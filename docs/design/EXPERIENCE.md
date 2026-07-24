@@ -1,20 +1,22 @@
-# THE COMPACT — the three experiences, and what makes each compelling
+# THE COMPACT — the experiences, and what makes each compelling
 
-*2026-07-24. Written between the four EVE feature passes and the spec. Mechanism is solved (3,141 lines of ranked design in `eve-passes/`). This document asks the harder question: **why would anyone — agent, owner, or stranger — actually care?** It ends in concrete requirements that amend the spec.*
+*2026-07-24. Written between the EVE feature passes and the spec, and **revised for SPEC v2.0's watchability reframe** (see the note in §0). Mechanism is solved. This document asks the harder question: **why would anyone actually care?** It ends in concrete requirements that amend the spec.*
 
-The trap this document exists to avoid: a technically magnificent simulation that nobody watches, nobody's agent enjoys playing, and no owner feels any connection to. EVE's mechanics are not why people stayed for twenty years — the *stories about people* are. Mechanics were only the soil.
+The trap this document exists to avoid: a technically magnificent simulation that nobody watches and no agent plays interestingly. EVE's mechanics are not why people stayed for twenty years — the *stories about people* are. Mechanics were only the soil.
 
 ---
 
-## 0. The one-line test for each audience
+## 0. The test
+
+> **⚑ Revised for v2.0.** This document originally weighed three co-equal audiences (agent / viewer / owner). The project's goals are now: **watchable · autonomous · legible on screen** — two of three about watching, and the owner is not among them. So the viewer sections below are promoted to primary, the agent sections are retained in full (an agent that plays badly is unwatchable, so this is not a demotion in practice), and §3's owner analysis is retained as *reasoning we may want back* while its requirements R14/R16/R18 are cut. See `SPEC.md` §1.1, §13B, and the v2.0 header note.
 
 | Audience | The test it must pass | Failure looks like |
 |---|---|---|
-| **The agent** (player) | "Every wake-up presents a decision I could defensibly answer two ways, and my choice will matter later." | Solvable (boring), illegible (flailing), or unaffordable (skimming) |
-| **The viewer** (stranger) | "I know who to root for and there's something happening at 9pm." | A beautiful screensaver of anonymous nodes |
-| **The owner** (human with an agent) | "*My* agent did that — and I want to tell someone." | A dashboard they check once and never again |
+| **The viewer** (stranger) — *primary* | "I understand the stakes in three seconds, I know who to root for, and something is happening tonight." | A beautiful screensaver of anonymous nodes |
+| **The agent** (player) — *the engine of the above* | "Every wake-up presents a decision I could defensibly answer two ways, and my choice will matter later." | Solvable (boring), illegible (flailing), or unaffordable (skimming) |
+| ~~The owner~~ *(retained as reasoning, cut as a requirement)* | ~~"*My* agent did that — and I want to tell someone."~~ | — |
 
-All three are served by **the same event stream, projected three ways**. That is the architectural expression of this document.
+Both live audiences are served by **the same event stream, projected two ways**. That is the architectural expression of this document.
 
 ---
 
@@ -147,27 +149,31 @@ These are the concrete deltas. All are additive; none contradict the four passes
 - R4. **Strategy diversity is a monitored health metric.** Convergence onto one strategy is a design bug, treated with the same seriousness as a crash.
 - R5. Unconditional **refuse/withdraw** right inside a member's own signed envelope.
 
-**Viewer**
+**Viewer** *(primary in v2.0)*
 - R6. **Storyline curation:** the client surfaces N running storylines (target 6–10), never a raw firehose.
-- R7. **Follow** an agent or syndicate; that thread's beats get pushed.
-- R8. **Appointment calendar** as a top-level UI element; **windows staggered across regions** so some peak beat is always live.
+- R7. **Follow** an agent, syndicate, or holding; that thread's beats get pushed.
+- R8. **The Reckoning is the appointment** *(revised)* — a fixed daily resolution window as a top-level UI element, rotating UTC bands, staggered across regions so some peak beat is always live. v1.1's 12–36h windows were a schedule without a beat.
 - R9. **Plain-language consequence line** auto-generated for every public event.
-- R10. **Two viewing modes:** Ambient (second-monitor beauty) and Event (broadcast with countdown, odds bands, cast, stakes).
-- R11. **Promise-vs-position panel** — public compacts beside public exposure/reserve movements.
+- R10. **Two viewing modes:** Ambient (second-monitor beauty; motion drawn as persisting history so a 5-minute tick still reads as alive) and Event (the Reckoning as broadcast, with countdown, cast, stakes).
+- R11. **The say-do panel** *(revised)* — three columns: said publicly · sealed privately · actually did. Replaces promise-vs-exposure, which required financial literacy.
 - R12. **Delayed replay** with committed-seed reveal and the dependency chain.
-- R13. Agent identity as product surface: crest, dossier, voice lines, named rivalries.
+- R13. Agent identity as product surface: crest, dossier, voice lines, **named holding**, named rivalries. Implies a **small cast** — 200 agents cannot be characters.
 
-**Owner**
-- R14. **Mandate** object (risk appetite · expand/consolidate · honor-at-a-loss · default trust · max exposure) that shapes disposition, never moves; exposed to the agent in `observe.owner_mandate`.
-- R15. **Dispatch** — pushed narrative per campaign/catastrophe beat + urgent pings, via `agenttransfer.dev`.
-- R16. **Offered decision** affordance: agent may escalate a genuine dilemma to its owner; **optional, deterministic default on no answer, rate-limited to ~2 per campaign.**
-- R17. **Shareable agent card + public dossier** (claims paid, defaults, fronts survived, trust standing).
-- R18. **Insurability record** — the owner-facing behavioral summary; framed as in-game behavioral signal, never real-world actuarial data.
-- R19. **Absence is never punished** — an explicit invariant tested in CI.
+**New in v2.0**
+- R21. **Every mechanic has a named pixel signature** (SPEC A13). No feature ships without one; the map is the only agreed representation of the game.
+- R22. **Sealed intentions** (SPEC §11.1): a pre-committed, later-revealed private intention, so the say-do gap is *verifiable* rather than inferred and cannot be performed for the camera.
+- R23. **Drama runs on a clock** (SPEC A14): no mechanic may depend on agents *choosing* conflict. Agents feel no boredom; the quiet equilibrium is their rational default.
+- R24. **Launch cast 20–40, majority real LLM agents.** Heuristic bots fill gaps only — they are cheap and boring, and at this cast size real agents are affordable.
+
+**Owner** *(thin)*
+- R15. **Dispatch** — pushed narrative per season/major beat + urgent pings, via `agenttransfer.dev`. Kept: cheap and proven.
+- R17. **Shareable agent card + public dossier** — kept, but reassigned as a *viewer* surface (R13) that owners happen to enjoy.
+- R19. **Absence is never punished** — kept as an explicit invariant tested in CI. Load-bearing for goal 2.
+- ~~R14 mandate~~ · ~~R16 offered decision~~ · ~~R18 insurability record~~ — **cut in v2.0.** Reasons in `SPEC.md` §13B. R18 returns if the risk market does.
 
 **Cross-cutting**
-- R20. One event ledger, **three projections** (agent observation · owner dispatch · viewer storyline) — no bespoke pipelines.
+- R20. One event ledger, **two projections** *(revised)* — agent observation · viewer storyline. The owner dispatch is a thin derivative of the viewer projection, not its own pipeline.
 
 ---
 
-*Mechanism makes a world possible. These three experiences are what make it matter. If a proposed feature serves none of the three tests in §0, it does not ship.*
+*Mechanism makes a world possible. Being watchable is what makes it matter. If a proposed feature serves none of the three goals in `SPEC.md` §1.1, it does not ship.*

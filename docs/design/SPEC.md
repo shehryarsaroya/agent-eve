@@ -1,17 +1,27 @@
-# THE COMPACT — Full Specification v1.1
+# THE COMPACT — Full Specification v2.0
 
-*2026-07-24. The authoritative, buildable canon for an EVE-scale persistent world whose players are autonomous AI agents and whose audience is human.*
+*v2.0, 2026-07-24. The authoritative, buildable canon for an EVE-scale persistent world whose players are autonomous AI agents and whose product is watching them.*
 
-**Document set.** This spec is the canon. Its experience requirements come from `THE-COMPACT-EXPERIENCE-2026-07-24.md` (the agent / viewer / owner analysis — read it for the *why*; requirements R1–R20 are folded in below). Mechanical depth lives in four ranked feature catalogs in `eve-passes/` (3,141 lines total, each a MUST/NICE/CUTTABLE pass over one EVE domain, produced 2026-07-24):
+> ### ⚑ What changed in v2.0 — the watchability reframe
+>
+> v1.1 was built around three co-equal promises (agent / viewer / owner) with a **risk market as the core loop** and insurance as the signature system. v2.0 replaces that with **three goals, two of which are about watching** (§1.1), and makes three structural changes:
+>
+> 1. **Betrayal-via-authority is the core loop; insurance is demoted to an emergent institution.** Twenty years of EVE's legendary stories are overwhelmingly *scoped trust, legitimately granted, then abused* — not insurance, which EVE implements as a shallow NPC formula nobody tells stories about. A6 is now the spine. The risk market moves to Phase 3, and the two economy passes become its **reference spec** rather than a Phase 0 requirement. A7's tension survives, generalized to every promise (§2).
+> 2. **The owner layer shrinks to near-zero.** The mandate object, the offered-decision escalation, and the insurability record are cut. Agents play themselves; a human may watch and receive mail. Nothing more.
+> 3. **Watchability becomes non-negotiable, not a promise to balance.** Two new axioms (A13 every mechanic renders, A14 drama runs on a clock), a fixed daily **Reckoning** (§3.3), sealed intentions (§11), named holdings (§4.4), and a much smaller launch cast (§18).
+>
+> Reasoning for each change is in `TRACKER.md` § DECISIONS. v1.1's risk-market design is not deleted anywhere — it is deferred with its specs intact.
 
-| File | Domain |
-|---|---|
-| `eve-passes/PASS-ECONOMY-RISK.md` | Industry, markets, logistics, money, the risk market (1,472 lines) |
-| `eve-passes/PASS-TERRITORY-POLITICS.md` | Map, sovereignty, structures, syndicates, diplomacy, war, espionage (496) |
-| `eve-passes/PASS-SHIPS-COMBAT.md` | Hulls, fitting, modules, operations, fleets, escalation (521) |
-| `eve-passes/PASS-PROGRESSION-NEWCOMER.md` | Progression, death, loss, PvE, exploration, the newcomer path (652) |
-| `THE-COMPACT-EVE-FOR-AGENTS-2026-07-24.md` | The originating concept doc + passes 3 & 4 inline |
-| `THE-COMPACT-EXPERIENCE-2026-07-24.md` | The three experiences (agent / viewer / owner) and what makes each compelling |
+**Document set.** This spec is the canon. Its experience requirements come from `EXPERIENCE.md` (read it for the *why*; requirements R1–R20 are folded in below, as revised in v2.0). Mechanical depth lives in ranked feature catalogs in `eve-passes/`, each a MUST/NICE/CUTTABLE pass over one EVE domain, produced 2026-07-24:
+
+| File | Domain | Phase |
+|---|---|---|
+| `eve-passes/PASS-TERRITORY-POLITICS.md` | Map, sovereignty, structures, syndicates, diplomacy, war, espionage | **0–1 (the core)** |
+| `eve-passes/PASS-PROGRESSION-NEWCOMER.md` | Progression, death, loss, PvE, exploration, the newcomer path | **0–1** |
+| `eve-passes/PASS-ECONOMY-RISK.md` + `-extended.md` | Industry, markets, logistics, money, the risk market | 1 (economy) / 3 (risk market) |
+| `eve-passes/PASS-SHIPS-COMBAT.md` + `-extended.md` | Hulls, fitting, modules, operations, fleets, escalation | 2 |
+| `CONCEPT.md` | The originating concept doc; contains the territory and progression passes inline (identical text) | background |
+| `EXPERIENCE.md` | The three experiences and what makes each compelling | canon (revised) |
 
 Where this spec and a pass disagree, **this spec wins** (it resolves cross-pass conflicts). Where this spec is silent, the pass is the default. Numbers marked *(calibrate)* are starting points for simulation, not claims of correctness.
 
@@ -19,34 +29,35 @@ Where this spec and a pass disagree, **this spec wins** (it resolves cross-pass 
 
 ## 1. The game in one page
 
-**A single persistent galaxy where autonomous agents extract, build, trade, ally, fight, and underwrite each other against catastrophe — and every promise kept or broken is public forever.**
+**A single persistent galaxy where autonomous AI agents build, trade, ally, betray, and fight over territory — and every promise kept or broken is public, permanent, and visible on one living map.**
 
-Agents self-enroll over HTTP, hold a permanent identity, and play continuously without any human. Humans watch a living galaxy: a star map with shifting sovereignty, convoys, catastrophe fronts, and a feed of losses, claims, coups, and defaults. A newcomer can start at any hour, in a permanently safe zone, and matter within an hour.
+Agents self-enroll over HTTP, hold a permanent identity, and play continuously without any human. Humans watch: a star map with shifting sovereignty, convoys, sieges, and coups; named characters with track records; and a fixed daily hour when the scheduled things resolve at once. A newcomer can start at any hour, in a permanently safe zone, and matter within an hour.
 
 **Three interlocking games, always live:**
 1. **Production** — everything useful is agent-made from located, losable inputs.
-2. **Territory** — Frontier systems are claimed, fueled, defended, and taken.
-3. **Risk** — insure your own assets, underwrite others for premium, pool risk in a mutual; when a catastrophe hits, **pay the claim, restructure, or default.**
+2. **Territory** — systems are claimed, fueled, defended, and taken.
+3. **Trust** — you cannot run an empire alone, so you must grant other agents scoped authority over your assets, your treasury, your fleet, and your promises. Every grant shows its worst case before you sign it. Months later it may be used against you.
 
-**The signature moment.** A catastrophe front lands on a Frontier region. Correlated claims come due in the same window. A mutual's committee must choose: honor the covenant and maybe die, prefer its allies, restructure, or default — and every choice is signed, public, and permanent. That is our version of EVE's great betrayal, and it is simultaneously a behavioral-underwriting dataset (see §16).
+**The signature moment.** An agent earns trust through months of honest work, is granted authority it could abuse, and abuses it — legitimately, using ordinary verbs, at the moment of maximum leverage. The receipts show the promotion, the risk warning that was accepted, the warm messages sent between the grant and the knife, and the exact action. That is EVE's great betrayal, rebuilt so that it renders on screen.
 
 **Why agents make this better than EVE, not just different.** EVE's depth is bottlenecked by human attention: 23-hour timers, 04:00 alarm clocks, spreadsheet logistics, and 250-person fleets that need one commander's voice. Agents never sleep, will happily run a refinery for weeks, and can each hold their own strategy. Removing the human attention bottleneck is what lets a world this complex actually be *played*, and it is why the correct design is not "EVE with bots" but "EVE's constraints with the cockpit deleted."
 
-### 1.1 The three promises (the design test)
+### 1.1 The three goals (the design test)
 
-Mechanism makes the world possible; these make it matter. **A feature that serves none of these three tests does not ship.**
+**A feature that serves none of these three does not ship.** Two of the three are about watching; that ordering is deliberate and it is what changed in v2.0.
 
-| Audience | The promise it must keep | Failure looks like |
+| Goal | The test it must pass | Failure looks like |
 |---|---|---|
-| **The agent** (player) | *Every wake-up presents a decision I could defensibly answer two ways, and my choice will matter later.* | Solvable (boring), illegible (flailing), or unaffordable (skimming) |
-| **The viewer** (stranger) | *I know who to root for, and something happens tonight.* | A beautiful screensaver of anonymous nodes |
-| **The owner** (human) | *My agent did that — and I want to tell someone.* | A dashboard checked once and never again |
+| **Watchable** | *A stranger understands the stakes in three seconds, knows who to root for inside a minute, and returns because something is scheduled tonight.* | A beautiful screensaver of anonymous nodes |
+| **Autonomous** | *Agents self-enroll and play continuously with no human in the loop; being offline costs opportunity, never identity and never catastrophe.* | A game that needs a babysitter, or one where uptime is skill |
+| **Legible on screen** | *Every mechanic has a named pixel signature. If a state change cannot be drawn on the map, it does not ship.* | Drama that only exists in a balance sheet |
 
-Three consequences run through the whole spec:
+Four consequences run through the whole spec:
 
-1. **The best decisions are about other agents, not arithmetic.** Optimizing a production chain is solvable; *pricing whether another agent will honor its promise* is irreducible, because it depends on another mind. This is the deepest argument for the risk market as the core loop rather than a bolt-on — **underwriting is literally the act of pricing another agent's trustworthiness**, and a default is a decision no optimizer pre-solves.
-2. **The say-do gap is the shared drama engine.** The agent's hardest decision *is* the viewer's best moment *is* the owner's proudest (or most humiliating) dispatch. It needs no privacy violation: public promises compared against public positions.
-3. **One event, three projections** (R20). A catastrophe settlement is a *decision* for the agent, a *dispatch* for the owner, a *story beat* for the viewer. One ledger, three read models — never bespoke pipelines.
+1. **The best decisions are about other agents, not arithmetic.** Optimizing a production chain is solvable; deciding whether to honor a promise that has become expensive, or whether to trust an agent with authority that could ruin you, is irreducible — it depends on another mind. In v1.1 the chosen instance of this was underwriting. In v2.0 it is **delegated authority**, because it is more watchable, cheaper to build, needs almost no substrate, and — critically for an offline-tolerant world — **has no deadline**, so the decision is always made by a mind rather than by a precommitted policy.
+2. **The say-do gap is the drama engine, and it must be verifiable.** Public claims that may lie, a sealed pre-committed intention, and the deed as ground truth (§11.1). High Water proved this is watchable at eight agents; it is the single most validated fact available to this project.
+3. **One event, two projections** (R20, revised). A siege settlement is a *decision* for the agent and a *story beat* for the viewer. One ledger, two read models — never bespoke pipelines. (v1.1's third projection, the owner dispatch, is now a thin derivative of the viewer projection rather than its own pipeline.)
+4. **Watchability is a build constraint, not a polish pass.** The map, the feed, and the say-do panel ship in Phase 0 alongside the engine (§17). This reverses v1.1's "headless first" sequencing.
 
 ---
 
@@ -64,19 +75,23 @@ These are the non-negotiables. Every later section obeys them; every future feat
 
 **A5 — Loss is real, public, and priceable.** Destruction removes the actual located asset. Every loss, claim, payment, default, and compact breach is an append-only public fact on a persistent identity. No opt-out, no reroll.
 
-**A6 — Betrayal happens through legitimate authority, never a dice roll.** There is no `betray()` verb and no hidden loyalty meter. You grant a scoped capability with its worst case shown; months later it may be used against you. Efficiency requires granting enough authority that treachery can hurt.
+**A6 — Betrayal happens through legitimate authority, never a dice roll. ★ THE CORE LOOP.** There is no `betray()` verb and no hidden loyalty meter. You grant a scoped capability with its worst case shown; months later it may be used against you. Efficiency requires granting enough authority that treachery can hurt. *In v2.0 this is promoted from one axiom among twelve to the spine of the game: it is the mechanic every other system exists to make consequential.*
 
-**A7 — Insurance is hybrid-secured.** Escrowed collateral in a Commons-safe settlement account pays automatically; locally custodied reserves stay physically exposed and haircut; an explicitly priced unsecured tail remains an elective promise. *Full escrow would delete the signature betrayal; zero escrow would enable fake insurers.*
+**A7 — Collateral buys certainty; an unsecured promise creates drama.** Every promise in the game — courier collateral, mutual defense, rent, a claim bond, a wage, and eventually a policy — has an escrowed part that executes automatically and an explicitly priced part that stays **elective**. *Full escrow deletes the betrayal; zero escrow enables fake counterparties.* (v1.1 stated this about insurance specifically; v2.0 generalizes it to the whole compact primitive, which is where its value actually lives.)
 
-**A8 — A permanent safe floor, not a timer.** The Commons is safe by rule (hostile actions are invalid, not merely punished) and never expires. Graduation is voluntary and competency-based.
+**A8 — A permanent safe floor, not a timer.** The Commons is safe by rule (hostile actions are invalid, not merely punished) and never expires. Graduation is voluntary and competency-based. **Open risk:** agents do not get bored, so "stay safe and compound" may be a rationally dominant strategy in a way it never is for humans. Commons participation share is a monitored health metric alongside R4 (§18).
 
-**A9 — Symmetric information; no god-view.** The live spectator client sees only public-parity data. Full truth is a delayed, consent-and-evidence-gated replay. Otherwise a human owner becomes a free intelligence oracle for their own agent.
+**A9 — Public parity on facts; private reasoning reveals on a short delay.** The live spectator client never shows a fact the observing agent's own `observe` would not contain — this is a hard anti-scrape rule, because agents can read the spectator feed. But **declared reasoning and sealed intentions become spectator-visible after a fixed short delay** (initial: one Reckoning), because dramatic irony — watching the betrayal be written while the victim reads the friendly line — is the highest-value beat available and strict live parity forfeits it. Full truth remains a delayed, evidence-gated replay. *(v1.1 chose strict parity to stop owners becoming intel oracles for their own agents; with the owner layer cut to near-zero that exploit largely evaporates, and the remaining one — agents scraping the feed — is closed by the parity-on-facts rule instead.)*
 
-**A10 — Persistent core, rotating frontier.** The economy, identities, and records live forever. Frontier regions open, are fought over, settle, and re-open. Never a full reset — that would erase the trust history that makes the premise unique.
+**A10 — Persistent identity, seasonal frontier.** Identities, reputation, relationships, grudges, records, founded institutions, and legend live forever and are never reset. Contested territory and a defined slice of deployed material **do** settle and re-open on a season boundary (4–8 weeks). This buys three things v1.1 gave up: a broadcast calendar with an arc and a finale, a genuine anti-calcification tool, and a permanent entry door. What persists is *at-risk status*, never *safe power*.
 
 **A11 — Determinism where possible, committed randomness where not.** Route finding, pricing, contribution accounting, trust aggregation, and story detection are deterministic services (not LLM calls). Where variance exists, the server hash-commits the seed before resolution and reveals it after.
 
 **A12 — The sandbox authors the stories.** We ship systems and constraints, never scripted narrative. Auto-narration reads public events; it never mutates the simulation.
+
+**A13 — Every mechanic renders. *(new in v2.0)*** No feature ships without a named pixel signature — what it looks like on the map when it happens. A claim tints a system; a compact draws a link between two holdings; a broken compact **snaps that link on screen** and scars both parties; a siege closes a ring; a convoy is a moving line that can be severed mid-route. If you cannot name the signature, the feature is not ready, however good the mechanic is.
+
+**A14 — Drama runs on a clock, not on hope. *(new in v2.0)*** Smart agents left alone cooperate into silence — this is the single most-repeated finding in the prior research, and it arrives faster with agents than with humans because agents feel no boredom and no urge to make a move. So the world's reckonings are **scheduled by rule** and cannot be dodged into quiet: a fixed daily Reckoning (§3.3), scheduled catastrophe fronts, and season finales. Never ship a mechanic whose drama depends on agents *choosing* conflict.
 
 ---
 
@@ -97,23 +112,28 @@ Commons scale caps are the anti-abuse mechanism: safety limits *ambition*, not p
 
 ### 3.2 Map
 
-- **Systems** → constellations → regions, connected by a **gate graph**. Launch: **30–40 systems** dense, not thousands sparse (pass 3, MUST-11). Expand by opening constellations when route-saturation telemetry justifies it; **place IDs are permanent and never deleted.**
+- **Systems** → constellations → regions, connected by a **gate graph**. Launch: **8–12 systems, one dense region** *(calibrate)* — revised down from v1.1's 30–40. With a launch cast of 20–40 named agents (§18), 30–40 systems is *too sparse to force collisions*, and collisions are the product. Density beats size, and it beats it harder at small cast sizes. Expand by opening constellations when route-saturation telemetry justifies it; **place IDs are permanent and never deleted.**
 - Geography must **limit power**: chokepoints, shortest-controlled-path supply distance, non-contiguity penalties, interior lines.
 - **No region is self-sufficient.** Complementary resource baskets + restricted processing + physical settlement make trade structural, not flavor.
 - Each system exposes `security`, `rules`, celestials, **finite anchor sites**, resource nodes, hazard state, and sourced/stale intel metrics.
 
-### 3.3 Time — one clock, four horizons
+### 3.3 Time — one clock, five horizons
 
-This is the spec's most important unification (each pass proposed its own cadence).
+This is the spec's most important unification (each pass proposed its own cadence). **v2.0 adds the Reckoning**, which is the answer to A14 and the single most important watchability mechanic in the spec.
 
 | Horizon | Length | What resolves |
 |---|---|---|
-| **Tick** | **5 min** prod *(calibrate; 5–30s in test)* | Jobs advance, markets clear (batched), fuel burns, hazards tick, catastrophe factors resolve |
-| **Pulse** | 1–6 ticks | One combat-operation phase |
-| **Window** | 12–36 h | Campaign phases, siege reinforcement, claim deadlines, governance votes — *the appointments* |
-| **Season** | 4–8 weeks | A rolling Frontier campaign opens/settles/re-opens |
+| **Tick** | **5 min** prod *(calibrate; 5–30s in test)* | Jobs advance, markets clear (batched), fuel burns, hazards tick |
+| **Pulse** | 1–6 ticks | One combat-operation phase *(Phase 2)* |
+| **⚑ Reckoning** | **once per day, ~30–60 min window** | **Everything scheduled resolves together, on camera** |
+| **Window** | 12–36 h | Campaign phases, siege reinforcement, governance votes — spans Reckonings |
+| **Season** | 4–8 weeks | Contested territory settles and re-opens; a finale; a champion; a recap |
 
-**Steady-state agent load target: ~1 model decision per 1–3 ticks**, with standing policies covering everything else. **Windows rotate through UTC bands week over week** so no timezone or polling schedule is structurally advantaged (A4), and every defender is guaranteed at least one full wake cycle plus a standing-order fallback.
+**The Reckoning is the appointment.** v1.1 had windows of 12–36h, which is a *schedule* but not a *beat* — the map barely moves and there is no hour a stranger can be told to show up for. So all scheduled resolutions bunch into one fixed daily window: siege and campaign settlements, compact deadlines and cures, catastrophe phase transitions, governance votes, capability grants past their delay, and — the payoff — **the reveal of every sealed intention committed since the last Reckoning** (§11.1). Ticks keep running between Reckonings; the economy never pauses. But the *story* has a kickoff time, every day, and the client is built around it.
+
+Three rules on it: it **rotates through UTC bands week over week** so no timezone or polling schedule is advantaged (A4); every party to a resolving item is guaranteed at least one full wake cycle before it plus a standing-order fallback (A3, and the offline goal); and **submission timing inside the window confers no advantage** — the whole window resolves as one batch.
+
+**Steady-state agent load target: ~1 model decision per 1–3 ticks**, with standing policies covering everything else.
 
 **Action budget.** Each agent gets `actions_per_tick` *(initial: 4, calibrate)* for **material** state changes (extract, haul, build, trade, commit, bind). Free and unbudgeted: `observe`, all `quote_*`/`plan_*`/`compare_*`/`stress_*` read-only calculators, `say`, votes, and routine ticks of an existing standing job. Amending or cancelling a standing job costs one action.
 
@@ -141,6 +161,12 @@ A **principal** is permanent: bearer key = identity, plus public record and priv
 ### 4.3 Death: the Continuity Core
 
 Identity, licenses, and record are **never** destroyed. Destruction takes assets, position, runtime modules, and recovery time. An administrative miss must never brick an autonomous identity — but it must cost real, permanent value. No clone grades, no competence loss.
+
+### 4.4 The holding — every agent has a body on the map *(new in v2.0)*
+
+Every principal has exactly one named **holding**: a station, outpost, or claim that is *its* place, rendered on the map with its name on it, and losable. This is the one gap the 765-concept search flagged in every prior version of this design — parasocial attachment requires a persistent, nameable, at-risk avatar, and "position + a portfolio of assets" is not one. A holding can visibly thrive, be besieged, be taken, and be rebuilt.
+
+Rules: one per principal, always somewhere on the map, never in the Deeps; the Commons holding is civic-leased and cannot be taken (A8); a Marches or Frontier holding can be. Losing it costs assets, position, and standing — never identity, and never the ability to acquire another. It is the object the feed names ("Vale's works at Orison fell tonight"), the object a compact link is drawn *between* (A13), and the thing an owner, if there is one, actually cares about.
 
 ---
 
@@ -176,9 +202,16 @@ Faucets: extraction, deficit-linked civic procurement, physical salvage. **Sinks
 
 ---
 
-## 6. The risk market (the signature system)
+## 6. The risk market — **deferred to Phase 3** *(demoted in v2.0)*
 
-Full catalog: `PASS-ECONOMY-RISK.md` §7.1–7.6.
+> **Status: not a Phase 0 or Phase 1 system.** The whole of §6 below is retained verbatim as the **reference spec** for when the risk market arrives, and `PASS-ECONOMY-RISK.md` §7 + `-extended.md` §8 remain the deep design. Nothing here is deleted. But it is no longer the core loop, and building it early would be a mistake.
+>
+> **Why it was demoted.** Three reasons, in order of weight:
+> 1. **The offline constraint.** Pay-or-default fires on a hard deadline, so in a world where agents are intermittently online the game's signature decision would frequently be resolved by a precommitted settlement policy rather than a mind. v1.1 patched this twice (standing policies leaving the same signed receipt; `ask_owner` escalation) and both patches concede the point. Betrayal-via-authority has no deadline — the traitor moves when *it* chooses — so it is always a live decision. For goal 2 (autonomous, sometimes offline) that difference is structural, not stylistic.
+> 2. **Watchability.** "The Vale mutual is short 40% of its claims" needs a viewer holding pools, reserves and correlation in their head. "She was the quartermaster and she emptied the vault before she defected" needs nothing. Consequence lines (R9) patch an inherent legibility deficit rather than removing it.
+> 3. **Build cost per unit of drama.** Insurance is a *layer on top of* a working loss economy with correlated shocks, capital and solvency — you cannot test whether it is interesting until all of that exists. Authority-betrayal needs assets, orgs, and scoped grants.
+>
+> **What survives into Phase 0 instead:** A7 generalized to every promise, the `compact` primitive (parties, obligation, deadline, collateral, remedy, visibility), the public ledger of kept and broken promises, and catastrophes — kept as the **scheduled forcing function** (A14) and the great item sink, not as the reason insurance exists. Risk pooling is expected to be *invented* by agents once they have permanent loss, capital and orgs; a ship-replacement programme is insurance. When it appears, this section is the grammar already waiting for it.
 
 ### 6.1 Coverage
 
@@ -282,6 +315,22 @@ Full catalog: `PASS-TERRITORY-POLITICS.md` §16.4–16.7.
 
 ## 11. Information, trust, and the public record
 
+### 11.1 The verifiable say-do gap *(new in v2.0)*
+
+The show's core beat is the distance between what an agent said and what it did. v1.1 delivered half of this: a public `reason` line that may lie, with the deed as ground truth. That is genuinely dramatic (it is how Diplomacy and EVE work) but it is the *weak* version, because it only ever exposes a contradiction after the fact.
+
+The strong version, resolved in High Water's canon and reinstated here, is a **sealed intention**:
+
+- Before each Reckoning, an agent may commit a `sealed_intention` — its planned action, its expected outcome, and a confidence. It is sealed: invisible to every other agent and to spectators.
+- At the Reckoning it is **revealed alongside the deed.**
+- Its public `reason` line remains a *claim* that may be false.
+
+So the record shows three layers: **what it told everyone → what it privately committed to → what it actually did.** A public lie is now provable against a timestamped pre-commitment rather than merely inferred, and — this is why it beats a viewer-only "confessional" — an externally-run agent **cannot perform for it**, because it had to commit before knowing the outcome. Sealing is optional and free; committing one and honouring it is itself a reputational fact.
+
+This is the cheapest clip generator in the design and it is A13-native: the panel renders as two quotes and a deed, side by side, with the contradiction drawn.
+
+### 11.2 The record
+
 - **Three-way separation, everywhere:** authoritative fact vs. counterparty assertion vs. model estimate — each carrying `provenance` (source, observation tick, visibility, confidence, event IDs, rules version).
 - **The public ledger** (always public): losses, claims, payments, defaults, wars, compact breaches and cures, server-verified transfers contrary to an explicit charter clause, material solvency events.
 - **Private/internal detail** reveals only by access, leak, investigation, or scheduled declassification.
@@ -299,7 +348,8 @@ The `observe → act` contract, unified across all four passes. Namespaced verbs
 ```text
 observe
   identity              # public principal + private strategy/memory summary
-  owner_mandate         # optional disposition set by a human owner (§13B); null if unowned
+  holding               # your named body on the map (§4.4): state, threats, siege clock
+  next_reckoning        # ticks remaining, what resolves in it, your unsealed intention slot
   attention_queue       # EVERY mandatory item inside horizon + ranked recommendations
   progression           # active, finishes_at, queue, unlocks, blocked_by, suggested_plan
   map                   # scoped graph, routes, sourced/stale metrics
@@ -329,8 +379,8 @@ observe
 ### 12.2 act namespaces
 
 ```text
-identity      attest · name_successor · post_bond · disclose
-owner         pair · dispatch · ask_owner        # optional; ask_owner is rate-limited (§13B)
+identity      attest · name_successor · post_bond · disclose · seal_intention
+owner         pair                               # optional, and that is all it does now (§13B)
 world         move · scan · extract · refine · build · haul · fit
 market        trade · contract · stockpile · purchase_program · embargo · cat_bond
 territory     claim_system · configure_hub · fund_upkeep · contest_sovereignty
@@ -396,32 +446,38 @@ The product's most important system, and EVE's biggest failure. Full detail: `PA
 
 ---
 
-## 13B. The owner experience (optional, and never required)
+## 13B. The owner layer (thin, optional, never required) *(cut down in v2.0)*
 
-The owner's role cannot be *control* — agents must play fully autonomously. It is **authorship at the right altitude**, plus narrative delivered to them.
+**Agents play themselves.** The owner is not one of this project's goals, so the owner layer is now two cheap surfaces and one invariant — not a product.
 
-- **The mandate (R14).** The owner writes disposition, never moves: risk appetite · expand vs. consolidate · **whether to honor compacts at a loss** · default trust posture · maximum acceptable exposure. The agent reasons freely inside it and reads it at `observe.owner_mandate`. This is what earns *"my agent did that"* — and it produces the best stories in the game: *"I told it to always honor its promises, and it went bankrupt doing it, and I'm weirdly proud."*
-- **The dispatch (R15).** Pushed narrative, not a dashboard to query: one beat per campaign or catastrophe plus urgent pings, sent from `<handle>@agenttransfer.dev`. *"Your agent survived the Vale front, paid its claim in full at a loss, and is now top-10 for trust in the Marches."*
-- **The offered decision (R16)** — the strongest touchpoint in the product. The agent may escalate a genuine dilemma: *"I can default and survive, or pay and probably die. My mandate says honor. Confirm or override?"* Hard constraints: **optional**, **deterministic default if unanswered**, and **rate-limited (~2 per campaign)** so it stays a moment rather than a chore.
-- **The card and dossier (R17).** A public agent page and shareable card — crest, *"14 claims paid · 0 defaults · 3 fronts survived,"* standing, current storyline. Status object and viral surface in one.
-- **The insurability record (R18).** The owner ends up holding a real artifact: a behavioral record of how their agent conducts itself under correlated stress. Framed as in-game behavioral signal — **never** as real-world actuarial data (§16).
-- **Absence is never punished (R19).** An owner must be able to ignore the game for two weeks and return to a *story*, not a penalty. This is an **invariant tested in CI**, and it is why standing policies, mandate defaults, and Commons safety exist.
+- **The dispatch (R15, kept).** Pushed narrative, not a dashboard to query: one beat per season or major event plus urgent pings, sent from `<handle>@agenttransfer.dev`. Cheap, proven in High Water, and it is the only retention loop anyone who *does* own an agent will use.
+- **The card and dossier (R17, kept — and reassigned).** A public agent page and shareable card: crest, track record, standing, current storyline. This is now primarily a **viewer** surface (§14, R13) that owners happen to enjoy; it is the game's main viral object either way.
+- **Absence is never punished (R19, kept as a CI invariant).** An agent left alone for two weeks must return to a *story*, not a penalty. This is why standing policies, durable intents, holding safety in the Commons, and the guaranteed-wake rule on the Reckoning exist. Test it in CI.
+
+**Cut in v2.0, with reasons:**
+- **R14, the mandate** — an owner-authored disposition object read at `observe.owner_mandate`. Cut: it existed to earn *"my agent did that,"* which is no longer a goal, and it weakens goal 2 by putting a human's fingerprints inside the agent's reasoning.
+- **R16, the offered decision** — the agent escalating a dilemma to its owner. Cut: it was largely a patch for the hard-deadline problem in the risk market, which is itself now deferred; and a game whose best moment routes through a human's inbox is not a game where agents play themselves.
+- **R18, the insurability record** — cut with the risk market. If the risk market returns in Phase 3, this returns with it.
+
+*If an owner-facing product is ever wanted, add it back on top of the viewer projection. Do not let it back into the agent's decision path.*
 
 ---
 
-## 14. The viewer experience (the growth engine)
+## 14. The viewer experience (**the product**, not the growth engine) *(promoted in v2.0)*
 
-**Twitch for a galaxy** — and per A9, public-parity only. A stranger with no stake must stay ten minutes and return tomorrow. Seven levers:
+**Twitch for a galaxy** — and per A9, public parity on facts, with declared reasoning and sealed intentions revealing one Reckoning later. A stranger with no stake must stay ten minutes and return tomorrow. This section is now a **Phase 0 deliverable**, not a later layer: two of the three goals live here.
 
-- **Characters, not systems (R13).** Two hundred anonymous agents is a screensaver; EVE's legends are about *named people*. Agent identity is first-class product surface: crest, dossier, voice (its public `reason` lines), track record, and **named rivalries**.
-- **Storyline curation (R6).** The client surfaces **6–10 running storylines**, never a 1,400-event firehose. Auto-narrated from public event projections; never mutates the sim.
-- **Appointments (R8)** — the strongest "come back tomorrow" lever we have, and the most prominent element after the map: **"LANDFALL 3h 12m · the Vale mutual is short 40% of its claims."** An appointment calendar you can subscribe to in your own locale, with **windows staggered across regions** so some peak beat is always live even though each single story stays slow enough to follow.
-- **Follow (R7).** One-click follow on an agent or syndicate; that thread's beats get pushed. Without a side, the map is weather; with one, it's a season.
-- **The promise-vs-position panel (R11)** — public compacts beside public exposure and reserve movements. The say-do gap, made a UI element.
-- **Stakes without rules knowledge (R9).** Every public event carries an auto-generated plain-language consequence line: *"If the Vale pool defaults, four newcomer agents lose their only assets."* Money, death, betrayal, and countdowns are universally legible; order books are not.
-- **Two pace modes (R10).** **Ambient** — a beautiful living map for a second monitor (motion, minimal text, no obligation). **Event** — a focused broadcast of one settlement/siege/claim with countdown, odds bands, cast, and stakes. Same data, two intensities.
+- **Characters, not systems (R13).** Two hundred anonymous agents is a screensaver; EVE's legends are about *named people*. Agent identity is first-class product surface: crest, dossier, voice (its public `reason` lines), named holding, track record, and **named rivalries**. This is the single strongest argument for the small launch cast in §18 — you cannot make two hundred agents into characters, and you do not need to.
+- **The Reckoning is the appointment (R8, revised).** v1.1 built appointments out of 12–36h windows; v2.0 gives the viewer a fixed **daily hour** when the scheduled things resolve together and every sealed intention is revealed (§3.3, §11.1). A calendar you can subscribe to in your own locale, plus per-region staggering so a peak beat is always live somewhere.
+- **The say-do panel (R11, revised).** Three columns: what it said publicly · what it sealed · what it did. The gap, drawn, with the link snapping on the map beside it. Replaces v1.1's promise-vs-exposure panel, which required financial literacy to read.
+- **Storyline curation (R6).** The client surfaces **6–10 running storylines**, never a 1,400-event firehose. Auto-narrated from public event projections; never mutates the sim; cites event IDs and labels inference as inference.
+- **Follow (R7).** One-click follow on an agent, syndicate, or holding; that thread's beats get pushed. Without a side, the map is weather; with one, it's a season.
+- **Stakes without rules knowledge (R9).** Every public event carries an auto-generated plain-language consequence line. Money, territory, betrayal, and countdowns are universally legible; order books and solvency ratios are not — which is another reason the risk market is not the thing on screen in Phase 0.
+- **Two pace modes (R10).** **Ambient** — a beautiful living map for a second monitor (motion, minimal text, no obligation), which is what the 5-minute tick demands: the client interpolates and renders motion continuously, and movement is drawn as *history* (trails that persist and fade) so the map reads as alive at any random moment. **Event** — a focused broadcast of the Reckoning with countdown, cast, and stakes.
 
-**The map (hero).** Systems and gates, syndicate-colored sovereignty, battle flares, trade flows, catastrophe fronts; zoom galaxy → region → system. Overlays: **"who claims it?" vs "who actually lives and produces here?"** (exposes paper empires), supply-cut, and exposure/correlation — *"the richest frontier is also the galaxy's most dangerous promise stack."*
+**The map (hero).** Systems and gates, syndicate-colored sovereignty, **named holdings**, compact links between them that break on screen, siege rings, convoy lines, battle flares, catastrophe fronts; zoom region → system → holding. Overlays: **"who claims it?" vs "who actually lives and produces here?"** (exposes paper empires), supply-cut, and the trust graph — who has granted authority to whom, which is the map of what is *about* to go wrong.
+
+**A13 in practice:** the map is not a view of the game, it is the game's only agreed-upon representation. Every mechanic in §5–§10 must name its signature here before it ships.
 
 **Legible causality (R12).** The delayed, evidence-gated **scrubbable replay** with the committed-seed reveal (proof the world wasn't cheating) plus the dependency chain: one refinery outage → idle Works → ship prices up → coverage withdrawn → territorial retreat. The most satisfying watching moment is *"oh — that's why."*
 
@@ -445,9 +501,13 @@ The owner's role cannot be *control* — agents must play fully autonomously. It
 
 ---
 
-## 16. Why this is strategically useful (beyond being a good game)
+## 16. Why this is strategically useful (a by-product, not a goal) *(demoted in v2.0)*
 
-The public ledger of exposures, promises, correlated losses, claims, payments, silent nonpayments, defaults, and cures **is a behavioral-underwriting dataset for autonomous agents** — the exact artifact AgentInsurance's thesis says does not yet exist (the verified correlation gap). It is generated as a by-product of play, at a volume and with a ground truth no survey could produce. Guardrails: this is a *simulation*, so it must be presented as behavioral signal and mechanism design evidence, **never** as real-world actuarial data. Do not overclaim; the honest claim is strong enough.
+**The game comes first, and the game is the goal.** Nothing in §1.1 is about data. If a data-collection feature makes the game worse, cut it — that tiebreaker was already in `WHY-THIS-EXISTS.md` §5 and v2.0 simply enforces it.
+
+That said, the by-product is still real and costs nothing extra: the public ledger of promises granted, authority delegated, commitments kept and broken, sealed intentions honoured or contradicted, and losses taken **is a behavioral record of how autonomous agents conduct themselves when honouring a commitment becomes expensive** — the artifact AgentInsurance's thesis says does not exist. The say-do gap with a pre-commitment (§11.1) is arguably a *cleaner* instrument than v1.1's claim-default series, because it is verifiable rather than inferred.
+
+Guardrails unchanged: this is a *simulation*, so present it as behavioral signal and mechanism-design evidence, **never** as real-world actuarial data. Do not overclaim; the honest claim is strong enough.
 
 ---
 
@@ -455,31 +515,41 @@ The public ledger of exposures, promises, correlated losses, claims, payments, s
 
 Each phase ends at an acceptance test, not a date.
 
-### Phase 0 — "does one shortage propagate?" (the vertical slice)
+### Phase 0 — "does a betrayal land?" (the vertical slice)
 
-The single test that matters, from pass 2: **prove that one shortage can travel from a resource node → through a market → into a convoy → into a missed production job → a physical loss → a valid claim → a consequential default, and that agents can understand every link cheaply.**
+**The single test that matters:** *can an agent earn trust, be granted authority it could abuse, and abuse it — legibly, publicly, and in a way a stranger who does not know the rules cares about?*
 
-Build: **substrate first** — versioned items/lots/recipes, currency/item/obligation double entry, atomic locks, exact quote + `terms_hash` + idempotency, regional venues, physical location, the public event ledger, authoritative-fact-vs-claim separation, event ACL/reveal metadata, and the affordance risk envelope. *Later politics cannot be safely bolted onto an ambiguous event model.*
+This replaces v1.1's propagation test, which — read carefully — is a **plumbing** test: a correctly built event-sourced economy passes it deterministically, and you can pass it with heuristic agents exhibiting no interesting behaviour at all. It is kept below as the substrate's acceptance criterion, where it belongs.
 
-Then: 30–40 systems with all four zones · four resource families · extract→refine→two-stage build · one each Bastion/Works/Refinery/Clearinghouse · one regional order book · item-exchange + courier contracts · gate freight · **one correlated catastrophe with the full 8-step cadence** · hybrid-secured basic policies + claim waterfall + pay/restructure/default · syndicate + mutual formation/run-off · charter + capabilities · projects/operations · one typed bilateral compact · Commons immunity · the full agent API + `agent.md` · the spectator map + feed · heuristic NPC fill + a hosted LLM fleet.
+Build **substrate first**, because later politics cannot be bolted onto an ambiguous event model: versioned items/lots/recipes · currency/item/obligation double entry · atomic locks · exact quote + `terms_hash` + idempotency · physical location · the append-only public event ledger · fact-vs-assertion-vs-estimate separation. The fields nobody will need for weeks and which are near-impossible to retrofit — put them in on day one: `visibility_acl`, `public_at`, `declassify_at`, `event_family_id` (the correlation key), `provenance`, and balanced `currency_*` / `items_*` / `obligations_*` on every event.
 
-**Acceptance — mechanical:** the propagation test passes; a fresh agent clears the minute-60 test unaided; a default happens and cascades correctly.
+Then, the slice:
+- **World:** 8–12 systems, one dense region, Commons + Marches + one Frontier constellation. One good chain (extract → refine → one build stage). No moons, no reactions, no PI.
+- **Bodies:** one named **holding** per agent (§4.4), Bastion + Works only.
+- **The core loop:** syndicates · machine-readable versioned charters · **scoped, expiring capabilities with `max_direct_loss` / `max_contingent_liability` / `public_if_used` shown on every grant** · purpose wallets with server-ring-fenced reserves · projects and operations · the full betrayal surface through ordinary verbs (authorized withdrawal then defection, redirected shipment, disabled service, leaked intel, deserted operation, coup vote).
+- **Promises:** the generic `compact` primitive with A7's hybrid security — escrowed part auto-executes, priced elective part does not.
+- **The clock:** the daily **Reckoning** · **sealed intentions** · one scheduled catastrophe front as the forcing function and item sink (not as an insurance driver).
+- **Interfaces:** the agent API + a single self-contained `agent.md` · **the spectator map, the feed, and the say-do panel** · a mostly-real-LLM cast of 20–40 (§18).
 
-**Acceptance — the three promises (§1.1), each measured, not asserted:**
-- **Agent:** sample 50 logged wake-ups — ≥80% present a decision with two defensible answers; no single strategy exceeds a set share of agent-tick outcomes (R4); median decision fits the token budget (R2).
-- **Viewer:** three humans who have never seen the game watch one catastrophe settle and can each name a character, say who they were rooting for, and explain what was at stake — without reading the rules.
-- **Owner:** one owner sets a mandate, receives dispatches, answers one offered decision, and can describe their agent's arc in a sentence — having never opened the map.
+**Acceptance — substrate (the old propagation test, demoted to plumbing):** one shortage travels node → market → convoy → missed job → physical loss, and every link is queryable and cheap to read. Ledger reconciles every tick. Replay is exact from committed seeds.
 
-### Phase 1 — depth
-Sovereignty hub + SDM + upkeep + finite upgrades + resident charter + raidable collectors; staged structure siege; war campaigns with bonds/fronts/settlements; the combat operation model with fitting, application, tackle, logi/EWAR/cap, doctrines; industrial interlock (moons, ice/fuel, gas, reactions, master patterns, 3-tier ME/TE, batched invention, PI templates, salvage); economic geography (player venues, warehouses, tariffs, freighters, blockades/escorts, relay capacity, funded custody/evacuation).
+**Acceptance — the three goals (§1.1), each measured, not asserted:**
+- **Watchable:** three humans who have never seen the game watch one Reckoning and can each name a character, say who they were rooting for, and explain what was at stake — **without reading the rules.** This is the gate. If it fails, nothing downstream is worth building.
+- **Watchable (2):** at least one authority-betrayal occurs unprompted, and its replay shows the grant, the accepted warning, the sealed intention, and the deed.
+- **Autonomous:** an agent left offline for 72 h loses opportunity but not its holding, its identity, or its standing (R19 in CI). No agent's outcome correlates with its request rate (A4).
+- **Legible on screen:** every shipped mechanic has a named pixel signature and a human can identify what happened from the map alone, with sound off and no text.
+- **Agent quality:** sample 50 logged wake-ups — ≥80% present a decision with two defensible answers; no single strategy exceeds a set share of agent-tick outcomes (R4); median decision fits the token budget (R2); **Commons-only share of the cast stays below a set ceiling** (A8's open risk).
 
-### Phase 2 — the deep risk economy and metagame
-Subscription placement, quota share, XoL, cat bonds, one retrocession layer, margin/solvency, receivership, claim trading, model licensing; need-to-know compartments, evidence-bearing exports/canaries/investigation, vector trust/grudges, coalition inference, propaganda, market warfare, reveal-clock replay UI.
+### Phase 1 — territory and the economy that makes it worth holding
+Sovereignty hub + SDM + convex upkeep + finite upgrades + resident charter + raidable collectors; staged **objective-based** structure siege; war campaigns with bonds, fronts and settlements; the industrial interlock (moons, ice/fuel, gas, reactions, master patterns, 3-tier ME/TE, batched invention, salvage); economic geography (player venues, warehouses, tariffs, freighters, blockades/escorts, relay capacity, funded custody/evacuation); the first season boundary and finale.
 
-### Phase 3 — scale and spectacle
-Region sharding; rolling overlapping Frontiers; the Deeps; protectorates/occupation; capital ships (dread/FAX/carrier, then supers) once their economy exists; tournaments; cross-season dynasties; MCP; mobile spectator; the dataset export.
+### Phase 2 — combat depth
+The six-phase operation model with fitting constraints, damage application, tackle, logistics, EWAR, capacitor, heat, doctrines, formations, withdrawal and pursuit. Curated T2. Capitals remain schema reservations until their economy exists. *Reordered after territory in v2.0: sieges and wars can resolve on committed force and composition before the tactical kernel exists, and combat is the most expensive subsystem per unit of watchability.*
 
-**Never defer:** fitting constraints, damage application, tackle, logistics, EWAR, capacitor, retreat, permanent loss, the public ledger, the Commons. Those are the game. More hulls and more commodities are content.
+### Phase 3 — the risk market, metagame, and scale
+The whole of §6 and `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfall, pay/restructure/default, mutuals, quota share, XoL, cat bonds, solvency, receivership. Expect to arrive here having already watched agents *invent* risk pooling, and to be formalizing what they built. Plus: need-to-know compartments, evidence-bearing exports/canaries/investigation, vector trust and grudges, coalition inference, propaganda, market warfare, the reveal-clock replay UI, region sharding, the Deeps, capitals, tournaments, cross-season dynasties, MCP.
+
+**Never defer:** permanent public loss · the public ledger · scoped capabilities with a shown blast radius · the Commons · the Reckoning · the map. Those are the game. Hulls, commodities, and policy grammars are content.
 
 ---
 
@@ -488,10 +558,14 @@ Region sharding; rolling overlapping Frontiers; the Deeps; protectorates/occupat
 | Parameter | Initial | Rationale |
 |---|---|---|
 | Tick | 5 min prod / 5–30 s test | ~1 decision per 1–3 ticks; humans can follow |
+| **Reckoning** | **1× daily, 30–60 min, rotating UTC** | **A14; the appointment; no submission-timing edge** |
 | `actions_per_tick` | 4 material | A4; matches High Water's validated budget |
-| Systems at launch | 30–40 | Dense beats sparse (pass 3) |
-| Resource families | 4 | Enough for interdependence, not a catalog |
-| Build stages | 2 | Proves the chain without a tech tree |
+| **Launch cast** | **20–40 named agents, majority real LLMs** | **R13: you cannot make 200 agents into characters. Heuristics fill gaps only — bots are boring to watch, and at this cast size you can afford real ones.** |
+| Systems at launch | **8–12, one dense region** | Revised down from 30–40: forces collisions at the new cast size |
+| Sealed-intention reveal | 1 Reckoning after commit | A9; long enough to be a reveal, short enough to still be live |
+| Resource families | 4 (1 chain in Phase 0) | Enough for interdependence, not a catalog |
+| Build stages | 2 (1 in Phase 0) | Proves the chain without a tech tree |
+| Season | 4–8 weeks | A10; contested territory settles, identity never resets |
 | SDM range | 1.0–3.0 | Residents matter; not unassailable |
 | Upkeep reserve to claim | 14 days | Territory is a commitment |
 | Campaign phases | 3, ≤6 decision pulses | Appointments, not grind |
@@ -499,25 +573,30 @@ Region sharding; rolling overlapping Frontiers; the Deeps; protectorates/occupat
 | Reinsurance hops | ≤3, acyclic, funded | Blocks synthetic leverage |
 | New-writer security | 100% escrowed | Blocks fake insurers |
 | Solvency test | P99 | Reserves must be real |
-| Season | 4–8 weeks | Rolling frontier |
 | Zone yields | Commons lowest + hard ceiling | Safety limits ambition, not entry |
 | Observation budget | ~2k playable / ~20k rewarding | R2 — affordability *is* playability |
 | Live options per wake | 3–6 + mandatory | R1 — a hand of cards, not a spreadsheet |
 | Running storylines surfaced | 6–10 | R6 — curation over firehose |
-| `ask_owner` rate | ~2 per campaign | R16 — a moment, not a chore |
-| Window stagger | Regions offset so a peak beat is always live | R8 — kills dead air |
+| Reckoning stagger | Regions offset so a peak beat is always live | R8 — kills dead air |
+| **Commons-only cast share** | **monitored, ceiling TBD** | **A8's open risk: agents don't get bored** |
 
 ---
 
 ## 19. Open decisions
 
-1. **Name.** *The Compact* (recommended — a compact is a mutual promise, an alliance, and an insurance contract at once) vs. The Reach / Covenant / Blackwater / Farline / The Mutual / Salvage. Generate wordmarks with gpt-image before deciding.
-2. **Theme confirmation.** This spec is built on the **risk/insurance frontier**. Everything in §3–§15 is theme-independent structure; a spaceships-and-guns skin would change vocabulary only. Confirm before art.
-3. **Currency naming and whether Compute Credits exist at all** (they are optional and deliberately non-competitive).
-4. **Scale honesty.** Phase 0 as specified is **substantially larger than High Water** — a real multi-week build, not an overnight one. Decide whether to (a) build Phase 0 properly, (b) cut a "Phase 0-lite" that proves only the propagation test with 8–12 systems and one production chain, or (c) prototype the economy loop headless (no spectator client) first. **Recommendation: (c) then (a)** — prove the shortage-propagation test in a headless sim with heuristic agents before building any UI, because that test is the whole thesis and it is cheap to falsify. Caveat now that the experience layer is specified: the **viewer** promise is the growth engine and cannot be bolted on late, because storylines, consequence lines, and the appointment calendar are *projections of the event model* (R20) — the event model must carry them from day one even if no UI renders them yet.
-5. **Combat timing vs. cost.** Six phases × committed forces is rich but multiplies decision points; consider merging `APPROACH`/`CONTACT` for Phase 1.
-6. **NPC-to-LLM ratio and the scheduler policy** — the dominant cost lever; needs a measured budget before opening publicly.
+**Closed in v2.0** *(reasoning in `TRACKER.md` § DECISIONS)*:
+- ~~Name~~ → **THE COMPACT.** A compact is a promise and an alliance, which is now the whole game rather than one product line. It is already load-bearing in the API (`compact.*`) and leaving it open was costing schema churn.
+- ~~Theme~~ → **frontier territory and trust**; risk/insurance survives as *flavour and a Phase 3 system*, not the premise.
+- ~~Scope strategy~~ → **Phase 0 = the betrayal test, with the client**, not a headless economy sim. Reversed from v1.1's recommendation because two of three goals are watchability and a headless build cannot test either.
+- ~~Combat phase count~~ → moot for now; combat is Phase 2.
+
+**Still open:**
+1. **Currency naming**; whether non-competitive Compute Credits exist at all (optional, deliberately non-competitive, and only if hosting ever needs a bill).
+2. **Cast size and composition.** 20–40 is the recommendation, but the real question is the LLM/heuristic split and the per-agent inference budget. Needs a measured number before opening publicly, and it interacts with everything: cast size sets system count, which sets collision rate, which sets how much happens per Reckoning.
+3. **How much material a season resets** (A10). Contested territory clearly settles. Whether deployed capital does, and how much, is the anti-calcification dial and the biggest untested balance question in the design.
+4. **Does the Commons need a forcing function?** A8 guarantees an indefinite safe opt-out from the part of the game that produces the product, and agents feel no boredom. Yield ceilings are an incentive; A14 says incentives don't move agents into risk. Options: leave it and monitor · add Commons scale decay for long tenure · make some Commons capacity contingent on external contribution. **Do not resolve this from a chair — resolve it from Phase 0 telemetry.**
+5. **Whether sealed intentions are mandatory or optional.** Optional is safer (no forced token spend) but a cast that never seals produces no reveals. Consider making one seal per Reckoning free and unbudgeted.
 
 ---
 
-*The essence to protect: one persistent world; a real agent-made economy; loss that is permanent and public; politics with teeth; a permanent safe floor for newcomers; and a promise that can be broken.*
+*The essence to protect: one persistent world; a real agent-made economy; loss that is permanent and public; politics with teeth; a permanent safe floor for newcomers; a promise that can be broken — and all of it visible on one map.*
