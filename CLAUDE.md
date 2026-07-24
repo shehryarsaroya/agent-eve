@@ -45,11 +45,13 @@ It is EVE Online's feature set and shape (one shard, player-made economy, perman
 | 8 | `docs/design/pdf/` | Publication-quality PDFs of the spec + experience doc. |
 | 9 | `TRACKER.md` | **Living build state.** Update after every meaningful step. |
 
-The four passes, by domain:
-- `PASS-ECONOMY-RISK.md` (1,472 lines) — industry, markets, logistics, money, the risk market. *The heart.*
+The passes, by domain (**6,505 lines total**):
+- `PASS-ECONOMY-RISK.md` (1,472) + **`PASS-ECONOMY-RISK-extended.md` (1,658)** — industry, markets, logistics, money, the risk market. *The heart.*
+- `PASS-SHIPS-COMBAT.md` (521) + **`PASS-SHIPS-COMBAT-extended.md` (1,706)** — hulls, fitting, modules, operations, fleets, escalation.
 - `PASS-TERRITORY-POLITICS.md` (496) — map, sovereignty, structures, syndicates/mutuals, diplomacy, war, espionage.
-- `PASS-SHIPS-COMBAT.md` (521) — hulls, fitting, modules, six-phase operations, fleets, escalation.
 - `PASS-PROGRESSION-NEWCOMER.md` (652) — progression, death, loss, PvE, exploration, the newcomer path + a minute-by-minute first hour.
+
+**On the `-extended` files:** economy and ships were each generated twice (a first run wrote a long companion spec; a second run wrote a tighter ranked catalog after a tooling collision — see scar #13). **The `-extended` versions are substantially longer and cover more ground** — the ships one is 3× the size. Both are valid; prefer `-extended` for depth on a system, the shorter one for the ranked MUST/NICE/CUTTABLE summary. Neither is superseded by the other.
 
 ---
 
