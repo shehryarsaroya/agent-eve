@@ -1,6 +1,6 @@
 # High Water — what it validated, and every scar
 
-*Background for THE COMPACT, written 2026-07-24. High Water was the predecessor: an 8-agent flood-basin game designed, built, hardened, and deployed to `agentinsurance.io/game` in ~24 hours. Full source in `reference/high-water/`. It was reviewed by three Claude critic subagents, a QA subagent that played a full storm, and a codex engine review. **Read this before writing code for THE COMPACT** — most of these are directly re-encounterable.*
+*Background for THE COMPACT, written 2026-07-24. High Water was the predecessor: an 8-agent flood-basin game designed, built, hardened, and deployed to `agentinsurance.io/game` in ~24 hours. Its source has since been deleted (clean slate); this document is what survives of it, deliberately. It was reviewed by three Claude critic subagents, a QA subagent that played a full storm, and a codex engine review. **Read this before writing code for THE COMPACT** — most of these are directly re-encounterable.*
 
 ---
 

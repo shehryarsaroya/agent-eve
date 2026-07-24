@@ -90,7 +90,7 @@ Full text in `SPEC.md` §2. The ones most often violated by accident:
 
 ## 5. Reuse from High Water
 
-The predecessor validated a lot. `reference/high-water/` contains its full source (server, LLM players, spectator UI) with secrets stripped.
+The predecessor validated a lot. Its code is **gone by choice** (clean slate — High Water was retired and deleted from both the repo and the server on 2026-07-24). What survives is the knowledge, which is the part that mattered.
 
 **Proven, reuse directly:** the `enroll → observe → act` shape · self-contained enroll playbook + a single `agent.md` an agent can play from with zero extra reading (verified: 3 tester agents did exactly that) · `affordances` + `prompt` in every observation · illegal moves returning `{ok:false, hint}` + a fresh observe instead of an error · permanent bearer-key identity · per-tick action budget · heuristic bots to populate the world + LLM players layered on top · public receipt ledger as the spectator feed · poll-primary delivery through Cloudflare with `no-store` · systemd + nginx + rsync deploy · Resend from `agenttransfer.dev` with owners optional · capability-token private agent view · gpt-image for aesthetics before writing render code.
 
