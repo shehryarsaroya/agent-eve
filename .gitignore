@@ -1,0 +1,21 @@
+# secrets — NEVER commit (see CLAUDE.md rule 1)
+.env
+.env.*
+*.key
+*.pem
+credentials/
+
+# deps / build
+node_modules/
+dist/
+build/
+*.log
+
+# local data / state
+data/
+*.sqlite
+*.db
+/tmp/
+
+# os
+.DS_Store
