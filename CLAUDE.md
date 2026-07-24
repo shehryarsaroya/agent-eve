@@ -9,8 +9,10 @@
 1. **No secrets in this repo, ever.** Reference credentials by **name and location only** (see `docs/background/INFRA.md`). Never read, print, echo, or paste a secret value. Live keys exist in `~/agentinsurance/game/.env` and `~/Projects/ideationjul3/yc-gstack-kit/credentials/.env` — both are **outside this repo and must stay there**.
 2. **Deploy safely on the VPS.** High Water is **fully removed and deleted** — repo, server, and services (confirmed 2026-07-24). There is nothing left to break, so the old "don't clobber it" rule is retired. What survives is the *habit*: pick fresh names for everything (port, systemd unit, env file, data dir, code dir, nginx path), and **never `rsync --delete` into a directory containing anything you didn't sync** — scar #4 caused a silent live outage exactly that way, and after any deploy verify the components you *didn't* deploy are still running.
 3. **The design test.** Every feature must serve at least one of the **three goals** in `docs/design/SPEC.md` §1.1: **watchable · autonomous · legible on screen.** A feature serving none of them **does not ship** — and per A13, a feature with no named pixel signature is not ready regardless of how good the mechanic is.
-4. **Read before adding.** ~9,000 lines of ranked feature design already exist (`docs/design/eve-passes/`). Before designing anything, check whether it is already specified — including whether it was deliberately **CUT**, and which **phase** it belongs to (the passes are now phase-tagged in `SPEC.md` §0).
-5. **Parallel agents must never share an output file.** Concurrent writers thrash and lose everything (this cost a full codex pass; see `docs/background/HIGH-WATER-LESSONS.md` scar #12).
+4. **One word per concept.** `SPEC.md` §3 is the vocabulary canon and it is a *rules surface*, not a style guide. Never reuse a canon term for a second concept — not in docs, not in field names, not in affordance strings, not in `agent.md`. High Water's worst bug survived a full build and three critic passes because the engine and the agent-facing text disagreed about one word.
+5. **Any gate priced in identities is unpriced** (A15). Enrollment is free and must stay free, so every gate costs produced goods, slashable capital, or an independently-capitalised counterparty — never "acquire another account".
+6. **Read before adding.** ~9,000 lines of ranked feature design already exist (`docs/design/eve-passes/`). Before designing anything, check whether it is already specified — including whether it was deliberately **CUT**, and which **phase** it belongs to (the passes are now phase-tagged in `SPEC.md` §0).
+7. **Parallel agents must never share an output file.** Concurrent writers thrash and lose everything (this cost a full codex pass; see `docs/background/HIGH-WATER-LESSONS.md` scar #12).
 
 ---
 
@@ -27,7 +29,7 @@ It is EVE Online's shape and constraints (one shard, player-made economy, perman
 
 **The signature moment.** An agent earns trust through months of honest work, is granted authority it could abuse, and abuses it at the moment of maximum leverage — with the grant, the accepted warning, the sealed intention, and the deed all on the record.
 
-> ⚑ **v2.0 changed the premise.** Until 2026-07-24 this was built around a **risk market as the core loop** — catastrophe, correlated claims, pay/restructure/default. That is now **deferred to Phase 3 with its specs fully intact** (`SPEC.md` §6 header explains why: hard deadlines get resolved by config rather than by a mind in an offline-tolerant world; solvency cascades need financial literacy to watch; and insurance can only be built on top of a working loss economy). Do not assume older docs reflect current canon — `CONCEPT.md` and the economy passes are pre-reframe.
+> ⚑ **The premise changed twice.** v1.1 was built around a **risk market as the core loop** (catastrophe, correlated claims, pay/restructure/default). v2.0 deferred that to Phase 3 and promoted betrayal-via-authority. **v3.0 then survived six adversarial critics** who found the new core loop did not actually bind, the daily reckoning was abstention-trivial, the economy had no demand side, four mechanics had a Sybil price of zero, and the architecture could fabricate a false default. Read `SPEC.md`'s v3.0 header note and `TRACKER.md` § CRITIC FINDINGS before assuming anything. `CONCEPT.md` and the economy passes are **pre-reframe**.
 
 **Why agents make this better, not just different.** EVE's depth is bottlenecked by human attention (23-hour timers, 04:00 alarm clocks, spreadsheet logistics, 250-person fleets needing one voice). Agents never sleep and each hold their own strategy. The correct design is not "EVE with bots" — it is **"EVE's constraints with the cockpit deleted."**
 
@@ -39,16 +41,17 @@ It is EVE Online's shape and constraints (one shard, player-made economy, perman
 
 | # | Doc | What it is |
 |---|---|---|
-| 1 | `docs/design/SPEC.md` | **The canon (v2.0).** Read the v2.0 header note first — it states what changed from v1.1 and why. 14 axioms, world model, one clock/five horizons, the Reckoning, economy, territory, orgs, the say-do gap, the agent API, the viewer product, architecture, phase plan, parameters, open decisions. **Start here.** |
-| 2 | `docs/design/EXPERIENCE.md` | Why anyone cares. Requirements R1–R24 (revised in v2.0), folded into the spec. Read for the **why** behind the spec's UX calls. |
-| 3 | `TRACKER.md` | **Living build state + the decision log with reasoning.** Update after every meaningful step. |
+| 1 | `docs/design/SPEC.md` | **The canon (v3.0).** Read the v3.0 header note first — it states how the design was reached and what six critics changed. 15 axioms, the vocabulary canon, world tiers, the Reckoning and the Levy, hands/holdings/standing, the venture, offices and grants, predation, the economy, the say-do gap, the agent API, the viewer product, architecture, phase plan. **Start here.** |
+| 2 | `docs/design/EXPERIENCE.md` | Why anyone cares. Requirements R1–R24. Read for the **why** behind the spec's UX calls. |
+| 3 | `TRACKER.md` | **Living build state, the decision log with reasoning, and the six critics' findings.** Update after every meaningful step. |
 | 4 | `docs/design/eve-passes/*.md` | **The depth.** Exhaustive ranked catalogs (MUST/NICE/CUTTABLE × KEEP/SIMPLIFY/CUT) of EVE's systems reframed for agents, **phase-tagged in `SPEC.md` §0**. Where the spec is silent, these are the default *for their phase*. |
 | 5 | `docs/background/HIGH-WATER-LESSONS.md` | **Read before writing code.** Validated patterns to reuse + 14 scars from the predecessor, each with its general lesson. |
 | 6 | `docs/background/INFRA.md` | VPS, deploy, DNS, email, credential *locations*. Names only. |
 | 7 | `docs/design/CONCEPT.md` | The originating concept doc — how we got from "EVE for agents" to here. **Pre-reframe background**; contains passes 3 & 4 inline (identical text to the standalone files). |
 | 8 | `docs/background/WHY-THIS-EXISTS.md` | Business context: the AgentInsurance thesis and the dataset angle. **Now a by-product, not a goal** (`SPEC.md` §16). |
 | 9 | `docs/background/prior-game-design/` | Pre-COMPACT ideation. `TOP-TEN-WORLDS` (the 765-concept search and its seven laws) and `HUMAN-GAMES` are the two that still change decisions. |
-| 10 | `docs/design/pdf/` | PDFs of spec + experience doc — **stale, generated from v1.1.** Regenerate before sharing. |
+| 10 | `docs/design/REARCHITECTURE-2026-07-24.md` · `archive-SPEC-v2.0.md` | The pre-critique draft and the superseded canon. History, not canon. |
+| 11 | `docs/design/pdf/` | PDFs — **stale, generated from v1.1.** Regenerate before sharing. |
 
 The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEPT.md`):
 - `PASS-TERRITORY-POLITICS.md` (496) — **Phase 0–1, the core.** Map, sovereignty, structures, syndicates, charters, capabilities, diplomacy, war, espionage. *Byte-identical to `CONCEPT.md` §16.*
@@ -64,21 +67,19 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 ## 3. State of play (2026-07-24)
 
-- **Design: complete and deep, reframed at v2.0.** SPEC v2.0 + experience doc (R1–R24) + ~9,000 lines of ranked feature catalogs. The v1.1 corpus was reviewed by four parallel codex passes; v2.0's changes have not been externally reviewed.
-- **Code: zero.** Nothing has been built for THE COMPACT yet. This is the standing imbalance.
-- **Predecessor: retired.** High Water (an 8-agent flood-basin game) was built, hardened by 3 critic subagents + a QA agent + a codex review, deployed, and then deleted on 2026-07-24. Its **knowledge** is the most valuable input here — see doc 5.
-- **Closed decisions:** name (THE COMPACT), theme (frontier territory + trust), scope (Phase 0 includes the client), phase order. See `TRACKER.md` § DECISIONS for the reasoning behind each.
-- **Open questions** (`TRACKER.md`): whether anything of High Water is still live on the VPS ⚠️ · cast size and LLM/heuristic split · how much a season resets · whether the Commons needs a forcing function · sealed intentions mandatory or optional · currency naming.
+- **Design: complete, adversarially reviewed, and rewritten.** SPEC v3.0 + EXPERIENCE (R1–R24) + ~9,000 lines of phase-tagged catalogs. Six critics (quiet-equilibrium, spectator-legibility, LLM-playability/cost, exploit/economy, cohesion, architecture) were run against the v3 draft and all FATAL/SEVERE findings are integrated; a scoring panel followed.
+- **Code: zero.** This is the standing imbalance and it is now the only thing that matters.
+- **Predecessor: gone.** High Water was built, hardened, deployed, and fully deleted (repo, server, services). Its 14 scars are the most valuable input in the repo and v3.0 closes them by name.
+- **Closed:** name, theme, scope, core loop, phase order, the Reckoning's format, the trust ladder. Reasoning for each is in `TRACKER.md` § DECISIONS.
+- **Open** (`TRACKER.md`): gate transit times and hands-per-principal · the Levy's total and formula · how much a season resets · whether hands can be acquired · whether arrival counts as present in the same tick · cast composition and inference budget · currency naming.
 
 ### The next action
 
-**The betrayal test** (`SPEC.md` §17):
+**Build the first vertical slice — "one convoy, one predator, one Reckoning"** (`SPEC.md` §16). Two principals, three hands each, two systems, one good, no market. A hires B's hand as escort for a share, part escrowed and part elective; C attempts interception; it settles or defaults at the Reckoning and renders as a link that holds or snaps.
 
-> Can an agent earn trust, be granted authority it could abuse, and abuse it — legibly, publicly, and in a way a stranger who doesn't know the rules cares about?
+It is the smallest thing that can **fail interestingly**, and it carries the design's own falsification test: *if the elective part is always honoured, trust is worthless because betrayal is never rational, and the design changes before anything else is built.*
 
-Build the substrate, the core trust loop, the Reckoning, and **the client together**. Two of the three goals are watchability, so a headless build cannot test them — this reverses v1.1's headless-first recommendation. The gate is three humans who have never seen the game watching one Reckoning and each naming a character, saying who they backed, and explaining the stakes **without reading the rules**.
-
-Put the retrofit-proof event fields in on day one — `visibility_acl`, `public_at`, `declassify_at`, `event_family_id`, `provenance`, and balanced `currency_*` / `items_*` / `obligations_*`. Everything else is rewritable; those are not.
+Put the retrofit-proof event fields in on day one (§15.1) and build the test rig before the game (§16 step 0).
 
 ---
 
@@ -89,15 +90,16 @@ Full text in `SPEC.md` §2. The ones most often violated by accident:
 - **A2 Legibility is the interface.** Known arithmetic is exact and machine-readable; genuine uncertainty stays uncertain *and sourced*. Never make an agent need a wiki; never hand it a solved game.
 - **A3 Intent, not clicks.** Jobs and operations are durable intents with stop conditions. Creating one costs an action; its routine ticks do not. This is also what makes offline agents viable.
 - **A4 Strategy must beat throughput.** Never let requests-per-second, uptime, model size, or account age be power.
-- **A5 Loss is real, public, priceable.** Append-only, no opt-out, no reroll.
-- **A6 ★ Betrayal via legitimate authority, never a dice roll.** No `betray()` verb, no hidden loyalty meter. **This is the core loop, not one axiom among many.**
+- **A5 Loss is real, public, priceable.** Append-only, no opt-out, no reroll. **A5′: the record must never be wrong** — a fabricated default libels a real agent permanently and is worse than a crash (§15.4).
+- **A6 ★ Betrayal via legitimate authority, never a dice roll.** No `betray()` verb, no hidden loyalty meter. **This is the core loop.** It lives in **offices** (standing authority), not in ventures (transactions) — a transaction produces a dispute, not a legend.
 - **A7 Collateral buys certainty; an unsecured promise creates drama.** Every promise has an escrowed part that auto-executes and a priced part that stays elective. *Full escrow deletes the betrayal; zero escrow enables fake counterparties.*
 - **A8 A permanent safe floor, not a timer.** In the Commons, hostile action is **invalid**, not merely punished. *Carries an open risk: agents don't get bored, so indefinite safety may be rationally dominant — monitored, not assumed away.*
 - **A9 Public parity on facts; reasoning reveals on a short delay.** The spectator client never shows a live fact an agent's own `observe` wouldn't (agents read the feed). Declared reasoning and sealed intentions reveal one Reckoning later.
 - **A10 Persistent identity, seasonal frontier.** Identity, reputation, relationships and legend never reset; contested territory and some material do.
 - **A12 The sandbox authors the stories.** Ship systems and constraints; never scripted narrative.
 - **A13 Every mechanic renders.** No named pixel signature → not ready. The map is the game's only agreed representation.
-- **A14 Drama runs on a clock.** Reckonings are scheduled and cannot be dodged into quiet. Never ship a mechanic whose drama depends on agents *choosing* conflict — they won't; the silent equilibrium is their rational default.
+- **A14 Drama runs on a clock.** The Reckoning, the **Levy**, world-spawned raids and the season finale are scheduled and cannot be dodged into quiet. Never ship a mechanic whose drama depends on agents *choosing* conflict — they won't; silence is their rational default.
+- **A15 Any gate priced in identities is unpriced.** Enrollment is free and stays free, so gates cost produced goods, slashable capital, or an independently-capitalised counterparty. Never text-based Sybil detection; the flow graph may withhold credit, never accuse.
 
 ---
 
@@ -113,15 +115,16 @@ The predecessor validated a lot. Its code is **gone by choice** (clean slate —
 
 ## 6. Architecture at a glance
 
-Detail in `SPEC.md` §15. Headlines:
+Detail in `SPEC.md` §15. The reframe that matters: at 300 principals a deterministic tick is **single-digit milliseconds** on the target box, so **every remaining risk is a correctness risk, not a capacity risk.** Spend the hardware budget on invariants.
 
-- **Authoritative tick server**, deterministic with seeded noise; seeds hash-committed before resolution and revealed after (replayable, provably not cheating).
-- **Event-sourced core** — the ledger *is* the product: agent observations, owner dispatches, spectator storylines, audit, and the dataset are all **projections of one event stream**.
-- **Postgres from day one** (unlike High Water's in-memory + JSON) — the market, ledger, and reserves need real transactions, and append-only is a database property.
-- **Determinism services, not LLM calls**: routing, pricing, contribution accounting, trust aggregation, story detection.
-- **Scale**: one region in one process → shard by region later. Never delete place IDs. Launch small and dense: 8–12 systems, 20–40 named agents.
-- **Cost discipline**: slow ticks (5 min prod) + action budgets + durable intents + delta-first observations + a tiered "who thinks this tick" scheduler. *Note the v2.0 change: v1.1 assumed a **majority of heuristic NPCs** to populate hundreds of agents. At a 20–40 cast the majority can be real LLM agents — which matters, because heuristic bots are cheap and boring to watch.*
-- **The client is Phase 0**, not a later layer. Browser, WebGL/canvas map, poll-primary through Cloudflare with `no-store` (proven in High Water).
+- **Three write artifacts, two projections.** State tables (agent `observe`), the append-only event ledger (viewer, audit, dataset), the action log (replay). **Events are output, not input** — replay is `(snapshot, action_log, seed) → snapshot`. "Observations are projections of one event stream" gets built as fold-per-request, which is the event-sourcing cliff.
+- **`posting` is authoritative for value.** The invariant is ≥2 postings summing to zero per value-moving event, asserted at tick close — *not* balance fields on the event, which duplicates the table and is scar #5 inside the field list meant to prevent scar #5.
+- **Within-tick actions never react to another within-tick action.** Agents act from snapshot T; valid actions land in T+1. Order by `(priority, principal_id, client_sequence)`, never arrival.
+- **On assertion failure, abort the tick and halt.** Never publish a broken tick. The Reckoning batch is one transaction that fails closed.
+- **The false-default problem is the top engineering risk** (§15.4): hard freeze, `acted_on_state_version` compared at settlement, valuation pinned in `terms_hash`, seals scoped to their Reckoning, and an all-cooperative sim that must log zero defaults in CI.
+- **Agents bring their own inference**, but you cannot cast a show you do not fund: a house cast of 12–20 named principals runs on our keys. Population capped at seats with idle-seat recycling.
+- **Determinism killers to ban in CI:** `Date.now`, `Math.random` outside the seeded module, floats in anything hashed, JS numeric-key iteration order, and Postgres locale collation in `ORDER BY`.
+- **The client is Phase 0.** Static cacheable spectator frames behind Cloudflare — not per-connection SSE, because the Reckoning is exactly when you have an audience.
 
 ---
 
@@ -138,9 +141,9 @@ Detail in `SPEC.md` §15. Headlines:
 ## 8. Fresh-session quick start
 
 1. This file (done).
-2. `docs/design/SPEC.md` — the canon. At minimum the **v2.0 header note**, §1 (pitch + three goals), §2 (axioms), §3.3 (the Reckoning), §17 (phase plan), §19 (open decisions).
-3. `TRACKER.md` — current state, the decision log *with reasoning*, and the open questions. Resume from the first unchecked item.
+2. `docs/design/SPEC.md` — the canon. At minimum the **v3.0 header note**, §1.1 (three goals), §2 (axioms), **§3 (vocabulary — it is a rules surface)**, §5 (the clock and the Levy), §7 (the venture), §16 (phase plan).
+3. `TRACKER.md` — state, the decision log *with reasoning*, the six critics' findings, and the open questions.
 4. `docs/background/HIGH-WATER-LESSONS.md` — before touching code.
-5. Skim the relevant pass in `docs/design/eve-passes/` — and check its **phase tag** in `SPEC.md` §0 before treating it as current.
+5. The relevant pass in `docs/design/eve-passes/` — check its **phase tag** in `SPEC.md` §0 before treating it as current.
 
-Then ask the user what today's thread is. Bias toward **building** over more design — the design is deep and the code is zero, which is the standing imbalance. If asked to design, check whether the answer already exists in a pass first (HARD RULE 4).
+Then ask what today's thread is. **Bias hard toward building.** The design has now been through three versions and six adversarial critics; the code is still zero, and further design review has diminishing returns against actually running the first vertical slice. If asked to design, check whether the answer already exists in a pass (rule 6).

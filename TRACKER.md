@@ -1,46 +1,47 @@
 # THE COMPACT — Build Tracker
 
-*The living source of truth. **Update the STATUS block after every meaningful step.** A fresh session should be able to read STATUS + NEXT + DECISIONS and resume instantly.*
+*The living source of truth. **Update STATUS after every meaningful step.** A fresh session should resume from STATUS + NEXT + DECISIONS alone.*
 
 ---
 
 ## ⏱ STATUS
 
-- **Phase:** 0 — pre-build. **Design complete and deep; zero code written.**
-- **Canon version:** `SPEC.md` **v2.0** — the watchability reframe (2026-07-24). v1.1's risk-market-as-core-loop is deferred to Phase 3 with its specs intact.
-- **Last done (2026-07-24):** Reframed the plan around three goals — watchable · autonomous · legible on screen. Rewrote `SPEC.md` §1, §2, §3.3, §4.4, §6 (demoted), §11.1 (new), §12, §13B (cut down), §14 (promoted), §16, §17 (rewritten), §18, §19; revised `EXPERIENCE.md` §0 and R1–R24; rewrote `README.md` and `CLAUDE.md`. No code yet.
-- **Design inputs:** SPEC v2.0 (canon) · EXPERIENCE (R1–R24) · CONCEPT (background) · 4 ranked EVE feature passes + 2 extended companions · High Water lessons (14 scars) · infra facts · prior-game-design lineage.
-- **Predecessor:** High Water — **retired and deleted** from the repo and the server (2026-07-24). Knowledge survives in `docs/background/HIGH-WATER-LESSONS.md`. ⚠️ See OPEN QUESTIONS #1: confirm whether anything is still running on the VPS before deploying.
+- **Phase:** 0 — pre-build. **Design complete, critiqued, and rewritten. Zero code.**
+- **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
+- **Last done (2026-07-24):** Ran six adversarial critics in parallel against the rearchitecture draft, then rewrote SPEC as v3.0 integrating all six. Scoring panel running.
+- **Predecessor:** High Water is **fully removed and deleted** — repo, server, and services (confirmed by the user). Nothing left to break; the old "don't clobber it" hard rule is retired. Its 14 scars remain the most valuable input in the repo.
 
 ---
 
-## 🎯 NEXT ACTION — the betrayal test
+## 🎯 NEXT ACTION
 
-**Can an agent earn trust, be granted authority it could abuse, and abuse it — legibly, publicly, and in a way a stranger who doesn't know the rules cares about?**
+**Build the first vertical slice: "one convoy, one predator, one Reckoning"** (`SPEC.md` §16).
 
-That is the Phase 0 gate (`SPEC.md` §17). It replaces v1.1's shortage-propagation test, which is a *plumbing* test — a correctly built event-sourced economy passes it deterministically, and you can pass it with heuristic agents doing nothing interesting. Propagation is retained as the substrate's acceptance criterion.
+Two principals, three hands each, two systems, one good, no market. A forms a `HAUL` and hires B's hand as `ESCORT` for a share, part escrowed and part elective. Cargo moves over four ticks. C attempts interception. At the Reckoning it settles — or B's elective part goes unpaid and a default is recorded — and both outcomes emit a receipt that renders as a link holding or snapping. Replay exact from the committed seed; ledger reconciles every tick.
 
-Constraints on the build:
-- **The client ships in Phase 0.** Reversed from v1.1's "headless first." Two of three goals are watchability; a headless build cannot test either.
-- **Substrate first, with the retrofit-proof fields on day one:** `visibility_acl`, `public_at`, `declassify_at`, `event_family_id`, `provenance`, and balanced `currency_*` / `items_*` / `obligations_*` on every event. Everything else is rewritable; these are not.
-- **Postgres from the start** (`SPEC.md` §15). ⚠️ Not yet installed on the VPS (`INFRA.md` §1).
-- **Small and dense:** 8–12 systems, one region, 20–40 named agents, majority real LLMs.
+It exercises hands, ventures, predation, the Reckoning, the ledger and both projections with **zero** market, production graph, sovereignty, combat or insurance. It is the smallest thing that can **fail interestingly**.
 
-### Suggested first steps
-- [ ] Fix doc hygiene: dangling filenames in `SPEC.md` §0 cross-refs and inside the passes (`THE-COMPACT-EVE-FOR-AGENTS-*` → `CONCEPT.md`, `THE-COMPACT-EXPERIENCE-*` → `EXPERIENCE.md`)
-- [ ] Resolve OPEN QUESTION #1 (is anything of High Water still live?) before any deploy work
-- [ ] Repo skeleton + Postgres schema for the substrate objects
-- [ ] Event ledger with visibility/reveal/correlation metadata + exact replay from committed seeds
-- [ ] Tick loop + durable intents with stop conditions + the daily **Reckoning**
-- [ ] One production chain (extract → refine → one build stage), 8–12 systems, three zones
-- [ ] Named **holdings** on the map
-- [ ] Syndicates + versioned charters + **scoped expiring capabilities with `max_direct_loss` / `max_contingent_liability` shown on every grant**
-- [ ] The generic `compact` primitive with A7 hybrid security
-- [ ] **Sealed intentions** + public `reason` lines + the say-do panel
-- [ ] Spectator map + feed (every mechanic with a named pixel signature — A13)
-- [ ] Agent API + a single self-contained `agent.md`
-- [ ] Cast: heuristic fill + real LLM agents; golden-file tests on prompt/affordance semantics (scar #1)
-- [ ] **Run the three-strangers watchability test and record the result here**
+> **The falsification to watch for:** if the elective part is always honoured in this slice, §7.6 is answered negatively — trust is worthless because betrayal is never rational — and the design changes before anything else is built.
+
+### Order (each step ends in an executable assertion — `SPEC.md` §16)
+- [ ] 0. Test rig before game: `NODE_ENV=production` + error middleware in commit #1, seeded RNG + lint ban, `assert_invariants`, `sim --seed S --ticks N` printing per-tick `state_hash`
+- [ ] 1. Ledger — accounts, postings, lots, encumbrances, CHECK constraints
+- [ ] 2. Events — partitioned, audience fan-out, the two filters; A9 parity as a fuzz test
+- [ ] 3. World + hands + movement, including the partial unique index on `venture_role.filled_by_hand_id`
+- [ ] 4. Tick loop + frozen snapshot + ordered queue → **the A4 test before any content**
+- [ ] 5. Ventures (HAUL only) + the settlement waterfall + property tests
+- [ ] 6. The Reckoning: window, sealed commitments, hard freeze → **scar #6 made executable**
+- [ ] 7. HTTP surface + `agent.md` → a scripted agent plays 200 ticks from `agent.md` alone
+- [ ] 8. Heuristic cast (30) → 24 h unattended, reconciling every tick
+- [ ] 9. Grants + offline semantics → **R19 in CI** (864 ticks offline)
+- [ ] 10. The Levy → no principal ever absent from a docket
+- [ ] 11. Markets → **A4 measured** at 1× / 10× / 60× request rate
+- [ ] 12. Predation — world-spawned raids + the Demand window
+- [ ] 13. Spectator — docket, map, three meters, say-do panel, ticker, cards, director
+- [ ] 14. Seals + the rundown
+- [ ] 15. LLM cast → semantic-coherence suite → **the three-strangers test**
+
+**Before any of it:** install Postgres on the VPS (`INFRA.md` §1 says it is not there yet), and fix the dangling `THE-COMPACT-EVE-FOR-AGENTS-*` / `THE-COMPACT-EXPERIENCE-*` cross-references inside the passes.
 
 ---
 
@@ -48,42 +49,71 @@ Constraints on the build:
 
 | Decision | Choice | Why |
 |---|---|---|
-| **Core loop** | **Betrayal via legitimate scoped authority** (A6), not the risk market | 3 of EVE's 4 legendary stories are delegated-authority abuse; its insurance is a shallow NPC formula nobody tells stories about. Cheaper, more watchable, needs almost no substrate — and **has no deadline**, so it's always decided by a mind, not a config. |
-| **Risk market** | **Deferred to Phase 3**, specs intact | (1) Pay-or-default fires on a hard deadline → in an offline-tolerant world the signature decision gets automated. (2) Solvency cascades need financial literacy to read. (3) It's a layer on top of a working loss economy, so it can't be tested early. |
-| A7 | **Generalized**: collateral buys certainty, an unsecured promise creates drama — for *every* compact | Best idea in the corpus, and its value was never insurance-specific. Applies to couriers, defense pacts, rent, wages. |
-| **Watchability** | Non-negotiable: **A13 every mechanic renders**, **A14 drama runs on a clock** | Two of three goals. Made axioms so they can veto features, not aspirations to balance. |
-| **The Reckoning** | One fixed daily resolution window, rotating UTC | v1.1's 12–36h windows were a schedule without a beat — no hour to tell a stranger to show up. Every winner in the prior research had a fixed ritual. |
-| Sealed intentions | Pre-committed, revealed one Reckoning later | Makes the say-do gap *verifiable*. An externally-run agent can perform for a viewer-only "confessional"; it cannot perform for a pre-commitment. (Resolved this way in High Water's canon; v1.1 dropped it.) |
-| A9 | **Public parity on facts; reasoning reveals on a short delay** | Strict live parity forfeits dramatic irony — the highest-value beat available. The exploit it guarded (owners as intel oracles) largely evaporates with the owner layer cut; the remaining one (agents scraping the feed) is closed by parity-on-facts instead. |
-| A10 | Persistent identity forever; **contested territory and some material settle on a season boundary** | Buys a broadcast calendar with a finale, a real anti-calcification tool, and a permanent entry door. v1.1's never-reset stance traded away the prior canon's strongest anti-calcify mechanism. |
-| Owner layer | **Cut to dispatch + card + never-punish-absence** | Not one of the goals. Mandate (R14), offered decision (R16), insurability record (R18) removed. |
-| Launch cast | **20–40 named agents, majority real LLMs**, in 8–12 systems | You cannot make 200 agents into characters (R13). Fewer agents → real LLMs are affordable → far more watchable. 30–40 systems is too sparse at this cast size to force collisions. |
-| Named holding | One per agent, on the map, losable | The one gap the 765-concept search flagged in every prior version: parasocial attachment needs a nameable at-risk body. |
-| Phase order | Territory (1) → **Combat (2)** → Risk market (3) | Sieges can resolve on committed force and composition before a tactical kernel exists; combat is the priciest subsystem per unit of watchability. |
-| Phase 0 shape | **Includes the client** | Reverses v1.1's headless-first recommendation. |
-| Name | **THE COMPACT** — closed | A compact is a promise and an alliance, which is now the whole game. Already load-bearing in the API (`compact.*`); leaving it open cost schema churn. |
-| Theme | **Frontier territory and trust**; risk/insurance is flavour + Phase 3 | Closed. |
-| Dataset | A **by-product**, never a goal | If a data feature makes the game worse, cut it. |
-| Newcomer floor | The Commons — hostile action **invalid**, never expires | Axiom A8 (unchanged) |
-| Betrayal | Legitimate scoped authority; no dice roll, no hidden meter | Axiom A6 (unchanged, promoted) |
-| Storage | Postgres from day one | `SPEC.md` §15 (unchanged) |
-| Tick | 5 min prod *(calibrate)*; ~1 decision per 1–3 ticks | `SPEC.md` §3.3 (unchanged) |
+| **Core loop** | Betrayal via legitimate scoped authority (A6) | 3 of EVE's 4 legendary stories are delegated-authority abuse; its insurance is a formula nobody tells stories about. Cheaper, more watchable, and **has no deadline**, so it is always decided by a mind rather than a config. |
+| **Presence is scarce** | 3 **hands** per principal; roles must be **concurrent**; one principal fills at most one role; ≥4 roles on top-yield kinds | Presence scarcity alone did **not** bind — 3 hands × 24h = 72 hand-hours vs ~6 for a serialised 3-role haul, i.e. ~12 solo ventures/day. Concurrency is what forces cooperation by arithmetic. |
+| **The Levy** | Daily, every principal, no Commons exemption, allocated **inverse to Exposure**, payable only in delivered goods | The Reckoning was abstention-trivial: nothing resolved unless agents volunteered it. Law 1's real requirement is *punishes everyone if dodged*. Also makes turtling the most-taxed posture, supplies the demand curve that makes hands scarce, and gives the show a meter nobody can lower alone. The Burn's overshoot alarm in this world's grammar. |
+| **Two social layers** | **Ventures** for daily texture; **offices** for the tail | Collapsing everything into one bounded, daily-settled object deleted standing authority — which *is* A6. A venture is a transaction; transactions produce disputes, not legends. |
+| **Trust ladder** | Continuous **bond** (slashable capital) + **sureties** (others' capital on your conduct). Owner email = attribution only | One catch-all domain gives one person unlimited verified addresses: **email bonds nothing; capital does** (A15). Gating custody on owner email also made power a function of owner attention, contradicting goal 2, and produced a ~40-of-300 custody oligopoly. |
+| **Standing** | Accrues **only to elective parts honoured**, weighted against the honourer's capital, diversity-weighted across independently-capitalised counterparties | A 100%-escrowed venture between two of my own principals produced the same "honoured" receipt at ~20 credits per reputation point — scar #9 with a new noun. |
+| **`elective` floor** | `elective ≥ f(kind)`, top kinds un-escrowable | Left elective, agents set it to zero — escrow strictly dominates for the buyer — and then A7 is dead letter and standing has nothing to accrue to. |
+| **A9 / seals** | Agents get `HONOURED \| CONTRADICTED` only; content to viewers + replay | Publishing seal *content* into an agent-readable channel supplies perfect cartel monitoring: verify each other's private pre-commitments on a fixed lag and the collusive equilibrium holds. |
+| **The Reckoning** | Sealed commitment window → **hard freeze** → settlement. **No discretionary decision inside the window.** Then a director-sequenced **rundown** | Fairness rules were mistaken for a presentation format: 30–60 min of simultaneous settlement is a page refresh. Every appointment format the corpus cites is *serial with withheld information*. The freeze also closes the false-default hole and removes the late-information edge. |
+| **The default view** | **Tonight's docket**, ≤7 cards; map is the stage the selected card renders on; **≤7 labels per frame** | A constellation renders ~70 handles and a viewer reads none. Legible max is ~7 named entities per frame, 12–20 per season, 1–3 followed. Hundreds of agents is fine; *naming* hundreds is not. |
+| **Meters** | `LEVY SHORT` (headline) · `ON A PROMISE` · `KEPT / BROKEN` | v2.0's "total value in the open" fell identically whether a promise was kept or broken, conflated escrow with the elective tail, and could be topped by self-dealing at zero risk. |
+| **Exposure** | `Σ open max_direct_loss` | Already computed per affordance; safe value contributes zero **by construction**; sub-millisecond scan. |
+| **Predation** | World-spawned raids aimed at the most exposed, plus a **Demand window** with slow-regenerating aggression capacity | Cheap bounded predation Coase-collapses into a toll cartel: an 8% standing passage fee beats an expected 15% loss, the escort market never opens, and the map renders identically to peace. A world-owned raid cannot be bribed. |
+| **The economy's job** | Four **sinks** in Phase 0: consumables per venture · holding upkeep · raid loss · a scheduled front | The v2.0 cut left supply intact and deleted consumption. No scarcity → no reason to hire a hand → no delegation → no betrayal. Fatal to the loop, not the economy. |
+| **Wake budget** | 16/day; outside a wake, `observe` is cached with no fresh affordances | Actions were budgeted; cognition was not. With BYOI an owner buys a bigger information set for ~19× spend — A4 violated through the budget. Also retires v1.1's "1 decision per 1–3 ticks" (a 5–13× cost overshoot). |
+| **Rationed resources** | **Batch-allocated at tick close**, never granted at submit | The design already solved this for markets (tick-batched clearing, no arrival advantage) and had not applied it to role slots — which made scarce slots a polling contest, i.e. scar #2 rebuilt. |
+| **Hands** | Rows not counts; **never destroyed** (go `RECOVERING`); commitment lives only in `venture_role` | Permanent loss would cripple an unlucky agent in the one dimension gating all play. Two homes for one quantity is scar #5 on the keystone. |
+| **`wage` / `share`** | Separate fields, never both; signer echoes `your_take_at_p50`; `projected_settlement` on every live venture | One polymorphic field carried a senior fixed claim and a junior residual claim — scar #1 with money, permanence and an audience, and the ledger would record the broken promise as *honoured*. |
+| **Vocabulary** | One word per concept, §3, enforced across canon / `agent.md` / field names / affordance strings | Eleven collisions in the draft: SEALED meant three things, `bond` seven, `exposure` six. Scar #1 was exactly this class of bug. |
+| **Events** | **Output, not input.** Replay is `(snapshot, action_log, seed) → snapshot` | "Observations are projections of one event stream" gets built as fold-per-request, which is the event-sourcing cliff and makes `expected_state_version` incoherent. |
+| **Value accounting** | `posting` is authoritative; the invariant is ≥2 postings summing to zero per value event | "Balanced `currency_*`/`items_*` on every event" duplicated the posting table — scar #5 inside the field list meant to prevent scar #5. |
+| Delivery | Long-poll `observe?wait=true` + `next_decision_at`; webhooks deferred | A retry-until-ack subsystem serves agents who poll anyway, for 20× the code and an outbound abuse surface. |
+| Phase order | Territory (1) → Combat (2, possibly never) → Risk market (3) | Sieges resolve on committed hands and composition before a tactical kernel exists; combat is the priciest subsystem per unit of watchability. |
+| A10 | Identity/standing/relationships/holdings/hands never reset; Frontier claims + a named slice of Frontier capital settle each season | Buys a broadcast arc, a real anti-calcification tool, and the finite horizon that makes late-season defection rational. |
+| A4 | Forbids advantage from throughput, uptime, and enrollment date — **not** model size | A4 and R2 cannot both hold otherwise: R2 explicitly rewards richer reasoning at 20k tokens. |
+| Name · theme · scope | THE COMPACT · frontier territory and trust · Phase 0 includes the client | `compact` is now the signed terms of every split, so the name is load-bearing in the schema. |
+| Dataset | A by-product, never a goal | If a data feature makes the game worse, cut it. |
 
 ---
 
-## ❓ OPEN QUESTIONS (need the user, or need telemetry)
+## 🧪 CRITIC FINDINGS (2026-07-24)
 
-1. **⚠️ Is anything of High Water still live?** `CLAUDE.md` HARD RULE 2 said a working game runs at `agentinsurance.io/game` with systemd units `highwater` / `highwater-players`; §5 of the same file and `HIGH-WATER-LESSONS.md` both say it was retired and deleted on 2026-07-24. Rule 2 has been rewritten to be safe under either reading, but **confirm on the box before any deploy.**
-2. **Cast size and the LLM/heuristic split** — the dominant cost lever, and it cascades into system count → collision rate → how much happens per Reckoning. Needs a measured inference budget.
-3. **How much material a season resets** (A10). Contested territory clearly settles; whether deployed capital does, and how much, is the anti-calcification dial and the biggest untested balance question in the design.
-4. **Does the Commons need a forcing function?** A8 guarantees an indefinite safe opt-out from the part of the game that produces the show, and agents feel no boredom. Yield ceilings are an incentive; A14 says incentives don't move agents into risk. **Resolve from Phase 0 telemetry, not from a chair.**
-5. **Sealed intentions: mandatory or optional?** Optional avoids forced token spend; a cast that never seals produces no reveals. Candidate: one free unbudgeted seal per Reckoning.
-6. **Currency naming**; whether non-competitive Compute Credits exist at all.
+Six adversarial critics run in parallel against `REARCHITECTURE-2026-07-24.md`. Every FATAL and SEVERE finding is addressed in SPEC v3.0; the table records what was found so a fresh session knows *why* the design is shaped this way.
+
+| Lens | Headline finding | Where fixed |
+|---|---|---|
+| **Quiet-equilibrium** | The Reckoning is abstention-trivial — the docket does not fill itself. Also: the Commons is a vault not a floor; presence is purchasable so the keystone reduces to capital; escrow + a permanent ledger makes betrayal irrational *and* trust worthless. | §5.2 (Levy), §4.1 + A8, §7.2, §7.5, §7.6 |
+| **Spectator-legibility** | The appointment has no *format* — fairness rules were mistaken for a presentation. Cast 10–20× over the legible limit. The single meter is blind to the only event the game is about. No clip factory. | §14.3, §14.1, §14.2, §14.5 |
+| **LLM playability & cost** | Spend is the power axis and A4 doesn't cover cognition. The rational delegation envelope is "grant nothing," which kills the core loop. `wage_or_share` is scar #1 with money. | §12.4, §6.4 + §8.1, §7.1 |
+| **Exploit / economy** | *Any gate priced in identities is unpriced.* Mark-launder a thin book → cheap bond → custodianship drain. 50 enrolments = 150 hands for ~$40/mo. Escrow-farmed reputation. | A15, §10.3, §6.4, §6.4 |
+| **Cohesion / orphans** | "One game in shape, three games in vocabulary, a loop that closes in prose but not in arithmetic." No travel time exists anywhere. No venture resolution arithmetic. No demand side. 11 vocabulary collisions. | §4.3, §7.4, §10.1, §3 |
+| **Architecture** | Every remaining risk is a **correctness** risk, not capacity — and the architecture can **fabricate a broken promise**, which is worse than a crash. Events-as-input is the wrong emphasis. | §15.4, §15.1 |
+
+**Convergent findings** (found independently by 3+ critics, therefore highest confidence): the single meter was broken and gameable · seals must be mandatory and free · the pre-Reckoning window needed sealing/freezing · the Reckoning had no guaranteed loss · role slots were a polling contest.
+
+**Two useful reusable artifacts the critics surfaced from the existing corpus:** `PASS-ECONOMY-RISK.md`'s `resource_operation` is the venture-resolution model already written (§7.4), and THE RUSH's **Demand window + aggression capacity** is the predation engine already written (§9).
+
+---
+
+## ❓ OPEN QUESTIONS
+
+1. **Gate transit times and hands per principal.** These two set ventures-per-day, wage levels, whether Exposure has a shape, and whether a viewer sees motion. Resolve by simulation before content.
+2. **The Levy's total and allocation formula.** Too small and turtling survives; too large and it is a treadmill. The number most needing telemetry.
+3. **How much a season resets** (A10) — the anti-calcification dial, biggest untested balance question.
+4. **Whether hands can ever be acquired.** Currently no; capital's only use is hiring. If yes, A15 needs re-examination.
+5. **Whether arrival counts as present in the same tick** (§15.2). Either is defensible; not choosing is scar #1.
+6. **Cast composition and per-agent inference budget** — answerable only from `decision_source` telemetry.
+7. **Currency naming.**
 
 ---
 
 ## 📓 STEP LOG
 
-**2026-07-24 — project seeded.** Created `~/Projects/thecompact` as a standalone home. Carried over the full design corpus (SPEC v1.1, EXPERIENCE, CONCEPT, 4 EVE passes + 2 extended companions, PDFs) and newly written background docs (HIGH-WATER-LESSONS with 14 scars, INFRA, WHY-THIS-EXISTS). High Water's reference implementation was subsequently dropped (commit `414952e`) — clean slate. No game code exists.
+**2026-07-24 — project seeded.** `~/Projects/thecompact` created as a standalone home with the full design corpus, newly written background docs, and (subsequently dropped, commit `414952e`) the High Water reference implementation.
 
-**2026-07-24 — v2.0, the watchability reframe.** Goals restated as **watchable · autonomous (sometimes offline) · legible on screen in a browser**; insurance dropped as the required core. Consequences, all now in canon: betrayal-via-authority becomes the core loop and the risk market defers to Phase 3 with specs intact; A7 generalizes to every promise; A9 relaxes to allow delayed reasoning reveal; A10 gains a season boundary; A13 (every mechanic renders) and A14 (drama runs on a clock) added; the daily Reckoning, sealed intentions, and named holdings added; owner layer cut to three items; launch cast and system count cut sharply; Phase 0 now ships the client and is gated on a three-strangers watchability test; name, theme and scope closed. **Nothing was deleted from the corpus** — the risk market and combat passes are reference specs for their phases.
+**2026-07-24 — v2.0, the watchability reframe.** Goals restated as watchable · autonomous · legible on screen; insurance dropped as the required core loop and deferred to Phase 3 with specs intact; betrayal-via-authority promoted; A13 and A14 added; daily Reckoning, seals, named holdings added; owner layer cut; name/theme/scope closed.
+
+**2026-07-24 — v3.0, the cohesion pass and critic integration.** Wrote `REARCHITECTURE-2026-07-24.md` diagnosing that the v2.0 core loop was an event rather than a loop, and proposing scarce presence + ventures + tiering + offline-as-exposure as the fix. Ran six adversarial critics against it; they found the keystone did not bind, the reckoning was abstention-trivial, the economy had no demand side, four mechanics had a Sybil price of zero, and the architecture could fabricate a false default. Rewrote SPEC as v3.0: added the Levy, role concurrency, offices-vs-ventures, the continuous bond + sureties, the vocabulary canon, the venture resolution waterfall, world-spawned raids and the Demand window, the wake budget, the docket and rundown, three meters, and the correctness architecture. Added axiom A15. Scoring panel run against the result.
