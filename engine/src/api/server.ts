@@ -619,11 +619,20 @@ export function createApp(options: ApiOptions): CreatedApp {
       const accepted: Record<string, unknown>[] = [];
       const corrections: Record<string, unknown>[] = [];
       const observationForHints = observe(who, false, false);
+      // The fresh nearest-legal set, solved at most once for the whole batch and paid
+      // for with one wake (see solveHintSet). Lazy: a batch with no corrections spends
+      // nothing, and a batch with several shares the one solve rather than harvesting
+      // a fresh priced set per rejected action.
+      let hintSet: readonly Affordance[] | null | undefined;
+      const hints = (): readonly Affordance[] | null => {
+        if (hintSet === undefined) hintSet = solveHintSet(who);
+        return hintSet;
+      };
 
       for (const [index, raw] of rawActions.entries()) {
         if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
           corrections.push(
-            correction(index, '?', 'A2', 'each action must be an object: {"verb": "...", "params": {...}}', observationForHints),
+            correction(index, '?', 'A2', 'each action must be an object: {"verb": "...", "params": {...}}', observationForHints, hints()),
           );
           continue;
         }
@@ -644,7 +653,7 @@ export function createApp(options: ApiOptions): CreatedApp {
           // Refused here, before submission, so nothing is charged. The tick loop
           // charges the budget before it runs a handler — correct for an act that
           // reached the rules and lost, wrong for a verb whose rules do not exist.
-          corrections.push(correction(clientSequence, verb, verdict.invariant, verdict.hint, observationForHints));
+          corrections.push(correction(clientSequence, verb, verdict.invariant, verdict.hint, observationForHints, hints()));
           continue;
         }
 
@@ -671,7 +680,7 @@ export function createApp(options: ApiOptions): CreatedApp {
           });
         } else {
           corrections.push(
-            correction(clientSequence, verb, submitted.invariant, submitted.hint, observationForHints, {
+            correction(clientSequence, verb, submitted.invariant, submitted.hint, observationForHints, hints(), {
               runtime,
               principal: who,
               params,
@@ -1049,6 +1058,7 @@ export function createApp(options: ApiOptions): CreatedApp {
     invariant: string,
     hint: string,
     observation: Observation,
+    hintSet: readonly Affordance[] | null,
     context?: {
       readonly runtime: Runtime;
       readonly principal: PrincipalId;
@@ -1074,7 +1084,7 @@ export function createApp(options: ApiOptions): CreatedApp {
        * that one is sent; the observation attached below stays wake-gated exactly as
        * a read does.
        */
-      nearest_legal: nearestFresh(observation, verb),
+      nearest_legal: nearestFresh(hintSet, verb),
       observation,
     };
   }
@@ -1108,24 +1118,38 @@ export function createApp(options: ApiOptions): CreatedApp {
    * §12.4 already tells the agent why the world has gone quiet.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  function nearestFresh(observation: Observation, verb: string): Affordance | null {
-    if (observation.affordances.length > 0) return nearestLegal(observation.affordances, verb);
-    const principal = observation.holding['principal'] as PrincipalId;
-    const reckoning = reckoningIndex(Math.max(0, runtime.engine.tick));
-    const row = wakes.get(principal);
-    const spent = row !== undefined && row.reckoning === reckoning ? row.spent : 0;
-    if (wakesRemainingFor(spent) <= 0) return null;
+  /**
+   * The fresh nearest-legal set for this response, solved AT MOST ONCE and paid for
+   * with exactly one wake.
+   *
+   * The old version gated on HAVING a wake but never SPENT one, so an agent holding a
+   * single wake could POST junk actions and harvest a complete, priced affordance set
+   * with live quote_ids, repeatedly, unmetered — the wake budget (§12.4) bypassed
+   * through the correction channel. A verifier caught it: "gating on having a wake is
+   * not the same as spending one." A fresh affordance set with usable quote_ids IS
+   * fresh information and costs a wake, exactly like a real observe — so it is solved
+   * once per response, one wake, and reused for every correction in the batch. Out of
+   * wakes, `nearest_legal` is null and the prose hint still names the invariant and the
+   * fix (§12.4).
+   */
+  function solveHintSet(principal: PrincipalId): readonly Affordance[] | null {
+    if (!spendWake(principal)) return null;
     const solved = buildObservation({
       runtime,
       principal,
       serverNowMs: clock.nowMs(),
       fresh: true,
-      wakesRemaining: wakesRemainingFor(spent),
+      wakesRemaining: wakesRemainingFor(wakes.get(principal)?.spent ?? 0),
       stale: runtime.engine.status === 'PAUSED',
       corrections: [],
       actionsRemaining: actionsRemainingFor(principal),
     });
-    return nearestLegal(solved.affordances, verb);
+    return solved.affordances;
+  }
+
+  function nearestFresh(hintSet: readonly Affordance[] | null, verb: string): Affordance | null {
+    if (hintSet === null) return null;
+    return nearestLegal(hintSet, verb);
   }
 
   function changedFields(context: {

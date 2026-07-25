@@ -711,6 +711,35 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     expect(h.runtime.engine.budget.remaining(a.principalId as never)).toBe(budgetBefore);
   });
 
+  it('a fresh nearest_legal costs a wake, so it cannot be harvested for free', async () => {
+    // The leak the verifier actually described, which the 0-wake test above does NOT
+    // catch: an agent HOLDING wakes could POST junk repeatedly and pull a fresh priced
+    // affordance set — live quote_ids — each time, unmetered, because solveHintSet
+    // gated on having a wake but never spent one. A fresh set is fresh information and
+    // must cost a wake exactly like an observe. This asserts the budget draws down.
+    const a = agent('harvester');
+    await enrol(h, a);
+    // Read the spend directly from the context, not the header — unambiguous, and no
+    // GET observe in the middle to confuse the accounting.
+    const before = h.context.wakesSpent(a.principalId as never);
+
+    // Three junk actions in a row, each of which would have harvested a free fresh set
+    // under the bug (nearest_legal solved fresh, gated on having a wake, never spending).
+    let served = 0;
+    for (let n = 0; n < 3; n += 1) {
+      const res = await signed(h, a, 'POST', PATHS.act, {
+        actions: [{ verb: 'trade', params: {}, clientSequence: n }],
+      });
+      const c = ((res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<string, unknown>[])[0];
+      if (c?.['nearest_legal'] !== null && c?.['nearest_legal'] !== undefined) served += 1;
+    }
+    const after = h.context.wakesSpent(a.principalId as never);
+    // Every fresh set served cost a wake. Under the bug, `served` sets came back while
+    // `wakesSpent` never moved — free information through the correction channel.
+    expect(after - before).toBe(served);
+    expect(served).toBeGreaterThan(0);
+  });
+
   it('still hands back the nearest legal act while the agent holds a wake (PROP-O7)', async () => {
     // The gate must not eat the guarantee it is protecting: inside a wake, a refusal
     // still comes with something to try instead.
