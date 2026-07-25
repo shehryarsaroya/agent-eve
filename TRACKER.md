@@ -6,7 +6,8 @@
 
 ## ⏱ STATUS
 
-- **Phase:** 0 — pre-build. **Design complete, critiqued, and rewritten. Zero code.**
+- **Phase:** 0 — **BUILDING.** Gate 0 green; wave 1 of the engine in flight.
+- **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
 - **Test plan:** `docs/design/TESTING.md` — written before any code, against v3.0. 26 always-on invariants · five named speeds · the probe-agent brief catalog · 14 scars as named regressions · 15 axioms as executable tests · 6 gates. **Gate 0 lands in commit #1.**
 - **Last done (2026-07-24):** Six adversarial critics → SPEC v3.0 → three scoring panels → fixes integrated → **doc tidy pass for all three audiences** (real protocols, the visibility ladder, the owner layer restored as §13B, THE RECEIPT REEL, cross-references fixed). Scored **7/10** on its own goals, **96/150** on the prior research's rubric, **ship-with-conditions** on engineering. See § SCORING PANEL for what was fixed and what was accepted-but-not-fixed.
@@ -156,6 +157,31 @@ Three independent scorers against SPEC v3.0.
 9. **What is the right `fast` tick?** `TESTING.md` derives **10 s** (a season overnight; a 4-minute commitment window that no LLM round-trip can miss) but that is a derivation, not a measurement. `PERF-7`'s pace sweep settles it, and its result must be published here. **If outcomes at 10× diverge from 1×, that is a design finding, not a harness finding — it means the game is latency-sensitive and A4 is already violated in production.**
 10. **A retention pass.** Six critics asked why this breaks in week one; nobody has asked why anyone plays in month six. That review has not been run.
 11. **Should the standing ledger publish as a real KYA credential?** Considered and deliberately *not* applied — it is a read-only projection that changes nothing about the game, and the instruction was to apply only what makes the game more compelling. It is near-free whenever we want it (signed, fetchable track record on the existing event ledger), and it is the artifact the agent-finance world has identity infrastructure for and no performance data to fill. The model-family correlation view is already in §14.5.
+
+---
+
+## 🏗 BUILD LOG (2026-07-24 →)
+
+**Gate 0 — GREEN.** Everything TESTING.md requires in commit #1 landed there, because four of its artifacts are golden-file surfaces that only work if they predate the bugs.
+- `core/units.ts` integer-only value paths; `splitByBps` allocates every minor unit and asserts `sum(parts) === whole`, so **INV-6 holds by construction** rather than by review.
+- `core/rng.ts` the only randomness. Rejection-sampled so small bounds stay exactly uniform — a modulo shortcut would bias every hazard roll slightly, which is the class of bug nobody ever finds. `derive()` gives independent sub-streams so adding a draw in one tick phase cannot shift another's outcomes.
+- `core/canonical.ts` sorted keys, integers only, floats throw. Deliberately **not** `JSON.stringify`: V8 reorders integer-like string keys numerically, which is the numeric-key determinism killer and stays invisible until a principal id happens to be numeric.
+- `core/time.ts` five named speeds, one sanctioned wall-clock reader, whitelisted by path.
+- **DET-7** banned-construct lint · **DET-8** scale audit · **PROP-O3** budget audit reading `SPEC.md` as source of truth and cross-checking the engine's enums against it (**15/15 axioms · 38/40 verbs · 10/10 observe keys · 8/8 venture kinds**). The cross-check is the point: spec and engine disagreeing about vocabulary *is* scar #1.
+
+**Server — live and clean.** Verified: High Water entirely gone, **24 cores** (docs said 12), landing page 200. Postgres 16.14 installed; database `compact` created with **`LC_COLLATE=C` at the database level**, which makes the collation determinism killer impossible rather than something every `ORDER BY` must remember. WAL archiving on.
+
+**OPS-1 — PASSING, and it earned its keep on the first run.** `deploy/verify-restore.sh`: base backup → `pg_verifybackup` → restore into a throwaway cluster → assert a canary row and row counts survived → assert collation survived. It found two real defects in the naive restore procedure, both of which would otherwise have surfaced during an incident:
+1. On Ubuntu the cluster config lives **outside** the data dir, so `pg_basebackup` alone does not produce a startable cluster.
+2. The packaged `postgresql.conf` **hard-codes `data_directory` at the live cluster**, so a naive restore silently attaches to production.
+
+**Schema (migration 001).** Every non-retrofittable field from §15.1 as a column; deliberately **no balance columns on `event`** (that duplicates `posting` — scar #5 inside the field list meant to prevent scar #5). Two things beyond table creation: **append-only enforced by GRANTS** (the app role has INSERT+SELECT and no UPDATE/DELETE on history, partitions revoked explicitly since they inherit at creation), and **partitions pre-created 7 Reckonings ahead with a fatal boot assertion** (OPS-3) — fatal because a warning about partitions is one nobody reads until the ledger stops accepting writes.
+
+**Deploy — scar #4 encoded as code, not advice.** Every sibling an explicit `--exclude`; the client sync omits `--delete` entirely because it writes inside the live landing page's webroot; Gate 0 gates the deploy; nginx wired via a one-line include of a separate snippet rather than rewriting the vhost that carries the live page and the certbot TLS block; and **post-deploy verification checks what we did *not* deploy** — landing page 200, health ok, and everything running before still running. That last check is the one whose absence let scar #4 stay invisible for days.
+
+**Frame contract + client.** `assertFrameBudgets()` makes A13 executable (≤7 cards, ≤12 segments, ≤7 labels, ascending stakes, no seal content without a verdict, no reel on a kept promise). The client is static single-file with **no database handle and no live-sim connection**, so A9 parity is structural — and since agents read the public feed, any viewer privilege would immediately be an agent exploit.
+
+**In flight:** wave 1 — five subagents on disjoint file sets (identity/RFC 9421/VC · ledger · events + A9 parity fuzz · world/hands/movement · golden files), each followed by an adversarial verifier told to disbelieve its report.
 
 ---
 
