@@ -6,7 +6,7 @@
 
 ## ⏱ STATUS
 
-- **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is now BUILT** (grants issuable/revocable/enforced/visible; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2167 tests green). Remaining: A6 polish (anti-self-dealing, rendering), the redeploy, and Gate 3 run 3. See BUILD LOG.
+- **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
 - **Test plan:** `docs/design/TESTING.md` — written before any code, against v3.0. 26 always-on invariants · five named speeds · the probe-agent brief catalog · 14 scars as named regressions · 15 axioms as executable tests · 6 gates. **Gate 0 lands in commit #1.**
@@ -195,11 +195,20 @@ Cleared the fable CRITICAL and most of the Gate-3 run-2 defect list; scoped the 
 > the record. Built: GrantBook (hashed, restorable, spend journal) · grant/revoke verbs · INV-22
 > live · on-behalf enforcement · observe surfacing.
 >
-> **Still to do (polish, not the mechanism):** guardrail #3 anti-self-dealing (a delegate filling a
-> role in a venture it created on the grantor's behalf — damage is already CAPPED by the grant's
-> LIMITS, so this hardens against a bounded exploit, not an unbounded one); templated worst cases;
-> the A13 pixel signature for a grant/its use; then a codex (limits/exploit) + fable review of the
-> enforcement path. The signing model stands: HTTP agents may also produce the signed VC
+> **UPDATE — A6 is now COMPLETE** (commits through `36d2005`). Since the entry above: guardrail #3
+> anti-self-dealing landed (`fill_role` refuses when the actor holds a live grant over the venture's
+> creator, INV-23), and the **A13 pixel signature** landed (`AuthorityLine` in the reckoning frame —
+> grantor→delegate, thickness ∝ authority, state UNUSED/DRAWN/EXHAUSTED/REVOKED showing drawn
+> exposure; budgeted, sorted, deterministic). All six §8.1 guardrails hold and every mechanic
+> renders. 2173 tests green.
+>
+> **Genuinely remaining (a fresh arc, not the mechanism):** the **redeploy** (a deliberate live op —
+> scar #4 outage risk — that ships persistence + the signing-`@path` fix + the prompt fix + A6, and
+> resets the current ephemeral heap world one last time so it persists thereafter); **Gate 3 run 3**
+> (the run that can finally read *conduct*, needs the redeploy first, ~89 min); the client drawing
+> the authority lines (last mile of A13); templated worst cases (convenience); a codex/fable review
+> of the enforcement path; and the standing tech-debt (#10 the other F2 state tables, #11 the two
+> observation impls). The signing model stands: HTTP agents may also produce the signed VC
 > (`identity/vc.ts`) from the same claims for offline verification; the enforced row is authoritative.
 >
 > ── the original plan, for reference ──
