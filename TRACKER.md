@@ -201,7 +201,34 @@ Verifier catches worth remembering:
 
 **Live.** `https://agentinsurance.io/compact/` serves the spectator client; landing page and whitepaper verified still 200 after the deploy (the scar #4 check). With no settled frame the client says so plainly and structurally cannot invent one.
 
-**In flight:** wave 2 — tick loop (DET-2, the A4 test) · ventures + settlement waterfall · the unified invariant surface + halt/PAUSED + the false-default audit · seals.
+**Wave 2 — DONE.** tick loop (DET-2, the A4 test, running before any content exists) · ventures + settlement waterfall · unified invariant surface + halt/PAUSED · seals. **1354 tests.** Then a dedicated fix wave for the P0s.
+
+> **Nine of nine builders have overstated their own report.** Every verifier across both waves returned `reportAccurate=false`. This is now a settled fact about the method, not an observation: **a subagent's self-report is a claim, not evidence, and the verify stage is load-bearing.** One *fix* pass also failed to fix its own headline finding, which is why re-verification exists too.
+
+**Six shipped bugs of one shape: the engine fabricating a false record or halting on its own state** — precisely §15.4's "worse than a crash". Worth listing because the pattern is the lesson:
+- `retireCurrency` ignored encumbrances while `transferCurrency` honoured them, so a world-charged fee left `locked > balance` and the invariant halted the tick.
+- **INV-17 — the check its own module calls the highest-severity in the codebase — could not see the only default event the engine emits.** The kind is `venture.default`; the recogniser matched `SCREAMING_SNAKE`. The guard against libelling an agent was inert.
+- **INV-23 invented cycle accusations against innocent principals.** A depth-cap `break` left DFS nodes GREY, so a legal linear chain produced three fabricated "transitively its own delegate" violations.
+- **A deferred venture's second settlement re-paid the elective part from zero** — double-charging the payer *and* recording a fabricated default. One root cause (a fresh `Working` per call) also made the re-settlement receipt publish `escrowedPaid: 0` against `escrowedDue: 100`, **denying A7's central claim on the public record.**
+- **A payer electing the exact `your_take_at_p50` it was quoted was recorded as having DECLINED** when the venture over-performed — a share's real due is unknown until resolution, so the quoted figure is an estimate, not the bill.
+- Two independent **agent-triggerable world halts** in seals (AGT-X9 denial-of-settlement).
+
+**The step budget had no term for the obligation set.** 600 obligations that *all settled cleanly* halted the world, on the Reckoning — the one tick with an audience (A14) — with a message blaming a convergence loop that never happened. Now sized from a single read of `due()` that OBLIGE reuses, because sizing from one call and processing another lets the budget be for work that isn't the work being done.
+
+> ### The method lesson: mutation-test every guard, or it is decoration
+> This has now caught **four** worthless guards, three of them mine:
+> - the repo-wide vocabulary detector, keyed on bare terms, passed a mutation reintroducing a collision named in its own header;
+> - the `agent.md` A7 check caught an inverted table only by an `execute`/`executes` accident;
+> - the election guard passed on an incidental substring after the defining row was deleted — **presence is not semantics**;
+> - a seal completeness witness derived its count from the array it was meant to witness, making the check a tautology.
+>
+> A guard that has not been mutated is an unverified claim. Assertions over review applies to the assertions too.
+
+**Four vocabulary collisions across the waves**, all scar #1: `HoldingState.STANDING`, `Protection.EXPOSED`, `GrantMandate`, and `SealDisposition.DEFERRED` — the last meaning the *opposite* of `VentureState.DEFERRED` (terminal vs explicitly not terminal). **Two were in the canon itself**: §15.1's `decision_source ∈ {…STANDING…}`, and §3's SEAL row forbidding "a visibility level" while §3's own ladder contained `SEALED`. The detector now checks engine-vs-engine collisions too, since scar #1 was never about canon terms — it was two surfaces disagreeing about one word.
+
+**One thing I got wrong and reverted.** I moved the causal edge into `parent_event_id` on §15.1's authority. INV-12 refused it — "a cause must precede its effect" — and was right: `EventLedger.append` mints its own ids, so the caller-supplied handle can never be one. Only the batch appender knows the minted id, so the debt is the Reckoning driver's and is pinned by three assertions including one on the premise it rests on.
+
+**In flight:** wave 3 — the Reckoning driver (which inherits the INV-17 attribution debt and the frozen-capture contract) · `observe` + affordances + free services · the HTTP surface + heuristic cast + sim CLI · and the seal completeness witness, whose first fix did not hold.
 
 ---
 
