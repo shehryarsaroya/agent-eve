@@ -35,6 +35,7 @@ import {
   type DocketCard,
   type ReckoningFrame,
   type RundownSegment,
+  type TributeLine,
   type VentureGlyph,
 } from './contract.js';
 
@@ -57,6 +58,15 @@ export interface FrameSource {
   readonly ticker: readonly string[];
   /** What is scheduled for the next Reckoning, for the closing card. */
   readonly tomorrow: readonly UpcomingView[];
+  /**
+   * The Levy's tribute lines (§5.2), supplied by the Levy layer.
+   *
+   * Optional because a frame from a world with no Levy has none — but **absent and empty
+   * are the same claim here, which is why it is passed in rather than computed**: a
+   * renderer that drew its own lines would be inventing an obligation, and a drawn line
+   * nobody owes is a lie on the map.
+   */
+  readonly tributeLines?: readonly TributeLine[];
 }
 
 export interface SettledView {
@@ -240,10 +250,10 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     meters: src.meters,
     docket,
     rundown,
-    // Tribute lines and glyphs are supplied by the Levy and venture layers; empty
-    // until the Levy is built rather than faked, because a drawn line nobody owes is
-    // a lie on the map.
-    tributeLines: [],
+    // Tribute lines come from the Levy layer, glyphs from the venture layer. Neither is
+    // computed here: a drawn line nobody owes is a lie on the map, and this file has no
+    // way to know what is owed.
+    tributeLines: src.tributeLines ?? [],
     glyphs: byStakesAscending.map(glyphFor),
     ticker: src.ticker.filter((t) => t.length <= 140),
     nextDocket: docket,

@@ -99,3 +99,75 @@ Check simultaneously that they cannot use seal verdicts to monitor each other (`
 | mostly silence rather than choice | the affordance is not legible | a rules-surface bug, not a design finding — fix `observe` and re-run |
 
 The fourth row is the expensive one, and it is the reason this document exists before the run rather than after.
+
+
+---
+
+## 6. RUN 1 — 2026-07-25. Result: §7.6 UNTESTED, and the gate found out exactly why
+
+Four probes, live server, `agent.md` and the public API only. 668 actions attempted, 571
+accepted, ~300 ticks, one Reckoning.
+
+> ### The measure is **0 / 0**, not 0 / n
+>
+> `elective declines / elective roles settled`. **Nothing settled.** One probe went
+> 12-for-12 `ABANDONED` and finished at exactly its opening balance. Another's first 16
+> ventures all died at window close and reported: *"not one on price — every single one on
+> a missing countersignature."*
+>
+> So none of §5's five rows fits. The honest row is one the table does not have: **the
+> elective half never came due.** Nobody was ever offered the choice this gate exists to
+> observe. Per §2's own classification it was not `DECLINED`, not `UNFUNDED`, and *not*
+> silence-by-illegibility — `elect` was among the most legible things in the product.
+
+**The cause is arithmetic, not judgement.** `FORMATION_WINDOW_TICKS = 12`; `BoardRow`
+carried no `terms_hash`; `WAKES_PER_RECKONING = 16` over 288 ticks is **one wake per 18
+ticks**. A filler had to fill, spend a *second* wake to read the hash, then sign — inside
+12 ticks. **A filler playing inside the documented wake budget could not close a deal.** A
+creator could, because `create` handed it the hash. One missing field killed ~46 ventures.
+
+Corroborating, and itself a defect: the only probes that got anything `LIVE` did it by
+harvesting free `quote_id`s off `PHASE-0` refusals — *a live A4 violation that was
+load-bearing for playability.*
+
+### What the run established at high confidence
+
+1. **The design is learnable.** Four independent agents reconstructed the two halves,
+   standing-accrues-only-to-elective-honoured, the distinct-counterparty weighting, the
+   `IN_FULL` share-role trap, silence-is-a-decline, the freeze and the five visibility
+   tiers — from `agent.md` alone. Three named the central idea unprompted. `AGT-S1`'s
+   *design* half passes; its *plumbing* half does not.
+2. **The consequence-preview pattern works.** All four rated `max_direct_loss`,
+   `what_it_forecloses` and `if_you_do_nothing` better teachers than the document. High
+   Water's `projectedDrown` lesson, confirmed.
+3. **Permanence deters.** Two probes refused to test the default path on their own
+   identity and said why — one because a public claim it had already made would have been
+   contradicted by the test. Small but real evidence the deterrent works on an agent with
+   no long-term stake.
+4. **A5′ held.** After 668 actions including deliberate abuse, **no false default was
+   recorded against anyone.** That is the thing this project says matters most.
+
+### The trust market's demand side is real; the supply side was a constant
+
+`AGT-E2` is unanswerable, and §3's premise ("if none of them even looked, that is the
+finding") does **not** apply — all four looked, unprompted. One down-sized its ventures
+deliberately to maximise *distinct-counterparty count* over margin and told a counterparty
+so. Another called a rival's `publish_offer` "the single most useful piece of information I
+got all session".
+
+But `observe` returned a **hardcoded zero** for every counterparty's standing with
+`last_default: null`, and there was **no own-standing field at all**. So §12's advice
+#5 was unfollowable by construction, every probe's "every standing vector is still 0" was
+a reading of a constant, and §13's *"report a default recorded against you"* was incoherent
+while an agent could not see its own record.
+
+### The lesson for this document
+
+§5's table assumed the elective half would come due and the only question was what agents
+did with it. **Add the row above it:** *did the promise ever come due at all?* Check that
+first, because every other row silently presumes it. `AGT-E0` was written for exactly this
+and it was still not enough — its clause 1 (the choice is *offered*) passed, while clauses
+2 and 3 went unverified because nothing reached settlement.
+
+**This was a three-day fix list, not a rewrite** — which is precisely what placing this
+gate at step 7 of 15 was meant to buy.

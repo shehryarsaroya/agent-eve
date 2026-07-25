@@ -74,20 +74,58 @@ import type {
   VentureId,
   VentureState,
 } from '../core/types.js';
-import { bps, minor, sumMinor, type Bps, type Minor } from '../core/units.js';
+import { bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { EventLedger, type NewEvent } from '../events/index.js';
 import {
   CURRENCY_FAUCET,
   DEFAULT_VALUATION_RULE,
+  GOODS_FAUCET,
+  GOODS_SINK,
   Ledger,
   SimpleObligationBook,
   compareIds,
   escrowAccount,
   openStores,
   openVentureEscrow,
+  principalPosition,
   storesAccount,
   ledgerStateTable,
+  type LotId,
 } from '../ledger/index.js';
+// ── THE LEVY (SPEC §5.2) ─────────────────────────────────────────────────────
+//
+// The mechanic §5.2 calls "the single most important in v3.0", and the reason it is
+// wired *here* rather than left as a module: six critics found the Reckoning
+// abstention-trivial, and a Levy that exists in `src/levy/` but is not registered on
+// the tick is a Levy that has changed nothing. `levyBuilt` in the sim's summary is the
+// flag that says whether this wiring happened, and it is read from this file's work.
+import {
+  Book as LevyBook,
+  LEVY_BALLOT,
+  LEVY_BASE_COMMONS_CAPACITY,
+  LEVY_GOOD,
+  LEVY_NOMINAL_MINOR,
+  LEVY_STARTER_ALLOTMENT,
+  assessCycle,
+  ballotFor,
+  ballotWindow,
+  carrierAt,
+  checkLevyAttribution,
+  constellationOf,
+  creditFor,
+  deliveryFault,
+  deliveryPlaceOf,
+  docketRowsFor,
+  inv24InputsFor,
+  isLevyRule,
+  levyStateTable,
+  settleLevy,
+  tributeLinesFor,
+  voteFault,
+  type LevySettlement,
+  type LevySubject,
+  type SweepPort,
+} from '../levy/index.js';
 import {
   DefaultRegister,
   HaltController,
@@ -110,6 +148,14 @@ import {
 // percentiles — so reading it here is reading the settlement's own arithmetic rather
 // than a second copy of the escrowed/elective split.
 import { slotClaimAt } from '../observe/forecast.js';
+// The Levy's pixel signature (§5.2, A13). Imported as a *type only*: this runtime
+// populates `TributeLine`, it does not define it — `frames/contract.ts` owns the shape and
+// the client already draws that one.
+import type { TributeLine } from '../frames/contract.js';
+// `agent.md` §6's own field names for the Levy block, typed once in the observation
+// layer. Imported as a type so this runtime fills the published shape rather than
+// inventing a second one (§3).
+import type { LevyBlock } from '../observe/sources.js';
 import {
   SealBook,
   cmpDeeds,
@@ -184,6 +230,7 @@ import {
   enroll,
   handsOf,
   launchMap,
+  principalIsCommonsBound,
   reject,
   releaseHand,
   tierOf,
@@ -305,6 +352,32 @@ export const DELIVERY_VERB = 'haul';
 
 /** Reckonings of settlement summaries the report keeps. Bounded (INV-26, scar #3). */
 export const MAX_RECKONING_SUMMARIES = 8;
+
+/**
+ * What the Levy did in one Reckoning, counted from the settlement's own output.
+ *
+ * `shortMinor` is `LEVY SHORT` — §14.2's headline, *"a world fact nobody can lower alone,
+ * which rises when the population turtles"*. It is reported beside `assessed` and
+ * `paidInFull` for the same reason `defaults` is reported beside `electiveHonoured`: a
+ * zero on its own is unreadable. Zero short with twelve assessed is a constellation that
+ * paid; zero short with **zero assessed** is the Levy not running at all, which is the
+ * abstention-trivial failure the whole mechanic exists to delete — and a summary that
+ * could not tell those apart would be the flattering version of this measurement.
+ */
+export interface LevySummary {
+  readonly reckoning: number;
+  readonly tick: number;
+  readonly assessed: number;
+  readonly paidInFull: number;
+  readonly totalMinor: Minor;
+  readonly shortMinor: Minor;
+  readonly sweptQty: Qty;
+  readonly sweepQueue: number;
+  readonly demoted: number;
+  /** Constellations whose allocation fell to the published formula (quorum failed). */
+  readonly byDefault: number;
+  readonly ballotsCast: number;
+}
 
 /**
  * Venture states that imply the venture reached `LIVE` and therefore **delivered**.
@@ -850,6 +923,19 @@ export class Runtime {
   private readonly summaries = new Ring<ReckoningSummary>(MAX_RECKONING_SUMMARIES);
 
   /**
+   * The Levy's book, behind a getter because the rollback **replaces** it — the same
+   * shape as `ventureBook`, and for the same reason: `restore` builds a fresh `Book` and
+   * every reader has to go through the accessor or half the engine keeps talking to the
+   * pre-abort assessment.
+   */
+  private levyBookRef = new LevyBook();
+  /** The Reckoning whose assessment has been minted. Assessing twice is refused, not silent. */
+  private levyAssessedReckoning = -1;
+  private levySettledReckoning = -1;
+  private levyOutcome: LevySettlement | null = null;
+  private readonly levySummaries = new Ring<LevySummary>(MAX_RECKONING_SUMMARIES);
+
+  /**
    * Things that went wrong where a halt would have been worse. Bounded, and printed.
    *
    * A restore that could not reproduce its capture, an event the ledger refused at
@@ -928,6 +1014,18 @@ export class Runtime {
             for (const [key, election] of restored) this.elections.set(key, election);
           },
         ),
+        // The Levy is inside `state_hash` and inside the abort path, and both halves
+        // matter. An assessment decides what future ticks do, so a hash blind to it
+        // would call two worlds identical while one owed 240 000 of goods; and an
+        // aborted tick that left a credited delivery in the book would have the world
+        // believing a payment that never published (§15.1, and the two verifiers who
+        // found exactly this for the venture book and the election map).
+        levyStateTable(
+          () => this.levyBookRef,
+          (book) => {
+            this.levyBookRef = book;
+          },
+        ),
       ],
       verbs: this.verbTable(),
       // §17 and agent.md: "one seal per role you hold is free and costs no action".
@@ -963,11 +1061,26 @@ export class Runtime {
           // mark the Reckoning resolved (INV-20).
           this.freezeNow(ctx);
           this.settleNow(ctx);
+          // ── THE LEVY, AND THE ORDER IS THE RULE ────────────────────────────
+          //
+          // `assessLevyNow` first, because a world that starts mid-cycle must be
+          // assessed before ASSERT asks INV-25 whether everyone is on a docket.
+          //
+          // `settleLevyNow` **after** `settleNow`, and that is not tidiness: the
+          // Reckoning batch re-reads the payer balances it froze and halts on any
+          // difference *in either direction* (§5.1's hard freeze, `reckoning/driver.ts`).
+          // A sweep before it would move a figure the settlement was computed from and
+          // pause a healthy world on the one tick that has an audience (A14).
+          this.assessLevyNow(ctx);
+          this.settleLevyNow(ctx);
         },
       },
       assertions: [
         (tick) => this.ventures.checkVentureInvariants(tick),
         (tick) => this.reckoningViolationsAt(tick),
+        // A5′ for the Levy: a shortfall is an accusation, so it is held to INV-17's
+        // standard — reproducible from the payment journal by a second road, or halt.
+        (tick) => checkLevyAttribution(this.levy, reckoningOf(tick), tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     });
@@ -976,6 +1089,11 @@ export class Runtime {
   /** The venture book. Never held across a tick boundary: the rollback replaces it. */
   get ventures(): VentureBook {
     return this.ventureBook;
+  }
+
+  /** The Levy's book. Never held across a tick boundary: the rollback replaces it. */
+  get levy(): LevyBook {
+    return this.levyBookRef;
   }
 
   /**
@@ -992,6 +1110,18 @@ export class Runtime {
    * `reckoningViolationsAt`.
    */
   private invariantInputs(tick: number): InvariantInputs {
+    const reckoning = Math.floor(tick / TICKS_PER_RECKONING);
+    const levy = inv24InputsFor(this.levy, reckoning);
+    // ── WHY THE DOCKET IS CONDITIONAL, AND WHY THAT IS NOT A DODGE ───────────
+    //
+    // `checkInv25` refuses an empty principal list on purpose — "an empty world
+    // satisfies it vacuously and that is exactly the night it must not". A fixture with
+    // no principals seated is a world with nothing to be quiet *about*, and supplying
+    // the pair there would halt every such test on a state nobody could be silent in.
+    // So the roll gates the supply, and the moment one principal exists the invariant is
+    // live and the Levy has to have put it on a row.
+    const roll = this.world.principalOrder;
+    const docket = roll.length === 0 ? undefined : docketRowsFor(this.levy, reckoning);
     return {
       ledger: this.ledger,
       obligations: this.obligations,
@@ -1003,7 +1133,9 @@ export class Runtime {
       sealBook: this.seals,
       standingChanges: this.standing.changes(),
       standings: this.standing.rows(),
-      atReckoning: Math.floor(tick / TICKS_PER_RECKONING),
+      atReckoning: reckoning,
+      ...(levy === null ? {} : { levy }),
+      ...(docket === undefined ? {} : { docket }),
     };
   }
 
@@ -1072,7 +1204,64 @@ export class Runtime {
       to: storesAccount(principal),
       amount: STARTER_STAKE,
     });
+    // ── §6.1's "starter stake of BOUND GOODS", which had never been minted ────
+    //
+    // The Levy is payable **only in located goods** (§5.2), and until this line the
+    // build had issued the starter stake as currency alone — so there was nothing
+    // located anywhere that a goods-only obligation could be discharged with, and every
+    // principal would have been permanently, unavoidably short. An obligation the rules
+    // make impossible to meet, recorded against a real agent every night, is A5′ with
+    // the engine's own economy as the cause.
+    //
+    // The allotment is finite and there is no `PRODUCE` phase behind it yet (§16 step
+    // 11), so a principal that only ever delivers from stock runs dry after about two
+    // and a half Reckonings and `LEVY SHORT` starts to rise on its own. That is the
+    // meter working rather than the model failing, and it is stated here so nobody
+    // later reads a rising short as a bug.
+    this.ledger.sourceGoods({
+      eventId: `enrol.goods:${principal}` as never,
+      tick: Math.max(0, tick),
+      faucet: GOODS_FAUCET.PRODUCTION,
+      to: storesAccount(principal),
+      good: LEVY_GOOD,
+      qty: LEVY_STARTER_ALLOTMENT,
+      location: enrolment.holding.system,
+      origin: principal,
+    });
+    // A principal that enrolled after its constellation was assessed still has to be on
+    // tonight's docket, or INV-25 — the anti-quiet invariant — halts on the arrival of a
+    // legitimate newcomer. Its duty is the nominal rate and it is added to the total, so
+    // no existing line moves (see `Book.admitLate`).
+    this.admitLateToLevy(principal, Math.max(0, tick));
     return enrolment;
+  }
+
+  /**
+   * Put a mid-cycle enroller on tonight's assessment. Never throws for an agent's sake.
+   *
+   * Enrolment is free and unauthenticated (§6.1) and reaches this through HTTP, so a
+   * throw here would be an agent-triggerable halt on the world's own front door. Three
+   * of those have shipped in this repo.
+   */
+  private admitLateToLevy(principal: PrincipalId, tick: number): void {
+    const reckoning = reckoningOf(tick);
+    const constellation = constellationOf(this.world, principal);
+    if (constellation === null) return;
+    if (!this.levy.isAssessed(reckoning, constellation)) return;
+    try {
+      this.levy.admitLate(reckoning, constellation, {
+        principal,
+        amount: LEVY_NOMINAL_MINOR,
+        newcomerFloored: true,
+        spared: false,
+        weight: 0,
+      });
+    } catch (error: unknown) {
+      this.faults.push(
+        `${principal} enrolled at tick ${String(tick)} and could not be added to the Reckoning ` +
+          `${String(reckoning)} Levy (${describeError(error)}); it is assessed from the next Reckoning`,
+      );
+    }
   }
 
   /** A Commons seat with the fewest holdings, or a named tier for the cast. */
@@ -1140,6 +1329,8 @@ export class Runtime {
       reckonings: this.summaries.size,
       operatorFaults: this.faults.size,
       seals: this.seals.size,
+      levyReckonings: this.levySummaries.size,
+      ...this.levy.sizes(),
     };
   }
 
@@ -1199,9 +1390,15 @@ export class Runtime {
   private verbTable(): Readonly<Record<string, VerbHandler>> {
     return {
       create: (ctx, req) =>
-        this.committing(ctx) ?? this.sealCompliance(ctx, req) ?? this.vCreate(ctx, req),
+        this.committing(ctx) ??
+        this.sealCompliance(ctx, req) ??
+        this.commonsCapacityRejection(req.principal) ??
+        this.vCreate(ctx, req),
       fill_role: (ctx, req) =>
-        this.committing(ctx) ?? this.sealCompliance(ctx, req) ?? this.vFillRole(ctx, req),
+        this.committing(ctx) ??
+        this.sealCompliance(ctx, req) ??
+        this.commonsCapacityRejection(req.principal) ??
+        this.vFillRole(ctx, req),
       sign: (ctx, req) => this.committing(ctx) ?? this.vSign(ctx, req),
       // ── `elect` is NOT behind `committing`, and it needs its own refusal ────
       //
@@ -1238,6 +1435,16 @@ export class Runtime {
       //      of *when* a seal about a delivery can still be kept — so the affordance, the
       //      cast and PROP-D4's compliance gate cannot disagree about it.
       seal: (ctx, req) => this.vSeal(ctx, req),
+      // ── The Levy's two verbs, and neither of them is new (§12.2, §17) ───────
+      //
+      // `deliver` and `vote` are already in the published verb table and the budget is at
+      // 39 of 40, so this registers handlers for words that already existed rather than
+      // spending the last slot. `set_delivery_intent` needs no handler here at all: it is
+      // a built-in that creates a durable intent, and the intent re-submits `deliver`
+      // through *this* table — which is what makes R19 ("payable by a standing intent, so
+      // an offline agent can meet it") true without a second execution path.
+      deliver: (ctx, req) => this.vDeliver(ctx, req),
+      vote: (ctx, req) => this.vVote(ctx, req),
     };
   }
 
@@ -2262,6 +2469,605 @@ export class Runtime {
     }
     this.pruneDeliveries(frozen.reckoning);
     return outcome;
+  }
+
+  // ── The Levy (SPEC §5.2) ──────────────────────────────────────────────────
+
+  /**
+   * What the allocation rule is allowed to know about a principal. **Facts only.**
+   *
+   * `freeStores` and `exposure` come from `principalPosition`, which is the same function
+   * every affordance's `max_direct_loss` is computed from — so the number that decides an
+   * assessment is the number an agent was shown, and there is no second EXPOSURE in the
+   * engine for the Levy to disagree with (§3: EXPOSURE is Σ open `max_direct_loss`, and
+   * nothing else).
+   */
+  private levySubject(principal: PrincipalId, tick: number): LevySubject {
+    const position = principalPosition(this.ledger, principal, storesAccount(principal));
+    const hands = handsOf(this.world, principal);
+    // Tenure from the earliest hand's own clock. Hands are minted exactly once, at
+    // enrolment, and are never destroyed (INV-8), so `presentSinceTick` of the first hand
+    // is the enrolment tick by construction — a second `enrolledAt` column would be one
+    // fact with two homes, and the one that drifted would decide the newcomer floor.
+    const seatedAt = hands.reduce<number>((earliest, hand) => {
+      const since = hand.presentSinceTick ?? 0;
+      return since < earliest ? since : earliest;
+    }, tick);
+    return {
+      principal,
+      tenureTicks: Math.max(0, tick - seatedAt),
+      freeStores: position.free,
+      exposure: position.exposure,
+    };
+  }
+
+  /**
+   * Mint this Reckoning's assessment, once.
+   *
+   * Called every OBLIGE rather than only at phase 0, and the reason is a fixture rather
+   * than an agent: a world constructed with `startTick` inside a cycle would otherwise
+   * hold no assessment for that cycle, no docket row for anybody, and INV-25 would halt
+   * a test world on its first tick. `assessCycle` skips a constellation that is already
+   * assessed, so the ordinary path still mints at phase 0 exactly once.
+   */
+  private assessLevyNow(ctx: PhaseContext): void {
+    const reckoning = reckoningOf(ctx.tick);
+    if (this.levyAssessedReckoning === reckoning) return;
+    if (this.world.principalOrder.length === 0) return;
+    let assessed;
+    try {
+      assessed = assessCycle({
+        book: this.levy,
+        world: this.world,
+        tick: ctx.tick,
+        subjectOf: (principal) => this.levySubject(principal, ctx.tick),
+      });
+    } catch (error: unknown) {
+      // An assessment that cannot be computed must not take the tick down: the Levy is
+      // the mechanic that keeps the world from being quiet, and a quiet world is better
+      // than a stopped one. Reported loudly, and `levyBuilt` stays true while
+      // `assessed: 0` says what happened.
+      this.faults.push(
+        `the Levy could not assess Reckoning ${String(reckoning)} (${describeError(error)}); nothing is ` +
+          'assessed tonight and every principal is short of nothing',
+      );
+      this.levyAssessedReckoning = reckoning;
+      return;
+    }
+    this.levyAssessedReckoning = reckoning;
+    ctx.step(assessed.plans.length + assessed.tallies.length);
+
+    for (const plan of assessed.plans) {
+      ctx.emit({
+        tick: ctx.tick,
+        kind: 'levy.assessed',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: `levy::${String(plan.reckoning)}::${plan.constellation}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        payload: {
+          constellation: plan.constellation,
+          reckoning: plan.reckoning,
+          totalMinor: plan.total,
+          rule: plan.rule,
+          byDefault: plan.byDefault,
+          spared: plan.spared,
+          deliverableTo: plan.deliverableTo,
+          assessed: plan.lines.length,
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+    }
+    // §14.4's named loser, computed against the counterfactual where the group did
+    // nothing. Published because Law 2 asks for a *named* loss by the group's action, and
+    // a loss nobody can name is not one.
+    for (const loser of assessed.losers) {
+      ctx.emit({
+        tick: ctx.tick,
+        kind: 'levy.borne',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: loser.principal,
+        grantId: null,
+        eventFamilyId: `levy::${String(reckoning)}::${loser.constellation}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        payload: { constellation: loser.constellation, principal: loser.principal, extraMinor: loser.extra },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+    }
+  }
+
+  /**
+   * Settle the Levy: shortfall, sweep, strikes, `LEVY SHORT`.
+   *
+   * Runs at the settlement tick, **after** the venture batch (see the OBLIGE handler on
+   * why the order is a rule and not a preference).
+   */
+  private settleLevyNow(ctx: PhaseContext): void {
+    if (!isSettlementTick(ctx.tick)) return;
+    const reckoning = reckoningOf(ctx.tick);
+    if (this.levySettledReckoning === reckoning) return;
+    this.levySettledReckoning = reckoning;
+
+    const settlement = settleLevy({
+      book: this.levy,
+      reckoning,
+      tick: ctx.tick,
+      exposureOf: (principal) => principalPosition(this.ledger, principal, storesAccount(principal)).exposure,
+      sweep: this.levySweepPort(),
+    });
+    this.levyOutcome = settlement;
+    ctx.step(settlement.shortfalls.length + settlement.sweepQueue.length);
+
+    for (const row of settlement.shortfalls) {
+      if (row.owed <= 0) continue;
+      ctx.emit({
+        tick: ctx.tick,
+        kind: 'levy.short',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: row.principal,
+        grantId: null,
+        eventFamilyId: `levy::${String(reckoning)}::${row.constellation}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        // The arithmetic travels with the accusation. A shortfall drives a sweep, a
+        // strike and eventually a demotion, so a reader has to be able to reproduce it
+        // from the row alone — INV-17's rule for defaults, applied where it belongs.
+        payload: {
+          principal: row.principal,
+          constellation: row.constellation,
+          assessmentMinor: row.assessment,
+          paidOwnMinor: row.paidOwn,
+          paidOtherMinor: row.paidOther,
+          sweptQty: row.sweptQty,
+          presenceOwedMinor: row.presenceOwed,
+          purchasableOwedMinor: row.purchasableOwed,
+          owedMinor: row.owed,
+          inSweepQueue: row.inSweepQueue,
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+    }
+
+    for (const principal of settlement.demoted) {
+      ctx.emit({
+        tick: ctx.tick,
+        kind: 'levy.capacity',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: principal,
+        grantId: null,
+        eventFamilyId: `levy::${String(reckoning)}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        // Named in full, because this is the *only* thing chronic non-payment costs and a
+        // reader must be able to see that nothing else moved (§5.2, PROP-LV4).
+        payload: {
+          principal,
+          capacity: this.levy.capacityOf(principal),
+          identityTaken: false,
+          holdingTaken: false,
+          standingTaken: false,
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+    }
+
+    const plans = this.levy.plansIn(reckoning);
+    this.levySummaries.push({
+      reckoning,
+      tick: ctx.tick,
+      assessed: settlement.assessed,
+      paidInFull: settlement.paidInFull,
+      totalMinor: sumMinor(plans.map((p) => p.total)),
+      shortMinor: settlement.levyShort,
+      sweptQty: settlement.sweptQty,
+      sweepQueue: settlement.sweepQueue.length,
+      demoted: settlement.demoted.length,
+      byDefault: plans.filter((p) => p.byDefault).length,
+      ballotsCast: plans.reduce<number>(
+        (n, p) => n + this.levy.ballotsFor(reckoning, p.constellation).length,
+        0,
+      ),
+    });
+    this.levy.prune(reckoning);
+  }
+
+  /**
+   * The only thing Levy settlement may reach for: located goods.
+   *
+   * `SweepPort` cannot express a holding, a standing row, a hand or an identity, so
+   * §5.2's *"never identity, never the holding, never standing"* is a property of the
+   * type rather than of anybody remembering (PROP-LV4).
+   */
+  private levySweepPort(): SweepPort {
+    return {
+      availableOf: (principal) => this.levyGoodAvailable(principal),
+      consume: (args) =>
+        this.consumeLevyGood({
+          principal: args.principal,
+          want: args.want,
+          place: args.place,
+          tick: args.tick,
+          label: `levy.sweep:${String(args.reckoning)}`,
+        }),
+    };
+  }
+
+  /** Unpledged, available units of the levy good in a principal's STORES. */
+  private levyGoodAvailable(principal: PrincipalId): Qty {
+    let total = 0;
+    for (const lot of this.levyGoodLots(principal)) total += lot.qty;
+    return qty(total);
+  }
+
+  /**
+   * The lots a delivery or a sweep may draw on, in canonical order.
+   *
+   * A pledged lot is excluded: the lien is exclusive, and the same goods must never back
+   * two obligations (INV-4). An `IN_TRANSIT` lot is excluded too — it is not somewhere a
+   * hand can hand it over from.
+   */
+  private levyGoodLots(principal: PrincipalId): readonly { readonly id: LotId; readonly qty: number }[] {
+    return this.ledger
+      .lotsInAccount(storesAccount(principal))
+      .filter((lot) => lot.good === LEVY_GOOD && lot.encumbranceId === null && lot.state === 'AVAILABLE')
+      .sort((a, b) => compareIds(a.id, b.id))
+      .map((lot) => ({ id: lot.id, qty: lot.qty }));
+  }
+
+  /**
+   * Move `want` units of the levy good into civic custody at `place`, and return what
+   * actually moved.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE LOT IS RELOCATED TO THE DELIVERY PLACE BEFORE IT IS CONSUMED**, so the record
+   * says the goods were destroyed *there*. §10.2's rule is that everything is located,
+   * and a consumption posted at the payer's holding while its hand stood at the delivery
+   * berth would be a located fact that was false.
+   *
+   * The carriage itself is compressed into the presence requirement: `haul` is §16 step
+   * 11 and does not exist, so what the engine can actually check is that one of the
+   * payer's own hands is standing at the named place. That is also the property §5.2 and
+   * PROP-LV3 turn on — presence, not payment — so the compression costs the mechanic
+   * nothing it depends on. It is stated rather than hidden, and it is the one place this
+   * module is thinner than the fiction.
+   *
+   * Never throws. A delivery is an agent-reachable path and a sweep runs at settlement;
+   * a throw in either would be an agent-triggerable halt or a tick aborted after every
+   * venture had already settled.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private consumeLevyGood(args: {
+    readonly principal: PrincipalId;
+    readonly want: Qty;
+    readonly place: SystemId;
+    readonly tick: number;
+    readonly label: string;
+  }): Qty {
+    let left: number = args.want;
+    let taken = 0;
+    for (const lot of this.levyGoodLots(args.principal)) {
+      if (left <= 0) break;
+      const portion = Math.min(left, lot.qty);
+      if (portion <= 0) continue;
+      try {
+        this.ledger.relocate(lot.id, { location: args.place });
+        this.ledger.destroyGoods({
+          eventId: `${args.label}:${args.principal}:${lot.id}` as EventId,
+          tick: args.tick,
+          sink: GOODS_SINK.CONSUMPTION,
+          lotId: lot.id,
+          qty: qty(portion),
+        });
+      } catch (error: unknown) {
+        this.faults.push(
+          `${args.principal} could not hand over ${String(portion)} of ${LEVY_GOOD} at ${args.place} ` +
+            `(${describeError(error)}); the Levy credits only what actually moved`,
+        );
+        continue;
+      }
+      taken += portion;
+      left -= portion;
+    }
+    return qty(taken);
+  }
+
+  /**
+   * `deliver` — §5.2's discharge, and the only one.
+   *
+   * Three things this handler does in a fixed order, because the order is what keeps the
+   * record honest (A5′):
+   *
+   *   1. **Refuse on the merits first**, with a sentence. Nothing has moved yet.
+   *   2. **Move the goods.** The ledger is the authority on whether they moved.
+   *   3. **Credit exactly what moved.** Never what was asked for.
+   *
+   * A handler that credited first and moved second would record a payment that did not
+   * happen, which is the same lie as a fabricated default pointed the other way.
+   */
+  private vDeliver(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const reckoning = reckoningOf(ctx.tick);
+    // `on_behalf_of` is the Coase-collapse primitive, offered on purpose: a delivery
+    // service has to be *expressible* for PROP-LV3 to be able to attempt the collapse
+    // against it. What it cannot do is fill the non-escrowable share (`payment.ts`).
+    const payerRaw = readString(req.params, ['on_behalf_of', 'onBehalfOf', 'for', 'payer']);
+    const payer = (payerRaw ?? req.principal) as PrincipalId;
+    if (this.world.holdingByPrincipal.get(payer) === undefined) {
+      return reject('A2', `there is no principal ${payer} to deliver for; name yourself or a real principal.`);
+    }
+    const constellation = constellationOf(this.world, payer);
+    const place = constellation === null ? null : deliveryPlaceOf(this.world.map, constellation);
+    if (place === null) {
+      return reject(
+        'A2',
+        'that principal\'s constellation has no delivery place, so nothing can be delivered against it yet.',
+      );
+    }
+
+    const owing = this.levy.owingOf(reckoning, payer);
+    const available = this.levyGoodAvailable(req.principal);
+    const fault = deliveryFault({
+      world: this.world,
+      payer,
+      deliverer: req.principal,
+      place,
+      tick: ctx.tick,
+      owing,
+      available,
+    });
+    if (fault !== null) return reject('A14', fault);
+
+    const asked = readInt(req.params, ['amount', 'qty', 'quantity']);
+    const byOwnHand = req.principal === payer;
+    const credible = creditFor(owing, minor(asked === null ? owing.owed : Math.max(0, asked)), byOwnHand);
+    const want = qty(Math.min(credible, available));
+    if (want <= 0) {
+      return reject(
+        'A14',
+        `nothing of that delivery can be credited: ${String(credible)} is creditable and you hold ` +
+          `${String(available)} of ${LEVY_GOOD}.`,
+      );
+    }
+
+    const moved = this.consumeLevyGood({
+      principal: req.principal,
+      want,
+      place,
+      tick: ctx.tick,
+      label: `levy.deliver:${String(reckoning)}`,
+    });
+    if (moved <= 0) {
+      return reject('A14', 'the goods could not be handed over, so nothing was credited against your Levy.');
+    }
+    this.levy.credit(reckoning, payer, minor(moved), byOwnHand);
+
+    const carrier = carrierAt(this.world, req.principal, place, ctx.tick);
+    ctx.emit({
+      tick: ctx.tick,
+      kind: 'levy.delivered',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: byOwnHand ? null : payer,
+      grantId: null,
+      eventFamilyId: `levy::${String(reckoning)}::${String(constellation)}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        payer,
+        deliverer: req.principal,
+        place,
+        good: LEVY_GOOD,
+        qty: moved,
+        byOwnHand,
+        hand: carrier?.id ?? null,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `vote` — §12.2's one verb, here for the `LEVY` ballot.
+   *
+   * Free (`tick/budget.ts` lists it), peaceful in the Commons (`world/commons.ts` names
+   * `LEVY` a peaceful ballot), and **replacing** rather than appending: one principal, one
+   * ballot, or a principal with more actions would have more votes and A4 would be
+   * violated through the ballot box.
+   */
+  private vVote(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const kind = (readString(req.params, ['ballot', 'ballot_kind', 'kind']) ?? LEVY_BALLOT).toUpperCase();
+    if (kind !== LEVY_BALLOT) {
+      return reject(
+        'A2',
+        `only the ${LEVY_BALLOT} ballot is open in this build: §12.2's other two (seizure, syndicate ` +
+          'proposals) land with predation and with syndicates. Send {"ballot": "LEVY", "rule": "..."}.',
+      );
+    }
+    const rule = readString(req.params, ['rule', 'allocation', 'formula']) ?? '';
+    const spare = readString(req.params, ['spare', 'spare_principal', 'relieve']);
+    const fault = voteFault({
+      book: this.levy,
+      world: this.world,
+      voter: req.principal,
+      rule,
+      spare,
+      tick: ctx.tick,
+    });
+    if (fault !== null) return reject('A14', fault);
+    if (!isLevyRule(rule)) {
+      // Unreachable: `voteFault` checks the rule first. Kept because the cast is a
+      // narrowing, not a check, and a future edit that reordered `voteFault` would
+      // otherwise write an unvalidated rule into a hashed structure.
+      return reject('A2', `${rule} is not a published Levy allocation rule.`);
+    }
+    const ballot = ballotFor({
+      world: this.world,
+      voter: req.principal,
+      rule,
+      spare: spare as PrincipalId | null,
+      tick: ctx.tick,
+    });
+    if (ballot === null) return reject('A2', 'you have no constellation to cast a Levy ballot in.');
+    try {
+      this.levy.castBallot(ballot);
+    } catch (error: unknown) {
+      return reject('INV-26', describeError(error));
+    }
+    ctx.emit({
+      tick: ctx.tick,
+      kind: 'levy.voted',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `levy::${String(ballot.forReckoning)}::${ballot.constellation}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      // A ballot is PUBLIC in full (§12.2: "all resolve at a Reckoning; all are PUBLIC"),
+      // which is what lets a viewer read the coalition off the feed — AGT-X4's pass
+      // criterion is that a cartel is *visible* while it succeeds.
+      payload: {
+        constellation: ballot.constellation,
+        forReckoning: ballot.forReckoning,
+        rule: ballot.rule,
+        spare: ballot.spare,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * The only cost of chronic non-payment: fewer concurrent venture roles in the Commons.
+   *
+   * §5.2: *"chronic non-payment demotes Commons capacity, **and that is all**."* Floored
+   * at {@link LEVY_MIN_COMMONS_CAPACITY} and applied only to a Commons-bound principal,
+   * because it is what the civic-leased holding grants (§6.3). Never zero: the Commons is
+   * a permanent floor, not a timer (A8), and a capacity of zero would be an ejection.
+   */
+  private commonsCapacityRejection(principal: PrincipalId): Rejection | null {
+    if (this.world.holdingByPrincipal.get(principal) === undefined) return null;
+    if (!principalIsCommonsBound(this.world, principal)) return null;
+    const capacity = this.levy.capacityOf(principal);
+    if (capacity >= LEVY_BASE_COMMONS_CAPACITY) return null;
+    const held = this.ventures
+      .live()
+      .filter((v) => roleOfPrincipal(v, principal) !== null || v.creator === principal).length;
+    if (held < capacity) return null;
+    return reject(
+      'A14',
+      `your Commons capacity is ${String(capacity)} concurrent ventures after ` +
+        `${String(this.levy.chronicOf(principal).demotions)} chronic Levy shortfalls, and you hold ` +
+        `${String(held)}. Deliver your Levy for a clean Reckoning, or finish something first. Your holding, ` +
+        'your standing and your identity are untouched and always will be.',
+    );
+  }
+
+  /**
+   * The Levy as `observe` shows it, in `agent.md` §6's own field names.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE FIELD NAMES ARE THE CONTRACT AND THEY ARE NOT NEGOTIABLE HERE.**
+   * `agent.md` §6 publishes `levy{ my_assessment, paid, deliverable_to,
+   * shortfall_if_unpaid, ballot }`, and `observe/sources.ts:LevyBlock` types exactly
+   * those plus `non_escrowable`. This method computes them from the one book, so the
+   * number an agent is shown is the number it is charged — scar #1 was the engine and
+   * the agent-facing text disagreeing about one word, and a Levy with two arithmetics
+   * would be that with money attached.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * `null` when the principal holds no assessment — which after the first OBLIGE of a
+   * cycle means it is not enrolled. `my_assessment: 0` would read as "assessed at
+   * nothing", a claim §5.2 makes about nobody.
+   */
+  levyBlockFor(principal: PrincipalId, tick = this.engine.tick): LevyBlock | null {
+    const reckoning = reckoningOf(tick);
+    const found = this.levy.lineFor(reckoning, principal);
+    if (found === null) return null;
+    const owing = this.levy.owingOf(reckoning, principal);
+    const window = ballotWindow(tick);
+    const constellation = found.plan.constellation;
+    return {
+      my_assessment: owing.assessment,
+      paid: owing.paid,
+      deliverable_to: found.plan.deliverableTo,
+      shortfall_if_unpaid: owing.owed,
+      non_escrowable: owing.nonEscrowable,
+      ballot: window.open
+        ? {
+            id: `${LEVY_BALLOT}::${String(window.forReckoning)}::${constellation}`,
+            kind: LEVY_BALLOT,
+            closes_tick: window.closesTick,
+            voted: this.levy.hasVoted(window.forReckoning, principal),
+            // A LEVY ballot takes nothing. `null` is the honest answer, and it is what
+            // keeps the Commons floor's "a hostile ballot with no resolvable target fails
+            // closed" rule from mistaking an allocation vote for a seizure.
+            target: null,
+          }
+        : null,
+    };
+  }
+
+  /** Per-Reckoning Levy history, oldest first. Bounded; the record is in the ledger. */
+  levyReckonings(): readonly LevySummary[] {
+    return this.levySummaries.all;
+  }
+
+  /** The Levy settlement that ran this Reckoning, for the frame renderer and tests. */
+  get levySettlement(): LevySettlement | null {
+    return this.levyOutcome;
+  }
+
+  /**
+   * The tribute lines as they stand right now (§5.2's pixel signature).
+   *
+   * Read from the book rather than recomputed, so the line's thickness is the number the
+   * settlement will use. A drawn line nobody owes is a lie on the map.
+   */
+  tributeLines(tick = this.engine.tick): readonly TributeLine[] {
+    return tributeLinesFor({ book: this.levy, world: this.world, reckoning: reckoningOf(tick), tick });
   }
 
   /** Every book the driver writes to. Built per call: the venture book can be replaced. */

@@ -31,7 +31,7 @@ import { pathToFileURL } from 'node:url';
 import { SPEEDS, isSpeedName, setSpeed, systemClock, type SpeedName } from '../core/time.js';
 import { Rng } from '../core/rng.js';
 import { HeuristicCast } from '../cast/index.js';
-import { Runtime, type ReckoningSummary } from './runtime.js';
+import { Runtime, type LevySummary, type ReckoningSummary } from './runtime.js';
 
 export interface SimArgs {
   readonly seed: string;
@@ -159,9 +159,14 @@ export interface SimLine {
  *   - `defaults` is accusations *published*, each with its cause as a column (INV-17).
  *     Zero means nothing was recorded, which is not the same as nobody breaking a
  *     promise — read it next to `electiveHonoured`, which is the other half.
- *   - `levyShort` is **structurally zero**: the Levy is SPEC §16 step 10 and does not
- *     exist yet, so `levyBuilt` is false beside it. A zero with no flag would read as
- *     "everybody paid" (A14's abstention-trivial failure, wearing a number).
+ *   - `levyShort` is `LEVY SHORT` — §14.2's headline, *"a world fact nobody can lower
+ *     alone, which rises when the population turtles"* — summed over the run, and it is
+ *     reported beside `levyAssessed` and `levyPaidInFull` for exactly the same reason. A
+ *     zero on its own is unreadable: zero short with 48 assessed is a population that
+ *     paid, and zero short with **zero assessed** is the Levy not running at all, which is
+ *     the abstention-trivial failure the mechanic exists to delete. `levyBuilt` says
+ *     which of those a zero means, and it is read from whether any assessment was minted
+ *     rather than from a constant — a flag that could not be false is not a measurement.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export interface ReckoningTotals {
@@ -185,8 +190,26 @@ export interface ReckoningTotals {
   readonly paidElectiveMinor: number;
   readonly unattributedMinor: number;
   readonly recordedLossMinor: number;
+  /** `LEVY SHORT`, summed over the run. The one meter no single agent can lower. */
   readonly levyShort: number;
-  readonly levyBuilt: false;
+  readonly levyTotal: number;
+  readonly levyAssessed: number;
+  readonly levyPaidInFull: number;
+  readonly levySweptQty: number;
+  readonly levySweepQueue: number;
+  readonly levyDemoted: number;
+  /** Constellation-Reckonings where quorum failed and the published formula applied. */
+  readonly levyByDefault: number;
+  readonly levyBallots: number;
+  /**
+   * Did the Levy actually run? **Derived from the assessments, never asserted.**
+   *
+   * `true` iff at least one principal was assessed in at least one Reckoning of this run.
+   * A hard-coded flag here would be the guard whose count came from the array it was
+   * meant to witness — this one goes false the moment the wiring in `runtime.ts` stops
+   * minting an assessment, which is the failure worth catching.
+   */
+  readonly levyBuilt: boolean;
 }
 
 export interface SimResult {
@@ -204,6 +227,22 @@ export interface SimResult {
   readonly reckonings: ReckoningTotals;
   /** Per Reckoning, oldest first. Bounded; the totals above cover the whole run. */
   readonly perReckoning: readonly ReckoningSummary[];
+  /** The Levy per Reckoning, oldest first. `LEVY SHORT` is decomposable to this. */
+  readonly perLevy: readonly LevySummary[];
+  /**
+   * The tribute lines at the last freeze the run reached, counted by state.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * A13's evidence, and it is sampled **at the freeze** on purpose: that is the moment
+   * §5.2 says an unpaid line turns red, so it is the one tick where the histogram
+   * distinguishes a population that paid from one that did not. Sampling at an arbitrary
+   * tick would report mostly `DASHED` and mean nothing.
+   *
+   * `lines: 0` here with `levyAssessed > 0` would mean the mechanic ran and drew nothing —
+   * A13's "no named pixel signature, not ready" as a number rather than a review note.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly tributeAtFreeze: Readonly<Record<string, number>>;
   /**
    * Alarms the runtime deliberately did not halt for.
    *
@@ -246,6 +285,7 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
   const lines: SimLine[] = [];
   const violations: string[] = [];
   const perReckoning: ReckoningSummary[] = [];
+  const perLevy: LevySummary[] = [];
   let applied = 0;
   let refused = 0;
   let halted = false;
@@ -278,6 +318,11 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     if (report.clock.isSettlementTick) {
       const settled = runtime.reckonings().at(-1);
       if (settled !== undefined && settled.tick === report.tick) perReckoning.push(settled);
+      // Collected the same way and for the same reason: the runtime's own Levy log is
+      // bounded (INV-26), so a long run read only at the end would report the last few
+      // Reckonings and a reader would have no way to tell that from a quiet season.
+      const levied = runtime.levyReckonings().at(-1);
+      if (levied !== undefined && levied.tick === report.tick) perLevy.push(levied);
     }
 
     if (args.assertEveryTick && report.violations.length > 0) {
@@ -304,16 +349,22 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     decisions: runtime.census.distribution(),
     rollbackGaps: runtime.engine.rollbackGaps,
     buffers: runtime.bufferSizes(),
-    reckonings: totalise(perReckoning),
+    reckonings: totalise(perReckoning, perLevy),
     perReckoning,
+    perLevy,
     operatorFaults: runtime.operatorFaults(),
   };
 }
 
 /** Sum the per-Reckoning rows. Counted, never inferred — see {@link ReckoningTotals}. */
-export function totalise(rows: readonly ReckoningSummary[]): ReckoningTotals {
+export function totalise(
+  rows: readonly ReckoningSummary[],
+  levy: readonly LevySummary[] = [],
+): ReckoningTotals {
   const sum = (pick: (row: ReckoningSummary) => number): number =>
     rows.reduce((n, row) => n + pick(row), 0);
+  const levySum = (pick: (row: LevySummary) => number): number =>
+    levy.reduce((n, row) => n + pick(row), 0);
   return {
     reckonings: rows.length,
     committed: rows.filter((r) => r.committed).length,
@@ -333,10 +384,18 @@ export function totalise(rows: readonly ReckoningSummary[]): ReckoningTotals {
     paidElectiveMinor: sum((r) => r.paidElective),
     unattributedMinor: sum((r) => r.unattributed),
     recordedLossMinor: sum((r) => r.recordedLoss),
-    // The Levy is SPEC §16 step 10 and is not built. Zero with a flag beside it, so it
-    // cannot be read as "every assessment was paid" (A14).
-    levyShort: 0,
-    levyBuilt: false,
+    levyShort: levySum((r) => r.shortMinor),
+    levyTotal: levySum((r) => r.totalMinor),
+    levyAssessed: levySum((r) => r.assessed),
+    levyPaidInFull: levySum((r) => r.paidInFull),
+    levySweptQty: levySum((r) => r.sweptQty),
+    levySweepQueue: levySum((r) => r.sweepQueue),
+    levyDemoted: levySum((r) => r.demoted),
+    levyByDefault: levySum((r) => r.byDefault),
+    levyBallots: levySum((r) => r.ballotsCast),
+    // Derived from the assessments, so it goes false the moment the wiring stops minting
+    // one. A constant here would be a flag that cannot report its own failure.
+    levyBuilt: levy.some((r) => r.assessed > 0),
   };
 }
 

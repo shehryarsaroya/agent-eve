@@ -29,14 +29,26 @@ import { Rng } from '../core/rng.js';
 import { inFreeze, isSettlementTick } from '../core/time.js';
 import type { PrincipalId, SystemId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor } from '../core/units.js';
-import { compareIds } from '../ledger/index.js';
+import { compareIds, principalPosition, storesAccount } from '../ledger/index.js';
+import {
+  LEVY_BALLOT,
+  LEVY_RULES,
+  ballotWindow,
+  carrierAt,
+  constellationOf,
+  isNewcomer,
+  rollByConstellation,
+  weightOf,
+  type LevyRule,
+} from '../levy/index.js';
 import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
-import { handsOf, tierOf } from '../world/index.js';
+import { handsOf, route, tierOf } from '../world/index.js';
 import {
   DELIVERY_MEASURE,
   DELIVERY_VERB,
   ELECTABLE_VENTURE_STATES,
   freeStores,
+  nextSettlementAtOrAfter,
   reckoningOf,
   type Runtime,
 } from '../sim/runtime.js';
@@ -294,6 +306,13 @@ export class HeuristicCast {
       };
     }
 
+    // ── The Levy ballot: free, once per cycle, and self-interested ────────────
+    //
+    // Placed before the venture branches because it is free and happens at most once per
+    // Reckoning, so it costs the bot one tick of attention a day and no actions at all.
+    const ballot = this.ballotFor(member, tick);
+    if (ballot !== null) return { ...base, ...ballot };
+
     const idle = handsOf(runtime.world, member.principal).filter((h) => h.state === 'IDLE');
     if (idle.length > 0) {
       const slot = this.openSlotFor(member, tick);
@@ -326,6 +345,20 @@ export class HeuristicCast {
         };
       }
     }
+
+    // ── Pay the Levy, and walk toward it if you cannot ────────────────────────
+    //
+    // Placed *after* the venture branches and *before* the random walk, deliberately:
+    //
+    //   - After, because the ventures are what the rest of the suite measures and a bot
+    //     that paid its tribute before filling a role would quietly change every
+    //     venture-side number in the corpus.
+    //   - Before, because this is what the random walk was standing in for. §5.2 promises
+    //     "continuous off-peak motion from a source that cannot go quiet", and a hand
+    //     walking to a delivery place is that motion; a hand wandering at random is
+    //     noise that looks like it.
+    const paying = this.levyMove(member, tick);
+    if (paying !== null) return { ...base, ...paying };
 
     if (idle.length > 0) {
       const hand = idle[rng.int(idle.length)];
@@ -449,6 +482,158 @@ export class HeuristicCast {
       verb: 'elect',
       params: { venture: first.venture, role: first.role, election: first.want },
     };
+  }
+
+  /**
+   * How this member votes on the Levy allocation, or `null` if it has nothing to cast.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **SELF-INTEREST, COMPUTED — not a coin flip and not a rigged answer.**
+   *
+   * The bot evaluates each published rule against its *own* share of its
+   * constellation's total weight and votes for the one that costs it least. That is a
+   * strategy an LLM would find in one wake, it needs no communication, and it produces
+   * genuine political conflict: the exposed prefer `INVERSE_EXPOSURE`, the turtles prefer
+   * `BY_EXPOSURE`, and the vote is a real fight rather than a formality.
+   *
+   * The spare nomination is the other half, and it is where a coalition comes from. Each
+   * bot nominates its constellation's **poorest non-newcomer** — a figure every member
+   * computes identically from public facts, so a coalition forms without a word being
+   * exchanged and somebody is spared most nights. That is a *policy*, not a claim about
+   * how agents will actually behave: an LLM cast may well nominate itself and never reach
+   * the two nominations a spare needs, in which case no principal is spared and the
+   * published formula does more of the work. Both are legitimate outcomes and the
+   * mechanic has to survive either, which is why `test/levy/ballot.test.ts` asserts both.
+   *
+   * No `Rng`, no floats. A random vote would be a dice roll where §5.2 wants a choice.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private ballotFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    const window = ballotWindow(tick);
+    if (!window.open) return null;
+    if (runtime.levy.hasVoted(window.forReckoning, member.principal)) return null;
+    const constellation = constellationOf(runtime.world, member.principal);
+    if (constellation === null) return null;
+    const roll = rollByConstellation(runtime.world).get(constellation) ?? [];
+    if (roll.length === 0) return null;
+
+    const subjects = [...roll].sort(compareIds).map((principal) => {
+      const position = principalPosition(runtime.ledger, principal, storesAccount(principal));
+      const hands = handsOf(runtime.world, principal);
+      const seatedAt = hands.reduce<number>((earliest, hand) => {
+        const since = hand.presentSinceTick ?? 0;
+        return since < earliest ? since : earliest;
+      }, tick);
+      return {
+        principal,
+        tenureTicks: Math.max(0, tick - seatedAt),
+        freeStores: position.free,
+        exposure: position.exposure,
+      };
+    });
+
+    const mine = subjects.find((s) => s.principal === member.principal);
+    if (mine === undefined) return null;
+
+    // Integer comparison of `myWeight / totalWeight` across rules, done by cross
+    // multiplication so no division and no float is involved: a < b iff
+    // myA * totalB < myB * totalA.
+    let best: LevyRule | null = null;
+    let bestMine = 0;
+    let bestTotal = 1;
+    for (const rule of LEVY_RULES) {
+      const myWeight = weightOf(rule, mine);
+      const total = subjects.reduce<number>((n, s) => n + weightOf(rule, s), 0);
+      if (total <= 0) continue;
+      if (best === null || myWeight * bestTotal < bestMine * total) {
+        best = rule;
+        bestMine = myWeight;
+        bestTotal = total;
+      }
+    }
+    if (best === null) return null;
+
+    const poorest = subjects
+      .filter((s) => !isNewcomer(s) && s.principal !== member.principal)
+      .sort((a, b) => a.freeStores - b.freeStores || compareIds(a.principal, b.principal))[0];
+
+    return {
+      verb: 'vote',
+      params: {
+        ballot: LEVY_BALLOT,
+        rule: best,
+        ...(poorest === undefined ? {} : { spare: poorest.principal }),
+      },
+    };
+  }
+
+  /**
+   * Pay the Levy, or take one gate toward the place it is payable at.
+   *
+   * Three branches, in the order a principal would actually do them:
+   *
+   *   1. **A hand is standing at the delivery place** → `deliver`. One action, and the
+   *      tribute line goes from solid to a hairline.
+   *   2. **A hand is on its way** → `set_delivery_intent`, once, with a stop condition.
+   *      This is R19 exercised in the sim rather than only in a test: the intent fires the
+   *      tick the hand arrives, at no action cost and with no wake, so the delivery
+   *      happens whether or not anybody is awake to make it. `max_runs: 1` because a
+   *      refusal is not a run — the intent survives the whole journey and spends itself on
+   *      the first tick it can actually pay.
+   *   3. **Nothing is moving** → walk an idle hand one gate along the cheapest route.
+   *
+   * Returns `null` inside the freeze, because a delivery is refused there (§5.1) and a bot
+   * generating one refusal per tick is the noise that buries real defects (AGT-S3).
+   */
+  private levyMove(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    const block = runtime.levyBlockFor(member.principal, tick);
+    if (block === null || block.shortfall_if_unpaid <= 0) return null;
+    const place = block.deliverable_to;
+
+    const carrier = carrierAt(runtime.world, member.principal, place, tick);
+    if (carrier !== null) {
+      return {
+        verb: 'deliver',
+        params: { to: place, hand: carrier.id, amount: block.shortfall_if_unpaid },
+      };
+    }
+
+    const hands = handsOf(runtime.world, member.principal);
+    if (hands.some((h) => h.destination === place)) {
+      if (runtime.engine.intents.liveFor(member.principal).some((i) => i.verb === 'deliver')) return null;
+      const settlement = nextSettlementAtOrAfter(tick);
+      if (settlement - 1 <= tick) return null;
+      return {
+        verb: 'set_delivery_intent',
+        params: {
+          intent: { verb: 'deliver', params: { to: place, amount: block.shortfall_if_unpaid } },
+          until_tick: settlement - 1,
+          max_runs: 1,
+        },
+      };
+    }
+
+    const idle = hands.filter((h) => h.state === 'IDLE');
+    const hand = idle[0];
+    if (hand === undefined) return null;
+    const path = route(runtime.world.map, hand.location, place);
+    const next = path?.path[1];
+    if (next === undefined) return null;
+    // Stay inside the tier this member was seated in: a Commons-bound principal may only
+    // move between Commons systems (A15), and the delivery place is chosen to be reachable
+    // (`levy/place.ts`) — so a route leaving the tier means the route is not this
+    // principal's to take, and the refusal would be a wasted bot every tick.
+    if (tierOf(runtime.world.map, next) !== tierOf(runtime.world.map, member.seat)) return null;
+    return { verb: 'move', params: { hand: hand.id, to: next } };
   }
 
   /**
