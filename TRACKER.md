@@ -6,7 +6,7 @@
 
 ## ⏱ STATUS
 
-- **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). Next: the Gate-3-derived roadmap (below).
+- **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is now BUILT** (grants issuable/revocable/enforced/visible; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2167 tests green). Remaining: A6 polish (anti-self-dealing, rendering), the redeploy, and Gate 3 run 3. See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
 - **Test plan:** `docs/design/TESTING.md` — written before any code, against v3.0. 26 always-on invariants · five named speeds · the probe-agent brief catalog · 14 scars as named regressions · 15 axioms as executable tests · 6 gates. **Gate 0 lands in commit #1.**
@@ -182,6 +182,27 @@ Cleared the fable CRITICAL and most of the Gate-3 run-2 defect list; scoped the 
 - **Gate 3 run 2 = NOT ENOUGH SIGNAL** (`GATE-3.md` §7, commit `0fb2767`). Plumbing sound (electives settle, standing real, A5′ held); zero real betrayals (the one default was accidental silence-by-omission); lands *below* §5's table — the promise came due and was honoured because there was no leverage moment yet. Roadmap = the run's ranked defect list.
 - **Cheap Gate-3 fixes done** (some already in repo from a prior wave, verified + guarded): own-standing in `observe` (#7), signing-`@path` accepts the client-visible spelling (#1), `take_at_p50` as slot-price (#5), the scar-#1 filler-standing prompt (#3). Committed this cycle (`5dbb7d7`): agent.md signing truths (keyid=enrol's token, `/enroll` unsigned, content-digest only with a body), advisory services marked not-live (#6), and `my_elective_direction` (#4). **Standing accrual PROVEN** (`c650c33`): the cast honours 44 electives worth 48,157 across distinct counterparties in 3 Reckonings — the supply side AGT-E2 needs; the live all-zero was the persistence reset, not a broken loop.
 
+> ### A6 (offices/grants) — the core loop: **MECHANISM BUILT** (2026-07-25, commits `21103ea`→`e014541`)
+>
+> The core loop is functional end-to-end and green (2167 tests). A principal grants scoped
+> authority over its own stores (`grant`, worst case shown), a delegate acts on the grantor's
+> behalf drawing on it (`create` with `on_behalf_of`, escrow from the grantor), the LIMITS are
+> enforced (a gate before any value moves, INV-22 as the net at tick close), revocation is
+> always accepted and effective next tick (`revoke`), and both sides see the grant in `observe`
+> (granted[] with each delegate's spend, held[] with remaining headroom). Betrayal-via-legitimate-
+> authority is now expressible with no `betray()` verb — a delegate can commit a grantor's capital
+> to a venture an accomplice wins, every act inside the limits, the grant + accepted worst case on
+> the record. Built: GrantBook (hashed, restorable, spend journal) · grant/revoke verbs · INV-22
+> live · on-behalf enforcement · observe surfacing.
+>
+> **Still to do (polish, not the mechanism):** guardrail #3 anti-self-dealing (a delegate filling a
+> role in a venture it created on the grantor's behalf — damage is already CAPPED by the grant's
+> LIMITS, so this hardens against a bounded exploit, not an unbounded one); templated worst cases;
+> the A13 pixel signature for a grant/its use; then a codex (limits/exploit) + fable review of the
+> enforcement path. The signing model stands: HTTP agents may also produce the signed VC
+> (`identity/vc.ts`) from the same claims for offline verification; the enforced row is authoritative.
+>
+> ── the original plan, for reference ──
 > ### A6 (offices/grants) — the core loop: SCOPED, foundations done, build plan set
 >
 > **Restated to grant-scale (SPEC §8 recommendation, closing open question 8):** a principal grants scoped authority over ITS OWN stores; full offices need syndicates (Phase 1). Grants over one principal's stores are enough to test whether a betrayal lands and renders.
