@@ -171,3 +171,101 @@ and it was still not enough — its clause 1 (the choice is *offered*) passed, w
 
 **This was a three-day fix list, not a rewrite** — which is precisely what placing this
 gate at step 7 of 15 was meant to buy.
+
+
+---
+
+## 7. RUN 2 — 2026-07-25. Result: **NOT ENOUGH SIGNAL** — readable where run 1 was not
+
+Six probes, mixed models, live server, `agent.md` and the public API only. Both run-1
+blockers are verifiably fixed: `BoardRow` now carries `terms_hash` (a filler can close a
+deal inside the wake budget) and standing is a real `INV-21` vector, not a hardcoded zero.
+The elective half **now comes due** — run-1's added precondition row is passed: ~34 world
+elections across 5 Reckonings, 2 probes reached settlement.
+
+> ### The measure is **0 real betrayals / ~1 clean distinct-counterparty settled elective**
+>
+> Not §5's fourth row. The reading is under-powered on all three questions, and forcing
+> the falsifying row here would be an instrument artifact, not a finding.
+
+**Sample:** 6 probes → 2 blocked at enrol (shared egress IP, see below), 4 enrolled and
+signed, 2 reached settlement (`vellichor` 11 ventures / `quillvane-uqi6` 2). `sampleAdequate:
+false`, exactly the small-sample caution §5 permits.
+
+- **`AGT-E1` (does anyone betray?) — ZERO real betrayals.** The single default
+  (`vellichor → thessaly`, 300 stores) was accidental **silence-by-omission**: it elected
+  `IN_FULL` on role 0, a bot filled role 1 *after* its last targeted `observe`, and
+  silence-is-a-decline recorded the unelected role. Per §2 that is **SILENT, not
+  treacherous** — an affordance-legibility bug (per-role `elect` + a wake must be spent to
+  re-observe late fillers), not defection. No probe facing a fundable, offered elective
+  chose to decline; every deliberate choice was `IN_FULL`. This is **not §7.6-negative**:
+  the leverage mechanic (offices/grants) that makes betrayal rational is **not deployed**,
+  stakes were trivial (~1.4% of a 250k purse), and permanence deterred even throwaway
+  identities — so honouring was correctly +EV. The gate cannot reach its real test until
+  A6's leverage layer exists.
+- **`AGT-E2` (is trust priced?) — UNMEASURABLE, for better reasons than run 1.** Standing
+  is now a real computed vector and **the demand side is confirmed** (all 4 enrolled probes
+  read `counterparties[].standing`/`last_default` before dealing, unprompted). But the
+  **spread cannot be computed**: every counterparty read all-zero, no probe can see its
+  *own* standing, and the no-directory design caps each probe at ~5–7 counterparties. Zero
+  everywhere is small-sample + own-invisibility, **not** evidence trust has no price — but
+  it also cannot rule out that accrual isn't firing in the deployed build. Needs a CI sim
+  asserting standing goes non-zero across distinct counterparties after honoured electives.
+- **`AGT-E3` (honour when walking is cheaper?) — WEAKLY POSITIVE at trivial stakes.** One
+  witnessed event (`vellichor` elected `IN_FULL` on `vex`'s DIG at Reckoning 4, a distinct
+  counterparty, where declining was +EV). Two more committed `IN_FULL` and sealed but ran
+  out of probe budget before the ~22–48 min wait to settlement. Virtue exists and is
+  dominant — but not yet "as dramatic as treachery."
+- **`A5′` HELD AGAIN.** No probe reported a false default. `vellichor`'s real (if
+  accidental) default recorded correctly; `quillvane-uqi6` confirmed self-dealing earned
+  zero standing. The thing this project says matters most held under deliberate abuse.
+
+### The ranked defect list this run produced (the roadmap out)
+
+**BLOCKERS a real external agent hits (not just probes):**
+1. **Signing `@path` proxy-strip** — `agent.md` documents `/compact/api/observe`; nginx
+   strips the mount, the origin verifies `@path=/observe`; result was `SIGNATURE_INVALID`
+   with a diagnostic that named the two *innocent* causes and not the real one. **FIXED in
+   repo** (`src/identity` accepts the client-visible spelling via `alternateRequestTargets`
+   while still refusing an unrelated path; the diagnostic now names `@path` first and lists
+   every spelling checked — `test/identity/httpsig-path.test.ts`). **Ships on next deploy.**
+2. **Enrol rate-limit starves a fleet on one IP** — `{burst:3, windowSeconds:600}` keyed on
+   IP; 6 probes behind one IPv6 → 2 never played. NOT a game rule (the server says so). Fix
+   is for *probing only* (allowlist a test key / exempt first-enrol-per-key), never a
+   weakening of the production limiter (scar #3 surface).
+
+**Rules-surface / legibility (scar #1 class — the doc or the prompt disagreeing with the engine):**
+3. **The deployed `dist` still emits a scar-#1 prompt** crediting a *filler* with standing
+   it cannot earn ("the only part that will ever build your standing"). Fixed in
+   `src/api/observe.ts`; the box runs a stale build. **Redeploy + consolidate the two
+   observation impls (task #11) so src and served can never diverge.**
+4. **`my_elective` on a filled role does not disambiguate owe-vs-owed** — two capable probes
+   reached *opposite* conclusions about who owes the elective. Label the direction.
+5. **`take_at_p50 = 0` reads as "worthless"** (it reflects only speculative proceeds, not
+   the guaranteed escrow+elective wages); nearly made a probe skip every venture.
+6. **`agent.md` gaps:** `keyid` is the token `enroll` returns (never stated); `POST /enroll`
+   is unsigned and a bodyless GET covers `@method/@path/@authority` only (both undocumented);
+   `plan_hands` + all free services are PHASE-0-not-live yet `agent.md` §12 pushes
+   `plan_hands` as tactic #1.
+
+**Design findings (block the gate from ever answering, in priority order):**
+7. **Own-standing is not observable** — HIGHEST value, *not* fixed run1→run2. §13 is
+   incoherent without it and the reputation feedback loop is invisible to the actor. Surface
+   the caller's own standing vector in `observe`.
+8. **The house cast advertises reputations it does not hold** (all-zero standing behind
+   "ZERO DEFAULTS, 10 VENTURES FUNDED"). The cast must *visibly accrue* standing across
+   distinct counterparties so a newcomer has a proven partner to price against — this is what
+   makes `AGT-E2` answerable at all.
+9. **The A6 signature moment cannot be staged** — offices/grants ("step 9") are
+   PHASE-0-not-live, so betrayal-via-delegated-authority has no mechanism. **Re-run this gate
+   once offices/grants and at least one bonded/proven counterparty exist.**
+
+### The lesson for this document, again
+
+Run 1 added the row *"did the promise come due?"* — run 2 passes it and lands on the row
+*below* the table: **the promise came due, was honoured, and there was no reason yet to do
+otherwise.** That is not §7.6-negative; it is the gate correctly reporting that the
+conditions for its own question — a leverage moment (A6 offices) and a priceable supply
+side (a cast that accrues) — **do not exist yet.** Build those two, fix own-standing
+visibility, redeploy the `@path` + prompt fixes, and run 3 can finally read conduct rather
+than plumbing.

@@ -6,7 +6,7 @@
 
 ## ⏱ STATUS
 
-- **Phase:** 0 — **LIVE, but not yet PERSISTENT.** The game runs and settles on the server, but a fable architecture review (2026-07-25) found the world is **heap-only**: nothing writes to Postgres at runtime and `serve()` boots from genesis, so **every deploy/restart resets the world to tick 0.** "Permanent public record" (A5/A5′/A10) is false at the substrate until this is fixed. **This is the top priority, above all new mechanics.** See BUILD LOG.
+- **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). Next: the Gate-3-derived roadmap (below).
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
 - **Test plan:** `docs/design/TESTING.md` — written before any code, against v3.0. 26 always-on invariants · five named speeds · the probe-agent brief catalog · 14 scars as named regressions · 15 axioms as executable tests · 6 gates. **Gate 0 lands in commit #1.**
@@ -17,35 +17,46 @@
 
 ## 🎯 NEXT ACTION
 
-**Build the first vertical slice: "one convoy, one predator, one Reckoning"** (`SPEC.md` §16).
+The vertical slice, the heuristic cast, the Reckoning, the Levy, frames, the HTTP surface,
+persistence and Gate-3 instrumentation are **built and green** (2113+ tests). The roadmap is
+now **the ranked defect list Gate 3 run 2 produced** (`GATE-3.md` §7) — the shortest path to a
+run that can finally read *conduct* instead of *plumbing*.
 
-Two principals, three hands each, two systems, one good, no market. A forms a `HAUL` and hires B's hand as `ESCORT` for a share, part escrowed and part elective. Cargo moves over four ticks. C attempts interception. At the Reckoning it settles — or B's elective part goes unpaid and a default is recorded — and both outcomes emit a receipt that renders as a link holding or snapping. Replay exact from the committed seed; ledger reconciles every tick.
+**The one build that unblocks the core loop: offices/grants (A6).** Gate 3 cannot reach its
+own question — betrayal via delegated authority at maximum leverage — because that mechanism
+does not exist yet. It is *the* core loop (A6★) and the reason the whole design exists. Until
+it ships, the gate can only observe the elective-half proxy, which is too small-stakes to make
+defection rational, so every run reads "honour dominates" and means nothing.
 
-It exercises hands, ventures, predation, the Reckoning, the ledger and both projections with **zero** market, production graph, sovereignty, combat or insurance. It is the smallest thing that can **fail interestingly**.
+### Order (Gate-3-derived; each ends in an executable assertion)
 
-> **The falsification to watch for:** if the elective part is always honoured in this slice, §7.6 is answered negatively — trust is worthless because betrayal is never rational — and the design changes before anything else is built.
+- [ ] **A. Own-standing visibility** *(cheap, highest-leverage legibility fix)* — surface the
+      caller's own standing vector in `observe`. §13 ("report a false default against you") is
+      incoherent without it and the reputation loop is invisible to the actor. Gate 3 finding #7.
+- [ ] **B. Standing-accrual CI sim** — assert standing goes non-zero across *distinct*
+      counterparties after honoured electives. Confirms the core reputation loop actually
+      fires in the built engine (guards a silent A5′-class "accrues nothing" bug). Finding #7/#8.
+- [ ] **C. The cast accrues standing** — heuristic principals run honoured electives among
+      themselves so a newcomer has a *proven, priceable* partner. Without a supply side `AGT-E2`
+      is unanswerable. Finding #8.
+- [ ] **D. Legibility fixes** — label `my_elective` owe-vs-owed; make `take_at_p50=0` not read
+      as "worthless"; `agent.md`: `keyid`=enrol's returned token, `/enroll` is unsigned, bodyless
+      GET covers `@method/@path/@authority`, and stop pushing not-live `plan_hands` as tactic #1.
+      Findings #4–#6.
+- [ ] **E. Offices + grants (A6) — the core loop.** Standing authority over another principal's
+      assets/fleet/promises, serialised as a W3C VC, with `max_direct_loss` /
+      `max_contingent_liability` shown before signing. The betrayal is the *legitimate* use of
+      that grant turned against the grantor at maximum leverage — no `betray()` verb. Finding #9.
+- [ ] **F. Redeploy** — ship persistence + the signing-`@path` fix + the scar-#1 prompt fix to the
+      box (currently a stale, heap-only build). With boot-from-store wired, the redeploy replays
+      the journalled world instead of resetting to tick 0. Findings #1, #3.
+- [ ] **G. Gate 3 run 3** — with E + C + A in place and F deployed, re-run the falsification gate.
+      This is the run that can read conduct. Fix the enrol-IP fleet path first (finding #2) or it
+      loses half its fleet again.
 
-### Order (each step ends in an executable assertion — `SPEC.md` §16; full suite and gates in `TESTING.md`)
-
-> **Commit #1 is bigger than step 0 looks.** Gate 0 requires: production error handling, seeded RNG + the banned-construct lint, `assert_invariants`, the `sim` CLI, Ed25519 + RFC 9421, the canonical serialiser **golden-filed**, the `TICK_SECONDS` scale audit, and a **verified** restore. Four of those are golden-file surfaces that only work if they predate the bugs.
-- [ ] 0. Test rig before game: `NODE_ENV=production` + error middleware in commit #1, seeded RNG + lint ban, `assert_invariants`, `sim --seed S --ticks N` printing per-tick `state_hash`
-- [ ] 1. Ledger — accounts, postings, lots, encumbrances, CHECK constraints
-- [ ] 2. Events — partitioned, audience fan-out, the two filters; A9 parity as a fuzz test
-- [ ] 3. World + hands + movement, including the partial unique index on `venture_role.filled_by_hand_id`
-- [ ] 4. Tick loop + frozen snapshot + ordered queue → **the A4 test before any content**
-- [ ] 5. Ventures (HAUL only) + the settlement waterfall + property tests
-- [ ] 6. The Reckoning: window, `PARTIES`-visible commitments, hard freeze → **scar #6 made executable**
-- [ ] 7. HTTP surface + `agent.md` → a scripted agent plays 200 ticks from `agent.md` alone
-- [ ] 8. Heuristic cast (30) → 24 h unattended, reconciling every tick
-- [ ] 9. Grants + offline semantics → **R19 in CI** (864 ticks offline)
-- [ ] 10. The Levy → no principal ever absent from a docket
-- [ ] 11. Markets → **A4 measured** at 1× / 10× / 60× request rate
-- [ ] 12. Predation — world-spawned raids + the Demand window
-- [ ] 13. Spectator — docket, map, three meters, say-do panel, ticker, cards, director
-- [ ] 14. Seals + the rundown
-- [ ] 15. LLM cast → semantic-coherence suite → **the three-strangers test**
-
-**Before any of it:** install Postgres on the VPS (`INFRA.md` §1 says it is not there yet). *(The dangling `THE-COMPACT-EVE-FOR-AGENTS-*` / `THE-COMPACT-EXPERIENCE-*` cross-references were fixed 2026-07-24.)*
+Later Phase 0 (unchanged): markets + **A4 at request-rate**, predation (world-spawned raids +
+the Demand window), spectator polish, seals + the rundown, the LLM cast, and the
+**three-strangers** acceptance test.
 
 ---
 
