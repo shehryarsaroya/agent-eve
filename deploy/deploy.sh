@@ -56,6 +56,7 @@ EXCLUDES=(
 # ── preflight ───────────────────────────────────────────────────────────────
 log "preflight"
 $SSH 'test -f /etc/compact/env' || fail "/etc/compact/env missing — run the bootstrap first"
+$SSH 'grep -q COMPACT_FRAMES_DIR /etc/compact/env' || fail "COMPACT_FRAMES_DIR not set in /etc/compact/env — the spectator client will have no frames"
 ok "runtime env present (never read, never printed)"
 $SSH 'systemctl is-active --quiet postgresql' || fail "postgresql not running"
 ok "postgresql running"

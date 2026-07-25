@@ -40,6 +40,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { reckoningIndex, setSpeed, systemClock, ticksToMs, type Clock } from '../core/time.js';
+import { publishFrame } from '../frames/write.js';
 import { costOf } from '../tick/index.js';
 import { HeuristicCast } from '../cast/index.js';
 import { Runtime } from '../sim/runtime.js';
@@ -1542,6 +1543,11 @@ export interface ServeOptions {
   readonly seed: string;
   readonly trustEdge: boolean;
   readonly castSize: number;
+  /**
+   * Where to write settled-Reckoning frames for the spectator client, or null to
+   * write none. In production this is the nginx-served frames directory.
+   */
+  readonly framesDir: string | null;
 }
 
 export function serve(options: ServeOptions): { readonly created: CreatedApp; readonly close: () => void } {
@@ -1559,7 +1565,22 @@ export function serve(options: ServeOptions): { readonly created: CreatedApp; re
     for (const action of cast.decide(runtime.engine.tick + 1, options.seed)) {
       runtime.engine.submit(action);
     }
-    runtime.runTick();
+    const report = runtime.runTick();
+    // Publish the settled Reckoning for the spectator client. Wrapped so a frame
+    // write can NEVER touch the world: the record is sacred and the show is cosmetic,
+    // so a full disk or a bad path drops a frame rather than halting the sim. The
+    // frame is a read model over the committed outcome (A9 parity holds structurally).
+    if (options.framesDir !== null && report.clock.isSettlementTick) {
+      try {
+        const frame = runtime.reckoningFrame();
+        if (frame !== null) publishFrame(options.framesDir, frame);
+      } catch (error: unknown) {
+        process.stderr.write(
+          `frame publish failed at tick ${String(report.tick)} (non-fatal): ` +
+            `${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      }
+    }
   }, ticksToMs(1));
 
   const server = created.app.listen(options.port, options.host);
@@ -1582,6 +1603,7 @@ if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
     // Behind Cloudflare in production, so the client-IP header is mandatory (SEC-5).
     trustEdge: process.env['COMPACT_TRUST_EDGE'] === 'true',
     castSize: Number(process.env['COMPACT_CAST'] ?? '12'),
+    framesDir: process.env['COMPACT_FRAMES_DIR'] ?? null,
   });
   process.stderr.write(
     `compact api listening on ${API_BASE_PATH}; population ${String(started.created.context.runtime.world.principalOrder.length)}\n`,
