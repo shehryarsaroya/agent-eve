@@ -262,6 +262,29 @@ export function settlementEvents(
         kind: VENTURE_EVENT_KINDS.defaulted,
         actor: d.payer,
         venture: settlement.venture,
+        // ── AN OPEN CONSTRAINT, stated here because this is where it bites ────────
+        //
+        // INV-17 requires a default's `parent_event_id` to BE its attributable cause,
+        // as a COLUMN — a default is the most serious thing this engine writes about
+        // an agent, and the evidence has to be joinable in SQL by an auditor who does
+        // not have our code. Attribution living only in a jsonb payload is attribution
+        // an operator cannot query under pressure.
+        //
+        // It is NOT wired yet, and the reason is worth recording rather than guessing
+        // at. `EventLedger.append` mints ids itself as `ev:{tick}:{seq}`
+        // (events/ledger.ts) — the caller never chooses one. So `input.eventId`, the
+        // handle this module receives, is not and cannot be a ledger id, and writing
+        // it into `parentEventId` makes INV-12 reject the row outright: "a cause must
+        // precede its effect". I tried exactly that and the invariant was right to
+        // refuse it.
+        //
+        // Resolving it belongs to whoever appends the batch, because only that caller
+        // knows the settled row's minted id: append the `venture.settled` row, read
+        // the id back, then set each default's `parentEventId` to it before appending.
+        // `settlementEvents` therefore has to become two-pass, or the Reckoning driver
+        // has to patch the rows between emit and append. That is a Reckoning-driver
+        // task and it is tracked, not forgotten — test/rules-surface pins the
+        // requirement so it cannot ship unwired.
         payload: {
           venture: settlement.venture,
           roleIndex: d.roleIndex,
@@ -269,8 +292,9 @@ export function settlementEvents(
           payee: d.payee,
           amount: d.amount,
           cause: d.cause,
-          // INV-17. The one field that makes this row a fact rather than an
-          // accusation, and the reason `causeEventId` is not nullable.
+          // Kept in the payload too: the column is what INV-17 checks and what an
+          // auditor joins on, and this is the human-readable copy beside the rest of
+          // the row. Deliberately duplicated, and the invariant asserts they agree.
           causeEventId: d.causeEventId,
           isDefault: true,
         },

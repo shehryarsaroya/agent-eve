@@ -281,3 +281,49 @@ describe('SPEC §15.1 — parent_event_id is causality, event_family_id is the c
     expect(TYPES).toContain('readonly parentEventId: EventId | null');
   });
 });
+
+/**
+ * INV-17's attribution column — an OPEN constraint, pinned so it cannot ship unwired.
+ *
+ * A wave-2 verifier found `checkInv17` requiring a default's `parent_event_id` to BE
+ * its attributable cause, while `venture/events.ts` sets that field to the settlement
+ * cohort. SPEC §15.1 settles which is right — "`event_family_id` (immutable primary
+ * cohort) · `parent_event_id` (causality — one flat field cannot express both)" — so
+ * the check is correct and the venture side must move.
+ *
+ * Attempting the move revealed why it is not a one-line change: `EventLedger.append`
+ * MINTS ids as `ev:{tick}:{seq}`, so the caller-supplied `input.eventId` can never be
+ * a ledger id, and writing it into `parent_event_id` makes INV-12 refuse the row
+ * ("a cause must precede its effect"). The invariant was right; my change was wrong.
+ *
+ * Only the caller that appends the batch knows the settled row's minted id, so this
+ * belongs to the Reckoning driver. These assertions hold the requirement in view.
+ */
+describe('INV-17 — the attribution column is a tracked debt, not a silent gap', () => {
+  it('the cause is at least carried in the payload today, so no default is unattributed', () => {
+    const events = readFileSync(new URL('../../src/venture/events.ts', import.meta.url), 'utf8');
+    expect(events).toContain('causeEventId: d.causeEventId');
+    expect(events).toContain('isDefault: true');
+  });
+
+  it('the reason it is not yet a column is recorded at the site rather than lost', () => {
+    // A gap nobody wrote down is a gap that ships. This asserts the explanation
+    // survives, so the next person to touch this file inherits the finding instead of
+    // rediscovering it by breaking INV-12 the same way.
+    const events = readFileSync(new URL('../../src/venture/events.ts', import.meta.url), 'utf8');
+    // Phrases chosen to survive comment wrapping: an assertion that breaks when
+    // someone re-flows a paragraph is an assertion that gets deleted.
+    expect(events).toContain('AN OPEN CONSTRAINT');
+    expect(events).toContain('INV-12 reject the row outright');
+    expect(events).toContain('mints ids itself');
+    expect(events).toMatch(/Reckoning[\s/*]+driver/i);
+    expect(events).toContain('tracked, not forgotten');
+  });
+
+  it('the ledger really does mint its own ids, which is the fact the debt rests on', () => {
+    // If ids ever become caller-supplied, this debt evaporates and the fix is trivial.
+    // Assert the premise so that change is noticed here too.
+    const ledger = readFileSync(new URL('../../src/events/ledger.ts', import.meta.url), 'utf8');
+    expect(ledger).toContain('const id = mintEventId(tick, seqInTick);');
+  });
+});
