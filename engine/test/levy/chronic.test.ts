@@ -92,6 +92,26 @@ describe('the shortfall sweep', () => {
     expect(out.sweptQty).toBeGreaterThan(0);
   });
 
+  it('records no more than was owed, even if the consume callback over-returns', () => {
+    // A codex arithmetic pass injected a consume that returns more than `want`; the
+    // sweep recorded the over-take, seizing goods the principal did not owe (A5′-adjacent).
+    // The take is now clamped to `want`. An adversarial or buggy port cannot make the
+    // record overstate a seizure.
+    const book = assessed(0, ['p:a']);
+    const owed = book.owingOf(0, 'p:a' as PrincipalId).purchasableOwed;
+    expect(owed).toBeGreaterThan(0);
+    const greedy: SweepPort = {
+      availableOf: () => qty(owed + 1_000_000),
+      // Returns FAR more than asked — the exact defect codex constructed.
+      consume: () => qty(owed + 1_000_000),
+    };
+    const out = settleLevy({ book, reckoning: 0, tick: 287, exposureOf: () => minor(0), sweep: greedy });
+    const row = out.shortfalls.find((r) => r.principal === ('p:a' as PrincipalId));
+    expect(row).toBeDefined();
+    // Never more than the purchasable debt.
+    expect(row!.sweptQty).toBeLessThanOrEqual(owed);
+  });
+
   it('CANNOT sweep the non-escrowable share — presence is not seizable', () => {
     const book = assessed(0, ['p:a']);
     const assessment = book.assessmentOf(0, 'p:a' as PrincipalId);

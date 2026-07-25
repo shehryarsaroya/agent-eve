@@ -146,14 +146,21 @@ export function settleLevy(args: {
     // Only the purchasable bucket. Presence is not seizable — see this file's header.
     const want = qty(Math.min(owing.purchasableOwed, Math.max(0, args.sweep.availableOf(principal))));
     if (want <= 0) continue;
-    const taken = args.sweep.consume({
+    const returned = args.sweep.consume({
       principal,
       want,
       place: entry.plan.deliverableTo,
       tick,
       reckoning,
     });
-    if (taken <= 0) continue;
+    if (returned <= 0) continue;
+    // Clamp to `want`. The sweep asks for exactly the purchasable shortfall, but the
+    // consume callback is external and its return is TRUSTED — an implementation that
+    // returns more than asked would record a seizure larger than the debt, which is
+    // taking goods an agent did not owe (A5′-adjacent). Found by a codex arithmetic
+    // pass injecting a consume that over-returns; the record must never overstate what
+    // was taken against a principal.
+    const taken = qty(Math.min(want, returned));
     book.recordSweep(reckoning, principal, taken);
     sweptTotal += taken;
   }
