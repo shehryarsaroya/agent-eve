@@ -156,15 +156,31 @@ export async function migrate(opts: MigrateOptions): Promise<void> {
     const created = await ensurePartitions(client, from, PARTITION_LOOKAHEAD + 1);
     process.stdout.write(`partitions ensured: ${created.length} created\n`);
 
-    // The role may not exist on a fresh box; create it without a password since
-    // the app connects over the local unix socket as a peer.
+    // The app role must already exist — see the refusal below. It connects over
+    // loopback TCP with a password rather than the unix socket, because Ubuntu's
+    // packaged pg_hba gives `local all all peer` and peer auth requires the OS user to
+    // match the DB user; the service runs as root.
     const { rowCount: roleExists } = await client.query(
       `SELECT 1 FROM pg_roles WHERE rolname = $1`,
       [opts.appRole],
     );
     if (roleExists === 0) {
-      await client.query(`CREATE ROLE ${opts.appRole} LOGIN`);
-      process.stdout.write(`role ${opts.appRole} created\n`);
+      // Deliberately NOT created here. Role creation needs CREATEROLE, and granting
+      // that to the migration role would widen the very privileges this app role
+      // exists to narrow — the app role's whole purpose is that it CANNOT rewrite
+      // history (INV-16), which is worth nothing if the thing that made it could
+      // also make itself a superuser.
+      //
+      // So provisioning is an operator step and this is an actionable refusal rather
+      // than a silent skip: a migration that quietly proceeds without the role leaves
+      // the app connecting as the table OWNER, and append-only goes back to being a
+      // convention.
+      throw new Error(
+        `role ${opts.appRole} does not exist. Create it as a superuser before migrating:\n` +
+          `  sudo -u postgres psql -c "CREATE ROLE ${opts.appRole} LOGIN PASSWORD '<generated>';"\n` +
+          `It is a separate role on purpose: the application must not be able to UPDATE or ` +
+          `DELETE the event ledger, and that is enforced by grants rather than by discipline.`,
+      );
     }
     await applyGrants(client, opts.appRole);
     process.stdout.write(`grants applied: ${opts.appRole} cannot UPDATE or DELETE history\n`);

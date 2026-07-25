@@ -35,6 +35,13 @@ log() { printf '  %s\n' "$*"; }
 fail() { printf 'OPS-1 FAILED: %s\n' "$*" >&2; exit 1; }
 
 cleanup() {
+  # Drop the canary here, not only on success. Earlier runs of this script failed
+  # BEFORE reaching their tidy-up step and left `ops1_restore_canary` behind in the
+  # game database — owned by `postgres`, so a later
+  # `GRANT ... ON ALL TABLES IN SCHEMA public TO compact_app` failed with "permission
+  # denied for table ops1_restore_canary" and blocked the deploy. A test that leaves
+  # residue on the failure path is a test that breaks the thing it was protecting.
+  sudo -u postgres psql -q -d compact -c "DROP TABLE IF EXISTS $CANARY_TABLE;" >/dev/null 2>&1 || true
   if [ -d "$SCRATCH_DIR" ]; then
     sudo -u postgres "$PGBIN/pg_ctl" -D "$SCRATCH_DIR" stop -m immediate >/dev/null 2>&1 || true
     rm -rf "$SCRATCH_DIR"

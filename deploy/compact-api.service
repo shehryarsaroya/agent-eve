@@ -1,8 +1,24 @@
 [Unit]
-# Stateless API workers serving pre-built observation blobs. These never write
-# world state; the sim is the only writer.
-Description=THE COMPACT — agent API
-After=network-online.target postgresql.service compact-sim.service
+# ONE process: the agent API and the tick scheduler together.
+#
+# There was a second unit here (compact-sim.service) on the strength of SPEC §15.5's
+# "one single-writer sim process; N stateless API workers". It has been REMOVED, and
+# the reason is worth recording rather than rediscovering.
+#
+# src/api/server.ts already owns the scheduler — it is the one place a real clock
+# drives the world, and it derives its interval from ticksToMs(1) so the speed setting
+# and the schedule cannot disagree. A separate sim unit would therefore have been a
+# SECOND WRITER, which is precisely what OPS-5 forbids and what §15.5's own phrase
+# "single-writer" is protecting. At Phase 0 scale (~30 principals, single-digit
+# millisecond ticks) splitting them buys no capacity and costs a shared-state
+# correctness surface — and §15 is explicit that every remaining risk here is a
+# correctness risk, not a capacity one.
+#
+# When the API genuinely needs to scale out, the split is: this unit keeps the
+# scheduler, the new stateless workers get NO write path, and OPS-5 becomes an
+# assertion rather than an artefact of there being one process.
+Description=THE COMPACT — agent API and tick scheduler (single writer)
+After=network-online.target postgresql.service
 Wants=network-online.target
 Requires=postgresql.service
 
@@ -11,7 +27,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/compact/engine
 EnvironmentFile=/etc/compact/env
-ExecStart=/usr/bin/node --experimental-strip-types src/api/server.ts
+ExecStart=/usr/bin/node dist/api/server.js
 Restart=always
 RestartSec=3
 

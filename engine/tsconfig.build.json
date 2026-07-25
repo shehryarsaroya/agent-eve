@@ -1,0 +1,20 @@
+{
+  // Production build. Deliberately separate from tsconfig.json, which includes the
+  // test tree: the server must not need vitest or fast-check on its module path, and
+  // `npm ci --omit=dev` means those are not installed there.
+  //
+  // Why compiled output rather than running the .ts directly: every import in this
+  // codebase carries a `.js` extension, which is correct for compiled ESM. Node's
+  // --experimental-strip-types does not rewrite those to `.ts`, so running src/ raw
+  // fails with ERR_MODULE_NOT_FOUND on the first relative import. Compiling makes the
+  // extensions true instead of aspirational.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true,
+    "declaration": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["test/**/*", "dist/**/*"]
+}

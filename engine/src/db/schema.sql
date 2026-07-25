@@ -61,7 +61,13 @@ CREATE TABLE IF NOT EXISTS mandate (
 -- Value. `posting` is authoritative; nothing else may claim to hold a balance.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-CREATE TYPE account_kind AS ENUM ('STORES', 'ESCROW', 'FAUCET', 'SINK');
+DO $$ BEGIN
+  -- CREATE TYPE has no IF NOT EXISTS, and this file runs on every deploy, so the
+  -- guard is what makes the migration idempotent rather than first-run-only.
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'account_kind') THEN
+    CREATE TYPE account_kind AS ENUM ('STORES', 'ESCROW', 'FAUCET', 'SINK');
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS account (
   id            text PRIMARY KEY,
@@ -81,11 +87,23 @@ CREATE TABLE IF NOT EXISTS account (
 -- because retrofitting partitioning onto a live append-only table is a rewrite.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-CREATE TYPE provenance_class AS ENUM ('FACT', 'ASSERTION', 'ESTIMATE');
+DO $$ BEGIN
+  -- CREATE TYPE has no IF NOT EXISTS, and this file runs on every deploy, so the
+  -- guard is what makes the migration idempotent rather than first-run-only.
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'provenance_class') THEN
+    CREATE TYPE provenance_class AS ENUM ('FACT', 'ASSERTION', 'ESTIMATE');
+  END IF;
+END $$;
 -- INTENT, not STANDING: §3 gives STANDING to the public factual vectors, and
 -- both would ship in the same payload. A3's word for a durable pre-set decision
 -- is "intent".
-CREATE TYPE decision_source  AS ENUM ('LIVE', 'INTENT', 'DELEGATE', 'HEURISTIC', 'FALLBACK');
+DO $$ BEGIN
+  -- CREATE TYPE has no IF NOT EXISTS, and this file runs on every deploy, so the
+  -- guard is what makes the migration idempotent rather than first-run-only.
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'decision_source') THEN
+    CREATE TYPE decision_source AS ENUM ('LIVE', 'INTENT', 'DELEGATE', 'HEURISTIC', 'FALLBACK');
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS event (
   id                        text        NOT NULL,
@@ -193,8 +211,32 @@ CREATE TABLE IF NOT EXISTS action_log (
   CONSTRAINT action_reject_has_reason CHECK (accepted OR reject_reason IS NOT NULL)
 ) PARTITION BY RANGE (tick);
 
-CREATE UNIQUE INDEX IF NOT EXISTS action_idempotency_uq
-  ON action_log (principal_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+-- Idempotency lives in its OWN table, deliberately not on `action_log`.
+--
+-- The obvious index — UNIQUE (principal_id, idempotency_key) on action_log — is
+-- rejected outright by Postgres: a unique index on a partitioned table must include
+-- every partitioning column, and `tick` is the partition key. Adding `tick` compiles
+-- and is WRONG: it makes a key unique *per tick*, so a client retrying across a tick
+-- boundary — the exact case idempotency exists for, since a retry happens after a
+-- timeout and a timeout is usually longer than a tick — would insert a second action
+-- and the world would apply it twice.
+--
+-- So the key is a LOOKUP rather than part of the append-only record. Unpartitioned,
+-- globally unique per principal, and prunable: once a tick falls out of the replay
+-- window the row has no reader, which is what stops this from being scar #3 in slow
+-- motion.
+CREATE TABLE IF NOT EXISTS idempotency (
+  principal_id     text    NOT NULL,
+  idempotency_key  text    NOT NULL,
+  -- Where the original landed, so a repeat can be answered with the first result
+  -- rather than re-executed. Not a foreign key: `action_log` is partitioned and a
+  -- reference into it would pin every partition against DETACH.
+  tick             integer NOT NULL,
+  resolution_order integer NOT NULL,
+  PRIMARY KEY (principal_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idempotency_tick_idx ON idempotency (tick);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Wake accounting. SPEC §15.1: "Two tables the design requires and nobody

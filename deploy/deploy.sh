@@ -29,15 +29,28 @@ fail() { printf '  ✗ %s\n' "$*" >&2; exit 1; }
 
 # Anything under $CODE_DIR that this script does not own. Add to this list
 # BEFORE adding a sibling directory, not after an outage.
+#
+# EVERY PATTERN IS ANCHORED WITH A LEADING SLASH, and that is not style. An rsync
+# pattern without one matches at ANY depth, so `--exclude 'cast/'` silently omitted
+# `src/cast/` as well as the intended top-level house-cast directory. The build then
+# failed with "Cannot find module '../cast/index.js'" — and it failed loudly only by
+# luck, because the module happened to be imported at the top level. Had it been
+# lazily required, the deploy would have succeeded and the cast would simply never
+# have run.
+#
+# That is scar #4's shape with a different verb: the predecessor's `--delete` removed
+# the players directory and reverted a live game to bots-only while looking healthy;
+# an unanchored `--exclude` omits code and looks equally healthy. Anchoring makes the
+# pattern mean the directory it names and nothing else.
 EXCLUDES=(
-  --exclude node_modules
-  --exclude .env
-  --exclude .git
-  --exclude dist
-  --exclude coverage
-  --exclude 'verify-restore.sh'   # ops script, lives here, not synced from repo
-  --exclude 'backups/'
-  --exclude 'cast/'               # house cast runs from its own dir on its own keys
+  --exclude '/node_modules/'
+  --exclude '/.env'
+  --exclude '/.git/'
+  --exclude '/dist/'
+  --exclude '/coverage/'
+  --exclude '/verify-restore.sh'   # ops script, lives on the box, not synced
+  --exclude '/backups/'
+  --exclude '/cast/'               # house cast dir on the BOX; src/cast/ must still sync
 )
 
 # ── preflight ───────────────────────────────────────────────────────────────
@@ -64,11 +77,31 @@ if [[ "$TARGET" == "api" || "$TARGET" == "sim" || "$TARGET" == "all" ]]; then
     "$REPO_ROOT/engine/" "root@$HOST:$CODE_DIR/engine/"
   ok "engine synced"
 
-  $SSH "cd $CODE_DIR/engine && npm ci --omit=dev --silent 2>&1 | tail -2"
-  ok "production deps installed"
+  # Assert the sync actually delivered the tree, rather than trusting rsync's exit
+  # code. An over-broad exclude exits 0 while omitting a module (see EXCLUDES above),
+  # and scar #4's whole lesson is that a silent omission looks like health.
+  MISSING_DIRS=$($SSH "cd $CODE_DIR/engine && for d in core ledger events world identity tick venture seal invariants reckoning observe api cast sim frames db; do test -d src/\$d || echo \$d; done")
+  [[ -z "$MISSING_DIRS" ]] || fail "these source directories did not reach the server: $MISSING_DIRS"
+  ok "every source directory arrived"
+
+  $SSH "cd $CODE_DIR/engine && npm ci --silent 2>&1 | tail -2"
+  ok "deps installed"
+
+  # Compile on the box rather than shipping dist/: every import here carries a `.js`
+  # extension (correct for compiled ESM), and Node's --experimental-strip-types does
+  # not rewrite those to `.ts`, so running src/ raw dies on the first relative import.
+  # Building makes the extensions true rather than aspirational.
+  log "building"
+  $SSH "cd $CODE_DIR/engine && npm run build 2>&1 | tail -2"
+  ok "compiled to dist/"
+
+  # Devtime deps were needed for the build; drop them now so the runtime module path
+  # holds nothing the server does not use.
+  $SSH "cd $CODE_DIR/engine && npm prune --omit=dev --silent 2>&1 | tail -1" || true
+  ok "dev deps pruned"
 
   log "migrating database"
-  $SSH "set -a && . /etc/compact/env && set +a && cd $CODE_DIR/engine && node --experimental-strip-types src/db/migrate.ts"
+  $SSH "set -a && . /etc/compact/env && set +a && cd $CODE_DIR/engine && node dist/db/migrate.js"
   ok "migrations applied, partition runway asserted (OPS-3)"
 fi
 
@@ -85,7 +118,7 @@ fi
 
 # ── services ────────────────────────────────────────────────────────────────
 log "installing unit files"
-for unit in compact-api compact-sim; do
+for unit in compact-api; do
   scp -q -i "$KEY" "$REPO_ROOT/deploy/$unit.service" "root@$HOST:/etc/systemd/system/$unit.service"
 done
 $SSH 'systemctl daemon-reload'
@@ -103,9 +136,9 @@ $SSH 'systemctl reload nginx'
 ok "nginx reloaded"
 
 log "restarting services"
-$SSH 'systemctl enable --now compact-sim compact-api 2>&1 | tail -2'
+$SSH 'systemctl enable --now compact-api 2>&1 | tail -2'
 sleep 4
-for unit in compact-sim compact-api; do
+for unit in compact-api; do
   $SSH "systemctl is-active --quiet $unit" || {
     $SSH "journalctl -u $unit -n 30 --no-pager" >&2
     fail "$unit failed to start"
