@@ -177,57 +177,43 @@ describe('splitByBps — the edges', () => {
   });
 });
 
-describe('DEFECT reports against src/core/units.ts', () => {
-  it.fails(
-    'DEFECT(core/units): a 0 bps weight is handed a minor unit, so a role with no claim gets paid',
-    () => {
-      // The remainder walks the weights in order without checking whether the
-      // weight is zero. The split still sums exactly (INV-6 holds), but it creates
-      // a posting to a party that agreed to nothing — which then has to be
-      // explained on a public receipt.
-      const parts = splitByBps(minor(1), w(0, 5000, 5000));
-      expect(parts[0]).toBe(0);
-    },
-  );
+describe('FIXED — regression guards for defects a codex arithmetic pass found', () => {
+  // These three were documented here as live defects (as `it.fails` markers) before
+  // they were fixed. They are kept as regression guards so a revert of the fix fails
+  // LOUDLY here rather than surfacing days later as a receipt paying the wrong party.
 
-  it('the zero-weight payout is recorded here so the defect above is not abstract', () => {
-    expect(normaliseZeros(splitByBps(minor(1), w(0, 5000, 5000)))).toEqual([1, 0, 0]);
-    // Sharper: two roles with no claim take the entire pot while the three roles
-    // that hold 100% of it between them are paid nothing.
-    expect(normaliseZeros(splitByBps(minor(2), w(0, 0, 3333, 3333, 3334)))).toEqual([
-      1, 1, 0, 0, 0,
-    ]);
+  it('a 0 bps weight is never handed a minor unit — a role with no claim is paid nothing', () => {
+    // The remainder used to walk the weights from index 0 without checking whether the
+    // weight was zero, so a 0-bps role took the leftover unit and got a posting for a
+    // share it was owed none of. The remainder now lands only on positive-weight roles.
+    const parts = splitByBps(minor(1), w(0, 5000, 5000));
+    expect(parts[0]).toBe(0);
+    expect(normaliseZeros(parts)).toEqual([0, 1, 0]);
+
+    // Sharper: the two roles with no claim get nothing; the whole pot lands on the
+    // three that hold 100% of it between them. (Old, buggy output was [1,1,0,0,0].)
+    const five = normaliseZeros(splitByBps(minor(2), w(0, 0, 3333, 3333, 3334)));
+    expect(five.slice(0, 2)).toEqual([0, 0]);
+    expect(five.reduce<number>((a, b) => a + b, 0)).toBe(2);
   });
 
-  it.fails(
-    'DEFECT(core/units): splitByBps returns -0 entries for a negative amount',
-    () => {
-      // Math.trunc(-0.5) is -0, and minor() accepts it. A -0 posting amount is
-      // equal to 0 under === but not under Object.is, so any reconciliation that
-      // uses Object.is (or a Map keyed on the sign) sees a value that is neither
-      // debit nor credit.
-      const parts = splitByBps(minor(-1), w(5000, 5000));
-      expect(parts.some((p) => Object.is(p, -0))).toBe(false);
-    },
-  );
+  it('splitByBps never returns a -0 entry for a negative amount', () => {
+    // Math.trunc(-0.5) is -0, and a -0 posting amount is === 0 but not Object.is 0, so
+    // reconciliation keyed on the sign reads it as neither debit nor credit. applyBpsTrunc
+    // now collapses it. A minor unit is a whole integer; it has no signed zero.
+    const parts = splitByBps(minor(-1), w(5000, 5000));
+    expect(parts.some((p) => Object.is(p, -0))).toBe(false);
+    expect(parts.reduce<number>((a, b) => a + b, 0)).toBe(-1);
+  });
 
-  it.fails(
-    'DEFECT(core/units): sumMinor loses a unit near the safe-integer ceiling without throwing',
-    () => {
-      // Each element is a safe integer, so nothing individually trips checkInt —
-      // but the running total passes through 2**53 where the spacing becomes 2,
-      // and the final result lands back inside the safe range as a wrong number
-      // that minor() happily accepts. addMinor is guarded; sumMinor is not.
-      const xs: Minor[] = [minor(Number.MAX_SAFE_INTEGER), minor(1), minor(1), minor(-2)];
-      expect(sumMinor(xs)).toBe(Number.MAX_SAFE_INTEGER);
-    },
-  );
-
-  it('the sumMinor drift is recorded here so the defect above is not abstract', () => {
+  it('sumMinor fails closed near the safe-integer ceiling rather than drifting', () => {
+    // Each element is a safe integer, so nothing individually tripped checkInt — but a
+    // bare `acc += x` running total passed through 2**53 (where the spacing becomes 2)
+    // and landed back inside the safe range as a wrong number minor() happily accepted.
+    // sumMinor now folds through the guarded addMinor, so it THROWS instead of drifting.
     const xs: Minor[] = [minor(Number.MAX_SAFE_INTEGER), minor(1), minor(1), minor(-2)];
-    expect(sumMinor(xs)).toBe(Number.MAX_SAFE_INTEGER - 1);
-    // Pairwise addition through the guarded helper refuses instead of drifting,
-    // which is the behaviour sumMinor should inherit.
+    expect(() => sumMinor(xs)).toThrow(UnitError);
+    // Same guarantee the guarded pairwise reduce always had.
     expect(() => xs.reduce((a, b) => addMinor(a, b))).toThrow(UnitError);
   });
 });

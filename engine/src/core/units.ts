@@ -55,9 +55,16 @@ export function subMinor(a: Minor, b: Minor): Minor {
 }
 
 export function sumMinor(xs: readonly Minor[]): Minor {
-  let acc = 0;
-  for (const x of xs) acc += x;
-  return minor(acc);
+  // Fold through addMinor rather than a bare `acc += x`. A plain accumulator that
+  // crosses 2^53 rounds SILENTLY — `sumMinor([MAX_SAFE_INTEGER, 1, 1, -2])` returned
+  // one less than the exact answer and `minor()` accepted it because the wrong result
+  // was itself a safe integer. addMinor re-checks each intermediate, so a sum that
+  // leaves the safe range throws (fail-closed) instead of recording a wrong total.
+  // Found by a codex arithmetic pass. It only bites at 2^53 magnitude, but a ledger
+  // that can be off by one is not a ledger.
+  let acc = minor(0);
+  for (const x of xs) acc = addMinor(acc, x);
+  return acc;
 }
 
 export function negMinor(a: Minor): Minor {
@@ -80,7 +87,11 @@ function applyBpsTrunc(amount: Minor, share: Bps): Minor {
   if (!Number.isSafeInteger(product)) {
     throw new UnitError(`applyBps overflow: ${amount} * ${share} exceeds safe integer range`);
   }
-  return minor(Math.trunc(product / BPS_ONE));
+  // `+ 0` collapses a negative-zero: `Math.trunc(-0.5)` is `-0`, and while `-0 === 0`
+  // is true, `Object.is(-0, 0)` is false — so a -0 posting amount is a value that any
+  // reconciliation keyed on the sign (or using Object.is) reads as neither debit nor
+  // credit. A minor unit is a whole integer; it has no signed zero. Found by a codex pass.
+  return minor(Math.trunc(product / BPS_ONE) + 0);
 }
 
 /**
@@ -108,18 +119,27 @@ export function splitByBps(amount: Minor, weights: readonly Bps[]): Minor[] {
   const allocated = out.reduce<number>((a, b) => a + b, 0);
   let remainder = amount - allocated;
 
-  // Remainder is strictly smaller than the number of weights, and shares the
-  // sign of `amount`. Distribute deterministically, one unit per weight, in
-  // the given order.
+  // Distribute the remainder ONLY across positive-weight indices, in order.
+  //
+  // The earlier version handed it out "one unit per weight, in the given order"
+  // starting at index 0 — so `splitByBps(2, [0, 0, 3333, 3333, 3334])` returned
+  // `[1, 1, 0, 0, 0]`, giving the two ZERO-weight roles the whole pot. A role owed
+  // 0 bps of the proceeds must receive nothing; handing it a remainder unit is value
+  // going to a party the split says is owed none. Found by a codex arithmetic pass.
+  // Weights sum to BPS_ONE, so at least one is positive and the remainder always has
+  // somewhere legitimate to land.
+  const positive = weights.map((w, idx) => (w > 0 ? idx : -1)).filter((idx) => idx >= 0);
   const step = remainder >= 0 ? 1 : -1;
   let i = 0;
   while (remainder !== 0) {
-    const cur = out[i % out.length];
+    const target = positive[i % positive.length];
+    if (target === undefined) throw new UnitError('unreachable: no positive weight to take the remainder');
+    const cur = out[target];
     if (cur === undefined) throw new UnitError('unreachable: split index out of range');
-    out[i % out.length] = minor(cur + step);
+    out[target] = minor(cur + step);
     remainder -= step;
     i += 1;
-    if (i > out.length * 2) {
+    if (i > positive.length * 2) {
       throw new UnitError('unreachable: remainder distribution failed to converge');
     }
   }

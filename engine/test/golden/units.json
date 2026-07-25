@@ -2,8 +2,8 @@
   "__meta": {
     "what": "Golden file for splitByBps (src/core/units.ts). INV-6 and DET-1.",
     "why": "INV-6: every settled venture split sums exactly to its proceeds and the remainder is accounted, never dropped. A dropped remainder is how a ledger silently stops balancing, and it would not show up as an error - only as a total that quietly drifts.",
-    "remainder_rule": "One minor unit per weight, in the order the weights were given, until the remainder is gone. Callers must pass weights in a canonical order (settlement uses venture_id then role_index), which is what makes INV-6 and DET-1 hold at the same time.",
-    "negative_zero": "Entries the remainder loop did not touch can be -0 for a negative amount, because Math.trunc(-0.5) is -0. Recorded here as 0; the test compares with Object.is-awareness and asserts the sum, which is the invariant that matters.",
+    "remainder_rule": "One minor unit per POSITIVE weight, in the order the weights were given, until the remainder is gone. A zero-weight role is skipped: it is owed no share, so it must receive no unit. Callers must pass weights in a canonical order (settlement uses venture_id then role_index), which is what makes INV-6 and DET-1 hold at the same time.",
+    "negative_zero": "No entry is ever -0. applyBpsTrunc collapses Math.trunc(-0.5) (which is -0) to +0 at the source, so a -0 posting amount - equal to 0 under === but not Object.is - cannot reach a reconciliation keyed on the sign. The test still asserts the sum, which is the invariant that matters.",
     "canonical_version": 1,
     "regenerate": "The hand-authored columns are the oracle. To add a case: write it here with a deliberately wrong derived value, run the matching test in test/core, and copy the expected value out of the failure. Never paste engine output in without checking it against arithmetic you did yourself - that turns an oracle into a snapshot of a bug."
   },
@@ -83,7 +83,7 @@
     },
     {
       "name": "negative_amount_with_remainder",
-      "note": "the remainder carries the sign of the amount; the trailing entries are -0 (see contract notes)",
+      "note": "the remainder carries the sign of the amount; the untouched trailing entry is +0, never -0 (applyBpsTrunc collapses it - see contract notes)",
       "amount": -1,
       "weights": [
         5000,
@@ -106,8 +106,8 @@
       ]
     },
     {
-      "name": "zero_weight_still_receives_remainder",
-      "note": "DEFECT pinned deliberately: a 0 bps weight is handed a minor unit because the remainder walks the weights in order",
+      "name": "zero_weight_gets_nothing",
+      "note": "a 0 bps role is owed no share, so the remainder skips it and lands on the first POSITIVE weight (index 1). Was a pinned defect that paid index 0; fixed in applyBpsTrunc's remainder loop.",
       "amount": 1,
       "weights": [
         0,
@@ -115,8 +115,8 @@
         5000
       ],
       "parts": [
-        1,
         0,
+        1,
         0
       ]
     },
