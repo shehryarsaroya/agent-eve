@@ -51,11 +51,7 @@ export function wallSecondsFrom(clock: Clock): WallSeconds {
   if (!Number.isFinite(ms) || ms < 0) {
     throw new WallClockError(`clock returned an unusable value: ${String(ms)}`);
   }
-  return wallSeconds(Math.floor(ms / MILLIS_IN_A_SECOND));
+  // Milliseconds to whole seconds. Not a game duration and not scale-dependent:
+  // it is the unit conversion the RFC's timestamps are defined in.
+  return wallSeconds(Math.floor(ms / 1000));
 }
-
-/**
- * Not a duration: a unit conversion constant. Named without a duration word so
- * it reads as arithmetic, which is what it is.
- */
-const MILLIS_IN_A_SECOND = 1e3;
