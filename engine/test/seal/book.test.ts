@@ -15,12 +15,13 @@
 
 import { describe, expect, it } from 'vitest';
 import { compareIds } from '../../src/ledger/order.js';
-import { TICKS_PER_RECKONING, inFreeze } from '../../src/core/time.js';
+import { FREEZE_TICKS, TICKS_PER_RECKONING, inFreeze, isSettlementTick } from '../../src/core/time.js';
 import type { SealId } from '../../src/core/types.js';
 import {
   MAX_SEALS_PER_PRINCIPAL_PER_RECKONING,
   SealBook,
   SealHalt,
+  allDeedsWitness,
   checkInv20,
   roleKey,
   type SealAuditRecord,
@@ -117,7 +118,11 @@ describe('INV-20 — one verdict, its own Reckoning, evaluated once', () => {
 
   it('refuses a seal inside the freeze (INV-18)', () => {
     const book = new SealBook();
-    const freezeTick = settlement(0);
+    // The freeze is the last tick BEFORE settlement (SPEC §5.1), so it is derived from the
+    // settlement tick rather than equal to it. This read `settlement(0)` while
+    // `core/time.ts` had `inFreeze` and `isSettlementTick` both true at phase 287, so the
+    // door it was checking was the settlement tick's, not the freeze's.
+    const freezeTick = settlement(0) - FREEZE_TICKS;
     expect(inFreeze(freezeTick)).toBe(true);
     const refused = commit(book, { tick: freezeTick });
     expect(refused.ok).toBe(false);
@@ -126,6 +131,32 @@ describe('INV-20 — one verdict, its own Reckoning, evaluated once', () => {
 
     // The last tick before the freeze is still open.
     expect(commit(book, { tick: freezeTick - 1 }).ok).toBe(true);
+  });
+
+  it('refuses a seal at the SETTLEMENT tick too, or an agent can halt the world', () => {
+    // Regression for a hole MY OWN core/time.ts fix opened. While `inFreeze` was
+    // wrongly true at the settlement phase, this door caught both ticks by accident;
+    // correcting that re-opened the settlement tick, and a verifier probed it: 285 ok,
+    // 286 refused, 287 ACCEPTED.
+    //
+    // Why that is not cosmetic. VALIDATE+LOCK is phase 3 and OBLIGE is phase 10, so a
+    // seal committed at the settlement tick lands in the very set the driver is about
+    // to judge, with no deed able to follow it in the same tick. Two outcomes, both
+    // unacceptable: a CONTRADICTED mark against a promise that had zero ticks in which
+    // to be kept (A5′ — a permanent false mark on an innocent agent), or an unjudged
+    // seal in a resolved Reckoning, which checkInv20 reports as a HALT (AGT-X9 — an
+    // agent-reachable world stop).
+    const book = new SealBook();
+    const settleTick = settlement(0);
+    expect(isSettlementTick(settleTick)).toBe(true);
+    // Not in the freeze — that is the whole point. The old test could not have caught
+    // this, because under the bug this tick WAS in the freeze.
+    expect(inFreeze(settleTick)).toBe(false);
+
+    const refused = commit(book, { tick: settleTick });
+    expect(refused.ok).toBe(false);
+    expect(refused.invariant).toBe('INV-18');
+    expect(book.size).toBe(0);
   });
 
   it('a seal that lands in a resolved Reckoning is caught by INV-20, not by the door', () => {
@@ -144,6 +175,37 @@ describe('INV-20 — one verdict, its own Reckoning, evaluated once', () => {
     expect(violations.length).toBeGreaterThan(0);
     expect(violations.map((v) => v.id)).toContain('INV-20');
     expect(violations.map((v) => v.message).join(' ')).toContain('no verdict');
+  });
+
+  it('and that late seal is never judged either — the closed court stays closed', () => {
+    // The clause `resolve`'s `resolvedReckonings` gate uniquely owns, and nothing
+    // pinned it: every other "resolved twice" test has a seal carrying
+    // `evaluations === 1`, so the *second* gate inside the loop (`rec.evaluations !==
+    // 0`) throws first and the outer gate can be deleted with all 169 tests green.
+    // Here the only seal in Reckoning 0 was committed *after* Reckoning 0 resolved, so
+    // it carries `evaluations === 0` and the inner gate has nothing to say. Without
+    // the outer gate the second resolve judges it — a promise arriving at a court that
+    // has already sat, which is scar #7 exactly.
+    const book = new SealBook();
+    book.resolve({ reckoningIndex: 0, atTick: settlement(0), stateVersion: 400, deeds: [] });
+    const late = commit(book, { tick: 10, role: null });
+    expect(late.ok).toBe(true);
+    expect(book.auditRecord(late.sealId!)!.evaluations).toBe(0);
+
+    expect(() =>
+      book.resolve({
+        reckoningIndex: 0,
+        atTick: settlement(0),
+        stateVersion: 400,
+        deeds: [deed({ principal: A, outcome: 50 })],
+        deedSet: allDeedsWitness(0, 400, [[A, 1]]),
+      }),
+    ).toThrow(SealHalt);
+    // Still unjudged, and still carrying no mark of any kind.
+    const rec = book.auditRecord(late.sealId!)!;
+    expect(rec.evaluations).toBe(0);
+    expect(rec.verdict).toBeNull();
+    expect(rec.disposition).toBeNull();
   });
 
   it('refuses a seal backdated behind the book’s watermark', () => {

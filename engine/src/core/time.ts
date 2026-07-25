@@ -84,6 +84,31 @@ export function ticksToMs(ticks: number): number {
   return ticks * currentTickSeconds * 1000;
 }
 
+/**
+ * The three phases of a Reckoning, as PHASE INDEXES within the cycle.
+ *
+ * SPEC §5.1 orders them "commitment window -> **freeze** (last tick *before*
+ * settlement) -> settlement", and the boundaries are explicitly "the design".
+ *
+ * My Gate 0 version made `inFreeze` and `isSettlementTick` BOTH true at phase 287,
+ * which quietly deleted the interval the freeze exists to create. A wave-3 verifier
+ * found the consequence: INV-18 — "between freeze and settlement, zero events touch
+ * the settlement set" — was asserting over an EMPTY interval, so §15.4's
+ * defence-in-depth against a fabricated default was unenforceable anywhere in the
+ * wired engine. The primary defence (re-reading live balances at VERIFY_INPUTS) was
+ * intact, so this was a lost second line rather than an open hole, but it was also an
+ * unimplementable contract: a phase asked to "honour the freeze against the settlement
+ * set" could not, because the set did not exist yet when it ran.
+ *
+ * Now the three are disjoint and together tile the cycle, which is the property the
+ * tests assert rather than a comment claiming it.
+ */
+export const SETTLEMENT_PHASE = TICKS_PER_RECKONING - 1;
+/** First phase of the freeze. With FREEZE_TICKS = 1 this is the single tick before settlement. */
+export const FREEZE_FIRST_PHASE = SETTLEMENT_PHASE - FREEZE_TICKS;
+/** First phase of the commitment window, which ends where the freeze begins. */
+export const WINDOW_FIRST_PHASE = FREEZE_FIRST_PHASE - COMMITMENT_WINDOW_TICKS;
+
 /** Position within the Reckoning cycle: 0 .. TICKS_PER_RECKONING-1. */
 export function phaseOfReckoning(tick: number): number {
   return ((tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING) % TICKS_PER_RECKONING;
@@ -104,18 +129,24 @@ export function ticksUntilReckoning(tick: number): number {
  * superior information (A4).
  */
 export function inCommitmentWindow(tick: number): boolean {
-  const left = ticksUntilReckoning(tick);
-  return left <= COMMITMENT_WINDOW_TICKS && left > FREEZE_TICKS;
+  const p = phaseOfReckoning(tick);
+  return p >= WINDOW_FIRST_PHASE && p < FREEZE_FIRST_PHASE;
 }
 
-/** Is this the freeze tick? Nothing may touch the settlement set (INV-18). */
+/**
+ * Is this a freeze tick? Nothing may touch the settlement set (INV-18).
+ *
+ * Strictly BEFORE the settlement tick, so "between freeze and settlement" names a
+ * real interval that a check can range over.
+ */
 export function inFreeze(tick: number): boolean {
-  return ticksUntilReckoning(tick) <= FREEZE_TICKS;
+  const p = phaseOfReckoning(tick);
+  return p >= FREEZE_FIRST_PHASE && p < SETTLEMENT_PHASE;
 }
 
 /** Is settlement due at the close of this tick? */
 export function isSettlementTick(tick: number): boolean {
-  return phaseOfReckoning(tick) === TICKS_PER_RECKONING - 1;
+  return phaseOfReckoning(tick) === SETTLEMENT_PHASE;
 }
 
 /**

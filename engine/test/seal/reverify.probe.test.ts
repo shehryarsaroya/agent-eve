@@ -13,8 +13,22 @@
  *
  * What this pass confirms: the P0 halt is genuinely gone on both routes, and the
  * mutation suite behind it bites (eight separate one-line reversions each turn
- * `witness.regression.test.ts` red). What it does **not** confirm is the report's
- * claim that the completeness witness makes every field "checked, not trusted".
+ * `witness.regression.test.ts` red). What it did **not** confirm is the report's claim
+ * that the completeness witness makes every field "checked, not trusted".
+ *
+ * **THIRD PASS.** Both `it.fails` blocks below are now plain `it` and green, because
+ * the two defects they recorded are closed:
+ *
+ * - the witness's count is per principal and comes from the deed **producer**, and
+ *   `allDeedsWitness` no longer receives the deed array at all, so the tautology is
+ *   not constructible through it;
+ * - a deed from a principal the witness never tallied is ignored rather than thrown
+ *   on, because a role-less principal owes no seal and must not be able to stop the
+ *   settlement tick by hauling.
+ *
+ * The WITNESS blocks further down are unchanged and still stand: they record
+ * consequences of the design (the unvouched-unit escape, the pin asymmetry) rather
+ * than defects in this module, and each names what would close it.
  */
 
 import { readFileSync } from 'node:fs';
@@ -71,7 +85,7 @@ describe('REVERIFY P0 — the agent-triggerable halt', () => {
         atTick: AT,
         stateVersion: 400,
         deeds,
-        deedSet: allDeedsWitness(0, 400, deeds, [A]),
+        deedSet: allDeedsWitness(0, 400, [[A, 1]]),
       }),
     ).not.toThrow();
   });
@@ -85,43 +99,45 @@ describe('REVERIFY P0 — the agent-triggerable halt', () => {
       atTick: AT,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.verdicts[0]?.verdict).toBe('HONOURED');
   });
 
   /**
-   * DEFECT — a **new** route to the same outage, added by the fix.
+   * DEFECT — a **new** route to the same outage, added by the first fix. **Now
+   * fixed**, and the assertions below were flipped to hold the fix.
    *
-   * `resolve` halts on a deed whose principal the completeness witness does not
-   * cover (`book.ts`'s "the witness and the deeds disagree about whose Reckoning
-   * this is"). But a principal only owes a seal for the **roles it holds** —
-   * `unsealedRoles`/`sealComplianceRejection` ask nothing of a principal with no
-   * role — while the witness's `principals` is the set the resolver is judging
-   * seals for. So a principal that hauls and holds no role produces a deed nobody
-   * witnessed, and the whole Reckoning halts with every other principal's seals
-   * inside it: AGT-X9's blast radius, reached from an ordinary act.
+   * `resolve` halted on a deed whose principal the completeness witness did not cover
+   * (`book.ts`'s "the witness and the deeds disagree about whose Reckoning this is").
+   * But a principal only owes a seal for the **roles it holds** —
+   * `unsealedRoles`/`sealComplianceRejection` ask nothing of a principal with no role
+   * — while the witness's principal set is the set the resolver is judging seals for.
+   * So a principal that hauls and holds no role produced a deed nobody witnessed, and
+   * the whole Reckoning halted with every other principal's seals inside it: AGT-X9's
+   * blast radius, reached from an ordinary act.
    *
-   * It cannot produce a false mark either way — a seal of an uncovered principal
-   * already defers, and a seal with a cited deed needs no witness at all — so this
-   * halt buys nothing and costs the settlement tick. By the module's own rule (*a
-   * halt is for our bug, never for their input*) the extra deed should be ignored
-   * and recorded, not thrown on.
+   * It could not produce a false mark either way — a seal of an untallied principal
+   * already defers, and a seal with a cited deed needs no witness at all — so the halt
+   * bought nothing and cost the settlement tick. By the module's own rule (*a halt is
+   * for our bug, never for their input*) the extra deed is now ignored, and A's seal is
+   * judged exactly as it would have been without it.
    */
-  it.fails('DEFECT(seal/book): a principal who acts but never seals halts the Reckoning', () => {
+  it('a principal who acts but never seals does NOT halt the Reckoning', () => {
     const book = new SealBook(WIRED);
     seal(book, 'P-A'); // only A holds a role, so only A owes a seal
     const deeds = [deed({ principal: A }), deed({ principal: B, eventId: eid('ev:150:1') })];
-    expect(() =>
-      book.resolve({
-        reckoningIndex: 0,
-        atTick: AT,
-        stateVersion: 400,
-        deeds,
-        // The witness covers the principals whose seals are being judged.
-        deedSet: allDeedsWitness(0, 400, deeds, [A]),
-      }),
-    ).not.toThrow();
+    const r = book.resolve({
+      reckoningIndex: 0,
+      atTick: AT,
+      stateVersion: 400,
+      deeds,
+      // The tally covers the principals whose seals are being judged.
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
+    });
+    expect(r.verdicts.map((v) => [v.principal, v.verdict])).toEqual([[A, 'HONOURED']]);
+    expect(r.deferred).toEqual([]);
+    expect(r.deedSetFaults).toEqual([]);
   });
 
   it('the surviving halts are engine-side: a deed valued ahead of settlement', () => {
@@ -134,7 +150,7 @@ describe('REVERIFY P0 — the agent-triggerable halt', () => {
         atTick: AT,
         stateVersion: 400,
         deeds,
-        deedSet: allDeedsWitness(0, 400, deeds, [A]),
+        deedSet: allDeedsWitness(0, 400, [[A, 1]]),
       }),
     ).toThrow(SealHalt);
   });
@@ -144,22 +160,25 @@ describe('REVERIFY P0 — the agent-triggerable halt', () => {
 
 describe('REVERIFY P1 — the completeness witness under its own documented usage', () => {
   /**
-   * DEFECT — the §15.4 false-mark route survives, and survives the fix's own
-   * recommended construction.
+   * DEFECT — the §15.4 false-mark route survived the first fix, and survived it under
+   * the fix's own recommended construction. **Now fixed**, and these assertions hold
+   * the fix.
    *
-   * `allDeedsWitness` derives `deedCount` **from the same array it accompanies**, so
-   * `resolve`'s `witness.deedCount !== input.deeds.length` clause is a tautology for
-   * every caller that uses the exported helper — and the fix's own cross-module
-   * instruction is to use exactly that helper, with `principals` covering principals
-   * that have zero deeds. Under that instruction a query that drops a row still
-   * publishes a permanent public CONTRADICTED plus a standing charge against the
-   * principal it dropped, with no invariant firing: the original P1, verbatim.
+   * The old `allDeedsWitness` derived a single total `deedCount` **from the same array
+   * it accompanied**, so `resolve`'s `witness.deedCount !== input.deeds.length` clause
+   * was a tautology for every caller that used the exported helper — and the fix's own
+   * cross-module instruction was to use exactly that helper. Under that instruction a
+   * query that dropped a row still published a permanent public CONTRADICTED plus a
+   * standing charge against the principal it dropped, with no invariant firing: the
+   * original P1, verbatim. A count derived from the thing it is meant to witness is
+   * not a witness.
    *
-   * What the witness actually rules out is narrower than claimed — only the case
-   * where the caller *already knows* which principals its query was complete for,
-   * which is the fact the witness was supposed to establish.
+   * The witness now carries a **per-principal** count that the helper cannot compute,
+   * because the helper never receives the deeds. Below, the producer wrote one deed
+   * each for A and B, one row arrived, and the disagreement lands on B — which defers
+   * with no mark and no charge, and says so in `deedSetFaults`.
    */
-  it.fails('DEFECT(seal/book): a dropped deed row still marks the principal it dropped', () => {
+  it('a dropped deed row does NOT mark the principal it dropped', () => {
     const book = new SealBook(WIRED);
     seal(book, 'P-A');
     seal(book, 'P-B');
@@ -170,11 +189,17 @@ describe('REVERIFY P1 — the completeness witness under its own documented usag
       atTick: AT,
       stateVersion: 400,
       deeds: gathered,
-      // The documented construction: cover every principal, zero-deed ones included.
-      deedSet: allDeedsWitness(0, 400, gathered, [A, B]),
+      // The documented construction: the producer's own tally, zero-deed principals
+      // included — and not a number this call site could read off `gathered`.
+      deedSet: allDeedsWitness(0, 400, [
+        [A, 1],
+        [B, 1],
+      ]),
     });
     expect(r.charges).toEqual([]);
     expect(r.verdicts.map((v) => v.principal)).toEqual([A]);
+    expect(r.deferred.map((d) => [d.principal, d.basis])).toEqual([[B, 'UNWITNESSED_DEED_SET']]);
+    expect(r.deedSetFaults.length).toBe(1);
   });
 
   /**
@@ -196,7 +221,7 @@ describe('REVERIFY P1 — the completeness witness under its own documented usag
         stateVersion: 400,
         deeds,
         deedSet: {
-          ...allDeedsWitness(0, 400, deeds, [A]),
+          ...allDeedsWitness(0, 400, [[A, 1]]),
           // What an unrelated object spread into the slot looks like.
           claim: 'THESE_ARE_SOME_DEEDS' as typeof ALL_DEEDS_CLAIM,
         },
@@ -204,7 +229,7 @@ describe('REVERIFY P1 — the completeness witness under its own documented usag
     ).toThrow(SealHalt);
   });
 
-  it('the narrow case the witness does close: B absent from `principals` defers', () => {
+  it('the narrow case the witness always closed: B absent from the tally defers', () => {
     const book = new SealBook(WIRED);
     seal(book, 'P-A');
     seal(book, 'P-B');
@@ -214,7 +239,7 @@ describe('REVERIFY P1 — the completeness witness under its own documented usag
       atTick: AT,
       stateVersion: 400,
       deeds: gathered,
-      deedSet: allDeedsWitness(0, 400, gathered, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.charges).toEqual([]);
     expect(r.deferred.map((d) => d.principal)).toEqual([B]);
@@ -255,7 +280,7 @@ describe('REVERIFY P1 — target validation', () => {
       atTick: AT,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.verdicts[0]?.verdict).toBe('CONTRADICTED');
     expect(r.charges.length).toBe(1);
@@ -285,7 +310,7 @@ describe('REVERIFY — deferral as an escape from an earned mark', () => {
       atTick: AT,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.verdicts).toEqual([]);
     expect(r.charges).toEqual([]);
@@ -309,7 +334,7 @@ describe('REVERIFY — deferral as an escape from an earned mark', () => {
       atTick: AT,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.charges).toEqual([]);
     expect(r.deferred.map((d) => d.basis)).toEqual(['STALE_MEASUREMENT']);
@@ -325,7 +350,7 @@ describe('REVERIFY — deferral as an escape from an earned mark', () => {
    */
   it('an impossible pin buys immunity from rule 4, where an honest pin defers', () => {
     const ancient = [deed({ principal: A, outcome: 50, valuedAtStateVersion: 0 })];
-    const witness = allDeedsWitness(0, 400, ancient, [A]);
+    const witness = allDeedsWitness(0, 400, [[A, 1]]);
 
     const liar = new SealBook(NO_UNIT_TABLE);
     seal(liar, 'P-A', { actedOnStateVersion: Number.MAX_SAFE_INTEGER });

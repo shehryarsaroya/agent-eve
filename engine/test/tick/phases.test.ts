@@ -10,7 +10,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { COMMITMENT_WINDOW_TICKS, TICKS_PER_RECKONING } from '../../src/core/time.js';
+import {
+  COMMITMENT_WINDOW_TICKS,
+  FREEZE_FIRST_PHASE,
+  SETTLEMENT_PHASE,
+  TICKS_PER_RECKONING,
+  WINDOW_FIRST_PHASE,
+} from '../../src/core/time.js';
 import {
   Engine,
   assertPhaseOrder,
@@ -106,15 +112,33 @@ describe('the tick owns the clock, and hands it to every phase', () => {
     expect(first.inFreeze).toBe(false);
     expect(first.isSettlementTick).toBe(false);
 
-    const settlement = reckoningClock(TICKS_PER_RECKONING - 1);
+    // The freeze tick and the settlement tick are DIFFERENT ticks — SPEC §5.1 puts the
+    // freeze at "the last tick *before* settlement" — so the clock reports exactly one band
+    // at each. This block used to assert `inFreeze` at the settlement tick, which passed
+    // only because `core/time.ts` had both predicates true at phase 287; that collision is
+    // what made INV-18's "between freeze and settlement" an empty interval.
+    const settlement = reckoningClock(SETTLEMENT_PHASE);
     expect(settlement.isSettlementTick).toBe(true);
-    expect(settlement.inFreeze).toBe(true);
-    // The freeze is not in the commitment window: the window ends where it begins.
+    expect(settlement.inFreeze).toBe(false);
     expect(settlement.inCommitmentWindow).toBe(false);
 
-    const window = reckoningClock(TICKS_PER_RECKONING - COMMITMENT_WINDOW_TICKS);
+    const freeze = reckoningClock(FREEZE_FIRST_PHASE);
+    expect(freeze.inFreeze).toBe(true);
+    expect(freeze.isSettlementTick).toBe(false);
+    // The freeze is not in the commitment window: the window ends where the freeze begins.
+    expect(freeze.inCommitmentWindow).toBe(false);
+
+    // Addressed by the constant that declares where the window starts, never by arithmetic
+    // on TICKS_PER_RECKONING: `TICKS_PER_RECKONING - COMMITMENT_WINDOW_TICKS` is two ticks
+    // into the window now that the freeze and the settlement each own a tick, so it would
+    // pass while saying something false about where the window opens.
+    const window = reckoningClock(WINDOW_FIRST_PHASE);
     expect(window.inCommitmentWindow).toBe(true);
     expect(window.inFreeze).toBe(false);
+    expect(window.isSettlementTick).toBe(false);
+    // …and the tick before it is outside, which is what makes the boundary asserted rather
+    // than merely visited.
+    expect(reckoningClock(WINDOW_FIRST_PHASE - 1).inCommitmentWindow).toBe(false);
   });
 
   it('puts the clock on every phase context and on the report', () => {
@@ -141,10 +165,20 @@ describe('the tick owns the clock, and hands it to every phase', () => {
     // offered at the settlement tick is a wake for the tick *after* the thing it was
     // about — the agent would be told to come and decide about a Reckoning that had
     // already happened. The first draft did exactly that, and this test found it.
-    const opens = TICKS_PER_RECKONING - COMMITMENT_WINDOW_TICKS;
+    // Taken from `WINDOW_FIRST_PHASE`, which is the window's declared start. It was
+    // computed as `TICKS_PER_RECKONING - COMMITMENT_WINDOW_TICKS`, and that expression
+    // silently stopped naming the window's first tick the moment the freeze and the
+    // settlement stopped sharing one: it now points two ticks *inside* the window, so the
+    // wake would be asserted at a tick the window had already opened on.
+    const opens = WINDOW_FIRST_PHASE;
     expect(opensCommitmentWindowNext(opens - 1)).toBe(true);
     expect(opensCommitmentWindowNext(opens)).toBe(false);
-    expect(opensCommitmentWindowNext(TICKS_PER_RECKONING - 1)).toBe(false);
+    expect(opensCommitmentWindowNext(SETTLEMENT_PHASE)).toBe(false);
+    // And the window the wake announces really is COMMITMENT_WINDOW_TICKS wide, counted
+    // from the first tick the agent can act in to the tick the freeze takes over. This is
+    // the agent-facing promise — "you have 24 ticks to commit" — and an engine that allowed
+    // 23 would be scar #1 with money on it.
+    expect(FREEZE_FIRST_PHASE - opens).toBe(COMMITMENT_WINDOW_TICKS);
 
     const { world, principals } = seatWorld(3);
     const engine = new Engine({ world, seed: 'wake-clock', startTick: opens - 3 });

@@ -27,6 +27,8 @@ import { join } from 'node:path';
 
 const SPEC = readFileSync(new URL('../../../docs/design/SPEC.md', import.meta.url), 'utf8');
 const SRC = new URL('../../src/', import.meta.url).pathname;
+/** The tests are source too. See the NUL-byte guard at the foot of this file. */
+const TEST = new URL('../', import.meta.url).pathname;
 
 /** §3's Term column, parsed from the canon rather than copied out of it. */
 function canonTerms(): ReadonlySet<string> {
@@ -244,7 +246,16 @@ describe('SPEC §3 is a rules surface — repo-wide', () => {
     // `file(1)` reports such a file as `data` and grep skips it entirely, so every
     // grep-based guard above — and SEC-9's outbound secret scan — silently stops
     // covering it while tsc, eslint and vitest all stay green.
-    const withNul = srcFiles().filter((f) => readFileSync(f).includes(0));
+    //
+    // ── `test/` IS WALKED TOO, AND IT WAS NOT ────────────────────────────────
+    //
+    // This guard was rooted at `src/` alone while its own comment named "one identity
+    // test" as a source of the bug it exists to prevent. Wave 2 then shipped a literal
+    // NUL in `test/api/scar11.test.ts` — the file whose seventy assertions are the
+    // scar-#11 leak suite — and this test stayed green while `file(1)` reported that
+    // file as `data` and `grep -rn … test/api/` skipped every line of it. A guard that
+    // does not walk the tests cannot see the tests, and a test is a source file.
+    const withNul = [...srcFiles(), ...srcFiles(TEST)].filter((f) => readFileSync(f).includes(0));
     expect(withNul).toEqual([]);
   });
 });

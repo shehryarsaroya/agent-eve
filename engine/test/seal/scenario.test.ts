@@ -100,8 +100,12 @@ function reckoning(
     deeds: all,
     // The completeness witness. `outcome === null` is an *abstention*, and the only
     // thing that separates an abstention from a query that missed A's deeds is this
-    // claim — without it the seal would defer rather than being marked (§15.4).
-    deedSet: allDeedsWitness(r, settlement(r), all, [A]),
+    // tally — without it the seal would defer rather than being marked (§15.4).
+    //
+    // The count is `deeds`, not `all`: `extraDeeds` is the previous Reckoning's deed,
+    // handed over deliberately to prove scar #7 stays closed, and a tally counts
+    // **this** Reckoning's rows only.
+    deedSet: allDeedsWitness(r, settlement(r), [[A, deeds.length]]),
   });
 }
 
@@ -113,6 +117,10 @@ describe('a seal honoured', () => {
     expect(resolution.verdicts.length).toBe(1);
     expect(resolution.verdicts[0]?.verdict).toBe('HONOURED');
     expect(resolution.charges).toEqual([]);
+    // A healthy Reckoning defers nothing and reconciles cleanly. Both lists are the
+    // operator's alarm, so a scenario that claims to be the healthy path must say so.
+    expect(resolution.deferred).toEqual([]);
+    expect(resolution.deedSetFaults).toEqual([]);
 
     const before = zeroStanding(A);
     const after = applySealStandingCharges(before, resolution.charges);

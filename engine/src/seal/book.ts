@@ -196,8 +196,42 @@ export interface SealAuditRecord {
 export const ALL_DEEDS_CLAIM = 'THESE_ARE_ALL_THIS_RECKONINGS_DEEDS';
 
 /**
+ * One principal's deed count for one Reckoning, **counted where the deeds were
+ * written**.
+ *
+ * `deedCount` is the whole load-bearing field of the completeness witness, and its
+ * only requirement is the one a type cannot express: *it must not be computed from
+ * the deed array it is checked against.* The first version of this witness carried
+ * a single total and shipped a helper that filled it in with `deeds.length` — so
+ * `resolve`'s comparison was a tautology, and a query that dropped a row still
+ * marked the principal it dropped, which is the §15.4 defect the witness exists to
+ * stop. A count derived from the thing it is meant to witness is not a witness.
+ *
+ * So the count is **per principal** and it comes from the producer: whatever wrote
+ * the deed rows for this Reckoning knows how many it wrote for each principal, and
+ * that tally reaches {@link SealBook.resolve} by a different road than the rows do.
+ * Two roads is the entire mechanism. See {@link allDeedsWitness}, which cannot see
+ * the deeds at all.
+ */
+export interface DeedTally {
+  readonly principal: PrincipalId;
+  /**
+   * How many deeds this principal recorded **in this Reckoning**, per the producer.
+   *
+   * The same population as {@link SealResolveInput.deeds} — *every* deed row, not
+   * only the ones that happen to name a sealed verb, because the resolver counts
+   * rows and cannot know which ones the producer thought were relevant. Deeds
+   * outside the Reckoning are not counted on either side.
+   *
+   * Zero is a real and important answer: it is a witnessed abstention, and it is the
+   * only thing that lets a seal be contradicted by an act that never happened.
+   */
+  readonly deedCount: number;
+}
+
+/**
  * **The completeness witness.** The caller's claim that `deeds` is every deed this
- * Reckoning recorded for the principals it names.
+ * Reckoning recorded for the principals it tallies.
  *
  * Without it, "the agent abstained" and "the caller's query missed this principal"
  * are the same input to {@link SealBook.resolve}, and the second publishes a
@@ -207,47 +241,65 @@ export const ALL_DEEDS_CLAIM = 'THESE_ARE_ALL_THIS_RECKONINGS_DEEDS';
  * §15.4 calls that shape the top engineering risk; this is it on the other permanent
  * mark the design can make.
  *
- * Every field is **checked, not trusted**. A witness that disagrees with the deed
- * array it accompanies is the engine's own bug and halts the tick — which is the
- * legitimate use of a halt, unlike the one this module used to make.
+ * Three fields are **checked against settlement** and disagreeing on any of them is
+ * a caller bug that halts: the Reckoning, the state version, and the claim itself.
+ * The fourth — {@link DeedTally} — is checked against the deeds **per principal**,
+ * and a principal whose tally does not reconcile is simply *not witnessed*: its
+ * seals defer, with no mark and no charge. That asymmetry is deliberate. A
+ * reconciliation failure is the one witness fault whose cause might be the tally
+ * rather than the query, so the module cannot prove it is beyond agent influence,
+ * and *a halt is for our bug, never for their input* (AGT-X9).
  *
- * `principals` must include principals with **zero** deeds. That is the whole point:
- * a principal listed with no deeds is a witnessed abstention and is marked; a
- * principal absent from the list is an unanswered question and defers.
+ * `tallies` must include principals with **zero** deeds. That is the whole point: a
+ * principal tallied at 0 with 0 deeds present is a witnessed abstention and is
+ * marked; a principal absent from the tally is an unanswered question and defers.
  */
 export interface DeedSetWitness {
   /** The Reckoning the set was gathered for. Must equal the one being resolved. */
   readonly reckoningIndex: number;
   /** The state version it was gathered at. Must equal settlement's own. */
   readonly stateVersion: number;
-  /** How many deeds the gatherer counted. Must equal `deeds.length`. */
-  readonly deedCount: number;
-  /** Every principal this set is complete for, including those with no deeds. */
-  readonly principals: readonly PrincipalId[];
+  /**
+   * Per principal, how many deeds the producer recorded. Every principal this set
+   * is complete for appears exactly once, including those with no deeds.
+   */
+  readonly tallies: readonly DeedTally[];
   /** Always {@link ALL_DEEDS_CLAIM}. */
   readonly claim: typeof ALL_DEEDS_CLAIM;
 }
 
 /**
- * Build a witness from the deed array and the principals it covers.
+ * Build a witness from the producer's own per-principal tally.
  *
- * Deliberately derives `deedCount` from `deeds` rather than taking it: a helper that
- * let a caller state a count *and* hand over a different array would be the same
- * unwitnessed hole with more ceremony. A caller whose count comes from its query
- * plan should construct the object literal itself, so that the two numbers have two
- * independent sources and {@link SealBook.resolve} can compare them.
+ * **This function cannot see the deed array, and that is the fix.** Its predecessor
+ * took `deeds` and filled in `deedCount: deeds.length`, which made the resolver's
+ * comparison a tautology for every caller that used the documented helper — the
+ * §15.4 false-mark route, reproduced verbatim under the fix's own instructions. A
+ * helper with no access to the rows cannot derive the count from them, so the two
+ * numbers `resolve` compares necessarily have two sources.
+ *
+ * `tally` is `(principal, count)` pairs from wherever the deeds were **written**:
+ * the per-principal count the deed producer kept as it appended, or a count taken
+ * from the venture/role records — never `deeds.filter(...).length` at the call site,
+ * which reintroduces the tautology one layer up and is the one thing a caller must
+ * not do.
+ *
+ * Duplicates are **preserved, not folded**. A caller that tallies one principal
+ * twice with two different counts has a bug the resolver must be able to see; a
+ * helper that quietly kept the first would hide it.
  */
 export function allDeedsWitness(
   reckoningIndex: number,
   stateVersion: number,
-  deeds: readonly Deed[],
-  principals: Iterable<PrincipalId>,
+  tally: Iterable<readonly [PrincipalId, number]>,
 ): DeedSetWitness {
+  const tallies = [...tally]
+    .map(([principal, deedCount]) => Object.freeze({ principal, deedCount }))
+    .sort((a, b) => compareIds(a.principal, b.principal));
   return Object.freeze({
     reckoningIndex,
     stateVersion,
-    deedCount: deeds.length,
-    principals: Object.freeze([...new Set(principals)].sort(compareIds)),
+    tallies: Object.freeze(tallies),
     claim: ALL_DEEDS_CLAIM,
   });
 }
@@ -263,7 +315,9 @@ export interface SealResolveInput {
   /**
    * The completeness witness. **Supply it**: without it no seal can be marked from
    * the absence of a deed, so a Reckoning resolved unwitnessed produces no reveals
-   * at all. See {@link DeedSetWitness} for why it is not simply assumed.
+   * at all. See {@link DeedSetWitness} for why it is not simply assumed, and
+   * {@link DeedTally} for the one requirement a type cannot state — the counts must
+   * come from wherever the deeds were *written*, not from `deeds` above.
    */
   readonly deedSet?: DeedSetWitness;
 }
@@ -297,6 +351,17 @@ export interface SealResolution {
    * that the resolver is being called without its witnesses.
    */
   readonly deferred: readonly SealDeferral[];
+  /**
+   * Every way the deed set and its own witness failed to reconcile, in canonical
+   * principal order. **Operator-facing only**; nothing publishes it and no agent can
+   * read it.
+   *
+   * These are the faults that used to be halts, and each one now costs exactly the
+   * seals of the principal it names — those defer. A healthy Reckoning has **none**,
+   * so a non-empty list means the deed query and the deed tally disagree, which is a
+   * bug worth paging someone about *without* stopping the world for it (AGT-X9).
+   */
+  readonly deedSetFaults: readonly string[];
 }
 
 /** Zero-padded so ids sort in creation order under {@link compareIds}. */
@@ -375,7 +440,20 @@ export class SealBook {
     // touch the settlement set (INV-18), and a seal joining the set inside it is
     // the scar #6 shape — the outcome resolved from a different state than the one
     // the reveal was computed from.
-    if (inFreeze(input.tick)) {
+    //
+    // THE SETTLEMENT TICK IS EXPLICITLY INCLUDED, and it is not redundant. While
+    // core/time.ts wrongly had `inFreeze` true at the settlement phase, this door
+    // caught both ticks by accident. Fixing that bug re-opened the settlement tick
+    // here, and a verifier probed the consequence: commit at 285 ok, 286 refused,
+    // **287 accepted**. Because VALIDATE+LOCK (phase 3) runs long before OBLIGE
+    // (phase 10), such a seal lands in the very set the driver is about to judge,
+    // with no deed able to follow it in the same tick. That is either a CONTRADICTED
+    // mark against a promise that had zero ticks in which to be kept — A5′, a false
+    // mark on an innocent agent — or an unjudged seal in a resolved Reckoning, which
+    // checkInv20 reports as a HALT, i.e. an agent-reachable world stop (AGT-X9).
+    // Both are reachable today: `seal` is gated off HTTP, but src/sim/runtime.ts
+    // passes ctx.tick straight through, so the cast can do it.
+    if (inFreeze(input.tick) || isSettlementTick(input.tick)) {
       return reject(
         'INV-18',
         'the freeze has begun: no seal may join this Reckoning now. Seal before the freeze tick;' +
@@ -591,15 +669,30 @@ export class SealBook {
    * bug, never for their input.*
    *
    * **Halts** — the wrong Reckoning, the wrong tick, a second resolution, a deed
-   * valued ahead of settlement, a completeness witness that disagrees with the deeds
-   * it accompanies, a deed for a principal the witness does not cover. Every one is
-   * an engine-side defect, reproducible from `(snapshot, action_log, seed)`, fixable,
-   * resumable.
+   * valued ahead of settlement, and a witness that disagrees with *settlement itself*
+   * about the Reckoning, the state version, or its own claim. Every one is an
+   * engine-side defect with no agent input anywhere near it, reproducible from
+   * `(snapshot, action_log, seed)`, fixable, resumable.
    *
    * **Defers** — anything that rests on an agent-supplied field the engine cannot
    * account for. See {@link ./verdict.ts}'s four bases. A deferred seal is judged
    * once and closed with no mark; it is never re-judged, because re-judging a seal at
    * a later court is scar #7 itself.
+   *
+   * **Two things that look like halts and are not**, both narrowed here after a
+   * re-verification found them re-opening AGT-X9 by a new road:
+   *
+   * - *A deed for a principal the witness does not tally.* A principal owes a seal
+   *   only for the **roles it holds**, so an agent that hauls while holding no role
+   *   produces a perfectly legitimate deed that no witness of the sealing principals
+   *   covers. Halting on it would let any agent stop every Reckoning with one
+   *   ordinary act. The deed is kept for attribution — it can only ever *honour* a
+   *   seal — and the principal is simply not witnessed, so nothing may be marked
+   *   against it from an absence.
+   * - *A tally that does not reconcile with the deeds that arrived.* That is the
+   *   query bug the witness exists to catch, and the answer A5′ permits is to make no
+   *   mark: only that principal's seals defer, and the mismatch is reported in
+   *   {@link SealResolution.deedSetFaults}.
    *
    * ## Two things the caller must supply, and what happens if it does not
    *
@@ -660,11 +753,11 @@ export class SealBook {
       }
     }
 
-    // The witness is checked against the array it accompanies, never trusted. A
-    // caller that says "these are all 12 deeds" and hands over 9 has a query bug, and
-    // a query bug that goes on to mark three innocent agents is §15.4 exactly.
+    // Three things the witness must agree with *settlement itself* about. None of the
+    // three can be reached by anything an agent sends, so all three halt: a witness
+    // gathered for another Reckoning, at another state version, or carrying no claim
+    // at all, is the batch wiring its own inputs together wrongly.
     const witness = input.deedSet;
-    const witnessed = new Set<PrincipalId>();
     if (witness !== undefined) {
       if (witness.claim !== ALL_DEEDS_CLAIM) {
         violations.push(
@@ -690,29 +783,6 @@ export class SealBook {
           ),
         );
       }
-      if (witness.deedCount !== input.deeds.length) {
-        violations.push(
-          sealViolation(
-            'INV-20',
-            atTick,
-            `deed-set witness counts ${witness.deedCount} deeds but ${input.deeds.length} were handed` +
-              ' over; a set that lost rows on the way here would mark whoever it dropped',
-          ),
-        );
-      }
-      for (const p of witness.principals) witnessed.add(p);
-      for (const deed of input.deeds) {
-        if (!witnessed.has(deed.principal)) {
-          violations.push(
-            sealViolation(
-              'INV-20',
-              atTick,
-              `deed ${deed.eventId} belongs to ${deed.principal}, whom the deed-set witness does not` +
-                ' cover; the witness and the deeds disagree about whose Reckoning this is',
-            ),
-          );
-        }
-      }
     }
     if (violations.length > 0) throw new SealHalt(violations);
 
@@ -722,6 +792,8 @@ export class SealBook {
       if (list === undefined) deedsByPrincipal.set(deed.principal, [deed]);
       else list.push(deed);
     }
+
+    const { witnessed, deedSetFaults } = reconcile(witness, input.deeds, r);
 
     const ids = [...(this.byReckoning.get(r) ?? [])].sort(compareIds);
     const verdicts: SealResolution['verdicts'][number][] = [];
@@ -779,7 +851,7 @@ export class SealBook {
     }
 
     this.resolvedReckonings.add(r);
-    return Object.freeze({ reckoningIndex: r, atTick, verdicts, charges, deferred });
+    return Object.freeze({ reckoningIndex: r, atTick, verdicts, charges, deferred, deedSetFaults });
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -845,6 +917,84 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const existing = map.get(key);
   if (existing === undefined) map.set(key, [value]);
   else existing.push(value);
+}
+
+/**
+ * Reconcile the producer's tally against the rows that actually arrived, and return
+ * the principals for whom an **absence** is now evidence.
+ *
+ * This is the whole of the completeness witness. `witnessed` is what
+ * {@link ./verdict.ts} consults before it will mark a seal from the absence of a
+ * deed, and a principal earns a place in it only by having its independently-sourced
+ * count match the rows in front of us. Everything that does not match produces a
+ * sentence for the operator and **no mark for anyone** — never a halt, because a
+ * tally is a caller's claim and a claim the engine cannot account for is data
+ * (AGT-X9; SPEC §15.3's rule that the unresolvable defers and never defaults).
+ *
+ * Only deeds **inside `r`** are counted, because that is what a tally of "this
+ * Reckoning's deeds" means. `resolve` deliberately tolerates out-of-window deeds in
+ * its argument (a naive "all deeds so far" query hands them over, and scar #7 says
+ * they must be ignored rather than judged) — counting them here would turn that
+ * tolerated sloppiness into a reconciliation failure and defer honest seals.
+ */
+function reconcile(
+  witness: DeedSetWitness | undefined,
+  deeds: readonly Deed[],
+  r: number,
+): { readonly witnessed: ReadonlySet<PrincipalId>; readonly deedSetFaults: readonly string[] } {
+  const witnessed = new Set<PrincipalId>();
+  const deedSetFaults: string[] = [];
+  if (witness === undefined) return { witnessed, deedSetFaults };
+
+  const arrived = new Map<PrincipalId, number>();
+  for (const deed of deeds) {
+    if (reckoningIndex(deed.tick) !== r) continue;
+    arrived.set(deed.principal, (arrived.get(deed.principal) ?? 0) + 1);
+  }
+
+  const tallied = new Map<PrincipalId, number[]>();
+  for (const t of witness.tallies) push(tallied, t.principal, t.deedCount);
+
+  for (const p of [...tallied.keys()].sort(compareIds)) {
+    const counts = tallied.get(p) ?? [];
+    const distinct = new Set(counts);
+    if (distinct.size > 1) {
+      // Two answers is no answer. Identical duplicates are merely untidy and are
+      // allowed through, because deferring an honest seal over a repeated row would
+      // cost the reveal for nothing.
+      //
+      // Reported in the order given rather than sorted: `NaN` is a reachable count
+      // here, and a numeric comparator against it returns `NaN`, which leaves the
+      // order to the engine rather than to us (DET-1).
+      deedSetFaults.push(
+        `the deed-set witness tallies ${p} more than once and the counts disagree` +
+          ` (${counts.map((c) => String(c)).join(', ')}); ${p}'s seals defer`,
+      );
+      continue;
+    }
+    const expected = counts[0];
+    if (expected === undefined || !Number.isSafeInteger(expected) || expected < 0) {
+      deedSetFaults.push(
+        `the deed-set witness tallies ${p} at ${String(expected)}, which is not a deed count;` +
+          ` ${p}'s seals defer`,
+      );
+      continue;
+    }
+    const present = arrived.get(p) ?? 0;
+    if (present !== expected) {
+      // The §15.4 route this witness exists for: the producer wrote N rows and N-1
+      // reached us, so the principal we dropped looks exactly like one that abstained.
+      deedSetFaults.push(
+        `the deed-set witness tallies ${expected} deed(s) for ${p} in Reckoning ${String(r)} but` +
+          ` ${present} arrived; a set that lost a row would mark whoever it dropped, so ${p}'s` +
+          ' seals defer',
+      );
+      continue;
+    }
+    witnessed.add(p);
+  }
+
+  return { witnessed, deedSetFaults };
 }
 
 /**

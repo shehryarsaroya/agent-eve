@@ -22,11 +22,28 @@
  * - **A5′ on the seal mark, route 2.** `target` was validated for length only and
  *   compared with `===`, so `sys-vega` versus `SYS-VEGA` was a guaranteed permanent
  *   public mark on an agent that did exactly what it meant.
+ *
+ * ## The second pass, and why route 1 needed fixing twice
+ *
+ * The first fix for route 1 added a completeness witness whose `deedCount` was a
+ * single total — and shipped a helper that filled it in with `deeds.length`. So
+ * `resolve`'s comparison was a tautology for every caller following the documented
+ * instructions, and a re-verifier reproduced the original false mark verbatim. *A
+ * count derived from the thing it is meant to witness is not a witness.*
+ *
+ * The count is now **per principal**, comes from whatever wrote the deed rows, and
+ * `allDeedsWitness` no longer receives the deeds at all — so the tautology is not
+ * constructible through the exported helper, and `tsc` refuses the old call shape.
+ * The same pass removed the halt the first fix had added on a deed from an untallied
+ * principal: a principal owes a seal only for the roles it holds, so an agent that
+ * hauls while holding none could stop the settlement tick for everyone (AGT-X9 again,
+ * by a new road). Both are regressions here, and both are mutation-verified.
  */
 
 import { describe, expect, it } from 'vitest';
 import { compareIds } from '../../src/ledger/order.js';
 import {
+  ALL_DEEDS_CLAIM,
   SEAL_DISCLOSURE_KEYS,
   SealBook,
   SealDisclosureError,
@@ -47,6 +64,8 @@ import { deed, eid, intent, pid, role, settlement } from './helpers.js';
 
 const A = pid('P-A');
 const B = pid('P-B');
+/** A third principal, so a tally's order is distinguishable from its reverse. */
+const C = pid('P-C');
 const AT_TICK = settlement(0);
 
 /** The world the vertical slice actually has: two systems and one hauling verb. */
@@ -84,6 +103,15 @@ function run(over: {
   version?: number;
   deeds?: readonly Deed[];
   witnessed?: boolean;
+  /**
+   * How many deeds the *producer* says A wrote this Reckoning.
+   *
+   * Defaults to the fixture's own array length, which is legitimate **here and only
+   * here**: a fixture is both producer and query, so deriving it states "the two
+   * agree", which is the healthy case. A production caller must never do this — see
+   * `DeedTally` — and the fixtures that model a query bug state the number.
+   */
+  recorded?: number;
   /** `null` puts the book in the degraded, no-world-attached mode on purpose. */
   world?: SealWorldIndex | null;
 }): ReturnType<SealBook['resolve']> {
@@ -105,7 +133,9 @@ function run(over: {
     atTick: AT_TICK,
     stateVersion: 400,
     deeds,
-    ...(over.witnessed === false ? {} : { deedSet: allDeedsWitness(0, 400, deeds, [A]) }),
+    ...(over.witnessed === false
+      ? {}
+      : { deedSet: allDeedsWitness(0, 400, [[A, over.recorded ?? deeds.length]]) }),
   });
 }
 
@@ -180,7 +210,10 @@ describe('AGT-X9 — no agent-reachable input may halt the world', () => {
       atTick: AT_TICK,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A, B]),
+      deedSet: allDeedsWitness(0, 400, [
+        [A, 1],
+        [B, 1],
+      ]),
     });
     // B's perfectly good seal is published.
     expect(r.verdicts.map((v) => [v.principal, v.verdict])).toEqual([[B, 'HONOURED']]);
@@ -238,18 +271,93 @@ describe('A5′ — an unwitnessed deed set may not publish a mark', () => {
       ).toBe(true);
     }
     // Both principals hauled 50. Only A's deed reached the resolver, and the witness
-    // says so: it covers A alone.
+    // says so: it tallies A alone.
     const deeds = [deed({ principal: A, outcome: 50 })];
     const r = book.resolve({
       reckoningIndex: 0,
       atTick: AT_TICK,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.charges).toEqual([]);
     expect(r.verdicts.map((v) => v.principal)).toEqual([A]);
     expect(r.deferred.map((d) => [d.principal, d.basis])).toEqual([[B, 'UNWITNESSED_DEED_SET']]);
+  });
+
+  /**
+   * **The first fix did not fix this.** The re-verifier reproduced the original
+   * defect verbatim, under the fix's own documented construction: the witness carried
+   * one total `deedCount` and the exported helper filled it in from `deeds.length`, so
+   * the resolver's comparison was a tautology. A query that lost B's row still marked
+   * B — a §15.4 false mark on an innocent agent, which is the worst thing this engine
+   * can do.
+   *
+   * The difference now is that the count is **per principal and independently
+   * sourced**: the producer wrote one deed for B, one row arrived for A and none for
+   * B, so the tally and the rows disagree about B and B's seal defers.
+   */
+  it('a tally that lost a row defers the principal it dropped, and never marks it', () => {
+    const book = new SealBook(NO_MEASURE_OPINION);
+    for (const p of [A, B]) {
+      const held = [role(`V-${p}`)];
+      const ok = book.commit({
+        principal: p,
+        tick: 100,
+        actedOnStateVersion: 100,
+        intent: intent(),
+        prose: '',
+        role: held[0] ?? null,
+        rolesHeld: held,
+      });
+      expect(ok.ok, JSON.stringify(ok)).toBe(true);
+    }
+    // Both hauled 50, in band, and the producer counted both. The query lost B's row.
+    const gathered = [deed({ principal: A, outcome: 50 })];
+    const r = book.resolve({
+      reckoningIndex: 0,
+      atTick: AT_TICK,
+      stateVersion: 400,
+      deeds: gathered,
+      deedSet: allDeedsWitness(0, 400, [
+        [A, 1],
+        [B, 1],
+      ]),
+    });
+    expect(r.charges).toEqual([]);
+    expect(r.verdicts.map((v) => [v.principal, v.verdict])).toEqual([[A, 'HONOURED']]);
+    expect(r.deferred.map((d) => [d.principal, d.basis])).toEqual([[B, 'UNWITNESSED_DEED_SET']]);
+    // And it is loud: the operator is told which principal did not add up.
+    expect(r.deedSetFaults.length).toBe(1);
+    expect(r.deedSetFaults[0]).toContain(B);
+    expect(r.deedSetFaults[0]).toContain('lost a row');
+  });
+
+  it('the helper cannot be handed the deeds, so the count cannot be derived from them', () => {
+    // The structural half of the fix, and the reason the defect could not simply be
+    // re-tested away: `allDeedsWitness` has no access to the array its count is
+    // checked against. The pairs come from the producer. `tsc` rejects the old
+    // four-argument call, which is what turned 25 silent tautologies into 25 errors.
+    // Three entries, not two, and in an order that is neither sorted nor reversed:
+    // with a two-element fixture `[[B,2],[A,0]]` a `.reverse()` in place of the sort
+    // produces the identical array, so the assertion below passed on a mutant that had
+    // no comparator at all. DET-1 wants the order pinned, not merely disturbed.
+    const witness = allDeedsWitness(0, 400, [
+      [B, 2],
+      [C, 7],
+      [A, 0],
+    ]);
+    expect(witness.tallies.map((t) => [t.principal, t.deedCount])).toEqual([
+      [A, 0],
+      [B, 2],
+      [C, 7],
+    ]);
+    expect(Object.keys(witness).sort(compareIds)).toEqual([
+      'claim',
+      'reckoningIndex',
+      'stateVersion',
+      'tallies',
+    ]);
   });
 
   it('no witness at all is not a claim of abstention either', () => {
@@ -268,10 +376,20 @@ describe('A5′ — an unwitnessed deed set may not publish a mark', () => {
     expect(r.deferred).toEqual([]);
   });
 
-  it('a witness that contradicts itself halts, because that is the engine’s own bug', () => {
+  /**
+   * The three clauses that still halt, and the reason they may: each is the witness
+   * disagreeing with **settlement itself**, which no agent input can reach. The
+   * `claim` clause is here rather than only in the probe file because it is the
+   * anti-accident guard — it is what stops an unrelated object spread into the slot
+   * from being read as a claim of completeness — and it went one whole pass with no
+   * test that bit it.
+   */
+  it('a witness that disagrees with settlement halts, because that is the engine’s own bug', () => {
     const book = new SealBook(NO_MEASURE_OPINION);
     const held = [role('V-1')];
-    book.commit({
+    // Asserted, not discarded: this block used to throw the commit result away, so a
+    // rejected fixture seal would have left the whole test passing on an empty book.
+    const ok = book.commit({
       principal: A,
       tick: 100,
       actedOnStateVersion: 100,
@@ -280,11 +398,15 @@ describe('A5′ — an unwitnessed deed set may not publish a mark', () => {
       role: held[0] ?? null,
       rolesHeld: held,
     });
+    expect(ok.ok, JSON.stringify(ok)).toBe(true);
+    expect(book.size).toBe(1);
+
     const deeds = [deed({ principal: A, outcome: 50 })];
+    const good = allDeedsWitness(0, 400, [[A, 1]]);
     for (const bad of [
-      { ...allDeedsWitness(0, 400, deeds, [A]), deedCount: 7 },
-      { ...allDeedsWitness(0, 400, deeds, [A]), reckoningIndex: 3 },
-      { ...allDeedsWitness(0, 400, deeds, [A]), stateVersion: 399 },
+      { ...good, reckoningIndex: 3 },
+      { ...good, stateVersion: 399 },
+      { ...good, claim: 'THESE_ARE_SOME_DEEDS' as typeof ALL_DEEDS_CLAIM },
     ]) {
       expect(() =>
         book.resolve({
@@ -298,18 +420,144 @@ describe('A5′ — an unwitnessed deed set may not publish a mark', () => {
     }
   });
 
-  it('a deed for a principal the witness does not cover is the engine’s bug too', () => {
+  /**
+   * The halt the first fix added, and the second one removed. `resolve` threw on a
+   * deed whose principal the witness did not cover — but a principal owes a seal only
+   * for the **roles it holds** (`unsealedRoles` asks nothing of a role-less
+   * principal), so an agent that hauls while holding no role produced a legitimate
+   * deed that stopped the settlement tick for everyone. AGT-X9's blast radius, reached
+   * by an ordinary act.
+   */
+  it('a deed from a principal the witness never tallied is ignored, not a halt', () => {
     const book = new SealBook(NO_MEASURE_OPINION);
-    const deeds = [deed({ principal: A, outcome: 50 })];
-    expect(() =>
-      book.resolve({
-        reckoningIndex: 0,
-        atTick: AT_TICK,
-        stateVersion: 400,
-        deeds,
-        deedSet: allDeedsWitness(0, 400, deeds, [B]),
-      }),
-    ).toThrow(SealHalt);
+    const held = [role('V-1')];
+    const ok = book.commit({
+      principal: A,
+      tick: 100,
+      actedOnStateVersion: 100,
+      intent: intent(),
+      prose: '',
+      role: held[0] ?? null,
+      rolesHeld: held,
+    });
+    expect(ok.ok, JSON.stringify(ok)).toBe(true);
+
+    // B holds no role, owes no seal, and hauls anyway.
+    const deeds = [
+      deed({ principal: A, outcome: 50 }),
+      deed({ principal: B, outcome: 50, eventId: eid('ev:150:1') }),
+    ];
+    const r = book.resolve({
+      reckoningIndex: 0,
+      atTick: AT_TICK,
+      stateVersion: 400,
+      deeds,
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
+    });
+    // A's seal is judged normally; B's untallied deed changes nothing and breaks
+    // nothing. It is not a fault either — the witness never claimed to cover B.
+    expect(r.verdicts.map((v) => [v.principal, v.verdict])).toEqual([[A, 'HONOURED']]);
+    expect(r.deferred).toEqual([]);
+    expect(r.deedSetFaults).toEqual([]);
+  });
+
+  /** Seal for A in a fresh book, then resolve against `deeds` with `tally`. */
+  function withTally(
+    tally: readonly (readonly [typeof A, number])[],
+    deeds: readonly Deed[],
+  ): ReturnType<SealBook['resolve']> {
+    const book = new SealBook(NO_MEASURE_OPINION);
+    const held = [role('V-1')];
+    const ok = book.commit({
+      principal: A,
+      tick: 100,
+      actedOnStateVersion: 100,
+      intent: intent(),
+      prose: '',
+      role: held[0] ?? null,
+      rolesHeld: held,
+    });
+    expect(ok.ok, JSON.stringify(ok)).toBe(true);
+    return book.resolve({
+      reckoningIndex: 0,
+      atTick: AT_TICK,
+      stateVersion: 400,
+      deeds,
+      deedSet: allDeedsWitness(0, 400, tally),
+    });
+  }
+
+  it('a tally that answers twice with two numbers defers rather than halting', () => {
+    const r = withTally(
+      [
+        [A, 1],
+        [A, 4],
+      ],
+      [],
+    );
+    expect(r.verdicts).toEqual([]);
+    expect(r.charges).toEqual([]);
+    expect(r.deferred.map((d) => d.basis)).toEqual(['UNWITNESSED_DEED_SET']);
+    expect(r.deedSetFaults[0]).toContain('more than once');
+  });
+
+  it('but two answers that agree are merely untidy, and the abstention is still marked', () => {
+    // Deferring over a repeated row would cost the reveal for nothing. Two answers is
+    // no answer; the same answer twice is an answer.
+    const r = withTally(
+      [
+        [A, 0],
+        [A, 0],
+      ],
+      [],
+    );
+    expect(r.verdicts.map((v) => v.verdict)).toEqual(['CONTRADICTED']);
+    expect(r.deedSetFaults).toEqual([]);
+  });
+
+  it('a tally that is not a count at all defers rather than halting', () => {
+    for (const bogus of [-1, 1.5, Number.NaN]) {
+      const r = withTally([[A, bogus]], []);
+      expect(r.verdicts, `tally ${bogus}`).toEqual([]);
+      expect(r.charges, `tally ${bogus}`).toEqual([]);
+      expect(r.deferred.map((d) => d.basis), `tally ${bogus}`).toEqual(['UNWITNESSED_DEED_SET']);
+      expect(r.deedSetFaults[0], `tally ${bogus}`).toContain('not a deed count');
+    }
+  });
+
+  it('a fault names the principal and the counts, and never the sealed intention (PROP-D2)', () => {
+    // `deedSetFaults` is a new operator-facing surface on a module whose whole subject
+    // is content nobody may see. "Whose seal could not be judged" is already a second
+    // fact about a sealed intention; the fields of that intention would be far worse.
+    const r = withTally([[A, 3]], []);
+    expect(r.deedSetFaults.length).toBe(1);
+    const line = r.deedSetFaults[0] ?? '';
+    const sealed = intent();
+    for (const secret of [
+      sealed.verb,
+      sealed.target,
+      String(sealed.outcomeLow),
+      String(sealed.outcomeHigh),
+      sealed.measure,
+    ]) {
+      expect(line, `leaked ${secret}`).not.toContain(secret);
+    }
+    expect(line).toContain(A);
+  });
+
+  it('and none of it can suppress a verdict a cited deed already proves', () => {
+    // The over-correction to guard against, restated for the tally: a witness fault
+    // withholds only marks that rest on an ABSENCE. A deed the resolver can point at
+    // needs no witness — otherwise a query bug would start deleting kept promises,
+    // which is A5's "loss is real, public, priceable" failing in the flattering
+    // direction.
+    const honoured = withTally([[A, 9]], [deed({ principal: A, outcome: 50 })]);
+    expect(honoured.verdicts.map((v) => v.verdict)).toEqual(['HONOURED']);
+    expect(honoured.deedSetFaults.length).toBe(1);
+
+    const contradicted = withTally([[A, 9]], [deed({ principal: A, outcome: 5 })]);
+    expect(contradicted.verdicts.map((v) => v.verdict)).toEqual(['CONTRADICTED']);
+    expect(contradicted.charges.length).toBe(1);
   });
 });
 
@@ -400,7 +648,7 @@ describe('A5′ — a formatting slip fails at sealing, not at judgement', () =>
       atTick: AT_TICK,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.verdicts[0]?.verdict).toBe('HONOURED');
   });
@@ -446,7 +694,7 @@ describe('a DEFERRED seal is judged exactly once and closes with no mark', () =>
       atTick: AT_TICK,
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     const rec = book.auditRecord(accepted.value.sealId);
     expect(rec?.disposition).toBe('UNMARKED');

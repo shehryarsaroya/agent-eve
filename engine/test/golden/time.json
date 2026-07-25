@@ -2,7 +2,7 @@
   "__meta": {
     "what": "Golden file for the Reckoning cycle (src/core/time.ts).",
     "why": "The width of the commitment window is an agent-facing rule. If agent.md says \"you have N ticks to commit\" and the engine allows N-1, that is scar #1 with money on it. The table below is what the engine actually does, so a recalibration shows up as a diff a human reads.",
-    "note_on_width": "COMMITMENT_WINDOW_TICKS is 24 but the commitment window is 23 ticks wide, because the freeze tick falls inside \"the last 24 ticks\" and is excluded from commitments. Pinned so the off-by-one cannot drift into agent-facing text unnoticed.",
+    "note_on_width": "COMMITMENT_WINDOW_TICKS is 24 and the commitment window is 24 ticks wide (phases 262-285). It USED to be 23, with a note here reasoning that the freeze tick fell inside 'the last 24 ticks' and was excluded - a plausible justification for what was actually an off-by-one, pinned as if intended. A wave-3 verifier found the related defect: inFreeze and isSettlementTick were BOTH true at phase 287, so 'between freeze and settlement' named an empty interval and INV-18 was vacuous in the wired engine. SPEC 5.1 says the freeze is 'the last tick BEFORE settlement', so the four bands are now disjoint and tile the cycle: quiet 0-261, commitment 262-285, freeze 286, settlement 287.",
     "canonical_version": 1,
     "regenerate": "The hand-authored columns are the oracle. To add a case: write it here with a deliberately wrong derived value, run the matching test in test/core, and copy the expected value out of the failure. Never paste engine output in without checking it against arithmetic you did yourself - that turns an oracle into a snapshot of a bug."
   },
@@ -12,17 +12,17 @@
   "phases": {
     "quiet": {
       "first": 0,
-      "last": 263,
-      "count": 264
+      "last": 261,
+      "count": 262
     },
     "commitment": {
-      "first": 264,
-      "last": 286,
-      "count": 23
+      "first": 262,
+      "last": 285,
+      "count": 24
     },
     "freeze": {
-      "first": 287,
-      "last": 287,
+      "first": 286,
+      "last": 286,
       "count": 1
     },
     "settlement": {
@@ -36,7 +36,7 @@
       "tick": -289,
       "phase": 287,
       "in_commitment_window": false,
-      "in_freeze": true,
+      "in_freeze": false,
       "is_settlement_tick": true
     },
     {
@@ -50,7 +50,7 @@
       "tick": -1,
       "phase": 287,
       "in_commitment_window": false,
-      "in_freeze": true,
+      "in_freeze": false,
       "is_settlement_tick": true
     },
     {
@@ -70,7 +70,7 @@
     {
       "tick": 263,
       "phase": 263,
-      "in_commitment_window": false,
+      "in_commitment_window": true,
       "in_freeze": false,
       "is_settlement_tick": false
     },
@@ -84,15 +84,15 @@
     {
       "tick": 286,
       "phase": 286,
-      "in_commitment_window": true,
-      "in_freeze": false,
+      "in_commitment_window": false,
+      "in_freeze": true,
       "is_settlement_tick": false
     },
     {
       "tick": 287,
       "phase": 287,
       "in_commitment_window": false,
-      "in_freeze": true,
+      "in_freeze": false,
       "is_settlement_tick": true
     },
     {
@@ -106,7 +106,7 @@
       "tick": 575,
       "phase": 287,
       "in_commitment_window": false,
-      "in_freeze": true,
+      "in_freeze": false,
       "is_settlement_tick": true
     },
     {
@@ -127,7 +127,7 @@
       "tick": 288000287,
       "phase": 287,
       "in_commitment_window": false,
-      "in_freeze": true,
+      "in_freeze": false,
       "is_settlement_tick": true
     }
   ]

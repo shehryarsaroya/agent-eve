@@ -40,7 +40,13 @@
  */
 
 import { Rng } from '../core/rng.js';
-import { TICKS_PER_RECKONING, inFreeze, isSettlementTick, reckoningIndex } from '../core/time.js';
+import {
+  FREEZE_TICKS,
+  TICKS_PER_RECKONING,
+  inFreeze,
+  isSettlementTick,
+  reckoningIndex,
+} from '../core/time.js';
 import type {
   AccountId,
   EventId,
@@ -274,6 +280,13 @@ export function runFalseDefaultAudit(options: AuditOptions): AuditResult {
     const formTick = base + 1;
     const hazardTick = base + HAZARD_PHASE;
     const settleTick = base + TICKS_PER_RECKONING - 1;
+    /**
+     * Where the settlement set is computed and its inputs read. **Strictly before the
+     * settlement tick** (SPEC §5.1: the freeze is "the last tick *before* settlement"), so
+     * INV-18's `(frozenAtTick .. settlementTick]` names a real interval. Derived from
+     * `FREEZE_TICKS` rather than written as `- 1`, so a wider freeze moves the model too.
+     */
+    const freezeTick = settleTick - FREEZE_TICKS;
     if (!isSettlementTick(settleTick)) {
       throw new Error(`the audit computed ${settleTick} as a settlement tick and core/time disagrees`);
     }
@@ -341,9 +354,9 @@ export function runFalseDefaultAudit(options: AuditOptions): AuditResult {
       visit(hazardTick, null);
     }
 
-    // ── the freeze, and the settlement ──────────────────────────────────────
-    if (!inFreeze(settleTick)) {
-      throw new Error(`core/time says tick ${settleTick} is not in the freeze; the model is out of step`);
+    // ── the freeze, and the settlement one tick later ────────────────────────
+    if (!inFreeze(freezeTick)) {
+      throw new Error(`core/time says tick ${freezeTick} is not in the freeze; the model is out of step`);
     }
 
     // A rival drains a committed account *inside* the freeze. Only reachable with
@@ -356,9 +369,11 @@ export function runFalseDefaultAudit(options: AuditOptions): AuditResult {
       }
     }
 
-    // The settlement set, computed at the freeze. `settlementSeqFrom` is the seq at
-    // which the settlement's own events begin, which is what separates "the
-    // settlement touched the set" from "somebody else did".
+    // The settlement set, frozen at `freezeTick` and settled at `settleTick`, so INV-18
+    // ranges over a real interval as well as over the within-tick seq boundary.
+    // `settlementSeqFrom` is the seq at which the settlement's own events begin, which is
+    // what separates "the settlement touched the set" from "somebody else did" for the
+    // rows written at the settlement tick itself.
     const objects = new Set<string>();
     for (const c of live) {
       objects.add(c.venture);
@@ -367,7 +382,7 @@ export function runFalseDefaultAudit(options: AuditOptions): AuditResult {
     }
     const set: SettlementSet = {
       reckoningIndex: reckoningIndex(settleTick),
-      frozenAtTick: settleTick,
+      frozenAtTick: freezeTick,
       settlementTick: settleTick,
       settlementSeqFrom: events.eventsAtTick(settleTick).length,
       objects,

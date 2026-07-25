@@ -256,10 +256,12 @@ export const INVARIANTS: readonly InvariantEntry[] = [
     'src/invariants/promises.ts:checkInv18',
     null,
     'PARTIAL',
-    'complete over a supplied SettlementSet. Note that FREEZE_TICKS = 1 makes the freeze tick and the settlement ' +
-      'tick the same tick, so the protected interval is empty in wall time and the check reduces to the ' +
-      'within-tick seq boundary (settlementSeqFrom). Scar #6 wants a wider freeze or that boundary made explicit ' +
-      'in the tick loop',
+    'complete over a supplied SettlementSet. The gap this note used to describe is CLOSED: core/time.ts once had ' +
+      'inFreeze and isSettlementTick both true at phase 287, so the protected interval was empty in wall time and ' +
+      'the check reduced to the within-tick seq boundary (settlementSeqFrom). SPEC §5.1 puts the freeze at the last ' +
+      'tick BEFORE settlement, so the bands are now disjoint (freeze 286, settlement 287) and the interval is real. ' +
+      'Remaining weakness, stated honestly: every drain the suite exercises still lands AT the settlement tick and ' +
+      'is caught by the seq boundary, so the interval itself is enforceable but thinly tested',
   ),
   entry(
     'INV-19',

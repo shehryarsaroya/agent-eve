@@ -78,7 +78,7 @@ function run(
     atTick: settlement(0),
     stateVersion: 400,
     deeds,
-    deedSet: allDeedsWitness(0, 400, deeds, [A]),
+    deedSet: allDeedsWitness(0, 400, [[A, deeds.length]]),
   });
 }
 
@@ -171,7 +171,10 @@ describe('PROBE — an agent can halt the Reckoning with a free seal', () => {
       atTick: settlement(0),
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A, B]),
+      deedSet: allDeedsWitness(0, 400, [
+        [A, 1],
+        [B, 1],
+      ]),
     });
     // B's perfectly good seal is published; A's is closed with no mark.
     expect(r.verdicts.map((v) => v.principal)).toEqual([B]);
@@ -280,7 +283,7 @@ describe('PROBE — a caller that under-supplies deeds fabricates contradictions
       atTick: settlement(0),
       stateVersion: 400,
       deeds,
-      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+      deedSet: allDeedsWitness(0, 400, [[A, 1]]),
     });
     expect(r.charges).toEqual([]);
     expect(r.deferred.map((d) => [d.principal, d.basis])).toEqual([[B, 'UNWITNESSED_DEED_SET']]);
@@ -318,7 +321,10 @@ describe('PROBE — a caller that under-supplies deeds fabricates contradictions
       atTick: settlement(0),
       stateVersion: TICKS_PER_RECKONING + 10,
       deeds,
-      deedSet: allDeedsWitness(0, TICKS_PER_RECKONING + 10, deeds, [A]),
+      // A wrote **no** deed inside Reckoning 0 — the haul landed a tick past the
+      // boundary — and the tally says so, which is what makes this a witnessed
+      // abstention rather than a query that lost the row.
+      deedSet: allDeedsWitness(0, TICKS_PER_RECKONING + 10, [[A, 0]]),
     });
     expect(r.verdicts[0]?.verdict).toBe('CONTRADICTED');
   });

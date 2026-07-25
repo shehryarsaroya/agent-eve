@@ -35,13 +35,19 @@
  *     one free seal (AGT-X9).
  *   - **A mark that rests on an ABSENCE needs a witness.** Two of them, and the tick
  *     loop owns both: `SealResolveInput.deedSet` (a {@link DeedSetWitness} — "these
- *     are all of this Reckoning's deeds, for these principals") and a
- *     {@link SealWorldIndex} on `new SealBook(world)` (targets name real entities, in
- *     the world's own spelling). Without them "the agent abstained" and "our query
- *     missed this principal" are the same input, and the second libels a real agent
- *     permanently (§15.4). Unwitnessed, the seal defers — so a Reckoning resolved
- *     without them produces **no reveals at all**, which is what
+ *     are all of this Reckoning's deeds, and here is how many each principal wrote")
+ *     and a {@link SealWorldIndex} on `new SealBook(world)` (targets name real
+ *     entities, in the world's own spelling). Without them "the agent abstained" and
+ *     "our query missed this principal" are the same input, and the second libels a
+ *     real agent permanently (§15.4). Unwitnessed, the seal defers — so a Reckoning
+ *     resolved without them produces **no reveals at all**, which is what
  *     `SealResolution.deferred` is for.
+ *   - **The deed tally must not be counted from the deeds.** {@link DeedTally}'s
+ *     `deedCount` comes from whatever *wrote* the rows — the producer's own
+ *     per-principal count, or the venture/role records. `allDeedsWitness` cannot see
+ *     the deed array precisely so that this cannot be got wrong by accident; a count
+ *     derived from the array it is checked against is not a witness, and that exact
+ *     mistake shipped once already.
  */
 
 export {
@@ -51,6 +57,7 @@ export {
   allDeedsWitness,
   roleKey,
   type DeedSetWitness,
+  type DeedTally,
   type SealAccepted,
   type SealAuditRecord,
   type SealCommit,
