@@ -228,7 +228,37 @@ Verifier catches worth remembering:
 
 **One thing I got wrong and reverted.** I moved the causal edge into `parent_event_id` on §15.1's authority. INV-12 refused it — "a cause must precede its effect" — and was right: `EventLedger.append` mints its own ids, so the caller-supplied handle can never be one. Only the batch appender knows the minted id, so the debt is the Reckoning driver's and is pinned by three assertions including one on the premise it rests on.
 
-**In flight:** wave 3 — the Reckoning driver (which inherits the INV-17 attribution debt and the frozen-capture contract) · `observe` + affordances + free services · the HTTP surface + heuristic cast + sim CLI · and the seal completeness witness, whose first fix did not hold.
+**Wave 3 — DONE, and the game runs end to end.** Reckoning driver · observe + affordances + free services · HTTP surface + heuristic cast + sim CLI. **1828 tests.** Then the Reckoning was wired into the sim, which is what turned a tick loop into a game:
+
+```
+1200 ticks · 4 Reckonings, all committed
+settlements 61 · standing moves 118 · proceeds 569,338 · unattributed 0
+deterministic across runs
+```
+
+Two P0s in wave 3, both fixed: **an identity takeover of a house-cast principal via the documented first request** (`/enroll` committed the seat and the key before checking the world already had that principal, and ids derive from handles), and a "fix" that changed a function's arity and left its only production caller broken while reporting `typecheckPasses: true`.
+
+### The two worst bugs of the whole build were mine
+
+**1. The freeze collided with settlement** (`core/time.ts`, Gate 0). §5.1 puts the freeze at "the last tick *before* settlement"; I made both predicates true at phase 287. So "between freeze and settlement" named an **empty interval**, INV-18 was vacuous in the wired engine, and §15.4's defence-in-depth against a fabricated default was unenforceable anywhere. The commitment window was also 23 ticks against a constant declaring 24.
+
+> It had been **pinned as correct in two places** — a test asserting "the freeze tick and the settlement tick are the same tick" with plausible reasoning, and a golden file explaining the off-by-one as deliberate. Four modules had written guards *to satisfy it*, one requiring a condition only the bug made possible. Fixing it turned 62 tests red across four cascading layers. **And the fix opened a new A5′ hole**: the seal freeze door had been catching the settlement tick by accident, so correcting the clock re-opened it — a seal committed at settlement joins the set being judged with no deed able to follow it, giving either a false `CONTRADICTED` or an agent-reachable halt. Found by *probing*, not reading.
+
+**2. Money was outside `state_hash`.** Only the venture table was registered, so two runs with identical world/intent/venture state but **divergent balances hashed the same** — DET-1 held while saying nothing about the one quantity the game is about. `Engine.abort` could not restore the ledger either, so §15.2's "replay the failed tick and it produces the world every observer was promised" was false for the table settlement mutates most. Fixed with a ledger state table; the evidence is that the identical run's hash changed, which is what "the hash now includes money" looks like.
+
+### A canon gap the build found: `elect`
+
+The payer's election rode as a parameter on `sign`, which locked the choice at signing. **That made A6 unreachable**: its signature moment is authority abused *at the moment of maximum leverage*, and if the choice is fixed at signing there is no such moment — §7.6's falsification test cannot be asked of a payer never offered the choice when it mattered. Now a verb (39/40, spent deliberately), restatable until the freeze, frozen thereafter because §5.1 forbids a discretionary decision inside the settlement window. `agent.md` says the part a player would never guess: **silence is a decline, not a pass.**
+
+### Method, settled by fourteen builders and their verifiers
+
+> **A subagent's self-report is not evidence.** Fourteen of fourteen overstated theirs; verifiers found a P0 or P1 in almost every one. One *fix* pass failed to fix its own headline finding. The verify and re-verify stages are the only reason **seven A5′-class bugs** are not in the tree.
+
+> **Mutation-test every guard or it is decoration.** Six worthless guards found, four of them mine: a vocabulary detector that passed a mutation reintroducing a collision named in its own header · an `agent.md` A7 check that caught an inverted table only by an `execute`/`executes` accident · an election guard that passed on an incidental substring after the defining row was deleted · a seal completeness witness that derived its count from the array it was meant to witness. **Presence is not semantics.**
+
+**Open, tracked, not hidden:** the seal verb is deliberately unregistered (two call sites name a verb this world records no deed for, so a kept promise would resolve `CONTRADICTED` from an absence) · INV-19 is decided and documented rather than repaired · the WATERFALL stage's INV-6 instance cannot fail as constructed · `src/sim/service.ts` does not exist yet, so `compact-sim.service` would not start.
+
+**In flight:** the `elect` implementation and the seal-verb fix.
 
 ---
 
