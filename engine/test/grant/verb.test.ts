@@ -19,6 +19,9 @@ import type { EventId, GrantId, PrincipalId, SystemId } from '../../src/core/typ
 import { minor } from '../../src/core/units.js';
 import { storesAccount } from '../../src/ledger/index.js';
 import { commonsSystems } from '../../src/world/index.js';
+import { buildObservation } from '../../src/api/observe.js';
+
+type Row = Record<string, unknown>;
 import {
   GRANT_MAX_LIFETIME_TICKS,
   Runtime,
@@ -250,6 +253,62 @@ describe('on-behalf create — a delegate draws on a grant (A6 enforcement)', ()
     const refusal = act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage });
     expect(refusal).toBeNull();
     expect(w.runtime.ventures.forPrincipal(w.grantor)[0]?.creator).toBe(w.grantor);
+  });
+});
+
+describe('observe surfaces grants, so an agent can see and use its authority (A6)', () => {
+  function grantsView(runtime: Runtime, principal: PrincipalId): { granted: Row[]; held: Row[] } {
+    const observation = buildObservation({
+      runtime,
+      principal,
+      serverNowMs: 0,
+      fresh: true,
+      wakesRemaining: 16,
+      stale: false,
+      corrections: [],
+      actionsRemaining: 4,
+    }) as unknown as { grants: { granted: Row[]; held: Row[] } };
+    return observation.grants;
+  }
+
+  it('a grantor sees what it granted; a delegate sees what it holds — the same grant, one book', () => {
+    const w = world('obs1');
+    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 500 }))).toBeNull();
+    const id = w.runtime.grants.forGrantor(w.grantor)[0]!.id;
+
+    const asGrantor = grantsView(w.runtime, w.grantor);
+    expect(asGrantor.granted).toHaveLength(1);
+    expect(asGrantor.granted[0]!['id']).toBe(id);
+    expect(asGrantor.granted[0]!['delegate']).toBe(w.delegate);
+    expect(asGrantor.granted[0]!['headroom_direct']).toBe(500);
+    expect(asGrantor.granted[0]!['live']).toBe(true);
+    expect(asGrantor.held).toHaveLength(0); // you are not your own delegate
+
+    const asDelegate = grantsView(w.runtime, w.delegate);
+    expect(asDelegate.held).toHaveLength(1);
+    expect(asDelegate.held[0]!['id']).toBe(id);
+    expect(asDelegate.held[0]!['grantor']).toBe(w.grantor);
+    expect(asDelegate.granted).toHaveLength(0);
+  });
+
+  it('the grantor watches the headroom fall as its delegate draws on the grant (exposure is visible)', () => {
+    const w = world('obs2');
+    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 250_000 }))).toBeNull();
+    const id = w.runtime.grants.forGrantor(w.grantor)[0]!.id;
+    expect(
+      act(w.runtime, w.delegate, 'create', {
+        kind: 'HAUL',
+        on_behalf_of: w.grantor,
+        value: 12_000,
+        stage: w.stage,
+      }),
+    ).toBeNull();
+
+    const spent = w.runtime.grants.get(id)!.spentDirect;
+    expect(spent).toBeGreaterThan(0);
+    const row = grantsView(w.runtime, w.grantor).granted[0]!;
+    expect(row['spent_direct']).toBe(spent);
+    expect(row['headroom_direct']).toBe(250_000 - spent);
   });
 });
 

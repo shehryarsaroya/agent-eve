@@ -52,7 +52,7 @@ import {
   reckoningIndex,
   ticksUntilReckoning,
 } from '../core/time.js';
-import type { PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
+import type { Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
 import { storesAccount } from '../ledger/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
@@ -355,9 +355,18 @@ export function buildObservation(input: ObserveInput): Observation {
     counterparties: counterpartiesFor(runtime, principal, mine, board).slice(0, MAX_LIST_ROWS),
 
     grants: {
-      /** Grants land at step 9. Two empty lists, not an invented headroom. */
-      granted: [],
-      held: [],
+      // Authority you HANDED OUT (you are the grantor): watch each delegate's spend
+      // against the worst case you signed. And authority you HOLD (you are the delegate):
+      // read your remaining headroom before your next on-behalf act. Both from the one
+      // book, through {@link grantView}, so the two sides can never disagree (A6, §8.1).
+      granted: runtime.grants
+        .forGrantor(principal)
+        .slice(0, MAX_LIST_ROWS)
+        .map((g) => grantView(runtime, g, tick)),
+      held: runtime.grants
+        .forDelegate(principal)
+        .slice(0, MAX_LIST_ROWS)
+        .map((g) => grantView(runtime, g, tick)),
     },
 
     market: {
@@ -1139,6 +1148,38 @@ function standingRow(runtime: Runtime, who: PrincipalId): Readonly<Record<string
     sureties: [],
     /** The tick of the latest recorded default, or null. A stamp, never a count. */
     last_default: row.lastDefaultTick,
+  };
+}
+
+/**
+ * One grant, as the reader sees it (SPEC §8, A6). Both roles read the same row so a
+ * grantor's `granted[]` and a delegate's `held[]` cannot describe one grant two ways.
+ *
+ * `spent` and `headroom` are the point of surfacing this at all: a grantor watches how
+ * much of the worst case it authorised a delegate has actually drawn — "an offline agent
+ * is exposed, and the audience can see by how much" (§8.1) — and a delegate reads the
+ * headroom it has left before its next on-behalf act is refused.
+ */
+function grantView(
+  runtime: Runtime,
+  grant: Grant,
+  tick: number,
+): Readonly<Record<string, unknown>> {
+  const headroom = runtime.grants.headroom(grant.id);
+  return {
+    id: grant.id,
+    grantor: grant.grantor,
+    delegate: grant.delegate,
+    template: grant.template,
+    max_direct_loss: grant.maxDirectLoss,
+    max_contingent_liability: grant.maxContingentLiability,
+    spent_direct: grant.spentDirect,
+    spent_contingent: grant.spentContingent,
+    headroom_direct: headroom.direct,
+    headroom_contingent: headroom.contingent,
+    expires_tick: grant.expiresTick,
+    revoked_at_tick: grant.revokedAtTick,
+    live: runtime.grants.isLive(grant.id, tick),
   };
 }
 
