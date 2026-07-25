@@ -66,6 +66,7 @@ import type {
   DecisionSource,
   EventId,
   GoodId,
+  Handle,
   HandId,
   HoldingId,
   InvariantViolation,
@@ -151,7 +152,8 @@ import { slotClaimAt } from '../observe/forecast.js';
 // The Levy's pixel signature (§5.2, A13). Imported as a *type only*: this runtime
 // populates `TributeLine`, it does not define it — `frames/contract.ts` owns the shape and
 // the client already draws that one.
-import type { TributeLine } from '../frames/contract.js';
+import type { TributeLine, ReckoningFrame } from '../frames/contract.js';
+import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
@@ -213,6 +215,7 @@ import {
   kindSpec,
   NEUTRAL_STAGE_BPS,
   openIndices,
+  partiesOf,
   pinnedAt,
   proceedsBand,
   roleOfPrincipal,
@@ -3695,6 +3698,83 @@ export class Runtime {
   /** The last Reckoning's full outcome, for a caller that needs more than the summary. */
   get lastReckoning(): ReckoningOutcome | null {
     return this.outcome;
+  }
+
+  /**
+   * The last settled Reckoning, rendered for the spectator client — or null before any
+   * Reckoning has settled.
+   *
+   * A READ MODEL over the committed outcome, never the live tick: the renderer is handed
+   * a settled result and nothing with a live handle, which is what keeps A9 parity
+   * structural (a viewer cannot be shown a fact a non-party agent's own observe would
+   * not) and lets the frame replay at broadcast speed independent of sim speed
+   * (TESTING.md §1.1 hazard 3). The world settles Reckonings and, until this existed,
+   * nobody could see one — half the product, dark.
+   *
+   * Fields sourced cleanly today: meters, the settled ventures with their parties and
+   * outcome, tribute lines, handles from holding names. publicLine/sealContent/messages
+   * are left null/empty — the renderer tolerates that (a reel only appears on a broken
+   * elective promise anyway), and wiring the declassified negotiation transcript in is a
+   * follow-up, not a blocker on the map having motion.
+   */
+  reckoningFrame(): ReckoningFrame | null {
+    const outcome = this.outcome;
+    if (outcome === null) return null;
+
+    const handles = new Map<PrincipalId, Handle>();
+    for (const h of this.world.holdings.values()) {
+      handles.set(h.principal, h.name as unknown as Handle);
+    }
+
+    const settled: SettledView[] = [];
+    for (const st of outcome.settlements) {
+      const v = this.ventures.get(st.venture);
+      if (v === undefined) continue;
+      const filled = v.roles.filter((r) => r.filledByPrincipal !== null).length;
+      const electiveDue = sumMinor(st.payouts.map((pp) => pp.electiveDue));
+      settled.push({
+        venture: st.venture,
+        kind: v.kind,
+        stage: v.stage,
+        creator: v.creator,
+        rolesFilled: filled,
+        rolesTotal: v.roles.length,
+        electiveBps: v.roles.length === 0 ? 0 : Math.round((electiveDue / Math.max(1, st.claims.proceeds)) * 10_000),
+        atStake: electiveDue,
+        defaulted: st.terminalState === 'DEFAULTED',
+        deferred: st.terminalState === 'DEFERRED',
+        parties: partiesOf(v),
+        publicLine: null,
+        sealVerdict: null,
+        sealContent: null,
+        messages: [],
+      });
+    }
+
+    // Meters: LEVY SHORT is the headline (§14.2), kept/broken is the cumulative
+    // scoreboard, on-a-promise is the elective value that settled this Reckoning.
+    const summaries = this.summaries.all;
+    const kept = summaries.reduce((a, r) => a + r.electiveHonoured, 0);
+    const broken = summaries.reduce((a, r) => a + r.defaults, 0);
+    const onAPromise = sumMinor(settled.map((v) => v.atStake));
+
+    const source: FrameSource = {
+      reckoning: outcome.reckoning,
+      tick: outcome.tick,
+      stateHash: this.engine.stateHash,
+      settled,
+      meters: {
+        levyShort: this.levy.shortFor(outcome.reckoning),
+        onAPromise,
+        kept,
+        broken,
+      },
+      handles,
+      ticker: [],
+      tomorrow: [],
+      tributeLines: this.tributeLines(outcome.tick),
+    };
+    return renderFrame(source);
   }
 
   /** Operator-facing alarms that were deliberately not halts. Bounded, and printed. */

@@ -31,6 +31,7 @@ import { pathToFileURL } from 'node:url';
 import { SPEEDS, isSpeedName, setSpeed, systemClock, type SpeedName } from '../core/time.js';
 import { Rng } from '../core/rng.js';
 import { HeuristicCast } from '../cast/index.js';
+import { publishFrame } from '../frames/write.js';
 import { Runtime, type LevySummary, type ReckoningSummary } from './runtime.js';
 
 export interface SimArgs {
@@ -44,6 +45,8 @@ export interface SimArgs {
   readonly assertEveryTick: boolean;
   readonly emitStateHash: boolean;
   readonly quiet: boolean;
+  /** Directory to write settled-Reckoning frames to, for the spectator client. */
+  readonly framesDir: string | null;
 }
 
 export const DEFAULT_ARGS: SimArgs = {
@@ -56,6 +59,7 @@ export const DEFAULT_ARGS: SimArgs = {
   assertEveryTick: true,
   emitStateHash: true,
   quiet: false,
+  framesDir: null,
 };
 
 export class ArgError extends Error {}
@@ -79,6 +83,9 @@ export function parseArgs(argv: readonly string[]): SimArgs {
       return v;
     };
     switch (flag) {
+      case '--frames':
+        args = { ...args, framesDir: value() };
+        break;
       case '--seed':
         args = { ...args, seed: value() };
         break;
@@ -251,6 +258,7 @@ export interface SimResult {
    * help (a refused row, a venture with no delivery, a restore that did not reproduce).
    */
   readonly operatorFaults: readonly string[];
+  readonly framesWritten: number;
 }
 
 /**
@@ -292,6 +300,7 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
   let halted = false;
   let haltedAtTick: number | null = null;
   let ticksRun = 0;
+  let framesWritten = 0;
 
   for (let n = 0; n < args.ticks; n += 1) {
     // The world stops when it stops. A scheduler that keeps calling a PAUSED engine is
@@ -319,6 +328,12 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     if (report.clock.isSettlementTick) {
       const settled = runtime.reckonings().at(-1);
       if (settled !== undefined && settled.tick === report.tick) perReckoning.push(settled);
+      // Write the settled Reckoning as a frame for the spectator client. A read model
+      // over the committed outcome — the world settles and someone can finally watch.
+      if (args.framesDir !== null) {
+        const frame = runtime.reckoningFrame();
+        if (frame !== null) framesWritten += publishFrame(args.framesDir, frame).bytes > 0 ? 1 : 0;
+      }
       // Collected the same way and for the same reason: the runtime's own Levy log is
       // bounded (INV-26), so a long run read only at the end would report the last few
       // Reckonings and a reader would have no way to tell that from a quiet season.
@@ -363,6 +378,7 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     perLevy,
     tributeAtFreeze,
     operatorFaults: runtime.operatorFaults(),
+    framesWritten,
   };
 }
 

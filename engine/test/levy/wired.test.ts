@@ -29,6 +29,7 @@ const ARGS: SimArgs = {
   assertEveryTick: true,
   emitStateHash: true,
   quiet: true,
+  framesDir: null,
 };
 
 describe('the verbs are reachable, and neither of them is new', () => {

@@ -34,6 +34,7 @@ describe('sim --flags', () => {
       '--hazards', 'on',
       '--assert-every-tick',
       '--emit', 'state_hash',
+      '--frames', '/tmp/x',
     ]);
     expect(args).toEqual({
       seed: 's1',
@@ -45,6 +46,7 @@ describe('sim --flags', () => {
       assertEveryTick: true,
       emitStateHash: true,
       quiet: false,
+      framesDir: '/tmp/x',
     });
   });
 
