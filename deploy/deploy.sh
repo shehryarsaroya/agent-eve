@@ -149,7 +149,13 @@ $SSH 'systemctl reload nginx'
 ok "nginx reloaded"
 
 log "restarting services"
-$SSH 'systemctl enable --now compact-api 2>&1 | tail -2'
+# `enable --now` was the bug: on an ALREADY-ACTIVE service `--now` runs `start`, and
+# `start` on a running unit is a no-op — so a redeploy synced, built and migrated the new
+# code and then never loaded it, leaving the OLD process (and its stale prompt, scar #1)
+# live. `restart` always stops the old and starts the new; `enable` (idempotent) only
+# keeps boot-persistence. That silent no-op is scar #4's shape a third time — a deploy that
+# looks healthy while the change never took — so it is called out here.
+$SSH 'systemctl enable compact-api >/dev/null 2>&1 || true; systemctl restart compact-api 2>&1 | tail -2'
 sleep 4
 for unit in compact-api; do
   $SSH "systemctl is-active --quiet $unit" || {
@@ -158,6 +164,11 @@ for unit in compact-api; do
   }
   ok "$unit active"
 done
+# Prove the restart actually loaded THIS build, not the old process: the new serve()
+# prints a boot line the old one never did. Its absence means the cutover silently failed.
+$SSH "journalctl -u compact-api --since '-60s' --no-pager 2>/dev/null | grep -q 'compact: boot'" \
+  || fail "the new build did not boot (no 'compact: boot' line in the last 60s) — the restart did not cut over"
+ok "the new build booted (boot line present)"
 
 # ── post-deploy verification — the scar #4 half ─────────────────────────────
 log "post-deploy verification"
