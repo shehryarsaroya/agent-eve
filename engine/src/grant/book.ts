@@ -23,10 +23,11 @@
  * counter that still looks clean.
  */
 
-import type { Grant, GrantId, PrincipalId } from '../core/types.js';
+import type { EventId, Grant, GrantId, PrincipalId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 import { addMinor, minor, type Minor } from '../core/units.js';
 import { isExpiredAt, isRevokedAt } from '../identity/vc.js';
+import type { GrantSpend } from '../invariants/authority.js';
 import type { CanonicalValue } from '../core/canonical.js';
 import type { StateTable } from '../tick/snapshot.js';
 import {
@@ -39,8 +40,24 @@ import {
 
 export class GrantBookError extends Error {}
 
+/**
+ * A cap on the spend journal (INV-26). Every on-behalf act that draws on a grant
+ * appends one row; the journal is summed at every tick close, so it is bounded both to
+ * keep `state_hash` finite and to keep INV-22's recompute cheap. Generous — grants
+ * expire and a real world's live spend is small.
+ */
+export const MAX_GRANT_SPENDS = 16_384;
+
 export class GrantBook {
   private readonly byId = new Map<GrantId, Grant>();
+
+  /**
+   * The spend journal INV-22 audits (SPEC §8.1 #1). The row caches (`spentDirect` /
+   * `spentContingent`) are the fast read; this is the source of truth the invariant
+   * recomputes from, because a per-row counter incremented by two delegates is a race
+   * and a journal is not. Append-only within a run; captured and replayed with the rows.
+   */
+  private readonly spendLog: GrantSpend[] = [];
 
   get(id: GrantId): Grant | undefined {
     return this.byId.get(id);
@@ -83,16 +100,44 @@ export class GrantBook {
   }
 
   /**
-   * Add one delegate draw against a grant's LIMITS — the cache INV-22 audits. Both
-   * halves move separately because LIMITS cap destruction, not just transfers (SPEC
-   * §8.1 #2): a delegate can burn a grantor's cargo without moving a coin, and a book
-   * that only tracked the direct half would show a clean grant over a total loss.
+   * Record one delegate draw against a grant's LIMITS: append it to the journal INV-22
+   * audits AND advance the row cache. Both halves move separately because LIMITS cap
+   * destruction, not just transfers (SPEC §8.1 #2): a delegate can burn a grantor's
+   * cargo without moving a coin, and a book that only tracked the direct half would show
+   * a clean grant over a total loss.
+   *
+   * This does NOT enforce headroom — the caller checks {@link headroom} before it moves
+   * any value, so a refusal leaves the world untouched. Recording a spend that overran
+   * the LIMIT would be caught at tick close by INV-22 and halt the world, which is the
+   * backstop, not the gate.
    */
-  recordSpend(id: GrantId, direct: Minor, contingent: Minor): void {
-    const grant = this.byId.get(id);
-    if (grant === undefined) throw new GrantBookError(`no grant ${id} to spend against`);
-    grant.spentDirect = addMinor(grant.spentDirect, direct);
-    grant.spentContingent = addMinor(grant.spentContingent, contingent);
+  recordSpend(spend: GrantSpend): void {
+    const grant = this.byId.get(spend.grant);
+    if (grant === undefined) throw new GrantBookError(`no grant ${spend.grant} to spend against`);
+    if (spend.direct < 0 || spend.contingent < 0) {
+      throw new GrantBookError(`a spend never returns headroom: direct ${spend.direct}, contingent ${spend.contingent}`);
+    }
+    if (this.spendLog.length >= MAX_GRANT_SPENDS) {
+      throw new GrantBookError(`the grant spend journal is at its cap of ${MAX_GRANT_SPENDS}`);
+    }
+    grant.spentDirect = addMinor(grant.spentDirect, spend.direct);
+    grant.spentContingent = addMinor(grant.spentContingent, spend.contingent);
+    this.spendLog.push(spend);
+  }
+
+  /** The spend journal, in the order draws were recorded. INV-22's source of truth. */
+  allSpends(): readonly GrantSpend[] {
+    return this.spendLog;
+  }
+
+  /**
+   * Restore-only: repopulate the spend journal from a capture. Bypasses the cap and the
+   * cache bump on purpose — the row caches were already restored from the captured rows,
+   * so replaying them through {@link recordSpend} would double-count. Used solely by
+   * {@link grantsStateTable}'s restore path.
+   */
+  hydrateSpends(spends: readonly GrantSpend[]): void {
+    for (const s of spends) this.spendLog.push(s);
   }
 
   /** Remaining headroom on a grant's two LIMITS, never below zero. */
@@ -164,8 +209,12 @@ export function grantsStateTable(
 ): StateTable {
   return {
     name: 'grant',
-    capture: (): CanonicalValue =>
-      read()
+    // An object with two id-sorted arrays: the rows AND the spend journal. Both are
+    // authoritative — the rows are what a delegate's next act is checked against, the
+    // journal is what INV-22 recomputes the spend from. A capture that dropped the
+    // journal would let a restored world pass INV-22's sum-vs-cache check vacuously.
+    capture: (): CanonicalValue => ({
+      grants: read()
         .all()
         .map((g) => ({
           id: g.id,
@@ -179,10 +228,21 @@ export function grantsStateTable(
           expiresTick: g.expiresTick,
           revokedAtTick: g.revokedAtTick,
         })),
+      spends: read()
+        .allSpends()
+        .map((s) => ({
+          grant: s.grant,
+          delegate: s.delegate,
+          tick: s.tick,
+          eventId: s.eventId,
+          direct: s.direct,
+          contingent: s.contingent,
+        })),
+    }),
     restore: (captured: CanonicalValue): void => {
-      const rows = snapArray(captured, 'grant');
+      const root = snapObject(captured, 'grant table');
       const book = new GrantBook();
-      for (const row of rows) {
+      for (const row of snapArray(root['grants'] ?? [], 'grant rows')) {
         const r = snapObject(row, 'grant row');
         const id = snapString(r, 'id', 'grant row') as GrantId;
         book.add({
@@ -192,12 +252,28 @@ export function grantsStateTable(
           template: snapString(r, 'template', `grant ${id}`),
           maxDirectLoss: minor(snapInt(r, 'maxDirectLoss', `grant ${id}`)),
           maxContingentLiability: minor(snapInt(r, 'maxContingentLiability', `grant ${id}`)),
+          // Restored to the CAPTURED cache directly, not by replaying the journal —
+          // capture took a consistent pair, so the row cache and the journal below agree
+          // by construction, and INV-22 re-checks that agreement on the next tick.
           spentDirect: minor(snapInt(r, 'spentDirect', `grant ${id}`)),
           spentContingent: minor(snapInt(r, 'spentContingent', `grant ${id}`)),
           expiresTick: snapInt(r, 'expiresTick', `grant ${id}`),
           revokedAtTick: snapIntOrNull(r, 'revokedAtTick', `grant ${id}`),
         });
       }
+      const spends: GrantSpend[] = [];
+      for (const row of snapArray(root['spends'] ?? [], 'grant spends')) {
+        const s = snapObject(row, 'grant spend');
+        spends.push({
+          grant: snapString(s, 'grant', 'grant spend') as GrantId,
+          delegate: snapString(s, 'delegate', 'grant spend') as PrincipalId,
+          tick: snapInt(s, 'tick', 'grant spend'),
+          eventId: snapString(s, 'eventId', 'grant spend') as EventId,
+          direct: minor(snapInt(s, 'direct', 'grant spend')),
+          contingent: minor(snapInt(s, 'contingent', 'grant spend')),
+        });
+      }
+      book.hydrateSpends(spends);
       write(book);
     },
   };

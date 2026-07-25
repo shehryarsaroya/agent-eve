@@ -1363,6 +1363,13 @@ export class Runtime {
       standingChanges: this.standing.changes(),
       standings: this.standing.rows(),
       atReckoning: reckoning,
+      // A6: the grant rows and the spend journal, so INV-22/23 run over real data at
+      // every tick close. INV-22 recomputes each grant's spend from the journal and
+      // compares it to the row cache — the only way the "concurrent delegates cannot
+      // race a journal" clause is checkable — and refuses any grant whose spend passed
+      // its LIMITS (the worst case the grantor was shown before it signed, A7).
+      grants: this.grantBook.all(),
+      grantSpends: this.grantBook.allSpends(),
       ...(levy === null ? {} : { levy }),
       ...(docket === undefined ? {} : { docket }),
     };

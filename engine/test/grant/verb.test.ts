@@ -15,7 +15,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { setSpeed } from '../../src/core/time.js';
-import type { GrantId, PrincipalId, SystemId } from '../../src/core/types.js';
+import type { EventId, GrantId, PrincipalId, SystemId } from '../../src/core/types.js';
+import { minor } from '../../src/core/units.js';
 import { commonsSystems } from '../../src/world/index.js';
 import {
   GRANT_MAX_LIFETIME_TICKS,
@@ -173,5 +174,46 @@ describe('revoke — always accepted, effective next tick (SPEC §8.1 #6)', () =
   it('refuses revoking a grant that does not exist', () => {
     const w = world('r3');
     expect(act(w.runtime, w.grantor, 'revoke', { grant: 'g:nope' })).not.toBeNull();
+  });
+});
+
+describe('INV-22 is LIVE over the grant rows, not vacuous (A6 backstop)', () => {
+  it('a grant forced past its LIMIT halts the world at tick close', () => {
+    const w = world('inv22');
+    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 500 }))).toBeNull();
+    const id = w.runtime.grants.forGrantor(w.grantor)[0]!.id;
+
+    // Force a spend past the max_direct_loss the grantor was shown (A7). This is not
+    // reachable through the verbs — it stands in for a delegate-enforcement bug that
+    // let a draw overrun its LIMIT — and INV-22 is the net that must catch it.
+    w.runtime.grants.recordSpend({
+      grant: id,
+      delegate: w.delegate,
+      tick: w.runtime.engine.tick,
+      eventId: 'ev:overrun' as EventId,
+      direct: minor(600),
+      contingent: minor(0),
+    });
+
+    const report = w.runtime.runTick();
+    expect(report.halted).toBe(true);
+    expect(report.violations.map((v) => v.id)).toContain('INV-22');
+  });
+
+  it('a grant spent within its LIMIT does not halt (the invariant is not trigger-happy)', () => {
+    const w = world('inv22-ok');
+    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 500 }))).toBeNull();
+    const id = w.runtime.grants.forGrantor(w.grantor)[0]!.id;
+    w.runtime.grants.recordSpend({
+      grant: id,
+      delegate: w.delegate,
+      tick: w.runtime.engine.tick,
+      eventId: 'ev:ok' as EventId,
+      direct: minor(400),
+      contingent: minor(0),
+    });
+    const report = w.runtime.runTick();
+    expect(report.halted).toBe(false);
+    expect(w.runtime.grants.get(id)?.spentDirect).toBe(400);
   });
 });

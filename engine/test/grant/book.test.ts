@@ -11,8 +11,23 @@
 import { describe, expect, it } from 'vitest';
 import { GrantBook, GrantBookError, grantsStateTable } from '../../src/grant/index.js';
 import { canonicalHash } from '../../src/core/canonical.js';
-import type { Grant, GrantId, PrincipalId } from '../../src/core/types.js';
+import type { EventId, Grant, GrantId, PrincipalId } from '../../src/core/types.js';
+import type { GrantSpend } from '../../src/invariants/authority.js';
 import { minor } from '../../src/core/units.js';
+
+let spendSeq = 0;
+/** A spend row against a grant — the journal INV-22 audits. */
+function sp(grant: GrantId, direct: number, contingent: number, delegate = 'p:bob'): GrantSpend {
+  spendSeq += 1;
+  return {
+    grant,
+    delegate: delegate as PrincipalId,
+    tick: 1,
+    eventId: `ev:spend:${String(spendSeq)}` as EventId,
+    direct: minor(direct),
+    contingent: minor(contingent),
+  };
+}
 
 function grant(over: Partial<Grant> & Pick<Grant, 'id' | 'grantor' | 'delegate'>): Grant {
   return {
@@ -53,17 +68,20 @@ describe('GrantBook — the row store', () => {
   it('spend accrues on both halves separately (LIMITS cap destruction, not just transfers)', () => {
     const book = new GrantBook();
     book.add(grant({ id: G('g:1'), grantor: P('p:alice'), delegate: P('p:bob') }));
-    book.recordSpend(G('g:1'), minor(300), minor(100));
-    book.recordSpend(G('g:1'), minor(250), minor(50));
+    book.recordSpend(sp(G('g:1'), 300, 100));
+    book.recordSpend(sp(G('g:1'), 250, 50));
     expect(book.get(G('g:1'))?.spentDirect).toBe(550);
     expect(book.get(G('g:1'))?.spentContingent).toBe(150);
     expect(book.headroom(G('g:1'))).toEqual({ direct: 450, contingent: 350 });
+    // The journal INV-22 audits carries both draws.
+    expect(book.allSpends()).toHaveLength(2);
+    expect(book.allSpends().reduce((n, s) => n + s.direct, 0)).toBe(550);
   });
 
   it('headroom never goes negative even if spend somehow exceeds the LIMIT', () => {
     const book = new GrantBook();
     book.add(grant({ id: G('g:1'), grantor: P('p:alice'), delegate: P('p:bob'), maxDirectLoss: minor(100) }));
-    book.recordSpend(G('g:1'), minor(140), minor(0));
+    book.recordSpend(sp(G('g:1'), 140, 0));
     expect(book.headroom(G('g:1')).direct).toBe(0);
   });
 });
@@ -104,14 +122,17 @@ describe('GrantBook — the clock rules (SPEC §8.1 #5, #6)', () => {
 describe('grantsStateTable — capture / restore / hash (fable F2: not outside the hash)', () => {
   function populated(): GrantBook {
     const book = new GrantBook();
-    book.add(grant({ id: G('g:1'), grantor: P('p:alice'), delegate: P('p:bob'), spentDirect: minor(120) }));
+    book.add(grant({ id: G('g:1'), grantor: P('p:alice'), delegate: P('p:bob') }));
     book.add(grant({ id: G('g:2'), grantor: P('p:alice'), delegate: P('p:cass'), revokedAtTick: 88 }));
+    // Spend via the journal so the row cache and the journal agree — a realistic book,
+    // the kind INV-22 accepts (cache == journal sum).
+    book.recordSpend(sp(G('g:1'), 120, 0));
     return book;
   }
 
   it('round-trips every field, including the mutable spend and revocation', () => {
     const src = populated();
-    src.recordSpend(G('g:1'), minor(30), minor(15));
+    src.recordSpend(sp(G('g:1'), 30, 15));
 
     const table = grantsStateTable(() => src, () => undefined);
     const captured = table.capture();
@@ -135,7 +156,7 @@ describe('grantsStateTable — capture / restore / hash (fable F2: not outside t
   it('MUTATION PROOF: a changed spend diverges the capture hash', () => {
     const a = populated();
     const b = populated();
-    b.recordSpend(G('g:1'), minor(1), minor(0)); // one unit of drift
+    b.recordSpend(sp(G('g:1'), 1, 0)); // one unit of drift
 
     const ha = canonicalHash(grantsStateTable(() => a, () => undefined).capture());
     const hb = canonicalHash(grantsStateTable(() => b, () => undefined).capture());
