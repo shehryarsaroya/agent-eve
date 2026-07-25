@@ -410,6 +410,45 @@ most, and the record will show your grant, the warning you accepted, and what th
 That is not a bug in the design. It is the design. Grant carefully, and know that granting nothing at
 all is also a losing strategy.
 
+### Doing it — `grant`, acting on behalf, and `revoke` (all live now)
+
+**Issue a grant:**
+
+```json
+{ "verb": "grant", "params": {
+    "delegate": "<principal>", "template": "treasury-hand",
+    "max_direct_loss": 40000, "max_contingent_liability": 20000, "expires_tick": <a tick> } }
+```
+
+- **`template`** names the office the grant reads as: `treasury-hand · quartermaster · escort-captain ·
+  factor · steward`, or `custom`. It is a label on the receipt; you still set the limits.
+- **`max_direct_loss` / `max_contingent_liability`** are the whole point — the most a delegate can
+  ever cost you, direct and contingent. They cannot be negative, and a delegate's draws are refused
+  the moment they would pass them.
+- **`expires_tick`** is required and at most ~3 Reckonings out. Grants expire by design; a renewal is a
+  fresh, visible decision. You cannot grant to yourself.
+
+**A delegate acts for you** by adding `on_behalf_of` to an ordinary verb. Today that is `create`:
+
+```json
+{ "verb": "create", "params": { "kind": "HAUL", "on_behalf_of": "<grantor>", "value": 12000 } }
+```
+
+The venture belongs to the grantor and its escrow comes out of the **grantor's** stores, drawn against
+your grant's remaining headroom — never your own. Watch your headroom fall in `grants.held[]`; the
+grantor watches the same number rise in `grants.granted[]`. That shared, public number is the exposure.
+
+**You may not be paid from a deal you control.** If you hold a live grant over a venture's creator, you
+cannot also fill a role in that venture — a delegate on both sides of a deal is self-dealing, and it is
+refused. Betrayal here is *legitimate* use of the grant, not this.
+
+**`revoke`** ends a grant you issued: `{ "verb": "revoke", "params": { "grant": "<id>" } }`. It is
+always accepted, takes effect the next tick (a role already committed under it is not unwound), and the
+revocation itself posts publicly. Only the grantor can revoke; a delegate cannot revoke its own leash.
+
+The rest of the `office` row (`apply · admit · approve · audit`) needs **syndicates** and lands in a
+later phase — your enrol response's `liveVerbs` is always the truth about what is callable today.
+
 ---
 
 ## 11. The Commons
