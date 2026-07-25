@@ -21,25 +21,29 @@
 ## 1. The VPS (deploy target)
 
 - **Host:** Contabo `vmi3131667` · **147.93.179.114** · Ubuntu 24.04
-- **Specs:** 12 cores / 96 GB RAM / 697 GB disk — comfortable headroom for a tick server + Postgres + an LLM-player fleet
+- **Specs:** **24 cores** / 94 GB RAM / 697 GB disk (678 GB free) — verified 2026-07-24; earlier note said 12 cores, it is 24
 - **Access:** `ssh -i ~/.ssh/agenttransfer_vps root@147.93.179.114`
-- **Installed:** Node 22, nginx, Docker 29 (idle), certbot. **Postgres is NOT installed yet** — THE COMPACT needs it (SPEC §15).
-- **Also present:** Caddy (leftover, ignore)
+- **Installed:** Node v22.23.1, nginx 1.24.0, containerd/docker (idle, no containers), certbot. **Postgres is NOT installed** — apt candidate is 16. THE COMPACT needs it (SPEC §15).
+- **Listening:** 22, 80, 443 only (plus containerd on localhost:34031). Nothing else.
 
-### ⚠️ Shared box — do not clobber High Water
+### Box state — verified clean 2026-07-24
 
-A working game is live on this host. When deploying THE COMPACT, use **new** names everywhere:
+**High Water is entirely gone**: no `/opt/highwater`, no `/var/lib/highwater`, no `/etc/highwater`, no systemd units. The earlier "shared box, do not clobber" warning is **retired** — there is nothing left to collide with. What survives is the *habit*, because scar #4 cost a live outage: pick fresh names, `--exclude` sibling dirs, and after any deploy verify what you didn't deploy is still running.
 
-| Resource | High Water (do not reuse) | Use for THE COMPACT |
-|---|---|---|
-| Port | `8787` | a new port |
-| systemd units | `highwater`, `highwater-players` | new unit names |
-| Env file | `/etc/highwater/env` | new path |
-| Data dir | `/var/lib/highwater/` | new path |
-| Code dir | `/opt/highwater/` | new path |
-| nginx path | `/game` and `/game/api/` | a new path |
+**What the box must hold (and only this):** the landing page, and THE COMPACT.
 
-**Deploy footgun (cost us a live outage):** High Water's backend deploy uses `rsync --delete` into `/opt/highwater/`, which repeatedly **deleted the sibling `players/` directory** and silently reverted the live game to bots-only. Always `--exclude` sibling dirs, and after any deploy verify the components you *didn't* deploy are still running. See `HIGH-WATER-LESSONS.md` scar #4.
+| Resource | THE COMPACT |
+|---|---|
+| API port | `8801` (loopback only) |
+| systemd units | `compact-api`, `compact-sim`, `compact-cast` |
+| Env file | `/etc/compact/env` |
+| Data dir | `/var/lib/compact/` |
+| Code dir | `/opt/compact/` |
+| Postgres | db `compact`, role `compact` |
+| nginx paths | `/compact/` (static frames) · `/compact/api/` (proxy → 8801) |
+| Spectator static | `/var/www/agentinsurance.io/compact/` |
+
+**Do not touch:** `/var/www/agentinsurance.io/{index.html,whitepaper.html,assets,css,js,fonts,data}` — that is the live landing page (200 OK). The vhost already sets `real_ip_header CF-Connecting-IP` from the Cloudflare ranges, which is what `SEC-5` requires; reuse it rather than re-deriving it.
 
 ---
 
