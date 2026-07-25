@@ -218,6 +218,17 @@ export class RateLimiter {
   constructor(
     private readonly limits: Readonly<Record<string, Allowance>> = RATE_LIMITS,
     private readonly maxClients: number = MAX_TRACKED_CLIENTS,
+    /**
+     * Clients (by the same key `check` receives — a real IP) that bypass EVERY limit.
+     * Default empty, so production is unchanged; an operator sets it (env) only for a
+     * controlled test window. This is why Gate 3's probe fleet could not onboard: a
+     * dozen probes behind ONE egress IP shared the enrol burst of 3/10min. It is safe
+     * because the limiter guards the HOST, not the game — A4 already makes speed powerless
+     * (actions are tick-batched) — so exempting a trusted operator IP changes no outcome,
+     * only who may hammer the box. It is NOT a weakening of the limiter for anyone else
+     * (scar #3): an unlisted client is metered exactly as before.
+     */
+    private readonly allowlist: ReadonlySet<string> = new Set(),
   ) {}
 
   /** Buckets currently held. Asserted by the soak test: this is the bound. */
@@ -226,6 +237,11 @@ export class RateLimiter {
   }
 
   check(route: string, client: string, now: WallSeconds): LimitVerdict {
+    // A trusted, operator-listed client is never metered. Kept above the route lookup so
+    // an allowlisted source is exempt even on a route that would otherwise fail closed.
+    if (this.allowlist.has(client)) {
+      return { allowed: true, retryAfterSeconds: 0, remaining: Number.MAX_SAFE_INTEGER };
+    }
     const allowance = this.limits[route];
     if (allowance === undefined) {
       // An unlimited route is a route somebody forgot. Fail closed rather than

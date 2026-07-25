@@ -1649,12 +1649,32 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
   );
 
   const journal = new Journal(store);
+
+  // A rate-limit allowlist for a controlled test window (Gate 3 #2): a probe fleet behind
+  // one egress IP shares the enrol burst of 3/10min, so most of a fleet is starved before
+  // it can play. An operator lists that IP here (comma-separated env). Default empty, so
+  // production is metered exactly as before — this is an exemption for a trusted source,
+  // never a weakening of the limiter for anyone else (scar #3). Safe because the limiter
+  // guards the host, not the game: A4 already makes request speed powerless.
+  const rateLimitAllowlist = new Set(
+    (process.env['COMPACT_RATELIMIT_ALLOWLIST'] ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
+  );
+  if (rateLimitAllowlist.size > 0) {
+    process.stderr.write(
+      `compact: rate-limit allowlist active for ${String(rateLimitAllowlist.size)} client(s) — a test window, not production\n`,
+    );
+  }
+
   const created = createApp({
     runtime,
     clock,
     trustEdge: options.trustEdge,
     keyring,
     seats,
+    limiter: new RateLimiter(undefined, undefined, rateLimitAllowlist),
     health: { durability: (): ReturnType<Journal['health']> => journal.health() },
     onEnroll: (enrollment) => {
       journal.recordEnrollment(enrollment);
