@@ -46,6 +46,14 @@ import { HeuristicCast } from '../cast/index.js';
 import { Runtime } from '../sim/runtime.js';
 import type { PrincipalId } from '../core/types.js';
 import {
+  InMemoryJournalStore,
+  Journal,
+  PgJournalStore,
+  bootFromStore,
+  type BootResult,
+  type JournalStore,
+} from '../persist/index.js';
+import {
   BoundedReplayStore,
   Keyring,
   RequestVerifier,
@@ -180,6 +188,18 @@ export interface ApiOptions {
   readonly keyring?: Keyring;
   readonly limiter?: RateLimiter;
   readonly health?: HealthOptions;
+  /**
+   * Called when an enrolment succeeds, so the durable journal can record it and boot
+   * can re-seat it after a restart (A10: identity never resets). Never throws into
+   * the route — it enqueues; see {@link Journal.recordEnrollment}.
+   */
+  readonly onEnroll?: (enrollment: {
+    readonly principal: PrincipalId;
+    readonly handle: string;
+    readonly publicKey: string;
+    readonly enrolledAtTick: number;
+    readonly ownerEmail: string | null;
+  }) => void;
 }
 
 /**
@@ -451,6 +471,17 @@ export function createApp(options: ApiOptions): CreatedApp {
           ),
         );
       }
+      // Persist the enrolment so a restart re-seats it. After the world seat
+      // succeeded and before the response, so a recorded enrolment is always one the
+      // world actually holds. `publicKey.value` is the base64url the agent sent.
+      options.onEnroll?.({
+        principal,
+        handle: handle.value,
+        publicKey: publicKey.value,
+        enrolledAtTick: tick,
+        ownerEmail: null,
+      });
+
       const observation = observe(principal, true);
 
       return send(res, 201, {
@@ -1548,28 +1579,110 @@ export interface ServeOptions {
    * write none. In production this is the nginx-served frames directory.
    */
   readonly framesDir: string | null;
+  /**
+   * The durable journal store. When omitted, {@link serve} builds one from the
+   * environment: a Postgres store if `COMPACT_DATABASE_URL` / `DATABASE_URL` / `PG*`
+   * is configured, else an in-memory store with a LOUD warning — a silent ephemeral
+   * fallback is the exact defect this subsystem exists to close.
+   */
+  readonly store?: JournalStore;
+  /** Override the connection string; defaults to the DB environment. */
+  readonly databaseUrl?: string | null;
 }
 
-export function serve(options: ServeOptions): { readonly created: CreatedApp; readonly close: () => void } {
+export interface ServeResult {
+  readonly created: CreatedApp;
+  readonly boot: BootResult;
+  readonly journal: Journal;
+  readonly close: () => Promise<void>;
+}
+
+/**
+ * Boot the world from the durable journal, then serve it and persist every tick.
+ *
+ * Async because boot replays the record before the first request can be served —
+ * a restart RESUMES rather than resetting to tick 0, which was the whole defect. The
+ * seed the store was born under wins over the provided one, because replaying a
+ * persisted world under a different seed diverges every hash.
+ */
+export async function serve(options: ServeOptions): Promise<ServeResult> {
   setSpeed('fast');
-  const runtime = new Runtime({ seed: options.seed });
+  const clock = systemClock();
+  const store = options.store ?? storeFromEnv(options, clock);
+
+  const persistedSeed = await store.masterSeed();
+  const seed = persistedSeed ?? options.seed;
+  if (persistedSeed !== null && persistedSeed !== options.seed) {
+    process.stderr.write(
+      `compact: resuming under the journalled seed '${persistedSeed}', ignoring the provided '${options.seed}'\n`,
+    );
+  }
+
+  const runtime = new Runtime({ seed });
   const cast = new HeuristicCast(runtime, { size: options.castSize });
-  cast.seat(options.seed);
-  const created = createApp({ runtime, clock: systemClock(), trustEdge: options.trustEdge });
+  cast.seat(seed);
+
+  // Built here, before boot, because boot re-registers each persisted enrolment's key
+  // and seat as it re-seats the world principal — the identity half of "identity never
+  // resets" (A10).
+  const keyring = new Keyring();
+  const seats = new SeatBook();
+
+  const boot = await bootFromStore(runtime, store, {
+    seed,
+    onEnrollment: (enrollment) => {
+      const jwk = jwkFromBase64Url(enrollment.publicKey);
+      if (jwk !== null) {
+        try {
+          keyring.register(enrollment.principal, recordFromJwk(jwk), Math.max(0, enrollment.enrolledAtTick));
+        } catch {
+          // Already registered on a prior boot step; identity is never re-minted.
+        }
+      }
+      seats.claim(enrollment.principal, enrollment.handle, Math.max(0, enrollment.enrolledAtTick));
+    },
+  });
+  process.stderr.write(
+    `compact: boot ${boot.mode}, head tick ${String(boot.headTick)}, ` +
+      `${String(boot.ticksReplayed)} ticks replayed, ${String(boot.enrollmentsApplied)} enrolments re-seated, ` +
+      `${String(boot.tripwiresChecked)} snapshot tripwires verified\n`,
+  );
+
+  const journal = new Journal(store);
+  const created = createApp({
+    runtime,
+    clock,
+    trustEdge: options.trustEdge,
+    keyring,
+    seats,
+    health: { durability: (): ReturnType<Journal['health']> => journal.health() },
+    onEnroll: (enrollment) => {
+      journal.recordEnrollment(enrollment);
+    },
+  });
 
   // The scheduler is the one place a real clock drives the world, and it derives its
   // interval from `ticksToMs(1)` so that changing the speed changes the schedule and
   // nothing else has to be told (TESTING.md §1.1, hazard 1).
   const interval = setInterval(() => {
     if (runtime.engine.status === 'PAUSED') return;
-    for (const action of cast.decide(runtime.engine.tick + 1, options.seed)) {
+    for (const action of cast.decide(runtime.engine.tick + 1, seed)) {
       runtime.engine.submit(action);
     }
     const report = runtime.runTick();
+
+    // Persist the committed tick BEFORE the frame: the record is sacred, the show is
+    // cosmetic. `record` buffers synchronously and never throws; `flushPending` is
+    // single-flight, so firing it each tick drains the backlog as ticks flow and a DB
+    // hiccup can never stall the loop (see `Journal`).
+    if (!report.halted) {
+      journal.record(runtime, report);
+      void journal.flushPending();
+    }
+
     // Publish the settled Reckoning for the spectator client. Wrapped so a frame
-    // write can NEVER touch the world: the record is sacred and the show is cosmetic,
-    // so a full disk or a bad path drops a frame rather than halting the sim. The
-    // frame is a read model over the committed outcome (A9 parity holds structurally).
+    // write can NEVER touch the world: a full disk or a bad path drops a frame rather
+    // than halting the sim. The frame is a read model over the committed outcome.
     if (options.framesDir !== null && report.clock.isSettlementTick) {
       try {
         const frame = runtime.reckoningFrame();
@@ -1586,17 +1699,49 @@ export function serve(options: ServeOptions): { readonly created: CreatedApp; re
   const server = created.app.listen(options.port, options.host);
   return {
     created,
-    close: () => {
+    boot,
+    journal,
+    close: async () => {
       clearInterval(interval);
+      // Drain buffered ticks to the store, then close it. A sustained outage leaves a
+      // logged backlog — the bounded tail loss the Journal header describes — never a
+      // silent claim of durability.
+      await journal.close();
       server.close();
     },
   };
 }
 
+/**
+ * Build the durable store from the environment, warning loudly on the ephemeral
+ * fallback. A misconfigured deploy that silently reverts to in-memory is exactly the
+ * shape of the outage this subsystem was written to prevent, so it is made visible.
+ */
+function storeFromEnv(options: ServeOptions, clock: Clock): JournalStore {
+  const url =
+    options.databaseUrl ??
+    process.env['COMPACT_DATABASE_URL'] ??
+    process.env['DATABASE_URL'] ??
+    null;
+  const hasPgEnv = process.env['PGHOST'] !== undefined || process.env['PGDATABASE'] !== undefined;
+  if (url !== null || hasPgEnv) {
+    return new PgJournalStore({
+      ...(url === null ? {} : { connectionString: url }),
+      nowMs: () => clock.nowMs(),
+    });
+  }
+  process.stderr.write(
+    'compact: WARNING — no COMPACT_DATABASE_URL / DATABASE_URL / PG* configured, so the journal is ' +
+      'an EPHEMERAL in-memory store. The world will NOT survive a restart. Configure the database to make ' +
+      'the permanent public record durable.\n',
+  );
+  return new InMemoryJournalStore();
+}
+
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
   const port = Number(process.env['COMPACT_PORT'] ?? '8787');
-  const started = serve({
+  const started = await serve({
     port: Number.isSafeInteger(port) ? port : 8787,
     host: process.env['COMPACT_HOST'] ?? '127.0.0.1',
     seed: process.env['COMPACT_SEED'] ?? 'compact-1',

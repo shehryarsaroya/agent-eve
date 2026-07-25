@@ -89,13 +89,33 @@ export interface HealthReport {
   readonly buffers: Readonly<Record<string, number>>;
   readonly ventures: { readonly total: number; readonly live: number };
   readonly rollback_gaps: readonly string[];
+  /** The durability frontier, when a journal is attached. Null for a store-less run. */
+  readonly durability: DurabilityHealth | null;
   /** Every reason it is unhealthy. Empty when healthy. Read this, not the status. */
   readonly failures: readonly string[];
+}
+
+/**
+ * The journal's durability frontier, as the health endpoint reports it.
+ *
+ * Structural on purpose: `health.ts` is the API layer and must not depend on
+ * `src/persist/**`, so `serve()` passes a probe that returns this shape (which
+ * `JournalHealth` satisfies). `durableTick` lagging `headTick` is the honest signal
+ * that the record is not yet durable — never a silent proceed-as-if-persisted.
+ */
+export interface DurabilityHealth {
+  readonly healthy: boolean;
+  readonly durableTick: number;
+  readonly headTick: number;
+  readonly backlog: number;
+  readonly lastError: string | null;
 }
 
 export interface HealthOptions {
   readonly floorBps?: number;
   readonly warmupTicks?: number;
+  /** A live probe of the journal's durability frontier, or absent for a store-less run. */
+  readonly durability?: () => DurabilityHealth | null;
 }
 
 export function buildHealth(
@@ -145,6 +165,19 @@ export function buildHealth(
     );
   }
 
+  // Durability is a first-class health signal: a green liveness check on a world
+  // whose record is not reaching disk is the exact shape of the defect this whole
+  // subsystem closes. Sustained journal failure is an operator alarm (503).
+  const durability = options.durability?.() ?? null;
+  if (durability !== null && !durability.healthy) {
+    failures.push(
+      `the journal is not durable: durable tick ${String(durability.durableTick)} lags head ` +
+        `${String(durability.headTick)} with ${String(durability.backlog)} writes buffered` +
+        (durability.lastError === null ? '' : ` (last error: ${durability.lastError})`) +
+        '. The permanent public record is not reaching storage; an operator must look.',
+    );
+  }
+
   return {
     status: failures.length === 0 ? 'healthy' : 'unhealthy',
     tick,
@@ -173,6 +206,7 @@ export function buildHealth(
      * so an operator has to know before the halt rather than during it.
      */
     rollback_gaps: runtime.engine.rollbackGaps,
+    durability,
     failures,
   };
 }

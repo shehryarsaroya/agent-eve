@@ -33,6 +33,13 @@ export const PARTITION_LOOKAHEAD = 7;
 const PARTITIONED_TABLES = ['event', 'event_audience', 'posting', 'action_log'] as const;
 const APPEND_ONLY_TABLES = ['event', 'event_audience', 'posting', 'action_log'] as const;
 
+/**
+ * The journal's own tables, append-only and unpartitioned. Immutable by grant, not
+ * convention (INV-16): a rewritten master seed or a re-minted enrolment would corrupt
+ * the record A10 says never resets, so the app role gets INSERT + SELECT and no more.
+ */
+const APPEND_ONLY_UNPARTITIONED = ['journal_meta', 'tick_seed', 'journal_enrollment'] as const;
+
 export function partitionIndexForTick(tick: number): number {
   return Math.floor(tick / TICKS_PER_PARTITION);
 }
@@ -120,6 +127,12 @@ async function applyGrants(client: Client, appRole: string): Promise<void> {
     for (const r of rows) {
       await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON ${r.relname} FROM ${appRole}`);
     }
+  }
+
+  // The journal's own append-only tables (unpartitioned, so no child partitions to
+  // walk). Revoked after the blanket grant, same ordering rule as above.
+  for (const t of APPEND_ONLY_UNPARTITIONED) {
+    await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON ${t} FROM ${appRole}`);
   }
 
   // Future tables created by migrations follow the same shape.

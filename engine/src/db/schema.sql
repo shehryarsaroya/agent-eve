@@ -297,4 +297,52 @@ CREATE TABLE IF NOT EXISTS world_status (
   CONSTRAINT paused_has_reason CHECK (status = 'RUNNING' OR paused_reason IS NOT NULL)
 );
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The journal's own boot inputs (src/persist/**). Added when the game learned to
+-- WRITE to Postgres at all — until then the "permanent public record" was process
+-- memory and every restart reset the world to tick 0. All additive
+-- (CREATE ... IF NOT EXISTS), so an existing database gets them on the next migrate.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- The run's master seed, write-once. Boot reads it and REFUSES to resume under a
+-- different seed, because replaying a persisted world under another seed diverges
+-- every hash. A key/value table so other write-once run facts have a home too.
+CREATE TABLE IF NOT EXISTS journal_meta (
+  key    text PRIMARY KEY,
+  value  text NOT NULL
+);
+
+-- seed(T) and its commitment, per committed tick. Redundant with the master seed
+-- (seed(T) is derived from it) but stored so the commit/reveal discipline — that
+-- hash(seed(T)) published BEFORE actions for T were accepted (DET-6) — is
+-- re-verifiable from durable data alone, without recomputing anything.
+CREATE TABLE IF NOT EXISTS tick_seed (
+  tick       integer PRIMARY KEY,
+  seed       text NOT NULL,
+  seed_hash  text NOT NULL,
+  CONSTRAINT tick_seed_tick_nonneg CHECK (tick >= 0)
+);
+
+-- Externally-enrolled identities (POST /enroll), so boot can re-seat them in the
+-- same order and the world reaches the same state at each tick. The house cast is
+-- re-seated deterministically from the master seed and is deliberately NOT here.
+--
+-- Deliberately NOT the `principal` table above: that one requires a 32-byte key and
+-- an underscore-only handle grammar, neither of which matches the live model (the
+-- house cast is keyless; the API's handle grammar allows hyphens). Those are
+-- pre-existing schema/implementation mismatches reported by the persistence work;
+-- until they are reconciled the journal keeps its boot inputs in its own table with
+-- no such constraints. `public_key` is base64url text for the same reason.
+CREATE TABLE IF NOT EXISTS journal_enrollment (
+  seq               bigserial,
+  principal         text PRIMARY KEY,
+  handle            text    NOT NULL,
+  public_key        text    NOT NULL,
+  enrolled_at_tick  integer NOT NULL,
+  owner_email       text
+);
+
+CREATE INDEX IF NOT EXISTS journal_enrollment_order_idx
+  ON journal_enrollment (enrolled_at_tick, seq);
+
 COMMIT;

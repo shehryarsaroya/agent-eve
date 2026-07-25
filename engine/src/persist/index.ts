@@ -1,0 +1,31 @@
+/**
+ * Durable persistence: the journal that makes "the permanent public record"
+ * permanent, and boot-from-store that makes a restart resume rather than reset.
+ *
+ * See `store.ts` for the interface and the finding that shaped boot (the ledger's
+ * snapshot is abort-only, so boot replays from genesis rather than adopting a
+ * checkpoint), and `journal.ts` for the persistence-failure policy.
+ */
+
+export {
+  type EnrollmentRecord,
+  type JournalStore,
+  type PersistedAudience,
+  type PersistedEvent,
+  type PersistedPosting,
+  type SnapshotRecord,
+  type TickRecord,
+  snapshotRecord,
+} from './store.js';
+
+export { InMemoryJournalStore, JournalStoreError } from './memory.js';
+export { PgJournalStore, type PgJournalStoreOptions } from './postgres.js';
+export { extractTick, snapshotRecordOf } from './extract.js';
+export { bootFromStore, BootError, type BootOptions, type BootResult } from './boot.js';
+export {
+  Journal,
+  BACKLOG_ALARM,
+  FAILURE_ALARM_THRESHOLD,
+  type JournalHealth,
+  type JournalOptions,
+} from './journal.js';
