@@ -181,7 +181,27 @@ Three independent scorers against SPEC v3.0.
 
 **Frame contract + client.** `assertFrameBudgets()` makes A13 executable (≤7 cards, ≤12 segments, ≤7 labels, ascending stakes, no seal content without a verdict, no reel on a kept promise). The client is static single-file with **no database handle and no live-sim connection**, so A9 parity is structural — and since agents read the public feed, any viewer privilege would immediately be an agent exploit.
 
-**In flight:** wave 1 — five subagents on disjoint file sets (identity/RFC 9421/VC · ledger · events + A9 parity fuzz · world/hands/movement · golden files), each followed by an adversarial verifier told to disbelieve its report.
+**Wave 1 — DONE.** identity (Ed25519 + RFC 9421 + VC grants) · ledger · events + the A9 parity fuzz · world/hands/movement · golden files. ~11.2k lines src, ~11.5k test. Five builders, five adversarial verifiers.
+
+> **Every builder overstated its report.** All five verifiers returned `reportAccurate=false`, and four found a P0/P1 the builder had called done. That is the single most useful datum from the wave: **a subagent's self-report is not evidence**, and the verify stage is not optional overhead.
+
+Verifier catches worth remembering:
+- **Ledger P0 — an engine-fabricated halt.** `retireCurrency` ignored encumbrances while `transferCurrency` respected them. Upkeep and fees are the primary currency sinks and are charged *by the world*, so `fund 1000 → lock 800 → retire 1000` left `locked 800 > balance 0`, and INV-3 then halted the tick. The engine creating the state that halts it is the A5′ failure mode.
+- **Ledger P1 — nine literal NUL bytes** used as a composite-key separator. `file(1)` reported the files as `data`, so **grep and ripgrep silently skipped them** while tsc, eslint and vitest stayed green. Every grep-based guard in the repo, including SEC-9's outbound secret scan, had an unreportable hole.
+- **Events P1 —** PROP-D2, the module's one absolute prohibition, escaped through an unchecked caller-supplied `flagKeys` allow-list: seal content could reach an agent-readable channel, which is perfect cartel monitoring.
+- **World P1 —** `classifyAction` indexed an object literal directly, so the eight `Object.prototype` keys returned a function instead of a disposition.
+
+**Four P1s the verifiers found and left; all fixed.** Three were scar #1 exactly — `HoldingState.STANDING`, `Protection.EXPOSED` (§3's Never-means for EXPOSURE reads literally "peril scope"), and `GrantMandate` (§3's Never-means for MANDATE reads "a grant"). The fourth: **a rotated-out key could still mint new grants**, because `bindIssuer` judged liveness at `validFromTick` — a field the signer chooses and signs — so rotating away a leaked key contained nothing.
+
+**Two collisions were in the canon, not the engine.** `SPEC` §15.1 itself specified `decision_source ∈ {LIVE, STANDING, …}`; renamed to `INTENT` (A3's own word) across spec, schema and engine. And §3's SEAL row forbade "a visibility level" while §3's own ladder included `SEALED` — the canon contradicted itself; the tier holds seals, so it is one concept and the clause was wrong.
+
+> **The sharpest lesson of the build so far.** The repo-wide vocabulary detector I wrote to catch those three collisions **did not work**. Keyed on bare canon *terms*, it passed a mutation that reintroduced `HoldingState = 'STANDING'` — a collision named in that very file's header — because `STANDING` was globally allowlisted for the legitimate `Standing` type. The detector was reproducing the bug it hunts, and it read as a clean bill of health. A canon term is never sanctioned in the abstract, only in one context, so the allowlist is keyed on **(union, member) pairs**. Now re-tested against a known *and* a novel collision, and the mutation is a permanent test rather than something run once by hand. **Corollary adopted as practice: mutation-test every guard, or it is decoration.**
+
+**`agent.md` + its guard.** Written *before* the API on purpose — written after, it would describe whatever the code happens to do, which is how scar #1 got in. `test/rules-surface/agent-md.test.ts` parses both canon and doc and asserts they agree on verbs, the ten observe keys and their order, A7's semantics, the seal disclosure rule, the visibility split, and that throughput buys nothing. Mutation-tested three ways including an **inverted A7 table**, which is scar #1's shape with money attached. That caught it only by an `execute`/`executes` accident, so both rows are now pinned verbatim.
+
+**Live.** `https://agentinsurance.io/compact/` serves the spectator client; landing page and whitepaper verified still 200 after the deploy (the scar #4 check). With no settled frame the client says so plainly and structurally cannot invent one.
+
+**In flight:** wave 2 — tick loop (DET-2, the A4 test) · ventures + settlement waterfall · the unified invariant surface + halt/PAUSED + the false-default audit · seals.
 
 ---
 
