@@ -27,9 +27,13 @@ import {
   Book,
   allocate,
   checkLevyAttribution,
+  inv24InputsFor,
   nonEscrowableOf,
   settleLevy,
+  LEVY_NOMINAL_MINOR,
+  LEVY_NEWCOMER_TENURE_TICKS,
 } from '../../src/levy/index.js';
+import { checkInv24 } from '../../src/invariants/index.js';
 import { act, levyWorld, runTo, tick, walkToPlace } from './fixture.js';
 import { subject } from './fixture.js';
 
@@ -188,6 +192,10 @@ describe('A5-PRIME — a principal that delivered is never recorded short', () =
       principal: 'p:new' as PrincipalId,
       amount: minor(500),
       newcomerFloored: true,
+      // Real inputs so INV-24 can re-derive isNewcomer independently: tenure 0 and
+      // empty stores make this genuinely a newcomer, matching newcomerFloored.
+      tenureTicks: 0,
+      freeStores: minor(0),
       spared: false,
       weight: 0,
     };
@@ -239,3 +247,71 @@ describe('A5-PRIME — a principal that delivered is never recorded short', () =
     expect(owing.owed).toBe(0);
   });
 });
+
+describe('INV-24 newcomer-floor guard is independent of the flag it checks', () => {
+  // The recurring bug class, caught by a verifier: a completeness witness derived from
+  // the field it is meant to witness. `inv24InputsFor` built `floorEligible` from each
+  // line's own `newcomerFloored`, so INV-24's "floored the wrong principal" clauses
+  // could never fire — reverting the fix leaves all 104 levy tests green. floorEligible
+  // is now re-derived from `isNewcomer` against the raw tenure and capital each line
+  // carries, which is what makes the check real.
+  const K: ConstellationId = 'k:test' as ConstellationId;
+  const PL: SystemId = 's:place' as SystemId;
+
+  function bookWithLine(line: Parameters<Book['admitLate']>[2]): Book {
+    const book = new Book();
+    // A real assessed plan for the constellation, so admitLate has something to add to.
+    const anchor = allocate({
+      constellation: K,
+      subjects: [subject('p:anchor')],
+      rule: 'EVEN',
+      spared: null,
+      byDefault: true,
+    });
+    book.assess({
+      reckoning: 0, constellation: K, total: anchor.total, rule: 'EVEN',
+      spared: null, byDefault: true, deliverableTo: PL, lines: anchor.lines, assessedAtTick: 0,
+    });
+    book.enrolled('p:anchor' as PrincipalId, 0);
+    if (!book.admitLate(0, K, line)) throw new Error('admitLate refused the crafted line');
+    return book;
+  }
+
+  it('catches a line that claims the floor while its raw inputs say veteran', () => {
+    // newcomerFloored: true, but long tenure and ample capital — a false floor, which
+    // would let a veteran pay the nominal rate forever.
+    const book = bookWithLine({
+      principal: 'p:veteran' as PrincipalId,
+      amount: LEVY_NOMINAL_MINOR,
+      newcomerFloored: true,
+      tenureTicks: LEVY_NEWCOMER_TENURE_TICKS * 10,
+      freeStores: minor(5_000_000),
+      spared: false,
+      weight: 0,
+    });
+    const inputs = inv24InputsFor(book, 0);
+    if (inputs === null) throw new Error('no inputs');
+    // Re-derived, not mirrored: the rule says this principal is NOT floor-eligible.
+    expect(inputs.floorEligible.has('p:veteran' as PrincipalId)).toBe(false);
+    // So INV-24 sees a line that recorded the floor without qualifying for it, and halts.
+    const violations = checkInv24(inputs, 287);
+    expect(violations.some((v) => v.id === 'INV-24')).toBe(true);
+  });
+
+  it('passes a genuine newcomer whose flag and inputs agree', () => {
+    // The positive case, so the test above is not just "INV-24 always fires".
+    const book = bookWithLine({
+      principal: 'p:fresh' as PrincipalId,
+      amount: LEVY_NOMINAL_MINOR,
+      newcomerFloored: true,
+      tenureTicks: 0,
+      freeStores: minor(0),
+      spared: false,
+      weight: 0,
+    });
+    const inputs = inv24InputsFor(book, 0);
+    if (inputs === null) throw new Error('no inputs');
+    expect(inputs.floorEligible.has('p:fresh' as PrincipalId)).toBe(true);
+    expect(checkInv24(inputs, 287).some((v) => v.id === 'INV-24')).toBe(false);
+  });
+})

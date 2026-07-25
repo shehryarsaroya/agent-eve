@@ -86,7 +86,7 @@ export interface LevySubject {
  * **Both halves**, and `params.ts` argues why at length: read as "either half" the
  * floor is a switch any veteran can flip by spending down before the assessment.
  */
-export function isNewcomer(subject: LevySubject): boolean {
+export function isNewcomer(subject: Pick<LevySubject, 'tenureTicks' | 'freeStores'>): boolean {
   return (
     subject.tenureTicks < LEVY_NEWCOMER_TENURE_TICKS &&
     subject.freeStores < LEVY_NEWCOMER_CAPITAL_MINOR
@@ -145,6 +145,18 @@ export interface Allocation {
   readonly amount: Minor;
   /** True iff the newcomer floor was applied. Recorded, never re-derived (INV-24). */
   readonly newcomerFloored: boolean;
+  /**
+   * The raw inputs the floor decision was made from, carried so INV-24 can recompute
+   * `isNewcomer` INDEPENDENTLY rather than trusting `newcomerFloored`.
+   *
+   * A completeness witness derived from the field it checks is a tautology — the seal
+   * book shipped exactly that bug, and a verifier caught this one recurring here: with
+   * `floorEligible` built from `newcomerFloored`, INV-24's "floored the wrong principal"
+   * clauses could never fire. These two fields are the independent source that makes the
+   * check real.
+   */
+  readonly tenureTicks: number;
+  readonly freeStores: Minor;
   /** True iff the constellation voted to spare this principal down to the nominal rate. */
   readonly spared: boolean;
   /** The weight it carried in the remainder pool. Zero for a floored or spared line. */
@@ -217,6 +229,8 @@ export function allocate(args: {
       principal: subject.principal,
       amount: LEVY_NOMINAL_MINOR,
       newcomerFloored: floored.has(subject.principal),
+      tenureTicks: subject.tenureTicks,
+      freeStores: subject.freeStores,
       spared: subject.principal === spared,
       weight: 0,
     });
@@ -226,6 +240,8 @@ export function allocate(args: {
       principal: subject.principal,
       amount: shares[i] ?? minor(0),
       newcomerFloored: false,
+      tenureTicks: subject.tenureTicks,
+      freeStores: subject.freeStores,
       spared: false,
       weight: weights[i] ?? 0,
     });

@@ -1450,10 +1450,17 @@ export class Runtime {
       return;
     }
     try {
+      // Carry the late enroller's REAL tenure and capital, not fabricated values, so
+      // INV-24 can re-derive isNewcomer against the same inputs the assessment used.
+      // A late enroller is a newcomer by construction (it just seated), so the floor is
+      // correct here — but the check verifies that rather than trusting the flag.
+      const subject = this.levySubjectOf(principal, tick);
       this.levy.admitLate(reckoning, constellation, {
         principal,
         amount: LEVY_NOMINAL_MINOR,
         newcomerFloored: true,
+        tenureTicks: subject.tenureTicks,
+        freeStores: subject.freeStores,
         spared: false,
         weight: 0,
       });

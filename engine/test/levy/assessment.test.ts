@@ -166,23 +166,13 @@ describe('the newcomer floor', () => {
     expect(isNewcomer(newcomer('p:new'))).toBe(true);
     // Tenure short, capital fat: not a newcomer. A rich arrival is not protected.
     expect(
-      isNewcomer({
-        principal: 'p:rich' as PrincipalId,
-        tenureTicks: 0,
-        freeStores: LEVY_NEWCOMER_CAPITAL_MINOR,
-        exposure: minor(0),
-      }),
+      isNewcomer({ tenureTicks: 0, freeStores: LEVY_NEWCOMER_CAPITAL_MINOR }),
     ).toBe(false);
     // ── THE EXPLOIT, NAMED ──────────────────────────────────────────────────
     // Tenure long, capital empty: NOT floored. Read as "either half", this is the
     // veteran that spends down before the assessment and pays the nominal rate forever.
     expect(
-      isNewcomer({
-        principal: 'p:pauper' as PrincipalId,
-        tenureTicks: LEVY_NEWCOMER_TENURE_TICKS,
-        freeStores: minor(0),
-        exposure: minor(0),
-      }),
+      isNewcomer({ tenureTicks: LEVY_NEWCOMER_TENURE_TICKS, freeStores: minor(0) }),
     ).toBe(false);
   });
 

@@ -536,6 +536,8 @@ export class Book {
               principal: line.principal,
               amount: line.amount,
               newcomerFloored: line.newcomerFloored,
+              tenureTicks: line.tenureTicks,
+              freeStores: line.freeStores,
               spared: line.spared,
               weight: line.weight,
             })),
@@ -619,6 +621,8 @@ export class Book {
           principal: readString(l, 'principal', lineWhere) as PrincipalId,
           amount: minor(readInt(l, 'amount', lineWhere)),
           newcomerFloored: readBool(l, 'newcomerFloored', lineWhere),
+          tenureTicks: readInt(l, 'tenureTicks', lineWhere),
+          freeStores: minor(readInt(l, 'freeStores', lineWhere)),
           spared: readBool(l, 'spared', lineWhere),
           weight: readInt(l, 'weight', lineWhere),
         };

@@ -39,6 +39,7 @@ import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import { halt } from '../invariants/registry.js';
 import type { DocketRow, Inv24Inputs, LevyAssessment } from '../invariants/crowd.js';
+import { isNewcomer } from './assessment.js';
 import type { Book, ShortfallRow } from './book.js';
 import { LEVY_NOMINAL_MINOR } from './params.js';
 import { owingOf } from './payment.js';
@@ -245,7 +246,15 @@ export function inv24InputsFor(book: Book, reckoning: number): Inv24Inputs | nul
         amount: line.amount,
         newcomerFloored: line.newcomerFloored,
       });
-      if (line.newcomerFloored) floorEligible.add(line.principal);
+      // INDEPENDENT re-derivation, not `line.newcomerFloored`. Building floorEligible
+      // from the flag the assessment set would make INV-24's "floored the wrong
+      // principal" clauses a tautology — the seal book shipped that exact bug and a
+      // verifier caught it recurring here. isNewcomer runs the §5.2 rule against the
+      // raw tenure and capital the line carries, so the check catches an assessment
+      // that floored someone it should not have, or failed to floor someone it should.
+      if (isNewcomer({ tenureTicks: line.tenureTicks, freeStores: line.freeStores })) {
+        floorEligible.add(line.principal);
+      }
       const row = book.shortfallOf(reckoning, line.principal);
       if (row !== null && row.inSweepQueue) seizureQueue.push(line.principal);
     }
