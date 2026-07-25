@@ -151,6 +151,11 @@
   <div id="rundown"></div>
 </section>
 
+<section id="authority-sec" style="margin-top:38px">
+  <h2 class="sec">Standing authority</h2>
+  <div id="authority"></div>
+</section>
+
 <section class="ticker" id="ticker-sec">
   <h2 class="sec">The ticker</h2>
   <div id="ticker"></div>
@@ -290,6 +295,37 @@ function renderTicker(lines) {
     || '<div class="empty">Quiet.</div>';
 }
 
+// Authority lines carry principal ids; the map's rule is names, not ids (A13). Build a
+// principal→handle lookup from the cast chips already in the frame (docket + rundown),
+// and fall back to the id (minus its "p:" prefix) for anyone not currently on screen.
+function handleMap(frame) {
+  const m = new Map();
+  const collect = (cast) => (cast || []).forEach((c) => {
+    if (c && c.principal && c.handle) m.set(c.principal, c.handle);
+  });
+  (frame.docket || []).forEach((c) => collect(c.cast));
+  (frame.rundown || []).forEach((s) => collect(s.cast));
+  return m;
+}
+function named(p, m) { return esc(m.get(p) || String(p ?? '').replace(/^p:/, '')); }
+
+// A6's authority signature (SPEC §8): who holds standing power over whom, and how much of
+// the worst case they were shown has been drawn. Convergence on a few delegates is a
+// forming power bloc — the thing this section exists to make watchable.
+function renderAuthority(lines, m) {
+  const el = $('authority');
+  if (!lines || lines.length === 0) {
+    el.innerHTML = '<div class="empty">No standing authority granted &mdash; nobody holds power over another&rsquo;s stores yet.</div>';
+    return;
+  }
+  const label = { UNUSED: 'unused', DRAWN: 'drawn on', EXHAUSTED: 'at the limit', REVOKED: 'revoked' };
+  el.innerHTML = lines.map((l) => `
+    <div class="card">
+      <p class="hl">${named(l.grantor, m)} &rarr; ${named(l.delegate, m)}</p>
+      <p class="tn">${money(l.spent)} drawn of ${money(l.granted)} granted &middot; ${esc(label[l.state] || l.state)}</p>
+    </div>`).join('');
+}
+
 async function load() {
   try {
     // latest.json is a small pointer so the big immutable frames can be cached
@@ -306,6 +342,7 @@ async function load() {
     renderMeters(frame.meters || {});
     renderDocket(frame.docket, 'docket');
     renderRundown(frame.rundown);
+    renderAuthority(frame.authorityLines, handleMap(frame));
     renderTicker(frame.ticker);
   } catch (e) {
     $('m-status').textContent = 'no frame';
@@ -314,6 +351,7 @@ async function load() {
       'This is the honest state before the first Reckoning &mdash; the client ' +
       'deliberately cannot invent one, because it has no view of the live sim.</div>';
     $('rundown').innerHTML = '';
+    $('authority').innerHTML = '';
     $('ticker').innerHTML = '';
   }
 }
