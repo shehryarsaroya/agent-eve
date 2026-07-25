@@ -1053,6 +1053,17 @@ function ventureRow(
     my_role: role === null ? null : role.index,
     my_escrowed: role === null ? 0 : role.terms.escrowed,
     my_elective: role === null ? 0 : role.terms.elective,
+    /**
+     * Direction, because `my_elective` alone was read two opposite ways by capable
+     * agents — one thought a filler *owes* it. The elective on a role YOU hold is paid
+     * TO you by the venture's **creator** (the payer), if the creator honours it; you
+     * never elect it, the creator does. So it is `OWED_TO_ME` when you filled someone
+     * else's venture. On your OWN venture your own role is self-paid and can never be a
+     * breach (scar #9), so it is `SELF`. What YOU owe as a creator is never here — it is
+     * the `elect` affordances, one per role somebody else holds in your venture.
+     */
+    my_elective_direction:
+      role === null ? null : venture.creator === principal ? 'SELF' : 'OWED_TO_ME',
     countersigned: [...venture.countersigned].sort(cmp),
     i_have_signed: venture.countersigned.has(principal),
     projected_settlement: yourTakeAtP50(venture, principal),

@@ -74,7 +74,7 @@ describe('agent.md §6 — every affordance field the document tells players to 
   });
 
   it('the document’s claim that max_direct_loss "is exact, not an estimate" holds', () => {
-    expect(AGENT_MD).toContain('It is exact, not an estimate.');
+    expect(AGENT_MD).toContain('exact, not estimates');
     // Exact means an integer computed from pinned terms — never a band, never a null.
     const f = fixture();
     const haul = makeHaul(f);
@@ -123,14 +123,18 @@ describe('agent.md §6 — the free services', () => {
       expect(AGENT_MD, `agent.md no longer offers ${service}`).toContain(`\`${service}\``);
       expect(SERVICE_NAMES as readonly string[]).toContain(service);
     }
-    expect(AGENT_MD).toContain('paginated');
+    expect(AGENT_MD.toLowerCase()).toContain('paginated');
     expect(SERVICE_NAMES as readonly string[]).toContain('page');
   });
 
-  it('promises plan_hands gives 3–6 complete plans with EV bands, worst case and foreclosures', () => {
-    expect(AGENT_MD).toContain(
-      '`plan_hands` (3–6 complete allocation plans with expected value bands, worst case, and what each',
-    );
+  it('marks the advisory services NOT-YET-LIVE so no one builds strategy on vapor (Gate 3 #6)', () => {
+    // The services are designed but unbuilt in Phase 0; agent.md once pushed plan_hands as
+    // getting-good tactic #1, which sent every probe chasing a PHASE-0 reply. It must now
+    // say plainly they are not live, and point at the consequence-preview fields that ARE.
+    expect(AGENT_MD).toContain('Not yet live (Phase 0)');
+    expect(AGENT_MD).toContain('the observation already previews consequences');
+    // And the getting-good list must no longer open with the vapor.
+    expect(AGENT_MD).not.toContain('Call `plan_hands` before every allocation decision');
   });
 });
 

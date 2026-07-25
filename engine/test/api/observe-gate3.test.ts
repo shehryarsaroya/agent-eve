@@ -586,6 +586,42 @@ describe('standing is read from the book, and an agent can see its own', () => {
   });
 });
 
+describe('my_elective_direction disambiguates who owes the elective (Gate 3 #4)', () => {
+  it('is OWED_TO_ME on a role you filled, and never OWED_TO_ME on your own venture', async () => {
+    // Two capable probes read bare `my_elective` opposite ways — one thought a filler
+    // OWES it. The engine rule (elect is the creator's, §5.1/observe.ts:546): the elective
+    // on a role you HOLD is paid TO you by the venture's creator. This pins the direction.
+    const { creator, venture, stage } = await stagedVenture();
+    const filler = agent('darrow');
+    await enrol(h, filler);
+    tick(h, 1);
+    bring(filler, stage);
+
+    const fill = affordances(direct(filler)).find(
+      (a) => a['verb'] === 'fill_role' && (a['params'] as Row)['venture'] === venture,
+    );
+    expect(fill, 'the filler is offered the open role').toBeDefined();
+    await act(filler, 'fill_role', fill?.['params']);
+    tick(h, 1);
+
+    const fRow = ((obs({ observation: direct(filler) })['ventures'] as Row)['mine'] as Row[]).find(
+      (v) => v['id'] === venture,
+    );
+    expect(fRow?.['my_role'], 'the filler now holds a role').not.toBeNull();
+    expect(fRow?.['my_elective_direction']).toBe('OWED_TO_ME');
+
+    const cRow = ((obs({ observation: direct(creator) })['ventures'] as Row)['mine'] as Row[]).find(
+      (v) => v['id'] === venture,
+    );
+    // On your OWN venture your own role is self-paid (scar #9): you are never OWED on it,
+    // and what you OWE as the payer is the `elect` affordance, never `my_elective`.
+    expect(cRow?.['my_elective_direction']).not.toBe('OWED_TO_ME');
+    if (cRow?.['my_role'] !== null && cRow?.['my_role'] !== undefined) {
+      expect(cRow?.['my_elective_direction']).toBe('SELF');
+    }
+  });
+});
+
 // ── 4. the prompt ───────────────────────────────────────────────────────────
 
 describe('briefing.prompt tells a filler the truth about standing (scar #1)', () => {
