@@ -243,6 +243,21 @@ export interface BoardSlot {
   readonly worst_case: Minor;
   readonly escrowed: Minor;
   readonly elective: Minor;
+  /**
+   * **The hash a filler must countersign, on the row that advertises the slot.**
+   *
+   * Gate 3's headline measure came out `0/0` because this field did not exist on either
+   * implementation of the board. A fill is a request allocated at tick close (PROP-V8) and
+   * the venture stays `FORMING` until every party countersigns the same `terms_hash`
+   * (§7.3) — so without the hash on the row a filler must spend a **second wake** reading
+   * `ventures.mine[]` before it can sign, inside a 12-tick formation window, on a budget
+   * of one wake per 18 ticks. ~46 ventures died on a missing countersignature and not one
+   * on price.
+   *
+   * Full, never shortened: `countersign` compares it byte for byte and a prefix is
+   * refused as a different deal.
+   */
+  readonly terms_hash: string | null;
   readonly expires_tick: number;
 }
 
@@ -1085,6 +1100,7 @@ function boardSlots(
         worst_case: minor(0),
         escrowed: role.terms.escrowed,
         elective: role.terms.elective,
+        terms_hash: venture.termsHash,
         expires_tick: venture.windowClosesTick,
       });
     }

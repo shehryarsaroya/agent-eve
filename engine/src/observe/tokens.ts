@@ -177,7 +177,16 @@ export const FLOOR_CAPS: ListCaps = Object.freeze({
 const WORST_ITEM_CHARS = Object.freeze({
   affordance: 350,
   mine: 320,
-  board: 290,
+  /**
+   * 290 before `BoardSlot.terms_hash`, which is a full 64-character hash plus its key.
+   *
+   * Paid for rather than shortened: the hash is what makes a board slot closeable inside
+   * one wake (Gate 3 measured `0/0` without it), and a truncated hash is refused by
+   * `countersign` as a different deal — so there is no cheaper honest version of this
+   * field. `floorWorstCaseChars()` still fits `NORMAL_TOKEN_CAP * CHARS_PER_TOKEN`
+   * because `FLOOR_CAPS.board` is 2, and `tokens.test.ts` asserts both halves.
+   */
+  board: 380,
   talk: 100,
   counterparty: 310,
   market: 200,

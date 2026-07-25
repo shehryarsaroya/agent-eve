@@ -227,7 +227,11 @@ describe('PROP-O2 — the static half: the floor rung is proved to fit', () => {
 
     check('affordance', built.affordances, 350);
     check('mine', built.ventures.mine, 320);
-    check('board', built.ventures.board, 290);
+    // 380, not 290: `BoardSlot.terms_hash` is a full 64-character hash and it is what makes
+    // a board slot closeable inside one wake (Gate 3 measured `0/0` without it). The literal
+    // is deliberately duplicated from `WORST_ITEM_CHARS` so that widening a shape has to be
+    // stated in two places, one of which is a test that re-measures it.
+    check('board', built.ventures.board, 380);
     check('talk', built.ventures.talks, 100);
     check('counterparty', built.counterparties, 310);
     check('market', built.market.books, 200);

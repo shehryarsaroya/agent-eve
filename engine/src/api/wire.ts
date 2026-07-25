@@ -110,7 +110,19 @@ const REDACTIONS: readonly (readonly [RegExp, string])[] = Object.freeze([
   // node_modules is a version-and-dependency map even without a version string.
   [/\S*node_modules\S*/g, '[path]'],
   // Semantic versions, with or without a leading v.
-  [/\bv?\d+\.\d+\.\d+(?:-[\w.]+)?\b/g, '[version]'],
+  //
+  // Fenced on BOTH sides against a longer dotted run, because an IPv4 address is a
+  // dotted quad and `\b` alone matched inside one: `127.0.0.1` came out as
+  // `[version].1`. That is not hypothetical — it corrupted two agent-facing rules
+  // surfaces at once. The `RATE_LIMITED` hint reads "too many enroll requests from
+  // …", naming the caller's own address, on the endpoint a newcomer meets first; and
+  // a `SIGNATURE_INVALID` diagnostic echoes the `"@authority"` line of the signature
+  // base, which exists to be diffed byte for byte and is useless if we mangle it.
+  // Production's authority is a hostname, which is why this survived a live deploy.
+  //
+  // Same class as the stack-frame pattern below it: a scrubber that quietly eats a
+  // rules surface is worse than the leak it prevents, because nothing fails.
+  [/(?<![\d.])v?\d+\.\d+\.\d+(?:-[\w.]+)?(?![\d.])/g, '[version]'],
   // Node's own banner shape, e.g. "node:internal/modules".
   [/\bnode:[a-z_/]+/g, '[internal]'],
 ]);
@@ -123,6 +135,34 @@ const REDACTIONS: readonly (readonly [RegExp, string])[] = Object.freeze([
  * that hands the raw text to the fallback.
  */
 export function scrub(text: unknown): string {
+  return scrubTo(text, MAX_DETAIL_LENGTH);
+}
+
+/**
+ * The same scrub, with the length bound as a parameter.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE BOUND IS A PARAMETER BECAUSE CHUNKING IS NOT AN ALTERNATIVE.**
+ *
+ * A caller that needs a longer bound than `MAX_DETAIL_LENGTH` — `/discrepancy` stores
+ * 2000 characters — cannot get there by slicing the text into sub-480 pieces and
+ * scrubbing each. That was tried, and it broke this function's first and most
+ * important rule in two ways:
+ *
+ *   1. **A redaction split in half stops matching.** `token=SUPERSECRETVALUE123456`
+ *      straddling a chunk boundary became `token=SUPE` + `RSECRETVALUE123456`, neither
+ *      of which matches the credential pattern — so the secret was stored *verbatim*
+ *      by the one function whose job is to remove it. The pattern is deliberately
+ *      first in {@link REDACTIONS} for exactly this reason.
+ *   2. **Every chunk boundary injected a space**, because the pieces had to be
+ *      rejoined. A venture id or a `terms_hash` straddling the boundary came out cut
+ *      in half — in a discrepancy report, which is the record an operator greps when
+ *      an agent says a default was recorded against it wrongly.
+ *
+ * So: one pass over the whole string, one bound, chosen by the caller.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function scrubTo(text: unknown, limit: number): string {
   let s: string;
   try {
     s = typeof text === 'string' ? text : String(text);
@@ -135,7 +175,7 @@ export function scrub(text: unknown): string {
   // Collapse the whitespace the frame stripper leaves behind.
   s = s.replace(/\s+/g, ' ').trim();
   if (s.length === 0) return 'no detail';
-  return s.length > MAX_DETAIL_LENGTH ? `${s.slice(0, MAX_DETAIL_LENGTH - 1)}…` : s;
+  return s.length > limit ? `${s.slice(0, limit - 1)}…` : s;
 }
 
 export function refusal(reason: string, detail: string): WireRefusal {

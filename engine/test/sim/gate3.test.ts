@@ -38,6 +38,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { Rng } from '../../src/core/rng.js';
 import { setSpeed } from '../../src/core/time.js';
 import type { HandId, PrincipalId, SystemId, VentureId } from '../../src/core/types.js';
 import { buildObservation, type Affordance } from '../../src/api/observe.js';
@@ -407,13 +408,26 @@ describe('a refused fill reaches its agent, with the invariant and what to do in
     const id = forming(w, PAYER);
     submit(w.runtime, ALPHA, 'fill_role', { venture: id, role: 1, hand: idleOf(w.runtime, ALPHA) });
     submit(w.runtime, BRAVO, 'fill_role', { venture: id, role: 1, hand: idleOf(w.runtime, BRAVO) });
-    const at = w.runtime.engine.tick + 1;
     tick(w.runtime);
     expect(w.runtime.takeCorrections(BRAVO)).toHaveLength(1);
-    // The tick that refused it appended nothing naming the loser. A refusal is private
-    // and recoverable; the public record only ever carries what actually happened.
-    for (const event of w.runtime.events.eventsAtTick(at)) {
-      expect(JSON.stringify(event.payload)).not.toContain(BRAVO);
+
+    // ── THIS LOOP USED TO BE EMPTY, AND THAT MADE THE GUARD A DECORATION ──────
+    //
+    // It read `eventsAtTick(at)` for the contested tick. Nothing in the runtime appends
+    // an event when a fill is granted or refused, so that set is **zero records** and the
+    // assertion inside never ran: measured 0 events at the contested tick, and the only
+    // two rows in the whole run are `venture.formed` and `levy.assessed`, both at tick 0.
+    // A guard for scar #10 that iterates an empty collection is the file header's own
+    // warning ("seven guards in this project have passed while testing nothing") arriving
+    // in the file that quotes it.
+    //
+    // So: scan the WHOLE ledger, and assert first that there is something in it to scan.
+    const scanned = w.runtime.events.ticks().flatMap((t) => [...w.runtime.events.eventsAtTick(t)]);
+    expect(scanned.length, 'nothing was appended at all, so this asserts nothing').toBeGreaterThan(0);
+    // A refusal is private and recoverable; the public record only ever carries what
+    // actually happened, and the loser of a contest did nothing that happened.
+    for (const record of scanned) {
+      expect(JSON.stringify(record.event)).not.toContain(BRAVO);
     }
   });
 });
@@ -554,5 +568,86 @@ describe('a seal claims the role the agent named, and never a different one', ()
     if (offered === undefined) throw new Error('no seal affordance was offered');
     expect(act(w.runtime, PAYER, 'seal', offered.params)).toBeNull();
     expect(w.runtime.seals.size).toBe(1);
+  });
+});
+
+// ── 5. §4's four-role kinds are real, and the cast has never shown one ────────
+
+describe('the four-role, wholly-elective kinds the engine can build and the cast never creates', () => {
+  it('takes a BUILD to LIVE on four distinct principals with nothing escrowed', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // §4's claim — that some kinds need "four or more roles" and so force cooperation by
+    // arithmetic rather than by appeal — is TRUE OF THE ENGINE and was never demonstrated
+    // to a player. `src/cast/heuristic.ts`'s `CREATES` table maps its four bot roles onto
+    // `DIG | HAUL | ESCORT | RAID`, all two-role kinds, so `BUILD` and `SIEGE` never
+    // reached the board and three Gate-3 probes concluded from the board that §4 was
+    // false. That is a cast defect, not an engine one, and this test is the target it has
+    // to hit: the mechanic exists, it needs four independently-capitalised counterparties
+    // (A15), and it is wholly elective, which is what makes standing accrue on it at all.
+    // ══════════════════════════════════════════════════════════════════════
+    const four = ['p:one', 'p:two', 'p:three', 'p:four'] as PrincipalId[];
+    const w = world('build', ...four);
+    const [creator] = four;
+    if (creator === undefined) throw new Error('no creator');
+
+    submit(w.runtime, creator, 'create', { kind: 'BUILD', stage: w.stage, value: 40_000 });
+    tick(w.runtime);
+    const built = w.runtime.ventures.all().find((v) => v.kind === 'BUILD');
+    if (built === undefined) throw new Error('the engine refused to mint a BUILD');
+    expect(built.roles).toHaveLength(4);
+    // Un-escrowable and floored at the whole consideration: there is no locked half to
+    // hide behind, so every unit of it is a promise somebody can walk away from (A7).
+    for (const role of built.roles) {
+      expect(role.terms.escrowed).toBe(0);
+      expect(role.terms.elective).toBeGreaterThan(0);
+    }
+
+    for (const [index, principal] of four.entries()) {
+      submit(w.runtime, principal, 'fill_role', {
+        venture: built.id,
+        role: index,
+        hand: idleOf(w.runtime, principal),
+      }, index);
+    }
+    tick(w.runtime);
+    const filled = w.runtime.ventures.require(built.id);
+    expect(openIndices(filled)).toEqual([]);
+    expect(new Set(filled.roles.map((r) => r.filledByPrincipal)).size).toBe(4);
+
+    const hash = filled.termsHash;
+    if (hash === null) throw new Error('no terms_hash');
+    for (const [index, principal] of four.entries()) {
+      submit(w.runtime, principal, 'sign', { venture: built.id, terms_hash: hash }, index);
+    }
+    tick(w.runtime);
+    tick(w.runtime);
+    expect(w.runtime.ventures.require(built.id).state).toBe('LIVE');
+  });
+
+  it('mints a SIEGE outside the Commons, where a hostile kind is legal', () => {
+    // The other four-role kind, and its own constraint: hostile action in the Commons is
+    // invalid rather than punished (A8), so a SIEGE has to be staged and aimed outside it.
+    const w = world('siege');
+    const four = ['p:five', 'p:six', 'p:seven', 'p:eight'] as PrincipalId[];
+    const marches = w.runtime.seatInTier('MARCHES', Rng.fromSeed('siege:seat'));
+    if (marches === undefined) throw new Error('the launch map has no MARCHES system');
+    for (const principal of four) {
+      w.runtime.seat(principal, principal.replace('p:', ''), marches);
+      w.runtime.standing.open(principal);
+    }
+    const [creator] = four;
+    if (creator === undefined) throw new Error('no creator');
+
+    submit(w.runtime, creator, 'create', {
+      kind: 'SIEGE',
+      stage: marches,
+      value: 60_000,
+      target_system: marches,
+    });
+    tick(w.runtime);
+    const siege = w.runtime.ventures.all().find((v) => v.kind === 'SIEGE');
+    if (siege === undefined) throw new Error('the engine refused to mint a SIEGE');
+    expect(siege.roles).toHaveLength(4);
+    for (const role of siege.roles) expect(role.terms.escrowed).toBe(0);
   });
 });

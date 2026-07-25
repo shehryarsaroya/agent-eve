@@ -28,7 +28,7 @@ import {
   takeAtPercentile,
   windowContains,
 } from '../../src/venture/index.js';
-import { handById } from '../../src/world/index.js';
+import { handById, handsOf } from '../../src/world/index.js';
 import type { HandId, VentureId } from '../../src/core/types.js';
 import {
   ALICE,
@@ -121,6 +121,49 @@ describe('every fill_role the observation publishes is one the engine accepts', 
     }
     expect(built.observation.ventures.board.some((s) => s.venture === open_.id)).toBe(true);
     expect(built.observation.ventures.board.some((s) => s.venture === 'v-shut')).toBe(false);
+  });
+
+  it('a board slot carries the terms_hash a filler has to countersign', () => {
+    // ── GATE 3's `0/0` ────────────────────────────────────────────────────────
+    //
+    // A fill is a request allocated at tick close and the venture stays FORMING until
+    // every party countersigns the *same* hash (§7.3). Without the hash on the row that
+    // advertises the slot, a filler needs a second wake to read it out of
+    // `ventures.mine[]` — inside a 12-tick window, on one wake per 18 ticks. Gate 3's
+    // measure came out `0/0` and ~46 ventures died on a missing countersignature.
+    const f = fixture();
+    const haul = makeHaul(f, { creator: ALICE });
+    const built = buildObservation(sourcesFor(f), BRAM);
+    const slots = built.observation.ventures.board.filter((s) => s.venture === haul.id);
+    expect(slots.length).toBeGreaterThan(0);
+    for (const slot of slots) {
+      // The venture's own hash, full length: `countersign` compares it byte for byte and
+      // reads a prefix as a different deal.
+      expect(slot.terms_hash).toBe(f.book.require(slot.venture).termsHash);
+      expect(String(slot.terms_hash).length).toBeGreaterThan(32);
+    }
+  });
+
+  it('counts the idle hands it does not offer, instead of claiming it offered them all', () => {
+    // `free[0]` offers one hand per slot. The others are legal acts — two Gate-3 probes
+    // filled with a hand the payload never offered — so they are counted under `PAGED`,
+    // the ground that means *eligible*, and `accountingFaults` must still balance.
+    const f = fixture();
+    const haul = makeHaul(f, { creator: ALICE });
+    const free = handsOf(f.world, BRAM).filter(
+      (hand) => hand.state === 'IDLE' && hand.location === haul.stage,
+    );
+    expect(free.length, 'the omission only exists if there is more than one hand').toBeGreaterThan(1);
+
+    const built = buildObservation(sourcesFor(f), BRAM);
+    const offered = built.observation.affordances.filter((a) => a.verb === 'fill_role');
+    expect(offered.length).toBeGreaterThan(0);
+    const paged = built.observation.header.withheld.find(
+      (row) => row.field === 'affordances' && row.ground === 'PAGED',
+    );
+    expect(paged?.count ?? 0).toBeGreaterThanOrEqual(free.length - 1);
+    // PROP-O1's arithmetic, which is the half a bare count could fake.
+    expect(built.accounting).toEqual([]);
   });
 
   it('a board slot’s worst case matches its fill_role affordance exactly', () => {

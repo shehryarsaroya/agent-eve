@@ -1427,7 +1427,28 @@ export class Runtime {
     const reckoning = reckoningOf(tick);
     const constellation = constellationOf(this.world, principal);
     if (constellation === null) return;
-    if (!this.levy.isAssessed(reckoning, constellation)) return;
+    if (!this.levy.isAssessed(reckoning, constellation)) {
+      // ── THE SILENT RETURN WAS THE HALT, ONE TICK LATER ─────────────────────
+      //
+      // No plan means this constellation held no principal when `assessLevyNow` ran at
+      // phase 0, so it was skipped — `assessCycle` skips an empty roll. Returning here
+      // leaves the arrival with no assessment and no docket row, and `levyAssessedReckoning`
+      // stops `assessCycle` from ever being asked again this Reckoning, so the plan is
+      // never minted and INV-25 halts every remaining tick of the cycle:
+      // `p:… appears in no docket row for Reckoning N; abstention must be impossible`.
+      //
+      // Reachable through `POST /enroll` — free and unauthenticated (A15) — in any world
+      // whose Commons constellation was empty at phase 0 while another constellation held
+      // a principal. Verified against the enrolment path's own call, `seat(principal,
+      // handle)` with no `seatAt`.
+      //
+      // Clearing the memo is the whole fix: the next OBLIGE re-runs `assessCycle`, which
+      // skips every constellation already assessed and mints the one that now has a roll.
+      // The assessment lands at this phase rather than phase 0, which is the honest record
+      // of when the constellation first had anybody in it.
+      this.levyAssessedReckoning = -1;
+      return;
+    }
     try {
       this.levy.admitLate(reckoning, constellation, {
         principal,
@@ -2911,7 +2932,13 @@ export class Runtime {
    */
   private assessLevyNow(ctx: PhaseContext): void {
     const reckoning = reckoningOf(ctx.tick);
-    if (this.levyAssessedReckoning === reckoning) return;
+    // The memo is a fast path, never the authority: the book is inside the rollback and
+    // this field is not, so an aborted phase-0 tick leaves the field claiming a Reckoning
+    // the restored book holds no plan for. `resume()` would then re-run the tick, return
+    // here, mint nothing, and INV-25 would halt on every principal for the rest of the
+    // cycle — a world made unrecoverable by its own recovery path. Asking the book too
+    // costs one map walk over at most `LEVY_RETAINED_RECKONINGS` constellations.
+    if (this.levyAssessedReckoning === reckoning && this.levy.plansIn(reckoning).length > 0) return;
     if (this.world.principalOrder.length === 0) return;
     let assessed;
     try {
@@ -3001,7 +3028,22 @@ export class Runtime {
   private settleLevyNow(ctx: PhaseContext): void {
     if (!isSettlementTick(ctx.tick)) return;
     const reckoning = reckoningOf(ctx.tick);
-    if (this.levySettledReckoning === reckoning) return;
+    // ── THE GUARD IS THE BOOK'S, BECAUSE THE BOOK IS INSIDE THE ROLLBACK ─────
+    //
+    // This used to read a plain field on the runtime. `settleLevy` is already idempotent
+    // by refusal against `book.isSettled`, so the field was a second home for a fact the
+    // book owns (scar #5) — and the two homes come apart at exactly the moment that
+    // matters. `abort()` restores every state table, and `levyStateTable` is one of them,
+    // so a halted tick's `markSettled` is rolled back; the field is in no table and is
+    // not. `resume()` then re-runs the same tick, this guard returns early against the
+    // stale field, and **the Reckoning's Levy is never settled**: no shortfall rows, no
+    // sweep, no strikes, `LEVY SHORT` 0 instead of what was owed — and the tick publishes
+    // clean, so nothing halts and nothing says so. Verified: 3 rows and 18 000 short
+    // before the abort, 0 and 0 after the re-run.
+    //
+    // The book's flag is captured in `state_hash` and restored by the rollback, so it can
+    // only ever say what the world it belongs to says.
+    if (this.levy.isSettled(reckoning)) return;
     this.levySettledReckoning = reckoning;
 
     const settlement = settleLevy({

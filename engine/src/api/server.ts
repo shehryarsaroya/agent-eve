@@ -80,6 +80,7 @@ import {
   readStringField,
   refusal,
   scrub,
+  scrubTo,
   type WireRefusal,
 } from './wire.js';
 
@@ -115,8 +116,48 @@ export const MAX_REPORT_LENGTH = 2000;
  */
 const EXPECTED_FIELDS = ['expected', 'expectation', 'wanted', 'should'] as const;
 const OBSERVED_FIELDS = ['observed', 'happened', 'actual', 'got', 'instead'] as const;
-/** Accepted when neither half is named: the whole report as one string. */
-const WHOLE_REPORT_FIELDS = ['report', 'detail', 'details', 'message', 'note', 'text', 'body'] as const;
+/**
+ * Accepted when neither half is named: the whole report as one string.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **`message`, `text`, `body` AND `note` ARE DELIBERATELY NOT HERE (HARD RULE 4).**
+ *
+ * The first version of this list carried all four, and every one of them was already
+ * spoken for by a *different* concept on the same API:
+ *
+ *   - **MESSAGE** is §3 canon — "one typed act in a hosted private negotiation" — and
+ *     a live free verb (`FREE_VERBS`, `src/api/verbs.ts`, `Runtime.vMessage`).
+ *   - `text` and `body` are that verb's own two parameter spellings.
+ *   - `note` is this endpoint's own **response** key.
+ *
+ * So `{"venture": "…", "act": "assure", "text": "I will pay"}` — the exact body
+ * `vMessage` prints in its own refusal — posted one path segment wrong answered
+ * `202 {recorded: true, note: "Thank you…"}`, dropped `venture` and `act` on the
+ * floor, and filed a negotiation act into an operator's ring buffer that no
+ * counterparty reads. An affirmative receipt for a game act that never happened, and
+ * in a design whose best artifact is the reassuring thing the traitor said (§14), a
+ * swallowed `assure` is a deleted piece of evidence.
+ *
+ * Widening the accepted shape was right; widening it onto four taken words was not.
+ * A reporter who guesses one of them now gets a free refusal that names the verb, so
+ * the confusion is *corrected* instead of confirmed — which is the whole point of
+ * scar #1: the refusal text is a rules surface.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+const WHOLE_REPORT_FIELDS = ['report', 'detail', 'details'] as const;
+
+/**
+ * Field names that mean something else on this API, listed so the refusal can say so.
+ *
+ * Cheaper than silence and far cheaper than acceptance: an agent that reached for one
+ * of these has confused two concepts, and this is the one moment we can tell it.
+ */
+const TAKEN_FIELD_NAMES: readonly (readonly [string, string])[] = Object.freeze([
+  ['message', "`message` is a VERB (POST /act) — one typed act in a venture's private channel"],
+  ['text', '`text` is the `message` verb\'s own parameter (POST /act)'],
+  ['body', '`body` is the `message` verb\'s own parameter (POST /act)'],
+  ['note', '`note` is this endpoint\'s response key, not a request field'],
+]);
 
 /** Recorded for the half a reporter did not state. Never blank: a blank reads as lost. */
 const NOT_STATED = '(not stated)';
@@ -321,12 +362,19 @@ export function createApp(options: ApiOptions): CreatedApp {
       // exactly: the record made wrong about a real agent, which the design calls
       // worse than a crash.
       //
-      // `agent.md` §2's worked example is literally `{ "handle": "vale" }`, and
-      // `CAST_NAMES[0]` is `vale`, so this was the *documented first request*.
+      // `agent.md` §2's worked example is `{ "handle": "vale" }`, which is **not** in
+      // `CAST_NAMES` — the documented first request enrols cleanly. Do not read that as
+      // reassurance: the twenty cast handles are printed on the map and in every frame,
+      // so they are the first thing an agent reading the spectator client would try.
+      // The guard is exercised by `test/api/enroll-takeover.test.ts`, which reads the
+      // handles out of `CAST_NAMES` rather than naming one here.
       //
       // Ordered before `seats.claim` because a refused enrolment must have no side
       // effect at all: the previous shape flipped a seat to occupied and bound a key
-      // on the way to failing.
+      // on the way to failing. Status alone does not prove that — with this check
+      // deleted the route still answers 409, because `runtime.seat` throws and the
+      // catch below reports it, *after* `keyring.register` has bound the stranger's
+      // key. So the takeover test asserts the three tables, not the status code.
       // ══════════════════════════════════════════════════════════════════════
       if (keyring.activeFor(principal) !== null) {
         return send(
@@ -1184,12 +1232,19 @@ function readDiscrepancy(
     (field): field is string => field !== null,
   );
   if (readFrom.length === 0) {
+    // If the reporter reached for a word this API already spends on something else,
+    // say which — a refusal that only restates the right answer leaves the confusion
+    // in place, and this is the one moment we can name it (scar #1).
+    const taken = TAKEN_FIELD_NAMES.filter(([name]) => typeof body[name] === 'string')
+      .map(([, why]) => why)
+      .join('; ');
     return {
       ok: false,
       refusal: refusal(
         WIRE_REASON.FIELD_MISSING,
         'send what you expected and what happened: {"expected": "...", "observed": "..."}. ' +
-          `Either half on its own is accepted, as is a single {"report": "..."}, up to ${String(MAX_REPORT_LENGTH)} characters each.`,
+          `Either half on its own is accepted, as is a single {"report": "..."}, up to ${String(MAX_REPORT_LENGTH)} characters each.` +
+          (taken.length === 0 ? '' : ` Note: ${taken}.`),
       ),
     };
   }
@@ -1234,27 +1289,18 @@ function readAlias(
  *
  * {@link scrub} truncates at `MAX_DETAIL_LENGTH`, which is correct for a string we are
  * about to send and silently destructive for a 2000-character report we have just been
- * given. So the text is scrubbed in segments below that bound and rejoined.
+ * given. So the bound travels as an argument — see {@link scrubTo}, which carries the
+ * two ways the earlier scrub-in-400-character-segments shape broke: a credential
+ * straddling a boundary stopped matching the redaction and was stored verbatim, and
+ * every boundary injected a space into whatever identifier sat across it.
  *
- * Segmenting a redaction pattern in half is the obvious objection, and it is answered
- * by where this text goes: a discrepancy report is never echoed to any caller — the 202
- * carries no copy of it — so nothing here is an outbound artifact in SEC-9's sense. The
- * scrub is here to keep reporter-chosen text from looking like a path or a version in an
- * operator's log, and the reporter already knows what it wrote.
+ * The blank case is substituted here and only here: `readDiscrepancy` hands the empty
+ * string over for the half a reporter did not state, and a blank field in the record
+ * reads as a report we lost.
  */
-const SCRUB_SEGMENT = 400;
-
 function scrubReport(text: string): string {
-  const out: string[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    for (let at = 0; at < line.length; at += SCRUB_SEGMENT) {
-      const segment = line.slice(at, at + SCRUB_SEGMENT);
-      if (segment.trim().length === 0) continue;
-      out.push(scrub(segment));
-    }
-  }
-  const joined = out.join(' ');
-  return joined.length === 0 ? NOT_STATED : joined.slice(0, MAX_REPORT_LENGTH);
+  if (text.trim().length === 0) return NOT_STATED;
+  return scrubTo(text, MAX_REPORT_LENGTH);
 }
 
 /**

@@ -557,12 +557,38 @@ function fillCandidates(ctx: CatalogueContext, venture: VentureRecord, out: Cand
       !ctx.claimed.has(hand.id) &&
       hand.location === venture.stage,
   );
+  /**
+   * How many hands could fill *any one* of these slots, before `free.shift()` starts
+   * consuming them.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **"WE NEVER TRUNCATE THIS LIST" WAS FALSE HERE, BY ONE PER SLOT.**
+   *
+   * `free[0]` offers one hand per slot and the others were never counted, so a principal
+   * with three idle hands at the stage saw one of three legal acts and a `withheld` ledger
+   * that did not mention the other two. `agent.md` §6 names this exact case as a
+   * must-report — "if you ever suspect an affordance was silently dropped, report it" —
+   * and two Gate-3 probes proved the omission was of *legal* acts by filling with a hand
+   * the payload never offered.
+   *
+   * Counted under `PAGED`, which is the ground that means **eligible**, and added to
+   * `considered` in the same breath so PROP-O1's `candidates === shown + Σ withheld`
+   * still balances. Measured against this snapshot rather than the shrinking `free`, so
+   * the denominator does not depend on which slot happens to be visited first.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  const pool = free.length;
 
   for (const index of open) {
     considered += 1;
     if (!windowContains(venture, sources.tick)) {
       ctx.tally.add('affordances', 'WINDOW_SHUT');
       continue;
+    }
+    // Every hand beyond the one offered is an act the world allows and this payload omits.
+    if (pool > 1) {
+      considered += pool - 1;
+      ctx.tally.add('affordances', 'PAGED', pool - 1);
     }
     const hand = free[0];
     if (hand === undefined) {

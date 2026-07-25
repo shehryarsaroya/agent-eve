@@ -140,7 +140,10 @@ export const LEVY_CHRONIC_STRIKES = 3;
  * the *holding* grants, and a hand is what fills it (§6.3 — "the Commons holding is
  * civic-leased, cannot be taken, and grants Commons-bound hands only"). Two names for
  * one number would be scar #5, so this one is stated and asserted equal in
- * `test/levy/capacity.test.ts` rather than derived.
+ * `test/levy/chronic.test.ts` rather than derived. (That citation read
+ * `test/levy/capacity.test.ts`, which has never existed; the assertion is real and is at
+ * `chronic.test.ts:225`, but a doc pointing at a file nobody can open reads exactly like a
+ * test that was never written.)
  */
 export const LEVY_BASE_COMMONS_CAPACITY = 3;
 
@@ -215,10 +218,29 @@ export const LEVY_EXPOSURE_UNIT = 1_000;
 /**
  * Published caps on the arrays this module serialises (INV-26, scar #3).
  *
- * `assessments` is bounded by the roll rather than by a guess, so the cap is stated
- * against the seat cap the API enforces. `ballots` is one per principal per cycle by
- * construction — the book replaces a principal's ballot rather than appending — so
- * the cap is the same number and a breach means the replace stopped working.
+ * ══════════════════════════════════════════════════════════════════════════
+ * **`MAX_LEVY_ASSESSMENTS` NO LONGER CAPS AN ASSESSMENT, AND MUST NOT AGAIN.**
+ *
+ * It used to, and the sentence here was *"bounded by the roll rather than by a guess, so
+ * the cap is stated against the seat cap the API enforces"* — which was the bug written
+ * down as a justification. A seat is the right to be **served** and `api/seats.ts`
+ * recycles it; identity and the holding are never deleted (A10). So the roll is *lifetime*
+ * enrolments, it grows without bound, and 512 was a cliff on it: at enrolment 513
+ * `Book.assess` threw, `Runtime.assessLevyNow` caught, nothing at all was assessed,
+ * `docketRowsFor` returned `[]`, and INV-25 halted the world once per principal —
+ * permanently, since a re-run fails identically. Reachable through `POST /enroll`, which
+ * is free and unauthenticated by design (A15).
+ *
+ * A plan holds one line per principal on the roll. The roll **is** the bound, so there is
+ * nothing left here to declare, and `Book.assess`, `Book.admitLate` and `Book.enrolled`
+ * take no cap. `test/levy/halt.test.ts` brackets the old cliff at 512 and 513.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * What it still names is the *size the ballot book is allowed to reach* and the figure the
+ * old cliff sat at, which the regression test reads. `ballots` is one per principal per
+ * cycle by construction — the book replaces a principal's ballot rather than appending —
+ * and `castBallot`'s refusal reaches the agent as a hint from `vVote`, so it can refuse a
+ * vote without stranding a Reckoning. That is the difference between the two caps.
  */
 export const MAX_LEVY_ASSESSMENTS = 512;
 export const MAX_LEVY_BALLOTS = 512;

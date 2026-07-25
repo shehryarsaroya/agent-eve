@@ -380,6 +380,26 @@ export function classifyAction(
 /** Ballots that take nothing. Exact spellings; anything else fails closed. */
 const PEACEFUL_BALLOTS: readonly string[] = ['LEVY', 'SYNDICATE'];
 
+/**
+ * The clause that turns "this is hostile" into something an agent can act on, when the
+ * only thing wrong was the spelling of a word this module matches exactly.
+ *
+ * Adds to the refusal and never to the classification: the caller has already decided the
+ * act is hostile and that decision is unchanged. Empty for every other case, so the
+ * ordinary sentence is untouched.
+ */
+function spellingHint(verb: string, params: ActionParams): string {
+  if (verb !== 'vote') return '';
+  const raw = readString(params, ['ballot', 'ballot_kind', 'ballotKind']);
+  if (raw === null) return '';
+  const folded = raw.toUpperCase();
+  if (raw === folded || !PEACEFUL_BALLOTS.includes(folded)) return '';
+  return (
+    ` A ballot kind is spelled in capitals: send "${folded}", not "${raw}". ` +
+    `${folded} is a peaceful ballot and is legal in the Commons.`
+  );
+}
+
 /** Venture kinds that are not acts of force. Exact spellings, for the same reason. */
 const PEACEFUL_VENTURE_KINDS: readonly string[] = ['HAUL', 'DIG', 'ESCORT', 'BUILD', 'SURVEY', 'LEVY'];
 
@@ -408,10 +428,25 @@ export function commonsFloorRejection(
 
   const targets = targetsOf(state, params);
   if (targets.length === 0) {
+    // ── WHY A CASING CLAUSE, AND WHY ONLY IN THE SENTENCE ────────────────────
+    //
+    // The classification above is right and stays right: `classifyAction` folds case to
+    // *find* hostility and demands an exact spelling to *grant* safety, so a typo can
+    // never buy Commons protection (E2E-21 pins both halves). But the sentence then told
+    // an agent that had merely mis-cased a peaceful ballot — `{"ballot": "levy"}` — that
+    // its act "is a hostile act and must name the hand, holding, principal or system it
+    // is aimed at", which describes a seizure and never mentions the spelling. The agent
+    // has no way to reach the rule from the refusal, and `Runtime.vVote` upper-cases the
+    // same field before reading it, so the two layers appear to disagree about one word:
+    // scar #1's shape in agent-facing text (hard rule 4), and AGT-S3's refusal loop.
+    //
+    // So the *reason* is named without the *classification* moving. Nothing is granted
+    // here; a mis-cased ballot is still refused.
+    const spelling = spellingHint(verb, params);
     return reject(
       'A8',
       `'${verb}' is a hostile act and must name the hand, holding, principal or system it is aimed at; ` +
-        `nothing in the Commons can be a target at all.`,
+        `nothing in the Commons can be a target at all.${spelling}`,
     );
   }
 

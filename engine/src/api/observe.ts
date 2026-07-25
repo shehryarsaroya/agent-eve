@@ -210,12 +210,13 @@ export function buildObservation(input: ObserveInput): Observation {
   const holding = holdingOf(world, principal);
   const mine = runtime.ventures.forPrincipal(principal);
 
-  const board = boardFor(runtime, principal, tick);
+  const solved = boardFor(runtime, principal, tick);
+  const board = solved.rows;
   // The **same rows** the payload publishes are the rows the affordances are built from.
   // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
   // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick, board)
+    ? affordancesFor(runtime, principal, tick, board, solved.dropped)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
   const exposure = runtime.ledger.encumbrances.cachedExposure(principal);
@@ -471,6 +472,8 @@ function affordancesFor(
   principal: PrincipalId,
   tick: number,
   board: readonly BoardRow[],
+  /** Eligible slots the board's own cap dropped. See {@link boardFor}. */
+  boardDropped: number,
 ): AffordanceSet {
   const eligible: Affordance[] = [];
   const world = runtime.world;
@@ -657,6 +660,7 @@ function affordancesFor(
   let rowsWithNoHand = 0;
   let rowsOutOfReach = 0;
   let alternateHands = 0;
+  let firstFill = true;
   const unreachedStages = new Set<SystemId>();
   for (const row of board) {
     const atStage = idleHands.filter((h) => occupiesSystem(h, row.stage));
@@ -671,22 +675,45 @@ function affordancesFor(
     }
     // Every other present idle hand *at this stage* is an equally legal fill of this slot.
     alternateHands += atStage.length - 1;
-    const echo = row.terms_hash === null ? 'the venture has no terms_hash yet' : `"${row.terms_hash}"`;
+    // ── The worked example is spelled out ONCE, and the rest of the list is short ──
+    //
+    // The closing sequence is a rule about `sign`, not a fact about this slot, and up to
+    // `MAX_LIST_ROWS` fill affordances repeating a 600-character worked example would add
+    // ~14 KB of identical prose to a payload an agent pays to read (A4, §17). So the
+    // highest-priority slot — the board is sorted reachable-first, so it is the one most
+    // worth taking — carries the copyable body, and the rest name the two fields on their
+    // own board row. Nothing is withheld by this: every value either form refers to is in
+    // the same payload.
+    const first = firstFill;
+    firstFill = false;
+    // `createVenture` always hashes its terms, so the null branch is unreachable in this
+    // build — but a half-written JSON snippet is worse than a sentence, so it says nothing
+    // it cannot back up rather than emitting `terms_hash: null` for an agent to copy.
+    const close =
+      row.terms_hash === null
+        ? `${row.venture} publishes no terms_hash yet, so read ventures.mine[] after the fill lands and sign ` +
+          'the hash it carries.'
+        : first
+          ? `So send {"verb":"sign","params":{"venture":"${row.venture}","terms_hash":"${row.terms_hash}",` +
+            `"your_take_at_p50":${String(row.your_take_at_p50)}}} on the NEXT tick — the next tick, because the ` +
+            'echo is checked against what you are owed and you are owed nothing until the fill lands. This ' +
+            'costs no wake: POST /act is not wake-gated.'
+          : 'Closing it needs a sign on the NEXT tick with this row’s own terms_hash and your_take_at_p50 — ' +
+            'the first fill_role affordance spells the body out.';
     eligible.push({
       verb: 'fill_role',
       params: { venture: row.venture, role: row.role, hand: idle.id, stake: 0 },
       cost: 1,
       max_direct_loss: 0,
       max_contingent_liability: 0,
-      what_it_forecloses:
-        `hand ${idle.id} cannot fill another role while it is committed to this one, and you may hold at most ` +
-        `one role in ${row.venture}. FILLING IS NOT CLOSING: the fill is allocated at tick close and the ` +
-        'venture stays FORMING until every party has countersigned the same terms_hash. So send ' +
-        `{"verb":"sign","params":{"venture":"${row.venture}","terms_hash":${echo},` +
-        `"your_take_at_p50":${String(row.your_take_at_p50)}}} on the NEXT tick — the next tick, because the ` +
-        'echo is checked against what you are owed and you are owed nothing until the fill lands. This costs ' +
-        `no wake: POST /act is not wake-gated. Unsigned by tick ${String(row.expires_tick)} and the window ` +
-        'closes, the venture retires ABANDONED, and nothing you spent comes back.',
+      what_it_forecloses: first
+        ? `hand ${idle.id} cannot fill another role while it is committed to this one, and you may hold at ` +
+          `most one role in ${row.venture}. FILLING IS NOT CLOSING: the fill is allocated at tick close and ` +
+          `the venture stays FORMING until every party has countersigned the same terms_hash. ${close} ` +
+          `Unsigned by tick ${String(row.expires_tick)} and the window closes, the venture retires ABANDONED, ` +
+          'and nothing you spent comes back.'
+        : `hand ${idle.id} is committed until this resolves, and you may hold at most one role in ` +
+          `${row.venture}. ${close} Unsigned by tick ${String(row.expires_tick)}: retired ABANDONED.`,
       expires_tick: row.expires_tick,
       quote_id: quoteId(principal, tick, 'fill_role', { venture: row.venture, role: row.role }),
     });
@@ -737,11 +764,9 @@ function affordancesFor(
         max_direct_loss: 0,
         max_contingent_liability: 0,
         what_it_forecloses:
-          `this hand cannot fill a role until it arrives. This lane takes ${String(trip)} tick(s): a move ` +
-          `that resolves in tick R puts the hand at ${lane} on tick R+${String(trip)}, and it becomes ` +
-          `PRESENT — able to fill a role, work, or escort — on tick R+${String(trip + 1)}. It can be raided ` +
-          'at its destination from the tick it arrives. hands[].in_transit_eta carries the arrival tick once ' +
-          'it is under way.',
+          `this hand cannot fill a role until it arrives, and it can be raided at ${lane} from the tick it ` +
+          `does. This lane takes ${String(trip)} tick(s): a move resolving in tick R lands the hand on tick ` +
+          `R+${String(trip)} and it is PRESENT — able to fill a role, work or escort — on R+${String(trip + 1)}.`,
         expires_tick: tick + QUOTE_PIN_TICKS,
         quote_id: quoteId(principal, tick, 'move', { hand: hand.id, to: lane }),
       });
@@ -825,10 +850,23 @@ function affordancesFor(
         'next one. They are still on the board and still yours to take once a hand frees up',
     );
   }
+  if (boardDropped > 0) {
+    // The list this sentence is about is `ventures.board[]` itself, one level above the
+    // affordances. It slices at `MAX_LIST_ROWS`, and until this branch existed the payload
+    // closed with "nothing you were eligible for has been dropped without this count" while
+    // holding back eligible slots — the engine contradicting `agent.md` §6 in the same
+    // breath as the count that exists to prevent exactly that.
+    reasons.push(
+      `${String(boardDropped)} further slot(s) you are eligible for are not on ventures.board[] at all, ` +
+        `because one observation carries at most ${String(MAX_LIST_ROWS)} rows. The rows you did get are the ` +
+        'ones a hand of yours can reach, sorted first for that reason; the rest come into view as these ' +
+        'resolve, or sooner if you move a hand to a stage you are not standing at',
+    );
+  }
   return {
     list,
     withheld: {
-      count: dropped + notLive + alternateHands + rowsWithNoHand + rowsOutOfReach,
+      count: dropped + notLive + alternateHands + rowsWithNoHand + rowsOutOfReach + boardDropped,
       reason:
         reasons.length === 0
           ? 'nothing was withheld: this is every legal act, with its full cost.'
@@ -924,8 +962,19 @@ interface BoardRow {
  * Only slots this principal is eligible for (§12.1: server-side eligibility
  * filtering). "One principal fills at most one role", so a venture it already
  * holds a role in is filtered out here rather than refused later.
+ *
+ * Returns the rows **and how many the cap dropped**, because `header.withheld` closes with
+ * *"Nothing you were eligible for has been dropped without this count"* and the `.slice()`
+ * below made that sentence false: measured at 36 eligible slots, 24 served, 12 gone with
+ * `withheld.count` naming none of them. `agent.md` §6 says "we never truncate this list",
+ * so an uncounted drop here is the engine and the document disagreeing about a rules
+ * surface — scar #1's shape, on the recruiting surface a newcomer reads first.
  */
-function boardFor(runtime: Runtime, principal: PrincipalId, tick: number): BoardRow[] {
+function boardFor(
+  runtime: Runtime,
+  principal: PrincipalId,
+  tick: number,
+): { readonly rows: BoardRow[]; readonly dropped: number } {
   const rows: BoardRow[] = [];
   for (const venture of runtime.ventures.live()) {
     if (venture.state !== 'FORMING') continue;
@@ -962,14 +1011,16 @@ function boardFor(runtime: Runtime, principal: PrincipalId, tick: number): Board
   for (const hand of handsOf(runtime.world, principal)) {
     if (hand.state === 'IDLE' && isPresent(hand, tick)) reach.add(hand.location);
   }
-  return rows
-    .sort(
-      (a, b) =>
-        Number(reach.has(b.stage)) - Number(reach.has(a.stage)) ||
-        cmp(a.venture, b.venture) ||
-        a.role - b.role,
-    )
-    .slice(0, MAX_LIST_ROWS);
+  const sorted = rows.sort(
+    (a, b) =>
+      Number(reach.has(b.stage)) - Number(reach.has(a.stage)) ||
+      cmp(a.venture, b.venture) ||
+      a.role - b.role,
+  );
+  return {
+    rows: sorted.slice(0, MAX_LIST_ROWS),
+    dropped: Math.max(0, sorted.length - MAX_LIST_ROWS),
+  };
 }
 
 function ventureRow(

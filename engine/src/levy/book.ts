@@ -46,7 +46,6 @@ import {
   LEVY_CHRONIC_STRIKES,
   LEVY_MIN_COMMONS_CAPACITY,
   LEVY_RETAINED_RECKONINGS,
-  MAX_LEVY_ASSESSMENTS,
   MAX_LEVY_BALLOTS,
 } from './params.js';
 import { owingOf as splitOwing, type Owing } from './payment.js';
@@ -158,11 +157,21 @@ export class Book {
    */
   enrolled(principal: PrincipalId, tick: number): void {
     if (this.seatedAt.has(principal)) return;
-    if (this.seatedAt.size >= MAX_LEVY_ASSESSMENTS) {
-      throw new LevyBookError(
-        `the tenure register is at its declared cap of ${MAX_LEVY_ASSESSMENTS} principals (INV-26)`,
-      );
-    }
+    // ── NO CAP HERE, AND THE CAP THAT WAS HERE WAS AN EXPLOIT ────────────────
+    //
+    // This register used to refuse past `MAX_LEVY_ASSESSMENTS`. `Runtime.seat` catches
+    // that refusal and files a fault, so the principal was seated with **no tenure row**
+    // — and `tenureTicksOf` returns 0 for a principal it has never heard of, on purpose,
+    // because that is the safe direction for a genuine newcomer. Together those two safe
+    // choices made a permanent one: enrolment 513 and every one after it read as tenure 0
+    // for the rest of the season and was assessed the nominal rate forever. Verified:
+    // `seatedAtOf` null, `tenureTicksOf(p, 100_000) === 0`.
+    //
+    // The register is bounded by the roll, and the roll is **lifetime** enrolments — not
+    // the 300 concurrent seats `api/seats.ts` enforces, because seats recycle while
+    // identity is never deleted (A10). A fixed cap on a monotonically growing set is not
+    // a declared bound; it is a cliff. One integer per principal ever enrolled is the
+    // cost of the floor being honest, and it is the smallest row in this file.
     this.seatedAt.set(principal, tick);
   }
 
@@ -201,12 +210,25 @@ export class Book {
           'never moves once minted, or a principal can be re-billed for goods it already handed over',
       );
     }
-    if (plan.lines.length > MAX_LEVY_ASSESSMENTS) {
-      throw new LevyBookError(
-        `${plan.constellation} assessed ${plan.lines.length} principals, over the declared cap of ` +
-          `${MAX_LEVY_ASSESSMENTS} (INV-26)`,
-      );
-    }
+    // ── NO CAP ON THE LINE COUNT, AND THE CAP THAT WAS HERE HALTED THE WORLD ──
+    //
+    // A plan holds one line per principal on the roll, so a cap on the lines is a cap on
+    // the roll. `MAX_LEVY_ASSESSMENTS` was 512 and was chosen "against the seat cap the
+    // API enforces" — but a seat is the right to be *served* and it recycles, while
+    // identity and the holding are never deleted (A10, `api/seats.ts`). So the roll is
+    // lifetime enrolments and grows without bound, and this throw was reachable through
+    // `POST /enroll`, which is free and unauthenticated by design (A15).
+    //
+    // What it cost: `assessCycle` propagates, `Runtime.assessLevyNow` catches and files a
+    // fault, **nothing at all is assessed**, `docketRowsFor` returns an empty array, and
+    // INV-25 halts the world once per principal. Verified at the boundary — 512 principals
+    // publish a clean tick, 513 halt with 513 INV-25 violations, permanently, because a
+    // re-run fails the same way.
+    //
+    // INV-26's discipline is kept where it can be kept honestly: the ballot book still
+    // declares a cap (its refusal reaches the agent as a hint from `vVote`, so it cannot
+    // strand a Reckoning) and `MAX_TRIBUTE_LINES` still bounds the frame. An assessment is
+    // not that kind of array — it is the roll, and the roll is the bound.
     this.plans.set(key, plan);
   }
 
@@ -240,11 +262,10 @@ export class Book {
     const plan = this.plans.get(key);
     if (plan === undefined) return false;
     if (plan.lines.some((l) => l.principal === line.principal)) return false;
-    if (plan.lines.length >= MAX_LEVY_ASSESSMENTS) {
-      throw new LevyBookError(
-        `${constellation} already holds ${plan.lines.length} assessments, the declared cap (INV-26)`,
-      );
-    }
+    // No cap, for the reason stated on {@link Book.assess}: a refusal here strands a
+    // legitimate mid-cycle enroller with no assessment and no docket row, and INV-25
+    // halts the world on its arrival — which is the exact failure this method exists to
+    // prevent.
     this.plans.set(key, {
       ...plan,
       total: minor(plan.total + line.amount),
