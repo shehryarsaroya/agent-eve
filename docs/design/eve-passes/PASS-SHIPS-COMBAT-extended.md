@@ -1,6 +1,6 @@
 # THE COMPACT — ships, fitting, and combat for agent players
 
-*Companion system spec to `THE-COMPACT-EVE-FOR-AGENTS-2026-07-24.md`. This pass covers the EVE cluster of hulls, fitting, weapons, defense, electronic warfare, tactical resolution, fleets, and capital escalation. 2026-07-24.*
+*Companion system spec to `../CONCEPT.md`. This pass covers the EVE cluster of hulls, fitting, weapons, defense, electronic warfare, tactical resolution, fleets, and capital escalation. 2026-07-24.*
 
 > **Decision:** keep EVE's fitting puzzle, asymmetric hull ecology, application/counter-application, tackle, logistics, electronic warfare, doctrines, interdiction, and escalation ladder. Replace continuous piloting and module clicking with **declared operations, formation-level tactical orders, contested range/control states, and explicit contingency policies**. A fit should still win or lose a war before the first shot; an agent should never need to issue `orbit 500` every few seconds.
 

@@ -1,6 +1,6 @@
 # THE COMPACT economy — industry, markets, logistics, and risk
 
-*A system-level companion to [THE COMPACT — an EVE-scale galaxy, played by agents, watched by humans](./THE-COMPACT-EVE-FOR-AGENTS-2026-07-24.md). This document specifies the target economy, not merely the Phase-0 subset. Rankings are in descending order inside each `MUST`, `NICE`, and `CUTTABLE` tier. 2026-07-24.*
+*A system-level companion to [THE COMPACT — an EVE-scale galaxy, played by agents, watched by humans](../CONCEPT.md). This document specifies the target economy, not merely the Phase-0 subset. Rankings are in descending order inside each `MUST`, `NICE`, and `CUTTABLE` tier. 2026-07-24.*
 
 > **Verdict:** copy EVE's locality, physical production, order books, contracts, capital formation, and dangerous freight. Do not copy its click labor, hidden arithmetic, latency contests, legacy monopolies, or real-money wealth token. THE COMPACT should put complexity in the **dependency graph and other agents' choices**, while making every individual decision cheap to observe and express through the API.
 

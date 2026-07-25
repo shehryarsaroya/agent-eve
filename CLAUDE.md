@@ -1,6 +1,6 @@
 # CLAUDE.md — THE COMPACT
 
-*Context file for any AI session in this repo. Written 2026-07-24, updated for SPEC v2.0. If you are a fresh session: read this top-to-bottom once, then jump to the docs it points at. This file is a map and a state-of-play; the source of truth for any topic is the doc named here.*
+*Context file for any AI session in this repo. Written 2026-07-24, updated for SPEC v3.0. If you are a fresh session: read this top-to-bottom once, then jump to the docs it points at. This file is a map and a state-of-play; the source of truth for any topic is the doc named here.*
 
 ---
 
@@ -8,7 +8,7 @@
 
 1. **No secrets in this repo, ever.** Reference credentials by **name and location only** (see `docs/background/INFRA.md`). Never read, print, echo, or paste a secret value. Live keys exist in `~/agentinsurance/game/.env` and `~/Projects/ideationjul3/yc-gstack-kit/credentials/.env` — both are **outside this repo and must stay there**.
 2. **Deploy safely on the VPS.** High Water is **fully removed and deleted** — repo, server, and services (confirmed 2026-07-24). There is nothing left to break, so the old "don't clobber it" rule is retired. What survives is the *habit*: pick fresh names for everything (port, systemd unit, env file, data dir, code dir, nginx path), and **never `rsync --delete` into a directory containing anything you didn't sync** — scar #4 caused a silent live outage exactly that way, and after any deploy verify the components you *didn't* deploy are still running.
-3. **The design test.** Every feature must serve at least one of the **three goals** in `docs/design/SPEC.md` §1.1: **watchable · autonomous · legible on screen.** A feature serving none of them **does not ship** — and per A13, a feature with no named pixel signature is not ready regardless of how good the mechanic is.
+3. **The design test.** Every feature must serve at least one of the **three goals** in `docs/design/SPEC.md` §1.1: **watchable · autonomous · legible on screen.** A feature serving none of them **does not ship** — and per A13, a feature with no named pixel signature is not ready regardless of how good the mechanic is. The goals are the *test*; they serve **three audiences** — viewers, agents, and owners. Owners get **narrative and status, never control** (§13B): no owner action moves a piece, and an unowned agent must be able to reach the top of this game.
 4. **One word per concept.** `SPEC.md` §3 is the vocabulary canon and it is a *rules surface*, not a style guide. Never reuse a canon term for a second concept — not in docs, not in field names, not in affordance strings, not in `agent.md`. High Water's worst bug survived a full build and three critic passes because the engine and the agent-facing text disagreed about one word.
 5. **Any gate priced in identities is unpriced** (A15). Enrollment is free and must stay free, so every gate costs produced goods, slashable capital, or an independently-capitalised counterparty — never "acquire another account".
 6. **Read before adding.** ~9,000 lines of ranked feature design already exist (`docs/design/eve-passes/`). Before designing anything, check whether it is already specified — including whether it was deliberately **CUT**, and which **phase** it belongs to (the passes are now phase-tagged in `SPEC.md` §0).
@@ -25,9 +25,13 @@ It is EVE Online's shape and constraints (one shard, player-made economy, perman
 - **the product is watching them** — a browser client shows a living map with named characters, named holdings, and a fixed daily appointment;
 - **newcomers can always start** — a permanently safe zone (the Commons) that never expires.
 
+**Real protocols where they fit.** Identity is an **Ed25519 keypair with RFC 9421 signed HTTP requests**, not a bearer key — a record of who kept their word cannot rest on *trust our server*. Delegated authority serialises as a **W3C Verifiable Credential**, so a counterparty verifies a delegate's mandate before dealing with it. And `agenttransfer.dev` is **real SMTP**: an agent's handle *is* its address, which is how it writes home to its owner and how the Gazette goes out. The rule: the protocol and the artifact are real; we are still on the path.
+
 **The core loop (A6).** You cannot run an empire alone, so you grant other agents scoped authority over your assets, treasury, fleet and promises — with `max_direct_loss` and `max_contingent_liability` shown before you sign. Months later it may be used against you. There is no `betray()` verb and no hidden loyalty meter; betrayal happens through ordinary legitimate actions, and the replay can point at the exact promotion and the risk warning someone accepted.
 
-**The signature moment.** An agent earns trust through months of honest work, is granted authority it could abuse, and abuses it at the moment of maximum leverage — with the grant, the accepted warning, the sealed intention, and the deed all on the record.
+**The signature moment.** An agent earns trust through months of honest work, is granted authority it could abuse, and abuses it at the moment of maximum leverage — with the grant, the accepted warning, the sealed intention, and the deed all on the record. And because negotiation runs through a channel **we host and store** (§7.3), the replay can put every reassuring thing the traitor said next to the promise it broke: **THE RECEIPT REEL** (§14).
+
+**Not everything is public, and that is deliberate.** §11.2's five-tier ladder — `PUBLIC · PARTIES · SENSED · SEALED · PRIVATE` — each tier with a defined declassify time. The split that matters: **movement on public lanes is public** (a convoy is the map's motion, and the map is the show) while **cargo contents are only sensed**. *A ship at sea is visible; its manifest is not.* All-public deletes strategy; all-private deletes the show.
 
 > ⚑ **The premise changed twice.** v1.1 was built around a **risk market as the core loop** (catastrophe, correlated claims, pay/restructure/default). v2.0 deferred that to Phase 3 and promoted betrayal-via-authority. **v3.0 then survived six adversarial critics** who found the new core loop did not actually bind, the daily reckoning was abstention-trivial, the economy had no demand side, four mechanics had a Sybil price of zero, and the architecture could fabricate a false default. Read `SPEC.md`'s v3.0 header note and `TRACKER.md` § CRITIC FINDINGS before assuming anything. `CONCEPT.md` and the economy passes are **pre-reframe**.
 
@@ -61,7 +65,7 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 **On the `-extended` files:** economy and ships were each generated twice (a long companion spec, then a tighter ranked catalog after a tooling collision — scar #13). Prefer `-extended` for depth on a system, the shorter one for the ranked MUST/NICE/CUTTABLE summary. Neither supersedes the other.
 
-**Known doc debt:** `SPEC.md` §0 and several passes still cross-reference the pre-seeding filenames `THE-COMPACT-EVE-FOR-AGENTS-2026-07-24.md` (→ `CONCEPT.md`) and `THE-COMPACT-EXPERIENCE-2026-07-24.md` (→ `EXPERIENCE.md`).
+**Doc debt:** cleared 2026-07-24 — the pre-seeding filenames (`THE-COMPACT-EVE-FOR-AGENTS-*`, `THE-COMPACT-EXPERIENCE-*`) are repointed at `CONCEPT.md` / `EXPERIENCE.md`, and `EXPERIENCE.md`'s dangling `§13B` citation now resolves.
 
 ---
 
@@ -107,7 +111,7 @@ Full text in `SPEC.md` §2. The ones most often violated by accident:
 
 The predecessor validated a lot. Its code is **gone by choice** (clean slate — retired and deleted from the repo on 2026-07-24; see HARD RULE 2 on the server-side ambiguity). What survives is the knowledge, which is the part that mattered — and one line of it is worth restating as a build requirement rather than a lesson: **the LLM-facing prompt, the affordance strings, the observation field names, and `agent.md` are all rules surfaces.** Scar #1 shipped a game whose central ritual reliably produced the opposite of what the town voted for, and it survived three critic passes because every individual component was correct. Golden-file test prompt and affordance semantics against the engine from the first commit, and ship a consequence-preview field (High Water's `projectedDrown`) as a standing pattern.
 
-**Proven, reuse directly:** the `enroll → observe → act` shape · self-contained enroll playbook + a single `agent.md` an agent can play from with zero extra reading (verified: 3 tester agents did exactly that) · `affordances` + `prompt` in every observation · illegal moves returning `{ok:false, hint}` + a fresh observe instead of an error · permanent bearer-key identity · per-tick action budget · heuristic bots to populate the world + LLM players layered on top · public receipt ledger as the spectator feed · poll-primary delivery through Cloudflare with `no-store` · systemd + nginx + rsync deploy · Resend from `agenttransfer.dev` with owners optional · capability-token private agent view · gpt-image for aesthetics before writing render code.
+**Proven, reuse directly:** the `enroll → observe → act` shape · self-contained enroll playbook + a single `agent.md` an agent can play from with zero extra reading (verified: 3 tester agents did exactly that) · `affordances` + `prompt` in every observation · illegal moves returning `{ok:false, hint}` + a fresh observe instead of an error · permanent cryptographic identity (High Water's bearer key, now upgraded to Ed25519 + RFC 9421) · per-tick action budget · heuristic bots to populate the world + LLM players layered on top · public receipt ledger as the spectator feed · poll-primary delivery through Cloudflare with `no-store` · systemd + nginx + rsync deploy · Resend from `agenttransfer.dev` with owners optional · capability-token private agent view · gpt-image for aesthetics before writing render code.
 
 **Read `docs/background/HIGH-WATER-LESSONS.md` before writing code.** Several of its 14 scars are directly re-encounterable here — especially the inverted-semantics bug (the LLM-facing prompt *is* part of the rules surface), request-speed dominance, unbounded agent growth, and the deploy footgun that silently reverted a live game to bots-only.
 
@@ -124,6 +128,7 @@ Detail in `SPEC.md` §15. The reframe that matters: at 300 principals a determin
 - **The false-default problem is the top engineering risk** (§15.4): hard freeze, `acted_on_state_version` compared at settlement, valuation pinned in `terms_hash`, seals scoped to their Reckoning, and an all-cooperative sim that must log zero defaults in CI.
 - **Agents bring their own inference**, but you cannot cast a show you do not fund: a house cast of 12–20 named principals runs on our keys. Population capped at seats with idle-seat recycling.
 - **Determinism killers to ban in CI:** `Date.now`, `Math.random` outside the seeded module, floats in anything hashed, JS numeric-key iteration order, and Postgres locale collation in `ORDER BY`.
+- **Negotiation is hosted on purpose.** The `message` channel is `PARTIES`-visible while live and **declassifies at settlement**. Do not be tempted to push it to principals' own endpoints "for realism" — that was tried and reversed. A conversation we cannot see is one the audience can never be shown.
 - **The client is Phase 0.** Static cacheable spectator frames behind Cloudflare — not per-connection SSE, because the Reckoning is exactly when you have an audience.
 
 ---

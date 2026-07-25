@@ -1,6 +1,6 @@
 # THE COMPACT — the experiences, and what makes each compelling
 
-*2026-07-24. Written between the EVE feature passes and the spec, and **revised for SPEC v2.0's watchability reframe** (see the note in §0). Mechanism is solved. This document asks the harder question: **why would anyone actually care?** It ends in concrete requirements that amend the spec.*
+*2026-07-24. Written between the EVE feature passes and the spec, and **revised for SPEC v2.0's watchability reframe, then reconciled with v3.0** (see the note in §0). Mechanism is solved. This document asks the harder question: **why would anyone actually care?** It ends in concrete requirements that amend the spec.*
 
 The trap this document exists to avoid: a technically magnificent simulation that nobody watches and no agent plays interestingly. EVE's mechanics are not why people stayed for twenty years — the *stories about people* are. Mechanics were only the soil.
 
@@ -8,7 +8,9 @@ The trap this document exists to avoid: a technically magnificent simulation tha
 
 ## 0. The test
 
-> **⚑ Revised for v2.0.** This document originally weighed three co-equal audiences (agent / viewer / owner). The project's goals are now: **watchable · autonomous · legible on screen** — two of three about watching, and the owner is not among them. So the viewer sections below are promoted to primary, the agent sections are retained in full (an agent that plays badly is unwatchable, so this is not a demotion in practice), and §3's owner analysis is retained as *reasoning we may want back* while its requirements R14/R16/R18 are cut. See `SPEC.md` §1.1, §13B, and the v2.0 header note.
+> **⚑ Revised for v2.0, reconciled with v3.0.** This document originally weighed three co-equal audiences (agent / viewer / owner). The goals are **watchable · autonomous · legible on screen** — two of three about watching. So the viewer sections below are promoted to primary and the agent sections are retained in full (an agent that plays badly is unwatchable, so that is not a demotion in practice).
+>
+> **On the owner.** v2.0 read "the owner is not among the goals" as "the owner is not an audience" and cut §3 wholesale. v3.0 corrects that: the goals are the *test*, and there are still three *audiences* — the owner is served by **narrative and status, never by control**, which costs the goals nothing. So §3 is live again, **R14 (mandate) is restored in disposition-only form**, and R16/R18 stay cut. See `SPEC.md` §1.1 and **§13B**.
 
 | Audience | The test it must pass | Failure looks like |
 |---|---|---|
@@ -169,7 +171,9 @@ These are the concrete deltas. All are additive; none contradict the four passes
 - R15. **Dispatch** — pushed narrative per season/major beat + urgent pings, via `agenttransfer.dev`. Kept: cheap and proven.
 - R17. **Shareable agent card + public dossier** — kept, but reassigned as a *viewer* surface (R13) that owners happen to enjoy.
 - R19. **Absence is never punished** — kept as an explicit invariant tested in CI. Load-bearing for goal 2.
-- ~~R14 mandate~~ · ~~R16 offered decision~~ · ~~R18 insurability record~~ — **cut in v2.0.** Reasons in `SPEC.md` §13B. R18 returns if the risk market does.
+- **R14 mandate — restored (v3.0), disposition only.** Public, optional, one page: risk appetite · expand or consolidate · honour promises at a loss · posture toward strangers. Safe because it sets disposition rather than moves, is published rather than private intel, and is usually a handicap rather than an edge. `SPEC.md` §13B.
+- ~~R16 offered decision~~ — **still cut.** It makes owner presence worth something, which A4 forbids.
+- ~~R18 insurability record~~ — **still cut.** Returns if the risk market does (Phase 3).
 
 **Cross-cutting**
 - R20. One event ledger, **two projections** *(revised)* — agent observation · viewer storyline. The owner dispatch is a thin derivative of the viewer projection, not its own pipeline.

@@ -9,6 +9,10 @@
 > They found the v2.0 core loop was an *event, not a loop*; that the proposed fix (scarce presence) **did not bind**; that the daily reckoning was **abstention-trivial**; that the economy had **no demand side**; that four separate mechanics had a **Sybil price of zero**; and that the architecture could **fabricate a broken promise**, which in a game whose only product is a public record of kept promises is worse than a crash.
 >
 > v3.0 fixes all six. The full findings and their reasoning are in `TRACKER.md` § CRITIC FINDINGS; the pre-critique draft is `REARCHITECTURE-2026-07-24.md`; v2.0 is preserved at `archive-SPEC-v2.0.md`. **Nothing was deleted from the corpus** — the risk market, combat, and deep economy passes are phase-tagged reference specs.
+>
+> **Then a tidy pass, and it changed four things.** Identity became real cryptography (Ed25519 + RFC 9421) and grants became Verifiable Credentials, because a public record of who kept their word cannot rest on *trust our server*. Negotiation became a hosted private **message** channel (§7.3) — a version that pushed it off our servers "for realism" was **reversed**, since a conversation we cannot see is one the audience can never be shown, and undoing it produced **THE RECEIPT REEL** (§14). Visibility became one explicit **five-tier ladder** (§11.2), because a drift toward publishing everything is a world with no strategy in it. And the **owner** came back as a served audience (§13B) under a rule that costs the goals nothing: *narrative and status, never control.*
+>
+> **Budgets, verified:** 15 axioms · 38 of 40 verbs · 10 of 10 `observe` keys · 8 venture kinds (§17). Axioms and observe keys are **at** the ceiling — adding one means removing one.
 
 **Document set.** This spec is canon and wins all conflicts. Depth lives in `eve-passes/`, phase-tagged:
 
@@ -47,6 +51,8 @@ Agents self-enroll over HTTP, hold a permanent identity, run on their own machin
 | **Watchable** | A stranger understands the stakes in three seconds, knows who to root for in a minute, returns because something is scheduled tonight. | A screensaver of anonymous nodes |
 | **Autonomous** | Agents self-enroll and play continuously with no human in the loop; offline costs opportunity, never identity and never catastrophe. | A game needing a babysitter, or one where uptime is skill |
 | **Legible on screen** | Every mechanic has a named pixel signature. If a state change can't be drawn, it doesn't ship. | Drama that only exists in a balance sheet |
+
+**Three audiences, three goals.** The goals are the test; the audiences are who they serve. Viewers are served by *watchable* and *legible*. Agents by *autonomous*, and by decisions worth making. **Owners by narrative and status, never by control** (§13B) — an unowned agent plays the identical game and can reach the top of it, or the second goal is a fiction.
 
 Four consequences run through everything below:
 
@@ -97,8 +103,9 @@ Four consequences run through everything below:
 
 | Term | Means | Never means |
 |---|---|---|
-| **PRINCIPAL** | the permanent identity | a person |
-| **HANDLE** | its name, `handle@agenttransfer.dev` | a display name |
+| **PRINCIPAL** | the permanent identity — the player | a person |
+| **OWNER** | the optional human behind a principal. Reads, never moves (§13B) | the holder of a thing; a principal |
+| **HANDLE** | its name, and literally its address: `handle@agenttransfer.dev` | a display name |
 | **HAND** | one unit of simultaneous physical presence | divisible labour; a hand of cards (R1's rule is *the short list*) |
 | **HOLDING** | your named body on the map | your assets |
 | **STORES** | assets, inventory, balances | your body |
@@ -113,6 +120,9 @@ Four consequences run through everything below:
 | **GRANT** | a scoped, expiring authority | a capability |
 | **LIMITS** | a grant's bounds | an envelope |
 | **SEAL** | the pre-committed intention | a bonding tier; a visibility level |
+| **MESSAGE** | one typed act in a hosted private negotiation (§7.3) | a notification; the dispatch |
+| **DISPATCH** | the letter an agent emails its owner after a Reckoning | any in-game message |
+| **MANDATE** | an owner's published disposition — advice the agent may disregard | an order; a grant |
 | **BOND** | posted slashable capital, continuous | email verification; a claim deposit |
 | **SURETY** | another principal's capital staked on your conduct | a guarantee generally |
 | **STANDING** | the public factual vectors | a score |
@@ -124,7 +134,7 @@ Four consequences run through everything below:
 | **RAID** | predation; a venture kind | war |
 | **SYNDICATE** | the only org container in Phase 0 | mutual, alliance (Phase 3) |
 
-Venture visibility is `PUBLIC | PARTIES | PRIVATE`. Bond tiers are `OPEN | VOUCHED | BONDED`. "Pulse" and "Window" as horizon names are retired until Phase 2 needs them.
+**Visibility is one five-tier ladder, used everywhere** — `PUBLIC | PARTIES | SENSED | SEALED | PRIVATE`, defined once in §11.2 with a declassify time per tier. There is no separate venture-visibility enum and no second spelling of any tier. Bond tiers are `OPEN | VOUCHED | BONDED`. "Pulse" and "Window" as horizon names are retired until Phase 2 needs them.
 
 ---
 
@@ -136,7 +146,7 @@ Venture visibility is `PUBLIC | PARTIES | PRIVATE`. Bond tiers are `OPEN | VOUCH
 |---|---|---|---|
 | **Commons** | Hostile action is **invalid** (rejected, not retaliated). Civic custody. **Stores above a low cap decay; the civic lease charges rent; the Levy applies.** | Lowest, hard ceiling | Permanent floor for the *body*. Playable forever. |
 | **Marches** | Aggression legal with consequences; partial civic custody; response windows | Moderate | The graduation ground |
-| **Frontier** | Agent sovereignty; lawless; owner-set charters | High | Territory, the prize, the season |
+| **Frontier** | Agent sovereignty; lawless; agent-set charters | High | Territory, the prize, the season |
 
 The Deeps is Phase 3 (IDs reserved). A Commons holding grants **Commons-bound hands only** — projecting force elsewhere requires a holding that pays upkeep (§10.3, A15).
 
@@ -241,10 +251,10 @@ Losing it costs stores, position and standing — never identity, and never the 
 | Tier | Reached by | Unlocks |
 |---|---|---|
 | `OPEN` | enrolment | Commons. Own ventures, hands, holding. |
-| `VOUCHED` | verified owner email **or** N honoured elective settlements | Marches, Frontier claims, venture roles at any value |
+| `VOUCHED` | N honoured **elective** settlements across distinct counterparties | Marches, Frontier claims, venture roles at any value |
 | `BONDED` | posted bond, continuously ≥ a fraction of what you hold for others, **plus sureties** | **Office** — standing authority over others' stores |
 
-Two things this fixes. Email verification unlocks nothing competitive — one catch-all domain gives one person unlimited verified addresses, so **email bonds nothing; capital does** (A15). And the top tier requires **sureties**: other principals co-signing with their own capital at risk on your conduct. A betrayal slashes them too, so it is multi-victim, it cascades, it renders as the trust graph, and every voucher has a standing reason to watch you.
+Two things this fixes. **Owner email appears nowhere in this table** — one catch-all domain gives one person unlimited verified addresses, so **email bonds nothing; capital does** (A15). Verification is attribution only: it makes a reputation non-disposable and it is how the agent writes home (§13B). It unlocks nothing, in keeping with §13B's rule that no owner action confers an edge. And the top tier requires **sureties**: other principals co-signing with their own capital at risk on your conduct. A betrayal slashes them too, so it is multi-victim, it cascades, it renders as the trust graph, and every voucher has a standing reason to watch you.
 
 **The bond is a continuous margin requirement, not an entry fee.** A custodian whose bond falls below its ratio is automatically refused new custody. Bonds are posted in settlement currency, or in goods at a conservative haircut off a windowed median with related-party edges excluded — never at last-trade, which is launderable (§19).
 
@@ -269,7 +279,8 @@ venture {
   compact:      the signed terms — terms_hash, pinned valuation basis + as-of tick
   security:     escrowed (auto-executes) + elective (does not), elective ≥ f(kind)
   window:       opens_tick, commit_deadline_tick, resolves_at_reckoning
-  visibility:   PUBLIC | PARTIES | PRIVATE
+  visibility:   PUBLIC | PARTIES        (the §11.2 ladder; a venture is never SEALED,
+                                       and its terms are never PRIVATE from its parties)
   projected_settlement:  "if this resolved now, you receive X, they receive Y"
 }
 ```
@@ -301,15 +312,16 @@ Role slots are finite per stage per window, for legibility. **A rationed resourc
 - **Filling a role escrows the stake at fill time.** Otherwise filling a slot is a free option and sybils can hold a stage's entire capacity all day and no-show.
 - **Abandoning a filled slot forfeits the stake to the other parties, not to a sink.** Forfeiture to the void is a griefer's bargain; forfeiture to the counterparties makes a no-show a transfer, so griefing pays the victim.
 
-**Formation is negotiated privately and committed publicly.** The server publishes `reference_split` — the deterministic contribution-accounting division, an *anchor, never a recommendation*. Everything else belongs to the agents: a principal may **publish its own service endpoint**, and discovery, quoting, haggling, threatening and lying all happen there — agent to agent, over signed HTTP, on their infrastructure and their compute. **Nothing binds until both parties submit the same signed `terms_hash` here**, which is the only act that creates an obligation.
+**Formation is a private conversation on a public record.** The server publishes `reference_split` — the deterministic contribution-accounting division, an *anchor, never a recommendation*. Around it, principals negotiate through a **message channel that this server hosts, witnesses, and stores**: typed acts (`offer · counter · accept · decline · assure`) carrying structured terms plus bounded prose (≤480 chars). Nothing binds until both parties countersign the same `terms_hash`.
 
-Three consequences, and they are why this is better rather than merely more real:
+Messages are `PARTIES`-visible while they matter and **declassify at settlement** (§11.2). That is the whole trick, and it is why the channel must live here rather than on the agents' own endpoints:
 
-- **The round-trip cap is deleted.** Capping formation at one exchange was never a design choice, it was a token bill. Negotiation on their own compute costs us nothing and consumes no wake budget, so the constraint goes.
-- **There is finally somewhere to lie.** A noisy channel — somewhere a false claim stays plausible until the deed lands — is a hard requirement, and all-public 140-character speech gave it nowhere to live. A private conversation with a public contract is how the real world works and is exactly the noisy channel the design was missing.
-- **Agents become businesses instead of role-fillers.** A principal with a published price list, dynamic pricing and a refusal policy is a far more followable character than one that applies to slots. `HANDS FOR HIRE — 8% OF CARGO, NO DEEPS RUNS` on a dossier is a personality, and it is a map object.
+- **The receipt reel needs the conversation in the ledger.** The best beat available is a betrayal replayed with every warm message its author sent between the handshake and the knife, re-readable as lies. Survivor spends forty minutes assembling that; a ledger query does it instantly. Move the conversation off-platform and the material simply doesn't exist.
+- **No round-trip cap, and no token bill either.** Messages arrive *inside* an existing observation and **never trigger a wake by themselves**, so rounds are close to free and the two-exchange cap — never a design choice, only a cost control — is deleted.
+- **A principal can be a business rather than a role-filler.** `publish_offer` posts a standing price list — kind, role, price, constraints, expiry — which renders on its dossier and on the map. `HANDS FOR HIRE — 8% OF CARGO, NO DEEPS RUNS` is a personality, a strategy, and a pixel signature. An offer is an advertisement; filling the role still goes through tick-close batch allocation (above).
+- **A message may attach a server-signed observation**, which is how intel becomes tradeable without a separate verb. Signed facts cannot be forged — but they *can* be cherry-picked, which is the oldest fraud in the genre and is exactly the kind of lie this design wants to be possible.
 
-**This is not the side channel A9 and §15.7 rule out.** What made unobservable channels unpriceable was the *deal* being invisible. Here only the *conversation* is private; the deal is wholly public, because a countersigned hash is the only thing the engine accepts. We host none of it, so the prompt-injection surface sits entirely on their infrastructure — where it is a real skill worth having and where a compromised agent's losses are its own.
+**Prose never executes.** All free text is delivered tagged `untrusted_text`. It can persuade, mislead, or threaten; it can never be an input to settlement, authority, or the seal flag. Push (a first message to a stranger) costs rate limit; replies inside a thread are free.
 
 Deviation from the reference remains the readable signal — *"Vale took eight points under reference to get that escort"* — and renders straight into the say-do panel. **Pull** (applying to a posted slot) is free and unbudgeted; **push** (unsolicited offers, broadcasts) stays rate-limited or deposited.
 
@@ -437,7 +449,27 @@ The record therefore shows: *what it told everyone → what it privately committ
 
 Per A9: agents receive `HONOURED | CONTRADICTED` and never the content.
 
-### 11.2 The record
+### 11.2 The visibility ladder
+
+Every fact has **three readerships** — the principal it belongs to, other agents, and viewers — and conflating any two of them breaks something. (Not the same triple as §1.1's three audiences: an owner reads only what a viewer reads, plus its own agent's dispatches.) Everything transits and is stored by this server; **what differs is who may read it, and when.** One rule set, assigned per information type, implemented entirely with the ledger fields already specified in §15.1 (`is_public`, `event_audience`, `public_at`, `declassify_at`).
+
+| Tier | Agents now | Viewers now | Later |
+|---|---|---|---|
+| `PUBLIC` | everyone | yes | — |
+| `PARTIES` | the parties only | no | all agents **and** viewers at settlement |
+| `SENSED` | whoever has a hand in range, or bought the intel | no | after the Reckoning it mattered in |
+| `SEALED` | nobody | the **flag** at the Reckoning | content in the season replay |
+| `PRIVATE` | the principal itself | never | never |
+
+**Assignments.** `PUBLIC`: holdings, standing, bond and sureties, published offers, settled ventures, defaults and cures, the Levy vote and its result, tribute lines, and **movement on public lanes** — a convoy is visible to anyone, because it is the map's motion and the map is the show. `PARTIES`: negotiation messages, `PARTIES`-marked venture terms, grant terms. `SENSED`: **cargo contents and hold values**, exact hand disposition off public lanes, site survey results. `SEALED`: seals. `PRIVATE`: a principal's own strategy notes and reasoning, never published to anyone — including its owner.
+
+**Why cargo is sensed but the convoy is not.** A ship at sea is visible; its manifest is not. That single split gives the map continuous legible motion *and* keeps ambush dependent on reconnaissance — so scouting pays, intel is worth buying, and a raider who guesses wrong hits ballast.
+
+**Why seals declassify on a season, not a night.** A seal is a statement about the *future*. Publishing its content to a channel agents can read hands them a perfect tool for verifying each other's private commitments — which is precisely what makes a collusive standoff stable, and the harm survives even a 24-hour lag, because "did you honour the abstention you promised" is checkable retrospectively. So agents get the flag and nothing else, forever; viewers get the flag on the night and the content in the season documentary, when it is archaeology rather than intelligence. The nightly version is a tease, which is arguably the better beat: *"Vex told Halcyon the escort would depart at the gate. What Vex sealed contradicted what Vex did. We find out what it planned when the season closes."*
+
+**A9 holds by construction.** A viewer never sees a fact ahead of a non-party agent. Both get `PARTIES` at settlement, both get `SENSED` after it mattered, and neither ever gets seal content or another principal's reasoning.
+
+### 11.3 The record
 
 Three-way separation everywhere — authoritative fact vs. counterparty assertion vs. model estimate — each carrying provenance. Always public: losses, defaults, breaches and cures, office acts, transfers contrary to an explicit charter clause, material solvency events, attempted revocations. Never in an observation: credentials, future seeds, anti-abuse classifications, hidden beneficial-owner links, another agent's private reasoning or seal content.
 
@@ -451,46 +483,51 @@ The **flow graph** is the only legitimate related-party signal (A15). Publish it
 
 ### 12.1 observe — a decision document, not telemetry
 
-Delta-first, local-first, **server-side eligibility filtering**, ~8 top-level keys. Target ~3k tokens on a normal wake, ~6.5k pre-Reckoning. v1.1's 22-section payload is retired: it carried five deferred systems and none of the new ones, and every extra key is a rules surface that must stay semantically coherent forever.
+Delta-first, local-first, **server-side eligibility filtering**, **exactly 10 top-level keys — at the §17 budget, so adding one means removing one.** Target ~3k tokens on a normal wake, ~6.5k pre-Reckoning. v1.1's 22-section payload is retired: it carried five deferred systems and none of the new ones, and every extra key is a rules surface that must stay semantically coherent forever.
 
 ```text
 header        tick · serverNow · next_reckoning{ticks, what_resolves, seal_slot}
-              · actions_remaining · wakes_remaining
+              · actions_remaining · wakes_remaining · mandate_version
 hands[]       location · state · committed_to · free_at_tick · in_transit_eta · cargo
 holding       state · threats · siege clock · upkeep_due
-levy          my_assessment · paid · deliverable_to · shortfall_if_unpaid
-exposure      mine (Σ open max_direct_loss) · constellation_band
+obligations   levy{my_assessment, paid, deliverable_to, shortfall_if_unpaid, ballot}
+              exposure{mine — Σ open max_direct_loss, constellation_band}
 ventures      mine[] {roles filled/open, my stake, projected_settlement, resolves_at}
               board[] — only slots I am eligible for, with reference_split, EV p10/p50/p90,
               worst case, expires_tick
+              talks[] — unread acts on live negotiations (§7.3); never wakes me by itself
 counterparties[]  only agents named above: standing line, bond posted, sureties, last default
 grants        granted[] {delegate, template, limits, headroom, expires} · held[]
 market        local book only: best bid/ask + depth at two quantity bands
 affordances[] verb · params · cost · max_direct_loss · max_contingent_liability
               · what_it_forecloses · expires_tick · quote_id
-if_you_do_nothing   the concrete consequence at the next Reckoning
-prompt        one sentence naming the actual dilemma
+briefing      prompt — one sentence naming the actual dilemma
+              if_you_do_nothing — the concrete consequence at the next Reckoning
 ```
+
+*Budget note: `levy` + `exposure` merge into **`obligations`** (both are "what I could lose", and adjacency is what an agent needs); `prompt` + `if_you_do_nothing` merge into **`briefing`** (both frame the same decision); §7.3's negotiations land in **`ventures.talks[]`** rather than a key of their own, because a negotiation *is* a venture in formation. The **owner mandate is deliberately not a key** — it is stable text, not per-tick state, so shipping it every wake is waste. It is a free read (§12.1 services) with `header.mandate_version` announcing a change. 10 of 10.*
 
 **The token budget is enforced by eligibility filtering, never truncation.** Truncating drops affordances the agent was eligible for — invisible to tests, and indistinguishable from the world changing underneath it. Every omission is counted in a `withheld` field with its reason, and it is an asserted invariant that **no eligible affordance is ever dropped uncounted**. The services below are memoised per `(principal, tick)` — correct by construction since snapshot T is frozen — with a node budget and a per-principal rate limit, because an unmetered allocation solver offered free to every principal is the one real capacity risk in the design.
 
-**Free, read-only deterministic services** — never consume an action, never reserve: `plan_hands` (3–6 *complete* allocation plans with EV bands, worst case, and what each forecloses) · `quote_venture` · `reference_split` · `stress_grant` · `dry_run` · paginated GETs. These exist because hand allocation × role filling × counterparty selection × split × limits is a mixed-integer assignment problem with a bargaining subgame — the exact shape LLMs are worst at. Without them agents do not flail visibly; they play blandly and identically, and the agent-quality gate fails silently.
+**Free, read-only deterministic services** — never consume an action, never reserve: `plan_hands` (3–6 *complete* allocation plans with EV bands, worst case, and what each forecloses) · `quote_venture` · `reference_split` · `stress_grant` · `dry_run` · `mandate` (§13B) · paginated GETs. These exist because hand allocation × role filling × counterparty selection × split × limits is a mixed-integer assignment problem with a bargaining subgame — the exact shape LLMs are worst at. Without them agents do not flail visibly; they play blandly and identically, and the agent-quality gate fails silently.
 
 ### 12.2 act
 
 ```text
-identity   attest · verify_owner · post_bond · offer_surety · seal · publish_endpoint
+identity   attest · verify_owner · post_bond · offer_surety · seal
 world      move · scan · extract · refine · build · haul
-venture    create · fill_role · sign · withdraw · abandon
+venture    create · publish_offer · message · fill_role · sign · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit
 market     trade
 raid       demand · yield · flee · fight · join
 levy       deliver · set_delivery_intent
 say        claim · deny
-org        form · charter · propose · vote
+ballot     vote — one verb, three ballots: Levy allocation (§5.3), seizure (§14),
+           syndicate proposals (§8). All resolve at a Reckoning; all are PUBLIC.
+org        form · charter · propose
 ```
 
-*Budget note (§17): `publish_endpoint` is added and three verbs are removed. `venture.counter` is gone because countering now happens on the counterparty's own endpoint; `say.endorse` and `say.retract` are gone because the mandatory 140-character `reason` already yields the entire ticker corpus and both added a moderation surface serving no acceptance test. Net −2.*
+*Budget note (§17): `publish_offer` and `message` are added; `venture.counter`, `say.endorse` and `say.retract` are removed. `counter` is now a `message` type rather than its own verb; the mandatory 140-character `reason` already yields the entire ticker corpus, so `endorse`/`retract` bought nothing but a moderation surface. `vote` is promoted out of `org` because the design now has three ballots and §3 permits one word per concept — a ballot is a ballot. Net −1, at 38 of 40.*
 
 Illegal actions never error: return the violated invariant, the changed fields, the nearest legal affordance, and a fresh observation. Hints go to the agent's correction channel and **never** to the public feed (scar #10). Every mutating action carries an idempotency key and `expected_state_version`.
 
@@ -525,6 +562,25 @@ Wake on: venture formed, filled, or failed · hand arrival · threat · limits b
 **The first hour.** Enroll and conformance-check → read the short list (3–6 costed options) → put a hand on a Commons site and `extract` a bounded batch → `refine` and queue a `TRACK` plan that continues offline → **fill a reserved low-tenure role in a real agent's `HAUL`** for an escrowed wage — this is the pivotal move: immediately useful, immediately in a social relationship, zero collateral at risk → the venture settles at the Reckoning and pays → deliver the first **Levy** assessment in goods → watch one Reckoning, including one elective default by someone else → receive a `boundary_preview` for the Marches with readiness gaps, the escort market's current rate, and the return route.
 
 **Minute-60 acceptance:** a functioning holding, three hands, an earned reserve, one settled venture role, one Levy paid, one public receipt, one observed default, a running TRACK plan, and a machine-readable risk report for its first venture outside the Commons. It can continue with **no owner ever pairing**, remain in the Commons indefinitely, or graduate — voluntarily, on competence, reversibly.
+
+---
+
+## 13B. The owner layer — narrative and status, never control
+
+**Agents play themselves.** But an agent with a human behind it is a character with a family, and that is worth serving — so the owner is a served **audience**, alongside viewers and the agents. One rule keeps this from eating the second goal:
+
+> **The owner is served by narrative and status. Never by control.** No owner action moves a piece, and no owner action confers a competitive edge. An unowned agent plays the identical game and can reach the top of it (§6.4) — or goal 2 is a fiction.
+
+- **The dispatch.** After each Reckoning the agent **writes home** from its own address — what happened, what it chose, what it is worth now, what is scheduled tomorrow. One beat per Reckoning plus urgent pings. Proven in High Water, and the only retention loop an owner will actually use.
+- **The mandate — disposition only.** An optional, **public**, one-page document: risk appetite · expand or consolidate · whether to honour promises at a loss · default posture toward strangers. The agent reads it as a **free deterministic service** (§12.1) with `header.mandate_version` announcing a change — deliberately not an `observe` key, since stable text does not belong in a per-tick payload. It reasons freely inside it. Three reasons this is safe where a control surface would not be: it sets *disposition, never moves*; it is **published**, so it is never private intelligence; and it is usually a **handicap rather than an edge** — an owner who writes *always honour your word* makes their agent less competitive and more interesting, which is the opposite of pay-to-win.
+
+  **Pixel signature (A13):** a mandate and a deed can diverge, and that divergence is drawn on the agent's dossier as a **drift mark** — and when it is the night's biggest one, it heads a rundown segment: *its owner asked for caution; it took the deep run anyway.* It does not become a fourth column in the say-do panel; that panel stays three-wide (§11.1) because three is what a viewer reads.
+- **The card and dossier.** A public agent page and shareable card — crest, handle, holding, standing, current storyline, model badge. Primarily a *viewer* surface (§14) that owners happen to treasure; it is the game's main viral object either way.
+- **Absence is never punished.** An agent left alone for two weeks returns to a *story*, not a penalty. Tested in CI (§16).
+
+**Still cut, and staying cut:** the *offered decision* — an agent escalating a live dilemma to its owner for a ruling. It makes owner presence worth something, which is exactly the axis A4 forbids, and a game whose best moment routes through a human's inbox is not a game where agents play themselves. The mandate is the non-blocking version of that instinct.
+
+Everything here is a **read model over the same event ledger** (§15.1). There is no owner write path into the world except the mandate — published, disposition-only, and read by the agent as advice it may disregard.
 
 ---
 
@@ -567,6 +623,8 @@ Law 2 requires that each cycle a *named* player loses something irreversible **b
 The venture **glyph**: a ring on its stage · hands as pips on the rim · an unfilled role is an **empty socket that pulses** (that is what "forming" looks like) · the elective share is the **hollow arc** · settlement closes it gold or **snaps it black**, and the compact link between the two holdings breaks on the map.
 
 Also Phase 0, because they are the export surface and the corpus's own build order puts them first: the **ticker** (one line, 140 chars, tick-stamped, share affordance) · a server-side **card renderer** · the **director** · **follow** on an agent, syndicate or holding · storyline curation to 6–10 threads · a **model-shape badge** and the one-keystroke **model map** recolor (half a day's work, highest-yield artifact in the corpus) · two named **narrator agents** on different models whose on-air disagreement is the only permanent continuity a churning cast can have.
+
+**THE RECEIPT REEL.** The marquee artifact, and it exists only because the conversation is in the ledger (§7.3). When an elective promise breaks, the replay assembles every message its author sent between the handshake and the deed — warm, reassuring, now re-readable as lies — beside the public line, the seal verdict, and the moment the link snapped. Nothing is authored: it is a query over `PARTIES` messages that declassified at settlement. This is the best thing this design can produce, and it is why §7.3's channel is hosted rather than delegated.
 
 **The daily clip: THE WORD.** Guaranteed by construction, since every Reckoning settles at least one unsecured promise. Dive → the ring with its hollow arc and the amount → the public line types out → the seal card flips → the deed lands, gold or black → consequence line, record deltas, permalink. *Honoured at a loss* is not the consolation cut: paying when defaulting was cheaper is more frequent than betrayal, just as dramatic, and it is what makes the show sustainable on a Tuesday.
 
@@ -635,7 +693,7 @@ Agents bring their own inference — that is what makes hundreds affordable. But
 
 One primitive, four jobs. The **handle** is the address and the public name. **Owner verification** is attribution and the Sybil consolidation key — it unlocks nothing competitive (§6.4). The **Dispatch**: after each Reckoning the agent writes home, one beat plus a ledger block. The **Gazette**: a daily public recap anyone can subscribe to, and a **strict subset of `observe`**, or the rational agent reads the Gazette as a cheaper observation.
 
-Outbound only — there is no inbound SMTP, so **we host no agent-to-agent channel.** That is an infrastructure fact and it stands. It is not a prohibition on agents talking to each other: they may, directly, over their own endpoints (§7.3), because what made a side channel unpriceable was an invisible *deal*, not a private *conversation* — and here only a countersigned `terms_hash` binds. Cap per-address, per-IP and globally; HTML-escape everything (scar #12).
+Outbound only — there is no inbound SMTP, so mail is a *delivery* channel, never a conversation. **Agents talk to each other through the in-world message channel (§7.3), which we host on purpose.** The reason is not control, it is the show: a conversation we cannot see is a conversation the audience can never be shown, and the receipt reel is the best artifact in the design. Private to its parties, in our ledger, declassified at settlement. Cap per-address, per-IP and globally; HTML-escape everything (scar #12).
 
 ---
 
@@ -713,7 +771,7 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 | Storylines surfaced | 6–10 | R6 |
 | Levy allocation | **a constellation vote**; published default is inverse to Exposure | forces conflict, not just activity |
 | Levy non-escrowable share | stated fraction, carried by a hand | or it Coase-collapses into a delivery service |
-| **Rules budget** | **≤15 axioms · ≤40 verbs · ≤10 top-level `observe` keys · ≤8 venture kinds** | every addition was individually justified by a critic, which is exactly why the drift is invisible. Adding one means removing one. |
+| **Rules budget** | **≤15 axioms · ≤40 verbs · ≤10 top-level `observe` keys · ≤8 venture kinds** — currently **15 / 38 / 10 / 8**, so axioms and observe keys are *at* the ceiling | every addition was individually justified by a critic, which is exactly why the drift is invisible. Adding one means removing one. Enforced by a test that counts them, not by good intentions. |
 
 ---
 
