@@ -30,6 +30,8 @@ export const MAX_LABELS_PER_FRAME = 7;
 export const MAX_DOCKET_CARDS = 7;
 /** §17: rundown segments. A broadcast, not a batch. */
 export const MAX_RUNDOWN_SEGMENTS = 12;
+/** §17: authority lines drawn per frame. Convergence is the signature; a hairball is not. */
+export const MAX_AUTHORITY_LINES = 12;
 /** §14.3: seconds per segment. Human time — never scaled by TICK_SECONDS. */
 export const SEGMENT_SECONDS = { min: 30, max: 45 } as const;
 
@@ -81,6 +83,29 @@ export interface TributeLine {
   readonly owed: Minor;
   /** DASHED no hand assigned · SOLID hand en route · RED unpaid at freeze · REVERSING seizure. */
   readonly state: TributeLineState;
+}
+
+/**
+ * The A6 pixel signature (SPEC §8, §14): standing authority as a directed line from a
+ * grantor to its delegate. Thickness ∝ the authority handed over (max_direct_loss), and
+ * the state shows how much of that worst case the delegate has actually drawn — "an
+ * offline agent is exposed, and the audience can see by how much" (§8.1). Authority
+ * converging on a handful of delegates is a forming power bloc, watchable before it acts —
+ * the same "convergence on a few hands" the Levy's tribute lines render for tribute.
+ */
+// Its own vocabulary (SPEC §3, one word per concept): `IDLE` is a hand's physical state
+// and `SPENT` is an intent's, so an authority line — a different concept — gets its own.
+export type AuthorityLineState = 'UNUSED' | 'DRAWN' | 'EXHAUSTED' | 'REVOKED';
+
+export interface AuthorityLine {
+  readonly grantor: PrincipalId;
+  readonly delegate: PrincipalId;
+  /** Thickness ∝ the authority granted (its max_direct_loss). */
+  readonly granted: Minor;
+  /** How much of the worst case the delegate has drawn. The visible exposure. */
+  readonly spent: Minor;
+  /** UNUSED nothing drawn · DRAWN some headroom used · EXHAUSTED at the direct limit · REVOKED ending next tick. */
+  readonly state: AuthorityLineState;
 }
 
 /**
@@ -155,6 +180,8 @@ export interface ReckoningFrame {
   readonly docket: readonly DocketCard[];
   readonly rundown: readonly RundownSegment[];
   readonly tributeLines: readonly TributeLine[];
+  /** The A6 authority signature: who holds standing power over whom, and by how much. */
+  readonly authorityLines: readonly AuthorityLine[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
@@ -227,6 +254,12 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
 
   if (frame.ticker.some((t) => t.length > 140)) {
     problems.push('a ticker line exceeds 140 characters');
+  }
+
+  if (frame.authorityLines.length > MAX_AUTHORITY_LINES) {
+    problems.push(
+      `${frame.authorityLines.length} authority lines, budget is ${MAX_AUTHORITY_LINES} — convergence on a few hands is the signature, a hairball is not`,
+    );
   }
 
   if (problems.length > 0) {

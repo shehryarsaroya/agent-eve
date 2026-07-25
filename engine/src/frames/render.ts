@@ -27,10 +27,12 @@ import type { Handle, PrincipalId, VentureId } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
+  MAX_AUTHORITY_LINES,
   MAX_DOCKET_CARDS,
   MAX_LABELS_PER_FRAME,
   MAX_RUNDOWN_SEGMENTS,
   assertFrameBudgets,
+  type AuthorityLine,
   type CastChip,
   type DocketCard,
   type ReckoningFrame,
@@ -67,6 +69,12 @@ export interface FrameSource {
    * nobody owes is a lie on the map.
    */
   readonly tributeLines?: readonly TributeLine[];
+  /**
+   * The A6 authority lines (§8), supplied by the grant layer — who holds standing power
+   * over whom, at this settlement. Optional and passed in for the same reason tribute
+   * lines are: a renderer that drew its own would be inventing authority nobody granted.
+   */
+  readonly authorityLines?: readonly AuthorityLine[];
 }
 
 export interface SettledView {
@@ -254,6 +262,18 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // computed here: a drawn line nobody owes is a lie on the map, and this file has no
     // way to know what is owed.
     tributeLines: src.tributeLines ?? [],
+    // Selection is arithmetic, not taste: the most authority first (the convergence a
+    // viewer should see), ties broken by id for determinism, capped to the budget. A
+    // line nobody granted is never drawn — these come from the grant layer.
+    authorityLines: (src.authorityLines ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          b.granted - a.granted ||
+          compareIds(a.grantor, b.grantor) ||
+          compareIds(a.delegate, b.delegate),
+      )
+      .slice(0, MAX_AUTHORITY_LINES),
     glyphs: byStakesAscending.map(glyphFor),
     ticker: src.ticker.filter((t) => t.length <= 140),
     nextDocket: docket,
@@ -274,6 +294,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     docket: [],
     rundown: [],
     tributeLines: [],
+    authorityLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],

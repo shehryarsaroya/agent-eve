@@ -11,10 +11,12 @@ import { describe, expect, it } from 'vitest';
 import { minor } from '../../src/core/units.js';
 import type { Handle, PrincipalId, VentureId } from '../../src/core/types.js';
 import {
+  MAX_AUTHORITY_LINES,
   MAX_LABELS_PER_FRAME,
   MAX_RUNDOWN_SEGMENTS,
   FrameBudgetError,
   assertFrameBudgets,
+  type AuthorityLine,
 } from '../../src/frames/contract.js';
 import { emptyFrame, renderFrame, type FrameSource, type SettledView } from '../../src/frames/render.js';
 
@@ -58,6 +60,55 @@ function source(over: Partial<FrameSource> = {}): FrameSource {
     ...over,
   };
 }
+
+describe('authority lines — the A6 pixel signature (§8, §14)', () => {
+  function line(over: Partial<AuthorityLine> = {}): AuthorityLine {
+    return {
+      grantor: P('halcyon'),
+      delegate: P('vex'),
+      granted: minor(1_000),
+      spent: minor(0),
+      state: 'UNUSED',
+      ...over,
+    };
+  }
+
+  it('passes grant authority lines through, most authority first (the convergence a viewer should see)', () => {
+    const f = renderFrame(
+      source({
+        authorityLines: [
+          line({ grantor: P('a'), delegate: P('b'), granted: minor(100) }),
+          line({ grantor: P('c'), delegate: P('d'), granted: minor(900) }),
+        ],
+      }),
+    );
+    expect(f.authorityLines.map((l) => l.granted)).toEqual([900, 100]);
+    expect(f.authorityLines[0]!.grantor).toBe(P('c'));
+  });
+
+  it('caps at MAX_AUTHORITY_LINES — convergence on a few hands, not a hairball', () => {
+    const many = Array.from({ length: MAX_AUTHORITY_LINES + 5 }, (_, i) =>
+      line({ grantor: P(`g${String(i)}`), delegate: P(`d${String(i)}`), granted: minor(1_000 + i) }),
+    );
+    const f = renderFrame(source({ authorityLines: many }));
+    expect(f.authorityLines.length).toBe(MAX_AUTHORITY_LINES);
+    // The biggest survived the cap; the smallest were dropped.
+    expect(f.authorityLines[0]!.granted).toBe(1_000 + MAX_AUTHORITY_LINES + 4);
+  });
+
+  it('assertFrameBudgets bites on an over-full authority set (A13, not silent)', () => {
+    const f = renderFrame(source());
+    const over = {
+      ...f,
+      authorityLines: Array.from({ length: MAX_AUTHORITY_LINES + 1 }, () => line()),
+    };
+    expect(() => assertFrameBudgets(over)).toThrow(FrameBudgetError);
+  });
+
+  it('an empty frame draws no authority', () => {
+    expect(emptyFrame(1, 100, 'h').authorityLines).toEqual([]);
+  });
+});
 
 describe('renderFrame', () => {
   it('renders a settled Reckoning within every §17 legibility budget', () => {

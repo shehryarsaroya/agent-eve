@@ -152,7 +152,7 @@ import { slotClaimAt } from '../observe/forecast.js';
 // The Levy's pixel signature (§5.2, A13). Imported as a *type only*: this runtime
 // populates `TributeLine`, it does not define it — `frames/contract.ts` owns the shape and
 // the client already draws that one.
-import type { TributeLine, ReckoningFrame } from '../frames/contract.js';
+import type { AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } from '../frames/contract.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
@@ -4077,6 +4077,31 @@ export class Runtime {
     const broken = summaries.reduce((a, r) => a + r.defaults, 0);
     const onAPromise = sumMinor(settled.map((v) => v.atStake));
 
+    // A6's authority signature (§8, §14): who holds standing power over whom at this
+    // settlement, and how much of it has been drawn. Dead-expired grants are dropped;
+    // live and revoked ones render (a revocation is drama). renderFrame sorts by the most
+    // authority and caps to the budget — convergence is the signature, a hairball is not.
+    const authorityLines: AuthorityLine[] = this.grantBook
+      .all()
+      .filter((g) => g.expiresTick >= outcome.tick)
+      .map((g) => {
+        const state: AuthorityLineState =
+          g.revokedAtTick !== null
+            ? 'REVOKED'
+            : g.spentDirect <= 0
+              ? 'UNUSED'
+              : g.spentDirect >= g.maxDirectLoss
+                ? 'EXHAUSTED'
+                : 'DRAWN';
+        return {
+          grantor: g.grantor,
+          delegate: g.delegate,
+          granted: g.maxDirectLoss,
+          spent: g.spentDirect,
+          state,
+        };
+      });
+
     const source: FrameSource = {
       reckoning: outcome.reckoning,
       tick: outcome.tick,
@@ -4092,6 +4117,7 @@ export class Runtime {
       ticker: [],
       tomorrow: [],
       tributeLines: this.tributeLines(outcome.tick),
+      authorityLines,
     };
     return renderFrame(source);
   }
