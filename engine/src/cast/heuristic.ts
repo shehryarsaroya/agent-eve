@@ -28,7 +28,7 @@
 import { Rng } from '../core/rng.js';
 import type { PrincipalId, SystemId, VentureKind } from '../core/types.js';
 import { compareIds } from '../ledger/index.js';
-import { openIndices, roleOfPrincipal } from '../venture/index.js';
+import { IN_FULL, openIndices, roleOfPrincipal } from '../venture/index.js';
 import { handsOf, tierOf } from '../world/index.js';
 import { reckoningOf, type Runtime } from '../sim/runtime.js';
 import type { SubmittedAction } from '../tick/index.js';
@@ -212,7 +212,31 @@ export class HeuristicCast {
       if (venture.state !== 'FORMING') continue;
       if (venture.termsHash === null) continue;
       if (venture.countersigned.has(member.principal)) continue;
-      return { ...base, verb: 'sign', params: { venture: venture.id, terms_hash: venture.termsHash } };
+      return {
+        ...base,
+        verb: 'sign',
+        params: {
+          venture: venture.id,
+          terms_hash: venture.termsHash,
+          // ── The election, and it is the payer's choice, not the engine's ──────
+          //
+          // Only the creator may elect, because the elective half is paid out of its
+          // own stores. `IN_FULL` rather than the figure it was quoted: on a share
+          // role the due is not knowable until the residual is drawn, so an agent
+          // that elects the number it signed for is electing *less than it owes* on
+          // any venture that over-performs — and the record would show it declined
+          // the difference (§7.1, and the trap `agent.md` §4 spells out).
+          //
+          // **A bot that always honours cannot answer §7.6.** This cast is honest by
+          // policy, which exercises the honoured branch and the standing that accrues
+          // to it; the default branch is reached the other way — a payer whose stores
+          // cannot cover the elective part at settlement, which is `UNFUNDED` and is a
+          // different row from a refusal. Whether betrayal is *rational* is a question
+          // only agents that reason can answer, and the falsification probes are where
+          // it gets asked.
+          ...(venture.creator === member.principal ? { election: IN_FULL } : {}),
+        },
+      };
     }
 
     const idle = handsOf(runtime.world, member.principal).filter((h) => h.state === 'IDLE');

@@ -31,7 +31,7 @@ import { pathToFileURL } from 'node:url';
 import { SPEEDS, isSpeedName, setSpeed, systemClock, type SpeedName } from '../core/time.js';
 import { Rng } from '../core/rng.js';
 import { HeuristicCast } from '../cast/index.js';
-import { Runtime } from './runtime.js';
+import { Runtime, type ReckoningSummary } from './runtime.js';
 
 export interface SimArgs {
   readonly seed: string;
@@ -148,6 +148,47 @@ export interface SimLine {
   readonly stateHash: string;
 }
 
+/**
+ * What the Reckonings did, over the whole run.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **This is how Gate 3 gets answered**, so every figure here is counted from the
+ * batch's own output rather than inferred, and the two that could be mistaken for good
+ * news are named so they cannot be:
+ *
+ *   - `defaults` is accusations *published*, each with its cause as a column (INV-17).
+ *     Zero means nothing was recorded, which is not the same as nobody breaking a
+ *     promise — read it next to `electiveHonoured`, which is the other half.
+ *   - `levyShort` is **structurally zero**: the Levy is SPEC §16 step 10 and does not
+ *     exist yet, so `levyBuilt` is false beside it. A zero with no flag would read as
+ *     "everybody paid" (A14's abstention-trivial failure, wearing a number).
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface ReckoningTotals {
+  /** Reckonings that reached settlement. One per settlement tick the run covered. */
+  readonly reckonings: number;
+  /** Reckonings whose batch committed. Anything less than `reckonings` is a halt. */
+  readonly committed: number;
+  readonly obligations: number;
+  readonly settlements: number;
+  readonly defaulted: number;
+  readonly deferrals: number;
+  readonly defaults: number;
+  readonly electiveHonoured: number;
+  readonly standingMoves: number;
+  readonly sealsJudged: number;
+  readonly sealsContradicted: number;
+  readonly sealsUnmarked: number;
+  readonly deedSetFaults: number;
+  readonly proceedsMinor: number;
+  readonly paidEscrowedMinor: number;
+  readonly paidElectiveMinor: number;
+  readonly unattributedMinor: number;
+  readonly recordedLossMinor: number;
+  readonly levyShort: number;
+  readonly levyBuilt: false;
+}
+
 export interface SimResult {
   readonly lines: readonly SimLine[];
   readonly halted: boolean;
@@ -160,6 +201,17 @@ export interface SimResult {
   readonly decisions: Readonly<Record<string, number>>;
   readonly rollbackGaps: readonly string[];
   readonly buffers: Readonly<Record<string, number>>;
+  readonly reckonings: ReckoningTotals;
+  /** Per Reckoning, oldest first. Bounded; the totals above cover the whole run. */
+  readonly perReckoning: readonly ReckoningSummary[];
+  /**
+   * Alarms the runtime deliberately did not halt for.
+   *
+   * Printed, because the alternative to halting is *saying so*: a fault nobody prints
+   * is a fault nobody acts on, and every one of these is reachable without an agent's
+   * help (a refused row, a venture with no delivery, a restore that did not reproduce).
+   */
+  readonly operatorFaults: readonly string[];
 }
 
 /**
@@ -193,6 +245,7 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
 
   const lines: SimLine[] = [];
   const violations: string[] = [];
+  const perReckoning: ReckoningSummary[] = [];
   let applied = 0;
   let refused = 0;
   let halted = false;
@@ -200,6 +253,9 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
   let ticksRun = 0;
 
   for (let n = 0; n < args.ticks; n += 1) {
+    // The world stops when it stops. A scheduler that keeps calling a PAUSED engine is
+    // the "verify the invisible" failure, and `runTick` throws rather than pretend.
+    if (runtime.paused) break;
     const tick = runtime.engine.tick + 1;
     if (cast !== null) {
       for (const action of cast.decide(tick, args.seed)) {
@@ -216,6 +272,13 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     const line: SimLine = { tick: report.tick, stateHash: report.stateHash };
     lines.push(line);
     if (emit !== undefined) emit(line);
+    // Collected per tick rather than read once at the end: the runtime's own log is
+    // bounded (INV-26), so a long run would otherwise report only the last few
+    // Reckonings and a reader would have no way to tell that from a quiet season.
+    if (report.clock.isSettlementTick) {
+      const settled = runtime.reckonings().at(-1);
+      if (settled !== undefined && settled.tick === report.tick) perReckoning.push(settled);
+    }
 
     if (args.assertEveryTick && report.violations.length > 0) {
       for (const v of report.violations) {
@@ -241,6 +304,39 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     decisions: runtime.census.distribution(),
     rollbackGaps: runtime.engine.rollbackGaps,
     buffers: runtime.bufferSizes(),
+    reckonings: totalise(perReckoning),
+    perReckoning,
+    operatorFaults: runtime.operatorFaults(),
+  };
+}
+
+/** Sum the per-Reckoning rows. Counted, never inferred — see {@link ReckoningTotals}. */
+export function totalise(rows: readonly ReckoningSummary[]): ReckoningTotals {
+  const sum = (pick: (row: ReckoningSummary) => number): number =>
+    rows.reduce((n, row) => n + pick(row), 0);
+  return {
+    reckonings: rows.length,
+    committed: rows.filter((r) => r.committed).length,
+    obligations: sum((r) => r.obligations),
+    settlements: sum((r) => r.settled),
+    defaulted: sum((r) => r.defaulted),
+    deferrals: sum((r) => r.deferred),
+    defaults: sum((r) => r.defaults),
+    electiveHonoured: sum((r) => r.electiveHonoured),
+    standingMoves: sum((r) => r.standingMoves),
+    sealsJudged: sum((r) => r.sealsJudged),
+    sealsContradicted: sum((r) => r.sealsContradicted),
+    sealsUnmarked: sum((r) => r.sealsUnmarked),
+    deedSetFaults: sum((r) => r.deedSetFaults),
+    proceedsMinor: sum((r) => r.proceeds),
+    paidEscrowedMinor: sum((r) => r.paidEscrowed),
+    paidElectiveMinor: sum((r) => r.paidElective),
+    unattributedMinor: sum((r) => r.unattributed),
+    recordedLossMinor: sum((r) => r.recordedLoss),
+    // The Levy is SPEC §16 step 10 and is not built. Zero with a flag beside it, so it
+    // cannot be read as "every assessment was paid" (A14).
+    levyShort: 0,
+    levyBuilt: false,
   };
 }
 
@@ -275,6 +371,8 @@ export function main(argv: readonly string[]): number {
       refused: result.refused,
       ventures: result.ventures,
       decisions: result.decisions,
+      reckonings: result.reckonings,
+      per_reckoning: result.perReckoning,
       buffers: result.buffers,
       elapsed_ms: elapsedMs,
       final_state_hash: result.lines[result.lines.length - 1]?.stateHash ?? null,
@@ -284,6 +382,10 @@ export function main(argv: readonly string[]): number {
       process.stderr.write(
         `rollback gaps (tables that cannot be restored in-process): ${result.rollbackGaps.join(', ')}\n`,
       );
+    }
+    if (result.operatorFaults.length > 0) {
+      process.stderr.write(`OPERATOR FAULTS (${String(result.operatorFaults.length)}), not halts:\n`);
+      for (const fault of result.operatorFaults) process.stderr.write(`  ${fault}\n`);
     }
   }
 

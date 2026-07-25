@@ -57,6 +57,7 @@ import { storesAccount } from '../ledger/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
   escrowRequired,
+  IN_FULL,
   kindSpec,
   openIndices,
   pinnedConsideration,
@@ -402,17 +403,35 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
     if (venture.termsHash === null) continue;
     const role = roleOfPrincipal(venture, principal);
     const owed = role === null ? escrowRequired(venture) : minor(0);
+    // ── The election rides on the signature, so the affordance carries it ──────
+    //
+    // The payer's election has no verb of its own (see `Runtime.vSign`, and it is
+    // reported as a canon gap), and an affordance is a **complete, copyable act**:
+    // `test/api/blind-play.test.ts` exists because agents do exactly what the document
+    // tells them and copy these params verbatim. A `sign` affordance with no election
+    // would therefore be the server handing the payer an act whose consequence is a
+    // `DECLINED` default — "a deliberate refusal" — against an agent that refused
+    // nothing. `IN_FULL` is offered rather than an amount because the amount is a trap
+    // on a share role (§7.1); declining is done by sending `election: 0`, and the
+    // sentence below says so.
+    const payer = venture.creator === principal;
     eligible.push({
       verb: 'sign',
       params: {
         venture: venture.id,
         terms_hash: venture.termsHash,
         your_take_at_p50: yourTakeAtP50(venture, principal),
+        ...(payer ? { election: IN_FULL } : {}),
       },
       cost: 1,
       max_direct_loss: owed,
       max_contingent_liability: electiveOwed(venture, principal),
-      what_it_forecloses: 'signing binds you to these terms; the terms_hash cannot be amended afterwards.',
+      what_it_forecloses: payer
+        ? 'signing binds you to these terms; the terms_hash cannot be amended afterwards. The election is ' +
+          'yours and stays yours: IN_FULL pays whatever the elective half turns out to be, an amount pays ' +
+          'exactly that much, and sending no election at all pays nothing — which is a decline, and a ' +
+          'decline is a default on the record. Restate it with sign at any time before the freeze.'
+        : 'signing binds you to these terms; the terms_hash cannot be amended afterwards.',
       expires_tick: venture.windowClosesTick,
       quote_id: quoteId(principal, tick, 'sign', { venture: venture.id }),
     });

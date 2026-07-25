@@ -150,8 +150,14 @@ describe('SCAR-14b — the health check asserts the interesting property', () =>
     expect(Object.keys(r['buffers'] as Record<string, number>).length).toBeGreaterThan(3);
     // Named rather than hidden: a table with no `restore` cannot be rolled back on a
     // halt, and an operator has to know that before deciding to resume.
+    //
+    // **Empty is now the correct answer**, and it is a stronger claim than the one this
+    // line used to make. `venture` was the gap; it has a verified restore, so every
+    // registered state table can be put back and a halted tick is genuinely undone.
+    // Asserted as equality rather than "does not contain venture", so a table that
+    // loses its restore path shows up here rather than in an operator's night.
     expect(Array.isArray(r['rollback_gaps'])).toBe(true);
-    expect(r['rollback_gaps']).toContain('venture');
+    expect(r['rollback_gaps']).toEqual([]);
   });
 
   it('is unhealthy while the world is PAUSED, and says what to do', async () => {

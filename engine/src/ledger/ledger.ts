@@ -26,6 +26,7 @@
  * construction.
  */
 
+import type { ValueLedger } from './accounts.js';
 import { canonicalHash, type CanonicalValue } from '../core/canonical.js';
 import type {
   AccountId,
@@ -150,6 +151,62 @@ export class Ledger {
     const a = this.accounts.get(id);
     if (a === undefined) throw new LedgerError(`unknown account ${id}`);
     return a;
+  }
+
+  /**
+   * Put the mutable half back, and truncate the append-only half.
+   *
+   * The abort path (SPEC §15.2) and DET-3's replay both need this: without it the
+   * ledger could not be a rollback-complete state table, so money sat outside
+   * `state_hash` and a halted tick left balances dirty for the next one.
+   *
+   * Truncation is exact rather than approximate. `postings` and `batches` only ever
+   * grow, so cutting them back to a captured length restores precisely the state the
+   * snapshot was taken over — there is no partial row to unwind and no ordering to
+   * rebuild. Growing them here would be a bug, so it is refused.
+   */
+  restoreTo(state: {
+    readonly accounts: readonly {
+      readonly id: AccountId;
+      readonly kind: AccountKind;
+      readonly principal: PrincipalId | null;
+      readonly name: string | null;
+      readonly ledger: ValueLedger | null;
+      readonly balanceMinor: Minor;
+      readonly movedQty: ReadonlyMap<GoodId, Qty>;
+    }[];
+    readonly lots: readonly Lot[];
+    readonly postingCount: number;
+    readonly batchCount: number;
+  }): void {
+    if (state.postingCount > this.postings.length || state.batchCount > this.batches.length) {
+      // A restore that had to ADD an append-only row would mean the snapshot came from
+      // a future the ledger never reached — a corrupted triple, not a rollback.
+      throw new LedgerError(
+        `restore would grow an append-only table (postings ${String(this.postings.length)} -> ` +
+          `${String(state.postingCount)}, batches ${String(this.batches.length)} -> ` +
+          `${String(state.batchCount)}); the snapshot does not belong to this ledger`,
+      );
+    }
+
+    this.accounts.clear();
+    for (const a of state.accounts) {
+      this.accounts.set(a.id, {
+        id: a.id,
+        kind: a.kind,
+        principal: a.principal,
+        name: a.name,
+        ledger: a.ledger,
+        balanceMinor: a.balanceMinor,
+        movedQty: new Map(a.movedQty),
+      });
+    }
+
+    this.lots.clear();
+    for (const lot of state.lots) this.lots.set(lot.id, { ...lot });
+
+    this.postings.length = state.postingCount;
+    this.batches.length = state.batchCount;
   }
 
   allAccounts(): readonly Account[] {

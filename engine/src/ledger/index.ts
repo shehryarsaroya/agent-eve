@@ -112,3 +112,6 @@ export {
   type ValuationReason,
   type ValuationRule,
 } from './valuation.js';
+
+export { ledgerStateTable, LedgerRestoreError } from './stateTable.js';
+export type { LedgerRestore, LedgerAccountRow } from './stateTable.js';
