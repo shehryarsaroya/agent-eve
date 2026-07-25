@@ -1,0 +1,28 @@
+[Unit]
+# Stateless API workers serving pre-built observation blobs. These never write
+# world state; the sim is the only writer.
+Description=THE COMPACT — agent API
+After=network-online.target postgresql.service compact-sim.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/compact/engine
+EnvironmentFile=/etc/compact/env
+ExecStart=/usr/bin/node --experimental-strip-types src/api/server.ts
+Restart=always
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=compact-api
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/compact
+
+[Install]
+WantedBy=multi-user.target
