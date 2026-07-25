@@ -470,7 +470,7 @@ The gate, and the reason two of three goals exist.
 
 The scoring panel put Operability at 4/10, the lowest score of any dimension. These are the tests that raise it.
 
-- `OPS-1` **A verified restore before the first real row exists.** WAL archiving configured, a restore performed, and the restored world's `state_hash` compared against the original. An unverified backup is not a backup.
+- `OPS-1` **A verified restore before the first real row exists.** WAL archiving configured, a restore performed, and the restored world's `state_hash` compared against the original. An unverified backup is not a backup. *Implemented as `deploy/verify-restore.sh`; passing since 2026-07-24. It earned its keep on the first run by finding that `pg_basebackup` alone is not restorable on Ubuntu — config lives outside the data dir, and the packaged `postgresql.conf` hard-codes `data_directory` at the live cluster, so a naive restore silently attaches to production.*
 - `OPS-2` Halt and resume: `E2E-30`, `E2E-31`.
 - `OPS-3` Partition pre-creation 7 days ahead, with a boot assertion. The failure mode is a world that stops accepting events at midnight.
 - `OPS-4` Deploy: fresh names for port, unit, env file, data dir, code dir, nginx path. **Never `rsync --delete` into a directory containing anything not synced.** House cast explicitly excluded. **After every deploy, assert the components not deployed are still running *and still deciding*** (scar #4 + scar #14b).

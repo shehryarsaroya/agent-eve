@@ -45,6 +45,18 @@
 
 **Do not touch:** `/var/www/agentinsurance.io/{index.html,whitepaper.html,assets,css,js,fonts,data}` — that is the live landing page (200 OK). The vhost already sets `real_ip_header CF-Connecting-IP` from the Cloudflare ranges, which is what `SEC-5` requires; reuse it rather than re-deriving it.
 
+### Postgres (installed 2026-07-24)
+
+PostgreSQL **16.14**, cluster `16/main` on :5432. Database `compact` owned by role `compact`.
+
+- **`LC_COLLATE=C` / `LC_CTYPE=C` set at the database level.** This is the real fix for the locale-collation determinism killer (SPEC §15.5) — it makes the bug *impossible* rather than something every `ORDER BY` has to remember.
+- WAL archiving on, to `/var/lib/compact/wal-archive`. Config in `/etc/postgresql/16/main/conf.d/compact.conf` (source of truth: `deploy/postgres-compact.conf` in this repo).
+- Runtime env at `/etc/compact/env`, mode 600. The password was generated **on the server** and written straight to that file; it has never been printed and is not in this repo.
+
+> ⚠️ **`pg_basebackup` alone is NOT a restorable backup on Ubuntu.** The packaged layout keeps `postgresql.conf`, `pg_hba.conf` and `pg_ident.conf` in `/etc/postgresql/16/main`, **outside** the data directory, so a restored data dir will not start. Worse, the packaged `postgresql.conf` hard-codes `data_directory` at the *live* cluster, so a naive restore silently attaches to production. `deploy/verify-restore.sh` backs up the config directory too and strips those path settings on restore. **Found by running OPS-1 before the first real row** — which is the whole argument for running it then rather than during an incident.
+
+`deploy/verify-restore.sh` is the OPS-1 gate: base backup → `pg_verifybackup` manifest check → restore into a throwaway cluster on :5499 → assert a canary row and row counts survived → assert collation survived → clean up. Passing as of 2026-07-24.
+
 ---
 
 ## 2. Web serving
