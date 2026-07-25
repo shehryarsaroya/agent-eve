@@ -231,7 +231,8 @@ import {
   type SettlementAccounts,
   type VentureRecord,
 } from '../venture/index.js';
-import type { RoleTerms, VentureKind } from '../core/types.js';
+import { GrantBook, grantsStateTable } from '../grant/index.js';
+import type { Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
 import {
   createWorld,
   enroll,
@@ -289,6 +290,36 @@ export const DELIVERY_LEAD_TICKS = FREEZE_TICKS + 1;
 
 /** Elections held for un-resolved ventures. Bounded (INV-26, scar #3). */
 export const MAX_ELECTIONS = 2_048;
+
+/**
+ * The longest a grant may live: ~3 Reckonings (SPEC §8.1 #5, scar #7 — the sticky
+ * vow). A short life is what makes each renewal a *decision* and keeps "months of
+ * honest work" a visible chain of renewals rather than one unrevisable grant.
+ */
+export const GRANT_MAX_LIFETIME_TICKS = 3 * TICKS_PER_RECKONING;
+
+/**
+ * A total cap on the grant book (INV-26): a principal that minted grants without
+ * limit would bloat `state_hash` and every capture. Generous, because grants expire
+ * and a real world clears them by time; deterministic pruning of expired rows is a
+ * follow-on (until then a long season is bounded by this, not by expiry).
+ */
+export const MAX_GRANTS = 4_096;
+
+/**
+ * The named grant templates (SPEC §8: "ship 5–8 named templates"). For now these are
+ * labels an agent picks so a receipt reads as an *office* rather than a raw limit
+ * pair; server-computed per-template worst cases are a follow-on. `custom` is the
+ * escape hatch for an explicit, un-templated limit pair.
+ */
+export const GRANT_TEMPLATES: readonly string[] = Object.freeze([
+  'treasury-hand',
+  'quartermaster',
+  'escort-captain',
+  'factor',
+  'steward',
+  'custom',
+]);
 
 /**
  * Statements accepted into the **open window** and not yet resolved. Bounded (INV-26).
@@ -1004,6 +1035,14 @@ export class Runtime {
    */
   private ventureBook = new VentureBook();
 
+  /**
+   * The live table of scoped authority (SPEC §8, A6). Assigned rather than readonly
+   * because `grantsStateTable` replaces it wholesale on an abort/restore, exactly as
+   * the venture book and election map are replaced.
+   */
+  private grantBook = new GrantBook();
+  private grantCounter = 0;
+
   /** Resolution-time refusals awaiting delivery, per principal. See the type's note. */
   private readonly pendingCorrections = new Map<PrincipalId, Ring<PendingCorrection>>();
   private readonly talk = new Ring<TalkEntry>(MAX_TALK_ENTRIES);
@@ -1153,6 +1192,16 @@ export class Runtime {
             this.levyBookRef = book;
           },
         ),
+        // Grants are the A6 betrayal surface, so the book a delegate's on-behalf act is
+        // checked against is inside `state_hash` and the abort path — two worlds that
+        // disagree about who may spend whose stores must never hash the same, and an
+        // aborted tick must not leave a grant's spend counter advanced. See INV-22/23.
+        grantsStateTable(
+          () => this.grantBook,
+          (book) => {
+            this.grantBook = book;
+          },
+        ),
       ],
       verbs: this.verbTable(),
       // §17 and agent.md: "one seal per role you hold is free and costs no action".
@@ -1264,6 +1313,11 @@ export class Runtime {
   /** The venture book. Never held across a tick boundary: the rollback replaces it. */
   get ventures(): VentureBook {
     return this.ventureBook;
+  }
+
+  /** The grant book (A6). Never held across a tick boundary: the rollback replaces it. */
+  get grants(): GrantBook {
+    return this.grantBook;
   }
 
   /** The Levy's book. Never held across a tick boundary: the rollback replaces it. */
@@ -1691,6 +1745,12 @@ export class Runtime {
       // an offline agent can meet it") true without a second execution path.
       deliver: (ctx, req) => this.vDeliver(ctx, req),
       vote: (ctx, req) => this.vVote(ctx, req),
+      // ── A6: the two grant verbs. Issuing is a COMMITMENT, so it is refused in the
+      // freeze like any other (§8.1: no grant spend in the settlement window). Revoking
+      // is NOT behind `committing`: SPEC §8.1 #6 makes revocation always accepted, and
+      // the attempted revocation is itself what posts — better drama than either extreme.
+      grant: (ctx, req) => this.committing(ctx) ?? this.vGrant(ctx, req),
+      revoke: (ctx, req) => this.vRevoke(ctx, req),
     };
   }
 
@@ -2215,6 +2275,178 @@ export class Runtime {
       );
     }
     this.elections.set(key, raw);
+    return { ok: true, value: null };
+  }
+
+  private mintGrantId(tick: number, principal: PrincipalId): GrantId {
+    this.grantCounter += 1;
+    const stamp = canonicalHash({ tick, principal, ordinal: this.grantCounter }).slice(0, 8);
+    return `g:${String(tick)}:${stamp}` as GrantId;
+  }
+
+  /**
+   * `grant` — hand a delegate scoped authority over your OWN stores (SPEC §8, A6). This
+   * is the core loop's issuance half: the grant, and the worst case accepted before
+   * signing, both on the permanent public record. The *use* of it (betrayal or not) is
+   * the delegate's, later, through ordinary verbs — there is no `betray()`.
+   *
+   * ── WHY A PARAMS PATH, NOT A SUBMITTED VC ──────────────────────────────────
+   * A grant serialises AS a W3C VC (`identity/vc.ts`), signed by the grantor — that is
+   * how a counterparty verifies a delegate offline. But the `Keyring` holds only public
+   * keys and the house cast has no keypair, so the runtime cannot mint a VC and the cast
+   * could never grant. So the authoritative record is this row (hashed, replayed,
+   * enforced), created from parameters under the grantor's already-authenticated action;
+   * the signed, portable VC is the grantor's to produce from these same claims. Both
+   * describe one grant — the row is what the tick loop enforces, the credential is what
+   * travels.
+   */
+  private vGrant(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const grantor = req.principal;
+    const delegate = readString(req.params, ['delegate', 'to', 'grantee']) as PrincipalId | null;
+    if (delegate === null) {
+      return reject(
+        'A2',
+        'grant needs {"delegate":"<principal>","template":"...","max_direct_loss":N,' +
+          '"max_contingent_liability":N,"expires_tick":T}. The delegate then acts on your stores within ' +
+          'these LIMITS, and these two numbers are the most it can ever lose you — shown before you sign (A7).',
+      );
+    }
+    if (delegate === grantor) {
+      // A→…→A launders unlimited self-authority into a scoped namespace where the limits
+      // were stripped (SPEC §8.1 #4, INV-23). The first hop of that is a self-grant.
+      return reject(
+        'INV-23',
+        'you cannot grant authority to yourself: a delegate spends someone ELSE\'s stores under a limit, and ' +
+          'authority over your own is already unlimited.',
+      );
+    }
+    if (this.world.holdingByPrincipal.get(delegate) === undefined) {
+      return reject('A2', `there is no principal ${delegate} to delegate to; name one that has enrolled.`);
+    }
+    const template = readString(req.params, ['template']) ?? 'custom';
+    if (!GRANT_TEMPLATES.includes(template)) {
+      return reject('A2', `template must be one of ${GRANT_TEMPLATES.join(', ')}; got "${template}".`);
+    }
+    const maxDirect = readInt(req.params, ['max_direct_loss', 'maxDirectLoss']);
+    const maxContingent = readInt(req.params, ['max_contingent_liability', 'maxContingentLiability']) ?? 0;
+    if (maxDirect === null || maxDirect < 0 || maxContingent < 0) {
+      return reject(
+        'A7',
+        'a grant must state its worst case: max_direct_loss (≥0) and max_contingent_liability (≥0). LIMITS ' +
+          'cap destruction, not just transfers — a delegate can burn your cargo without moving a coin, so both ' +
+          'halves are bounded (SPEC §8.1 #2).',
+      );
+    }
+    const expiresTick = readInt(req.params, ['expires_tick', 'expiresTick']);
+    if (expiresTick === null || expiresTick <= ctx.tick) {
+      return reject(
+        'A2',
+        `a grant must expire in the future: expires_tick must be greater than ${String(ctx.tick)}. Grants ` +
+          'expire by design (SPEC §8.1 #5) — the short life is what makes each renewal a decision.',
+      );
+    }
+    if (expiresTick > ctx.tick + GRANT_MAX_LIFETIME_TICKS) {
+      return reject(
+        'A14',
+        `a grant may live at most ${String(GRANT_MAX_LIFETIME_TICKS)} ticks (~3 Reckonings): expires_tick ` +
+          `must be ≤ ${String(ctx.tick + GRANT_MAX_LIFETIME_TICKS)}. Authority decays and must be renewed ` +
+          '(scar #7, the sticky vow); a renewal is a fresh, visible decision.',
+      );
+    }
+    if (this.grantBook.all().length >= MAX_GRANTS) {
+      // Every grant is a new row (unique id), so unlike an election there is no free
+      // "restate" case — the book only grows, so bound it (INV-26).
+      return reject(
+        'INV-26',
+        `the grant book is at its cap of ${String(MAX_GRANTS)}. Grants expire; wait for outstanding ones to ` +
+          'lapse, or revoke ones you no longer need.',
+      );
+    }
+    const id = this.mintGrantId(ctx.tick, grantor);
+    const grant: Grant = {
+      id,
+      grantor,
+      delegate,
+      template,
+      maxDirectLoss: minor(maxDirect),
+      maxContingentLiability: minor(maxContingent),
+      spentDirect: minor(0),
+      spentContingent: minor(0),
+      expiresTick,
+      revokedAtTick: null,
+    };
+    this.grantBook.add(grant);
+    ctx.emit({
+      tick: ctx.tick,
+      kind: 'grant.issued',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: grantor,
+      onBehalfOfPrincipalId: null,
+      grantId: id,
+      eventFamilyId: `grant::${id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        grant: id,
+        grantor,
+        delegate,
+        template,
+        maxDirectLoss: maxDirect,
+        maxContingentLiability: maxContingent,
+        expiresTick,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `revoke` — end a grant you issued (SPEC §8.1 #6). Always accepted, takes effect the
+   * NEXT tick (a role committed under it before then is not unwound), and the attempted
+   * revocation is itself what posts publicly — better drama than a silent kill or an
+   * un-revokable vow.
+   */
+  private vRevoke(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const grantId = readString(req.params, ['grant', 'grant_id', 'grantId']) as GrantId | null;
+    if (grantId === null) return reject('A2', 'revoke needs {"grant":"<id>"}.');
+    const grant = this.grantBook.get(grantId);
+    if (grant === undefined) return reject('PROP-V6', `there is no grant ${grantId}.`);
+    if (grant.grantor !== req.principal) {
+      return reject(
+        'INV-23',
+        `only ${grant.grantor} may revoke ${grantId}: a delegate cannot revoke the authority handed to it.`,
+      );
+    }
+    const alreadyRevoked = grant.revokedAtTick !== null;
+    this.grantBook.revoke(grantId, ctx.tick);
+    // Idempotent: a second revoke is accepted (§8.1 #6) but does not re-post — the record
+    // already carries the revocation, and a second identical row would be noise.
+    if (alreadyRevoked) return { ok: true, value: null };
+    ctx.emit({
+      tick: ctx.tick,
+      kind: 'grant.revoked',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId,
+      eventFamilyId: `grant::${grantId}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: { grant: grantId, delegate: grant.delegate, effectiveTick: ctx.tick + 1 },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
     return { ok: true, value: null };
   }
 
