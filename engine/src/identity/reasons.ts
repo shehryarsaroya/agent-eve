@@ -109,6 +109,13 @@ export type CredentialRejection =
   | 'CREDENTIAL_WRONG_ISSUER'
   /** The issuer key is unknown to this world (only checked when a directory is supplied). */
   | 'CREDENTIAL_ISSUER_KEY_UNKNOWN'
+  /**
+   * The issuing key is registered but retired at the tick we are judging.
+   * Distinct from CREDENTIAL_WRONG_ISSUER on purpose: the key really does belong
+   * to the claimed principal, it simply may no longer issue. Collapsing the two
+   * would tell a rotating principal its own key was never its own.
+   */
+  | 'CREDENTIAL_ISSUER_KEY_RETIRED'
   /** `validUntilTick` has passed. */
   | 'CREDENTIAL_EXPIRED'
   /** `validFromTick` has not arrived. */
@@ -121,7 +128,7 @@ export type CredentialRejection =
   | 'CREDENTIAL_CHAIN_CYCLE'
   /** The chain does not begin at the grantor, or does not end at this issuer. */
   | 'CREDENTIAL_CHAIN_INCOHERENT'
-  /** A limit is negative, or the mandate is otherwise unenforceable. */
+  /** A limit is negative, or the claims is otherwise unenforceable. */
   | 'CREDENTIAL_LIMITS_INVALID';
 
 /**

@@ -82,7 +82,10 @@ CREATE TABLE IF NOT EXISTS account (
 -- ─────────────────────────────────────────────────────────────────────────────
 
 CREATE TYPE provenance_class AS ENUM ('FACT', 'ASSERTION', 'ESTIMATE');
-CREATE TYPE decision_source  AS ENUM ('LIVE', 'STANDING', 'DELEGATE', 'HEURISTIC', 'FALLBACK');
+-- INTENT, not STANDING: §3 gives STANDING to the public factual vectors, and
+-- both would ship in the same payload. A3's word for a durable pre-set decision
+-- is "intent".
+CREATE TYPE decision_source  AS ENUM ('LIVE', 'INTENT', 'DELEGATE', 'HEURISTIC', 'FALLBACK');
 
 CREATE TABLE IF NOT EXISTS event (
   id                        text        NOT NULL,

@@ -1,0 +1,177 @@
+{
+  "__meta": {
+    "what": "Golden file for splitByBps (src/core/units.ts). INV-6 and DET-1.",
+    "why": "INV-6: every settled venture split sums exactly to its proceeds and the remainder is accounted, never dropped. A dropped remainder is how a ledger silently stops balancing, and it would not show up as an error - only as a total that quietly drifts.",
+    "remainder_rule": "One minor unit per weight, in the order the weights were given, until the remainder is gone. Callers must pass weights in a canonical order (settlement uses venture_id then role_index), which is what makes INV-6 and DET-1 hold at the same time.",
+    "negative_zero": "Entries the remainder loop did not touch can be -0 for a negative amount, because Math.trunc(-0.5) is -0. Recorded here as 0; the test compares with Object.is-awareness and asserts the sum, which is the invariant that matters.",
+    "canonical_version": 1,
+    "regenerate": "The hand-authored columns are the oracle. To add a case: write it here with a deliberately wrong derived value, run the matching test in test/core, and copy the expected value out of the failure. Never paste engine output in without checking it against arithmetic you did yourself - that turns an oracle into a snapshot of a bug."
+  },
+  "splits": [
+    {
+      "name": "even_halves",
+      "note": "the base case: nothing to allocate",
+      "amount": 100,
+      "weights": [
+        5000,
+        5000
+      ],
+      "parts": [
+        50,
+        50
+      ]
+    },
+    {
+      "name": "thirds_remainder_one",
+      "note": "truncation loses 1 minor unit; it goes to the first weight, never the largest",
+      "amount": 100,
+      "weights": [
+        3333,
+        3333,
+        3334
+      ],
+      "parts": [
+        34,
+        33,
+        33
+      ]
+    },
+    {
+      "name": "amount_smaller_than_weight_count",
+      "note": "INV-6: 1 minor unit across 3 weights still sums to 1 - the remainder is never dropped",
+      "amount": 1,
+      "weights": [
+        3333,
+        3333,
+        3334
+      ],
+      "parts": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "zero_amount",
+      "note": "zero splits to zeros, and the loop must not spin",
+      "amount": 0,
+      "weights": [
+        2500,
+        2500,
+        2500,
+        2500
+      ],
+      "parts": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "negative_amount_even",
+      "note": "a clawback splits like a payout",
+      "amount": -100,
+      "weights": [
+        5000,
+        5000
+      ],
+      "parts": [
+        -50,
+        -50
+      ]
+    },
+    {
+      "name": "negative_amount_with_remainder",
+      "note": "the remainder carries the sign of the amount; the trailing entries are -0 (see contract notes)",
+      "amount": -1,
+      "weights": [
+        5000,
+        5000
+      ],
+      "parts": [
+        -1,
+        0
+      ]
+    },
+    {
+      "name": "single_full_weight",
+      "note": "one role takes everything",
+      "amount": 999999,
+      "weights": [
+        10000
+      ],
+      "parts": [
+        999999
+      ]
+    },
+    {
+      "name": "zero_weight_still_receives_remainder",
+      "note": "DEFECT pinned deliberately: a 0 bps weight is handed a minor unit because the remainder walks the weights in order",
+      "amount": 1,
+      "weights": [
+        0,
+        5000,
+        5000
+      ],
+      "parts": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "many_weights_max_remainder",
+      "note": "remainder is at most weights.length - 1, and all of it is allocated",
+      "amount": 10007,
+      "weights": [
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000
+      ],
+      "parts": [
+        1001,
+        1001,
+        1001,
+        1001,
+        1001,
+        1001,
+        1001,
+        1000,
+        1000,
+        1000
+      ]
+    },
+    {
+      "name": "lopsided_weights",
+      "note": "a 1 bps role gets nothing from a small pot, and the pot still balances",
+      "amount": 7,
+      "weights": [
+        1,
+        9999
+      ],
+      "parts": [
+        1,
+        6
+      ]
+    },
+    {
+      "name": "largest_splittable_amount",
+      "note": "the ceiling: amount * 10000 must stay a safe integer, so this is the largest split possible",
+      "amount": 900719925474,
+      "weights": [
+        10000
+      ],
+      "parts": [
+        900719925474
+      ]
+    }
+  ]
+}

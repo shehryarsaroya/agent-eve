@@ -19,6 +19,7 @@ import type { AccountId, EventId, GoodId, InvariantViolation, Posting } from '..
 import type { Minor, Qty } from '../core/units.js';
 import type { Account, ValueLedger } from './accounts.js';
 import { isWorldAccount } from './accounts.js';
+import { compareIds } from './order.js';
 
 /** A supply change is always attributable, so its faucet or sink is named. */
 export type SupplyDirection = 'ISSUE' | 'RETIRE';
@@ -207,9 +208,4 @@ export function checkBatchForm(
   }
 
   return out;
-}
-
-/** Code-unit ordering. Locale collation is a determinism killer (SPEC §15.5). */
-export function compareIds(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }

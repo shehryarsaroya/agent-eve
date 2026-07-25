@@ -1,0 +1,53 @@
+{
+  "note": "The Phase 0 launch map. \"Authored\" means this hash cannot change without this file changing. Regenerate deliberately, never to make a test pass.",
+  "seed": "the-compact:phase0:region-1",
+  "hash": "f927eddf46cd32889a82273aac22b824418f3412926e370eaecf0e73cbcfe1a5",
+  "systemCount": 30,
+  "laneCount": 35,
+  "constellations": [
+    {
+      "id": "con-1",
+      "name": "Hearth",
+      "systems": 7
+    },
+    {
+      "id": "con-2",
+      "name": "Threshold",
+      "systems": 8
+    },
+    {
+      "id": "con-3",
+      "name": "Marrow",
+      "systems": 7
+    },
+    {
+      "id": "con-4",
+      "name": "Vane",
+      "systems": 8
+    }
+  ],
+  "commons": [
+    "sys-01",
+    "sys-02",
+    "sys-03",
+    "sys-04"
+  ],
+  "interConstellationLanes": [
+    {
+      "key": "sys-05~sys-15",
+      "transitTicks": 16
+    },
+    {
+      "key": "sys-06~sys-20",
+      "transitTicks": 16
+    },
+    {
+      "key": "sys-09~sys-26",
+      "transitTicks": 16
+    },
+    {
+      "key": "sys-16~sys-25",
+      "transitTicks": 14
+    }
+  ]
+}

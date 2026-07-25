@@ -49,7 +49,7 @@ export type Handle = string & { readonly __brand: 'Handle' };
 export type Visibility = 'PUBLIC' | 'PARTIES' | 'SENSED' | 'SEALED' | 'PRIVATE';
 
 /** Where a decision came from. Without this, R3, R4 and the A4 audit are unmeasurable. */
-export type DecisionSource = 'LIVE' | 'STANDING' | 'DELEGATE' | 'HEURISTIC' | 'FALLBACK';
+export type DecisionSource = 'LIVE' | 'INTENT' | 'DELEGATE' | 'HEURISTIC' | 'FALLBACK';
 
 /** Authoritative fact vs. counterparty assertion vs. model estimate (SPEC §11.3). */
 export type ProvenanceClass = 'FACT' | 'ASSERTION' | 'ESTIMATE';
@@ -154,7 +154,7 @@ export interface Venture {
 
 /**
  * A scoped, expiring authority — serialised as a W3C Verifiable Credential so a
- * counterparty can verify a delegate's mandate *before* dealing with it.
+ * counterparty can verify a delegate's claims *before* dealing with it.
  *
  * `maxDirectLoss` bounds **destruction, not just transfers** (PROP-G1). The
  * attack that makes this necessary: a delegate sends your hands into a raid

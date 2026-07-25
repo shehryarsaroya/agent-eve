@@ -27,7 +27,7 @@ import type {
   VentureId,
 } from '../core/types.js';
 import { addMinor, minor, subMinor, type Minor } from '../core/units.js';
-import { compareIds } from './batch.js';
+import { compareIds } from './order.js';
 
 /** Why value is locked. An encumbrance with no live obligation is INV-4. */
 export type ObligationRef = VentureId | GrantId;
@@ -70,8 +70,8 @@ export function emptyObligationBook(): ObligationBook {
 
 /** A mutable obligation book for the tick loop and for tests. */
 export class SimpleObligationBook implements ObligationBook {
-  private readonly live = new Set<string>();
-  private readonly secured = new Set<string>();
+  private readonly live = new Set<ObligationRef>();
+  private readonly secured = new Set<ObligationRef>();
 
   open(ref: ObligationRef, requiresEncumbrance = false): void {
     this.live.add(ref);
@@ -88,7 +88,7 @@ export class SimpleObligationBook implements ObligationBook {
   }
 
   securedObligations(): readonly ObligationRef[] {
-    return [...this.secured].sort(compareIds) as ObligationRef[];
+    return [...this.secured].sort(compareIds);
   }
 }
 
@@ -101,13 +101,28 @@ export interface LockRequest {
   readonly obligationRef: ObligationRef;
   /**
    * The most this lock can *lose*, not the most it can move. Bounds destruction
-   * (PROP-G1) and is the only input to EXPOSURE. Must be 0..amountMinor.
+   * (PROP-G1) and is the only input to EXPOSURE. Non-negative, and deliberately
+   * **not** capped at `amountMinor` — a haul locks the escrow and risks the cargo,
+   * so the blast radius is routinely larger than the currency behind it.
    */
   readonly maxDirectLoss: Minor;
 }
 
 /** A lock over value that cannot be taken. It has no `maxDirectLoss` to shade. */
 export type SafeLockRequest = Omit<LockRequest, 'maxDirectLoss'>;
+
+/**
+ * What the book needs to know about the account a lock sits in. Supplied by the
+ * `Ledger`, so a lock cannot be created over value that is not there — INV-3's
+ * third clause then holds by construction rather than being caught an hour later
+ * at an `ASSERT` phase.
+ */
+export interface LockableAccount {
+  readonly kind: string;
+  readonly balanceMinor: Minor;
+}
+
+export type AccountLookup = (id: AccountId) => LockableAccount | undefined;
 
 export class EncumbranceBook {
   private readonly rows = new Map<string, Row>();
@@ -116,18 +131,42 @@ export class EncumbranceBook {
   /** Per-event lock counter, so ids are content-derived rather than global. */
   private readonly perEvent = new Map<string, number>();
 
+  constructor(private readonly lookup: AccountLookup) {}
+
   /**
-   * Lock value for an obligation. `maxDirectLoss` is stated by the caller and
-   * bounded by the lock, because a lock claiming to risk more than it holds makes
-   * EXPOSURE a number an agent can inflate for free.
+   * Lock value for an obligation.
+   *
+   * `maxDirectLoss` is **not** capped at the amount locked, and that is deliberate:
+   * a haul locks the escrow but risks the cargo too, so the blast radius of a
+   * commitment routinely exceeds the currency behind it. The number is computed by
+   * the engine and never supplied by an agent, so the thing that protects A7 is not
+   * a cap here but INV-5's `served` check — the EXPOSURE an agent was shown is the
+   * EXPOSURE the table holds.
+   *
+   * Locks live in STORES and nowhere else. Escrow is A7's *already committed* half —
+   * locking it a second time would let the same value back two obligations, which is
+   * the one thing `encumbrance_id` exists to prevent.
    */
   lock(req: LockRequest): string {
     if (req.amountMinor <= 0) {
       throw new EncumbranceError(`an encumbrance must lock a positive amount, got ${req.amountMinor}`);
     }
-    if (req.maxDirectLoss < 0 || req.maxDirectLoss > req.amountMinor) {
+    if (req.maxDirectLoss < 0) {
+      throw new EncumbranceError(`EXPOSURE cannot be negative, got ${req.maxDirectLoss}`);
+    }
+    const account = this.lookup(req.account);
+    if (account === undefined) {
+      throw new EncumbranceError(`INV-4: cannot lock value in unknown account ${req.account}`);
+    }
+    if (account.kind !== 'STORES') {
       throw new EncumbranceError(
-        `EXPOSURE must be 0..${req.amountMinor} for this encumbrance, got ${req.maxDirectLoss}`,
+        `a lock lives in a principal's STORES; ${req.account} is ${account.kind}`,
+      );
+    }
+    const free = subMinor(account.balanceMinor, this.encumberedInAccount(req.account));
+    if (req.amountMinor > free) {
+      throw new EncumbranceError(
+        `INV-3: ${req.account} has ${free} free and cannot lock ${req.amountMinor}`,
       );
     }
     const n = this.perEvent.get(req.eventId) ?? 0;
@@ -169,27 +208,56 @@ export class EncumbranceBook {
   }
 
   /**
-   * Shrink a lock because the value behind it is gone — a raid drained the
-   * account, or the pledged cargo burned. PROP-L3: an encumbrance is a claim on a
-   * thing, not a shield over it, so the lock yields and the caller records the
-   * difference as a loss. It must not record a default: the promise was not
-   * broken, the collateral was destroyed (SPEC §10.2).
+   * Shrink a lock because the currency behind it is gone — a raid drained the
+   * account. PROP-L3: an encumbrance is a claim on a thing, not a shield over it, so
+   * the lock yields and the caller records the difference as a **loss**. It must not
+   * record a default: the promise was not broken, the collateral was destroyed
+   * (SPEC §10.2).
+   *
+   * **The row is never auto-released**, even when nothing is left in it. Releasing on
+   * exhaustion would look tidy and would be a false-default generator: a secured
+   * obligation would abruptly "lack its encumbrance" and any lot pledged to it would
+   * become an orphan, so INV-4 would halt the tick in response to entirely
+   * legitimate predation (SPEC §15.4). The claim still exists; it simply has nothing
+   * behind it, which is exactly the story the record should tell. The obligation's
+   * owner releases it at settlement.
    *
    * Returns the amount the lock gave up.
    */
-  reduce(id: string, by: Minor, tick: number): Minor {
+  reduce(id: string, by: Minor): Minor {
     if (by < 0) throw new EncumbranceError(`cannot reduce an encumbrance by ${by}`);
+    const row = this.row(id);
+    const shed = minor(Math.min(by, row.amountMinor));
+    row.amountMinor = subMinor(row.amountMinor, shed);
+    // Less value behind the claim means less that can be lost from it.
+    this.shedPeril(row, shed);
+    return shed;
+  }
+
+  /**
+   * Shrink a lock's **peril** without touching the currency it locks — the pledged
+   * cargo burned, so the blast radius fell while the escrow is untouched. Separate
+   * from {@link reduce} on purpose: one word per concept, and conflating "the money
+   * went" with "the cargo went" is how EXPOSURE stops matching what an agent was
+   * shown.
+   */
+  reducePeril(id: string, by: Minor): Minor {
+    if (by < 0) throw new EncumbranceError(`cannot reduce peril by ${by}`);
+    return this.shedPeril(this.row(id), by);
+  }
+
+  private shedPeril(row: Row, by: Minor): Minor {
+    const shed = minor(Math.min(by, row.maxDirectLoss));
+    row.maxDirectLoss = subMinor(row.maxDirectLoss, shed);
+    this.bumpCache(row.principal, minor(0 - shed));
+    return shed;
+  }
+
+  private row(id: string): Row {
     const row = this.rows.get(id);
     if (row === undefined) throw new EncumbranceError(`unknown encumbrance ${id}`);
     if (row.releasedAtTick !== null) throw new EncumbranceError(`encumbrance ${id} is released`);
-    const shed = minor(Math.min(by, row.amountMinor));
-    row.amountMinor = subMinor(row.amountMinor, shed);
-    // EXPOSURE can never exceed the value actually locked, so it shrinks with it.
-    const lossShed = minor(Math.min(shed, row.maxDirectLoss));
-    row.maxDirectLoss = subMinor(row.maxDirectLoss, lossShed);
-    this.bumpCache(row.principal, minor(0 - lossShed));
-    if (row.amountMinor === 0) row.releasedAtTick = tick;
-    return shed;
+    return row;
   }
 
   get(id: string): Encumbrance | undefined {
@@ -252,7 +320,7 @@ export class EncumbranceBook {
     const seen = new Set<PrincipalId>();
     for (const row of this.rows.values()) seen.add(row.principal);
     for (const p of this.exposureCache.keys()) seen.add(p);
-    return [...seen].sort(compareIds) as PrincipalId[];
+    return [...seen].sort(compareIds);
   }
 
   private sortedRows(): Row[] {

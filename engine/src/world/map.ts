@@ -312,7 +312,7 @@ export function generateMap(seed: string, plan: MapPlan = LAUNCH_PLAN): WorldMap
     addLane(lanes, systems, from, to, 'INTER', transitRng);
   }
 
-  const laneOrder = [...lanes.keys()].sort(cmpStr) as LaneKey[];
+  const laneOrder = [...lanes.keys()].sort(cmpStr);
   const frozen = new Map<SystemId, StarSystem>();
   for (const id of systemOrder) {
     const s = systems.get(id);

@@ -1,0 +1,134 @@
+{
+  "__meta": {
+    "what": "Golden file for the Reckoning cycle (src/core/time.ts).",
+    "why": "The width of the commitment window is an agent-facing rule. If agent.md says \"you have N ticks to commit\" and the engine allows N-1, that is scar #1 with money on it. The table below is what the engine actually does, so a recalibration shows up as a diff a human reads.",
+    "note_on_width": "COMMITMENT_WINDOW_TICKS is 24 but the commitment window is 23 ticks wide, because the freeze tick falls inside \"the last 24 ticks\" and is excluded from commitments. Pinned so the off-by-one cannot drift into agent-facing text unnoticed.",
+    "canonical_version": 1,
+    "regenerate": "The hand-authored columns are the oracle. To add a case: write it here with a deliberately wrong derived value, run the matching test in test/core, and copy the expected value out of the failure. Never paste engine output in without checking it against arithmetic you did yourself - that turns an oracle into a snapshot of a bug."
+  },
+  "ticks_per_reckoning": 288,
+  "commitment_window_ticks_constant": 24,
+  "freeze_ticks_constant": 1,
+  "phases": {
+    "quiet": {
+      "first": 0,
+      "last": 263,
+      "count": 264
+    },
+    "commitment": {
+      "first": 264,
+      "last": 286,
+      "count": 23
+    },
+    "freeze": {
+      "first": 287,
+      "last": 287,
+      "count": 1
+    },
+    "settlement": {
+      "first": 287,
+      "last": 287,
+      "count": 1
+    }
+  },
+  "spot": [
+    {
+      "tick": -289,
+      "phase": 287,
+      "in_commitment_window": false,
+      "in_freeze": true,
+      "is_settlement_tick": true
+    },
+    {
+      "tick": -288,
+      "phase": 0,
+      "in_commitment_window": false,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": -1,
+      "phase": 287,
+      "in_commitment_window": false,
+      "in_freeze": true,
+      "is_settlement_tick": true
+    },
+    {
+      "tick": 0,
+      "phase": 0,
+      "in_commitment_window": false,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 1,
+      "phase": 1,
+      "in_commitment_window": false,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 263,
+      "phase": 263,
+      "in_commitment_window": false,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 264,
+      "phase": 264,
+      "in_commitment_window": true,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 286,
+      "phase": 286,
+      "in_commitment_window": true,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 287,
+      "phase": 287,
+      "in_commitment_window": false,
+      "in_freeze": true,
+      "is_settlement_tick": true
+    },
+    {
+      "tick": 288,
+      "phase": 0,
+      "in_commitment_window": false,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 575,
+      "phase": 287,
+      "in_commitment_window": false,
+      "in_freeze": true,
+      "is_settlement_tick": true
+    },
+    {
+      "tick": 576,
+      "phase": 0,
+      "in_commitment_window": false,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 288000000,
+      "phase": 0,
+      "in_commitment_window": false,
+      "in_freeze": false,
+      "is_settlement_tick": false
+    },
+    {
+      "tick": 288000287,
+      "phase": 287,
+      "in_commitment_window": false,
+      "in_freeze": true,
+      "is_settlement_tick": true
+    }
+  ]
+}

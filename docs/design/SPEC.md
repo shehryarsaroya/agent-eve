@@ -120,7 +120,7 @@ Four consequences run through everything below:
 | **OFFICE** | standing, revocable authority over an org's stores or structures | a job |
 | **GRANT** | a scoped, expiring authority | a capability |
 | **LIMITS** | a grant's bounds | an envelope |
-| **SEAL** | the pre-committed intention | a bonding tier; a visibility level |
+| **SEAL** | the pre-committed intention. The `SEALED` visibility tier is *this same concept* — the tier that holds seals — not a second one | a bonding tier |
 | **MESSAGE** | one typed act in a hosted private negotiation (§7.3) | a notification; the dispatch |
 | **DISPATCH** | the letter an agent emails its owner after a Reckoning | any in-game message |
 | **MANDATE** | an owner's published disposition — advice the agent may disregard | an order; a grant |
@@ -645,7 +645,7 @@ Deploy target is one Contabo VPS, 12 cores / 96 GB. At 300 principals × 3 hands
 
 > **The correction that matters:** "agent observations are projections of one event stream" gets built as fold-events-per-request, which is the canonical event-sourcing cliff and makes `expected_state_version` incoherent. **Replay's input is `(snapshot_T, action_log_T, seed_T) → snapshot_T+1`. Events are output, not input.**
 
-**Event fields — day one, non-retrofittable:** `tick` + `seq_in_tick` · `kind` · `rules_version` (accepted obligations pin the version they quoted, or a balance patch retroactively rewrites history) · `actor_principal_id` · `on_behalf_of_principal_id` + `grant_id` as **columns** · `event_family_id` (immutable primary cohort) · `parent_event_id` (causality — one flat field cannot express both) · `is_public` + an `event_audience` fan-out table (**not** a jsonb ACL, which is un-indexable and turns private-feed paging into a scan) · `public_at` · `declassify_at` · `provenance_class` as a column · `acted_on_state_version` · `decision_source ∈ {LIVE, STANDING, DELEGATE, HEURISTIC, FALLBACK}` — without which R3, R4 and the A4 audit are unmeasurable. Partition by range on `tick` from the first migration.
+**Event fields — day one, non-retrofittable:** `tick` + `seq_in_tick` · `kind` · `rules_version` (accepted obligations pin the version they quoted, or a balance patch retroactively rewrites history) · `actor_principal_id` · `on_behalf_of_principal_id` + `grant_id` as **columns** · `event_family_id` (immutable primary cohort) · `parent_event_id` (causality — one flat field cannot express both) · `is_public` + an `event_audience` fan-out table (**not** a jsonb ACL, which is un-indexable and turns private-feed paging into a scan) · `public_at` · `declassify_at` · `provenance_class` as a column · `acted_on_state_version` · `decision_source ∈ {LIVE, INTENT, DELEGATE, HEURISTIC, FALLBACK}` (**not** `STANDING` — §3 gives that word to the public factual vectors, and both would ship in the same payload; A3's own word for a durable pre-set decision is *intent*) — without which R3, R4 and the A4 audit are unmeasurable. Partition by range on `tick` from the first migration.
 
 **What v2.0 got wrong here:** "balanced `currency_*`/`items_*`/`obligations_*` on every event" duplicates the posting table — scar #5 inside the field list that exists to prevent scar #5. The correct invariant: *every value-moving event produces ≥2 postings summing to zero, or one ISSUE/RETIRE against a named faucet/sink*, asserted at tick close. And drop per-event state hashing; hash at tick boundaries only.
 

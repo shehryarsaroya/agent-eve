@@ -1,0 +1,440 @@
+{
+  "__meta": {
+    "what": "Golden file for canonical serialisation (src/core/canonical.ts). PROP-W1 and DET-4.",
+    "why": "terms_hash is what two principals countersign. If the same logical terms can serialise two ways, agents see hash mismatches and correctly read them as a counterparty reneging - the engine fabricating a betrayal, which is the A5-prime failure and worse than a crash.",
+    "cross_platform": "This file IS the cross-platform contract for DET-4. One test process cannot run two operating systems, so instead every platform must reproduce these exact strings and hashes. A Linux CI run failing this test is DET-4 firing.",
+    "canonical_version": 1,
+    "hash": "sha256 of the canonical string, hex - verifiable without running engine code",
+    "regenerate": "The canonical column is hand-authored and is the oracle; the hash column is derived from it. A diff here is either a deliberate canonicaliser version bump (CANONICAL_VERSION must change in the same commit) or a bug.",
+    "ascii_only": "Non-ASCII is written as \\uXXXX so NFC/NFD pairs and lone surrogates are unambiguous on inspection.",
+    "not_here": "Minus zero, undefined-valued keys, symbol keys and inherited keys are unrepresentable in JSON (JSON.stringify(-0) is \"0\"), so they live in canonical-edge.json with their inputs built in test/golden/edge-values.ts."
+  },
+  "cases": [
+    {
+      "name": "scalar_null",
+      "note": "null is a value, distinct from absent",
+      "value": null,
+      "canonical": "c1:null",
+      "hash": "89f7521208ab23812fb1960356e999ee1c1050c5693003f085d581f051b22588"
+    },
+    {
+      "name": "scalar_true",
+      "note": "booleans are bare words, never 0/1",
+      "value": true,
+      "canonical": "c1:true",
+      "hash": "18ce3f52c1c9a0b1d6c9cc83ce79b88f9b7532ad1e5bf869533d703c3b000568"
+    },
+    {
+      "name": "scalar_false",
+      "note": "booleans are bare words, never 0/1",
+      "value": false,
+      "canonical": "c1:false",
+      "hash": "348aee56e710b62348c9f2f662575c3798dd3ce3dd77f0eaa3c4d17f9f78ed2b"
+    },
+    {
+      "name": "scalar_zero",
+      "note": "plain integer",
+      "value": 0,
+      "canonical": "c1:0",
+      "hash": "7ba40d851e27969a84b73368f770a8efb9d2cc0658096ca326ab94edbe5d4ad0"
+    },
+    {
+      "name": "scalar_negative_integer",
+      "note": "sign is part of the digits, no separate marker",
+      "value": -42,
+      "canonical": "c1:-42",
+      "hash": "f7d6ce1e112c5821ad1fc970e2cdfadacb4ac530bbf3387204b4ac5995f257d9"
+    },
+    {
+      "name": "scalar_max_safe_integer",
+      "note": "the largest Minor that may be hashed; no exponent notation at any magnitude",
+      "value": 9007199254740991,
+      "canonical": "c1:9007199254740991",
+      "hash": "ad21c741e99fd96842f7f73e8e69ee0fe6203f57a8e8a33fda46600efed97ab7"
+    },
+    {
+      "name": "scalar_min_safe_integer",
+      "note": "the most negative Minor that may be hashed",
+      "value": -9007199254740991,
+      "canonical": "c1:-9007199254740991",
+      "hash": "1742165f5c8ce1198aa6bd5a21438456aad31471e7d1c9f12a445158e0c1922b"
+    },
+    {
+      "name": "scalar_empty_string",
+      "note": "an empty string is a value",
+      "value": "",
+      "canonical": "c1:\"\"",
+      "hash": "c2f3ccd3fa085250c382e2011826edf9014077228043f1115c3c3c1207f7c1f3"
+    },
+    {
+      "name": "empty_object",
+      "note": "an empty object is not an empty array",
+      "value": {},
+      "canonical": "c1:{}",
+      "hash": "d4a3e7164dc1ff0b5db02cc00e01fc528d686c8d0bf3433542111556520f59a2"
+    },
+    {
+      "name": "empty_array",
+      "note": "an empty array is not an empty object",
+      "value": [],
+      "canonical": "c1:[]",
+      "hash": "5710b7aa9c7edb05e3727c6fe9104b015a725774434d8fd6591c66618d5b9212"
+    },
+    {
+      "name": "empty_structures_nested",
+      "note": "empty containers nest without collapsing into each other",
+      "value": {
+        "a": {},
+        "b": [],
+        "c": [
+          {}
+        ],
+        "d": [
+          []
+        ]
+      },
+      "canonical": "c1:{\"a\":{},\"b\":[],\"c\":[{}],\"d\":[[]]}",
+      "hash": "9150cdd0cad0b1aa3fb1ae0ebe9cc7f89facc97c867eec5f5c3e198bd87ca4a6"
+    },
+    {
+      "name": "key_order_ascii",
+      "note": "insertion order b,a,c must serialise a,b,c",
+      "value": {
+        "b": 1,
+        "a": 2,
+        "c": 3
+      },
+      "canonical": "c1:{\"a\":2,\"b\":1,\"c\":3}",
+      "hash": "4d09e5318080de329a7a9532947e571fe0d9c6c8a97167f59b954650962e7780"
+    },
+    {
+      "name": "key_order_numeric_like",
+      "note": "THE numeric-key determinism killer (SPEC 15.5): JSON.stringify emits 1,2,10 \u2014 code-unit order is 1,10,2",
+      "value": {
+        "1": "one",
+        "2": "two",
+        "10": "ten"
+      },
+      "canonical": "c1:{\"1\":\"one\",\"10\":\"ten\",\"2\":\"two\"}",
+      "hash": "6b95b586e95aca905164c02a2aa368d57d0f169c3981d5d09046bedc0fb924ac"
+    },
+    {
+      "name": "key_order_numeric_mixed",
+      "note": "V8 puts integer-like keys first in Object.keys whatever the insertion order; sorting must override that",
+      "value": {
+        "1": 10,
+        "2": 20,
+        "10": 100,
+        "b": 2,
+        "a": 1
+      },
+      "canonical": "c1:{\"1\":10,\"10\":100,\"2\":20,\"a\":1,\"b\":2}",
+      "hash": "27b180d2b7e72f342c070bfc601a01ffa763d2a4a9b9c379e8cb3c0a7c8056d2"
+    },
+    {
+      "name": "key_order_prefixed_numeric",
+      "note": "k1,k2,k10 sort as k1,k10,k2 \u2014 the same trap once a prefix hides it",
+      "value": {
+        "k9": 9,
+        "k10": 10,
+        "k1": 1,
+        "k2": 2,
+        "k11": 11
+      },
+      "canonical": "c1:{\"k1\":1,\"k10\":10,\"k11\":11,\"k2\":2,\"k9\":9}",
+      "hash": "c08406fdafbd8811acc40ada35d449d70058fa92d2177d1093f196f0bfdfa6d2"
+    },
+    {
+      "name": "key_order_case_sensitive",
+      "note": "uppercase sorts before lowercase by code unit; a locale collation would not",
+      "value": {
+        "a": 1,
+        "B": 2,
+        "A": 3,
+        "b": 4
+      },
+      "canonical": "c1:{\"A\":3,\"B\":2,\"a\":1,\"b\":4}",
+      "hash": "ca6624e9c52757c49a05e2595231c7743c665350dffae42d24d16a4faf1247b6"
+    },
+    {
+      "name": "key_order_punctuation",
+      "note": "hyphen < digit < uppercase < underscore < lowercase, by code unit only",
+      "value": {
+        "0": 5,
+        "aa": 3,
+        "Zz": 2,
+        "_x": 1,
+        "-y": 4
+      },
+      "canonical": "c1:{\"-y\":4,\"0\":5,\"Zz\":2,\"_x\":1,\"aa\":3}",
+      "hash": "7f3edb7547a809cd0bc0b387631af7ae9fd5ea7ca5c7c62a6036c6959c6cd727"
+    },
+    {
+      "name": "key_order_prefix_shorter_first",
+      "note": "a prefix sorts before its extensions; the empty key sorts first of all",
+      "value": {
+        "a": 1,
+        "ab": 2,
+        "": 3,
+        "aa": 4
+      },
+      "canonical": "c1:{\"\":3,\"a\":1,\"aa\":4,\"ab\":2}",
+      "hash": "ae822f50a23a00f171e304e4bd4eca8164614e884e5ad54448a51c6b6a406e88"
+    },
+    {
+      "name": "key_order_unicode",
+      "note": "non-ASCII keys sort by UTF-16 code unit, so no ICU version can move them",
+      "value": {
+        "\u2726": 1,
+        "\u00e9": 2,
+        "z": 3,
+        "A": 4
+      },
+      "canonical": "c1:{\"A\":4,\"z\":3,\"\u00e9\":2,\"\u2726\":1}",
+      "hash": "085ead87e555acc4aee07e16e24a71eda07aff3c51b95e932e2ac1e01462ae29"
+    },
+    {
+      "name": "string_escapes",
+      "note": "quote and backslash escape; forward slash does not",
+      "value": {
+        "s": "a\"b\\c/d"
+      },
+      "canonical": "c1:{\"s\":\"a\\\"b\\\\c/d\"}",
+      "hash": "69ed7c8dd7feec9f07ef73313e06ccc6d4b2b6d66c043b22ff1eabca801da551"
+    },
+    {
+      "name": "string_control_chars",
+      "note": "short escapes for b,f,n,r,t and lowercase \\u00xx for the rest \u2014 pinned because a raw byte here would be unparseable",
+      "value": "\u0000\u0001\b\f\n\r\t\u001f",
+      "canonical": "c1:\"\\u0000\\u0001\\b\\f\\n\\r\\t\\u001f\"",
+      "hash": "acefb18a8200b5efa98171a3c1251b4338a5bc872b391f077eb3a9f9c450caa8"
+    },
+    {
+      "name": "string_lone_surrogate",
+      "note": "a lone surrogate escapes to \\udxxx (well-formed stringify), never raw bytes",
+      "value": {
+        "high": "\ud800",
+        "low": "\udfff"
+      },
+      "canonical": "c1:{\"high\":\"\\ud800\",\"low\":\"\\udfff\"}",
+      "hash": "c8264e359b28c6ae64dc02fb980691932bae9586922f49c5cf9febc3f1da71e4"
+    },
+    {
+      "name": "string_astral_and_zwj",
+      "note": "astral planes and a zero-width joiner pass through raw; the byte sequence is what is pinned",
+      "value": "\ud834\udd1e\ud83d\udc69\u200d\ud83d\udcbb",
+      "canonical": "c1:\"\ud834\udd1e\ud83d\udc69\u200d\ud83d\udcbb\"",
+      "hash": "48bb303363c0b7dd375304a51807189d5594ad72eaf3cc4a4106e109bc12d27d"
+    },
+    {
+      "name": "string_unicode_normalisation_is_not_applied",
+      "note": "NFC e-acute and NFD e+combining-acute are DIFFERENT terms and hash differently \u2014 deliberate, but agents must be told",
+      "value": {
+        "nfc": "\u00e9",
+        "nfd": "e\u0301"
+      },
+      "canonical": "c1:{\"nfc\":\"\u00e9\",\"nfd\":\"e\u0301\"}",
+      "hash": "7240496822089989cd089d2b735ae2675c4a810ccfb0a42566d53df9a62c1497"
+    },
+    {
+      "name": "string_digits_are_not_integers",
+      "note": "the string \"1\" must not collide with the integer 1",
+      "value": {
+        "a": "1"
+      },
+      "canonical": "c1:{\"a\":\"1\"}",
+      "hash": "f50dbee95cf9e48d91a58ab248d70c2f60efea6332922e18172ba413849950ff"
+    },
+    {
+      "name": "int_looks_like_the_digit_string",
+      "note": "paired with string_digits_are_not_integers; the two hashes must differ",
+      "value": {
+        "a": 1
+      },
+      "canonical": "c1:{\"a\":1}",
+      "hash": "d0dc569b26fe496a26683c5e9cc9f5c088181d87daf4b1c30ce3fe6f70efb6bf"
+    },
+    {
+      "name": "delimiter_injection_attempt",
+      "note": "a key carrying the structural delimiters must not be able to forge a second field",
+      "value": {
+        "a\":1,\"b": 2
+      },
+      "canonical": "c1:{\"a\\\":1,\\\"b\":2}",
+      "hash": "94f706a1a7844b57b4952dfc5a6e74e5f0b0cf4ba38735fc77a9efadfd751587"
+    },
+    {
+      "name": "delimiter_injection_target",
+      "note": "the shape the previous case tries to impersonate; the hashes must differ",
+      "value": {
+        "a": 1,
+        "b": 2
+      },
+      "canonical": "c1:{\"a\":1,\"b\":2}",
+      "hash": "b02091f2d708ed3d3d2b5270296822734800ed4a9facaf18074552364ef04337"
+    },
+    {
+      "name": "array_order_is_meaning",
+      "note": "arrays are sequences: order is preserved, never sorted",
+      "value": [
+        3,
+        1,
+        2
+      ],
+      "canonical": "c1:[3,1,2]",
+      "hash": "16b5f266a087b0e3bbb917786b91120ea1c4be3842607cb02e62bec64f667952"
+    },
+    {
+      "name": "array_heterogeneous",
+      "note": "every scalar kind and both containers side by side",
+      "value": [
+        null,
+        true,
+        false,
+        0,
+        -1,
+        "",
+        [],
+        {}
+      ],
+      "canonical": "c1:[null,true,false,0,-1,\"\",[],{}]",
+      "hash": "020f524cdc72ac14c3932532e7b53944c0a7303b5793fee66705ec95758952bb"
+    },
+    {
+      "name": "array_of_objects_keys_sorted_elements_not",
+      "note": "element order stays, key order sorts \u2014 two different rules in one structure",
+      "value": [
+        {
+          "b": 1,
+          "a": 2
+        },
+        {
+          "a": 3
+        }
+      ],
+      "canonical": "c1:[{\"a\":2,\"b\":1},{\"a\":3}]",
+      "hash": "3abcea666a377da197b1f07a0e5525bb58f169af7ed8a6ebfd5cdab3c8e94d68"
+    },
+    {
+      "name": "null_valued_key_is_present",
+      "note": "paired with the constructed case where b is undefined and disappears entirely",
+      "value": {
+        "a": 1,
+        "b": null
+      },
+      "canonical": "c1:{\"a\":1,\"b\":null}",
+      "hash": "d6c1debd40b8d6b5ae6794243c9d269a9db409fcc69bfa7c8529d33bdf8400f4"
+    },
+    {
+      "name": "deep_nested_32",
+      "note": "32 levels is the documented maximum and must serialise; 33 throws (asserted in code)",
+      "value": {
+        "a": {
+          "a": {
+            "a": {
+              "a": {
+                "a": {
+                  "a": {
+                    "a": {
+                      "a": {
+                        "a": {
+                          "a": {
+                            "a": {
+                              "a": {
+                                "a": {
+                                  "a": {
+                                    "a": {
+                                      "a": {
+                                        "a": {
+                                          "a": {
+                                            "a": {
+                                              "a": {
+                                                "a": {
+                                                  "a": {
+                                                    "a": {
+                                                      "a": {
+                                                        "a": {
+                                                          "a": {
+                                                            "a": {
+                                                              "a": {
+                                                                "a": {
+                                                                  "a": {
+                                                                    "a": {
+                                                                      "a": 1
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "canonical": "c1:{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":1}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+      "hash": "cd5b8decadb7f2526ce32d253d561c3c97e6dac2a1b26da2b1596bd50debf0b1"
+    },
+    {
+      "name": "venture_terms_realistic",
+      "note": "a plausible terms_hash input: integer Minor, integer Bps, wage XOR share, valuation rule pinned with its as-of tick (SPEC 15.4)",
+      "value": {
+        "compact_version": 1,
+        "venture_id": "v_0007",
+        "kind": "HAUL",
+        "window_opens_tick": 264,
+        "window_closes_tick": 286,
+        "resolves_at_tick": 287,
+        "valuation": {
+          "rule": "BOOK_MID",
+          "as_of_tick": 264
+        },
+        "roles": [
+          {
+            "index": 0,
+            "label": "hauler",
+            "terms": {
+              "wage": null,
+              "share": 6000,
+              "escrowed": 12000,
+              "elective": 8000
+            }
+          },
+          {
+            "index": 1,
+            "label": "escort",
+            "terms": {
+              "wage": 5000,
+              "share": null,
+              "escrowed": 5000,
+              "elective": 0
+            }
+          }
+        ]
+      },
+      "canonical": "c1:{\"compact_version\":1,\"kind\":\"HAUL\",\"resolves_at_tick\":287,\"roles\":[{\"index\":0,\"label\":\"hauler\",\"terms\":{\"elective\":8000,\"escrowed\":12000,\"share\":6000,\"wage\":null}},{\"index\":1,\"label\":\"escort\",\"terms\":{\"elective\":0,\"escrowed\":5000,\"share\":null,\"wage\":5000}}],\"valuation\":{\"as_of_tick\":264,\"rule\":\"BOOK_MID\"},\"venture_id\":\"v_0007\",\"window_closes_tick\":286,\"window_opens_tick\":264}",
+      "hash": "4cc8258f4fec592aa1e40b913ff3ff72efa1df06ffc4f524c70ea967662dc029"
+    }
+  ]
+}

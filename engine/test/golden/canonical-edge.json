@@ -1,0 +1,71 @@
+{
+  "__meta": {
+    "what": "Golden expectations for inputs JSON cannot express. Companion to canonical.json.",
+    "why": "JSON has no undefined, no symbol keys, no prototype chain, and JSON.stringify(-0) is \"0\". Four of the behaviours most likely to fabricate a terms_hash mismatch are therefore unrepresentable in the main golden and are built in test/golden/edge-values.ts instead.",
+    "inputs": "test/golden/edge-values.ts, keyed by name. One definition, no generator/test drift.",
+    "canonical_version": 1,
+    "regenerate": "The canonical column is hand-authored and is the oracle; the hash column is derived from it. To add a case: add a builder to test/golden/edge-values.ts, add a row here with a deliberately wrong hash, run test/core/canonical.test.ts, and copy the expected value out of the failure."
+  },
+  "aliases": [
+    [
+      "undefined_value_omitted",
+      "absent_key_baseline"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "negative_zero_scalar",
+      "note": "minus zero normalises to 0 - splitByBps returns -0 for negative remainders, so this reaches the ledger",
+      "canonical": "c1:0",
+      "hash": "7ba40d851e27969a84b73368f770a8efb9d2cc0658096ca326ab94edbe5d4ad0"
+    },
+    {
+      "name": "negative_zero_in_array",
+      "note": "every element normalises; a split result array cannot hash two ways",
+      "canonical": "c1:[0,0,0]",
+      "hash": "5e5f26943dbe92e486bf93be847aa1f5729c360606d8bae8ce5f1415a72ec798"
+    },
+    {
+      "name": "negative_zero_as_object_value",
+      "note": "minus zero and zero as sibling values are one term",
+      "canonical": "c1:{\"a\":0,\"b\":0}",
+      "hash": "0fd1ef8519aee487d1310d6cebcd133d553eaf879a919daa582aa2a0b4564c84"
+    },
+    {
+      "name": "undefined_value_omitted",
+      "note": "absent means absent: an undefined-valued key disappears rather than serialising as null",
+      "canonical": "c1:{\"a\":1,\"c\":2}",
+      "hash": "1dcec17a9fef454ec0e32993c5dcdffd41bc5334bd02fb166084d29a35c9697f"
+    },
+    {
+      "name": "undefined_only_key",
+      "note": "an object whose only key is undefined is the empty object",
+      "canonical": "c1:{}",
+      "hash": "d4a3e7164dc1ff0b5db02cc00e01fc528d686c8d0bf3433542111556520f59a2"
+    },
+    {
+      "name": "absent_key_baseline",
+      "note": "the shape undefined_value_omitted must be identical to",
+      "canonical": "c1:{\"a\":1,\"c\":2}",
+      "hash": "1dcec17a9fef454ec0e32993c5dcdffd41bc5334bd02fb166084d29a35c9697f"
+    },
+    {
+      "name": "symbol_key_omitted",
+      "note": "symbol keys are invisible to Object.keys and are silently dropped, not rejected",
+      "canonical": "c1:{\"a\":2}",
+      "hash": "67328d7408cefb84527d12fd752abef7374bf82fd2103b7a1314fc9ec43c4dc6"
+    },
+    {
+      "name": "inherited_key_omitted",
+      "note": "only own enumerable keys serialise, so a prototype cannot smuggle a field into terms_hash",
+      "canonical": "c1:{\"own\":2}",
+      "hash": "39ba6d8cb00423ceb10d0b5b2b78c8f2b28c4d46406eb68c49c2f3fd02c44be1"
+    },
+    {
+      "name": "deep_nested_32_arrays",
+      "note": "the depth guard counts arrays as well as objects; 33 throws, which is also the only cycle protection",
+      "canonical": "c1:[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "hash": "4074bbfc3bc10067063367b22a69df76e222650f8ce5666a6f515f0b4b393614"
+    }
+  ]
+}
