@@ -495,6 +495,8 @@ All `INV` · `PROP-L*` `PROP-V*` · `DET-1..6` · `DET-9` `DET-10` · `E2E-1a` `
 `E2E-19` (minute-60) · `AGT-S1` clean (a probe can play from `agent.md` alone with zero 4xx/5xx across 200 ticks) · `SCAR-11` · `SEC-1` `SEC-6` `SEC-7` · per-probe output paths asserted unique.
 
 **Gate 3 — the falsification gate. Before building anything else.**
+Briefs and reading instructions: **`GATE-3.md`**, written before the run so the questions cannot drift to fit the answers. It adds `AGT-E0`, a precondition the build turned out to need: the `elect` affordance must be *offered* on every elective role every tick until the freeze, and restating it must change the settlement. Without that the choice does not exist at the moment it matters, and the gate measures an engine that cannot betray.
+
 `AGT-E1` and `AGT-E2` have **run and been read.** Not "passed" — *read*. If betrayal never happens or trust has no price, the design changes here, and everything built after this point would have been built on a false premise. This gate is the cheapest moment in the project to discover the most expensive possible mistake.
 
 **Gate 4 — before the spectator client is called done**
