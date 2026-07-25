@@ -23,6 +23,7 @@
 | `PASS-ECONOMY-RISK.md` + `-extended.md` | Industry, markets, logistics, money · **the risk market (§7 / §8)** | 1 · **3** |
 | `PASS-SHIPS-COMBAT.md` + `-extended.md` | Hulls, fitting, operations, fleets, escalation | 2 |
 | `EXPERIENCE.md` | Why anyone cares. R1–R24 | canon |
+| `TESTING.md` | What must be true and what proves it wrong. Invariants, the five speeds, the probe briefs, the gates | canon |
 | `CONCEPT.md` | Originating concept. **Pre-reframe**; contains two passes inline | background |
 
 Numbers marked *(calibrate)* are simulation starting points, not claims.
@@ -701,7 +702,9 @@ Outbound only — there is no inbound SMTP, so mail is a *delivery* channel, nev
 
 ### Phase 0 — "does a betrayal land, and does anyone watch?"
 
-**Build order, each step ending in an executable assertion**, because AI coding agents author plausible code faster than anyone can verify it.
+**Build order, each step ending in an executable assertion**, because AI coding agents author plausible code faster than anyone can verify it. The assertions below are the *headline* per step; the full suite, the five test speeds, the probe-agent briefs and the phase gates are in **`TESTING.md`**.
+
+> **Three things `TESTING.md` §1 found that belong here.** (1) Compressing the tick does not compress wall-clock durations — rate limits, timeouts and mail caps must all derive from `TICK_SECONDS` or be explicitly whitelisted, tested from commit #1. (2) **An LLM's thinking latency does not compress**, so a compressed run systematically advantages fast models — *A4 is a wall-clock property and is measured at production pace only.* (3) The rundown's 6–9 minutes is human time and must not compress, so `sim_speed` and `broadcast_speed` are separate: **the renderer consumes a settled Reckoning from the ledger, never the live sim.** That last one is a small architectural requirement with a large payoff — it is what makes the watchability suite affordable against worlds generated overnight.
 
 0. **Test rig before game.** `NODE_ENV=production` + error middleware in commit #1 (scar #11), seeded RNG + lint ban, `assert_invariants(world)`, `sim --seed S --ticks N` printing per-tick `state_hash`. **Ed25519 keygen and RFC 9421 request verification land here too** — retrofitting signatures across an existing action surface is unpleasant, and the canonical serialiser they share with `terms_hash` needs golden files from the first commit.
 1. **Ledger** — accounts, postings, lots, encumbrances, CHECK constraints. → 10k random transfers never break supply conservation.
@@ -719,6 +722,8 @@ Outbound only — there is no inbound SMTP, so mail is a *delivery* channel, nev
 13. **Spectator** — docket, map, three meters, say-do panel, ticker, cards, director. → A13: a human names what happened from the map with text off.
 14. **Seals + the rundown.**
 15. **LLM cast** → the semantic-coherence suite → the three-strangers test.
+
+> **Gate 3 is the one to respect** (`TESTING.md` §15). Once a slice is playable, run the falsification probes — *does anyone betray anyone, and does trust have a price* — and **read the result before building anything else.** It is the cheapest moment in the project to discover the most expensive possible mistake.
 
 **The first provable vertical slice — "one convoy, one predator, one Reckoning."** Two principals, three hands each, two systems, one good, no market. A forms a `HAUL` and hires B's hand as `ESCORT` for a share, part escrowed and part elective. Cargo moves over four ticks. C attempts interception. At the Reckoning it settles — or B's elective part goes unpaid and a default is recorded — and both outcomes emit a receipt that renders as a link holding or snapping. Replay exact; ledger reconciles. It exercises hands, ventures, predation, the Reckoning, the ledger and both projections with **zero** market, production graph, sovereignty, combat or insurance. It is the smallest thing that can **fail interestingly** — and if the elective part is always honoured here, §7.6 is answered negatively and the design changes before anything else is built.
 
@@ -748,7 +753,7 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 
 | Parameter | Initial | Rationale |
 |---|---|---|
-| Tick | 5 min prod / 5–30 s test | humans can follow; agents can afford |
+| Tick | **5 min prod · 10 s `fast` · 2 s `turbo` · 0 `instant`** — five named speeds, `TESTING.md` §1.2 | humans can follow; agents can afford. `fast` puts a whole season in one night (~22 h) while keeping the commitment window at 4 min, longer than any LLM round-trip |
 | Reckoning | daily per constellation, staggered, rotating UTC | A14 |
 | Season | 4–8 weeks | A10; the horizon that makes defection rational |
 | **Gate transit** | **2–6 ticks intra-, 8–20 inter-constellation** | **the most load-bearing number in the design** |

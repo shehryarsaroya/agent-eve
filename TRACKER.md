@@ -8,6 +8,7 @@
 
 - **Phase:** 0 — pre-build. **Design complete, critiqued, and rewritten. Zero code.**
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
+- **Test plan:** `docs/design/TESTING.md` — written before any code, against v3.0. 26 always-on invariants · five named speeds · the probe-agent brief catalog · 14 scars as named regressions · 15 axioms as executable tests · 6 gates. **Gate 0 lands in commit #1.**
 - **Last done (2026-07-24):** Six adversarial critics → SPEC v3.0 → three scoring panels → fixes integrated → **doc tidy pass for all three audiences** (real protocols, the visibility ladder, the owner layer restored as §13B, THE RECEIPT REEL, cross-references fixed). Scored **7/10** on its own goals, **96/150** on the prior research's rubric, **ship-with-conditions** on engineering. See § SCORING PANEL for what was fixed and what was accepted-but-not-fixed.
 - **Predecessor:** High Water is **fully removed and deleted** — repo, server, and services (confirmed by the user). Nothing left to break; the old "don't clobber it" hard rule is retired. Its 14 scars remain the most valuable input in the repo.
 
@@ -23,7 +24,9 @@ It exercises hands, ventures, predation, the Reckoning, the ledger and both proj
 
 > **The falsification to watch for:** if the elective part is always honoured in this slice, §7.6 is answered negatively — trust is worthless because betrayal is never rational — and the design changes before anything else is built.
 
-### Order (each step ends in an executable assertion — `SPEC.md` §16)
+### Order (each step ends in an executable assertion — `SPEC.md` §16; full suite and gates in `TESTING.md`)
+
+> **Commit #1 is bigger than step 0 looks.** Gate 0 requires: production error handling, seeded RNG + the banned-construct lint, `assert_invariants`, the `sim` CLI, Ed25519 + RFC 9421, the canonical serialiser **golden-filed**, the `TICK_SECONDS` scale audit, and a **verified** restore. Four of those are golden-file surfaces that only work if they predate the bugs.
 - [ ] 0. Test rig before game: `NODE_ENV=production` + error middleware in commit #1, seeded RNG + lint ban, `assert_invariants`, `sim --seed S --ticks N` printing per-tick `state_hash`
 - [ ] 1. Ledger — accounts, postings, lots, encumbrances, CHECK constraints
 - [ ] 2. Events — partitioned, audience fan-out, the two filters; A9 parity as a fuzz test
@@ -150,8 +153,9 @@ Three independent scorers against SPEC v3.0.
 6. **Cast composition and per-agent inference budget** — answerable only from `decision_source` telemetry.
 7. **Currency naming.**
 8. **Does Phase 0 ship offices, or is the gate restated as grant-scale betrayal?** Recommendation: restate. Syndicates are Phase 1's first job.
-9. **A retention pass.** Six critics asked why this breaks in week one; nobody has asked why anyone plays in month six. That review has not been run.
-10. **Should the standing ledger publish as a real KYA credential?** Considered and deliberately *not* applied — it is a read-only projection that changes nothing about the game, and the instruction was to apply only what makes the game more compelling. It is near-free whenever we want it (signed, fetchable track record on the existing event ledger), and it is the artifact the agent-finance world has identity infrastructure for and no performance data to fill. The model-family correlation view is already in §14.5.
+9. **What is the right `fast` tick?** `TESTING.md` derives **10 s** (a season overnight; a 4-minute commitment window that no LLM round-trip can miss) but that is a derivation, not a measurement. `PERF-7`'s pace sweep settles it, and its result must be published here. **If outcomes at 10× diverge from 1×, that is a design finding, not a harness finding — it means the game is latency-sensitive and A4 is already violated in production.**
+10. **A retention pass.** Six critics asked why this breaks in week one; nobody has asked why anyone plays in month six. That review has not been run.
+11. **Should the standing ledger publish as a real KYA credential?** Considered and deliberately *not* applied — it is a read-only projection that changes nothing about the game, and the instruction was to apply only what makes the game more compelling. It is near-free whenever we want it (signed, fetchable track record on the existing event ledger), and it is the artifact the agent-finance world has identity infrastructure for and no performance data to fill. The model-family correlation view is already in §14.5.
 
 ---
 
@@ -160,6 +164,12 @@ Three independent scorers against SPEC v3.0.
 **2026-07-24 — project seeded.** `~/Projects/thecompact` created as a standalone home with the full design corpus, newly written background docs, and (subsequently dropped, commit `414952e`) the High Water reference implementation.
 
 **2026-07-24 — v2.0, the watchability reframe.** Goals restated as watchable · autonomous · legible on screen; insurance dropped as the required core loop and deferred to Phase 3 with specs intact; betrayal-via-authority promoted; A13 and A14 added; daily Reckoning, seals, named holdings added; owner layer cut; name/theme/scope closed.
+
+**2026-07-24 — the test plan.** Wrote `docs/design/TESTING.md` before any engine code: five tiers (invariants → unit/property → determinism → scenario → agent-in-the-loop), 26 always-on invariants asserted every tick with halt-on-failure, ~130 named tests, the 14 scars as named regressions, the 15 axioms with an honest column for which are executable, the six critics' findings converted from one-time reviews into **continuous measurements with thresholds**, and six phase gates.
+
+Three findings came out of designing the clock rather than from the spec. **(1)** Compressing the tick does not compress wall-clock durations — rate limits, timeouts and mail caps silently break at 30×, and the fix (`TICK_SECONDS` + a commit-#1 scale audit) is cheap now and an audit later. **(2)** An LLM's thinking latency does not compress, so **compressed runs systematically advantage fast models** — the harness would fabricate the exact A4 violation it is meant to detect, so A4 is measured at production pace only. **(3)** The rundown's 6–9 minutes is human time, so `sim_speed` and `broadcast_speed` must be separate, which means **the renderer reads a settled Reckoning from the ledger rather than watching the live sim** — a small architectural requirement that is the only reason the watchability suite is affordable. All three are now in `SPEC.md` §16.
+
+Recommended default for agent work: **`fast` = 10 s ticks (30×)** — a full 28-day season in ~22 hours, a 4-minute commitment window that no LLM round-trip can miss, ~40M input tokens per season-night for a 30-principal cast. Verified by `PERF-7` rather than assumed.
 
 **2026-07-24 — v3.0 tidy: real protocols, information tiers, the owner restored.** Cross-pollinated the agent-finance research: replaced the bearer key with **Ed25519 + RFC 9421 signed requests**, serialised grants as **W3C Verifiable Credentials**, and made `agenttransfer.dev` a real SMTP surface where an agent's handle *is* its address. Added a hosted private **message channel** for negotiation — then caught and reversed a version that pushed it off our server, because the drama has to be on the record we can show. Added the **five-tier visibility ladder** (§11.2) so strategy can stay hidden without the show going dark. Restored the **owner layer** as §13B (narrative and status, never control) with R14 as a published disposition-only mandate, and added **THE RECEIPT REEL** to §14 — the declassified negotiation transcript replayed beside the promise it broke. Unified `vote` into one ballot verb. Fixed the dangling `§13B` and pre-seeding-filename references across the docs. Budgets re-verified: 15 axioms, 38/40 verbs.
 

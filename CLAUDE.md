@@ -47,15 +47,16 @@ It is EVE Online's shape and constraints (one shard, player-made economy, perman
 |---|---|---|
 | 1 | `docs/design/SPEC.md` | **The canon (v3.0).** Read the v3.0 header note first — it states how the design was reached and what six critics changed. 15 axioms, the vocabulary canon, world tiers, the Reckoning and the Levy, hands/holdings/standing, the venture, offices and grants, predation, the economy, the say-do gap, the agent API, the viewer product, architecture, phase plan. **Start here.** |
 | 2 | `docs/design/EXPERIENCE.md` | Why anyone cares. Requirements R1–R24. Read for the **why** behind the spec's UX calls. |
-| 3 | `TRACKER.md` | **Living build state, the decision log with reasoning, and the six critics' findings.** Update after every meaningful step. |
-| 4 | `docs/design/eve-passes/*.md` | **The depth.** Exhaustive ranked catalogs (MUST/NICE/CUTTABLE × KEEP/SIMPLIFY/CUT) of EVE's systems reframed for agents, **phase-tagged in `SPEC.md` §0**. Where the spec is silent, these are the default *for their phase*. |
-| 5 | `docs/background/HIGH-WATER-LESSONS.md` | **Read before writing code.** Validated patterns to reuse + 14 scars from the predecessor, each with its general lesson. |
-| 6 | `docs/background/INFRA.md` | VPS, deploy, DNS, email, credential *locations*. Names only. |
-| 7 | `docs/design/CONCEPT.md` | The originating concept doc — how we got from "EVE for agents" to here. **Pre-reframe background**; contains passes 3 & 4 inline (identical text to the standalone files). |
-| 8 | `docs/background/WHY-THIS-EXISTS.md` | Business context: the AgentInsurance thesis and the dataset angle. **Now a by-product, not a goal** (`SPEC.md` §16). |
-| 9 | `docs/background/prior-game-design/` | Pre-COMPACT ideation. `TOP-TEN-WORLDS` (the 765-concept search and its seven laws) and `HUMAN-GAMES` are the two that still change decisions. |
-| 10 | `docs/design/REARCHITECTURE-2026-07-24.md` · `archive-SPEC-v2.0.md` | The pre-critique draft and the superseded canon. History, not canon. |
-| 11 | `docs/design/pdf/` | PDFs — **stale, generated from v1.1.** Regenerate before sharing. |
+| 3 | `docs/design/TESTING.md` | **What must be true, and what proves it wrong.** 26 always-on invariants, the five test speeds and why 10 s is the default, the probe-agent brief catalog, the 14 scars as named regressions, the 15 axioms as executable tests, and six phase gates. **Read before writing tests — or code, since several artifacts must land in commit #1.** |
+| 4 | `TRACKER.md` | **Living build state, the decision log with reasoning, and the six critics' findings.** Update after every meaningful step. |
+| 5 | `docs/design/eve-passes/*.md` | **The depth.** Exhaustive ranked catalogs (MUST/NICE/CUTTABLE × KEEP/SIMPLIFY/CUT) of EVE's systems reframed for agents, **phase-tagged in `SPEC.md` §0**. Where the spec is silent, these are the default *for their phase*. |
+| 6 | `docs/background/HIGH-WATER-LESSONS.md` | **Read before writing code.** Validated patterns to reuse + 14 scars from the predecessor, each with its general lesson. |
+| 7 | `docs/background/INFRA.md` | VPS, deploy, DNS, email, credential *locations*. Names only. |
+| 8 | `docs/design/CONCEPT.md` | The originating concept doc — how we got from "EVE for agents" to here. **Pre-reframe background**; contains passes 3 & 4 inline (identical text to the standalone files). |
+| 9 | `docs/background/WHY-THIS-EXISTS.md` | Business context: the AgentInsurance thesis and the dataset angle. **Now a by-product, not a goal** (`SPEC.md` §16). |
+| 10 | `docs/background/prior-game-design/` | Pre-COMPACT ideation. `TOP-TEN-WORLDS` (the 765-concept search and its seven laws) and `HUMAN-GAMES` are the two that still change decisions. |
+| 11 | `docs/design/REARCHITECTURE-2026-07-24.md` · `archive-SPEC-v2.0.md` | The pre-critique draft and the superseded canon. History, not canon. |
+| 12 | `docs/design/pdf/` | PDFs — **stale, generated from v1.1.** Regenerate before sharing. |
 
 The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEPT.md`):
 - `PASS-TERRITORY-POLITICS.md` (496) — **Phase 0–1, the core.** Map, sovereignty, structures, syndicates, charters, capabilities, diplomacy, war, espionage. *Byte-identical to `CONCEPT.md` §16.*
@@ -84,6 +85,10 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 It is the smallest thing that can **fail interestingly**, and it carries the design's own falsification test: *if the elective part is always honoured, trust is worthless because betrayal is never rational, and the design changes before anything else is built.*
 
 Put the retrofit-proof event fields in on day one (§15.1) and build the test rig before the game (§16 step 0).
+
+**Commit #1 carries more than it looks like.** Per `TESTING.md` Gate 0: `NODE_ENV=production` + error middleware · seeded RNG + the banned-construct lint · `assert_invariants(world)` · the `sim` CLI printing per-tick `state_hash` · Ed25519 + RFC 9421 verification · the canonical serialiser **golden-filed** · the `TICK_SECONDS` scale audit · and a **verified** restore. Each of these is far cheaper now than retrofitted, and four of them are golden-file surfaces that only work if they predate the bugs.
+
+**The gate that matters most is Gate 3** (`TESTING.md` §15): as soon as a slice is playable, run the falsification probes and *read* them. If betrayal never happens or trust has no price, the design changes there — before anything else is built on a false premise.
 
 ---
 
