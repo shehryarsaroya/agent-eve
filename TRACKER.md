@@ -98,6 +98,41 @@ Six adversarial critics run in parallel against `REARCHITECTURE-2026-07-24.md`. 
 
 ---
 
+## 📊 SCORING PANEL (2026-07-24)
+
+Three independent scorers against SPEC v3.0.
+
+| Lens | Result |
+|---|---|
+| **The three goals** | Watchable 7 · Autonomous 8 · **Legible 5** · Cohesion 6 · Anti-quiet 8 · Consistency 6. **Overall 7/10.** |
+| **The prior research's own 15-requirement rubric** | **96/150.** Spine (laws 1–7) averages 7.1; the deep layer (8–15) averages 5.6. |
+| **Shippability** | Buildability 7 · Scope 5 · Correctness 6 · Testability 6 · **Operability 4** · Scar coverage 8 · Cost 7. **Ship with conditions.** |
+
+**The diagnostic pattern, found independently by two scorers:** mechanics designed *first* (hands, ventures, the Reckoning, the settlement waterfall) are complete in economics, arithmetic **and** pixels. Mechanics **bolted on to answer the critics** (the Levy, offices, markets, the front) got their economics and their prose but neither their pixels nor their arithmetic. That is why Legible scored lowest.
+
+**The second pattern:** all six critics were *failure-mode* critics — they asked why the game breaks in week one. **None asked why anyone plays in month six.** Hence the 7.1 / 5.6 inversion: the five things that thinned together (renewing catastrophe, the persistence gradient, world-memory, institutions, the owner loop) are exactly the prior research's retention answer. *"A design that got extremely good at not failing and slightly worse at mattering."*
+
+### Fixed in response
+- **The Levy is now a constellation vote**, not a published formula. The total stays undodgeable (that is the alarm); the *allocation* is voted, with the formula as the quorum-failure default. This was the panel's best single idea: it restores the redistributive half that makes a recurring catastrophe the right forcing function, converts a tax into coalitions, and gives every Reckoning a named loser **by the group's action** — satisfying Law 2 without a separate seizure mechanic, and fixing four rubric requirements at once.
+- **A non-escrowable share of every assessment**, because a fully purchasable Levy Coase-collapses into a delivery service exactly as predation would — zero trust risked, zero standing accrued, and the headline meter flat every night.
+- **A newcomer floor on the Levy.** Inverse-Exposure weighting handed the minute-60 newcomer the *maximum* assessment and first place in the seizure queue.
+- **The tribute line** — the Levy's pixel signature, and the highest-leverage single edit available: every principal on the map every day, turtling made visible, continuous off-peak motion from a source that cannot go quiet, `LEVY SHORT` decomposable to *whose* line is red, and a forming cartel visible on screen.
+- **Cascade truncation DEFERS, never defaults.** As written the round limit fabricated a public breach, constructible on purpose by a rival.
+- **The false-default audit runs in two modes**, because as specified it could not catch the bug it exists for: hazards-off must log zero defaults; hazards-on requires every default to carry the event ID that caused it.
+- **Encumbered assets are destructible**, with the `CARGO_LOST` branch written: escrow guarantees payment priority, never that the goods survive. The alternative made encumbrance a shield and killed the loss sink.
+- **Halt semantics**, **structured seals** (prose never feeds the flag), **contradicted seals cost standing**, **standing decays**, **withheld credit is disclosed**, **affordances are filtered not truncated**, **two named currency faucets**, **the front now renews as it destroys**, **three world-memory projections**, **grant renewal history carries the trust arc**, and a **rules budget** in §17 (≤15 axioms, ≤40 verbs, ≤10 observe keys — adding one means removing one).
+- **Vocabulary violations in the spec that declares the vocabulary** — `SEAL` was reused as a visibility level and a tick phase, and "pulse" was retired then used. Exactly the scar #1 class. Fixed.
+
+### Accepted, not yet fixed
+- **Syndicates are vapour** and offices depend on them, so the Phase 0 gate should be restated as **grant-scale betrayal** with syndicates as Phase 1's first job. §8 now says so; §16's build order still needs rewriting to match.
+- **§16 covers ~60% of Phase 0** — no step builds offices, syndicates, bonds, sureties, extract/refine, upkeep, consumables, or the free deterministic services, several of which the spec itself calls load-bearing.
+- **Operability (4/10):** one constellation and one fixed Reckoning hour for Phase 0, not four staggered rotating ones; WAL archiving and a verified restore before the first row; partitions created 7 days ahead with a boot assertion.
+- **Schedule the grand venture in week one** of the live run, not at the end — a 4-week Phase 0 contains no season boundary, so the anti-quiet gate could fail for a reason already solved on paper.
+- **Wake budget arithmetic** is unreconciled against the mandatory trigger classes.
+- **Not carried from the prior research:** multi-owner units with an on-asset mutiny vote (judged the most original social mechanic of all 765 concepts, and the only available source of owner-vs-owner drama) · the death-timer season finale · persistent debts as first-class feud objects · restoring R14 (a mandate is one document, and a mandate that diverges from a deed is free say-do material).
+
+---
+
 ## ❓ OPEN QUESTIONS
 
 1. **Gate transit times and hands per principal.** These two set ventures-per-day, wage levels, whether Exposure has a shape, and whether a viewer sees motion. Resolve by simulation before content.
@@ -107,6 +142,8 @@ Six adversarial critics run in parallel against `REARCHITECTURE-2026-07-24.md`. 
 5. **Whether arrival counts as present in the same tick** (§15.2). Either is defensible; not choosing is scar #1.
 6. **Cast composition and per-agent inference budget** — answerable only from `decision_source` telemetry.
 7. **Currency naming.**
+8. **Does Phase 0 ship offices, or is the gate restated as grant-scale betrayal?** Recommendation: restate. Syndicates are Phase 1's first job.
+9. **A retention pass.** Six critics asked why this breaks in week one; nobody has asked why anyone plays in month six. That review has not been run.
 
 ---
 
