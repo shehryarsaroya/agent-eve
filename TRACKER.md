@@ -6,7 +6,7 @@
 
 ## ⏱ STATUS
 
-- **Phase:** 0 — **LIVE.** The game runs on the server, settles Reckonings, and has been through its first falsification gate.
+- **Phase:** 0 — **LIVE, but not yet PERSISTENT.** The game runs and settles on the server, but a fable architecture review (2026-07-25) found the world is **heap-only**: nothing writes to Postgres at runtime and `serve()` boots from genesis, so **every deploy/restart resets the world to tick 0.** "Permanent public record" (A5/A5′/A10) is false at the substrate until this is fixed. **This is the top priority, above all new mechanics.** See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
 - **Test plan:** `docs/design/TESTING.md` — written before any code, against v3.0. 26 always-on invariants · five named speeds · the probe-agent brief catalog · 14 scars as named regressions · 15 axioms as executable tests · 6 gates. **Gate 0 lands in commit #1.**
@@ -161,6 +161,27 @@ Three independent scorers against SPEC v3.0.
 ---
 
 ## 🏗 BUILD LOG (2026-07-24 →)
+
+**2026-07-25 — HETEROGENEOUS REVIEW (fable architecture + 3 codex arithmetic). The fable review found the build's biggest gap.**
+
+> ### CRITICAL: the permanent record is process memory (fable Finding 1, VERIFIED)
+> Nothing outside `db/migrate.ts` touches Postgres. The event ledger, action log, ledger, ventures, seals, standing, and **externally-enrolled identities** all live in one Node process's heap. `serve()` does `new Runtime({seed})` from genesis; `deploy.sh` restarts on every deploy; `Restart=always`. **So every deploy in this build silently reset the live world to tick 0, and the Gate-3 probes' enrolled identities died on each restart.** A5 (loss is permanent), A5′, and A10 (identity never resets) are false at the substrate. Replay-from-triple — the whole §15.2 halt-recovery story — has no durable inputs. I built the schema + partitions + WAL + a "verified restore" (OPS-1) and never wired the runtime to WRITE or BOOT from any of it — so **OPS-1 verified restoring a database the game never writes to**, the self-witnessing pattern a fourth time, at the operational layer. Everything ran in one process, so no test could fail on "what does *permanent* mean."
+>
+> **Fix (fable's sequence, now the plan):** (1) durable journal + boot-from-snapshot — machinery exists: `captureSnapshot` returns `CanonicalValue`, `adoptSnapshot` verifies byte-for-byte, the tables exist; write events+action-log+seed at COMMIT, snapshot every N ticks, load-and-adopt at boot. (2) The four missing state tables + abort-reset. (3) observe consolidation.
+
+**HIGH (fable), all verified or credible:**
+- **F2 — the settlement tick cannot be honestly resumed.** Four authoritative stores (seal book, standing book, deliveries, obligation book, default register) are OUTSIDE `state_hash` and the rollback set — the "money outside the hash" class with more members. An abort on a settlement tick (the heaviest tick, where the 600-obligation halt fired) leaves published receipts contradicting rolled-back state, and `settleNow` early-returns on resume so the money never re-applies. DET-1 is blind to seal/standing divergence. The comment at `runtime.ts:2843` claims re-run settles again — pinned-as-correct in prose, wrong in code (the freeze/settlement shape again).
+- **F3 — "never publish a broken tick" is false for the product artifact.** Delivery + settlement events append to the ledger mid-tick (`isPublic:true` immediately), bypassing the COMMIT buffer, so an aborted tick's receipts cannot be retracted (INV-16). Fix: a `committed` fence flipped at COMMIT, feeds read through it.
+- **F4 — two observation implementations**, and the SERVED one (`api/observe.ts`) is the weaker — no token-budget ladder, hence the ~20-32KB unbudgeted payload. Every Gate-3 conclusion is about the served surface, not the tested `src/observe/` one. Both files' own banners say one must go. Consolidate onto `src/observe/`, golden-file the payload across the migration.
+- **F5 — the wake budget (A4's cognition meter) is a per-process closure map**, outside the hash, and the heuristic cast pays nothing (reads `runtime.*` directly). The moment the API scales out, A4 multiplies. Emergence is measured against a house cast that sees 18× more state for free.
+
+**MEDIUM:** F6 halt/resume has no production door (`resumeKeys: new Map()`, no operator key read) so PAUSED in prod means "reset on restart"; F7 `acted_on_state_version` is a whole-window applied-actions counter, not "the state the parties acted on" — the §15.4 defence has collapsed to VERIFY_INPUTS plus two narrow checks, and the column name will mislead every future consumer; F8 `setSpeed('fast')` hardcoded in `serve()` so prod runs at 30× — the one regime the docs say A4 cannot be measured at.
+
+**Fable's verdict:** the in-process architecture is genuinely sound — the deterministic core, the tick transaction, the settlement arithmetic, the A5′ discipline are beyond the project's stage. But *as deployed* it is "a simulation of the game it claims to be." **STOP adding mechanics until F1 → F2 → F4 land; all three are wiring over machinery that already exists.**
+
+**Consequence for the "stages left" answer:** persistence was thought done (schema + migrate built) and is not — it jumps to the FRONT, ahead of predation and the grant-betrayal loop. TESTING.md needs a sixth tier: **durability** — kill the process mid-season, restart, assert the world + record + every identity survive byte-for-byte. Written before the persistence work, the way golden files predate their bugs.
+
+
 
 **2026-07-25 (later) — Gate 3 fixes + the Levy, verified and deployed.** 2109 tests. The game is playable and the fixes are live.
 
