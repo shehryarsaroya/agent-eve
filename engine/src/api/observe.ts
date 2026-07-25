@@ -322,11 +322,15 @@ export function buildObservation(input: ObserveInput): Observation {
 
     obligations: {
       /**
-       * **Null, not zero.** The Levy lands at SPEC §16 step 10. `my_assessment: 0`
-       * would read as "assessed at nothing", which is a claim about a mechanic that
-       * has not run; null reads as "not assessed", which is the truth.
+       * The principal's own Levy line for this Reckoning, or null when it has none
+       * (not yet assessed this cycle, or not enrolled). NOT a hardcoded null — that
+       * was the "tested but dead on the live path" bug a verifier caught: the Levy
+       * settled correctly in the sim while an agent over HTTP could never see its own
+       * assessment, the same shape as standing being a constant. `levyBlockFor`
+       * returns exactly agent.md §6's `{ my_assessment, paid, deliverable_to,
+       * shortfall_if_unpaid, ballot }`.
        */
-      levy: null,
+      levy: runtime.levyBlockFor(principal, tick),
       exposure: {
         mine: exposure,
         /**

@@ -29,7 +29,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WAKES_PER_RECKONING } from '../../src/core/time.js';
+import { TICKS_PER_RECKONING, WAKES_PER_RECKONING } from '../../src/core/time.js';
 import { buildObservation } from '../../src/api/index.js';
 import { engineReport, engineViolation, tickInputsFor } from '../../src/tick/halt.js';
 import { storesAccount } from '../../src/ledger/index.js';
@@ -826,3 +826,31 @@ describe('if_you_do_nothing is right about the escrow (PROP-O5)', () => {
     expect(h.runtime.engine.status).toBe('RUNNING');
   });
 });
+
+describe('the Levy is visible over the API, not tested-but-dead', () => {
+  it('obligations.levy reflects the runtime block once a Reckoning has assessed', async () => {
+    // A verifier found `src/api/observe.ts` returning `obligations.levy: null`
+    // unconditionally while the Levy settled correctly in the sim — the same shape as
+    // standing being a hardcoded constant. An agent over HTTP could never see its own
+    // assessment, so §5's "the total cannot be dodged" was unfollowable and
+    // set_delivery_intent never surfaced. The observation now calls
+    // runtime.levyBlockFor, so the wire matches what the engine holds.
+    // Enrol a principal the ordinary way, then advance to the first assessment.
+    const who = agent('levyseer');
+    await enrol(h, who);
+    for (let i = 0; i < TICKS_PER_RECKONING; i++) tick(h);
+
+    const block = h.runtime.levyBlockFor(who.principalId as never, h.runtime.engine.tick);
+    const obs = direct(who);
+    const obligations = obs['obligations'] as { levy: unknown };
+
+    if (block !== null) {
+      expect(obligations.levy).not.toBeNull();
+      expect((obligations.levy as { my_assessment: number }).my_assessment).toBe(block.my_assessment);
+    } else {
+      expect(obligations.levy).toBeNull();
+    }
+    // Either way, the wire equals the engine: the whole point.
+    expect(obligations.levy).toEqual(block);
+  });
+})
