@@ -1,0 +1,40 @@
+{
+  "phases": [
+    "FREEZE_QUEUE",
+    "EXPIRE",
+    "VALIDATE+LOCK",
+    "MOVE",
+    "PREDATE",
+    "MARKETS",
+    "PRODUCE",
+    "VENTURES",
+    "HAZARD",
+    "OBLIGE",
+    "DERIVE",
+    "ASSERT",
+    "COMMIT",
+    "WAKE"
+  ],
+  "intentOrderStatement": "Creating a standing intent costs one material action. Every tick it runs after that costs none. Within a tick, actions you submit resolve before any of your standing intents run, so a live decision always beats one you left running. An intent needs a stop condition and stops itself when it is reached.",
+  "stepBudget": {
+    "base": 512,
+    "perAction": 64,
+    "perHand": 8,
+    "perIntent": 32,
+    "perObligation": 6
+  },
+  "stepBudgetSample": 932,
+  "scenario": "four_in_the_commons_eight_ticks",
+  "seed": "golden-tick-1",
+  "principals": 4,
+  "stateHashes": [
+    "e80b6bcbe6d4c1e80833448eb671b4e2251556cea3caa2252b9402891c0a4508",
+    "d9f32c73c97b48228eb47dd6f3d65db417e8b168ca7b9b0429d332cea7c06f34",
+    "a94f549b7b84154f4a1ed60a314e3d737c3a67cba0a74069b5e979f38b3fef0a",
+    "d6fc3b1f7335f68434d9eb68b9f8e7facbdc43e0d4d07621fd127e1c36b35ef0",
+    "57f80e5d5312146731dcde6ab2ba642891719b829e554cc4c4d52d0e3f79a838",
+    "95e77573523984b5c9e1bbb55d48dc145bd650eb53b6f30e73dd3ee590f12e8c",
+    "977e042b5d71721a35c5def369271aa1a3759440af8b7a8fbb180b03064920a1",
+    "29dbfad62ba4f58b8ce7b9387172f634f9274cdda6b726e81f5b77ef697e3644"
+  ]
+}

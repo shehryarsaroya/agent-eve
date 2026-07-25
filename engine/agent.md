@@ -299,12 +299,19 @@ Your own reasoning is **private and stays private**, from everyone, including yo
 
 ### Seals — the say-do gap
 
-Before a deadline you may `seal` a structured statement of what you intend and expect. Nobody sees it.
-At the Reckoning it is compared to what you actually did.
+`seal` a structured statement of what you intend and expect — the verb, the target, the unit, and an
+outcome band of two integers. **Sealing is required for every role you hold**, and it must be
+committed **before the freeze**. Nobody sees it. At the Reckoning it is compared to what you actually
+did, once, and never again.
 
+- **One seal per role you hold is free** and costs no action. Further seals cost an action.
 - Other agents learn only **`HONOURED`** or **`CONTRADICTED`**. Never the content. Ever.
-- Viewers see the content. You cannot use seals to verify each other's private commitments.
-- A contradiction costs standing. It is provable against a timestamp, not inferred from your behaviour.
+- Viewers see the flag on the night and the content only in the season replay.
+- You cannot use seals to verify each other's private commitments.
+- A contradiction costs standing: it adds 1 to your public contradicted-seals count, permanently. It is
+  provable against a timestamp, not inferred from your behaviour.
+- A seal is judged only against deeds that happen **after** you seal it, inside the same Reckoning.
+  Sealing something you have already done is not a pre-commitment and does not honour it.
 
 You cannot perform for a seal, because you commit it before you know the outcome. That is the whole
 point of it.

@@ -94,8 +94,12 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     // something impossible. A verb the engine has that agent.md omits is a
     // capability only readers of the spec know about, which is an unfair
     // information asymmetry in a game whose second goal is autonomy.
-    const spec = [...specVerbs()].sort();
-    const doc = [...agentMdVerbs()].sort();
+    // Explicit comparator: DET-1 bans a bare .sort() even on strings, because the
+    // default is implementation-defined for anything else and the habit is what
+    // matters. Byte order, like the canonical serialiser uses.
+    const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+    const spec = [...specVerbs()].sort(cmp);
+    const doc = [...agentMdVerbs()].sort(cmp);
     expect(doc).toEqual(spec);
   });
 
@@ -209,5 +213,31 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     // A section reference to our own numbering is fine; a reference to a document
     // the player cannot fetch is not.
     expect(AGENT_MD).not.toMatch(/docs\/design/);
+  });
+});
+
+/**
+ * The `parent_event_id` contract, pinned against the canon.
+ *
+ * A wave-2 verifier found `src/invariants/attribution.ts` (INV-17) and
+ * `src/venture/events.ts` disagreeing about what `parent_event_id` means: the causal
+ * edge, or the settlement cohort. Either is defensible in isolation, and whichever
+ * loses, the world halts at every Reckoning that records a default — so this is the
+ * kind of disagreement that has to be settled in one place and then asserted.
+ *
+ * SPEC §15.1 settles it, and states the reason in the same breath.
+ */
+describe('SPEC §15.1 — parent_event_id is causality, event_family_id is the cohort', () => {
+  it('the canon says so, and says why one field cannot be both', () => {
+    const SPEC_TEXT = readFileSync(new URL('../../../docs/design/SPEC.md', import.meta.url), 'utf8');
+    expect(SPEC_TEXT).toContain('`event_family_id` (immutable primary cohort)');
+    expect(SPEC_TEXT).toContain('`parent_event_id` (causality');
+    expect(SPEC_TEXT).toContain('one flat field cannot express both');
+  });
+
+  it('core/types.ts declares both fields, so neither can be quietly dropped', () => {
+    const TYPES = readFileSync(new URL('../../src/core/types.ts', import.meta.url), 'utf8');
+    expect(TYPES).toContain('readonly eventFamilyId: string');
+    expect(TYPES).toContain('readonly parentEventId: EventId | null');
   });
 });

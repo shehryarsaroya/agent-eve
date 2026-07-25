@@ -1,0 +1,110 @@
+/**
+ * Seals and the say-do gap — SPEC §11.
+ *
+ * What the rest of the engine needs to know about this module:
+ *
+ *   - **A seal is typed fields. Prose never feeds the verdict** (PROP-D1). `judge`
+ *     in `verdict.ts` does not take prose as an argument, and `intentFromCanonical`
+ *     refuses any key outside the closed five. There is **no natural-language
+ *     betrayal detector anywhere in this design** (scars #7 and #8).
+ *   - **Agents receive `HONOURED | CONTRADICTED` and nothing else** (PROP-D2). The
+ *     only agent-facing shape is `SealDisclosure` and its four keys; content
+ *     reaches viewers in the season replay and agents never. `sealCommitEvent` and
+ *     `sealVerdictEvent` take no payload and no allow-list argument, so a caller
+ *     **cannot** opt out.
+ *   - **`reckoningIndex` is derived from the sealing tick**, never supplied, and
+ *     `resolve` refuses to run outside its own Reckoning's settlement tick. That is
+ *     scar #7 closed by construction rather than by care.
+ *   - **A contradicted seal costs standing on a published schedule** —
+ *     `SEAL_STANDING_SCHEDULE`, versioned, with `SEAL_STANDING_STATEMENT` as the
+ *     sentence `agent.md` must carry verbatim (scar #1: the agent-facing text is a
+ *     rules surface).
+ *   - **Sealing is mandatory and one seal per role held is free.**
+ *     `sealComplianceRejection` is the predicate the venture module must call before
+ *     a role is carried into the freeze; `unsealedRoles` is the Reckoning-time audit.
+ *   - **Role membership is never stored here.** `venture_role.filled_by_hand_id` is
+ *     the single home of commitment (§6.2, scar #5), so `rolesHeld` is an argument.
+ *   - **Standing itself is not stored here.** `resolve` returns charges; whoever
+ *     owns the standing table applies them and runs `checkInv21` with the causes it
+ *     authorised.
+ */
+
+export {
+  MAX_SEALS_PER_PRINCIPAL_PER_RECKONING,
+  SealBook,
+  roleKey,
+  type SealAccepted,
+  type SealAuditRecord,
+  type SealCommit,
+  type SealResolution,
+  type SealResolveInput,
+  type SealRoleRef,
+} from './book.js';
+
+export { cmpDeeds, deedFaults, type Deed } from './deed.js';
+
+export {
+  SEAL_DISCLOSURE_KEYS,
+  SealDisclosureError,
+  agentSealDisclosure,
+  sealCommitEvent,
+  sealProjectionLeaks,
+  sealVerdictEvent,
+  seasonReplaySealContent,
+  settlementTickOf,
+  viewerSealDisclosure,
+  type SealDisclosure,
+  type SealReplayRow,
+} from './disclosure.js';
+
+export {
+  MAX_PROSE_LENGTH,
+  MAX_TARGET_LENGTH,
+  PUBLIC_CLAIM_MAX_CHARS,
+  SEAL_INTENT_KEYS,
+  SEAL_MEASURES,
+  claimFaults,
+  inBand,
+  intentFaults,
+  intentFromCanonical,
+  intentToCanonical,
+  isDeclaredVerb,
+  type PublicClaim,
+  type SealIntent,
+  type SealIntentKey,
+  type SealMeasure,
+} from './intent.js';
+
+export { assertSealInvariants, checkInv20 } from './invariants.js';
+
+export {
+  MAX_ROW_ITEMS,
+  sayDoReplayRow,
+  sayDoRow,
+  type SayDoReplayRow,
+  type SayDoRow,
+  type SayDoRowInput,
+  type SayDoWithheld,
+} from './saydo.js';
+
+export {
+  SEAL_STANDING_SCHEDULE,
+  SEAL_STANDING_STATEMENT,
+  STANDING_VECTORS,
+  VECTORS_BY_CAUSE,
+  applySealStandingCharges,
+  chargeForContradiction,
+  checkInv21,
+  type SealStandingCharge,
+  type StandingCause,
+  type StandingVector,
+} from './standing.js';
+
+export {
+  SealHalt,
+  judge,
+  sealViolation,
+  type Judgement,
+  type VerdictBasis,
+  type VerdictInputs,
+} from './verdict.js';
