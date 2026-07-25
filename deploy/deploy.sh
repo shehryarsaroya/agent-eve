@@ -114,6 +114,18 @@ if [[ "$TARGET" == "client" || "$TARGET" == "all" ]]; then
   # stale orphan file is nothing; the cost of that mistake is the whole site.
   rsync -az -e "ssh -i $KEY" "$REPO_ROOT/client/" "root@$HOST:$WEB_DIR/"
   ok "client synced (deliberately without --delete)"
+
+  # agent.md is the ONE artifact an agent must be able to play from with zero extra
+  # reading, so it has to be fetchable. Copied from engine/agent.md rather than kept as
+  # a second file in client/, because two copies of a rules surface is scar #1 waiting
+  # for someone to edit the wrong one.
+  scp -q -i "$KEY" "$REPO_ROOT/engine/agent.md" "root@$HOST:$WEB_DIR/agent.md"
+  ok "agent.md published from its single source"
+fi
+
+# ── the rules surface must actually be served ───────────────────────────────
+if [[ "$TARGET" == "client" || "$TARGET" == "all" ]]; then
+  :
 fi
 
 # ── services ────────────────────────────────────────────────────────────────
@@ -158,6 +170,16 @@ ok "landing page still 200"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://agentinsurance.io/whitepaper.html || echo 000)
 [[ "$CODE" == "200" ]] || fail "whitepaper returned $CODE"
 ok "whitepaper still 200"
+
+# agent.md must return MARKDOWN, not the client's index.html. nginx's
+# `try_files $uri $uri/ /compact/index.html` turns a missing file into a 200 serving a
+# web page, so a probe fetching the rules would get HTML and try to parse it as rules —
+# and the status code would say everything was fine. A 200 is not evidence; the content
+# is. This check exists because that is exactly what happened.
+FIRST=$(curl -s --max-time 20 https://agentinsurance.io/compact/agent.md | head -c 40)
+grep -q 'THE COMPACT' <<<"$FIRST" || fail "agent.md is not being served as markdown (got: ${FIRST:0:40})"
+grep -qv '<!DOCTYPE' <<<"$FIRST" || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
+ok "agent.md served as markdown"
 
 # Health must assert the interesting property, not liveness (scar #14b).
 HEALTH=$(curl -s --max-time 20 https://agentinsurance.io/compact/health || echo '{}')
