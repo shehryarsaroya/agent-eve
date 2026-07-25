@@ -83,7 +83,11 @@ describe('§12.1 — the observation is exactly ten keys, in agent.md order', ()
     // And the header publishes the live list, so an agent never has to discover it by
     // spending actions on refusals.
     expect(live.size).toBeGreaterThan(3);
-    expect(live.has('seal')).toBe(false);
+    // `seal` and `elect` are both live now, so what this asserts about them is the thing
+    // that matters: they are in the published list, which is what makes offering them
+    // legal under the check above.
+    expect(live.has('seal')).toBe(true);
+    expect(live.has('elect')).toBe(true);
   });
 
   it('counts a withheld act whose verb is not live yet, rather than dropping it silently', () => {
@@ -91,9 +95,17 @@ describe('§12.1 — the observation is exactly ten keys, in agent.md order', ()
     // omission the agent is entitled to know about, and a silent filter would be
     // indistinguishable, from where it sits, from having become ineligible.
     //
-    // Exercised in-process rather than over the wire because the case only arises for a
-    // principal that HOLDS A ROLE — `seal` is the withheld act, and a newcomer with no
-    // role would be offered no seal to withhold, so a wire test would pass vacuously.
+    // ── WHY THIS SHADOWS `liveVerbs` INSTEAD OF USING A REAL GAP ─────────────
+    //
+    // It used to use `seal`, which was the one verb the generator produced and the
+    // runtime refused. Both `seal` and `elect` are live now, so **every** verb the
+    // generator can produce is live and there is no naturally-occurring instance left —
+    // which would make this guard pass vacuously forever, and a guard that cannot fire
+    // reads exactly like a clean bill of health.
+    //
+    // The mechanism is what has to stay covered, because the next unbuilt verb the
+    // generator learns to offer will need it. So the live set is narrowed for one call.
+    // Verified by mutation: deleting the `notLive` branch in `affordancesFor` fails this.
     const cast = new HeuristicCast(h.runtime, { size: 8 });
     cast.seat('withheld');
     for (let n = 0; n < 40; n += 1) {
@@ -110,7 +122,9 @@ describe('§12.1 — the observation is exactly ten keys, in agent.md order', ()
     expect(holder, 'the cast filled no roles, so this test would prove nothing').toBeDefined();
     if (holder === undefined) return;
 
-    const observation = buildObservation({
+    // The affordance the narrowing will withhold has to exist first, or the assertions
+    // below would hold for the wrong reason.
+    const before = buildObservation({
       runtime: h.runtime,
       principal: holder.principal,
       serverNowMs: h.clock.nowMs(),
@@ -120,12 +134,33 @@ describe('§12.1 — the observation is exactly ten keys, in agent.md order', ()
       corrections: [],
       actionsRemaining: 4,
     });
-    const withheld = observation.header['withheld'] as Record<string, unknown>;
-    expect(Number(withheld['count'])).toBeGreaterThan(0);
-    expect(String(withheld['reason'])).toContain('has not landed yet');
-    expect(String(withheld['reason'])).toContain('Nothing you were eligible for has been dropped');
-    // And the seal was the thing withheld: it is not in the list.
-    expect(observation.affordances.some((x) => x.verb === 'seal')).toBe(false);
+    const target = before.affordances[0]?.verb;
+    expect(target, 'no affordance to withhold, so this test would prove nothing').toBeDefined();
+    if (target === undefined) return;
+
+    const real = h.runtime.liveVerbs;
+    const narrowed = new Set([...real].filter((v) => v !== target));
+    Object.defineProperty(h.runtime, 'liveVerbs', { get: () => narrowed, configurable: true });
+    try {
+      const observation = buildObservation({
+        runtime: h.runtime,
+        principal: holder.principal,
+        serverNowMs: h.clock.nowMs(),
+        fresh: true,
+        wakesRemaining: 16,
+        stale: false,
+        corrections: [],
+        actionsRemaining: 4,
+      });
+      const withheld = observation.header['withheld'] as Record<string, unknown>;
+      expect(Number(withheld['count'])).toBeGreaterThan(0);
+      expect(String(withheld['reason'])).toContain('has not landed yet');
+      expect(String(withheld['reason'])).toContain('Nothing you were eligible for has been dropped');
+      // And the unlive verb was the thing withheld: it is not in the list.
+      expect(observation.affordances.some((x) => x.verb === target)).toBe(false);
+    } finally {
+      Object.defineProperty(h.runtime, 'liveVerbs', { get: () => real, configurable: true });
+    }
   });
 
   it('always reports withheld, including when nothing was withheld (PROP-O1)', async () => {

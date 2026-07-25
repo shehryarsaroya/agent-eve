@@ -298,6 +298,12 @@ export interface EngineOptions {
    */
   readonly roleFills?: () => RoleFills;
   readonly obligations?: ObligationSource;
+  /**
+   * Report whether an act is inside its module's own free allowance. Only `seal` uses
+   * it today ("one free per role held", §17 and agent.md). Omit it and every act is
+   * metered normally, which fails closed.
+   */
+  readonly allowance?: (request: ActionRequest) => boolean;
   readonly events?: EventSink;
   /**
    * The PAUSED state machine. Owned by `src/invariants/halt.ts`, never mirrored
@@ -380,6 +386,12 @@ export class Engine {
   private readonly roleFills: () => RoleFills;
   private readonly obligations: ObligationSource | null;
   /**
+   * Whether an act falls inside a module-owned free allowance (§17). Supplied by the
+   * caller because only the owning module holds the count; see `budget.ts` on why
+   * duplicating it here would be scar #5.
+   */
+  private readonly allowance: ((request: ActionRequest) => boolean) | null;
+  /**
    * The obligation set for the tick being resolved, read ONCE at budget time.
    *
    * Deliberately cached rather than re-read in OBLIGE. Sizing the budget from one
@@ -430,6 +442,7 @@ export class Engine {
     this.requireAllInvariants = options.requireAllInvariants ?? false;
     this.roleFills = options.roleFills ?? ((): RoleFills => NO_ROLE_FILLS);
     this.obligations = options.obligations ?? null;
+    this.allowance = options.allowance ?? null;
     this.events = options.events ?? null;
     // ── what is in `state_hash`, and what cannot be ────────────────────────
     //
@@ -1037,7 +1050,13 @@ export class Engine {
     const floor = commonsFloorRejection(this.world, request.verb, request.params);
     if (floor !== null) return this.refuse(floor);
 
-    const charged = this.budget.charge(request.principal, request.verb, routine);
+    // Ask the owning module whether this act is inside its own free allowance —
+    // today only `seal`'s "one free per role held" (§17), whose ledger lives in the
+    // seals book. The budget meters; it does not keep a second copy of that count.
+    // agent.md promises the first seal is free, so this hook is the difference
+    // between keeping that promise and printing it.
+    const withinAllowance = this.allowance?.(request) ?? false;
+    const charged = this.budget.charge(request.principal, request.verb, routine, withinAllowance);
     if (!charged.ok) return this.refuse(charged);
 
     const handler = this.verbs[request.verb];

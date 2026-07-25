@@ -138,14 +138,26 @@ function haul(args: {
 
   const hash = venture.termsHash;
   if (hash === null) throw new Error('no terms_hash');
-  submit(runtime, payer, 'sign', {
-    venture: venture.id,
-    terms_hash: hash,
-    ...(args.election === undefined ? {} : { election: args.election }),
-  }, 0);
+  submit(runtime, payer, 'sign', { venture: venture.id, terms_hash: hash }, 0);
   submit(runtime, hand, 'sign', { venture: venture.id, terms_hash: hash }, 1);
   runtime.runTick();
   runtime.runTick();
+
+  // ── The election is its own verb and its own tick ──────────────────────────
+  //
+  // It used to ride on the signature, so this fixture used to pass it there. Two things
+  // the split changes about what these tests exercise, and both are the point of it:
+  // the election names **role 1** specifically — role 0 is the payer's own hand, which
+  // is self-dealt and which `elect` refuses by name (scar #9) — and it lands *after*
+  // the venture is already LIVE, which is where a payer actually decides.
+  if (args.election !== undefined) {
+    submit(runtime, payer, 'elect', {
+      venture: venture.id,
+      role: 1,
+      election: args.election,
+    }, 0);
+    runtime.runTick();
+  }
 
   const live = runtime.ventures.require(venture.id);
   if (live.state !== 'LIVE') throw new Error(`the venture is ${live.state}, not LIVE`);

@@ -20,8 +20,10 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { setSpeed } from '../../src/core/time.js';
+import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import { CAST_NAMES, CAST_ROLES, HeuristicCast, MAX_CAST } from '../../src/cast/index.js';
+import { IN_FULL } from '../../src/venture/index.js';
+import { storesAccount } from '../../src/ledger/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { tierOf } from '../../src/world/index.js';
 import { Rng } from '../../src/core/rng.js';
@@ -135,6 +137,151 @@ describe('the cast plays the game', () => {
     // be a halt an agent could provoke (AGT-X9).
     const { runtime } = run('cast-nohalt', 300, MAX_CAST);
     expect(runtime.engine.status).toBe('RUNNING');
+  });
+
+  it('elects, seals, and answers §7.6 with BOTH branches in one day', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // §7.6 IS THE DESIGN'S OWN FALSIFICATION TEST, and it was rigged.
+    //
+    // The old cast elected `IN_FULL` on every venture it created, unconditionally, so
+    // *is the elective part always honoured?* had exactly one possible answer and it was
+    // "yes, because the only agent in the world cannot do otherwise". The default branch
+    // was unreachable, and the honest comment in the cast said so.
+    //
+    // The bot now has a reason — {@link CAST_ELECTIVE_APPETITE_BPS} of its free stores,
+    // across everything settling tonight — so both branches are reached in one Reckoning
+    // from a *policy*, not a dice roll. This asserts both, because either alone is the
+    // pre-answered version: all-honoured means trust is free, all-defaulted means it is
+    // worthless.
+    // ══════════════════════════════════════════════════════════════════════
+    const { runtime } = run('cast-elective', TICKS_PER_RECKONING + 2, 12);
+    const summary = runtime.reckonings()[0];
+    expect(summary, 'no Reckoning settled, so this proves nothing').toBeDefined();
+    expect(summary?.electiveHonoured).toBeGreaterThan(0);
+    expect(summary?.defaults).toBeGreaterThan(0);
+    // Honouring dominates. A world where most promises break has no trust to price.
+    expect(summary?.electiveHonoured ?? 0).toBeGreaterThan(summary?.defaults ?? 0);
+    // Seals were made and judged, and not one was marked from an absence (A5′).
+    expect(summary?.sealsJudged ?? 0).toBeGreaterThan(0);
+    expect(summary?.sealsContradicted).toBe(0);
+    expect(summary?.deedSetFaults).toBe(0);
+  });
+
+  it('states less when the bill is large against the purse — a reason, not a dice roll', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // §6.4 prices the *resistance*: "resisting a temptation you could not afford is worth
+    // more than resisting one you could not be bothered with." So the bot's reason has to
+    // be affordability, and this is the assertion that it actually is one rather than a
+    // constant with a comment attached: the same world, the same tick, the same venture —
+    // only the purse changes, and the statement changes with it.
+    //
+    // A6 also requires there be no dice in it. That is structural rather than asserted:
+    // `electionFor` takes no `Rng` at all, so there is no stream for it to draw from, and
+    // `Math.random` is banned by lint (DET-7).
+    // ══════════════════════════════════════════════════════════════════════
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'purse' });
+    const cast = new HeuristicCast(runtime, { size: 8 });
+    cast.seat('purse');
+    // Run without ever submitting an election, so every role is still unstated and the
+    // policy is deciding from scratch on the tick under test.
+    for (let n = 0; n < 80; n += 1) {
+      for (const action of cast.decide(runtime.engine.tick + 1, 'purse')) {
+        if (action.verb !== 'elect') runtime.engine.submit(action);
+      }
+      runtime.runTick();
+    }
+    const first = cast
+      .decide(runtime.engine.tick + 1, 'purse')
+      .find((a) => a.verb === 'elect');
+    expect(first, 'no payer had an election to make, so this proves nothing').toBeDefined();
+    if (first === undefined) return;
+    // A full purse against a small bill: the honest statement, and the only safe one on a
+    // share role.
+    expect(first.params['election']).toBe(IN_FULL);
+
+    // Now empty that payer's stores. Nothing else about the world moves.
+    const stores = storesAccount(first.principal);
+    runtime.ledger.transferCurrency({
+      eventId: 'purse::drain' as never,
+      tick: runtime.engine.tick,
+      from: stores,
+      to: storesAccount(cast.roster.find((m) => m.principal !== first.principal)?.principal ?? first.principal),
+      amount: runtime.ledger.freeBalance(stores),
+    });
+    const after = cast
+      .decide(runtime.engine.tick + 1, 'purse')
+      .find((a) => a.verb === 'elect' && a.principal === first.principal);
+    expect(after, 'the payer stopped electing entirely, which is a different bug').toBeDefined();
+    // Same venture, same role, and now a number instead of "whatever it costs" — which is
+    // a decline for the difference, permanently, and it is meant to be.
+    expect(after?.params['venture']).toBe(first.params['venture']);
+    expect(after?.params['role']).toBe(first.params['role']);
+    expect(after?.params['election']).not.toBe(IN_FULL);
+    expect(after?.params['election']).toBe(0);
+  });
+
+  it('restates a promise it can no longer fund DOWNWARD, which is the drama the split buys', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // `agent.md`: "Changing your mind late is allowed, and it is the whole reason this game
+    // has drama in it." A cast that only ever decided once would be the old
+    // election-on-`sign` behaviour wearing the new verb's name, and the restatement path
+    // would be dead code with a comment on it — which a mutation caught: emptying the
+    // restate branch left every other assertion in this file green.
+    //
+    // So: the bot commits IN_FULL while it can afford to, the money goes elsewhere, and it
+    // comes back and says a smaller number. Monotone downward, never up, which is what
+    // makes the policy converge instead of thrashing.
+    // ══════════════════════════════════════════════════════════════════════
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'restate' });
+    const cast = new HeuristicCast(runtime, { size: 8 });
+    cast.seat('restate');
+    let committed: { principal: string; venture: string; role: number } | null = null;
+    for (let n = 0; n < 120 && committed === null; n += 1) {
+      const decisions = cast.decide(runtime.engine.tick + 1, 'restate');
+      for (const action of decisions) runtime.engine.submit(action);
+      runtime.runTick();
+      const elected = decisions.find(
+        (a) => a.verb === 'elect' && a.params['election'] === IN_FULL,
+      );
+      if (elected !== undefined) {
+        committed = {
+          principal: String(elected.principal),
+          venture: String(elected.params['venture']),
+          role: Number(elected.params['role']),
+        };
+      }
+    }
+    expect(committed, 'no payer ever committed IN_FULL, so this proves nothing').not.toBeNull();
+    if (committed === null) return;
+    expect(runtime.electionOn(committed.venture as never, committed.role)).toBe(IN_FULL);
+
+    // The money goes elsewhere. Nothing about the promise changes; only the purse behind it.
+    const stores = storesAccount(committed.principal as never);
+    const elsewhere = cast.roster.find((m) => m.principal !== committed.principal)?.principal;
+    runtime.ledger.transferCurrency({
+      eventId: 'restate::drain' as never,
+      tick: runtime.engine.tick,
+      from: stores,
+      to: storesAccount(elsewhere ?? (committed.principal as never)),
+      amount: runtime.ledger.freeBalance(stores),
+    });
+
+    const restated = cast
+      .decide(runtime.engine.tick + 1, 'restate')
+      .find(
+        (a) =>
+          a.verb === 'elect' &&
+          a.principal === committed.principal &&
+          a.params['venture'] === committed.venture &&
+          a.params['role'] === committed.role,
+      );
+    expect(restated, 'the bot let a promise it cannot fund stand').toBeDefined();
+    expect(restated?.params['election']).not.toBe(IN_FULL);
+    expect(Number(restated?.params['election'])).toBeLessThan(
+      runtime.electiveCeilingOf(runtime.ventures.require(committed.venture as never), committed.role),
+    );
   });
 
   it('seats raiders outside the Commons and everybody else inside it', () => {

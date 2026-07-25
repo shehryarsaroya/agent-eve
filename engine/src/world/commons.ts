@@ -70,6 +70,15 @@ export const VERB_CLASS: Readonly<Record<string, VerbClass>> = {
   message: 'PEACEFUL',
   fill_role: 'CONTEXTUAL',
   sign: 'CONTEXTUAL',
+  // `elect` is PEACEFUL, including when it declines, and the classification is
+  // load-bearing rather than incidental. A8 makes hostile action *invalid* in the
+  // Commons, so a CONTEXTUAL or HOSTILE reading here would mean a Commons-seated payer
+  // could not state what it will pay — and every principal in Phase 0 is
+  // Commons-seated. Walking away from an elective half is not an attack on anyone's
+  // body: agent.md calls it "a legitimate move... the choice the whole game is built
+  // around", it is answered by a permanent public default rather than by the floor, and
+  // §7.6 cannot be asked at all in a zone where the choice is unreachable.
+  elect: 'PEACEFUL',
   withdraw: 'PEACEFUL',
   abandon: 'PEACEFUL',
 

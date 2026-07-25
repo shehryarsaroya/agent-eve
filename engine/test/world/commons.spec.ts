@@ -131,7 +131,10 @@ function merge(a: ActionParams, b: ActionParams): ActionParams {
 
 describe('the verb classification is total against SPEC §12.2', () => {
   it('classifies every verb the canon declares, and declares no verb the canon lacks', () => {
-    expect(VERBS.length).toBe(38);
+    // 39, not 38: SPEC §12.2 gained `elect` and deliberately spends the last-but-one
+    // slot of §17's budget of 40 on it, because A6 is the core loop and was unreachable
+    // while the payer's choice was a parameter on a signature it had already sent.
+    expect(VERBS.length).toBe(39);
     expect(() => assertVerbsClassified(VERBS)).not.toThrow();
     expect(Object.keys(VERB_CLASS)).toHaveLength(VERBS.length);
   });

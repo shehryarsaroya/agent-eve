@@ -93,14 +93,14 @@ describe('PROP-O3 — exactly ten top-level keys, in order', () => {
 });
 
 describe('PROP-O3 — the verb budget, cross-checked against the world module', () => {
-  it('is 38 verbs, under §17’s cap of 40', () => {
-    expect(VERBS.length).toBe(38);
+  it('is 39 verbs, under §17’s cap of 40', () => {
+    expect(VERBS.length).toBe(39);
     expect(VERBS.length).toBeLessThanOrEqual(40);
     expect(new Set(VERBS).size).toBe(VERBS.length);
   });
 
   it('is exactly the set world/commons.ts classifies — not a subset either way', () => {
-    // Two lists of the same 38 words is the drift scar #1 is made of, so this asserts
+    // Two lists of the same 39 words is the drift scar #1 is made of, so this asserts
     // equality in both directions rather than containment in one.
     const classified = Object.keys(VERB_CLASS).sort((a, b) => (a < b ? -1 : 1));
     const offered = [...VERBS].sort((a, b) => (a < b ? -1 : 1));
@@ -214,7 +214,7 @@ describe('the payload is a stable, hashable artifact', () => {
   });
 
   it('offers only verbs whose engine exists, and says which those are', () => {
-    // Nineteen of the 38 verbs have no state table yet. That is documented in
+    // Most of the 39 verbs have no state table yet. That is documented in
     // catalogue.ts and asserted here so the day one ships, this list moves with it.
     const f = fixture();
     const haul = makeHaul(f);

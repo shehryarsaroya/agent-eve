@@ -12,7 +12,12 @@
 import { describe, expect, it } from 'vitest';
 import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import { ArgError, DEFAULT_ARGS, parseArgs, runSim } from '../../src/sim/cli.js';
-import { Runtime, defaultTerms, nextSettlementAtOrAfter } from '../../src/sim/runtime.js';
+import {
+  DELIVERY_VERB,
+  Runtime,
+  defaultTerms,
+  nextSettlementAtOrAfter,
+} from '../../src/sim/runtime.js';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { electiveFloor, kindSpec, VENTURE_KINDS } from '../../src/venture/index.js';
 import { storesAccount } from '../../src/ledger/index.js';
@@ -178,13 +183,19 @@ describe('the runtime holds the line no agent may cross', () => {
       // The election is agent-supplied and reaches the settlement set, so every shape
       // it can arrive in has to come back as a hint. A malformed one that got through
       // would be dropped silently at the freeze (PROP-V4's own default) and read on the
-      // record as a payer that declined.
-      { venture: 'nope', terms_hash: 'deadbeef', election: 'IN_PART' },
-      { venture: 'nope', terms_hash: 'deadbeef', election: -1 },
-      { venture: 'nope', terms_hash: 'deadbeef', election: 1.5 },
-      { venture: 'nope', terms_hash: 'deadbeef', election: Number.MAX_VALUE },
-      { venture: 'nope', terms_hash: 'deadbeef', election: null },
-      { venture: 'nope', terms_hash: 'deadbeef', election: { pay: 'everything' } },
+      // record as a payer that declined. Aimed at `elect` now that it has its own verb,
+      // and still carrying `terms_hash` so the same rows also fuzz `sign` — which must
+      // refuse an election rather than accept one, and must not throw doing it.
+      { venture: 'nope', role: 0, terms_hash: 'deadbeef', election: 'IN_PART' },
+      { venture: 'nope', role: 0, terms_hash: 'deadbeef', election: -1 },
+      { venture: 'nope', role: 0, terms_hash: 'deadbeef', election: 1.5 },
+      { venture: 'nope', role: 0, terms_hash: 'deadbeef', election: Number.MAX_VALUE },
+      { venture: 'nope', role: 0, terms_hash: 'deadbeef', election: null },
+      { venture: 'nope', role: 0, terms_hash: 'deadbeef', election: { pay: 'everything' } },
+      { venture: 'nope', role: Number.NaN, election: 'IN_FULL' },
+      { venture: 'nope', role: -1, election: 'IN_FULL' },
+      { venture: 'nope', role: 1e308, election: 'IN_FULL' },
+      { venture: 'nope', role: '0', election: 'IN_FULL' },
       { act: 'shout', venture: 'nope', text: 'y'.repeat(5_000) },
       { verb: '', target: '', measure: 'NOPE', outcome_low: 5, outcome_high: 1 },
       { intent: { verb: 'move', params: { hand: null } }, until_tick: -1 },
@@ -210,35 +221,37 @@ describe('the runtime holds the line no agent may cross', () => {
     expect(submissions).toBeGreaterThan(20);
   });
 
-  it('does not offer `seal` yet, and the reason is no longer that nothing resolves it', () => {
-    // ── The regression for a real halt this suite found ─────────────────────
+  it('offers `seal` and `elect`, and every seal it offers names a verb this world records', () => {
+    // ── The regression for two real defects, both now closed ────────────────
     //
-    // With `seal` registered, twenty bots sealing through Reckoning 0 produced sixty
-    // INV-20 HALT violations at tick 287 and PAUSED the world: every seal must be
-    // resolved exactly once when its Reckoning closes, and nothing resolved seals.
-    // One free `seal` from one principal was enough (AGT-X9).
-    //
-    // **That half is fixed.** The Reckoning driver now resolves every Reckoning's seals
-    // at its settlement tick, against real delivery deeds and an independently-sourced
-    // completeness witness — `test/sim/reckoning.test.ts` drives a seal through the
-    // handler and asserts the verdict, so the halt is gone and the path is covered.
-    //
-    // The verb stays unregistered for a different reason, and it is a rules-surface
-    // reason rather than an engine one: `src/api/observe.ts` and the cast both offer a
-    // seal whose `verb` is `sign`, and this world records no `sign` deed — so the first
-    // thing an agent following its own affordance would seal is guaranteed
-    // `CONTRADICTED` from an absence. Registering the verb before those two are moved
-    // onto the delivery verb would publish a permanent public lie about an agent that
-    // did exactly what the server told it to (A5′, scar #1). Turning it on is one line
-    // **plus** those two call sites, and it is reported as such rather than done here.
+    // 1. With `seal` registered and nothing resolving seals, twenty bots sealing through
+    //    Reckoning 0 produced sixty INV-20 HALT violations at tick 287 and PAUSED the
+    //    world. One free `seal` from one principal was enough (AGT-X9). The Reckoning
+    //    driver now resolves every Reckoning's seals at its settlement tick.
+    // 2. The affordance and the cast then both sealed `verb: 'sign'`, and this world
+    //    records **no `sign` deed**. With the completeness witness working, such a seal
+    //    resolves CONTRADICTED from an absence: a permanent public lie about an agent
+    //    that copied the server's own affordance (A5′, scar #1). That is what kept the
+    //    verb unregistered, and it is what this assertion now nails down.
     setSpeed('instant');
     const runtime = new Runtime({ seed: 'no-seal' });
-    expect(runtime.liveVerbs.has('seal')).toBe(false);
-    // The handler exists and is correct; only the affordances wait.
+    expect(runtime.liveVerbs.has('seal')).toBe(true);
+    expect(runtime.liveVerbs.has('elect')).toBe(true);
+    // The handler stays exposed for the fixtures that drive it with their own context.
     expect(typeof runtime.sealHandler).toBe('function');
+    // The one property that made registration safe: the only verb a seal may name is the
+    // one the engine writes deeds under. `'sign'` is the spelling that was the trap.
+    expect(DELIVERY_VERB).not.toBe('sign');
   });
 
-  it('survives a full Reckoning with a cast sealing nothing and no seals to resolve', () => {
+  it('runs a full Reckoning with a cast that seals, and marks nobody from an absence', () => {
+    // ── §7.6 and A5′ in one loop ────────────────────────────────────────────
+    //
+    // This used to assert `seals.size === 0`, which is what a world with the verb turned
+    // off looks like. With it on, the assertion that matters is the opposite one: seals
+    // are *made*, they are *judged*, and — because the affordance, the cast and PROP-D4's
+    // compliance gate all read one `sealableRoles` — none of them is marked
+    // CONTRADICTED, because every one of them was keepable when it was offered.
     setSpeed('instant');
     const runtime = new Runtime({ seed: 'boundary' });
     const cast = new HeuristicCast(runtime, { size: 20 });
@@ -251,7 +264,16 @@ describe('the runtime holds the line no agent may cross', () => {
       expect(report.violations, `violations at tick ${String(report.tick)}`).toEqual([]);
       expect(report.halted).toBe(false);
     }
-    expect(runtime.seals.size).toBe(0);
+    expect(runtime.seals.size).toBeGreaterThan(0);
+    const summary = runtime.reckonings()[0];
+    expect(summary?.sealsJudged).toBeGreaterThan(0);
+    // A5′: not one mark against an agent that did what the server told it to.
+    expect(summary?.sealsContradicted).toBe(0);
+    expect(summary?.deedSetFaults).toBe(0);
+    // And both halves of A7 were exercised in the same day, which is the evidence §7.6
+    // is answerable rather than pre-answered.
+    expect(summary?.electiveHonoured).toBeGreaterThan(0);
+    expect(summary?.defaults).toBeGreaterThan(0);
   });
 });
 

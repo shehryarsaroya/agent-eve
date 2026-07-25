@@ -36,10 +36,12 @@
  *     settlement resolves it at the *next* tick. The gap between them is where a raid
  *     lands, and it is the reason {@link Runtime.committing} refuses a commitment inside
  *     it rather than letting `VERIFY_INPUTS` halt a healthy world.
- *   - **The payer's election rides on `sign`**, and that is a canon gap being filled
- *     rather than a design choice: see {@link Runtime.vSign}. The engine never infers an
- *     election, because inferring one deletes A7 and answering §7.6 with our own
- *     arithmetic is worse than not answering it.
+ *   - **The election is its own verb, per role, restatable until the freeze.** `sign`
+ *     binds the terms; {@link Runtime.vElect} decides the payment. The engine never
+ *     infers an election, because inferring one deletes A7 and answering §7.6 with our
+ *     own arithmetic is worse than not answering it — and it never *locks* one early
+ *     either, because a choice fixed at signing has no moment of maximum leverage in it
+ *     and A6 is the core loop.
  *   - **Deeds come from deliveries and the tally comes from the venture rows**, by two
  *     roads on purpose ({@link Runtime.deedTallyFor}). A tally counted off the deeds
  *     would make the seal resolver's own completeness check a tautology.
@@ -102,6 +104,12 @@ import {
   type ReckoningOutcome,
   type ReckoningWorld,
 } from '../reckoning/index.js';
+// §7.1: "there is one function that answers 'what is this role owed', and both the quote
+// and the payout read it." `slotClaimAt` is that function with the holder lookup lifted,
+// and `test/observe/catalogue.test.ts` pins it against the preview at all three
+// percentiles — so reading it here is reading the settlement's own arithmetic rather
+// than a second copy of the escrowed/elective split.
+import { slotClaimAt } from '../observe/forecast.js';
 import {
   SealBook,
   cmpDeeds,
@@ -141,6 +149,7 @@ import {
 import {
   allocateFills,
   activate,
+  allRoleIndices,
   computeProceeds,
   countersign,
   createVenture,
@@ -148,12 +157,14 @@ import {
   electiveFloor,
   escrowRequired,
   filledIndices,
+  IN_FULL,
   isEscrowable,
   isFullyFilled,
   kindSpec,
   NEUTRAL_STAGE_BPS,
   openIndices,
   pinnedAt,
+  proceedsBand,
   roleOfPrincipal,
   roleTerms,
   scaleByBps,
@@ -224,6 +235,26 @@ export const DELIVERY_LEAD_TICKS = FREEZE_TICKS + 1;
 
 /** Elections held for un-resolved ventures. Bounded (INV-26, scar #3). */
 export const MAX_ELECTIONS = 2_048;
+
+/**
+ * Venture states in which an election is still a live statement — **one home, three
+ * readers**: `vElect`'s door, the `elect` affordance, and the cast's policy.
+ *
+ * Three copies of this list is three chances for the engine to accept an election the
+ * affordance did not offer, or to offer one the engine will refuse (AGT-S2). It was
+ * written out three times before this constant existed.
+ *
+ * `DEFERRED` belongs here and it is not an oversight: §15.3's deferral carries the *same
+ * pot* to the next Reckoning, {@link Runtime.settleNow} deliberately does not release a
+ * deferred venture's election, and the payer's choice is therefore still ahead of it.
+ * Everything absent from this list is terminal, and an election on a terminal obligation
+ * is a book entry that is never released — see the note in {@link Runtime.vElect}.
+ */
+export const ELECTABLE_VENTURE_STATES: readonly VentureState[] = Object.freeze([
+  'FORMING',
+  'LIVE',
+  'DEFERRED',
+] as VentureState[]);
 
 /** Reckonings of deed rows retained. Two: this one and the one being settled. */
 export const DEED_RETAINED_RECKONINGS = 2;
@@ -846,6 +877,9 @@ export class Runtime {
   };
 
   constructor(options: RuntimeOptions) {
+    // Before anything else, because a world whose clock makes every offered seal
+    // unkeepable must not start. See {@link assertSealSchedule}.
+    assertSealSchedule();
     this.world = createWorld(launchMap());
     this.ledger = new Ledger();
     this.hazards = options.hazards ?? false;
@@ -884,8 +918,29 @@ export class Runtime {
             this.ventureBook = book;
           },
         ),
+        // The one agent-supplied value that decides whether tonight is a settlement or a
+        // default. See {@link electionsStateTable} on why it was wrong for it to be
+        // outside both the hash and the abort path.
+        electionsStateTable(
+          () => this.elections,
+          (restored) => {
+            this.elections.clear();
+            for (const [key, election] of restored) this.elections.set(key, election);
+          },
+        ),
       ],
       verbs: this.verbTable(),
+      // §17 and agent.md: "one seal per role you hold is free and costs no action".
+      // The allowance is the SEALS BOOK's ledger, so the budget asks rather than
+      // keeping a second copy of the count (scar #5). Before this hook existed the
+      // budget charged for every seal and agent.md's promise was simply false — a
+      // doc/engine disagreement about a cost, which is scar #1's shape.
+      allowance: (request): boolean => {
+        if (request.verb !== 'seal') return false;
+        const roles = this.sealableRoles(request.principal, this.engine.tick);
+        if (roles.length === 0) return false;
+        return this.seals.freeSlotsRemaining(request.principal, reckoningOf(this.engine.tick), roles) > 0;
+      },
       roleFills: () => this.ventures.roleFills(),
       obligations: this.obligationSource(),
       // Buffered until COMMIT and appended here, so nothing an observer can read moves
@@ -1143,55 +1198,163 @@ export class Runtime {
 
   private verbTable(): Readonly<Record<string, VerbHandler>> {
     return {
-      create: (ctx, req) => this.committing(ctx) ?? this.vCreate(ctx, req),
-      fill_role: (ctx, req) => this.committing(ctx) ?? this.vFillRole(ctx, req),
+      create: (ctx, req) =>
+        this.committing(ctx) ?? this.sealCompliance(ctx, req) ?? this.vCreate(ctx, req),
+      fill_role: (ctx, req) =>
+        this.committing(ctx) ?? this.sealCompliance(ctx, req) ?? this.vFillRole(ctx, req),
       sign: (ctx, req) => this.committing(ctx) ?? this.vSign(ctx, req),
+      // ── `elect` is NOT behind `committing`, and it needs its own refusal ────
+      //
+      // `committing`'s sentence ends "submit again next tick", which is true of a
+      // commitment and a lie about an election: the tick after the freeze is the
+      // settlement tick, by which time the obligation this election was about has
+      // already resolved. §5.1 forbids a *discretionary decision* inside the settlement
+      // window, and the honest thing to tell a payer at that point is that its last
+      // statement is what happens — not to try again.
+      elect: (ctx, req) => this.electingFrozen(ctx) ?? this.vElect(ctx, req),
       withdraw: (ctx, req) => this.committing(ctx) ?? this.vWithdraw(ctx, req),
       abandon: (ctx, req) => this.committing(ctx) ?? this.vAbandon(ctx, req),
       publish_offer: (ctx, req) => this.vPublishOffer(ctx, req),
       message: (ctx, req) => this.vMessage(ctx, req),
       claim: (ctx, req) => this.vSay(ctx, req, false),
       deny: (ctx, req) => this.vSay(ctx, req, true),
-      // ── `seal` IS STILL NOT REGISTERED, and the reason has changed. ─────────
+      // ── `seal` IS NOW REGISTERED, and here is what had to be true first. ────
       //
-      // The old reason was decisive and is now **fixed**: INV-20 requires every seal made
-      // in a Reckoning to be resolved exactly once when that Reckoning closes, nothing
-      // resolved seals, and the cast found the consequence in 288 ticks — 60
-      // HALT-severity violations at tick 287 and a PAUSED world, reachable by any agent
-      // with one free action (AGT-X9). The Reckoning driver now resolves every
-      // Reckoning's seals at its settlement tick, against real `venture.delivered` deeds
-      // and a completeness witness whose counts come from the venture rows;
-      // `test/sim/reckoning.test.ts` drives a seal through {@link sealHandler} and
-      // asserts the verdict, the cited deed and the single evaluation.
+      // Two blockers, both closed:
       //
-      // What still blocks the verb is a **rules-surface** problem, not an engine one, and
-      // it is A5′ from the other side. Two places already tell agents what to seal:
-      // `src/api/observe.ts`'s seal affordance and the cast's own seal branch, and both
-      // name `verb: 'sign'`. This world records **no `sign` deed** — the only deed it
-      // records is the delivery, under {@link DELIVERY_VERB} — so a seal about signing
-      // has no attributable deed, and with the witness now complete that resolves
-      // `CONTRADICTED` from an absence. Registering the verb before those two move onto
-      // the delivery verb would publish a permanent public lie about an agent that did
-      // exactly what the server's own affordance told it to do: scar #1's shape, with the
-      // one penalty this design calls worse than a crash attached.
-      //
-      // So turning it on is one line **plus** those two call sites plus a decision about
-      // PROP-D4's "sealing is mandatory" (a validator on the acting path, which does not
-      // exist yet). That is reported upward rather than done here.
-      //
-      // {@link vSeal} is kept, wired and correct, and `test/sim/cli.test.ts` holds the
-      // regression that it is not offered.
+      //   1. **Nothing resolved seals.** INV-20 requires every seal made in a Reckoning
+      //      to be resolved exactly once when that Reckoning closes. The cast found the
+      //      consequence in 288 ticks — 60 HALT-severity violations at tick 287 and a
+      //      PAUSED world, reachable by any agent with one action (AGT-X9). The Reckoning
+      //      driver now resolves every Reckoning's seals at its settlement tick, against
+      //      real delivery deeds and a completeness witness whose counts come from the
+      //      venture rows by a second road.
+      //   2. **The affordance and the cast both sealed `verb: 'sign'`**, and this world
+      //      records no `sign` deed — only the delivery, under {@link DELIVERY_VERB}. With
+      //      the witness working, such a seal resolves `CONTRADICTED` **from an absence**:
+      //      a permanent public lie about an agent that did exactly what the server's own
+      //      affordance told it to (A5′, scar #1). Both call sites now name
+      //      {@link DELIVERY_VERB}, and {@link Runtime.sealableRoles} is the single home
+      //      of *when* a seal about a delivery can still be kept — so the affordance, the
+      //      cast and PROP-D4's compliance gate cannot disagree about it.
+      seal: (ctx, req) => this.vSeal(ctx, req),
     };
   }
 
   /**
-   * The seal handler, kept ready for the Reckoning driver.
+   * The seal handler, exposed as well as registered.
    *
-   * Not in {@link verbTable} — see the note there. Exposed so the wiring is one line
-   * and so its role-scoping fix cannot be lost while it waits.
+   * Kept because the seal tests drive it with a synthetic {@link PhaseContext} to reach
+   * ticks the verb table's own clock would not put them at, and because a caller that
+   * needs the handler without the table (the Reckoning fixtures) should not have to
+   * reach through `verbTable`.
    */
   get sealHandler(): VerbHandler {
     return (ctx, req) => this.vSeal(ctx, req);
+  }
+
+  /**
+   * PROP-D4's mandatory half, **as a validator on the acting path** — and the narrowest
+   * one that makes the rule true.
+   *
+   * > "Seals are mandatory and free — one unbudgeted seal per venture you hold a role
+   * > in. Optional seals mean a cast that never seals, which means no reveals, which
+   * > means the design's only guaranteed clip generator produces nothing." — §11.1
+   *
+   * `SealBook.sealComplianceRejection` was written for this and had no caller, so the
+   * rule was documentation. It is applied to **new commitments only** — `create` and
+   * `fill_role`, the two verbs that add a role to the set carried into the freeze — and
+   * deliberately to nothing else:
+   *
+   *   - **Never `elect`.** Gating the payment decision behind an unrelated rule is a
+   *     road to a forced decline, and a decline is a permanent public default (A5′).
+   *   - **Never `sign`.** A venture waiting on a countersignature would die in its
+   *     window, and signing is what makes a role sealable in the first place.
+   *   - **Never `withdraw` or `abandon`.** The exits must not be blockable.
+   *   - **Never `seal`.** The cure cannot require itself.
+   *   - **Never `move`, `message`, `claim`, `deny`, `publish_offer`.** None of them
+   *     carries a role into the freeze, and a hand frozen in place is a map with no
+   *     motion in it (A13).
+   *
+   * The set it asks about is {@link sealableRoles}, not every role held. That is the
+   * whole reason this is safe: a role whose seal could not be kept is not a role a
+   * seal may be *demanded* for, or the engine would be compelling agents into marks
+   * they cannot avoid. It is a validator and not a penalty for the Commons floor's
+   * reason (A8): the cure is free, immediate and offered in the same observation.
+   */
+  private sealCompliance(ctx: PhaseContext, req: ActionRequest): Rejection | null {
+    const held = this.sealableRoles(req.principal, ctx.tick);
+    if (held.length === 0) return null;
+    return this.seals.sealComplianceRejection(req.principal, ctx.tick, held);
+  }
+
+  /**
+   * Roles this principal holds for which a seal made **now** could still be kept.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * ONE HOME, THREE READERS: the `seal` affordance, the cast, and PROP-D4's compliance
+   * gate. Three copies of this predicate is three chances for the engine to demand or
+   * offer a seal that its own resolver will mark `CONTRADICTED`, which is A5′ with the
+   * server's fingerprints on it.
+   *
+   * Every clause is a rule from `src/seal/verdict.ts`'s four attribution rules read
+   * backwards, i.e. *what must hold for an honest agent's deed to be attributable*:
+   *
+   *   - **`LIVE`.** A venture reaches `LIVE` only fully filled, and then it delivers at
+   *     its delivery tick ({@link DELIVERED_STATES}) — so the deed will exist. A
+   *     `FORMING` venture may never fill, and its role holder would then be
+   *     `CONTRADICTED` from an absence it did not cause.
+   *   - **The delivery is still ahead** (rule 3: a deed at or before the seal cannot
+   *     honour it). A seal written after the delivery is a pre-commitment made in
+   *     hindsight, and the resolver correctly refuses to honour it.
+   *   - **The delivery is in this same Reckoning** (rule 2, scar #7: a seal is judged
+   *     only against its own window). A seal at Reckoning 1 for a delivery at Reckoning
+   *     2 is judged with no deed in range at all.
+   *
+   * **There is deliberately no `inFreeze(tick)` clause**, and that is a mutation-test
+   * result rather than an omission. One was written — `SealBook.commit` refuses inside the
+   * freeze, so offering a seal there would be AGT-S2 — and deleting it changed nothing
+   * observable, because the delivery clause already excludes every freeze tick: `create`
+   * schedules delivery at `resolvesAtTick - DELIVERY_LEAD_TICKS`, `resolvesAtTick` is
+   * always a settlement tick, and {@link DELIVERY_LEAD_TICKS} exceeds `FREEZE_TICKS`, so a
+   * venture's delivery is always strictly before its freeze. A guard no test can bite on
+   * is indistinguishable from a clean bill of health, so the *dependency* is asserted
+   * instead — see {@link assertSealSchedule}, which fires if those constants ever move.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  sealableRoles(principal: PrincipalId, tick: number): readonly SealRoleRef[] {
+    const out: SealRoleRef[] = [];
+    for (const venture of this.ventures.forPrincipal(principal)) {
+      if (venture.state !== 'LIVE') continue;
+      const delivery = this.deliveryTickOf(venture);
+      if (delivery <= tick) continue;
+      if (reckoningOf(delivery) !== reckoningOf(tick)) continue;
+      const role = roleOfPrincipal(venture, principal);
+      if (role === null) continue;
+      out.push({ venture: venture.id, roleIndex: role.index });
+    }
+    return out.sort((a, b) =>
+      a.venture === b.venture ? a.roleIndex - b.roleIndex : compareIds(a.venture, b.venture),
+    );
+  }
+
+  /**
+   * The band a seal on a delivery can honestly claim, in `MINOR`.
+   *
+   * The proceeds are `gross + residual` where the residual is a **seeded draw inside a
+   * band the kind publishes**, so `[p10, p90]` is not a forecast — it is the exact
+   * closed interval the rules permit, and `residualAtPercentile` returns the band's two
+   * ends rather than quantiles of a distribution. A venture that is `LIVE` is fully
+   * filled, so the full-fill quote is the one that will be paid.
+   *
+   * That makes a seal an agent copies out of its affordance **keepable by
+   * construction**, which is the only acceptable default when the penalty for missing
+   * is permanent and public (A5′). An agent that wants to say something bolder narrows
+   * the band itself, and the affordance's own text says so.
+   */
+  deliveryBandOf(venture: VentureRecord): { readonly low: Minor; readonly high: Minor } {
+    const band = proceedsBand(venture.kind, allRoleIndices(venture), NEUTRAL_STAGE_BPS);
+    return { low: band.p10, high: band.p90 };
   }
 
   /**
@@ -1223,9 +1386,11 @@ export class Runtime {
     return reject(
       'INV-18',
       `the Reckoning's freeze has begun (tick ${String(ctx.tick)} of Reckoning ` +
-        `${String(ctx.clock.reckoning)}): no new commitments, no elections and no withdrawals until it has ` +
-        'settled. Everything the settlement pays from was read at the freeze, so moving any of it now would ' +
-        'record a promise as broken that nobody broke. Nothing was lost — submit again next tick.',
+        `${String(ctx.clock.reckoning)}): no new commitments and no withdrawals until it has settled. ` +
+        'Everything the settlement pays from was read at the freeze, so moving any of it now would record a ' +
+        'promise as broken that nobody broke. Nothing was lost — submit again next tick. (`elect` is closed ' +
+        'too, for a different reason and with a different answer: see its own refusal — what you last stated ' +
+        'is what happens tonight, and submitting again will not change it.)',
     );
   }
 
@@ -1377,39 +1542,23 @@ export class Runtime {
   }
 
   /**
-   * `sign` — countersign the terms, and (for the payer) state the election.
+   * `sign` — countersign the terms. **Nothing else.**
    *
-   * ══════════════════════════════════════════════════════════════════════════
-   * **THE ELECTION HAS NO VERB OF ITS OWN, AND THAT IS A GAP IN THE CANON.**
+   * The election used to ride here as an optional parameter, and it was the right
+   * answer to a canon gap that no longer exists: SPEC §12.2 now has `elect`. Two
+   * reasons it had to move, and the second is the one that mattered:
    *
-   * `agent.md` §4 tells a payer "when settlement comes, you elect what to pay on each
-   * elective role" and gives it two words to say it with — `IN_FULL` or an amount — and
-   * SPEC §12.2's thirty-eight verbs contain **no verb that carries one**. So there is a
-   * mechanic every party is promised and no door to reach it through.
+   *   - On a **share** role the real due is not known until the residual is drawn at
+   *     resolution, so a payer electing at signing is guessing rather than choosing.
+   *   - **The moment of betrayal was not expressible.** A6's signature moment is
+   *     authority abused *at the moment of maximum leverage*; a choice fixed at signing
+   *     has no such moment, and §7.6's falsification test — *is the elective part always
+   *     honoured?* — cannot be asked of a payer that was never offered the choice when
+   *     it counted.
    *
-   * The three ways out and why this is the one taken:
-   *
-   *   - **Infer the election** (pay in full unless told otherwise). This is the one that
-   *     must never be built: PROP-V4's second clause is that the elective half never
-   *     auto-executes, "because there is no default that pays and no branch that infers
-   *     an intention to pay". An engine that elects on the payer's behalf deletes A7 and
-   *     answers §7.6's falsification question with its own arithmetic.
-   *   - **Leave it unreachable.** Then every elective part goes unpaid, every settlement
-   *     writes a `DECLINED` default — *"a deliberate refusal"* — against a payer that
-   *     refused nothing because it had no way to accept. That is a fabricated default at
-   *     industrial scale, which A5′ puts below crashing.
-   *   - **Carry it on the signature.** A signature is a payer putting its name to what
-   *     it will pay, so the election rides on `sign` as an explicit, optional,
-   *     restatable parameter. It is agent-supplied, recorded, and refusable, so nothing
-   *     is inferred; and it can be restated — including down to zero — any time until
-   *     the commitment window closes, so the choice is still live at the moment of
-   *     maximum leverage, which is what makes it a betrayal rather than a typo.
-   *
-   * **This is reported upward as a canon gap, not papered over.** Either §12.2 gains a
-   * verb or `agent.md` §7 documents the parameter; until one of those happens the
-   * engine and the player-facing document disagree about *how* to elect, which is
-   * scar #1's shape even though they agree about what an election is.
-   * ══════════════════════════════════════════════════════════════════════════
+   * So: `sign` binds the terms and {@link vElect} decides the payment. One verb, one
+   * concept (§3). An `election` key on a `sign` request is **not** silently ignored —
+   * see {@link electionOnSign} for why that would be the worst of the three options.
    */
   private vSign(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
@@ -1424,51 +1573,106 @@ export class Runtime {
     const venture = this.ventures.get(ventureId);
     if (venture === undefined) return reject('PROP-V6', `there is no venture ${ventureId}.`);
 
-    // Validated before anything is written, so a refused signature cannot leave an
-    // election behind and a refused election cannot leave a signature.
-    const elected = this.readElection(venture, req);
-    if (elected !== null && !elected.ok) return elected;
-    const election = elected === null ? null : elected.value;
+    const misplaced = electionOnSign(req);
+    if (misplaced !== null) return misplaced;
 
     if (!venture.countersigned.has(req.principal)) {
       const echoed = readInt(req.params, ['your_take_at_p50', 'take_at_p50']);
       const server = yourTakeAtP50(venture, req.principal);
       const signed = countersign(venture, req.principal, hash, minor(echoed ?? server), server);
       if (!signed.ok) return signed;
-    } else if (election === null) {
-      // Nothing to do: the signature is already on the record and it does not move.
-      // Said as an accept rather than a refusal, because signing twice is not an error.
-      return { ok: true, value: null };
-    } else if (hash !== venture.termsHash) {
-      // Restating an election is still a statement about *these* terms.
-      return reject(
-        'PROP-W1',
-        `the terms_hash you sent is not ${venture.id}'s; an election is a statement about the terms you ` +
-          'signed, so it names the same hash.',
-      );
     }
-
-    if (election !== null) this.recordElection(venture, election);
+    // Signing twice is not an error and the signature does not move, so this is an
+    // accept rather than a refusal.
     return { ok: true, value: null };
   }
 
   /**
-   * Validate an election, or `null` when the request carries none.
+   * `elect` — what the payer will pay on **one** elective role, restatable until the
+   * freeze.
    *
-   * Only the **payer** may elect, because the elective part is paid out of the
-   * creator's own stores and nobody else's. A malformed value is refused here, with a
-   * hint, for one action — `isElection` is exported from the Reckoning module for
-   * exactly this, and the freeze's own normaliser silently *drops* what it cannot read,
-   * which is the right answer there and the wrong one at the door.
+   * ══════════════════════════════════════════════════════════════════════════
+   * `agent.md`'s promises, each mapped to the line that keeps it:
+   *
+   * | promise | where |
+   * |---|---|
+   * | "state what you will pay on **each** elective role" | `role` is required; the book is keyed per role |
+   * | "you may restate it right up to the freeze" | no once-only guard; the last statement wins |
+   * | "you cannot change it during settlement" | {@link electingFrozen}, and §5.1 |
+   * | "silence is a decline, not a pass" | nothing is written unless the payer writes it (PROP-V4) |
+   * | "`IN_FULL` never pays more than you owe" | `electionFor` caps at the due, in `settlement.ts` |
+   * | "an unfundable `IN_FULL` is unfunded, not declined" | `finaliseVenture` splits `DECLINED` from `UNFUNDED` |
+   *
+   * **The engine never infers an election** — not a default that pays, not a branch that
+   * reads an intention out of a signature. That is PROP-V4's second clause, and an
+   * engine that elected on the payer's behalf would delete A7 and answer §7.6 with its
+   * own arithmetic instead of with an agent's decision.
+   * ══════════════════════════════════════════════════════════════════════════
    */
-  private readElection(venture: VentureRecord, req: ActionRequest): WorldResult<Election> | null {
-    const raw = req.params['election'] ?? req.params['elect'];
-    if (raw === undefined) return null;
+  private vElect(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
+    const roleIndex = readInt(req.params, ['role', 'role_index', 'roleIndex']);
+    const raw = req.params['election'] ?? req.params['elect'] ?? req.params['pay'];
+    if (ventureId === null || roleIndex === null || raw === undefined) {
+      return reject(
+        'A2',
+        'elect needs {"venture": "<id>", "role": N, "election": "IN_FULL"} — or an amount of minor units ' +
+          'in place of IN_FULL. It is per role, because what you owe one counterparty is not what you owe ' +
+          'another, and you may restate it every tick until the freeze.',
+      );
+    }
+    const venture = this.ventures.get(ventureId);
+    if (venture === undefined) return reject('PROP-V6', `there is no venture ${ventureId}.`);
+
+    // ── AN ELECTION ON A FINISHED OBLIGATION IS A KEY THAT IS NEVER RELEASED ──
+    //
+    // {@link releaseElections} runs when an obligation reaches a terminal state, so an
+    // election accepted *after* that is never cleaned up — and the book is a **shared**
+    // resource with a published cap. An agent that elected on a few thousand of its own
+    // settled ventures would fill it and then every other payer's `elect` is refused for
+    // INV-26, silently forcing `DECLINED` defaults on principals that tried to pay. That
+    // is A5′ reached sideways, through a buffer.
+    //
+    // So the electable states are exactly the ones that still release: what has not
+    // settled yet, plus a deferral, which carries the same pot to the next Reckoning and
+    // whose election is deliberately kept alive (§15.3).
+    if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) {
+      return reject(
+        'PROP-V6',
+        `${venture.id} is ${venture.state}, so there is nothing left to elect on it — its elective parts were ` +
+          'settled or its formation was abandoned, and the record of what was paid is already permanent. ' +
+          `Elections are live while a venture is ${ELECTABLE_VENTURE_STATES.join(', ')}.`,
+      );
+    }
+
+    // The payer, and nobody else. The elective half is paid out of the creator's own
+    // stores, so anyone else electing on it would be spending another agent's money.
     if (venture.creator !== req.principal) {
       return reject(
         'PROP-V4',
         `only ${venture.creator} elects on ${venture.id}: the elective half is paid out of the payer's own ` +
-          'stores. Your own elective parts are on the ventures you created.',
+          'stores, and you are not the payer here. Your own elective parts are on the ventures you created.',
+      );
+    }
+    const role = venture.roles.find((r) => r.index === roleIndex);
+    if (role === undefined) {
+      return reject(
+        'PROP-V6',
+        `${venture.id} has no role ${String(roleIndex)}; its roles are ` +
+          `${venture.roles.map((r) => `${String(r.index)} (${r.label})`).join(', ')}.`,
+      );
+    }
+    // A creator holding one of its own roles owes itself nothing: settlement books that
+    // payment as fully paid *before* it reads the election, so it can never read as a
+    // breach (scar #9). Said out loud rather than accepted as a no-op, because an agent
+    // that thinks it is paying somebody is an agent budgeting for a payment that will
+    // never happen.
+    if (role.filledByPrincipal === req.principal) {
+      return reject(
+        'PROP-V4',
+        `you hold role ${String(roleIndex)} of ${venture.id} yourself, so there is nothing to elect: a ` +
+          'payment to your own stores is booked as paid in full, earns you no standing, and can never be ' +
+          'recorded as a default. Elect on the roles other principals hold.',
       );
     }
     if (!isElection(raw)) {
@@ -1479,29 +1683,71 @@ export class Runtime {
           'an amount short of the due is a decline, and a decline is a default on the record.',
       );
     }
-    if (this.elections.size >= MAX_ELECTIONS && !this.elections.has(electionKey(venture.id, 0))) {
+    const key = electionKey(venture.id, roleIndex);
+    if (this.elections.size >= MAX_ELECTIONS && !this.elections.has(key)) {
       return reject(
         'INV-26',
         `the election book is full at its published cap of ${String(MAX_ELECTIONS)}; elections are released ` +
-          'when their ventures settle.',
+          'when their ventures settle. Restating one you have already made is always allowed, because it ' +
+          'does not grow the book.',
       );
     }
-    return { ok: true, value: raw };
+    this.elections.set(key, raw);
+    return { ok: true, value: null };
   }
 
   /**
-   * Record one payer's election against every role in its venture.
+   * §5.1's freeze, as it applies to a *decision* rather than a commitment.
    *
-   * One statement for the whole obligation, because a per-role election needs a
-   * per-role verb and there is none (see {@link vSign}). `IN_FULL` is per-role exact by
-   * construction — it pays whatever *that* role's elective part turns out to be — so the
-   * only thing this coarseness costs is the ability to pay one counterparty and decline
-   * another inside one venture, and that is reported as part of the same canon gap.
+   * > **Settlement.** Deterministic and ordered. **There is no decision to make inside
+   * > this window.** — §5.1
+   *
+   * This is deliberately not {@link committing}: that sentence ends "submit again next
+   * tick", which is true of a `create` and false of an election, because the tick after
+   * the freeze is the settlement tick and by then the obligation has resolved. The
+   * honest sentence is that the last statement stands — which is also the sentence that
+   * explains why being offline through a Reckoning cannot be used against you.
    */
-  private recordElection(venture: VentureRecord, election: Election): void {
-    for (const role of venture.roles) {
-      this.elections.set(electionKey(venture.id, role.index), election);
-    }
+  private electingFrozen(ctx: PhaseContext): Rejection | null {
+    if (!ctx.clock.inFreeze && !ctx.clock.isSettlementTick) return null;
+    return reject(
+      'INV-18',
+      `the freeze for Reckoning ${String(ctx.clock.reckoning)} has landed at tick ${String(ctx.tick)}, so ` +
+        'the elections are closed: whatever you last stated is what happens tonight, and nothing you send ' +
+        'now can change it. That is not a penalty — §5.1 puts no decision inside the settlement window, ' +
+        'which is exactly why being offline through one cannot be used against you. Ventures that settle ' +
+        'after tonight are electable again from the next tick.',
+    );
+  }
+
+  /** What the payer has stated for one role, or `undefined` for silence. */
+  electionOn(venture: VentureId, roleIndex: number): Election | undefined {
+    return this.elections.get(electionKey(venture, roleIndex));
+  }
+
+  /**
+   * The most one role's elective part can ever come to — **exact, not a forecast.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * ONE HOME, TWO READERS: the `elect` affordance's `max_direct_loss`, and the cast's
+   * own decision about what it can afford. `agent.md` §12 tells players
+   * `max_direct_loss` "is exact, not an estimate", so this cannot be the pinned
+   * `role.terms.elective`: on a **share** role the due is `claim - escrowedDue` where the
+   * claim is a fraction of proceeds, so a venture that over-performs owes *more* than the
+   * pinned figure — §7.1's trap, in the one field the document says to trust.
+   *
+   * Exact rather than probabilistic all the same, because the residual is a seeded draw
+   * inside a band the kind publishes: `residualAtPercentile('p90')` is the band's top
+   * end, not a quantile, and proceeds are monotonic in the residual. Quoted at a full
+   * fill because a venture reaches `LIVE` only fully filled and only a `LIVE` venture
+   * settles, so the full-fill figure is the one that will be paid.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  electiveCeilingOf(venture: VentureRecord, roleIndex: number): Minor {
+    const role = venture.roles.find((r) => r.index === roleIndex);
+    if (role === undefined) return minor(0);
+    const ceiling = slotClaimAt(venture, roleIndex, 'p90').electiveDue;
+    return minor(Math.max(0, ceiling - role.settledElectiveMinor));
   }
 
   private vWithdraw(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
@@ -2305,6 +2551,39 @@ export function reckoningOf(tick: number): number {
 }
 
 /**
+ * The scheduling fact {@link Runtime.sealableRoles} rests on, asserted rather than assumed.
+ *
+ * A seal is only keepable if the delivery it names actually happens, and `resolveFills`
+ * skips every delivery inside the freeze (§5.1: nothing may touch a figure the settlement
+ * was computed from). Every venture `create` mints resolves at a settlement tick and
+ * delivers `DELIVERY_LEAD_TICKS` before it, so `DELIVERY_LEAD_TICKS > FREEZE_TICKS` is
+ * exactly the condition that keeps every delivery outside the freeze — and therefore the
+ * condition that lets `sealableRoles` decide sealability from the delivery tick alone.
+ *
+ * Called at construction, so a change to either constant fails loudly at start-up rather
+ * than quietly turning every offered seal into a `CONTRADICTED` mark (A5′).
+ */
+export function assertSealSchedule(
+  /**
+   * Injected, defaulting to the real constants, for one reason: a guard nothing can make
+   * fire is a guard no test can bite on, and a mutation proved it — with the comparison
+   * flipped to something unsatisfiable, an `expect(...).not.toThrow()` on the healthy
+   * world stayed green. The parameters are what let a test supply the violating pair.
+   */
+  lead: number = DELIVERY_LEAD_TICKS,
+  freeze: number = FREEZE_TICKS,
+): void {
+  if (lead <= freeze) {
+    throw new EngineError(
+      `DELIVERY_LEAD_TICKS (${String(lead)}) must exceed FREEZE_TICKS ` +
+        `(${String(freeze)}): a venture delivers DELIVERY_LEAD_TICKS before its settlement tick, and a ` +
+        'delivery inside the freeze is skipped — which would leave every seal offered against it with no deed ' +
+        'to honour it, and resolve it CONTRADICTED from an absence (A5′)',
+    );
+  }
+}
+
+/**
  * The election book's key.
  *
  * `::`, like every other composite key in this codebase. Three agents have reached for a
@@ -2313,6 +2592,82 @@ export function reckoningOf(tick: number): number {
  */
 export function electionKey(venture: VentureId, roleIndex: number): string {
   return `${venture}::${String(roleIndex)}`;
+}
+
+/**
+ * Refuse an `election` sent on a `sign`, rather than ignoring it.
+ *
+ * The election used to ride on `sign`, so this parameter shape is what a stale
+ * `agent.md`, a cached prompt, or a model reasoning from either will produce. The three
+ * things this handler could do with it:
+ *
+ *   1. **Ignore it.** The payer believes it has elected; nothing is recorded; silence is
+ *      a decline; the settlement writes a `DECLINED` default — *"a deliberate refusal"* —
+ *      permanently, publicly, against an agent that was trying to pay. That is A5′
+ *      exactly, and it is the option a reasonable person implements by accident.
+ *   2. **Honour it.** Two doors onto one concept (§3), and the choice is re-locked at
+ *      signing, which is the whole thing `elect` exists to undo.
+ *   3. **Refuse, before anything is written, naming the verb to use.** One action and
+ *      one tick, inside a formation window of {@link FORMATION_WINDOW_TICKS}, against a
+ *      permanent public lie. That is this.
+ */
+function electionOnSign(req: ActionRequest): Rejection | null {
+  if (req.params['election'] === undefined && req.params['elect'] === undefined) return null;
+  return reject(
+    'PROP-V4',
+    'the election does not ride on sign any more — it has its own verb. `sign` binds the terms; `elect` ' +
+      'decides the payment, one role at a time, and you may restate it every tick until the freeze. Send ' +
+      'sign without the election, then {"verb": "elect", "params": {"venture": "<id>", "role": N, ' +
+      '"election": "IN_FULL"}}. Nothing was signed and nothing was elected: this is refused whole rather ' +
+      'than signed with the election dropped, because a payer that believes it elected and did not is a ' +
+      'payer the record will call a defaulter.',
+  );
+}
+
+/**
+ * The election book as a rollback-able, hashed table.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The elections were **outside `state_hash` and outside the abort path** while they rode
+ * on `sign`, and both halves matter more now that they are their own restatable verb:
+ *
+ *   - Outside the hash, two runs whose payers elected differently hash identically until
+ *     the money moves at the Reckoning — so the sim's determinism check could not see
+ *     the one agent-supplied value that decides whether tonight is a settlement or a
+ *     default. The same omission is what `ledgerStateTable` was added for.
+ *   - Outside the rollback, a tick that halts leaves an election behind that the
+ *     replayed tick will write again. Benign today because a restatement is idempotent,
+ *     and exactly the kind of "benign" that stops being so the moment the value is
+ *     derived from anything.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function electionsStateTable(
+  read: () => Map<string, Election>,
+  write: (restored: Map<string, Election>) => void,
+): StateTable {
+  return {
+    name: 'election',
+    capture: (): CanonicalValue =>
+      [...read().keys()]
+        .sort(compareIds)
+        .map((key) => ({ key, election: read().get(key) ?? null })),
+    restore: (captured: CanonicalValue): void => {
+      const rows = snapArray(captured, 'election');
+      const restored = new Map<string, Election>();
+      for (const row of rows) {
+        const record = snapObject(row, 'election row');
+        const key = snapString(record, 'key', 'election row');
+        const raw = record['election'];
+        // `IN_FULL` is a string and an amount is an integer, which is how `Election`
+        // discriminates them everywhere else — so the restore discriminates them the
+        // same way rather than coercing, because an amount that happens to equal the
+        // due is a different statement from IN_FULL.
+        if (raw === IN_FULL) restored.set(key, IN_FULL);
+        else restored.set(key, minor(snapInt(record, 'election', `election ${key}`)));
+      }
+      write(restored);
+    },
+  };
 }
 
 /** The settlement tick at or after `tick`. Settlement is the last tick of a day. */

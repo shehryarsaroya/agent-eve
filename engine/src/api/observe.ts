@@ -43,6 +43,7 @@
 
 import { canonicalHash, shortHash, type CanonicalValue } from '../core/canonical.js';
 import {
+  FREEZE_TICKS,
   TICKS_PER_RECKONING,
   WAKES_PER_RECKONING,
   inCommitmentWindow,
@@ -60,7 +61,6 @@ import {
   IN_FULL,
   kindSpec,
   openIndices,
-  pinnedConsideration,
   pinnedValue,
   roleOfPrincipal,
   yourTakeAtP50,
@@ -68,7 +68,14 @@ import {
 } from '../venture/index.js';
 import type { SealRoleRef } from '../seal/index.js';
 import { handsOf, holdingOf, tierOf } from '../world/index.js';
-import { defaultTerms, type PendingCorrection, type Runtime } from '../sim/runtime.js';
+import {
+  defaultTerms,
+  DELIVERY_MEASURE,
+  DELIVERY_VERB,
+  ELECTABLE_VENTURE_STATES,
+  type PendingCorrection,
+  type Runtime,
+} from '../sim/runtime.js';
 
 /** Ticks a `quote_id` pins its inputs for (§12.3: "1–3 ticks"). */
 export const QUOTE_PIN_TICKS = 3;
@@ -403,17 +410,16 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
     if (venture.termsHash === null) continue;
     const role = roleOfPrincipal(venture, principal);
     const owed = role === null ? escrowRequired(venture) : minor(0);
-    // ── The election rides on the signature, so the affordance carries it ──────
+    // ── `sign` binds the terms and carries NO election ─────────────────────────
     //
-    // The payer's election has no verb of its own (see `Runtime.vSign`, and it is
-    // reported as a canon gap), and an affordance is a **complete, copyable act**:
-    // `test/api/blind-play.test.ts` exists because agents do exactly what the document
-    // tells them and copy these params verbatim. A `sign` affordance with no election
-    // would therefore be the server handing the payer an act whose consequence is a
-    // `DECLINED` default — "a deliberate refusal" — against an agent that refused
-    // nothing. `IN_FULL` is offered rather than an amount because the amount is a trap
-    // on a share role (§7.1); declining is done by sending `election: 0`, and the
-    // sentence below says so.
+    // It used to carry one, and the affordance was right to while `sign` was the only
+    // door: an affordance is a **complete, copyable act** (`test/api/blind-play.test.ts`
+    // exists because agents copy these params verbatim), and a `sign` that silently
+    // elected nothing handed the payer an act whose consequence was a `DECLINED`
+    // default. `elect` is now that door, so the election has moved to its own
+    // affordance below — and `Runtime.vSign` **refuses** an `election` on a `sign`
+    // rather than dropping it, so this parameter list and that handler cannot drift
+    // into a payer that thinks it elected and did not.
     const payer = venture.creator === principal;
     eligible.push({
       verb: 'sign',
@@ -421,47 +427,118 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
         venture: venture.id,
         terms_hash: venture.termsHash,
         your_take_at_p50: yourTakeAtP50(venture, principal),
-        ...(payer ? { election: IN_FULL } : {}),
       },
       cost: 1,
       max_direct_loss: owed,
       max_contingent_liability: electiveOwed(venture, principal),
       what_it_forecloses: payer
-        ? 'signing binds you to these terms; the terms_hash cannot be amended afterwards. The election is ' +
-          'yours and stays yours: IN_FULL pays whatever the elective half turns out to be, an amount pays ' +
-          'exactly that much, and sending no election at all pays nothing — which is a decline, and a ' +
-          'decline is a default on the record. Restate it with sign at any time before the freeze.'
+        ? 'signing binds you to these terms; the terms_hash cannot be amended afterwards. It does NOT decide ' +
+          'what you pay — that is `elect`, one role at a time, restatable every tick until the freeze. Sign ' +
+          'and never elect and you pay nothing, which is a decline and a default on the record.'
         : 'signing binds you to these terms; the terms_hash cannot be amended afterwards.',
       expires_tick: venture.windowClosesTick,
       quote_id: quoteId(principal, tick, 'sign', { venture: venture.id }),
     });
   }
 
-  // 2. Seal a role you hold. Free, and required for every role (§11.1).
+  // 2. State what you will pay on each elective role you are the payer of.
+  //
+  //    ══════════════════════════════════════════════════════════════════════
+  //    **THE CHOICE HAS TO BE OFFERED, OR IT IS NOT A CHOICE.** Before `elect`
+  //    existed, betrayal was possible and never offered: the payer's only door was a
+  //    parameter on a signature it had already sent, so §7.6's falsification test —
+  //    *is the elective part always honoured?* — was being asked of payers that were
+  //    never presented with the decision at the moment it mattered.
+  //
+  //    **One affordance per role, and it carries `IN_FULL`.** Not two, and there is
+  //    no separate decline button: A6 is explicit that there is no `betray()` verb,
+  //    and betrayal happens "through ordinary legitimate actions". So the honest
+  //    offer is the one `agent.md` tells the payer to use — `IN_FULL` — with the
+  //    whole truth about the alternative in `what_it_forecloses`, and the agent
+  //    constructs the other choice itself out of the same ordinary verb.
+  //    ══════════════════════════════════════════════════════════════════════
   for (const venture of mine) {
-    const role = roleOfPrincipal(venture, principal);
-    if (role === null) continue;
-    if (venture.state !== 'LIVE' && venture.state !== 'FORMING') continue;
+    if (venture.creator !== principal) continue;
+    if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) continue;
+    // Restatable *until* the freeze, so inside it there is nothing to offer: §5.1 puts
+    // no decision in the settlement window, and `Runtime.vElect` refuses there.
+    if (inFreeze(tick) || isSettlementTick(tick)) continue;
+    for (const role of venture.roles) {
+      // The payer owes an elective part only where somebody else holds the role: a
+      // payment to your own stores is booked as paid in full and can never be a breach
+      // (scar #9), and `elect` refuses it by name.
+      if (role.filledByPrincipal === null || role.filledByPrincipal === principal) continue;
+      const owed = runtime.electiveCeilingOf(venture, role.index);
+      if (owed <= 0) continue;
+      const stated = runtime.electionOn(venture.id, role.index);
+      eligible.push({
+        verb: 'elect',
+        params: { venture: venture.id, role: role.index, election: IN_FULL },
+        cost: 1,
+        // Exact, not an estimate (A2). See `Runtime.electiveCeilingOf`: the residual is drawn
+        // inside a band the kind publishes, so the top of that band is the most this
+        // election can ever move — it is arithmetic, not a forecast.
+        max_direct_loss: owed,
+        // Nothing further is contingent. The election IS the commitment, and it settles
+        // at the next Reckoning; there is no later call it can grow into.
+        max_contingent_liability: minor(0),
+        what_it_forecloses:
+          `IN_FULL pays whatever role ${String(role.index)} turns out to be owed, up to ${String(owed)} — ` +
+          'never a unit more. It forecloses nothing: you may restate this every tick until the freeze, ' +
+          'including downwards. An amount instead of IN_FULL pays exactly that much and anything short of ' +
+          'the due is a decline; electing nothing at all is also a decline. A decline is a permanent public ' +
+          `default. You have currently stated: ${stated === undefined ? 'nothing, which is a decline' : String(stated)}.`,
+        expires_tick: lastTickBeforeFreeze(tick),
+        quote_id: quoteId(principal, tick, 'elect', { venture: venture.id, role: role.index }),
+      });
+    }
+  }
+
+  // 3. Seal a role you hold. Free, and mandatory for every sealable role (§11.1).
+  //
+  //    ══════════════════════════════════════════════════════════════════════
+  //    **THIS AFFORDANCE WAS A TRAP AND THE FIX IS TWO FIELDS.** It named
+  //    `verb: 'sign'`, and this world records no `sign` deed — the only deed it records
+  //    is the delivery, under `DELIVERY_VERB`. With the completeness witness working,
+  //    such a seal resolves `CONTRADICTED` **from an absence**: a permanent public lie
+  //    about an agent that did exactly what this affordance told it to (A5′, scar #1).
+  //    It also banded the claim in `pinnedConsideration(role.terms)`, which is what the
+  //    *role* is owed, while a delivery deed's `outcome` is the *venture's* proceeds —
+  //    two different quantities compared as if they were one.
+  //
+  //    Both now come from the runtime: `sealableRoles` decides when a seal about a
+  //    delivery can still be kept, and `deliveryBandOf` gives the band the rules
+  //    permit. One home each, shared with the cast and with PROP-D4's compliance gate,
+  //    so a future edit cannot re-open the trap in one caller only.
+  //    ══════════════════════════════════════════════════════════════════════
+  for (const ref of runtime.sealableRoles(principal, tick)) {
+    const venture = runtime.ventures.get(ref.venture);
+    if (venture === undefined) continue;
+    const band = runtime.deliveryBandOf(venture);
     eligible.push({
       verb: 'seal',
       params: {
-        verb: 'sign',
+        verb: DELIVERY_VERB,
         target: venture.id,
-        measure: 'MINOR',
-        outcome_low: 0,
-        outcome_high: pinnedConsideration(role.terms),
+        role: ref.roleIndex,
+        measure: DELIVERY_MEASURE,
+        outcome_low: band.low,
+        outcome_high: band.high,
       },
       cost: 0,
       max_direct_loss: 0,
       max_contingent_liability: 0,
       what_it_forecloses:
-        'a seal is judged once, against what you do after it, inside this Reckoning. It cannot be amended.',
+        `a seal is judged once, at this Reckoning, against what you do after it — it cannot be amended or ` +
+        `withdrawn. This band is the whole range ${venture.kind} is allowed to deliver in, so keeping it ` +
+        'costs you only the delivery itself; narrow it if you want the claim to mean more, and know that a ' +
+        'contradicted seal costs standing.',
       expires_tick: lastTickBeforeFreeze(tick),
-      quote_id: quoteId(principal, tick, 'seal', { venture: venture.id }),
+      quote_id: quoteId(principal, tick, 'seal', { venture: venture.id, role: ref.roleIndex }),
     });
   }
 
-  // 3. Fill an open role you are eligible for.
+  // 4. Fill an open role you are eligible for.
   for (const row of boardFor(runtime, principal, tick)) {
     const idle = hands.find((h) => h.state === 'IDLE');
     if (idle === undefined) break;
@@ -477,7 +554,7 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
     });
   }
 
-  // 4. Create a venture, for each kind the stores can actually fund. Affordability
+  // 5. Create a venture, for each kind the stores can actually fund. Affordability
   //    is part of *eligibility*, so an affordance is never an offer you cannot take.
   for (const kind of OFFERED_KINDS) {
     const seat = hands[0]?.location;
@@ -496,7 +573,7 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
     });
   }
 
-  // 5. Move an idle hand one gate. Loss is time, never capacity (INV-8), so the
+  // 6. Move an idle hand one gate. Loss is time, never capacity (INV-8), so the
   //    direct loss is exactly zero and saying so is the point.
   for (const hand of hands) {
     if (hand.state !== 'IDLE') continue;
@@ -516,7 +593,7 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
     }
   }
 
-  // 6. Words. Free, bounded, public, permanent.
+  // 7. Words. Free, bounded, public, permanent.
   eligible.push({
     verb: 'publish_offer',
     params: { text: 'HANDS FOR HIRE' },
@@ -784,7 +861,15 @@ function ifYouDoNothing(
 ): string {
   const settlement = nextSettlement(tick);
   const resolving = mine.filter((v) => v.state === 'LIVE' && v.resolvesAtTick <= settlement);
-  const owed = resolving.reduce((sum, v) => sum + electiveOwed(v, principal), 0);
+  // ── This sentence has to read the election book, or it becomes a lie ────────
+  //
+  // PROP-O5 says `if_you_do_nothing` is *tested against reality*, and while the
+  // election rode on `sign` there was no separate book to consult. Now there is: a
+  // payer that has already elected `IN_FULL` and is still told "your elective N is NOT
+  // paid" would either re-elect (burning actions on an act with no effect) or conclude
+  // the engine lost its statement. So the figure is what is genuinely unelected, and
+  // only that.
+  const owed = resolving.reduce((sum, v) => sum + unelectedElective(runtime, v, principal), 0);
   const parts: string[] = [];
 
   if (resolving.length > 0) {
@@ -793,7 +878,7 @@ function ifYouDoNothing(
     );
     if (owed > 0) {
       parts.push(
-        `and your elective ${String(owed)} is NOT paid — an unelected elective part is a decline, and a decline is a default on the record`,
+        `and your elective ${String(owed)} is NOT paid — an unelected elective part is a decline, and a decline is a default on the record, so \`elect\` it before the freeze`,
       );
     }
   }
@@ -830,13 +915,44 @@ function electiveOwed(venture: VentureRecord, principal: PrincipalId): number {
   return total;
 }
 
+/** What this payer has NOT elected on, netted against what it has. */
+function unelectedElective(
+  runtime: Runtime,
+  venture: VentureRecord,
+  principal: PrincipalId,
+): number {
+  if (venture.creator !== principal) return 0;
+  let total = 0;
+  for (const role of venture.roles) {
+    if (role.filledByPrincipal === null) continue;
+    if (role.filledByPrincipal === principal) continue;
+    const stated = runtime.electionOn(venture.id, role.index);
+    // `IN_FULL` covers whatever the due turns out to be, so nothing is left unelected.
+    if (stated === IN_FULL) continue;
+    const owed = runtime.electiveCeilingOf(venture, role.index);
+    total += Math.max(0, owed - (stated ?? 0));
+  }
+  return total;
+}
+
 function nextSettlement(tick: number): number {
   return tick + ticksUntilReckoning(tick) - 1;
 }
 
+/**
+ * The last tick on which an act aimed at tonight's settlement can still be taken.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * This used to return the **freeze tick itself**, which is a tick where `SealBook.commit`
+ * and `Runtime.vElect` both refuse — so the seal affordance published an `expires_tick`
+ * one past its own deadline and an agent acting at exactly that tick was told to do
+ * something and then declined (AGT-S2). `nextSettlement(tick) - 1` is the freeze
+ * (`FREEZE_TICKS === 1`); the last *actable* tick is one before that.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
 function lastTickBeforeFreeze(tick: number): number {
   const settlement = nextSettlement(tick);
-  return Math.max(tick, settlement - 1);
+  return Math.max(tick, settlement - 1 - FREEZE_TICKS);
 }
 
 /** The tick something changes for this principal. Never decreases within a tick. */

@@ -25,7 +25,7 @@
  *
  * `VERB_CLASS` there classifies every verb as peaceful or hostile; {@link VERBS}
  * here is the ordered list an affordance's `verb` must come from. Two lists of the
- * same 38 words is exactly the drift scar #1 is made of, so
+ * same 39 words is exactly the drift scar #1 is made of, so
  * `test/observe/shape.test.ts` asserts the two sets are **equal** — not that one
  * contains the other. A verb added to §12.2 and classified but not listed here
  * fails that test, and so does the reverse.
@@ -38,7 +38,7 @@ import { costOf } from '../tick/index.js';
 import { MAX_FORECLOSE_ENTRIES, MAX_PHRASE_CHARS } from './tokens.js';
 
 /**
- * SPEC §12.2's verbs, in the spec's own group order. 38 of the §17 budget's 40.
+ * SPEC §12.2's verbs, in the spec's own group order. 39 of the §17 budget's 40.
  *
  * Grouped and commented so a reader can diff this against §12.2 by eye; the
  * mechanical diff is in the test.
@@ -63,6 +63,7 @@ export const VERBS = Object.freeze([
   'message',
   'fill_role',
   'sign',
+  'elect',
   'withdraw',
   'abandon',
   // office

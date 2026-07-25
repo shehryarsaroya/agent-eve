@@ -1,8 +1,8 @@
 /**
  * The verb surface, and the honest gap in it.
  *
- * `agent.md` §7 lists thirty-eight verbs and an agent reads that list as a promise
- * that all thirty-eight do something. Phase 0 does not implement thirty-eight
+ * `agent.md` §7 lists thirty-nine verbs and an agent reads that list as a promise
+ * that all thirty-nine do something. Phase 0 does not implement thirty-nine
  * mechanics, and there are exactly two ways to handle that:
  *
  *   1. Let the unbuilt ones fall through to the tick loop's `unknownVerb`, which
@@ -54,6 +54,10 @@ export const CANON_VERBS: readonly string[] = Object.freeze([
   'message',
   'fill_role',
   'sign',
+  // `sign` binds the terms; `elect` decides the payment. Two verbs because they are
+  // two concepts (§3) and because the election has to stay restatable until the
+  // freeze — a choice fixed at signing is not the choice A6 needs (SPEC §12.2).
+  'elect',
   'withdraw',
   'abandon',
   // office
@@ -97,17 +101,11 @@ export function isCanonVerb(verb: string): boolean {
  * against a public plan and "coming soon" is not.
  */
 export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
-  /**
-   * `seal` is written, tested and deliberately not live.
-   *
-   * INV-20 requires every seal to be resolved exactly once when its Reckoning closes,
-   * and seal resolution needs the deeds to judge against — which belongs to the
-   * Reckoning driver. Offering `seal` before that exists means the first settlement
-   * tick after any agent seals HALTS the world, which is a denial of settlement any
-   * agent could trigger with one free action (AGT-X9). See the note in
-   * `src/sim/runtime.ts`.
-   */
-  seal: 'step 14 (seals and the rundown)',
+  // `seal` and `elect` were both here and both are now live, so their entries are
+  // gone rather than left to read as a promise about a verb that already works.
+  // `classifyVerb` checks `live` first, so a stale entry would never be *shown* — it
+  // would just quietly disagree with the engine, which is the drift this file exists
+  // to prevent.
   attest: 'step 9 (grants and offline semantics)',
   verify_owner: 'step 9 (grants and offline semantics)',
   post_bond: 'step 9 (grants and offline semantics)',

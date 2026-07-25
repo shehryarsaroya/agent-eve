@@ -26,11 +26,20 @@
  */
 
 import { Rng } from '../core/rng.js';
+import { inFreeze, isSettlementTick } from '../core/time.js';
 import type { PrincipalId, SystemId, VentureKind } from '../core/types.js';
+import { BPS_ONE, minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
-import { IN_FULL, openIndices, roleOfPrincipal } from '../venture/index.js';
+import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
 import { handsOf, tierOf } from '../world/index.js';
-import { reckoningOf, type Runtime } from '../sim/runtime.js';
+import {
+  DELIVERY_MEASURE,
+  DELIVERY_VERB,
+  ELECTABLE_VENTURE_STATES,
+  freeStores,
+  reckoningOf,
+  type Runtime,
+} from '../sim/runtime.js';
 import type { SubmittedAction } from '../tick/index.js';
 
 /**
@@ -118,6 +127,23 @@ export interface CastOptions {
 export const DEFAULT_CREATE_CHANCE_BPS = 2_000;
 
 /**
+ * How much of its **free** stores a cast payer will commit to elective parts across
+ * everything settling in one Reckoning. *(calibrate)*
+ *
+ * This one number is what makes §7.6 answerable at all: at `BPS_ONE` every promise is
+ * honoured and the falsification test has a rigged answer, and at `0` nothing is ever
+ * paid and standing has nothing to accrue to. In between, a payer with a few ventures
+ * honours them and a payer that has over-committed relative to its purse declines the
+ * marginal one — which is the ordinary road to a broken promise A6 describes, and it is
+ * a *reason* rather than a dice roll.
+ *
+ * Not a claim of correctness (§7 of CLAUDE.md's conventions): it is a starting point for
+ * simulation, and `test/cast/heuristic.test.ts` asserts the *shape* of the policy — that
+ * it honours what it can afford and declines what it cannot — rather than this figure.
+ */
+export const CAST_ELECTIVE_APPETITE_BPS = 700;
+
+/**
  * The cast, as a deterministic policy over the world.
  *
  * Stateless with respect to its own decisions: everything it needs is in the world
@@ -186,11 +212,18 @@ export class HeuristicCast {
    *
    *   1. **Sign what is waiting on you.** Nothing binds until every party
    *      countersigns, so an unsigned venture is a venture that cannot go live.
-   *   2. **Fill somebody's open role.** This is the clause §15.6 actually asks for:
-   *      heuristics fill unfilled slots so ventures always resolve.
+   *   2. **State what you will pay**, or restate it. See {@link electionFor}.
    *   3. **Seal a role you hold.** Free, mandatory, and the reveal is the show.
-   *   4. **Create something**, occasionally, so the board is never empty.
-   *   5. **Move an idle hand**, so the map has motion in it (A13).
+   *   4. **Fill somebody's open role.** This is the clause §15.6 actually asks for:
+   *      heuristics fill unfilled slots so ventures always resolve.
+   *   5. **Create something**, occasionally, so the board is never empty.
+   *   6. **Move an idle hand**, so the map has motion in it (A13).
+   *
+   * **The seal comes before `fill_role` and `create` on purpose.** PROP-D4's
+   * compliance validator refuses both while a sealable role is unsealed, so a bot that
+   * tried to fill first would be refused every tick and never reach its own seal branch
+   * — one refusal per tick forever, which reads in the logs exactly like a rules-surface
+   * defect (AGT-S3) and would bury the real ones.
    */
   private decideOne(
     member: CastMember,
@@ -212,29 +245,51 @@ export class HeuristicCast {
       if (venture.state !== 'FORMING') continue;
       if (venture.termsHash === null) continue;
       if (venture.countersigned.has(member.principal)) continue;
+      // No election here. `sign` binds the terms and nothing else — and `vSign` refuses
+      // a request that carries one rather than dropping it, so this params list and that
+      // handler cannot drift into a payer that believes it elected and did not.
       return {
         ...base,
         verb: 'sign',
+        params: { venture: venture.id, terms_hash: venture.termsHash },
+      };
+    }
+
+    const election = this.electionFor(member, tick);
+    if (election !== null) return { ...base, ...election };
+
+    // One home for "which roles can still be sealed and kept": the affordance, PROP-D4's
+    // compliance gate and this bot all read `sealableRoles`, so a bot cannot be refused
+    // for failing to seal something it was never offered, and cannot be told to seal
+    // something the resolver would mark CONTRADICTED from an absence.
+    for (const ref of runtime.liveVerbs.has('seal')
+      ? runtime.sealableRoles(member.principal, tick)
+      : []) {
+      if (runtime.seals.freeSlotsRemaining(member.principal, reckoningOf(tick), [ref]) === 0) continue;
+      const venture = runtime.ventures.get(ref.venture);
+      if (venture === undefined) continue;
+      const band = runtime.deliveryBandOf(venture);
+      return {
+        ...base,
+        verb: 'seal',
         params: {
-          venture: venture.id,
-          terms_hash: venture.termsHash,
-          // ── The election, and it is the payer's choice, not the engine's ──────
+          // ── THE DELIVERY VERB, NOT `sign` ────────────────────────────────────
           //
-          // Only the creator may elect, because the elective half is paid out of its
-          // own stores. `IN_FULL` rather than the figure it was quoted: on a share
-          // role the due is not knowable until the residual is drawn, so an agent
-          // that elects the number it signed for is electing *less than it owes* on
-          // any venture that over-performs — and the record would show it declined
-          // the difference (§7.1, and the trap `agent.md` §4 spells out).
-          //
-          // **A bot that always honours cannot answer §7.6.** This cast is honest by
-          // policy, which exercises the honoured branch and the standing that accrues
-          // to it; the default branch is reached the other way — a payer whose stores
-          // cannot cover the elective part at settlement, which is `UNFUNDED` and is a
-          // different row from a refusal. Whether betrayal is *rational* is a question
-          // only agents that reason can answer, and the falsification probes are where
-          // it gets asked.
-          ...(venture.creator === member.principal ? { election: IN_FULL } : {}),
+          // This branch named `verb: 'sign'` and this world records **no `sign` deed**.
+          // With the completeness witness working, such a seal resolves `CONTRADICTED`
+          // from an absence — a permanent public mark against a bot that did exactly
+          // what it said it would. The only deed the engine writes is the delivery.
+          verb: DELIVERY_VERB,
+          // `target` names the venture and `role` names the slot, so the free slot
+          // the engine charges is the one this bot's own arithmetic checked.
+          target: ref.venture,
+          role: ref.roleIndex,
+          measure: DELIVERY_MEASURE,
+          // The band the rules permit, which is what the deed will be measured
+          // against — not `escrowed + elective`, which is what the *role* is owed and
+          // is a different quantity entirely.
+          outcome_low: band.low,
+          outcome_high: band.high,
         },
       };
     }
@@ -250,35 +305,6 @@ export class HeuristicCast {
           params: { venture: slot.venture, role: slot.role, hand: hand.id, stake: 0 },
         };
       }
-    }
-
-    // Sealing is only attempted when the verb is live. It is deliberately not, until
-    // the Reckoning driver resolves seals (see the note in `src/sim/runtime.ts`), and a
-    // bot that tried anyway would generate one refusal per tick forever — which reads
-    // in the logs exactly like a rules-surface defect (AGT-S3) and would bury the real
-    // ones. The branch stays, gated, so turning the verb on turns the behaviour on.
-    for (const venture of runtime.liveVerbs.has('seal')
-      ? runtime.ventures.forPrincipal(member.principal)
-      : []) {
-      const role = roleOfPrincipal(venture, member.principal);
-      if (role === null) continue;
-      if (venture.state !== 'LIVE' && venture.state !== 'FORMING') continue;
-      const held = [{ venture: venture.id, roleIndex: role.index }];
-      if (runtime.seals.freeSlotsRemaining(member.principal, reckoningOf(tick), held) === 0) continue;
-      return {
-        ...base,
-        verb: 'seal',
-        params: {
-          verb: 'sign',
-          // `target` names the venture and `role` names the slot, so the free slot
-          // the engine charges is the one this bot's own arithmetic checked.
-          target: venture.id,
-          role: role.index,
-          measure: 'MINOR',
-          outcome_low: 0,
-          outcome_high: role.terms.escrowed + role.terms.elective,
-        },
-      };
     }
 
     const appetite = this.options.createChanceBps ?? DEFAULT_CREATE_CHANCE_BPS;
@@ -320,6 +346,109 @@ export class HeuristicCast {
       }
     }
     return null;
+  }
+
+  /**
+   * What this payer will pay, and **why it sometimes will not pay in full.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * §7.6 IS THE POINT OF THIS FUNCTION.
+   *
+   * The old cast elected `IN_FULL` on every venture it created, unconditionally, and
+   * said so honestly: *"a bot that always honours cannot answer §7.6."* That left the
+   * design's own falsification test — *is the elective part always honoured?* — with a
+   * rigged answer, because the only agent in the world was honest by construction.
+   *
+   * So this bot has a **reason**, and the reason is the one §6.4 uses to price the
+   * resistance in the first place:
+   *
+   * > "Resisting a temptation you could not afford is worth more than resisting one you
+   * > could not be bothered with." — `agent.md`
+   *
+   * The bot is willing to commit {@link CAST_ELECTIVE_APPETITE_BPS} of its **free**
+   * stores to elective parts across everything settling tonight. Inside that, it elects
+   * `IN_FULL` — the honest statement, and the only one that is safe on a share role
+   * where the due is not knowable until the residual is drawn. Beyond it, it elects the
+   * part it can still cover and declines the rest: a `DECLINED` default, permanently, on
+   * a promise it decided not to keep because it had spent the money elsewhere. That is
+   * the ordinary, legitimate, un-dramatic road to a broken promise, which is exactly A6's
+   * claim about how betrayal happens.
+   *
+   * **Three properties that make it a policy and not a coin flip:**
+   *
+   *   1. **No `Rng` at all.** Deliberate: a random default is a dice roll, and A6's whole
+   *      claim is that betrayal is never one. Nothing here draws, so nothing here can
+   *      make the world unreplayable either (DET-7).
+   *   2. **Integer arithmetic only** — `bps` and `trunc`. A float in a value path is
+   *      banned, and this figure decides what moves at settlement.
+   *   3. **Stateless and monotone.** It recomputes its whole intention from the world
+   *      every tick, so it needs no book of its own and cannot drift out of step with
+   *      one. An existing statement is left alone while it is still affordable and is
+   *      only ever restated *downwards* — which converges, and which is the restatement
+   *      `agent.md` promises is possible right up to the freeze: "changing your mind late
+   *      is allowed, and it is the whole reason this game has drama in it."
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private electionFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    // Refused inside the freeze, so there is nothing to send there (§5.1). Checked here
+    // as well as in the handler because a bot generating one refusal per tick is the
+    // AGT-S3 noise that buries real defects.
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+
+    const free = freeStores(runtime.ledger, member.principal);
+    const budget = Math.trunc((free * CAST_ELECTIVE_APPETITE_BPS) / BPS_ONE);
+    let pledged = 0;
+    let first: { readonly venture: string; readonly role: number; readonly want: Election } | null =
+      null;
+
+    // Canonical order, so two runs of one seed walk the same roles in the same sequence
+    // and therefore run out of budget at the same one.
+    const mine = [...runtime.ventures.forPrincipal(member.principal)]
+      .filter((v) => v.creator === member.principal)
+      .sort((a, b) => compareIds(a.id, b.id));
+
+    for (const venture of mine) {
+      if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) continue;
+      for (const role of venture.roles) {
+        // The payer owes an elective part only where somebody else holds the role: a
+        // payment to its own stores is booked as paid in full and can never be a breach
+        // (scar #9), and `elect` refuses it by name.
+        if (role.filledByPrincipal === null) continue;
+        if (role.filledByPrincipal === member.principal) continue;
+        const owed = runtime.electiveCeilingOf(venture, role.index);
+        if (owed <= 0) continue;
+
+        const room = Math.max(0, budget - pledged);
+        const stated = runtime.electionOn(venture.id, role.index);
+        if (stated !== undefined) {
+          const current = stated === IN_FULL ? owed : Math.min(stated, owed);
+          if (current <= room) {
+            // Already said, and still affordable. Left exactly as it is: restating a
+            // promise you can keep costs an action and changes nothing.
+            pledged += current;
+            continue;
+          }
+          // The money went elsewhere since. Restated **down** to what is left, which is
+          // a default for the difference and is meant to be.
+          if (first === null) first = { venture: venture.id, role: role.index, want: minor(room) };
+          pledged += room;
+          continue;
+        }
+        const want: Election = room >= owed ? IN_FULL : minor(room);
+        if (first === null) first = { venture: venture.id, role: role.index, want };
+        pledged += room >= owed ? owed : room;
+      }
+    }
+
+    if (first === null) return null;
+    return {
+      verb: 'elect',
+      params: { venture: first.venture, role: first.role, election: first.want },
+    };
   }
 
   /**

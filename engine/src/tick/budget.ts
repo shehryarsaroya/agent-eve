@@ -27,9 +27,16 @@
  *   - `scan` is **not** free. It is information, and unmetered information is
  *     throughput becoming power by a different route (A4). §12.1's free services
  *     are read-only *derivations of what you can already see*; `scan` reaches.
- *   - `seal` is **not** in this set. §17 gives seals their own allowance — "one
- *     free per role held" — which is the seals module's ledger, not this one.
- *     Putting `seal` here would give one quantity two homes (scar #5).
+ *   - `seal` is **conditionally** free, and neither extreme is right. §17 gives
+ *     seals their own allowance — "one free per role held" — and `agent.md` promises
+ *     it in those words. Listing `seal` in `FREE_VERBS` would make EVERY seal free
+ *     and delete the allowance; leaving it out charged for the first one and made
+ *     `agent.md` a lie, which is scar #1 with the doc on the losing side.
+ *
+ *     So the allowance stays in the seals module — one home for one quantity, no
+ *     scar #5 — and the budget ASKS. `charge` takes an optional `withinAllowance`
+ *     flag that the caller sets from the seals ledger. The budget owns metering; the
+ *     seals book owns the allowance; the promise is kept.
  */
 
 import { ACTIONS_PER_TICK } from '../core/time.js';
@@ -98,6 +105,15 @@ export class ActionBudget {
     principal: PrincipalId,
     verb: string,
     routine = false,
+    /**
+     * True when this act falls inside its own module's free allowance — today only
+     * `seal`, whose "one free per role held" ledger lives in the seals book (§17).
+     *
+     * Deliberately a caller-supplied fact rather than a verb lookup: the budget
+     * cannot know how many seals this principal has already placed on this role
+     * without duplicating that ledger, and duplicating it is scar #5.
+     */
+    withinAllowance = false,
   ): { readonly ok: true; readonly cost: ActionCost } | Rejection {
     if (routine) {
       // A durable intent already paid, once, at creation. Charging again here is
@@ -108,9 +124,9 @@ export class ActionBudget {
       return { ok: true, cost: 'FREE' };
     }
     const cost = costOf(verb);
-    if (cost === 'FREE') {
+    if (cost === 'FREE' || withinAllowance) {
       this.bump(this.freeTotal, principal);
-      return { ok: true, cost };
+      return { ok: true, cost: 'FREE' };
     }
     const used = this.spent(principal);
     if (used >= this.perTick) {
