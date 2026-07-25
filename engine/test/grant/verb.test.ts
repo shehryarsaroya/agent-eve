@@ -18,7 +18,7 @@ import { setSpeed } from '../../src/core/time.js';
 import type { EventId, GrantId, PrincipalId, SystemId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
 import { storesAccount } from '../../src/ledger/index.js';
-import { commonsSystems } from '../../src/world/index.js';
+import { commonsSystems, handsOf } from '../../src/world/index.js';
 import { buildObservation } from '../../src/api/observe.js';
 
 type Row = Record<string, unknown>;
@@ -309,6 +309,53 @@ describe('observe surfaces grants, so an agent can see and use its authority (A6
     const row = grantsView(w.runtime, w.grantor).granted[0]!;
     expect(row['spent_direct']).toBe(spent);
     expect(row['headroom_direct']).toBe(250_000 - spent);
+  });
+});
+
+describe('anti-self-dealing — a delegate is not a counterparty to a deal it controls (§8.1 #3)', () => {
+  it('a delegate may not fill a role in a venture whose creator it holds authority over', () => {
+    const w = world('sd1');
+    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 250_000 }))).toBeNull();
+    expect(
+      act(w.runtime, w.delegate, 'create', {
+        kind: 'HAUL',
+        on_behalf_of: w.grantor,
+        value: 12_000,
+        stage: w.stage,
+      }),
+    ).toBeNull();
+
+    const v = w.runtime.ventures.forPrincipal(w.grantor)[0]!;
+    const open = v.roles.find((r) => r.filledByPrincipal === null)!;
+    const hand = handsOf(w.runtime.world, w.delegate)[0]!;
+    // The delegate created this venture on the grantor's account and now tries to be
+    // paid out of it — the trivial self-deal §8.1 #3 forbids.
+    const refusal = act(w.runtime, w.delegate, 'fill_role', {
+      venture: v.id,
+      role: open.index,
+      hand: hand.id,
+    });
+    expect(refusal?.invariant).toBe('INV-23');
+  });
+
+  it('a principal with no authority over the creator may fill the role (control)', () => {
+    const w = world('sd2');
+    const outsider = 'p:outsider' as PrincipalId;
+    w.runtime.seat(outsider, 'outsider', w.stage);
+    w.runtime.standing.open(outsider);
+    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage })).toBeNull();
+
+    const v = w.runtime.ventures.forPrincipal(w.grantor)[0]!;
+    const open = v.roles.find((r) => r.filledByPrincipal === null)!;
+    const hand = handsOf(w.runtime.world, outsider)[0]!;
+    const refusal = act(w.runtime, outsider, 'fill_role', {
+      venture: v.id,
+      role: open.index,
+      hand: hand.id,
+    });
+    // May be refused for an unrelated eligibility reason, but never for self-dealing —
+    // the outsider holds no authority over the creator.
+    expect(refusal?.invariant).not.toBe('INV-23');
   });
 });
 

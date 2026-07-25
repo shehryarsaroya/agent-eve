@@ -2106,6 +2106,26 @@ export class Runtime {
     if (roleIndex < 0 || roleIndex >= venture.roles.length) {
       return reject('PROP-V6', `${ventureId} has roles 0..${String(venture.roles.length - 1)}.`);
     }
+    // ── ANTI-SELF-DEALING (SPEC §8.1 #3, INV-23) ─────────────────────────────
+    //
+    // A delegate may not be a counterparty to a deal it holds authority over. If you hold
+    // a live grant over this venture's creator, you could have shaped the venture in your
+    // own favour and funded its escrow from the creator's OWN stores — so you may not also
+    // fill a role in it and be paid out of that escrow. That is the classic betrayal's
+    // trivial form (create on the grantor's behalf, then pay yourself), and A6's whole
+    // claim is that betrayal is subtle and legitimate, not this. Filling roles in ventures
+    // whose creator you have no authority over is untouched.
+    if (
+      venture.creator !== req.principal &&
+      this.grantBook.liveGrantBetween(venture.creator, req.principal, ctx.tick) !== null
+    ) {
+      return reject(
+        'INV-23',
+        `you hold a live grant over ${venture.creator}, so you may not also fill a role in its venture ` +
+          `${ventureId}: a delegate cannot be a counterparty to a deal it has authority over (self-dealing, ` +
+          '§8.1 #3). Fill roles in ventures whose creator you have no authority over.',
+      );
+    }
     // ── GEOGRAPHY IS NOT ENFORCED HERE, AND IT IS NOT AN OVERSIGHT ────────────
     //
     // `fillRole` checks `isPresent`, which is about the hand's *state* — not in transit,
