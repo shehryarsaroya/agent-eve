@@ -181,11 +181,24 @@ grep -q 'THE COMPACT' <<<"$FIRST" || fail "agent.md is not being served as markd
 grep -qv '<!DOCTYPE' <<<"$FIRST" || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
 ok "agent.md served as markdown"
 
-# Health must assert the interesting property, not liveness (scar #14b).
+# Post-deploy health has TWO distinct questions, and conflating them was a bug:
+# "did the deploy work" vs "is a live run in progress". The service being up with a
+# sound world is the deploy's business; whether LLM players are currently deciding is
+# not — right after a restart there is no run, so the deciding-share floor (scar #14b)
+# is EXPECTED to be tripped and must not fail the deploy. It is a monitoring alert for
+# during a run, surfaced here as a warning.
 HEALTH=$(curl -s --max-time 20 https://agentinsurance.io/compact/health || echo '{}')
 printf '  health: %s\n' "$HEALTH"
-grep -q '"ok":true' <<<"$HEALTH" || fail "health endpoint not ok"
-ok "health ok"
+# Structural soundness — these WOULD be deploy failures:
+grep -q '"world":"RUNNING"' <<<"$HEALTH" || fail "world is not RUNNING after deploy"
+grep -q '"rollback_gaps":\[\]' <<<"$HEALTH" || fail "rollback_gaps is non-empty — a halt left state dirty"
+ok "service up, world RUNNING, no rollback gaps"
+# The deciding-share floor is informational at deploy time.
+if grep -q '"status":"healthy"' <<<"$HEALTH"; then
+  ok "live agents deciding above the floor"
+else
+  printf '  \033[33m! deciding-share floor tripped — expected with no live cast running; not a deploy failure (scar #14b is a run-time alert)\033[0m\n'
+fi
 
 # Anything that was running before must still be running. This is the check
 # whose absence let scar #4 stay invisible for days.

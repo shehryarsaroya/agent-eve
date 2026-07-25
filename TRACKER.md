@@ -162,6 +162,24 @@ Three independent scorers against SPEC v3.0.
 
 ## 🏗 BUILD LOG (2026-07-24 →)
 
+**2026-07-25 (later) — Gate 3 fixes + the Levy, verified and deployed.** 2109 tests. The game is playable and the fixes are live.
+
+- **Deal-closing gap closed** (Gate 3's headline). A filler reads ONE observation, fills and signs from the board row inside the 12-tick window. **Action refusal rate 78% → 0%** on the merged tree — one missing `terms_hash` field had been strangling the whole venture loop, exactly as Gate 3 diagnosed.
+- **The Levy shipped** and is **visible over HTTP** — it had been tested-but-dead (`observe` returned `obligations.levy: null`), the same shape as standing being a constant. Assessment, the constellation vote, the non-escrowable share (Coase-collapse-proof), the newcomer floor, tribute lines, INV-24/25.
+- **Standing is real** — was a hardcoded zero in `observe`; this is what made `AGT-E2` unanswerable.
+- **A4 quote-harvest hole closed** — `nearestFresh` checked for a wake but never spent one, so an agent could harvest priced affordances unmetered through the correction channel. A fresh set now costs a wake, solved once per response.
+
+> **The recurring bug class struck a THIRD time and was caught.** INV-24's newcomer-floor guard built its `floorEligible` set from the very `newcomerFloored` flag it was meant to check — a completeness witness derived from what it witnesses, exactly like the seal witness (wave 2/3) and the bare-term vocabulary detector (wave 1). Mutation-proven worthless: reverting left all 104 levy tests green. Fixed by carrying the raw tenure/capital on each line (INV-17's "attribution is a column" principle) and re-deriving eligibility from the rule. **This pattern is now the single most repeated defect in the project — worth a standing check for it in any new guard.**
+
+- **Deploy hardened through eight real failures**, six mine, two that *looked like success*: an unanchored `--exclude` silently dropped `src/cast/`, and `agent.md` was served as HTML with a 200. Also fixed: the deploy's own health gate conflated "did the deploy work" with "is a live run in progress" — it failed on the scar #14b floor (correct behaviour, no live cast) — now split into a structural gate (world RUNNING, no rollback gaps) and a run-time warning.
+- **Verifiers on Opus** for this wave (per the model-tier policy: judgment is the measurement where a shallow pass misses A5′ bugs). They found the INV-24 tautology, the A4 harvest, and the Levy-invisible-over-HTTP — none of which the green suite caught.
+
+**Live:** `agentinsurance.io/compact/` — tick 1001, 3 Reckonings, 411 ventures, `rollback_gaps` empty, deterministic.
+
+**Open P2s (real, not blocking):** observation payload ~19.5KB and structurally unbudgeted (recommended fix: collapse onto `src/observe/`) · the Levy ballot's rule-half is sock-puppetable (A15, spare-half is covered) · `health` counts INTENT as deciding (scar #14b through a narrower door) · `message` has no party check (a PARTIES-tier write leak) · `LEVY` is a member of two named unions.
+
+**Next:** re-run the season soak (expect the 78% refusal collapse to hold at scale) and **re-run Gate 3 on Opus** — the deal-closing fix and visible standing mean it should finally read 0/n instead of 0/0, and `AGT-E2` becomes answerable.
+
 **2026-07-25 — LIVE, and through Gate 3.** The game is deployed at `https://agentinsurance.io/compact/` and settling Reckonings on its own. ~1880 tests. Milestones since the wave logs below:
 
 - **Deployed.** Eight failures to get there, six mine; two *looked like success* — an unanchored rsync `--exclude` silently omitted `src/cast/` (scar #4's shape with a different verb), and `agent.md` was served as HTML with a 200 via nginx's SPA fallback. The deploy now anchors every pattern, asserts all 16 source dirs arrived, and verifies `agent.md` is markdown. `compact-sim.service` was **deleted** rather than written: the API already owns the scheduler, so a second unit would have been a second writer (OPS-5).
