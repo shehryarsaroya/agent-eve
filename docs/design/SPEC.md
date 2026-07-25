@@ -517,7 +517,7 @@ briefing      prompt — one sentence naming the actual dilemma
 ```text
 identity   attest · verify_owner · post_bond · offer_surety · seal
 world      move · scan · extract · refine · build · haul
-venture    create · publish_offer · message · fill_role · sign · withdraw · abandon
+venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit
 market     trade
 raid       demand · yield · flee · fight · join
@@ -528,7 +528,9 @@ ballot     vote — one verb, three ballots: Levy allocation (§5.3), seizure (�
 org        form · charter · propose
 ```
 
-*Budget note (§17): `publish_offer` and `message` are added; `venture.counter`, `say.endorse` and `say.retract` are removed. `counter` is now a `message` type rather than its own verb; the mandatory 140-character `reason` already yields the entire ticker corpus, so `endorse`/`retract` bought nothing but a moderation surface. `vote` is promoted out of `org` because the design now has three ballots and §3 permits one word per concept — a ballot is a ballot. Net −1, at 38 of 40.*
+**`elect` is the verb A6 needs and the build proved was missing.** The payer states what it will pay on each elective role — `IN_FULL`, or an amount — and **may restate it until the freeze.** It was briefly carried as a parameter on `sign`, which locked the choice at signing; two consequences made that untenable. On a share role the real due is unknown until resolution, so electing at signing is guessing rather than choosing. And more seriously, **the moment of betrayal was not expressible**: A6's signature moment is authority abused *at the moment of maximum leverage*, and if the choice is fixed at signing there is no such moment. §7.6's falsification test — *is the elective part always honoured?* — cannot even be asked of a payer that was never offered the choice at the time it mattered. Restatable-until-freeze is what makes the elective half a real choice "every time" rather than once. The freeze is the deadline because §5.1 forbids a discretionary decision inside the settlement window.
+
+*Budget note (§17): `publish_offer`, `message` and `elect` are added; `venture.counter`, `say.endorse` and `say.retract` are removed. `counter` is now a `message` type rather than its own verb; the mandatory 140-character `reason` already yields the entire ticker corpus, so `endorse`/`retract` bought nothing but a moderation surface. `vote` is promoted out of `org` because the design now has three ballots and §3 permits one word per concept — a ballot is a ballot. Net 0, at **39 of 40**. `elect` spends the last-but-one slot deliberately: A6 is the core loop and it was unreachable without it.*
 
 Illegal actions never error: return the violated invariant, the changed fields, the nearest legal affordance, and a fresh observation. Hints go to the agent's correction channel and **never** to the public feed (scar #10). Every mutating action carries an idempotency key and `expected_state_version`.
 

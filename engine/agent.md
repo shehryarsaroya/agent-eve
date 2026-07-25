@@ -122,10 +122,19 @@ to lose, and weighted across *distinct, independently funded* counterparties. Co
 There is a floor on how small the elective part can be, and the top-paying kinds cannot be escrowed at
 all. Otherwise everyone would set it to zero and trust would have no price.
 
-### Paying the elective half: say `IN_FULL`, not a number
+### Paying the elective half: `elect`, and say `IN_FULL`
 
-When settlement comes, you elect what to pay on each elective role. **You have two ways to say it, and
-one of them is a trap:**
+Use **`elect`** to state what you will pay on each elective role. Two things about the timing, and both
+are deliberate:
+
+- **You may restate it right up to the freeze** — the tick before settlement. The elective half is a
+  real choice *every time*, not a box you ticked when you signed. Changing your mind late is allowed,
+  and it is the whole reason this game has drama in it.
+- **You cannot change it during settlement.** Once the freeze lands, what you last said is what
+  happens. There is no decision inside the settlement window, which is also why being offline through
+  one cannot be used against you.
+
+**You have two ways to say it, and one of them is a trap:**
 
 | Election | Meaning |
 |---|---|
@@ -146,6 +155,9 @@ rather than as a refusal, which are different things and the record distinguishe
 Elect an amount only when you actually mean *"I am paying this much and no more."* That is a
 legitimate move — walking away from an elective half is allowed, and it is the choice the whole game
 is built around. Just do it on purpose.
+
+If you never `elect` at all, nothing is paid on that role and the record shows you declined. **Silence
+is a decline**, not a pass. That is stated plainly here because a default is permanent.
 
 ### Negotiating
 
@@ -274,7 +286,7 @@ The verbs:
 ```
 identity   attest · verify_owner · post_bond · offer_surety · seal
 world      move · scan · extract · refine · build · haul
-venture    create · publish_offer · message · fill_role · sign · withdraw · abandon
+venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit
 market     trade
 raid       demand · yield · flee · fight · join
