@@ -1922,13 +1922,24 @@ export class Runtime {
         `create needs a kind: {"kind": "HAUL"}. The kinds are ${VENTURE_KINDS.join(' · ')}.`,
       );
     }
+    // The venture belongs to `creator`. Usually that is the actor; when `on_behalf_of`
+    // names another principal, the actor is a DELEGATE spending the grantor's stores
+    // under a grant (A6). The grant gate runs below, once the escrow amount is known —
+    // before any value moves, so a refusal leaves the world untouched.
+    const onBehalf = readString(req.params, ['on_behalf_of', 'onBehalfOf', 'for']) as PrincipalId | null;
+    const creator = onBehalf ?? req.principal;
+    const delegated = onBehalf !== null && onBehalf !== req.principal;
+    if (delegated && this.world.holdingByPrincipal.get(creator) === undefined) {
+      return reject('A2', `there is no principal ${creator} to create a venture on behalf of.`);
+    }
     const stage = readString(req.params, ['stage', 'system', 'at']) as SystemId | null;
-    const hands = handsOf(this.world, req.principal);
+    const hands = handsOf(this.world, creator);
     const here = stage ?? hands[0]?.location;
     if (here === undefined || !this.world.map.systems.has(here)) {
       return reject(
         'A2',
-        'create needs a stage — the system it happens in. Name one where you have a hand.',
+        `create needs a stage — the system it happens in. Name one where ${delegated ? String(creator) : 'you'} ` +
+          'has a hand.',
       );
     }
     const value = readInt(req.params, ['value', 'value_minor']) ?? kindSpec(kind).baseYieldMinor;
@@ -1944,12 +1955,12 @@ export class Runtime {
     // at the freeze tick would have to deliver inside it — which moves a figure the
     // settlement was computed from and halts the world on a healthy Reckoning.
     const resolves = nextSettlementAtOrAfter(closes + DELIVERY_LEAD_TICKS);
-    const id = this.mintVentureId(ctx.tick, req.principal);
+    const id = this.mintVentureId(ctx.tick, creator);
 
     const made = createVenture({
       id,
       kind,
-      creator: req.principal,
+      creator,
       stage: here,
       terms: defaultTerms(kind, minor(value)),
       windowOpensTick: opens,
@@ -1960,31 +1971,58 @@ export class Runtime {
     });
     if (!made.ok) return made;
 
-    // A7: the escrowed half is locked **up front**, out of the creator's own free
+    // A7: the escrowed half is locked **up front**, out of the CREATOR's own free
     // balance. Checked here as a rejection so the ledger's throw is unreachable
     // from a request; wrapped below in case the two ever disagree.
     const required = escrowRequired(made.value);
-    const stores = storesAccount(req.principal);
+
+    // ── The delegation gate (A6, §8.1). Runs BEFORE any value moves. A delegate needs a
+    // live grant from the creator whose remaining DIRECT headroom covers this escrow —
+    // the escrow is the grantor's loss the delegate is committing, and it may never pass
+    // the max_direct_loss the grantor was shown (A7). This is the gate; INV-22 is the net.
+    let grant: Grant | null = null;
+    if (delegated) {
+      grant = this.grantBook.liveGrantBetween(creator, req.principal, ctx.tick);
+      if (grant === null) {
+        return reject(
+          'INV-23',
+          `you hold no live grant from ${creator} to act on its behalf. Ask it to grant you scoped authority ` +
+            '(verb: grant), or create on your own account.',
+        );
+      }
+      const headroom = this.grantBook.headroom(grant.id);
+      if (required > headroom.direct) {
+        return reject(
+          'INV-22',
+          `this escrow of ${String(required)} would exceed grant ${grant.id}'s remaining direct headroom of ` +
+            `${String(headroom.direct)} (max_direct_loss ${String(grant.maxDirectLoss)}, already spent ` +
+            `${String(grant.spentDirect)}). A delegate can never lose the grantor more than the worst case it ` +
+            'was shown before signing (A7, §8.1 #2).',
+        );
+      }
+    }
+
+    const stores = storesAccount(creator);
     if (this.ledger.account(stores) === undefined) {
-      return reject('INV-1', 'you have no stores account; enroll before creating a venture.');
+      return reject('INV-1', `${delegated ? String(creator) + ' has' : 'you have'} no stores account.`);
     }
     const free = this.ledger.freeBalance(stores);
     if (free < required) {
       return reject(
         'A7',
-        `${kind} at value ${String(value)} needs ${String(required)} escrowed up front and your stores have ` +
-          `${String(free)} free. Lower the value, or price more of it elective — the elective half is the ` +
-          'only part standing can accrue to anyway.',
+        `${kind} at value ${String(value)} needs ${String(required)} escrowed up front and ` +
+          `${delegated ? String(creator) + "'s" : 'your'} stores have ${String(free)} free. Lower the value, or ` +
+          'price more of it elective — the elective half is the only part standing can accrue to anyway.',
       );
     }
     try {
-      openVentureEscrow(this.ledger, id, req.principal);
+      openVentureEscrow(this.ledger, id, creator);
       if (required > 0) {
         this.ledger.transferCurrency({
           eventId: `escrow:${id}` as never,
           tick: ctx.tick,
           from: stores,
-          to: escrowAccount(id, req.principal),
+          to: escrowAccount(id, creator),
           amount: required,
         });
       }
@@ -1998,13 +2036,28 @@ export class Runtime {
     }
 
     this.ventures.add(made.value);
+    // The delegate's draw against the grant, recorded AFTER the value moved so the spend
+    // journal and the ledger cannot disagree. Bounded by the headroom check above; INV-22
+    // re-checks the sum at tick close. Both actor and principal are on the event below.
+    if (delegated && grant !== null && required > 0) {
+      this.grantBook.recordSpend({
+        grant: grant.id,
+        delegate: req.principal,
+        tick: ctx.tick,
+        eventId: `escrow:${id}` as EventId,
+        direct: required,
+        contingent: minor(0),
+      });
+    }
     ctx.emit({
       tick: ctx.tick,
       kind: 'venture.formed',
       rulesVersion: RULES_VERSION,
+      // Both actor and principal on the receipt: a delegated formation names the delegate
+      // that acted AND the grantor whose stores were committed, plus the grant it drew on.
       actorPrincipalId: req.principal,
-      onBehalfOfPrincipalId: null,
-      grantId: null,
+      onBehalfOfPrincipalId: delegated ? creator : null,
+      grantId: grant?.id ?? null,
       eventFamilyId: `venture::${id}`,
       parentEventId: null,
       isPublic: true,
@@ -2018,7 +2071,14 @@ export class Runtime {
       provenanceClass: 'FACT',
       actedOnStateVersion: ctx.frozenStateVersion,
       decisionSource: req.decisionSource,
-      payload: { venture: id, kind, stage: here, escrowed: required, termsHash: made.value.termsHash },
+      payload: {
+        venture: id,
+        kind,
+        stage: here,
+        escrowed: required,
+        termsHash: made.value.termsHash,
+        ...(delegated ? { creator, onBehalfOf: creator, grant: grant?.id ?? null } : {}),
+      },
       visibility: 'PUBLIC',
       audience: [],
     });

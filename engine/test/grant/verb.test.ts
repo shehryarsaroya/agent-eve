@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import { setSpeed } from '../../src/core/time.js';
 import type { EventId, GrantId, PrincipalId, SystemId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
+import { storesAccount } from '../../src/ledger/index.js';
 import { commonsSystems } from '../../src/world/index.js';
 import {
   GRANT_MAX_LIFETIME_TICKS,
@@ -174,6 +175,81 @@ describe('revoke — always accepted, effective next tick (SPEC §8.1 #6)', () =
   it('refuses revoking a grant that does not exist', () => {
     const w = world('r3');
     expect(act(w.runtime, w.grantor, 'revoke', { grant: 'g:nope' })).not.toBeNull();
+  });
+});
+
+describe('on-behalf create — a delegate draws on a grant (A6 enforcement)', () => {
+  function grantTo(w: World, opts: Record<string, unknown> = {}): GrantId {
+    expect(act(w.runtime, w.grantor, 'grant', OK(opts))).toBeNull();
+    const id = w.runtime.grants.forGrantor(w.grantor)[0]?.id;
+    if (id === undefined) throw new Error('grant did not land');
+    return id;
+  }
+
+  it('creates a venture on the grantor’s account, drawing escrow from the GRANTOR, not the delegate', () => {
+    const w = world('ob1');
+    const id = grantTo(w, { max_direct_loss: 250_000 });
+    const grantorBefore = w.runtime.ledger.freeBalance(storesAccount(w.grantor));
+    const delegateBefore = w.runtime.ledger.freeBalance(storesAccount(w.delegate));
+
+    const refusal = act(w.runtime, w.delegate, 'create', {
+      kind: 'HAUL',
+      on_behalf_of: w.grantor,
+      value: 12_000,
+      stage: w.stage,
+    });
+    expect(refusal).toBeNull();
+
+    // The venture belongs to the grantor, not the delegate who formed it.
+    const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
+    expect(v?.creator).toBe(w.grantor);
+
+    // The escrow came out of the GRANTOR's stores; the delegate paid nothing.
+    const escrow = grantorBefore - w.runtime.ledger.freeBalance(storesAccount(w.grantor));
+    expect(escrow).toBeGreaterThan(0);
+    expect(w.runtime.ledger.freeBalance(storesAccount(w.delegate))).toBe(delegateBefore);
+
+    // The draw was recorded against the grant, by the delegate.
+    expect(w.runtime.grants.get(id)?.spentDirect).toBe(escrow);
+    expect(
+      w.runtime.grants.allSpends().some((s) => s.grant === id && s.delegate === w.delegate),
+    ).toBe(true);
+  });
+
+  it('a delegate with NO grant cannot act on the grantor’s behalf (INV-23)', () => {
+    const w = world('ob2');
+    const refusal = act(w.runtime, w.delegate, 'create', {
+      kind: 'HAUL',
+      on_behalf_of: w.grantor,
+      value: 12_000,
+      stage: w.stage,
+    });
+    expect(refusal?.invariant).toBe('INV-23');
+    expect(w.runtime.ventures.forPrincipal(w.grantor)).toHaveLength(0);
+  });
+
+  it('a draw past the grant’s direct headroom is refused, and NO value moves (INV-22, the gate not the net)', () => {
+    const w = world('ob3');
+    const id = grantTo(w, { max_direct_loss: 1 }); // far below any real escrow
+    const before = w.runtime.ledger.freeBalance(storesAccount(w.grantor));
+    const refusal = act(w.runtime, w.delegate, 'create', {
+      kind: 'HAUL',
+      on_behalf_of: w.grantor,
+      value: 12_000,
+      stage: w.stage,
+    });
+    expect(refusal?.invariant).toBe('INV-22');
+    // The gate ran before any value moved — the grantor is untouched, no venture, no spend.
+    expect(w.runtime.ledger.freeBalance(storesAccount(w.grantor))).toBe(before);
+    expect(w.runtime.ventures.forPrincipal(w.grantor)).toHaveLength(0);
+    expect(w.runtime.grants.get(id)?.spentDirect).toBe(0);
+  });
+
+  it('a self-create still needs no grant — the common path is unchanged (regression)', () => {
+    const w = world('ob4');
+    const refusal = act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage });
+    expect(refusal).toBeNull();
+    expect(w.runtime.ventures.forPrincipal(w.grantor)[0]?.creator).toBe(w.grantor);
   });
 });
 
