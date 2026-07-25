@@ -6,6 +6,18 @@
 
 ## ⏱ STATUS
 
+> **2026-07-25 LIVE MILESTONE — the game is hosted, PERSISTENT, and running the full core loop.**
+> Redeploy done and verified on the box (`84d24a6`): persistence works in production —
+> a restart booted `REPLAY, head tick 4, 5 ticks replayed` instead of resetting, so the fable
+> CRITICAL (every deploy reset the world to tick 0) is closed live. The deploy also shipped the
+> complete A6 core loop, the signing-`@path` fix, and the corrected scar-#1 prompt. Found + fixed a
+> real deploy bug in the process: `systemctl enable --now` is a no-op on a running service, so prior
+> "redeploys" never cut over — now `restart` + a boot-line assertion. Live surface verified: world
+> RUNNING, no rollback gaps, agent.md serving the new signing docs. **Remaining: Gate 3 run 3 (the
+> falsification payoff — time-gated: the world just reset to genesis and must accrue standing, which
+> now persists), the enrol-IP fleet path that unblocks it, and standing tech-debt (#10/#11) + polish.**
+
+
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
