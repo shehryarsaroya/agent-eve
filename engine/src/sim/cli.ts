@@ -286,6 +286,7 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
   const violations: string[] = [];
   const perReckoning: ReckoningSummary[] = [];
   const perLevy: LevySummary[] = [];
+  let tributeAtFreeze: Record<string, number> = {};
   let applied = 0;
   let refused = 0;
   let halted = false;
@@ -324,6 +325,14 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
       const levied = runtime.levyReckonings().at(-1);
       if (levied !== undefined && levied.tick === report.tick) perLevy.push(levied);
     }
+    if (report.clock.inFreeze) {
+      tributeAtFreeze = { lines: 0, DASHED: 0, SOLID: 0, RED: 0, REVERSING: 0, owedMinor: 0 };
+      for (const line of runtime.tributeLines(report.tick)) {
+        tributeAtFreeze[line.state] = (tributeAtFreeze[line.state] ?? 0) + 1;
+        tributeAtFreeze['lines'] = (tributeAtFreeze['lines'] ?? 0) + 1;
+        tributeAtFreeze['owedMinor'] = (tributeAtFreeze['owedMinor'] ?? 0) + line.owed;
+      }
+    }
 
     if (args.assertEveryTick && report.violations.length > 0) {
       for (const v of report.violations) {
@@ -352,6 +361,7 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     reckonings: totalise(perReckoning, perLevy),
     perReckoning,
     perLevy,
+    tributeAtFreeze,
     operatorFaults: runtime.operatorFaults(),
   };
 }
@@ -432,6 +442,8 @@ export function main(argv: readonly string[]): number {
       decisions: result.decisions,
       reckonings: result.reckonings,
       per_reckoning: result.perReckoning,
+      per_levy: result.perLevy,
+      tribute_at_freeze: result.tributeAtFreeze,
       buffers: result.buffers,
       elapsed_ms: elapsedMs,
       final_state_hash: result.lines[result.lines.length - 1]?.stateHash ?? null,

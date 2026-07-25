@@ -53,6 +53,7 @@ import {
   verifySignedRequest,
   wallSecondsFrom,
   type PublicKeyJwk,
+  type RefusalDiagnostic,
   type SignableRequest,
 } from '../identity/index.js';
 import { buildHealth, type HealthOptions } from './health.js';
@@ -73,7 +74,6 @@ import {
 import { HANDLE_GRAMMAR, MAX_HANDLE_LENGTH, SeatBook } from './seats.js';
 import { classifyVerb, unbuiltVerbs } from './verbs.js';
 import {
-  MAX_DETAIL_LENGTH,
   WIRE_REASON,
   parseBody,
   readIntField,
@@ -91,6 +91,35 @@ export const MAX_ACTIONS_PER_BATCH = 8;
 
 /** Discrepancy reports retained in memory. Bounded (scar #3). */
 export const MAX_DISCREPANCIES = 512;
+
+/**
+ * Characters accepted in one half of a discrepancy report.
+ *
+ * Deliberately **not** `MAX_DETAIL_LENGTH`. That constant bounds a string this server
+ * *emits* to an agent, and reusing it as the bound on a report an agent *submits*
+ * conflated two unrelated quantities — a Gate-3 probe had its most important finding
+ * rejected three times at 480 characters, a cap stated in no document. Two fields at
+ * this size across {@link MAX_DISCREPANCIES} rows is a ~2 MB ceiling on the buffer,
+ * which is the bound that actually matters here.
+ */
+export const MAX_REPORT_LENGTH = 2000;
+
+/**
+ * Field names accepted for the two halves of a report, canonical first.
+ *
+ * agent.md §13 asks for "what you expected and what happened" and names no key, so a
+ * reporter following the document guesses. The aliases are agent.md's own words and
+ * the obvious synonyms; the canonical spelling is what `read_from` echoes back and the
+ * only one that appears in a stored {@link DiscrepancyReport}, so §3's one-word-per-
+ * concept rule still holds on both the storage and the outbound side.
+ */
+const EXPECTED_FIELDS = ['expected', 'expectation', 'wanted', 'should'] as const;
+const OBSERVED_FIELDS = ['observed', 'happened', 'actual', 'got', 'instead'] as const;
+/** Accepted when neither half is named: the whole report as one string. */
+const WHOLE_REPORT_FIELDS = ['report', 'detail', 'details', 'message', 'note', 'text', 'body'] as const;
+
+/** Recorded for the half a reporter did not state. Never blank: a blank reads as lost. */
+const NOT_STATED = '(not stated)';
 
 export interface DiscrepancyReport {
   readonly tick: number;
@@ -211,41 +240,62 @@ export function createApp(options: ApiOptions): CreatedApp {
   router.use(express.raw({ type: () => true, limit: MAX_BODY_BYTES }));
 
   // ── enroll ────────────────────────────────────────────────────────────────
+  //
+  // Ordered `callerOf → validate → meter → create`, and the middle two are in that
+  // order on purpose. See {@link meter}: a malformed field creates nothing, so it must
+  // not spend one of three enrolment windows in ten minutes.
   router.post('/enroll', (req, res) => {
     guard(res, () => {
-      const gate = admit(req, res, 'enroll');
-      if (gate === null) return;
+      const ip = callerOf(req, res);
+      if (ip === null) return;
 
       const parsed = parseBody(bytesOf(req), MAX_BODY_BYTES);
-      if (!parsed.ok) return send(res, 400, parsed.refusal);
+      if (!parsed.ok) return send(res, 400, uncharged(parsed.refusal));
       const body = parsed.value.json;
 
       const handle = readStringField(body, 'handle', MAX_HANDLE_LENGTH);
-      if (!handle.ok) return send(res, 400, handle.refusal);
+      if (!handle.ok) return send(res, 400, uncharged(handle.refusal));
       if (!HANDLE_GRAMMAR.test(handle.value)) {
+        // The grammar is stated as a pattern, not only as prose. A Gate-3 probe read
+        // agent.md §2 — whose worked example is the bare handle "vale" and which states
+        // no grammar at all — guessed an underscore, and paid ten minutes for it.
         return send(
           res,
           400,
-          refusal(
-            WIRE_REASON.FIELD_MALFORMED,
-            "a handle is lowercase letters, digits and single hyphens, starting with a letter — it is also your email address at agenttransfer.dev, so it has to be one.",
+          uncharged(
+            refusal(
+              WIRE_REASON.FIELD_MALFORMED,
+              `'${scrub(handle.value)}' is not a handle. The grammar is ${HANDLE_GRAMMAR.source}: ` +
+                `lowercase letters and digits, single internal hyphens, starting with a letter, ` +
+                `1..${String(MAX_HANDLE_LENGTH)} characters. No underscores, no capitals, no dots. ` +
+                `'vale' and 'red-ash-9' are handles; 'Vale', 'red_ash' and 'vale-' are not. It is also ` +
+                'your address at agenttransfer.dev, so it has to be one.',
+            ),
           ),
         );
       }
       const publicKey = readStringField(body, 'publicKey', 256);
-      if (!publicKey.ok) return send(res, 400, publicKey.refusal);
+      if (!publicKey.ok) return send(res, 400, uncharged(publicKey.refusal));
 
       const jwk = jwkFromBase64Url(publicKey.value);
       if (jwk === null) {
         return send(
           res,
           400,
-          refusal(
-            WIRE_REASON.FIELD_MALFORMED,
-            'publicKey must be the base64url encoding of your 32-byte Ed25519 public key. We never see your private key.',
+          uncharged(
+            refusal(
+              WIRE_REASON.FIELD_MALFORMED,
+              'publicKey must be the base64url encoding of your 32-byte Ed25519 public key — 43 characters, ' +
+                'unpadded, alphabet A-Z a-z 0-9 - _. We never see your private key.',
+            ),
           ),
         );
       }
+
+      // Everything past here reads or writes world state, so everything past here is
+      // metered — including handle enumeration, which a free path would hand over.
+      const gate = meter(res, 'enroll', ip);
+      if (gate === null) return;
 
       const principal = `p:${handle.value}` as PrincipalId;
       const tick = runtime.engine.tick + 1;
@@ -631,17 +681,35 @@ export function createApp(options: ApiOptions): CreatedApp {
   // exactly the caller most likely to have found a contract mismatch, and refusing
   // it would close the channel at the moment it is most useful. Signed reports are
   // attributed; unsigned ones are still recorded, and both are rate-limited.
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // **THE CHANNEL agent.md CALLS "THE SINGLE MOST USEFUL THING YOU CAN SEND US"
+  // WAS THE HARDEST ONE TO USE.** Three Gate-3 defects, all here:
+  //
+  //   1. A probe's most important report was **rejected three times for length** —
+  //      the cap was `MAX_DETAIL_LENGTH`, which is the bound on a string we *send*,
+  //      reused as the bound on a report we *receive*. Those are not the same
+  //      quantity and one of them was documented nowhere.
+  //   2. agent.md §13 says "what you expected and what happened" and **names no
+  //      field at all**; the engine demanded exactly `expected` and `observed`, and
+  //      required both. A reporter following the document had to guess twice.
+  //   3. Each rejected attempt still spent a window, so the guessing was metered.
+  //
+  // So: a real cap, stated in every response; agent.md's own words accepted as field
+  // names; either half sufficient on its own; and validation before the meter.
+  // ══════════════════════════════════════════════════════════════════════════
   router.post('/discrepancy', (req, res) => {
     guard(res, () => {
-      const gate = admit(req, res, 'discrepancy');
-      if (gate === null) return;
+      const ip = callerOf(req, res);
+      if (ip === null) return;
 
       const parsed = parseBody(bytesOf(req), MAX_BODY_BYTES);
-      if (!parsed.ok) return send(res, 400, parsed.refusal);
-      const expected = readStringField(parsed.value.json, 'expected', MAX_DETAIL_LENGTH);
-      if (!expected.ok) return send(res, 400, expected.refusal);
-      const observed = readStringField(parsed.value.json, 'observed', MAX_DETAIL_LENGTH);
-      if (!observed.ok) return send(res, 400, observed.refusal);
+      if (!parsed.ok) return send(res, 400, uncharged(parsed.refusal));
+      const read = readDiscrepancy(parsed.value.json);
+      if (!read.ok) return send(res, 400, uncharged(read.refusal));
+
+      const gate = meter(res, 'discrepancy', ip);
+      if (gate === null) return;
 
       const signed = tryAuthenticate(req);
       const report: DiscrepancyReport = {
@@ -649,8 +717,8 @@ export function createApp(options: ApiOptions): CreatedApp {
         principal: signed,
         // Scrubbed on the way *in* as well as out: this text is read by an operator
         // and may be replayed into a log, and the reporter chose it.
-        expected: scrub(expected.value),
-        observed: scrub(observed.value),
+        expected: scrubReport(read.expected),
+        observed: scrubReport(read.observed),
       };
       discrepancies.push(report);
       while (discrepancies.length > MAX_DISCREPANCIES) discrepancies.shift();
@@ -660,6 +728,10 @@ export function createApp(options: ApiOptions): CreatedApp {
         recorded: true,
         at_tick: report.tick,
         attributed_to: report.principal,
+        /** Which keys we read, so a reporter using agent.md's words learns the canon. */
+        read_from: read.readFrom,
+        /** Stated here because a cap an agent discovers by rejection is undocumented. */
+        max_field_length: MAX_REPORT_LENGTH,
         note:
           'Thank you — this is the most useful thing you can send us and it is never penalised. ' +
           'A promise recorded as broken when it was not is worse than a crash, so if that is what you are ' +
@@ -746,12 +818,51 @@ export function createApp(options: ApiOptions): CreatedApp {
    * global bucket.
    */
   function admit(req: Request, res: Response, route: RouteName): true | null {
+    const ip = callerOf(req, res);
+    if (ip === null) return null;
+    return meter(res, route, ip);
+  }
+
+  /**
+   * Establish the real client address, or reply and return null.
+   *
+   * Split out of {@link admit} so that a route can identify its caller *before*
+   * deciding whether the request is even worth metering. Nothing here consumes a
+   * limiter window; that is {@link meter}'s job and its only job.
+   */
+  function callerOf(req: Request, res: Response): string | null {
     const address = clientAddress(req.headers, req.socket.remoteAddress, { trustEdge });
     if (!address.ok) {
       send(res, 400, refusal(WIRE_REASON.CLIENT_IP_UNVERIFIED, `${address.reason}: ${address.detail}`));
       return null;
     }
-    const verdict = limiter.check(route, address.value.ip, wallSecondsFrom(clock));
+    return address.value.ip;
+  }
+
+  /**
+   * Spend one of this caller's windows on this route, or reply 429.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A REQUEST THAT CREATES NOTHING MUST NOT CONSUME A SCARCE WINDOW.**
+   *
+   * `enroll` is `{burst: 3, windowSeconds: 600}`, and a Gate-3 probe spent **27
+   * minutes** landing one enrolment — because a `FIELD_MALFORMED` refusal (its first
+   * guess at the handle grammar used an underscore) created nothing, changed nothing,
+   * and still burned one of three, opening a fresh 600 s window in the process and
+   * pushing `Retry-After` from 383 s to 589 s. A client bug became a ten-minute
+   * outage for a newcomer, which is a strictly worse failure than the load it avoided.
+   *
+   * So the two halves are separate calls and the routes that create rows order them
+   * `callerOf → validate → meter`. What runs before the meter is bounded by
+   * `express.raw`'s 64 KB cap, allocates nothing retained, touches no world state, and
+   * is cheaper than the TLS handshake the edge has already paid for. What runs after
+   * it is every lookup against real state (`ALREADY_ENROLLED`, `HANDLE_TAKEN` — handle
+   * enumeration, which must stay metered) and every row creation, which is the scar #3
+   * surface the allowance exists for.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  function meter(res: Response, route: RouteName, ip: string): true | null {
+    const verdict = limiter.check(route, ip, wallSecondsFrom(clock));
     if (!verdict.allowed) {
       res.setHeader('Retry-After', String(verdict.retryAfterSeconds));
       send(
@@ -759,8 +870,9 @@ export function createApp(options: ApiOptions): CreatedApp {
         429,
         refusal(
           WIRE_REASON.RATE_LIMITED,
-          `too many ${route} requests from ${address.value.ip}; retry in ${String(verdict.retryAfterSeconds)}s. ` +
-            'This limit protects the host and is not a game rule: sending requests faster never helps you.',
+          `too many ${route} requests from ${ip}; retry in ${String(verdict.retryAfterSeconds)}s. ` +
+            'This limit protects the host and is not a game rule: sending requests faster never helps you. ' +
+            'A request refused for a malformed field costs you nothing here, so fix it and resend at once.',
         ),
       );
       return null;
@@ -780,9 +892,10 @@ export function createApp(options: ApiOptions): CreatedApp {
     if (!verified.ok) {
       // agent.md promises a *specific* reason — "expired, wrong key, replayed
       // nonce, missing component, digest mismatch. Never a generic failure." The
-      // identity module's closed set is passed through unchanged, spelling included.
+      // identity module's closed set is passed through unchanged, spelling included,
+      // and so is the diagnostic when it carries one.
       const status = verified.reason === 'NONCE_BUDGET_EXCEEDED' ? 429 : 401;
-      send(res, status, refusal(verified.reason, verified.detail));
+      send(res, status, signatureRefusal(verified.reason, verified.detail, verified.diagnostic));
       return null;
     }
     const principal = verified.value.principal;
@@ -1022,6 +1135,159 @@ function send(res: Response, status: number, body: WireRefusal | Record<string, 
 }
 
 /**
+ * Mark a refusal as having cost the caller nothing.
+ *
+ * The sentence is not decoration. `enroll` is three requests per ten minutes; an agent
+ * that cannot tell "you are out of windows" from "that field was wrong" has to assume
+ * the expensive one and wait. Saying so turns a ten-minute stall into an immediate
+ * retry, and it is only sayable because {@link meter} runs after validation.
+ */
+function uncharged(source: WireRefusal): WireRefusal {
+  return refusal(
+    source.reason,
+    `${source.detail} Nothing was created and no rate-limit window was charged: correct it and send it again immediately.`,
+  );
+}
+
+/**
+ * The two halves of a discrepancy report, however the reporter spelled them.
+ *
+ * Either half alone is enough. A reporter with only "a default was recorded against me
+ * and it is wrong" has the highest-severity report in the game and must not be refused
+ * for failing to also fill in a field agent.md never mentioned.
+ *
+ * A half that was not stated comes back as the empty string, and {@link scrubReport}
+ * is the single place that turns that into {@link NOT_STATED}. Substituting it here as
+ * well was the first shape of this function, and a mutation test proved the second
+ * substitution unreachable — two spellings of one rule, one of which nothing could
+ * exercise.
+ */
+function readDiscrepancy(
+  body: Readonly<Record<string, unknown>>,
+):
+  | {
+      readonly ok: true;
+      readonly expected: string;
+      readonly observed: string;
+      readonly readFrom: readonly string[];
+    }
+  | { readonly ok: false; readonly refusal: WireRefusal } {
+  const expected = readAlias(body, EXPECTED_FIELDS);
+  if (!expected.ok) return expected;
+  const observed = readAlias(body, OBSERVED_FIELDS);
+  if (!observed.ok) return observed;
+  const whole = observed.field === null ? readAlias(body, WHOLE_REPORT_FIELDS) : observed;
+  if (!whole.ok) return whole;
+
+  const observedText = observed.field === null ? whole.value : observed.value;
+  const readFrom = [expected.field, observed.field ?? whole.field].filter(
+    (field): field is string => field !== null,
+  );
+  if (readFrom.length === 0) {
+    return {
+      ok: false,
+      refusal: refusal(
+        WIRE_REASON.FIELD_MISSING,
+        'send what you expected and what happened: {"expected": "...", "observed": "..."}. ' +
+          `Either half on its own is accepted, as is a single {"report": "..."}, up to ${String(MAX_REPORT_LENGTH)} characters each.`,
+      ),
+    };
+  }
+  return { ok: true, expected: expected.value, observed: observedText, readFrom };
+}
+
+/** The first of `names` this body actually carries, or `field: null` for none. */
+function readAlias(
+  body: Readonly<Record<string, unknown>>,
+  names: readonly string[],
+):
+  | { readonly ok: true; readonly field: string | null; readonly value: string }
+  | { readonly ok: false; readonly refusal: WireRefusal } {
+  for (const name of names) {
+    const raw = body[name];
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw !== 'string') {
+      return { ok: false, refusal: refusal(WIRE_REASON.FIELD_MALFORMED, `'${name}' must be a string.`) };
+    }
+    const value = raw.trim();
+    // An empty string is a reporter who filled the shape but not the field; fall
+    // through to the next alias rather than recording nothing under this name.
+    if (value.length === 0) continue;
+    if (value.length > MAX_REPORT_LENGTH) {
+      return {
+        ok: false,
+        refusal: refusal(
+          WIRE_REASON.FIELD_MALFORMED,
+          `'${name}' is ${String(value.length)} characters; the cap is ${String(MAX_REPORT_LENGTH)} per field. ` +
+            'Send the shortest version that still names what you expected and what happened, and send the rest as a second report — ' +
+            'we would much rather have two than lose one.',
+        ),
+      };
+    }
+    return { ok: true, field: name, value };
+  }
+  return { ok: true, field: null, value: '' };
+}
+
+/**
+ * Scrub a report that is longer than one outbound detail.
+ *
+ * {@link scrub} truncates at `MAX_DETAIL_LENGTH`, which is correct for a string we are
+ * about to send and silently destructive for a 2000-character report we have just been
+ * given. So the text is scrubbed in segments below that bound and rejoined.
+ *
+ * Segmenting a redaction pattern in half is the obvious objection, and it is answered
+ * by where this text goes: a discrepancy report is never echoed to any caller — the 202
+ * carries no copy of it — so nothing here is an outbound artifact in SEC-9's sense. The
+ * scrub is here to keep reporter-chosen text from looking like a path or a version in an
+ * operator's log, and the reporter already knows what it wrote.
+ */
+const SCRUB_SEGMENT = 400;
+
+function scrubReport(text: string): string {
+  const out: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    for (let at = 0; at < line.length; at += SCRUB_SEGMENT) {
+      const segment = line.slice(at, at + SCRUB_SEGMENT);
+      if (segment.trim().length === 0) continue;
+      out.push(scrub(segment));
+    }
+  }
+  const joined = out.join(' ');
+  return joined.length === 0 ? NOT_STATED : joined.slice(0, MAX_REPORT_LENGTH);
+}
+
+/**
+ * A signature refusal, with the verifier's own working attached when it has some.
+ *
+ * The extra key is additive: `{ok, reason, detail}` is unchanged, so a client that
+ * only reads those three is unaffected. Every string inside passes {@link scrub},
+ * because a diagnostic is an outbound artifact like any other (SEC-9) — and because
+ * the signature base is built from *client-chosen* header values, which is exactly
+ * the text that must not be echoed raw.
+ *
+ * The base travels as an array of lines rather than one newline-joined string on
+ * purpose: `scrub` collapses whitespace runs, so a joined base would arrive as one
+ * unusable line and the diagnostic would defeat itself.
+ */
+function signatureRefusal(
+  reason: string,
+  detail: string,
+  diagnostic: RefusalDiagnostic | undefined,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...refusal(reason, detail) };
+  if (diagnostic === undefined) return body;
+  const out: Record<string, string | string[]> = {};
+  for (const field of Object.keys(diagnostic)) {
+    const value = diagnostic[field];
+    if (value === undefined) continue;
+    out[field] = typeof value === 'string' ? scrub(value) : value.map((line) => scrub(line));
+  }
+  body['diagnostic'] = out;
+  return body;
+}
+
+/**
  * Run a handler and never let a throw reach Express.
  *
  * The error middleware is the backstop and this is the belt: a route that throws
@@ -1065,20 +1331,84 @@ function bytesOf(req: Request): Uint8Array {
 }
 
 /**
+ * Every spelling of the request target that reaches this same handler, **canonical
+ * first**.
+ *
+ * ┌─ THE SINGLE BIGGEST BARRIER IN THE PRODUCT, IN A GATE-3 PROBE'S WORDS ────┐
+ * │ A probe wrote a textbook RFC 9421 client and got 401 SIGNATURE_INVALID    │
+ * │ until it signed `"@path": /observe` instead of `/compact/api/observe`. It  │
+ * │ found that only by brute-forcing eight variants, at a cost of five        │
+ * │ rejections and a large part of its session. **Every conformant client     │
+ * │ failed at its first signed request.**                                     │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * The cause is not `originalUrl` vs `url` — that part was already right. It is that
+ * `deploy/nginx-compact.conf` proxies `/compact/api/` to `http://127.0.0.1:8801/`,
+ * and the trailing slash makes nginx **strip the mount prefix**: the client sends
+ * `/compact/api/observe` and the app is handed `/observe`. RFC 9421 §2.2.6 derives
+ * `@path` from the target the *client* sent, so the client is right and the origin
+ * cannot see what it needs by inspection.
+ *
+ * It cannot be recovered, either: `/observe` arriving through the stripping proxy and
+ * `/observe` arriving directly are byte-identical requests. So both spellings are
+ * accepted, with the client-visible one canonical:
+ *
+ *   received `/observe`              → [`/compact/api/observe`, `/observe`]
+ *   received `/compact/api/observe`  → [`/compact/api/observe`, `/observe`]
+ *
+ * Two properties make this the right shape rather than a shrug:
+ *
+ *   - **The canonical spelling is the RFC's.** It is what the diagnostic quotes and
+ *     what the archive records, so the transitional form never becomes the taught
+ *     one. When nginx is eventually changed to preserve the prefix, the alternate
+ *     stops being exercised and nothing else moves.
+ *   - **The received target is always in the set.** Every signature that verified
+ *     before this change still verifies, which is what makes it safe to land under a
+ *     live world with 1886 tests standing on the old behaviour.
+ *
+ * Why it does not weaken verification is argued where it has to hold — on
+ * {@link SignableRequest.alternateRequestTargets}. In one line: the prefix is a
+ * routing no-op here, so both spellings are the same resource, and the nonce is
+ * spent per key rather than per path.
+ */
+export function requestTargetsFor(received: string, mount: string = API_BASE_PATH): readonly string[] {
+  const unmounted =
+    received === mount
+      ? '/'
+      : received.startsWith(`${mount}/`)
+        ? received.slice(mount.length)
+        : received.startsWith(`${mount}?`)
+          ? `/${received.slice(mount.length)}`
+          : received;
+  const mounted = unmounted === '/' ? `${mount}/` : `${mount}${unmounted}`;
+  const out: string[] = [];
+  // `received` last and unconditionally: it is the one spelling that certainly
+  // verified before this function existed.
+  for (const target of [mounted, unmounted, received]) {
+    if (!out.includes(target)) out.push(target);
+  }
+  return out;
+}
+
+/**
  * Reduce an Express request to exactly what a signature covers.
  *
  * `originalUrl` rather than `url`, because a router mount rewrites `url` and the
  * client signed the path it actually sent. Getting this wrong presents as every
- * signature being invalid, which is the most expensive possible way to be wrong.
+ * signature being invalid, which is the most expensive possible way to be wrong —
+ * and see {@link requestTargetsFor} for the half of that hazard which lives in
+ * nginx rather than here.
  */
 function signableOf(req: Request): SignableRequest {
   const forwarded = req.headers['x-forwarded-proto'];
   const proto = typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : undefined;
+  const targets = requestTargetsFor(req.originalUrl);
   return {
     method: req.method,
     scheme: proto === 'https' ? 'https' : proto === 'http' ? 'http' : 'http',
     authority: typeof req.headers.host === 'string' ? req.headers.host : 'localhost',
-    requestTarget: req.originalUrl,
+    requestTarget: targets[0] ?? req.originalUrl,
+    alternateRequestTargets: targets.slice(1),
     headers: req.headers as Readonly<Record<string, string | readonly string[]>>,
     body: bytesOf(req),
   };

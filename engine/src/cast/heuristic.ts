@@ -29,7 +29,7 @@ import { Rng } from '../core/rng.js';
 import { inFreeze, isSettlementTick } from '../core/time.js';
 import type { PrincipalId, SystemId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor } from '../core/units.js';
-import { compareIds, principalPosition, storesAccount } from '../ledger/index.js';
+import { compareIds } from '../ledger/index.js';
 import {
   LEVY_BALLOT,
   LEVY_RULES,
@@ -48,7 +48,6 @@ import {
   DELIVERY_VERB,
   ELECTABLE_VENTURE_STATES,
   freeStores,
-  nextSettlementAtOrAfter,
   reckoningOf,
   type Runtime,
 } from '../sim/runtime.js';
@@ -521,20 +520,11 @@ export class HeuristicCast {
     const roll = rollByConstellation(runtime.world).get(constellation) ?? [];
     if (roll.length === 0) return null;
 
-    const subjects = [...roll].sort(compareIds).map((principal) => {
-      const position = principalPosition(runtime.ledger, principal, storesAccount(principal));
-      const hands = handsOf(runtime.world, principal);
-      const seatedAt = hands.reduce<number>((earliest, hand) => {
-        const since = hand.presentSinceTick ?? 0;
-        return since < earliest ? since : earliest;
-      }, tick);
-      return {
-        principal,
-        tenureTicks: Math.max(0, tick - seatedAt),
-        freeStores: position.free,
-        exposure: position.exposure,
-      };
-    });
+    // `levySubjectOf` is the engine's own subject reader — the same one the assessment
+    // uses. A bot computing its own tenure and EXPOSURE would be a second arithmetic for
+    // the figure it is voting about, and the bot would then vote against a world the
+    // engine does not have.
+    const subjects = [...roll].sort(compareIds).map((principal) => runtime.levySubjectOf(principal, tick));
 
     const mine = subjects.find((s) => s.principal === member.principal);
     if (mine === undefined) return null;
@@ -574,20 +564,40 @@ export class HeuristicCast {
   /**
    * Pay the Levy, or take one gate toward the place it is payable at.
    *
-   * Three branches, in the order a principal would actually do them:
+   * Two branches, in the order a principal would actually do them:
    *
-   *   1. **A hand is standing at the delivery place** → `deliver`. One action, and the
-   *      tribute line goes from solid to a hairline.
-   *   2. **A hand is on its way** → `set_delivery_intent`, once, with a stop condition.
-   *      This is R19 exercised in the sim rather than only in a test: the intent fires the
-   *      tick the hand arrives, at no action cost and with no wake, so the delivery
-   *      happens whether or not anybody is awake to make it. `max_runs: 1` because a
-   *      refusal is not a run — the intent survives the whole journey and spends itself on
-   *      the first tick it can actually pay.
-   *   3. **Nothing is moving** → walk an idle hand one gate along the cheapest route.
+   *   1. **A hand is standing at the delivery place** → `deliver`.
+   *   2. **Nothing is there** → walk an idle hand one gate along the cheapest route.
    *
-   * Returns `null` inside the freeze, because a delivery is refused there (§5.1) and a bot
-   * generating one refusal per tick is the noise that buries real defects (AGT-S3).
+   * Three guards, and each of them exists to stop the bot generating a refusal it could
+   * have predicted — a bot hitting one refusal per tick reads in the logs exactly like a
+   * rules-surface defect and would bury the real ones (AGT-S3):
+   *
+   *   - **Nothing owed** → nothing to do.
+   *   - **Inside the freeze** → a delivery is refused there (§5.1) and no amount of trying
+   *     changes that until the next Reckoning opens.
+   *   - **No levy good left** → the Levy is payable only in goods. Phase 0 has no
+   *     production behind the starter allotment, so a bot that has spent its stock is
+   *     genuinely unable to pay and walking to the place would not help. This is the
+   *     branch that produces a **rising `LEVY SHORT`** in a long run, and it is the meter
+   *     doing its job.
+   *
+   * ── WHY THERE IS NO `set_delivery_intent` BRANCH HERE, which is a real finding ──
+   *
+   * An earlier version set a standing delivery intent while a hand was in transit, which
+   * is exactly R19's story and worked. Two problems, neither about the Levy:
+   *
+   *   1. The intent is due every tick of the journey and refused on each of them
+   *      (`IntentBook.ran(intent, false)` — "a convoy intent whose hand is still in
+   *      transit"), which the AGT-S3 aggregate reads as a repeated refusal.
+   *   2. More seriously, `GET /health`'s `deciding_share_bps` counts `INTENT` as deciding,
+   *      so a **heuristic** cast using standing intents makes a bots-only world look
+   *      healthy — which is scar #14b, the failure that check exists to catch, walking
+   *      back in through a new door.
+   *
+   * Both are properties of the harness rather than of the mechanic, so the mechanic is
+   * proven where it belongs: `test/levy/offline.test.ts` pays a whole assessment from a
+   * standing intent with no live action at all (PROP-LV5, R19).
    */
   private levyMove(
     member: CastMember,
@@ -597,6 +607,7 @@ export class HeuristicCast {
     if (inFreeze(tick) || isSettlementTick(tick)) return null;
     const block = runtime.levyBlockFor(member.principal, tick);
     if (block === null || block.shortfall_if_unpaid <= 0) return null;
+    if (runtime.levyGoodAvailable(member.principal) <= 0) return null;
     const place = block.deliverable_to;
 
     const carrier = carrierAt(runtime.world, member.principal, place, tick);
@@ -608,19 +619,7 @@ export class HeuristicCast {
     }
 
     const hands = handsOf(runtime.world, member.principal);
-    if (hands.some((h) => h.destination === place)) {
-      if (runtime.engine.intents.liveFor(member.principal).some((i) => i.verb === 'deliver')) return null;
-      const settlement = nextSettlementAtOrAfter(tick);
-      if (settlement - 1 <= tick) return null;
-      return {
-        verb: 'set_delivery_intent',
-        params: {
-          intent: { verb: 'deliver', params: { to: place, amount: block.shortfall_if_unpaid } },
-          until_tick: settlement - 1,
-          max_runs: 1,
-        },
-      };
-    }
+    if (hands.some((h) => h.destination === place)) return null;
 
     const idle = hands.filter((h) => h.state === 'IDLE');
     const hand = idle[0];

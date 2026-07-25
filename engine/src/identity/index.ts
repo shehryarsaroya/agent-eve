@@ -13,7 +13,13 @@ export { wallSeconds, wallSecondsFrom, addWallSeconds, WallClockError } from './
 export type { WallSeconds } from './wallclock.js';
 
 export { IdentityError, accept, refuse } from './reasons.js';
-export type { CredentialRejection, Refusal, SignatureRejection, Verified } from './reasons.js';
+export type {
+  CredentialRejection,
+  Refusal,
+  RefusalDiagnostic,
+  SignatureRejection,
+  Verified,
+} from './reasons.js';
 
 export {
   AgentKeypair,
@@ -38,6 +44,7 @@ export { contentDigestHeader, verifyContentDigest } from './digest.js';
 
 export {
   DEFAULT_SIGNATURE_POLICY,
+  MAX_ALTERNATE_REQUEST_TARGETS,
   RequestVerifier,
   signRequest,
   verifyArchivedSignature,

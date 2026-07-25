@@ -167,12 +167,16 @@ import {
 import {
   Engine,
   EngineError,
+  MAX_QUEUED_PER_PRINCIPAL,
   tickInputsFor,
   type ActionRequest,
   type CascadeAttempt,
+  type EngineOptions,
   type ObligationSource,
   type PhaseContext,
+  type QueuedAction,
   type StateTable,
+  type SubmittedAction,
   type TickReport,
   type VerbHandler,
 } from '../tick/index.js';
@@ -284,6 +288,16 @@ export const DELIVERY_LEAD_TICKS = FREEZE_TICKS + 1;
 export const MAX_ELECTIONS = 2_048;
 
 /**
+ * Statements accepted into the **open window** and not yet resolved. Bounded (INV-26).
+ *
+ * The window itself is bounded — {@link MAX_QUEUED_PER_PRINCIPAL} per principal, and a
+ * total cap in `tick/queue.ts` — so this map is already bounded by somebody else's
+ * arithmetic. It carries its own published cap anyway, because "bounded by a cap in
+ * another module" is exactly how scar #3's structure was argued safe.
+ */
+export const MAX_IN_FLIGHT_ELECTIONS = MAX_QUEUED_PER_PRINCIPAL * 32;
+
+/**
  * Venture states in which an election is still a live statement — **one home, three
  * readers**: `vElect`'s door, the `elect` affordance, and the cast's policy.
  *
@@ -352,6 +366,25 @@ export const DELIVERY_VERB = 'haul';
 
 /** Reckonings of settlement summaries the report keeps. Bounded (INV-26, scar #3). */
 export const MAX_RECKONING_SUMMARIES = 8;
+
+/**
+ * What to add to a refused fill's own sentence, per `RefusalReason`.
+ *
+ * The allocator already writes the *fact*; this writes what the agent should do about it,
+ * which is the half `agent.md` §7 promises and the half a refusal is useless without.
+ * Keyed on the union so a new reason is a compile error rather than a silent blank.
+ */
+export const FILL_REFUSAL_NOTE: Readonly<Record<'LOST_CONTEST' | 'HAND_COMMITTED' | 'ROLE_RULE', string>> =
+  Object.freeze({
+    LOST_CONTEST:
+      'Another principal took this slot in the same tick. A contest is decided by the initiator\'s stated ' +
+      'preference, then by stake, and never by who arrived first — so sending it again faster will not help. ' +
+      'The board in your next observation is already without it.',
+    HAND_COMMITTED:
+      'Nothing was charged and the hand keeps the role it already has. Send a different hand, or wait for that ' +
+      'venture to resolve.',
+    ROLE_RULE: 'Nothing was charged. Read the open roles in ventures.board[] and send one of those.',
+  });
 
 /**
  * What the Levy did in one Reckoning, counted from the settlement's own output.
@@ -866,6 +899,82 @@ export function defaultTerms(kind: VentureKind, value: Minor): readonly RoleTerm
   return out;
 }
 
+/**
+ * `Engine`, plus the one fact the runtime cannot learn any other way: **what a payer has
+ * already said that has not resolved yet.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A5′, THROUGH A READBACK.** An accepted action resolves in the *next* tick (§15.2), so
+ * between `POST /act` and that tick the election book still holds the payer's
+ * **previous** statement — and `agent.md`'s readback ("You have currently stated: …") is
+ * built from that book. Measured on the live world: a payer that had elected `IN_FULL`
+ * and then restated an amount was told, in a fresh `stale: false` observation, that it
+ * had "currently stated: IN_FULL". At 16 wakes over 288 ticks — one wake per 18 — that
+ * is the last thing it reads before going dark, and the amount is what settles. A
+ * permanent public `DECLINED` default against an agent the engine showed as not owing:
+ * §15.4's class exactly, and the one this project calls worse than a crash.
+ *
+ * The window is private to `SubmissionQueue` and must stay private — nothing *inside* a
+ * tick may read it, or an action would react to a within-tick decision. So the runtime
+ * learns about a statement at the only honest moment, **as the window accepts it**, and
+ * keeps it out of every path that decides anything: the settlement reads
+ * {@link Runtime.elections} directly, and only {@link Runtime.electionOn} — the
+ * readback's own source, and nothing that moves money — consults the overlay.
+ *
+ * Subclassed rather than wired through an options hook because `submit` is the seam and
+ * it is already public; a hook would put a second door onto the same call in the module
+ * that owns the rule that there is only one.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+class WindowedEngine extends Engine {
+  constructor(
+    options: EngineOptions,
+    /** Called for every submission the window **took**. A refusal is not a statement. */
+    private readonly accepted: (queued: QueuedAction) => void,
+  ) {
+    super(options);
+  }
+
+  override submit(action: SubmittedAction): WorldResult<QueuedAction> {
+    const outcome = super.submit(action);
+    if (outcome.ok) this.accepted(outcome.value);
+    return outcome;
+  }
+}
+
+/**
+ * Is this venture still looking for a role holder?
+ *
+ * The one condition under which a venture's channel is a **recruiting** channel rather
+ * than a `PARTIES` one: it is forming, and there is a slot a stranger could fill. Written
+ * once because {@link Runtime.mayTalkIn} and {@link Runtime.talksFor} must agree about it
+ * exactly — a write gate and a read gate that disagree is the defect this closed, in the
+ * other direction.
+ */
+function isRecruiting(venture: VentureRecord): boolean {
+  return venture.state === 'FORMING' && openIndices(venture).length > 0;
+}
+
+/**
+ * The three fields an `elect` request carries, read once.
+ *
+ * ONE HOME, TWO READERS: {@link Runtime.vElect}, which applies the statement, and
+ * {@link Runtime.noteElection}, which stops the readback lagging behind it. Two copies
+ * of this spelling list is two chances for the readback to miss a statement the handler
+ * will honour — A5′ reached through a parameter name, which is scar #1's shape.
+ */
+function electionFieldsOf(params: Readonly<Record<string, unknown>>): {
+  readonly venture: VentureId | null;
+  readonly roleIndex: number | null;
+  readonly raw: unknown;
+} {
+  return {
+    venture: readString(params, ['venture', 'venture_id']) as VentureId | null,
+    roleIndex: readInt(params, ['role', 'role_index', 'roleIndex']),
+    raw: params['election'] ?? params['elect'] ?? params['pay'],
+  };
+}
+
 // ── The runtime ─────────────────────────────────────────────────────────────
 
 export class Runtime {
@@ -900,6 +1009,9 @@ export class Runtime {
 
   /** Fill requests collected this tick, resolved once in VENTURES (PROP-V8). */
   private pendingFills: FillRequest[] = [];
+
+  /** One window's params-to-`client_sequence` index. See {@link sequenceOf}. */
+  private readonly sequenceIndex = new WeakMap<readonly QueuedAction[], Map<object, number>>();
   private ventureCounter = 0;
 
   /**
@@ -910,6 +1022,18 @@ export class Runtime {
    * settlement set carries, and an absent entry pays nothing.
    */
   private readonly elections = new Map<string, Election>();
+
+  /**
+   * The **least-paying** statement each role has in flight this window, by
+   * `venture::roleIndex`. Amounts only; see {@link WindowedEngine} for why it exists.
+   *
+   * Deliberately **outside `state_hash` and outside the rollback**, unlike
+   * {@link electionsStateTable} — and the difference is the point. This is not state: it
+   * is a fact about the *window*, it is cleared at the end of every tick, nothing that
+   * moves value reads it, and a replayed tick rebuilds it from the same action log. A
+   * table for it would put a per-window artefact into the hash two runs are compared on.
+   */
+  private readonly electionsInFlight = new Map<string, Minor>();
 
   /** Deliveries, by venture. The deed set's only source; bounded by settlement. */
   private readonly deliveries = new Map<VentureId, DeliveryRecord>();
@@ -981,7 +1105,7 @@ export class Runtime {
       resumeKeys: new Map(),
     });
 
-    this.engine = new Engine({
+    this.engine = new WindowedEngine({
       world: this.world,
       seed: options.seed,
       ...(options.startTick === undefined ? {} : { startTick: options.startTick }),
@@ -1083,7 +1207,55 @@ export class Runtime {
         (tick) => checkLevyAttribution(this.levy, reckoningOf(tick), tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
+    },
+    (queued) => {
+      this.noteElection(queued);
     });
+  }
+
+  /**
+   * Record an accepted `elect` so the payer's readback cannot lag behind the payer.
+   *
+   * **The least-paying statement wins, and that is what makes this safe rather than
+   * merely fresher.** {@link MAX_QUEUED_PER_PRINCIPAL} is eight times the per-tick action
+   * budget, so a payer can queue more elections than the tick will resolve, and which one
+   * survives is then decided by the budget rather than by the last thing sent. Keeping
+   * the *most dangerous* candidate is the only rule that can never tell a payer it is
+   * safe when it is not — and being a minimum it does not depend on the order the
+   * submissions arrived in, which is A4 held by construction rather than by care.
+   *
+   * `IN_FULL` is therefore never recorded: it pays the whole due, so it can never be the
+   * minimum, and an overlay holding it could only ever *raise* a readback — the one
+   * direction A5′ forbids.
+   *
+   * Every door {@link vElect} refuses is re-checked here, and not for tidiness: an
+   * overlay a stranger could write into would be a fresh way to tell a payer it owes
+   * something it does not, which is the same harm arriving from the other side.
+   */
+  private noteElection(queued: QueuedAction): void {
+    if (queued.verb !== 'elect') return;
+    const fields = electionFieldsOf(queued.params);
+    if (fields.venture === null || fields.roleIndex === null) return;
+    if (!isElection(fields.raw) || fields.raw === IN_FULL) return;
+    const venture = this.ventures.get(fields.venture);
+    if (venture === undefined) return;
+    if (venture.creator !== queued.principal) return;
+    if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) return;
+    const role = venture.roles.find((r) => r.index === fields.roleIndex);
+    if (role === undefined) return;
+    if (role.filledByPrincipal === null || role.filledByPrincipal === queued.principal) return;
+
+    const key = electionKey(venture.id, fields.roleIndex);
+    const held = this.electionsInFlight.get(key);
+    if (held !== undefined) {
+      if (fields.raw < held) this.electionsInFlight.set(key, fields.raw);
+      return;
+    }
+    // At the cap the overlay stops growing rather than evicting: an eviction would drop
+    // a statement and restore the very lag this exists to close, and the honest failure
+    // of a full buffer is to stop taking new ones.
+    if (this.electionsInFlight.size >= MAX_IN_FLIGHT_ELECTIONS) return;
+    this.electionsInFlight.set(key, fields.raw);
   }
 
   /** The venture book. Never held across a tick boundary: the rollback replaces it. */
@@ -1232,6 +1404,14 @@ export class Runtime {
     // tonight's docket, or INV-25 — the anti-quiet invariant — halts on the arrival of a
     // legitimate newcomer. Its duty is the nominal rate and it is added to the total, so
     // no existing line moves (see `Book.admitLate`).
+    // The tenure clock, recorded once, here. The newcomer floor reads it and nothing
+    // else in the engine holds an enrolment tick — see `Book.enrolled` on why deriving it
+    // from hand presence was a permanent nominal-rate exploit.
+    try {
+      this.levy.enrolled(principal, Math.max(0, tick));
+    } catch (error: unknown) {
+      this.faults.push(`${principal} could not be added to the Levy tenure register (${describeError(error)})`);
+    }
     this.admitLateToLevy(principal, Math.max(0, tick));
     return enrolment;
   }
@@ -1275,12 +1455,40 @@ export class Runtime {
 
   // ── Reads the API needs ───────────────────────────────────────────────────
 
+  /**
+   * The talk this principal may read.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE READ PATH IS WHAT MAKES "ROLES ARE FILLED BY TALKING" BUILDABLE.** This used to
+   * be the parties and nobody else, while {@link vMessage} let anyone write — so an
+   * outsider could put text into a channel that declassifies publicly at settlement and
+   * feed the receipt reel, and could never see a reply. A probe did it. The write side is
+   * now gated (see {@link mayTalkIn}); the read side has to match it or the gate simply
+   * deletes recruiting: a candidate that cannot read the creator's answer cannot
+   * negotiate, and a probe named the missing reply as the reason the negotiation channel
+   * felt unbuildable.
+   *
+   * So: the creator and the role holders always, plus **anyone who has spoken in a
+   * venture that is still recruiting**. That is not a widening of the `PARTIES` tier, it
+   * is the tier applied honestly — nothing binds until both parties countersign the same
+   * `terms_hash` (§7.3), so an open venture has no parties yet to keep a secret from, and
+   * its terms are already on the public board. The moment the last role fills, the channel
+   * closes to everyone but the parties and stays that way until it declassifies.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   talksFor(principal: PrincipalId): readonly TalkEntry[] {
+    // One pass for the ventures this principal has spoken in, so the filter below stays
+    // linear: the ring holds up to MAX_TALK_ENTRIES and this is on the observation path.
+    const spokenIn = new Set<VentureId>();
+    for (const entry of this.talk.all) {
+      if (entry.from === principal) spokenIn.add(entry.venture);
+    }
     return this.talk.all.filter((t) => {
       const venture = this.ventures.get(t.venture);
       if (venture === undefined) return false;
       if (venture.creator === principal) return true;
-      return venture.roles.some((r) => r.filledByPrincipal === principal);
+      if (venture.roles.some((r) => r.filledByPrincipal === principal)) return true;
+      return spokenIn.has(t.venture) && isRecruiting(venture);
     });
   }
 
@@ -1325,6 +1533,7 @@ export class Runtime {
       pendingCorrections: [...this.pendingCorrections.values()].reduce((n, r) => n + r.size, 0),
       pendingCorrectionPrincipals: this.pendingCorrections.size,
       elections: this.elections.size,
+      electionsInFlight: this.electionsInFlight.size,
       deliveries: this.deliveries.size,
       reckonings: this.summaries.size,
       operatorFaults: this.faults.size,
@@ -1382,6 +1591,12 @@ export class Runtime {
     }
     // Fill requests never survive a tick: they are resolved in VENTURES or refused.
     this.pendingFills = [];
+    // Neither do in-flight elections. The window this tick froze has been applied or
+    // refused, so every statement in it is now either in the book or the subject of a
+    // correction — and a survivor would keep flooring a readback the book has caught up
+    // with. Cleared even on a halt, because a PAUSED world serves `stale: true` with no
+    // affordances in it, so the overlay has no reader to mislead.
+    this.electionsInFlight.clear();
     return report;
   }
 
@@ -1733,6 +1948,37 @@ export class Runtime {
     if (roleIndex < 0 || roleIndex >= venture.roles.length) {
       return reject('PROP-V6', `${ventureId} has roles 0..${String(venture.roles.length - 1)}.`);
     }
+    // ── GEOGRAPHY IS NOT ENFORCED HERE, AND IT IS NOT AN OVERSIGHT ────────────
+    //
+    // `fillRole` checks `isPresent`, which is about the hand's *state* — not in transit,
+    // not recovering — and says nothing about **which system** it is present in. So a hand
+    // sitting in one Commons system fills a role staged three lanes away, and two Gate-3
+    // probes did exactly that. Every other surface says otherwise: the `fill_role`
+    // affordance in `src/observe/catalogue.ts` requires presence at the stage, and `move`'s
+    // own `what_it_forecloses` promises "this hand cannot fill a role until it arrives".
+    // A rule three surfaces state and the engine does not enforce is scar #1's shape, and
+    // its consequence is that geography is decorative, `move` is a wasted action, and the
+    // map — the game's only agreed representation (A13) — is a picture of nothing.
+    //
+    // `occupiesSystem(hand, venture.stage)` is the whole check, and it was **written,
+    // measured, and taken back out**: the heuristic cast's `openSlotFor`
+    // (`src/cast/heuristic.ts`) filters candidate slots by *tier*, not by system, and the
+    // launch map has four COMMONS systems. With the check in, the cast picked an
+    // unreachable slot, was refused, and picked the same one again every tick — 777
+    // repeated `fill_role INV-9` refusals in one Reckoning, **zero ventures live and zero
+    // settled**. That is Gate 3's own 0/0 failure, caused by the fix for it, and a silent
+    // world is worse than a decorative map.
+    //
+    // It is therefore a **coupled** change across three files and it cannot land in one:
+    //   1. `src/cast/heuristic.ts:openSlotFor` — `continue` unless `venture.stage` is a
+    //      system the member has an idle hand in, instead of comparing tiers.
+    //   2. `src/api/observe.ts` — the `fill_role` affordance picks `hands.find(IDLE)`
+    //      regardless of where it is, so it would start offering acts the engine refuses
+    //      (AGT-S2). It must pick an idle hand **at `row.stage`**, and skip the row if
+    //      there is none.
+    //   3. this check, restored.
+    // Reported upward rather than half-shipped.
+
     if (this.pendingFills.length >= MAX_TALK_ENTRIES) {
       return reject('INV-26', 'the fill queue for this tick is full; try the next tick.');
     }
@@ -1742,7 +1988,16 @@ export class Runtime {
       roleIndex,
       principal: req.principal,
       hand: handId,
-      clientSequence: this.pendingFills.length,
+      // ── THE AGENT'S OWN SEQUENCE, NOT THIS QUEUE'S LENGTH ───────────────────
+      //
+      // `FillRequest.clientSequence` is documented as "§12.3's per-batch ordering key, a
+      // statement of the agent's own preference", and `canonicalRequestOrder` breaks its
+      // last tie on it. It was the *length of the pending array*, which is arrival order —
+      // so which of one principal's own hands took a contested slot was decided by which
+      // packet landed first, inside the one comparator written to make that impossible
+      // (A4). It is also the number the refusal above echoes back, and a correction
+      // citing a sequence the agent never sent is one it cannot match to anything it did.
+      clientSequence: this.sequenceOf(ctx, req),
       stake: minor(readInt(req.params, ['stake', 'stake_minor']) ?? 0),
     });
     return { ok: true, value: null };
@@ -1767,6 +2022,35 @@ export class Runtime {
    * concept (§3). An `election` key on a `sign` request is **not** silently ignored —
    * see {@link electionOnSign} for why that would be the worst of the three options.
    */
+  /**
+   * The `client_sequence` the agent actually sent for the action being applied.
+   *
+   * `ActionRequest` does not carry it — the handler is given the principal, the verb and
+   * the params, and nothing about the submission — but `PhaseContext.actions` is the
+   * frozen window and holds it. Matched on **reference identity of the params object**,
+   * because `applyOne` hands the handler the very object the window is holding: a field
+   * comparison would find an action that merely *looks* the same, which for two of one
+   * principal's own competing commitments is precisely the case that matters.
+   *
+   * Indexed once per tick and memoised against the window array itself, which is one
+   * object for the whole tick — so this is a single pass over the window per tick rather
+   * than a scan per action, and a `WeakMap` means it is bounded without anything having to
+   * clear it (INV-26).
+   *
+   * A standing intent has no queued action at all and answers 0. That is deliberate and it
+   * is not a collision: with the sequence equal, `canonicalRequestOrder` falls through to
+   * the hand id, which is deterministic and has nothing to do with arrival.
+   */
+  private sequenceOf(ctx: PhaseContext, req: ActionRequest): number {
+    let index = this.sequenceIndex.get(ctx.actions);
+    if (index === undefined) {
+      index = new Map<object, number>();
+      for (const action of ctx.actions) index.set(action.params, action.clientSequence);
+      this.sequenceIndex.set(ctx.actions, index);
+    }
+    return index.get(req.params) ?? 0;
+  }
+
   private vSign(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
     const hash = readString(req.params, ['terms_hash', 'termsHash']);
@@ -1817,9 +2101,9 @@ export class Runtime {
    * ══════════════════════════════════════════════════════════════════════════
    */
   private vElect(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
-    const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
-    const roleIndex = readInt(req.params, ['role', 'role_index', 'roleIndex']);
-    const raw = req.params['election'] ?? req.params['elect'] ?? req.params['pay'];
+    // The same reader the window notice uses, so a spelling this handler honours can
+    // never be one the readback missed. See {@link electionFieldsOf}.
+    const { venture: ventureId, roleIndex, raw } = electionFieldsOf(req.params);
     if (ventureId === null || roleIndex === null || raw === undefined) {
       return reject(
         'A2',
@@ -1927,9 +2211,37 @@ export class Runtime {
     );
   }
 
-  /** What the payer has stated for one role, or `undefined` for silence. */
+  /**
+   * What the payer has stated for one role, or `undefined` for silence.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE READBACK'S SOURCE, AND IT MAY NEVER OVERSTATE A PAYMENT.** `agent.md` tells the
+   * payer that a decline is permanent and public, and the `elect` affordance ends with
+   * "You have currently stated: …" — so this answer is the one an agent decides whether
+   * to go dark on. It therefore reports the book **floored by anything the payer has said
+   * that has not resolved yet** ({@link WindowedEngine}):
+   *
+   *   | book | in flight | answer | why |
+   *   |---|---|---|---|
+   *   | `IN_FULL` | 2340 | 2340 | the restatement is what settles; the old one is gone |
+   *   | 5000 | 2340 | 2340 | the lower of two statements is the one that can default |
+   *   | 2340 | `IN_FULL` | 2340 | conservative: the raise may still be refused for budget |
+   *   | absent | 2340 | absent | silence is already a full decline — the worst reading |
+   *
+   * It never reads the queue and never learns *when* a statement was made, so it cannot
+   * become a channel for one action to react to another (§15.2). The settlement reads the
+   * book alone — see {@link plansFor} — because an obligation must resolve against what
+   * the world has actually applied and nothing else.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   electionOn(venture: VentureId, roleIndex: number): Election | undefined {
-    return this.elections.get(electionKey(venture, roleIndex));
+    const key = electionKey(venture, roleIndex);
+    const book = this.elections.get(key);
+    const inFlight = this.electionsInFlight.get(key);
+    if (inFlight === undefined) return book;
+    if (book === undefined) return undefined;
+    if (book === IN_FULL) return inFlight;
+    return minor(Math.min(book, inFlight));
   }
 
   /**
@@ -2034,8 +2346,41 @@ export class Runtime {
     }
     const venture = this.ventures.get(ventureId);
     if (venture === undefined) return reject('PROP-V6', `there is no venture ${ventureId}.`);
+    // ── A PARTIES CHANNEL WITH NO PARTY CHECK IS NOT A PARTIES CHANNEL ────────
+    //
+    // This validated only that the venture existed. So any principal could push text into
+    // a live venture's private channel — which is `PARTIES` while the deal runs and
+    // **declassifies publicly at settlement** (§11.2), where it becomes the receipt reel's
+    // raw material (§14). An outsider could therefore write words that end up published
+    // beside somebody else's kept or broken promise, and never see a reply. A probe did
+    // exactly that. `talksFor` was already gated correctly, which is what made the leak
+    // one-directional and invisible from inside the game.
+    if (!this.mayTalkIn(venture, req.principal)) {
+      return reject(
+        'PROP-VI1',
+        `${venture.id} is ${venture.state} and every role is taken, so its channel is now the parties' and ` +
+          'yours is not among them: what is said in it becomes public beside what they actually did, and a ' +
+          'stranger cannot be one of the voices in that. While a venture still has an open role anyone may ' +
+          'pitch for it here and read the replies — so bid on a venture in ventures.board[], or say it in ' +
+          'public with `claim` or `publish_offer`.',
+      );
+    }
     this.talk.push({ venture: ventureId, from: req.principal, act, text, tick: ctx.tick });
     return { ok: true, value: null };
+  }
+
+  /**
+   * Who may write into a venture's channel: the parties, plus anyone at all while it is
+   * still recruiting.
+   *
+   * ONE HOME, TWO READERS — this and {@link talksFor}. A write gate wider than the read
+   * gate is the leak this closed; a read gate wider than the write gate would be a
+   * different one, and two copies of the predicate is how a build gets both.
+   */
+  private mayTalkIn(venture: VentureRecord, principal: PrincipalId): boolean {
+    if (venture.creator === principal) return true;
+    if (venture.roles.some((r) => r.filledByPrincipal === principal)) return true;
+    return isRecruiting(venture);
   }
 
   private vSay(ctx: PhaseContext, req: ActionRequest, denial: boolean): WorldResult<null> {
@@ -2077,18 +2422,43 @@ export class Runtime {
     // until it hit INV-26's cap. 311 refusals from a correct agent, caused
     // entirely by the engine and the affordance disagreeing about which role a
     // seal was for. One name, two meanings: scar #1's exact shape.
-    const named = readString(req.params, ['role_venture', 'roleVenture']) ?? target;
+    const explicit = readString(req.params, ['role_venture', 'roleVenture']);
+    const named = explicit ?? target;
     const namedIndex = readInt(req.params, ['role', 'role_index', 'roleIndex']);
     const matching =
       held.find((r) => r.venture === named && (namedIndex === null || r.roleIndex === namedIndex)) ?? null;
-    // No named match: claim the first held role that still has its free slot, so a
-    // mandatory seal is free even when the agent did not spell the role out.
-    const unspent =
-      matching ??
-      held.find(
-        (r) => this.seals.freeSlotsRemaining(req.principal, reckoningOf(ctx.tick), [r]) > 0,
-      ) ??
-      null;
+
+    // ── AND IT IS NEVER SOME OTHER ROLE ───────────────────────────────────────
+    //
+    // The fallback here was "the first held role that still has its free slot", which is
+    // the same one-name-two-meanings defect the block above describes, arriving from the
+    // other side: an agent that named a role it does **not** hold had its seal quietly
+    // charged against a role it does. Measured: a probe finished with four seals attached
+    // to roles it never named, none of them readable back (a verdict is `HONOURED |
+    // CONTRADICTED` and nothing else, at any tier — PROP-D2), any of which could be
+    // judged against its deeds. Its own words: "I would not have sealed at all had I
+    // known." A mark is permanent and public, so an intention the agent did not state is
+    // the one thing this door must not invent (A5′, scar #8: prefer precision over
+    // recall).
+    //
+    // So a *named* role that is not held is refused outright, and an unnamed one resolves
+    // to `null` — a seal that costs an action and claims no slot — rather than to
+    // somebody else's slot. `SealBook.commit` already refuses `role` not in `rolesHeld`;
+    // it never saw one, because this line substituted first.
+    if (matching === null && (explicit !== null || namedIndex !== null)) {
+      return reject(
+        'PROP-D4',
+        `you hold no role ${namedIndex === null ? '' : `${String(namedIndex)} `}in ${named}, so it gives you no ` +
+          'free seal and this seal has not been made. It is deliberately not charged against a different role ' +
+          'of yours: a seal is judged once, permanently and publicly, and the engine will not pick which ' +
+          'promise you meant. ' +
+          (held.length === 0
+            ? 'You hold no roles at all right now — fill one first, or seal without naming a role and spend an action.'
+            : `The roles you hold are ${held
+                .map((r) => `${r.venture} role ${String(r.roleIndex)}`)
+                .join(', ')}.`),
+      );
+    }
 
     const committed = this.seals.commit({
       principal: req.principal,
@@ -2097,7 +2467,7 @@ export class Runtime {
       stateVersion: ctx.frozenStateVersion,
       intent: { verb, target, measure, outcomeLow: low, outcomeHigh: high },
       prose: readString(req.params, ['prose']) ?? '',
-      role: unspent,
+      role: matching,
       rolesHeld: held,
     });
     return committed.ok ? { ok: true, value: null } : committed;
@@ -2138,10 +2508,41 @@ export class Runtime {
   private resolveFills(ctx: PhaseContext): void {
     if (this.pendingFills.length > 0) {
       ctx.step(this.pendingFills.length);
-      allocateFills(this.ventures, this.pendingFills, {
+      const allocated = allocateFills(this.ventures, this.pendingFills, {
         tick: ctx.tick,
         handOf: (id) => this.world.hands.get(id),
       });
+      // ── EVERY REFUSAL REACHES ITS AGENT, AND THE RETURN VALUE IS WHY ─────────
+      //
+      // This call's `{granted, refused}` was **discarded**, and each refusal it drops
+      // carries an invariant and a written sentence. So a fill that lost a contest, named
+      // a committed hand, or asked for a role that does not exist came back from
+      // `POST /act` as `accepted` and then did nothing at all — `accepted` meaning
+      // *queued*, with no later word either way. Measured on the live world: 20+ silent
+      // no-ops across three probes, two of which filed bug reports they then had to
+      // retract, and one of which wrote that "an accepted no-op is strictly worse than a
+      // refusal". `agent.md` §7 promises the opposite in as many words: an illegal action
+      // returns the invariant you violated and the nearest legal thing instead.
+      //
+      // It arrives through the corrections channel rather than as a return value for the
+      // reason that channel exists (see {@link PendingCorrection}): a contest is only
+      // decided once the whole tick's set is in, so at `POST /act` time there is nothing
+      // yet to say. It is a **hint and never an event** (scar #10).
+      for (const refused of allocated.refused) {
+        this.holdCorrection(refused.request.principal, {
+          tick: ctx.tick,
+          verb: 'fill_role',
+          clientSequence: refused.request.clientSequence,
+          invariant: refused.invariant,
+          hint: `${refused.hint} ${FILL_REFUSAL_NOTE[refused.reason]}`,
+          params: {
+            venture: refused.request.venture,
+            role: refused.request.roleIndex,
+            hand: refused.request.hand,
+            stake: refused.request.stake,
+          },
+        });
+      }
       this.pendingFills = [];
     }
     // Nothing in the freeze may touch a figure the settlement was computed from: a
@@ -2482,20 +2883,18 @@ export class Runtime {
    * engine for the Levy to disagree with (§3: EXPOSURE is Σ open `max_direct_loss`, and
    * nothing else).
    */
-  private levySubject(principal: PrincipalId, tick: number): LevySubject {
+  levySubjectOf(principal: PrincipalId, tick = this.engine.tick): LevySubject {
     const position = principalPosition(this.ledger, principal, storesAccount(principal));
-    const hands = handsOf(this.world, principal);
-    // Tenure from the earliest hand's own clock. Hands are minted exactly once, at
-    // enrolment, and are never destroyed (INV-8), so `presentSinceTick` of the first hand
-    // is the enrolment tick by construction — a second `enrolledAt` column would be one
-    // fact with two homes, and the one that drifted would decide the newcomer floor.
-    const seatedAt = hands.reduce<number>((earliest, hand) => {
-      const since = hand.presentSinceTick ?? 0;
-      return since < earliest ? since : earliest;
-    }, tick);
     return {
       principal,
-      tenureTicks: Math.max(0, tick - seatedAt),
+      // ── NOT DERIVED FROM HAND PRESENCE, and the first version of this was ────
+      //
+      // `HandRecord.presentSinceTick` is the *arrival* clock and `resolveArrival`
+      // rewrites it on every journey, so "earliest hand presence" reads as recent for
+      // anybody who keeps its hands moving — a permanent newcomer floor bought with one
+      // `move` a Reckoning. `Book.enrolled` records the seat tick once and never again;
+      // its own comment carries the full argument.
+      tenureTicks: this.levy.tenureTicksOf(principal, tick),
       freeStores: position.free,
       exposure: position.exposure,
     };
@@ -2520,7 +2919,7 @@ export class Runtime {
         book: this.levy,
         world: this.world,
         tick: ctx.tick,
-        subjectOf: (principal) => this.levySubject(principal, ctx.tick),
+        subjectOf: (principal) => this.levySubjectOf(principal, ctx.tick),
       });
     } catch (error: unknown) {
       // An assessment that cannot be computed must not take the tick down: the Levy is
@@ -2723,8 +3122,15 @@ export class Runtime {
     };
   }
 
-  /** Unpledged, available units of the levy good in a principal's STORES. */
-  private levyGoodAvailable(principal: PrincipalId): Qty {
+  /**
+   * Unpledged, available units of the levy good in a principal's STORES.
+   *
+   * Public because a *player* has to be able to see it before it commits a hand to a
+   * journey: walking three gates to a delivery place you cannot pay at is the shape of
+   * refusal-loop noise that buries real rules-surface defects (AGT-S3). The affordance
+   * layer and the cast read this same figure.
+   */
+  levyGoodAvailable(principal: PrincipalId): Qty {
     let total = 0;
     for (const lot of this.levyGoodLots(principal)) total += lot.qty;
     return qty(total);

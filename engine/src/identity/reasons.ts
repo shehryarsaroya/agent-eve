@@ -132,23 +132,66 @@ export type CredentialRejection =
   | 'CREDENTIAL_LIMITS_INVALID';
 
 /**
+ * What the verifier **computed**, for a caller whose signature did not verify.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A hint that names two innocent causes and not the real one is worse than no
+ * hint**, and this type exists because we shipped exactly that.
+ *
+ * `SIGNATURE_INVALID` used to read "a different key, or a message that changed in
+ * flight". A Gate-3 probe wrote a textbook RFC 9421 client, got that sentence, and
+ * spent a large part of its session brute-forcing eight variants before finding
+ * that the disagreement was `@path` — the two causes the sentence named were both
+ * fine. The server knew the signature base it had computed the whole time and did
+ * not say it.
+ *
+ * A signature base is not a secret. Every line of it is either something the caller
+ * sent us or something the caller can derive from what it sent. So it is returned,
+ * one line per covered component, and a client diffs instead of guessing. Same
+ * lesson as scar #1: the agent-facing string is a rules surface.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Values are strings or arrays of strings so that the whole thing serialises to
+ * JSON without a shaping step, and so that a multi-line artifact travels as lines
+ * rather than as embedded newlines — the transport scrubber collapses whitespace,
+ * which would silently glue a signature base into one unusable line.
+ */
+export interface RefusalDiagnostic {
+  readonly [field: string]: string | readonly string[];
+}
+
+/**
  * A refusal, with a human-readable detail for the agent's correction channel.
  *
  * `detail` is for the agent, `reason` is for our metrics: the probe harness
  * aggregates `rejections_by_reason` (TESTING.md §16), which only works if the
  * reason is a closed set and the detail is the only thing that varies.
+ *
+ * `diagnostic` is the machine-readable half of `detail` and is **optional on
+ * purpose**: it is populated only where knowing what the server computed is the
+ * difference between a one-line fix and a brute-force search.
  */
 export interface Refusal<R extends string> {
   readonly reason: R;
   readonly detail: string;
+  readonly diagnostic?: RefusalDiagnostic | undefined;
 }
 
 export type Verified<T, R extends string> =
   | { readonly ok: true; readonly value: T }
   | ({ readonly ok: false } & Refusal<R>);
 
-export function refuse<R extends string>(reason: R, detail: string): { ok: false } & Refusal<R> {
-  return { ok: false, reason, detail };
+export function refuse<R extends string>(
+  reason: R,
+  detail: string,
+  diagnostic?: RefusalDiagnostic,
+): { ok: false } & Refusal<R> {
+  // Spread-free branches so that `diagnostic` is *absent* rather than present-and-
+  // undefined: `exactOptionalPropertyTypes` is on, and an explicit `undefined` would
+  // serialise as a key the wire contract does not promise.
+  return diagnostic === undefined
+    ? { ok: false, reason, detail }
+    : { ok: false, reason, detail, diagnostic };
 }
 
 export function accept<T>(value: T): { ok: true; value: T } {

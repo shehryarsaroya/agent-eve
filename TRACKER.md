@@ -6,7 +6,7 @@
 
 ## ⏱ STATUS
 
-- **Phase:** 0 — **BUILDING.** Gate 0 green; wave 1 of the engine in flight.
+- **Phase:** 0 — **LIVE.** The game runs on the server, settles Reckonings, and has been through its first falsification gate.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
 - **Test plan:** `docs/design/TESTING.md` — written before any code, against v3.0. 26 always-on invariants · five named speeds · the probe-agent brief catalog · 14 scars as named regressions · 15 axioms as executable tests · 6 gates. **Gate 0 lands in commit #1.**
@@ -161,6 +161,18 @@ Three independent scorers against SPEC v3.0.
 ---
 
 ## 🏗 BUILD LOG (2026-07-24 →)
+
+**2026-07-25 — LIVE, and through Gate 3.** The game is deployed at `https://agentinsurance.io/compact/` and settling Reckonings on its own. ~1880 tests. Milestones since the wave logs below:
+
+- **Deployed.** Eight failures to get there, six mine; two *looked like success* — an unanchored rsync `--exclude` silently omitted `src/cast/` (scar #4's shape with a different verb), and `agent.md` was served as HTML with a 200 via nginx's SPA fallback. The deploy now anchors every pattern, asserts all 16 source dirs arrived, and verifies `agent.md` is markdown. `compact-sim.service` was **deleted** rather than written: the API already owns the scheduler, so a second unit would have been a second writer (OPS-5).
+- **`elect` landed** (verb 39/40): the payer's choice is restatable until the freeze, so A6's "abuse at the moment of maximum leverage" is finally expressible. Before it, the choice was locked at signing and §7.6 could not be asked.
+- **The seal trap closed**, the seal-cost promise in `agent.md` made true (the allowance stays in the seals book; the budget asks), and money brought inside `state_hash` via a ledger state table — it had been outside the hash I was claiming determinism about.
+
+> **SEASON SOAK — the thorough test. 30 principals, 8,100 ticks, 28 Reckonings, all committed.** 298 settlements · 22 defaulted · 33 defaults · 640 seals judged · **0 unattributed value · 0 deed-set faults.** A5′ holds at season scale, which is the strongest evidence yet for the thing the project says matters most. 36 ms/tick with per-tick hash streaming and the heuristic cast in the loop. *Caveat: 78% of actions were refused (101k vs 28k applied) — consistent with Gate 3's deal-closing gap, and expected to drop once the fixes land; re-run the soak after.*
+
+> **GATE 3 — RUN AND READ (`GATE-3.md` §6).** Four probes, live server, `agent.md` + public API only. The measure is **0/0, not 0/n**: nothing settled, so §7.6 is *untested*. Cause is arithmetic — a filler needed a second wake to read the `terms_hash` before signing, inside a 12-tick window on one wake per 18, so **a filler playing inside the documented budget could not close a deal.** But four things held at high confidence: the design is **learnable** (three probes named the core idea unprompted), the consequence-preview pattern **works**, permanence **deters**, and after 668 probe actions including deliberate abuse **no false default was recorded** (A5′). The trust-market demand side is real — agents down-sized ventures to farm distinct counterparties — while the supply side was a **hardcoded zero** in `observe`. A three-day fix list, not a rewrite, which is what placing the gate at step 7 of 15 was meant to buy.
+
+**In flight:** the **Levy** (the spec's "single most important mechanic in v3.0"; without it the Reckoning is abstention-trivial) · the **three Gate-3 fix areas** (`observe` deal-closing + standing + the false-state strings · `runtime` accepted-means-queued + the elect-readback A5′ lag · `identity` the `@path` RFC violation that broke every conformant client). Each with an Opus verifier.
 
 **Gate 0 — GREEN.** Everything TESTING.md requires in commit #1 landed there, because four of its artifacts are golden-file surfaces that only work if they predate the bugs.
 - `core/units.ts` integer-only value paths; `splitByBps` allocates every minor unit and asserts `sum(parts) === whole`, so **INV-6 holds by construction** rather than by review.

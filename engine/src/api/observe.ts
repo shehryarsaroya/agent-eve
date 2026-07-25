@@ -52,7 +52,7 @@ import {
   reckoningIndex,
   ticksUntilReckoning,
 } from '../core/time.js';
-import type { PrincipalId, SystemId, VentureId, VentureKind } from '../core/types.js';
+import type { PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
 import { storesAccount } from '../ledger/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
@@ -66,8 +66,15 @@ import {
   yourTakeAtP50,
   type VentureRecord,
 } from '../venture/index.js';
+/**
+ * §7.1: "there is one function that answers 'what is this role owed', and both the quote
+ * and the payout read it." {@link slotClaimAt} is that function with the holder lookup
+ * lifted out — which is the only way to price a slot **nobody holds yet**, and therefore
+ * the only way `board[].your_take_at_p50` can be anything but zero.
+ */
+import { slotClaimAt } from '../observe/forecast.js';
 import type { SealRoleRef } from '../seal/index.js';
-import { handsOf, holdingOf, tierOf } from '../world/index.js';
+import { handsOf, holdingOf, isPresent, occupiesSystem, tierOf, transitTicks } from '../world/index.js';
 import {
   defaultTerms,
   DELIVERY_MEASURE,
@@ -204,9 +211,12 @@ export function buildObservation(input: ObserveInput): Observation {
   const mine = runtime.ventures.forPrincipal(principal);
 
   const board = boardFor(runtime, principal, tick);
+  // The **same rows** the payload publishes are the rows the affordances are built from.
+  // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
+  // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick)
-    : { list: [] as Affordance[], withheld: notAWake(input.wakesRemaining) };
+    ? affordancesFor(runtime, principal, tick, board)
+    : { list: [] as Affordance[], withheld: notAWake(input) };
 
   const exposure = runtime.ledger.encumbrances.cachedExposure(principal);
   const stores = runtime.ledger.account(storesAccount(principal));
@@ -233,6 +243,26 @@ export function buildObservation(input: ObserveInput): Observation {
       actions_remaining: input.stale ? 0 : input.actionsRemaining,
       actions_per_tick: ACTIONS_PER_TICK,
       wakes_remaining: input.wakesRemaining,
+      /**
+       * **Your own record — the same row `counterparties[]` carries about everybody else.**
+       *
+       * It lives on `header` rather than as an eleventh top-level key because §17's observe
+       * budget is *at* its ceiling at ten (`OBSERVE_KEYS` is counted, not trusted), and
+       * `header` is where the payload already keeps the facts about the reader that are
+       * true regardless of what it is doing this tick — its clock, its budgets, its
+       * mandate version. Its record belongs in exactly that set.
+       *
+       * It is not in `counterparties[]` on purpose: §3 says a counterparty is somebody you
+       * deal with, and putting the reader in a list of other agents would be one word for
+       * two concepts. Built by {@link standingRow}, so the row about you and the row about
+       * them cannot drift — `header.standing.standing.defaults` and
+       * `counterparties[i].standing.defaults` are the same field, computed once.
+       *
+       * §13's "report a default recorded against you" needs this to be sayable at all, and
+       * `agent.md` §4's standing rules are unverifiable by an agent that cannot see its own
+       * vectors move.
+       */
+      standing: standingRow(runtime, principal),
       /**
        * §13B: the owner mandate is stable text, not per-tick state, so it is a free
        * read with a version announced here rather than a key of its own.
@@ -340,7 +370,7 @@ export function buildObservation(input: ObserveInput): Observation {
     affordances: affordanceSet.list,
 
     briefing: {
-      prompt: promptFor(runtime, principal, mine, board, input.fresh),
+      prompt: promptFor(runtime, principal, mine, board, input.fresh, tick),
       if_you_do_nothing: ifYouDoNothing(runtime, principal, mine, tick),
       /**
        * **The delivery half of PROP-O7.**
@@ -371,13 +401,56 @@ export function buildObservation(input: ObserveInput): Observation {
 
 // ── Affordances ─────────────────────────────────────────────────────────────
 
-function notAWake(wakesRemaining: number): Withheld {
+/**
+ * Why this payload carries no affordances — **and the world's actual status.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE TWO REASONS WERE SWAPPED, AND FOUR PROBES READ THE FALSE ONE.**
+ *
+ * The condition was `wakesRemaining > 0`, which is the *common* case rather than the
+ * paused one: `POST /act` attaches an observation built with `fresh: false` (see
+ * `server.ts:observationForHints`), so an agent with fifteen wakes in hand was told "the
+ * world is PAUSED, so there is nothing you can legally do until it resumes" — while
+ * `/health` said RUNNING, `header.stale` was false, its actions were being accepted, and
+ * `briefing.prompt` **in the same payload** correctly said it was outside a wake.
+ *
+ * A false assertion about world state is not a cosmetic slip. An agent that believes the
+ * world is paused stops playing, and the one thing it will not do is spend a wake to find
+ * out otherwise. So the paused string is now gated on the engine's own status — the same
+ * field `/health` publishes — and there is a third case for the one that was missing.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * The count is zero in all three branches and that is exact rather than convenient:
+ * nothing was *withheld*, because no affordance list was solved. Solving one here is the
+ * A4 leak `server.ts:nearestFresh` exists to close — outside a wake, a bigger inference
+ * budget must not buy a bigger information set.
+ */
+function notAWake(input: ObserveInput): Withheld {
+  if (input.runtime.engine.status === 'PAUSED') {
+    return {
+      count: 0,
+      reason:
+        'this observation is the cached tick snapshot: the world is PAUSED, so there is nothing you can ' +
+        'legally do until it resumes. Nothing was withheld — no affordance list was solved.',
+    };
+  }
+  if (input.wakesRemaining > 0) {
+    return {
+      count: 0,
+      reason:
+        `the world is RUNNING and you still hold ${String(input.wakesRemaining)} of ` +
+        `${String(WAKES_PER_RECKONING)} wakes this Reckoning — this particular payload simply was not fetched ` +
+        'in one. It is the copy attached to an action response or a preview, so it carries no fresh ' +
+        'affordance and no quote_id. Nothing was withheld: no affordance list was solved. Send a signed ' +
+        'GET /observe to spend a wake and get the actable list.',
+    };
+  }
   return {
     count: 0,
     reason:
-      wakesRemaining > 0
-        ? 'this observation is the cached tick snapshot: the world is PAUSED, so there is nothing you can legally do until it resumes.'
-        : `you have spent all ${String(WAKES_PER_RECKONING)} wakes this Reckoning. This snapshot is legal, free, and carries no fresh affordance and no quote_id. Wakes reset at the next Reckoning.`,
+      `you have spent all ${String(WAKES_PER_RECKONING)} wakes this Reckoning. This snapshot is legal, ` +
+      'free, and carries no fresh affordance and no quote_id. Wakes reset at the next Reckoning. Nothing ' +
+      'was withheld — no affordance list was solved.',
   };
 }
 
@@ -393,7 +466,12 @@ interface AffordanceSet {
  * bites, what survives is what the agent most needs. Within a group, canonical id
  * order, so the list is byte-stable across two fetches in one tick.
  */
-function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number): AffordanceSet {
+function affordancesFor(
+  runtime: Runtime,
+  principal: PrincipalId,
+  tick: number,
+  board: readonly BoardRow[],
+): AffordanceSet {
   const eligible: Affordance[] = [];
   const world = runtime.world;
   const hands = handsOf(world, principal);
@@ -538,17 +616,77 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
     });
   }
 
-  // 4. Fill an open role you are eligible for.
-  for (const row of boardFor(runtime, principal, tick)) {
-    const idle = hands.find((h) => h.state === 'IDLE');
-    if (idle === undefined) break;
+  // 4. Fill an open role you are eligible for — and *close* it.
+  //
+  //    ══════════════════════════════════════════════════════════════════════
+  //    **A FILL IS NOT A DEAL, AND THIS STRING IS WHERE A FILLER LEARNS THAT.**
+  //
+  //    Gate 3's headline number was unreadable because ~46 ventures died on a missing
+  //    countersignature rather than on price. `fill_role` is a request allocated at tick
+  //    close, and the venture stays FORMING until every party has signed the same
+  //    `terms_hash` — so the act an agent must send *next* is the whole game, and it is
+  //    named here with both literal values, because the board row now carries them.
+  //
+  //    **Two omissions are counted rather than hidden.** `hands.find(...)` offered the
+  //    first idle hand and stopped — one act per row, `break` when there was none, and
+  //    `header.withheld` reading `count: 0` with "nothing was withheld: this is every
+  //    legal act". Neither claim was true: any of the principal's other idle hands fills
+  //    the same slot (two probes verified it by hand), and a row with no free hand is an
+  //    eligible slot silently dropped. `agent.md` §6 names this exact case as a
+  //    must-report, and PROP-O1 forbids the silent drop.
+  //
+  //    **AND THE HAND HAS TO BE WHERE THE VENTURE IS.** This is the one that cost the most
+  //    at Gate 3, because it is silent: `Runtime.vFillRole` refuses a fill whose hand does
+  //    not `occupiesSystem(venture.stage)` — a rule `src/observe/catalogue.ts` and `move`'s
+  //    own `what_it_forecloses` both already state — and this list offered `hands[0]`
+  //    whatever system it was standing in. A principal seated at `sys-02` was handed a
+  //    copyable `fill_role` for a venture staged at `sys-01`, and the refusal arrives a
+  //    tick later from VALIDATE+LOCK, after the action is spent. Home systems differ per
+  //    principal, so whether an agent could play at all depended on where it woke up.
+  //
+  //    `isPresent` joins the filter for the same reason: a hand that arrived this tick is
+  //    `IDLE` and **not present**, `fillRole` refuses it by name (INV-9), and offering it
+  //    is the server telling an agent to do something and then declining (AGT-S2).
+  //    `occupiesSystem` rather than a `location` comparison written here, because that is
+  //    the world module's own predicate and it is false for a hand on a lane — the same
+  //    call the runtime makes, so the two cannot drift.
+  //    ══════════════════════════════════════════════════════════════════════
+  const idleHands = hands
+    .filter((h) => h.state === 'IDLE' && isPresent(h, tick))
+    .sort((a, b) => cmp(a.id, b.id));
+  let rowsWithNoHand = 0;
+  let rowsOutOfReach = 0;
+  let alternateHands = 0;
+  const unreachedStages = new Set<SystemId>();
+  for (const row of board) {
+    const atStage = idleHands.filter((h) => occupiesSystem(h, row.stage));
+    const idle = atStage[0];
+    if (idle === undefined) {
+      if (idleHands.length === 0) rowsWithNoHand += 1;
+      else {
+        rowsOutOfReach += 1;
+        unreachedStages.add(row.stage);
+      }
+      continue;
+    }
+    // Every other present idle hand *at this stage* is an equally legal fill of this slot.
+    alternateHands += atStage.length - 1;
+    const echo = row.terms_hash === null ? 'the venture has no terms_hash yet' : `"${row.terms_hash}"`;
     eligible.push({
       verb: 'fill_role',
       params: { venture: row.venture, role: row.role, hand: idle.id, stake: 0 },
       cost: 1,
       max_direct_loss: 0,
       max_contingent_liability: 0,
-      what_it_forecloses: `hand ${idle.id} cannot fill another role while it is committed to this one.`,
+      what_it_forecloses:
+        `hand ${idle.id} cannot fill another role while it is committed to this one, and you may hold at most ` +
+        `one role in ${row.venture}. FILLING IS NOT CLOSING: the fill is allocated at tick close and the ` +
+        'venture stays FORMING until every party has countersigned the same terms_hash. So send ' +
+        `{"verb":"sign","params":{"venture":"${row.venture}","terms_hash":${echo},` +
+        `"your_take_at_p50":${String(row.your_take_at_p50)}}} on the NEXT tick — the next tick, because the ` +
+        'echo is checked against what you are owed and you are owed nothing until the fill lands. This costs ' +
+        `no wake: POST /act is not wake-gated. Unsigned by tick ${String(row.expires_tick)} and the window ` +
+        'closes, the venture retires ABANDONED, and nothing you spent comes back.',
       expires_tick: row.expires_tick,
       quote_id: quoteId(principal, tick, 'fill_role', { venture: row.venture, role: row.role }),
     });
@@ -575,18 +713,35 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
 
   // 6. Move an idle hand one gate. Loss is time, never capacity (INV-8), so the
   //    direct loss is exactly zero and saying so is the point.
+  //
+  //    **The trip's length is published, because a fill is on the other end of it.**
+  //    A board slot staged elsewhere needs a `move` first, and an agent that cannot tell
+  //    when the hand becomes fillable has to spend a *second wake* to find out — the same
+  //    arithmetic that made Gate 3 unreadable, one step earlier in the chain. The lane's
+  //    `transitTicks` is exact (`departHand` sets `freeAtTick = resolveTick + transitTicks`
+  //    and `resolveArrival` sets `presentSinceTick = freeAtTick + 1` because
+  //    `ARRIVAL_IS_PRESENT_SAME_TICK` is false), so this is arithmetic, not an estimate (A2).
+  //    Stated as a rule about the resolving tick rather than as an absolute number, because
+  //    this quote is good for `QUOTE_PIN_TICKS` and an absolute tick would go stale inside
+  //    its own window.
   for (const hand of hands) {
     if (hand.state !== 'IDLE') continue;
     const system = world.map.systems.get(hand.location);
     if (system === undefined) continue;
     for (const lane of [...system.lanes].sort(cmp)) {
+      const trip = transitTicks(world.map, hand.location, lane);
       eligible.push({
         verb: 'move',
         params: { hand: hand.id, to: lane },
         cost: 1,
         max_direct_loss: 0,
         max_contingent_liability: 0,
-        what_it_forecloses: 'this hand cannot fill a role until it arrives; an arrival is not present until the next tick.',
+        what_it_forecloses:
+          `this hand cannot fill a role until it arrives. This lane takes ${String(trip)} tick(s): a move ` +
+          `that resolves in tick R puts the hand at ${lane} on tick R+${String(trip)}, and it becomes ` +
+          `PRESENT — able to fill a role, work, or escort — on tick R+${String(trip + 1)}. It can be raided ` +
+          'at its destination from the tick it arrives. hands[].in_transit_eta carries the arrival tick once ' +
+          'it is under way.',
         expires_tick: tick + QUOTE_PIN_TICKS,
         quote_id: quoteId(principal, tick, 'move', { hand: hand.id, to: lane }),
       });
@@ -647,10 +802,33 @@ function affordancesFor(runtime: Runtime, principal: PrincipalId, tick: number):
         'header.live_verbs is the current list',
     );
   }
+  if (alternateHands > 0) {
+    reasons.push(
+      `${String(alternateHands)} further legal fill_role act(s) exist and are not listed: each open slot on ` +
+        'ventures.board[] can be filled by ANY of your idle hands standing at that venture’s stage, and only ' +
+        'one is offered per slot. hands[] lists them all, and which hand you send changes nothing about what ' +
+        'the role pays',
+    );
+  }
+  if (rowsOutOfReach > 0) {
+    reasons.push(
+      `${String(rowsOutOfReach)} slot(s) on ventures.board[] have no fill_role offered because you have no ` +
+        `idle hand standing at their stage (${[...unreachedStages].sort(cmp).join(', ')}) — a hand fills a ` +
+        'role where the venture happens, so `move` one there first and check the trip fits inside the window ' +
+        'each row publishes in expires_tick',
+    );
+  }
+  if (rowsWithNoHand > 0) {
+    reasons.push(
+      `${String(rowsWithNoHand)} slot(s) on ventures.board[] have no fill_role offered because none of your ` +
+        'hands is both IDLE and present this tick — a hand that arrived this tick is not present until the ' +
+        'next one. They are still on the board and still yours to take once a hand frees up',
+    );
+  }
   return {
     list,
     withheld: {
-      count: dropped + notLive,
+      count: dropped + notLive + alternateHands + rowsWithNoHand + rowsOutOfReach,
       reason:
         reasons.length === 0
           ? 'nothing was withheld: this is every legal act, with its full cost.'
@@ -681,17 +859,63 @@ function probeElective(kind: VentureKind): Minor {
 
 // ── Rows ────────────────────────────────────────────────────────────────────
 
+/**
+ * One open slot, and **everything needed to both fill it and close it.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS ROW IS THE RECRUITING SURFACE AND IT USED TO BE UNCLOSEABLE.**
+ *
+ * Gate 3 measured `elective declines / elective roles settled` as `0/0`: across ~300
+ * ticks and 668 actions nothing settled at all, and one probe's first sixteen ventures
+ * died at window close "not one on price — every single one on a missing
+ * countersignature". The cause is arithmetic in this interface.
+ *
+ * A fill is a *request*, allocated at tick close (PROP-V8), and the venture stays
+ * `FORMING` until every party has countersigned the **same `terms_hash`** (§7.3). This
+ * row carried no `terms_hash`, so a filler had to spend a **second wake** to read it out
+ * of `ventures.mine[]` before it could sign — inside a `FORMATION_WINDOW_TICKS` of 12,
+ * on a budget of `WAKES_PER_RECKONING` 16 over `TICKS_PER_RECKONING` 288, which is one
+ * wake every 18 ticks. **A filler playing inside the documented wake budget could not
+ * close a deal.** The creator could, because `create` handed it the hash.
+ *
+ * So the row carries the hash and the echo. `POST /act` is *not* wake-gated — only
+ * observation freshness is (§12.4) — so with both values in hand the filler sends
+ * `fill_role` in its wake and `sign` on the next tick without a second observation.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
 interface BoardRow {
   readonly venture: VentureId;
   readonly role: number;
   readonly label: string;
   readonly kind: string;
   readonly stage: SystemId;
+  /**
+   * Who **pays** the elective half of this role, and therefore whose record decides
+   * whether `elective` below is money or a story. `counterparties[]` carries its
+   * standing, and `agent.md` §12 advice #5 ("look at last_default before you trust
+   * someone") is only followable from the board if the board names who to look up.
+   */
+  readonly creator: PrincipalId;
   readonly wage: number | null;
   readonly share: number | null;
   readonly escrowed: number;
   readonly elective: number;
+  /**
+   * What **this slot** pays whoever fills it, at p50 — and the number to echo on `sign`.
+   *
+   * It used to be `yourTakeAtP50(venture, reader)`, which returns zero when the reader
+   * holds no role — true of every board row by construction. So the price of a seat read
+   * `0` at the decision point and became correct only once the choice was irreversible:
+   * *"the recruiting surface tells every newcomer that every seat pays nothing."*
+   *
+   * **The echo is only valid once the fill has been granted.** `countersign` compares it
+   * against `yourTakeAtP50(venture, you)`, which is still zero while you hold no role, so
+   * a signature sent in the *same* tick as the fill is refused on PROP-V3. That is the
+   * whole reason `fill_role`'s `what_it_forecloses` names the next tick.
+   */
   readonly your_take_at_p50: number;
+  /** The hash to countersign, and the second half of what closing a deal needs. */
+  readonly terms_hash: string | null;
   readonly expires_tick: number;
   readonly resolves_at_tick: number;
 }
@@ -716,18 +940,35 @@ function boardFor(runtime: Runtime, principal: PrincipalId, tick: number): Board
         label: role.label,
         kind: venture.kind,
         stage: venture.stage,
+        creator: venture.creator,
         wage: role.terms.wage,
         share: role.terms.share,
         escrowed: role.terms.escrowed,
         elective: role.terms.elective,
-        your_take_at_p50: yourTakeAtP50(venture, principal),
+        // The slot's claim, not the reader's. Same arithmetic settlement will run.
+        your_take_at_p50: slotClaimAt(venture, index, 'p50').claim,
+        terms_hash: venture.termsHash,
         expires_tick: venture.windowClosesTick,
         resolves_at_tick: venture.resolvesAtTick,
       });
     }
   }
+  // **Reachable slots first, then canonical id order.** The list is capped at
+  // `MAX_LIST_ROWS`, and a cap over an arbitrary order can hide the only slot this
+  // principal could actually fill behind twenty-three it cannot reach. Reachability is a
+  // fact about the world computed the same way twice, so the order is still byte-stable
+  // within a tick (PROP-O6) — it is a priority, not a shuffle.
+  const reach = new Set<SystemId>();
+  for (const hand of handsOf(runtime.world, principal)) {
+    if (hand.state === 'IDLE' && isPresent(hand, tick)) reach.add(hand.location);
+  }
   return rows
-    .sort((a, b) => cmp(a.venture, b.venture) || a.role - b.role)
+    .sort(
+      (a, b) =>
+        Number(reach.has(b.stage)) - Number(reach.has(a.stage)) ||
+        cmp(a.venture, b.venture) ||
+        a.role - b.role,
+    )
     .slice(0, MAX_LIST_ROWS);
 }
 
@@ -782,30 +1023,57 @@ function counterpartiesFor(
       if (role.filledByPrincipal !== null) named.add(role.filledByPrincipal);
     }
   }
-  for (const row of board) {
-    const venture = runtime.ventures.get(row.venture);
-    if (venture !== undefined) named.add(venture.creator);
-  }
+  for (const row of board) named.add(row.creator);
   named.delete(principal);
 
-  return [...named].sort(cmp).map((other) => ({
-    principal: other,
-    /**
-     * The public factual vectors, never a score (§3). Standing accrues only at
-     * settlement, which lands with the Reckoning driver; these read zero because
-     * nothing has settled, not because we chose not to say.
-     */
+  return [...named].sort(cmp).map((other) => standingRow(runtime, other));
+}
+
+/**
+ * One principal's public record, in the one shape used for everybody including the reader.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS WAS A HARDCODED ZERO WHILE A LIVE `StandingBook` SAT BESIDE IT.**
+ *
+ * `Runtime.standing` is real, it is the only writer of standing (INV-21), and nothing
+ * read it. Four consequences, all of which Gate 3's probes hit:
+ *
+ *   - `agent.md` §12 advice #5 — "look at `counterparties[].last_default` before you trust
+ *     someone" — was **unfollowable by construction**, because the field was the literal
+ *     `null` for a serial defaulter and for a saint alike.
+ *   - Every probe's "every standing vector is still 0" was reading a constant, not a
+ *     world. A constant that looks like data is worse than a missing field.
+ *   - `AGT-E2` — *is trust priced?* — is the spread between what a high-standing
+ *     counterparty is paid and what a defaulting one is paid. **Unanswerable** while the
+ *     inputs are the same five zeros for everyone.
+ *   - §13's "report a default recorded against you" is incoherent while an agent cannot
+ *     see its own record. Hence the header's own row.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * **Zeros here are facts, not a clean bill of health**, and the distinction is real: a
+ * principal with no journal entries genuinely has honoured nothing, defaulted on nothing
+ * and dealt with nobody. `elective_honoured: 0` beside `distinct_counterparties: 0` is
+ * *unproven*, which `agent.md` §4 already teaches ("a fully escrowed venture earns you a
+ * performance record and **zero** trust"). What it must never be is a *constant*.
+ */
+function standingRow(runtime: Runtime, who: PrincipalId): Readonly<Record<string, unknown>> {
+  const row: Standing = runtime.standing.row(who);
+  return {
+    principal: who,
+    /** The public factual vectors, never a score (§3). */
     standing: {
-      elective_honoured: 0,
-      elective_honoured_value: 0,
-      defaults: 0,
-      contradicted_seals: 0,
-      distinct_counterparties: 0,
+      elective_honoured: row.electiveHonoured,
+      elective_honoured_value: row.electiveHonouredValue,
+      defaults: row.defaults,
+      contradicted_seals: row.contradictedSeals,
+      distinct_counterparties: row.distinctCounterparties,
     },
+    /** Zero because bonds do not exist yet (§6.4), not because none was posted. */
     bond_posted: 0,
     sureties: [],
-    last_default: null,
-  }));
+    /** The tick of the latest recorded default, or null. A stamp, never a count. */
+    last_default: row.lastDefaultTick,
+  };
 }
 
 // ── Briefing ────────────────────────────────────────────────────────────────
@@ -817,6 +1085,7 @@ function promptFor(
   mine: readonly VentureRecord[],
   board: readonly BoardRow[],
   fresh: boolean,
+  tick: number,
 ): string {
   if (!fresh) {
     return 'You are outside a wake, so this snapshot carries no fresh affordances and no quote_id. Nothing here can be acted on; wait for your next wake or the next Reckoning.';
@@ -837,9 +1106,51 @@ function promptFor(
   }
   if (board.length > 0) {
     const first = board[0];
-    return first === undefined
-      ? 'There are open roles you are eligible for.'
-      : `${String(board.length)} open role(s) you are eligible for, the nearest being ${first.label} on ${first.venture} at ${String(first.elective)} elective — which is the only part that will ever build your standing.`;
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS SENTENCE TOLD A FILLER SOMETHING FALSE, AND IT IS THE FIRST SENTENCE
+    // OF MOST WAKES (scar #1).**
+    //
+    // It read "… at N elective — which is the only part that will ever build your
+    // standing." On a board role the reader is the **payee**, not the payer: the `elect`
+    // affordance is generated only for `venture.creator === principal`, standing accrues to
+    // whoever *honours* an elective part (INV-21, `ELECTIVE_HONOURED`), and a filler earns
+    // no standing at all from this role. So the payload's most-read string asserted the
+    // opposite of the engine's own rule about the design's central quantity — the exact
+    // shape of scar #1, and two probes named it by name.
+    //
+    // What is true is more useful anyway: the elective half is the part the filler is owed
+    // and may simply never be paid, which is why the payer's record is on the same row.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (first === undefined) return 'There are open roles you are eligible for.';
+    // The nearest slot a hand can actually reach, because a slot three lanes away needs a
+    // `move` first and naming that one as "the nearest" is the prompt sending an agent at
+    // an act the engine refuses. Falls back to the first row, with the trip named.
+    const usable = handsOf(runtime.world, principal).filter(
+      (h) => h.state === 'IDLE' && isPresent(h, tick),
+    );
+    const reachable = board.find((row) => usable.some((h) => occupiesSystem(h, row.stage)));
+    const pick = reachable ?? first;
+    const payer = runtime.standing.row(pick.creator);
+    const record =
+      payer.defaults > 0
+        ? `${String(payer.defaults)} recorded default(s), the last at tick ${String(payer.lastDefaultTick)}`
+        : payer.electiveHonoured > 0
+          ? `${String(payer.electiveHonoured)} elective part(s) honoured across ` +
+            `${String(payer.distinctCounterparties)} distinct counterparties and no defaults`
+          : 'no record either way yet — unproven, which is not the same as clean';
+    const close =
+      reachable === undefined
+        ? `You have no idle hand at ${pick.stage}, so move one there first — a hand fills a role where the ` +
+          `venture happens, the window shuts at tick ${String(pick.expires_tick)}, and the trip has to fit.`
+        : `To close it, fill_role now and sign ${String(pick.terms_hash)} on the next tick; unsigned by tick ` +
+          `${String(pick.expires_tick)} and it retires with nothing settled.`;
+    return (
+      `${String(board.length)} open role(s) you are eligible for. The nearest is ${pick.label} on ` +
+      `${pick.venture} at ${pick.stage}, which pays you ${String(pick.your_take_at_p50)} at p50, of which ` +
+      `${String(pick.elective)} is elective — the part ${pick.creator} may simply decline to pay, and its ` +
+      `record shows ${record}. Filling it builds no standing of your own: standing accrues to whoever ` +
+      `HONOURS an elective part, and on this role that is the payer. ${close}`
+    );
   }
   const idle = handsOf(runtime.world, principal).filter((h) => h.state === 'IDLE').length;
   return `Nothing is waiting on you and ${String(idle)} of your hands are idle; an idle hand earns nothing, and the Commons is safe but poor.`;
@@ -883,10 +1194,31 @@ function ifYouDoNothing(
     }
   }
 
+  // ── The escrow claim was wrong, and PROP-O5 makes that a bug ───────────────
+  //
+  // This read "their escrow stays locked until you abandon them". It is not: `Runtime`'s
+  // VENTURES phase calls `retireFormation` the first tick past `windowClosesTick`, which
+  // resolves the venture ABANDONED, closes its obligation, **refunds the escrow in full**
+  // and frees the hands — with the agent doing nothing at all. Three probes read the false
+  // version and one saw it four times, which is exactly the field `agent.md` §6 promises is
+  // "tested against reality — if it turns out to be wrong, that is a bug".
+  //
+  // The correction matters beyond accuracy: an agent told its capital is trapped until it
+  // spends an action budgets around a lock that is not there.
   const forming = mine.filter((v) => v.state === 'FORMING');
   if (forming.length > 0) {
+    const soonest = forming.reduce(
+      (min, v) => Math.min(min, v.windowClosesTick),
+      Number.MAX_SAFE_INTEGER,
+    );
+    const mineToRefund = forming.filter((v) => v.creator === principal).length;
     parts.push(
-      `${String(forming.length)} forming venture(s) never go live, their windows close, and their escrow stays locked until you abandon them`,
+      `${String(forming.length)} forming venture(s) never go live: from tick ${String(soonest)} each window ` +
+        'closes and the venture is retired ABANDONED without your acting' +
+        (mineToRefund > 0
+          ? `, your escrow on the ${String(mineToRefund)} you created is refunded in full, and any hand you ` +
+            'committed comes free — you do not need to `abandon` them and nothing stays locked'
+          : ', and any hand you committed comes free'),
     );
   }
 

@@ -23,6 +23,18 @@
  * Everything before crypto is cheap and structural, so the common case — a client
  * with a bug — gets a precise hint (scar #1: the agent-facing string is a rules
  * surface) without costing a curve operation.
+ *
+ * **`@path` is the client's path, not ours.** §2.2.6 derives it from the target the
+ * client sent, and a path-stripping proxy destroys that before the origin sees it.
+ * The caller therefore supplies the client-visible spelling plus any other spelling
+ * that routes here — see {@link SignableRequest.alternateRequestTargets}, which
+ * argues why that is not a hole. Getting this wrong refused *every conformant
+ * client* in Gate 3.
+ *
+ * **A failing signature says what we computed.** `SIGNATURE_INVALID` carries the
+ * base, one line per covered component, in {@link RefusalDiagnostic}. The old
+ * sentence named the two causes that were fine and not the one that was wrong, and
+ * cost a probe most of a session.
  */
 
 import type { PrincipalId } from '../core/types.js';
@@ -31,7 +43,7 @@ import type { AgentKeypair } from './keys.js';
 import { verifyBytes } from './keys.js';
 import type { KeyDirectory, KeyRegistration } from './keyring.js';
 import { keyLiveAt } from './keyring.js';
-import type { SignatureRejection, Verified } from './reasons.js';
+import type { RefusalDiagnostic, SignatureRejection, Verified } from './reasons.js';
 import { IdentityError, accept, refuse } from './reasons.js';
 import type { ReplayStore, ReplayStoreLimits } from './replay.js';
 import { decodeBase64, encodeBase64 } from './encoding.js';
@@ -52,8 +64,50 @@ export interface SignableRequest {
   readonly scheme: 'http' | 'https';
   /** host, optionally with a port. Normalised on the way into the base. */
   readonly authority: string;
-  /** Origin-form target: absolute path plus optional query, exactly as sent. */
+  /**
+   * Origin-form target: absolute path plus optional query, **as the client sent
+   * it** — which is what RFC 9421 §2.2.6 derives `@path` from, and is not always
+   * what this process received. See {@link alternateRequestTargets}.
+   */
   readonly requestTarget: string;
+  /**
+   * Other spellings of {@link requestTarget} that address this same resource, tried
+   * in order after the canonical one fails. Empty or absent in the normal case.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **WHY THIS FIELD EXISTS, AND WHY IT IS NOT A HOLE.**
+   *
+   * `@path` is defined over the target *the client sent*. A path-stripping reverse
+   * proxy destroys that information before we see it: nginx proxies
+   * `/compact/api/observe` to the app root, so the app is handed `/observe` and a
+   * conformant client — which signed `/compact/api/observe`, correctly — fails at
+   * its first request with nothing to go on. Measured in Gate 3: every conformant
+   * client failed, and the workaround (sign the app-internal path) is the one thing
+   * the RFC forbids.
+   *
+   * The origin cannot recover the sent target by inspection, so it is *told*: the
+   * caller supplies the canonical, client-visible spelling and any other spelling
+   * that routes to the same handler here.
+   *
+   * This does not weaken verification, and the reasons are worth stating rather
+   * than assuming:
+   *
+   *   1. **No cross-resource acceptance.** The alternates differ from the canonical
+   *      only by a mount prefix that is a routing no-op — both spellings reach the
+   *      same handler on the same host — so a signature accepted under one spelling
+   *      cannot authorise something the other would not.
+   *   2. **No replay window.** The nonce is spent per `(keyid, nonce)`, never per
+   *      path, so a signature accepted under either spelling burns the same nonce.
+   *   3. **Attribution stays exact.** {@link AcceptedSignature.signatureBase} records
+   *      the base that actually verified, not the canonical one, so the archive
+   *      re-proves years later without knowing anything about proxies.
+   *   4. **Bounded, and unreachable while unauthenticated.** At most
+   *      {@link MAX_ALTERNATE_REQUEST_TARGETS} extra curve operations, only when a
+   *      target-derived component is actually covered, and only after the key has
+   *      been found — an unknown keyid is refused before any of it.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly alternateRequestTargets?: readonly string[] | undefined;
   readonly headers: Readonly<Record<string, string | readonly string[]>>;
   /** The exact bytes read from the wire, or null for a bodyless request. */
   readonly body: Uint8Array | null;
@@ -92,6 +146,28 @@ export const DEFAULT_SIGNATURE_POLICY: SignaturePolicy = {
 const NONCE_GRAMMAR = /^[A-Za-z0-9_-]{8,}$/;
 
 const SUPPORTED_DERIVED = new Set(['@method', '@path', '@authority', '@scheme', '@query', '@target-uri']);
+
+/** The derived components whose value depends on the request target, and only those. */
+const TARGET_DERIVED: ReadonlySet<string> = new Set(['@path', '@query', '@target-uri']);
+
+/**
+ * How many extra request-target spellings a signature may be checked against.
+ *
+ * A cap rather than a trusted caller: the alternates are derived from an
+ * agent-reachable path, and a bug upstream that produced hundreds of them would turn
+ * one request into hundreds of curve operations. Excess is dropped, never thrown on
+ * — no agent-reachable input may halt the world (AGT-X9).
+ */
+export const MAX_ALTERNATE_REQUEST_TARGETS = 3;
+
+/**
+ * Signature-base lines echoed back in a `SIGNATURE_INVALID` diagnostic.
+ *
+ * The covered list is client-controlled, so the diagnostic it produces has to be
+ * bounded like every other outbound string (INV-26). Twenty is far past the five a
+ * real client covers, and a truncation marker says so rather than lying by omission.
+ */
+const MAX_DIAGNOSTIC_LINES = 20;
 
 const DEFAULT_LABEL = 'compact';
 
@@ -356,8 +432,13 @@ export function verifySignedRequest(
   }
 
   // ── the signature base ────────────────────────────────────────────────────
+  //
+  // One per acceptable spelling of the request target, canonical first. A refusal
+  // here can only come from the canonical build: the alternates differ from it in
+  // `@path`/`@query`/`@target-uri` alone, and none of those can be absent.
   const built = buildSignatureBase(member.items, member, options.request);
   if (!built.ok) return built;
+  const candidates = candidateBases(member, options.request, covered, built.value);
 
   // ── the body ──────────────────────────────────────────────────────────────
   const digestHeader = headers.get('content-digest');
@@ -407,11 +488,18 @@ export function verifySignedRequest(
   }
 
   // ── crypto ────────────────────────────────────────────────────────────────
-  if (!verifyBytes(registration.publicKeyJwk, Buffer.from(built.value, 'ascii'), signatureBytes)) {
-    return refuse(
-      'SIGNATURE_INVALID',
-      'the signature does not verify over the signature base: a different key, or a message that changed in flight',
-    );
+  //
+  // Canonical spelling first, so the common case is one curve operation and the
+  // archived base is the RFC-correct one whenever both would verify.
+  let verified: BaseCandidate | null = null;
+  for (const candidate of candidates) {
+    if (verifyBytes(registration.publicKeyJwk, Buffer.from(candidate.base, 'ascii'), signatureBytes)) {
+      verified = candidate;
+      break;
+    }
+  }
+  if (verified === null) {
+    return refuse('SIGNATURE_INVALID', invalidDetail(covered, candidates), invalidDiagnostic(covered, candidates));
   }
 
   // ── replay: the only state this function writes, and it writes it last ────
@@ -436,10 +524,104 @@ export function verifySignedRequest(
     created: wallSeconds(created),
     expires: expires === null ? null : wallSeconds(expires),
     nonce,
-    signatureBase: built.value,
+    // The base that actually verified, never the canonical one — an archive that
+    // records a base the bytes do not sign is an archive that cannot be re-proved.
+    signatureBase: verified.base,
     signature: encodeBase64(signatureBytes),
     acceptedAtTick: options.tick,
   });
+}
+
+// ── candidate bases, and the diagnostic when none of them verify ────────────
+
+interface BaseCandidate {
+  /** The request-target spelling this base was built from. */
+  readonly target: string;
+  readonly base: string;
+}
+
+/**
+ * Every base this signature may legitimately have been made over, canonical first.
+ *
+ * Returns the canonical one alone unless a target-derived component is actually
+ * covered — if the signature says nothing about the path, every spelling produces a
+ * byte-identical base and the extra curve operations would buy nothing.
+ */
+function candidateBases(
+  innerList: SfInnerList,
+  request: SignableRequest,
+  covered: readonly string[],
+  canonicalBase: string,
+): readonly BaseCandidate[] {
+  const out: BaseCandidate[] = [{ target: request.requestTarget, base: canonicalBase }];
+  if (!covered.some((name) => TARGET_DERIVED.has(name))) return out;
+  const alternates = (request.alternateRequestTargets ?? []).slice(0, MAX_ALTERNATE_REQUEST_TARGETS);
+  for (const target of alternates) {
+    if (out.some((candidate) => candidate.target === target)) continue;
+    const rebuilt = buildSignatureBase(innerList.items, innerList, { ...request, requestTarget: target });
+    // A build that fails for an alternate cannot succeed for the canonical either,
+    // and the canonical has already succeeded — so this is unreachable and skipped
+    // rather than returned, because a refusal here would be the wrong reason.
+    if (rebuilt.ok) out.push({ target, base: rebuilt.value });
+  }
+  return out;
+}
+
+/**
+ * The sentence a client reads when its signature does not verify.
+ *
+ * Leads with the actionable fact and never names an innocent cause first. The
+ * section number of RFC 9421's `@path` rule is deliberately *not* quoted: the
+ * outbound scrubber redacts anything shaped like a semantic version, so "§2.2.6"
+ * would reach the agent as "§[version]" — a rules surface mangled by a security
+ * filter, which is precisely the class of bug this whole change is about.
+ */
+function invalidDetail(covered: readonly string[], candidates: readonly BaseCandidate[]): string {
+  const parts = [
+    'the signature does not verify over the signature base we computed.',
+    'That base is in diagnostic.signature_base, one line per covered component — diff it against yours rather than guessing.',
+  ];
+  if (covered.includes('@path')) {
+    const paths = candidates.map((candidate) => splitTarget(candidate.target).path);
+    const canonical = paths[0] ?? '/';
+    parts.push(
+      `We computed "@path": ${canonical} — RFC 9421 derives @path from the request target you sent, including any mount prefix.`,
+    );
+    const others = paths.slice(1).filter((path) => path !== canonical);
+    if (others.length > 0) parts.push(`We also checked ${others.join(' and ')}.`);
+  }
+  parts.push('If your base matches ours line for line, the bytes were signed by a different key.');
+  return parts.join(' ');
+}
+
+/** The machine-readable half. See {@link RefusalDiagnostic} for why it is safe to send. */
+function invalidDiagnostic(
+  covered: readonly string[],
+  candidates: readonly BaseCandidate[],
+): RefusalDiagnostic {
+  const canonical = candidates[0];
+  return {
+    signature_base: bounded(canonical === undefined ? [] : canonical.base.split('\n'), 'lines'),
+    covered_components: bounded(covered, 'components'),
+    // Bounded by construction: at most MAX_ALTERNATE_REQUEST_TARGETS + 1.
+    request_targets_checked: candidates.map((candidate) => candidate.target),
+  };
+}
+
+/**
+ * Cap a client-controlled list on its way out, saying so rather than lying by omission.
+ *
+ * Both lists here are derived from the covered-component list, which a caller chooses.
+ * Echoing it wholesale is not amplification — every entry had to be present in the
+ * request — but "not amplification" is not the same as "bounded", and INV-26 asks for
+ * bounded.
+ */
+function bounded(values: readonly string[], noun: string): readonly string[] {
+  if (values.length <= MAX_DIAGNOSTIC_LINES) return values;
+  return [
+    ...values.slice(0, MAX_DIAGNOSTIC_LINES),
+    `… ${String(values.length - MAX_DIAGNOSTIC_LINES)} further ${noun}`,
+  ];
 }
 
 /**

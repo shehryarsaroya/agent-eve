@@ -129,8 +129,60 @@ export class Book {
   private readonly ballots = new Map<string, LevyBallot>();
   private readonly chronic = new Map<PrincipalId, ChronicRow>();
   private readonly shortfalls = new Map<string, ShortfallRow>();
+  /**
+   * The tick each principal enrolled at. **The newcomer floor's tenure clock.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS EXISTS BECAUSE DERIVING TENURE FROM PRESENCE IS AN EXPLOIT**, and the first
+   * version of this module shipped it. `HandRecord.presentSinceTick` is the *arrival*
+   * clock — `resolveArrival` rewrites it every time a hand finishes a journey — so
+   * "earliest hand presence" reads as *recent* for any principal that keeps its hands
+   * moving. The consequence was not cosmetic: move a hand every day and you are a
+   * newcomer forever, assessed at the nominal rate for the rest of the season, which is
+   * a permanent tax exemption bought with one action a Reckoning.
+   *
+   * There is no enrolment tick anywhere else in the engine — the world's tables hold
+   * position, not history — so this is a first home rather than a second one, and it is
+   * never pruned, because identity is never deleted (A10).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private readonly seatedAt = new Map<PrincipalId, number>();
   /** Reckonings whose Levy has already settled. Idempotence, and INV-20's shape. */
   private readonly settled = new Set<number>();
+
+  // ── tenure ────────────────────────────────────────────────────────────────
+
+  /**
+   * Record an enrolment. First write wins: identity is never re-minted (§6.1), so a
+   * second call would be a principal quietly becoming newer than it is.
+   */
+  enrolled(principal: PrincipalId, tick: number): void {
+    if (this.seatedAt.has(principal)) return;
+    if (this.seatedAt.size >= MAX_LEVY_ASSESSMENTS) {
+      throw new LevyBookError(
+        `the tenure register is at its declared cap of ${MAX_LEVY_ASSESSMENTS} principals (INV-26)`,
+      );
+    }
+    this.seatedAt.set(principal, tick);
+  }
+
+  /**
+   * Ticks since enrolment.
+   *
+   * A principal the register has never heard of is treated as enrolling **now** — so it
+   * is inside the newcomer floor, which is the safe direction. The unsafe direction would
+   * be treating it as ancient and assessing it the full duty on its first night, which is
+   * precisely the failure §5.2's floor exists to prevent.
+   */
+  tenureTicksOf(principal: PrincipalId, tick: number): number {
+    const seated = this.seatedAt.get(principal);
+    if (seated === undefined) return 0;
+    return Math.max(0, tick - seated);
+  }
+
+  seatedAtOf(principal: PrincipalId): number | null {
+    return this.seatedAt.get(principal) ?? null;
+  }
 
   // ── assessment ────────────────────────────────────────────────────────────
 
@@ -438,6 +490,7 @@ export class Book {
       levyBallots: this.ballots.size,
       levyShortfalls: this.shortfalls.size,
       levyChronic: this.chronic.size,
+      levyTenure: this.seatedAt.size,
     };
   }
 
@@ -513,6 +566,12 @@ export class Book {
           owed: row.owed,
           inSweepQueue: row.inSweepQueue,
         })),
+      // The tenure register is inside `state_hash` and inside the abort path, because it
+      // decides who the newcomer floor protects — a restore that lost it would reassess
+      // every principal as brand new and hand the whole constellation a nominal rate.
+      seatedAt: [...this.seatedAt.entries()]
+        .sort((a, b) => compareIds(a[0], b[0]))
+        .map(([principal, tick]) => ({ principal, tick })),
       settled: [...this.settled].sort((a, b) => a - b),
     };
   }
@@ -524,6 +583,7 @@ export class Book {
     this.ballots.clear();
     this.chronic.clear();
     this.shortfalls.clear();
+    this.seatedAt.clear();
     this.settled.clear();
 
     for (const [i, raw] of readArray(root['plans'] ?? [], 'levy.plans').entries()) {
@@ -617,6 +677,12 @@ export class Book {
         inSweepQueue: readBool(o, 'inSweepQueue', where),
       };
       this.shortfalls.set(principalKey(row.reckoning, row.principal), row);
+    }
+
+    for (const [i, raw] of readArray(root['seatedAt'] ?? [], 'levy.seatedAt').entries()) {
+      const where = `levy.seatedAt[${String(i)}]`;
+      const o = readObject(raw, where);
+      this.seatedAt.set(readString(o, 'principal', where) as PrincipalId, readInt(o, 'tick', where));
     }
 
     for (const raw of readArray(root['settled'] ?? [], 'levy.settled')) {
