@@ -305,6 +305,10 @@ function record(over: Partial<SealAuditRecord> = {}): SealAuditRecord {
     role: { venture: vid('V-1'), roleIndex: 0 },
     intent: intent(),
     prose: '',
+    // The healthy shape of both witness fields, so each mutant below still differs
+    // from a good record in exactly one respect.
+    targetWitnessed: true,
+    disposition: null,
     verdict: null,
     verdictAtTick: null,
     basis: null,

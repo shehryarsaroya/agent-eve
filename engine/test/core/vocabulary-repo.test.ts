@@ -66,6 +66,32 @@ const SANCTIONED = new Map<string, string>([
   ['Visibility.SEALED', "the visibility tier that holds seals — §3's SEAL row now says so explicitly"],
 ]);
 
+/**
+ * Members that legitimately appear in two unions, keyed `UnionA+UnionB.MEMBER` with
+ * the sorted union names. Each needs a reason that argues the two readings are ONE
+ * concept — not merely that both spellings look reasonable.
+ */
+const SHARED_MEMBERS = new Map<string, string>([
+  ['DecisionSource+IntentState+VentureState.LIVE',
+    'all three mean "currently active" — one adjective applied to three subjects, not three concepts'],
+  ['HandState+LotState.IN_TRANSIT',
+    'a hand in transit and a lot in transit are both "moving between systems"; INV-2 counts them as one term'],
+  ['RoleLabel+VentureKind.ESCORT',
+    'the escorting function, whether it is a role inside a HAUL or a venture of its own — §3 sanctions the identical shape for RAID'],
+  ['CascadeStatus+VentureState.DEFERRED',
+    'both are §15.3 deferral exactly: carried to the next Reckoning, NOT terminal, and never a default. Their agreement is what showed SealDisposition.DEFERRED was the odd one out'],
+  ['SealDisposition+SealVerdict.HONOURED',
+    'SealDisposition is SealVerdict plus UNMARKED, so it shares members by construction; PROP-D2 keeps the two-valued verdict the only thing agents ever see'],
+  ['SealDisposition+SealVerdict.CONTRADICTED',
+    'same superset relationship as HONOURED; splitting the spelling would make the wider type unreadable against the narrower'],
+  ['AssertScope+Coverage+Redaction+Rollback.FULL',
+    '"complete" in all four — an adjective, and renaming any of them would read as a distinction that does not exist'],
+  ['BatchKind+SupplyDirection.ISSUE',
+    'value entering the economy against a named faucet; INV-1 treats the batch kind and the direction as one fact'],
+  ['BatchKind+SupplyDirection.RETIRE',
+    'value leaving the economy against a named sink; the mirror of ISSUE and the same argument'],
+]);
+
 function srcFiles(dir = SRC): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
@@ -148,7 +174,7 @@ describe('SPEC §3 is a rules surface — repo-wide', () => {
   it('every sanctioned dual use carries a stated reason', () => {
     // The allowlist is the only way a collision can get in, so it is the thing
     // most worth guarding. An empty reason is not a reason.
-    for (const [pair, reason] of SANCTIONED) {
+    for (const [pair, reason] of [...SANCTIONED, ...SHARED_MEMBERS]) {
       expect(reason.length, `${pair} has no justification`).toBeGreaterThan(20);
       // A bare term as a key would silently re-open the hole the mutation test
       // found, so the shape itself is asserted.
@@ -174,6 +200,43 @@ describe('SPEC §3 is a rules surface — repo-wide', () => {
       caught.push(`${mutant.name}.${m}`);
     }
     expect(caught).toEqual(['HoldingState.STANDING']);
+  });
+
+  it('no member name appears in two different unions without a sanctioned reason', () => {
+    // THE GAP THE §3 CHECK ABOVE CANNOT SEE, and it shipped a real defect.
+    //
+    // `SealDisposition.DEFERRED` and `VentureState.DEFERRED` meant OPPOSITE things: a
+    // deferred venture is explicitly not terminal and returns next Reckoning (§15.3);
+    // an unmarked seal is terminal and never re-judged (INV-20 — scar #7 was a promise
+    // re-judged at every subsequent court). One word, two opposite lifecycles, one
+    // engine. The check above could not see it because DEFER appears in §3 as prose,
+    // not as a Term-column row, so neither member was a "canon term" at all.
+    //
+    // Scar #1 was not about canon terms. It was about the ENGINE and the AGENT-FACING
+    // TEXT disagreeing over one word. This check is that shape generalised: any member
+    // name living in two unions is a word doing two jobs until someone says otherwise.
+    const byMember = new Map<string, Set<string>>();
+    for (const u of allUnions()) {
+      // Skip inline field annotations (`state: 'A' | 'B'`). The regex names those
+      // after the FIELD, which is lowercase, and such a field is not a second union
+      // — it is the same union written out. Counting them produced pairs like
+      // "VentureState+state.FORMING", which is one union reported as two.
+      if (!/^[A-Z]/.test(u.name)) continue;
+      for (const m of u.members) {
+        const homes = byMember.get(m) ?? new Set<string>();
+        homes.add(u.name);
+        byMember.set(m, homes);
+      }
+    }
+
+    const shared: string[] = [];
+    for (const [member, homes] of byMember) {
+      if (homes.size < 2) continue;
+      const key = `${[...homes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join('+')}.${member}`;
+      if (SHARED_MEMBERS.has(key)) continue;
+      shared.push(key);
+    }
+    expect(shared).toEqual([]);
   });
 
   it('no source file contains a NUL byte', () => {

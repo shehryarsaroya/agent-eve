@@ -12,9 +12,11 @@
  * - **the state version** — resolve from the same state the agents acted on (scar
  *   #6, which made a "mandatory" event not happen ~35% of the time).
  *
- * Plus the one that matters most for A5′: when the engine and the seal disagree
- * about *units or state version*, the tick **halts** rather than publishing
- * CONTRADICTED. A halt is recoverable; a permanent false public mark is not.
+ * Plus the one that matters most for A5′: when the engine and the seal disagree about
+ * *units or state version*, the seal **defers** — no mark, and no outage either. It
+ * used to halt, and because `intent.measure` is agent-supplied that halt was a
+ * denial-of-settlement lever (AGT-X9); a permanent false public mark and an
+ * agent-chosen outage are both unacceptable, and deferral is neither.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -24,6 +26,12 @@ import { deed, eid, intent, pid } from './helpers.js';
 
 const AT_TICK = 287;
 
+/**
+ * Both witnesses default to **supplied**, which is the shape a wired tick loop
+ * always has: the deed set is claimed complete and the target was checked against the
+ * world at commit. Every test below is therefore about attribution, not about the
+ * witnesses — those have their own file, `witness.regression.test.ts`.
+ */
 function inputs(over: Partial<VerdictInputs> = {}): VerdictInputs {
   return {
     principal: pid('P-A'),
@@ -31,6 +39,8 @@ function inputs(over: Partial<VerdictInputs> = {}): VerdictInputs {
     sealedAtTick: 100,
     actedOnStateVersion: 100,
     intent: intent(),
+    deedSetWitnessed: true,
+    targetWitnessed: true,
     ...over,
   };
 }
@@ -131,33 +141,42 @@ describe('attribution — the act named', () => {
   });
 });
 
-describe('A5-prime — a measurement disagreement halts instead of libelling', () => {
-  it('halts when a matching deed is measured in another unit', () => {
+describe('A5-prime — a measurement disagreement makes no mark, and no outage either', () => {
+  /**
+   * This block used to assert a **halt**, on the precondition that `measure` is
+   * engine-assigned. `intent.measure` is agent-supplied at `commit`, so that halt was
+   * a denial of settlement an agent could trigger with one free seal (AGT-X9), and
+   * `resolve` threw out of its loop so it took every other principal's seals with it.
+   *
+   * The rule that replaced it: *a halt is for our bug, never for their input.* A
+   * disagreement about an agent-supplied field is data, and the seal is `DEFERRED` —
+   * judged once, closed with no mark, never re-judged. The caller-bug halts below are
+   * unchanged, and they are the point of the distinction.
+   */
+  it('defers when a matching deed is measured in another unit', () => {
     // Comparing a band of 50 minor units against 50 whole goods is scar #1 with
     // money. Publishing CONTRADICTED off that comparison would mark an agent that
-    // did exactly what it said.
-    expect(() => judge(inputs(), [deed({ measure: 'MINOR', outcome: 50 })], AT_TICK)).toThrow(
-      SealHalt,
+    // did exactly what it said — and halting lets that agent stop the world.
+    const j = judge(inputs(), [deed({ measure: 'MINOR', outcome: 50 })], AT_TICK);
+    expect(j.disposition).toBe('UNMARKED');
+    expect(j.verdict).toBeNull();
+    expect(j.basis).toBe('MEASURE_DISAGREEMENT');
+    expect(j.citedDeedEventId).toBe('ev:150:0');
+  });
+
+  it('defers when a matching deed was valued against a state older than the seal', () => {
+    const j = judge(
+      inputs({ actedOnStateVersion: 100 }),
+      [deed({ valuedAtStateVersion: 99 })],
+      AT_TICK,
     );
-    try {
-      judge(inputs(), [deed({ measure: 'MINOR', outcome: 50 })], AT_TICK);
-    } catch (err: unknown) {
-      expect(err).toBeInstanceOf(SealHalt);
-      if (err instanceof SealHalt) {
-        expect(err.violations[0]?.severity).toBe('HALT');
-        expect(err.message).toContain('refusing to contradict');
-      }
-    }
+    expect(j.disposition).toBe('UNMARKED');
+    expect(j.basis).toBe('STALE_MEASUREMENT');
   });
 
-  it('halts when a matching deed was valued against a state older than the seal', () => {
-    expect(() =>
-      judge(inputs({ actedOnStateVersion: 100 }), [deed({ valuedAtStateVersion: 99 })], AT_TICK),
-    ).toThrow(SealHalt);
-  });
-
-  it('does NOT halt when a good deed also exists — the seal is simply honoured', () => {
-    // The halt exists to avoid a false contradiction, not to punish a stray row.
+  it('does NOT defer when a good deed also exists — the seal is simply honoured', () => {
+    // The deferral exists to avoid a false contradiction, not to swallow a kept
+    // promise: an honoured seal outranks a stray row it could not measure.
     const j = judge(
       inputs(),
       [

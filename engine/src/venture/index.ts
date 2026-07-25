@@ -9,10 +9,27 @@
  *   - **`fill_role` is a request, not a grant.** Collect {@link FillRequest}s
  *     through the tick and resolve them with {@link allocateFills} at tick close,
  *     never at submit (PROP-V8, §7.3). Arrival order is not an input.
+ *   - **A granted fill commits its hand, and a resolved venture releases it.**
+ *     {@link allocateFills} calls the world's `commitHand` itself; settlement releases
+ *     through {@link SettlementPresence}, or reports {@link VentureSettlement.freedHands}
+ *     for a driver that owns hand rows this module cannot reach. A hand filling a live
+ *     role while `IDLE`, or `COMMITTED` while filling none, is an INV-9 **halt** — so
+ *     the venture write and the world write happen in one phase or the tick dies.
  *   - **Settlement runs in `venture_id` order and nothing else** (§15.3, PROP-V7).
  *     {@link settleBatch} sorts its own input, so a caller cannot get this wrong.
+ *   - **A deferral is one obligation settled twice, and it remembers.** What each role
+ *     has been paid lives on the venture's rows (`settledElectiveMinor`,
+ *     `escrowExecutedAtTick`), so the second pass pays the remainder and the receipt
+ *     reports the whole obligation. Pass the *same* pinned `proceeds` and the same
+ *     elections; do not rebuild them from a fresh quote.
  *   - **The escrowed part always executes; the elective part never does**
  *     (PROP-V4). `SettleInput.elections` is opt-in and an absent entry pays nothing.
+ *     An entry is an amount or {@link IN_FULL} — the election that states the intention
+ *     to pay the whole elective part, which on a `share` role is not knowable at
+ *     signing time and must not require the payer to guess a number (A5').
+ *   - **`SettleInput.actedOnStateVersion` is the value the freeze captured**, not the
+ *     engine's live counter and not the row read back. Its doc comment says why both
+ *     wrong answers are wrong (INV-19, §15.4).
  *   - **A shortfall on the escrowed half is a recorded LOSS, never a default**
  *     (§10.2, PROP-L3). A default carries `causeEventId` and is never null (INV-17).
  *   - **Value moves only through the `Ledger`.** This module computes who is owed
@@ -105,6 +122,7 @@ export {
   openIndices,
   partiesOf,
   pinnedValue,
+  recordPaid,
   roleAt,
   roleOfPrincipal,
   signatoriesRequired,
@@ -135,6 +153,7 @@ export {
 
 export {
   CASCADE_ROUND_LIMIT,
+  IN_FULL,
   MAX_DEFERRALS,
   SettlementHalt,
   assertClaimsExact,
@@ -145,12 +164,14 @@ export {
   settleVenture,
   type ClaimBreakdown,
   type DefaultCause,
+  type Election,
   type ResolutionKind,
   type RoleClaim,
   type RolePayout,
   type SettleInput,
   type SettlementAccounts,
   type SettlementBatch,
+  type SettlementPresence,
   type StandingDelta,
   type VentureDefault,
   type VentureSettlement,

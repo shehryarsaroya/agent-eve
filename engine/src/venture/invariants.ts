@@ -148,6 +148,50 @@ export function checkVentureStructure(book: VentureBook, tick: number): Invarian
           violation('INV-9', tick, `${venture.id} role ${role.index} names a hand with no principal`),
         );
       }
+      // The paid-so-far markers are what give §15.3's deferral a memory, so they are
+      // asserted rather than trusted: a negative or fractional marker means a settlement
+      // pass un-paid a role, and the next pass would then re-pay value that had already
+      // moved — the double-charge and the fabricated default that came with it.
+      for (const [what, amount] of [
+        ['escrowed', role.settledEscrowedMinor],
+        ['elective', role.settledElectiveMinor],
+      ] as const) {
+        if (!Number.isSafeInteger(amount) || amount < 0) {
+          out.push(
+            violation(
+              'INV-6',
+              tick,
+              `${venture.id} role ${role.index} has settled ${what} ${String(amount)}; the paid-so-far ` +
+                'markers are whole, non-negative and monotonic or a deferral can forget a payment',
+            ),
+          );
+        }
+      }
+    }
+
+    // A7's escrowed half auto-executes at the *first* settlement, so an obligation that
+    // has deferred has necessarily executed it. A DEFERRED venture with no execution
+    // marker means phase 1 was skipped without ever having run: the escrow is stranded
+    // and every subsequent receipt publishes a shortfall on the one half A7 guarantees.
+    if (venture.state === 'DEFERRED' && venture.escrowExecutedAtTick === null) {
+      out.push(
+        violation(
+          'PROP-V4',
+          tick,
+          `${venture.id} has deferred without ever executing its escrowed parts; the escrowed half ` +
+            'always executes, so a deferral that skipped it is a receipt denying its own guarantee',
+        ),
+      );
+    }
+    if (venture.escrowExecutedAtTick !== null && venture.state === 'FORMING') {
+      out.push(
+        violation(
+          'PROP-V4',
+          tick,
+          `${venture.id} is FORMING but its escrowed parts have executed; settlement ran on a venture ` +
+            'that was never live',
+        ),
+      );
     }
 
     // INV-15 / §15.4: the terms a venture settles on are the terms that were

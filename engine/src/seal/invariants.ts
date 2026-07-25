@@ -35,7 +35,26 @@ import { SealHalt, sealViolation } from './verdict.js';
  *
  * Four separate claims, all needed:
  *
- * 1. a seal in a **resolved** Reckoning has a verdict and `evaluations === 1`;
+ * ## How "exactly one verdict" is read against a DEFERRED seal
+ *
+ * A seal that closed `DEFERRED` was judged once and carries **no** verdict, so the
+ * literal reading of INV-20 would fire on it. That reading cannot be the right one:
+ * it forces the engine to publish a mark it has just established it cannot justify,
+ * which is the A5′ failure §15.4 names as worse than a crash. So the clause is read
+ * as **exactly one evaluation, and never a second** — `evaluations === 1` is asserted
+ * for every resolved seal without exception, and the verdict clause exempts the one
+ * disposition that records *why* there is no mark.
+ *
+ * The exemption is deliberately narrow: it requires `disposition === 'UNMARKED'`
+ * positively, so a seal that is verdict-less for any other reason — including a
+ * record with no disposition at all, which is what a mis-migrated row looks like —
+ * still fires. `test/seal/book.test.ts`'s mutation suite holds that line.
+ *
+ * A healthy Reckoning defers **nothing**: `SealResolution.deferred` is the operator's
+ * alarm that the resolver is being called without its witnesses.
+ *
+ * 1. a seal in a **resolved** Reckoning has a verdict — or a recorded deferral — and
+ *    `evaluations === 1`;
  * 2. a seal in an **unresolved** Reckoning has no verdict and `evaluations === 0`
  *    — this is the clause that catches a seal being judged early, or twice with
  *    the book's bookkeeping bypassed;
@@ -62,7 +81,9 @@ export function checkInv20(book: SealBook, tick: number): InvariantViolation[] {
     }
 
     if (resolved) {
-      if (rec.verdict === null) {
+      // Positively `DEFERRED`, never merely "not something else": a record with no
+      // disposition is what a mis-migrated row looks like, and it must still fire.
+      if (rec.verdict === null && rec.disposition !== 'UNMARKED') {
         out.push(
           sealViolation(
             'INV-20',

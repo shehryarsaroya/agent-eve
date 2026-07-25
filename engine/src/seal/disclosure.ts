@@ -173,6 +173,12 @@ export function sealCommitEvent(rec: SealAuditRecord, rulesVersion: number): New
  * `actorPrincipalId` is null: the Reckoning computed this, not the principal. The
  * principal it concerns is a payload field, so nothing reads as an act the agent
  * chose to take.
+ *
+ * **Drive this from `SealResolution.verdicts`, never from `auditRecords()`.** A seal
+ * that closed `DEFERRED` has no flag by design and throws here, because there is
+ * nothing to publish: to every reader it must look exactly like a seal whose
+ * Reckoning has not come, and inventing a `DEFERRED` event would put a second fact
+ * about a sealed intention on a `PUBLIC` channel (PROP-D2).
  */
 export function sealVerdictEvent(
   rec: SealAuditRecord,
@@ -291,6 +297,10 @@ const CONTENT_KEY_NAMES: readonly string[] = [
   'outcomeHigh',
   'basis',
   'citedDeedEventId',
+  // `disposition` distinguishes "no flag yet" from "judged, and unjudgeable" — a
+  // second fact about a sealed intention, which PROP-D2 permits no more than the
+  // basis does. {@link agentSealDisclosure} cannot emit it; this is the scan half.
+  'disposition',
 ];
 
 /**

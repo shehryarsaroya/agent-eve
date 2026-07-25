@@ -7,11 +7,25 @@
  * signing believing one thing while the engine recorded another, and it was
  * "invisible to unit tests". A number that is right for the cases somebody thought of
  * is exactly the shape of that bug.
+ *
+ * ## Why the property reads a balance
+ *
+ * `takeAtPercentile` and settlement deliberately share one `computeClaims`, so a
+ * property that compares `payouts[i].claim` against `yourTakeAtP50(...)` compares one
+ * function's output with **itself**: it cannot fail, and it did not. Mutating the
+ * escrowed transfer amount in `payEscrowedParts` to `p.paid - 1` left the whole 300-case
+ * property green, because nothing in it touched the ledger.
+ *
+ * So the property asserts the thing that can actually go wrong — the *money*. The quote,
+ * the claim, and the delta in the role-holder's STORES are one number, and that requires
+ * electing the elective half, because a quote nobody pays is not a quote that was met.
  */
 
 import { describe, expect, it } from 'vitest';
 import { bps, minor, type Minor } from '../../src/core/units.js';
+import { storesAccount } from '../../src/ledger/index.js';
 import {
+  IN_FULL,
   PERCENTILES,
   computeProceeds,
   countersign,
@@ -22,6 +36,7 @@ import {
   takeAtPercentile,
   ventureEscrowRatioBps,
   yourTakeAtP50,
+  type Election,
   type Percentile,
 } from '../../src/venture/index.js';
 import {
@@ -38,6 +53,7 @@ import {
   goLive,
   makeHaul,
   makeTopYield,
+  presenceOf,
   rngFor,
   share,
   vid,
@@ -81,6 +97,12 @@ describe('PROP-V3 — the echoed p50 is what the waterfall pays at p50', () => {
       const quotedCarrier = yourTakeAtP50(haul, ALICE);
       const quotedEscort = yourTakeAtP50(haul, BRAM);
 
+      // BRAM holds the escort and is not the creator, so its STORES move by exactly what
+      // this settlement pays it and by nothing else. ALICE is both creator and carrier,
+      // so its balance also carries the escrow return and the proceeds deposit — which is
+      // why the money assertion below names one party and not both.
+      const escortBefore = f.ledger.balance(storesAccount(BRAM));
+
       const s = settleVenture(
         f.ledger,
         f.book,
@@ -90,17 +112,33 @@ describe('PROP-V3 — the echoed p50 is what the waterfall pays at p50', () => {
           eventId: ev(`settle:${haul.id}`),
           outcome: 'FULFILLED',
           proceeds: p50Proceeds,
-          elections: new Map<number, Minor>(),
-          stateVersion: STATE_VERSION,
+          // IN_FULL, so the elective half is honoured and the quote is a claim on money
+          // rather than on arithmetic. With an empty map only the escrowed half moves and
+          // the property could not compare a balance against a take at all.
+          elections: new Map<number, Election>([[0, IN_FULL], [1, IN_FULL]]),
+          actedOnStateVersion: STATE_VERSION,
           causeEventId: null,
         },
         ACCOUNTS,
+        presenceOf(f),
       );
 
       // The claim the waterfall computed is the number the signer echoed. Not "close
       // to": equal, to the minor unit.
       expect(s.payouts[0]?.claim, `carrier @ ${i}`).toBe(quotedCarrier);
       expect(s.payouts[1]?.claim, `escort @ ${i}`).toBe(quotedEscort);
+
+      // And the money agrees with both. This is the assertion the property was missing:
+      // the quote, the claim, and the delta in the holder's STORES are one number, so a
+      // transfer that pays a unit less than the claim fails here and nowhere else.
+      const escort = s.payouts[1];
+      if (escort === undefined) throw new Error(`no escort payout @ ${i}`);
+      expect(f.ledger.balance(storesAccount(BRAM)) - escortBefore, `escort paid @ ${i}`).toBe(quotedEscort);
+      expect(escort.escrowedPaid + escort.electivePaid, `escort halves @ ${i}`).toBe(quotedEscort);
+      expect(escort.escrowedPaid, `escrowed executed @ ${i}`).toBe(escort.escrowedDue);
+      expect(escort.electivePaid, `elective honoured @ ${i}`).toBe(escort.electiveDue);
+      expect(s.defaults, `no default @ ${i}`).toEqual([]);
+
       // A principal holding no role has no take: the creator's residual is what is
       // left, not a take (§3 — one word, one concept).
       expect(beforeFilling).toEqual([0, 0]);

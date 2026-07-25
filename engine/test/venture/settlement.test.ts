@@ -65,7 +65,7 @@ function input(
     outcome: 'FULFILLED',
     proceeds,
     elections,
-    stateVersion: STATE_VERSION,
+    actedOnStateVersion: STATE_VERSION,
     causeEventId: null,
     ...overrides,
   };
@@ -488,10 +488,83 @@ describe('INV-19 and the pinned terms halt the tick rather than settling wrongly
       settleVenture(
         f.ledger,
         f.book,
-        input(haul, minor(10_000), new Map(), { stateVersion: STATE_VERSION + 1 }),
+        input(haul, minor(10_000), new Map(), { actedOnStateVersion: STATE_VERSION + 1 }),
         ACCOUNTS,
       ),
     ).toThrow(SettlementHalt);
+  });
+
+  it('halts when the pinned version was rewritten between the freeze and the settlement', () => {
+    // The failure INV-19 can actually see, stated from the driver's side. The Reckoning
+    // captures `acted_on_state_version` at the freeze and hashes it with the inputs; if
+    // the row no longer agrees with that capture, something rewrote a pinned obligation
+    // inside the freeze and the settlement about to be published would be wrong.
+    const f = fixture();
+    const haul = makeHaul(f);
+    goLive(f, haul, [ALICE, BRAM], minor(10_000));
+    const capturedAtFreeze = haul.actedOnStateVersion;
+    if (capturedAtFreeze === null) throw new Error('fixture');
+    haul.actedOnStateVersion = capturedAtFreeze + 3;
+    expect(() =>
+      settleVenture(
+        f.ledger,
+        f.book,
+        input(haul, minor(10_000), new Map(), { actedOnStateVersion: capturedAtFreeze }),
+        ACCOUNTS,
+      ),
+    ).toThrow(SettlementHalt);
+  });
+
+  it('settles a venture that outlived its activation tick, because the live counter is not the input', () => {
+    // The other half of the decision, and the one that makes the check non-vacuous
+    // *without* making it a guaranteed halt: a venture is agreed in its formation window
+    // and settled a whole Reckoning later, so the engine's own state version has moved on
+    // many times by then. The freeze's capture is what is compared, so this settles.
+    const f = fixture();
+    const haul = makeHaul(f, { windowOpensTick: 0, windowClosesTick: 100, resolvesAtTick: 287 });
+    goLive(f, haul, [ALICE, BRAM], minor(10_000));
+    const capturedAtFreeze = haul.actedOnStateVersion;
+    expect(capturedAtFreeze).toBe(STATE_VERSION);
+    const s = settleVenture(
+      f.ledger,
+      f.book,
+      input(haul, minor(10_000), new Map(), {
+        tick: 287,
+        actedOnStateVersion: capturedAtFreeze ?? 0,
+      }),
+      ACCOUNTS,
+    );
+    expect(s.terminalState).not.toBe('DEFERRED');
+    expect(s.payouts[1]?.escrowedPaid).toBe(s.payouts[1]?.escrowedDue);
+  });
+
+  it('halts on a malformed capture rather than reading it as a rewritten row', () => {
+    // Equality alone would halt on any of these, but with the wrong story: an operator
+    // reading "the pinned version was rewritten between the freeze and the settlement"
+    // goes looking for a forgery that is really a driver that forgot to capture. The
+    // message has to name the malformed capture, so the message is what is asserted.
+    const f = fixture();
+    const haul = makeHaul(f);
+    goLive(f, haul, [ALICE, BRAM], minor(10_000));
+    for (const bad of [-1, 7.5, Number.NaN]) {
+      expect(() =>
+        settleVenture(
+          f.ledger,
+          f.book,
+          input(haul, minor(10_000), new Map(), { actedOnStateVersion: bad }),
+          ACCOUNTS,
+        ),
+      ).toThrow(/malformed acted_on_state_version/);
+    }
+    // And the rewritten-row case keeps its own message, so the two never blur.
+    expect(() =>
+      settleVenture(
+        f.ledger,
+        f.book,
+        input(haul, minor(10_000), new Map(), { actedOnStateVersion: STATE_VERSION + 1 }),
+        ACCOUNTS,
+      ),
+    ).toThrow(/rewritten between the freeze and the settlement/);
   });
 
   it('halts when a role term was edited after signing', () => {

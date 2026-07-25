@@ -67,11 +67,30 @@ import {
  * see it. `stakeEncumbranceId` exists so INV-4 has a live obligation to point at
  * and so the lock can actually be released at settlement — an orphan lock is an
  * invariant failure, and a lock nobody remembers the id of is an orphan waiting.
+ *
+ * ## Why the paid-so-far figures are rows and not locals
+ *
+ * §15.3's deferral makes one obligation settle over **more than one Reckoning**, so
+ * "how much has this role been paid" is a question about the obligation and not about
+ * the current pass. The first build answered it from a working map rebuilt per
+ * `settleBatch` call, so the second pass re-paid the elective part from zero: the
+ * payee was over-paid, the payer was double-charged, and a default was written against
+ * a payer that had by then paid more than it owed. That is A5' — "a fabricated default
+ * libels a real agent permanently and is worse than a crash" — produced by the very
+ * machinery §15.3 added to prevent it.
+ *
+ * These are **progress markers, not balances** (§15.1: `posting` stays authoritative
+ * for value, and there is no way to recover this figure from the posting table because
+ * each pass stamps its own `event_id`). Cumulative, monotonic, and never reset.
  */
 export interface VentureRoleRecord extends VentureRole {
   readonly label: RoleLabel;
   filledAtTick: number | null;
   stakeEncumbranceId: string | null;
+  /** Paid to this role out of the escrow, cumulative over every settlement pass. */
+  settledEscrowedMinor: Minor;
+  /** Paid to this role electively, cumulative over every settlement pass. */
+  settledElectiveMinor: Minor;
 }
 
 /**
@@ -99,6 +118,18 @@ export interface VentureRecord extends Venture {
   resolvedAtTick: number | null;
   /** How many Reckonings this has deferred to (§15.3's bounded cascade). */
   deferrals: number;
+  /**
+   * The tick the escrowed half executed, or null while it has not.
+   *
+   * A7's escrowed part auto-executes **once**, out of an account that is emptied and
+   * returned to the creator in the same phase. So the second pass of a deferral must
+   * not run phase 1 again, and the fact it must test is *"has the escrow been drawn"* —
+   * not `deferrals > 0`, which was the first build's proxy and is a different fact: a
+   * venture can carry a deferral count without ever having settled, and skipping phase
+   * 1 then strands the escrow forever **and** publishes a shortfall on the guaranteed
+   * half, which is the record denying A7's own guarantee.
+   */
+  escrowExecutedAtTick: number | null;
 }
 
 /** Venture states in which a role's fill occupies its hand — the partial index. */
@@ -208,6 +239,8 @@ export function createVenture(input: CreateVentureInput): WorldResult<VentureRec
       filledByPrincipal: null,
       filledAtTick: null,
       stakeEncumbranceId: null,
+      settledEscrowedMinor: minor(0),
+      settledElectiveMinor: minor(0),
     });
   }
 
@@ -230,6 +263,7 @@ export function createVenture(input: CreateVentureInput): WorldResult<VentureRec
     rulesVersion: input.rulesVersion,
     resolvedAtTick: null,
     deferrals: 0,
+    escrowExecutedAtTick: null,
   };
 
   venture.termsHash = termsHashOf(venture);
@@ -499,6 +533,24 @@ export function fillRole(
   role.filledByPrincipal = hand.principal;
   role.filledAtTick = tick;
   return accept(role);
+}
+
+/**
+ * Record what a settlement pass just paid a role.
+ *
+ * The **only** writer of the paid-so-far markers, so they can only grow: settlement
+ * across a deferral adds to them and nothing anywhere resets them. A role that was
+ * vacated keeps them, because what was paid was paid and the record is append-only.
+ */
+export function recordPaid(role: VentureRoleRecord, escrowed: Minor, elective: Minor): void {
+  if (escrowed < 0 || elective < 0) {
+    throw new VentureError(
+      `role ${role.index} (${role.label}) cannot un-pay ${escrowed} escrowed / ${elective} elective; ` +
+        'the paid-so-far markers are monotonic or a deferral can forget a payment',
+    );
+  }
+  role.settledEscrowedMinor = minor(role.settledEscrowedMinor + escrowed);
+  role.settledElectiveMinor = minor(role.settledElectiveMinor + elective);
 }
 
 /** Empty a role. The hand's physical state is the world module's business. */

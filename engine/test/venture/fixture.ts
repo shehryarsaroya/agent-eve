@@ -54,6 +54,7 @@ import {
   yourTakeAtP50,
   type PinnedValuation,
   type SettlementAccounts,
+  type SettlementPresence,
   type VentureRecord,
 } from '../../src/venture/index.js';
 
@@ -135,6 +136,18 @@ export const ACCOUNTS: SettlementAccounts = {
   escrowOf: (venture) => escrowAccount(venture.id, venture.creator),
   storesOf: (principal) => storesAccount(principal),
 };
+
+/**
+ * Where a settlement finds the hand rows it must release.
+ *
+ * A function of the fixture rather than a constant, because hand *state* lives in the
+ * world and account ids do not. A resolved venture that does not release presence
+ * leaves a `COMMITTED` hand filling no live role, which INV-9 halts on — so a test that
+ * asserts `checkInv9` after a settlement has to pass this.
+ */
+export function presenceOf(f: Fixture): SettlementPresence {
+  return { handOf: (id) => f.world.hands.get(id) };
+}
 
 /** Kept for call sites that name a single venture; the map is venture-agnostic. */
 export function accountsFor(_venture?: VentureId, _creator?: PrincipalId): SettlementAccounts {

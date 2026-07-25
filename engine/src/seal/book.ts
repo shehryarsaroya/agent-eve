@@ -63,10 +63,18 @@ import {
   MAX_PROSE_LENGTH,
   intentFaults,
   intentToCanonical,
+  intentWorldFaults,
   type SealIntent,
+  type SealWorldIndex,
 } from './intent.js';
 import { chargeForContradiction, type SealStandingCharge } from './standing.js';
-import { SealHalt, judge, sealViolation, type VerdictBasis } from './verdict.js';
+import {
+  SealHalt,
+  judge,
+  sealViolation,
+  type SealDisposition,
+  type VerdictBasis,
+} from './verdict.js';
 
 /**
  * INV-26 — bound every array. 64 seals per principal per Reckoning is far above
@@ -92,6 +100,21 @@ export interface SealCommit {
   readonly tick: number;
   /** The state version the agent acted on. Pinned, and compared at settlement. */
   readonly actedOnStateVersion: number;
+  /**
+   * The world's **current** state version, from the caller.
+   *
+   * Supply it. `actedOnStateVersion` is an agent's claim about what it saw, and a
+   * claim ahead of the world is a pin no deed can ever satisfy — which used to make
+   * every deed "unjudgeable" and halt the settlement tick (AGT-X9's second route).
+   * With this present the impossible pin is refused at the door instead, which is
+   * INV-19's submit-time half.
+   *
+   * Optional only because the seal book cannot invent it and several fixtures have
+   * no version to give. Where it is absent the resolver disregards an impossible pin
+   * rather than trusting it, so the lever is closed either way — but the door is the
+   * better place, because the agent gets a sentence it can act on.
+   */
+  readonly stateVersion?: number;
   readonly intent: SealIntent;
   /**
    * Prose for the broadcast. Stored, bounded, and **never** an input to the
@@ -137,6 +160,25 @@ export interface SealAuditRecord {
   readonly role: SealRoleRef | null;
   readonly intent: SealIntent;
   readonly prose: string;
+  /**
+   * Was this seal's `target` confirmed against the world at commit?
+   *
+   * `false` means the book had no {@link SealWorldIndex} attached, so it cannot tell
+   * "the agent did not do it" from "the agent spelled the target a way no deed will
+   * ever match". A verdict that rests on the *absence* of a deed is withheld in that
+   * case — see {@link SealBook.resolve}.
+   */
+  readonly targetWitnessed: boolean;
+  /**
+   * How the seal closed: `null` until judged, then one of three. `DEFERRED` means
+   * judged once and closed with **no mark** — see {@link ./verdict.ts}'s header.
+   *
+   * `verdict` below is the published half of the same fact and is `null` exactly
+   * when this is `DEFERRED`. Both are written in one place, from one judgement, so
+   * there is no second home to drift (scar #5); `verdict` exists separately because
+   * `core/types.ts`'s `Seal.verdict` is the contract shape and is two-valued.
+   */
+  readonly disposition: SealDisposition | null;
   readonly verdict: SealVerdict | null;
   readonly verdictAtTick: number | null;
   /** Audit-side only. Never disclosed: it is a second fact about the intention. */
@@ -147,6 +189,69 @@ export interface SealAuditRecord {
   readonly evaluations: number;
 }
 
+/**
+ * The exact sentence a completeness witness asserts. Spelled out so a caller
+ * cannot supply the witness by accident, or by spreading an unrelated object.
+ */
+export const ALL_DEEDS_CLAIM = 'THESE_ARE_ALL_THIS_RECKONINGS_DEEDS';
+
+/**
+ * **The completeness witness.** The caller's claim that `deeds` is every deed this
+ * Reckoning recorded for the principals it names.
+ *
+ * Without it, "the agent abstained" and "the caller's query missed this principal"
+ * are the same input to {@link SealBook.resolve}, and the second publishes a
+ * permanent public `CONTRADICTED` plus a standing charge against an innocent agent
+ * — with no invariant firing anywhere, because `checkInv20` sees a verdict and one
+ * evaluation and `checkInv21` sees an authorised `CONTRADICTED_SEAL` cause. SPEC
+ * §15.4 calls that shape the top engineering risk; this is it on the other permanent
+ * mark the design can make.
+ *
+ * Every field is **checked, not trusted**. A witness that disagrees with the deed
+ * array it accompanies is the engine's own bug and halts the tick — which is the
+ * legitimate use of a halt, unlike the one this module used to make.
+ *
+ * `principals` must include principals with **zero** deeds. That is the whole point:
+ * a principal listed with no deeds is a witnessed abstention and is marked; a
+ * principal absent from the list is an unanswered question and defers.
+ */
+export interface DeedSetWitness {
+  /** The Reckoning the set was gathered for. Must equal the one being resolved. */
+  readonly reckoningIndex: number;
+  /** The state version it was gathered at. Must equal settlement's own. */
+  readonly stateVersion: number;
+  /** How many deeds the gatherer counted. Must equal `deeds.length`. */
+  readonly deedCount: number;
+  /** Every principal this set is complete for, including those with no deeds. */
+  readonly principals: readonly PrincipalId[];
+  /** Always {@link ALL_DEEDS_CLAIM}. */
+  readonly claim: typeof ALL_DEEDS_CLAIM;
+}
+
+/**
+ * Build a witness from the deed array and the principals it covers.
+ *
+ * Deliberately derives `deedCount` from `deeds` rather than taking it: a helper that
+ * let a caller state a count *and* hand over a different array would be the same
+ * unwitnessed hole with more ceremony. A caller whose count comes from its query
+ * plan should construct the object literal itself, so that the two numbers have two
+ * independent sources and {@link SealBook.resolve} can compare them.
+ */
+export function allDeedsWitness(
+  reckoningIndex: number,
+  stateVersion: number,
+  deeds: readonly Deed[],
+  principals: Iterable<PrincipalId>,
+): DeedSetWitness {
+  return Object.freeze({
+    reckoningIndex,
+    stateVersion,
+    deedCount: deeds.length,
+    principals: Object.freeze([...new Set(principals)].sort(compareIds)),
+    claim: ALL_DEEDS_CLAIM,
+  });
+}
+
 export interface SealResolveInput {
   readonly reckoningIndex: number;
   /** Must be the settlement tick of `reckoningIndex`, or the call halts. */
@@ -155,6 +260,20 @@ export interface SealResolveInput {
   readonly stateVersion: number;
   /** Ground truth. Deeds outside the Reckoning window are ignored, not an error. */
   readonly deeds: readonly Deed[];
+  /**
+   * The completeness witness. **Supply it**: without it no seal can be marked from
+   * the absence of a deed, so a Reckoning resolved unwitnessed produces no reveals
+   * at all. See {@link DeedSetWitness} for why it is not simply assumed.
+   */
+  readonly deedSet?: DeedSetWitness;
+}
+
+/** A seal judged once and closed with no mark. Audit-side; nothing publishes it. */
+export interface SealDeferral {
+  readonly sealId: SealId;
+  readonly principal: PrincipalId;
+  /** Which input could not be accounted for. Never disclosed (PROP-D2). */
+  readonly basis: VerdictBasis;
 }
 
 export interface SealResolution {
@@ -167,6 +286,17 @@ export interface SealResolution {
     readonly verdict: SealVerdict;
   }[];
   readonly charges: readonly SealStandingCharge[];
+  /**
+   * Seals that closed with no mark, and why.
+   *
+   * **Nothing publishes these.** A `SEAL_RESOLVED` event carries a flag, and "this
+   * agent's seal could not be judged" is a second fact about a sealed intention,
+   * which PROP-D2 does not permit — so a deferred seal looks, to every reader,
+   * exactly like a seal whose Reckoning has not come. This list is for the batch: a
+   * healthy Reckoning defers **nothing**, so anything here is an operator's alarm
+   * that the resolver is being called without its witnesses.
+   */
+  readonly deferred: readonly SealDeferral[];
 }
 
 /** Zero-padded so ids sort in creation order under {@link compareIds}. */
@@ -194,6 +324,19 @@ export class SealBook {
    */
   private watermark = -1;
 
+  /**
+   * What the book asks the world before accepting a seal, or `null` when nothing was
+   * attached.
+   *
+   * **Attach it in production.** With it, the two agent-supplied fields a verdict is
+   * computed from — `target` and `measure` — are checked at the door, so a formatting
+   * slip costs one action and a hint instead of a permanent public mark. Without it
+   * the book runs in a degraded mode that refuses to mark any seal from the *absence*
+   * of a deed, because it cannot tell a target that names nothing from an act the
+   * agent chose not to perform.
+   */
+  constructor(private readonly world: SealWorldIndex | null = null) {}
+
   // ── Commit ─────────────────────────────────────────────────────────────────
 
   /**
@@ -213,6 +356,18 @@ export class SealBook {
         'INV-19',
         'a seal pins the state version you acted on; supply a non-negative integer version so the' +
           ' verdict can be computed against the state you actually saw.',
+      );
+    }
+    // INV-19's submit-time half. A pin ahead of the world names a state that never
+    // existed, and every deed that could honour the seal would be "measured against
+    // an older state" — which is AGT-X9's second route to stopping the settlement
+    // tick. Refused here, where it costs one action and returns a sentence.
+    if (input.stateVersion !== undefined && input.actedOnStateVersion > input.stateVersion) {
+      return reject(
+        'INV-19',
+        `you pinned state version ${input.actedOnStateVersion}, which is ahead of this world's` +
+          ` ${input.stateVersion}: nothing has happened at that version yet, so no deed of yours could` +
+          ' ever be measured against it. Pin the version your last observation carried.',
       );
     }
 
@@ -235,6 +390,20 @@ export class SealBook {
         `a seal is typed fields, never prose: ${faults.join('; ')}. Supply verb, target, measure` +
           ' and an integer outcome band; put anything you want said out loud in `prose`.',
       );
+    }
+    // The A5′ door. Scar #8: when the penalty is permanent and public, prefer
+    // precision over recall — so a target or a unit the world does not recognise is
+    // refused *now*, in private, recoverably, rather than becoming a mark at the
+    // Reckoning that the agent is never even told the reason for (PROP-D2).
+    if (this.world !== null) {
+      const worldFaults = intentWorldFaults(input.intent, this.world);
+      if (worldFaults.length > 0) {
+        return reject(
+          'A5',
+          `this seal could only ever be judged against you, so it is refused here instead:` +
+            ` ${worldFaults.join('; ')}`,
+        );
+      }
     }
     if (input.prose.length > MAX_PROSE_LENGTH) {
       return reject(
@@ -298,6 +467,11 @@ export class SealBook {
       role: input.role === null ? null : Object.freeze({ ...input.role }),
       intent: Object.freeze({ ...input.intent }),
       prose: input.prose,
+      // Recorded, not recomputed at settlement: whether the target was witnessed is a
+      // fact about the moment the seal was accepted, and a book that gained a world
+      // afterwards must not retroactively make an old seal markable.
+      targetWitnessed: this.world !== null,
+      disposition: null,
       verdict: null,
       verdictAtTick: null,
       basis: null,
@@ -407,9 +581,33 @@ export class SealBook {
   /**
    * Resolve one Reckoning's seals. **Exactly once, and only its own** (INV-20).
    *
-   * Halts rather than returning a rejection: the caller is the Reckoning batch,
-   * not an agent, and there is no turn to save. SPEC §15.2 — abort the tick and
-   * halt; never publish a broken tick.
+   * Halts rather than returning a rejection **for a caller bug**: the caller is the
+   * Reckoning batch, not an agent, and there is no turn to save. SPEC §15.2 — abort
+   * the tick and halt; never publish a broken tick.
+   *
+   * ## What halts, and what defers
+   *
+   * The line is the one AGT-X9 was found on the wrong side of: *a halt is for our
+   * bug, never for their input.*
+   *
+   * **Halts** — the wrong Reckoning, the wrong tick, a second resolution, a deed
+   * valued ahead of settlement, a completeness witness that disagrees with the deeds
+   * it accompanies, a deed for a principal the witness does not cover. Every one is
+   * an engine-side defect, reproducible from `(snapshot, action_log, seed)`, fixable,
+   * resumable.
+   *
+   * **Defers** — anything that rests on an agent-supplied field the engine cannot
+   * account for. See {@link ./verdict.ts}'s four bases. A deferred seal is judged
+   * once and closed with no mark; it is never re-judged, because re-judging a seal at
+   * a later court is scar #7 itself.
+   *
+   * ## Two things the caller must supply, and what happens if it does not
+   *
+   * `input.deedSet` witnesses that the deeds are complete; a {@link SealWorldIndex}
+   * on the constructor witnesses that targets name real entities. Absence-based marks
+   * need both, because *without them "the agent abstained" and "our query missed it"
+   * are the same input* (§15.4). A Reckoning resolved without them produces no
+   * reveals at all — which is loud in `SealResolution.deferred` and silent nowhere.
    */
   resolve(input: SealResolveInput): SealResolution {
     const { reckoningIndex: r, atTick, stateVersion } = input;
@@ -461,6 +659,61 @@ export class SealBook {
         );
       }
     }
+
+    // The witness is checked against the array it accompanies, never trusted. A
+    // caller that says "these are all 12 deeds" and hands over 9 has a query bug, and
+    // a query bug that goes on to mark three innocent agents is §15.4 exactly.
+    const witness = input.deedSet;
+    const witnessed = new Set<PrincipalId>();
+    if (witness !== undefined) {
+      if (witness.claim !== ALL_DEEDS_CLAIM) {
+        violations.push(
+          sealViolation('INV-20', atTick, `deed-set witness carries no claim of completeness`),
+        );
+      }
+      if (witness.reckoningIndex !== r) {
+        violations.push(
+          sealViolation(
+            'INV-20',
+            atTick,
+            `deed-set witness was gathered for Reckoning ${witness.reckoningIndex}, not ${String(r)}`,
+          ),
+        );
+      }
+      if (witness.stateVersion !== stateVersion) {
+        violations.push(
+          sealViolation(
+            'INV-19',
+            atTick,
+            `deed-set witness was gathered at state version ${witness.stateVersion}, not settlement's` +
+              ` ${stateVersion}; a set gathered at another version is not this Reckoning's set`,
+          ),
+        );
+      }
+      if (witness.deedCount !== input.deeds.length) {
+        violations.push(
+          sealViolation(
+            'INV-20',
+            atTick,
+            `deed-set witness counts ${witness.deedCount} deeds but ${input.deeds.length} were handed` +
+              ' over; a set that lost rows on the way here would mark whoever it dropped',
+          ),
+        );
+      }
+      for (const p of witness.principals) witnessed.add(p);
+      for (const deed of input.deeds) {
+        if (!witnessed.has(deed.principal)) {
+          violations.push(
+            sealViolation(
+              'INV-20',
+              atTick,
+              `deed ${deed.eventId} belongs to ${deed.principal}, whom the deed-set witness does not` +
+                ' cover; the witness and the deeds disagree about whose Reckoning this is',
+            ),
+          );
+        }
+      }
+    }
     if (violations.length > 0) throw new SealHalt(violations);
 
     const deedsByPrincipal = new Map<PrincipalId, Deed[]>();
@@ -473,6 +726,7 @@ export class SealBook {
     const ids = [...(this.byReckoning.get(r) ?? [])].sort(compareIds);
     const verdicts: SealResolution['verdicts'][number][] = [];
     const charges: SealStandingCharge[] = [];
+    const deferred: SealDeferral[] = [];
 
     for (const id of ids) {
       const rec = this.byId.get(id);
@@ -493,8 +747,10 @@ export class SealBook {
           principal: rec.principal,
           reckoningIndex: rec.reckoningIndex,
           sealedAtTick: rec.sealedAtTick,
-          actedOnStateVersion: rec.actedOnStateVersion,
+          actedOnStateVersion: pinnedVersion(rec, stateVersion),
           intent: rec.intent,
+          deedSetWitnessed: witnessed.has(rec.principal),
+          targetWitnessed: rec.targetWitnessed,
         },
         deedsByPrincipal.get(rec.principal) ?? [],
         atTick,
@@ -504,13 +760,18 @@ export class SealBook {
         id,
         Object.freeze({
           ...rec,
+          disposition: judgement.disposition,
           verdict: judgement.verdict,
-          verdictAtTick: atTick,
+          verdictAtTick: judgement.verdict === null ? null : atTick,
           basis: judgement.basis,
           citedDeedEventId: judgement.citedDeedEventId,
           evaluations: rec.evaluations + 1,
         }),
       );
+      if (judgement.verdict === null) {
+        deferred.push({ sealId: id, principal: rec.principal, basis: judgement.basis });
+        continue;
+      }
       verdicts.push({ sealId: id, principal: rec.principal, verdict: judgement.verdict });
       if (judgement.verdict === 'CONTRADICTED') {
         charges.push(chargeForContradiction(rec.principal, id, rec.reckoningIndex));
@@ -518,7 +779,7 @@ export class SealBook {
     }
 
     this.resolvedReckonings.add(r);
-    return Object.freeze({ reckoningIndex: r, atTick, verdicts, charges });
+    return Object.freeze({ reckoningIndex: r, atTick, verdicts, charges, deferred });
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -584,4 +845,27 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const existing = map.get(key);
   if (existing === undefined) map.set(key, [value]);
   else existing.push(value);
+}
+
+/**
+ * The state version a seal's rule 4 is enforced against.
+ *
+ * `actedOnStateVersion` is the agent's own claim about what it saw, countersigned by
+ * nobody. A claim **ahead of settlement's own version** names a state that did not
+ * exist even at the Reckoning, so scar #6's rule — *resolve from the same state the
+ * agents acted on* — has nothing to say about it, and applying it anyway filters out
+ * every honest deed the agent produced.
+ *
+ * Three answers were possible and two are wrong. **Halting** is AGT-X9: an agent
+ * chooses the number, so an agent chooses the outage. **Deferring** hands every agent
+ * a one-integer way to make its mandatory seal weightless, which deletes the reveal.
+ * So an impossible pin is **disregarded**: the seal is judged on its deeds like any
+ * other, and the agent gains nothing by lying about what it saw.
+ *
+ * The honest case is untouched, and the door in `commit` refuses the impossible one
+ * outright wherever the caller supplies `stateVersion` — this is the floor under
+ * that, not a substitute for it.
+ */
+function pinnedVersion(rec: SealAuditRecord, settlementStateVersion: number): number {
+  return rec.actedOnStateVersion <= settlementStateVersion ? rec.actedOnStateVersion : 0;
 }

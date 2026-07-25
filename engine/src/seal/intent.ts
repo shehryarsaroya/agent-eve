@@ -50,8 +50,10 @@ import { VERB_CLASS } from '../world/commons.js';
  * no fourth, because a fourth would be a float wearing a name.
  *
  * The measure is part of the intent and not an afterthought: comparing a band of
- * 500 minor units against a deed of 500 whole goods is scar #1 with money, and
- * {@link ../seal/verdict.ts} halts rather than judging across a mismatch.
+ * 500 minor units against a deed of 500 whole goods is scar #1 with money. The
+ * measure is **agent-supplied**, so the disagreement is a real input and not an
+ * impossibility — {@link SealWorldIndex.measureOfVerb} is how it is refused at the
+ * door, and {@link ../seal/verdict.ts} defers rather than marking when it was not.
  */
 export type SealMeasure = 'MINOR' | 'QTY' | 'BPS';
 
@@ -122,6 +124,77 @@ export interface PublicClaim {
   readonly reason: string;
 }
 
+// ── What the book must be able to ask the world ──────────────────────────────
+
+/**
+ * The two questions the seal book asks before it accepts a seal.
+ *
+ * Both exist for one reason: **the only two agent-supplied fields a verdict is
+ * computed from are `target` and `measure`, and a disagreement about either can
+ * only ever come out against the agent.** Sealing `sys-vega` and hauling to
+ * `SYS-VEGA` compares unequal under `===`; sealing `haul` in `BPS` compares a
+ * proportion against a count. Neither is a lie and neither is a defect in the
+ * engine — they are formatting slips, and an LLM makes them constantly.
+ *
+ * Scar #8 is the reason this is a door and not a judgement: *when the penalty is
+ * permanent and public, prefer precision over recall.* A rejection at `commit`
+ * costs the agent one action and returns a sentence it can act on (High Water
+ * pattern 4); a `CONTRADICTED` mark at settlement is permanent, public, and — since
+ * `basis` is never disclosed (PROP-D2) — undiagnosable from the agent's side.
+ *
+ * **Injected, never a table in this module.** The world's ids and the unit a deed
+ * of a given verb is recorded in are facts owned elsewhere; a second copy here is
+ * scar #1 waiting for a rename, and scar #5 for the id list. So the book *asks*,
+ * and a caller that cannot answer gets the degraded mode documented on
+ * {@link ../seal/book.ts}'s `resolve` rather than a wrong answer.
+ */
+export interface SealWorldIndex {
+  /**
+   * The world's own spelling of `raw`, or `null` when nothing in the world answers
+   * to it. Returning a *different* string is a hint, not a licence to rewrite: the
+   * book refuses the seal and quotes the canonical spelling back.
+   */
+  canonicalTarget(raw: string): string | null;
+  /**
+   * The unit a deed of `verb` is recorded in, or `null` when the caller cannot say.
+   * `null` is honest and is treated as "no opinion"; it never widens what a verdict
+   * may mark.
+   */
+  measureOfVerb(verb: string): SealMeasure | null;
+}
+
+/**
+ * Build an index from a flat list of ids and a verb→measure function.
+ *
+ * The fold is **only ever a hint, and it is withheld when it is ambiguous.** Two
+ * real ids that differ only by case fold to one key, and resolving that key would
+ * be a seal about one entity honoured by a deed about another — a fabricated
+ * HONOURED, which is the same class of defect as a fabricated mark (A5′). So an
+ * ambiguous key resolves to `null` and the agent is told the target names nothing,
+ * which is the recoverable answer.
+ */
+export function sealWorldIndex(
+  ids: Iterable<string>,
+  measureOfVerb: (verb: string) => SealMeasure | null,
+): SealWorldIndex {
+  const exact = new Set<string>();
+  /** Folded key -> the one id that owns it, or `null` once two ids claim it. */
+  const folded = new Map<string, string | null>();
+  for (const id of ids) {
+    exact.add(id);
+    const key = id.toLowerCase();
+    const held = folded.get(key);
+    folded.set(key, held === undefined || held === id ? id : null);
+  }
+  return Object.freeze({
+    canonicalTarget(raw: string): string | null {
+      if (exact.has(raw)) return raw;
+      return folded.get(raw.trim().toLowerCase()) ?? null;
+    },
+    measureOfVerb,
+  });
+}
+
 /** Is this a verb SPEC §12.2 declares? Own-property lookup, never a bare index. */
 export function isDeclaredVerb(verb: string): boolean {
   // A bare `VERB_CLASS[verb]` returns a *function* for `constructor`, `toString`
@@ -172,6 +245,52 @@ export function intentFaults(intent: SealIntent): string[] {
   }
 
   faults.push(...bandFaults(intent));
+  return faults;
+}
+
+/**
+ * Everything the **world** says is wrong with an intent, or empty.
+ *
+ * Separate from {@link intentFaults} on purpose. Shape faults are a property of the
+ * intent alone and are checkable by anyone; these two need the world, are reported
+ * under `A5` rather than `PROP-D1`, and exist for a different reason — not "this is
+ * malformed" but *"this is a seal we could only ever mark against you, so we will
+ * not accept it."* Keeping them apart is also what lets a caller with no world
+ * attached run the shape checks and know exactly which guarantee it is missing.
+ *
+ * Faults rather than a rewrite: trimming or case-folding the target would store
+ * something the agent did not write, which is the argument
+ * `test/seal/prose.prop.test.ts` already makes about truncating prose. The
+ * canonical spelling is *quoted back* instead.
+ */
+export function intentWorldFaults(intent: SealIntent, world: SealWorldIndex): string[] {
+  const faults: string[] = [];
+
+  // Only when the shape check has nothing to say about the target; otherwise an
+  // empty or over-long target would be reported twice in two vocabularies.
+  if (intent.target.length > 0 && intent.target.length <= MAX_TARGET_LENGTH) {
+    const canonical = world.canonicalTarget(intent.target);
+    if (canonical === null) {
+      faults.push(
+        `'${intent.target}' names nothing this world can locate, so a seal aimed at it could only` +
+          ' ever be contradicted. Name an existing system, hand, holding, principal or venture.',
+      );
+    } else if (canonical !== intent.target) {
+      faults.push(
+        `this world spells that target '${canonical}', not '${intent.target}'; a verdict compares the` +
+          ` two exactly, so seal '${canonical}'.`,
+      );
+    }
+  }
+
+  const declared = world.measureOfVerb(intent.verb);
+  if (declared !== null && declared !== intent.measure) {
+    faults.push(
+      `a '${intent.verb}' deed is recorded in ${declared}, so a band in ${intent.measure} is a` +
+        ` measurement this world never takes. Restate the band in ${declared}.`,
+    );
+  }
+
   return faults;
 }
 

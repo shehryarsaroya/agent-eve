@@ -30,14 +30,26 @@
  * fill time", and that is a value movement, so it goes through the `Ledger` in
  * {@link ./settlement.ts}'s companion {@link lockFillStake} — this module decides
  * *who*, and the ledger decides *what moves*. One value path (§15.1).
+ *
+ * ## What it *must* do: hand the world its half in the same phase
+ *
+ * Commitment lives in `venture_role.filled_by_hand_id` (INV-9) and the hand's *state*
+ * lives in the world, and `world/invariants.ts` treats a hand filling a live role while
+ * `IDLE` as a **halt**: "release it from the role or commit it". So a grant that wrote
+ * the role and left the hand alone made the ALLOCATE phase produce a world the ASSERT
+ * phase refuses — the engine halting on a state it created itself, which §15.2 counts
+ * as an outage in front of an audience.
+ *
+ * The transition is the world's to make, so this calls the world's own `commitHand`
+ * rather than assigning the field. Two writes in one phase, never one.
  */
 
 import type { HandId, PrincipalId, VentureId } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
-import type { HandRecord } from '../world/index.js';
+import { commitHand, type HandRecord } from '../world/index.js';
 import { VentureBook } from './book.js';
-import { fillRole, type VentureRoleRecord } from './venture.js';
+import { fillRole, vacateRole, type VentureRoleRecord } from './venture.js';
 
 /** One agent's bid for one slot, submitted during a tick. */
 export interface FillRequest {
@@ -205,6 +217,26 @@ export function allocateFills(
     }
 
     book.indexFill(request.venture, request.roleIndex, request.hand);
+
+    // The world's half of the same grant. `commitHand` is idempotent for a hand that is
+    // already COMMITTED or IN_TRANSIT (an escort travelling *for* the role is a legal
+    // fill) and refuses only a RECOVERING one.
+    const committed = commitHand(hand);
+    if (!committed.ok) {
+      // Unreachable while `fillRole` requires `isPresent`, which a RECOVERING hand is
+      // not. Kept, and kept as a *rollback*, because the alternative is the exact state
+      // INV-9 halts on: a role naming a hand the world will not commit. A refusal costs
+      // one agent one slot; the halt costs every agent the tick.
+      vacateRole(venture, request.roleIndex);
+      book.indexRelease(request.hand);
+      refused.push({
+        request,
+        reason: 'ROLE_RULE',
+        invariant: committed.invariant,
+        hint: committed.hint,
+      });
+      continue;
+    }
     granted.push({ request, role: result.value });
   }
 

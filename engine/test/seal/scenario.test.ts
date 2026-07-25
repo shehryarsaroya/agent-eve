@@ -30,17 +30,34 @@ import {
   SealHalt,
   agentSealDisclosure,
   applySealStandingCharges,
+  allDeedsWitness,
   checkInv20,
   checkInv21,
   sealCommitEvent,
   sealProjectionLeaks,
   sealVerdictEvent,
+  sealWorldIndex,
   type Deed,
 } from '../../src/seal/index.js';
 import { deed, eid, intent, pid, role, settlement, zeroStanding } from './helpers.js';
 
 const A = pid('P-VEX');
 const OBSERVER = pid('P-HALCYON');
+
+/**
+ * The world this scenario happens in, attached to every book below.
+ *
+ * A book with no world cannot tell a target that names nothing from an act the agent
+ * chose not to perform, and refuses to mark either — so a scenario about a *witnessed*
+ * contradiction has to say what the world contains. That is the point of the fix, not
+ * a concession to it: the two agent-supplied fields a verdict reads are checked at the
+ * door, and this is the door.
+ */
+const WORLD = sealWorldIndex(['SYS-VEGA'], (verb) => (verb === 'haul' ? 'QTY' : null));
+
+function newBook(): SealBook {
+  return new SealBook(WORLD);
+}
 
 /** Seal in Reckoning `r`, do a deed of `outcome`, resolve at its settlement. */
 function reckoning(
@@ -54,6 +71,7 @@ function reckoning(
   const accepted = book.commit({
     principal: A,
     tick: sealTick,
+    stateVersion: sealTick,
     actedOnStateVersion: sealTick,
     intent: intent(),
     prose: 'The convoy holds. I will deliver between forty and sixty.',
@@ -74,17 +92,22 @@ function reckoning(
             eventId: eid(`ev:${String(sealTick + 40)}:0`),
           }),
         ];
+  const all = [...deeds, ...extraDeeds];
   return book.resolve({
     reckoningIndex: r,
     atTick: settlement(r),
     stateVersion: settlement(r),
-    deeds: [...deeds, ...extraDeeds],
+    deeds: all,
+    // The completeness witness. `outcome === null` is an *abstention*, and the only
+    // thing that separates an abstention from a query that missed A's deeds is this
+    // claim — without it the seal would defer rather than being marked (§15.4).
+    deedSet: allDeedsWitness(r, settlement(r), all, [A]),
   });
 }
 
 describe('a seal honoured', () => {
   it('costs nothing, moves no standing, and publishes only the flag', () => {
-    const book = new SealBook();
+    const book = newBook();
     const resolution = reckoning(book, 0, 50);
 
     expect(resolution.verdicts.length).toBe(1);
@@ -122,7 +145,7 @@ describe('a seal honoured', () => {
 
 describe('a seal contradicted', () => {
   it('costs standing on the published schedule, with the record intact', () => {
-    const book = new SealBook();
+    const book = newBook();
     const resolution = reckoning(book, 0, 5);
 
     expect(resolution.verdicts[0]?.verdict).toBe('CONTRADICTED');
@@ -150,7 +173,7 @@ describe('a seal contradicted', () => {
   });
 
   it('a sealed intention that simply never happened is contradicted too', () => {
-    const book = new SealBook();
+    const book = newBook();
     const resolution = reckoning(book, 0, null);
     expect(resolution.verdicts[0]?.verdict).toBe('CONTRADICTED');
     const rec = book.auditRecord(resolution.verdicts[0]!.sealId)!;
@@ -161,7 +184,7 @@ describe('a seal contradicted', () => {
 
 describe('E2E-15 — a seal from a previous Reckoning is not re-evaluated', () => {
   it('one utterance is judged once, however many courts sit afterwards (scar #7)', () => {
-    const book = new SealBook();
+    const book = newBook();
     let standing: Standing = zeroStanding(A);
 
     // Reckoning 0: contradicted. One step.
@@ -209,7 +232,7 @@ describe('E2E-15 — a seal from a previous Reckoning is not re-evaluated', () =
   });
 
   it('re-resolving an old Reckoning at a later court halts rather than re-judging', () => {
-    const book = new SealBook();
+    const book = newBook();
     reckoning(book, 0, 5);
     // Both shapes of the mistake: the same court twice, and an old court reopened.
     expect(() =>
@@ -223,7 +246,7 @@ describe('E2E-15 — a seal from a previous Reckoning is not re-evaluated', () =
 
   it('a seal made in this Reckoning is untouched by the previous one’s resolution', () => {
     // The mirror case: resolving Reckoning 0 must not reach forward either.
-    const book = new SealBook();
+    const book = newBook();
     const held = [role('V-1')];
     const later = book.commit({
       principal: A,
@@ -256,7 +279,7 @@ describe('the three layers, in order', () => {
     // §11.1: "what it told everyone -> what it privately committed to -> what it
     // did." The public line is a lie; the seal is the pre-commitment; the deed is
     // ground truth. Nothing infers anything from the words.
-    const book = new SealBook();
+    const book = newBook();
     const held = [role('V-1')];
     const claimTick = 20;
     const sealTick = 40;

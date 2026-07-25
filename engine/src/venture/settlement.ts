@@ -24,7 +24,8 @@
  *    here and *only on an explicit election* — {@link SettleInput.elections} is an
  *    opt-in map and an absent entry pays nothing. That is PROP-V4's second clause
  *    made structural rather than conditional: there is no code path in this file
- *    that moves elective value without the payer naming the role and the amount.
+ *    that moves elective value without the payer naming the role and either an amount
+ *    or {@link IN_FULL}.
  * 3. **The role-holder's STORES.** Where payouts land.
  *
  * A role's claim is attributed across the two halves by the pinned terms:
@@ -33,6 +34,20 @@
  * escrowedDue = min(claim, terms.escrowed)     guaranteed, auto-executes
  * electiveDue = claim - escrowedDue            elective, never auto-executes
  * ```
+ *
+ * ## A deferral is one obligation, settled twice
+ *
+ * §15.3 lets an obligation unresolved at the round limit **defer to the next
+ * Reckoning**, so `settleBatch` may run over the same venture more than once. Every
+ * figure that decides an outcome — how much is still owed, whether the guaranteed half
+ * was delivered, whether the payer declined — is therefore a fact about the
+ * *obligation*, and lives on the venture's own rows
+ * (`VentureRoleRecord.settledElectiveMinor`, `VentureRecord.escrowExecutedAtTick`),
+ * never in the per-call {@link Working}. The first build kept them per call and the
+ * second pass re-paid the elective part from zero: the payee over-paid, the payer
+ * double-charged, the escrowed half published as undelivered, and a default written
+ * against a payer that had by then paid *more* than it owed. Four wrong answers, one
+ * missing lookup, and all four are A5'.
  *
  * An escrow **shortfall** — the account was raided between signing and settlement —
  * is a **recorded loss, never a default** (§10.2, PROP-L3). "An encumbrance is a
@@ -63,6 +78,7 @@
 import type {
   AccountId,
   EventId,
+  HandId,
   PrincipalId,
   VentureId,
   VentureState,
@@ -76,12 +92,15 @@ import {
   type Ledger,
 } from '../ledger/index.js';
 import { CASCADE_ROUND_LIMIT, assertBoundedRounds, type StandingCause } from '../invariants/index.js';
+import { releaseHand, type HandRecord } from '../world/index.js';
 import type { RoleLabel } from './kinds.js';
 import { VentureBook } from './book.js';
 import { SHARE_PRIORITY, WAGE_PRIORITY, seniorityOf } from './terms.js';
 import {
   filledIndices,
   isFullyFilled,
+  recordPaid,
+  roleAt,
   termsHashOf,
   type VentureRecord,
   type VentureRoleRecord,
@@ -133,6 +152,36 @@ const LOSS_OUTCOMES: readonly ResolutionKind[] = Object.freeze([
 /** Why an elective part went unpaid. Never inferred from prose (PROP-D1, scar #8). */
 export type DefaultCause = 'DECLINED' | 'UNFUNDED';
 
+/**
+ * "Pay the elective part, whatever it turns out to be."
+ *
+ * §7.1 gives a signing party exactly one figure — the server-computed
+ * `your_take_at_p50` it must echo — and on a `share` role that figure is a *forecast*:
+ * `electiveDue` is only known once the seeded residual is drawn at resolution. So a
+ * payer that elects the number it countersigned has elected the p50 and nothing else,
+ * and the first build turned a venture that **over-performed** into a `DECLINED`
+ * default against it for the difference.
+ *
+ * `DECLINED` means a deliberate refusal. A payer that paid every unit it was ever shown
+ * refused nothing, so that row is the record mis-characterising a kept promise — A5' —
+ * and the only escape was to over-elect an arbitrary large number that nothing
+ * documented. This is the election that states the *intention* instead of guessing the
+ * amount.
+ *
+ * It is still an election: absent from the map, nothing is paid (PROP-V4). What it is
+ * not is a licence — it pays the elective part and never a unit more, on a venture that
+ * over-performs or under-performs alike.
+ */
+export const IN_FULL = 'IN_FULL' as const;
+
+/**
+ * One entry in {@link SettleInput.elections}: an exact amount, or {@link IN_FULL}.
+ *
+ * A `Minor` is a number and `IN_FULL` is a string, so `typeof` discriminates them and
+ * there is no third shape to forget about.
+ */
+export type Election = Minor | typeof IN_FULL;
+
 export class SettlementHalt extends Error {}
 
 export interface SettlementAccounts {
@@ -163,13 +212,43 @@ export interface SettleInput {
    */
   readonly proceeds: Minor;
   /**
-   * The payer's elections, role index -> amount it chooses to pay of that role's
-   * elective part. **An absent entry pays nothing** (PROP-V4). Capped at the
-   * elective due, so an over-election cannot become a gift the payer did not intend.
+   * The payer's elections, role index -> what it chooses to pay of that role's elective
+   * part. **An absent entry pays nothing** (PROP-V4).
+   *
+   * An amount is capped at the elective due, so an over-election cannot become a gift
+   * the payer did not intend; {@link IN_FULL} pays the whole elective part without the
+   * payer having to predict it. See {@link Election}.
    */
-  readonly elections: ReadonlyMap<number, Minor>;
-  /** INV-19: what the parties acted on. A mismatch halts the tick. */
-  readonly stateVersion: number;
+  readonly elections: ReadonlyMap<number, Election>;
+  /**
+   * INV-19 — **`acted_on_state_version` as the frozen settlement set recorded it.**
+   *
+   * This is the one field on this input with no obvious source, so it is stated here
+   * rather than left to a driver to guess. §15.3's order is "freeze, settlement set
+   * computed and inputs hashed -> settle: assert the input hash equals what parties
+   * acted on", so the Reckoning driver reads `venture.actedOnStateVersion` **at the
+   * freeze**, keeps it inside the immutable settlement set alongside the inputs hash,
+   * and passes that captured copy here. {@link guardSettleable} then compares the
+   * captured copy against the live row.
+   *
+   * The two values a driver must **not** pass, and why:
+   *
+   *   - **the engine's live `stateVersion`.** It increments on every applied action, so
+   *     every venture that outlives its activation tick would halt the world. The
+   *     comparison is not "did the world move since signing" — of course it did, that is
+   *     what a formation window *is*, and the defence against value moving underneath a
+   *     settlement is the freeze plus INV-18, not this.
+   *   - **`venture.actedOnStateVersion` read at settlement time.** That is the same
+   *     object on both sides of `!==`, which is a check that cannot fail — §15.4's
+   *     second defence quietly reduced to a no-op.
+   *
+   * So what this catches is precisely: the row's pinned version is not the version the
+   * freeze hashed, i.e. `acted_on_state_version` was rewritten between the freeze and
+   * the settlement. That is the same class as scar #6 (the resolver reading a state the
+   * players never acted on) and it is the one thing a single settlement call can check
+   * about it without a second source of truth.
+   */
+  readonly actedOnStateVersion: number;
   /**
    * The event that destroyed value, on a loss outcome. INV-17: "a default with no
    * attributable cause is a top-severity halt, because it is the game accusing an
@@ -214,6 +293,14 @@ export interface ClaimBreakdown {
   readonly creatorPart: Minor;
 }
 
+/**
+ * What a role was actually paid, **cumulative over every settlement pass**.
+ *
+ * Cumulative and not per-pass, because these figures are the ones a receipt publishes
+ * and the ones the default decision reads, and both questions are about the whole
+ * obligation. A deferral's second receipt reporting `escrowedPaid: 0` for a guaranteed
+ * half that executed on the first pass is the record denying A7's own claim.
+ */
 export interface RolePayout extends RoleClaim {
   readonly escrowedPaid: Minor;
   readonly electivePaid: Minor;
@@ -269,10 +356,29 @@ export interface VentureSettlement {
   readonly payouts: readonly RolePayout[];
   /** Escrow returned to the creator: unearned funding plus its residual share. */
   readonly escrowReturned: Minor;
-  /** Σ escrowed shortfall. A recorded loss; standing does not move (INV-21). */
+  /**
+   * Σ escrowed shortfall **newly recorded by this pass**. A recorded loss; standing
+   * does not move (INV-21).
+   *
+   * Zero on a deferral's second pass, because the escrowed half executes exactly once
+   * and its shortfall was published then. `payouts[i].escrowedShortfall` still reports
+   * the outstanding guaranteed value, which is a standing fact rather than a new one —
+   * republishing the loss row would double-count destroyed value in the feed.
+   */
   readonly recordedLoss: Minor;
   readonly defaults: readonly VentureDefault[];
   readonly standing: readonly StandingDelta[];
+  /**
+   * The hands this venture stopped occupying, in id order (§7.3, INV-9).
+   *
+   * A resolved venture — settled, defaulted **or** deferred — releases presence, or a
+   * rival can construct a deferral loop to pin a competitor's hands (E2E-13). The hand
+   * *state* belongs to the world, so a driver that passes {@link SettlementPresence}
+   * has already had them released; one that keeps hand rows elsewhere must call
+   * `releaseHand` on exactly these, or INV-9 halts the next tick on a `COMMITTED` hand
+   * that fills no role.
+   */
+  readonly freedHands: readonly HandId[];
   /**
    * Elective value left unpaid that this engine will **not** attribute — the
    * deferral bound was reached. See {@link SettlementBatch.unattributed}.
@@ -478,16 +584,45 @@ export function assertClaimsExact(b: ClaimBreakdown): void {
 
 // ── The batch ────────────────────────────────────────────────────────────────
 
+/**
+ * Where a settlement finds the hand rows it must hand back to the world.
+ *
+ * A resolved venture releases presence (§7.3, E2E-13) and the hand's *state* belongs to
+ * the world module, so settlement takes a lookup rather than a second home for the
+ * field. Optional because a driver may keep hand rows somewhere this module cannot
+ * reach; that driver must release {@link VentureSettlement.freedHands} itself, because
+ * a `COMMITTED` hand filling no live role is an INV-9 halt on the next tick.
+ */
+export interface SettlementPresence {
+  handOf(hand: HandId): HandRecord | undefined;
+}
+
 interface Working {
   readonly input: SettleInput;
   readonly claims: ClaimBreakdown;
-  readonly escrowedPaid: Map<number, Minor>;
-  readonly electivePaid: Map<number, Minor>;
   readonly defaults: VentureDefault[];
   escrowReturned: Minor;
   recordedLoss: Minor;
   /** True once every elective part is either paid in full or defaulted. */
   resolvedElective: boolean;
+}
+
+/**
+ * What a role has been paid so far — read from the venture's own row, never from a
+ * per-call map.
+ *
+ * These two functions are why a deferral has a memory. §15.3's deferral settles **one**
+ * obligation across more than one Reckoning, so "how much is still owed" is a question
+ * about the obligation; answering it from a `Working` rebuilt per `settleBatch` call is
+ * what re-paid the elective part from zero on the second pass and then wrote a default
+ * against a payer that had over-paid.
+ */
+function paidEscrowed(w: Working, roleIndex: number): Minor {
+  return roleAt(w.input.venture, roleIndex).settledEscrowedMinor;
+}
+
+function paidElective(w: Working, roleIndex: number): Minor {
+  return roleAt(w.input.venture, roleIndex).settledElectiveMinor;
 }
 
 /**
@@ -505,20 +640,38 @@ export function settleBatch(
   book: VentureBook,
   inputs: readonly SettleInput[],
   accounts: SettlementAccounts,
+  presence?: SettlementPresence,
 ): SettlementBatch {
   // §15.3: `venture_id` order, and nothing else. Sorting here rather than trusting
   // the caller is what makes PROP-V7 a property of this function instead of a
   // convention its callers might break.
   const ordered = [...inputs].sort((a, b) => compareIds(a.venture.id, b.venture.id));
 
+  // One obligation, one settlement. A venture listed twice would produce two receipts
+  // for one promise and resolve the row twice, and the guards cannot catch it
+  // individually because both copies see a LIVE venture. Named here rather than left to
+  // surface downstream: before the escrowed half was marked as executed, the duplicate
+  // presented as an *unfunded signature* and halted with a message about a raid that had
+  // not happened, which is an operator sent after a forgery that is really a caller bug.
+  const seen = new Set<VentureId>();
+  for (const input of ordered) {
+    if (seen.has(input.venture.id)) {
+      throw new SettlementHalt(
+        `${input.venture.id} appears twice in one settlement batch; one obligation settles once per ` +
+          'Reckoning, and two receipts for one promise is a record that cannot be read',
+      );
+    }
+    seen.add(input.venture.id);
+  }
+
   const working: Working[] = [];
   for (const input of ordered) {
     guardSettleable(ledger, input, accounts);
+    const claims = computeClaims(input.venture, input.proceeds);
+    guardProgressFitsClaims(input.venture, claims);
     working.push({
       input,
-      claims: computeClaims(input.venture, input.proceeds),
-      escrowedPaid: new Map<number, Minor>(),
-      electivePaid: new Map<number, Minor>(),
+      claims,
       defaults: [],
       escrowReturned: minor(0),
       recordedLoss: minor(0),
@@ -528,10 +681,12 @@ export function settleBatch(
 
   // ── Phase 1: escrowed parts execute. Automatic, always (PROP-V4). ──────────
   for (const w of working) {
-    // A deferral has already had its escrowed parts paid and its escrow returned.
-    // Re-running them would pay twice out of an account that is now empty, which
-    // would present as an escrow shortfall — a recorded loss the engine invented.
-    if (w.input.venture.deferrals > 0) continue;
+    // Exactly once per venture. A pass that has already drawn the escrow emptied it and
+    // returned the remainder to the creator, so re-running phase 1 would read as an
+    // escrow shortfall — a recorded loss the engine invented — or halt outright on a
+    // delivered venture. The marker is set by the execution itself; see
+    // `VentureRecord.escrowExecutedAtTick` for why `deferrals > 0` is not the same fact.
+    if (w.input.venture.escrowExecutedAtTick !== null) continue;
     payEscrowedParts(ledger, w, accounts);
   }
 
@@ -566,7 +721,7 @@ export function settleBatch(
   const settlements: VentureSettlement[] = [];
   let unattributedTotal = 0;
   for (const w of working) {
-    const outcome = finaliseVenture(ledger, book, w, truncated);
+    const outcome = finaliseVenture(ledger, book, w, truncated, presence);
     unattributedTotal += outcome.unattributed;
     settlements.push(outcome);
   }
@@ -591,8 +746,9 @@ export function settleVenture(
   book: VentureBook,
   input: SettleInput,
   accounts: SettlementAccounts,
+  presence?: SettlementPresence,
 ): VentureSettlement {
-  const batch = settleBatch(ledger, book, [input], accounts);
+  const batch = settleBatch(ledger, book, [input], accounts, presence);
   const only = batch.settlements[0];
   if (only === undefined) throw new SettlementHalt(`${input.venture.id} produced no settlement`);
   return only;
@@ -622,20 +778,30 @@ function guardSettleable(ledger: Ledger, input: SettleInput, accounts: Settlemen
     );
   }
 
-  // INV-19 / §15.4: "acted_on_state_version compared at settlement, halting the
-  // tick on mismatch". Settling against a world the parties never saw is how a
-  // healthy-looking system fabricates a broken promise.
+  // INV-19 / §15.4: "acted_on_state_version compared at settlement, halting the tick on
+  // mismatch". The live row against the copy the freeze hashed — see
+  // `SettleInput.actedOnStateVersion` for which value the driver must pass and for the
+  // two it must not.
   if (v.actedOnStateVersion === null) {
     throw new SettlementHalt(
       `INV-19: ${v.id} never pinned acted_on_state_version, so there is nothing to compare at ` +
         'settlement and no way to know the parties saw this world',
     );
   }
-  if (v.actedOnStateVersion !== input.stateVersion) {
+  // A malformed capture would otherwise compare unequal and read as a rewritten row,
+  // sending an operator after a forgery that is really a driver that forgot to capture.
+  if (!Number.isSafeInteger(input.actedOnStateVersion) || input.actedOnStateVersion < 0) {
     throw new SettlementHalt(
-      `INV-19: ${v.id} was agreed against state version ${v.actedOnStateVersion} but settlement is ` +
-        `running at ${input.stateVersion}; halting rather than settling against a world the parties ` +
-        'never saw',
+      `INV-19: ${v.id} is being settled against a malformed acted_on_state_version ` +
+        `${String(input.actedOnStateVersion)}; the Reckoning driver must pass the value it captured for ` +
+        'this venture at the freeze',
+    );
+  }
+  if (v.actedOnStateVersion !== input.actedOnStateVersion) {
+    throw new SettlementHalt(
+      `INV-19: ${v.id} was frozen against acted_on_state_version ${input.actedOnStateVersion} but its ` +
+        `row now says ${v.actedOnStateVersion}; the pinned version was rewritten between the freeze and ` +
+        'the settlement, so halt rather than settle against a world the parties never saw',
     );
   }
 
@@ -672,8 +838,17 @@ function guardSettleable(ledger: Ledger, input: SettleInput, accounts: Settlemen
     );
   }
 
-  for (const amount of input.elections.values()) {
-    if (amount < 0) throw new SettlementHalt(`${v.id} elects to pay a negative amount ${amount}`);
+  // An election is `IN_FULL` or a whole non-negative amount, and nothing else. Checked
+  // rather than trusted because the map crosses a process boundary before it gets here,
+  // and a NaN would silently elect nothing while reading as an election on the record.
+  for (const [roleIndex, election] of input.elections) {
+    if (election === IN_FULL) continue;
+    if (!Number.isSafeInteger(election) || election < 0) {
+      throw new SettlementHalt(
+        `${v.id} elects ${String(election)} on role ${roleIndex}; an election is IN_FULL or a whole ` +
+          'non-negative amount of minor units',
+      );
+    }
   }
 
   // Every account a payment could reach must exist before any of them moves. A
@@ -684,6 +859,36 @@ function guardSettleable(ledger: Ledger, input: SettleInput, accounts: Settlemen
   for (const role of v.roles) {
     if (role.filledByPrincipal === null) continue;
     requireAccount(ledger, accounts.storesOf(role.filledByPrincipal), v.id, `role holder ${role.filledByPrincipal}`);
+  }
+}
+
+/**
+ * What was already paid must fit inside what this pass says is due.
+ *
+ * The guard on the contract a deferral rests on: §15.3's second pass **divides the same
+ * pot**, so `SettleInput.proceeds` is pinned by the caller and re-quoting it is a caller
+ * bug. Left unchecked it publishes a role as paid more than it is owed — `electivePaid >
+ * electiveDue` — which reads on the receipt as an overpayment nobody agreed to and turns
+ * `electiveShortfall` negative, silently deleting a default that was real. Halting names
+ * the actual mistake instead (§15.2: never publish a broken tick).
+ */
+function guardProgressFitsClaims(venture: VentureRecord, claims: ClaimBreakdown): void {
+  for (const r of claims.roles) {
+    const role = roleAt(venture, r.roleIndex);
+    if (role.settledEscrowedMinor > r.escrowedDue) {
+      throw new SettlementHalt(
+        `${venture.id} role ${r.roleIndex} has already been paid ${role.settledEscrowedMinor} from escrow ` +
+          `but this settlement makes it due ${r.escrowedDue}; a deferral divides the same pot, so the ` +
+          'pinned proceeds were re-quoted between Reckonings',
+      );
+    }
+    if (role.settledElectiveMinor > r.electiveDue) {
+      throw new SettlementHalt(
+        `${venture.id} role ${r.roleIndex} has already been paid ${role.settledElectiveMinor} electively ` +
+          `but this settlement makes it due ${r.electiveDue}; a deferral divides the same pot, so the ` +
+          'pinned proceeds were re-quoted between Reckonings',
+      );
+    }
   }
 }
 
@@ -741,7 +946,9 @@ function payEscrowedParts(ledger: Ledger, w: Working, accounts: SettlementAccoun
 
   for (const p of result.payouts) {
     const roleIndex = Number.parseInt(p.key.slice(p.key.lastIndexOf(':') + 1), 10);
-    w.escrowedPaid.set(roleIndex, addMinor(w.escrowedPaid.get(roleIndex) ?? minor(0), p.paid));
+    // Written to the row in the same statement the money moves in, so a later phase
+    // that throws cannot leave the ledger and the progress marker disagreeing.
+    recordPaid(roleAt(v, roleIndex), p.paid, minor(0));
     if (p.paid <= 0) continue;
     ledger.transferCurrency({
       eventId: `${w.input.eventId}#escrowed:${roleIndex}` as EventId,
@@ -768,6 +975,11 @@ function payEscrowedParts(ledger: Ledger, w: Working, accounts: SettlementAccoun
     });
     w.escrowReturned = remaining;
   }
+
+  // The escrow is now empty and its remainder is home, so the guaranteed half has
+  // executed and must never execute again. Set last, after every movement, so a throw
+  // above leaves the venture with phase 1 still to do rather than silently skipped.
+  v.escrowExecutedAtTick = w.input.tick;
 }
 
 // ── Phase 2 ──────────────────────────────────────────────────────────────────
@@ -778,7 +990,7 @@ function outstandingElective(w: Working): Minor {
   for (const r of w.claims.roles) {
     if (r.holder === null) continue;
     const want = electionFor(w, r);
-    const paid = w.electivePaid.get(r.roleIndex) ?? 0;
+    const paid = paidElective(w, r.roleIndex);
     total += Math.max(0, want - paid);
   }
   return minor(total);
@@ -791,9 +1003,15 @@ function outstandingElective(w: Working): Minor {
  * elective part never auto-executes, because there is no default that pays and no
  * branch that infers an intention to pay. §7.5: left free, agents set the elective
  * part to zero — so the floor makes it exist, and this makes it optional.
+ *
+ * {@link IN_FULL} is the whole elective due, which is a *different* statement from an
+ * amount that happens to equal it: on a share role the due is not knowable until the
+ * residual is drawn, so an amount is always a bet and `IN_FULL` never is.
  */
 function electionFor(w: Working, r: RoleClaim): Minor {
-  const elected = w.input.elections.get(r.roleIndex) ?? minor(0);
+  const elected = w.input.elections.get(r.roleIndex);
+  if (elected === undefined) return minor(0);
+  if (elected === IN_FULL) return r.electiveDue;
   return minor(Math.min(elected, r.electiveDue));
 }
 
@@ -821,14 +1039,18 @@ function payElectiveParts(ledger: Ledger, w: Working, accounts: SettlementAccoun
       // to — and nothing was *promised*, so no standing accrues and no default can be
       // recorded (§6.4, scar #9: ~17 duplicate pacts once took reputation 50 -> 100).
       // Booked as fully paid, not as an election, so it can never read as a breach.
-      if ((w.electivePaid.get(r.roleIndex) ?? 0) < r.electiveDue) {
-        w.electivePaid.set(r.roleIndex, r.electiveDue);
+      const booked = paidElective(w, r.roleIndex);
+      if (booked < r.electiveDue) {
+        recordPaid(roleAt(v, r.roleIndex), minor(0), subMinor(r.electiveDue, booked));
       }
       continue;
     }
 
     const want = electionFor(w, r);
-    const already = w.electivePaid.get(r.roleIndex) ?? minor(0);
+    // Paid so far reads the venture's own row, so a deferral's second pass starts from
+    // what the first pass actually paid instead of from zero. That single lookup is the
+    // difference between a payer paying its elective part once and paying it twice.
+    const already = paidElective(w, r.roleIndex);
     const remainingWant = want - already;
     if (remainingWant <= 0) continue;
 
@@ -837,13 +1059,15 @@ function payElectiveParts(ledger: Ledger, w: Working, accounts: SettlementAccoun
     if (pay <= 0) continue;
 
     ledger.transferCurrency({
+      // `already` is cumulative across passes as well as rounds, so the id is unique
+      // per movement even when a deferral's second pass reuses the settlement event id.
       eventId: `${w.input.eventId}#elective:${r.roleIndex}:${String(already)}` as EventId,
       tick: w.input.tick,
       from: payerStores,
       to,
       amount: pay,
     });
-    w.electivePaid.set(r.roleIndex, addMinor(already, pay));
+    recordPaid(roleAt(v, r.roleIndex), minor(0), pay);
     moved += pay;
   }
   return minor(moved);
@@ -860,11 +1084,18 @@ function finaliseVenture(
   book: VentureBook,
   w: Working,
   truncated: boolean,
+  presence: SettlementPresence | undefined,
 ): VentureSettlement {
   const v = w.input.venture;
   const payouts: RolePayout[] = w.claims.roles.map((r) => {
-    const escrowedPaid = w.escrowedPaid.get(r.roleIndex) ?? minor(0);
-    const electivePaid = w.electivePaid.get(r.roleIndex) ?? minor(0);
+    // The venture's own rows, so a deferral's second receipt reports the whole
+    // obligation rather than one pass of it. The first build derived these from a map
+    // that phase 1 had (correctly) not filled in, and published `escrowedPaid: 0`
+    // against a guaranteed half that had executed in full — a PUBLIC receipt denying
+    // A7's central claim, with `escrowedPaid + escrowedShortfall === escrowedDue` still
+    // holding at `0 + due` so INV-6 had nothing to complain about.
+    const escrowedPaid = paidEscrowed(w, r.roleIndex);
+    const electivePaid = paidElective(w, r.roleIndex);
     return {
       ...r,
       escrowedPaid,
@@ -959,7 +1190,18 @@ function finaliseVenture(
   // the obligation carries over, but the lock does not, or a deferral loop becomes a
   // way to freeze a competitor's capital.
   releaseStakes(ledger, v, w.input.tick);
-  book.resolve(v.id, terminalState, w.input.tick);
+  const freedHands = book.resolve(v.id, terminalState, w.input.tick);
+  // Presence goes back with the lock, and in the same phase. The world owns the hand's
+  // state, so this asks it to make the transition rather than writing the field: a hand
+  // still `COMMITTED` while filling no live role is an INV-9 halt on the next tick, and
+  // the engine halting on a state it produced itself is an outage in front of an
+  // audience (§15.2).
+  if (presence !== undefined) {
+    for (const id of freedHands) {
+      const hand = presence.handOf(id);
+      if (hand !== undefined) releaseHand(hand);
+    }
+  }
 
   return {
     venture: v.id,
@@ -972,6 +1214,7 @@ function finaliseVenture(
     standing,
     unattributed: minor(unattributed),
     terminalState,
+    freedHands,
     line: settlementLine(v, w.input.outcome, terminalState, payouts),
   };
 }

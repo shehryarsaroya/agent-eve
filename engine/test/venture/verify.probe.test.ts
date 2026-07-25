@@ -57,7 +57,7 @@ function inp(
     outcome: 'FULFILLED',
     proceeds,
     elections,
-    stateVersion: STATE_VERSION,
+    actedOnStateVersion: STATE_VERSION,
     causeEventId: null,
     ...overrides,
   };
@@ -108,120 +108,138 @@ function truncatingChain(): { f: Fixture; inputs: SettleInput[]; first: VentureR
 
 describe('the deferral re-settlement', () => {
   /**
-   * `settleBatch` builds a fresh `Working` per call, so `electivePaid` starts at zero
-   * on the deferral's second pass and `payElectiveParts` pays the election again from
-   * the top. `settlement.ts:534` has the mirror guard for phase 1 (`deferrals > 0`
-   * skips the escrowed parts, so the escrow is not double-drawn); phase 2 has none,
-   * and nothing on `VentureRecord` records what a role has already been paid.
+   * **Fixed.** `settleBatch` built a fresh `Working` per call, so `electivePaid` started
+   * at zero on the deferral's second pass and `payElectiveParts` paid the election again
+   * from the top. Phase 1 had the mirror guard (`deferrals > 0` skipped the escrowed
+   * parts, so the escrow was not double-drawn); phase 2 had none, and nothing on
+   * `VentureRecord` recorded what a role had already been paid.
+   *
+   * The paid-so-far figures now live on the venture's own rows
+   * (`VentureRoleRecord.settledElectiveMinor`, `VentureRecord.escrowExecutedAtTick`) and
+   * both phases read them. Kept as a regression: `test/venture/deferral.test.ts` covers
+   * the same ground from the record's side.
    */
-  it.fails(
-    'DEFECT(venture): a deferred venture re-pays the elective part, overpaying the payee',
-    () => {
-      const { f, inputs, first } = truncatingChain();
-      const payee = first.roles[0]?.filledByPrincipal;
-      if (payee === undefined || payee === null) throw new Error('fixture');
-      const before = f.ledger.balance(storesAccount(payee));
+  it('does not re-pay the elective part, so the payee is not overpaid', () => {
+    const { f, inputs, first } = truncatingChain();
+    const payee = first.roles[0]?.filledByPrincipal;
+    if (payee === undefined || payee === null) throw new Error('fixture');
+    const before = f.ledger.balance(storesAccount(payee));
 
-      settleBatch(f.ledger, f.book, inputs, ACCOUNTS);
-      const head = inputs[0];
-      if (head === undefined) throw new Error('fixture');
-      const second = settleBatch(f.ledger, f.book, [head], ACCOUNTS);
+    settleBatch(f.ledger, f.book, inputs, ACCOUNTS);
+    const head = inputs[0];
+    if (head === undefined) throw new Error('fixture');
+    const second = settleBatch(f.ledger, f.book, [head], ACCOUNTS);
 
-      const claim = second.settlements[0]?.payouts[0]?.claim ?? 0;
-      const received = f.ledger.balance(storesAccount(payee)) - before;
-      // A role is owed its claim once. Across the deferral it is paid 5200 for 5100.
-      expect(received).toBeLessThanOrEqual(claim);
-    },
-  );
+    const claim = second.settlements[0]?.payouts[0]?.claim ?? 0;
+    const received = f.ledger.balance(storesAccount(payee)) - before;
+    // A role is owed its claim once. Before the fix it was paid 5200 for 5100.
+    expect(received).toBeLessThanOrEqual(claim);
+  });
 
   /**
-   * The same bug seen from the record's side, which is the A5' half: the payer has in
-   * aggregate paid *more* than the elective part it owed, and the settlement still
-   * writes a default against it and drops its standing.
+   * **Fixed.** The same bug seen from the record's side, which is the A5' half: the payer
+   * had in aggregate paid *more* than the elective part it owed, and the settlement still
+   * wrote a default against it and dropped its standing.
    */
-  it.fails(
-    'DEFECT(venture): a payer that has over-paid across a deferral is still recorded in default',
-    () => {
-      const { f, inputs, first } = truncatingChain();
-      const payer = first.creator;
-      const payee = first.roles[0]?.filledByPrincipal;
-      if (payee === undefined || payee === null) throw new Error('fixture');
+  it('records no default against a payer that has paid the elective part across a deferral', () => {
+    const { f, inputs, first } = truncatingChain();
+    const payer = first.creator;
+    const payee = first.roles[0]?.filledByPrincipal;
+    if (payee === undefined || payee === null) throw new Error('fixture');
 
-      settleBatch(f.ledger, f.book, inputs, ACCOUNTS);
-      const head = inputs[0];
-      if (head === undefined) throw new Error('fixture');
-      const second = settleBatch(f.ledger, f.book, [head], ACCOUNTS);
-      const s = second.settlements[0];
-      if (s === undefined) throw new Error('no settlement');
+    settleBatch(f.ledger, f.book, inputs, ACCOUNTS);
+    const head = inputs[0];
+    if (head === undefined) throw new Error('fixture');
+    const second = settleBatch(f.ledger, f.book, [head], ACCOUNTS);
+    const s = second.settlements[0];
+    if (s === undefined) throw new Error('no settlement');
 
-      const paidInTotal = 5_100; // 300 in pass 1 + 4800 in pass 2, against 5000 due.
-      const due = s.payouts[0]?.electiveDue ?? 0;
-      expect(paidInTotal).toBeGreaterThanOrEqual(due);
-      // A5': the record must never accuse an agent that kept its promise.
-      expect(s.defaults.filter((d) => d.payer === payer && d.payee === payee)).toEqual([]);
-    },
-  );
+    const paidInTotal = s.payouts[0]?.electivePaid ?? 0;
+    const due = s.payouts[0]?.electiveDue ?? 0;
+    expect(paidInTotal).toBeGreaterThanOrEqual(due);
+    // A5': the record must never accuse an agent that kept its promise.
+    expect(s.defaults.filter((d) => d.payer === payer && d.payee === payee)).toEqual([]);
+  });
 
   /**
-   * Phase 1 is skipped for a deferral so the escrow is not drawn twice — correct — but
-   * `escrowedPaid` is then reported as zero, so the PUBLIC `venture.settled` payload
-   * says the guaranteed half was never delivered. A7's whole claim is that the
-   * escrowed part always executes; the receipt for the second pass denies it.
+   * **Fixed.** Phase 1 is skipped for a deferral so the escrow is not drawn twice —
+   * correct — but `escrowedPaid` was then reported as zero, so the PUBLIC
+   * `venture.settled` payload said the guaranteed half was never delivered. A7's whole
+   * claim is that the escrowed part always executes; the receipt for the second pass
+   * denied it, and `checkSettlementExact` passed because `0 + due === due`.
    */
-  it.fails(
-    'DEFECT(venture): a re-settled deferral publishes escrowedPaid 0 for a half that was paid',
-    () => {
-      const { f, inputs } = truncatingChain();
-      settleBatch(f.ledger, f.book, inputs, ACCOUNTS);
-      const head = inputs[0];
-      if (head === undefined) throw new Error('fixture');
-      const s = settleBatch(f.ledger, f.book, [head], ACCOUNTS).settlements[0];
-      const carrier = s?.payouts[0];
-      expect(carrier?.escrowedDue).toBeGreaterThan(0);
-      // The escrowed half was paid in full on the first pass; the second pass must not
-      // report it as outstanding.
-      expect(carrier?.escrowedShortfall).toBe(0);
-    },
-  );
+  it('publishes escrowedPaid in full on a re-settled deferral', () => {
+    const { f, inputs } = truncatingChain();
+    settleBatch(f.ledger, f.book, inputs, ACCOUNTS);
+    const head = inputs[0];
+    if (head === undefined) throw new Error('fixture');
+    const s = settleBatch(f.ledger, f.book, [head], ACCOUNTS).settlements[0];
+    const carrier = s?.payouts[0];
+    expect(carrier?.escrowedDue).toBeGreaterThan(0);
+    // The escrowed half was paid in full on the first pass; the second pass must not
+    // report it as outstanding.
+    expect(carrier?.escrowedShortfall).toBe(0);
+  });
 });
 
 describe('the elections map against a residual claim', () => {
   /**
-   * `electionFor` caps an election at `electiveDue`, and `electiveDue` on a share role
-   * is only known once the seeded residual is drawn at resolution. A payer that elects
-   * exactly the server-computed `your_take_at_p50` it countersigned — the only number
-   * §7.1 gives it — is recorded as having **DECLINED** the difference when the venture
-   * over-performs. There is no "pay in full" election, so honouring a share in full
-   * requires over-electing a number the payer has to guess.
+   * **Resolved, by adding vocabulary rather than by changing this branch.**
+   *
+   * The defect this probe was filed against was real: `electiveDue` on a share role is
+   * only known once the seeded residual is drawn, so a payer electing the one number
+   * §7.1 gives it — the countersigned `your_take_at_p50` — was recorded as having
+   * DECLINED the difference whenever the venture over-performed, and the only escape was
+   * to over-elect a figure nothing documented.
+   *
+   * The fix added {@link IN_FULL}: the election that states the intention instead of
+   * guessing the amount. It deliberately did **not** change what a *named amount* means,
+   * and that is the right call — `roleDeclined = electiveDue - want` is the engine's own
+   * definition of a decline, and a payer that names 3240 against a due of 3780 has, by
+   * that definition, declined 540. The defect was never in this branch; it was that the
+   * API had no way to say "all of it".
+   *
+   * So this stays as a **witness** on the named-amount path, not an `it.fails` pin. It
+   * was left as `it.fails` after the fix landed, which meant the suite recorded a live
+   * A5' defect that `test/venture/election.test.ts`'s
+   * "is what an agent electing only its countersigned p50 would otherwise be punished
+   * for" simultaneously asserted was correct behaviour — two tests in one module
+   * encoding opposite rules for one input, which is scar #1 inside the suite meant to
+   * catch it.
    */
-  it.fails(
-    'DEFECT(venture): electing the countersigned p50 is recorded as DECLINED when the venture over-performs',
-    () => {
-      const f = fixture();
-      const haul = makeHaul(f, { carrier: wage(800, 400), escort: share(bps(3_000), 0, 900) });
-      // HAUL p50 = 12_000, p90 = 13_800.
-      goLive(f, haul, [ALICE, BRAM], minor(13_800));
-      const quoted = computeClaims(haul, minor(12_000));
-      const elections = new Map<number, Minor>();
-      for (const r of quoted.roles) if (r.electiveDue > 0) elections.set(r.roleIndex, r.electiveDue);
+  it('records a named amount below the drawn due as DECLINED, which is why IN_FULL exists', () => {
+    const f = fixture();
+    const haul = makeHaul(f, { carrier: wage(800, 400), escort: share(bps(3_000), 0, 900) });
+    // HAUL p50 = 12_000, p90 = 13_800.
+    goLive(f, haul, [ALICE, BRAM], minor(13_800));
+    const quoted = computeClaims(haul, minor(12_000));
+    const elections = new Map<number, Minor>();
+    for (const r of quoted.roles) if (r.electiveDue > 0) elections.set(r.roleIndex, r.electiveDue);
 
-      const s = settleVenture(f.ledger, f.book, inp(haul, minor(13_800), elections), ACCOUNTS);
-      // DECLINED means a choice. The payer paid every unit it was ever quoted.
-      expect(s.defaults.map((d) => d.cause)).not.toContain('DECLINED');
-    },
-  );
+    const s = settleVenture(f.ledger, f.book, inp(haul, minor(13_800), elections), ACCOUNTS);
+    // The named amount is a bet, and the venture beat it. `IN_FULL` is the election
+    // that never has to bet — see test/venture/election.test.ts for the pair.
+    expect(s.defaults.map((d) => d.cause)).toContain('DECLINED');
+    const escort = s.payouts[1];
+    if (escort === undefined) throw new Error('no escort payout');
+    expect(escort.electiveDue).toBeGreaterThan(quoted.roles[1]?.electiveDue ?? 0);
+  });
 });
 
 describe('allocation and the world', () => {
   /**
-   * `allocateFills` writes the role and the index but never moves the hand out of
-   * `IDLE`, and `checkInv9` requires a hand filling a live role to be `COMMITTED` or
-   * `IN_TRANSIT`. So the ASSERT phase halts on a state the ALLOCATE phase just
-   * created. The builder's `allocation.test.ts` never runs `checkInv9`, and
-   * `concurrency.test.ts` only ever reaches it through the fixture's `fill()` helper,
-   * which does call `commitHand` — the seam is exactly where the suite does not look.
+   * **Fixed.** `allocateFills` wrote the role and the index but never moved the hand out
+   * of `IDLE`, and `checkInv9` requires a hand filling a live role to be `COMMITTED` or
+   * `IN_TRANSIT`. So the ASSERT phase halted on a state the ALLOCATE phase had just
+   * created. The builder's `allocation.test.ts` never ran `checkInv9`, and
+   * `concurrency.test.ts` only ever reached it through the fixture's `fill()` helper,
+   * which does call `commitHand` — the seam was exactly where the suite did not look.
+   *
+   * `allocateFills` now calls the world's own `commitHand` in the same phase as the
+   * grant, and rolls the fill back if the world refuses. `test/venture/presence.test.ts`
+   * carries the rest of the seam, including the settlement side.
    */
-  it.fails('DEFECT(venture): a granted fill leaves its hand IDLE, which INV-9 halts on', () => {
+  it('commits the hand it grants a role to, so INV-9 has nothing to halt on', () => {
     const f = fixture();
     const haul = makeHaul(f, { id: vid('v-a') });
     const hand = [...f.world.hands.values()].find((h) => h.principal === BRAM);
@@ -335,11 +353,15 @@ describe('witnesses — behaviour the builder s suite never constructs', () => {
   });
 
   /**
-   * `settleBatch` does not de-duplicate its input, so the same venture twice in one
-   * batch draws its escrow twice and the second draw presents as an unfunded signature
-   * — a `SettlementHalt`, i.e. the world halting on a caller mistake rather than
-   * refusing it. `settlementSet` returns each venture once, so this is a landmine
-   * rather than a live bug.
+   * `settleBatch` refuses a duplicate rather than settling one obligation twice.
+   *
+   * As filed, it did not de-duplicate at all: the same venture twice drew its escrow
+   * twice and the second draw presented as an *unfunded signature*, so the world halted
+   * with a message about a raid that had not happened. The halt is right — two receipts
+   * for one promise is a record nobody can read, and §15.2 says abort rather than publish
+   * — but the reason has to be the real one, so `settleBatch` now names the duplicate.
+   * (`settlementSet` returns each venture once, so this remains a landmine rather than a
+   * live bug.)
    */
   it('the same venture twice in one batch halts instead of being refused', () => {
     const f = fixture();
@@ -350,15 +372,19 @@ describe('witnesses — behaviour the builder s suite never constructs', () => {
   });
 });
 
-describe('PROP-V3 tests the claim, not the payment', () => {
+describe('PROP-V3 tests the payment, not only the claim', () => {
   /**
-   * A witness against the builder's own claim that PROP-V3 checks "what a real
-   * settlement *pays* at p50, through a real Ledger". `takeAtPercentile` and
-   * `settleVenture` both route through the same `computeClaims(venture, proceeds,
-   * allIndices)` call, so `preview.test.ts`'s 300-case property compares one function's
-   * output with itself and never reads a balance. Mutating the escrowed transfer amount
-   * in `payEscrowedParts` leaves that property green; only four balance-comparing spot
-   * tests elsewhere catch it. This test states the missing assertion.
+   * **Fixed.** As filed, `takeAtPercentile` and `settleVenture` both routed through the
+   * same `computeClaims(venture, proceeds, allIndices)` call, so `preview.test.ts`'s
+   * 300-case property compared one function's output with itself and never read a
+   * balance: mutating the escrowed transfer amount in `payEscrowedParts` to `p.paid - 1`
+   * left the whole property green, and only four balance-comparing spot tests elsewhere
+   * caught it.
+   *
+   * The property now elects `IN_FULL` and asserts the delta in the holder's STORES
+   * against the quoted p50, so the same mutation fails it on the first of 300 cases.
+   * This spot test — the one the verifier wrote — is kept as the smallest statement of
+   * the same claim.
    */
   it('a settlement pays the quoted claim into the holder s STORES', () => {
     const f = fixture();

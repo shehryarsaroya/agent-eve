@@ -71,7 +71,7 @@ function settleAll(f: Fixture, venture: VentureRecord, proceeds: Minor): Venture
     outcome: 'FULFILLED',
     proceeds,
     elections,
-    stateVersion: STATE_VERSION,
+    actedOnStateVersion: STATE_VERSION,
     causeEventId: null,
   };
   return settleVenture(f.ledger, f.book, inputs, ACCOUNTS);
@@ -475,7 +475,7 @@ describe('INV-4 — the fill stake has a live obligation and is released', () =>
         outcome: 'FULFILLED',
         proceeds: minor(12_000),
         elections: new Map<number, Minor>(),
-        stateVersion: STATE_VERSION,
+        actedOnStateVersion: STATE_VERSION,
         causeEventId: null,
       },
       ACCOUNTS,

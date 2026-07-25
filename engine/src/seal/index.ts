@@ -27,15 +27,34 @@
  *   - **Standing itself is not stored here.** `resolve` returns charges; whoever
  *     owns the standing table applies them and runs `checkInv21` with the causes it
  *     authorised.
+ *   - **A halt is for our bug, never for their input.** Nothing an agent can send
+ *     reaches a `SealHalt`. A `target`, `measure` or `actedOnStateVersion` the engine
+ *     cannot account for makes the seal `DEFERRED` — judged once, closed with no mark,
+ *     never re-judged (§15.3's unresolved-obligation rule; scar #7 for the "never
+ *     again"). That replaced a halt path an agent could trigger every Reckoning with
+ *     one free seal (AGT-X9).
+ *   - **A mark that rests on an ABSENCE needs a witness.** Two of them, and the tick
+ *     loop owns both: `SealResolveInput.deedSet` (a {@link DeedSetWitness} — "these
+ *     are all of this Reckoning's deeds, for these principals") and a
+ *     {@link SealWorldIndex} on `new SealBook(world)` (targets name real entities, in
+ *     the world's own spelling). Without them "the agent abstained" and "our query
+ *     missed this principal" are the same input, and the second libels a real agent
+ *     permanently (§15.4). Unwitnessed, the seal defers — so a Reckoning resolved
+ *     without them produces **no reveals at all**, which is what
+ *     `SealResolution.deferred` is for.
  */
 
 export {
+  ALL_DEEDS_CLAIM,
   MAX_SEALS_PER_PRINCIPAL_PER_RECKONING,
   SealBook,
+  allDeedsWitness,
   roleKey,
+  type DeedSetWitness,
   type SealAccepted,
   type SealAuditRecord,
   type SealCommit,
+  type SealDeferral,
   type SealResolution,
   type SealResolveInput,
   type SealRoleRef,
@@ -68,11 +87,14 @@ export {
   intentFaults,
   intentFromCanonical,
   intentToCanonical,
+  intentWorldFaults,
   isDeclaredVerb,
+  sealWorldIndex,
   type PublicClaim,
   type SealIntent,
   type SealIntentKey,
   type SealMeasure,
+  type SealWorldIndex,
 } from './intent.js';
 
 export { assertSealInvariants, checkInv20 } from './invariants.js';
@@ -105,6 +127,7 @@ export {
   judge,
   sealViolation,
   type Judgement,
+  type SealDisposition,
   type VerdictBasis,
   type VerdictInputs,
 } from './verdict.js';

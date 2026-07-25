@@ -16,12 +16,38 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { TICKS_PER_RECKONING } from '../../src/core/time.js';
-import { SealBook, SealHalt, intentFaults, type Deed } from '../../src/seal/index.js';
+// `SealHalt` is deliberately **not** imported here any more: after the fix there is
+// no agent-reachable path to one, so a probe file whose whole subject is agent input
+// has nothing to assert about it. The two remaining halt paths are engine faults and
+// are held by `verdict.test.ts` and `witness.regression.test.ts`.
+import {
+  SealBook,
+  allDeedsWitness,
+  intentFaults,
+  intentWorldFaults,
+  sealWorldIndex,
+  type Deed,
+  type SealWorldIndex,
+} from '../../src/seal/index.js';
 import { deed, intent, pid, role, settlement } from './helpers.js';
 
 const A = pid('P-A');
 const B = pid('P-B');
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
+
+/**
+ * The world the fixture's seals are aimed at.
+ *
+ * `measureOfVerb` is deliberately silent here so the *resolver's* behaviour stays
+ * reachable: with an opinion the wrong unit never gets past `commit`, which is the
+ * primary fix and is asserted separately below. The probes want the floor under it.
+ */
+const WORLD = sealWorldIndex(['SYS-VEGA'], () => null);
+
+/** A world with an opinion about units, which is what a wired tick loop supplies. */
+const OPINIONATED: SealWorldIndex = sealWorldIndex(['SYS-VEGA'], (verb) =>
+  verb === 'haul' ? 'QTY' : null,
+);
 
 /** Seal, then resolve, with everything the book needs supplied by the caller. */
 function run(
@@ -30,9 +56,11 @@ function run(
     target?: string;
     version?: number;
     deeds?: readonly Deed[];
+    /** `null` is the degraded, no-world-attached book on purpose. */
+    world?: SealWorldIndex | null;
   } = {},
 ): ReturnType<SealBook['resolve']> {
-  const book = new SealBook();
+  const book = new SealBook(over.world === undefined ? WORLD : over.world);
   const held = [role('V-1')];
   const accepted = book.commit({
     principal: A,
@@ -44,63 +72,83 @@ function run(
     rolesHeld: held,
   });
   if (!accepted.ok) throw new Error(`commit refused: ${accepted.hint}`);
+  const deeds = over.deeds ?? [deed({ principal: A, outcome: 50 })];
   return book.resolve({
     reckoningIndex: 0,
     atTick: settlement(0),
     stateVersion: 400,
-    deeds: over.deeds ?? [deed({ principal: A, outcome: 50 })],
+    deeds,
+    deedSet: allDeedsWitness(0, 400, deeds, [A]),
   });
 }
 
 describe('PROBE — an agent can halt the Reckoning with a free seal', () => {
   /**
-   * FINDING. `verdict.ts`'s header states the precondition its A5' halt depends
-   * on: "a deed's `measure` is assigned by the engine from the verb that produced
-   * it and is never agent-supplied. If it ever became agent-supplied, this halt
-   * would be a denial-of-settlement lever." The deed side holds. **The seal side
-   * does not**: `intent.measure` is agent-supplied at `commit`, and nothing
-   * anywhere maps a verb to the unit it produces, so `intentFaults` accepts
-   * `haul` in `BPS` with zero faults.
+   * FINDING, and now **FIXED** — the assertions below were flipped from recording
+   * the defect to holding the fix, which is what an `it.fails` is for.
    *
-   * An agent therefore files one free seal (a role it holds costs no action),
-   * performs exactly the act it sealed, and `judge` throws `SealHalt` — because a
-   * matching verb+target with a different `measure` is "unjudgeable" and
+   * `verdict.ts`'s header stated the precondition its A5' halt depended on: "a
+   * deed's `measure` is assigned by the engine from the verb that produced it and
+   * is never agent-supplied. If it ever became agent-supplied, this halt would be a
+   * denial-of-settlement lever." The deed side held. **The seal side did not**:
+   * `intent.measure` is agent-supplied at `commit`, and nothing anywhere mapped a
+   * verb to the unit it produces, so `intentFaults` accepted `haul` in `BPS` with
+   * zero faults.
+   *
+   * An agent therefore filed one free seal (a role it holds costs no action),
+   * performed exactly the act it sealed, and `judge` threw `SealHalt` — because a
+   * matching verb+target with a different `measure` was "unjudgeable" and
    * unjudgeable outranks contradiction. SPEC §15.2 aborts the tick and pauses the
-   * world. One free action, repeatable every Reckoning, stops the game, and it
-   * takes every other principal's seals down with it.
+   * world. One free action, repeatable every Reckoning, stopped the game, and it
+   * took every other principal's seals down with it.
    *
-   * `actedOnStateVersion` is the same lever by a second route: `commit` validates
-   * only "non-negative safe integer", so a seal pinned at `MAX_SAFE_INTEGER` makes
+   * `actedOnStateVersion` was the same lever by a second route: `commit` validated
+   * only "non-negative safe integer", so a seal pinned at `MAX_SAFE_INTEGER` made
    * every deed that could ever honour it unjudgeable.
+   *
+   * The fix is in two layers, and both are asserted here. The door: the book *asks*
+   * the world what unit a verb is recorded in and refuses a seal that disagrees
+   * (`intentWorldFaults`), and refuses a pin ahead of the world's current version.
+   * The floor: where the caller cannot answer, the seal is `DEFERRED` — no mark, no
+   * charge, no outage — because *a halt is for our bug, never for their input*.
    */
-  it('nothing ties the seal’s `measure` to the verb, so a mismatch is committable', () => {
+  it('the shape check still does not own the unit — the world does, and it refuses', () => {
+    // Unchanged and correct: `intentFaults` is a property of the intent alone, and a
+    // verb→measure table inside this module would be a second home for a fact the
+    // engine's deed writer owns (scar #1). What changed is that the fact is now
+    // *asked for*, and a caller that can answer closes the lever at the door.
     expect(intentFaults(intent({ verb: 'haul', measure: 'MINOR' }))).toEqual([]);
     expect(intentFaults(intent({ verb: 'haul', measure: 'BPS' }))).toEqual([]);
+
+    expect(intentWorldFaults(intent({ verb: 'haul', measure: 'QTY' }), OPINIONATED)).toEqual([]);
+    expect(intentWorldFaults(intent({ verb: 'haul', measure: 'BPS' }), OPINIONATED).length).toBe(1);
   });
 
-  it.fails(
-    'DEFECT(seal/verdict): an agent that seals its own verb in the wrong unit and then performs it halts the world',
-    () => {
-      // The correct behaviour is either a rejection at `commit` (there is no verb ->
-      // measure table to reject against) or a verdict. Not a halt an agent chose.
-      expect(() => run({ measure: 'MINOR', deeds: [deed({ principal: A, outcome: 50 })] })).not.toThrow();
-    },
-  );
+  it('an agent that seals its own verb in the wrong unit and then performs it cannot halt the world', () => {
+    expect(() =>
+      run({ measure: 'MINOR', deeds: [deed({ principal: A, outcome: 50 })] }),
+    ).not.toThrow();
+    const r = run({ measure: 'MINOR', deeds: [deed({ principal: A, outcome: 50 })] });
+    expect(r.deferred.map((d) => d.basis)).toEqual(['MEASURE_DISAGREEMENT']);
+    expect(r.charges).toEqual([]);
+  });
 
-  it.fails(
-    'DEFECT(seal/book): a seal pinned at an unreachable actedOnStateVersion halts the world',
-    () => {
-      expect(() =>
-        run({ version: Number.MAX_SAFE_INTEGER, deeds: [deed({ principal: A, outcome: 50 })] }),
-      ).not.toThrow();
-    },
-  );
+  it('a seal pinned at an unreachable actedOnStateVersion cannot halt the world', () => {
+    expect(() =>
+      run({ version: Number.MAX_SAFE_INTEGER, deeds: [deed({ principal: A, outcome: 50 })] }),
+    ).not.toThrow();
+    // And it buys nothing: an impossible pin is disregarded, not honoured as a filter.
+    expect(
+      run({ version: Number.MAX_SAFE_INTEGER, deeds: [deed({ principal: A, outcome: 50 })] })
+        .verdicts[0]?.verdict,
+    ).toBe('HONOURED');
+  });
 
-  it('and the blast radius is the whole Reckoning, not the one bad seal', () => {
-    // A witness rather than a `it.fails`: this is `resolve`'s documented
-    // fail-closed batch semantics (DET-10). It is recorded because it is what
-    // turns one agent's malformed seal into every agent's outage.
-    const book = new SealBook();
+  it('and the blast radius is now the one bad seal, not the whole Reckoning', () => {
+    // The witness that recorded the defect, inverted. `resolve` still fails closed as
+    // a batch (DET-10) — for *engine* faults. One agent's unaccountable field is no
+    // longer one of them, so it no longer becomes every agent's outage.
+    const book = new SealBook(WORLD);
     for (const [p, measure] of [
       [A, 'MINOR'],
       [B, 'QTY'],
@@ -117,41 +165,83 @@ describe('PROBE — an agent can halt the Reckoning with a free seal', () => {
       });
       expect(ok.ok).toBe(true);
     }
-    expect(() =>
-      book.resolve({
-        reckoningIndex: 0,
-        atTick: settlement(0),
-        stateVersion: 400,
-        deeds: [deed({ principal: A, outcome: 50 }), deed({ principal: B, outcome: 50 })],
-      }),
-    ).toThrow(SealHalt);
-    // Nothing was published, including B's perfectly good seal.
-    for (const rec of book.auditRecords()) expect(rec.verdict).toBeNull();
+    const deeds = [deed({ principal: A, outcome: 50 }), deed({ principal: B, outcome: 50 })];
+    const r = book.resolve({
+      reckoningIndex: 0,
+      atTick: settlement(0),
+      stateVersion: 400,
+      deeds,
+      deedSet: allDeedsWitness(0, 400, deeds, [A, B]),
+    });
+    // B's perfectly good seal is published; A's is closed with no mark.
+    expect(r.verdicts.map((v) => v.principal)).toEqual([B]);
+    expect(r.deferred.map((d) => d.principal)).toEqual([A]);
   });
 });
 
 describe('PROBE — a target the engine never spells the same way is a silent permanent mark', () => {
   /**
-   * FINDING, the asymmetry. A *unit* disagreement between agent and engine halts
-   * the tick to avoid libelling an honest agent — `verdict.ts` argues that at
-   * length. A *target-string* disagreement is the same class of engine-vs-agent
-   * mismatch, and the one an LLM is far likelier to make, and it publishes the
-   * permanent mark instead: `namesTheSameAct` compares with `===` and `target` is
-   * validated for length only. Nothing checks the target names a real system, hand,
-   * holding, principal or venture, and nothing normalises case, so `sys-vega`
-   * versus `SYS-VEGA` is a guaranteed CONTRADICTED plus a standing charge for an
-   * agent that did exactly what it meant.
+   * FINDING, and now **FIXED**. The asymmetry was the point: a *unit* disagreement
+   * halted the tick to avoid libelling an honest agent — `verdict.ts` argued that at
+   * length — while a *target-string* disagreement, the same class of engine-vs-agent
+   * mismatch and the one an LLM is far likelier to make, published the permanent mark
+   * instead. `namesTheSameAct` compares with `===` and `target` was validated for
+   * length only, so `sys-vega` versus `SYS-VEGA` was a guaranteed CONTRADICTED plus a
+   * standing charge for an agent that did exactly what it meant.
+   *
+   * Both halves now answer to one rule: **the mismatch fails at sealing, where it is
+   * recoverable and private, never at judgement, where it is permanent and public**
+   * (scar #8). `===` at judgement is left exactly as it was — it is *correct* once the
+   * seal is known to carry the world's own spelling, and loosening it would be a
+   * fabricated HONOURED on any pair of ids that differ only by case.
    */
-  it('a case difference in `target` is CONTRADICTED, not a halt and not a rejection', () => {
+  it('a case difference in `target` is refused at commit, not marked at settlement', () => {
+    // The shape check still has nothing to say — the world does.
     expect(intentFaults(intent({ target: 'sys-vega' }))).toEqual([]);
-    const r = run({ target: 'sys-vega', deeds: [deed({ principal: A, outcome: 50 })] });
-    expect(r.verdicts[0]?.verdict).toBe('CONTRADICTED');
-    expect(r.charges.length).toBe(1);
+
+    const book = new SealBook(WORLD);
+    const held = [role('V-1')];
+    const refused = book.commit({
+      principal: A,
+      tick: 100,
+      actedOnStateVersion: 100,
+      intent: intent({ target: 'sys-vega' }),
+      prose: '',
+      role: held[0] ?? null,
+      rolesHeld: held,
+    });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.hint).toContain('SYS-VEGA');
+    expect(book.size).toBe(0);
   });
 
   it('so is a target that names nothing in the world at all', () => {
-    const r = run({ target: 'no-such-place', deeds: [deed({ principal: A, outcome: 50 })] });
-    expect(r.verdicts[0]?.verdict).toBe('CONTRADICTED');
+    const book = new SealBook(WORLD);
+    const held = [role('V-1')];
+    const refused = book.commit({
+      principal: A,
+      tick: 100,
+      actedOnStateVersion: 100,
+      intent: intent({ target: 'no-such-place' }),
+      prose: '',
+      role: held[0] ?? null,
+      rolesHeld: held,
+    });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.hint).toContain('names nothing');
+  });
+
+  it('and a book with no world attached refuses to make the mark at all', () => {
+    // The floor under the door: a book that cannot witness a target cannot tell a
+    // misspelling from an abstention, so it publishes neither.
+    const r = run({
+      target: 'sys-vega',
+      world: null,
+      deeds: [deed({ principal: A, outcome: 50 })],
+    });
+    expect(r.verdicts).toEqual([]);
+    expect(r.charges).toEqual([]);
+    expect(r.deferred.map((d) => d.basis)).toEqual(['UNWITNESSED_TARGET']);
   });
 });
 
@@ -167,43 +257,43 @@ describe('PROBE — a caller that under-supplies deeds fabricates contradictions
    * mode the module does not defend against — while spending a whole halt path on
    * the unit mismatch, which is strictly less likely.
    */
-  it.fails(
-    'DEFECT(seal/book): resolve accepts an incomplete deed set and marks the missing principal',
-    () => {
-      const book = new SealBook();
-      for (const p of [A, B]) {
-        const held = [role(`V-${p}`)];
-        const ok = book.commit({
-          principal: p,
-          tick: 100,
-          actedOnStateVersion: 100,
-          intent: intent(),
-          prose: '',
-          role: held[0] ?? null,
-          rolesHeld: held,
-        });
-        expect(ok.ok).toBe(true);
-      }
-      // Both principals hauled 50. Only A's deed reached the resolver. The correct
-      // behaviour is to refuse to judge from an unwitnessed deed set; today B is
-      // marked CONTRADICTED and charged.
-      const r = book.resolve({
-        reckoningIndex: 0,
-        atTick: settlement(0),
-        stateVersion: 400,
-        deeds: [deed({ principal: A, outcome: 50 })],
+  it('resolve refuses to mark a principal an incomplete deed set never covered', () => {
+    const book = new SealBook(WORLD);
+    for (const p of [A, B]) {
+      const held = [role(`V-${p}`)];
+      const ok = book.commit({
+        principal: p,
+        tick: 100,
+        actedOnStateVersion: 100,
+        intent: intent(),
+        prose: '',
+        role: held[0] ?? null,
+        rolesHeld: held,
       });
-      expect(r.charges).toEqual([]);
-    },
-  );
+      expect(ok.ok).toBe(true);
+    }
+    // Both principals hauled 50. Only A's deed reached the resolver, and the witness
+    // says which principals it is complete for. B is no longer marked or charged.
+    const deeds = [deed({ principal: A, outcome: 50 })];
+    const r = book.resolve({
+      reckoningIndex: 0,
+      atTick: settlement(0),
+      stateVersion: 400,
+      deeds,
+      deedSet: allDeedsWitness(0, 400, deeds, [A]),
+    });
+    expect(r.charges).toEqual([]);
+    expect(r.deferred.map((d) => [d.principal, d.basis])).toEqual([[B, 'UNWITNESSED_DEED_SET']]);
+  });
 
   it('a deed that lands one tick past the Reckoning boundary is a contradiction', () => {
     // A witness, not a defect: §11.1 scopes a seal to `(prev_reckoning,
     // this_reckoning]` on purpose. Recorded because it is the contradiction an
     // honest agent cannot avoid — a haul dispatched inside the window that arrives
     // just outside it reads exactly like a broken promise, and `agent.md` does not
-    // warn about it.
-    const book = new SealBook();
+    // warn about it. The deed set is witnessed, so the mark is the engine's real
+    // answer and not an artifact of a query that missed something.
+    const book = new SealBook(WORLD);
     const held = [role('V-1')];
     const ok = book.commit({
       principal: A,
@@ -215,18 +305,20 @@ describe('PROBE — a caller that under-supplies deeds fabricates contradictions
       rolesHeld: held,
     });
     expect(ok.ok).toBe(true);
+    const deeds = [
+      deed({
+        principal: A,
+        tick: TICKS_PER_RECKONING + 1,
+        outcome: 50,
+        valuedAtStateVersion: TICKS_PER_RECKONING + 1,
+      }),
+    ];
     const r = book.resolve({
       reckoningIndex: 0,
       atTick: settlement(0),
       stateVersion: TICKS_PER_RECKONING + 10,
-      deeds: [
-        deed({
-          principal: A,
-          tick: TICKS_PER_RECKONING + 1,
-          outcome: 50,
-          valuedAtStateVersion: TICKS_PER_RECKONING + 1,
-        }),
-      ],
+      deeds,
+      deedSet: allDeedsWitness(0, TICKS_PER_RECKONING + 10, deeds, [A]),
     });
     expect(r.verdicts[0]?.verdict).toBe('CONTRADICTED');
   });

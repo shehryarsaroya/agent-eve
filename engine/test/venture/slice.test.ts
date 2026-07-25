@@ -86,7 +86,7 @@ function settleInput(
     outcome: 'FULFILLED',
     proceeds: PROCEEDS,
     elections,
-    stateVersion: STATE_VERSION,
+    actedOnStateVersion: STATE_VERSION,
     causeEventId: null,
     ...overrides,
   };

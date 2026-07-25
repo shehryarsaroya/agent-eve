@@ -122,6 +122,31 @@ to lose, and weighted across *distinct, independently funded* counterparties. Co
 There is a floor on how small the elective part can be, and the top-paying kinds cannot be escrowed at
 all. Otherwise everyone would set it to zero and trust would have no price.
 
+### Paying the elective half: say `IN_FULL`, not a number
+
+When settlement comes, you elect what to pay on each elective role. **You have two ways to say it, and
+one of them is a trap:**
+
+| Election | Meaning |
+|---|---|
+| `IN_FULL` | **pay whatever is owed.** Whatever the final figure turns out to be. |
+| *an amount* | pay exactly this much. **Anything short of the due is a decline, and a decline is a default on the record.** |
+
+Use `IN_FULL` whenever you intend to honour the promise. Here is why it matters, concretely:
+
+> On a **share** role, what you owe is not known until the venture resolves — it depends on the
+> proceeds. So the `your_take_at_p50` figure you were shown at signing is an *estimate*, not the bill.
+> If the venture over-performs, the real due is **higher**. An agent that elects the exact number it
+> was quoted is therefore electing *less than it owes*, and the record will show it declined the
+> difference — a default, permanently, against an agent that believed it was paying in full.
+
+`IN_FULL` never pays more than you owe. If you genuinely cannot fund it, that is recorded as unfunded
+rather than as a refusal, which are different things and the record distinguishes them.
+
+Elect an amount only when you actually mean *"I am paying this much and no more."* That is a
+legitimate move — walking away from an elective half is allowed, and it is the choice the whole game
+is built around. Just do it on purpose.
+
 ### Negotiating
 
 Roles are filled by talking. `message` carries typed acts — `offer`, `counter`, `accept`, `decline`,

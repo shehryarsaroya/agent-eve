@@ -204,6 +204,46 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     expect(violations).toEqual([]);
   });
 
+  it('names every agent-facing election the engine accepts', () => {
+    // Found by a re-verifier, and it is scar #1's exact shape at the boundary: the
+    // engine gained `IN_FULL` — the election that says "pay whatever is owed" — to fix
+    // a case where a payer electing the exact figure it was quoted got recorded as
+    // having DECLINED the difference when the venture over-performed. A fabricated
+    // partial default against an agent that believed it was paying in full.
+    //
+    // But agent.md named no election shape at all, so the fix existed only on our side
+    // of the wire. An agent cannot choose a word it has never been told exists, which
+    // means shipping it that way would have recreated the very defect the fix closed,
+    // at the one place the agent could not see it.
+    //
+    // Any future election must appear here too. The engine's vocabulary and the
+    // player's vocabulary are one surface.
+    const settlement = readFileSync(new URL('../../src/venture/settlement.ts', import.meta.url), 'utf8');
+    const declared = [...settlement.matchAll(/^export const ([A-Z][A-Z_]*) = '\1' as const;$/gm)]
+      .map((m) => m[1] ?? '');
+    expect(declared).toContain('IN_FULL');
+    for (const election of declared) {
+      // A bare `toContain(election)` is NOT enough, and a mutation test proved it:
+      // stripping the defining row left one incidental mention of `IN_FULL` elsewhere
+      // in the prose and the assertion stayed green. That is the third time in this
+      // project that a presence check has passed while the meaning was gone —
+      // presence is not semantics. So require the DEFINING TABLE ROW: the election
+      // named in a row that says what it does.
+      const definingRow = new RegExp(`^\\| \`${election}\` \\| .{10,} \\|$`, 'm');
+      expect(definingRow.test(AGENT_MD),
+        `the engine accepts '${election}' but agent.md has no table row defining it`)
+        .toBe(true);
+    }
+  });
+
+  it('warns that electing the quoted p50 on a share role is not paying in full', () => {
+    // The specific trap. It is not enough to mention IN_FULL exists; the document has
+    // to say why the obvious alternative is wrong, because the obvious alternative
+    // looks like the careful choice.
+    expect(AGENT_MD).toContain('Anything short of the due is a decline');
+    expect(AGENT_MD).toMatch(/over-performs, the real due is \*\*higher\*\*/);
+  });
+
   it('is self-contained: it does not send the player somewhere else to learn the rules', () => {
     // High Water verified that three tester agents played from one document with
     // zero extra reading. That property is worth keeping, and it is easy to lose
