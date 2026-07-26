@@ -285,6 +285,24 @@ instead of producing a finding.
 log each table's capture on both sides of its existing adoption and diff the strings. Everything needed
 is already wired; only the diff is missing.
 
+**THIRD INVALID HARNESS, and its output named the cause outright.** I built the per-table diff through
+the real `bootFromStore` path, and it reported `world`, `ledger`, `levy` and `event` all differing. The
+content settled it in one line: the booted side had **`"principals":[],"holdings":[],"hands":[]`** — an
+empty world. I never called `cast.seat()` on the fresh runtime. `checkpoint-adoption-audit` does exactly
+that at its line 79, and that is the difference between its harness and mine.
+
+**Three invalid instruments in a row, all mine, all caught before producing a finding.** The tally is
+worth keeping because the pattern is the lesson: (1) a per-tick comparison that diverged identically on
+an unmodified engine — caught by running the control; (2) a table-by-table restore that adoption never
+performs — caught by an append-only guard throwing; (3) this one — caught by *reading the diff content*
+rather than trusting that a diff means a bug.
+
+**Nothing here changes the underlying signal:** `checkpoint-adoption-audit` passes without the
+heuristic change and fails with it, and it seats its cast correctly. The bug is real. What is
+established is that **it must be diagnosed inside that test**, and the three things a fresh attempt now
+gets for free: seat the cast on both sides, remember that adoption hydrates the ledger rather than
+restoring it, and write the control before the subject.
+
 Reverted rather than shipped. A determinism failure is the one class in this codebase that must never
 be shipped on a guess, and `state_hash` divergence on a live world at ~4,500 ticks means a boot that
 refuses to resume.
