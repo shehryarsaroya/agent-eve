@@ -5852,6 +5852,32 @@ export class Runtime {
     return this.syndicateBook;
   }
 
+
+  /**
+   * Have these parties ever shared a venture that RESOLVED?
+   *
+   * `resolvedAtTick !== null` is the test, deliberately: two agents currently inside their first
+   * deal together have not yet dealt before — the thing that builds confidence is a deal that
+   * *finished*, whichever way it went. "It held" is a separate claim the docket line makes, and it
+   * is why this returns a plain boolean rather than a verdict.
+   */
+  private haveDealtBefore(
+    creator: PrincipalId,
+    fillers: readonly PrincipalId[],
+    exclude: VentureId,
+  ): boolean {
+    if (fillers.length === 0) return false;
+    const wanted = new Set<string>(fillers.map(String));
+    for (const past of this.ventures.all()) {
+      if (past.id === exclude || past.resolvedAtTick === null) continue;
+      if (past.creator !== creator) continue;
+      for (const role of past.roles) {
+        if (role.filledByPrincipal !== null && wanted.has(String(role.filledByPrincipal))) return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * The syndicates, as the map draws them (A13).
    *
@@ -8379,7 +8405,51 @@ export class Runtime {
       // The raid ticker, drained into the frame. Bounded by the Ring, and 140-char
       // capped by `raidTickerLine`; `renderFrame` drops anything longer anyway.
       ticker: this.raidTicker.all,
-      tomorrow: [],
+      // ── TOMORROW'S DOCKET, WHICH WAS HARDCODED EMPTY ────────────────────────
+      //
+      // `docket` and `nextDocket` are §14's setup — *"biggest stakes first, each one a sentence a
+      // stranger reads"* — and the closing card is what makes a viewer come back. Both read this
+      // array, and this array was `[]`, so every frame ever published had an empty docket and an
+      // empty closing card. Nothing failed: an empty list renders as an honest empty state, which
+      // is why it survived.
+      //
+      // Built from the LIVE ventures rather than from anything predicted. `atStake` is the elective
+      // half — the part that is a promise rather than an execution, which is the only part with any
+      // drama in it — and `firstTimeTogether` is what makes a card a sentence instead of a number.
+      tomorrow: this.ventures
+        .live()
+        .map((v) => ({
+          venture: v.id,
+          atStake: sumMinor(
+            // `terms.elective` is A7's PRICED-BUT-ELECTIVE half — the part that stays a promise
+            // and can still be broken. Only filled roles count: an unfilled role is nobody's
+            // promise yet, and a docket card about a slot no agent has taken is a card about
+            // nothing. `settledElectiveMinor` would be the wrong field entirely — that is what has
+            // already been PAID, and this card is about what is still riding.
+            v.roles.map((r) => (r.filledByPrincipal === null ? minor(0) : r.terms.elective)),
+          ),
+          parties: [
+            v.creator,
+            ...v.roles.map((r) => r.filledByPrincipal).filter((x): x is PrincipalId => x !== null),
+          ].sort(compareIds),
+          // ── DERIVED, BECAUSE `false` PRINTS A SENTENCE THAT MAY BE A LIE ────────
+          //
+          // This was hardcoded `false`, and `render.ts` turns `false` into *"They have dealt
+          // before, and it held."* — a specific claim about two named agents' shared history,
+          // printed on a public frame, for pairs that may never have met. An empty docket was
+          // merely useless; that is the record being WRONG about a relationship, which is what
+          // A5′ exists to forbid and what other agents read to decide who to trust.
+          //
+          // So it is computed from the venture book's own history: have these parties ever
+          // shared a RESOLVED venture. Bounded work — at most `MAX_DOCKET_CARDS` cards survive
+          // the cut, and each is one pass over a book the process already holds.
+          firstTimeTogether: !this.haveDealtBefore(
+            v.creator,
+            v.roles.map((r) => r.filledByPrincipal).filter((x): x is PrincipalId => x !== null),
+            v.id,
+          ),
+        }))
+        .filter((u) => u.atStake > 0),
       tributeLines: this.tributeLines(outcome.tick),
       authorityLines,
       // Predation's pixel signature (A13, §9). Built by the predation layer, never by
