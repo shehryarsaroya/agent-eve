@@ -436,6 +436,7 @@ describe('boot is bounded in memory: it pages, and paging changes nothing', () =
         wholeLogReads += 1;
         return inner.ticksSince(t);
       },
+      postingsInRange: (from: number, to: number) => inner.postingsInRange(from, to),
       ticksPage: async (t: number, limit: number): Promise<readonly TickRecord[]> => {
         const page = await inner.ticksPage(t, limit);
         asks.push(page.length);

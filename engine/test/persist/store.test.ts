@@ -111,6 +111,53 @@ describe('extractTick pulls the three write artifacts', () => {
     expect(total).toBeGreaterThan(0);
   });
 
+  it('carries every batch field a hydrated ledger needs, including the NAMED faucet', async () => {
+    const runtime = new Runtime({ seed: 'extract-supply' });
+    const cast = new HeuristicCast(runtime, { size: 4 });
+    cast.seat('extract-supply');
+    const store = new InMemoryJournalStore();
+    await store.init('extract-supply');
+    for (let i = 0; i < 40; i += 1) {
+      const target = runtime.engine.tick + 1;
+      for (const a of cast.decide(target, 'extract-supply')) runtime.engine.submit(a);
+      await store.appendTick(extractTick(runtime, runtime.runTick()));
+    }
+
+    const rows = await store.postingsInRange(0, 39);
+    expect(rows.length).toBeGreaterThan(0);
+
+    // Append order, on integers only. This is the order the ledger's array is rebuilt
+    // in, and `restoreTo` truncates that array positionally.
+    for (let i = 1; i < rows.length; i += 1) {
+      const prev = rows[i - 1];
+      const cur = rows[i];
+      if (prev === undefined || cur === undefined) continue;
+      const before =
+        prev.tick < cur.tick ||
+        (prev.tick === cur.tick &&
+          (prev.seqInTick < cur.seqInTick ||
+            (prev.seqInTick === cur.seqInTick && prev.postingIndex < cur.postingIndex)));
+      expect(before, `row ${String(i)} is out of append order`).toBe(true);
+    }
+
+    // A supply change names its faucet or sink; a TRANSFER names none. Both halves,
+    // because dropping either is what makes `checkInv7`'s third mirror unrebuildable.
+    const supply = rows.filter((r) => r.batchKind !== 'TRANSFER');
+    expect(supply.length).toBeGreaterThan(0);
+    expect(supply.every((r) => r.supplyAccount !== null && r.supplyAccount.length > 0)).toBe(true);
+    expect(rows.filter((r) => r.batchKind === 'TRANSFER').every((r) => r.supplyAccount === null)).toBe(
+      true,
+    );
+    // Every row carries the event that caused it, so a batch can be traced.
+    expect(rows.every((r) => r.eventId.length > 0)).toBe(true);
+
+    // The window is a window: nothing outside it, and an inverted one reads nothing.
+    const early = await store.postingsInRange(0, 3);
+    expect(early.every((r) => r.tick <= 3)).toBe(true);
+    expect(early.length).toBeLessThan(rows.length);
+    expect(await store.postingsInRange(20, 19)).toEqual([]);
+  });
+
   it('refuses to extract a halted tick — nothing was published', () => {
     const runtime = new Runtime({ seed: 'extract-halt' });
     new HeuristicCast(runtime, { size: 2 }).seat('extract-halt');

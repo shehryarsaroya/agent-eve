@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { PgJournalStore } from '../../src/persist/index.js';
 import type { PersistedEvent, TickRecord } from '../../src/persist/index.js';
-import type { EventId, PrincipalId } from '../../src/core/types.js';
+import type { AccountId, EventId, GoodId, PrincipalId } from '../../src/core/types.js';
 import type { LoggedAction } from '../../src/tick/index.js';
 
 interface Call {
@@ -132,6 +132,108 @@ describe('PgJournalStore builds consistent parameterised SQL', () => {
     expect(pool.client.calls.filter((c) => c.sql.includes('INTO event_audience')).length).toBe(2);
     expect(pool.client.calls.filter((c) => c.sql.includes('INTO action_log')).length).toBe(1);
     assertConsistent(pool.client.calls);
+  });
+
+  it('appendTick writes the posting log, with the batch fields it cannot re-derive', async () => {
+    // The table this store did not write for the whole of the live world's first
+    // season, because `posting -> account -> principal.public_key NOT NULL` could not
+    // be satisfied by a keyless house cast. The FK is gone; these rows are the point.
+    const pool = new FakePool();
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    await store.appendTick({
+      tick: 7,
+      seed: 's:t7',
+      seedHash: 'h:t7',
+      events: [],
+      actions: [],
+      postings: [
+        {
+          tick: 7,
+          seqInTick: 0,
+          postingIndex: 0,
+          eventId: 'e:mint' as EventId,
+          account: 'stores:p:vex' as AccountId,
+          good: null,
+          amountMinor: 1_000,
+          amountQty: null,
+          batchKind: 'ISSUE',
+          supplyAccount: 'faucet:starter_stake' as AccountId,
+        },
+        {
+          tick: 7,
+          seqInTick: 1,
+          postingIndex: 1,
+          eventId: 'e:haul' as EventId,
+          account: 'stores:p:sable' as AccountId,
+          good: 'ration' as GoodId,
+          amountMinor: 0,
+          amountQty: -5,
+          batchKind: 'TRANSFER',
+          supplyAccount: null,
+        },
+      ],
+    });
+
+    const inserts = pool.client.calls.filter((c) => c.sql.includes('INTO posting'));
+    expect(inserts.length).toBe(2);
+    // The named faucet is durable: INV-1's form check and checkInv7's third mirror
+    // both read WHICH faucet, and that is not recoverable from the kind.
+    expect(inserts[0]?.params).toContain('faucet:starter_stake');
+    expect(inserts[0]?.params).toContain('ISSUE');
+    // A signed goods leg survives as a negative; `posting.amount_qty` is signed.
+    expect(inserts[1]?.params).toContain(-5);
+    assertConsistent(pool.client.calls);
+  });
+
+  it('postingsInRange is bounded, parameterised, and ordered on integers only', async () => {
+    const pool = new FakePool();
+    pool.query = (sql: string, params?: readonly unknown[]) => {
+      pool.calls.push({ sql, params: params ?? [] });
+      return Promise.resolve({
+        rows: [
+          {
+            tick: 7,
+            seq_in_tick: 0,
+            posting_index: 0,
+            account_id: 'stores:p:vex',
+            good_id: null,
+            amount_minor: '1000',
+            amount_qty: null,
+            event_id: 'e:mint',
+            batch_kind: 'ISSUE',
+            supply_account_id: 'faucet:starter_stake',
+          },
+        ] as never[],
+        rowCount: 1,
+      });
+    };
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    const rows = await store.postingsInRange(0, 511);
+    expect(rows).toEqual([
+      {
+        tick: 7,
+        seqInTick: 0,
+        postingIndex: 0,
+        eventId: 'e:mint',
+        account: 'stores:p:vex',
+        good: null,
+        // bigint arrives as a string from pg and must come back an integer, or the
+        // hydrated ledger sums strings and INV-7 reports nonsense.
+        amountMinor: 1000,
+        amountQty: null,
+        batchKind: 'ISSUE',
+        supplyAccount: 'faucet:starter_stake',
+      },
+    ]);
+    const sql = pool.calls[0]?.sql ?? '';
+    expect(sql).toContain('WHERE tick >= $1 AND tick <= $2');
+    // Three integer columns. Text in an ORDER BY is the collation determinism killer,
+    // and this ordering is the order the ledger's append-only array is rebuilt in.
+    expect(sql).toContain('ORDER BY tick ASC, seq_in_tick ASC, posting_index ASC');
+    expect(pool.calls[0]?.params).toEqual([0, 511]);
+    // An inverted window reads nothing rather than scanning the table.
+    expect(await store.postingsInRange(10, 9)).toEqual([]);
+    expect(pool.calls.length).toBe(1);
   });
 
   it('writeSnapshot and enrolment and init are all parameterised and consistent', async () => {

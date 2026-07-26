@@ -166,11 +166,39 @@ CREATE INDEX IF NOT EXISTS event_audience_principal_idx
 -- Note what is absent: balance columns on `event`. Putting balanced totals there
 -- duplicates this table — scar #5 inside the field list that exists to prevent
 -- scar #5.
+--
+-- ── WHY THERE IS NO FOREIGN KEY ON account_id ────────────────────────────────
+--
+-- There was one, and it is the reason this table sat EMPTY for the whole of the
+-- live world's first season. `posting -> account -> principal.public_key NOT NULL
+-- (32 bytes)`, and the house cast is seated keyless on purpose (the enrol-takeover
+-- guard depends on it), so cast-owned accounts could never be inserted and neither
+-- could any posting that touched one. The authoritative value log was unwritable.
+--
+-- The FK is dropped rather than worked around, because it was wrong on its own
+-- terms, independently of the keyless cast:
+--
+--   * It points from an APPEND-ONLY, partitioned history table into a MUTABLE
+--     state table (SPEC §15.1 keeps those two artifacts separate). History that
+--     depends on a current-state row still existing is history a DELETE elsewhere
+--     can invalidate, and it pins every partition against DETACH — the schema
+--     already refuses exactly this shape for `idempotency -> action_log`.
+--   * It enforces nothing this record needs. What must be true is that a posting's
+--     account is one the LEDGER knows, and that is asserted twice already:
+--     `Ledger.apply` refuses a posting against an unknown account at write time
+--     (INV-1's form check), and the boot hydrate refuses any posting whose account
+--     is absent from the snapshot's own captured account set — a strictly stronger
+--     test, because it compares against the accounts as they were AT that tick
+--     rather than as they are today.
+--
+-- `account` and `principal` are left exactly as they are: the schema/implementation
+-- mismatch they carry (keyless cast, hyphenated handles) is real and is still
+-- reported, but it is an identity question and it no longer blocks the value log.
 CREATE TABLE IF NOT EXISTS posting (
   tick          integer NOT NULL,
   seq_in_tick   integer NOT NULL,
   posting_index integer NOT NULL,
-  account_id    text    NOT NULL REFERENCES account(id),
+  account_id    text    NOT NULL,
   good_id       text,
   -- Integer minor units. There are no floats in this column's world; a numeric
   -- with a scale would invite one.
@@ -183,6 +211,30 @@ CREATE TABLE IF NOT EXISTS posting (
 ) PARTITION BY RANGE (tick);
 
 CREATE INDEX IF NOT EXISTS posting_account_idx ON posting (account_id, tick DESC);
+
+-- The batch's own three fields, repeated on each of its rows.
+--
+-- A batch (`AppliedBatch`) has no table: `seq_in_tick` here is the batch's ordinal
+-- within the tick, so a batch is the group of rows sharing `(tick, seq_in_tick)`.
+-- These three are what makes that group re-checkable — INV-1's form check needs the
+-- kind and the NAMED faucet or sink, and `checkInv7`'s third mirror recomputes the
+-- faucet/sink accumulators from them. "Which faucet" is not recoverable from the
+-- kind, so it is stored. The reader refuses a group whose rows disagree, which is
+-- what keeps a denormalised column from becoming a second home for the fact.
+--
+-- Nullable, and NOT retro-constrained: these are ALTERs that run on a live database
+-- on every deploy, and a constraint that has to validate existing rows is a deploy
+-- that can fail closed on a table the world is writing to. The writer always supplies
+-- all three and the hydrate refuses a null, which puts the check where a failure is a
+-- refusal to boot rather than a refusal to migrate.
+ALTER TABLE posting ADD COLUMN IF NOT EXISTS event_id          text;
+ALTER TABLE posting ADD COLUMN IF NOT EXISTS batch_kind        text;
+ALTER TABLE posting ADD COLUMN IF NOT EXISTS supply_account_id text;
+
+-- Drop the FK on an already-migrated database. `CREATE TABLE IF NOT EXISTS` above is
+-- a no-op there, so removing the clause from the DDL alone would leave production
+-- unable to write a single posting while every fresh database could.
+ALTER TABLE posting DROP CONSTRAINT IF EXISTS posting_account_id_fkey;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- The action log. Every submission including rejected ones, with arrival and

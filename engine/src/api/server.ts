@@ -1686,6 +1686,15 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
       `${String(result.ticksReplayed)} ticks replayed, ${String(result.enrollmentsApplied)} enrolments re-seated, ` +
       `${String(result.tripwiresChecked)} snapshot tripwires verified\n`,
   );
+  // Why the boot was long, in the same breath as how long it was. "Replayed 242 000
+  // ticks" is a fact an operator can do nothing with; "and here are the five books
+  // that stop it adopting a checkpoint" is the same fact with an owner.
+  process.stderr.write(
+    result.adoptedAtTick === null
+      ? `compact: boot replayed from genesis — ${result.checkpointRefusal ?? 'no reason recorded'}\n`
+      : `compact: boot ADOPTED the checkpoint at tick ${String(result.adoptedAtTick)} ` +
+          `(${String(result.postingsHydrated)} postings rehydrated), replaying only the tail\n`,
+  );
   if (result.divergenceAccepted !== null) {
     const d = result.divergenceAccepted;
     process.stderr.write(

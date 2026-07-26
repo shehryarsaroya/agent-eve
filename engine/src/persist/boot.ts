@@ -2,17 +2,31 @@
  * Boot the world from the durable journal. §15.2's halt/resume, made real.
  *
  * ══════════════════════════════════════════════════════════════════════════
- * **THE BOOT SHAPE, AND WHY IT IS NOT "ADOPT THE LATEST SNAPSHOT".**
+ * **THE BOOT SHAPE: ADOPT THE LATEST CHECKPOINT IF — AND ONLY IF — IT CARRIES
+ * THE WHOLE WORLD.**
  *
  * §15.2 describes resume as "load the latest snapshot, adopt it, replay the actions
- * after it." That path is still blocked, and `store.ts`'s header now lists the four
- * reasons rather than the one this file used to give. The decisive one is not the
- * `restoreTo` refusal: it is that **`EncumbranceBook` is in no state table at all**,
- * so no snapshot carries the open locks, and a world adopted from one would have
- * escrowed stake silently spendable. That is A5′ — the world would be *wrong* — and a
- * slow boot is strictly better than a wrong one.
+ * after it", and the machinery for that now exists and is proven: the ledger's
+ * append-only log is rebuilt from the durable posting rows (`hydrate.ts`), the
+ * snapshot is adopted through `Engine.adoptSnapshot`, and only the ticks after it are
+ * replayed. The equivalence test in `test/durability/` asserts that adopt-plus-tail
+ * reaches a `state_hash` **identical** to a full genesis replay, and that `checkInv7`
+ * passes on the first tick after the adopted boot.
  *
- * So boot **reconstructs genesis deterministically and replays the action log**:
+ * It is still not what production does, and the reason is the one thing a hash cannot
+ * check itself for. A snapshot carries the engine's **state tables**, and `state_hash`
+ * hashes exactly those tables — so a book kept outside a table is neither carried nor
+ * missed. Measured: adopting the snapshot at tick 575 of a 600-tick run reproduced the
+ * hash byte for byte while the cast's `electiveHonoured` went from `4, 6, 2, 4, …` to
+ * all zeros. `StandingBook` is in no table, so reputation reset — silently, and past a
+ * tripwire that reported success.
+ *
+ * So {@link planCheckpoint} gates adoption on `CHECKPOINT_REQUIRED_TABLES` (`hydrate.ts`), and
+ * boot falls back to a genesis replay, naming the missing books, until every one of
+ * them is a restorable state table. The gate clears itself: nothing here changes on
+ * the day they are registered.
+ *
+ * The genesis path is unchanged and is still what runs today:
  *
  *   1. the caller builds a fresh `Runtime` on the master seed and seats the house
  *      cast (both deterministic from the seed) — this reproduces the exact tick -1
@@ -24,7 +38,7 @@
  *      the record and the replay into a loud refusal instead of a quiet lie.
  *
  * ══════════════════════════════════════════════════════════════════════════
- * **THE TWO THINGS THIS FILE FIXED, AND THE ONE IT DID NOT.**
+ * **WHAT THIS FILE FIXED BEFORE, AND WHAT IS STILL OPEN.**
  *
  * *Fixed — the crash loop.* Replay under changed code hits one of two walls: an
  * action the record says APPLIED is now refused, or the arithmetic moved and the
@@ -38,19 +52,26 @@
  * proceed. The caller holds the world and serves the diagnosis.
  *
  * *Fixed — O(entire history) memory.* `ticksSince(-1)` materialised every tick and
- * every action before replaying the first one. Boot now pages ({@link REPLAY_PAGE_TICKS}
+ * every action before replaying the first one. Boot pages ({@link REPLAY_PAGE_TICKS}
  * ticks at a time) and reads only `(tick, state_hash)` for the tripwire set, so the
- * resident set is flat in season length. The wall-clock cost is still O(head) —
- * measured at ~1.8 ms/tick with a six-hand cast, so ~7 minutes at 242 000 ticks —
- * and that is NOT fixed here, because fixing it means checkpoint adoption, which
- * means the encumbrance book, which is the reported blocker above.
+ * resident set is flat in season length.
  *
- * *Not fixed — checkpoint adoption.* See `store.ts`. Reported, not faked.
+ * *Open — O(head) wall clock, until the manifest clears.* An adopted boot replays
+ * only the ticks after the last Reckoning (≤288 at any speed), which is the bounded
+ * boot; a refused one still costs ~0.8–1.8 ms per tick of history. The refusal is
+ * reported in {@link BootResult.checkpointRefusal} so an operator can see which books
+ * are keeping the boot long, rather than being told the boot is simply slow.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
 import { RULES_VERSION, type Runtime } from '../sim/runtime.js';
 import type { SubmittedAction } from '../tick/index.js';
+import {
+  hydrateLedgerForSnapshot,
+  planCheckpoint,
+  snapshotOf,
+  type CheckpointOptions,
+} from './hydrate.js';
 import {
   safeDetail,
   type DivergenceKind,
@@ -123,13 +144,29 @@ export type BootFailureKind =
   | 'STATE_HASH_MISMATCH'
   | 'REPLAY_HALTED'
   | 'TICK_MISMATCH'
-  | 'ENROLLMENT_REFUSED';
+  | 'ENROLLMENT_REFUSED'
+  | 'CHECKPOINT_UNUSABLE';
 
 export interface BootResult {
   /** `GENESIS` when the store was empty; `REPLAY` when it held a run to resume. */
   readonly mode: 'GENESIS' | 'REPLAY';
   /** The tick the runtime sits at after boot. -1 for a fresh genesis. */
   readonly headTick: number;
+  /**
+   * The checkpoint this boot adopted, or null when it replayed from genesis.
+   *
+   * Non-null is the bounded boot: {@link ticksReplayed} is then the tail after this
+   * tick, never the whole run.
+   */
+  readonly adoptedAtTick: number | null;
+  /**
+   * Why no checkpoint was adopted, or null when one was. Reported rather than logged
+   * and forgotten: "the boot is slow" is not actionable, "these five books are in no
+   * state table" is.
+   */
+  readonly checkpointRefusal: string | null;
+  /** Postings rebuilt from the durable log to make the adoption legitimate. */
+  readonly postingsHydrated: number;
   readonly ticksReplayed: number;
   readonly enrollmentsApplied: number;
   /** Journalled snapshots the replay was checked against. Every one that passed. */
@@ -189,6 +226,14 @@ export interface BootOptions {
   readonly nowMs?: () => number;
   /** Ticks per journal page. Defaults to {@link REPLAY_PAGE_TICKS}. */
   readonly pageSize?: number;
+  /**
+   * Checkpoint adoption. Defaults to "adopt the latest snapshot if the manifest
+   * (`CHECKPOINT_REQUIRED_TABLES` (`hydrate.ts`)) is satisfied", which today means: don't.
+   *
+   * `requiredTables` exists for the durability tier, which narrows it to prove the
+   * ledger half of adoption in isolation. Production must not narrow it.
+   */
+  readonly checkpoint?: CheckpointOptions;
 }
 
 /**
@@ -238,6 +283,9 @@ export async function bootFromStore(
     return {
       mode: 'GENESIS',
       headTick: runtime.engine.tick,
+      adoptedAtTick: null,
+      checkpointRefusal: 'genesis: the store holds no run to resume',
+      postingsHydrated: 0,
       ticksReplayed: 0,
       enrollmentsApplied: 0,
       tripwiresChecked: 0,
@@ -299,8 +347,9 @@ export async function bootFromStore(
   // Digests, not bodies: boot compares hashes and reads nothing else, and the bodies
   // are the whole world once per Reckoning.
   const snapByTick = new Map((await store.snapshotHashes()).map((s) => [s.tick, s.stateHash] as const));
+  const enrollments = await store.enrollments();
   const enrollByTick = new Map<number, EnrollmentRecord[]>();
-  for (const e of await store.enrollments()) {
+  for (const e of enrollments) {
     const bucket = enrollByTick.get(e.enrolledAtTick);
     if (bucket === undefined) enrollByTick.set(e.enrolledAtTick, [e]);
     else bucket.push(e);
@@ -313,6 +362,65 @@ export async function bootFromStore(
   let tripwiresChecked = 0;
   let enrollmentsApplied = 0;
   let cursor = -1;
+
+  // ── The checkpoint ────────────────────────────────────────────────────────
+  //
+  // Before a single tick is replayed: is there a snapshot, and does it carry the
+  // whole world? Only then is the tail the honest thing to replay. A refusal is not
+  // an error — it is the slow, correct boot, carried out loud.
+  const plan = await planCheckpoint(runtime.engine.stateTables, store, opts.checkpoint);
+  let adoptedAtTick: number | null = null;
+  let postingsHydrated = 0;
+  const checkpointRefusal = plan.refusal;
+  if (plan.snapshot !== null) {
+    const snapshot = plan.snapshot;
+    try {
+      // Order is load-bearing. The append-only log must be back BEFORE the snapshot is
+      // adopted: `Ledger.restoreTo` refuses to grow those halves, and the hydrate is
+      // what makes the lengths already match so the refusal is satisfied rather than
+      // relaxed. (And `adoptSnapshot` re-captures and compares hashes, so a restore
+      // that did not reproduce the captured bytes throws there rather than serving.)
+      const restored = await hydrateLedgerForSnapshot(runtime.ledger, store, snapshot);
+      postingsHydrated = restored.postings;
+      runtime.engine.adoptSnapshot(snapshotOf(snapshot));
+      adoptedAtTick = snapshot.tick;
+      cursor = snapshot.tick;
+      // `tripwiresChecked` is deliberately NOT incremented here. A tripwire's claim is
+      // "this build RECOMPUTED the tick and got the journalled hash"; adoption takes
+      // the recorded state as given, so counting it would inflate the one number an
+      // operator reads to decide how much of the record was actually re-derived.
+      // Every snapshot in the replayed tail still counts.
+    } catch (error: unknown) {
+      throw new BootError(
+        `checkpoint adoption failed at tick ${String(snapshot.tick)}: ` +
+          `${error instanceof Error ? error.message : String(error)}. The snapshot and the durable ` +
+          'posting log describe different worlds, so neither adopting nor quietly replaying past it ' +
+          'is honest — the record itself is inconsistent.',
+        {
+          ...context,
+          kind: 'CHECKPOINT_UNUSABLE',
+          tick: snapshot.tick,
+          message: error instanceof Error ? error.message : String(error),
+          expectedHash: snapshot.stateHash,
+          actualHash: null,
+          action: null,
+          // No door. This is not "the rules changed"; it is the durable record
+          // disagreeing with itself, and continuing would publish a ledger whose
+          // INV-7 mirrors are already known to be wrong.
+          operatorInstruction: null,
+        },
+      );
+    }
+    // Enrolments inside the adopted prefix are already in the snapshot's `world`
+    // capture, so they must NOT be re-seated. Their out-of-world identity — keyring
+    // key, seat book — lives outside the runtime and is not in any snapshot, so the
+    // hook still has to run for every one of them or a real agent boots with no way
+    // to sign a request (A10 at the substrate, one layer out).
+    for (const e of enrollments) {
+      if (e.enrolledAtTick > cursor) continue;
+      opts.onEnrollment?.(e);
+    }
+  }
 
   /**
    * The one place a divergence is judged. Either the operator named this exact tick
@@ -477,6 +585,9 @@ export async function bootFromStore(
   return {
     mode: 'REPLAY',
     headTick: runtime.engine.tick,
+    adoptedAtTick,
+    checkpointRefusal,
+    postingsHydrated,
     ticksReplayed,
     tripwiresChecked,
     enrollmentsApplied,

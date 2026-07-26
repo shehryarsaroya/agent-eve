@@ -21,6 +21,7 @@ import type {
   DivergenceRecord,
   EnrollmentRecord,
   JournalStore,
+  PersistedPosting,
   SnapshotDigest,
   SnapshotRecord,
   TickRecord,
@@ -123,6 +124,22 @@ export class InMemoryJournalStore implements JournalStore {
 
   headTick(): Promise<number> {
     return Promise.resolve(this.head);
+  }
+
+  postingsInRange(fromTick: number, toTick: number): Promise<readonly PersistedPosting[]> {
+    const out: PersistedPosting[] = [];
+    for (const record of [...this.ticksByTick.values()].sort((a, b) => a.tick - b.tick)) {
+      if (record.tick < fromTick || record.tick > toTick) continue;
+      // Append order within a tick, defensively re-sorted rather than assumed: the pg
+      // store gets this from an ORDER BY and the two must not be able to disagree
+      // about the order the ledger's log is rebuilt in.
+      out.push(
+        ...[...record.postings].sort(
+          (a, b) => a.seqInTick - b.seqInTick || a.postingIndex - b.postingIndex,
+        ),
+      );
+    }
+    return Promise.resolve(out);
   }
 
   recordRulesVersion(version: number): Promise<void> {

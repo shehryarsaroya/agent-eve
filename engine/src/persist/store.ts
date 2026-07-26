@@ -24,51 +24,39 @@
  * `hash(seed(T))` can be re-verified from durable data alone) and the **snapshot**
  * at Reckoning checkpoints.
  *
- * ── THE SHAPE OF BOOT, AND A FINDING THAT CHANGED IT ────────────────────────
+ * ── THE SHAPE OF BOOT: FOUR BLOCKERS CLOSED, ONE LARGER ONE FOUND ───────────
  *
  * §15.2's story is "load the latest snapshot, adopt it, replay the actions after
- * it." **That does not work here, and the reason is load-bearing.** The ledger's
- * state table (`src/ledger/stateTable.ts`) stores the append-only postings/batches
- * as *counts*, not contents, and `Ledger.restoreTo` **refuses to grow** them — it
- * is an abort-path inverse (truncate the current tick's additions), not a
- * cross-process restore. A fresh process has zero postings, so adopting any
- * snapshot taken after value has moved throws `restore would grow an append-only
- * table`. Verified empirically before this module was written.
+ * it." Two earlier passes refused to build that and listed four reasons. Three of
+ * the four are now closed and the fourth was never the decisive one; a fifth,
+ * bigger than all of them, is why boot still replays from genesis by default.
  *
- * So boot **re-seats the deterministic house cast and replays the action log from
- * genesis**, which reproduces the exact `state_hash` (also verified). The stored
- * snapshots become **verification tripwires**: at every tick that has one, the
- * replayed hash must equal the stored hash, or boot refuses. {@link latestSnapshot}
- * is provided for interface completeness and for operators, but boot cannot use it
- * as an adopt-point until the ledger grows a hydrate-from-journal path.
+ * **Closed:**
  *
- * ── RE-VERIFIED 2026-07-25, AND STILL TRUE FOR THREE REASONS, NOT ONE ───────
+ *   1. *`EncumbranceBook` was in no state table.* Fixed elsewhere: the book now has
+ *      `capture()`/`restore()` carrying rows, the exposure cache and the per-event
+ *      counter, and sits inside `ledgerStateTable`. Re-verified here.
+ *   2. *`PgJournalStore` did not write the `posting` table.* It does now, and the FK
+ *      that blocked it is gone for a stated reason — see `postgres.ts` and
+ *      `schema.sql`. {@link JournalStore.postingsInRange} is the read side.
+ *   3. *The capture holds only `postingCount`/`batchCount`, never the contents, and
+ *      `checkInv7` sums the whole posting log every tick.* The contents come back
+ *      from the record: `Ledger.hydrateAppendOnly` rebuilds the append-only halves
+ *      and refuses unless the rebuilt lengths equal the captured counts exactly.
+ *   4. *`Ledger.restoreTo` refuses to grow the append-only halves.* **Untouched, and
+ *      deliberately so.** The hydrate runs first, so the lengths already match and
+ *      the truncation is a no-op; the refusal is not relaxed, it is satisfied.
  *
- * A second pass went looking for a way to adopt a checkpoint anyway. There is not
- * one yet, and the reasons are worth writing down so the next attempt starts from
- * facts rather than from the §15.2 story:
- *
- *   1. **`restoreTo` refuses to grow the append-only halves** (the original finding;
- *      re-confirmed empirically — `postings 12 -> 1299`). Liftable on its own.
- *   2. **The capture holds only `postingCount`/`batchCount`, never the contents** —
- *      and `checkInv7` recomputes EVERY account balance by summing the whole posting
- *      log on every tick. A hydrated ledger whose log is short by one row halts the
- *      first tick after boot. So lifting (1) alone produces a world that boots and
- *      then dies, which is strictly worse than a slow boot.
- *   3. **`EncumbranceBook` is in no state table at all.** It is not captured, not
- *      hashed and not rolled back, so a snapshot cannot carry the open locks. Adopting
- *      one drops every encumbrance: escrowed stake becomes spendable
- *      (`freeBalance` reads the book) and any venture role still holding a
- *      `stakeEncumbranceId` points at a lock that no longer exists. That is an A5′
- *      defect — the world would be *wrong*, not merely stale.
- *   4. **`PgJournalStore` does not write the `posting` table** (see its header), so in
- *      production there is no durable source to hydrate (2) from even if (1) and (3)
- *      were solved.
- *
- * (3) is the decisive one, and closing it means putting the encumbrance book inside
- * the hashed capture — which changes `state_hash` for every tick and is therefore
- * itself the kind of rules change {@link DivergenceRecord} exists to declare. It is
- * reported upward rather than smuggled into the commit that builds the door.
+ * **Not closed, and it is the one that matters (`hydrate.ts` holds the manifest):**
+ * a snapshot carries the *state tables*, and the state tables are not the whole
+ * world. `StandingBook` (A10 reputation), `SealBook`, the `EventLedger`, the
+ * obligation book INV-4 checks locks against, and the attribution register are in no
+ * table, so an adopted world loses them — and `state_hash` cannot see the loss,
+ * because it hashes only the tables. Measured: adopting a snapshot at tick 575
+ * reproduces the hash **exactly** while `electiveHonoured` for the cast goes from
+ * `4, 6, 2, 4 …` to all zeros. A tripwire that passes on a world whose reputation
+ * has silently reset is worse than a slow boot, so boot adopts only when every book
+ * is covered, and says which ones are not.
  */
 
 import type { CanonicalValue } from '../core/canonical.js';
@@ -106,8 +94,15 @@ export interface PersistedAudience {
  * `seq_in_tick` — the codebase does not maintain a 1:1 map between ledger batches
  * and `EventLedger` events (seating stakes and escrow refunds move value without an
  * `EventLedger` row), so a batch ordinal is the honest, gapless key. `eventId` is
- * carried so a batch can still be traced to its cause. See the module note in
- * `postgres.ts` for why the `posting` table is not populated by the pg store yet.
+ * carried so a batch can still be traced to its cause.
+ *
+ * **`batchKind` and `supplyAccount` are the batch's fields, repeated on every row of
+ * that batch.** A batch has no table of its own, so it is reconstructed by grouping
+ * on `(tick, seqInTick)` — and the denormalisation is made self-checking rather than
+ * trusted: {@link JournalStore.postingsInRange}'s reader refuses a group whose rows
+ * disagree about any of the three. They cannot be dropped and re-derived: INV-1's
+ * form check and `checkInv7`'s third mirror both read the *named* faucet or sink a
+ * supply change went through, and "which faucet" is not recoverable from the kind.
  */
 export interface PersistedPosting {
   readonly tick: number;
@@ -120,6 +115,11 @@ export interface PersistedPosting {
   readonly amountMinor: number;
   readonly amountQty: number | null;
   readonly batchKind: string;
+  /**
+   * The named faucet or sink this posting's batch moved supply through, or null for a
+   * TRANSFER. Unnamed minting is unauditable (INV-1 form B), so the name is durable.
+   */
+  readonly supplyAccount: AccountId | null;
 }
 
 /**
@@ -268,7 +268,7 @@ export interface JournalStore {
   /** Write a full snapshot at a checkpoint (every Reckoning; cheap insurance). */
   writeSnapshot(record: SnapshotRecord): Promise<void>;
 
-  /** The highest-tick snapshot, or null. For operators; boot cannot adopt it (see header). */
+  /** The highest-tick snapshot, or null. Boot's adopt-point when the manifest allows it. */
   latestSnapshot(): Promise<SnapshotRecord | null>;
   /**
    * Every snapshot, ascending by tick — full captures.
@@ -301,6 +301,24 @@ export interface JournalStore {
   ticksPage(tick: number, limit: number): Promise<readonly TickRecord[]>;
   /** The highest appended tick, or -1 when none. */
   headTick(): Promise<number>;
+
+  /**
+   * Every persisted posting with `fromTick <= tick <= toTick`, in append order
+   * (`tick`, then `seqInTick`, then `postingIndex`).
+   *
+   * The read side of the authoritative posting log (§15.1), and the only durable
+   * source a checkpoint adoption can rebuild the ledger's append-only halves from.
+   * Bounded by the window rather than by a row limit on purpose: the caller pages in
+   * tick windows, exactly as it does for {@link ticksPage}, and a tick's postings are
+   * a batch-shaped unit that must not be split across pages — half a batch is a
+   * malformed INV-1 group, and rejoining it across a page boundary is state the
+   * reader would have to carry.
+   *
+   * An implementation that does not persist postings returns empty, which the
+   * hydrate then refuses loudly against the snapshot's own counts rather than
+   * adopting a ledger with no record behind it.
+   */
+  postingsInRange(fromTick: number, toTick: number): Promise<readonly PersistedPosting[]>;
 
   /**
    * Record the `RULES_VERSION` this run was born under. Write-once, like the seed:

@@ -153,6 +153,7 @@ function readOnly(inner: JournalStore): JournalStore {
     snapshotHashes: () => inner.snapshotHashes(),
     ticksSince: (t: number) => inner.ticksSince(t),
     ticksPage: (t: number, limit: number) => inner.ticksPage(t, limit),
+    postingsInRange: (from: number, to: number) => inner.postingsInRange(from, to),
     headTick: () => inner.headTick(),
     // A no-op, not a refusal: write-once metadata, irrelevant to reproduction, and a
     // check that failed on it would cry wolf on every journal written before it.

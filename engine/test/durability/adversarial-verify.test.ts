@@ -19,6 +19,7 @@ import {
   type DivergenceRecord,
   type EnrollmentRecord,
   type JournalStore,
+  type PersistedPosting,
   type SnapshotDigest,
   type SnapshotRecord,
   type TickRecord,
@@ -258,6 +259,9 @@ class FlakyStore implements JournalStore {
   }
   ticksSince(t: number): Promise<readonly TickRecord[]> {
     return this.inner.ticksSince(t);
+  }
+  postingsInRange(from: number, to: number): Promise<readonly PersistedPosting[]> {
+    return this.inner.postingsInRange(from, to);
   }
   ticksPage(t: number, limit: number): Promise<readonly TickRecord[]> {
     return this.inner.ticksPage(t, limit);

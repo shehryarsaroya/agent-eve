@@ -37,6 +37,17 @@ export {
   type BootOutcome,
   type BootResult,
 } from './boot.js';
+export {
+  CHECKPOINT_REQUIRED_TABLES,
+  HYDRATE_PAGE_TICKS,
+  HydrateError,
+  hydrateLedgerForSnapshot,
+  missingCheckpointTables,
+  planCheckpoint,
+  snapshotOf,
+  type CheckpointOptions,
+  type CheckpointPlan,
+} from './hydrate.js';
 export { replayCheck, type ReplayCheckResult } from './replayCheck.js';
 export {
   Journal,

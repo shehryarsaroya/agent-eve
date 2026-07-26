@@ -17,27 +17,36 @@
  *   - `snapshot`      — the Reckoning checkpoints boot uses as tripwires;
  *   - `action_log`    — replay's second term (submitted actions only);
  *   - `event` + `event_audience` — the append-only public record (§15.1's product);
+ *   - `posting` — authoritative for value (§15.1), and the only durable source a
+ *                  checkpoint adoption can rebuild the ledger's append-only log from;
  *   - `journal_enrollment` — external identities, so boot can re-seat them.
  *
- * **`posting` and `account` are NOT written here, and that is a reported gap, not an
- * oversight.** The `posting` table foreign-keys `account`, which foreign-keys
- * `principal`, whose `public_key` is `NOT NULL (octet_length = 32)`. The house cast
- * is seated keyless (`Runtime.seat`, no keypair — the enrol-takeover guard depends on
- * it), so cast-owned accounts cannot satisfy `account → principal`, and cast-caused
- * postings therefore cannot be inserted as the schema stands. Value is not lost:
- * balances live in the snapshot's ledger capture and every posting is re-derived by
- * replay. But the *authoritative posting log* (§15.1) will not be queryable from
- * Postgres until either `principal.public_key` is made nullable for house principals
- * or `posting` drops its `account` FK — both schema changes in files under review.
- * Reported upward. `ticksSince` returns postings as empty for the same reason.
+ * ── `posting` USED TO BE UNWRITABLE, AND THE FIX IS IN THE SCHEMA ────────────
  *
- * `ticksSince` returns the **replay-essential** fields (`tick`, `seed`, `seedHash`,
- * `actions`); it does not re-hydrate `events` (its only consumer is boot, which reads
- * none of them, and the event feed is served from the `event` table directly).
+ * This store wrote no postings at all for the live world's first season. The cause
+ * was a foreign key: `posting → account → principal.public_key NOT NULL (32 bytes)`,
+ * against a house cast that is seated **keyless** on purpose. Cast-owned accounts
+ * could not be inserted, so cast-caused postings could not be either, so the
+ * authoritative value log had no durable home.
+ *
+ * The FK is now gone, with the argument written out in `schema.sql`: it pointed from
+ * an append-only partitioned history table into a mutable state table, which is a
+ * shape the schema already refuses elsewhere, and it enforced nothing that is not
+ * enforced better in two other places (`Ledger.apply` at write time, and the boot
+ * hydrate against the snapshot's own captured account set — which checks the
+ * accounts as they were at that tick rather than as they are now). `account` and
+ * `principal` are untouched; the keyless-cast mismatch is still reported, but it is
+ * an identity question and no longer blocks value.
+ *
+ * `ticksSince`/`ticksPage` return the **replay-essential** fields (`tick`, `seed`,
+ * `seedHash`, `actions`); they do not re-hydrate `events` or `postings` (their only
+ * consumer is boot's tail replay, which re-derives both, and reading them per page
+ * would double the boot's IO for rows nothing reads). The posting log has its own
+ * bounded reader, {@link PgJournalStore.postingsInRange}, used only by the hydrate.
  */
 
 import { Pool, type PoolClient } from 'pg';
-import type { DecisionSource, PrincipalId } from '../core/types.js';
+import type { AccountId, DecisionSource, EventId, GoodId, PrincipalId } from '../core/types.js';
 import type { LoggedAction } from '../tick/index.js';
 import type {
   DivergenceKind,
@@ -45,6 +54,7 @@ import type {
   EnrollmentRecord,
   JournalStore,
   PersistedEvent,
+  PersistedPosting,
   SnapshotDigest,
   SnapshotRecord,
   TickRecord,
@@ -111,6 +121,7 @@ export class PgJournalStore implements JournalStore {
         [record.tick, record.seed, record.seedHash],
       );
       await this.insertEvents(client, record.events);
+      await this.insertPostings(client, record.postings);
       await this.insertActions(client, record.tick, record.actions);
       await client.query('COMMIT');
     } catch (error: unknown) {
@@ -159,6 +170,79 @@ export class PgJournalStore implements JournalStore {
         );
       }
     }
+  }
+
+  /**
+   * The authoritative value log, row by row.
+   *
+   * `ON CONFLICT (tick, seq_in_tick, posting_index) DO NOTHING` for the same reason
+   * every other insert here has it: a retried flush must be idempotent, and the app
+   * role holds no UPDATE on this table, so the alternative to DO NOTHING is a failed
+   * transaction that retries forever.
+   */
+  private async insertPostings(
+    client: PoolClient,
+    postings: readonly PersistedPosting[],
+  ): Promise<void> {
+    for (const p of postings) {
+      await client.query(
+        `INSERT INTO posting (
+           tick, seq_in_tick, posting_index, account_id, good_id,
+           amount_minor, amount_qty, event_id, batch_kind, supply_account_id
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (tick, seq_in_tick, posting_index) DO NOTHING`,
+        [
+          p.tick,
+          p.seqInTick,
+          p.postingIndex,
+          p.account,
+          p.good,
+          p.amountMinor,
+          p.amountQty,
+          p.eventId,
+          p.batchKind,
+          p.supplyAccount,
+        ],
+      );
+    }
+  }
+
+  /**
+   * One bounded window of the posting log, in append order.
+   *
+   * `ORDER BY` is on three integers, never on text, so the C-collation rule
+   * (SPEC §15.5's determinism killer) cannot reach this ordering at all — and the
+   * order matters, because it is the order the ledger's append-only array is rebuilt
+   * in and `restoreTo` truncates that array positionally.
+   */
+  async postingsInRange(fromTick: number, toTick: number): Promise<readonly PersistedPosting[]> {
+    if (!Number.isSafeInteger(fromTick) || !Number.isSafeInteger(toTick)) {
+      throw new Error('postingsInRange needs integer tick bounds');
+    }
+    if (toTick < fromTick) return [];
+    const { rows } = await this.pool.query<PostingRow>(
+      `SELECT tick, seq_in_tick, posting_index, account_id, good_id,
+              amount_minor, amount_qty, event_id, batch_kind, supply_account_id
+         FROM posting
+        WHERE tick >= $1 AND tick <= $2
+        ORDER BY tick ASC, seq_in_tick ASC, posting_index ASC`,
+      [fromTick, toTick],
+    );
+    return rows.map((r) => ({
+      tick: Number(r.tick),
+      seqInTick: Number(r.seq_in_tick),
+      postingIndex: Number(r.posting_index),
+      eventId: (r.event_id ?? '') as EventId,
+      account: r.account_id as AccountId,
+      good: r.good_id as GoodId | null,
+      amountMinor: Number(r.amount_minor),
+      amountQty: r.amount_qty === null ? null : Number(r.amount_qty),
+      // Deliberately passed through as-is when null. A row written before these
+      // columns existed cannot be repaired here, and guessing 'TRANSFER' would
+      // fabricate a batch form; the hydrate refuses it by name instead.
+      batchKind: r.batch_kind ?? '',
+      supplyAccount: r.supply_account_id as AccountId | null,
+    }));
   }
 
   private async insertActions(
@@ -448,6 +532,19 @@ interface SeedRow {
   readonly tick: number;
   readonly seed: string;
   readonly seed_hash: string;
+}
+
+interface PostingRow {
+  readonly tick: string | number;
+  readonly seq_in_tick: string | number;
+  readonly posting_index: string | number;
+  readonly account_id: string;
+  readonly good_id: string | null;
+  readonly amount_minor: string | number;
+  readonly amount_qty: string | number | null;
+  readonly event_id: string | null;
+  readonly batch_kind: string | null;
+  readonly supply_account_id: string | null;
 }
 
 interface DivergenceRow {

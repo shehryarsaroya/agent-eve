@@ -62,6 +62,10 @@ export function extractTick(runtime: Runtime, report: TickReport): TickRecord {
         amountMinor: p.amountMinor,
         amountQty: p.amountQty,
         batchKind: batch.kind,
+        // The named faucet or sink, not just "this was an ISSUE". Which faucet is not
+        // recoverable from the kind, and both INV-1's form check and `checkInv7`'s
+        // third mirror read the name — so a hydrated ledger without it halts.
+        supplyAccount: batch.supply === null ? null : batch.supply.account,
       });
     });
     batchOrdinal += 1;

@@ -120,6 +120,8 @@ export class Ledger {
    * committed half).
    */
   readonly encumbrances = new EncumbranceBook((id) => this.accounts.get(id));
+  /** Set by {@link hydrateAppendOnly}. Boot-only, and only ever once. */
+  private hydrated = false;
 
   constructor() {
     // The constitution, opened at construction. A faucet you have to remember to
@@ -164,6 +166,13 @@ export class Ledger {
    * grow, so cutting them back to a captured length restores precisely the state the
    * snapshot was taken over — there is no partial row to unwind and no ordering to
    * rebuild. Growing them here would be a bug, so it is refused.
+   *
+   * **Cross-process boot does not weaken this.** A fresh process adopting a snapshot
+   * from tick 287 puts the missing rows back from the durable record first — see
+   * {@link hydrateAppendOnly} — so by the time this runs the lengths already match and
+   * the truncation is a no-op. The refusal stays exactly as strict, because the thing
+   * it catches (a capture describing a log this ledger never had) is still a corrupt
+   * triple no matter which process asks.
    */
   restoreTo(state: {
     readonly accounts: readonly {
@@ -218,6 +227,115 @@ export class Ledger {
 
     this.postings.length = state.postingCount;
     this.batches.length = state.batchCount;
+  }
+
+  /**
+   * Rebuild the append-only halves from the durable record, so a snapshot taken at
+   * tick T can legitimately be adopted into a fresh process.
+   *
+   * ── WHY THIS EXISTS, AND WHY IT IS NOT A RELAXATION OF `restoreTo` ──────────
+   *
+   * {@link restoreTo} refuses to GROW `postings`/`batches`, and that refusal is
+   * correct: inside one process, a capture can only ever describe a prefix of the log
+   * the ledger already holds, so growth means the snapshot came from a future this
+   * ledger never reached. Boot's problem is the *other* direction — a fresh process
+   * has an almost-empty log and a snapshot from tick 287 — and the honest fix is to
+   * put the missing rows back from the record rather than to teach the rollback path
+   * to invent them.
+   *
+   * The rows are not optional decoration. `checkInv7` recomputes **every** account
+   * balance by summing the whole posting log, and its third mirror recomputes faucet
+   * and sink accumulators from every batch's supply leg, on every tick. A hydrated
+   * ledger short by one row halts the first tick after boot; a hydrated ledger with
+   * one row too many halts it just as loudly, in the opposite direction. So the
+   * counts are checked against the snapshot's own capture and a mismatch is a
+   * refusal, never a truncation: silently trimming to fit is how a boot loses a
+   * posting and reports success.
+   *
+   * Call once, before adopting the matching snapshot. A second call is refused —
+   * replacing a log the world has since extended would erase real history.
+   */
+  hydrateAppendOnly(
+    batches: readonly AppliedBatch[],
+    expected: { readonly postingCount: number; readonly batchCount: number },
+  ): void {
+    if (this.hydrated) {
+      throw new LedgerError(
+        'the append-only log has already been hydrated; a second hydrate would replace a log the world has since extended',
+      );
+    }
+    if (!Number.isSafeInteger(expected.postingCount) || expected.postingCount < 0) {
+      throw new LedgerError(`hydrate: postingCount ${String(expected.postingCount)} is not a count`);
+    }
+    if (!Number.isSafeInteger(expected.batchCount) || expected.batchCount < 0) {
+      throw new LedgerError(`hydrate: batchCount ${String(expected.batchCount)} is not a count`);
+    }
+
+    const postings: Posting[] = [];
+    const applied: AppliedBatch[] = [];
+    let lastTick = Number.NEGATIVE_INFINITY;
+    for (const [i, b] of batches.entries()) {
+      const where = `hydrate: batch ${String(i)} (${b.eventId})`;
+      if (b.postings.length === 0) {
+        throw new LedgerError(`${where}: a value-moving batch with no postings (INV-1)`);
+      }
+      if (!Number.isSafeInteger(b.tick)) throw new LedgerError(`${where}: tick is not an integer`);
+      if (b.tick < lastTick) {
+        // Append order is the record's order. Out-of-order rows would still sum the
+        // same, but they would mean the reader lost the ordering the log was written
+        // in — and `allPostings()` is read positionally by `restoreTo`'s truncation.
+        throw new LedgerError(
+          `${where}: tick ${String(b.tick)} arrives after tick ${String(lastTick)}; the log is append-only in time`,
+        );
+      }
+      lastTick = b.tick;
+      if ((b.supply === null) !== (b.kind === 'TRANSFER')) {
+        throw new LedgerError(
+          `${where}: kind ${b.kind} ${b.supply === null ? 'carries no' : 'carries a'} supply leg; ` +
+            'a TRANSFER never moves supply and an ISSUE/RETIRE always does (INV-1)',
+        );
+      }
+      if (b.supply !== null && b.supply.direction !== b.kind) {
+        throw new LedgerError(
+          `${where}: kind ${b.kind} disagrees with supply direction ${b.supply.direction}`,
+        );
+      }
+      for (const [j, p] of b.postings.entries()) {
+        if (p.eventId !== b.eventId) {
+          throw new LedgerError(
+            `${where}: posting ${String(j)} carries event ${p.eventId}, not the batch's ${b.eventId}`,
+          );
+        }
+        if (!Number.isSafeInteger(p.amountMinor)) {
+          throw new LedgerError(`${where}: posting ${String(j)} amountMinor is not a safe integer`);
+        }
+        if (p.amountQty !== null && !Number.isSafeInteger(p.amountQty)) {
+          throw new LedgerError(`${where}: posting ${String(j)} amountQty is not a safe integer`);
+        }
+        if (postingLedger(p) === null) {
+          throw new LedgerError(
+            `${where}: posting ${String(j)} on ${p.account} is neither a currency leg nor a goods leg`,
+          );
+        }
+        postings.push(p);
+      }
+      applied.push(b);
+    }
+
+    if (postings.length !== expected.postingCount || applied.length !== expected.batchCount) {
+      throw new LedgerError(
+        `hydrate: the record yields ${String(postings.length)} postings in ${String(applied.length)} batches, ` +
+          `but the snapshot was taken over ${String(expected.postingCount)} postings in ` +
+          `${String(expected.batchCount)} batches. INV-7 sums the whole posting log every tick, so a ` +
+          'hydrated ledger that is short or long halts the first tick after boot — refusing here instead.',
+      );
+    }
+
+    this.postings.length = 0;
+    this.postings.push(...postings);
+    this.batches.length = 0;
+    this.batches.push(...applied);
+    this.hydrated = true;
   }
 
   allAccounts(): readonly Account[] {
