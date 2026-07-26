@@ -255,6 +255,20 @@ grep -q 'THE COMPACT' <<<"$FIRST" || fail "agent.md is not being served as markd
 grep -qv '<!DOCTYPE' <<<"$FIRST" || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
 ok "agent.md served as markdown"
 
+# THE FRAME THE CLIENT ACTUALLY FETCHES, fetched the way the client fetches it.
+#
+# The frames were being written correctly for days while every viewer got index.html:
+# a regex `location` with `alias` does not append the remaining URI, so the path never
+# resolved and nginx fell through to the SPA. Server-side everything looked right — the
+# file was on disk, the deploy passed — because nothing here had ever asked for the URL.
+# Same shape as the agent.md check above, and added for the same reason: a 200 carrying
+# the wrong body is worse than a 404, since it looks like success to everything except
+# the thing that has to parse it.
+FRAME=$(curl -s --max-time 20 https://agentinsurance.io/compact/frames/latest.json | head -c 60)
+grep -qv '<!DOCTYPE' <<<"$FRAME" || fail "frames/latest.json fell through to index.html — the client polls this and would parse HTML as a frame"
+grep -q '{' <<<"$FRAME" || fail "frames/latest.json is not JSON (got: ${FRAME:0:60})"
+ok "the spectator frame is served as JSON"
+
 # Post-deploy health has TWO distinct questions, and conflating them was a bug:
 # "did the deploy work" vs "is a live run in progress". The service being up with a
 # sound world is the deploy's business; whether LLM players are currently deciding is
