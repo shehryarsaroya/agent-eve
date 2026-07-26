@@ -2115,15 +2115,32 @@ export class Runtime {
     // trivial form (create on the grantor's behalf, then pay yourself), and A6's whole
     // claim is that betrayal is subtle and legitimate, not this. Filling roles in ventures
     // whose creator you have no authority over is untouched.
+    //
+    // The question is asked at the venture's CREATION tick, not at this one. Asking it
+    // at `ctx.tick` left a one-tick bypass around the only guardrail A6 has, and it was
+    // the trivial betrayal named above wearing a delay: hold a grant, create a venture
+    // on the grantor's behalf funded from the grantor's own stores, let the grant expire
+    // (or revoke it yourself — revocation takes effect next tick), then fill a paid role
+    // one tick later. `liveGrantBetween` returned null, the guard never ran, and the
+    // delegate was paid out of an escrow it had shaped with someone else's money. Found
+    // by a codex review of the grant accounting.
+    //
+    // Creation-tick is also strictly STRONGER than the check it replaces rather than
+    // merely different, which is why this is a one-word fix and not a second condition:
+    // liveness is `atTick <= end`, so a grant live now was necessarily live at creation
+    // too. Every case the old check caught, this one still catches.
     if (
       venture.creator !== req.principal &&
-      this.grantBook.liveGrantBetween(venture.creator, req.principal, ctx.tick) !== null
+      this.grantBook.liveGrantBetween(venture.creator, req.principal, venture.windowOpensTick) !==
+        null
     ) {
       return reject(
         'INV-23',
-        `you hold a live grant over ${venture.creator}, so you may not also fill a role in its venture ` +
-          `${ventureId}: a delegate cannot be a counterparty to a deal it has authority over (self-dealing, ` +
-          '§8.1 #3). Fill roles in ventures whose creator you have no authority over.',
+        `you held a grant over ${venture.creator} when venture ${ventureId} was created, so you may ` +
+          'not also fill a role in it: a delegate cannot be a counterparty to a deal it has authority ' +
+          'over (self-dealing, §8.1 #3). Letting the grant lapse does not clear this — the conflict is ' +
+          'that you could have shaped the venture. Fill roles in ventures whose creator you have no ' +
+          'authority over.',
       );
     }
     // ── GEOGRAPHY IS NOT ENFORCED HERE, AND IT IS NOT AN OVERSIGHT ────────────

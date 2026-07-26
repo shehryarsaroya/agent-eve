@@ -338,6 +338,43 @@ describe('anti-self-dealing — a delegate is not a counterparty to a deal it co
     expect(refusal?.invariant).toBe('INV-23');
   });
 
+  it('letting the grant LAPSE does not unlock the self-deal — the guard asks about creation', () => {
+    // The one-tick bypass a codex review of the grant accounting found. The guard used to
+    // ask "do you hold a live grant RIGHT NOW", so the trivial betrayal it exists to block
+    // was available to anyone willing to wait: create the venture on the grantor's account
+    // while the grant is live, revoke it (revocation takes effect next tick), let a tick
+    // pass, then fill a paid role in the venture you shaped with the grantor's money.
+    const w = world('sd-lapse');
+    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 250_000 }))).toBeNull();
+    expect(
+      act(w.runtime, w.delegate, 'create', {
+        kind: 'HAUL',
+        on_behalf_of: w.grantor,
+        value: 12_000,
+        stage: w.stage,
+      }),
+    ).toBeNull();
+
+    const v = w.runtime.ventures.forPrincipal(w.grantor)[0]!;
+    const id = w.runtime.grants.forGrantor(w.grantor)[0]!.id;
+
+    // The grantor's authority is withdrawn, and a tick passes so it is fully effective.
+    expect(act(w.runtime, w.grantor, 'revoke', { grant: id })).toBeNull();
+    w.runtime.runTick();
+    expect(w.runtime.grants.liveGrantBetween(w.grantor, w.delegate, w.runtime.engine.tick)).toBeNull();
+
+    // No live grant — and the delegate must STILL be refused, because it could have
+    // shaped this venture when it did hold one.
+    const open = v.roles.find((r) => r.filledByPrincipal === null)!;
+    const hand = handsOf(w.runtime.world, w.delegate)[0]!;
+    const refusal = act(w.runtime, w.delegate, 'fill_role', {
+      venture: v.id,
+      role: open.index,
+      hand: hand.id,
+    });
+    expect(refusal?.invariant).toBe('INV-23');
+  });
+
   it('a principal with no authority over the creator may fill the role (control)', () => {
     const w = world('sd2');
     const outsider = 'p:outsider' as PrincipalId;
