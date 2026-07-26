@@ -116,6 +116,46 @@ things that really happened — the operator really did pay — and rewriting th
 lying in the other direction. The diversity term is the one that claims something about *whom* the
 promises were to, and it is the only one making a claim that is false.
 
+## ⚠ ATTEMPTED, REVERTED — and the attempt eliminated the obvious fix
+
+*Added after implementing the proxy above and reverting it. The three "decisions to settle" were
+not bureaucracy; the first attempt ran straight into one.*
+
+I implemented exactly the rule proposed above — **count `P → C` only if `C` has dealt with somebody
+other than `P`** — in both the live accrual and the restore path (which has to rebuild in journal
+order, evaluating before adding, or a restored world holds a larger count than the live one and
+INV-21 correctly halts it). Four tests went red, and one of them was the finding:
+
+`books-in-the-hash.test.ts` has `p:a` crediting `p:b` and then `p:c` — two genuinely different
+principals — and asserts a diversity of 2. Under my rule it is **0**, because `p:b` and `p:c` are
+themselves leaves that never credited anyone.
+
+**That is not the property the field claims.** The name is *independently-**capitalised***, and my
+proxy tests *independently-**connected***. They are different, and the difference lands on the wrong
+party: `p:a` did nothing wrong and cannot control whether its counterparties go on to deal elsewhere.
+A real agent that hires a genuinely new principal would earn no diversity credit for it — the rule
+punishes the honest crediting agent for somebody else's lack of breadth.
+
+Worse, it is *gameable in the other direction*: two operators with puppet farms can cross-credit each
+other's puppets once, making every puppet "connected" and restoring the farm at trivial cost.
+
+**So the connectivity proxy is eliminated.** What is actually needed is capital provenance: *does `C`
+hold value that did not come from `P`?* A puppet's capital is entirely its operator's; a real agent's
+is not. That is a flow question, and the honest options are:
+
+1. **Track inflow provenance per principal** — the direct answer, and real new state inside
+   `state_hash`, which is the cost `ledger/endowment.ts` explicitly refused to pay for D7.
+2. **Require the counterparty to have EXTRACTED** — production is the one way capital enters a
+   principal without another principal handing it over (`GOODS_FAUCET.EXTRACTION`, and a WORKS costs
+   earnings to raise). "Has this counterparty ever extracted?" is one book lookup, needs no new
+   state, and a puppet farm cannot fake it without buying a WORKS per puppet out of *earned* money —
+   which is precisely the cost D7 was designed to impose. **This is the most promising line.**
+3. **Cap the diversity term's contribution to standing** rather than gating the count, so a farm
+   raises a number that is worth little. Cheapest, and it dodges the question rather than answering it.
+
+Option 2 also has the property the others lack: it makes the anti-farm term mean something an
+operator must *pay the world* for, not something it must arrange socially.
+
 ## The method note
 
 Three of today's findings came from one question: *what does this check NOT check?* The seal band
