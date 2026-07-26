@@ -77,11 +77,30 @@ export const CONTRACT_SECTIONS: readonly string[] = Object.freeze([
  *
  * The bill barely moves, and that is why raising it is the right answer rather than trimming.
  * The contract is the **stable prefix** of every cast prompt, so it is cached input at a tenth
- * of fresh-input price; 6k more characters is roughly 1.5k tokens at $0.10/M. The ceiling still
- * does its real job — a section that grows tenfold cannot decuple the bill — because 32k is a
+ * of fresh-input price; more characters cost roughly $0.10/M of cached tokens. The ceiling still
+ * does its real job — a section that grows tenfold cannot decuple the bill — because this is a
  * ceiling on the *whole excerpt*, not a per-section allowance.
+ *
+ * ## 32k → 40k, and the second raise is itself the finding
+ *
+ * The headroom assertion in `prompt.test.ts` caught this at **30,821 of 32,000** when §11C
+ * (syndicates) and the assurance-timing paragraph landed — before anything was dropped, which is
+ * what that assertion exists for. Raised again on the same cost reasoning.
+ *
+ * **But twice is a pattern, and the honest reading is that the contract is the wrong shape.** The
+ * cast is handed the *whole* player document because scar #1 says it must prompt from the real
+ * rules surface and never a private paraphrase — and that was exactly right when `agent.md` was
+ * 300 lines. It is now approaching 800 and every system added grows it. Raising the ceiling a
+ * third time would be avoiding the question.
+ *
+ * The question to answer then, and it is a real design decision rather than a tuning knob: does a
+ * cast member need every section every wake, or does it need the sections its *current situation*
+ * touches — with the selection derived from the observation rather than hand-curated, so it is
+ * still the real document and never a paraphrase? A Commons newcomer does not need the Charge; a
+ * claimant in arrears does not need the enrolment playbook. That is a projection, not a summary,
+ * and it keeps scar #1's guarantee while bounding the prefix.
  */
-export const MAX_CONTRACT_CHARS = 32_000;
+export const MAX_CONTRACT_CHARS = 40_000;
 
 /** Characters of observation JSON in one prompt, before keys start being dropped. */
 export const MAX_OBSERVATION_CHARS = 16_000;
@@ -302,6 +321,18 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
       '  and that pairing is what a watching human reads. An assurance you kept is the strongest',
       '  evidence you are worth dealing with; one you broke is the most damaging sentence in the',
       '  game, and it is damaging in YOUR words rather than ours.',
+      '',
+      '',
+      '  TIMING IS THE WHOLE VALUE. An assurance is only worth something BEFORE the outcome is known.',
+      '  Said while the deal is live it is a promise, and the record prints it beside what you did.',
+      '  Said after the venture has settled it is worth NOTHING to anyone: the result is already in',
+      '  the record, nobody relied on your words, and no reader will ever see them next to a deed.',
+      '  Measured on the live world: 40 of 41 assurances were spoken about deals that had ALREADY',
+      '  RESOLVED. That is not caution, it is words with nothing at stake.',
+      '',
+      '  So the moment to say it is when you still owe something. `affordances[]` offers you the',
+      '  assurance exactly then, on exactly the ventures where you still owe an elective half — take',
+      '  it from there and the timing takes care of itself.',
       '',
       '  So say it if you mean it, and understand what you are staking if you do not.',
       '',

@@ -600,3 +600,28 @@ describe("agent.md's verb table says which verbs actually exist", () => {
     expect(AGENT_MD.replace(/\s+/g, ' ')).toContain('cannot be intercepted in transit');
   });
 });
+
+describe('agent.md says WHEN an assurance is worth anything', () => {
+  /**
+   * Measured on the live world: **40 of 41 assurances were about ventures that had already
+   * resolved.** The cast was speaking, at the right party — 40 of them from the creator, who owes the
+   * elective half — and about the wrong MOMENT. A promise made after the outcome is known is not a
+   * promise; nobody relied on it and no reader will ever see it beside a deed.
+   *
+   * The guidance said `assure` is "the one that is quoted back at you" and never said when. The
+   * affordance now enforces the timing structurally (offered only on live ventures the principal
+   * still owes), but an agent reading the document is entitled to know why, and a human tuning the
+   * prompt later is entitled to know this was measured rather than assumed.
+   */
+  it('says an assurance after settlement is worth nothing', () => {
+    const flat = AGENT_MD.replace(/\s+/g, ' ');
+    expect(flat).toContain('TIMING is its whole value');
+    expect(flat, 'and what makes it worthless').toMatch(/already resolved it is worth \*\*nothing\*\*/);
+  });
+
+  it('points at the affordance as the way to get the timing right', () => {
+    const flat = AGENT_MD.replace(/\s+/g, ' ');
+    expect(flat).toContain('while you still owe something');
+    expect(flat, 'and names where the correctly-timed act is offered').toContain('affordances[]');
+  });
+});

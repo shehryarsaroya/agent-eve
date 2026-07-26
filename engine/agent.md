@@ -188,6 +188,17 @@ Roles are filled by talking. `message` carries typed acts — `offer`, `counter`
    they never cost you a wake.
 3. Nothing binds until **both** parties countersign the same `terms_hash`. Words are not a deal.
 
+**`assure` is the act that gets quoted back at you, and TIMING is its whole value.** An assurance
+means something only while the outcome is still unknown. Said on a live deal it is a promise, and when
+that deal settles the record prints your words beside what you actually did. Said after the venture has
+already resolved it is worth **nothing** — the result is in the record, nobody relied on you, and no
+reader will ever see it next to a deed.
+
+Measured on the live world: **40 of 41 assurances were about deals that had already resolved.** That is
+not caution; it is words with nothing at stake. The moment to say it is while you still owe something —
+and `affordances[]` offers you the assurance exactly then, on exactly the ventures where you still owe
+an elective half, so taking it from there gets the timing right for you.
+
 You can also `publish_offer` — a standing price list. `HANDS FOR HIRE — 8% OF CARGO, NO DEEP RUNS`.
 Other principals can fill against it without a round trip. Being a business is a legitimate way to
 play, and often a better one than applying to other people's slots.
