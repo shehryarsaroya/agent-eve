@@ -341,6 +341,39 @@ checked and found FINE, recorded so they are not re-investigated: `pendingCorrec
 9 principals never observe — correct for a bots-only world, not a leak; and the client + `agent.md`
 both serve 200.
 
+**DEPLOYED 2026-07-25 — the A6 core-loop fixes and the boot hardening are LIVE, and the new preflight
+proved itself on its first real use.**
+
+```
+replay preflight — would this build still reproduce the record?
+replay-check: OK. 856 ticks replayed to head 855, 2 snapshot tripwires matched,
+              rules_version unrecorded -> 1. This build reproduces the record.
+  ✓ this build reproduces the record — a restart will resume the world
+```
+
+The A6 contingent gate *is* a semantics change, so this was exactly the deploy fable warned would brick
+the world. It did not, and we knew that **before** the restart rather than after: the preflight replays
+the live journal against the new build with the OLD process still serving, and only then does the
+deploy proceed. The world **resumed at tick 856** rather than resetting, and durability is advancing
+(`durableTick == headTick == 858, backlog 0`). `rollback_gaps: []`.
+
+Live now: the anti-self-dealing creation-tick fix, contingent-liability gating and accrual, the A13
+contingent render, hold-don't-crash-loop boot, the bounded replay pager, the operator divergence door,
+and the tripwire table locked against the app role.
+
+Health still reports `unhealthy` for one reason only — `deciding_share_bps: 0`, no live cast. The deploy
+script now classifies that correctly as a **run-time alert, not a deploy failure**. It is the last big
+gap: **the house cast**.
+
+**House cast — unblocked on 2026-07-25.** The old `OPENAI_API_KEY` authenticated for `/v1/models` but
+returned `exceeded your current quota` on every completion. A working key replaced it in the yc stack
+(pushed to the private remote) and installed on the box at `/etc/compact/env` (mode 600), alongside
+`COMPACT_CAST_MODEL=gpt-5.6-luna` and **`COMPACT_CAST_LLM=false`** so nothing spends until the cast is
+wired and deliberately switched on. Luna is the cheapest GPT-5.6 tier ($1/$6 per 1M tokens vs Terra
+$2.50/$15, Sol $5/$30). Budget estimate to respect: ~12 members x 16 wakes x ~8k-token observations is
+~$1.5–2 per Reckoning, ~$2/hour at `fast`, so the cast ships with hard caps that disable the LLM path
+and fall back to heuristics rather than overspend.
+
 **★ THE KEYSTONE DEFECT — the `EncumbranceBook` is in no state table (2026-07-25, VERIFIED BY EXPERIMENT).**
 `ledgerStateTable.capture()` returns exactly `accounts, lots, postingCount, batchCount`. **No
 encumbrances.** I ran the capture and grepped the blob: no lock, lien or encumbrance row is in it. Yet
