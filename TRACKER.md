@@ -24,6 +24,13 @@
   transferable part is everything above the floor — which keeps it out of `state_hash` and the
   snapshot. `ledger/endowment.ts` owns the constant; the grant and the floor are one quantity with
   one home. **No launch blockers remain.**
+- **★ THE WORLD IS THINKING (2026-07-26).** The LLM house cast is **ON in production**. First real
+  LIVE decisions in the game's history: `by_source {"LIVE": 18, "HEURISTIC": 2304, "FALLBACK": 1}`,
+  climbing as the 288-tick window ages out the bots-only past. Model `gpt-5.6-luna`, ~99% of each
+  prompt served from cache, three budget caps with a latching $5 ceiling. The one FALLBACK is the
+  degradation path working, with a greppable reason (`cast: kestrel reply discarded (empty-plan)`) —
+  the member fell back to its heuristic instead of stalling the tick. `deciding_share_bps` will cross
+  the 2500 floor as the window fills; until then `unhealthy` is arithmetic, not a fault.
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
