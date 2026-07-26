@@ -200,8 +200,11 @@ These came out of the critique and are actionable now:
    climax slots first, then fill setup.
 5. **Rundown duration is inconsistent**: SPEC says 30–45 minutes; twelve 30–45s segments give 6–9
    minutes; the client implements neither.
-6. **Levy plumbing would teleport Charge goods**, and **free identities can mint unbound cash and
-   goods** (A15).
+6. ~~**Levy plumbing would teleport Charge goods**~~ — **WITHDRAWN, I misread it.** Presence is
+   enforced (`deliveryFault` requires a hand at the delivery place, and the non-escrowable share
+   requires the payer's *own* hand). Only cargo carriage is compressed, pending `haul`. See
+   `D8-the-levy-teleport.md`. **Free identities minting unbound cash and goods (A15) is real** and is
+   the one launch blocker — see `D7-the-endowment-hole.md`.
 
 ---
 
