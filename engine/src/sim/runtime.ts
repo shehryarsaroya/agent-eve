@@ -6835,14 +6835,26 @@ export class Runtime {
       provenanceClass: 'FACT',
       actedOnStateVersion: ctx.frozenStateVersion,
       decisionSource: req.decisionSource ?? null,
+      // ── NO DERIVED QUANTITIES IN THE PAYLOAD (scar #5, and a replay hazard) ──
+      //
+      // This carried `share_per_tick` and `occupants`, both computed by `worksQuote` at the instant
+      // of the build. The event ledger is HASHED STATE, so freezing a derivation into it makes
+      // `state_hash` sensitive to how that derivation was reached — and `checkpoint-adoption-audit`
+      // tripped exactly there once the heuristic cast started building. The build was ACCEPTED on
+      // replay (the error was `TRIPWIRE`, not `APPLIED_REFUSED`, so no gate flipped) and the state
+      // still differed, which points at the payload rather than the decision.
+      //
+      // It is also scar #5 on its own terms — one quantity with two homes. Both numbers are
+      // recomputable at any time from the map and the works book, and the frame's `worksLines`
+      // already publishes the live share and occupancy. An event should record what HAPPENED
+      // (this principal raised a WORKS here, and it comes online then), never a snapshot of what
+      // was derivable at the time.
       payload: {
         works: row.id,
         system,
         holder: req.principal,
         tier: quote.tier,
         online_at_tick: row.onlineAtTick,
-        share_per_tick: quote.sharePerTick,
-        occupants: quote.occupants + 1,
       },
     });
     return { ok: true, value: null };

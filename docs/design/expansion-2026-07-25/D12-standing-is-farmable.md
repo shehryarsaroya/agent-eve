@@ -235,12 +235,26 @@ fails with it. That is the thing to reproduce. Do not use a hand-built per-tick 
 it without first proving the harness reproduces a KNOWN-GOOD run — an instrument that reports
 divergence on an unmodified engine cannot tell you anything about a modified one.
 
-**The remaining suspect, and where to start:** `vBuildWorks` **re-validates on replay**. It calls
-`worksQuote` and gates on `affordable`, so any difference in free balance at that instant flips the
-gate — the build succeeds live and is *refused* during replay, which diverges everything after it.
-A verb whose re-execution can be refused is not replay-safe, and the fix is probably that a replayed
-action must not re-run an affordability gate the live tick already passed. Check whether any other
-verb has the same shape before fixing this one alone.
+**THE RE-VALIDATION SUSPECT IS DEAD, and the way it died narrows things usefully.** Replay *does*
+re-run the handlers — `boot.ts` calls `engine.submit()` then `runTick()` — and it carries an explicit
+`APPLIED_REFUSED` divergence kind for precisely the case where re-validation refuses something the
+record says applied. **Our error is `TRIPWIRE`, not `APPLIED_REFUSED`**, so no gate flipped: the build
+was accepted on replay and the resulting state still differed.
+
+**Fifth cause ruled out: the event payload.** `works.raised` carried `share_per_tick` and `occupants`,
+both derived by `worksQuote` at the instant of the build, and the event ledger is hashed state — so a
+frozen derivation was a plausible sensitivity. Removed (it is scar #5 on its own terms, one quantity
+with two homes, and the frame already publishes both live). **The tripwire persists**, so that was not
+the cause either — but the change is kept because it was wrong regardless.
+
+**Where that leaves it.** The build applies in both runs, the books round-trip identically, lot
+selection is canonical, no gate flips, and the payload is no longer derived. What remains unexamined
+is the *ordering* surface: `clientSequence` in a live heuristic batch is the position in that batch
+(`out.length`), and the replay takes it from the action log — so a change to which members produce
+actions changes the sequence numbers a live run assigns, and the comparison is between two runs whose
+batches differ, not between a run and its own replay. **That is the next thing to test, and it may mean
+`checkpoint-adoption-audit` is comparing runs that were never meant to match.** Prove the harness
+reproduces an unmodified run first; see the warning above.
 
 Reverted rather than shipped. A determinism failure is the one class in this codebase that must never
 be shipped on a guess, and `state_hash` divergence on a live world at ~4,500 ticks means a boot that
