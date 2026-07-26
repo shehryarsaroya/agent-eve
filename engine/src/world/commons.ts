@@ -367,8 +367,25 @@ export function classifyAction(
     case 'vote': {
       const ballot = readString(params, ['ballot', 'ballot_kind', 'ballotKind']);
       if (ballot === null) return 'HOSTILE';
-      if (ballot.toUpperCase() === SEIZURE_BALLOT) return 'HOSTILE';
-      return PEACEFUL_BALLOTS.includes(ballot) ? 'PEACEFUL' : 'HOSTILE';
+      // ── THE BALLOT MAY BE A KIND *OR* AN ID, BECAUSE THE OBSERVATION GIVES AN ID ──
+      //
+      // This matched the kind exactly, and the observation hands the agent
+      // `obligations.levy.ballot.id` — an id shaped `KIND::reckoning::constellation`. So
+      // an agent that voted with the field the game had just given it sent
+      // `LEVY::11::con-1`, matched nothing, fell through to the fail-closed HOSTILE, and
+      // was told by A8 that voting in the Levy is an attack. Every principal starts in the
+      // Commons, so the Levy ballot — the politics §5.2 says nobody sits out — was
+      // unreachable for everyone, and `commons.spec.ts` **asserted** the classification
+      // that did it: a green suite shipping a dead mechanic. Found by a live playtest.
+      //
+      // The kind is the part before the first separator, and matching stays EXACT on it:
+      // folding case here is what the test below deliberately forbids, because a spelling
+      // this module accepts but the ballot module reads differently would slip past the
+      // floor. So `LEVY::11::con-1` is peaceful, `levy::11::con-1` is still hostile, and
+      // `SEIZURE::…` is still hostile as an id as well as a kind.
+      const kind = ballot.split(BALLOT_ID_SEPARATOR)[0] ?? ballot;
+      if (kind.toUpperCase() === SEIZURE_BALLOT) return 'HOSTILE';
+      return PEACEFUL_BALLOTS.includes(kind) ? 'PEACEFUL' : 'HOSTILE';
     }
     case 'approve': {
       // An approval is paperwork: the act it authorises is floor-checked when it
@@ -386,6 +403,15 @@ export function classifyAction(
 
 /** Ballots that take nothing. Exact spellings; anything else fails closed. */
 const PEACEFUL_BALLOTS: readonly string[] = ['LEVY', 'SYNDICATE'];
+
+/**
+ * What separates a ballot's kind from the rest of its id (`LEVY::11::con-1`).
+ *
+ * Exported-adjacent knowledge on purpose: the classifier reads a ballot id that the Levy
+ * module mints, and one of the two having its own idea of the shape is the disagreement
+ * §3 exists to prevent.
+ */
+const BALLOT_ID_SEPARATOR = '::';
 
 /**
  * The clause that turns "this is hostile" into something an agent can act on, when the

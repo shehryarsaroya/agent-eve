@@ -366,3 +366,42 @@ describe('what counts as being in the Commons', () => {
     expect(commonsFloorRejection(f.state, 'demand', { hand_id: raiderHand.id })).toBeNull();
   });
 });
+
+describe('a Levy ballot id is votable from the Commons (the dead-mechanic fix)', () => {
+  it('accepts the id the observation actually hands the agent', () => {
+    // A live playtest probe read obligations.levy.ballot.id, voted with it, and was told
+    // by A8 that voting in the Levy is a hostile act. Every principal starts in the
+    // Commons and could not leave, so the politics §5.2 says nobody sits out was
+    // unreachable for everyone — and the previous version of this file ASSERTED the
+    // classification that caused it. A green suite was shipping a dead mechanic.
+    expect(classifyAction('vote', { ballot: 'LEVY::11::con-1' })).toBe('PEACEFUL');
+    expect(classifyAction('vote', { ballot: 'SYNDICATE::4::con-2' })).toBe('PEACEFUL');
+  });
+
+  it('still fails closed on a lower-case kind, id or not', () => {
+    // The case discipline is deliberate and is NOT relaxed: a spelling this module
+    // accepts but the ballot module reads differently would slip past the floor.
+    expect(classifyAction('vote', { ballot: 'levy::11::con-1' })).toBe('HOSTILE');
+    expect(classifyAction('vote', { ballot: 'levy' })).toBe('HOSTILE');
+  });
+
+  it('a seizure ballot is hostile as an ID as well as a kind', () => {
+    // The one ballot that takes something must not become peaceful by being spelled as
+    // an id — that would be the fix opening a hole where the bug had merely closed a door.
+    //
+    // HONESTLY: this property is guarded TWICE and this test cannot tell you which guard
+    // holds it. Mutating the explicit seizure branch to compare the whole ballot string
+    // leaves the suite green, because `SEIZURE` is not in PEACEFUL_BALLOTS and the
+    // fail-closed default catches it regardless. So the explicit branch is defence in
+    // depth rather than the load-bearing check, and it is kept for the day somebody adds
+    // a kind to that list without thinking about seizure. Reported rather than dressed up
+    // as a proven guard — an unproven guard I claimed was proven is worse than one I
+    // labelled.
+    expect(classifyAction('vote', { ballot: 'SEIZURE::11::p:someone' })).toBe('HOSTILE');
+    expect(classifyAction('vote', { ballot: 'SEIZURE' })).toBe('HOSTILE');
+  });
+
+  it('an unknown kind still fails closed', () => {
+    expect(classifyAction('vote', { ballot: 'MUTINY::1::x' })).toBe('HOSTILE');
+  });
+});
