@@ -52,6 +52,17 @@ import type { FrameSource } from './render.js';
  * | `claimLines` | `PUBLIC` | sovereignty and its published legal state — the argument is below, in full |
  * | `modelBadges` | `PUBLIC` | which model runs a cast seat; not a game fact |
  * | `worksLines` | `PUBLIC` | a structure on the map, its tier-fixed yield, and what the world has already handed over |
+ * | `syndicateLines` | `PUBLIC` | an organisation's standing legal shape, its pooled capital, and who may spend it |
+ *
+ * **`syndicateLines.treasuryMinor` is the third field to argue against the stockpile line, and it
+ * wins on §6.4's precedent rather than on convenience.** Bond is *"posted slashable capital,
+ * **public**, and any amount — it is your credit rating"*, and a pooled treasury is that same object
+ * at org scale: the thing counterparties price, and the thing an office-holder could take. It is not
+ * a private hoard inferred through a formula — it is currency in a named account every member
+ * deliberately pooled, minted by `PUBLIC` events. Hiding it would make the betrayal unreadable at
+ * the exact moment the show exists for. What stays out: any member's OWN balance or holdings
+ * (`SENSED` — pooling does not make a member's private stores public) and a covenant's verbs,
+ * selectors or approval chain (`PARTIES`, D9a: only a grant's LIMITS and parties are public).
  *
  * **`worksLines` argues itself the same way `claimLines` had to**, and it is worth stating
  * because this is the third mechanic to reach the frame and the second one where the tempting
@@ -137,6 +148,7 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'raidLines',
   'claimLines',
   'worksLines',
+  'syndicateLines',
 ]);
 
 export class ProjectionError extends Error {}

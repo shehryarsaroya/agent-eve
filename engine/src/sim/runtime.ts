@@ -308,6 +308,7 @@ import {
   MAX_RAID_LINES,
   type ClaimLine,
   type WorksLine,
+  type SyndicateLine,
 } from '../frames/contract.js';
 import {
   ANCHOR_QTY,
@@ -5831,6 +5832,43 @@ export class Runtime {
   }
 
   /**
+   * The syndicates, as the map draws them (A13).
+   *
+   * `officeHolders` counts live grants whose grantor is the syndicate — the number of individuals
+   * any one of whom could empty the treasury today without breaking a rule. That is the figure an
+   * audience should feel, and it is the whole of A6 stated as one integer.
+   */
+  syndicateLines(tick: number): readonly SyndicateLine[] {
+    const out: SyndicateLine[] = [];
+    for (const row of this.syndicateBook.liveInOrder()) {
+      const pooled = syndicateAsPrincipal(row.id);
+      const account = storesAccount(pooled);
+      const treasury = this.ledger.account(account) === undefined ? minor(0) : this.ledger.balance(account);
+      const offices = this.grantBook
+        .forGrantor(pooled)
+        .filter((g) => this.grantBook.isLive(g.id, tick)).length;
+      const members = this.syndicateBook.sittingMembers(row.id, tick).length;
+      out.push({
+        syndicate: row.id,
+        name: row.name,
+        founder: row.founder,
+        members,
+        admission: row.charter.admission,
+        decision: row.charter.decision,
+        treasuryOffices: row.charter.treasuryOffices,
+        treasuryMinor: minor(treasury),
+        officeHolders: offices,
+        // STRONGBOX is asserted by `assertFrameBudgets` when the clause forbids offices, because a
+        // viewer reading a pooled treasury needs to know at a glance whether anyone can touch it.
+        legend: row.charter.treasuryOffices
+          ? `${String(members)} POOLED · ${String(offices)} CAN SPEND`
+          : `STRONGBOX · ${String(members)} POOLED`,
+      });
+    }
+    return out;
+  }
+
+  /**
    * `form` — found a syndicate under a charter that can never be amended.
    *
    * ══════════════════════════════════════════════════════════════════════════
@@ -8176,6 +8214,7 @@ export class Runtime {
       // rejected "fuel gauge" was exactly that, and this is what replaced it.
       claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
       worksLines: this.worksLines(outcome.tick),
+      syndicateLines: this.syndicateLines(outcome.tick),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

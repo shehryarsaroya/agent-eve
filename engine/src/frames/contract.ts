@@ -54,6 +54,9 @@ export const MAX_FRAME_CLAIM_LINES = 12;
  * crowded, so the contested seams survive the cut.
  */
 export const MAX_FRAME_WORKS_LINES = 16;
+
+/** Syndicate lines a frame may draw. Fewer than works marks: an org is a bigger object. *(calibrate)* */
+export const MAX_FRAME_SYNDICATE_LINES = 8;
 /** §14.3: seconds per segment. Human time — never scaled by TICK_SECONDS. */
 export const SEGMENT_SECONDS = { min: 30, max: 45 } as const;
 
@@ -236,6 +239,60 @@ export interface RaidLine {
  * here is on the safe one — `extracted` says what a place has given up, never what its holder
  * still has.
  */
+/**
+ * A syndicate, as the map draws it (A13).
+ *
+ * ## What makes a pooled treasury watchable
+ *
+ * A claim tints a system and a WORKS marks one. A syndicate has no *place* — it is an authority
+ * structure — so its signature is the **shape of the authority**: how many pooled in, what the
+ * constitution permits, and how many people can currently spend the pot. That last number is the
+ * one an audience should feel, because it is the count of individuals any one of whom could empty
+ * the treasury today without breaking a rule (A6).
+ *
+ * ## The §11.2 argument, field by field
+ *
+ * `name`, `founder`, `members`, `admission`, `decision`, `treasuryOffices` — all **PUBLIC**, and
+ * necessarily so: a charter is what a prospective member relies on before it hands over goods it
+ * cannot retrieve, and a membership is what a counterparty prices when it deals with any member.
+ * §11.2 gives `PUBLIC` to an organisation's standing legal shape for exactly this reason, and
+ * `syndicate.formed` and `syndicate.joined` are both emitted `PUBLIC` already, so this is the
+ * record re-read rather than anything derived.
+ *
+ * `officeHolders` is a **count of live grants whose grantor is this syndicate**, and a grant's
+ * LIMITS and parties are already `PUBLIC` by D9a. Publicity is the mechanic here, not a leak: the
+ * whole A6 story is that the authority was visible and legitimate the entire time.
+ *
+ * **`treasuryMinor` is the field that had to argue hardest, and the argument is that it is not a
+ * stockpile.** It is currency in a named account that every member deliberately pooled, and §6.4's
+ * precedent is exact: bond is *"posted slashable capital, **public**, and any amount — it is your
+ * credit rating"*. A pooled treasury is the same object at org scale — the thing counterparties
+ * price and the thing an office-holder could take. Hiding it would make the betrayal unreadable at
+ * the moment it lands, which is the one moment the show exists for.
+ *
+ * **What a syndicate line may never carry:** any member's *own* balance or holdings (`SENSED`, and
+ * nothing about pooling makes a member's private stores public); goods anywhere; a covenant's verbs,
+ * selectors or approval chain (`PARTIES` by D9a — only a grant's LIMITS and parties are public);
+ * anything derived from a member's private stock. `assertFrameBudgets` refuses the stockpile shapes
+ * by field name, the same executable form `claimLines` and `worksLines` use.
+ */
+export interface SyndicateLine {
+  readonly syndicate: string;
+  readonly name: string;
+  readonly founder: PrincipalId;
+  readonly members: number;
+  readonly admission: string;
+  readonly decision: string;
+  /** Whether the constitution permits anyone to be given spending authority at all. */
+  readonly treasuryOffices: boolean;
+  /** Currency pooled. Public for §6.4's reason: this is the org's credit rating. */
+  readonly treasuryMinor: Minor;
+  /** Live offices over the pool — the count of people who could empty it legally today. */
+  readonly officeHolders: number;
+  /** `STRONGBOX` · `4 POOLED · 1 CAN SPEND` — the words a viewer reads. */
+  readonly legend: string;
+}
+
 export interface WorksLine {
   readonly works: string;
   /** The system the mark sits on. */
@@ -368,6 +425,7 @@ export interface ReckoningFrame {
   /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
   readonly claimLines: readonly ClaimLine[];
   readonly worksLines: readonly WorksLine[];
+  readonly syndicateLines: readonly SyndicateLine[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
@@ -468,6 +526,45 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     }
     if (line.lost < 0 || line.demand < 0) {
       problems.push(`raid ${line.raid} renders a negative quantity`);
+    }
+  }
+
+  // ── A SYNDICATE LINE MAY NOT CONTRADICT ITS OWN CONSTITUTION ─────────────
+  //
+  // The legend is what a viewer believes, and the frame is a stranger's only source. A line that
+  // reads STRONGBOX while reporting office-holders is publishing a contradiction about the one
+  // clause every member relied on.
+  if (frame.syndicateLines.length > MAX_FRAME_SYNDICATE_LINES) {
+    problems.push(
+      `${frame.syndicateLines.length} syndicate lines, budget is ${MAX_FRAME_SYNDICATE_LINES} — a legend a viewer reads, not a directory`,
+    );
+  }
+  for (const line of frame.syndicateLines) {
+    if (!line.treasuryOffices && line.officeHolders > 0) {
+      problems.push(
+        `${line.syndicate} sets treasury_offices false but renders ${line.officeHolders} office-holder(s); no office may exist over that pool`,
+      );
+    }
+    if (line.members < 1) {
+      problems.push(`${line.syndicate} renders ${line.members} members; a syndicate always holds its founder`);
+    }
+    if (line.treasuryMinor < 0 || line.officeHolders < 0) {
+      problems.push(`${line.syndicate} renders a negative quantity`);
+    }
+    if (!line.treasuryOffices && !/STRONGBOX/.test(line.legend)) {
+      problems.push(
+        `${line.syndicate} cannot appoint offices but its legend "${line.legend}" does not say STRONGBOX — that clause is the whole reason a member pooled`,
+      );
+    }
+    // The same shape refusal the other two lines carry. A member's own stores are SENSED, and
+    // pooling does not make them public — so a field naming a member's holdings is the fuel gauge
+    // in a third costume.
+    for (const key of Object.keys(line)) {
+      if (/memberStock|memberHold|holdings|reserve|gauge|cover/i.test(key)) {
+        problems.push(
+          `${line.syndicate} carries "${key}", which reads as a member's own stock — §11.2 keeps that SENSED, and pooling does not publish it`,
+        );
+      }
     }
   }
 

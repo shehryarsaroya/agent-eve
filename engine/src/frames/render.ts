@@ -40,7 +40,9 @@ import {
   MAX_FRAME_CLAIM_LINES,
   type ClaimLine,
   MAX_FRAME_WORKS_LINES,
+  MAX_FRAME_SYNDICATE_LINES,
   type WorksLine,
+  type SyndicateLine,
   type ReckoningFrame,
   type RundownSegment,
   type TributeLine,
@@ -99,6 +101,7 @@ export interface FrameSource {
    */
   readonly claimLines?: readonly ClaimLine[];
   readonly worksLines?: readonly WorksLine[];
+  readonly syndicateLines?: readonly SyndicateLine[];
 }
 
 export interface SettledView {
@@ -376,6 +379,19 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // is the first thing dropped — but it is still *drawn* while there is room, because a
     // map that showed only failing claims would make the screen quietest on the night the
     // most upkeep was supplied.
+    // Ordered by HOW MANY CAN SPEND IT first, then by size. The story a viewer should find is the
+    // treasury with the most people able to empty it, which is the one where A6 is closest to
+    // happening — not simply the richest org.
+    syndicateLines: (src.syndicateLines ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          b.officeHolders - a.officeHolders ||
+          b.treasuryMinor - a.treasuryMinor ||
+          b.members - a.members ||
+          compareIds(a.syndicate, b.syndicate),
+      )
+      .slice(0, MAX_FRAME_SYNDICATE_LINES),
     // Ordered by CROWDING first, because the story a viewer should find is the contested
     // seam, not the biggest total. A sort by `extracted` would rank the oldest WORKS top
     // forever and make the map a leaderboard of tenure.
@@ -422,6 +438,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     raidLines: [],
     claimLines: [],
     worksLines: [],
+    syndicateLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],

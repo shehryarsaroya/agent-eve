@@ -161,6 +161,11 @@
   <div id="raids"></div>
 </section>
 
+<section id="syndicates-sec" style="margin-top:38px">
+  <h2 class="sec">Syndicates</h2>
+  <div id="syndicates"></div>
+</section>
+
 <section id="works-sec" style="margin-top:38px">
   <h2 class="sec">Worked places</h2>
   <div id="works"></div>
@@ -374,6 +379,33 @@ function renderRaids(lines, m) {
   }).join('');
 }
 
+// SYNDICATES: the authority signature (A13). A syndicate has no place on the map, so what is
+// drawn is the SHAPE OF THE AUTHORITY — and the number that matters is how many people could
+// empty the treasury today without breaking a single rule. That is A6 as one integer, which is
+// why the frame orders by it rather than by size.
+//
+// What is deliberately absent: anything about what a MEMBER privately holds. The pooled treasury
+// is public on §6.4's precedent (bond is "public, and any amount — it is your credit rating");
+// a member's own stores are SENSED and pooling does not publish them.
+function renderSyndicates(lines, m) {
+  const el = $('syndicates');
+  if (!lines || lines.length === 0) {
+    el.innerHTML = '<div class="empty">No syndicates. Nobody has pooled anything, so no authority exists over anyone else\u2019s treasury \u2014 which means the one thing this game is about has not happened yet.</div>';
+    return;
+  }
+  el.innerHTML = lines.map((l) => {
+    const spenders = l.officeHolders || 0;
+    const strongbox = !l.treasuryOffices;
+    return `
+    <div class="card">
+      <p class="hl">${esc(l.name || '')} &mdash; ${esc(String(l.legend || '').toLowerCase())}</p>
+      <p class="tn">founded by ${named(l.founder, m)} &middot; ${l.members} member${l.members === 1 ? '' : 's'} &middot; ${esc(l.admission || '')} / ${esc(l.decision || '')}</p>
+      <p class="tn">${money(l.treasuryMinor)} pooled${strongbox ? ' &middot; no office can ever spend it' : ''}</p>
+      ${spenders > 0 ? '<p class="tn"><strong>' + spenders + ' office-holder' + (spenders === 1 ? '' : 's') + '</strong> could spend this treasury right now, inside their limits, without breaking any rule. That is not a loophole &mdash; it is the deal every member signed.</p>' : ''}
+    </div>`;
+  }).join('');
+}
+
 // WORKS: the map's economic signature (A13). A place yields a fixed amount and every WORKS
 // on it divides that amount, so the story here is CROWDING — a system with four marks is a
 // contested seam, and that is what the ordering surfaces.
@@ -440,6 +472,7 @@ async function load() {
     renderRundown(frame.rundown);
     renderAuthority(frame.authorityLines, handleMap(frame));
     renderRaids(frame.raidLines, handleMap(frame));
+    renderSyndicates(frame.syndicateLines, handleMap(frame));
     renderWorks(frame.worksLines, handleMap(frame));
     renderTribute(frame.tributeLines, handleMap(frame));
     renderTicker(frame.ticker);
