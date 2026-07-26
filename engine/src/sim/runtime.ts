@@ -5674,6 +5674,8 @@ export class Runtime {
   worksQuote(principal: PrincipalId, system: SystemId): {
     readonly system: SystemId;
     readonly tier: ZoneTier;
+    /** Named here, not in the affordance string: one home for what a WORKS extracts. */
+    readonly good: GoodId;
     readonly yieldPerTick: number;
     readonly occupants: number;
     /** What this principal would get per tick once online, at today's crowding. */
@@ -5693,6 +5695,7 @@ export class Runtime {
     return {
       system,
       tier,
+      good: WORKS_GOOD,
       yieldPerTick: YIELD_PER_TICK[tier],
       occupants,
       // Divided by the occupants THIS BUILD WOULD MAKE, not by today's count. Quoting the

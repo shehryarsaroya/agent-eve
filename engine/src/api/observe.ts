@@ -412,6 +412,14 @@ export function buildObservation(input: ObserveInput): Observation {
        */
       commons_bound: principalIsCommonsBound(world, principal),
       graduation: graduationBlock(runtime, principal),
+      /**
+       * WORKS — the only reason goods enter the world (§10.2).
+       *
+       * Carried whether or not the build is affordable, for the reason `graduation` is: the
+       * most consequential economic decision a principal makes is whether to raise one, and
+       * a decision it cannot read is one it cannot plan toward.
+       */
+      works: worksBlock(runtime, principal),
       /** §6.4: posted slashable capital, continuous and public. What a claim requires. */
       bond: runtime.bondView(principal),
       /**
@@ -662,6 +670,43 @@ interface AffordanceSet {
  * Every number comes from `Runtime.graduationQuote`, which is also what the verb charges,
  * so the price shown and the price taken are one arithmetic (scar #1).
  */
+/**
+ * What this principal is extracting, and what one more WORKS would get it.
+ *
+ * `share_per_tick` is divided by `occupants + 1` — the share AFTER arriving, never the empty
+ * rate. The whole economic question is whether a build pays for itself, and the pre-arrival
+ * number answers a question nobody asked.
+ */
+function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<string, unknown>> {
+  const seat = runtime.graduationQuote(principal);
+  const mine = runtime.worksOf(principal);
+  if (seat === null) return { held: mine, here: null };
+  const quote = runtime.worksQuote(principal, seat.from);
+  return {
+    /** Live WORKS of yours, with whether each is past spin-up and what it has extracted. */
+    held: mine,
+    here: {
+      system: quote.system,
+      tier: quote.tier,
+      good: quote.good,
+      /** What the PLACE yields per tick, before division. A property of the map. */
+      yield_per_tick: quote.yieldPerTick,
+      /** WORKS standing there now, yours or anyone's. Your share falls as this rises. */
+      occupants: quote.occupants,
+      /** What yours would extract per tick once online, at today's crowding. */
+      share_per_tick: quote.sharePerTick,
+      cost_minor: quote.costMinor,
+      cost_qty: quote.costQty,
+      /** EARNINGS you can spend. The starter stake is withheld from this (D7). */
+      spendable_minor: quote.freeMinor,
+      available_qty: quote.availableQty,
+      spinup_ticks: quote.spinupTicks,
+      already_held: quote.alreadyHeld,
+      affordable: quote.affordable,
+    },
+  };
+}
+
 function graduationBlock(
   runtime: Runtime,
   principal: PrincipalId,
@@ -1292,6 +1337,49 @@ function affordancesFor(
       });
     }
   }
+  // 5b-bis. **Raise a WORKS.** The only reason goods enter the world, so it is offered
+  //         wherever the body stands and priced with the share it would actually get.
+  //
+  //         ══════════════════════════════════════════════════════════════════════
+  //         **OFFERED, BECAUSE A VERB THAT IS LEGAL AND NEVER OFFERED IS A VERB THAT
+  //         NEVER HAPPENS.** That sentence is not a guess: a live playtest found no
+  //         principal could reach the Marches, because `graduate` existed and was not on
+  //         this list. The economy's only faucet reaching the same fate would be worse —
+  //         the world would run down to zero goods with the fix sitting in the engine.
+  //
+  //         The quote divides by `occupants + 1`, so the number an agent reads is what it
+  //         would get AFTER arriving. Quoting the empty-system rate would overstate the
+  //         return of every build into a crowded place, which is the one number that
+  //         decides whether the build pays for itself (A2).
+  //         ══════════════════════════════════════════════════════════════════════
+  const worksSeat = runtime.graduationQuote(principal);
+  const worksHere = worksSeat === null ? null : runtime.worksQuote(principal, worksSeat.from);
+  if (worksHere !== null && worksHere.affordable && !worksHere.alreadyHeld) {
+    eligible.push({
+      verb: 'build',
+      params: { kind: 'WORKS', system: worksHere.system },
+      cost: 1,
+      // Both halves are charged the instant it lands, and both are gone: the currency is
+      // retired and the goods are destroyed into the build.
+      max_direct_loss: worksHere.costMinor,
+      max_contingent_liability: worksHere.costQty,
+      what_it_forecloses:
+        `A WORKS extracts what a PLACE yields, and ${worksHere.system} (${worksHere.tier}) yields ` +
+        `${String(worksHere.yieldPerTick)} units of ${worksHere.good} a tick divided among every WORKS ` +
+        `standing on it. ${String(worksHere.occupants)} stand there now, so yours would take about ` +
+        `${String(worksHere.sharePerTick)} a tick — and that share FALLS as others arrive. It costs ` +
+        `${String(worksHere.costMinor)} of your EARNINGS (the starter stake cannot buy one) plus ` +
+        `${String(worksHere.costQty)} units of ${worksHere.good} standing here, destroyed into the build. ` +
+        `It extracts nothing for ${String(worksHere.spinupTicks)} ticks, so a WORKS raised just before a ` +
+        'Reckoning does not help you pay it, and one raised where a raid is coming may never pay for ' +
+        'itself. This is the only way goods enter the world: everything you owe consumes them.',
+      expires_tick: tick + QUOTE_PIN_TICKS,
+      quote_id: quoteId(principal, tick, 'build', { kind: 'WORKS', system: worksHere.system }),
+    });
+  }
+  const worksWithheld =
+    worksHere !== null && !worksHere.affordable && !worksHere.alreadyHeld ? 1 : 0;
+
   const crossingWithheld =
     crossing !== null && !crossing.affordable && crossing.anchoring.length === 0 ? crossing.open.length : 0;
   // Counted separately from the price, because the fix is a different act. Silently
@@ -1649,6 +1737,16 @@ function affordancesFor(
         'holding.graduation carries the same figures and the destinations, so the choice is still readable',
     );
   }
+  if (worksWithheld > 0 && worksHere !== null) {
+    reasons.push(
+      `a WORKS at ${worksHere.system} is not offered because you cannot pay for it yet: it costs ` +
+        `${String(worksHere.costMinor)} of EARNINGS (you can spend ${String(worksHere.freeMinor)} — the ` +
+        'starter stake is withheld from anything that buys permanent income) plus ' +
+        `${String(worksHere.costQty)} units of ${worksHere.good} standing here (you have ` +
+        `${String(worksHere.availableQty)} unpledged). holding.works carries the same figures and the ` +
+        'share you would get, so the decision is readable before you can afford it',
+    );
+  }
   if (crossingAnchored > 0 && crossing !== null) {
     reasons.push(
       `${String(crossingAnchored)} graduate act(s) exist and are not offered because you hold live claim(s) on ` +
@@ -1694,6 +1792,7 @@ function affordancesFor(
         boardDropped +
         crossingWithheld +
         crossingAnchored +
+        worksWithheld +
         chargeNoHand +
         commonsBoundLanes,
       reason:

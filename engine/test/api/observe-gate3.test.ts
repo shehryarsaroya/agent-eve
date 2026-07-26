@@ -780,9 +780,26 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
         0,
       );
     expect(boundLanes).toBeGreaterThan(0);
-    expect(Number(withheld['count'])).toBe(rows.length * (idle.length - 1) + boundLanes);
+    // ── AND A THIRD TERM, WHICH ARRIVED WITH WORKS ──────────────────────────
+    //
+    // A WORKS costs EARNINGS, and a principal in this fixture has only its starter stake —
+    // which D7 withholds from anything that buys permanent income. So the build is legal,
+    // unaffordable, and therefore counted rather than dropped. Recomputed from the quote the
+    // observation reads, for the reason the term above is: this assertion is exact on purpose.
+    const worksQuote = h.runtime.worksQuote(
+      filler.principalId as never,
+      h.runtime.graduationQuote(filler.principalId as never)?.from ?? ('sys-01' as never),
+    );
+    const worksWithheld = !worksQuote.affordable && !worksQuote.alreadyHeld ? 1 : 0;
+    expect(worksWithheld, 'the starter stake cannot buy a WORKS, so the omission is real').toBe(1);
+    expect(Number(withheld['count'])).toBe(
+      rows.length * (idle.length - 1) + boundLanes + worksWithheld,
+    );
     expect(String(withheld['reason'])).toContain('further legal fill_role act(s) exist');
     expect(String(withheld['reason'])).toContain('lanes leaving the Commons');
+    expect(String(withheld['reason']), 'and the WORKS omission names its own price').toContain(
+      'a WORKS at',
+    );
     // The claim it used to make while dropping them.
     expect(String(withheld['reason'])).not.toBe(
       'nothing was withheld: this is every legal act, with its full cost.',
