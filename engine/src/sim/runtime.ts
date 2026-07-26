@@ -3336,6 +3336,8 @@ export class Runtime {
       post_bond: (ctx, req) => this.committing(ctx) ?? this.vPostBond(ctx, req),
       build: (ctx, req) => this.committing(ctx) ?? this.vBuild(ctx, req),
       form: (ctx, req) => this.committing(ctx) ?? this.vForm(ctx, req),
+      apply: (ctx, req) => this.committing(ctx) ?? this.vApply(ctx, req),
+      admit: (ctx, req) => this.committing(ctx) ?? this.vAdmit(ctx, req),
     };
   }
 
@@ -5942,6 +5944,168 @@ export class Runtime {
         admission: charter.admission,
         decision: charter.decision,
         treasury_offices: charter.treasuryOffices,
+      },
+    });
+    return { ok: true, value: null };
+  }
+
+
+  /**
+   * `apply` — ask to be admitted. The charter decides what asking means.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **I TRIED TO REUSE `join` FOR THIS AND HARD RULE 4 IS EXACTLY WHY IT FAILED.** The argument
+   * was that one verb is better because the charter already decides what an application means —
+   * under `OPEN` it IS an admission, under `INVITE` a request a member answers, under `CLOSED`
+   * neither — so making an agent choose between `apply` and `admit` per charter is choosing
+   * between two spellings of one intention.
+   *
+   * That reasoning was fine and the verb was wrong. **`join` already means "answer a raid"**, and
+   * §9 classifies it as a HOSTILE act: the A8 pre-check requires it to name the hand, holding,
+   * principal or system it is aimed at, and refuses it outright inside the Commons. So `join
+   * {"syndicate":…}` was rejected before reaching any of this — from the Commons, where every
+   * principal starts, which is every case that matters.
+   *
+   * Hard rule 4 says never reuse a canon term for a second concept, and it is a *rules surface*
+   * rather than a style guide. I argued for one verb on hard-rule-4 grounds and then picked the
+   * one word the rule forbids. `apply` was reserved for this from the start.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private vApply(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const named = readString(req.params, ['syndicate']);
+    if (named === null) {
+      return reject(
+        'A2',
+        'apply needs {"syndicate":"<id>"}. Syndicates and their charters are PUBLIC — read the charter ' +
+          'off the feed first, because its terms can never change after you are inside.',
+      );
+    }
+    const id = named as unknown as SyndicateId;
+    const row = this.syndicateBook.at(id);
+    if (row === null) {
+      return reject(
+        'A2',
+        `there is no syndicate ${named}. Syndicates and their charters are PUBLIC — read them off the ` +
+          'feed before you ask to join one, because the terms cannot change after you are inside.',
+      );
+    }
+    const fault = this.syndicateBook.admissionFault(id, req.principal, ctx.tick);
+    if (fault !== null) return reject('A2', fault);
+
+    // ── OPEN admits; INVITE records nothing and says who can answer ───────────
+    //
+    // Under INVITE the request is deliberately NOT stored. A pending-application queue is a
+    // buffer that grows with enrolments, which is scar #3's shape, and it would need its own cap,
+    // its own place in the hash and its own expiry. The `message` channel already exists for
+    // asking — it is free, it is PARTIES-visible, and it declassifies at settlement, so an
+    // approach and its answer end up in the record where a viewer can read them.
+    if (row.charter.admission === 'INVITE') {
+      return reject(
+        'A2',
+        `${named}'s charter is INVITE: a sitting member has to bring you in, and there is no ` +
+          'application queue for me to put you in. Its members are ' +
+          `${this.syndicateBook.sittingMembers(id, ctx.tick).join(' · ')} — \`message\` one of them, which ` +
+          'costs no action, and it will admit you by naming you itself. What you say there becomes ' +
+          'public at settlement, so it is also how you build the case.',
+      );
+    }
+
+    try {
+      this.syndicateBook.admit(id, req.principal, ctx.tick);
+    } catch (error: unknown) {
+      return reject('A2', describeError(error));
+    }
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'syndicate.joined',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `syndicate::${row.id}`,
+      parentEventId: null,
+      // Membership is public for the same reason the charter is: it is what a counterparty prices
+      // when it deals with any member, and §11.2 gives PUBLIC to an organisation's standing shape.
+      visibility: 'PUBLIC',
+      audience: [],
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      payload: {
+        syndicate: row.id,
+        member: req.principal,
+        members: this.syndicateBook.sittingMembers(id, ctx.tick).length,
+        admission: row.charter.admission,
+      },
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `admit` — a sitting member brings somebody in under an INVITE charter.
+   *
+   * The counterpart to `join`'s refusal, and the reason that refusal can name a concrete next
+   * step instead of an apology.
+   */
+  private vAdmit(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const named = readString(req.params, ['syndicate']);
+    const who = readString(req.params, ['principal', 'member', 'admit', 'who']) as PrincipalId | null;
+    if (named === null || who === null) {
+      return reject(
+        'A2',
+        'admit needs {"syndicate":"<id>","principal":"<who>"}. You must be a sitting member, and the ' +
+          "charter's admission rule decides whether you may bring anyone in at all.",
+      );
+    }
+    const id = named as unknown as SyndicateId;
+    const row = this.syndicateBook.at(id);
+    if (row === null) return reject('A2', `there is no syndicate ${named}.`);
+    if (!this.syndicateBook.isMember(id, req.principal, ctx.tick)) {
+      return reject('A2', `you are not a sitting member of ${named}, so you cannot admit anyone to it.`);
+    }
+    if (row.charter.admission === 'CLOSED') {
+      return reject(
+        'A2',
+        `${named}'s charter is CLOSED: its founding membership is final and nobody may ever be admitted. ` +
+          'That clause is permanent and no vote changes it.',
+      );
+    }
+    if (this.world.holdingByPrincipal.get(who) === undefined) {
+      return reject('A2', `there is no principal ${who} to admit; name one that has enrolled.`);
+    }
+    const fault = this.syndicateBook.admissionFault(id, who, ctx.tick);
+    if (fault !== null) return reject('A2', fault);
+    try {
+      this.syndicateBook.admit(id, who, ctx.tick);
+    } catch (error: unknown) {
+      return reject('A2', describeError(error));
+    }
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'syndicate.joined',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `syndicate::${row.id}`,
+      parentEventId: null,
+      visibility: 'PUBLIC',
+      audience: [],
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      payload: {
+        syndicate: row.id,
+        member: who,
+        admitted_by: req.principal,
+        members: this.syndicateBook.sittingMembers(id, ctx.tick).length,
+        admission: row.charter.admission,
       },
     });
     return { ok: true, value: null };

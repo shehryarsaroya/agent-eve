@@ -135,3 +135,120 @@ describe('a charter is refused rather than silently defaulted', () => {
     expect(h.runtime.ledger.balance(storesAccount(p)), 'a refusal is free').toBe(before);
   });
 });
+
+describe('joining is reachable, so a syndicate is not a solo container', () => {
+  /**
+   * Before this, `form` existed and nothing else did — so the founder was the only member a
+   * syndicate could ever have, which makes pooled stores a private account with extra steps and
+   * makes every charter clause about admission decorative.
+   *
+   * `apply` asks and `admit` answers. I first tried to do both with `join`, reasoning that the
+   * charter already decides what asking MEANS — under OPEN an application is an admission, under
+   * INVITE a request, under CLOSED neither — so one verb is better than two spellings of one
+   * intention.
+   *
+   * The reasoning held and the verb was wrong: `join` already means "answer a raid" and §9 makes
+   * it a HOSTILE act, so the A8 pre-check refused it inside the Commons — where every principal
+   * starts. Hard rule 4 forbids reusing a canon term for a second concept, and I argued for one
+   * verb on hard-rule-4 grounds while picking the one word it rules out. The last test in this
+   * block guards the raid path, because that is what a careless reuse would have quietly eaten.
+   */
+  it('OPEN admits on the spot, and the membership is public', async () => {
+    const founder = agent('opener');
+    const joiner = agent('newcomer');
+    for (const who of [founder, joiner]) expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    const id = await found(founder, { name: 'Open House', admission: 'OPEN' });
+    expect(id).not.toBeNull();
+
+    await act(joiner, 'apply', { syndicate: id });
+    run(1);
+    expect(
+      h.runtime.takeCorrections(joiner.principalId as PrincipalId).map((c) => c.hint).join(' '),
+      'an OPEN charter must admit without ceremony',
+    ).toBe('');
+    expect(
+      h.runtime.syndicates.sittingMembers(id as never, h.runtime.engine.tick),
+      'and the joiner is now a sitting member, so it counts in every vote',
+    ).toContain(joiner.principalId);
+  });
+
+  it('INVITE refuses with the members named and the free channel to reach them', async () => {
+    // The refusal has to be actionable or it is a dead end. There is deliberately NO application
+    // queue: a pending list grows with enrolments (scar #3's shape) and would need its own cap,
+    // hash entry and expiry. `message` already exists, costs no action, and becomes public at
+    // settlement — so the approach and its answer land in the record a viewer reads.
+    const founder = agent('gatekeeper');
+    const hopeful = agent('supplicant');
+    for (const who of [founder, hopeful]) expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    const id = await found(founder, { name: 'Invitation Only', admission: 'INVITE' });
+
+    await act(hopeful, 'apply', { syndicate: id });
+    run(1);
+    const said = h.runtime.takeCorrections(hopeful.principalId as PrincipalId).map((c) => c.hint).join(' ');
+    expect(said, 'it names who can actually let you in').toContain(String(founder.principalId));
+    expect(said, 'and the free verb that reaches them').toContain('message');
+    expect(
+      h.runtime.syndicates.sittingMembers(id as never, h.runtime.engine.tick),
+      'and nothing was admitted',
+    ).not.toContain(hopeful.principalId);
+  });
+
+  it('admit lets a sitting member bring somebody in under INVITE', async () => {
+    const founder = agent('host');
+    const guest = agent('guest');
+    for (const who of [founder, guest]) expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    const id = await found(founder, { name: 'By Arrangement', admission: 'INVITE' });
+
+    await act(founder, 'admit', { syndicate: id, principal: guest.principalId });
+    run(1);
+    expect(
+      h.runtime.takeCorrections(founder.principalId as PrincipalId).map((c) => c.hint).join(' '),
+      'admitting must not be refused for a member under INVITE',
+    ).toBe('');
+    expect(
+      h.runtime.syndicates.sittingMembers(id as never, h.runtime.engine.tick),
+    ).toContain(guest.principalId);
+  });
+
+  it('CLOSED admits nobody, by anybody, ever', async () => {
+    const founder = agent('sealed');
+    const outsider = agent('knocker');
+    for (const who of [founder, outsider]) expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    const id = await found(founder, { name: 'Final Company', admission: 'CLOSED' });
+
+    await act(outsider, 'apply', { syndicate: id });
+    await act(founder, 'admit', { syndicate: id, principal: outsider.principalId });
+    run(1);
+    expect(
+      h.runtime.takeCorrections(founder.principalId as PrincipalId).map((c) => c.hint).join(' '),
+      'even a founder cannot reopen a CLOSED charter',
+    ).toMatch(/CLOSED|permanent/);
+    expect(
+      h.runtime.syndicates.sittingMembers(id as never, h.runtime.engine.tick),
+    ).toEqual([founder.principalId]);
+  });
+
+  it('`join` still means answer-a-raid, and knows nothing about syndicates', async () => {
+    // The regression a careless reuse would have caused: legal, quiet, and only visible the next
+    // time a raid arrived. `join` is a hostile act by §9 and must name its target, which is also
+    // the check that caught the reuse in the first place.
+    const who = agent('defender');
+    expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    // The A8 hostility pre-check runs at ACCEPT time, not at tick close, so the hint is in the
+    // response rather than in `takeCorrections`. Worth stating: the two places a refusal can appear
+    // is the distinction that made an earlier assertion in this repo look for the right message in
+    // the wrong bucket and pass vacuously.
+    const res = await signed(h, who, 'POST', PATHS.act, {
+      actions: [{ verb: 'join', params: {}, clientSequence: 1 }],
+    });
+    expect(res.status).toBe(200);
+    const said = JSON.stringify(res.json);
+    expect(said, 'it must still be the raid answer').toMatch(/hostile act|aimed at/i);
+    expect(said, 'and must not have learned about syndicates').not.toMatch(/syndicate/i);
+  });
+});
