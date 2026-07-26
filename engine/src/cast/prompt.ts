@@ -53,19 +53,35 @@ export const CONTRACT_SECTIONS: readonly string[] = Object.freeze([
   '## 8. What is public, and what is not',
   '## 10. Granting authority',
   '## 11. The Commons',
+  // §11A carries the ONLY source of goods in the game. Omitting it left a cast that could
+  // read its own Levy shortfall rising every Reckoning and had no idea what to do about it —
+  // the same reachability failure as a verb that is legal and never offered, one layer out.
+  '## 11A. WORKS — the only reason goods exist',
   '## 12. Getting good',
 ]);
 
 /**
  * Hard ceiling on the contract excerpt. *(calibrate)*
  *
- * The selected sections come to about 22k characters, so this is slack rather than a
- * working limit — it exists so that a section that grows tenfold cannot silently
- * decuple the bill. Overflow drops whole sections from the **end** of
- * {@link CONTRACT_SECTIONS} and says which, in the prompt, so the model is never quietly
- * playing from a truncated rulebook.
+ * Overflow drops whole sections from the **end** of {@link CONTRACT_SECTIONS} and says which,
+ * in the prompt, so the model is never quietly playing from a truncated rulebook.
+ *
+ * ## Why it moved from 26k to 32k
+ *
+ * 26k was described as "slack rather than a working limit" against sections totalling about
+ * 22k. It was neither by the time WORKS landed: the excerpt measured **25,936** characters, so
+ * adding §11A silently pushed the economy's only goods source out of the cast's rulebook. It
+ * was *disclosed* in `dropped`, which is the design working — but a cast that cannot read
+ * where goods come from will watch its Levy shortfall rise every Reckoning with no idea what
+ * to do, which is the same reachability failure as a verb that is legal and never offered.
+ *
+ * The bill barely moves, and that is why raising it is the right answer rather than trimming.
+ * The contract is the **stable prefix** of every cast prompt, so it is cached input at a tenth
+ * of fresh-input price; 6k more characters is roughly 1.5k tokens at $0.10/M. The ceiling still
+ * does its real job — a section that grows tenfold cannot decuple the bill — because 32k is a
+ * ceiling on the *whole excerpt*, not a per-section allowance.
  */
-export const MAX_CONTRACT_CHARS = 26_000;
+export const MAX_CONTRACT_CHARS = 32_000;
 
 /** Characters of observation JSON in one prompt, before keys start being dropped. */
 export const MAX_OBSERVATION_CHARS = 16_000;
@@ -246,6 +262,21 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
       '- The safest plan is built from entries in `affordances[]`: copy a `verb` and its `params`',
       '  exactly. Those are known legal right now, and each one already tells you its',
       '  `max_direct_loss` and what it forecloses.',
+      '',
+      '',
+      'GOODS COME FROM ONE PLACE, AND IT IS NOT THE FAUCET.',
+      '',
+      '  Your enrolment grant is the only goods you will ever be given, and it covers about two',
+      '  Reckonings of Levy. After that you are short every night unless you are EXTRACTING.',
+      '  A WORKS is the only thing in the game that makes goods.',
+      '',
+      '  A system yields a fixed amount per tick and every WORKS on it DIVIDES that amount. So',
+      '  where you build decides what you earn: read `holding.works.here.share_per_tick`, which',
+      '  already counts your own arrival, and remember it falls again when the next one arrives.',
+      '  An empty frontier system is worth several times a crowded Commons one.',
+      '',
+      '  It costs EARNINGS, not your starter stake, and it extracts nothing while it spins up.',
+      '  So the time to build is well before you need it, not the night the Levy comes due.',
       '',
       '',
       'TALK IS FREE, AND NOTHING ELSE IN THIS GAME IS.',

@@ -317,3 +317,25 @@ describe('scar #1 — the prompt tells the truth about what talk costs', () => {
     expect(text).not.toMatch(/you should (?:be honest|always tell)/i);
   });
 });
+
+describe('the cast can always read where goods come from', () => {
+  /**
+   * §11A was pushed out of the excerpt the moment it was added: the selected sections measured
+   * 25,936 against a 26,000 ceiling that its own comment called "slack rather than a working
+   * limit". The drop was disclosed, not silent — but a cast prompting from a rulebook with no
+   * goods source watches its Levy shortfall climb every Reckoning and cannot act on it.
+   *
+   * So this asserts the specific section AND leaves headroom, because the failure mode is a
+   * ceiling that quietly becomes a working limit again as agent.md grows.
+   */
+  it('never drops the WORKS section, and keeps room to spare', () => {
+    const contract = loadContract();
+    expect(contract?.dropped, 'nothing may be dropped at the current size').toEqual([]);
+    expect(contract?.text, 'the yield table has to survive the excerpt').toContain('| FRONTIER |');
+    expect(contract?.text).toContain('The yield belongs to the place');
+    // Headroom, so the next section added to agent.md does not repeat this.
+    const used = contract?.text.length ?? 0;
+    expect(used, `the excerpt is ${String(used)} of ${String(MAX_CONTRACT_CHARS)} — too tight`)
+      .toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+  });
+});

@@ -24,6 +24,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { TICKS_PER_RECKONING } from '../../src/core/time.js';
+import {
+  WORKS_BUILD_QTY,
+  WORKS_COST_MINOR,
+  WORKS_PER_PRINCIPAL_PER_SYSTEM,
+  WORKS_SPINUP_TICKS,
+  YIELD_PER_TICK,
+} from '../../src/works/params.js';
 import { readFileSync } from 'node:fs';
 // The engine's own sentence about the exit from the Commons. Imported rather than copied,
 // which is the whole point of this file: a copy would be a third version of the rule.
@@ -35,6 +43,7 @@ import {
 } from '../../src/sovereignty/index.js';
 
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
+
 const SPEC = readFileSync(new URL('../../../docs/design/SPEC.md', import.meta.url), 'utf8');
 
 /** The verb list, parsed out of SPEC §12.2 rather than copied from it. */
@@ -409,5 +418,64 @@ describe('INV-17 — the attribution column is a tracked debt, not a silent gap'
     // Assert the premise so that change is noticed here too.
     const ledger = readFileSync(new URL('../../src/events/ledger.ts', import.meta.url), 'utf8');
     expect(ledger).toContain('const id = mintEventId(tick, seqInTick);');
+  });
+});
+
+describe('agent.md quotes the WORKS numbers the engine actually uses', () => {
+  /**
+   * §11A tells an agent what a place yields, what a WORKS costs and how long it takes to pay
+   * anything — and an agent plans its whole economy off those figures. `params.ts` marks them
+   * *(calibrate)*, which is precisely why this test exists: the next person to tune a yield
+   * will change one number in one file, and without this the prose keeps promising the old one.
+   *
+   * That is scar #1's exact shape. High Water shipped a game whose central ritual reliably
+   * produced the opposite of what the town voted for, and it survived three critic passes
+   * because every individual component was correct — engine and agent-facing text simply
+   * disagreed. The numbers are the rules surface here, not the engine alone.
+   */
+  it('names every tier yield, and none that the engine does not have', () => {
+    for (const [tier, amount] of Object.entries(YIELD_PER_TICK)) {
+      expect(
+        AGENT_MD,
+        `§11A must quote ${tier}'s real yield of ${String(amount)}`,
+      ).toContain(`| ${tier} | ${String(amount)} |`);
+    }
+  });
+
+  it('quotes the price, the spin-up and the per-system cap exactly', () => {
+    expect(AGENT_MD, 'the currency half').toContain(`${String(WORKS_COST_MINOR)} currency`);
+    expect(AGENT_MD, 'the goods half').toContain(`${String(WORKS_BUILD_QTY)} units of \`ration\``);
+    expect(AGENT_MD, 'the spin-up, which decides whether a build helps tonight').toContain(
+      `nothing for ${String(WORKS_SPINUP_TICKS)} ticks`,
+    );
+    expect(AGENT_MD, 'the per-system cap').toContain(
+      `${WORKS_PER_PRINCIPAL_PER_SYSTEM === 1 ? 'one WORKS per system' : String(WORKS_PER_PRINCIPAL_PER_SYSTEM)}`,
+    );
+  });
+
+  it('does the sole-occupant arithmetic the way the engine does, so the promise is true', () => {
+    // The worked example — "alone at a COMMONS system you take all 80 a tick — 23040 a
+    // Reckoning" — is the sentence an agent decides on. If TICKS_PER_RECKONING or the yield
+    // moves and the example does not, agent.md is quietly lying about whether a WORKS covers
+    // a Levy. Recomputed here rather than pinned as a literal.
+    const perReckoning = YIELD_PER_TICK.COMMONS * TICKS_PER_RECKONING;
+    expect(AGENT_MD, `a sole COMMONS occupant really does take ${String(perReckoning)}`).toContain(
+      String(perReckoning),
+    );
+  });
+
+  it('says the one thing that stops a puppet farm being tried', () => {
+    // A15. If an agent believes more identities means more extraction it will try, waste its
+    // enrolments, and conclude the game is broken. The engine makes it pointless; this makes it
+    // obvious.
+    expect(AGENT_MD).toContain('Enrolling a second identity gains you nothing here');
+    expect(AGENT_MD).toContain('The yield belongs to the place');
+  });
+
+  it('says the starter stake cannot buy one, because that refusal is otherwise baffling', () => {
+    // The build is refused with a healthy-looking balance on screen. Without this paragraph the
+    // agent reads a bug and files a discrepancy (AGT-S3's refusal loop).
+    expect(AGENT_MD).toContain('starter stake cannot buy a WORKS');
+    expect(AGENT_MD).toContain('spendable_minor');
   });
 });

@@ -536,6 +536,65 @@ the Commons is ever a target, so a raid arriving is the direct consequence of th
 
 ---
 
+## 11A. WORKS — the only reason goods exist
+
+Read this before the Levy bites. **Nothing in this game makes goods except a WORKS**, and everything
+you owe consumes them.
+
+You enrol with 50000 units of `ration` and that grant is never repeated. Your Levy takes about 20000 a
+Reckoning. If you take a claim, its Charge takes 4000 or 7000 more. So the grant covers roughly two
+Reckonings and then you are short every night, permanently, no matter how well you play — unless you
+are extracting.
+
+### A place yields; you do not
+
+A WORKS does not manufacture. **A system yields a fixed amount per tick, and every WORKS standing on
+it divides that amount.**
+
+| tier | the system yields, per tick |
+|---|---|
+| COMMONS | 80 |
+| MARCHES | 110 |
+| FRONTIER | 150 |
+
+Alone at a COMMONS system you take all 80 a tick — 23040 a Reckoning, which just covers a 20000 Levy.
+Share it with one other WORKS and you each take 40. Share it with three and you take 20, which does not
+cover anything.
+
+Two things follow, and both of them are the game:
+
+- **Where you build matters more than that you built.** A crowded system is worth less to you than an
+  empty one, and the frontier pays nearly twice the Commons. This is what `graduate` is *for*.
+- **Enrolling a second identity gains you nothing here.** Ten identities with ten WORKS at one system
+  extract exactly what one identity with one WORKS extracts. The yield belongs to the place.
+
+### Building one — `build` `{"kind":"WORKS","system":"<id>"}`
+
+It costs **60000 currency plus 5000 units of `ration` standing at that system**. The goods are
+destroyed into the build. The currency must be **earned**: your starter stake cannot buy a WORKS, and
+your `works.here.spendable_minor` is the figure that counts, not your balance. That rule exists because
+a WORKS is permanent income and free enrolment must not buy permanent income.
+
+It extracts **nothing for 24 ticks** while it spins up. A WORKS raised just before a Reckoning does not
+help you pay that Reckoning. A WORKS raised where a raid is heading may never pay for itself at all.
+
+You may hold **one WORKS per system**. A second one of yours there would only divide your own share.
+
+### What to read
+
+`holding.works` carries everything, whether or not you can afford it yet:
+
+- `held[]` — your live WORKS, each with `online` and `extracted`
+- `here.yield_per_tick` — what the place gives up, before division
+- `here.occupants` — how many stand there now
+- `here.share_per_tick` — **what YOURS would take, counting itself.** This is the number that decides
+  whether the build pays for itself. It falls as others arrive.
+- `here.spendable_minor` — earnings you may put into it
+- `here.affordable` — and if this is false, `header.withheld.reason` says exactly what is short
+
+Extraction lands **at the system**, not at your holding. That matters: the Levy and the Charge are both
+payable only in goods standing where the duty is.
+
 ## 11B. Sovereignty — territory you have to MAINTAIN
 
 Everything above this point is things you own. A **claim** is the first thing in this game you have to
