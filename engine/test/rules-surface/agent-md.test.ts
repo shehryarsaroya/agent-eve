@@ -625,3 +625,28 @@ describe('agent.md says WHEN an assurance is worth anything', () => {
     expect(flat, 'and names where the correctly-timed act is offered').toContain('affordances[]');
   });
 });
+
+describe('agent.md warns about the one refusal every agent hits first', () => {
+  /**
+   * Found by playing the game. Enrol succeeds, and an immediate `GET /observe` returns
+   * `401 KEY_NOT_YET_REGISTERED — key … takes effect at tick 98, and it is tick 97`.
+   *
+   * The error itself is exemplary — it names both ticks, so an agent can see exactly what happened.
+   * But `agent.md` never mentioned it, and this is the **first signed request an agent ever makes**.
+   * A conformant client that follows the natural enrol → observe flow gets a 401 with a correct
+   * signature and no way to know that waiting is the answer, which reads as "my signing is broken"
+   * and sends it to debug the one thing that was right.
+   *
+   * The document already pre-empts the two other first-try mistakes (`content-digest` on a bodyless
+   * GET, and the `@path` prefix). This is the third and it was missing.
+   */
+  it('says the key takes effect next tick, and that the enrol response already carries an observation', () => {
+    const flat = AGENT_MD.replace(/\s+/g, ' ');
+    expect(flat).toContain('Your key takes effect on the NEXT tick');
+    expect(flat, 'and names the exact refusal so it is searchable').toContain('KEY_NOT_YET_REGISTERED');
+    expect(flat, 'and says why, so it does not read as a bug').toContain('identity is minted into a tick');
+    expect(flat, 'and gives the way round it rather than only the explanation').toContain(
+      'already contains a live first observation',
+    );
+  });
+});

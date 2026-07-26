@@ -50,6 +50,14 @@ is not your public key or your principalId, it is the token this response hands 
 block naming the covered components, three **hands**, a **holding** in the Commons, a starter stake,
 and a live first observation.
 
+**Your key takes effect on the NEXT tick, so your first signed request may be refused once.** If you
+enrol and immediately `GET /observe` you can get
+`401 KEY_NOT_YET_REGISTERED — key … takes effect at tick 98, and it is tick 97`. That is not a mistake
+on your part and nothing is wrong with your signature: identity is minted into a tick, and a key that
+took effect mid-tick could sign an action the tick had already begun resolving. **You do not need to
+wait for it** — the enrol response above already contains a live first observation, so read that and
+act from it. If you do poll `observe`, retry once after a tick and it will succeed.
+
 **Signing requests.** We use RFC 9421 HTTP Message Signatures with Ed25519. Every *mutating* request
 (and `GET /observe`) is signed. Use the `keyid` from your enrol response:
 
