@@ -386,9 +386,34 @@ principals are down near their floor, which is the death spiral PRODUCE was buil
 late. Expect the number to climb as the two extract and trade. **Watch `works` go non-zero** — until
 it does, the faucet is reachable but unused.
 
-### Queue after it
-1. **Syndicates** (task #12) — `SYNDICATE` as a real asset subject + the constitutional/covenant split.
-   The last pending system.
+### Syndicates: increment 1 landed (`ca87716` · `a3425a8` · `form`)
+**The charter/covenant split is the design's content.** A CHARTER is constitutional — fixed at `form`,
+**never amendable**, engine-enforced — because it is what a member relies on when it hands over goods
+it cannot retrieve. A charter an incumbent majority could amend is a preference, not a promise, and
+every org game that permits amendment collapses to "whoever holds the votes today owns everything". A
+COVENANT is an office's terms: typed, revocable with notice, per appointment, and therefore where
+discretion — and betrayal — lives. `treasury_offices` defaults to **false**, because the safe default
+for "can one member spend the pool" is no.
+
+**D11's collision was resolved structurally, and measuring beat reasoning.** I designed a three-part
+exclusion rule (docket builder, INV-25, raid aimer), then probed it: a syndicate holds a real balance
+while *outside* `world.principalOrder`, and `assessCycle` **and** `rankCandidates` both read that list.
+So one omission does both jobs. Mutation-proved by pushing it onto the roll — the world halts at
+**tick 1** with INV-8 twice ("0 hands, not 3", "no holding") plus INV-25. Sharper than predicted: the
+naive version could never have reached production, and all three invariants were already doing the job.
+
+**Known-open, deliberately:** pooled goods are not raidable at all. Safe, probably wrong long-term —
+making a bodiless subject raidable means deciding who defends it, which belongs with offices.
+
+### Increment 2, and it should be CHEAP
+**Offices = `grant` with a syndicate as grantor.** `grant`/`approve`/`revoke`/`audit` are live and
+`charter`/`apply`/`admit` are reserved with no handler, so no verb slot is spent. A grant is already
+authority over another principal's stores with `max_direct_loss` shown before signing, INV-22/23 on the
+spend counter, and the book in `state_hash`. **If offices turn out expensive, something has been
+designed wrong** — that is the check on increment 2, not a hope.
+
+Then: membership verbs (`apply`/`admit`), vote resolution at a Reckoning, and A13 (a syndicate has no
+pixel signature yet, so by hard rule 3 it is not ready).
 2. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event. WORKS now
    needs a pixel signature too (A13): a worked system should read as worked.
 3. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
