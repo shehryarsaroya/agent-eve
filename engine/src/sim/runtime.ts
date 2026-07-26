@@ -508,6 +508,13 @@ export const MAX_MARKET_ROWS = 24;
  */
 export { STARTER_STAKE } from '../ledger/endowment.js';
 import { STARTER_STAKE } from '../ledger/endowment.js';
+import {
+  Book as SyndicateBook,
+  syndicateAsPrincipal,
+  syndicateStateTable,
+} from '../syndicate/book.js';
+import { CHARTER_STATEMENT, parseCharter } from '../syndicate/charter.js';
+import { FOUNDING_COST_MINOR, MAX_SYNDICATES_PER_PRINCIPAL } from '../syndicate/params.js';
 import { Book as WorksBook, worksStateTable } from '../works/book.js';
 import { produce as produceNow } from '../works/produce.js';
 import { checkWorks } from '../works/invariants.js';
@@ -1407,6 +1414,8 @@ export class Runtime {
   readonly census = new DecisionCensus();
   /** The WORKS book. Swapped wholesale on restore, like every other hashed book. */
   private worksBook = new WorksBook();
+  /** The syndicate book. Swapped wholesale on restore, like every other hashed book. */
+  private syndicateBook = new SyndicateBook();
   readonly hazards: boolean;
 
   /**
@@ -1670,6 +1679,15 @@ export class Runtime {
         // The WORKS book decides how many goods enter the world every tick, so it is inside
         // the hash and the abort path for the same reason the EncumbranceBook had to be:
         // two worlds that disagree about who is extracting what must never hash the same.
+        // Pooled stores decide who may spend what, so the book that records the constitution has
+        // to be inside the hash and the abort path — an aborted tick must not leave a syndicate
+        // founded, and two worlds that disagree about a charter must never hash the same.
+        syndicateStateTable(
+          () => this.syndicateBook,
+          (book) => {
+            this.syndicateBook = book;
+          },
+        ),
         worksStateTable(
           () => this.worksBook,
           (book) => {
@@ -3316,6 +3334,7 @@ export class Runtime {
       // billed to after the figures were hashed.
       post_bond: (ctx, req) => this.committing(ctx) ?? this.vPostBond(ctx, req),
       build: (ctx, req) => this.committing(ctx) ?? this.vBuild(ctx, req),
+      form: (ctx, req) => this.committing(ctx) ?? this.vForm(ctx, req),
     };
   }
 
@@ -5708,6 +5727,133 @@ export class Runtime {
       });
     }
     return out;
+  }
+
+
+  // ── SYNDICATES: the org container, and pooled stores (§3, §365, D11) ──────
+
+  /** The syndicate book, for the invariant pass, the views and the tests. */
+  get syndicates(): SyndicateBook {
+    return this.syndicateBook;
+  }
+
+  /**
+   * `form` — found a syndicate under a charter that can never be amended.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE SYNDICATE IS NOT REGISTERED AS AN AGENT, AND THAT IS THE WHOLE SAFETY
+   * ARGUMENT (D11).** Its stores account is opened so value can pool there, but it never
+   * enters `world.principalOrder`. That single omission is load-bearing twice over:
+   * `assessCycle` walks `principalOrder`, so a syndicate is never assessed a Levy it could
+   * not possibly pay — it has no hands, and the Levy is payable only in goods carried by a
+   * present hand, so a syndicate on the roll would default every Reckoning forever, which is
+   * A5′ with our own org model as the cause. And `rankCandidates` reads the same list, so it
+   * is never a raid target either.
+   *
+   * Measured before it was built: an account outside `principalOrder` holds a real balance
+   * and the tick publishes clean. The alternative — an exclusion predicate consulted by the
+   * docket builder, INV-25 and the raid aimer — was designed, then discarded, because three
+   * call sites that agree today is a rule that lapses on the fourth.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private vForm(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const name = readString(req.params, ['name', 'syndicate', 'title']);
+    if (name === null || name.trim().length === 0) {
+      return reject(
+        'A2',
+        'form needs a name: {"name":"<what to call it>"}. It founds a SYNDICATE — a pooled treasury ' +
+          `under a charter — and costs ${String(FOUNDING_COST_MINOR)}. ${CHARTER_STATEMENT}`,
+      );
+    }
+    if (name.length > 48) {
+      return reject('A2', `a syndicate name is at most 48 characters; yours is ${String(name.length)}.`);
+    }
+    const already = this.syndicateBook.of(req.principal, ctx.tick).length;
+    if (already >= MAX_SYNDICATES_PER_PRINCIPAL) {
+      return reject(
+        'A15',
+        `you already sit in ${String(already)} syndicates, which is the cap of ` +
+          `${String(MAX_SYNDICATES_PER_PRINCIPAL)}. Divided loyalty is interesting; unlimited is noise. ` +
+          'Give notice on one first.',
+      );
+    }
+    const charter = parseCharter(req.params);
+    if ('fault' in charter) {
+      // Refused rather than defaulted. Silently defaulting a constitutional clause would be the
+      // worst failure available here: permanent, invisible, and not what was asked for.
+      return reject('A2', `${charter.fault} ${CHARTER_STATEMENT}`);
+    }
+
+    const account = storesAccount(req.principal);
+    const free = this.ledger.account(account) === undefined ? minor(0) : this.ledger.freeBalance(account);
+    if (free < FOUNDING_COST_MINOR) {
+      return reject(
+        'A15',
+        `founding a syndicate costs ${String(FOUNDING_COST_MINOR)} and you have ${String(free)} free ` +
+          '(locked stores do not count). The money is RETIRED, not paid to anybody, so your starter stake ' +
+          'can cover it — this gate is priced in capital and never in identities.',
+      );
+    }
+    try {
+      this.ledger.retireCurrency({
+        eventId: `syndicate.form:${req.principal}:${String(ctx.tick)}` as EventId,
+        tick: ctx.tick,
+        from: account,
+        amount: FOUNDING_COST_MINOR,
+        sink: CURRENCY_SINK.UPKEEP,
+      });
+    } catch (error: unknown) {
+      return reject('INV-3', `the founding cost could not be paid (${describeError(error)}); nothing was founded.`);
+    }
+
+    let row;
+    try {
+      row = this.syndicateBook.form({
+        founder: req.principal,
+        name: name.trim(),
+        charter,
+        tick: ctx.tick,
+      });
+    } catch (error: unknown) {
+      return reject('INV-26', describeError(error));
+    }
+
+    // The pool. Opened here and NOT registered as a principal — see the header.
+    const pooled = syndicateAsPrincipal(row.id);
+    if (this.ledger.account(storesAccount(pooled)) === undefined) {
+      this.ledger.openAccount(storesAccount(pooled), 'STORES', pooled);
+    }
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'syndicate.formed',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `syndicate::${row.id}`,
+      parentEventId: null,
+      // The charter is the most public thing about a syndicate: a prospective member has to be
+      // able to read the terms before it hands over goods it cannot retrieve, and §11.2 gives
+      // PUBLIC to the standing legal shape of an organisation for exactly that reason.
+      visibility: 'PUBLIC',
+      audience: [],
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      payload: {
+        syndicate: row.id,
+        name: row.name,
+        founder: req.principal,
+        admission: charter.admission,
+        decision: charter.decision,
+        treasury_offices: charter.treasuryOffices,
+      },
+    });
+    return { ok: true, value: null };
   }
 
   // ── WORKS: the production structure (§10.2, A15) ─────────────────────────

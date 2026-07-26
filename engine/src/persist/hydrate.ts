@@ -152,6 +152,12 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // tick, so an adopted world that dropped it would come up with every place unworked — and the
   // holders would watch their income stop with no event saying why.
   'works',
+  // Syndicates. A charter can never be amended, so a checkpoint that dropped the book would
+  // bring the world up with the constitution every member relied on simply gone — and there is
+  // no verb that could restate it. Named in the same change that registered the table, which is
+  // now the third time `books-in-the-hash` has asked for that within a minute of the table
+  // landing. The lesson has stuck: the manifest entry is part of adding a book, not a follow-up.
+  'syndicate',
 ];
 
 /** Why a checkpoint was not adopted, or null when one was. */
