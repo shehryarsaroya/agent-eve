@@ -75,3 +75,46 @@ the political critic.
 Proposed: market → predation/world raids → sovereignty → syndicates. The argument is that each supplies
 what the next needs, and that predation is second because **A14 compliance is currently absent
 entirely** — the live world has no forced conflict, which is a large part of why it is quiet.
+
+
+---
+
+## D6. ★ A15 HOLE IN THE MATCHER — the handle decides who captures the spread
+
+**Status: OPEN, found by my own reproduction after the build landed. Must fix before launch.**
+
+The matcher breaks price ties by seniority `(placedTick, principal_id, client_sequence, order_id)`
+and executes at **the more senior order's limit**. The builder reported the `principal_id` term
+honestly as a residual — "an earlier-sorting handle wins same-price, same-tick ties permanently…
+not a throughput advantage (A4 holds), but enrolment is free (A15) so a handle can be chosen."
+
+It is worse than queue position. On a same-tick cross it decides **the price**, and therefore who
+captures the spread. Reproduced directly, identical orders, only the names changed:
+
+```
+buyer=aaron seller=zoe   -> fill 100      (bid limit 100, ask limit 95)
+buyer=zoe   seller=aaron -> fill  95
+                             ^ 5 per unit moves on the handle alone
+```
+
+The senior party trades at *its own* limit, so the lexicographically **later** handle always
+receives the price improvement. A free, one-time choice of handle is therefore worth a permanent
+per-unit edge on every same-tick cross — **a gate priced in identities, which A15 forbids without
+qualification.** A4 does hold (speed still buys nothing); this is purely an A15 defect.
+
+**Candidate fixes, in preference order:**
+1. **Midpoint on same-tick crosses.** If both orders entered the book on the same tick, neither is a
+   maker, so split the spread: no name is consulted. Needs a documented integer rounding rule
+   (the spread can be odd) — round toward the *ask* and say so, or price in half-units.
+2. **Seeded rotation.** Keep the maker-price rule but break same-tick ties from the tick's seeded
+   RNG rather than from `principal_id`. Deterministic and replayable, but harder to explain to an
+   agent, and "the rules surface must be legible" (A2) argues against it.
+3. Leave the rule and **make handles unchoosable** (server-assigned). Rejected: handles are part of
+   the show, and A15 says fix the gate, not the identity.
+
+**Recommendation: (1).** It removes the name from the price entirely rather than obscuring it, it is
+trivially explainable in `agent.md`, and it matches the economic critic's separate recommendation to
+pay makers for *presence* — a same-tick pair contains no maker to pay.
+
+Note this interacts with the economic critique's ladder-execution recommendation, so both changes to
+the pricing rule should land as one edit rather than two.
