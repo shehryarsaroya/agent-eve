@@ -297,6 +297,74 @@ obligation / deliveries + the two ID counters as state tables, closing F2 and th
 together; **(3)** the observe consolidation (F4) — every Gate 3 conclusion is about the *served* surface,
 which is the one without the token-budget ladder.
 
+**Second fable review (persistence + A6), 2026-07-25.** This one reads `src/persist/` correctly and
+analyses it in depth — independent confirmation that the first review's F1 was wrong. Findings, ranked:
+
+- **★ CORE LOOP — A6's central promise is false as built (fable #3).** The delegated-`create` gate checks
+  **escrow only** against `max_direct_loss` (`runtime.ts:1979-2003`), and records spend with
+  `contingent: minor(0)` — the *only* `recordSpend` call site in the tree (`:2042-2051`). But every role
+  carries an elective part by `defaultTerms` (`:915-934`), and the top-yield kinds are **not escrowable at
+  all** (`kinds.ts:230`), i.e. 100% elective. So: G issues D a grant with `max_direct_loss: 0` — worst case
+  shown to the owner is *zero* — and D creates un-escrowable top-yield ventures on G's behalf. Required
+  escrow is 0, so `0 > 0` passes at zero headroom, no spend is recorded, INV-22 sees nothing. At the
+  Reckoning G faces elective obligations its delegate created in its name: pay beyond every number it was
+  shown, or stay silent — and **silence is a decline, which is a permanent public default.** `max_contingent_liability`
+  is carried, shown, VC-serialised and INV-22-checked, but **no code path ever accrues or gates it**. Two
+  aggravators: the A13 authority line renders drawn exposure, which is 0 here, so the whole thing renders
+  as `UNUSED`; and §8.1 #5 (limits decay with principal silence) is unimplemented, so the offline-grantor
+  window is the full grant lifetime. **"All six §8.1 guardrails hold" was overstated — #2 and #5 do not.**
+- **CRITICAL (fable #1) — replay-from-genesis makes any semantics-changing deploy a boot brick.** Boot
+  re-executes the whole action log under current code (`boot.ts:121-183`); there is no `rules_version`
+  dispatch, no snapshot adoption (blocked by `Ledger.restoreTo` refusing to grow append-only counts), no
+  migration, no operator override. The first deploy that changes any past tick's arithmetic → either an
+  `APPLIED` action is now refused (`boot.ts:152`) or the hash tripwire fires (`:174`) → `BootError` →
+  `Restart=always` → infinite crash loop with no HTTP surface, re-reading the entire journal each time.
+  Compounding: the Pg store deliberately does not persist postings, so re-execution is the *only* durable
+  representation of value history. Asymmetric hole: `REFUSED`→now-accepted is not caught at the action,
+  only at the next snapshot. Fix: land ledger hydrate-from-journal so boot adopts the last checkpoint and
+  replays only the tail; until then ship a deliberate operator door recorded as a public event.
+- **HIGH (fable #2) — O(entire history) boot with the world hard-down.** `ticksSince(-1)` materialises every
+  tick and action into memory. At `fast` (10s) a 28-day season ≈ 242k ticks → **20 min to 2+ h of downtime
+  per restart**, growing monotonically across seasons since A10 forbids resets. Same root as #1; schedule together.
+- **HIGH (fable #4) — published-before-durable.** A committed tick is observable while its journal write is
+  still queued; the stated policy keeps the world running *and accepting external actions* through a DB
+  outage. A kill then replays those ticks **without the external actions that died in the queue** — worst
+  case an `elect IN_FULL` lost from a settlement tick becomes silence → `DECLINED` → **a fabricated public
+  default (§15.4) arriving through the persistence layer.** Enrollment has the same shape (201 before durable).
+  Fix: journal submitted actions at accept-time (the input artifact should not inherit the output's loss
+  window), or refuse/mark-tentative while backlog > 0.
+- **MEDIUM (fable #5) — no SIGTERM handler anywhere in `src/`**, so every `systemctl restart` (every deploy)
+  is a hard kill and #4's window is not outage-only but routine. Also `drain()` spins on
+  `await Promise.resolve()` — microtask starvation, the pg IO completion never runs, hangs until SIGKILL.
+- **MEDIUM (fable #8) — agent-reachable permanent world halt.** `MAX_GRANT_SPENDS = 16_384` is *lifetime* and
+  never pruned; `recordSpend` throws **after** value moved and outside the guarded block, so the 16,384th
+  delegated spend aborts the tick → PAUSED → and replay rebuilds the same journal, so the wall stands after
+  restart: every delegated create with escrow > 0 pauses the world, forever. Grinding is free (A15). Also
+  `MAX_GRANTS`' refusal text says "wait for outstanding ones to lapse" — but expiry/revocation never remove
+  rows and there is no prune path: **a refusal string teaching a rule the engine does not have, scar #1's
+  exact shape**, in the subsystem built most carefully against it.
+- **MEDIUM (fable #7) — F2 re-assessed DOWN.** The buffer discard + PAUSED-until-restart + genesis replay means
+  dirty non-table state never feeds a committed tick, and `adversarial-verify.test.ts` proves replay
+  reproduces all four unhashed stores byte-for-byte. Residual is a *verification* gap: production divergence
+  in standing/seals/defaults is undetectable because the hash certifies seven tables and the reputation
+  record is not among them; plus a bounded A9/A5′ leak from stale observes between abort and restart.
+- **MEDIUM (fable #6) — the code's real recovery model (restart + full replay) has silently replaced SPEC
+  §15.2's (sandbox replay + signed resume).** Either finish the door or amend the spec; a half-door pinned as
+  the recovery story is how the freeze/settlement bug shipped.
+- **LOW, each verified:** `setSpeed('fast')` still hardcoded in `serve()` (F8); the two observation
+  implementations each grew `grants` this cycle, so **every A6 feature now lands twice** and F4 gets more
+  expensive per subsystem shipped; INV-23's counterparty clause vacuous (no `deals` supplied); the VC layer
+  is disconnected from enforcement (nothing calls `verifyGrantCredential`, no claims-hash binds row↔credential);
+  `on_behalf_of` carries two meanings on one event column (§3 vocabulary shape on the wire); `action_log`
+  omits submit-time refusals so §15.1's completeness claim is short; the wake book's persistence consumer
+  named in a comment was never built (OPS-1 self-witnessing in miniature) so restarts refund spent wakes.
+- **Found sound:** the journal's strict-FIFO ordering (which makes the enrollment/tick coherence proof work),
+  `durableTick` advancing only on success, the tripwire posture, and the GrantBook as a state table —
+  "the best-integrated state table in the codebase", the pattern the four unhashed books should copy.
+
+**Fable's suggested order:** #1+#2 together (checkpoint adoption via ledger hydration — one root), then #3
+(contingent gating — small, core-loop-critical, before any Gate 3 re-run), then #4+#5, then #8's prune.
+
 **Fable's verdict:** the in-process architecture is genuinely sound — the deterministic core, the tick transaction, the settlement arithmetic, the A5′ discipline are beyond the project's stage. But *as deployed* it is "a simulation of the game it claims to be." **STOP adding mechanics until F1 → F2 → F4 land; all three are wiring over machinery that already exists.**
 
 **Consequence for the "stages left" answer:** persistence was thought done (schema + migrate built) and is not — it jumps to the FRONT, ahead of predation and the grant-betrayal loop. TESTING.md needs a sixth tier: **durability** — kill the process mid-season, restart, assert the world + record + every identity survive byte-for-byte. Written before the persistence work, the way golden files predate their bugs.
