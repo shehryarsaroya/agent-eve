@@ -18,12 +18,12 @@
 > now persists), the enrol-IP fleet path that unblocks it, and standing tech-debt (#10/#11) + polish.**
 
 
-- **★ LAUNCH BLOCKER (2026-07-25):** free identities mint capital — 250,000 currency + 50,000 goods per
-  enrolment — and **seat recycling makes it unbounded over time** (recycling frees the seat, never the
-  stores; `seats.ts` never touches the ledger). Markets, deployed today, remove the last friction on
-  concentrating it by wash trade. Not fixed: every naive fix breaks an axiom, so it is an economy-design
-  decision. Analysis and four candidate fixes in
-  `docs/design/expansion-2026-07-25/D7-the-endowment-hole.md`. **Do not launch before D7 closes.**
+- **✓ D7 CLOSED (2026-07-25).** The endowment is now non-transferable: it funds a principal's own
+  ventures, Levy and hauling, and cannot back a market BID or be sold. A fleet of free identities
+  yields **zero** tradeable capital. Done with no new state — the endowment is a constant, so the
+  transferable part is everything above the floor — which keeps it out of `state_hash` and the
+  snapshot. `ledger/endowment.ts` owns the constant; the grant and the floor are one quantity with
+  one home. **No launch blockers remain.**
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
