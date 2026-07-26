@@ -341,6 +341,43 @@ checked and found FINE, recorded so they are not re-investigated: `pendingCorrec
 9 principals never observe — correct for a bots-only world, not a leak; and the client + `agent.md`
 both serve 200.
 
+**★ THE KEYSTONE DEFECT — the `EncumbranceBook` is in no state table (2026-07-25, VERIFIED BY EXPERIMENT).**
+`ledgerStateTable.capture()` returns exactly `accounts, lots, postingCount, batchCount`. **No
+encumbrances.** I ran the capture and grepped the blob: no lock, lien or encumbrance row is in it. Yet
+`src/ledger/stateTable.ts`'s own header says *"Accounts, lots and encumbrances are mutable and are
+carried in full."* **The comment asserts a property the code does not have** — scar #1's shape at the
+state-table layer, in the file written to fix the last "money outside the hash" bug.
+
+**Three independent reviewers found this, and none of them was me:** codex's ledger review (its finding
+#3: "capture at balance 1,000, create a 600 lock, restore — the capture is unchanged by the lock;
+restore leaves it open, free balance 400, exposure 600, and its ID counter advanced"), the boot-upgrade
+builder (which hit it as the blocker for checkpoint adoption and said so honestly in its module header
+rather than shipping a plausible hydrate), and then my own experiment confirming it.
+
+**Four consequences, and the last one is why this is the keystone:**
+1. **Abort/rollback is incomplete.** A tick that opens a lock and then aborts leaves the lock open —
+   free balance reduced, exposure inflated, ID counter advanced. Escrow exists that the world says
+   does not.
+2. **`state_hash` is blind to encumbrances.** Two worlds with different open locks hash identically, so
+   DET-1 cannot see a divergence in escrow. This is the *exact* bug `ledgerStateTable` was created to
+   fix ("a hash that cannot see the money is not a hash of the world"), one layer down.
+3. **A5′ risk:** a world adopted from a snapshot would have escrowed stake silently spendable.
+4. **It blocks checkpoint adoption** — and therefore blocks the fix for the boot crash-loop AND the
+   O(history) restart. The boot builder correctly refused to adopt snapshots because of it and fell back
+   to full genesis replay (measured ~1.8 ms/tick, so ~7 min at 242k ticks — better than fable's 20min–2h
+   estimate, but still a hard-down restart that grows forever).
+
+**So registering the `EncumbranceBook` as a state table is now the highest-value single fix in the
+build:** it closes an A5′ hole, restores rollback correctness, puts escrow inside the hash, and unblocks
+checkpointing. It is the same fix shape as `ledgerStateTable`/`grantsStateTable`, which already exist as
+the pattern to copy.
+
+**Also settled (good news for the house cast):** boot **seats** the house cast deterministically from
+the seed and then replays the *action log* — it does **not** re-invoke the cast to make decisions. So an
+LLM-driven cast is **replay-safe by construction**: its decisions enter the record as logged actions and
+replay from the log, and non-deterministic reasoning never re-runs. That removes the main architectural
+objection to the house cast.
+
 **Second fable review (persistence + A6), 2026-07-25.** This one reads `src/persist/` correctly and
 analyses it in depth — independent confirmation that the first review's F1 was wrong. Findings, ranked:
 
