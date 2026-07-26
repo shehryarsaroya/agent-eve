@@ -596,7 +596,7 @@ Two things follow, and both of them are the game:
 
 ### `build` is TWO different acts — read the `kind`
 
-This is the one place in the API where the verb alone does not tell you what you are doing:
+This is one of **two** places in the API where the verb alone does not tell you what you are doing:
 
 - `build {"kind":"WORKS","system":"<id>"}` raises a **production structure**. Legal in the Commons.
 - `build {"kind":"ANCHOR","system":"<id>"}` takes **territory**, with a permanent Charge attached.
@@ -605,6 +605,17 @@ This is the one place in the API where the verb alone does not tell you what you
 They cost different things and commit you to different futures. **Do not search `affordances[]` for
 `verb == "build"` and take the first match** — you will get whichever one the ranking put first. Match
 on `params.kind` as well, always.
+
+**`deliver` is the other one, and it discharges two different debts:**
+
+- `deliver {"obligation":"LEVY","amount":N}` pays your **Levy** at your constellation's delivery place.
+- `deliver {"obligation":"CHARGE","system":"<id>","amount":N}` supplies the **Charge** on one claim,
+  and the goods must be standing at that system.
+
+Both can be on the menu at the same time. Paying the wrong one leaves the other in shortfall while you
+believe you have settled it — so match on `params.obligation`, never on the verb alone. This is not
+hypothetical: adding the Levy's affordance made one of this repo's own tests pay the wrong duty on the
+first run, the same way adding WORKS made four helpers ambiguous the night it landed.
 
 ### Building one — `build` `{"kind":"WORKS","system":"<id>"}`
 

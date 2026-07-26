@@ -8355,6 +8355,66 @@ export class Runtime {
     };
   }
 
+  /**
+   * Whether a LEVY delivery would be ACCEPTED right now, and for how much.
+   *
+   * Exists so the affordance list can offer `deliver` against the Levy without owning a second
+   * copy of the legality rule: this calls the same {@link deliveryFault} `vDeliver` calls, with the
+   * same inputs. A menu that decided legality for itself would be scar #1 waiting to happen — and
+   * the Charge's own affordance already carries a comment about what it costs an agent to be
+   * offered an act the engine then refuses.
+   *
+   * Measured before it existed: `vote` and `deliver` against the Levy both EXECUTED when called
+   * directly and were absent from `affordances[]` in every observation, while `withheld` explained
+   * neither. A14 says the Levy cannot be dodged into quiet; it was being dodged by ignorance.
+   */
+  levyDeliveryQuote(
+    principal: PrincipalId,
+    tick = this.engine.tick,
+  ): {
+    readonly place: SystemId | null;
+    /** What a full discharge would hand over now, bounded by what is actually to hand. */
+    readonly payable: number;
+    readonly owed: number;
+    readonly available: Qty;
+    /** Null exactly when the verb would be accepted. Otherwise the engine's own sentence. */
+    readonly fault: string | null;
+  } {
+    const reckoning = reckoningOf(tick);
+    const line = this.levy.lineFor(reckoning, principal);
+    const constellation = line?.plan.constellation ?? constellationOf(this.world, principal);
+    const place =
+      line?.plan.deliverableTo ??
+      (constellation === null ? null : deliveryPlaceOf(this.world.map, constellation));
+    const owing = this.levy.owingOf(reckoning, principal);
+    const available = this.levyGoodAvailable(principal);
+    if (place === null) {
+      return {
+        place: null,
+        payable: 0,
+        owed: owing.owed,
+        available,
+        fault: 'your constellation has no delivery place, so nothing can be delivered against it yet.',
+      };
+    }
+    const fault = deliveryFault({
+      world: this.world,
+      payer: principal,
+      deliverer: principal,
+      place,
+      tick,
+      owing,
+      available,
+    });
+    return {
+      place,
+      payable: Math.max(0, Math.min(owing.owed, available)),
+      owed: owing.owed,
+      available,
+      fault,
+    };
+  }
+
   /** Per-Reckoning Levy history, oldest first. Bounded; the record is in the ledger. */
   levyReckonings(): readonly LevySummary[] {
     return this.levySummaries.all;

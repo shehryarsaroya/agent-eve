@@ -234,7 +234,14 @@ describe('the Charge is a duty on territory, and the preview cannot disagree wit
     const before = h.runtime.sovereignty.owingOf(reckoning, system);
     expect(before.assessment, 'a claim is assessed in its first Reckoning').toBeGreaterThan(0);
 
-    const deliver = affordance(await observe(who), 'deliver');
+    // `obligation` MATCHED, not just the verb. `deliver` discharges two world obligations now — the
+    // Levy and the Charge — and the Levy's affordance can sort first, so a bare `verb == 'deliver'`
+    // lookup pays the wrong duty and then asserts about the other one. That is the `build`
+    // ambiguity exactly (ANCHOR vs WORKS), which turned four helpers in this repo ambiguous in a
+    // single commit. Same shape, one verb later.
+    const deliver = ((await observe(who))['affordances'] as Row[]).find(
+      (a) => a['verb'] === 'deliver' && (a['params'] as Row)['obligation'] === 'CHARGE',
+    );
     if (deliver !== undefined) {
       await act(who, 'deliver', deliver['params']);
       run(1);

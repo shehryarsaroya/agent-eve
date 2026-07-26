@@ -89,6 +89,7 @@ import {
   chargeConstituencyOf,
   type ClaimView,
 } from '../sovereignty/index.js';
+import { LEVY_BALLOT, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.js';
 import type { SealRoleRef } from '../seal/index.js';
 import {
   commonsBoundRejection,
@@ -126,6 +127,16 @@ export const MAX_AFFORDANCES = 64;
 
 /** Rows served in any list inside an observation. Bounded (INV-26). */
 export const MAX_LIST_ROWS = 24;
+
+/**
+ * How many `grant` offers the menu carries at once.
+ *
+ * Small on purpose. A6 is the core loop and the list is the only place most players will meet it,
+ * but an office is the heaviest thing an agent can hand out — so the menu shows the two best-attested
+ * candidates rather than everyone with a record, and an agent that wants a different delegate names
+ * one itself. *(calibrate)*
+ */
+export const MAX_GRANT_OFFERS = 2;
 
 /**
  * Kinds offered as a `create` affordance.
@@ -1563,6 +1574,99 @@ function affordancesFor(
         quote_id: quoteId(principal, tick, 'vote', { ballot: CHARGE_BALLOT }),
       });
     }
+  }
+
+  // 5B. **THE LEVY.** A14 says the Levy is scheduled and cannot be dodged into quiet. It was being
+  //     dodged by ignorance: `deliver` against the Levy and `vote` on its ballot both EXECUTE when
+  //     called, and neither was ever offered in any observation — measured across 900 ticks and
+  //     eight principals, with `withheld` explaining neither. The Charge got affordances when
+  //     sovereignty landed and the Levy never did.
+  //
+  //     Legality is not decided here. `levyDeliveryQuote` calls the same `deliveryFault` the verb
+  //     calls, so this list cannot offer an act the engine will refuse — which costs an agent a
+  //     real action, exactly as the Charge's own comment says.
+  const levyQuote = runtime.levyDeliveryQuote(principal, tick);
+  if (levyQuote.fault === null && levyQuote.payable > 0) {
+    eligible.push({
+      verb: 'deliver',
+      params: { obligation: 'LEVY', amount: levyQuote.payable },
+      cost: 1,
+      max_direct_loss: levyQuote.payable,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `hands ${String(levyQuote.payable)} of ${CHARGE_GOOD} to the Levy at ${String(levyQuote.place)}, ` +
+        `against ${String(levyQuote.owed)} owed this Reckoning. Goods delivered are GONE — this is upkeep, ` +
+        `not an investment, and it buys you no standing. What it avoids is the other branch: an unpaid ` +
+        `assessment is recorded as a public shortfall against you at settlement, and a shortfall is ` +
+        `permanent. Paying part is legal and is counted; the remainder still falls short.`,
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'deliver', { obligation: 'LEVY' }),
+    });
+  }
+  const levyBallotBlock = runtime.levyBlockFor(principal, tick);
+  const levyBallot = (levyBallotBlock?.ballot ?? null) as Readonly<Record<string, unknown>> | null;
+  if (levyBallot !== null && levyBallot['voted'] === false) {
+    eligible.push({
+      verb: 'vote',
+      params: { ballot: LEVY_BALLOT, rule: PUBLISHED_DEFAULT_RULE },
+      cost: 0,
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `decides how this Reckoning's Levy is SPLIT across your constellation. The total is fixed and ` +
+        `cannot be voted away — only who bears which share. Swap \`rule\` for any of ` +
+        `${LEVY_RULES.join(', ')}: BY_EXPOSURE loads it onto whoever has most at risk, BY_STORES onto ` +
+        `whoever is holding most, EVEN spreads it flat, INVERSE_EXPOSURE shields the exposed. You are ` +
+        `voting on a bill you will pay, so the rule that suits you is rarely the one that suits the ` +
+        `others. Quorum failure applies ${PUBLISHED_DEFAULT_RULE}. Free, and it costs no action.`,
+      expires_tick: Number(levyBallot['closes_tick']),
+      quote_id: quoteId(principal, tick, 'vote', { ballot: LEVY_BALLOT }),
+    });
+  }
+
+  // 5C. **THE CORE LOOP (A6).** `grant` had no affordance at all. It is legal, it works, and it was
+  //     never on the menu — while the cast prompt tells a player *"the safest plan is built from
+  //     entries in affordances[]"*. The live world showed the consequence directly:
+  //     `authorityLines: 0` on the published frame, a core loop that had never run through the
+  //     front door.
+  //
+  //     **Offered only to a counterparty you have actually kept a promise with.** That is not a
+  //     list-budget dodge, it is the mechanic: A6 is an agent earning trust over months and then
+  //     being handed authority it could abuse. A grant offered to a stranger is a handout; a grant
+  //     offered to someone with a record is the end of an arc, and the receipt reads that way at
+  //     settlement.
+  //
+  //     The caps are *(calibrate)* starting points, not claims of correctness: a tenth of the free
+  //     balance, and an expiry one Reckoning out rather than the three the engine allows — a short
+  //     life is what makes each renewal a decision (scar #7, the sticky vow).
+  for (const relation of runtime.relationsFor(principal, MAX_GRANT_OFFERS * 4)) {
+    if (eligible.filter((a) => a.verb === 'grant').length >= MAX_GRANT_OFFERS) break;
+    if (relation.kept <= 0) continue;
+    const cap = Math.trunc(free / 10);
+    if (cap <= 0) continue;
+    eligible.push({
+      verb: 'grant',
+      params: {
+        to: relation.other,
+        template: 'treasury-hand',
+        max_direct_loss: cap,
+        max_contingent_liability: cap,
+        expires_tick: tick + TICKS_PER_RECKONING,
+      },
+      cost: 1,
+      max_direct_loss: cap,
+      max_contingent_liability: cap,
+      what_it_forecloses:
+        `puts ${relation.other} in an OFFICE over your treasury until tick ` +
+        `${String(tick + TICKS_PER_RECKONING)}. From the tick it lands they may act in your name up to ` +
+        `${String(cap)} of direct loss and ${String(cap)} of contingent liability, and you cannot undo an ` +
+        `act they have already taken — only \`revoke\` what is left. They have kept ${String(relation.kept)} ` +
+        `promise(s) to you and broken ${String(relation.broke)}. That record is why this is offered and it ` +
+        `is not a prediction: the grant, this warning, and whatever they do with it all land on the same ` +
+        `public record, and it is read back at settlement.`,
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'grant', { to: relation.other }),
+    });
   }
 
   // 6. Move an idle hand one gate. Loss is time, never capacity (INV-8), so the
