@@ -417,18 +417,88 @@ export interface Inv21Inputs {
  * function is not called `checkInv21` because that name is taken by the other half,
  * and one name per concept is a rules surface (§3).
  */
+/**
+ * The resumable replay state for INV-21.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **WHY THIS IS NOT A TAUTOLOGY.** INV-21's value is that the cached standing row an agent reads
+ * is compared against a replay of **every change ever made to it**. Keeping a running total beside
+ * the rows and comparing the two is two numbers maintained by one code path agreeing, which proves
+ * nothing. So this is not a running total: it is a replay that was independently performed at the
+ * tick it was verified, resumed only while the entries it folded provably have not changed.
+ *
+ * Before: the whole journal was replayed AND SORTED every tick — O(n log n) on an n that grows for
+ * the life of the world, worse than the O(n) `checkInv7` was doing before its own fix.
+ *
+ * **THE BOUNDARY IS A COMPLETED TICK, NOT AN ARRAY INDEX.** The canonical order is
+ * `(tick, principal, eventId)`, so entries inside one tick interleave; resuming mid-tick could fold
+ * a later-sorting change before an earlier one and move `lastDefault`'s sequencing. Only ticks
+ * strictly before the current one are sealed, because the current tick can still receive changes
+ * after this check runs.
+ *
+ * **THE TRAP, WHICH COST A HUNDRED FAILING TESTS ON THE FIRST ATTEMPT.** Fold everything through
+ * the current tick but seal at `tick - 1`, and the next call re-folds the previous tick and
+ * DOUBLE-COUNTS. Hence the clone: the comparison runs against carried-plus-unsealed-tail, while the
+ * carried state absorbs only completed ticks — and absorbs them **only if this pass found no
+ * violations**, because a tick that is about to abort must not certify a boundary inside a world
+ * that never happened.
+ *
+ * Keyed on the `EventLedger`, which is stable for a world's life, in a `WeakMap`: this is
+ * VERIFICATION state and must never reach `state_hash`, and a restored world correctly starts with
+ * no prefix and replays from the beginning.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+interface StandingPrefix {
+  throughTick: number;
+  count: number;
+  boundary: string | null;
+  readonly recomputed: Map<PrincipalId, Record<StandingField, number>>;
+  readonly lastDefault: Map<PrincipalId, number>;
+  readonly counterparties: Map<PrincipalId, Set<PrincipalId>>;
+}
+
+const STANDING_PREFIX = new WeakMap<EventLedger, StandingPrefix>();
+
+/** Full replays vs resumed ones. Read by the test that proves this is actually incremental. */
+export const inv21Stats = { fullReplays: 0, resumed: 0 };
+
 export function checkStandingJournal(
   inputs: Inv21Inputs,
   tick: number,
 ): readonly InvariantViolation[] {
   const out: InvariantViolation[] = [];
-  const recomputed = new Map<PrincipalId, Record<StandingField, number>>();
-  const lastDefault = new Map<PrincipalId, number>();
-  const counterparties = new Map<PrincipalId, Set<PrincipalId>>();
 
-  const ordered = [...inputs.changes].sort(
-    (a, b) => a.tick - b.tick || cmp(a.principal, b.principal) || cmp(a.eventId, b.eventId),
-  );
+  // ── THE RESUMED REPLAY (see StandingPrefix) ───────────────────────────────
+  let carried = STANDING_PREFIX.get(inputs.events);
+  const boundaryIntact =
+    carried !== undefined &&
+    carried.count <= inputs.changes.length &&
+    (carried.count === 0 || String(inputs.changes[carried.count - 1]?.eventId) === carried.boundary);
+  if (carried === undefined || !boundaryIntact) {
+    carried = { throughTick: -1, count: 0, boundary: null, recomputed: new Map(), lastDefault: new Map(), counterparties: new Map() };
+    STANDING_PREFIX.set(inputs.events, carried);
+    inv21Stats.fullReplays += 1;
+  } else {
+    inv21Stats.resumed += 1;
+  }
+  const sealedThrough = carried.throughTick;
+
+  // The comparison runs against a CLONE, never against the carried state. The clone is bounded by
+  // the number of principals with standing, not by the length of the journal, so it is affordable
+  // every tick — and it is what lets the unsealed tail be replayed without contaminating a prefix
+  // that a later aborted tick might have to disown.
+  const recomputed = new Map<PrincipalId, Record<StandingField, number>>();
+  for (const [k, v] of carried.recomputed) recomputed.set(k, { ...v });
+  const lastDefault = new Map(carried.lastDefault);
+  const counterparties = new Map<PrincipalId, Set<PrincipalId>>();
+  for (const [k, v] of carried.counterparties) counterparties.set(k, new Set(v));
+
+  const replay = (from: number): readonly StandingChange[] =>
+    inputs.changes
+      .filter((c) => c.tick > from)
+      .sort((a, b) => a.tick - b.tick || cmp(a.principal, b.principal) || cmp(a.eventId, b.eventId));
+
+  const ordered = replay(sealedThrough);
 
   for (const change of ordered) {
     if (!STANDING_CAUSES.includes(change.cause)) {
@@ -617,6 +687,47 @@ export function checkStandingJournal(
         ),
       );
     }
+  }
+
+  // ── SEAL COMPLETED TICKS, AND ONLY ON A CLEAN PASS ────────────────────────
+  //
+  // `tick - 1`, never `tick`: the current tick can still receive standing changes after this check
+  // runs, and sealing a half-finished tick would leave the rest of it permanently unverified.
+  //
+  // And nothing is sealed at all when this pass found violations. The tick is about to abort, its
+  // standing rows and journal entries will be rolled back, and a boundary sealed inside a tick that
+  // never happened would certify a world that does not exist — which is worse than the cost it
+  // saves. The clone above is what makes this possible: the comparison already ran against
+  // carried-plus-tail, so the carried state can absorb strictly less than it was compared with.
+  if (out.length === 0) {
+    for (const change of replay(sealedThrough)) {
+      if (change.tick > tick - 1) continue;
+      if (!STANDING_CAUSES.includes(change.cause)) continue;
+      const allowed = fieldsFor(change.cause);
+      const row = bucket(carried.recomputed, change.principal);
+      for (const [field, amount] of Object.entries(change.delta)) {
+        const key = field as StandingField;
+        if (!STANDING_FIELDS.includes(key) || amount === undefined || !Number.isSafeInteger(amount)) continue;
+        if (!allowed.has(key)) continue;
+        row[key] += amount;
+      }
+      if (change.cause === 'DEFAULT') {
+        const prior = carried.lastDefault.get(change.principal);
+        if (prior === undefined || change.tick > prior) carried.lastDefault.set(change.principal, change.tick);
+      }
+      if (change.counterparty !== null && change.counterparty !== change.principal) {
+        let seen = carried.counterparties.get(change.principal);
+        if (seen === undefined) {
+          seen = new Set<PrincipalId>();
+          carried.counterparties.set(change.principal, seen);
+        }
+        seen.add(change.counterparty);
+      }
+    }
+    carried.throughTick = tick - 1;
+    carried.count = inputs.changes.length;
+    carried.boundary =
+      inputs.changes.length === 0 ? null : String(inputs.changes[inputs.changes.length - 1]?.eventId ?? '');
   }
 
   return out;
