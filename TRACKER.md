@@ -79,6 +79,20 @@
   segment carries a `receiptReel` — the reel only exists where an elective promise BROKE, and so far
   the cast keeps paying. That is the game being honest, not the reel being broken, but it means the
   signature moment is still unwitnessed.
+- **★★ THE RISK FRONTIER IS REACHABLE (2026-07-26).** `graduate` shipped (`0fda7ab`) and I verified
+  the acceptance criterion myself, starting where enrolment really puts a principal rather than seating
+  one in MARCHES — that shortcut is what hid the defect for a week:
+  `enrolled at sys-01 (COMMONS) → graduate accepted → now at sys-05 (MARCHES) → raids aimed at me: 1`.
+  Paired with the earlier control (0 raids in 900 ticks staged in the Commons), **both halves hold**:
+  A8's floor is inviolable and A14's conflict can now actually reach a player.
+  Priced in produced goods plus capital, never identities (A15): 50,000 currency retired to
+  `sink:upkeep` and 5,000 of the upkeep good burned to `sink:consumption`, one-way, with everything in
+  your body travelling with it and raidable where it lands.
+  **The build also caught a defect I would have missed:** `sys-03` is an interior Commons system with
+  no outward lane, so under bare adjacency **one newcomer in four** would have graduated into
+  `graduation.open: []` — the same cage one layer down, and *intermittent*. Departure is therefore
+  measured from the **zone**, not the node: the Commons is one place and you may leave by any of its
+  gates.
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
