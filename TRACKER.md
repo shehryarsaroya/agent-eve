@@ -297,6 +297,25 @@ obligation / deliveries + the two ID counters as state tables, closing F2 and th
 together; **(3)** the observe consolidation (F4) — every Gate 3 conclusion is about the *served* surface,
 which is the one without the token-budget ladder.
 
+**LIVE-WORLD OBSERVATION (2026-07-25, from the deployed box) — the house cast has no inference.**
+`/compact/health` reports `unhealthy` in steady state, and it is **right to**: of 618 decisions in the
+window, **618 were `HEURISTIC` and 0 were `LIVE`/`INTENT`/`DELEGATE`** (`deciding_share_bps: 0` against
+`floor_bps: 2500`). The anti-scar-#14 check is working exactly as designed — it refuses to call a
+bots-only world healthy. But the cause is a **missing build stage, not a bug**: `src/cast/` contains
+only `heuristic.ts`. There is no LLM-driven cast, so `LIVE` can only ever come from an external agent
+calling the API. SPEC §15 says *"you cannot cast a show you do not fund: a house cast of 12–20 named
+principals runs on our keys"* — as built, the house cast is 12 heuristic bots and the world is
+**permanently unhealthy by its own definition** whenever probes are not running.
+
+This is the **watchability gap**, and it is the thing standing between "the engine runs" and "the show
+is worth watching": heuristics produce motion, not drama. A6's whole claim — betrayal through
+legitimate authority, months of honest work then abuse at maximum leverage — is not a behaviour a
+heuristic bot can exhibit. **The house cast is now a named Phase 0 stage.** Two live-world numbers also
+checked and found FINE, recorded so they are not re-investigated: `pendingCorrections` climbing
+(95→100 over 3 ticks) is a bounded per-principal `Ring(MAX_PENDING_CORRECTIONS)` filling because those
+9 principals never observe — correct for a bots-only world, not a leak; and the client + `agent.md`
+both serve 200.
+
 **Second fable review (persistence + A6), 2026-07-25.** This one reads `src/persist/` correctly and
 analyses it in depth — independent confirmation that the first review's F1 was wrong. Findings, ranked:
 
