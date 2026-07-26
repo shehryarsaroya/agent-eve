@@ -112,3 +112,56 @@ describe('the API verb list is the canon verb list', () => {
     expect(verdict.hint).toBe('');
   });
 });
+
+describe('a verb cannot be both live and waiting on a build step', () => {
+  /**
+   * Found by audit, not by a failure: `admit`, `apply`, `deliver`, `form`, `grant`, `revoke` and
+   * `vote` all had working handlers **and** entries in `VERB_ARRIVES_AT` saying which future build
+   * step they were waiting on. One of them was `grant` — the A6 core loop.
+   *
+   * Nothing broke, and that is the whole reason this test exists. `classifyVerb` checks `live`
+   * first, so a stale entry is never *shown* to an agent; it just quietly disagrees with the
+   * engine. `verbs.ts` already documented the convention — remove the entry when the verb lands —
+   * and the convention drifted anyway, because a convention maintained by remembering is one that
+   * drifts. Four entries had been removed correctly and seven had not.
+   *
+   * This asserts the two sets are disjoint, so the next verb to go live cannot leave its promise
+   * behind. It reads the runtime's own live set rather than a hand-kept list, so it cannot drift in
+   * the same way it is guarding against.
+   */
+  it('every verb with a handler is absent from VERB_ARRIVES_AT', async () => {
+    const { harness } = await import('./harness.js');
+    const h = await harness({ seed: 'verb-drift' });
+    try {
+      const live = h.runtime.liveVerbs;
+      const promised = Object.keys(VERB_ARRIVES_AT);
+      // Explicit comparator: DET-1 bans a bare .sort() even on a diagnostic string list, and it is
+      // right to — a message whose order varies by platform makes a failure hard to compare.
+      const both = promised.filter((v) => live.has(v)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      expect(
+        both,
+        `these verbs have handlers AND claim to be waiting on a build step: ${both.join(', ')}. ` +
+          'Remove their VERB_ARRIVES_AT entries — a promise about a verb that already works is a ' +
+          'rules surface disagreeing with the engine, which is scar #1 in miniature.',
+      ).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('and every verb still promised really has no handler', async () => {
+    // The other direction, so the fix cannot be "delete the map". A verb genuinely waiting on a
+    // build step must stay listed, because the agent is owed the step number rather than silence.
+    const { harness } = await import('./harness.js');
+    const h = await harness({ seed: 'verb-drift-2' });
+    try {
+      expect(Object.keys(VERB_ARRIVES_AT).length, 'the map must not be empty while work remains').toBeGreaterThan(0);
+      for (const [verb, step] of Object.entries(VERB_ARRIVES_AT)) {
+        expect(h.runtime.liveVerbs.has(verb), `${verb} is listed as unbuilt but has a handler`).toBe(false);
+        expect(step, `${verb}'s note must cite a step, not an apology`).toMatch(/step \d+/);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});

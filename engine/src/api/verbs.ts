@@ -106,11 +106,17 @@ export function isCanonVerb(verb: string): boolean {
  * against a public plan and "coming soon" is not.
  */
 export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
-  // `seal` and `elect` were both here and both are now live, so their entries are
-  // gone rather than left to read as a promise about a verb that already works.
-  // `classifyVerb` checks `live` first, so a stale entry would never be *shown* — it
-  // would just quietly disagree with the engine, which is the drift this file exists
-  // to prevent.
+  // ── SEVEN STALE ENTRIES WERE FOUND HERE AND THE DISCIPLINE IS NOW EXECUTABLE ──
+  //
+  // `seal`, `elect`, `post_bond` and `build` were removed as each went live. Then an audit found
+  // `admit`, `apply`, `deliver`, `form`, `grant`, `revoke` and `vote` still listed as waiting on a
+  // build step while all seven had working handlers — including `grant`, which is the A6 core loop.
+  //
+  // The comment below was already right about why that matters and was not enough on its own:
+  // `classifyVerb` checks `live` first, so a stale entry is never *shown* to an agent — it just
+  // quietly disagrees with the engine, and nothing failed. A convention maintained by remembering
+  // is a convention that drifts. `verbs.test.ts` now asserts the two sets cannot overlap, so the
+  // next verb to go live cannot leave its entry behind.
   attest: 'step 9 (grants and offline semantics)',
   verify_owner: 'step 9 (grants and offline semantics)',
   // `post_bond` and `build` were both here and both are now live, so their entries are gone
@@ -127,11 +133,6 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   extract: 'step 11 (markets and the production graph)',
   refine: 'step 11 (markets and the production graph)',
   haul: 'step 11 (markets and the production graph)',
-  apply: 'step 9 (offices and grants)',
-  admit: 'step 9 (offices and grants)',
-  grant: 'step 9 (offices and grants)',
-  approve: 'step 9 (offices and grants)',
-  revoke: 'step 9 (offices and grants)',
   audit: 'step 9 (offices and grants)',
   // `yield`, `fight` and `join` were here and all three are now live, so their entries
   // are gone rather than left to read as a promise about a verb that already works.
@@ -144,9 +145,6 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   // spelling of one action would be §3's forbidden second concept.
   demand: 'step 12b (the agent-initiated Demand window; world-spawned raids are live now)',
   flee: 'step 12b — move a hand off the stage and the raid misses; `move` already does this',
-  deliver: 'step 10 (the Levy)',
-  vote: 'step 10 (the Levy ballot)',
-  form: 'step 9 (syndicates)',
   charter: 'step 9 (syndicates)',
   propose: 'step 9 (syndicates)',
 });
