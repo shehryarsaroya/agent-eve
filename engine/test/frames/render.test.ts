@@ -68,6 +68,8 @@ describe('authority lines — the A6 pixel signature (§8, §14)', () => {
       delegate: P('vex'),
       granted: minor(1_000),
       spent: minor(0),
+      grantedContingent: minor(0),
+      spentContingent: minor(0),
       state: 'UNUSED',
       ...over,
     };
@@ -84,6 +86,23 @@ describe('authority lines — the A6 pixel signature (§8, §14)', () => {
     );
     expect(f.authorityLines.map((l) => l.granted)).toEqual([900, 100]);
     expect(f.authorityLines[0]!.grantor).toBe(P('c'));
+  });
+
+  it('ranks on BOTH limits, so the largest exposure is not sorted last and cut', () => {
+    // §8.1 #2: a grant carries two worst cases. Ranking on `max_direct_loss` alone put a
+    // grant written `max_direct_loss: 0, max_contingent_liability: <huge>` — the shape of
+    // the un-escrowable A6 attack, and the largest authority on the map — dead last, so
+    // the twelve-line budget cut the one line the audience most needed to see.
+    const f = renderFrame(
+      source({
+        authorityLines: [
+          line({ grantor: P('a'), delegate: P('b'), granted: minor(500), grantedContingent: minor(0) }),
+          line({ grantor: P('c'), delegate: P('d'), granted: minor(0), grantedContingent: minor(900_000) }),
+        ],
+      }),
+    );
+    expect(f.authorityLines[0]!.grantor).toBe(P('c'));
+    expect(f.authorityLines.map((l) => l.grantedContingent)).toEqual([900_000, 0]);
   });
 
   it('caps at MAX_AUTHORITY_LINES — convergence on a few hands, not a hairball', () => {

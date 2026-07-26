@@ -312,6 +312,11 @@ function named(p, m) { return esc(m.get(p) || String(p ?? '').replace(/^p:/, '')
 // A6's authority signature (SPEC §8): who holds standing power over whom, and how much of
 // the worst case they were shown has been drawn. Convergence on a few delegates is a
 // forming power bloc — the thing this section exists to make watchable.
+//
+// BOTH limits are drawn (§8.1 #2). Showing only the direct half rendered the sharpest
+// version of the A6 betrayal as "unused": a delegate that opens un-escrowable ventures in
+// its grantor's name moves no escrow at all, so the direct figure stays at zero while the
+// grantor carries the whole elective tail into the Reckoning.
 function renderAuthority(lines, m) {
   const el = $('authority');
   if (!lines || lines.length === 0) {
@@ -322,7 +327,7 @@ function renderAuthority(lines, m) {
   el.innerHTML = lines.map((l) => `
     <div class="card">
       <p class="hl">${named(l.grantor, m)} &rarr; ${named(l.delegate, m)}</p>
-      <p class="tn">${money(l.spent)} drawn of ${money(l.granted)} granted &middot; ${esc(label[l.state] || l.state)}</p>
+      <p class="tn">${money(l.spent)} drawn of ${money(l.granted)} direct &middot; ${money(l.spentContingent || 0)} drawn of ${money(l.grantedContingent || 0)} contingent &middot; ${esc(label[l.state] || l.state)}</p>
     </div>`).join('');
 }
 

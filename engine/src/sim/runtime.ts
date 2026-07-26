@@ -207,6 +207,7 @@ import {
   createVenture,
   drawResidual,
   electiveFloor,
+  electiveTotal,
   escrowRequired,
   filledIndices,
   IN_FULL,
@@ -231,7 +232,7 @@ import {
   type SettlementAccounts,
   type VentureRecord,
 } from '../venture/index.js';
-import { GrantBook, grantsStateTable } from '../grant/index.js';
+import { MAX_GRANT_SPENDS, GrantBook, grantsStateTable } from '../grant/index.js';
 import type { Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
 import {
   createWorld,
@@ -1975,11 +1976,37 @@ export class Runtime {
     // balance. Checked here as a rejection so the ledger's throw is unreachable
     // from a request; wrapped below in case the two ever disagree.
     const required = escrowRequired(made.value);
+    // ══════════════════════════════════════════════════════════════════════════
+    // **A7's OTHER HALF, AND THE LIMIT NOTHING USED TO CHARGE.**
+    //
+    // Every role carries an elective part (`defaultTerms`) and the top-yield kinds are
+    // legally un-escrowable, so `BUILD` and `SIEGE` are **100% elective**. The elective
+    // part does not auto-execute: at the Reckoning the CREATOR is asked for it, and
+    // silence is a decline, which is a permanent public default (A5).
+    //
+    // So on a delegated create it is the grantor — who may not have woken — that carries
+    // it, and it is exactly what SPEC §8.1 #2's `max_contingent_liability` is for. It was
+    // carried, shown, VC-serialised and INV-22-checked, and charged NOWHERE: the gate
+    // below tested escrow against direct headroom only, and the draw was recorded with
+    // `contingent: 0`. A grant issued with `max_direct_loss: 0` therefore showed its owner
+    // a worst case of ZERO while a delegate opened un-escrowable top-yield ventures in its
+    // name at zero headroom — `0 > 0` is false, so the gate passed, no spend was recorded,
+    // INV-22 saw nothing, and the authority line rendered `UNUSED` over an unbounded
+    // liability. A6's headline promise ("max_direct_loss and max_contingent_liability are
+    // shown before you sign") was false as built.
+    //
+    // Derived from `made.value` — the terms the venture is ACTUALLY created with — never
+    // re-guessed from the kind and the value, or the number gated would drift from the
+    // number owed the moment terms stop being the default (scar #1's shape).
+    // ══════════════════════════════════════════════════════════════════════════
+    const elective = electiveTotal(made.value);
 
     // ── The delegation gate (A6, §8.1). Runs BEFORE any value moves. A delegate needs a
-    // live grant from the creator whose remaining DIRECT headroom covers this escrow —
-    // the escrow is the grantor's loss the delegate is committing, and it may never pass
-    // the max_direct_loss the grantor was shown (A7). This is the gate; INV-22 is the net.
+    // live grant from the creator, and a delegated create draws on BOTH of its LIMITS:
+    // the escrow against DIRECT headroom (value locked out of the grantor's stores now),
+    // the elective tail against CONTINGENT headroom (value the grantor is asked for at
+    // settlement and defaults on by staying silent). Neither may pass the worst case the
+    // grantor was shown (A7). This is the gate; INV-22 is the net.
     let grant: Grant | null = null;
     if (delegated) {
       grant = this.grantBook.liveGrantBetween(creator, req.principal, ctx.tick);
@@ -2000,6 +2027,35 @@ export class Runtime {
             'was shown before signing (A7, §8.1 #2).',
         );
       }
+      if (elective > headroom.contingent) {
+        return reject(
+          'INV-22',
+          `the elective part of this ${kind} totals ${String(elective)} and would exceed grant ${grant.id}'s ` +
+            `remaining contingent headroom of ${String(headroom.contingent)} ` +
+            `(max_contingent_liability ${String(grant.maxContingentLiability)}, already spent ` +
+            `${String(grant.spentContingent)}).` +
+            (isEscrowable(kind)
+              ? ''
+              : ` ${kind} is a top-yield kind and is legally un-escrowable, so ALL of it is elective —` +
+                ' nothing about it is secured by escrow.') +
+            ` The elective part does not auto-execute: ${creator} is asked for it at the Reckoning and ` +
+            'staying silent is a decline, which is a permanent public default. That is contingent liability, ' +
+            'not escrow, and it is capped by the second LIMIT the grantor was shown before it signed (A6, A7, ' +
+            '§8.1 #2). Ask for a wider max_contingent_liability, lower the value, or create on your own ' +
+            'account.',
+        );
+      }
+      // INV-26's cap, as a REFUSAL rather than a throw. `recordSpend` throws when the
+      // journal is full, and it is called below inside the value-moving path — so a full
+      // journal used to abort the tick for an act that was merely not allowed.
+      if (this.grantBook.allSpends().length >= MAX_GRANT_SPENDS) {
+        return reject(
+          'INV-26',
+          `the grant spend journal is at its cap of ${String(MAX_GRANT_SPENDS)} draws, so this draw cannot be ` +
+            'recorded and an unrecorded draw is an uncapped one. Nothing was created. Grants expire; act on ' +
+            'your own account until this one does.',
+        );
+      }
     }
 
     const stores = storesAccount(creator);
@@ -2015,7 +2071,36 @@ export class Runtime {
           'price more of it elective — the elective half is the only part standing can accrue to anyway.',
       );
     }
+    // ── Everything that mutates, inside ONE guard ─────────────────────────────
+    //
+    // `recordSpend` used to sit AFTER this block and OUTSIDE it, on the reasoning that a
+    // draw recorded after the money moved cannot disagree with the ledger. But it mutates
+    // the row and then appends to a capped journal, so it can throw — and a throw there
+    // aborts the tick with the escrow already funded, which turns an act that should have
+    // been refused into a halted world. A refusal must stay a refusal (AGT-X9).
+    //
+    // So it is first, and inside the guard. Ordering the draw before the transfer is
+    // deliberate: if the (already unreachable) transfer failed afterwards the residue
+    // would be a recorded draw against a grant with no value moved — the grantor's
+    // exposure over-stated, which is safe — where the other order leaves currency locked
+    // in the escrow of a venture that was never added to the book.
+    let drew = false;
     try {
+      // Bounded by the two headroom checks above and by the journal-cap check; INV-22
+      // re-checks the sum at tick close. Both actor and principal are on the event below.
+      // The split is the honest one: escrow is DIRECT (locked now), the elective tail is
+      // CONTINGENT (owed at settlement). Neither is counted as the other.
+      if (delegated && grant !== null && (required > 0 || elective > 0)) {
+        this.grantBook.recordSpend({
+          grant: grant.id,
+          delegate: req.principal,
+          tick: ctx.tick,
+          eventId: `escrow:${id}` as EventId,
+          direct: required,
+          contingent: elective,
+        });
+        drew = true;
+      }
       openVentureEscrow(this.ledger, id, creator);
       if (required > 0) {
         this.ledger.transferCurrency({
@@ -2027,28 +2112,18 @@ export class Runtime {
         });
       }
     } catch (error: unknown) {
-      // Never a halt from a request. The world is unchanged: the venture has not
-      // been added to the book yet, and the escrow account is empty if it opened.
+      // Never a halt from a request. No venture was added to the book, and the escrow
+      // account is empty if it opened. The one thing that may survive is the recorded
+      // draw, and the hint says so rather than claiming "nothing happened".
       return reject(
         'A7',
-        `the escrow for ${id} could not be funded (${describeError(error)}). Nothing was created.`,
+        `the escrow for ${id} could not be funded (${describeError(error)}). No venture was created` +
+          (drew ? `, though the attempted draw is on grant ${grant?.id ?? '?'}` : '') +
+          '.',
       );
     }
 
     this.ventures.add(made.value);
-    // The delegate's draw against the grant, recorded AFTER the value moved so the spend
-    // journal and the ledger cannot disagree. Bounded by the headroom check above; INV-22
-    // re-checks the sum at tick close. Both actor and principal are on the event below.
-    if (delegated && grant !== null && required > 0) {
-      this.grantBook.recordSpend({
-        grant: grant.id,
-        delegate: req.principal,
-        tick: ctx.tick,
-        eventId: `escrow:${id}` as EventId,
-        direct: required,
-        contingent: minor(0),
-      });
-    }
     ctx.emit({
       tick: ctx.tick,
       kind: 'venture.formed',
@@ -2076,6 +2151,10 @@ export class Runtime {
         kind,
         stage: here,
         escrowed: required,
+        // The unsecured tail, on the record at formation. A7 requires the priced
+        // elective part to be *displayed*, and a receipt that showed only the escrow
+        // would describe an un-escrowable BUILD as a venture with nothing at stake.
+        elective,
         termsHash: made.value.termsHash,
         ...(delegated ? { creator, onBehalfOf: creator, grant: grant?.id ?? null } : {}),
       },
@@ -4102,12 +4181,19 @@ export class Runtime {
       .all()
       .filter((g) => g.expiresTick >= outcome.tick)
       .map((g) => {
+        // BOTH limits decide the state. Reading `spentDirect` alone rendered the A6
+        // attack as `UNUSED`: an un-escrowable venture created on a grantor's behalf
+        // moves no escrow, so the direct counter never leaves zero while the grantor
+        // carries the whole elective tail. Nothing drawn on either limit is UNUSED;
+        // no headroom left on either is EXHAUSTED; anything between is DRAWN.
+        const headroom = this.grantBook.headroom(g.id);
+        const drawn = g.spentDirect > 0 || g.spentContingent > 0;
         const state: AuthorityLineState =
           g.revokedAtTick !== null
             ? 'REVOKED'
-            : g.spentDirect <= 0
+            : !drawn
               ? 'UNUSED'
-              : g.spentDirect >= g.maxDirectLoss
+              : headroom.direct <= 0 && headroom.contingent <= 0
                 ? 'EXHAUSTED'
                 : 'DRAWN';
         return {
@@ -4115,6 +4201,8 @@ export class Runtime {
           delegate: g.delegate,
           granted: g.maxDirectLoss,
           spent: g.spentDirect,
+          grantedContingent: g.maxContingentLiability,
+          spentContingent: g.spentContingent,
           state,
         };
       });

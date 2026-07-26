@@ -214,6 +214,31 @@ Cleared the fable CRITICAL and most of the Gate-3 run-2 defect list; scoped the 
 > exposure; budgeted, sorted, deterministic). All six §8.1 guardrails hold and every mechanic
 > renders. 2173 tests green.
 >
+> **UPDATE 2 — A6's headline promise was FALSE as built, and is now true** (2026-07-25, a fable
+> architecture review). §8.1 #2 gives a grant two LIMITS and only ONE was ever charged. The
+> delegated-`create` gate tested the venture's required ESCROW against DIRECT headroom and recorded
+> the draw with `contingent: 0` — but every role carries an elective part and the top-yield kinds
+> (`BUILD`, `SIEGE`) are legally un-escrowable, i.e. **100% elective**. So a grant written
+> `max_direct_loss: 0` showed its owner a worst case of ZERO while its delegate opened
+> un-escrowable ventures in the owner's name at zero headroom (`0 > 0` is false, so the gate
+> passed), recorded nothing, and rendered `UNUSED` on the authority line. At the Reckoning the
+> grantor — possibly never awake — either paid beyond every number it was shown or stayed silent,
+> and **silence is a decline, which is a permanent public default** (A5). `max_contingent_liability`
+> was carried, shown, VC-serialised and INV-22-checked, and *gated and accrued nowhere*.
+>
+> Fixed: `electiveTotal(venture)` (one home, in `venture/venture.ts`, derived from the terms the
+> venture is actually created with) · gated against CONTINGENT headroom exactly as escrow is gated
+> against direct, with a refusal naming the rule, the amount, the headroom and which limit ·
+> accrued as `contingent` spend so headroom really falls and INV-22 recomputes consistently ·
+> rendered (`AuthorityLine` gained `grantedContingent`/`spentContingent`, its state reads BOTH
+> limits so the attack can no longer render `UNUSED`, and the frame now ranks lines on both so the
+> largest exposure is not cut first) · `agent.md` §10 states the rule in the engine's words, with a
+> live doc-vs-engine test. Two adjacent defects closed in the same pass: `recordSpend` moved inside
+> the guarded path and before the value move (it can throw at `MAX_GRANT_SPENDS`, which used to
+> abort the tick *after* the escrow had moved — a halted world for an act that should have been a
+> refusal, now `INV-26`), and INV-22's own recomputation moved from bare `+=` to `addMinor` so the
+> invariant's arithmetic is fail-closed past 2⁵³. 2195 tests green; 13 mutations proven.
+>
 > **Genuinely remaining (a fresh arc, not the mechanism):** the **redeploy** (a deliberate live op —
 > scar #4 outage risk — that ships persistence + the signing-`@path` fix + the prompt fix + A6, and
 > resets the current ephemeral heap world one last time so it persists thereafter); **Gate 3 run 3**

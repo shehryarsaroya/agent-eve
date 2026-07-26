@@ -22,6 +22,7 @@ import {
   activate,
   computeClaims,
   electiveHonouredValue,
+  electiveTotal,
   escrowRequired,
   isFullyCountersigned,
   isFullyFilled,
@@ -369,6 +370,25 @@ describe('the venture record answers the questions the API layer needs', () => {
     expect(partiesOf(haul)).toEqual([ALICE, BRAM]);
     expect(signatoriesRequired(haul)).toEqual([ALICE, BRAM]);
     expect(isFullyCountersigned(haul)).toBe(false);
+  });
+
+  it('reports the elective total — the creator’s contingent liability (§8.1 #2, A7)', () => {
+    // The companion of `escrowRequired`, and the number the delegated-`create` gate
+    // charges against a grant's `max_contingent_liability`. It is Σ over EVERY role,
+    // including ones nobody has filled: at creation none are filled, and the worst case
+    // is that every one of them is filled by a stranger the creator then owes. A figure
+    // that quietly assumed the creator would take a slot itself would be a forecast
+    // dressed as a bound, which is exactly the promise A6 makes and must not break.
+    const f = fixture();
+    const haul = makeHaul(f, { carrier: wage(700, 300), escort: share(bps(3_000), 400, 600) });
+    expect(electiveTotal(haul)).toBe(900);
+    // The two halves partition the pinned value, so neither can absorb the other.
+    expect(escrowRequired(haul) + electiveTotal(haul)).toBe(pinnedValue(haul));
+
+    // Filling every role does not move it: the liability was fixed at signing.
+    fill(f, haul, 0, ALICE);
+    fill(f, haul, 1, BRAM);
+    expect(electiveTotal(haul)).toBe(900);
   });
 
   it('throws on a role index that does not exist', () => {

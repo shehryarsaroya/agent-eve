@@ -39,6 +39,7 @@ import {
   fill,
   fixture,
   goLive,
+  grantFrom,
   makeHaul,
   makeTopYield,
   share,
@@ -298,5 +299,29 @@ describe('the move affordance prices only what can actually be lost', () => {
       expect(commons.has(destination as never)).toBe(true);
     }
     expect(built.observation.header.withheld.some((r) => r.ground === 'COMMONS_BOUND')).toBe(true);
+  });
+});
+
+describe('the revoke affordance names BOTH headrooms it takes away (§8.1 #2, A13)', () => {
+  it('states the direct AND the contingent headroom a revocation ends', () => {
+    // A grant carries two LIMITS and a delegated `create` draws on both — the escrow
+    // against direct, the venture's elective tail against contingent. Naming only the
+    // direct half under-states what a revocation forecloses, and on the un-escrowable
+    // top-yield kinds the direct half is ZERO while the entire liability sits in the
+    // other one: the grantor would read "revoking ends 0 of headroom" over a delegate
+    // that can still commit its whole contingent limit.
+    const f = fixture();
+    const grant = grantFrom({
+      grantor: ALICE,
+      delegate: BRAM,
+      maxDirectLoss: 0,
+      maxContingentLiability: 90_000,
+    });
+    const built = buildObservation(sourcesFor(f, { grants: [grant] }), ALICE);
+    const revoke = built.observation.affordances.find((a) => a.verb === 'revoke');
+    expect(revoke).toBeDefined();
+    const forecloses = (revoke?.what_it_forecloses ?? []).join(' | ');
+    expect(forecloses).toContain('0 direct');
+    expect(forecloses).toContain('90000 contingent');
   });
 });

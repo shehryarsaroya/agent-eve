@@ -24,7 +24,7 @@
  */
 
 import type { Handle, PrincipalId, VentureId } from '../core/types.js';
-import { minor, type Minor } from '../core/units.js';
+import { addMinor, minor, type Minor } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
   MAX_AUTHORITY_LINES,
@@ -107,6 +107,16 @@ export interface UpcomingView {
 
 function handleOf(src: FrameSource, p: PrincipalId): Handle {
   return src.handles.get(p) ?? (p as unknown as Handle);
+}
+
+/**
+ * How much authority a line represents, for ranking into the frame budget: BOTH of
+ * §8.1 #2's LIMITS, because either one alone is a partial account of what a delegate
+ * may cost its grantor. Summed with the checked helper, not `+`, so a pair that leaves
+ * the safe range throws rather than silently ranking a huge grant as a small one.
+ */
+function authorityWeight(line: AuthorityLine): Minor {
+  return addMinor(line.granted, line.grantedContingent);
 }
 
 function money(n: Minor): string {
@@ -265,11 +275,16 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // Selection is arithmetic, not taste: the most authority first (the convergence a
     // viewer should see), ties broken by id for determinism, capped to the budget. A
     // line nobody granted is never drawn — these come from the grant layer.
+    //
+    // "The most authority" is BOTH limits summed, not `max_direct_loss` alone. A grant
+    // written `max_direct_loss: 0, max_contingent_liability: 900000` authorises the
+    // largest exposure on the map and used to sort dead last, so the twelve-line budget
+    // cut the one line the audience most needed (A13, §8.1 #2).
     authorityLines: (src.authorityLines ?? [])
       .slice()
       .sort(
         (a, b) =>
-          b.granted - a.granted ||
+          authorityWeight(b) - authorityWeight(a) ||
           compareIds(a.grantor, b.grantor) ||
           compareIds(a.delegate, b.delegate),
       )

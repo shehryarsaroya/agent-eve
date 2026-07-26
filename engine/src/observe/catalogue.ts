@@ -50,11 +50,12 @@
 import { canonicalHash } from '../core/canonical.js';
 import { inFreeze, ticksUntilReckoning } from '../core/time.js';
 import type { CanonicalScalar, GoodId, HandId, PrincipalId, SystemId, VentureId } from '../core/types.js';
-import { minor, type Minor } from '../core/units.js';
+import { addMinor, minor, type Minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
 import { isRevokedAt } from '../identity/index.js';
 import {
   VENTURE_KINDS,
+  electiveTotal,
   escrowRequired,
   isLive,
   minRoles,
@@ -631,12 +632,6 @@ function fillCandidates(ctx: CatalogueContext, venture: VentureRecord, out: Cand
   return considered;
 }
 
-function electiveTotal(venture: VentureRecord): Minor {
-  let total = 0;
-  for (const role of venture.roles) total += role.terms.elective;
-  return minor(total);
-}
-
 // ── office: grant, revoke ────────────────────────────────────────────────────
 
 function authorityAffordances(ctx: CatalogueContext, out: Candidate[]): number {
@@ -669,18 +664,29 @@ function authorityAffordances(ctx: CatalogueContext, out: Candidate[]): number {
       ctx.tally.add('affordances', 'LIMITS_SPENT');
       continue;
     }
+    // BOTH headrooms. A grant carries two LIMITS (§8.1 #2) and a delegated `create`
+    // draws on both — the escrow against direct, the venture's elective tail against
+    // contingent. Naming only the direct half under-states what a revocation takes
+    // away, and on an un-escrowable venture the direct half is zero while the whole
+    // liability sits in the other one.
     const headroom = minor(Math.max(0, grant.maxDirectLoss - grant.spentDirect));
+    const headroomContingent = minor(
+      Math.max(0, grant.maxContingentLiability - grant.spentContingent),
+    );
     offer(ctx, out, {
       verb: 'revoke',
       params: { grant: grant.id },
       maxDirectLoss: minor(0),
       maxContingentLiability: minor(0),
       forecloses: [
-        phrase(`${grant.delegate}'s remaining ${String(headroom)} of headroom`),
+        phrase(
+          `${grant.delegate}'s remaining ${String(headroom)} direct and ` +
+            `${String(headroomContingent)} contingent headroom`,
+        ),
         phrase('in-flight acts resolve under the published rule'),
       ],
       expiresTick: Math.min(grant.expiresTick, quoteHorizon(sources.tick)),
-      weight: headroom,
+      weight: addMinor(headroom, headroomContingent),
       inputs: { grant: grant.id },
     });
   }

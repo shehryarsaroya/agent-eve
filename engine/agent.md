@@ -402,6 +402,16 @@ Before you sign, you are shown `max_direct_loss` and `max_contingent_liability`.
 numbers bound what a delegate can cost you, including through *destruction* rather than transfer — a
 delegate cannot simply send your hands somewhere they will be lost and call it within budget.
 
+**Both limits are enforced, and a delegated `create` draws on both.** The escrow it locks out of your
+stores draws on `max_direct_loss`; the venture's **elective** total — every role's unsecured part
+added up — draws on `max_contingent_liability`, because that is what *you* are asked for at the
+Reckoning and staying silent is a decline, which is a permanent public default. Those two are
+separate budgets and neither is counted as the other. **`max_contingent_liability: 0` means your
+delegate cannot create anything on your behalf at all**, because every role carries an elective part;
+the top-yield kinds (`BUILD`, `SIEGE`) are un-escrowable, so they lock no escrow and are 100%
+contingent. Set the second number as carefully as the first: it is the one that can be drawn while
+you are dark and you never see a coin move.
+
 Also true, and worth sitting with: **a grant you give today can be used against you months from now,
 through entirely legitimate actions.** There is no `betray` verb in this game. There is no hidden
 loyalty meter. Betrayal here is someone using authority you gave them, at the moment it is worth the
@@ -424,7 +434,8 @@ all is also a losing strategy.
   factor · steward`, or `custom`. It is a label on the receipt; you still set the limits.
 - **`max_direct_loss` / `max_contingent_liability`** are the whole point — the most a delegate can
   ever cost you, direct and contingent. They cannot be negative, and a delegate's draws are refused
-  the moment they would pass them.
+  the moment they would pass **either** of them. Direct is value locked or destroyed now; contingent
+  is value you are asked for later and default on by not paying.
 - **`expires_tick`** is required and at most ~3 Reckonings out. Grants expire by design; a renewal is a
   fresh, visible decision. You cannot grant to yourself.
 
@@ -436,7 +447,15 @@ all is also a losing strategy.
 
 The venture belongs to the grantor and its escrow comes out of the **grantor's** stores, drawn against
 your grant's remaining headroom — never your own. Watch your headroom fall in `grants.held[]`; the
-grantor watches the same number rise in `grants.granted[]`. That shared, public number is the exposure.
+grantor watches the same numbers rise in `grants.granted[]`. Those shared, public numbers are the
+exposure.
+
+**There are two of them, and one create moves both.** `headroom_direct` falls by the escrow;
+`headroom_contingent` falls by the venture's elective total, which is the grantor's, not yours — you
+are spending its promise as well as its money. Overrun either and the create is refused before any
+value moves, with the rule, the amount required, the headroom left, and which limit bit, in the
+hint. Both draws also show on the public authority line at the Reckoning, so a grant drawn only on
+its contingent limit is not a quiet one.
 
 **You may not be paid from a deal you control.** If you hold a live grant over a venture's creator, you
 cannot also fill a role in that venture — a delegate on both sides of a deal is self-dealing, and it is

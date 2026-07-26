@@ -181,6 +181,19 @@ describe('revoke — always accepted, effective next tick (SPEC §8.1 #6)', () =
   });
 });
 
+/**
+ * ── WIDE: enough of BOTH limits for a real on-behalf create ──────────────────
+ *
+ * A delegated `create` draws on `max_direct_loss` (the escrow) AND on
+ * `max_contingent_liability` (the elective tail the GRANTOR is asked for at
+ * settlement). Every test below that expects a create to *succeed* previously passed
+ * only the direct limit and left `OK()`'s contingent limit of 200 in place, which was
+ * far below the ~3,000 elective on a 12,000 HAUL — they passed because the contingent
+ * limit was gated nowhere at all. That was the defect, not the intent, so the fixture
+ * now grants both. The refusal cases keep their narrow limits on purpose.
+ */
+const WIDE = { max_direct_loss: 250_000, max_contingent_liability: 250_000 };
+
 describe('on-behalf create — a delegate draws on a grant (A6 enforcement)', () => {
   function grantTo(w: World, opts: Record<string, unknown> = {}): GrantId {
     expect(act(w.runtime, w.grantor, 'grant', OK(opts))).toBeNull();
@@ -191,7 +204,7 @@ describe('on-behalf create — a delegate draws on a grant (A6 enforcement)', ()
 
   it('creates a venture on the grantor’s account, drawing escrow from the GRANTOR, not the delegate', () => {
     const w = world('ob1');
-    const id = grantTo(w, { max_direct_loss: 250_000 });
+    const id = grantTo(w, WIDE);
     const grantorBefore = w.runtime.ledger.freeBalance(storesAccount(w.grantor));
     const delegateBefore = w.runtime.ledger.freeBalance(storesAccount(w.delegate));
 
@@ -242,6 +255,9 @@ describe('on-behalf create — a delegate draws on a grant (A6 enforcement)', ()
       stage: w.stage,
     });
     expect(refusal?.invariant).toBe('INV-22');
+    // Named, because BOTH limits now refuse under INV-22 and an agent that cannot tell
+    // which one bit cannot fix its request. This one is the direct limit.
+    expect(refusal?.hint).toContain('direct headroom');
     // The gate ran before any value moved — the grantor is untouched, no venture, no spend.
     expect(w.runtime.ledger.freeBalance(storesAccount(w.grantor))).toBe(before);
     expect(w.runtime.ventures.forPrincipal(w.grantor)).toHaveLength(0);
@@ -293,7 +309,7 @@ describe('observe surfaces grants, so an agent can see and use its authority (A6
 
   it('the grantor watches the headroom fall as its delegate draws on the grant (exposure is visible)', () => {
     const w = world('obs2');
-    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 250_000 }))).toBeNull();
+    expect(act(w.runtime, w.grantor, 'grant', OK(WIDE))).toBeNull();
     const id = w.runtime.grants.forGrantor(w.grantor)[0]!.id;
     expect(
       act(w.runtime, w.delegate, 'create', {
@@ -315,7 +331,7 @@ describe('observe surfaces grants, so an agent can see and use its authority (A6
 describe('anti-self-dealing — a delegate is not a counterparty to a deal it controls (§8.1 #3)', () => {
   it('a delegate may not fill a role in a venture whose creator it holds authority over', () => {
     const w = world('sd1');
-    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 250_000 }))).toBeNull();
+    expect(act(w.runtime, w.grantor, 'grant', OK(WIDE))).toBeNull();
     expect(
       act(w.runtime, w.delegate, 'create', {
         kind: 'HAUL',
@@ -345,7 +361,7 @@ describe('anti-self-dealing — a delegate is not a counterparty to a deal it co
     // while the grant is live, revoke it (revocation takes effect next tick), let a tick
     // pass, then fill a paid role in the venture you shaped with the grantor's money.
     const w = world('sd-lapse');
-    expect(act(w.runtime, w.grantor, 'grant', OK({ max_direct_loss: 250_000 }))).toBeNull();
+    expect(act(w.runtime, w.grantor, 'grant', OK(WIDE))).toBeNull();
     expect(
       act(w.runtime, w.delegate, 'create', {
         kind: 'HAUL',

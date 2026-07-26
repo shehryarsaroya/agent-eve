@@ -43,7 +43,7 @@ import type {
   VentureRole,
   VentureState,
 } from '../core/types.js';
-import { minor, type Minor } from '../core/units.js';
+import { addMinor, minor, type Minor } from '../core/units.js';
 import { accept, isPresent, reject, type HandRecord, type WorldResult } from '../world/index.js';
 import {
   MAX_ROLES_PER_VENTURE,
@@ -322,16 +322,43 @@ export function roleOfPrincipal(venture: VentureRecord, principal: PrincipalId):
 
 /** Σ escrowed over every role — what the creator must fund before signing binds. */
 export function escrowRequired(venture: VentureRecord): Minor {
-  let total = 0;
-  for (const role of venture.roles) total += role.terms.escrowed;
-  return minor(total);
+  let total = minor(0);
+  for (const role of venture.roles) total = addMinor(total, role.terms.escrowed);
+  return total;
+}
+
+/**
+ * Σ elective over every role — **the creator's contingent liability** on this venture
+ * (SPEC §8.1 #2's `max_contingent_liability`, A7's "explicitly priced unsecured tail").
+ *
+ * The elective half is the part that does NOT auto-execute: at settlement the creator
+ * either pays it out of pocket or stays silent, and silence is a decline, which is a
+ * permanent public default (A5). So this is exactly "the most you could owe later" —
+ * the number `agent.md` §6 promises on every affordance, and the number the delegated
+ * `create` gate charges against a grant's `max_contingent_liability`.
+ *
+ * **Σ over EVERY role, not just the ones somebody else filled.** At creation no role is
+ * filled yet, so the worst case is that every one of them is filled by a stranger and
+ * the creator owes all of it. A figure that assumed the creator would fill some slot
+ * itself would be a *forecast* dressed as a bound, and a bound that can be exceeded is
+ * the promise A6 makes and this codebase broke: the grantor was shown a worst case that
+ * was not one.
+ *
+ * The companion of {@link escrowRequired}, deliberately: escrow is the DIRECT half
+ * (locked up front, gated against `max_direct_loss`) and this is the CONTINGENT half.
+ * Together they are `pinnedValue`, and neither may be counted as the other.
+ */
+export function electiveTotal(venture: VentureRecord): Minor {
+  let total = minor(0);
+  for (const role of venture.roles) total = addMinor(total, role.terms.elective);
+  return total;
 }
 
 /** Σ (escrowed + elective) — the venture's pinned value, for `f(kind)` and the card. */
 export function pinnedValue(venture: VentureRecord): Minor {
-  let total = 0;
-  for (const role of venture.roles) total += pinnedConsideration(role.terms);
-  return minor(total);
+  let total = minor(0);
+  for (const role of venture.roles) total = addMinor(total, pinnedConsideration(role.terms));
+  return total;
 }
 
 /**

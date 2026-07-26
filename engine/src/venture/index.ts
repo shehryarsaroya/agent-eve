@@ -113,6 +113,7 @@ export {
   activate,
   countersign,
   createVenture,
+  electiveTotal,
   escrowRequired,
   filledIndices,
   fillRole,

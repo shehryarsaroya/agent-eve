@@ -6,4 +6,4 @@
  * `identity/vc.ts`; this module is the live, enforced, hashed *book* of them.
  */
 
-export { GrantBook, GrantBookError, grantsStateTable } from './book.js';
+export { MAX_GRANT_SPENDS, GrantBook, GrantBookError, grantsStateTable } from './book.js';

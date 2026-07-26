@@ -17,7 +17,7 @@
 
 import { MAX_DELEGATION_DEPTH } from '../identity/vc.js';
 import type { EventId, Grant, GrantId, InvariantViolation, PrincipalId } from '../core/types.js';
-import type { Minor } from '../core/units.js';
+import { addMinor, minor, type Minor } from '../core/units.js';
 import { halt } from './registry.js';
 
 /**
@@ -53,7 +53,7 @@ export function checkInv22(
   tick: number,
 ): readonly InvariantViolation[] {
   const out: InvariantViolation[] = [];
-  const summed = new Map<GrantId, { direct: number; contingent: number }>();
+  const summed = new Map<GrantId, { readonly direct: Minor; readonly contingent: Minor }>();
   const known = new Map<GrantId, Grant>();
   for (const g of grants) known.set(g.id, g);
 
@@ -111,10 +111,17 @@ export function checkInv22(
         ),
       );
     }
-    const acc = summed.get(spend.grant) ?? { direct: 0, contingent: 0 };
-    acc.direct += spend.direct;
-    acc.contingent += spend.contingent;
-    summed.set(spend.grant, acc);
+    // `addMinor`, not `+=`. A bare accumulator that crosses 2^53 rounds SILENTLY and
+    // the wrong total is itself a safe integer, so the journal-vs-cache comparison
+    // below would compare two different wrong numbers and could agree. The checked
+    // helper throws instead — and an invariant whose own arithmetic can drift is a
+    // guard that reads exactly like a clean bill of health (the same reasoning that
+    // put `sumMinor` in `core/units.ts`).
+    const acc = summed.get(spend.grant) ?? { direct: minor(0), contingent: minor(0) };
+    summed.set(spend.grant, {
+      direct: addMinor(acc.direct, spend.direct),
+      contingent: addMinor(acc.contingent, spend.contingent),
+    });
   }
 
   for (const grant of [...known.values()].sort((a, b) => cmp(a.id, b.id))) {
@@ -158,7 +165,7 @@ export function checkInv22(
         ),
       );
     }
-    const acc = summed.get(grant.id) ?? { direct: 0, contingent: 0 };
+    const acc = summed.get(grant.id) ?? { direct: minor(0), contingent: minor(0) };
     if (acc.direct !== grant.spentDirect) {
       out.push(
         halt(

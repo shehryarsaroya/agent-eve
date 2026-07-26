@@ -97,14 +97,40 @@ export interface TributeLine {
 // and `SPENT` is an intent's, so an authority line — a different concept — gets its own.
 export type AuthorityLineState = 'UNUSED' | 'DRAWN' | 'EXHAUSTED' | 'REVOKED';
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * **BOTH LIMITS RENDER, BECAUSE ONLY ONE OF THEM USED TO.**
+ *
+ * A grant carries two worst cases (§8.1 #2) and this line drew only the first. A
+ * delegate that opened un-escrowable top-yield ventures in its grantor's name moved no
+ * escrow at all, so `spent` stayed 0 and the line rendered **`UNUSED`** — an
+ * innocent-looking pixel signature over an unbounded contingent liability, and the
+ * A13 half of the A6 defect. Thickness came off `max_direct_loss` alone too, so a grant
+ * that authorised nothing direct and everything contingent drew as a hairline and sorted
+ * last into the twelve-line budget: the largest exposure on the map, cut first.
+ *
+ * Four fields rather than two, and the state reads both.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
 export interface AuthorityLine {
   readonly grantor: PrincipalId;
   readonly delegate: PrincipalId;
-  /** Thickness ∝ the authority granted (its max_direct_loss). */
+  /** Thickness ∝ the authority granted. This half is its max_direct_loss. */
   readonly granted: Minor;
-  /** How much of the worst case the delegate has drawn. The visible exposure. */
+  /** How much of the direct worst case the delegate has drawn. */
   readonly spent: Minor;
-  /** UNUSED nothing drawn · DRAWN some headroom used · EXHAUSTED at the direct limit · REVOKED ending next tick. */
+  /** The other half of the authority granted: its max_contingent_liability. */
+  readonly grantedContingent: Minor;
+  /**
+   * How much of the contingent worst case the delegate has drawn — value the GRANTOR is
+   * asked for at settlement and defaults on by staying silent. Visible exposure that
+   * moves no coin until the Reckoning, which is exactly why it has to be on screen.
+   */
+  readonly spentContingent: Minor;
+  /**
+   * UNUSED nothing drawn on EITHER limit · DRAWN some headroom used · EXHAUSTED no
+   * headroom left on either limit · REVOKED ending next tick.
+   */
   readonly state: AuthorityLineState;
 }
 
