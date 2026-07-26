@@ -1753,6 +1753,28 @@ function ifYouDoNothing(
     parts.push(`hand ${hand.id} arrives at ${String(hand.destination)} on tick ${String(hand.freeAtTick)}`);
   }
 
+  // ── THE LEVY HAS TO BE IN HERE, OR THE SENTENCE IS A LIE ────────────────────
+  //
+  // A live playtest caught this field saying *"absence costs opportunity and nothing
+  // else"* in the same payload that carried `levy.shortfall_if_unpaid: 500`. Reproduced
+  // across two Reckonings. The Levy is the one obligation an agent cannot dodge by doing
+  // nothing (§5.2: the total is fixed by rule), so leaving it out of the
+  // consequence-preview inverted the only field PROP-O5 promises is tested against
+  // reality — and told a principal it was safe while a public shortfall was accruing.
+  //
+  // This is the `projectedDrown` pattern, which exists precisely so an agent can see the
+  // cost of NOT deciding. A preview that omits the undodgeable item previews the wrong
+  // world.
+  const levy = runtime.levyBlockFor(principal, tick);
+  const levyShort = levy === null ? 0 : Math.max(0, levy.shortfall_if_unpaid ?? 0);
+  if (levyShort > 0) {
+    parts.unshift(
+      `your Levy assessment of ${String(levyShort)} goes UNPAID and is recorded as a public shortfall ` +
+        `against you at tick ${String(settlement)} — this one does not lapse quietly, and it is the ` +
+        'obligation doing nothing cannot avoid',
+    );
+  }
+
   if (parts.length === 0) {
     return `Nothing resolves for you before tick ${String(settlement)}. Your identity, your holding and your standing are unchanged — absence costs opportunity and nothing else.`;
   }

@@ -256,6 +256,34 @@ describe('§12.1 — the observation is exactly ten keys, in agent.md order', ()
     expect(h.runtime.world.handsByPrincipal.get(principal)?.length).toBe(handsBefore);
     expect(h.runtime.engine.status).toBe('RUNNING');
   });
+
+  it('names the LEVY when one is owed — it cannot say absence is free while a shortfall accrues', async () => {
+    // A live playtest caught this saying "absence costs opportunity and nothing else" in
+    // the same payload that carried levy.shortfall_if_unpaid: 500, twice, across two
+    // Reckonings. The Levy is the one obligation doing nothing cannot avoid (§5.2: the
+    // total is fixed by rule), so omitting it inverted the only field PROP-O5 promises is
+    // tested against reality — and told a principal it was safe while a public shortfall
+    // was accruing against it.
+    const a = agent('tolvane');
+    await enrol(h, a);
+    const principal = a.principalId as never;
+
+    // Run far enough for an assessment to exist for this principal.
+    tick(h, 40);
+    const levy = h.runtime.levyBlockFor(principal);
+    const short = levy === null ? 0 : (levy.shortfall_if_unpaid ?? 0);
+    if (short <= 0) return; // no assessment in this window; the shape test below still holds
+
+    const fresh = await signed(h, a, 'GET', PATHS.observe);
+    const statement = String(
+      (obs(fresh.json)['briefing'] as Record<string, unknown>)['if_you_do_nothing'],
+    );
+    expect(statement, 'a Levy is owed, so this cannot claim absence is free').not.toMatch(
+      /absence costs opportunity and nothing else/,
+    );
+    expect(statement).toMatch(/Levy/);
+    expect(statement).toContain(String(short));
+  });
 });
 
 describe('PROP-O7 — an illegal action is a correction, not an error', () => {
