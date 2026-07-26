@@ -3599,17 +3599,45 @@ export class Runtime {
     const onBehalf = readString(req.params, ['on_behalf_of', 'onBehalfOf', 'for']) as PrincipalId | null;
     const creator = onBehalf ?? req.principal;
     const delegated = onBehalf !== null && onBehalf !== req.principal;
-    if (delegated && this.world.holdingByPrincipal.get(creator) === undefined) {
+    // ── AN OFFICE-HOLDER BRINGS THE HANDS; THE HOUSE BRINGS THE MONEY ────────
+    //
+    // A syndicate is a principal with no keypair and no holding — *"it cannot sign a request and
+    // cannot act"* (`syndicate/book.ts`). It has a stores account and nothing else. So this
+    // existence check refused every `on_behalf_of=<syndicate>` call, and OFFICES WERE INERT: a
+    // syndicate could pool a treasury, vote an office by MAJORITY, and issue a grant that showed up
+    // correctly on both sides — and the holder could not spend the pool on anything at all.
+    //
+    // §8's whole complaint about ventures is that *"there is no quartermaster who could empty the
+    // vault at any moment"*. There was one. It was behind this predicate.
+    //
+    // Found from the outside by a probe agent, then named independently by two reviewers as the
+    // highest-value change available — which is what made me look at it rather than at anything
+    // more interesting.
+    //
+    // The resolution is what an office already means: the HOLDER supplies the physical presence and
+    // the HOUSE supplies the capital. Escrow still draws on `creator`'s stores (the syndicate's), the
+    // grant gate below still bounds it by the two limits the members voted, and the stage comes from
+    // the hand actually standing there — the actor's. Nothing about liability moves: the venture
+    // belongs to the syndicate, and A6's whole point is that this is a legitimate act by someone who
+    // was legitimately given the authority to do it.
+    const creatorIsHouse = this.syndicateBook.isSyndicate(creator);
+    if (delegated && !creatorIsHouse && this.world.holdingByPrincipal.get(creator) === undefined) {
       return reject('A2', `there is no principal ${creator} to create a venture on behalf of.`);
     }
+    if (creatorIsHouse && this.syndicateBook.at(creator as unknown as SyndicateId) === null) {
+      return reject('A2', `${creator} is not a live syndicate; a dissolved house has no treasury to spend.`);
+    }
     const stage = readString(req.params, ['stage', 'system', 'at']) as SystemId | null;
-    const hands = handsOf(this.world, creator);
+    // A house has no hands. The office-holder's own hand is what puts the venture somewhere.
+    const presence = creatorIsHouse ? req.principal : creator;
+    const hands = handsOf(this.world, presence);
     const here = stage ?? hands[0]?.location;
     if (here === undefined || !this.world.map.systems.has(here)) {
       return reject(
         'A2',
-        `create needs a stage — the system it happens in. Name one where ${delegated ? String(creator) : 'you'} ` +
-          'has a hand.',
+        `create needs a stage — the system it happens in. Name one where ` +
+          `${creatorIsHouse ? 'you' : delegated ? String(creator) : 'you'} has a hand` +
+          `${creatorIsHouse ? ', because a syndicate has no hands of its own — you act with yours' : ''}.`,
       );
     }
     const value = readInt(req.params, ['value', 'value_minor']) ?? kindSpec(kind).baseYieldMinor;
