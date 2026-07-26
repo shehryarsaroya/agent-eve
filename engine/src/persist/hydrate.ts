@@ -121,6 +121,19 @@ export interface CheckpointOptions {
   readonly requiredTables?: readonly string[];
   /** Never adopt, whatever the manifest says. The operator's "just replay it". */
   readonly disabled?: boolean;
+  /**
+   * True when the journal's `RULES_VERSION` differs from this build's.
+   *
+   * **Adoption re-derives nothing.** A genesis replay recomputes every tick and
+   * compares each one against its journalled snapshot, which is how a rules change is
+   * caught, held, and put through the operator door. An adopted boot takes the
+   * recorded state as given and replays only the tail — and the tail after the LATEST
+   * Reckoning contains no snapshot at all (measured: `tripwiresChecked === 0` on a
+   * 900-tick journal), so a build whose arithmetic moved would resume silently with
+   * no divergence record. That is the A5′ failure the door exists to prevent, so a
+   * rules change forces the slow path.
+   */
+  readonly rulesChanged?: boolean;
 }
 
 /**
@@ -165,6 +178,19 @@ export async function planCheckpoint(
         `restorable state table — ${missing.join(', ')}. A snapshot carries the state tables and ` +
         `state_hash hashes exactly those, so adopting one would drop these silently and the ` +
         `tripwire would still pass. Replaying from genesis instead.`,
+    };
+  }
+  // After the manifest, not before it: the manifest is the standing reason and the one
+  // an operator needs named on every boot today. The rules gate is the one that bites
+  // on the day the manifest clears.
+  if (options.rulesChanged === true) {
+    return {
+      snapshot: null,
+      refusal:
+        'checkpoint adoption refused: the journal was written under a different RULES_VERSION. ' +
+        'Adoption re-derives nothing and the tail after the latest Reckoning carries no snapshot to ' +
+        'check against, so a rules change would take effect with no tripwire and no divergence ' +
+        'record. Replaying from genesis so the mismatch is found and the operator door is offered.',
     };
   }
   const snapshot = await store.latestSnapshot();

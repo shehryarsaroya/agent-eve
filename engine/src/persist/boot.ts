@@ -368,7 +368,13 @@ export async function bootFromStore(
   // Before a single tick is replayed: is there a snapshot, and does it carry the
   // whole world? Only then is the tail the honest thing to replay. A refusal is not
   // an error — it is the slow, correct boot, carried out loud.
-  const plan = await planCheckpoint(runtime.engine.stateTables, store, opts.checkpoint);
+  const plan = await planCheckpoint(runtime.engine.stateTables, store, {
+    ...opts.checkpoint,
+    // Not the caller's to override: a rules change is a fact about the record, and
+    // adoption is the one boot shape that would never notice it (see
+    // `CheckpointOptions.rulesChanged`).
+    rulesChanged: rulesChanged || opts.checkpoint?.rulesChanged === true,
+  });
   let adoptedAtTick: number | null = null;
   let postingsHydrated = 0;
   const checkpointRefusal = plan.refusal;
