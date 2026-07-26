@@ -526,6 +526,15 @@ export class LlmCast {
 
     const prompt = buildPrompt({
       contract: this.contract,
+      // Derived per wake from the record. Cheap: one pass over the standing journal, which the
+      // resumed INV-21 check already keeps small enough to walk.
+      relations: this.runtime.relationsFor(member.principal).map((r) => ({
+        other: String(r.other),
+        kept: r.kept,
+        broke: r.broke,
+        youKept: r.youKept,
+        youBroke: r.youBroke,
+      })),
       character,
       observation,
       memory: this.memory.render(member.handle),

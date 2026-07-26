@@ -206,6 +206,18 @@ export interface PromptInput {
   readonly memory: string;
   /** Verbs this runtime actually implements — read off the engine, never restated. */
   readonly liveVerbs: readonly string[];
+  /**
+   * Who this member has dealt with and how it went. Derived from the record by
+   * `Runtime.relationsFor`, never stored — a wound is a DEFAULT that already happened, and A5
+   * makes it permanent, so the journal IS the memory.
+   */
+  readonly relations?: readonly {
+    readonly other: string;
+    readonly kept: number;
+    readonly broke: number;
+    readonly youKept: number;
+    readonly youBroke: number;
+  }[];
   /** How many actions one reply may plan. They are submitted one per tick, in order. */
   readonly planMax: number;
   readonly maxObservationChars?: number;
@@ -418,6 +430,34 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
               ...focus.map((f) => `  · ${f}`),
               '',
             ];
+      })(),
+      ...(() => {
+        const rel = input.relations ?? [];
+        if (rel.length === 0) return [];
+        return [
+          'WHO YOU HAVE DEALT WITH, AND WHAT PASSED BETWEEN YOU. Not a scoreboard — this is what you',
+          'know about them and what they know about you. Every line of it is public and permanent, so',
+          'they can read your half exactly as you are reading theirs:',
+          ...rel.map((r) => {
+            const them =
+              r.broke > 0
+                ? `${String(r.broke)} promise(s) to you BROKEN${r.kept > 0 ? `, ${String(r.kept)} kept` : ''}`
+                : r.kept > 0
+                  ? `${String(r.kept)} promise(s) to you kept, none broken`
+                  : 'nothing has settled between you yet';
+            const you =
+              r.youBroke > 0
+                ? ` — and you broke ${String(r.youBroke)} to them`
+                : r.youKept > 0
+                  ? ` — you have kept ${String(r.youKept)} to them`
+                  : '';
+            return `  · ${r.other}: ${them}${you}`;
+          }),
+          '',
+          'Nobody is telling you to forgive or to retaliate. But dealing again with somebody who broke',
+          'a promise to you is a choice you are making with information, and so is refusing to.',
+          '',
+        ];
       })(),
       'WHAT YOU DID AND WHAT WAS DONE TO YOU, most recent last:',
       input.memory,

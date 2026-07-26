@@ -540,6 +540,15 @@ export const FORMATION_WINDOW_TICKS = 12;
 
 /** Bound on every agent-written text buffer (INV-26, scar #3). */
 export const MAX_TALK_ENTRIES = 512;
+
+/**
+ * Counterparties a cast member is reminded of. *(calibrate)*
+ *
+ * Small on purpose. The point is *"you have dealt with these people and here is how it went"*, not a
+ * ledger — and the prompt's existing problem is length, so an unbounded history would crowd out the
+ * observation it is supposed to give context to.
+ */
+export const MAX_RELATIONS = 6;
 export const MAX_OFFER_ENTRIES = 256;
 export const MAX_CLAIM_ENTRIES = 512;
 
@@ -5906,6 +5915,83 @@ export class Runtime {
     return out;
   }
 
+
+
+  // ── WHO A CAST MEMBER KNOWS, AND WHAT PASSED BETWEEN THEM (§14, A12) ──────
+
+  /**
+   * This principal's history with everyone it has dealt with, **derived from the record**.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE WATCHABILITY CEILING IS THE CAST'S INNER LIFE, NOT THE ENGINE'S SURFACE.** A
+   * character is `handle · title · creed · stance` — appetite, no memory. So every wake it
+   * met the world as a stranger: it could read that a venture had settled and not that the
+   * counterparty across it had broken a promise to it twice before. A12 says the sandbox
+   * authors the stories, and an agent with no memory of who wronged it cannot be a party to
+   * one.
+   *
+   * **Derived, never stored.** A wound is a `DEFAULT` somebody already committed against
+   * you — A5 makes it public and permanent, so the record IS the memory and there is nothing
+   * to keep in sync. That also keeps it out of `state_hash`, out of the snapshot, and out of
+   * the rollback set: a relationship computed from the journal cannot disagree with the
+   * journal, which is the whole failure mode a `relationships` table would have.
+   *
+   * The asymmetry is the point. `kept`/`broke` are what THEY did to YOU — that is what
+   * decides whether to deal again — while `youKept`/`youBroke` is your own record with them,
+   * which is what they can read about you. A model handed only its own side would be unable
+   * to reason about being distrusted.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  relationsFor(
+    principal: PrincipalId,
+    limit = MAX_RELATIONS,
+  ): readonly {
+    readonly other: PrincipalId;
+    readonly kept: number;
+    readonly broke: number;
+    readonly youKept: number;
+    readonly youBroke: number;
+    readonly lastTick: number;
+  }[] {
+    const byOther = new Map<
+      string,
+      { other: PrincipalId; kept: number; broke: number; youKept: number; youBroke: number; lastTick: number }
+    >();
+    const touch = (other: PrincipalId, tick: number): { kept: number; broke: number; youKept: number; youBroke: number; lastTick: number; other: PrincipalId } => {
+      const key = String(other);
+      let row = byOther.get(key);
+      if (row === undefined) {
+        row = { other, kept: 0, broke: 0, youKept: 0, youBroke: 0, lastTick: tick };
+        byOther.set(key, row);
+      }
+      if (tick > row.lastTick) row.lastTick = tick;
+      return row;
+    };
+
+    for (const change of this.standing.changes()) {
+      const cp = change.counterparty;
+      if (cp === null || cp === change.principal) continue;
+      // THEY acted, and you were the counterparty: this is what was done to you.
+      if (cp === principal) {
+        const row = touch(change.principal, change.tick);
+        if (change.cause === 'ELECTIVE_HONOURED') row.kept += 1;
+        if (change.cause === 'DEFAULT') row.broke += 1;
+      }
+      // YOU acted, and they were the counterparty: this is your record with them.
+      if (change.principal === principal) {
+        const row = touch(cp, change.tick);
+        if (change.cause === 'ELECTIVE_HONOURED') row.youKept += 1;
+        if (change.cause === 'DEFAULT') row.youBroke += 1;
+      }
+    }
+
+    // Most recent first, then by id so the list is reproducible. Bounded (INV-26): a member
+    // that has dealt with three hundred principals does not need three hundred lines of
+    // history in a prompt whose problem is already length.
+    return [...byOther.values()]
+      .sort((a, b) => b.lastTick - a.lastTick || compareIds(a.other, b.other))
+      .slice(0, Math.max(0, limit));
+  }
 
   // ── SYNDICATES: the org container, and pooled stores (§3, §365, D11) ──────
 
