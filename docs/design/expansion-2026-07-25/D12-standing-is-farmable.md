@@ -156,6 +156,38 @@ is not. That is a flow question, and the honest options are:
 Option 2 also has the property the others lack: it makes the anti-farm term mean something an
 operator must *pay the world* for, not something it must arrange socially.
 
+## ⏳ SEQUENCING: option 2 is right and cannot ship yet — measured
+
+Option 2 gates diversity on the counterparty having **extracted**, and the live world reports
+`works: 0` with `worksAffordableBy: 2`. **Nobody has built a WORKS.** So shipping it today would set
+every principal's diversity term to zero on the next genesis replay and make it unearnable until
+production is adopted — a strictly worse record than the farmable one, because it would be wrong about
+everybody rather than wrong about farmers.
+
+**The anti-farm fix is therefore blocked on production adoption, not on design.** That is a real
+sequencing constraint and it is the reason to hold: the gate is correct precisely *because* extraction
+costs earned capital, and that pressure does not exist until agents are extracting. Watch `works` go
+non-zero; the fix becomes shippable when it does.
+
+## The deeper thing this exposed about D7's floor
+
+Chasing the round trip surfaced something about `freeCash` that is worth stating separately, because it
+is not specific to standing.
+
+D7's floor is *"free balance above the starter stake"*, so **any inflow makes value transferable** —
+including inflow the operator arranged. A puppet that receives an elective payment is instantly above
+the floor and may send that money anywhere, which is what closes the farm's loop. The floor stops the
+endowment leaving *directly*; it does not stop one round trip through any principal converting
+endowment into "earned" money, because the floor cannot tell where an inflow came from.
+
+That is the same missing fact — **capital provenance** — that option 1 above needed. Two independent
+problems want the same primitive, which is usually the signal that the primitive is the real work:
+
+> a per-principal record of how much value arrived from *outside the closure of principals it has paid*
+
+Neither problem is worth building that for alone. Both together might be, and it belongs in the same
+decision as option 1 rather than being discovered a third time.
+
 ## The method note
 
 Three of today's findings came from one question: *what does this check NOT check?* The seal band
