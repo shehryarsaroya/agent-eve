@@ -130,16 +130,24 @@
 
 ## 🎯 NEXT ACTION
 
-The vertical slice, the heuristic cast, the Reckoning, the Levy, frames, the HTTP surface,
-persistence and Gate-3 instrumentation are **built and green** (2113+ tests). The roadmap is
-now **the ranked defect list Gate 3 run 2 produced** (`GATE-3.md` §7) — the shortest path to a
-run that can finally read *conduct* instead of *plumbing*.
+**Every system in the phase plan is built.** The block that stood here — *"the one build that unblocks
+the core loop: offices/grants (A6)"* — is done: grants have been live for some time and **offices**
+landed 2026-07-26, so A6 is now reachable over an organisation's pooled treasury and not just one
+agent's purse. That was the reason the whole design exists, and the mechanism now exists.
 
-**The one build that unblocks the core loop: offices/grants (A6).** Gate 3 cannot reach its
-own question — betrayal via delegated authority at maximum leverage — because that mechanism
-does not exist yet. It is *the* core loop (A6★) and the reason the whole design exists. Until
-it ships, the gate can only observe the elective-half proxy, which is too small-stakes to make
-defection rational, so every run reads "honour dominates" and means nothing.
+So the roadmap is no longer "build the missing mechanic". It is **make the built world produce the
+show**, and there are three candidates in priority order:
+
+1. **Run Gate 3 again and READ it.** It can finally reach its own question — betrayal via delegated
+   authority at maximum leverage — because the authority is real, the treasuries are large enough for
+   defection to be rational, and the say-do gap reaches the frame. Every prior run could only observe
+   the elective-half proxy, which was too small-stakes to mean anything. *This is the falsification
+   test the project is arranged around and it has never had a fair run.*
+2. **The two counters that are zero.** `works` and `docket` are legitimately zero in the live world;
+   both mechanisms are proven in driven worlds. If they stay zero with agents present, the mechanics
+   are reachable and unused, which is a different and more interesting problem than a bug.
+3. **Cast richness** — model-written seals, Reckoning reflection, characters with relationships and
+   wounds. The watchability ceiling is now the cast's inner life, not the engine's surface area.
 
 ### Order (Gate-3-derived; each ends in an executable assertion)
 
@@ -579,12 +587,16 @@ a redundant guard look proven. Same family as the truncated witnesses — `head`
 lint, `curl | grep` treating "could not look" as "all clear".
 
 ### Known-open, so they are not rediscovered
-`nextDocket` empty · production cannot adopt checkpoints until the Pg event tables grow four columns
-(a refusal, not a crash) · `checkInv7` sums the whole posting log every tick so INV-7's cost grows with
-history regardless of checkpointing · a world raid with no agent joiners loses nothing material if
-repulsed · `StandingBook`'s journal is unbounded and now captured every tick (INV-26 debt, deliberately
-uncapped) · `UNBUILT_PHASES` still lists `MARKETS`, which is built · no model-written seals, no
-Reckoning reflection, characters have no relationships or wounds.
+Five of the six entries that stood here were closed on 2026-07-26 and are **not** open: `nextDocket`,
+checkpoint adoption, `checkInv7`'s cost, the repulsed-raid question (which was not a defect — a world
+raid is physics), and `UNBUILT_PHASES` listing `MARKETS`. What actually remains:
+
+- `StandingBook`'s journal is unbounded and captured every tick (INV-26 debt, deliberately uncapped),
+  and `checkStandingJournal` replays **and sorts** it every tick. The resumable fix was attempted and
+  reverted; its design and its double-counting trap are recorded above.
+- Pooled goods are **not raidable** (D11) — deciding who defends a bodiless subject belongs with a
+  later offices pass.
+- No model-written seals, no Reckoning reflection, and cast characters have no relationships or wounds.
 
 ## 🏗 BUILD LOG (2026-07-24 →)
 
