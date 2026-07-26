@@ -3117,9 +3117,16 @@ export class Runtime {
       // answer is continuously visible rather than discovered a week later.
       works: this.worksBook.size,
       worksOnline: this.worksBook.liveInOrder().filter((w) => this.engine.tick >= w.onlineAtTick).length,
-      worksAffordableBy: [...this.world.holdingByPrincipal.keys()].filter(
-        (principal) => freeCash(this.ledger, principal) >= WORKS_COST_MINOR,
-      ).length,
+      // Reads `worksQuote(...).affordable` — the SAME predicate the affordance and the verb use —
+      // rather than recomputing the price test. The first version recomputed it with `freeCash`
+      // and kept reporting 0 after the gate moved to the free balance, so the instrument was
+      // measuring a rule the engine no longer had. A witness with its own copy of the logic can
+      // be wrong in exactly the direction that hides the thing it was built to reveal.
+      worksAffordableBy: [...this.world.holdingByPrincipal.keys()].filter((principal) => {
+        const seat = this.world.holdingByPrincipal.get(principal);
+        if (seat === undefined) return false;
+        return this.worksQuote(principal, holdingOf(this.world, principal).system).affordable;
+      }).length,
       offers: this.offers.size,
       claims: this.claims.size,
       pendingFills: this.pendingFills.length,
