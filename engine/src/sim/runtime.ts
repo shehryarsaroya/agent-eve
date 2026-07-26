@@ -3149,6 +3149,23 @@ export class Runtime {
       assuresByCreator: this.talk.all.filter(
         (t) => t.act === 'assure' && this.ventures.get(t.venture)?.creator === t.from,
       ).length,
+      // ── AND ARE THEY IN TIME? ────────────────────────────────────────────────
+      //
+      // The last question in this chain, and the only one left after 40 creator assurances turned
+      // out to exist. `publicLine` reads assurances on the venture that settled **in that
+      // Reckoning**, so an assurance's value depends entirely on arriving BEFORE the settlement it
+      // will be printed beside.
+      //
+      // `assuresOnLive` will reach a frame when its venture settles. `assuresOnResolved` never
+      // will — those were spoken about a deal already in the record, which is a promise made after
+      // the outcome was known and is worth nothing to a reader. If the second number dominates, the
+      // cast is assuring too late and the fix is in the prompt's timing, not in the frame.
+      assuresOnLive: this.talk.all.filter(
+        (t) => t.act === 'assure' && this.ventures.get(t.venture)?.resolvedAtTick === null,
+      ).length,
+      assuresOnResolved: this.talk.all.filter(
+        (t) => t.act === 'assure' && (this.ventures.get(t.venture)?.resolvedAtTick ?? null) !== null,
+      ).length,
       // ── IS THE ECONOMY'S ONLY FAUCET ACTUALLY REACHABLE? ────────────────────
       //
       // `works` counts structures and `worksOnline` counts the ones past spin-up; together
