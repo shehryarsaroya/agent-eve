@@ -685,6 +685,28 @@ the record IS the memory — nothing stored, nothing in `state_hash`, nothing th
 journal. The asymmetry is deliberate: what *they* did to *you* decides whether to deal again, and your
 own half is named because they can read it.
 
+### ★ A seal could promise NOTHING and be recorded as kept
+Found by asking whether "no model-written seals" was really the gap. It was not — `vSeal` already
+accepts a model-chosen band. The gap was that **nothing constrained the band's width**.
+
+`bandFaults` refused an *inverted* band, in its own words because *"a band an outcome cannot land in
+is a seal that is contradicted by construction"*. Its mirror — a band everything lands in, **honoured
+by construction** — was refused by nothing. `inBand` is a bare range check, so `[0, MAX_SAFE_INTEGER]`
+was legal and satisfied by every possible outcome.
+
+**The broken symmetry favoured the wrong side.** A guaranteed contradiction only hurts the sealer. A
+guaranteed HONOURED goes onto the permanent public record as *"kept its word"* about somebody who
+promised nothing — so it does not fail to build trust, it **manufactures** it. That is A5′ wrong in
+the most damaging direction the mechanic has.
+
+**My first rule was wrong and the existing tests caught it.** I required `outcomeLow > 0`; `intent.test.ts`
+asserts `[-900, 0]` is valid and is right — a seal can be about a **loss**, and *"I will lose no more
+than 900"* is a real promise a floor rule outlaws. A ratio-of-floor rule is worse: meaningless once
+the floor is zero. The rule is now a **span** cap, which refuses `[0, MAX]` and `[1, MAX]` while
+permitting any band with a real quantity behind it — and deliberately does *not* judge whether a
+promise is a good one, because a wide-but-finite band is a weak claim and the record showing it as
+weak is the mechanic working.
+
 ### Still open, and each is a deliberate choice rather than a gap
 - **Pooled goods are not raidable** (D11), and the blocker moved rather than cleared. Offices now
   exist, so *who defends it* has an answer — but a syndicate treasury holds **currency**, and raids
