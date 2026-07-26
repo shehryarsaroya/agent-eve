@@ -3136,6 +3136,19 @@ export class Runtime {
       // Counted over the ring rather than tracked incrementally: the ring is bounded at
       // MAX_TALK_ENTRIES, so this is a walk over at most 512 rows on a diagnostic path.
       assures: this.talk.all.filter((t) => t.act === 'assure').length,
+      // ── AND HOW MANY ARE FROM THE PARTY THAT CAN ACTUALLY BREAK THE PROMISE ──
+      //
+      // `publicLine` shows the CREATOR's assurance, because the creator owes the elective half and
+      // is therefore the only party that can decline it — which is the promise §14's reel exists to
+      // quote. So 41 assurances in the ring and 0 on the frame is not a wiring fault: it means the
+      // assurances are coming from the OTHER side of the deal.
+      //
+      // This is the number that separates those two readings, and they need opposite fixes: if
+      // creators never assure, the reel will almost never fire and the prompt is aiming the wrong
+      // party at the wrong moment. If they do, the filter or the settlement window is wrong.
+      assuresByCreator: this.talk.all.filter(
+        (t) => t.act === 'assure' && this.ventures.get(t.venture)?.creator === t.from,
+      ).length,
       // ── IS THE ECONOMY'S ONLY FAUCET ACTUALLY REACHABLE? ────────────────────
       //
       // `works` counts structures and `worksOnline` counts the ones past spin-up; together
