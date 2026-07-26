@@ -156,7 +156,25 @@ async function enrolAndClaim(handle: string): Promise<{ who: Agent; system: stri
   // is INVALID rather than refused, so 3 KB of prose about it is a cost with no decision
   // attached. `graduation.statement` is what it reads instead.
   expect((first['holding'] as Row)['sovereignty']).toBeNull();
-  expect(affordance(first, 'build'), 'no claim is offered inside the Commons (A8)').toBeUndefined();
+  // ── MATCHED ON THE KIND, NOT ON THE VERB, AND THAT IS THE POINT ───────────
+  //
+  // `build` is TWO acts now: `{"kind":"ANCHOR"}` takes territory and `{"kind":"WORKS"}` raises a
+  // production structure. This assertion used to read "no `build` is offered in the Commons" and
+  // went red the moment WORKS landed — correctly, because a WORKS in the Commons is legal and
+  // must be: A8's floor is worthless if a newcomer cannot produce there.
+  //
+  // Kept as a kind-specific check rather than deleted, because the property it guards is real
+  // and A8's: no CLAIM may be offered inside the Commons. And the fact that it broke is the
+  // warning worth keeping — any agent matching on `verb === 'build'` alone gets whichever kind
+  // happens to come first, which is why `agent.md` now says so in as many words.
+  expect(
+    affordance(first, 'build', (a) => (a['params'] as Row)['kind'] === 'ANCHOR'),
+    'no claim is offered inside the Commons (A8)',
+  ).toBeUndefined();
+  expect(
+    affordance(first, 'build', (a) => (a['params'] as Row)['kind'] === 'WORKS'),
+    'but a WORKS is — a safe floor an agent cannot produce on is not a floor',
+  ).toBeDefined();
   expect(affordance(first, 'post_bond'), 'no bond is offered inside the Commons').toBeUndefined();
 
   await take(who, first, 'graduate');
@@ -174,7 +192,7 @@ async function enrolAndClaim(handle: string): Promise<{ who: Agent; system: stri
 
   const bonded = await observe(who);
   expect((bonded['holding'] as Row)['bond']).toMatchObject({ posted: CLAIM_BOND_MINOR, required: 0, claims: 0 });
-  await take(who, bonded, 'build');
+  await take(who, bonded, 'build', (a) => (a['params'] as Row)['kind'] === 'ANCHOR');
 
   const claimed = await observe(who);
   const system = String((claimed['holding'] as Row)['system']);

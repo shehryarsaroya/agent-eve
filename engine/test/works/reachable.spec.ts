@@ -18,16 +18,16 @@ describe('a real agent can find and take the WORKS build over HTTP', () => {
       tick(h, 1);
       const p = who.principalId as PrincipalId;
 
-      // Before earnings: legal, unaffordable, and COUNTED with its price — not dropped.
+      // The FIRST WORKS is reachable from the grant alone — the money is retired, not paid to
+      // anybody, so D7 has no claim on it. `economy-has-a-source.spec.ts` holds that property
+      // from a bare enrolment; here it just has to be true before income arrives.
       let obs = (await signed(h, who, 'GET', PATHS.observe)).json['observation'] as Record<string, unknown>;
       const works = (obs['holding'] as Record<string, unknown>)['works'] as Record<string, unknown>;
       const here = works['here'] as Record<string, unknown>;
-      expect(here['affordable'], 'the stake cannot buy one').toBe(false);
-      expect(Number(here['share_per_tick']), 'but the share is quoted anyway, so it can plan').toBeGreaterThan(0);
-      expect(String((obs['header'] as Record<string, unknown>)['withheld']))
-        .toBeDefined();
+      expect(here['affordable'], 'a newcomer can raise its first WORKS').toBe(true);
+      expect(Number(here['share_per_tick']), 'and the share it would get is quoted').toBeGreaterThan(0);
 
-      // Earnings arrive.
+      // Income arrives anyway, because the rest of this test is about the offer surviving it.
       for (const [i, f] of funders.entries()) {
         h.runtime.ledger.transferCurrency({
           eventId: `test.income:reach:${String(i)}` as never,

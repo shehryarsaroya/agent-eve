@@ -57,8 +57,10 @@ async function observe(who: Agent): Promise<Row> {
   return res.json['observation'] as Row;
 }
 
-function affordance(o: Row, verb: string): Row | undefined {
-  return (o['affordances'] as Row[]).find((a) => a['verb'] === verb);
+function affordance(o: Row, verb: string, match?: (a: Row) => boolean): Row | undefined {
+  return (o['affordances'] as Row[]).find(
+    (a) => a['verb'] === verb && (match === undefined || match(a)),
+  );
 }
 
 async function act(who: Agent, verb: string, params: unknown): Promise<Row> {
@@ -79,9 +81,18 @@ function run(n: number): void {
   }
 }
 
-async function takeOffered(who: Agent, verb: string): Promise<void> {
-  const offer = affordance(await observe(who), verb);
-  expect(offer, `${verb} must be offered`).toBeDefined();
+/**
+ * Take an offered affordance. `kind` disambiguates `build`, which is two different acts —
+ * ANCHOR takes territory, WORKS raises a production structure — and matching on the verb alone
+ * takes whichever the ranking happened to put first.
+ */
+async function takeOffered(who: Agent, verb: string, kind?: string): Promise<void> {
+  const offer = affordance(
+    await observe(who),
+    verb,
+    kind === undefined ? undefined : (a) => (a['params'] as Row)['kind'] === kind,
+  );
+  expect(offer, `${verb}${kind === undefined ? '' : ` ${kind}`} must be offered`).toBeDefined();
   await act(who, verb, offer?.['params']);
   tick(h, 1);
 }
@@ -96,7 +107,8 @@ describe('the endowment cannot leave a principal through a cession price (D7 · 
     const boss = agent('boss');
     expect((await enrol(h, boss)).status).toBe(201);
     tick(h, 1);
-    for (const verb of ['graduate', 'post_bond', 'build'] as const) await takeOffered(boss, verb);
+    for (const verb of ['graduate', 'post_bond'] as const) await takeOffered(boss, verb);
+    await takeOffered(boss, 'build', 'ANCHOR');
     const system = String(((await observe(boss))['holding'] as Row)['system']) as SystemId;
 
     // The puppet enrols — free, as A15 requires it stay — and crosses to the same system.
@@ -144,7 +156,8 @@ describe('the endowment cannot leave a principal through a cession price (D7 · 
     const boss = agent('seller');
     expect((await enrol(h, boss)).status).toBe(201);
     tick(h, 1);
-    for (const verb of ['graduate', 'post_bond', 'build'] as const) await takeOffered(boss, verb);
+    for (const verb of ['graduate', 'post_bond'] as const) await takeOffered(boss, verb);
+    await takeOffered(boss, 'build', 'ANCHOR');
     const system = String(((await observe(boss))['holding'] as Row)['system']) as SystemId;
 
     const buyer = agent('earner');

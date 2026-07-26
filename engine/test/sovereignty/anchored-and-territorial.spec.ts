@@ -102,10 +102,19 @@ async function enrolAndClaim(handle: string): Promise<{ who: Agent; system: Syst
   const who = agent(handle);
   expect((await enrol(h, who)).status).toBe(201);
   tick(h, 1);
-  for (const verb of ['graduate', 'post_bond', 'build'] as const) {
-    const offered = affordance(await observe(who), verb);
-    expect(offered, `${verb} must be offered on the road to territory`).toBeDefined();
-    await act(who, verb, offered?.['params']);
+  // `build` is two acts — ANCHOR takes territory, WORKS raises a production structure — so the
+  // road to territory has to name which. Matching on the verb alone takes whichever comes first,
+  // which is the trap `agent.md` now warns agents about explicitly.
+  for (const step of [
+    { verb: 'graduate' as const, kind: null },
+    { verb: 'post_bond' as const, kind: null },
+    { verb: 'build' as const, kind: 'ANCHOR' },
+  ]) {
+    const offered = (((await observe(who))['affordances'] as Row[]) ?? []).find(
+      (a) => a['verb'] === step.verb && (step.kind === null || (a['params'] as Row)['kind'] === step.kind),
+    );
+    expect(offered, `${step.verb}${step.kind === null ? '' : ` ${step.kind}`} must be offered`).toBeDefined();
+    await act(who, step.verb, offered?.['params']);
     run(1);
   }
   const holding = (await observe(who))['holding'] as Row;

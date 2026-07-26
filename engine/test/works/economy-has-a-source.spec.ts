@@ -112,3 +112,63 @@ describe('the world has a goods source, and it is a place (§10.2)', () => {
     expect(typeof extracted, 'the faucet is a real account the audit can read').toBe('number');
   });
 });
+
+describe('a fresh enrolment can reach its first WORKS (the reachability property)', () => {
+  /**
+   * The property this file exists to protect, and the one the first version broke.
+   *
+   * The build gated on `freeCash`, reasoning that free enrolment must not buy permanent income.
+   * Measured on the live world, `worksAffordableBy` read **0 of 21** — the floor withholds the
+   * whole starter stake, and a principal that has graduated has less free than the floor. The
+   * economy's only faucet was correct, tested, offered and rendered, and no principal could
+   * ever build one.
+   *
+   * The gate was also the wrong reading of D7, whose rule is that the endowment cannot **leave**
+   * a principal. A WORKS build retires the money into `sink:upkeep` — destroyed, paid to nobody
+   * — so a puppet gains its operator nothing here. The exploit that remains (extract, then sell)
+   * is bounded by the map, which was always the real defence.
+   *
+   * A test that only checked "a funded principal can build" would have passed the whole time.
+   * This one starts from nothing but an enrolment.
+   */
+  it('with no income at all, only the grant', async () => {
+    const who = agent('bootstrap');
+    expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    const p = who.principalId as PrincipalId;
+
+    // Nothing has been earned. This is the exact state every principal is in at minute one.
+    const obs = await observe(who);
+    const system = String((obs['holding'] as Row)['system']) as SystemId;
+    const quote = h.runtime.worksQuote(p, system);
+    expect(quote.affordable, 'the grant alone must cover the first WORKS').toBe(true);
+    const offer = (obs['affordances'] as Row[]).find(
+      (a) => a['verb'] === 'build' && (a['params'] as Row)['kind'] === 'WORKS',
+    );
+    expect(offer, 'a newcomer with only its grant must be OFFERED its first WORKS').toBeDefined();
+
+    const res = await signed(h, who, 'POST', PATHS.act, {
+      actions: [{ verb: 'build', params: offer?.['params'], clientSequence: 1 }],
+    });
+    expect(res.status).toBe(200);
+    run(1);
+    expect(
+      h.runtime.takeCorrections(p).map((c) => c.hint),
+      'and taking it must not be refused',
+    ).toEqual([]);
+    expect(h.runtime.worksOf(p).length, 'the WORKS stands').toBe(1);
+  });
+
+  it('but the grant still cannot buy a claim from another principal', async () => {
+    // The distinction that makes the change principled rather than a relaxation: retirement is
+    // not transfer. `cession-endowment.spec.ts` holds the other side of this in full.
+    const { freeCash } = await import('../../src/market/escrow.js');
+    const who = agent('nontransferor');
+    expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    expect(
+      freeCash(h.runtime.ledger, who.principalId as PrincipalId),
+      'nothing the grant contains may be paid to another principal',
+    ).toBe(0);
+  });
+});

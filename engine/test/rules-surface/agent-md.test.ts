@@ -479,3 +479,31 @@ describe('agent.md quotes the WORKS numbers the engine actually uses', () => {
     expect(AGENT_MD).toContain('spendable_minor');
   });
 });
+
+describe('agent.md warns about the one verb whose meaning depends on a parameter', () => {
+  /**
+   * `build` is two acts: ANCHOR takes territory with a permanent Charge attached, WORKS raises a
+   * production structure and is legal in the Commons. An agent that searches `affordances[]` for
+   * `verb == "build"` and takes the first match gets whichever the ranking happened to put first
+   * — and the two commit it to completely different futures.
+   *
+   * This is not hypothetical. Adding WORKS turned FOUR of this repo's own test helpers ambiguous
+   * in one commit, including two written the same night, and broke an A8 assertion that read "no
+   * `build` is offered in the Commons". If the engine's own tests fell for it within hours, an
+   * LLM reading affordances under a token budget certainly will.
+   *
+   * Hard rule 4 is about one word per concept. `build` builds structures and both of these are
+   * structures, so the vocabulary is sound — the hazard is in the affordance surface, and the
+   * defence is to say so where the agent is reading.
+   */
+  it('says to match on params.kind and not on the verb alone', () => {
+    expect(AGENT_MD).toContain('`build` is TWO different acts');
+    expect(AGENT_MD).toContain('Match');
+    expect(AGENT_MD).toContain('params.kind');
+  });
+
+  it('names what each kind commits you to, so the choice is not a coin flip', () => {
+    expect(AGENT_MD).toContain('Legal in the Commons');
+    expect(AGENT_MD).toContain('Invalid in the Commons');
+  });
+});

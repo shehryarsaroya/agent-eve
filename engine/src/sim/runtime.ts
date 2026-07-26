@@ -5747,7 +5747,32 @@ export class Runtime {
   } {
     const tier = tierOf(this.world.map, system);
     const occupants = this.worksBook.liveAt(system).length;
-    const free = freeCash(this.ledger, principal);
+    // ── WHY THIS IS `freeBalance` AND THE CESSION PRICE IS `freeCash` ────────
+    //
+    // The first version used `freeCash` here, reasoning that a WORKS is permanent income and
+    // free enrolment must not buy permanent income. Measured against the live world, that made
+    // the mechanic **unreachable**: `worksAffordableBy` read 0 of 21 principals, because the
+    // floor withholds the WHOLE starter stake and a principal that has graduated has less free
+    // than the floor. The economy's only faucet was correct, tested, offered, rendered — and
+    // dead.
+    //
+    // The gate was also the wrong reading of D7. D7's rule is that the endowment **cannot leave
+    // a principal**, and it exists because a sock puppet handing its stake to its operator turns
+    // free identities into capital. A WORKS build does not transfer: `retireCurrency` destroys
+    // the money into `sink:upkeep`. A puppet that spends its stake here gives its operator
+    // nothing, and ends holding a structure it must still play to use.
+    //
+    // The indirect route — puppet extracts, then sells to its operator — is real, and it is
+    // bounded by the thing that was always the actual defence: **a place yields what it yields**.
+    // N puppets at one system split one yield, and across the map the ceiling is the number of
+    // systems, not the number of identities. That is A15's requirement met by the map rather
+    // than by a price, which is why the price was never load-bearing here.
+    //
+    // The cession price keeps `freeCash`, and the distinction is exact: that one **pays another
+    // principal**. Retirement and transfer are different acts and only one of them is D7's.
+    const free = this.ledger.account(storesAccount(principal)) === undefined
+      ? minor(0)
+      : this.ledger.freeBalance(storesAccount(principal));
     const available = this.chargeGoodAt(principal, system);
     return {
       system,
@@ -5805,10 +5830,10 @@ export class Runtime {
     if (quote.freeMinor < quote.costMinor) {
       return reject(
         'A15',
-        `a WORKS costs ${String(quote.costMinor)} and you can spend ${String(quote.freeMinor)}. That figure ` +
-          'is your EARNINGS: locked stores do not count, and neither does the starter stake — a WORKS turns ' +
-          'capital into a standing claim on a place, so buying one with the grant would make a free identity ' +
-          'into permanent income (D7/A15). Earn it by hauling, trading or completing ventures.',
+        `a WORKS costs ${String(quote.costMinor)} and you have ${String(quote.freeMinor)} free (locked ` +
+          'stores do not count). Your starter stake CAN pay for this one: the money is retired, not paid ' +
+          'to anybody, so your first WORKS is reachable before you have earned anything. What the stake ' +
+          'cannot buy is a claim from another principal — that price leaves you and goes to them.',
       );
     }
     if (quote.availableQty < quote.costQty) {

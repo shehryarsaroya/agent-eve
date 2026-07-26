@@ -780,26 +780,29 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
         0,
       );
     expect(boundLanes).toBeGreaterThan(0);
-    // ── AND A THIRD TERM, WHICH ARRIVED WITH WORKS ──────────────────────────
+    // ── AND A THIRD TERM, WHICH ARRIVED WITH WORKS AND THEN WENT TO ZERO ─────
     //
-    // A WORKS costs EARNINGS, and a principal in this fixture has only its starter stake —
-    // which D7 withholds from anything that buys permanent income. So the build is legal,
-    // unaffordable, and therefore counted rather than dropped. Recomputed from the quote the
-    // observation reads, for the reason the term above is: this assertion is exact on purpose.
+    // Written when a WORKS cost EARNINGS, so a fixture principal holding only its starter stake
+    // could not afford one and the omission was counted. Then reachability was measured on the
+    // live world — `worksAffordableBy` read 0 of 21 — and the gate moved to the free balance,
+    // because a WORKS build RETIRES currency rather than paying anybody and D7 has no claim on
+    // it. The build is now affordable from the grant, so the term is legitimately zero.
+    //
+    // Recomputed from the quote either way rather than pinned, so this stays exact through the
+    // next recalibration instead of becoming a literal nobody trusts.
     const worksQuote = h.runtime.worksQuote(
       filler.principalId as never,
       h.runtime.graduationQuote(filler.principalId as never)?.from ?? ('sys-01' as never),
     );
     const worksWithheld = !worksQuote.affordable && !worksQuote.alreadyHeld ? 1 : 0;
-    expect(worksWithheld, 'the starter stake cannot buy a WORKS, so the omission is real').toBe(1);
     expect(Number(withheld['count'])).toBe(
       rows.length * (idle.length - 1) + boundLanes + worksWithheld,
     );
     expect(String(withheld['reason'])).toContain('further legal fill_role act(s) exist');
     expect(String(withheld['reason'])).toContain('lanes leaving the Commons');
-    expect(String(withheld['reason']), 'and the WORKS omission names its own price').toContain(
-      'a WORKS at',
-    );
+    if (worksWithheld > 0) {
+      expect(String(withheld['reason']), 'a withheld WORKS names its own price').toContain('a WORKS at');
+    }
     // The claim it used to make while dropping them.
     expect(String(withheld['reason'])).not.toBe(
       'nothing was withheld: this is every legal act, with its full cost.',

@@ -568,6 +568,18 @@ Two things follow, and both of them are the game:
 - **Enrolling a second identity gains you nothing here.** Ten identities with ten WORKS at one system
   extract exactly what one identity with one WORKS extracts. The yield belongs to the place.
 
+### `build` is TWO different acts — read the `kind`
+
+This is the one place in the API where the verb alone does not tell you what you are doing:
+
+- `build {"kind":"WORKS","system":"<id>"}` raises a **production structure**. Legal in the Commons.
+- `build {"kind":"ANCHOR","system":"<id>"}` takes **territory**, with a permanent Charge attached.
+  Invalid in the Commons, and it needs a posted bond.
+
+They cost different things and commit you to different futures. **Do not search `affordances[]` for
+`verb == "build"` and take the first match** — you will get whichever one the ranking put first. Match
+on `params.kind` as well, always.
+
 ### Building one — `build` `{"kind":"WORKS","system":"<id>"}`
 
 It costs **60000 currency plus 5000 units of `ration` standing at that system**. The goods are
