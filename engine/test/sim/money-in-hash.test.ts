@@ -138,6 +138,7 @@ describe('state_hash covers money', () => {
       rt.ledger.restoreTo({
         accounts: [],
         lots: [],
+        encumbrances: { rows: [], exposure: [], perEvent: [] },
         postingCount: rt.ledger.allPostings().length + 1,
         batchCount: rt.ledger.allBatches().length,
       }),

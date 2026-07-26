@@ -38,8 +38,10 @@ import {
   emptyWorld,
   ev,
   fund,
+  fundedWorld,
   mine,
 } from './fixture.js';
+import { ledgerStateTable } from '../../src/ledger/stateTable.js';
 
 const GRANT_1 = 'grant-quartermaster' as GrantId;
 
@@ -491,5 +493,74 @@ describe('principalPosition', () => {
     expect(pos.free).toBe(3_000);
     expect(pos.exposure).toBe(250);
     expect(pos.goods.get(ORE)).toBe(11);
+  });
+});
+
+describe('the book is inside the hashed capture and the abort path (the keystone fix)', () => {
+  it('a rolled-back tick does not keep its lock: capture -> lock -> restore releases it', () => {
+    // This is the test that would have caught it. `ledgerStateTable.capture()` used to
+    // return exactly {accounts, lots, postingCount, batchCount} — no encumbrances — so an
+    // aborted tick kept every lock it had opened: free balance reduced and EXPOSURE
+    // inflated for a commitment the world had just rolled back. Found three times
+    // independently (a codex ledger review, the boot-upgrade builder, and a direct test
+    // of the capture) while the file's own header claimed encumbrances were carried.
+    const f = fundedWorld();
+    const before = f.ledger.freeBalance(A_STORES);
+    const captured = ledgerStateTable(
+      () => f.ledger,
+      (r) => {
+        f.ledger.restoreTo(r);
+      },
+    );
+    const snapshot = captured.capture();
+
+    f.obligations.open('v:lock-test' as VentureId);
+    f.ledger.encumbrances.lock({
+      eventId: ev('lock'),
+      tick: 1,
+      principal: ALICE,
+      account: A_STORES,
+      amountMinor: minor(600),
+      obligationRef: 'v:lock-test' as VentureId,
+      maxDirectLoss: minor(600),
+    });
+    // The lock bites: free balance falls and exposure appears.
+    expect(f.ledger.freeBalance(A_STORES)).toBe(before - 600);
+    expect(f.ledger.encumbrances.cachedExposure(ALICE)).toBe(600);
+
+    // Now abort the tick.
+    captured.restore?.(snapshot);
+
+    expect(f.ledger.freeBalance(A_STORES), 'the lock must be gone after a rollback').toBe(before);
+    expect(f.ledger.encumbrances.cachedExposure(ALICE), 'EXPOSURE must roll back too').toBe(0);
+    expect(f.ledger.encumbrances.openForAccount(A_STORES).length).toBe(0);
+  });
+
+  it('state_hash can SEE escrow: a world with a lock does not hash like one without', () => {
+    // The bug `ledgerStateTable` was written to fix ("a hash that cannot see the money is
+    // not a hash of the world"), one layer down: two worlds differing only in open locks
+    // used to produce an identical capture, so DET-1 was blind to divergent escrow.
+    const f = fundedWorld();
+    const table = ledgerStateTable(
+      () => f.ledger,
+      (r) => {
+        f.ledger.restoreTo(r);
+      },
+    );
+    const withoutLock = JSON.stringify(table.capture());
+
+    f.obligations.open('v:hash-test' as VentureId);
+    f.ledger.encumbrances.lock({
+      eventId: ev('lock2'),
+      tick: 1,
+      principal: ALICE,
+      account: A_STORES,
+      amountMinor: minor(600),
+      obligationRef: 'v:hash-test' as VentureId,
+      maxDirectLoss: minor(600),
+    });
+    const withLock = JSON.stringify(table.capture());
+
+    expect(withLock, 'the capture must differ once escrow exists').not.toEqual(withoutLock);
   });
 });

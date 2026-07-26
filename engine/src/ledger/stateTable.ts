@@ -28,6 +28,7 @@ import type { StateTable } from '../tick/snapshot.js';
 import type { Ledger } from './ledger.js';
 import type { AccountKind, ValueLedger } from './accounts.js';
 import type { Lot, LotId, LotState } from './lots.js';
+import type { EncumbranceCapture } from './encumbrance.js';
 import { compareIds } from './order.js';
 
 export class LedgerRestoreError extends Error {}
@@ -36,6 +37,8 @@ export class LedgerRestoreError extends Error {}
 export interface LedgerRestore {
   readonly accounts: readonly LedgerAccountRow[];
   readonly lots: readonly Lot[];
+  /** The open locks. Restoring these is what makes an abort actually undo a lock. */
+  readonly encumbrances: EncumbranceCapture;
   /** Append-only tails are truncated to these lengths, not rebuilt. */
   readonly postingCount: number;
   readonly batchCount: number;
@@ -150,6 +153,11 @@ export function ledgerStateTable(
       return {
         accounts,
         lots,
+        // The open locks. Absent until now, which meant an aborted tick kept its
+        // encumbrances, a snapshot restored a world whose escrow was spendable, and
+        // two worlds with different escrow hashed the same. See
+        // `EncumbranceBook.capture` for the four consequences and how they were found.
+        encumbrances: l.encumbrances.capture(),
         // Append-only. Counted, not carried: the contents are already immutable and
         // re-listing them in every snapshot would make the hash input grow without
         // bound for no additional attestation.
@@ -199,7 +207,40 @@ export function ledgerStateTable(
         throw new LedgerRestoreError('ledger: append-only lengths cannot be negative');
       }
 
-      write({ accounts, lots, postingCount, batchCount });
+      // The locks. Parsed strictly like everything else: a snapshot that cannot be
+      // read is a refusal, never a silently empty book — an empty book here would be
+      // exactly the A5′ failure this capture was added to prevent (escrowed stake
+      // becoming spendable), and it would look like a clean restore.
+      const encRoot = obj(root['encumbrances'] ?? { rows: [], exposure: [], perEvent: [] },
+        'ledger.encumbrances');
+      const encumbrances: EncumbranceCapture = {
+        rows: arr(encRoot['rows'] ?? [], 'ledger.encumbrances.rows').map((raw, i) => {
+          const where = `ledger.encumbrances.rows[${String(i)}]`;
+          const o = obj(raw, where);
+          return {
+            id: str(o, 'id', where),
+            principal: str(o, 'principal', where) as PrincipalId,
+            account: str(o, 'account', where) as AccountId,
+            amountMinor: minor(int(o, 'amountMinor', where)),
+            obligationRef: str(o, 'obligationRef', where) as EncumbranceCapture['rows'][number]['obligationRef'],
+            maxDirectLoss: minor(int(o, 'maxDirectLoss', where)),
+            openedTick: int(o, 'openedTick', where),
+            releasedAtTick: o['releasedAtTick'] === null ? null : int(o, 'releasedAtTick', where),
+          };
+        }),
+        exposure: arr(encRoot['exposure'] ?? [], 'ledger.encumbrances.exposure').map((raw, i) => {
+          const where = `ledger.encumbrances.exposure[${String(i)}]`;
+          const pair = arr(raw, where);
+          return [String(pair[0]) as PrincipalId, minor(Number(pair[1]))] as const;
+        }),
+        perEvent: arr(encRoot['perEvent'] ?? [], 'ledger.encumbrances.perEvent').map((raw, i) => {
+          const where = `ledger.encumbrances.perEvent[${String(i)}]`;
+          const pair = arr(raw, where);
+          return [String(pair[0]), Number(pair[1])] as const;
+        }),
+      };
+
+      write({ accounts, lots, encumbrances, postingCount, batchCount });
     },
   };
 }

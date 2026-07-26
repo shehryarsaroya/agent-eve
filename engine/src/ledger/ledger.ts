@@ -56,7 +56,7 @@ import {
   type SupplyLeg,
 } from './batch.js';
 import { applyQtyDelta, qtyDelta } from './delta.js';
-import { EncumbranceBook } from './encumbrance.js';
+import { EncumbranceBook, type EncumbranceCapture } from './encumbrance.js';
 import { lotId, type Lot, type LotId, type LotState } from './lots.js';
 import { compareIds } from './order.js';
 
@@ -176,6 +176,12 @@ export class Ledger {
       readonly movedQty: ReadonlyMap<GoodId, Qty>;
     }[];
     readonly lots: readonly Lot[];
+    /**
+     * The open locks. Without this, `abort` restored balances but left every
+     * encumbrance the aborted tick had opened — free balance reduced and exposure
+     * inflated for a commitment the world had just rolled back.
+     */
+    readonly encumbrances: EncumbranceCapture;
     readonly postingCount: number;
     readonly batchCount: number;
   }): void {
@@ -204,6 +210,11 @@ export class Ledger {
 
     this.lots.clear();
     for (const lot of state.lots) this.lots.set(lot.id, { ...lot });
+
+    // The locks, restored with everything else. A lot carries only an `encumbranceId`
+    // pointer, so restoring lots without the book leaves those pointers dangling at a
+    // row that no longer exists — which reads as unencumbered cargo.
+    this.encumbrances.restore(state.encumbrances);
 
     this.postings.length = state.postingCount;
     this.batches.length = state.batchCount;

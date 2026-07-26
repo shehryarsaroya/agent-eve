@@ -26,6 +26,7 @@ import type {
   PrincipalId,
   VentureId,
 } from '../core/types.js';
+import type { CanonicalValue } from '../core/canonical.js';
 import { addMinor, minor, subMinor, type Minor } from '../core/units.js';
 import { compareIds } from './order.js';
 
@@ -353,6 +354,91 @@ export class EncumbranceBook {
       releasedAtTick: r.releasedAtTick,
     }));
   }
+
+  /**
+   * Everything this book owns, for the hashed capture and the abort path.
+   *
+   * This book was in **no state table at all** until now, which was the most
+   * consequential omission in the engine and was found three times independently (a
+   * codex ledger review, the boot-upgrade builder, and a direct test of
+   * `ledgerStateTable.capture()`, which returned exactly
+   * `{accounts, lots, postingCount, batchCount}`). Four things followed from it:
+   *
+   *   1. **Abort did not undo a lock.** A tick that opened an encumbrance and then
+   *      aborted left it open — free balance reduced and exposure inflated for a
+   *      commitment the world had rolled back.
+   *   2. **`state_hash` could not see escrow.** Two worlds with different open locks
+   *      hashed identically, so DET-1 was blind to divergent escrow. This is precisely
+   *      the bug `ledgerStateTable` was written to fix ("a hash that cannot see the
+   *      money is not a hash of the world"), one layer down.
+   *   3. **A5′:** a world restored from a snapshot had escrowed stake silently
+   *      spendable, because `freeBalance` reads this book and the book came back empty.
+   *   4. It blocked checkpoint adoption, and therefore a bounded boot.
+   *
+   * All three maps are carried, not just `rows`. `exposureCache` is what INV-5 checks,
+   * so restoring rows without it would resurrect the very mismatch INV-5 exists to
+   * catch; and `perEvent` seeds content-derived ids, so dropping it would let a replayed
+   * event mint an id that already exists and throw `duplicate encumbrance id`.
+   */
+  capture(): CanonicalValue {
+    return {
+      rows: [...this.rows.values()]
+        .sort((a, b) => compareIds(a.id, b.id))
+        .map((r) => ({
+          id: r.id,
+          principal: r.principal,
+          account: r.account,
+          amountMinor: r.amountMinor,
+          obligationRef: r.obligationRef,
+          maxDirectLoss: r.maxDirectLoss,
+          openedTick: r.openedTick,
+          releasedAtTick: r.releasedAtTick,
+        })),
+      exposure: [...this.exposureCache.entries()]
+        .sort((a, b) => compareIds(a[0], b[0]))
+        .map(([principal, amount]) => [principal, amount] as CanonicalValue),
+      perEvent: [...this.perEvent.entries()]
+        .sort((a, b) => compareIds(a[0], b[0]))
+        .map(([eventId, n]) => [eventId, n] as CanonicalValue),
+    };
+  }
+
+  /** Replace this book's contents with a captured state. The inverse of {@link capture}. */
+  restore(state: EncumbranceCapture): void {
+    this.rows.clear();
+    this.exposureCache.clear();
+    this.perEvent.clear();
+    for (const r of state.rows) {
+      this.rows.set(r.id, {
+        id: r.id,
+        principal: r.principal,
+        account: r.account,
+        amountMinor: r.amountMinor,
+        obligationRef: r.obligationRef,
+        maxDirectLoss: r.maxDirectLoss,
+        openedTick: r.openedTick,
+        releasedAtTick: r.releasedAtTick,
+      });
+    }
+    for (const [principal, amount] of state.exposure) this.exposureCache.set(principal, amount);
+    for (const [eventId, n] of state.perEvent) this.perEvent.set(eventId, n);
+  }
+}
+
+/** The shape {@link EncumbranceBook.restore} accepts, parsed from a capture. */
+export interface EncumbranceCapture {
+  readonly rows: readonly {
+    readonly id: string;
+    readonly principal: PrincipalId;
+    readonly account: AccountId;
+    readonly amountMinor: Minor;
+    readonly obligationRef: ObligationRef;
+    readonly maxDirectLoss: Minor;
+    readonly openedTick: number;
+    readonly releasedAtTick: number | null;
+  }[];
+  readonly exposure: readonly (readonly [PrincipalId, Minor])[];
+  readonly perEvent: readonly (readonly [string, number])[];
 }
 
 function toEncumbrance(row: Row): Encumbrance {
