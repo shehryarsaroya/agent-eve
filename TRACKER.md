@@ -284,6 +284,39 @@ not raced. Then re-check `receiptReel`: it only populates where an elective prom
 cast currently keeps paying, so the reel may still be empty for an honest reason rather than a
 plumbing one. Those two causes must not be confused.
 
+### ★★ PLAYTEST FINDING — THERE IS NO WAY OUT OF THE COMMONS, SO THE RISK FRONTIER IS UNREACHABLE
+
+Eight probes enrolled and played the live world. The raid probe's report is the headline:
+
+> *"I could not get raided, could not resist, and could never have seen a raid coming, because in
+> this build no raid can arrive at anyone... a Commons-holding principal is Commons-bound and its
+> hands cannot leave, with no live verb to move or build a holding — **so the exit does not exist**."*
+
+**Verified directly, and the probe was right about the cause though wrong on one detail:**
+- enrolment always seats via `safestSeat(map, commonsSystems(map), …)` — **every principal starts in
+  the Commons, without exception**;
+- `commonsBoundRejection` refuses any hand movement out while the holding is Commons-tier;
+- there is **no `relocate` and no `build` verb**, so no principal can ever establish a holding
+  anywhere else.
+- *(The probe said all five raid verbs are Phase-0. Not so: `yield`, `fight` and `join` ARE live —
+  only `demand` and `flee` are not, and `demand` belongs to the world rather than an agent. Response
+  was never the blocker; **reachability** was.)*
+
+**What this means.** A8's permanent safe floor has quietly become the entire world. Predation ships
+and can never touch a player. MARCHES and FRONTIER are decorative. There is no risk/reward choice
+anywhere in the game, which is a large part of why the world looks busy and feels quiet — and my own
+A14 test passed only because it drove the runtime directly and seated principals in MARCHES, which no
+real agent can do.
+
+**The fix is far smaller than the finding: `relocateHolding` ALREADY EXISTS** in
+`src/world/holding.ts` and nothing is wired to it. The exit was built and never exposed. It needs a
+verb, a price (§6.3: "a Marches or Frontier holding pays upkeep in currency plus manufactured goods
+— the anti-Sybil price of projecting force"), and a line in `agent.md`. This is the graduation step
+`PASS-PROGRESSION-NEWCOMER` describes.
+
+**This is the top gameplay job**, ahead of sovereignty and syndicates: both of those are about
+territory nobody can currently reach.
+
 ### Queue, in order, with the reason each is next
 1. **Whatever the playtest says.** If the betrayer could not betray *profitably*, that outranks
    everything — it is the design's falsifiable claim (`GATE-3.md`).
