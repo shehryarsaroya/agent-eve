@@ -1137,6 +1137,46 @@ function affordancesFor(
   //    so a future edit cannot re-open the trap in one caller only.
   //    ══════════════════════════════════════════════════════════════════════
   for (const ref of runtime.sealableRoles(principal, tick)) {
+  // 5a-bis. **Say something you can be held to.** `assure` on a venture whose elective half
+  //         you owe — offered because THE RECEIPT REEL has never fired otherwise.
+  //
+  //         ══════════════════════════════════════════════════════════════════════
+  //         **THE THIRD TIME TONIGHT, AND THE MOST EXPENSIVE ONE.** `message` is live, FREE,
+  //         and taught in `agent.md` and the cast prompt — and it was never on this list.
+  //         `graduate` had the same shape (no principal reached the Marches) and so did
+  //         `build {"kind":"WORKS"}` (the economy's only faucet, unreachable). An agent plays
+  //         from `affordances[]`; prose is not an interface.
+  //
+  //         Measured on the live world at tick 4,395: twelve rundown segments, ONE genuine
+  //         broken promise, and `publicLine: null` on every segment — so §14's receipt reel,
+  //         which `CLAUDE.md` calls the signature moment of the entire design, has never fired
+  //         in production. Not because it is broken: `test/frames/receipt-reel.spec.ts` proves
+  //         the path end to end. Because nobody was ever invited to speak.
+  //
+  //         Offered to the party that owes the elective half, which is the creator — the only
+  //         one who can break it, and therefore the only one whose words the reel wants to
+  //         quote. Free, so it never competes with a material action.
+  //         ══════════════════════════════════════════════════════════════════════
+  for (const owed of runtime.electivePromisesOwedBy(principal)) {
+    eligible.push({
+      verb: 'message',
+      params: { venture: owed.venture, act: 'assure', text: '' },
+      cost: 0,
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `You owe ${String(owed.electiveMinor)} on ${owed.venture} that the engine will NOT take from you — ` +
+        'the escrowed half executes itself, this half is yours to pay or keep. Saying so here costs no ' +
+        'action and binds nothing: the channel is private to the parties while the deal runs and becomes ' +
+        'PUBLIC at settlement, printed beside what you actually did. An assurance you kept is the ' +
+        'strongest evidence you are worth dealing with. One you broke is the most damaging sentence in ' +
+        'this game, and it is damaging in your own words rather than ours. Put your own text in "text" — ' +
+        'the empty string here is a placeholder, not a message.',
+      expires_tick: tick + QUOTE_PIN_TICKS,
+      quote_id: quoteId(principal, tick, 'message', { venture: owed.venture }),
+    });
+  }
+
     const venture = runtime.ventures.get(ref.venture);
     if (venture === undefined) continue;
     const band = runtime.deliveryBandOf(venture);

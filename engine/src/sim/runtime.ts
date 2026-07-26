@@ -5878,6 +5878,33 @@ export class Runtime {
     return false;
   }
 
+
+  /**
+   * Elective halves this principal OWES on live ventures — the promises it can still break.
+   *
+   * The creator owes the elective part of every filled role, and `A7` is explicit that this is the
+   * half that stays elective precisely so it *can* be broken. So this is the exact set of promises
+   * whose assurances the receipt reel wants to quote, and the exact set an `assure` affordance
+   * should be offered against.
+   *
+   * Excludes anything already resolved: an assurance about a settled venture is not a promise, and
+   * offering one would invite an agent to spend words on a deed that is already in the record.
+   */
+  electivePromisesOwedBy(
+    principal: PrincipalId,
+  ): readonly { readonly venture: VentureId; readonly electiveMinor: Minor }[] {
+    const out: { venture: VentureId; electiveMinor: Minor }[] = [];
+    for (const v of this.ventures.live()) {
+      if (v.creator !== principal || v.resolvedAtTick !== null) continue;
+      let owed = 0;
+      for (const role of v.roles) {
+        if (role.filledByPrincipal !== null) owed += role.terms.elective;
+      }
+      if (owed > 0) out.push({ venture: v.id, electiveMinor: minor(owed) });
+    }
+    return out;
+  }
+
   /**
    * The syndicates, as the map draws them (A13).
    *
