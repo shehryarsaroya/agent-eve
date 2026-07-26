@@ -134,7 +134,10 @@ describe('A4 — a faster client buys NOTHING, through the whole engine', () => 
     const parsed = JSON.parse(settled) as [string, string, string, number, number][];
     expect(parsed[0]?.[2], 'the same-price tie went to the wrong ask').toBe('p:v1');
     expect(parsed[0]?.[1]).toBe('p:v3');
-    expect(parsed[0]?.[3], 'the more senior ask did not set the price').toBe(10);
+    // Same-tick crosses now split the spread (A15: the handle must not set the price),
+    // so this is the midpoint rather than the senior side's limit. The tie-break above
+    // still decides WHO trades — only the price stopped depending on a name.
+    expect(parsed[0]?.[3], 'a same-tick cross must clear at the midpoint').toBe(11);
   });
 });
 

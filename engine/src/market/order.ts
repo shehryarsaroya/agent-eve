@@ -237,5 +237,32 @@ export function crossPrice(bid: Order, ask: Order): Minor | null {
     throw new RangeError('market: a cross is one BID against one ASK');
   }
   if (bid.limitPrice < ask.limitPrice) return null;
-  return compareSeniority(bid, ask) <= 0 ? bid.limitPrice : ask.limitPrice;
+
+  // ── A15: WHEN NEITHER SIDE IS THE MAKER, NO NAME MAY SET THE PRICE ────────
+  //
+  // The maker's-price rule is right when one order genuinely rested longer: it pays for
+  // presence, and price improvement accrues to the aggressor. But when BOTH orders
+  // entered the book on the same tick, neither rested, and `compareSeniority` then falls
+  // through to `principal_id` — so the handle decided the price. Reproduced:
+  //
+  //     buyer=aaron seller=zoe   -> fill 100      (bid limit 100, ask limit 95)
+  //     buyer=zoe   seller=aaron -> fill  95
+  //
+  // Same orders, same tick; only the names differ and 5 per unit moves. The senior party
+  // trades at its own limit, so the lexicographically LATER handle always takes the
+  // improvement — and enrolment is free (A15), so the handle is choosable. A15 forbids a
+  // gate priced in identities without qualification, and this was one worth real money on
+  // every same-tick cross. (A4 was never affected: speed still buys nothing.)
+  //
+  // So a same-tick cross splits the spread instead. No name is consulted, which removes
+  // the advantage rather than obscuring it, and it matches what a same-tick pair actually
+  // is: two aggressors and no maker to pay.
+  //
+  // Rounding is toward the ASK — stated here because an integer midpoint of an odd spread
+  // has to favour someone, and the tie must be decided by a published rule rather than by
+  // whoever happens to be sorted first. Truncation of a non-negative sum is exact.
+  if (compareSeniority(bid, ask) === 0 || bid.placedTick === ask.placedTick) {
+    return minor(Math.trunc((bid.limitPrice + ask.limitPrice) / 2));
+  }
+  return compareSeniority(bid, ask) < 0 ? bid.limitPrice : ask.limitPrice;
 }

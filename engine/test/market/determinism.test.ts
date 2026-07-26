@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { PrincipalId } from '../../src/core/types.js';
 import { canonicalHash, type CanonicalValue } from '../../src/core/canonical.js';
 import { matchBook, type MatchPlan } from '../../src/market/index.js';
 import { minor, qty } from '../../src/core/units.js';
@@ -138,9 +139,55 @@ describe('A4 — matching is deterministic under any arrival order', () => {
       const fills = plan(shuffled).fills;
       expect(fills.length).toBe(1);
       expect(fills[0]?.seller).toBe(BOB);
-      // …and it trades at the seller's limit, because the seller is the more senior
-      // of the pair (tick 3, `p:bob` < `p:cara`). The buyer keeps the improvement.
-      expect(fills[0]?.unitPrice).toBe(10);
+      // PRICE CHANGED BY THE A15 FIX, and the queue claim above is untouched.
+      //
+      // This used to assert the seller's limit of 10, "because the seller is the more
+      // senior of the pair (tick 3, `p:bob` < `p:cara`)". That sentence is the defect
+      // written down: both orders entered on tick 3, so neither rested, and seniority
+      // fell through to the HANDLE — which then set the price. Enrolment is free, so a
+      // handle is choosable, and A15 forbids a gate priced in identities.
+      //
+      // A same-tick cross now splits the spread: (12 + 10) / 2 = 11. No name is consulted.
+      // The seller still wins the queue on price, which is what this test is really for.
+      expect(fills[0]?.unitPrice).toBe(11);
     }
+  });
+});
+
+describe('A15 — the HANDLE must never set the price', () => {
+  it('a same-tick cross clears at the midpoint whichever way the names sort', () => {
+    // The defect, reproduced before the fix: identical orders, identical tick, only the
+    // names swapped, and 5 per unit moved.
+    //
+    //     buyer=aaron seller=zoe   -> fill 100      (bid 100, ask 95)
+    //     buyer=zoe   seller=aaron -> fill  95
+    //
+    // The senior party traded at its own limit, so the lexicographically later handle
+    // always took the improvement. Enrolment is free (A15), so that was a permanent,
+    // choosable, per-unit edge on every same-tick cross.
+    const priceWhen = (buyer: string, seller: string): number => {
+      const bid = order({ principal: buyer as PrincipalId, side: 'BID', price: 100, qty: 10, tick: 1 });
+      const ask = order({ principal: seller as PrincipalId, side: 'ASK', price: 95, qty: 10, tick: 1 });
+      const fills = plan([bid, ask]).fills;
+      expect(fills.length, 'the pair must actually trade').toBe(1);
+      return fills[0]!.unitPrice;
+    };
+
+    const aBuys = priceWhen('p:aaron', 'p:zoe');
+    const zBuys = priceWhen('p:zoe', 'p:aaron');
+    expect(aBuys, 'the name must not move the price').toBe(zBuys);
+    // And it is the split, not one side's limit.
+    expect(aBuys).toBe(97); // trunc((100 + 95) / 2), rounded toward the ask by rule
+  });
+
+  it('a genuine maker — one that actually rested a tick — still sets the price', () => {
+    // The A15 fix must not delete the thing the rule is FOR: presence is still paid for.
+    const rested = order({ principal: 'p:zoe' as PrincipalId, side: 'ASK', price: 95, qty: 10, tick: 1 });
+    const arriving = order({ principal: 'p:aaron' as PrincipalId, side: 'BID', price: 100, qty: 10, tick: 4 });
+    const fills = plan([rested, arriving]).fills;
+    expect(fills.length).toBe(1);
+    // The rested ask sets it, and the aggressor keeps the improvement — even though
+    // `p:aaron` sorts first, which under the old rule would have handed it the price.
+    expect(fills[0]?.unitPrice).toBe(95);
   });
 });
