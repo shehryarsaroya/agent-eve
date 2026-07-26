@@ -20,7 +20,6 @@ import { storesAccount } from '../../src/ledger/index.js';
 import { FOUNDING_COST_MINOR } from '../../src/syndicate/params.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from '../api/harness.js';
 
-type Row = Record<string, unknown>;
 let h: Harness;
 
 beforeEach(async () => {
