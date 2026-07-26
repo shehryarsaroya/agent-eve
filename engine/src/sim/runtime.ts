@@ -1283,6 +1283,11 @@ export class Runtime {
         return this.seals.freeSlotsRemaining(request.principal, reckoningOf(this.engine.tick), roles) > 0;
       },
       roleFills: () => this.ventures.roleFills(),
+      // The MARKETS phase walks the whole resting book, and that quantity scales with
+      // nothing else in the step budget. Without this the tick loop sized a cap for a
+      // world with no market and DET-9 aborted a legitimate book walk — an
+      // agent-reachable halt (AGT-X9). See `STEP_BUDGET.perRestingOrder`.
+      restingOrders: () => this.marketBook.countOpen(),
       obligations: this.obligationSource(),
       // Buffered until COMMIT and appended here, so nothing an observer can read moves
       // until the tick is checked. The settlement's own receipts are the deliberate

@@ -133,6 +133,25 @@ export const STEP_BUDGET = {
    * per-item bookkeeping around each attempt.
    */
   perObligation: CASCADE_ROUND_LIMIT + 3,
+  /**
+   * **The resting order book, and this is the same defect as `perObligation`, one
+   * phase over.**
+   *
+   * `MARKETS` walks every open order on every crossing book once per tick. Like the
+   * settlement set, that quantity scales with nothing else in this budget: it is set
+   * by agents collectively over many ticks, and the tick it is *spent* on may carry
+   * no actions at all. Measured before this term existed: 480 resting one-unit asks
+   * and one buyer crossing all of them charged 1024 steps against a cap of 1016, and
+   * DET-9 aborted the tick and paused the world. Entirely legitimate play, so the
+   * halt was agent-reachable — AGT-X9, which is worse than a crash because it is a
+   * weapon.
+   *
+   * Three per order: the matcher's own advance, the fill, and the closure. The
+   * market's caps (`MAX_OPEN_ORDERS`) bound this absolutely, so the budget stays
+   * finite; what it must not do is bound it *below* the work a full book legitimately
+   * needs.
+   */
+  perRestingOrder: 4,
 } as const;
 
 export function stepBudgetFor(
@@ -140,6 +159,7 @@ export function stepBudgetFor(
   hands: number,
   intents: number,
   obligations: number,
+  restingOrders = 0,
 ): number {
   if (STEP_BUDGET.perObligation < CASCADE_ROUND_LIMIT) {
     // A budget below the round limit makes a legitimate cascade unbudgetable, which
@@ -154,7 +174,8 @@ export function stepBudgetFor(
     STEP_BUDGET.perAction * actions +
     STEP_BUDGET.perHand * hands +
     STEP_BUDGET.perIntent * intents +
-    STEP_BUDGET.perObligation * obligations
+    STEP_BUDGET.perObligation * obligations +
+    STEP_BUDGET.perRestingOrder * restingOrders
   );
 }
 
@@ -299,6 +320,15 @@ export interface EngineOptions {
   readonly roleFills?: () => RoleFills;
   readonly obligations?: ObligationSource;
   /**
+   * How many orders are resting on the market books right now.
+   *
+   * Injected for the same reason `roleFills` is: the tick loop must not learn what an
+   * order is. It sizes the step budget only — see `STEP_BUDGET.perRestingOrder` for
+   * the measured halt this closes. Absent means zero, which is correct for any
+   * fixture with no market.
+   */
+  readonly restingOrders?: () => number;
+  /**
    * Report whether an act is inside its module's own free allowance. Only `seal` uses
    * it today ("one free per role held", §17 and agent.md). Omit it and every act is
    * metered normally, which fails closed.
@@ -381,6 +411,8 @@ export class Engine {
   private readonly handlers: Partial<Record<PhaseName, PhaseHandler>>;
   private readonly verbs: Record<string, VerbHandler>;
   private readonly assertions: readonly ((tick: number) => readonly InvariantViolation[])[];
+  /** Sizes the step budget for the MARKETS phase. See `STEP_BUDGET.perRestingOrder`. */
+  private readonly restingOrders: () => number;
   private readonly invariantInputs: (tick: number) => InvariantInputs;
   private readonly requireAllInvariants: boolean;
   private readonly roleFills: () => RoleFills;
@@ -435,6 +467,7 @@ export class Engine {
     this.seeds = new SeedBook(options.seed);
     this.queue = new SubmissionQueue(this.completedTick + 1);
     this.budget = new ActionBudget(options.actionsPerTick);
+    this.restingOrders = options.restingOrders ?? ((): number => 0);
     this.handlers = options.handlers ?? {};
     this.verbs = { ...BUILT_IN_VERBS, ...(options.verbs ?? {}) };
     this.assertions = options.assertions ?? [];
@@ -761,6 +794,7 @@ export class Engine {
       this.world.hands.size,
       this.intents.liveCount(),
       this.dueThisTick.length,
+      this.restingOrders(),
     );
 
     const traces: PhaseTrace[] = [{ phase: 'FREEZE_QUEUE', unbuilt: false, steps: 0 }];

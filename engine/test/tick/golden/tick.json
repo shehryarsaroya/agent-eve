@@ -21,7 +21,8 @@
     "perAction": 64,
     "perHand": 8,
     "perIntent": 32,
-    "perObligation": 6
+    "perObligation": 6,
+    "perRestingOrder": 4
   },
   "stepBudgetSample": 932,
   "scenario": "four_in_the_commons_eight_ticks",
