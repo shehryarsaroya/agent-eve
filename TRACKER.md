@@ -664,6 +664,27 @@ member is standing in, in the **user** message, which is already per-member and 
 contract stays whole and cached; the pointer points *into* the real document rather than paraphrasing
 it, which is the line scar #1 draws.
 
+### ★ The frame carries the MAP, and the cast has a MEMORY
+Two things landed that the whole show was missing.
+
+**The frame had no map.** A13 calls the map *"the game's only agreed representation"* and the frame
+carried none — a client saw system *ids* inside claim tints and works marks with no topology, so every
+line was a caption on a picture nobody could render. I had told the user the gap was *coordinates*;
+checking my own answer found it was the graph itself. Now: **30 systems · 3 tiers · 4 constellations ·
+70 lanes**, and *deliberately no coordinates* — position is presentation, and x/y on a system would put
+presentation inside `state_hash` where a layout tweak becomes a replay divergence. A test asserts the
+absence of `x`/`y`/`angle`/`radius`. It is the one frame field **never truncated**: a cut map makes a
+client draw lanes to systems it cannot place, which is worse than drawing nothing.
+
+**The cast had no memory of each other.** A character was `handle · title · creed · stance` —
+appetite, no history — so every wake a member met the world as a stranger and could not know that the
+principal across the table had broken two promises to it. A12 says the sandbox authors the stories,
+and an agent with no memory of who wronged it cannot be a party to one. `relationsFor` derives it from
+the **standing journal**: a wound is a `DEFAULT` that already happened and A5 makes it permanent, so
+the record IS the memory — nothing stored, nothing in `state_hash`, nothing that can disagree with the
+journal. The asymmetry is deliberate: what *they* did to *you* decides whether to deal again, and your
+own half is named because they can read it.
+
 ### Still open, and each is a deliberate choice rather than a gap
 - **Pooled goods are not raidable** (D11), and the blocker moved rather than cleared. Offices now
   exist, so *who defends it* has an answer — but a syndicate treasury holds **currency**, and raids
