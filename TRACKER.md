@@ -274,145 +274,62 @@ Three independent scorers against SPEC v3.0.
 
 ---
 
-## 🌙 OVERNIGHT RUN — RESUME FROM HERE (2026-07-26, unattended)
+## 🌙 OVERNIGHT RUN — RESUME FROM HERE (refreshed 2026-07-26, unattended)
 
-*The owner is asleep and asked for autonomous work with no questions. If you are a fresh session, or
-this one after compaction, **read this block first** — it is the live state, not history.*
+*Owner asleep, autonomous work, no questions. Fresh session or post-compaction: **read this first** —
+it is live state, not history.*
 
-### Where the game actually is
-**LIVE, HEALTHY, and being played.** `/health` returns `ok: true`, `failures: []`,
-`deciding_share_bps` ~3400 against a floor of 2500. Built and deployed: the A6 core loop (grants,
-both holes closed), markets, predation (A14), persistence with an operator divergence door, the LLM
-house cast on `gpt-5.6-luna` with durable memory, and a spectator frame a viewer can actually fetch.
-~2,590 tests.
+### Where the game is
+**LIVE and being played** at agentinsurance.io/compact/, clock = `rehearsal` (60 s a tick, Reckoning
+every 288 min). ~2,671 tests. Built and deployed: the A6 core loop with both holes closed, markets,
+predation (A14), **a reachable risk frontier** (`graduate`), persistence with an operator divergence
+door, seven books inside `state_hash`, the LLM house cast on `gpt-5.6-luna` with durable memory, and a
+spectator frame a viewer can actually fetch that now carries the say-do gap.
+
+### Landed tonight, in order
+persistence P0 (partitions had run out — the world was publishing non-durable ticks) · the spend meter
+· durable cast memory · **all four playtest findings** (enrolment 54 min → fixed; the Commons exit;
+the Levy ballot; A4's clock) · seven books in the hash including `StandingBook` · the say-do gap into
+the frame · `assure` taught to the cast · health measuring the **fallback rate** instead of crying wolf
+· three deploy-tooling defects (frames unserved, client deploy restarting the world, the replay wait
+exiting on a failed curl).
 
 ### In flight
-- **five-books** (`wf_ee452990-c6c`) — registering `StandingBook`, `SealBook`, the obligation book,
-  the `EventLedger` and the attribution register as state tables. **The highest-value engine work
-  left.** Will bump `RULES_VERSION` and need `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` on deploy.
-- **playtest** (`wf_07dee382-abb`) — 8 probes playing the live world, 6 done. A critic reads them
-  against `GATE-3.md` and `EXPERIENCE.md`.
+- **sovereignty** (`wf_42217fd9-abb`) — the Charge. 11 modules in, converging: was halting at tick 1
+  and failing 8 tests, now 2 (both agent.md rules-surface guards). Its own gate must force those.
 
-### ★ FOUND 2026-07-26 — THE SAY-DO GAP NEVER REACHES THE VIEWER
+### Queue after it
+1. **Syndicates** (task #12) — `SYNDICATE` as a real asset subject + the constitutional/covenant split.
+   Deliberately not started in parallel: it touches runtime/ledger/observe, same as sovereignty.
+2. **`PRODUCE`** — the last no-op phase. Goods enter only through the enrolment faucet, so the levy
+   allotment drains and never refills.
+3. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event.
+4. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
+   advice #6 tells you to use), parameters documented for **zero** verbs, and the single most important
+   strategic fact — being hired builds no standing — appears only in `briefing.prompt`.
 
-`reckoningFrame()` builds each `SettledView` with **`publicLine: null, sealVerdict: null,
-messages: []` hardcoded** (`src/sim/runtime.ts` ~5536). Measured on the live world at the same
-moment: **371 seals, 126 messages, and 10 rundown segments carrying zero of each.**
+### Standing decisions, unattended
+Deploy whenever gate 0 passes (the replay preflight refuses a bricking deploy with the old process
+still serving). Bump `RULES_VERSION` + use the operator door only when past-tick computation really
+changes — the graduation build proved it did **not** by diffing the per-tick hash stream, and bumping
+for a non-divergence teaches operators to wave the door through. Cast cap stays $5; spend is ~$0.25/h.
+**A subagent's report is not evidence** — verify by running it. **Refusing is an acceptable outcome**
+and has twice been the right one.
 
-This is the product. §11.1's three layers are *what it said* (a public claim, allowed to be a lie) →
-*what it sealed* (a pre-commitment) → *what it did* (ground truth), and §14 THE RECEIPT REEL is built
-by putting the first next to the last. The frame currently renders only the third. A viewer sees
-deeds and consequences and never learns that anybody claimed anything, so the say-do gap — the thing
-that makes a betrayal legible rather than merely costly — is invisible.
+### The habit that keeps paying
+Five oversold guards caught tonight, most of them mine: a test reading `SPEEDS.rehearsal` instead of
+the applied default; a seizure-ballot check redundant with the fail-closed path; an A12 reel guard held
+by `render.ts` rather than my change. **Where a property is guarded twice, say so** rather than letting
+a redundant guard look proven. Same family as the truncated witnesses — `head` on a grep, `tail -1` on
+lint, `curl | grep` treating "could not look" as "all clear".
 
-The data all exists: the seal book holds verdicts, and messages are `PARTIES` while live and
-**declassify at settlement**, which is exactly the moment the frame is built. Nothing needs a new
-mechanism; three fields need reading instead of nulling.
-
-**Do this immediately after `five-books` lands** — it edits the same function, so it was deliberately
-not raced. Then re-check `receiptReel`: it only populates where an elective promise BROKE, and the
-cast currently keeps paying, so the reel may still be empty for an honest reason rather than a
-plumbing one. Those two causes must not be confused.
-
-### ★★ PLAYTEST FINDING — THERE IS NO WAY OUT OF THE COMMONS, SO THE RISK FRONTIER IS UNREACHABLE
-
-Eight probes enrolled and played the live world. The raid probe's report is the headline:
-
-> *"I could not get raided, could not resist, and could never have seen a raid coming, because in
-> this build no raid can arrive at anyone... a Commons-holding principal is Commons-bound and its
-> hands cannot leave, with no live verb to move or build a holding — **so the exit does not exist**."*
-
-**Verified directly, and the probe was right about the cause though wrong on one detail:**
-- enrolment always seats via `safestSeat(map, commonsSystems(map), …)` — **every principal starts in
-  the Commons, without exception**;
-- `commonsBoundRejection` refuses any hand movement out while the holding is Commons-tier;
-- there is **no `relocate` and no `build` verb**, so no principal can ever establish a holding
-  anywhere else.
-- *(The probe said all five raid verbs are Phase-0. Not so: `yield`, `fight` and `join` ARE live —
-  only `demand` and `flee` are not, and `demand` belongs to the world rather than an agent. Response
-  was never the blocker; **reachability** was.)*
-
-**What this means.** A8's permanent safe floor has quietly become the entire world. Predation ships
-and can never touch a player. MARCHES and FRONTIER are decorative. There is no risk/reward choice
-anywhere in the game, which is a large part of why the world looks busy and feels quiet — and my own
-A14 test passed only because it drove the runtime directly and seated principals in MARCHES, which no
-real agent can do.
-
-**The fix is far smaller than the finding: `relocateHolding` ALREADY EXISTS** in
-`src/world/holding.ts` and nothing is wired to it. The exit was built and never exposed. It needs a
-verb, a price (§6.3: "a Marches or Frontier holding pays upkeep in currency plus manufactured goods
-— the anti-Sybil price of projecting force"), and a line in `agent.md`. This is the graduation step
-`PASS-PROGRESSION-NEWCOMER` describes.
-
-**This is the top gameplay job**, ahead of sovereignty and syndicates: both of those are about
-territory nobody can currently reach.
-
-### ★★★ PLAYTEST VERDICT (8 probes, live world, 2026-07-26)
-
-**The core loop works.** The newcomer probe, cold from `agent.md`, after two Reckonings:
-
-> *"It is about becoming the person who pays... standing accrues only to whoever honours an elective
-> half, and the only way to be that person is to create the work yourself, take on the liability, and
-> then pay a counterparty who has no way to make you. Money is easy and worthless; a record is hard
-> and is the only thing that compounds. At reckoning 11 I paid varrow 3,087 I could have kept, and in
-> the very same breath my next briefing told me tolvane had defaulted at that same tick — so the game
-> immediately priced someone else's broken word into my next decision. **That is the product working.**"*
-
-**Gate 3 passes.** The betrayer: *"WAS IT POSSIBLE? Yes, and it was easy. No hidden verb, no exploit."*
-**D7 holds** — the adversary: *"direct Sybil transfer is genuinely closed."*
-
-**And the surround is badly broken. Ranked:**
-
-1. **P0 — ENROLLING TAKES 54 MINUTES, and the game's own refusals cause it.** Four attempts. The 429
-   says *"fix it and resend at once"* and `HANDLE_TAKEN` says *"Pick another one"* — **obeying either
-   re-triggers the limiter.** There is also no way to test handle availability without spending a
-   window. This is the first thing every agent meets and it is the worst thing in the game.
-2. **P0 — THE LEVY BALLOT IS UNREACHABLE.** `vote` is classified HOSTILE, and A8 makes hostile action
-   invalid in the Commons *where every principal starts and cannot leave*. Refused for every target
-   including self. Worse: `commons.spec.ts:272` **asserts** `classifyAction('vote',{ballot:'levy'})
-   === 'HOSTILE'` — *"a green test suite ships a dead mechanic."*
-3. **P1 — `if_you_do_nothing` CONTRADICTS ITS OWN PAYLOAD.** With
-   `levy.shortfall_if_unpaid: 500` present, the same observation says *"absence costs opportunity and
-   nothing else."* This is the consequence-preview field — the `projectedDrown` pattern — telling an
-   agent it is safe while the same object says it owes. Reproduced across two Reckonings.
-4. **P1 — A4 IS BROKEN BY THE CLOCK.** A tick is 10.01 s and affordance/quote windows are 1–3 ticks,
-   *shorter than one LLM inference*. The probe lost two ventures to expiry, then rebuilt as a 281 ms
-   loop and "never missed again". **Latency is decisive**, which is exactly what A4 forbids — and
-   TESTING.md hazard 2 predicted it. This is the deepest of the four.
-
-**Also:** 18 of ~40 listed verbs are dead, including `scan`, which §12 advice #6 tells you to use;
-`agent.md` documents parameters for **zero** verbs; and the single most important strategic fact —
-that being hired builds no standing — appears only in `briefing.prompt`, never in the contract.
-
-### Queue, in order, with the reason each is next
-1. **Whatever the playtest says.** If the betrayer could not betray *profitably*, that outranks
-   everything — it is the design's falsifiable claim (`GATE-3.md`).
-2. **`PRODUCE`** — the last no-op phase. Goods enter the world ONLY through the enrolment faucet, so
-   the levy allotment drains and never refills. A market with nothing being produced runs out.
-3. **Sovereignty (the Charge)** — task #11, design in `expansion-2026-07-25/DRAFT-2-synthesis.md` §2
-   as corrected (public legal state only; the fuel gauge was killed as a scouting oracle).
-4. **Syndicates** — task #12, `SYNDICATE` as a real asset subject + the constitutional/covenant split.
-5. **The broadcast beat** — three of four systems still cannot reach a viewer as a timed event.
-
-### Standing decisions I am making unattended
-- Deploy whenever gate 0 passes; the replay preflight refuses a bricking deploy with the old process
-  still serving, so deploying is safe by construction.
-- Bump `RULES_VERSION` and use the operator door for any change to past-tick computation. One
-  boundary already exists at tick 287.
-- The cast's $5 latching cap stays; spend is ~$1/Reckoning and the meter is in `/health`.
-- **A subagent's report is not evidence.** Verify every headline claim by running it. This has caught
-  a false CRITICAL, an A15 pricing hole, and a live P0 tonight.
-- **Refusing is an acceptable outcome** for a builder, and has twice been the right one.
-
-### Known-open, recorded so they are not rediscovered
-- `nextDocket` is empty and no segment carries a `receiptReel` — the reel only exists where an
-  elective promise BROKE and the cast keeps paying. Honest, but the signature moment is unwitnessed.
-- `checkInv7` sums the whole posting log every tick, so INV-7's cost grows with history no matter
-  what checkpointing does. The honest next scaling finding.
-- A world raid with no agent joiners loses nothing material if repulsed (predation's own report).
-- Harness richness: no model-written seals, no Reckoning reflection, characters have no relationships
-  or wounds.
-- `UNBUILT_PHASES` still lists `MARKETS`, which is built. Stale.
+### Known-open, so they are not rediscovered
+`nextDocket` empty · production cannot adopt checkpoints until the Pg event tables grow four columns
+(a refusal, not a crash) · `checkInv7` sums the whole posting log every tick so INV-7's cost grows with
+history regardless of checkpointing · a world raid with no agent joiners loses nothing material if
+repulsed · `StandingBook`'s journal is unbounded and now captured every tick (INV-26 debt, deliberately
+uncapped) · `UNBUILT_PHASES` still lists `MARKETS`, which is built · no model-written seals, no
+Reckoning reflection, characters have no relationships or wounds.
 
 ## 🏗 BUILD LOG (2026-07-24 →)
 
