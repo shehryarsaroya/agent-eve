@@ -613,6 +613,13 @@ Permanent third: **`KEPT 214 · BROKEN 9 — LAST 30 DAYS`.** The scoreboard, mo
 
 Atomic resolution at T+0 preserves fairness. Then a **director service** computes a running order and the client plays it over 30–45 minutes:
 
+> **What the 30–45 minutes measures.** The whole broadcast — cold open, segments, the call, standings,
+> and the closing card — **not** the segments alone. The segments are ≤12 × 30–45 s = **6–9 minutes**;
+> most of the running time is §14.4's call, whose ballots are read one at a time, plus standings and
+> the post-game. `MAX_RUNDOWN_SEGMENTS` and `SEGMENT_SECONDS` in `frames/contract.ts` implement the
+> segment budget and are **not** in conflict with this figure. Stated because two independent readers
+> took it as a contradiction and one nearly "fixed" the correct constant.
+
 Cold open on the single largest amount riding on an unsecured promise → ≤12 segments of 30–45 s, ascending by stakes, with the **three largest say-do deltas held to the end** → each segment is exactly one venture: cast chips, the public line, the seal card flipping, the deed, the map beat, the plain-language consequence line → **the call** (§14.4) → standings and standing moves → the closing card: **tomorrow's docket.** Everything not in the rundown settles silently into the ledger and the ticker.
 
 Then **reveal-then-cooldown**: no material actions for one window after, so every agent gets a wake cycle on the same information before anyone can move. It is also the post-game show.
