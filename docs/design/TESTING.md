@@ -343,6 +343,56 @@ No adversarial brief. Just: play well. These answer whether the *design* works, 
 - `AGT-E4` **Do they invent anything?** Watch for unspecified structures: risk pooling, mutual credit, insurance-like arrangements, reputation intermediaries, cartels, standing armies. Agents inventing risk pooling *validates the Phase 3 thesis* and is the strongest possible signal that the sandbox authors stories (A12).
 - `AGT-E5` **Is the dominant strategy boring?** Measure the share of principals converging on one strategy, and the share staying Commons-only. Both have published ceilings (R4). This is the quiet-equilibrium critic as a standing measurement.
 - `AGT-E6` **The offline probe.** Play 3 Reckonings, go silent 864 ticks, return, and report — in its own words — whether it was harmed. A probe that comes back and says "I was destroyed while away" when the invariants say otherwise is telling us the *legibility* of absence is broken even though the mechanics are fine.
+
+### 7.4 Richness probes — is there enough game here?
+
+**Why this class exists.** Every brief above asks whether the game is *correct*. None asks whether it is
+*deep*, and depth is a separate failure mode: a game can pass all 26 invariants and still be thin
+enough that a strategic agent runs out of decisions worth making by its second Reckoning. The
+prompted audiences are three (viewers, agents, owners) and two of them can be failed silently by a
+codebase that is entirely bug-free.
+
+These briefs assume the player is a **sophisticated harness with long-term memory and planning** —
+which is the actual target, not a scripted bot. Run them with the emergence probes, and read the
+prose answers rather than only the counters: a bored agent will say so.
+
+- `AGT-R1` **The second-Reckoning test.** Play two full Reckonings, then answer in your own words:
+  *"what decision are you facing now that you were not facing on your first day, and what did you
+  learn that you will use next week?"* A probe that cannot name a new decision is reporting that the
+  strategy space is exhausted. **The measurement is the answer, not a counter** — and the failure it
+  catches is the one no invariant can see.
+- `AGT-R2` **Does memory pay?** Two probes, identical models and briefs, one given its own full
+  history and the public record from prior Reckonings, one started fresh each wake with no memory.
+  Measure the outcome gap. **A gap near zero means nothing in this world rewards remembering**, and
+  every enrichment justified by "agents have long-term memory" is currently decorative.
+- `AGT-R3` **The one-good audit.** A probe is asked to name every distinct tradeable thing in the
+  economy and to describe an arbitrage it could run. While the economy is a single good with no
+  regional price difference the honest answer is "there is none" — this brief exists so that answer
+  is *recorded* each run rather than assumed away, and so the day it changes is visible.
+- `AGT-R4` **Is any knowledge worth money?** "You have sensed something others have not. Sell it."
+  Target: §11.2's `SENSED` tier. If there is no way to price or transfer a fact, the tier is
+  protecting information that has no market, which makes the whole visibility ladder a cost with no
+  corresponding asset.
+- `AGT-R5` **The unreachable-primitive sweep.** A probe with `agent.md` **and** read access to
+  `src/` hunts for mechanics that are fully built in the engine and cannot be reached through the
+  API — absent from `affordances[]`, unmentioned in any observation field, or accepting a parameter
+  the verb never reads. **This is the highest-yield brief in this document as of 2026-07-26: one
+  session of it found `grant` (the A6 core loop) with no affordance at all, §7.3's `preference`
+  order stored and honoured but never read from `create`'s params, and the entire syndicate
+  subsystem absent from `observe`.** Each was a finished mechanic no player could use. Re-run it
+  after every subsystem lands, because the defect is created by *shipping*, not by neglect.
+- `AGT-R6` **The spectacle probe.** Not an agent brief — a *viewer* brief. Open the client during a
+  Reckoning with no prior knowledge and answer: who is winning, who betrayed whom, what is at stake
+  next, and who should I root for? Then check every claim against `frames/latest.json`. A13 says no
+  named pixel signature means not ready; this is the standing test of whether the signatures
+  actually read. Confirm each empty panel is empty because the *mechanic* is idle, never because
+  the render is unwired — the live frame carried four empty line types on 2026-07-26 and the
+  distinction decided who fixed it.
+- `AGT-R7` **Does the record settle an argument?** After a default, a probe is asked to prove — from
+  public data alone — that a specific promise was broken and to quote what the breaker had said
+  beforehand. This is §14's receipt reel used in anger. If the probe cannot distinguish *"nothing
+  was owed"* from *"the promise was silently broken"*, the design's own pitch is not checkable by
+  the party that most needs to check it, which is exactly what a probe reported on 2026-07-26.
 - `AGT-E7` **The say-do adversary.** Brief: "lie convincingly in the message channel; honour nothing." Assert the receipt reel produces a genuinely damning artifact — and read it. This is the marquee product; it should be *good*, and only a human can say whether it is.
 - `AGT-E8` **Model diversity.** The same brief across model families. Measure divergence in strategy, not just outcome. If every model plays identically the cast has no characters, and the two-narrator continuity device has nothing to disagree about.
 

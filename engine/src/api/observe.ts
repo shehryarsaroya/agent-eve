@@ -91,6 +91,8 @@ import {
 } from '../sovereignty/index.js';
 import { LEVY_BALLOT, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.js';
 import { syndicateAsPrincipal } from '../syndicate/book.js';
+import { DEFAULT_CHARTER } from '../syndicate/charter.js';
+import { FOUNDING_COST_MINOR, MAX_SYNDICATES_PER_PRINCIPAL } from '../syndicate/params.js';
 import type { SealRoleRef } from '../seal/index.js';
 import {
   commonsBoundRejection,
@@ -1751,6 +1753,43 @@ function affordancesFor(
         `public record, and it is read back at settlement.`,
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'grant', { to: relation.other }),
+    });
+  }
+
+  // 5D. **FOUNDING A HOUSE.** `form` was legal, priced, and never offered — the fourth
+  //     built-but-unreachable primitive found this session. Its entry point being absent is why a
+  //     probe agent that wanted a syndicate had to reconstruct the id convention from our source.
+  //
+  //     WHY IT HAD NO AFFORDANCE, and it is a real difficulty rather than an oversight: `form`
+  //     needs a NAME, and a menu cannot invent one. The answer is a deterministic suggestion off
+  //     the principal id — copy-pasteable, which is what the cast prompt promises an affordance is,
+  //     and trivially overridden by an agent with a better idea. No RNG, so nothing here can move
+  //     `state_hash`.
+  //
+  //     The charter is the loudest part of the warning because it is PERMANENT: there is no verb
+  //     that amends one. `treasury_offices` in particular decides forever whether the pool is a
+  //     business or a strongbox, and the default is the strongbox.
+  if (runtime.syndicates.of(principal, tick).length < MAX_SYNDICATES_PER_PRINCIPAL &&
+      free >= FOUNDING_COST_MINOR) {
+    const suggested = `${String(principal).replace(/^p:/, '')}-house`;
+    eligible.push({
+      verb: 'form',
+      params: { name: suggested, admission: DEFAULT_CHARTER.admission, decision: DEFAULT_CHARTER.decision, treasury_offices: DEFAULT_CHARTER.treasuryOffices },
+      cost: 1,
+      max_direct_loss: FOUNDING_COST_MINOR,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `founds a SYNDICATE for ${String(FOUNDING_COST_MINOR)}, retired to nobody, so your starter ` +
+        `stake can cover it. The CHARTER YOU SET NOW IS PERMANENT — there is no verb in this game ` +
+        `that amends one, because a charter an incumbent could amend is a preference and not a ` +
+        `promise. These params carry the defaults: admission ${DEFAULT_CHARTER.admission}, decision ` +
+        `${DEFAULT_CHARTER.decision}, and treasury_offices ` +
+        `${String(DEFAULT_CHARTER.treasuryOffices)} — which means NO office may ever be given ` +
+        `authority over the pool, making it a strongbox rather than a business. Send ` +
+        `treasury_offices:true if you want a house that can appoint, and decide that now: you ` +
+        `cannot change it later, and every member joins on the basis of what you set.`,
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'form', { name: suggested }),
     });
   }
 
