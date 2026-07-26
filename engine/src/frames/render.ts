@@ -130,7 +130,8 @@ export interface UpcomingView {
   readonly venture: VentureId;
   readonly atStake: Minor;
   readonly parties: readonly PrincipalId[];
-  readonly firstTimeTogether: boolean;
+  /** NEVER · HELD · BROKEN. A boolean here printed "and it held" about defaults (A5′). */
+  readonly priorDealings: 'NEVER' | 'HELD' | 'BROKEN';
 }
 
 function handleOf(src: FrameSource, p: PrincipalId): Handle {
@@ -393,9 +394,14 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     .map((u) => ({
       venture: u.venture,
       headline: headlineForUpcoming(src, u),
-      tension: u.firstTimeTogether
-        ? 'These two have never dealt with each other before.'
-        : 'They have dealt before, and it held.',
+      // Three states, because two of them used to share one sentence. `BROKEN` is the better card
+      // anyway: a pair with a default between them is the most watchable row on a docket.
+      tension:
+        u.priorDealings === 'NEVER'
+          ? 'These two have never dealt with each other before.'
+          : u.priorDealings === 'BROKEN'
+            ? 'They have dealt before, and a promise between them was broken.'
+            : 'They have dealt before, and it held.',
       atStake: u.atStake,
       cast: chipsFor(src, u.parties),
     }));

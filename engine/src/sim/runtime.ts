@@ -6072,21 +6072,52 @@ export class Runtime {
    * *finished*, whichever way it went. "It held" is a separate claim the docket line makes, and it
    * is why this returns a plain boolean rather than a verdict.
    */
-  private haveDealtBefore(
+  /**
+   * What happened the last time these parties dealt — **three answers, not two.**
+   *
+   * This was `haveDealtBefore`, a boolean, and `render.ts` turned `false` into *"These two have
+   * never dealt with each other before"* and `true` into *"They have dealt before, and it held."*
+   * The predicate only asked whether a RESOLVED venture was shared. It never asked whether it
+   * held. So a pair whose single prior deal was a **default** got a public frame stating that it
+   * held.
+   *
+   * The comment above `firstTimeTogether` identified exactly this hazard for the `false` branch —
+   * *"that is the record being WRONG about a relationship, which is what A5′ exists to forbid and
+   * what other agents read to decide who to trust"* — and the `true` branch then reintroduced it.
+   * Found by a spectacle critic reading the render path, not by any test: no invariant covers the
+   * truth of a sentence.
+   *
+   * `HELD` is only returned after looking for a break and not finding one. The venture book answers
+   * *did they deal*; the standing journal — the same source `relationsFor` walks, so there is one
+   * home for what passed between two principals — answers *did it hold*.
+   */
+  priorDealings(
     creator: PrincipalId,
     fillers: readonly PrincipalId[],
     exclude: VentureId,
-  ): boolean {
-    if (fillers.length === 0) return false;
+  ): 'NEVER' | 'HELD' | 'BROKEN' {
+    if (fillers.length === 0) return 'NEVER';
     const wanted = new Set<string>(fillers.map(String));
+    let dealt = false;
     for (const past of this.ventures.all()) {
       if (past.id === exclude || past.resolvedAtTick === null) continue;
       if (past.creator !== creator) continue;
       for (const role of past.roles) {
-        if (role.filledByPrincipal !== null && wanted.has(String(role.filledByPrincipal))) return true;
+        if (role.filledByPrincipal !== null && wanted.has(String(role.filledByPrincipal))) {
+          dealt = true;
+          break;
+        }
       }
+      if (dealt) break;
     }
-    return false;
+    if (!dealt) return 'NEVER';
+    // A break in EITHER direction makes "it held" false. Which of them broke it is the receipt
+    // reel's job at settlement; the docket line only has to stop asserting something untrue.
+    for (const relation of this.relationsFor(creator)) {
+      if (!wanted.has(String(relation.other))) continue;
+      if (relation.broke > 0 || relation.youBroke > 0) return 'BROKEN';
+    }
+    return 'HELD';
   }
 
 
@@ -8837,7 +8868,7 @@ export class Runtime {
       //
       // Built from the LIVE ventures rather than from anything predicted. `atStake` is the elective
       // half — the part that is a promise rather than an execution, which is the only part with any
-      // drama in it — and `firstTimeTogether` is what makes a card a sentence instead of a number.
+      // drama in it — and `priorDealings` is what makes a card a sentence instead of a number.
       tomorrow: this.ventures
         .live()
         .map((v) => ({
@@ -8865,7 +8896,7 @@ export class Runtime {
           // So it is computed from the venture book's own history: have these parties ever
           // shared a RESOLVED venture. Bounded work — at most `MAX_DOCKET_CARDS` cards survive
           // the cut, and each is one pass over a book the process already holds.
-          firstTimeTogether: !this.haveDealtBefore(
+          priorDealings: this.priorDealings(
             v.creator,
             v.roles.map((r) => r.filledByPrincipal).filter((x): x is PrincipalId => x !== null),
             v.id,

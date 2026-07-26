@@ -122,4 +122,68 @@ describe("tomorrow's docket is built from what is actually riding", () => {
     // the count is printed so a zero is visible rather than silently trivial.
     expect(claimed).toBeGreaterThanOrEqual(0);
   });
+
+  it('never says "it held" about a pair with a broken promise between them (A5\u2032)', () => {
+    // THE ASSERTION NEITHER TEST ABOVE MADE. Both checked whether the parties had DEALT; neither
+    // checked whether the deal HELD. `haveDealtBefore` returned true for any resolved shared
+    // venture, so a pair whose only prior deal was a DEFAULT got a public frame stating that it
+    // held — the record being wrong about a named relationship, which is the thing A5\u2032 forbids
+    // above all others and which other agents read to decide who to trust.
+    //
+    // Found by a spectacle critic reading the render path. No invariant covers the truth of a
+    // sentence, which is exactly why this class of defect needs an assertion of its own.
+    //
+    // Checked against the STANDING JOURNAL rather than against the field that produced the
+    // sentence, so it cannot pass by agreeing with itself.
+    let held = 0;
+    for (const seed of ['docket-a', 'docket-b', 'docket-c']) {
+      const rt = world(seed);
+      const frame = rt.reckoningFrame();
+      for (const card of frame?.docket ?? []) {
+        if (!/and it held/.test(card.tension)) continue;
+        held += 1;
+        const v = rt.ventures.get(card.venture);
+        const fillers = new Set(
+          (v?.roles ?? [])
+            .map((r) => r.filledByPrincipal)
+            .filter((x): x is PrincipalId => x !== null)
+            .map(String),
+        );
+        for (const relation of rt.relationsFor(v?.creator as PrincipalId)) {
+          if (!fillers.has(String(relation.other))) continue;
+          expect(
+            relation.broke + relation.youBroke,
+            `${card.venture}'s card says "it held" and the journal records ` +
+              `${String(relation.broke + relation.youBroke)} broken promise(s) between ` +
+              `${String(v?.creator)} and ${String(relation.other)}. The docket is asserting ` +
+              'something untrue about two real agents, in public, on the surface other agents ' +
+              'price each other from.',
+          ).toBe(0);
+        }
+      }
+    }
+    // ── THIS ASSERTION IS CURRENTLY VACUOUS, AND SAYING SO IS THE POINT ──────
+    //
+    // 19 cards say "it held" across these seeds and every one of them genuinely held, so the
+    // assertion passes without ever meeting the case it exists for. I know it is vacuous because I
+    // mutated the fix — making `priorDealings` unable to return BROKEN at all — and this test
+    // stayed GREEN.
+    //
+    // The reason is worth recording: **the heuristic cast never breaks a promise.** Measured across
+    // six seeds and 900 ticks each, zero pairs have a DEFAULT recorded between them. So no test
+    // driven by the heuristic can exercise this path, and that is a fact about the whole suite, not
+    // about this file — `AGT-E1` ("does anyone betray anyone?") is unanswerable without LLM agents
+    // for exactly the same reason.
+    //
+    // Nor can the state be faked. A `DEFAULT` standing change must cite an eventId that is in the
+    // `DefaultRegister` (`reckoning/standing.ts:79-82`) because *"reputation must never fall for an
+    // accusation the engine cannot justify"* — so `checkStandingJournal` would halt a synthetic
+    // default. That is A5' enforced structurally, and it is right to make this hard.
+    //
+    // So: the guard is real, the fix is real, and the discrimination is owed by a probe run with
+    // real agents. Labelled rather than dressed up, because a guard I claim is proven and is not is
+    // worse than one I mark.
+    console.log('docket cards claiming "it held" across three seeds:', held);
+    expect(held, 'no card said "it held", so the assertion never ran at all').toBeGreaterThan(0);
+  });
 });
