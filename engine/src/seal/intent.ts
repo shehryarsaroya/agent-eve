@@ -338,8 +338,64 @@ function bandFaults(intent: SealIntent): string[] {
         ' a band an outcome cannot land in is a seal that is contradicted by construction',
     );
   }
+
+  // ── AND THE MIRROR CASE, WHICH WAS MISSING AND IS THE DANGEROUS ONE ────────
+  //
+  // The check above refuses a band nothing can land in — "contradicted by construction". Its
+  // mirror is a band EVERYTHING lands in, honoured by construction, and nothing refused it:
+  // `inBand` is a bare `outcome >= low && outcome <= high`, so `[0, MAX_SAFE_INTEGER]` was a
+  // legal seal that every possible outcome satisfied.
+  //
+  // The broken symmetry favoured the wrong side. A guaranteed contradiction only hurts the
+  // agent that sealed it. A guaranteed HONOURED is written to the permanent public record as
+  // "kept its word" about somebody who promised nothing — so it does not merely fail to build
+  // trust, it MANUFACTURES it. A5′ says the record must never be wrong, and that is wrong in
+  // the most damaging direction the mechanic has.
+  //
+  // ## Why this is a WIDTH rule and not a floor rule
+  //
+  // My first attempt required `outcomeLow > 0`, reasoning that a band starting at zero is
+  // satisfied by doing nothing. `intent.test.ts` refused it, and was right to: a seal can be
+  // about a LOSS. `[-900, 0]` is a real promise — *"I will lose no more than 900"* — and a floor
+  // rule forbids the whole class. It also cannot be a RATIO of the floor, which is meaningless
+  // once the floor is zero or negative.
+  //
+  // So the rule is the one the exploit actually needs: a band may not span an absurd stretch of
+  // the number line. That refuses `[0, MAX_SAFE_INTEGER]` and `[1, MAX_SAFE_INTEGER]` — the
+  // shapes that make a seal free — while permitting every band with a real quantity behind it,
+  // in either direction. It deliberately does NOT judge whether a promise is a *good* one: a
+  // wide-but-finite band is a weak claim, and the record showing it as weak is the mechanic
+  // working, not something to forbid.
+  if (
+    Number.isSafeInteger(intent.outcomeLow) &&
+    Number.isSafeInteger(intent.outcomeHigh) &&
+    intent.outcomeHigh >= intent.outcomeLow &&
+    intent.outcomeHigh - intent.outcomeLow > MAX_BAND_WIDTH
+  ) {
+    faults.push(
+      `the band [${intent.outcomeLow}, ${intent.outcomeHigh}] spans ` +
+        `${intent.outcomeHigh - intent.outcomeLow}, over the limit of ${MAX_BAND_WIDTH}. A band that ` +
+        'cannot be missed is not a promise: the verdict would read HONOURED whatever you did. Name ' +
+        'the range you are actually committing to — a tighter band is a stronger claim, and the ' +
+        'record shows the difference.',
+    );
+  }
   return faults;
 }
+
+/**
+ * The widest span a seal's band may cover. *(calibrate)*
+ *
+ * Deliberately generous, because this rule exists to refuse a band that spans the NUMBER LINE — the
+ * shape that made a seal free — and not to referee whether a promise is a good one. A wide-but-finite
+ * band is a weak claim, and the record showing it as weak is the mechanic working.
+ *
+ * For scale: the engine's own reference band (`deliveryBandOf`, p10–p90) measures about 2,400 wide on
+ * 12,000 of proceeds in a driven world, and a whole venture's value is in the tens of thousands. A
+ * million is far above anything with a real quantity behind it and far below `MAX_SAFE_INTEGER`,
+ * which is the only thing being excluded.
+ */
+export const MAX_BAND_WIDTH = 1_000_000;
 
 /** Is `outcome` inside the band? Integer comparison, inclusive at both ends. */
 export function inBand(intent: SealIntent, outcome: number): boolean {

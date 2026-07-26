@@ -25,6 +25,9 @@
  * reported rather than encoded.
  */
 
+// Bands here are realistic rather than arbitrary: `[0, PROCEEDS]` and `[1_000, PROCEEDS]` were
+// picked as "a band the outcome lands in", and `intentFaults` now refuses a band that cannot be
+// missed — a zero floor is satisfied by doing nothing and a 12x width is HONOURED whatever happens.
 import { describe, expect, it } from 'vitest';
 import { bps, minor, type Minor } from '../../src/core/units.js';
 import { VENTURE_EVENT_KINDS, computeClaims, type Election } from '../../src/venture/index.js';
@@ -154,7 +157,7 @@ describe('E2E-1a — the honoured branch, through a whole Reckoning', () => {
     sealFor(
       f,
       BRAM,
-      { verb: 'haul', target: haul.id, measure: 'MINOR', outcomeLow: 0, outcomeHigh: PROCEEDS },
+      { verb: 'haul', target: haul.id, measure: 'MINOR', outcomeLow: Math.trunc(PROCEEDS / 2), outcomeHigh: PROCEEDS },
       { venture: haul.id, roleIndex: 1 },
     );
     const deedEvent = appendPublic(f, {
