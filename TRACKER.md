@@ -322,17 +322,54 @@ early-game cession harder than D7 intended. Both priced, neither applied — eac
 **The rule both produced: an alarm that is red while nothing is broken is one an operator stops
 reading, which is how scar #14b happened in the first place.**
 
-### Verify next (do not skip — this could be muting a real alarm)
-`HEALTH_WARMUP_TICKS = 24`, so the deciding-share floor resumes judging ~24 min after the 06:24
-deploy. **Confirm `by_source.LIVE > 0` and the share clears 2,500 bps.** If it does not, the cast is
-genuinely not deciding post-restart and the health fix hid it rather than corrected it.
+### Health verification: RESOLVED, the fix corrected a false alarm
+Polled across three ticks post-warmup: `LIVE` climbed 0 → 15 → 17 with `cast.live` matching, so the
+cast is deciding and the census fix was right. `estimatedCalls` stays 0 because plans were **restored
+from the durable cast vault** — no re-planning needed, which is what that vault is for.
+
+**One thing to watch, not yet chased:** the deciding share *falls* over a quiet stretch (3125 → 2833 →
+2394 bps) because heuristic bots decide every tick while cast members ride restored intents. That is
+A3 working as designed, but it means the 2,500 floor measures how often intents need refreshing rather
+than whether the cast is alive. The floor may fire legitimately during a quiet run. Decide whether the
+floor should count *principals that decided this Reckoning* instead of *decisions this window* — do
+not simply lower it.
+
+### PRODUCE landed, and it jumped the queue for a measurable reason
+`grep -rn "sourceGoods(" src` returned **exactly one** call site — the enrolment grant — against
+**two** recurring sinks once the Charge landed. Goods entered a world once per identity and left
+forever, so the terminal state was every obligation unpayable and the record accusing every principal
+of a default our own arithmetic made unavoidable. `endowment.ts` already refuses to remove the starter
+allotment in those words; this is that sentence applied to the world instead of to one newcomer. So it
+went ahead of syndicates: another political system on an economy with no source makes the death more
+elaborate, not less certain.
+
+**Output is bounded by the MAP, never by the population.** A system has a per-tick yield and the WORKS
+standing there *divide* it — verified at 1, 2, 3, 5, 10 and 37 occupants, all extracting exactly the
+tier yield. A structure that *minted* would be a worse D7 (a perpetual flow rather than a one-time
+grant, scaling with the one resource A15 says is free). Two wanted side effects: crowding makes
+production contend over *places*, which is what gives territory a reason to be worth holding; and the
+tier gradient (COMMONS 80 · MARCHES 110 · FRONTIER 150, *calibrate*) is `graduate`'s risk/reward
+argument made material, with the Commons margin the thinnest that is still positive — A8 promises
+safety, not prosperity.
+
+`build {"kind":"WORKS"}`, no verb slot spent. Paid from `freeCash`, so the grant cannot buy permanent
+income. Posted against `GOODS_FAUCET.EXTRACTION`, unused since commit #1 — the split from `PRODUCTION`
+is what lets the audit check extraction against the map and production against enrolments. INV-W1
+halts if a share split ever sums above the tier yield. In `state_hash` and in
+`CHECKPOINT_REQUIRED_TABLES` — named in the same change, which `books-in-the-hash` demanded within a
+minute. **No `RULES_VERSION` bump:** the boot stream still reports 14 tripwires verified and 13
+declared divergences, identical to the pre-PRODUCE boot, so no past tick's computation moved. Verified
+by diffing the stream, not by reasoning about it.
 
 ### Queue after it
 1. **Syndicates** (task #12) — `SYNDICATE` as a real asset subject + the constitutional/covenant split.
-   Deliberately not started in parallel: it touches runtime/ledger/observe, same as sovereignty.
-2. **`PRODUCE`** — the last no-op phase. Goods enter only through the enrolment faucet, so the levy
-   allotment drains and never refills.
-3. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event.
+   The last pending system.
+2. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event. WORKS now
+   needs a pixel signature too (A13): a worked system should read as worked.
+3. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
+   advice #6 tells you to use), parameters documented for **zero** verbs, and the single most important
+   strategic fact — being hired builds no standing — appears only in `briefing.prompt`. **WORKS is not
+   in `agent.md` at all yet**, which is the same reachability failure one layer out.
 4. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
    advice #6 tells you to use), parameters documented for **zero** verbs, and the single most important
    strategic fact — being hired builds no standing — appears only in `briefing.prompt`.
