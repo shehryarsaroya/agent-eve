@@ -526,21 +526,32 @@ reverted. The design and the bug are recorded because the bug is not obvious:
 not ticks — so it grows far more slowly. It is a halting invariant, and shipping a delicate
 optimisation to one of those under time pressure is how a world halts on a world that does not exist.
 
-### Still open, smaller
-- Pooled goods are **not raidable** (D11), deliberately — making a bodiless subject raidable means
-  deciding who defends it, which belongs with a later offices pass.
-- `StandingBook`'s journal is unbounded (INV-26 debt, deliberately uncapped).
-- Production cannot adopt checkpoints until the Pg event tables grow four columns (a refusal, not a
-  crash).
-2. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event. WORKS now
-   needs a pixel signature too (A13): a worked system should read as worked.
-3. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
-   advice #6 tells you to use), parameters documented for **zero** verbs, and the single most important
-   strategic fact — being hired builds no standing — appears only in `briefing.prompt`. **WORKS is not
-   in `agent.md` at all yet**, which is the same reachability failure one layer out.
-4. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
-   advice #6 tells you to use), parameters documented for **zero** verbs, and the single most important
-   strategic fact — being hired builds no standing — appears only in `briefing.prompt`.
+### Production can take a bounded boot now
+`hydrateEventsForSnapshot` refused to adopt a checkpoint it could not re-check the §11.2 ladder from,
+so production replayed **from genesis on every restart** at a cost growing with the age of the world —
+and A10 forbids ever resetting, so it only went one way.
+
+The note that stood here ("the Pg event tables lack four columns") was **half the story**. The columns
+were missing *and* `PgJournalStore.ticksPage` returned `events: []`, so however complete the schema
+became the hydrate had nothing to read. All four values had been arriving on `PersistedEvent` all along
+and being dropped on the way into SQL — which is why nothing failed: the in-memory path was complete
+and only the durable one was lossy.
+
+**The refusal is narrowed, not removed.** A pre-migration row genuinely does not know its tier
+(`is_public` cannot tell PARTIES from SEALED), and backfilling a guess would put a fabricated tier in
+the permanent record — A5′ with our own migration as the cause. Those rows are skipped, `restoreTo`
+refuses to grow, adoption falls back to a genesis replay, and the refusal expires by itself as the
+world moves past the migration. Added by `ALTER` as well as in `CREATE`, because `CREATE TABLE IF NOT
+EXISTS` does nothing to a table that already exists.
+
+### Still open, and each is a deliberate choice rather than a gap
+- **Pooled goods are not raidable** (D11). Making a bodiless subject raidable means deciding who
+  defends it, which belongs with a later offices pass.
+- **INV-21's resumable replay** — attempted, reverted, design and trap recorded above. Low priority:
+  the standing journal grows on Reckonings, not ticks.
+- `docket` and `works` are both legitimately **zero in the live world** right now — nothing has a
+  filled role carrying elective value, and 2 of 21 can afford a WORKS. Both mechanisms are proven in
+  driven worlds. **Watch them populate.**
 
 ### Standing decisions, unattended
 Deploy whenever gate 0 passes (the replay preflight refuses a bricking deploy with the old process
