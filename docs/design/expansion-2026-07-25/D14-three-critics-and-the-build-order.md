@@ -216,6 +216,53 @@ violation"* — passing a book with one undeclared array would halt the world. N
 already held 115 rows at tick 400 with no cap constant, which the architecture critic identifies as
 the largest uncapped structure in hashed state.
 
+**Wired 2026-07-26: the grant book**, with `MAX_GRANTS` and `MAX_GRANT_SPENDS` imported rather than
+retyped, captured through the state table so the walker checks the shape that reaches `state_hash`.
+Chosen first because `MAX_GRANT_SPENDS` **throws with no pruning anywhere** — the A6 core loop dies
+permanently at 16,384 draws and until now nothing could watch that number approach. Eighteen tables
+remain; the map above is what they need.
+
+### 5A. The seven other skipping invariants — and the false alarm I nearly filed
+
+Measured after wiring INV-26: seven clauses appear in `report.skipped` on **every one of 700 ticks
+across two Reckonings** — `INV-5 · INV-6 · INV-16 · INV-18 · INV-19 · INV-21 · INV-23`. I labelled
+that "seven more permanent holes like INV-26" in a commit message. **That was wrong, and the way it
+was wrong is the useful part.**
+
+Two things I had not checked:
+
+1. **Appearing in `skipped` does not mean "did not run".** An invariant with several clauses is
+   listed if *any* clause skipped. INV-23's grant table **is** supplied (`grants:
+   this.grantBook.all()`), so its cycle clause runs every tick — it is listed only because the
+   signed-deal clause has no `deals` input.
+2. **`checkInvariants` is called twice, from two places.** `tick/loop.ts:1148` runs it per tick;
+   **`reckoning/driver.ts:724` runs it again at the settlement tick** with `settlements` supplied. So
+   INV-6 (splits sum exactly), INV-18 (no event touches the settlement set inside the freeze) and
+   INV-19 (`acted_on_state_version` at settlement — one of §15.4's five named false-default defences)
+   **do run, at settlement, which is the only place they mean anything.** Their per-tick skip is
+   correct by design.
+
+So the corrected finding is **two partial holes, not seven**:
+
+- **INV-5's second half never runs.** Its skip reads *"the 'served' half was not supplied; only the
+  book's own cache was compared"*, and `servedExposure` — described in the inputs as *"the EXPOSURE
+  the observation layer actually served"* — is supplied by nobody. So the clause compares the book
+  against itself, and the half that would catch **the observation layer disagreeing with the book**
+  is inert. That is a scar #5 detector that cannot see scar #5.
+- **INV-23's counterparty clause never runs.** *"No signed-deal journal supplied"* — so *"no delegate
+  is counterparty to a deal it signs on another's behalf"*, which §E2E-11 calls the one form of
+  betrayal that must be **invalid rather than merely legible**, is unchecked. The `SignedDeal` type
+  exists and nothing produces it.
+
+INV-16's database half is legitimately out-of-process (a `REVOKE` in `db/migrate.ts`, reachable only
+by AX-A5-1 against live Postgres) and is flagged `outOfProcess` so `requireAll` cannot escalate it.
+INV-21 needs the same two-call verification I did for INV-6/18/19 before anyone claims anything about
+it.
+
+**The lesson, which is the same one as §8 below:** a skip list is not a coverage report. "Skipped on
+every tick" and "never runs" look identical from outside, and telling them apart took two greps —
+which is exactly the cheap check I skipped before writing the claim down.
+
 ---
 
 ## 6. The scaling claim is no longer true
