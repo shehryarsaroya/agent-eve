@@ -503,6 +503,16 @@ export const MAX_MARKET_ROWS = 24;
  */
 export { STARTER_STAKE } from '../ledger/endowment.js';
 import { STARTER_STAKE } from '../ledger/endowment.js';
+import { Book as WorksBook, worksStateTable } from '../works/book.js';
+import { produce as produceNow } from '../works/produce.js';
+import { checkWorks } from '../works/invariants.js';
+import {
+  WORKS_BUILD_QTY,
+  WORKS_COST_MINOR,
+  WORKS_GOOD,
+  WORKS_SPINUP_TICKS,
+  YIELD_PER_TICK,
+} from '../works/params.js';
 
 /** INV-26: raid ticker lines retained for the frame. Bounded, published. */
 export const MAX_RAID_TICKER_LINES = 32;
@@ -1390,6 +1400,8 @@ export class Runtime {
   readonly obligations = new SimpleObligationBook();
   readonly engine: Engine;
   readonly census = new DecisionCensus();
+  /** The WORKS book. Swapped wholesale on restore, like every other hashed book. */
+  private worksBook = new WorksBook();
   readonly hazards: boolean;
 
   /**
@@ -1650,6 +1662,15 @@ export class Runtime {
         // argued: seven books were found outside the hash in one night, one of them
         // StandingBook, and the symptom was a snapshot that matched byte-for-byte while
         // reputation silently reset. There is no eighth.
+        // The WORKS book decides how many goods enter the world every tick, so it is inside
+        // the hash and the abort path for the same reason the EncumbranceBook had to be:
+        // two worlds that disagree about who is extracting what must never hash the same.
+        worksStateTable(
+          () => this.worksBook,
+          (book) => {
+            this.worksBook = book;
+          },
+        ),
         sovereigntyStateTable(
           () => this.sovereigntyBookRef,
           (book) => {
@@ -1818,6 +1839,18 @@ export class Runtime {
         },
         MARKETS: (ctx) => {
           this.clearMarketsNow(ctx);
+        },
+        // ── PRODUCE, and the slot is the rule ──────────────────────────────
+        //
+        // The third of the three no-op hooks reserved in commit #1, cashed on the same
+        // terms as MARKETS and PREDATE: filling it shifts no other phase's seeded
+        // sub-stream, and nothing here reads the clock or the RNG at all — extraction is
+        // a pure function of the map, the book and the tick.
+        //
+        // It runs AFTER markets clear (§15.2's clear-before-produce) so a principal
+        // cannot see this tick's clearing price and then decide what to make.
+        PRODUCE: (ctx) => {
+          this.produceNow(ctx);
         },
         VENTURES: (ctx) => {
           this.resolveFills(ctx);
@@ -5612,6 +5645,215 @@ export class Runtime {
     return { ok: true, value: null };
   }
 
+
+  // ── WORKS: the production structure (§10.2, A15) ─────────────────────────
+
+  /** Every live WORKS this principal holds. Read by `observe` and by the frame. */
+  worksOf(principal: PrincipalId): readonly { readonly id: string; readonly system: SystemId; readonly online: boolean; readonly extracted: number }[] {
+    return this.worksBook.ofPrincipal(principal).map((w) => ({
+      id: w.id,
+      system: w.system,
+      online: this.engine.tick >= w.onlineAtTick,
+      extracted: w.extracted,
+    }));
+  }
+
+  /** The book itself, for the invariant pass and the tests. */
+  get works(): WorksBook {
+    return this.worksBook;
+  }
+
+  /**
+   * What one more WORKS at `system` would extract per tick, and what it costs.
+   *
+   * **ONE HOME, THREE READERS** — the affordance in `api/observe.ts`, the `works` block of
+   * the observation, and {@link Runtime.vBuildWorks}. The share falls as a place fills up, so
+   * an agent that is quoted the *empty* rate and then extracts a third of it was misled about
+   * the only number that decides whether the build pays for itself (A2).
+   */
+  worksQuote(principal: PrincipalId, system: SystemId): {
+    readonly system: SystemId;
+    readonly tier: ZoneTier;
+    readonly yieldPerTick: number;
+    readonly occupants: number;
+    /** What this principal would get per tick once online, at today's crowding. */
+    readonly sharePerTick: number;
+    readonly costMinor: Minor;
+    readonly costQty: Qty;
+    readonly freeMinor: Minor;
+    readonly availableQty: Qty;
+    readonly spinupTicks: number;
+    readonly alreadyHeld: boolean;
+    readonly affordable: boolean;
+  } {
+    const tier = tierOf(this.world.map, system);
+    const occupants = this.worksBook.liveAt(system).length;
+    const free = freeCash(this.ledger, principal);
+    const available = this.chargeGoodAt(principal, system);
+    return {
+      system,
+      tier,
+      yieldPerTick: YIELD_PER_TICK[tier],
+      occupants,
+      // Divided by the occupants THIS BUILD WOULD MAKE, not by today's count. Quoting the
+      // pre-arrival share overstates the return of every build into a crowded place.
+      sharePerTick: Math.trunc(YIELD_PER_TICK[tier] / (occupants + 1)),
+      costMinor: WORKS_COST_MINOR,
+      costQty: WORKS_BUILD_QTY,
+      freeMinor: free,
+      availableQty: available,
+      spinupTicks: WORKS_SPINUP_TICKS,
+      alreadyHeld: this.worksBook.atCapacity(principal, system),
+      affordable: free >= WORKS_COST_MINOR && available >= WORKS_BUILD_QTY,
+    };
+  }
+
+  /**
+   * Raise a WORKS.
+   *
+   * The order is the honesty, exactly as `vGraduate` and `vDeliver` state it: refuse on every
+   * ground first, then charge, then record. A build that took the currency and then failed on
+   * the goods would leave a principal poorer with nothing standing.
+   */
+  private vBuildWorks(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const holdingRow = this.world.holdingByPrincipal.get(req.principal);
+    if (holdingRow === undefined) {
+      return reject('A2', `${req.principal} has no holding, so there is nowhere to raise a WORKS.`);
+    }
+    const holding = holdingOf(this.world, req.principal);
+    const system = (readString(req.params, ['system', 'system_id', 'at', 'where']) ?? holding.system) as SystemId;
+    if (this.world.map.systems.get(system) === undefined) {
+      return reject('A2', `${system} is not a system on this map.`);
+    }
+    // A WORKS is worked where your body is. Same rule as an ANCHOR, and for the same reason:
+    // otherwise a principal owns extraction everywhere and presence means nothing.
+    if (holding.system !== system) {
+      return reject(
+        'A2',
+        `a WORKS is raised where your BODY stands, and your holding is at ${holding.system}. ` +
+          `Move it with \`graduate\` — or raise the WORKS at ${holding.system} instead.`,
+      );
+    }
+    const quote = this.worksQuote(req.principal, system);
+    if (quote.alreadyHeld) {
+      return reject(
+        'A15',
+        `you already hold a WORKS at ${system}, and a place yields the same total however many stand on ` +
+          'it — a second one of yours would only divide your own share. Raise it somewhere else.',
+      );
+    }
+    if (quote.freeMinor < quote.costMinor) {
+      return reject(
+        'A15',
+        `a WORKS costs ${String(quote.costMinor)} and you can spend ${String(quote.freeMinor)}. That figure ` +
+          'is your EARNINGS: locked stores do not count, and neither does the starter stake — a WORKS turns ' +
+          'capital into a standing claim on a place, so buying one with the grant would make a free identity ' +
+          'into permanent income (D7/A15). Earn it by hauling, trading or completing ventures.',
+      );
+    }
+    if (quote.availableQty < quote.costQty) {
+      return reject(
+        'A15',
+        `a WORKS also consumes ${String(quote.costQty)} units of ${WORKS_GOOD} standing at ${system}, and you ` +
+          `have ${String(quote.availableQty)} unpledged there. They are destroyed into the build, not stored.`,
+      );
+    }
+
+    try {
+      this.ledger.retireCurrency({
+        eventId: `works.build:${system}:${String(ctx.tick)}:${req.principal}` as EventId,
+        tick: ctx.tick,
+        from: storesAccount(req.principal),
+        amount: quote.costMinor,
+        sink: CURRENCY_SINK.UPKEEP,
+      });
+    } catch (error: unknown) {
+      return reject(
+        'INV-3',
+        `the WORKS cost could not be paid (${describeError(error)}); nothing moved and nothing was raised.`,
+      );
+    }
+    const burned = this.burnAnchorGoods(req.principal, system, quote.costQty, ctx.tick);
+    if (burned < quote.costQty) {
+      this.faults.push(
+        `${req.principal} raised only ${String(burned)} of the ${String(quote.costQty)} units a WORKS at ` +
+          `${system} consumes; the WORKS was not raised`,
+      );
+      return reject('INV-3', 'the WORKS materials could not be raised; nothing was built.');
+    }
+
+    const row = this.worksBook.raise({ system, holder: req.principal, tick: ctx.tick });
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'works.raised',
+      rulesVersion: RULES_VERSION,
+      visibility: 'PUBLIC',
+      audience: [],
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `works::${row.id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      payload: {
+        works: row.id,
+        system,
+        holder: req.principal,
+        tier: quote.tier,
+        online_at_tick: row.onlineAtTick,
+        share_per_tick: quote.sharePerTick,
+        occupants: quote.occupants + 1,
+      },
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * One tick of extraction. Bounded by the map, never by the population.
+   *
+   * Nothing here draws from the RNG, so filling the PRODUCE slot could not shift another
+   * phase's seeded sub-stream — the promise the no-op hook was reserved to keep.
+   */
+  private produceNow(ctx: PhaseContext): void {
+    const rows = produceNow({
+      book: this.worksBook,
+      ledger: this.ledger,
+      map: this.world.map,
+      tick: ctx.tick,
+    });
+    for (const row of rows) {
+      this.emitRow({
+        tick: ctx.tick,
+        kind: 'works.extracted',
+        rulesVersion: RULES_VERSION,
+        visibility: 'PUBLIC',
+        audience: [],
+        // Nobody acted: extraction is the world giving up what a place yields, on a rule.
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: `works::${row.works}`,
+        parentEventId: null,
+        // A place giving up what it yields is the map's own motion, and §11.2 makes the map
+        // public. The QUANTITY is safe for the same reason the Charge's `due` is: it is fixed
+        // by the tier and the occupant count, both public, and is never a function of what
+        // the holder already has in store.
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        payload: { works: row.works, system: row.system, holder: row.holder, qty: row.qty },
+      });
+    }
+  }
+
   /**
    * `build` — raise an ANCHOR and take a claim (§6.3, A15).
    *
@@ -5631,11 +5873,13 @@ export class Runtime {
    */
   private vBuild(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const kind = (readString(req.params, ['kind', 'what', 'structure']) ?? 'ANCHOR').toUpperCase();
+    if (kind === 'WORKS') return this.vBuildWorks(ctx, req);
     if (kind !== 'ANCHOR') {
       return reject(
         'PHASE-0',
-        `\`build\` raises an ANCHOR in this build and nothing else: production WORKS land with the production ` +
-          `graph at §16 step 11. Send {"kind":"ANCHOR","system":"<id>"}. ${SOVEREIGNTY_STATEMENT}`,
+        `\`build\` raises an ANCHOR or a WORKS. An ANCHOR takes territory; a WORKS extracts what a place ` +
+          `yields. Send {"kind":"ANCHOR","system":"<id>"} or {"kind":"WORKS","system":"<id>"}. ` +
+          SOVEREIGNTY_STATEMENT,
       );
     }
     const system = readString(req.params, ['system', 'system_id', 'at', 'where']) as SystemId | null;
@@ -6425,6 +6669,11 @@ export class Runtime {
         bondCeiling: CLAIM_BOND_MINOR,
       }),
       ...checkChargeAttribution(this.sovereignty, reckoningOf(tick), tick, CLAIM_BOND_MINOR),
+      // INV-W1..3. Grouped here rather than in their own hook because they answer the same
+      // question sovereignty's do — is a place's arithmetic still true — and the A15 claim
+      // that world output cannot scale with the population is exactly the kind of assertion
+      // that is a comment until something halts on it.
+      ...checkWorks({ book: this.worksBook, map: this.world.map, tick }),
     ];
   }
 

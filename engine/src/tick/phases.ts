@@ -83,7 +83,11 @@ export function isPhaseName(s: string): s is PhaseName {
  * market module still runs it empty. Correcting it belongs to whoever owns the market,
  * not to the predation change that noticed it.
  */
-export const UNBUILT_PHASES: readonly PhaseName[] = ['MARKETS', 'PRODUCE'];
+// `MARKETS` came off this list when the order book landed and `PRODUCE` when WORKS did.
+// Kept as a list rather than deleted: `PREDATE` was the third reserved hook and the tick
+// loop still asserts that a phase named here does nothing, which is what made filling these
+// three provably free of seeded-substream drift.
+export const UNBUILT_PHASES: readonly PhaseName[] = [];
 
 /**
  * What each phase is for, and — for the unbuilt ones — which build step fills
@@ -108,10 +112,13 @@ export const PHASE_NOTE: Readonly<Record<PhaseName, string>> = {
     '(SPEC §9, §16 step 12). Filled by src/predation via a registered handler; the tick loop owns the slot. ' +
     'After MOVE, so a hand that marched to the stage to defend is present on the tick its ETA promised.',
   MARKETS:
-    'NO-OP HOOK. Filled by SPEC §16 step 11 (markets). Must precede PRODUCE — §15.2: clear-before-produce, ' +
-    'and jobs may not buy at market.',
+    'Resting orders cross at one venue per system (SPEC §10.3). Filled by src/market via a registered ' +
+    'handler. After MOVE so a hand that arrived this tick can trade where it landed, and before PRODUCE — ' +
+    '§15.2: clear-before-produce, and jobs may not buy at market.',
   PRODUCE:
-    'NO-OP HOOK. Filled with the economy substrate (SPEC §10.2), after MARKETS has cleared.',
+    'WORKS extract what their system yields, divided among the WORKS standing there (SPEC §10.2, A15). ' +
+    'Filled by src/works via a registered handler. After MARKETS so a principal cannot read this tick\'s ' +
+    'clearing price and then decide what to make (§15.2, clear-before-produce).',
   VENTURES:
     'Ventures advance and settle. Filled by SPEC §16 step 5 (HAUL and the settlement waterfall) via a ' +
     'registered handler; the tick loop owns the slot, not the content.',

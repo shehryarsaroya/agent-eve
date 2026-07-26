@@ -147,6 +147,11 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // holding no claims, no arrears counters and no bond locks — every posted bond an orphan lock
   // INV-4 halts on, and every claim silently un-owned.
   'sovereignty',
+  // WORKS. Named in the same change that registered the table, for the reason the two
+  // entries above learned the hard way. This book decides how many goods enter the world every
+  // tick, so an adopted world that dropped it would come up with every place unworked — and the
+  // holders would watch their income stop with no event saying why.
+  'works',
 ];
 
 /** Why a checkpoint was not adopted, or null when one was. */

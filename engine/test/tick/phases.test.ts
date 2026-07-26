@@ -99,12 +99,24 @@ describe('SPEC §15.2 — the fourteen phases', () => {
     // Omitting them would be the cheap option now and an expensive one later:
     // adding a phase changes the set of Rng.derive labels, so every golden file
     // downstream of the insertion moves.
-    expect([...UNBUILT_PHASES]).toEqual(['MARKETS', 'PRODUCE']);
+    // All three reserved hooks are now filled — PREDATE by predation, MARKETS by the order
+    // book, PRODUCE by WORKS — so the list is empty. The assertion below is deliberately not
+    // `toEqual([])`: what this test protects is the RULE, and the rule outlives the list.
     for (const phase of UNBUILT_PHASES) {
       expect(PHASES as readonly string[]).toContain(phase);
       expect(PHASE_NOTE[phase]).toContain('NO-OP HOOK');
       // A hook with no stated owner becomes a hook nobody fills.
       expect(PHASE_NOTE[phase]).toMatch(/Filled (by|with)/);
+    }
+    // And the transition is pinned from the other side: a phase that is no longer listed as
+    // unbuilt must not still describe itself as a no-op. That is the half that would have
+    // caught the stale `MARKETS` entry, which sat in this list for weeks after the order book
+    // landed and made the note and the engine disagree — a rules surface drifting quietly.
+    for (const phase of PHASES) {
+      if ((UNBUILT_PHASES as readonly string[]).includes(phase)) continue;
+      expect(PHASE_NOTE[phase], `${phase} is built but still calls itself a hook`).not.toContain(
+        'NO-OP HOOK',
+      );
     }
   });
 
