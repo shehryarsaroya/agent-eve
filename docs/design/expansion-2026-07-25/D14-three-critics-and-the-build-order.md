@@ -249,10 +249,24 @@ So the corrected finding is **two partial holes, not seven**:
   the observation layer actually served"* — is supplied by nobody. So the clause compares the book
   against itself, and the half that would catch **the observation layer disagreeing with the book**
   is inert. That is a scar #5 detector that cannot see scar #5.
-- **INV-23's counterparty clause never runs.** *"No signed-deal journal supplied"* — so *"no delegate
-  is counterparty to a deal it signs on another's behalf"*, which §E2E-11 calls the one form of
-  betrayal that must be **invalid rather than merely legible**, is unchecked. The `SignedDeal` type
-  exists and nothing produces it.
+- **INV-23's counterparty clause never runs — and it is NOT a safety gap.** Third correction in this
+  thread, and it narrows the problem again. *"No signed-deal journal supplied"*, and nothing can
+  supply one: **`vSign` does not read `on_behalf_of` at all**, so a deal signed on another's behalf
+  cannot exist. `SignedDeal` describes a shape the engine cannot produce — the same situation as
+  INV-23's depth walk before `parentGrantId` (§2).
+  <br><br>
+  The property itself — *"a delegate cannot be a counterparty to a deal it has authority over"*, which
+  E2E-11 calls the one form of betrayal that must be **invalid** rather than merely legible — **is
+  enforced at the verb and thoroughly tested.** `vFillRole` refuses it, asking the question at the
+  venture's CREATION tick rather than the fill tick; the comment records that asking at the fill tick
+  *"left a one-tick bypass around the only guardrail A6 has"* (hold a grant, create on the grantor's
+  behalf, let the grant lapse, fill a paid role next tick), found by a codex review.
+  `test/grant/verb.test.ts:331` covers it in three cases including the lapse bypass **and** a negative
+  control so an outsider is never refused for self-dealing.
+  <br><br>
+  So the invariant clause is a second net awaiting a capability that does not exist. It should come
+  alive with delegated signing, and until then the honest description is "inert by construction, with
+  the load-bearing guard elsewhere and tested" — not "unchecked".
 
 INV-16's database half is legitimately out-of-process (a `REVOKE` in `db/migrate.ts`, reachable only
 by AX-A5-1 against live Postgres) and is flagged `outOfProcess` so `requireAll` cannot escalate it.
@@ -263,11 +277,17 @@ it runs every tick. The per-batch half needs `standingDiffs`, supplied at
 `reckoning/driver.ts:718` — so it runs at the Reckoning. Its per-tick listing is correct by design,
 exactly like INV-6/18/19.
 
-**Final tally of the 26.** One was a genuine permanent hole (INV-26 — fixed and mutation-proven). Two
-are genuine partial holes and remain open: INV-5's `servedExposure` half and INV-23's counterparty
-clause. One is legitimately out-of-process (INV-16). The other four that appeared in the skip list —
-INV-6, INV-18, INV-19, INV-21 — run on the settlement call path, which is the only place they mean
-anything.
+**Final tally of the 26, after three successive corrections that each narrowed it.** One was a genuine
+permanent hole — INV-26, which had never checked a structure; fixed and mutation-proven. **ONE genuine
+open gap: INV-5's `servedExposure` half**, where the clause compares the book against its own cache and
+the half that would catch the observation layer disagreeing with the book is inert. One is
+legitimately out-of-process (INV-16). One is inert by construction with its property enforced and
+tested at the verb (INV-23's counterparty clause). Four run on the settlement path, which is the only
+place they mean anything (INV-6, INV-18, INV-19, INV-21).
+
+**Twenty-four of twenty-six protective today, one inert-by-construction, one genuinely open.** Each
+correction came from a grep I could have run before writing the previous version down, which is §8's
+lesson arriving three more times in one thread.
 
 **The lesson, which is the same one as §8 below:** a skip list is not a coverage report. "Skipped on
 every tick" and "never runs" look identical from outside, and telling them apart took two greps —
