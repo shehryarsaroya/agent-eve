@@ -201,6 +201,37 @@ fixed, since A3 makes a durable intent's routine ticks free and the postings alr
 production adopt WORKS → then ship D12's extraction gate.** Each step unblocks the next, and the first
 one is a determinism question rather than a design one.
 
+### ⚠ THE TRIPWIRE: a real determinism bug in WORKS, with four causes ruled out
+
+**It is not the fixture and it is not the heuristic.** `build {"kind":"WORKS"}` replayed from the
+action log produces different state than when it ran live: `checkpoint-adoption-audit` reports
+*"TRIPWIRE at tick 300: replayed state_hash … does not match the journalled snapshot"*. Sovereignty's
+ANCHOR build shares most of that path, so **claims are likely affected too** and simply have never
+been exercised under replay — nothing in the heuristic cast has ever built anything.
+
+Ruled out, each by measurement:
+
+1. **The world halting.** Eight WORKS build cleanly to tick 399 with no violations.
+2. **The event-ledger flood.** `PRODUCE` was emitting a `PUBLIC` event per WORKS per tick and the
+   event ledger is hashed state, so this was the leading hypothesis. Fixed separately (`ccfe439`) —
+   **the tripwire persists**, so it was not the cause.
+3. **Capture/restore of the works book.** Round-tripping every state table through its own
+   `restore(capture())` leaves `state_hash` **identical** with eight WORKS present. Serialisation is
+   sound.
+4. **Lot-selection order in `burnAnchorGoods`.** `chargeGoodLotsAt` sorts by `compareIds(a.id, b.id)`
+   — canonical, so the goods burned are the same in both runs.
+
+**The remaining suspect, and where to start:** `vBuildWorks` **re-validates on replay**. It calls
+`worksQuote` and gates on `affordable`, so any difference in free balance at that instant flips the
+gate — the build succeeds live and is *refused* during replay, which diverges everything after it.
+A verb whose re-execution can be refused is not replay-safe, and the fix is probably that a replayed
+action must not re-run an affordability gate the live tick already passed. Check whether any other
+verb has the same shape before fixing this one alone.
+
+Reverted rather than shipped. A determinism failure is the one class in this codebase that must never
+be shipped on a guess, and `state_hash` divergence on a live world at ~4,500 ticks means a boot that
+refuses to resume.
+
 ## The deeper thing this exposed about D7's floor
 
 Chasing the round trip surfaced something about `freeCash` that is worth stating separately, because it
