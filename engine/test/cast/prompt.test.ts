@@ -26,6 +26,7 @@ import {
 } from '../../src/cast/index.js';
 import { buildObservation, OBSERVE_KEYS, type Observation } from '../../src/api/observe.js';
 import { charactersFor, HeuristicCast } from '../../src/cast/index.js';
+import { FREE_VERBS } from '../../src/tick/budget.js';
 import { setSpeed } from '../../src/core/time.js';
 import { Runtime } from '../../src/sim/runtime.js';
 
@@ -210,5 +211,73 @@ describe('the observation is projected, never truncated into invalid JSON', () =
     const projected = projectObservation(observation, 300);
     expect(projected.omitted.length).toBeGreaterThan(0);
     for (const name of projected.omitted) expect(name.length).toBeGreaterThan(0);
+  });
+});
+
+describe('scar #1 — the prompt tells the truth about what talk costs', () => {
+  it('names exactly the verbs the ENGINE charges nothing for, never a hand-written list', () => {
+    // The live world ran eight Reckonings with 510 ventures, 297 seals — and ZERO
+    // messages. The cast never negotiated, so §14's receipt reel had nothing to show:
+    // it is built from what a traitor said next to what it did, and nobody said anything.
+    //
+    // The cause was not the engine. `message` is a live verb, is handled, and is in
+    // FREE_VERBS ("charging for talk starves the channel"). The prompt simply never said
+    // so, while steering hard toward copying affordances — so every plan slot went to a
+    // material action and talk never competed.
+    //
+    // The list is read FROM the budget rather than retyped here, because a prompt that
+    // claims a verb is free when the engine charges for it is scar #1 exactly: the
+    // rules surface and the engine disagreeing about one word.
+    const contract = loadContract();
+    expect(contract).not.toBeNull();
+    if (contract === null) return;
+    const runtime = new Runtime({ seed: 'talk' });
+    const cast = new HeuristicCast(runtime, { size: 1 });
+    const members = cast.seat('talk');
+    const character = charactersFor(members, 'talk').values().next().value;
+    expect(character).toBeDefined();
+    if (character === undefined) return;
+    const text = buildPrompt({
+      contract,
+      character,
+      observation: anObservation(),
+      memory: 'nothing',
+      liveVerbs: [...runtime.liveVerbs].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+      planMax: 2,
+    })
+      .messages.map((m) => m.content)
+      .join('\n');
+
+    for (const verb of FREE_VERBS) {
+      expect(text, `the prompt must name ${verb} as free`).toContain(verb);
+    }
+    expect(text).toMatch(/cost NO action budget/i);
+  });
+
+  it('does not tell the cast to be honest or to talk — that would author the story (A12)', () => {
+    // A12: ship systems, never scripted narrative. The prompt may state the incentive and
+    // the mechanics; it must not supply the strategy, or the drama is ours and not theirs.
+    const contract = loadContract();
+    expect(contract).not.toBeNull();
+    if (contract === null) return;
+    const runtime = new Runtime({ seed: 'talk' });
+    const cast = new HeuristicCast(runtime, { size: 1 });
+    const members = cast.seat('talk');
+    const character = charactersFor(members, 'talk').values().next().value;
+    expect(character).toBeDefined();
+    if (character === undefined) return;
+    const text = buildPrompt({
+      contract,
+      character,
+      observation: anObservation(),
+      memory: 'nothing',
+      liveVerbs: [...runtime.liveVerbs].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+      planMax: 2,
+    })
+      .messages.map((m) => m.content)
+      .join('\n');
+
+    expect(text).toMatch(/Silence is legal/i);
+    expect(text).not.toMatch(/you should (?:be honest|always tell)/i);
   });
 });

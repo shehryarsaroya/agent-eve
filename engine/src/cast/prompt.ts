@@ -27,6 +27,7 @@
 import { readFileSync } from 'node:fs';
 import type { Observation } from '../api/observe.js';
 import type { CastCharacter } from './characters.js';
+import { FREE_VERBS } from '../tick/budget.js';
 import { STANCE_CREED } from './characters.js';
 import type { CompletionMessage } from './transport.js';
 
@@ -245,6 +246,21 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
       '- The safest plan is built from entries in `affordances[]`: copy a `verb` and its `params`',
       '  exactly. Those are known legal right now, and each one already tells you its',
       '  `max_direct_loss` and what it forecloses.',
+      '',
+      '',
+      'TALK IS FREE, AND NOTHING ELSE IN THIS GAME IS.',
+      '',
+      `  ${[...FREE_VERBS].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join(' · ')} cost NO action budget.`,
+      '  Every other verb spends one of your few material actions per tick. So a plan that talks',
+      '  and then acts costs the same as a plan that only acts.',
+      '',
+      '  Why it is worth spending words on: a promise is worth more when the counterparty believes',
+      '  it, and belief is built by saying what you intend BEFORE the outcome is known. The channel',
+      '  is private to the parties while it is live and becomes public at settlement — so what you',
+      '  say is remembered, and it will be read next to what you actually did.',
+      '',
+      '  Nobody is telling you to be honest, or to talk at all. Silence is legal and sometimes',
+      '  correct. But a counterparty who has never heard from you prices you as a stranger.',
       '',
       'IF YOUR REPLY IS NOT VALID JSON, names a verb outside that list, carries a decimal number,',
       'or nests an object, THE WHOLE REPLY IS DISCARDED, a heuristic acts in your place, and you',
