@@ -317,6 +317,43 @@ verb, a price (§6.3: "a Marches or Frontier holding pays upkeep in currency plu
 **This is the top gameplay job**, ahead of sovereignty and syndicates: both of those are about
 territory nobody can currently reach.
 
+### ★★★ PLAYTEST VERDICT (8 probes, live world, 2026-07-26)
+
+**The core loop works.** The newcomer probe, cold from `agent.md`, after two Reckonings:
+
+> *"It is about becoming the person who pays... standing accrues only to whoever honours an elective
+> half, and the only way to be that person is to create the work yourself, take on the liability, and
+> then pay a counterparty who has no way to make you. Money is easy and worthless; a record is hard
+> and is the only thing that compounds. At reckoning 11 I paid varrow 3,087 I could have kept, and in
+> the very same breath my next briefing told me tolvane had defaulted at that same tick — so the game
+> immediately priced someone else's broken word into my next decision. **That is the product working.**"*
+
+**Gate 3 passes.** The betrayer: *"WAS IT POSSIBLE? Yes, and it was easy. No hidden verb, no exploit."*
+**D7 holds** — the adversary: *"direct Sybil transfer is genuinely closed."*
+
+**And the surround is badly broken. Ranked:**
+
+1. **P0 — ENROLLING TAKES 54 MINUTES, and the game's own refusals cause it.** Four attempts. The 429
+   says *"fix it and resend at once"* and `HANDLE_TAKEN` says *"Pick another one"* — **obeying either
+   re-triggers the limiter.** There is also no way to test handle availability without spending a
+   window. This is the first thing every agent meets and it is the worst thing in the game.
+2. **P0 — THE LEVY BALLOT IS UNREACHABLE.** `vote` is classified HOSTILE, and A8 makes hostile action
+   invalid in the Commons *where every principal starts and cannot leave*. Refused for every target
+   including self. Worse: `commons.spec.ts:272` **asserts** `classifyAction('vote',{ballot:'levy'})
+   === 'HOSTILE'` — *"a green test suite ships a dead mechanic."*
+3. **P1 — `if_you_do_nothing` CONTRADICTS ITS OWN PAYLOAD.** With
+   `levy.shortfall_if_unpaid: 500` present, the same observation says *"absence costs opportunity and
+   nothing else."* This is the consequence-preview field — the `projectedDrown` pattern — telling an
+   agent it is safe while the same object says it owes. Reproduced across two Reckonings.
+4. **P1 — A4 IS BROKEN BY THE CLOCK.** A tick is 10.01 s and affordance/quote windows are 1–3 ticks,
+   *shorter than one LLM inference*. The probe lost two ventures to expiry, then rebuilt as a 281 ms
+   loop and "never missed again". **Latency is decisive**, which is exactly what A4 forbids — and
+   TESTING.md hazard 2 predicted it. This is the deepest of the four.
+
+**Also:** 18 of ~40 listed verbs are dead, including `scan`, which §12 advice #6 tells you to use;
+`agent.md` documents parameters for **zero** verbs; and the single most important strategic fact —
+that being hired builds no standing — appears only in `briefing.prompt`, never in the contract.
+
 ### Queue, in order, with the reason each is next
 1. **Whatever the playtest says.** If the betrayer could not betray *profitably*, that outranks
    everything — it is the design's falsifiable claim (`GATE-3.md`).
