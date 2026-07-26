@@ -227,6 +227,61 @@ export interface BuiltPrompt {
  * The budget never assumes that discount — it prices every call at full rate — but there
  * is no reason to make the saving impossible.
  */
+
+/**
+ * Which contract sections this wake actually touches, named in the USER message.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **THE CONTRACT CEILING WAS NEVER A COST PROBLEM, AND I HAD RECORDED THE WRONG FIX.**
+ *
+ * Raising `MAX_CONTRACT_CHARS` twice made me write down that the contract "is the wrong
+ * shape" and should be projected per situation. Then I checked the arithmetic. The contract
+ * is the FIRST system message and is byte-identical for every member, so it is one shared
+ * cached prefix — which is why ~99% of each prompt is cached at a tenth of fresh price.
+ * 40,000 characters is ≈10k tokens ≈ $0.001 a call cached, against a total spend of about
+ * $0.25/hour. It is a rounding error.
+ *
+ * And a per-situation projection would **break** that: each variant becomes its own prefix,
+ * so the change would trade a rounding error for real cache misses. Reordering the sections
+ * per member has exactly the same problem.
+ *
+ * The real risk over 40,000 characters is **attention, not money** — a rule that matters this
+ * tick being lost in the middle of a document that also explains four systems the member is
+ * not touching. That is fixable without paying anything, because the *user* message is
+ * already per-member and already uncached: point at the sections the situation touches, and
+ * leave the contract whole and cached.
+ *
+ * Derived from the observation, never hand-curated — so it stays a pointer INTO the real
+ * document rather than a paraphrase of it, which is what scar #1 forbids.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+export function situationalFocus(observation: Readonly<Record<string, unknown>>): readonly string[] {
+  const focus: string[] = [];
+  const holding = (observation['holding'] ?? {}) as Record<string, unknown>;
+  const obligations = (observation['obligations'] ?? {}) as Record<string, unknown>;
+  const affordances = (observation['affordances'] ?? []) as Record<string, unknown>[];
+  const has = (verb: string, kind?: string): boolean =>
+    affordances.some(
+      (a) => a['verb'] === verb && (kind === undefined || (a['params'] as Record<string, unknown>)?.['kind'] === kind),
+    );
+
+  if (String(holding['tier']) === 'COMMONS') focus.push('§11 The Commons — you are still inside it, and leaving is one-way');
+  if (has('graduate')) focus.push('§11 `graduate` — the crossing is affordable to you right now');
+  if (has('build', 'WORKS') || ((holding['works'] as Record<string, unknown>)?.['held'] as unknown[])?.length)
+    focus.push('§11A WORKS — the only source of goods in this world');
+  if (holding['sovereignty'] !== null && holding['sovereignty'] !== undefined)
+    focus.push('§11B Sovereignty — you hold territory that has to be MAINTAINED');
+  if (((obligations['charge'] ?? []) as unknown[]).length > 0)
+    focus.push('§11B The Charge — a bill falls due on your claim this Reckoning');
+  if (((observation['syndicates'] ?? []) as unknown[]).length > 0)
+    focus.push('§11C Syndicates — you are inside one, and its charter cannot change');
+  // The assurance, and it is listed LAST on purpose: it is free, so it should be the thing an
+  // agent does in addition to its plan rather than instead of it.
+  if (has('message'))
+    focus.push('§4 Negotiating — you owe an elective half and can say so BEFORE it settles, for free');
+  return focus;
+}
+
 export function buildPrompt(input: PromptInput): BuiltPrompt {
   const projected = projectObservation(
     input.observation,
@@ -353,6 +408,17 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
       '',
       projected.json,
       '',
+      ...(() => {
+        const focus = situationalFocus(input.observation as unknown as Readonly<Record<string, unknown>>);
+        return focus.length === 0
+          ? []
+          : [
+              'THE PARTS OF THE CONTRACT THIS TICK ACTUALLY TOUCHES. The whole contract still applies —',
+              'these are the sections your situation is standing in right now:',
+              ...focus.map((f) => `  · ${f}`),
+              '',
+            ];
+      })(),
       'WHAT YOU DID AND WHAT WAS DONE TO YOU, most recent last:',
       input.memory,
       '',

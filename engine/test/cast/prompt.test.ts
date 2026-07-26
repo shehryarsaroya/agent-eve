@@ -1,3 +1,4 @@
+import { situationalFocus } from '../../src/cast/prompt.js';
 /**
  * SCAR-1, again, at the cast's own boundary.
  *
@@ -337,5 +338,67 @@ describe('the cast can always read where goods come from', () => {
     const used = contract?.text.length ?? 0;
     expect(used, `the excerpt is ${String(used)} of ${String(MAX_CONTRACT_CHARS)} — too tight`)
       .toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+  });
+});
+
+describe('the contract stays whole and cached; the FOCUS is per-member', () => {
+  /**
+   * I raised `MAX_CONTRACT_CHARS` twice and wrote down that the contract was "the wrong shape" and
+   * should be projected per situation. Then I checked the arithmetic and the recorded fix was wrong.
+   *
+   * The contract is the FIRST system message and byte-identical for every member, so it is one
+   * shared cached prefix — 40,000 characters is ≈10k tokens ≈ $0.001 a call cached, against ~$0.25
+   * an hour of total spend. A rounding error. And a per-situation projection would BREAK that: each
+   * variant becomes its own prefix, trading a rounding error for real cache misses.
+   *
+   * The real risk over 40,000 characters is attention, not money. So the pointer goes in the USER
+   * message, which is already per-member and already uncached — and it points INTO the real document
+   * rather than paraphrasing it, which is what scar #1 forbids.
+   */
+  it('names the sections a Commons newcomer is standing in, and not the ones it is not', () => {
+    const focus = situationalFocus({
+      holding: { tier: 'COMMONS', sovereignty: null, works: { held: [] } },
+      obligations: { charge: [] },
+      affordances: [{ verb: 'create', params: {} }],
+      syndicates: [],
+    });
+    const text = focus.join(' | ');
+    expect(text, 'the Commons is where it is standing').toContain('§11 The Commons');
+    expect(text, 'and it is told nothing about territory it cannot hold').not.toContain('§11B');
+    expect(text, 'nor about syndicates it is not in').not.toContain('§11C');
+  });
+
+  it('names sovereignty and the Charge for a claimant with a bill due', () => {
+    const focus = situationalFocus({
+      holding: { tier: 'MARCHES', sovereignty: { statement: 'x' }, works: { held: [{}] } },
+      obligations: { charge: [{ owed: 4_000 }] },
+      affordances: [{ verb: 'deliver', params: {} }],
+      syndicates: [],
+    });
+    const text = focus.join(' | ');
+    expect(text).toContain('§11B Sovereignty');
+    expect(text).toContain('§11B The Charge');
+    expect(text, 'and WORKS, because it holds one').toContain('§11A WORKS');
+    expect(text, 'and NOT the Commons, which it has left').not.toContain('§11 The Commons');
+  });
+
+  it('puts the free assurance LAST, so it is an addition rather than a substitution', () => {
+    const focus = situationalFocus({
+      holding: { tier: 'MARCHES', sovereignty: null, works: { held: [] } },
+      obligations: { charge: [] },
+      affordances: [{ verb: 'message', params: { act: 'assure' } }, { verb: 'graduate', params: {} }],
+      syndicates: [],
+    });
+    expect(focus.length).toBeGreaterThan(1);
+    expect(
+      focus[focus.length - 1],
+      'the assurance is free, so it should read as something to do AS WELL as the plan',
+    ).toContain('Negotiating');
+  });
+
+  it('says nothing at all when the situation touches nothing special', () => {
+    // An empty focus must produce no block: a header with no bullets under it is noise in a prompt
+    // whose whole problem is that it is long.
+    expect(situationalFocus({ holding: {}, obligations: {}, affordances: [], syndicates: [] })).toEqual([]);
   });
 });
