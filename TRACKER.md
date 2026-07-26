@@ -27,6 +27,28 @@
 > precisely what made the probe file one. Open items, including a 1,241-line duplicate
 > `buildObservation` that only tests import, are in D13 §4.
 >
+> **Then three critics read the code.** `docs/design/expansion-2026-07-25/D14-three-critics-and-the-build-order.md`
+> — an enrichment researcher plus adversarial spectacle and architecture passes. They found **eleven
+> more built-but-unreachable primitives**, and two things that mattered more than any enrichment:
+>
+> - **INV-23 halted the world on four legal grants** — `a→b, b→c, c→d, d→e`, five principals each
+>   granting over their OWN stores. An agent-reachable permanent halt, free to trigger, and the
+>   `grant` affordance shipped that morning offers exactly that shape. Fixed, with a tripwire that
+>   fires when `parentGrantId` lands.
+> - **Offices were inert behind one existence check.** A house could pool a treasury, vote an office
+>   by MAJORITY and issue a grant that rendered on both sides — and the holder could not spend the
+>   pool on anything. §8's *"quartermaster who could empty the vault at any moment"* existed and was
+>   behind a predicate. Fixed: the holder brings the hands, the house brings the money.
+>
+> Also fixed: the rundown's running order compared **currency against units of a good on one axis**,
+> which is why the live frame buried its betrayal under three plunders; §14.3 is arithmetic now. And
+> the docket claimed *"they have dealt before, and it held"* about pairs whose only prior deal was a
+> default (A5′).
+>
+> **`INV-26` — the bounded-growth invariant — has never checked a single structure**, and the skip is
+> silent. Scar #14b inside the invariant layer. D14 §5 carries the full array map needed to wire it.
+> D14 §7 is the build order all three critics converge on; §8 is where I was wrong three more times.
+>
 > **What changed tonight, in one line each.** Sovereignty landed and then failed its own adversarial
 > pass — four real bugs, including one where any principal could **halt the galaxy** with two offered
 > affordances. PRODUCE jumped the queue because `grep sourceGoods` returned exactly **one** call site
