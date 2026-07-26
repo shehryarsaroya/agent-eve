@@ -112,6 +112,21 @@ export interface GoodsSupply {
 export class Ledger {
   private readonly accounts = new Map<AccountId, Account>();
   private readonly lots = new Map<LotId, Lot>();
+  /**
+   * `account → its lot ids`. **Derived, never captured, never hashed.**
+   *
+   * `lotsInAccount` was `allLots().filter(...)`, and `allLots()` SORTS EVERY LOT IN THE GALAXY on
+   * every call. `clearMarkets` reaches it through `escrowedGoods` once per ask principal per book, so
+   * at a few hundred books and ten thousand lots that is ~10^8 comparator calls a tick — seconds, in
+   * a design whose §15 budget is single-digit milliseconds. Unlike the other scaling findings this one
+   * is **not history-dependent**: it bites at today's volumes.
+   *
+   * Safe as an index precisely because a lot's `account` is never reassigned in place — a move is a
+   * delete plus an open — so there are exactly three sites to maintain: `restore`, the `opens` loop,
+   * and the zero-qty delete. `allLots()` and the state table are untouched, so `state_hash` cannot
+   * move; a differential test asserts the new answer equals the old one lot-for-lot.
+   */
+  private readonly lotsByAccount = new Map<AccountId, Set<LotId>>();
   private readonly postings: Posting[] = [];
   private readonly batches: AppliedBatch[] = [];
   /**
@@ -218,7 +233,11 @@ export class Ledger {
     }
 
     this.lots.clear();
-    for (const lot of state.lots) this.lots.set(lot.id, { ...lot });
+    this.lotsByAccount.clear();
+    for (const lot of state.lots) {
+      this.lots.set(lot.id, { ...lot });
+      this.indexLot(lot.account, lot.id);
+    }
 
     // The locks, restored with everything else. A lot carries only an `encumbranceId`
     // pointer, so restoring lots without the book leaves those pointers dangling at a
@@ -367,8 +386,33 @@ export class Ledger {
     return [...this.lots.values()].sort((a, b) => compareIds(a.id, b.id));
   }
 
+  private indexLot(account: AccountId, id: LotId): void {
+    const set = this.lotsByAccount.get(account);
+    if (set === undefined) this.lotsByAccount.set(account, new Set([id]));
+    else set.add(id);
+  }
+
+  private unindexLot(account: AccountId, id: LotId): void {
+    const set = this.lotsByAccount.get(account);
+    if (set === undefined) return;
+    set.delete(id);
+    // Dropped when empty, or the map itself becomes the unbounded array (scar #3) keyed by every
+    // account that ever held a lot.
+    if (set.size === 0) this.lotsByAccount.delete(account);
+  }
+
   lotsInAccount(account: AccountId): readonly Lot[] {
-    return this.allLots().filter((l) => l.account === account);
+    // Sorted by id, exactly as the old `allLots().filter(...)` returned them: a global id sort
+    // filtered to one account is the same sequence as that account's ids sorted. `lot-index.test.ts`
+    // asserts the equality against the old implementation rather than trusting that sentence.
+    const ids = this.lotsByAccount.get(account);
+    if (ids === undefined) return [];
+    const out: Lot[] = [];
+    for (const id of ids) {
+      const lot = this.lots.get(id);
+      if (lot !== undefined) out.push(lot);
+    }
+    return out.sort((a, b) => compareIds(a.id, b.id));
   }
 
   /** Goods held in an account, by good. Derived from lots — the single home. */
@@ -437,6 +481,7 @@ export class Ledger {
     }
     for (const open of draft.opens) {
       if (this.lots.has(open.id)) throw new LedgerError(`duplicate lot id ${open.id}`);
+      this.indexLot(open.account, open.id);
       this.lots.set(open.id, {
         id: open.id,
         account: open.account,
@@ -456,7 +501,10 @@ export class Ledger {
       // (Never "a holding" — §3 reserves HOLDING for a principal's body on the
       // map and never for its assets, which are STORES.) Keeping
       // empty lots forever is scar #3's unbounded array with extra steps.
-      if (l.qty === 0 && l.encumbranceId === null) this.lots.delete(l.id);
+      if (l.qty === 0 && l.encumbranceId === null) {
+        this.lots.delete(l.id);
+        this.unindexLot(l.account, l.id);
+      }
     }
     if (draft.supply !== null) {
       this.applySupplyLeg(draft.supply, stamped);
