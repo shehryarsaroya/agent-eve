@@ -294,9 +294,38 @@ the frame · `assure` taught to the cast · health measuring the **fallback rate
 · three deploy-tooling defects (frames unserved, client deploy restarting the world, the replay wait
 exiting on a failed curl).
 
-### In flight
-- **sovereignty** (`wf_42217fd9-abb`) — the Charge. 11 modules in, converging: was halting at tick 1
-  and failing 8 tests, now 2 (both agent.md rules-surface guards). Its own gate must force those.
+### Sovereignty LANDED, then failed its own adversarial pass — four real bugs
+`a236ce3` landed the Charge; `a7bf5a0` fixed what playing it found. All four were reachable through
+the front door with offered affordances, and **none was visible in 2,671 passing tests**:
+1. **Any principal could halt the galaxy** — `graduate` stayed offered after `build` took a claim, so
+   moving the body broke INV-8 and aborted the tick. Aborting is right, which is what made it severe.
+2. **The Charge preview lied** — abandon and retake mid-Reckoning and the new claim read
+   `STAYS_SUPPLIED` while settlement slashed its bond. Duty keyed on `ClaimId`, everything else on
+   `SystemId`. A5′, in the consequence-preview field.
+3. **The first fix for (2) opened an exploit** — settle-by-claim-id let a holder stall the collapse
+   arc at two misses forever. Both wrong versions are recorded in `settle.ts`.
+4. **D7 was reopened by a verb that postdates it** — a cession price moved 150,000 of pure endowment
+   from a puppet to its operator. *D7 is not a property of the market; it is a property of every verb
+   that moves currency between principals.*
+
+`ba6d7cb` records the two findings that are **design calls, not defects** (`D10`): raid targeting is
+an argmax over a `SENSED` quantity and works as a free scouting oracle, and the endowment floor shuts
+early-game cession harder than D7 intended. Both priced, neither applied — each changes a rule.
+
+### Two cry-wolf fixes, which are the same bug in opposite directions
+- `f7a1c2e`-ish: the discrepancy-ring guard timed out under parallel load and **refused a good
+  deploy**. Given an honest 30 s rather than a re-run.
+- The scar #14b floor called a healthy world sick after every restart, because **boot replays the
+  action log into the decision census** — 1,960 replayed HEURISTIC against 330 LIVE — while the cast
+  was demonstrably spending. The census now learns where live play starts and forgets the replay.
+
+**The rule both produced: an alarm that is red while nothing is broken is one an operator stops
+reading, which is how scar #14b happened in the first place.**
+
+### Verify next (do not skip — this could be muting a real alarm)
+`HEALTH_WARMUP_TICKS = 24`, so the deciding-share floor resumes judging ~24 min after the 06:24
+deploy. **Confirm `by_source.LIVE > 0` and the share clears 2,500 bps.** If it does not, the cast is
+genuinely not deciding post-restart and the health fix hid it rather than corrected it.
 
 ### Queue after it
 1. **Syndicates** (task #12) — `SYNDICATE` as a real asset subject + the constitutional/covenant split.
