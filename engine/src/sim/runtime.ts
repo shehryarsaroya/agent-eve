@@ -156,6 +156,7 @@ import { slotClaimAt } from '../observe/forecast.js';
 // populates `TributeLine`, it does not define it — `frames/contract.ts` owns the shape and
 // the client already draws that one.
 import type { AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } from '../frames/contract.js';
+import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
@@ -4655,6 +4656,12 @@ export class Runtime {
       tributeLines: this.tributeLines(outcome.tick),
       authorityLines,
     };
+    // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
+    // this frame is built by reading live books directly, so nothing structural stopped
+    // the next field from being sensed cargo or a private stockpile. The assertion
+    // refuses a projection carrying an unargued key, and refuses one that is still
+    // holding a handle to live state (it must canonicalise, so it must be inert data).
+    assertInertPublicFacts(source);
     return renderFrame(source);
   }
 
