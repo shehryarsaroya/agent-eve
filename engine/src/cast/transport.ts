@@ -104,15 +104,40 @@ export function describeFailure(error: unknown, maxChars = 240): string {
   return flat.length <= maxChars ? flat : `${flat.slice(0, maxChars)}…`;
 }
 
-/** Raised by {@link openAiTransport}. Its message is redacted before it is constructed. */
+/**
+ * Raised by {@link openAiTransport}. Its message is redacted before it is constructed.
+ *
+ * ── WHY {@link reachedProvider} IS ITS OWN FIELD AND NOT `status !== null` ──
+ *
+ * The budget refunds a charge for a call that **cannot be on an invoice**, and it used to
+ * infer that from "there is no HTTP status". That inference is wrong in the direction that
+ * costs money: a 200 whose body will not parse — OpenAI's refusal shape is
+ * `{choices:[{message:{content:null, refusal:"…"}}]}`, and a proxy returning HTML with a
+ * 200 is the other — has **no** status by the time it is raised (it is built inside
+ * {@link readReply}, which never sees the response), and yet the provider generated and
+ * billed it. Under that inference the whole cast can run indefinitely with the cumulative
+ * cap reading `$0.00`: measured at 96 billed calls, `spentMicros: 0`, cap never tripped.
+ *
+ * So the question the budget actually needs answered — *did this request reach a provider
+ * that could bill for it?* — is stored, not derived. It defaults to `status !== null`,
+ * which is right for every call site that has a status, and {@link openAiTransport}
+ * re-stamps the parse failures it catches with the status the response really carried.
+ * An abort is charged deliberately: the request went out, so it may well be billed, and
+ * under-counting real spend is the dangerous direction.
+ */
 export class CastTransportError extends Error {
+  /** True when a provider answered — or may have — so this call may be on an invoice. */
+  readonly reachedProvider: boolean;
+
   constructor(
     message: string,
     /** HTTP status, when there was one. `null` for a network or parse failure. */
     readonly status: number | null,
+    reachedProvider?: boolean,
   ) {
     super(redactSecrets(message));
     this.name = 'CastTransportError';
+    this.reachedProvider = reachedProvider ?? status !== null;
   }
 }
 
@@ -173,7 +198,15 @@ export function openAiTransport(options: OpenAiTransportOptions = {}): CastTrans
       };
       request.signal?.addEventListener('abort', onOuterAbort, { once: true });
 
+      // The status the provider actually answered with, once it has. Everything thrown
+      // after this is set is a call that may be on an invoice — see CastTransportError.
+      let answered: number | null = null;
+      // Set the instant the request leaves. An abort after this point may still have been
+      // generated and billed server-side, so it is charged rather than refunded.
+      let dispatched = false;
+
       try {
+        dispatched = true;
         const response = await doFetch(url, {
           method: 'POST',
           headers: {
@@ -193,6 +226,8 @@ export function openAiTransport(options: OpenAiTransportOptions = {}): CastTrans
           signal: controller.signal,
         });
 
+        answered = response.status;
+
         if (!response.ok) {
           const body = await response.text().catch(() => '');
           throw new CastTransportError(
@@ -204,14 +239,45 @@ export function openAiTransport(options: OpenAiTransportOptions = {}): CastTrans
         const payload: unknown = await response.json();
         return readReply(payload);
       } catch (error: unknown) {
-        if (error instanceof CastTransportError) throw error;
-        throw new CastTransportError(describeFailure(error), null);
+        if (error instanceof CastTransportError) {
+          // `readReply` raises with `status: null` because it is handed a payload and
+          // never sees the response. Re-stamp it here, where the status is known: a 200
+          // we could not read is still a 200 the provider billed for.
+          if (answered !== null && !error.reachedProvider) {
+            throw new CastTransportError(error.message, answered, true);
+          }
+          throw error;
+        }
+        // A `json()` that threw, a socket that died, an abort. The split that matters:
+        //
+        //   - **A connection failure** (DNS, ECONNREFUSED, TLS) means no bytes reached a
+        //     provider. Refundable — and it must stay refundable, or a world whose network
+        //     is down latches its own cumulative cap having spent nothing.
+        //   - **An abort** means the request went out and we stopped waiting. The provider
+        //     may well have finished generating and billed it, so it is charged. This is
+        //     the routine case at a 3-tick deadline, and refunding it was the second half
+        //     of the hole that let 96 billed calls report `spentMicros: 0`.
+        const billable = answered !== null || (dispatched && isAbort(error));
+        throw new CastTransportError(describeFailure(error), answered, billable);
       } finally {
         if (timer !== null) clearTimeout(timer);
         request.signal?.removeEventListener('abort', onOuterAbort);
       }
     },
   };
+}
+
+/**
+ * Was this failure the request being cancelled, rather than the network refusing it?
+ *
+ * `AbortError` is what both `AbortController` and an undici timeout raise, as a
+ * `DOMException` in some runtimes and an `Error` in others — so the name is checked
+ * rather than the type. `TimeoutError` is undici's newer spelling for the same thing.
+ */
+function isAbort(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = (error as { name?: unknown }).name;
+  return name === 'AbortError' || name === 'TimeoutError';
 }
 
 /**

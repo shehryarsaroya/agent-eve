@@ -55,7 +55,22 @@ export interface CastBudgetLimits {
   readonly callsPerReckoning: number;
   /** Maximum tokens in one reply. Also sent to the provider on the request. */
   readonly maxOutputTokens: number;
-  /** Hard ceiling on the characters in one prompt. Prompt building truncates to fit. */
+  /**
+   * Ceiling on the **observation JSON** inside a prompt, in characters.
+   *
+   * Named for the prompt and applied to the observation, which is worth stating plainly
+   * because the difference is most of the bill: `llm.ts` passes this as
+   * `buildPrompt`'s `maxObservationChars`, and the ~22k-character `agent.md` contract
+   * and the character brief sit outside it. Setting this to 2,000 measurably yields a
+   * ~26,400-character prompt, not a 2,000-character one.
+   *
+   * That is deliberate rather than an oversight to fix: the contract is the rules
+   * surface, and scar #1 is what happens when a player reasons from a partial copy of
+   * the rules — `loadContract` would rather drop whole named sections and say so
+   * ({@link MAX_CONTRACT_CHARS}) than have a byte budget quietly shave it. Cost is
+   * still counted honestly either way: `charge()` prices the prompt that was actually
+   * built, so a prompt over this figure is billed at what it really costs.
+   */
   readonly maxPromptChars: number;
   /** Cumulative, for the life of the process. Tripping this disables the LLM cast. */
   readonly spendCapMicros: number;
@@ -236,7 +251,25 @@ export class CastBudget {
     };
   }
 
+  /**
+   * Trip the cumulative cap if the total has reached it — and never let the total stop
+   * being a number.
+   *
+   * `NaN >= cap` is `false`, forever. So a single non-finite figure reaching {@link spent}
+   * would not merely mis-count: it would silently and permanently switch the cumulative
+   * cap off, which is the one failure this class exists to prevent. `readReply` already
+   * guarantees safe integers, so nothing can reach that state through
+   * {@link openAiTransport} — but `CastTransport` is an injectable interface, an
+   * unbounded bill is the cost of being wrong about it, and the guard is one comparison.
+   * A poisoned total is treated as "at the cap", because the safe reading of *we no
+   * longer know what we have spent* is **stop spending**.
+   */
   private checkCap(): void {
+    if (!Number.isFinite(this.spent)) {
+      this.spent = this.limits.spendCapMicros;
+      this.stopped = 'SPEND_CAP';
+      return;
+    }
     if (this.spent >= this.limits.spendCapMicros) this.stopped = 'SPEND_CAP';
   }
 

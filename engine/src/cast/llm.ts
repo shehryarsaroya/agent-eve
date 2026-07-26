@@ -563,16 +563,25 @@ export class LlmCast {
         .catch((error: unknown) => {
           // ── REFUND ONLY WHAT CANNOT HAVE BEEN BILLED ──────────────────────
           //
-          // `status === null` means the transport never got an HTTP response at all: no
-          // key, DNS, connection refused, aborted. None of those can be on an invoice, so
-          // keeping the reservation would be *phantom* spend — and phantom spend trips the
-          // cumulative cap, which latches, which disables the cast permanently for calls
-          // that were never made. A world misconfigured with no key would give up on the
-          // LLM path after a few Reckonings of spending nothing.
+          // `reachedProvider === false` means the request never got to anything that could
+          // charge for it: no key, DNS, connection refused. None of those can be on an
+          // invoice, so keeping the reservation would be *phantom* spend — and phantom
+          // spend trips the cumulative cap, which latches, which disables the cast
+          // permanently for calls that were never made. A world misconfigured with no key
+          // would give up on the LLM path after a few Reckonings of spending nothing.
           //
-          // Anything with a status stays charged. A 200 that failed to parse may well have
-          // been billed, and under-counting real spend is the dangerous direction.
-          if (error instanceof CastTransportError && error.status === null) {
+          // **Not `status === null`.** That was the same question asked the wrong way, and
+          // it got the two most common provider-answered failures backwards: a 200 whose
+          // body will not parse (OpenAI's refusal shape has `content: null`) and a call
+          // the cast aborted at its deadline both arrive with no status and both are
+          // billed. Refunding them let the whole cast run with the cumulative cap reading
+          // `$0.00` — measured at 96 billed calls, `spentMicros: 0`, cap never tripped.
+          // Under-counting real spend is the dangerous direction, so the transport now
+          // answers the billing question directly and this only reads it.
+          //
+          // Anything that is not a CastTransportError at all stays charged, deliberately:
+          // an unrecognised failure is not evidence that nothing was spent.
+          if (error instanceof CastTransportError && !error.reachedProvider) {
             this.budget.refund(reserved);
           }
           state.ready = { generation, ok: false, why: describeFailure(error, 120) };
