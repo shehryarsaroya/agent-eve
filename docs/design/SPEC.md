@@ -462,7 +462,22 @@ Every fact has **three readerships** — the principal it belongs to, other agen
 | `SEALED` | nobody | the **flag** at the Reckoning | content in the season replay |
 | `PRIVATE` | the principal itself | never | never |
 
-**Assignments.** `PUBLIC`: holdings, standing, bond and sureties, published offers, settled ventures, defaults and cures, the Levy vote and its result, tribute lines, and **movement on public lanes** — a convoy is visible to anyone, because it is the map's motion and the map is the show. `PARTIES`: negotiation messages, `PARTIES`-marked venture terms, grant terms. `SENSED`: **cargo contents and hold values**, exact hand disposition off public lanes, site survey results. `SEALED`: seals. `PRIVATE`: a principal's own strategy notes and reasoning, never published to anyone — including its owner.
+**Assignments.** `PUBLIC`: holdings, standing, bond and sureties, published offers, settled ventures, defaults and cures, the Levy vote and its result, tribute lines, and **movement on public lanes** — a convoy is visible to anyone, because it is the map's motion and the map is the show. `PARTIES`: negotiation messages, `PARTIES`-marked venture terms, and a grant's **operational detail** — its verbs, resource selectors, approvals, and delegation depth. **A grant's two LIMITS (`max_direct_loss`, `max_contingent_liability`), its parties, and its renewal chain are `PUBLIC`.** `SENSED`: **cargo contents and hold values**, exact hand disposition off public lanes, site survey results. `SEALED`: seals. `PRIVATE`: a principal's own strategy notes and reasoning, never published to anyone — including its owner.
+
+**Why a grant's limits are public but its detail is not.** This line used to assign "grant terms" to
+`PARTIES` wholesale, and that contradicted §8 twice: §8 requires that **a counterparty can verify a
+delegate's mandate before dealing with it** — unsatisfiable if the limits are secret — and it makes
+**renewal history public and cumulative** so that "months of honest work" is a visible chain. It also
+left the A13 authority line in limbo, since a line that cannot show magnitude shows no stake at all,
+and "someone holds some authority over someone" is not a pixel signature.
+
+So the split is by *what the number is for*. **The limits are a public price**: they are what a
+counterparty needs to judge how much rope a delegate has, and what makes the replay's "the worst case
+was shown before you signed" checkable by anyone rather than assertable by us. **The operational
+detail is private strategy**: which verbs, over which resources, with which approvals is how a
+principal actually runs its house, and publishing it hands every rival a map of the internal controls.
+Knowing a delegate may lose 250,000 is a price. Knowing it may do so only on Tuesdays, over ore, with
+two approvals, is a plan.
 
 **Why cargo is sensed but the convoy is not.** A ship at sea is visible; its manifest is not. That single split gives the map continuous legible motion *and* keeps ambush dependent on reconnaissance — so scouting pays, intel is worth buying, and a raider who guesses wrong hits ballast.
 
