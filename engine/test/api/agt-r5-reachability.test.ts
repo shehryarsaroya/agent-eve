@@ -48,8 +48,8 @@ const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  *   - RESPONSE-ONLY — the verb answers something another principal started, so it is offered only
  *     while that thing is pending, and the pending state is rare in a short run.
  *
- * "We have not got round to it" is NOT a legitimate reason. `set_delivery_intent` is the one honest
- * gap left and it says so.
+ * "We have not got round to it" is NOT a legitimate reason. A third legitimate kind, HONEST GAP,
+ * exists for when that is nonetheless the truth — the list held exactly one and now holds none.
  */
 const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
   abandon:
@@ -73,11 +73,10 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'samples, at which point the affordance correctly disappears. Covered directly by ' +
     'test/api/legal-but-unoffered.test.ts.',
   withdraw: 'RESPONSE-ONLY — needs a syndicate membership to give notice on.',
-  set_delivery_intent:
-    'HONEST GAP — legal, executes, and offered nowhere. It is the offline path for meeting the ' +
-    'Levy (A3: durable intents are what make an absent agent viable), so its absence hurts exactly ' +
-    'the players least able to notice. Recorded as open in ' +
-    'docs/design/expansion-2026-07-25/D13-what-playing-it-found.md §4.',
+  // `set_delivery_intent` USED TO LIVE HERE as the one HONEST GAP, and its removal is this list
+  // working as designed: it is offered now, and the rot test above failed by name the moment the
+  // affordance landed — before I had thought to come and delete the entry. That is the whole reason
+  // the check runs in both directions. See test/api/offline-path-is-expressible.test.ts.
 });
 
 describe('AGT-R5 — every live verb is offered somewhere, or declared with a reason', () => {

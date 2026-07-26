@@ -1711,6 +1711,43 @@ function affordancesFor(
     });
   }
 
+  // 5B-bis. **THE OFFLINE PATH.** `set_delivery_intent` was the last HONEST GAP in AGT-R5's
+  //     exception list: legal, executing, and offered nowhere. A3 makes durable intents the reason
+  //     an offline agent is viable and R19 makes the Levy payable by one, so the players it serves
+  //     are precisely the ones not around to go looking for it.
+  //
+  //     Offered in the FLAT spelling. The nested form is what the verb was born with and the house
+  //     cast structurally cannot send it — `cast/parse.ts` rejects a non-array object in params and
+  //     discards the whole plan for it, which production logged as
+  //     `param-intent-nested-object`. An affordance an agent copies verbatim must be one every
+  //     client can actually send.
+  if (levyQuote.fault === null && levyQuote.payable > 0) {
+    eligible.push({
+      verb: 'set_delivery_intent',
+      params: {
+        intent_verb: 'deliver',
+        obligation: 'LEVY',
+        amount: levyQuote.payable,
+        until_tick: tick + TICKS_PER_RECKONING * 2,
+      },
+      cost: 1,
+      // The intent itself risks nothing at creation. What it will hand over each time it runs is
+      // the delivery's own cost, and that is stated rather than hidden inside the total.
+      max_direct_loss: levyQuote.payable,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `sets a STANDING ORDER to pay the Levy, so it keeps being paid while you are away. Creating ` +
+        `it costs one action and every tick it runs after that costs NONE — that is the whole point ` +
+        `of an intent, and it is why going offline costs you opportunity rather than your record. It ` +
+        `hands over up to ${String(levyQuote.payable)} of ${CHARGE_GOOD} each Reckoning until tick ` +
+        `${String(tick + TICKS_PER_RECKONING * 2)}, and it will keep doing so whether or not you are ` +
+        `watching — including when you would rather have spent those goods on something else. Raise ` +
+        `\`until_tick\` to cover a longer absence, or send it again later to replace this one.`,
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'set_delivery_intent', { obligation: 'LEVY' }),
+    });
+  }
+
   // 5C. **THE CORE LOOP (A6).** `grant` had no affordance at all. It is legal, it works, and it was
   //     never on the menu — while the cast prompt tells a player *"the safest plan is built from
   //     entries in affordances[]"*. The live world showed the consequence directly:

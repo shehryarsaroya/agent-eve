@@ -1396,15 +1396,51 @@ const BUILT_IN_VERBS: Readonly<Record<string, VerbHandler>> = {
   },
 
   set_delivery_intent: (ctx, request): WorldResult<null> => {
+    // ── TWO SPELLINGS, BECAUSE THE NESTED ONE IS UNREACHABLE FOR SOME CLIENTS ──
+    //
+    // This verb used to accept ONLY `{"intent": {"verb": ..., "params": {...}}}`, and that shape is
+    // impossible for the house cast to send: `cast/parse.ts` rejects any non-array object in params
+    // as `nested-object`, and a rejected param DISCARDS THE WHOLE PLAN — so one nested key costs a
+    // member its entire wake, not one action. Production logged it verbatim:
+    //
+    //     cast: thessaly reply discarded (param-intent-nested-object)
+    //
+    // A real cast member tried to set a standing intent and lost its wake for it. A3 says durable
+    // intents are what make an offline agent viable and R19 says the Levy is payable by one, so the
+    // players who most need this — the absent ones — were the ones who could not express it.
+    //
+    // So a FLAT spelling is accepted too: `{"intent_verb": "deliver", "obligation": "LEVY",
+    // "amount": N, "until_tick": N}` — the repeated act's own params sit alongside, minus the three
+    // control keys. The nested form still works; nothing that already sent it changes.
+    const CONTROL_KEYS: readonly string[] = ['intent', 'intent_verb', 'intentVerb', 'repeat', 'until_tick', 'untilTick', 'max_runs', 'maxRuns'];
     const inner = request.params['intent'];
-    if (typeof inner !== 'object' || inner === null || Array.isArray(inner)) {
+    const nested = typeof inner === 'object' && inner !== null && !Array.isArray(inner);
+    const flatVerb = request.params['intent_verb'] ?? request.params['intentVerb'] ?? request.params['repeat'];
+    if (!nested && (typeof flatVerb !== 'string' || flatVerb.length === 0)) {
       return reject(
         'A3',
-        `set_delivery_intent needs the act to repeat: {"intent": {"verb": "...", "params": {...}}, ` +
-          `"until_tick": N}. Creating it costs one action; every tick it runs after that costs none.`,
+        `set_delivery_intent needs the act to repeat, in either spelling: nested — ` +
+          `{"intent": {"verb": "...", "params": {...}}, "until_tick": N} — or flat, which is what ` +
+          `to send if your client cannot nest an object: ` +
+          `{"intent_verb": "deliver", "obligation": "LEVY", "amount": N, "until_tick": N}. ` +
+          `Creating it costs one action; every tick it runs after that costs none.`,
       );
     }
-    const spec = inner as Record<string, unknown>;
+    const spec = nested
+      ? (inner as Record<string, unknown>)
+      : {
+          verb: flatVerb,
+          // Built in SORTED key order rather than iteration order: this object reaches the hashed
+          // action log, and a hash that depends on the order a client happened to serialise its
+          // JSON is a determinism bug waiting for two clients to disagree. Explicit comparator —
+          // DET-1 bans a bare `.sort()`.
+          params: Object.fromEntries(
+            Object.keys(request.params)
+              .filter((k) => !CONTROL_KEYS.includes(k))
+              .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+              .map((k) => [k, request.params[k]]),
+          ),
+        };
     const verb = spec['verb'];
     if (typeof verb !== 'string' || verb.length === 0) {
       return reject('A3', 'the intent needs a verb to repeat.');
