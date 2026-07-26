@@ -250,7 +250,18 @@ describe('GRADUATION_STATEMENT is a rules surface and quotes the real numbers', 
     expect(GRADUATION_STATEMENT).toContain('INVALID, not punished');
     expect(GRADUATION_STATEMENT).toContain('one lane outward');
     expect(GRADUATION_STATEMENT).toContain('IT IS ONE-WAY');
-    expect(GRADUATION_STATEMENT).toContain('Recurring upkeep is NOT charged yet');
+    // ── THE FOURTH THING CHANGED WHEN THE CHARGE SHIPPED ──────────────────
+    //
+    // This read 'Recurring upkeep is NOT charged yet', which was true while §6.3's recurring
+    // half was unbuilt. It is built now, and it attaches to a **claim** rather than to a
+    // graduated body — so a graduated principal that never claims still owes nothing recurring,
+    // and one that claims owes a Charge every Reckoning forever. The old sentence would now be
+    // a false promise on the most consequential decision in the game, which is the exact shape
+    // this file exists to catch; leaving it in place and letting the mechanic disagree would
+    // have been scar #1 with territory attached.
+    expect(GRADUATION_STATEMENT).toContain('charged ONCE');
+    expect(GRADUATION_STATEMENT).toContain('attaches to a CLAIM, not to your body');
+    expect(GRADUATION_STATEMENT).toContain('holding.sovereignty');
   });
 
   it('does not promise ADJACENCY from a Commons seat, because the engine does not give it', () => {

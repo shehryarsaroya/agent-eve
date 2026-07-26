@@ -22,6 +22,7 @@
  */
 
 import type {
+  ClaimState,
   Handle,
   HoldingId,
   PrincipalId,
@@ -42,6 +43,8 @@ export const MAX_RUNDOWN_SEGMENTS = 12;
 export const MAX_AUTHORITY_LINES = 12;
 /** §17: raid lines drawn per frame. A countdown a viewer can follow, not a weather map. */
 export const MAX_RAID_LINES = 6;
+/** §17: claim tints drawn per frame. A map of who owes what, not a heatmap. */
+export const MAX_FRAME_CLAIM_LINES = 12;
 /** §14.3: seconds per segment. Human time — never scaled by TICK_SECONDS. */
 export const SEGMENT_SECONDS = { min: 30, max: 45 } as const;
 
@@ -178,6 +181,59 @@ export interface RaidLine {
 }
 
 /**
+ * Sovereignty's pixel signature (A13, §6.3) — **THE CLAIM TINT AND ITS LEGEND.**
+ *
+ * A13's own example is *"a claim tints a system"*. The tint is the state; the legend on it is
+ * the three words a stranger reads in three seconds — `PAID` · `ARREARS 1 of 2` ·
+ * `ARREARS 2 of 2 · NEXT MISS LAPSES` — with the amount due, the deadline and the bond at
+ * risk beside it.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THERE IS NO FUEL GAUGE HERE, AND THAT IS THE POINT OF THIS TYPE.**
+ *
+ * The rejected design published *"Reckonings of Charge remaining"*, which is a public recipe
+ * divided by a **private** stockpile: it leaked reserve coverage, the limiting good, and —
+ * when it jumped — inbound convoy contents. This line carries only the world's own published
+ * verdict (`state`, `legend`, `arrears`), figures the rules fixed in advance (`due`,
+ * `deadlineTick`, `bondAtRisk`, `arrearsOf`), what a completed public act moved (`owed`,
+ * `slashed`), and two facts a claimant published itself (`forSale`, and `contestable`, which
+ * is a clock).
+ *
+ * **`owed` had to argue for itself.** It is `due − delivered`, and `delivered` is goods that
+ * have already been **destroyed** into `sink:consumption`. So it is a function of the
+ * *spent* stock, never the remaining stock — a fact about the past, which A5 makes public the
+ * moment it happens. The gauge's sin was publishing a function of what was **left**, and the
+ * difference between those two is the whole §11.2 boundary this type sits on. A field named
+ * `reckoningsOfCover`, or anything else derived from a warehouse, does not belong here and
+ * `projection.ts` will refuse it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface ClaimLine {
+  readonly claim: string;
+  /** The system the tint sits on. */
+  readonly system: SystemId;
+  readonly claimant: PrincipalId;
+  readonly state: ClaimState;
+  /** The three words. `PAID` · `ARREARS 1 of 2` · `ARREARS 2 of 2 · NEXT MISS LAPSES`. */
+  readonly legend: string;
+  readonly arrears: number;
+  readonly arrearsOf: number;
+  /** This Reckoning's Charge, in units of the good. Computable by any stranger. */
+  readonly due: number;
+  /** Still owed. `due` less goods already destroyed — never a function of what is left. */
+  readonly owed: number;
+  readonly deadlineTick: number;
+  /** Posted, slashable, and `PUBLIC` by §6.4: "public, and any amount". */
+  readonly bondAtRisk: Minor;
+  /** What a lapse actually took. Zero unless it lapsed; A5 makes a loss public. */
+  readonly slashed: Minor;
+  /** The asking price while the claimant has it up for sale, else null. The fire sale. */
+  readonly forSale: Minor | null;
+  /** True while the published vulnerability window is open on a CONTESTED claim. */
+  readonly contestable: boolean;
+}
+
+/**
  * The venture glyph (§14.5): a ring on its stage, hands as pips on the rim, an
  * unfilled role as an empty socket that pulses — that is what "forming" looks
  * like — the elective share as a hollow arc, and settlement closing it gold or
@@ -264,6 +320,8 @@ export interface ReckoningFrame {
   readonly authorityLines: readonly AuthorityLine[];
   /** Predation's signature (§9, A14): what the world came for, and how it went. */
   readonly raidLines: readonly RaidLine[];
+  /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
+  readonly claimLines: readonly ClaimLine[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
@@ -364,6 +422,58 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     }
     if (line.lost < 0 || line.demand < 0) {
       problems.push(`raid ${line.raid} renders a negative quantity`);
+    }
+  }
+
+  if (frame.claimLines.length > MAX_FRAME_CLAIM_LINES) {
+    problems.push(
+      `${frame.claimLines.length} claim lines, budget is ${MAX_FRAME_CLAIM_LINES} — a legend a viewer reads, not a heatmap`,
+    );
+  }
+  for (const line of frame.claimLines) {
+    // ── THE LEGEND AND THE STATE MUST AGREE, AND THE PIXEL IS WHAT IS BELIEVED ──
+    //
+    // A claim tinted `SUPPLIED` under a legend reading `NEXT MISS LAPSES` is a stranger
+    // being told the wrong thing about a real agent's territory, and a stranger has no
+    // second source. The state is the world's verdict, so the label is checked against it
+    // rather than the other way round.
+    const expectsArrears = line.state === 'STRAINED' || line.state === 'CONTESTED';
+    if (expectsArrears !== line.legend.startsWith('ARREARS')) {
+      problems.push(
+        `claim ${line.claim} renders ${line.state} under the legend "${line.legend}"; the label and the ` +
+          'legal state must say the same thing',
+      );
+    }
+    if (line.state === 'CONTESTED' && !line.legend.includes('NEXT MISS LAPSES')) {
+      problems.push(
+        `claim ${line.claim} is CONTESTED and its legend does not warn that the next miss lapses it; the whole ` +
+          'point of publishing the state is that the fall is visible one Reckoning ahead',
+      );
+    }
+    if (line.state !== 'LAPSED' && line.slashed > 0) {
+      problems.push(
+        `claim ${line.claim} renders ${line.state} and carries a slash of ${line.slashed}; only a LAPSE slashes`,
+      );
+    }
+    if (line.due < 0 || line.owed < 0 || line.bondAtRisk < 0) {
+      problems.push(`claim ${line.claim} renders a negative quantity`);
+    }
+    if (line.owed > line.due) {
+      problems.push(
+        `claim ${line.claim} renders ${line.owed} owed against ${line.due} due; owed is due less what was ` +
+          'already destroyed and can never exceed it',
+      );
+    }
+    // The gauge, refused at the boundary rather than in review. Any field whose name
+    // suggests a division of a stockpile by a recipe is the rejected design coming back,
+    // and this is the last place before a screen.
+    for (const key of Object.keys(line)) {
+      if (/cover|remaining|reserve|stock|gauge/i.test(key)) {
+        problems.push(
+          `claim ${line.claim} carries '${key}'. A frame field derived from a private stockpile is the "fuel ` +
+            'gauge" §11.2 refused: it leaks reserve coverage, the limiting good, and inbound convoy contents',
+        );
+      }
     }
   }
 

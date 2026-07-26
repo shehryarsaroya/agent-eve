@@ -53,7 +53,7 @@ import {
   ticksUntilReckoning,
 } from '../core/time.js';
 import type { Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
-import { minor, type Minor } from '../core/units.js';
+import { BPS_ONE, minor, type Minor } from '../core/units.js';
 import { storesAccount } from '../ledger/index.js';
 import { MAX_ORDER_QTY, sellableGoods, type PublicBook } from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
@@ -75,6 +75,20 @@ import {
  */
 import { slotClaimAt } from '../observe/forecast.js';
 import { RAID_JOIN_STAKE_MINOR, RAID_TAKE_MULTIPLE } from '../predation/index.js';
+import {
+  ANCHOR_QTY,
+  ARREARS_STATEMENT,
+  CESSION_SALVAGE_BPS,
+  CHARGE_BALLOT,
+  CHARGE_GOOD,
+  CHARGE_STATEMENT,
+  CLAIM_BOND_MINOR,
+  PUBLISHED_DEFAULT_CHARGE_RULE,
+  SOVEREIGNTY_STATEMENT,
+  chargeBallotWindow,
+  chargeConstituencyOf,
+  type ClaimView,
+} from '../sovereignty/index.js';
 import type { SealRoleRef } from '../seal/index.js';
 import {
   commonsBoundRejection,
@@ -220,6 +234,14 @@ export function buildObservation(input: ObserveInput): Observation {
   const world = runtime.world;
   const hands = handsOf(world, principal);
   const holding = holdingOf(world, principal);
+  // ── ONE SOLVE, LIKE THE BOARD AND THE MARKET BLOCK ──────────────────────
+  //
+  // The claim rows are read once and used by `holding.threats`, `holding.upkeep_due_qty`,
+  // `obligations.charge` and the affordance list. Solving them four times would let the
+  // alarm, the bill and the act disagree about what is owed inside one payload — the
+  // two-homes shape of scar #1 with territory attached — and it is also four walks of the
+  // claim book per observation.
+  const myClaims = runtime.claimsFor(principal, tick);
   const mine = runtime.ventures.forPrincipal(principal);
 
   const solved = boardFor(runtime, principal, tick);
@@ -346,24 +368,32 @@ export function buildObservation(input: ObserveInput): Observation {
       state: holding.state,
       fell_at_reckoning: holding.fellAtReckoning,
       /**
-       * Empty, and truthfully so **even now that predation is live**: a raid takes
-       * located goods and sends hands to `RECOVERING`, and §9 has nothing in it that
-       * reaches a holding. Sieges and seizure are the mechanics that would fill this,
-       * and they land with sovereignty. A demand against this principal is not
-       * invented here either — it is a real row in `obligations.raid`, with its
-       * deadline and all three costs. An invented threat would be a lie in the one
-       * field an agent would act on hardest.
+       * **THE ONE THING THAT CAN TAKE TERRITORY, AND IT IS NAMED BEFORE IT HAPPENS.**
+       *
+       * A `CONTESTED` claim of this principal's, inside or approaching the published
+       * vulnerability window, is a real threat to a real holding — the first thing in
+       * this build that is. Every row is public legal state and a clock: no row here
+       * is a function of what anybody holds, which is the difference between this and
+       * the "fuel gauge" §11.2 refused (see `sovereignty/view.ts`).
+       *
+       * Predation still contributes nothing: a raid takes located goods and sends
+       * hands to `RECOVERING`, and §9 has nothing in it that reaches a holding. A
+       * demand is a real row in `obligations.raid` instead, with its own deadline.
        */
-      threats: [],
+      threats: claimThreats(myClaims),
       /**
-       * Zero, and it is the honest number rather than a stub. §6.3 makes a Marches or
-       * Frontier holding pay upkeep **continuously**, and that recurring charge is not
-       * built — it arrives with the Charge. What *is* charged is the one-off at the
-       * crossing (`graduation.upkeep_minor` + `upkeep_qty`), and
-       * `graduation.statement` says in as many words that the recurring half is not
-       * live yet. A non-zero figure here would be a bill nothing sends.
+       * §6.3's recurring upkeep, in **goods** — the Charge, summed over every claim.
+       *
+       * It was `0` with a comment saying the recurring half was not built. It is built:
+       * `obligations.charge` carries the per-claim detail with each deadline, each
+       * consequence and each bond at risk, and this is the headline an agent sees
+       * without reading it. Currency is `0` because the Charge is payable ONLY in goods
+       * standing at the claimed system — a currency figure here would be a bill nothing
+       * sends, which is what this field used to be.
        */
       upkeep_due: 0,
+      upkeep_due_qty: myClaims.reduce((n, c) => n + c.owed, 0),
+      upkeep_good: CHARGE_GOOD,
       /**
        * **THE EXIT, VISIBLE FROM INSIDE** (§4.1, §6.3, A8, A15, A2).
        *
@@ -382,6 +412,29 @@ export function buildObservation(input: ObserveInput): Observation {
        */
       commons_bound: principalIsCommonsBound(world, principal),
       graduation: graduationBlock(runtime, principal),
+      /** §6.4: posted slashable capital, continuous and public. What a claim requires. */
+      bond: runtime.bondView(principal),
+      /**
+       * **ONE sovereignty statement, chosen by what this principal can actually do next.**
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * **THIS WAS THREE STATEMENTS AND IT BROKE THE CAST.** The first version shipped
+       * `SOVEREIGNTY_STATEMENT`, `CHARGE_STATEMENT` and `ARREARS_STATEMENT` — about 3 KB
+       * of static prose — in **every** observation for **every** principal, including
+       * Commons-bound newcomers for whom a claim is not a legal act. Measured
+       * consequence: `cast/prompt.ts:projectObservation` drops observation keys and then
+       * truncates `affordances[]` once the payload passes 16,000 characters, so a
+       * twelve-member cast over one Reckoning went from 192 LIVE decisions to 172 and the
+       * deciding share fell **below** the health floor. Static prose crowded out the
+       * agent's own choices.
+       *
+       * §12.1's observation budget is ~3k tokens normally, and it is a budget for
+       * *decision-relevant state*. So the rule here is the one the affordance list already
+       * follows: say the thing that applies now. All three strings are in `agent.md` in
+       * full, verbatim and pinned, which is where a complete rules surface belongs.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      sovereignty: sovereigntyStatementFor(world, principal, myClaims),
     },
 
     obligations: {
@@ -420,6 +473,20 @@ export function buildObservation(input: ObserveInput): Observation {
        * whose default outcome is not stated is not a decision.
        */
       raid: runtime.raidsFor(principal, tick, MAX_LIST_ROWS),
+      /**
+       * **THE CHARGE, WITH ITS DEADLINE AND ITS CONSEQUENCE** (§6.3, A5′).
+       *
+       * It belongs in `obligations` for the raid row's reason: it is something owed, at
+       * a named place, by a named tick, with a stated consequence for not paying. What
+       * makes it the most dangerous row in the payload is that the consequence is
+       * territory and slashable capital, so `if_you_do_nothing` and `consequence` are
+       * not decoration — they are the same arithmetic settlement runs
+       * (`sovereignty/view.ts:claimDoNothing`), so a claimant that reads this and does
+       * nothing gets exactly what it was told.
+       */
+      charge: myClaims.slice(0, MAX_LIST_ROWS),
+      /** The allocation ballot, while it is open. Who bears the total is the vote (§5.2's split). */
+      charge_ballot: chargeBallotBlock(runtime, principal, tick),
     },
 
     ventures: {
@@ -620,6 +687,87 @@ function graduationBlock(
   };
 }
 
+/**
+ * Claims of this principal's that are in arrears, as `holding.threats[]`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A THREAT AN AGENT COULD NOT SEE COMING IS A DICE ROLL, AND A LAPSE IS PERMANENT.** This
+ * is the field an agent acts on hardest, so every row is a published fact and a published
+ * clock: the claim's legal state, how many misses it carries, when the vulnerability window
+ * opens, and what settlement does tonight if nothing more arrives. Nothing here is derived
+ * from anybody's stores — not the claimant's and not a rival's.
+ *
+ * A `SUPPLIED` claim is not a threat and is deliberately absent: a threats list that always
+ * had every claim in it would train agents to ignore it, which is the failure mode of a
+ * warning that is always on.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function claimThreats(mine: readonly ClaimView[]): readonly Readonly<Record<string, unknown>>[] {
+  return mine
+    .filter((c) => c.state === 'STRAINED' || c.state === 'CONTESTED' || c.if_you_do_nothing !== 'STAYS_SUPPLIED')
+    .slice(0, MAX_LIST_ROWS)
+    .map((c) => ({
+      kind: 'CHARGE_ARREARS',
+      system: c.system,
+      state: c.state,
+      legend: c.legend,
+      owed_qty: c.owed,
+      deadline_tick: c.deadline_tick,
+      bond_at_risk: c.bond_at_risk,
+      if_you_do_nothing: c.if_you_do_nothing,
+      consequence: c.consequence,
+      /** Open now, or the tick it opens. A14: the defender reads the same clock the taker does. */
+      window_opens_tick: c.vulnerability.opens_tick,
+      window_open: c.vulnerability.open,
+    }));
+}
+
+/**
+ * The one sovereignty statement that applies to this principal right now.
+ *
+ * Three rules surfaces, one slot, and the choice is by what the principal can legally do
+ * next — which is the same rule the affordance list follows. `null` for a Commons-bound
+ * principal with no claim: a claim there is INVALID rather than refused (A8), so
+ * sovereignty is not yet a thing that can happen to it, and 3 KB of prose about it on all
+ * sixteen wakes a day is a cost with no decision attached. `graduation.statement` already
+ * tells that principal what leaving the Commons commits it to, and `agent.md` §11 carries
+ * all three strings in full.
+ */
+function sovereigntyStatementFor(
+  world: Runtime['world'],
+  principal: PrincipalId,
+  mine: readonly ClaimView[],
+): string | null {
+  if (mine.some((c) => c.state === 'STRAINED' || c.state === 'CONTESTED')) return ARREARS_STATEMENT;
+  if (mine.length > 0) return CHARGE_STATEMENT;
+  if (world.holdingByPrincipal.get(principal) === undefined) return null;
+  if (tierOf(world.map, holdingOf(world, principal).system) === 'COMMONS') return null;
+  return SOVEREIGNTY_STATEMENT;
+}
+
+/** The Charge allocation ballot, while it is open. Null when this principal holds no claim. */
+function chargeBallotBlock(
+  runtime: Runtime,
+  principal: PrincipalId,
+  tick: number,
+): Readonly<Record<string, unknown>> | null {
+  const constellation = chargeConstituencyOf(runtime.sovereignty, principal);
+  if (constellation === null) return null;
+  const window = chargeBallotWindow(tick);
+  if (!window.open) return null;
+  return {
+    id: `${CHARGE_BALLOT}::${String(window.forReckoning)}::${constellation}`,
+    kind: CHARGE_BALLOT,
+    closes_tick: window.closesTick,
+    voted: runtime.sovereignty.hasVoted(window.forReckoning, principal),
+    for_reckoning: window.forReckoning,
+    rules: ['EVEN', 'BY_CLAIMS', 'BY_TIER'],
+    default_rule: PUBLISHED_DEFAULT_CHARGE_RULE,
+    /** A CHARGE ballot takes nothing from anybody, so `null` is the honest answer. */
+    target: null,
+  };
+}
+
 function localSummary(
   books: readonly PublicBook[],
   system: SystemId,
@@ -645,6 +793,9 @@ function affordancesFor(
   books: readonly PublicBook[],
 ): AffordanceSet {
   const eligible: Affordance[] = [];
+  /** Charge deliveries withheld because no hand of this principal is standing there. */
+  let chargeNoHand = 0;
+  const chargeNoHandAt: string[] = [];
   const world = runtime.world;
   const hands = handsOf(world, principal);
   const mine = runtime.ventures.forPrincipal(principal);
@@ -738,6 +889,89 @@ function affordancesFor(
           quote_id: quoteId(principal, tick, 'join', { raid: view.raid, side: 'RAIDER', principal: view.target }),
         });
       }
+    }
+  }
+
+  // 0b. **Supply a claim of yours.** Second only to a raid, and for the same reason: the
+  //     deadline is the Reckoning, nobody can be talked out of it, and the consequence is
+  //     the only thing in this build that can take TERRITORY and slashable capital.
+  //
+  //     ══════════════════════════════════════════════════════════════════════
+  //     **A5′ LIVES HERE.** *"Never record an arrears or a lapse against a claimant that
+  //     was never shown what it owed."* The observation block is half of that; this is the
+  //     other half, because an agent following the affordance list is the agent most likely
+  //     to be following ONLY the affordance list. `max_direct_loss` on a `deliver` is the
+  //     goods it hands over; `max_contingent_liability` is what NOT acting costs — the bond
+  //     that gets slashed if this is the third miss — because that is the number A6's own
+  //     preview rule exists to publish and the number an agent will regret not reading.
+  //     ══════════════════════════════════════════════════════════════════════
+  for (const claim of runtime.claimsFor(principal, tick)) {
+    if (claim.owed <= 0) continue;
+    const canPayNow = Math.min(claim.owed, claim.available_here);
+    // ── PRESENCE, OR THE OFFER IS A TRAP (AGT-S2) ─────────────────────────
+    //
+    // A Charge is goods physically handed over, so `chargeDeliveryFault` refuses a delivery
+    // with no hand of the deliverer standing at the claimed system — and it is right to.
+    // `graduate` moves a HOLDING and leaves the hands where they were, so this is the
+    // ORDINARY state of a principal that has just claimed, not an edge case. Offering
+    // `deliver` there costs the agent a real action on an act the engine will refuse; the
+    // acceptance test caught exactly that, verbatim. Withheld and counted below.
+    if (canPayNow > 0 && claim.hand_here) {
+      eligible.push({
+        verb: 'deliver',
+        params: { obligation: 'CHARGE', system: claim.system, amount: canPayNow },
+        cost: 1,
+        max_direct_loss: canPayNow,
+        max_contingent_liability: claim.if_you_do_nothing === 'LAPSES' ? claim.bond_at_risk : 0,
+        what_it_forecloses:
+          `${String(canPayNow)} of ${claim.good} standing at ${claim.system} is destroyed and credited against ` +
+          `this Reckoning's Charge of ${String(claim.due)}; ${String(claim.owed - canPayNow)} would still be ` +
+          `owed after it. Partial payment counts. ${claim.consequence}`,
+        expires_tick: claim.deadline_tick,
+        quote_id: quoteId(principal, tick, 'deliver', { obligation: 'CHARGE', system: claim.system }),
+      });
+    } else if (canPayNow > 0) {
+      chargeNoHand += 1;
+      chargeNoHandAt.push(claim.system);
+    }
+    // The two exits, offered **only once the record has actually published a miss.** The
+    // first draft offered them whenever a Charge was outstanding, which is *every* claim at
+    // the start of *every* Reckoning — so a principal that had just taken territory and had
+    // 280 ticks to pay for it was handed "sell it" and "give it up" as its top two
+    // affordances. That is the server suggesting surrender, which is advice and not an
+    // affordance (A12: ship the sandbox, never the narrative). From STRAINED onward there are
+    // still two whole Reckonings to use them in, so nothing is lost by waiting for a fact.
+    if (claim.state === 'STRAINED' || claim.state === 'CONTESTED') {
+      eligible.push({
+        verb: 'publish_offer',
+        params: { cede: claim.system, price: 0 },
+        cost: 1,
+        max_direct_loss: 0,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `puts ${claim.system} up for sale at a price you set — 0 means "take it off my hands". A buyer ` +
+          `inherits the claim AND its ${String(claim.arrears)} arrears, and pays you the price. Publishing an ` +
+          `offer takes nothing from you and can be restated; nobody can take the claim without your offer ` +
+          `unless it is CONTESTED and the published window is open.`,
+        expires_tick: claim.deadline_tick,
+        quote_id: quoteId(principal, tick, 'publish_offer', { cede: claim.system }),
+      });
+      eligible.push({
+        verb: 'abandon',
+        params: { claim: claim.system },
+        cost: 1,
+        // Exact: giving up costs the unsalvaged part of the bond, which is strictly less
+        // than a lapse takes. That comparison is the whole reason this affordance exists.
+        max_direct_loss: claim.bond_at_risk - Math.trunc((claim.bond_at_risk * CESSION_SALVAGE_BPS) / BPS_ONE),
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `gives up ${claim.system} now. 60% of the ${String(claim.bond_at_risk)} bond stops being at risk and ` +
+          `the rest is retired; the claim ends CEDED, not LAPSED. A lapse takes the whole ` +
+          `${String(claim.bond_at_risk)}, so this is cheaper than failing — and the arrears stay with the ` +
+          `ground for whoever claims it next.`,
+        expires_tick: claim.deadline_tick,
+        quote_id: quoteId(principal, tick, 'abandon', { claim: claim.system }),
+      });
     }
   }
 
@@ -1053,6 +1287,129 @@ function affordancesFor(
   const crossingWithheld =
     crossing !== null && !crossing.affordable ? crossing.open.length : 0;
 
+  // 5c. **Rescue, or take.** A claim of somebody else's that is for sale, or contestable
+  //     inside the published window. Both are `build`, and the row says which.
+  //
+  //     ══════════════════════════════════════════════════════════════════════
+  //     **RANKED HERE AND NOT AT THE TOP, AND THE MEASUREMENT IS WHY.** It has a clock —
+  //     the vulnerability window closes — but it is an *opportunity*, not an obligation:
+  //     nothing happens to this principal if it declines. `graduate`'s note above states
+  //     the rule ("below the raid answers and the signature deadlines because those have
+  //     clocks and this one does not"), and taking somebody else's territory is the same
+  //     kind of act.
+  //
+  //     Ranking it at the top was measured and was wrong in a way worth recording: the
+  //     cast harness picks `affordances[0]` every wake, so with these above `sign` all
+  //     twelve members marched out of the Commons and claimed within one Reckoning. The
+  //     world then had far more for the heuristic gap-filler to do, and the LLM-deciding
+  //     share fell from 3232 bps to 2477 — through the 2500 bps health floor. The
+  //     affordance order is a rules surface for exactly this reason: it is what an agent
+  //     playing from the list actually does.
+  //     ══════════════════════════════════════════════════════════════════════
+  for (const claim of runtime.claimsOpenTo(principal, tick)) {
+    if (claim.route === null) continue;
+    if (claim.available_here < ANCHOR_QTY) continue;
+    const price = claim.cession?.price ?? 0;
+    if (claim.route === 'CESSION' && free < price) continue;
+    eligible.push({
+      verb: 'build',
+      params: { kind: 'ANCHOR', system: claim.system },
+      cost: 1,
+      max_direct_loss: price,
+      // Taking a claim takes on its Charge and its arrears, so the contingent liability is
+      // the bond you must have posted plus what the arrears can cost you. Named, because A6's
+      // preview rule is that a worst case is shown before it is signed for.
+      max_contingent_liability: CLAIM_BOND_MINOR,
+      what_it_forecloses:
+        `${claim.route === 'CESSION' ? `pays ${String(price)} to ${claim.claimant} and` : 'takes the claim by force of arrival inside the published window and'} ` +
+        `destroys ${String(ANCHOR_QTY)} of ${claim.good} standing at ${claim.system}. You become the claimant of ` +
+        `record — AND you inherit its ${String(claim.arrears)} arrears and this Reckoning's ` +
+        `${String(claim.owed)} still owed, which a transfer never resets. Your holding must already stand there ` +
+        `and you must have ${String(CLAIM_BOND_MINOR)} more bond posted per claim.`,
+      expires_tick: claim.vulnerability.open ? claim.vulnerability.closes_tick : claim.deadline_tick,
+      quote_id: quoteId(principal, tick, 'build', { kind: 'ANCHOR', system: claim.system }),
+    });
+  }
+
+  // 5d. **Take a claim where you already stand**, and post the bond that backs it. No
+  //     clock at all, so it ranks below everything that has one.
+  //
+  //     Offered only outside the Commons, because a Commons claim is INVALID rather than
+  //     refused (A8) and offering it would be offering a move the floor always rejects — the
+  //     same rule that keeps `RAID` out of `OFFERED_KINDS`. This is the affordance that makes
+  //     the whole mechanic reachable by an agent that reads nothing else, which is why it
+  //     carries both halves of the price and names the recurring one.
+  {
+    const holding = world.holdingByPrincipal.get(principal) === undefined
+      ? null
+      : holdingOf(world, principal);
+    const bond = runtime.bondView(principal);
+    if (holding !== null && tierOf(world.map, holding.system) !== 'COMMONS') {
+      const here = runtime.sovereignty.liveAt(holding.system);
+      const shortfall = CLAIM_BOND_MINOR + bond.required - bond.posted;
+      if (shortfall > 0 && free >= shortfall) {
+        eligible.push({
+          verb: 'post_bond',
+          params: { amount: shortfall },
+          cost: 1,
+          // A bond is LOCKED, not spent, and it is only lost if a claim of yours lapses. So
+          // the direct loss is zero and the contingent liability is the whole amount — which
+          // is the honest shape and the reason the two fields exist separately.
+          max_direct_loss: 0,
+          max_contingent_liability: shortfall,
+          what_it_forecloses:
+            `locks ${String(shortfall)} of your stores as BOND. It stays yours and stays visible as your credit ` +
+            `rating; it is taken only if a claim of yours LAPSES. You have ${String(bond.posted)} posted against ` +
+            `${String(bond.required)} required for ${String(bond.claims)} claim(s), and one more claim needs ` +
+            `${String(CLAIM_BOND_MINOR)} on top. Locked stores cannot be spent on anything else.`,
+          expires_tick: tick + 1,
+          quote_id: quoteId(principal, tick, 'post_bond', { amount: shortfall }),
+        });
+      }
+      if (
+        here === null &&
+        shortfall <= 0 &&
+        runtime.chargeGoodAt(principal, holding.system) >= ANCHOR_QTY
+      ) {
+        eligible.push({
+          verb: 'build',
+          params: { kind: 'ANCHOR', system: holding.system },
+          cost: 1,
+          max_direct_loss: ANCHOR_QTY,
+          max_contingent_liability: CLAIM_BOND_MINOR,
+          what_it_forecloses:
+            `destroys ${String(ANCHOR_QTY)} of ${CHARGE_GOOD} standing at ${holding.system} and makes you its ` +
+            `claimant. From the next Reckoning onward the claim owes a CHARGE in goods that must be standing ` +
+            `THERE, every Reckoning, forever — miss it three times running and the claim lapses and ` +
+            `${String(CLAIM_BOND_MINOR)} of your bond is slashed. This is territory you have to MAINTAIN, not ` +
+            `territory you buy once.`,
+          expires_tick: tick + 1,
+          quote_id: quoteId(principal, tick, 'build', { kind: 'ANCHOR', system: holding.system }),
+        });
+      }
+    }
+    // The allocation vote. Free, like every other ballot (`tick/budget.ts` lists `vote`), and
+    // offered only to a claimant with an open ballot it has not cast.
+    const ballot = chargeBallotBlock(runtime, principal, tick);
+    if (ballot !== null && ballot['voted'] === false) {
+      eligible.push({
+        verb: 'vote',
+        params: { ballot: CHARGE_BALLOT, rule: PUBLISHED_DEFAULT_CHARGE_RULE },
+        cost: 0,
+        max_direct_loss: 0,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `decides how Reckoning ${String(ballot['for_reckoning'])}'s sovereignty upkeep is SPLIT across your ` +
+          `constellation's claims — the total is fixed by rule and cannot be dodged, but who bears which share ` +
+          `is this vote. EVEN spreads it per claim, BY_CLAIMS loads it onto whoever holds the most territory, ` +
+          `BY_TIER loads it onto the Frontier. Two claimants naming the same \`spare\` relieve it to a nominal ` +
+          `share and the rest of you fund the difference. Quorum failure applies ${PUBLISHED_DEFAULT_CHARGE_RULE}.`,
+        expires_tick: Number(ballot['closes_tick']),
+        quote_id: quoteId(principal, tick, 'vote', { ballot: CHARGE_BALLOT }),
+      });
+    }
+  }
+
   // 6. Move an idle hand one gate. Loss is time, never capacity (INV-8), so the
   //    direct loss is exactly zero and saying so is the point.
   //
@@ -1274,6 +1631,18 @@ function affordancesFor(
         'holding.graduation carries the same figures and the destinations, so the choice is still readable',
     );
   }
+  if (chargeNoHand > 0) {
+    // Counted with the sentence that fixes it, because the fix is one ordinary act. Left
+    // uncounted this would read as "your Charge is unpayable", which is the shape of the
+    // refusal loop that buries real rules-surface defects (AGT-S3).
+    reasons.push(
+      `${String(chargeNoHand)} Charge delivery(ies) exist and are not offered because none of YOUR hands is ` +
+        `standing at ${[...new Set(chargeNoHandAt)].sort(cmp).join(', ')}. A Charge is goods physically handed ` +
+        'over, so `move` a hand there first — `graduate` moved your holding and your stores, never your hands. ' +
+        'obligations.charge[] carries `hand_here: false` and the full bill regardless, so the deadline stays ' +
+        'readable; and any principal\'s hand may pay any claim\'s Charge, so hiring a carrier also works',
+    );
+  }
   if (boardDropped > 0) {
     // The list this sentence is about is `ventures.board[]` itself, one level above the
     // affordances. It slices at `MAX_LIST_ROWS`, and until this branch existed the payload
@@ -1298,6 +1667,7 @@ function affordancesFor(
         rowsOutOfReach +
         boardDropped +
         crossingWithheld +
+        chargeNoHand +
         commonsBoundLanes,
       reason:
         reasons.length === 0
@@ -1773,6 +2143,38 @@ function ifYouDoNothing(
         `against you at tick ${String(settlement)} — this one does not lapse quietly, and it is the ` +
         'obligation doing nothing cannot avoid',
     );
+  }
+
+  // ── AND THE CHARGE HAS TO BE IN HERE, FOR THE SAME REASON AND WORSE ─────────
+  //
+  // The Levy was omitted from this field until a playtest caught it, and the sentence read
+  // "absence costs opportunity and nothing else" in the same payload that carried
+  // `shortfall_if_unpaid: 500`. The Charge is that failure with the stakes raised: a Levy
+  // shortfall costs Commons capacity, and a Charge shortfall costs TERRITORY and 50,000 of
+  // slashable capital. A5′ is explicit — never record an arrears or a lapse against a
+  // claimant that was never shown what it owed — and this field is where being shown
+  // happens for an agent that reads one line.
+  //
+  // It goes at the FRONT, ahead of the Levy, because a lapse is irreversible and a Levy
+  // shortfall is not: the ordering is by what an agent would most regret not reading.
+  const claims = runtime.claimsFor(principal, tick);
+  const failing = claims.filter((c) => c.if_you_do_nothing !== 'STAYS_SUPPLIED');
+  const lapsing = failing.filter((c) => c.if_you_do_nothing === 'LAPSES');
+  if (failing.length > 0) {
+    parts.unshift(
+      failing
+        .slice(0, 3)
+        .map((c) => c.consequence)
+        .join(' '),
+    );
+    if (lapsing.length > 0) {
+      parts.unshift(
+        `${String(lapsing.length)} claim(s) of yours LAPSE at tick ${String(settlement)} and ` +
+          `${String(lapsing.reduce((n, c) => n + c.bond_at_risk, 0))} of your bond is SLASHED — this is the ` +
+          'consequence of doing nothing that cannot be undone, and delivering, selling or abandoning are all ' +
+          'cheaper than it',
+      );
+    }
   }
 
   if (parts.length === 0) {

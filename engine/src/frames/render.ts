@@ -37,6 +37,8 @@ import {
   type CastChip,
   type DocketCard,
   type RaidLine,
+  MAX_FRAME_CLAIM_LINES,
+  type ClaimLine,
   type ReckoningFrame,
   type RundownSegment,
   type TributeLine,
@@ -85,6 +87,15 @@ export interface FrameSource {
    * nobody attacked is the worst lie this frame could tell.
    */
   readonly raidLines?: readonly RaidLine[];
+  /**
+   * Sovereignty's claim lines (§6.3, A13), supplied by the sovereignty layer.
+   *
+   * Optional and passed in for the reason every other line set is: a renderer that computed
+   * its own would be inventing an obligation, and a tint reading `NEXT MISS LAPSES` over a
+   * claim nobody is short on is a lie about a real agent's territory that a stranger has no
+   * second source for. This file cannot know what is owed and must not guess.
+   */
+  readonly claimLines?: readonly ClaimLine[];
 }
 
 export interface SettledView {
@@ -126,6 +137,29 @@ function handleOf(src: FrameSource, p: PrincipalId): Handle {
  */
 function authorityWeight(line: AuthorityLine): Minor {
   return addMinor(line.granted, line.grantedContingent);
+}
+
+/**
+ * How close a claim is to falling. The claim-line sort's first key.
+ *
+ * Ordered by *what a viewer would regret not seeing*: a lapse that happened tonight, then a
+ * claim one miss from lapsing, then one that is contestable right now, then ordinary arrears.
+ * A `SUPPLIED` claim is last, which is right — it is the one with nothing about to happen to
+ * it — and it is still drawn while there is room.
+ */
+function claimUrgency(line: ClaimLine): number {
+  switch (line.state) {
+    case 'LAPSED':
+      return 5;
+    case 'CONTESTED':
+      return line.contestable ? 4 : 3;
+    case 'STRAINED':
+      return 2;
+    case 'CEDED':
+      return 1;
+    case 'SUPPLIED':
+      return 0;
+  }
 }
 
 function money(n: Minor): string {
@@ -333,6 +367,21 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
           compareIds(a.raid, b.raid),
       )
       .slice(0, MAX_RAID_LINES),
+    // Claims about to fall first, then the largest shortfall, then by id. Same argument as
+    // the raid lines: if the budget bites, what survives is what the audience most needs,
+    // and the order is arithmetic rather than taste. A discharged claim is a hairline and it
+    // is the first thing dropped — but it is still *drawn* while there is room, because a
+    // map that showed only failing claims would make the screen quietest on the night the
+    // most upkeep was supplied.
+    claimLines: (src.claimLines ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          claimUrgency(b) - claimUrgency(a) ||
+          b.owed - a.owed ||
+          compareIds(a.system, b.system),
+      )
+      .slice(0, MAX_FRAME_CLAIM_LINES),
     glyphs: byStakesAscending.map(glyphFor),
     ticker: src.ticker.filter((t) => t.length <= 140),
     nextDocket: docket,
@@ -355,6 +404,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     tributeLines: [],
     authorityLines: [],
     raidLines: [],
+    claimLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],

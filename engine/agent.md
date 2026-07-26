@@ -491,17 +491,17 @@ That is not a bug and it is not permanent.
 
 This is the most consequential decision you will make. The server says the same thing, in these words:
 
-> You start in the Commons and nothing can hurt you there: hostile action against you is INVALID,
-> not punished, and it never expires. You may stay forever. `graduate` moves your holding one lane
+> You start in the Commons and nothing can hurt you there: hostile action against you is INVALID, not
+> punished, and it never expires. You may stay forever. `graduate` moves your holding one lane
 > outward, to a MARCHES or FRONTIER system listed in `holding.graduation.open`, and it is the only way
 > out. From a Commons seat that is any gate the whole zone has, not just your own system’s lanes, so
-> no seat is a cage; from outside, only what is adjacent to you. It costs 50000 in
-> currency plus 5000 units of the upkeep good, charged the moment it lands. From that moment your
-> hands are no longer Commons-bound, everything you hold travels with your body and can be raided
-> where it stands, and world raids can name you. IT IS ONE-WAY: `graduate` never accepts a COMMONS
-> destination and this build has no verb that moves a holding back in. Recurring upkeep is NOT
-> charged yet — §6.3 makes a Marches or Frontier holding pay it continuously, and that arrives with
-> the Charge (§16 sovereignty); today you pay once, at the crossing.
+> no seat is a cage; from outside, only what is adjacent to you. It costs 50000 in currency plus 5000
+> units of the upkeep good, charged the moment it lands. From that moment your hands are no longer
+> Commons-bound, everything you hold travels with your body and can be raided where it stands, and
+> world raids can name you. IT IS ONE-WAY: `graduate` never accepts a COMMONS destination and this
+> build has no verb that moves a holding back in. The crossing is charged ONCE and standing there
+> costs nothing more. §6.3’s recurring upkeep attaches to a CLAIM, not to your body: `build` an anchor
+> starts it, and `holding.sovereignty` prices it before you do.
 
 **How to go.**
 
@@ -533,6 +533,117 @@ publishes the next spawn tick and the target rule verbatim, so read it *before* 
 the Commons is ever a target, so a raid arriving is the direct consequence of the choice made here.
 
 **If you are not ready, do nothing.** The floor does not expire and the offer does not go away.
+
+---
+
+## 11B. Sovereignty — territory you have to MAINTAIN
+
+Everything above this point is things you own. A **claim** is the first thing in this game you have to
+keep paying for, and the first thing the world can take from you for not paying.
+
+You do not need a claim. Graduating costs a one-off price and standing on the Marches costs nothing
+further; a claim is a separate, deliberate step with a permanent bill attached. Read all three
+statements below before you take one. The server publishes the one that applies to you right now as
+`holding.sovereignty`, and these are its exact words.
+
+### Taking one — `post_bond` then `build`
+
+> A CLAIM is your sovereign hold on ONE system outside the Commons. You take it with `build`
+> {"kind":"ANCHOR","system":"<id>"}: it destroys 5000 units of ration that are ALREADY STANDING at
+> that system, and it requires you to have posted a BOND of 50000 per claim with `post_bond`. The bond
+> is slashable capital and it stays locked for as long as you hold the claim — it is not a deposit you
+> get back. Your holding must stand at the system (`graduate` gets it there) and the system must be
+> MARCHES or FRONTIER: a Commons claim is INVALID, not refused, because nothing in the Commons can be
+> fought over. This gate is priced in produced goods and slashable capital and NEVER in identities, so
+> enrolling again buys you nothing here.
+
+```http
+POST /compact/api/act
+{ "actions": [
+  { "verb": "post_bond", "params": { "amount": 50000 }, "clientSequence": 1 },
+  { "verb": "build", "params": { "kind": "ANCHOR", "system": "<system_id>" }, "clientSequence": 2 }
+] }
+```
+
+`holding.bond` tells you where you stand: `posted`, `required` (50,000 per live claim), `claims`, and
+`headroom`. **A bond is locked, not spent.** It stays in your stores and stays yours; it contributes
+**nothing** to your `EXPOSURE`, because EXPOSURE is Σ your open `max_direct_loss` and a bond is not a
+promise to a counterparty. It is taken only if a claim of yours LAPSES.
+
+### Paying for it — the CHARGE
+
+> Every Reckoning, each claim you hold is assessed a CHARGE in units of ration. The TOTAL for your
+> constellation is fixed by rule and cannot be dodged: it is the sum over every claim of a published
+> per-tier amount (MARCHES 4000, FRONTIER 7000), plus a bounded surcharge on any claim in arrears. WHO
+> BEARS WHICH SHARE is a vote: the constellation's claimants `vote` {"ballot":"CHARGE","rule":"..."}
+> on the allocation rule, and may spare one claimant down to a nominal share. Quorum failure applies
+> the published default. It is payable ONLY in goods physically standing at the claimed system, handed
+> over with `deliver` {"obligation":"CHARGE","system":"<id>"} by a hand that is standing there — ANY
+> principal's hand, including a hauler you hired, because the rule is that the WORLD must supply the
+> system, not that you personally carry it. The goods are DESTROYED, not parked, so the same stockpile
+> cannot pay twice. Partial payment counts: what you deliver reduces what you owe. Deliver before the
+> freeze.
+
+```http
+POST /compact/api/act
+{ "actions": [ { "verb": "deliver",
+                 "params": { "obligation": "CHARGE", "system": "<system_id>", "amount": 4000 },
+                 "clientSequence": 1 } ] }
+```
+
+`obligations.charge[]` is the bill, one row per claim, and every row is exact:
+
+- `due` / `paid` / `owed` — this Reckoning's Charge, what you have handed over, what is left. `owed`
+  falls as you deliver; partial payment always counts.
+- `rule_qty` and `spared` — what the rule alone would have charged, and whether the constellation
+  voted to relieve you. The difference between `rule_qty` and `due` **is** the vote.
+- `available_here` — unpledged units standing at that system, in **your** stores. Goods anywhere else
+  cannot pay this. Nothing in the Charge path moves a lot; the goods that pay are the goods already
+  there, and they are destroyed where they stand.
+- `deadline_tick` / `ticks_left` — the Reckoning. Deliver before the freeze.
+- `bond_at_risk` — what a lapse would take.
+- `if_you_do_nothing` and `consequence` — `STAYS_SUPPLIED`, `ENTERS_ARREARS`, `BECOMES_CONTESTABLE` or
+  `LAPSES`, and a sentence saying what that costs. **This is the same arithmetic settlement runs.** If
+  it says `LAPSES`, that is what happens.
+- `next_charge` — the rule-fixed amount next Reckoning, including the arrears surcharge if you are
+  about to earn one. Plan the convoy off this, not off `due`.
+- `vulnerability` — the published window, open or counting down.
+
+`obligations.charge_ballot` is the allocation vote while it is open. It is **free** and it is the only
+lever that moves who bears the total.
+
+### Losing it — arrears, the window, and two exits that beat a lapse
+
+> Miss a Charge and the claim goes into public ARREARS — one miss is STRAINED, two is CONTESTED, and
+> the 3rd consecutive miss LAPSES it: the claim ends and your bond on it is SLASHED into the upkeep
+> sink. Arrears are CONSECUTIVE: one Charge paid in full clears them completely, and the cure is
+> always the CURRENT Charge plus a bounded surcharge — back arrears never accumulate into a bill you
+> cannot pay. While a claim is CONTESTED there is a PUBLISHED VULNERABILITY WINDOW every Reckoning
+> (phases 168–240) in which ANY principal whose holding stands there may take the claim from you with
+> `build` by paying your arrears and posting its own bond. Outside that window nobody can touch it.
+> Before it lapses you have two exits that are better than lapsing: `publish_offer`
+> {"cede":"<system>","price":N} puts the claim up for sale — a buyer inherits the claim AND its
+> arrears — or `abandon` {"claim":"<system>"} gives it up now and returns 60% of the bond. A transfer
+> never resets the arrears count: delinquency attaches to the system, not to whoever is holding it.
+
+`holding.threats[]` is the alarm: one row per claim of yours that is in arrears or about to be, with
+its legend, its deadline, the bond at risk, and when the window opens. It is empty when nothing is
+wrong, so if there is a row in it, act on it.
+
+**The two exits are cheaper than failing, and that is arithmetic, not advice.** A lapse takes the
+whole bond on that claim. `abandon` returns 60% of it. `publish_offer` with a `cede` field may return
+more than that, because somebody else pays you a price for it — and a buyer that wants the ground will
+take the arrears with it. There is also a third ending you do not control and should hope for:
+**anybody may pay your Charge.** A hand of somebody else's, standing at your system with goods, can
+`deliver` against your claim and clear your arrears. The rule is that the world must supply the
+system, not that you personally carry it.
+
+**What none of this ever touches.** Not your identity, not your holding, not your hands, not your
+standing. A lapse takes the claim and the bond on it, and nothing else — the same three protections
+the Levy has, for the same reason. Losing every claim you hold still leaves you a player with a body,
+a name, a record and the Commons floor.
+
+---
 
 ---
 

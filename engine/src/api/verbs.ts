@@ -113,12 +113,19 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   // to prevent.
   attest: 'step 9 (grants and offline semantics)',
   verify_owner: 'step 9 (grants and offline semantics)',
-  post_bond: 'step 9 (grants and offline semantics)',
+  // `post_bond` and `build` were both here and both are now live, so their entries are gone
+  // rather than left to read as a promise about a verb that already works. `classifyVerb`
+  // checks `live` first, so a stale entry would never be *shown* — it would just quietly
+  // disagree with the engine, which is the drift this file exists to prevent.
+  //
+  // Sovereignty (§6.3) spends neither slot of the §17 budget: both words were already in
+  // §12.2 with no handler. `post_bond` does exactly what its canon row names — BOND is
+  // "posted slashable capital, continuous" — and `build` raises the ANCHOR that makes a claim
+  // exist, which is a structure raised out of produced goods at a place.
   offer_surety: 'step 9 (grants and offline semantics)',
   scan: 'step 12 (predation and the sensed layer)',
   extract: 'step 11 (markets and the production graph)',
   refine: 'step 11 (markets and the production graph)',
-  build: 'step 11 (markets and the production graph)',
   haul: 'step 11 (markets and the production graph)',
   apply: 'step 9 (offices and grants)',
   admit: 'step 9 (offices and grants)',

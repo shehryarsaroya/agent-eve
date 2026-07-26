@@ -94,6 +94,8 @@ const SHARED_MEMBERS = new Map<string, string>([
     'value leaving the economy against a named sink; the mirror of ISSUE and the same argument'],
   ['RaidSide+RoleLabel.RAIDER',
     'one who raids, whether it is a slot inside a RAID venture or the side a joiner takes in a standoff — the identical shape the ESCORT entry above sanctions, and §3 names RAID once for both'],
+  ['ChargeRule+LevyRule.EVEN',
+    'ONE allocation rule — "every subject on the roll bears the same share" — offered on two ballots, the Levy\'s over principals and the Charge\'s over claims. Renaming either would be the mirror of the §3 error: two words for one concept, so an agent reading EVEN on one ballot and FLAT on the other would learn a distinction that does not exist. The two are also computed by the same weight of 1, in the same largest-remainder pass'],
 ]);
 
 function srcFiles(dir = SRC): string[] {

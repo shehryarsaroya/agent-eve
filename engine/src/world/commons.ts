@@ -401,8 +401,30 @@ export function classifyAction(
   }
 }
 
-/** Ballots that take nothing. Exact spellings; anything else fails closed. */
-const PEACEFUL_BALLOTS: readonly string[] = ['LEVY', 'SYNDICATE'];
+/**
+ * Ballots that take nothing. Exact spellings; anything else fails closed.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **`CHARGE` IS HERE BECAUSE THE AFFORDANCE LAYER OFFERED IT AND THE FLOOR REFUSED IT.**
+ *
+ * `vote` is CONTEXTUAL — one verb, four ballots now, and only `SEIZURE` reaches for a
+ * thing — so a ballot kind this list does not name falls through to the fail-closed
+ * `HOSTILE`. The sovereignty build added the Charge allocation ballot and its affordance
+ * without adding the kind here, and the exact failure the note above this describes
+ * happened again in a different mechanic: measured on a twelve-member cast over one
+ * Reckoning, two members were offered `vote {"ballot":"CHARGE"}` in their own observation
+ * and had it **rejected at submit** with *"'vote' is a hostile act ... nothing in the
+ * Commons can be a target"* — 20 of 192 LIVE decisions lost, and the deciding share fell
+ * below the health floor. An affordance the floor refuses is worse than a missing one: the
+ * agent spent a wake on it.
+ *
+ * A Charge allocation ballot takes nothing from anybody. It moves *who bears* a total the
+ * rule already fixed, so it cannot reach a holding, a hand, a standing row or an identity
+ * — `sovereignty/settle.ts:SlashPort` is what a lapse reaches through, and a ballot has no
+ * access to it. Peaceful, on the same terms as `LEVY`.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+const PEACEFUL_BALLOTS: readonly string[] = ['LEVY', 'SYNDICATE', 'CHARGE'];
 
 /**
  * What separates a ballot's kind from the rest of its id (`LEVY::11::con-1`).

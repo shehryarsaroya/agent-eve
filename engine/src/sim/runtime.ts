@@ -76,7 +76,7 @@ import type {
   VentureState,
   ZoneTier,
 } from '../core/types.js';
-import { bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
+import { BPS_ONE, bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { EventLedger, eventsStateTable, type NewEvent } from '../events/index.js';
 import {
   CURRENCY_FAUCET,
@@ -302,8 +302,49 @@ import {
   type RaidSchedule,
   type RaidView,
 } from '../predation/index.js';
-import { MAX_RAID_LINES } from '../frames/contract.js';
-import type { Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
+import { MAX_FRAME_CLAIM_LINES, MAX_RAID_LINES, type ClaimLine } from '../frames/contract.js';
+import {
+  ANCHOR_QTY,
+  Book as SovereigntyBook,
+  CESSION_SALVAGE_BPS,
+  CHARGE_BALLOT,
+  CHARGE_GOOD,
+  CHARGE_MISSES_TO_LAPSE,
+  CHARGE_STATEMENT,
+  CLAIM_BOND_MINOR,
+  SOVEREIGNTY_STATEMENT,
+  abandonRejection,
+  assertSovereigntySchedule,
+  assessCharge,
+  bondAtRiskFor,
+  bondRefFor,
+  bondViewFor,
+  cessionRejection,
+  chargeBallotFor,
+  chargeDeliveryFault,
+  chargeDocketRowsFor,
+  chargeVoteFault,
+  checkChargeAttribution,
+  checkSovereigntyInvariants,
+  claimIdFor,
+  claimLinesFor,
+  claimRejection,
+  claimTickerLine,
+  claimRouteFor,
+  claimViewsFor,
+  handAt,
+  isChargeRule,
+  postedBondOf,
+  requiredBondOf,
+  settleCharge,
+  sovereigntyStateTable,
+  type BondView,
+  type ChargeSettlement,
+  type ClaimRecord,
+  type ClaimView,
+  type SlashPort,
+} from '../sovereignty/index.js';
+import type { ConstellationId, Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
 import {
   DEFENDER_SIDE,
   GRADUATION_STATEMENT,
@@ -411,8 +452,40 @@ import {
  * hash differs, and hold — which is the correct behaviour and the reason the door
  * exists. Crossing it deliberately is a record an auditor can read; crossing it by
  * pretending nothing moved is not.
+ *
+ * ## 5 → 6 (2026-07-26)
+ *
+ * **Sovereignty landed, and the claim book entered the hashed capture** (SPEC §6.3). One
+ * change moves the hash and it is the first item of the 4 → 5 boundary again: a new state
+ * table changes `state_hash` at **every** tick, including ticks already journalled. The
+ * `sovereignty` table holds the claims, the per-system arrears counters and the bond lock
+ * ids, and it is registered unconditionally for the reason the other eight are — an arrears
+ * counter decides whether the *next* Reckoning takes a principal's territory and 50,000 of
+ * its capital, so two worlds that disagree about it must never hash the same.
+ *
+ * **Nothing else moved, and that was measured rather than argued.** No phase gained a draw:
+ * `assessChargeNow` and `settleChargeNow` are pure arithmetic over the book inside the
+ * existing OBLIGE handler, and sovereignty asks the seeded RNG for nothing at all (there is
+ * no band to draw from — `sovereignty/params.ts` explains why the Charge is a pure function
+ * of tier and arrears). No existing verb's behaviour changed: `deliver`, `vote`,
+ * `publish_offer` and `abandon` each dispatch on a **new** parameter and fall through to
+ * exactly their old path when it is absent, so a journalled action replays identically. And
+ * `world/commons.ts` gained one peaceful ballot kind, which can only *admit* an act that was
+ * previously refused — no journalled action can have carried `{"ballot":"CHARGE"}`, because
+ * nothing could produce one.
+ *
+ * Verified the way the `graduate` boundary was verified, in the other direction:
+ * `sim --seed rulesv --ticks 200 --cast heuristic --principals 8` prints a per-tick
+ * `state_hash` stream whose md5 is `c299f39f…` before this change and `2c3f0ec3…` after, and
+ * **every one of the 200 ticks differs** — which is the signature of the hash's input set
+ * growing rather than of a behaviour changing at some tick partway through. A behaviour change
+ * would agree up to the tick it bit.
+ *
+ * So the live world needs the operator divergence door
+ * (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the next deploy, exactly as it did at 1 → 2 and
+ * 4 → 5.
  */
-export const RULES_VERSION = 5;
+export const RULES_VERSION = 6;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
@@ -1362,6 +1435,15 @@ export class Runtime {
    * across a tick boundary — see {@link Runtime.raids}.
    */
   private raidBookRef = new RaidBook();
+
+  /**
+   * The claim book (SPEC §6.3). Replaced wholesale by the rollback, so nothing may hold a
+   * reference across a tick boundary — see {@link Runtime.sovereignty}.
+   */
+  private sovereigntyBookRef = new SovereigntyBook();
+  /** The Reckoning whose Charge has been minted. Assessing twice is refused, not silent. */
+  private chargeAssessedReckoning = -1;
+  private chargeOutcome: ChargeSettlement | null = null;
   /**
    * One 140-character line per resolved raid, for the frame's ticker (§14).
    *
@@ -1408,6 +1490,11 @@ export class Runtime {
     // resolution, so such a raid could only be dropped or resolved illegally — and both
     // are a permanent public fact the rules made unavoidable (A5′).
     assertRaidSchedule();
+    // And a third: a vulnerability window that opened inside §5.1's freeze could only be
+    // honoured illegally or dropped, and a claim changing hands mid-settlement moves two
+    // principals' currency after the Reckoning froze the figures it was computed from. A
+    // clock that makes the published window unplayable must not start a world (A5′).
+    assertSovereigntySchedule();
     this.world = createWorld(launchMap());
     this.ledger = new Ledger();
     this.hazards = options.hazards ?? false;
@@ -1502,6 +1589,22 @@ export class Runtime {
           () => this.raidBookRef,
           (book) => {
             this.raidBookRef = book;
+          },
+        ),
+        // Sovereignty. An arrears counter decides whether the NEXT Reckoning takes a
+        // principal's territory and slashes 50,000 of its capital, and a bond lock id is the
+        // only thing that says which capital is at risk — so a hash blind to this book would
+        // call two worlds identical while one of them was about to do that, and an aborted
+        // tick would leave a credited Charge delivery or a half-slashed bond behind.
+        //
+        // Registered from this module's first commit, and the reason is measured rather than
+        // argued: seven books were found outside the hash in one night, one of them
+        // StandingBook, and the symptom was a snapshot that matched byte-for-byte while
+        // reputation silently reset. There is no eighth.
+        sovereigntyStateTable(
+          () => this.sovereigntyBookRef,
+          (book) => {
+            this.sovereigntyBookRef = book;
           },
         ),
         // ══════════════════════════════════════════════════════════════════════
@@ -1691,6 +1794,20 @@ export class Runtime {
           // pause a healthy world on the one tick that has an audience (A14).
           this.assessLevyNow(ctx);
           this.settleLevyNow(ctx);
+          // ── THE CHARGE, AND THE ORDER IS THE RULE AGAIN ────────────────────
+          //
+          // `assessChargeNow` first, for `assessLevyNow`'s reason: a world booting mid-cycle
+          // must be assessed before ASSERT asks whether every claim carries a verdict.
+          //
+          // `settleChargeNow` LAST of everything in this phase. A lapse slashes a bond, which
+          // retires currency out of a principal's stores — and `reckoning/driver.ts`
+          // re-reads every payer's free balance between the freeze and the settlement and
+          // halts on any difference in either direction. Slashing before the venture batch
+          // would pause a healthy world on the one tick that has an audience (A14). After the
+          // Levy's sweep too, so the two world obligations settle in a stated order rather
+          // than an incidental one: the Levy's goods first, then sovereignty's territory.
+          this.assessChargeNow(ctx);
+          this.settleChargeNow(ctx);
         },
         // ── DERIVE, and the slot is the rule ────────────────────────────────
         //
@@ -1722,6 +1839,13 @@ export class Runtime {
         // PRD-1 is A8 (a raid standing in the Commons halts the world) and PRD-3 is A5′
         // (a recorded loss must equal what the posting log actually moved).
         (tick) => this.predationViolations(tick),
+        // SOV-1..7 plus the A5′ attribution guard. Not registry entries — see
+        // `sovereignty/invariants.ts` on why the 26 stay 26 — but merged into the same ASSERT
+        // pass and halting on the same terms. SOV-1 is A8 (a claim in the Commons halts the
+        // world) and `checkChargeAttribution` is A5′: an arrears is an accusation that ends
+        // in taken territory and a slashed bond, so it is held to INV-17's standard —
+        // reproducible from the delivery journal by a second road, or the tick halts.
+        (tick) => this.sovereigntyViolations(tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     },
@@ -1799,6 +1923,119 @@ export class Runtime {
   /** The Levy's book. Never held across a tick boundary: the rollback replaces it. */
   get levy(): LevyBook {
     return this.levyBookRef;
+  }
+
+  // ── SOVEREIGNTY (SPEC §6.3, the Charge) ───────────────────────────────────
+
+  /** The claim book. Never held across a tick boundary: the rollback replaces it. */
+  get sovereignty(): SovereigntyBook {
+    return this.sovereigntyBookRef;
+  }
+
+  /** What the last Charge settlement did, or `null` before the first one. */
+  get chargeSettlement(): ChargeSettlement | null {
+    return this.chargeOutcome;
+  }
+
+  /**
+   * The narrow port {@link postedBondOf} reads bond amounts through.
+   *
+   * The ledger is the one home for what a lock holds (`sovereignty/bond.ts`), and this is the
+   * only road to it. A cached amount in the claim book would go on reporting a bond the world
+   * had already reduced, and the claim would look backed while nothing stood behind it.
+   */
+  private bondRead(): (id: string) => Minor | null {
+    return (id) => this.ledger.encumbrances.get(id)?.amountMinor ?? null;
+  }
+
+  /**
+   * Unpledged, `AVAILABLE` units of the Charge good standing **at one system**.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **LOCATION-STRICT, AND THAT IS THE WHOLE LOCALITY ENFORCEMENT.** `levyGoodAvailable` is
+   * location-*blind* on purpose — a Levy delivery may draw from anywhere the payer holds,
+   * because the Levy's presence requirement is about the hand. The Charge's requirement is
+   * about the **goods**: `DRAFT-2-synthesis.md` §2 makes a goods Charge defensible only if
+   * "goods must arrive from outside the claimed system", and the economic critic's numeric
+   * exploit is exactly what happens if this filter is missing — *"store 1,000,000 rations in
+   * the core, park one hand at the frontier, pay a 10,000 Charge, the whole lot relocates and
+   * 990,000 appears behind the blockade."*
+   *
+   * Nothing in the Charge path calls `relocate`, so nothing can teleport: the lots that pay
+   * are the lots that were already there, and they are destroyed where they stand.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  chargeGoodAt(principal: PrincipalId, system: SystemId): Qty {
+    let total = 0;
+    for (const lot of this.chargeGoodLotsAt(principal, system)) total += lot.qty;
+    return qty(total);
+  }
+
+  private chargeGoodLotsAt(
+    principal: PrincipalId,
+    system: SystemId,
+  ): readonly { readonly id: LotId; readonly qty: number }[] {
+    const account = storesAccount(principal);
+    if (this.ledger.account(account) === undefined) return [];
+    return this.ledger
+      .lotsInAccount(account)
+      .filter(
+        (lot) =>
+          lot.good === CHARGE_GOOD &&
+          lot.qty > 0 &&
+          lot.state === 'AVAILABLE' &&
+          lot.encumbranceId === null &&
+          lot.location === system,
+      )
+      .sort((a, b) => compareIds(a.id, b.id))
+      .map((lot) => ({ id: lot.id, qty: lot.qty }));
+  }
+
+  /** Live claims this principal holds, priced, with deadline and consequence. */
+  claimsFor(principal: PrincipalId, tick = this.engine.tick): readonly ClaimView[] {
+    return claimViewsFor(this.claimViewPort(tick), principal, this.sovereignty.claimsOf(principal));
+  }
+
+  /**
+   * Claims a principal does **not** hold but could act on: for sale, or contestable now.
+   *
+   * Published because the rescue and the fire sale are half the collapse arc, and neither
+   * happens if nobody can find the claim that is failing. Everything on the row is public
+   * legal state — `view.ts` argues each field — so this is not a scouting oracle: a reader
+   * learns that a claim is in arrears, which the record published on the night it happened.
+   */
+  claimsOpenTo(principal: PrincipalId, tick = this.engine.tick): readonly ClaimView[] {
+    const open = this.sovereignty
+      .liveClaims()
+      .filter((c) => c.claimant !== principal && claimRouteFor(this.sovereignty, c.system, tick) !== null);
+    return claimViewsFor(this.claimViewPort(tick), principal, open);
+  }
+
+  private claimViewPort(tick: number): Parameters<typeof claimViewsFor>[0] {
+    return {
+      book: this.sovereignty,
+      tick,
+      tierOf: (system) => tierOf(this.world.map, system),
+      availableAt: (principal, system) => this.chargeGoodAt(principal, system),
+      handAt: (principal, system) => handAt(this.world, principal, system, tick) !== null,
+      bondRead: this.bondRead(),
+    };
+  }
+
+  /** A principal's bond position: posted, required, and the headroom between them. */
+  bondView(principal: PrincipalId): BondView {
+    return bondViewFor(this.sovereignty, principal, this.bondRead());
+  }
+
+  /** The claim lines as they stand right now (§6.3's pixel signature). */
+  claimLines(tick = this.engine.tick): readonly ClaimLine[] {
+    return claimLinesFor({
+      book: this.sovereignty,
+      reckoning: reckoningOf(tick),
+      tick,
+      tierOf: (system) => tierOf(this.world.map, system),
+      bondRead: this.bondRead(),
+    });
   }
 
   // ── PREDATION (SPEC §9, §16 step 12) ──────────────────────────────────────
@@ -2503,7 +2740,15 @@ export class Runtime {
     // So the roll gates the supply, and the moment one principal exists the invariant is
     // live and the Levy has to have put it on a row.
     const roll = this.world.principalOrder;
-    const docket = roll.length === 0 ? undefined : docketRowsFor(this.levy, reckoning);
+    // The Levy's rows plus the Charge's. The Levy alone already satisfies INV-25 — it assesses
+    // every principal — so sovereignty's rows are additive rather than load-bearing for the
+    // invariant. They are supplied anyway because INV-25's own note is that it is "the one most
+    // likely to quietly stop being true as features are added", and a mechanic that can take a
+    // principal's territory without ever putting it on a docket row is precisely that failure.
+    const docket =
+      roll.length === 0
+        ? undefined
+        : [...docketRowsFor(this.levy, reckoning), ...chargeDocketRowsFor(this.sovereignty, reckoning)];
     return {
       ledger: this.ledger,
       obligations: this.liveObligations(),
@@ -2945,6 +3190,20 @@ export class Runtime {
       // place, and moving it while tonight's obligations are frozen would change where a
       // settling assessment is payable after the inputs that priced it were hashed.
       graduate: (ctx, req) => this.committing(ctx) ?? this.vGraduate(ctx, req),
+      // ── SOVEREIGNTY: two words that already existed and had no handler ─────
+      //
+      // `post_bond` and `build` are both in SPEC §12.2 and both were unregistered, so this
+      // registers handlers for words that already existed rather than spending a slot the
+      // §17 budget does not have. See the long note above `vPostBond`.
+      //
+      // `post_bond` is behind `committing` because it LOCKS currency, and
+      // `reckoning/driver.ts:VERIFY_INPUTS` re-reads every payer's free balance between the
+      // freeze and the settlement and halts on any difference in either direction — `trade`'s
+      // reason exactly. `build` moves currency (a cession price) and destroys goods, so the
+      // same door, plus its own: a claim changing hands mid-settlement changes who a Charge is
+      // billed to after the figures were hashed.
+      post_bond: (ctx, req) => this.committing(ctx) ?? this.vPostBond(ctx, req),
+      build: (ctx, req) => this.committing(ctx) ?? this.vBuild(ctx, req),
     };
   }
 
@@ -3925,8 +4184,20 @@ export class Runtime {
   }
 
   private vAbandon(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // A claim, if one is named. `abandon` means relinquishing your own object, publicly and
+    // irreversibly; the object is a venture or a claim. The argument for that being ONE concept
+    // rather than two — and the counter-argument from `graduate`'s precedent — is written out
+    // above `vPostBond`, because it is the one mode in this mechanic that review may reject.
+    const claimSystem = readString(req.params, ['claim', 'system', 'system_id']) as SystemId | null;
+    if (claimSystem !== null) return this.abandonClaim(ctx, req, claimSystem);
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
-    if (ventureId === null) return reject('A2', 'abandon needs {"venture": "<id>"}.');
+    if (ventureId === null) {
+      return reject(
+        'A2',
+        'abandon needs {"venture": "<id>"} to give up a FORMING venture, or {"claim": "<system_id>"} to give up ' +
+          'a claim and salvage part of its bond.',
+      );
+    }
     const venture = this.ventures.get(ventureId);
     if (venture === undefined) return reject('PROP-V6', `there is no venture ${ventureId}.`);
     if (venture.creator !== req.principal) {
@@ -3945,6 +4216,11 @@ export class Runtime {
   }
 
   private vPublishOffer(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // A claim for sale, if one is named. `publish_offer` publishes an offer; a cession is an
+    // offer with a subject the engine can actually transfer, which is why it carries a price
+    // and a system rather than only prose.
+    const cede = readString(req.params, ['cede', 'claim', 'sell']) as SystemId | null;
+    if (cede !== null) return this.offerCession(ctx, req, cede);
     const text = readString(req.params, ['text', 'offer', 'reason']);
     if (text === null || text.length > MAX_REASON_LENGTH) {
       return reject(
@@ -4382,7 +4658,12 @@ export class Runtime {
       isLive: (ref) =>
         this.obligations.isLive(ref) ||
         this.marketBook.isLive(String(ref)) ||
-        this.raids.isLive(String(ref)),
+        this.raids.isLive(String(ref)) ||
+        // A posted BOND is a lock whose obligation is the bond itself: it is *continuous*
+        // (§3), so it is live for exactly as long as the claim book still lists it. Without
+        // this clause every posted bond reads to INV-4 as an orphan lock and the tick halts
+        // — the market's and predation's extension for the third time, same one line.
+        this.sovereignty.isLive(String(ref)),
       securedObligations: () => this.obligations.securedObligations(),
       close: (ref) => {
         this.obligations.close(ref);
@@ -5176,6 +5457,905 @@ export class Runtime {
     return qty(taken);
   }
 
+  // ── SOVEREIGNTY'S VERBS, AND NOT ONE OF THEM IS NEW ───────────────────────
+  //
+  // The §17 budget is at 40 of 40 and spent, so this mechanic ships on words SPEC §12.2
+  // already publishes:
+  //
+  //   - **`post_bond`** (identity group) had no handler. §3 defines BOND as "posted slashable
+  //     capital, continuous", which is exactly what a claim requires — so this is the verb
+  //     doing the job its own canon row names.
+  //   - **`build`** (world group) had no handler. An anchor is a structure raised out of
+  //     produced goods at a place, which is what `build` means. It carries `kind` so that
+  //     production works can use the same word when §16 step 11 lands.
+  //   - **`deliver`** carries `{"obligation":"CHARGE"}`. One concept — handing goods over at a
+  //     named place — applied to the second world obligation. Absent the field it is a Levy
+  //     delivery, exactly as before, so no existing agent changes behaviour.
+  //   - **`vote`** carries a fourth ballot. §12.2's own words: "one verb, three ballots ... a
+  //     ballot is a ballot".
+  //   - **`publish_offer`** carries `{"cede":"<system>","price":N}`. It is an offer, published.
+  //   - **`abandon`** carries `{"claim":"<system>"}`. One concept — relinquishing your own
+  //     object, publicly and irreversibly — applied to a claim instead of a venture. Stated
+  //     rather than assumed: this is the one of the six that is arguable, because §12.2 groups
+  //     `abandon` under `venture`. The argument for it being one word is that the semantics
+  //     are identical (the actor gives up its own thing, nobody else's, and it is published),
+  //     and the argument against is `graduate`'s precedent — `move` applied to a holding
+  //     needed its own word because a hand and a holding are distinct §3 nouns. A claim is not
+  //     a distinct noun from a venture in that sense; it is a different object of the same act.
+  //     If review disagrees, the fix is a 41st verb and a removal, and this comment is where
+  //     that argument starts.
+
+  /**
+   * `post_bond` — put slashable capital behind your word (§3, §6.4).
+   *
+   * A **lock**, not a payment: the capital stays in the claimant's own STORES and is visible
+   * as its credit rating. It contributes zero to EXPOSURE by construction (`lockSafe`), and
+   * that is deliberate — EXPOSURE is *"Σ your open `max_direct_loss`, and nothing else"* (§3)
+   * and a bond is not a commitment to a counterparty. Adding it would silently move every
+   * Levy allocation computed `BY_EXPOSURE`.
+   */
+  private vPostBond(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const amount = readInt(req.params, ['amount', 'bond', 'minor']);
+    const account = storesAccount(req.principal);
+    const free = this.ledger.account(account) === undefined ? minor(0) : this.ledger.freeBalance(account);
+    const required = requiredBondOf(this.sovereignty, req.principal);
+    const posted = postedBondOf(this.sovereignty, req.principal, this.bondRead());
+    if (amount === null || amount <= 0) {
+      return reject(
+        'A2',
+        `post_bond needs {"amount": N} in whole minor units. You have ${String(posted)} posted against ` +
+          `${String(required)} required, and ${String(free)} free to post. ${SOVEREIGNTY_STATEMENT}`,
+      );
+    }
+    if (amount > free) {
+      return reject(
+        'INV-3',
+        `you have ${String(free)} free (balance less every open lock) and cannot post ${String(amount)}. A bond ` +
+          'stays in your own stores — it is locked, not spent — so what you can post is what is unlocked.',
+      );
+    }
+    let lockId: string;
+    try {
+      lockId = this.ledger.encumbrances.lockSafe({
+        eventId: `bond:${req.principal}:${String(ctx.tick)}:${String(amount)}`,
+        tick: ctx.tick,
+        principal: req.principal,
+        account,
+        amountMinor: minor(amount),
+        // The bond's own id is the obligation it secures: a bond is continuous, so it is live
+        // for as long as the book lists it. `liveObligations` asks the book, which is a state
+        // table, so an aborted tick's lock disappears with the rollback rather than becoming
+        // an orphan INV-4 halts on.
+        obligationRef: bondRefFor(req.principal) as unknown as VentureId,
+      });
+    } catch (error: unknown) {
+      return reject('INV-3', describeError(error));
+    }
+    this.sovereignty.addBondLock(req.principal, lockId);
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'bond.posted',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `bond::${req.principal}`,
+      parentEventId: null,
+      // §6.4: a bond is "posted slashable capital, PUBLIC, and any amount — it is your credit
+      // rating". Publicity is the mechanic, not a side effect.
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        principal: req.principal,
+        amountMinor: amount,
+        postedMinor: postedBondOf(this.sovereignty, req.principal, this.bondRead()),
+        requiredMinor: required,
+        claims: this.sovereignty.claimsOf(req.principal).length,
+        exposureUnchanged: true,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `build` — raise an ANCHOR and take a claim (§6.3, A15).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE ORDER IS THE HONESTY**, exactly as it is in `vGraduate` and `vDeliver`:
+   *
+   *   1. **Refuse on the merits first**, with a sentence, before anything moves.
+   *   2. **Pay the cession price** if there is one, so the incumbent is made whole before it
+   *      loses the claim.
+   *   3. **Destroy the anchor goods where they stand**, and let the ledger be the authority on
+   *      whether they moved.
+   *   4. **Record the claim only if the whole price was paid.**
+   *
+   * A partial anchor is refused rather than completed at a discount. The pre-validation makes
+   * that unreachable, and the one thing that must never happen is territory taken for free.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private vBuild(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const kind = (readString(req.params, ['kind', 'what', 'structure']) ?? 'ANCHOR').toUpperCase();
+    if (kind !== 'ANCHOR') {
+      return reject(
+        'PHASE-0',
+        `\`build\` raises an ANCHOR in this build and nothing else: production WORKS land with the production ` +
+          `graph at §16 step 11. Send {"kind":"ANCHOR","system":"<id>"}. ${SOVEREIGNTY_STATEMENT}`,
+      );
+    }
+    const system = readString(req.params, ['system', 'system_id', 'at', 'where']) as SystemId | null;
+    if (system === null) {
+      const holding = this.world.holdingByPrincipal.get(req.principal) === undefined
+        ? null
+        : holdingOf(this.world, req.principal);
+      return reject(
+        'A2',
+        'build needs {"kind":"ANCHOR","system":"<system_id>"}. A claim is anchored where your BODY stands' +
+          `${holding === null ? '' : `, which is ${holding.system} (${tierOf(this.world.map, holding.system)})`}. ` +
+          SOVEREIGNTY_STATEMENT,
+      );
+    }
+    const account = storesAccount(req.principal);
+    const free = this.ledger.account(account) === undefined ? minor(0) : this.ledger.freeBalance(account);
+    const fault = claimRejection({
+      book: this.sovereignty,
+      map: this.world.map,
+      world: this.world,
+      principal: req.principal,
+      system,
+      tick: ctx.tick,
+      anchorAvailable: this.chargeGoodAt(req.principal, system),
+      bondRead: this.bondRead(),
+      freeMinor: free,
+    });
+    if (fault !== null) return fault;
+
+    const route = claimRouteFor(this.sovereignty, system, ctx.tick);
+    const incumbent = this.sovereignty.liveAt(system);
+    const offer = this.sovereignty.cessionAt(system);
+
+    // ── Step 2: the incumbent is paid before it loses anything ──────────────
+    if (route === 'CESSION' && offer !== null && offer.price > 0) {
+      try {
+        this.ledger.transferCurrency({
+          eventId: `claim.cession:${system}:${String(ctx.tick)}:${req.principal}` as EventId,
+          tick: ctx.tick,
+          from: account,
+          to: storesAccount(offer.by),
+          amount: offer.price,
+        });
+      } catch (error: unknown) {
+        return reject(
+          'INV-3',
+          `the cession price of ${String(offer.price)} could not be paid to ${offer.by} ` +
+            `(${describeError(error)}); nothing moved and the claim is still theirs.`,
+        );
+      }
+    }
+
+    // ── Step 3: the anchor, burned where it stands ──────────────────────────
+    const burned = this.burnAnchorGoods(req.principal, system, ANCHOR_QTY, ctx.tick);
+    if (burned < ANCHOR_QTY) {
+      this.faults.push(
+        `${req.principal} could only raise ${String(burned)} of the ${String(ANCHOR_QTY)} unit anchor at ` +
+          `${system}; the claim was not taken`,
+      );
+      return reject(
+        'A15',
+        `only ${String(burned)} of the ${String(ANCHOR_QTY)} units of ${CHARGE_GOOD} could be put into the ` +
+          'anchor, so the claim was not taken. Check what is standing at that system and try again.',
+      );
+    }
+
+    // ── Step 4: the claim ───────────────────────────────────────────────────
+    const bondLock = this.sovereignty.bondLocksOf(req.principal)[0] ?? null;
+    let claim: ClaimRecord;
+    try {
+      if (incumbent !== null) {
+        // A takeover or a cession. **The arrears do not reset** — they belong to the system,
+        // which closes the critic's "transfer to reset the consecutive-miss counter" exploit.
+        claim = this.sovereignty.succeed(system, req.principal, bondLock);
+      } else {
+        const epoch = this.sovereignty.nextEpochFor(system);
+        claim = {
+          id: claimIdFor(system, epoch),
+          system,
+          constellation: (this.world.map.systems.get(system)?.constellation ?? '') as ConstellationId,
+          claimant: req.principal,
+          epoch,
+          takenAtTick: ctx.tick,
+          anchorQty: ANCHOR_QTY,
+          bondEncumbranceId: bondLock,
+          state: 'SUPPLIED',
+          endedAtReckoning: null,
+          succeededBy: null,
+        };
+        this.sovereignty.take(claim);
+      }
+    } catch (error: unknown) {
+      this.faults.push(
+        `${req.principal} burned ${String(burned)} of ${CHARGE_GOOD} at ${system} and the claim could not be ` +
+          `recorded (${describeError(error)})`,
+      );
+      return reject('A2', describeError(error));
+    }
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: incumbent === null ? 'claim.taken' : 'claim.succeeded',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: incumbent?.claimant ?? null,
+      grantId: null,
+      eventFamilyId: `claim::${system}`,
+      parentEventId: null,
+      // §11.2 gives PUBLIC to territorial control, and A13 makes the claim a named signature:
+      // "a claim tints a system". Territory nobody can see is not territory.
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        claim: claim.id,
+        system,
+        tier: tierOf(this.world.map, system),
+        claimant: req.principal,
+        from: incumbent?.claimant ?? null,
+        route,
+        anchorQty: burned,
+        good: CHARGE_GOOD,
+        priceMinor: route === 'CESSION' ? (offer?.price ?? 0) : 0,
+        bondRequiredMinor: requiredBondOf(this.sovereignty, req.principal),
+        bondPostedMinor: postedBondOf(this.sovereignty, req.principal, this.bondRead()),
+        // Inherited, and said out loud on the receipt: a buyer or a conqueror takes the
+        // arrears with the ground.
+        arrearsInherited: this.sovereignty.missesAt(system),
+        state: claim.state,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    if (incumbent !== null) {
+      this.raidTicker.push(
+        claimTickerLine({
+          kind: 'CEDED',
+          system,
+          claimant: incumbent.claimant,
+          other: req.principal,
+          amount: offer?.price ?? 0,
+        }),
+      );
+    } else {
+      this.raidTicker.push(
+        claimTickerLine({ kind: 'TAKEN', system, claimant: req.principal, other: null, amount: 0 }),
+      );
+    }
+    return { ok: true, value: null };
+  }
+
+  /**
+   * Burn the anchor, **where the goods are standing** (§10.2).
+   *
+   * Never relocates. That is the entire answer to the economic critic's teleport exploit: the
+   * lots that pay are lots already at the system, and they are destroyed there, so a remote
+   * stockpile cannot ride in behind a blockade on a payment. Returns what actually moved;
+   * never throws, for `consumeLevyGood`'s reason.
+   */
+  private burnAnchorGoods(
+    principal: PrincipalId,
+    system: SystemId,
+    want: Qty,
+    tick: number,
+  ): Qty {
+    let left: number = want;
+    let taken = 0;
+    for (const lot of this.chargeGoodLotsAt(principal, system)) {
+      if (left <= 0) break;
+      const portion = Math.min(left, lot.qty);
+      if (portion <= 0) continue;
+      try {
+        this.ledger.destroyGoods({
+          eventId: `claim.anchor:${principal}:${String(tick)}:${system}:${lot.id}` as EventId,
+          tick,
+          sink: GOODS_SINK.CONSUMPTION,
+          lotId: lot.id,
+          qty: qty(portion),
+        });
+      } catch (error: unknown) {
+        this.faults.push(
+          `${principal} could not put ${String(portion)} of ${CHARGE_GOOD} into an anchor at ${system} ` +
+            `(${describeError(error)}); only what actually moved is charged`,
+        );
+        continue;
+      }
+      taken += portion;
+      left -= portion;
+    }
+    return qty(taken);
+  }
+
+  /**
+   * The Charge half of `deliver`. Reached when the action names `obligation: "CHARGE"`.
+   *
+   * Three things in a fixed order, because the order keeps the record honest (A5′): refuse on
+   * the merits, **destroy** the goods, credit exactly what was destroyed. A handler that
+   * credited first would record a payment that did not happen.
+   */
+  private deliverCharge(ctx: PhaseContext, req: ActionRequest, system: SystemId): WorldResult<null> {
+    const reckoning = reckoningOf(ctx.tick);
+    const claim = this.sovereignty.liveAt(system);
+    if (claim === null) {
+      return reject(
+        'A2',
+        `there is no live claim on ${system}, so there is no Charge to deliver against. ${CHARGE_STATEMENT}`,
+      );
+    }
+    const owing = this.sovereignty.owingOf(reckoning, claim.id);
+    const available = this.chargeGoodAt(req.principal, system);
+    const fault = chargeDeliveryFault({
+      world: this.world,
+      deliverer: req.principal,
+      claim,
+      tick: ctx.tick,
+      owed: owing.owed,
+      available,
+    });
+    if (fault !== null) return reject('A14', fault);
+
+    const asked = readInt(req.params, ['amount', 'qty', 'quantity']);
+    const want = qty(Math.min(owing.owed, available, asked === null ? owing.owed : Math.max(0, asked)));
+    if (want <= 0) {
+      return reject(
+        'A14',
+        `nothing of that delivery can be credited: ${String(owing.owed)} of ${CHARGE_GOOD} is still owed on ` +
+          `${system} and you hold ${String(available)} unpledged there.`,
+      );
+    }
+
+    const moved = this.burnAnchorGoods(req.principal, system, want, ctx.tick);
+    if (moved <= 0) {
+      return reject('A14', 'the goods could not be handed over, so nothing was credited against the Charge.');
+    }
+    this.sovereignty.credit(reckoning, claim.id, moved);
+    const after = this.sovereignty.owingOf(reckoning, claim.id);
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'charge.delivered',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: req.principal === claim.claimant ? null : claim.claimant,
+      grantId: null,
+      eventFamilyId: `claim::${system}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        claim: claim.id,
+        system,
+        claimant: claim.claimant,
+        deliverer: req.principal,
+        good: CHARGE_GOOD,
+        qty: moved,
+        // Partial payment counts, and the receipt says so: this is the field that makes the
+        // arc an arc rather than a cliff.
+        stillOwedQty: after.owed,
+        // A rescue is a story, so it is a field a viewer's client can read directly rather
+        // than something a reader has to infer by comparing two principal ids.
+        rescue: req.principal !== claim.claimant,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    if (req.principal !== claim.claimant && after.owed <= 0) {
+      this.raidTicker.push(
+        claimTickerLine({
+          kind: 'RESCUED',
+          system,
+          claimant: claim.claimant,
+          other: req.principal,
+          amount: moved,
+        }),
+      );
+    }
+    return { ok: true, value: null };
+  }
+
+  /** The Charge allocation ballot. Reached from `vVote` when the ballot names CHARGE. */
+  private voteCharge(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const rule = readString(req.params, ['rule', 'allocation', 'formula']) ?? '';
+    const spare = readString(req.params, ['spare', 'spare_principal', 'relieve']);
+    const fault = chargeVoteFault({
+      book: this.sovereignty,
+      voter: req.principal,
+      rule,
+      spare,
+      tick: ctx.tick,
+    });
+    if (fault !== null) return reject('A14', fault);
+    if (!isChargeRule(rule)) {
+      // Unreachable: `chargeVoteFault` checks the rule first. Kept because the cast below is a
+      // narrowing rather than a check, and a future edit that reordered the fault function
+      // would otherwise write an unvalidated rule into a hashed structure.
+      return reject('A2', `${rule} is not a published Charge allocation rule.`);
+    }
+    const ballot = chargeBallotFor({
+      book: this.sovereignty,
+      voter: req.principal,
+      rule,
+      spare: spare as PrincipalId | null,
+      tick: ctx.tick,
+    });
+    if (ballot === null) return reject('A2', 'you hold no claim, so you have no Charge ballot to cast.');
+    try {
+      this.sovereignty.castBallot(ballot);
+    } catch (error: unknown) {
+      return reject('INV-26', describeError(error));
+    }
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'charge.voted',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `charge::${String(ballot.forReckoning)}::${ballot.constellation}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      // A ballot is PUBLIC in full (§12.2: "all resolve at a Reckoning; all are PUBLIC"), which
+      // is what lets a viewer read the coalition off the feed — AGT-X4's pass criterion is that
+      // a cartel is *visible* while it succeeds, not that it fails.
+      payload: {
+        constellation: ballot.constellation,
+        forReckoning: ballot.forReckoning,
+        rule: ballot.rule,
+        spare: ballot.spare,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    return { ok: true, value: null };
+  }
+
+  /** Publish a claim for sale. The fire sale, and it is PUBLIC because it is the story. */
+  private offerCession(ctx: PhaseContext, req: ActionRequest, system: SystemId): WorldResult<null> {
+    const price = readInt(req.params, ['price', 'amount', 'ask']);
+    const fault = cessionRejection({
+      book: this.sovereignty,
+      principal: req.principal,
+      system,
+      price,
+      tick: ctx.tick,
+    });
+    if (fault !== null) return fault;
+    const claim = this.sovereignty.liveAt(system);
+    if (claim === null || price === null) {
+      // Unreachable: `cessionRejection` checks both. Kept as a narrowing rather than a `!`.
+      return reject('A2', `there is no live claim on ${system} to cede.`);
+    }
+    this.sovereignty.offerCession({
+      system,
+      claim: claim.id,
+      by: req.principal,
+      price: minor(price),
+      openedAtTick: ctx.tick,
+    });
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'cession.offered',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `claim::${system}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        claim: claim.id,
+        system,
+        by: req.principal,
+        priceMinor: price,
+        state: claim.state,
+        arrears: this.sovereignty.missesAt(system),
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    this.raidTicker.push(
+      claimTickerLine({ kind: 'FOR_SALE', system, claimant: req.principal, other: null, amount: price }),
+    );
+    return { ok: true, value: null };
+  }
+
+  /**
+   * Give up a claim now, and keep part of the bond.
+   *
+   * The critic's *"allow voluntary cession before freeze with partial bond/anchor salvage so an
+   * empire can sacrifice its edge"*. Salvage is a **release of the lock**, not a transfer:
+   * nothing was ever taken from the claimant, so nothing is given back — what changes is that
+   * the capital stops being at risk. The unsalvaged remainder is retired into the upkeep sink,
+   * which is what makes cession a real cost rather than a free reset.
+   */
+  private abandonClaim(ctx: PhaseContext, req: ActionRequest, system: SystemId): WorldResult<null> {
+    const fault = abandonRejection({
+      book: this.sovereignty,
+      principal: req.principal,
+      system,
+      tick: ctx.tick,
+    });
+    if (fault !== null) return fault;
+    const claim = this.sovereignty.liveAt(system);
+    if (claim === null) return reject('A2', `there is no live claim on ${system} to abandon.`);
+
+    const atRisk = bondAtRiskFor(this.sovereignty, req.principal, this.bondRead());
+    const forfeit = minor(Math.max(0, atRisk - Math.trunc((atRisk * CESSION_SALVAGE_BPS) / BPS_ONE)));
+    let taken = minor(0);
+    const lockId = claim.bondEncumbranceId;
+    try {
+      if (lockId !== null && this.ledger.encumbrances.isOpen(lockId)) {
+        this.ledger.encumbrances.release(lockId, ctx.tick);
+        this.sovereignty.dropBondLock(req.principal, lockId);
+      }
+      if (forfeit > 0) {
+        const account = storesAccount(req.principal);
+        const free = this.ledger.account(account) === undefined ? minor(0) : this.ledger.freeBalance(account);
+        taken = minor(Math.min(forfeit, Math.max(0, free)));
+        if (taken > 0) {
+          this.ledger.retireCurrency({
+            eventId: `claim.cede:${system}:${String(ctx.tick)}` as EventId,
+            tick: ctx.tick,
+            sink: CURRENCY_SINK.UPKEEP,
+            from: account,
+            amount: taken,
+          });
+        }
+      }
+    } catch (error: unknown) {
+      this.faults.push(
+        `${req.principal} gave up ${system} and the salvage arithmetic failed (${describeError(error)}); the ` +
+          'claim is ceded and the record says what was actually taken',
+      );
+    }
+    this.sovereignty.end(system, 'CEDED', reckoningOf(ctx.tick), null);
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'claim.ceded',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `claim::${system}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        claim: claim.id,
+        system,
+        claimant: req.principal,
+        to: null,
+        bondAtRiskMinor: atRisk,
+        forfeitedMinor: taken,
+        salvagedMinor: minor(Math.max(0, atRisk - taken)),
+        salvageBps: CESSION_SALVAGE_BPS,
+        arrearsAtCession: this.sovereignty.missesAt(system),
+        // A cession is not a lapse and a viewer is owed the difference: nothing was taken by
+        // the world, and the arrears stay with the ground for whoever claims it next.
+        lapsed: false,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    this.raidTicker.push(
+      claimTickerLine({ kind: 'CEDED', system, claimant: req.principal, other: null, amount: taken }),
+    );
+    return { ok: true, value: null };
+  }
+
+  // ── SOVEREIGNTY: the Charge (§6.3) ────────────────────────────────────────
+
+  /**
+   * Mint this Reckoning's Charge, once.
+   *
+   * Called every OBLIGE rather than only at phase 0, for `assessLevyNow`'s reason: a world
+   * constructed with `startTick` inside a cycle would otherwise hold no plan for that cycle
+   * and SOV-6 would report a settled Reckoning with unjudged claims. `assessCharge` skips a
+   * constellation that is already assessed, so the ordinary path mints at phase 0 exactly once.
+   */
+  private assessChargeNow(ctx: PhaseContext): void {
+    const reckoning = reckoningOf(ctx.tick);
+    // The memo is a fast path, never the authority — `assessLevyNow`'s note in full: the book
+    // is inside the rollback and this field is not, so an aborted phase-0 tick leaves the
+    // field claiming a Reckoning the restored book holds no plan for, and every claim would go
+    // unassessed for the rest of the cycle. Asking the book too costs one map walk.
+    if (this.chargeAssessedReckoning === reckoning && this.sovereignty.plansIn(reckoning).length > 0) {
+      return;
+    }
+    if (this.sovereignty.liveClaims().length === 0) {
+      this.chargeAssessedReckoning = reckoning;
+      return;
+    }
+    let assessed;
+    try {
+      assessed = assessCharge({
+        book: this.sovereignty,
+        tick: ctx.tick,
+        tierOf: (system) => tierOf(this.world.map, system),
+      });
+    } catch (error: unknown) {
+      // An assessment that cannot be computed must not take the tick down. But it must also
+      // never become an arrears: with no plan, `settleCharge` finds no lines, records no
+      // shortfall and advances no arrears counter — so a claim whose Charge could not be
+      // computed is *not billed*, which is the only A5′-safe direction. Reported loudly.
+      this.faults.push(
+        `the Charge could not be assessed for Reckoning ${String(reckoning)} (${describeError(error)}); no claim ` +
+          'is billed tonight and no arrears is recorded against anybody',
+      );
+      this.chargeAssessedReckoning = reckoning;
+      return;
+    }
+    this.chargeAssessedReckoning = reckoning;
+    ctx.step(assessed.plans.length + assessed.tallies.length);
+
+    for (const plan of assessed.plans) {
+      this.emitRow({
+        tick: ctx.tick,
+        kind: 'charge.assessed',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: `charge::${String(plan.reckoning)}::${plan.constellation}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        // The whole assessment travels with the row, per claim, because A5′ requires a
+        // claimant to have been *shown* what it owed before an arrears can be recorded — and
+        // the public event is the record that it was shown. `system` and `due` are enough for
+        // a stranger to recompute the line from the published tier and the published ballot.
+        payload: {
+          constellation: plan.constellation,
+          reckoning: plan.reckoning,
+          good: CHARGE_GOOD,
+          totalQty: plan.total,
+          rule: plan.rule,
+          byDefault: plan.byDefault,
+          spared: plan.spared,
+          claims: plan.lines.length,
+          lines: plan.lines.map((line) => ({
+            system: line.system,
+            claimant: line.claimant,
+            due: line.amount,
+            ruleQty: line.ruleQty,
+            spared: line.spared,
+            arrears: line.missesAtAssessment,
+          })),
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+    }
+    // §14.4's named loser, against the counterfactual where the group did nothing. Published
+    // because Law 2 asks for a *named* loss by the group's action, and a loss nobody can name
+    // is not one.
+    for (const loser of assessed.losers) {
+      this.emitRow({
+        tick: ctx.tick,
+        kind: 'charge.borne',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: loser.principal,
+        grantId: null,
+        eventFamilyId: `charge::${String(reckoning)}::${loser.constellation}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        payload: {
+          constellation: loser.constellation,
+          principal: loser.principal,
+          extraQty: loser.extra,
+          good: CHARGE_GOOD,
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+    }
+  }
+
+  /**
+   * Settle the Charge: shortfall, arrears, lapse, slashed bond.
+   *
+   * Runs at the settlement tick, **after** the venture batch and after the Levy's sweep (see
+   * the OBLIGE handler on why the order is a rule and not a preference).
+   */
+  private settleChargeNow(ctx: PhaseContext): void {
+    if (!isSettlementTick(ctx.tick)) return;
+    const reckoning = reckoningOf(ctx.tick);
+    // The book's flag, not a field on the runtime: `settleLevyNow`'s note carries the measured
+    // consequence of the other choice. The book is inside `state_hash` and restored by the
+    // rollback, so it can only ever say what the world it belongs to says; a plain field
+    // survives an abort and silently skips the re-run, and here that would mean a Reckoning
+    // in which no arrears advanced and no lapse fired, published clean.
+    if (this.sovereignty.isSettled(reckoning)) return;
+
+    const settlement = settleCharge({
+      book: this.sovereignty,
+      reckoning,
+      tick: ctx.tick,
+      slash: this.slashPort(ctx.tick),
+      bondAtRiskOf: (principal) => bondAtRiskFor(this.sovereignty, principal, this.bondRead()),
+    });
+    this.chargeOutcome = settlement;
+    ctx.step(settlement.shortfalls.length + settlement.lapsed.length);
+
+    for (const row of settlement.shortfalls) {
+      if (row.owed <= 0) continue;
+      this.emitRow({
+        tick: ctx.tick,
+        kind: row.state === 'LAPSED' ? 'claim.lapsed' : 'charge.arrears',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: row.claimant,
+        grantId: null,
+        eventFamilyId: `claim::${row.system}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        // The arithmetic travels with the accusation. An arrears drives a vulnerability
+        // window and eventually a slashed bond, so a reader has to be able to reproduce it
+        // from the row alone — INV-17's rule for defaults, applied where it belongs.
+        payload: {
+          claim: row.claim,
+          system: row.system,
+          claimant: row.claimant,
+          good: CHARGE_GOOD,
+          assessedQty: row.assessment,
+          paidQty: row.paid,
+          owedQty: row.owed,
+          arrears: row.misses,
+          arrearsOf: CHARGE_MISSES_TO_LAPSE - 1,
+          state: row.state,
+          slashedMinor: row.slashed,
+          // Named in full on a lapse, because a reader must be able to see that nothing
+          // ELSE moved: §5.2's protections are not weakened by sovereignty, and a claimant
+          // that loses every claim it has still holds its identity, its holding, its hands
+          // and its standing.
+          identityTaken: false,
+          holdingTaken: false,
+          standingTaken: false,
+          handsTaken: false,
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+      this.raidTicker.push(
+        row.state === 'LAPSED'
+          ? claimTickerLine({
+              kind: 'LAPSED',
+              system: row.system,
+              claimant: row.claimant,
+              other: null,
+              amount: row.slashed,
+            })
+          : claimTickerLine({
+              kind: row.state === 'CONTESTED' ? 'CONTESTED' : 'ARREARS',
+              system: row.system,
+              claimant: row.claimant,
+              other: null,
+              amount: row.owed,
+            }),
+      );
+    }
+    this.sovereignty.prune(reckoning);
+  }
+
+  /**
+   * The only thing a lapse may reach for: posted bond.
+   *
+   * `SlashPort` cannot express a holding, a hand, a standing row or an identity, so §5.2's
+   * *"never identity, never the holding, never standing"* survives sovereignty as a property
+   * of the **type** rather than of anybody remembering (SOV-3).
+   *
+   * The order inside is the A5′ order and it matters: **release the lock first, then retire
+   * the currency.** `retireCurrency` refuses to take value that is locked, so retiring first
+   * would throw on the claimant's own bond; and `seizeCurrency` would call
+   * `reduceLocksToBalance`, which sheds the claimant's OTHER locks — including bonds backing
+   * claims that are perfectly current. One lapse must not cascade.
+   */
+  private slashPort(_tick: number): SlashPort {
+    return {
+      slash: (args) => {
+        const claim = this.sovereignty.at(args.system);
+        const lockId = claim?.bondEncumbranceId ?? null;
+        if (args.want <= 0) return minor(0);
+        try {
+          if (lockId !== null && this.ledger.encumbrances.isOpen(lockId)) {
+            this.ledger.encumbrances.release(lockId, args.tick);
+            this.sovereignty.dropBondLock(args.principal, lockId);
+          }
+          const account = storesAccount(args.principal);
+          const free = this.ledger.account(account) === undefined
+            ? minor(0)
+            : this.ledger.freeBalance(account);
+          const take = minor(Math.min(args.want, Math.max(0, free)));
+          if (take <= 0) return minor(0);
+          this.ledger.retireCurrency({
+            eventId: `claim.slash:${args.system}:${String(args.reckoning)}` as EventId,
+            tick: args.tick,
+            sink: CURRENCY_SINK.UPKEEP,
+            from: account,
+            amount: take,
+          });
+          return take;
+        } catch (error: unknown) {
+          // Never a throw: this runs at the settlement tick, after every venture has already
+          // resolved, and a throw would abort a Reckoning with an audience. A bond that could
+          // not be taken is recorded as `slashed: 0`, which is the honest record.
+          this.faults.push(
+            `${args.principal}'s bond on ${args.system} could not be slashed (${describeError(error)}); the ` +
+              'claim still lapsed and the record says nothing was taken',
+          );
+          return minor(0);
+        }
+      },
+    };
+  }
+
+  /** SOV-1..7 plus the A5′ attribution guard, for the tick's ASSERT hook. */
+  private sovereigntyViolations(tick: number): readonly InvariantViolation[] {
+    return [
+      ...checkSovereigntyInvariants({
+        book: this.sovereignty,
+        tick,
+        tierOf: (system) => tierOf(this.world.map, system),
+        holdingSystemOf: (principal) =>
+          this.world.holdingByPrincipal.get(principal as PrincipalId) === undefined
+            ? null
+            : holdingOf(this.world, principal as PrincipalId).system,
+        bondCeiling: CLAIM_BOND_MINOR,
+      }),
+      ...checkChargeAttribution(this.sovereignty, reckoningOf(tick), tick, CLAIM_BOND_MINOR),
+    ];
+  }
+
   // ── GRADUATION: the exit from the Commons (§4.1, §6.3, A8, A15) ───────────
 
   /**
@@ -5516,6 +6696,29 @@ export class Runtime {
    * happen, which is the same lie as a fabricated default pointed the other way.
    */
   private vDeliver(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // ── THE CHARGE'S HALF OF `deliver`, AND WHY IT IS A MODE AND NOT A VERB ──
+    //
+    // §12.2 publishes `deliver` as the levy group's discharge and the §17 verb budget is at 40
+    // of 40. `deliver` means one thing — handing goods over at a named place — and there are
+    // now two world obligations discharged that way. So the obligation is a parameter, and
+    // ABSENT IT NOTHING CHANGES: an agent that has only ever sent `{"amount":N}` still pays its
+    // Levy, which is what keeps this from being a rules-surface break (scar #1).
+    //
+    // Naming a `system` is also enough on its own, because a Levy is payable at a delivery
+    // PLACE the plan names and a Charge at the claimed system — an agent that says which claim
+    // it is supplying has said which obligation it means.
+    const obligation = (readString(req.params, ['obligation', 'against', 'duty']) ?? '').toUpperCase();
+    const chargeSystem = readString(req.params, ['system', 'claim', 'system_id']) as SystemId | null;
+    if (obligation === 'CHARGE' || (obligation === '' && chargeSystem !== null)) {
+      if (chargeSystem === null) {
+        return reject(
+          'A2',
+          'a Charge delivery needs the claim it is against: {"obligation":"CHARGE","system":"<id>","amount":N}. ' +
+            CHARGE_STATEMENT,
+        );
+      }
+      return this.deliverCharge(ctx, req, chargeSystem);
+    }
     const reckoning = reckoningOf(ctx.tick);
     // `on_behalf_of` is the Coase-collapse primitive, offered on purpose: a delivery
     // service has to be *expressible* for PROP-LV3 to be able to attempt the collapse
@@ -5628,11 +6831,20 @@ export class Runtime {
    */
   private vVote(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const kind = (readString(req.params, ['ballot', 'ballot_kind', 'kind']) ?? LEVY_BALLOT).toUpperCase();
+    // ── THE FOURTH BALLOT, AND §12.2 SAYS IT IS STILL ONE VERB ──────────────
+    //
+    // "one verb, three ballots ... a ballot is a ballot" is the sentence §12.2 used to promote
+    // `vote` out of the `org` group, and the Charge allocation is a ballot by exactly that
+    // reading: scheduled, constellation-scoped, PUBLIC in full, resolving at a Reckoning. The
+    // §17 budget is untouched.
+    if (kind === CHARGE_BALLOT) return this.voteCharge(ctx, req);
     if (kind !== LEVY_BALLOT) {
       return reject(
         'A2',
-        `only the ${LEVY_BALLOT} ballot is open in this build: §12.2's other two (seizure, syndicate ` +
-          'proposals) land with predation and with syndicates. Send {"ballot": "LEVY", "rule": "..."}.',
+        `only the ${LEVY_BALLOT} and ${CHARGE_BALLOT} ballots are open in this build: §12.2's other two ` +
+          '(seizure, syndicate proposals) land with the seizure vote and with syndicates. Send ' +
+          '{"ballot": "LEVY", "rule": "..."} to allocate the Levy, or {"ballot": "CHARGE", "rule": "..."} to ' +
+          'allocate your constellation\'s sovereignty upkeep.',
       );
     }
     const rule = readString(req.params, ['rule', 'allocation', 'formula']) ?? '';
@@ -6123,6 +7335,13 @@ export class Runtime {
       // this frame could tell. The §11.2 clause that admits the key is argued in
       // `frames/projection.ts`.
       raidLines: raidLinesFor(this.raids, outcome.tick, MAX_RAID_LINES),
+      // Sovereignty's pixel signature (A13, §6.3): the claim tint and its legend. Built by the
+      // sovereignty layer for the same reason the raid lines are — a renderer that computed
+      // what a claim owed would be inventing an obligation. The §11.2 clause that admits the
+      // key is argued at length in `frames/projection.ts`, and the argument is specifically
+      // that no field on this line is a function of anything a claimant STILL holds: the
+      // rejected "fuel gauge" was exactly that, and this is what replaced it.
+      claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

@@ -49,7 +49,43 @@ import type { FrameSource } from './render.js';
  * | `tributeLines` | `PUBLIC` | "the Levy vote and its result, tribute lines" |
  * | `authorityLines` | `PUBLIC` | a grant's LIMITS, parties and renewal chain (D9a) |
  * | `raidLines` | `PUBLIC` | "movement on public lanes"; a raid is the map's motion, and its outcome is a public loss (A5) |
+ * | `claimLines` | `PUBLIC` | sovereignty and its published legal state — the argument is below, in full |
  * | `modelBadges` | `PUBLIC` | which model runs a cast seat; not a game fact |
+ *
+ * **`claimLines` had to argue for itself hardest of all, because this is the exact field the
+ * "fuel gauge" would have been.** The argument, field by field:
+ *
+ *   - §11.2 gives `PUBLIC` to **sovereignty and territorial control** — a claim is A13's own
+ *     named signature (*"a claim tints a system"*), and territory nobody can see is not
+ *     territory. `system`, `claimant`, `state`, `legend`, `arrears`, `arrearsOf`: all of it is
+ *     the **world's own published verdict**, minted at a settlement that already emitted a
+ *     `PUBLIC` event for it. Nothing is derived; it is the record, re-read.
+ *   - `due`, `deadlineTick`, `arrearsOf`: fixed by rule **in advance** and computable by any
+ *     stranger from the tier, the published surcharge and the published ballot. A2 requires
+ *     known arithmetic be exact and machine-readable, and a number a stranger can already
+ *     compute leaks nothing by being drawn.
+ *   - `bondAtRisk`: §6.4 makes bond *"posted slashable capital, **public**, and any amount —
+ *     it is your credit rating"*. Publicity is the mechanic.
+ *   - `slashed`: A5 — *"loss is real, public, priceable"* — and it is what the ledger actually
+ *     moved, on the night it moved.
+ *   - `owed`: **the one that needed the argument.** It is `due` less what has been delivered,
+ *     and a delivery **destroys** the goods into `sink:consumption`. So it is a function of
+ *     the stock a claimant has already *spent*, which is a completed public act, and never a
+ *     function of the stock it still *holds*. The rejected gauge published *"Reckonings of
+ *     Charge remaining"* — a public recipe divided by a **private** stockpile — and thereby
+ *     leaked reserve coverage, the limiting good, and, when it jumped, inbound convoy
+ *     contents. Past-spend and present-holdings are the two sides of this boundary, and
+ *     `owed` is on the safe one.
+ *   - `forSale`: a price the claimant published itself, with `publish_offer`. `contestable`:
+ *     a **clock**, from `VULNERABILITY_WINDOW`, and A14 requires it be readable by the
+ *     defender too.
+ *
+ * **What a claim line may never carry**, and each was considered: units of the Charge good the
+ * claimant still holds, anywhere (`SENSED` — "a ship at sea is visible; its manifest is not");
+ * Reckonings of cover, however public the recipe; the limiting good in a multi-good recipe;
+ * anything that moves when a convoy arrives. `contract.ts:assertFrameBudgets` refuses a claim
+ * line whose field name matches `/cover|remaining|reserve|stock|gauge/i`, which is that rule
+ * made executable rather than remembered.
  *
  * **`raidLines` had to argue for itself, and here is the argument.** §11.2 gives
  * `PUBLIC` to "movement on public lanes — a convoy is visible to anyone, because it is
@@ -84,6 +120,7 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'tributeLines',
   'authorityLines',
   'raidLines',
+  'claimLines',
 ]);
 
 export class ProjectionError extends Error {}

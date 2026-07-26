@@ -28,6 +28,11 @@ import { readFileSync } from 'node:fs';
 // The engine's own sentence about the exit from the Commons. Imported rather than copied,
 // which is the whole point of this file: a copy would be a third version of the rule.
 import { GRADUATION_STATEMENT } from '../../src/world/index.js';
+import {
+  ARREARS_STATEMENT,
+  CHARGE_STATEMENT,
+  SOVEREIGNTY_STATEMENT,
+} from '../../src/sovereignty/index.js';
 
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
 const SPEC = readFileSync(new URL('../../../docs/design/SPEC.md', import.meta.url), 'utf8');
@@ -279,6 +284,48 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     expect(AGENT_MD).toContain('**What you give up is A8.**');
     // And that the bind on its hands is the reason `move` refuses, not a bug.
     expect(AGENT_MD).toContain('Commons-bound');
+  });
+
+  it('carries the THREE sovereignty statements verbatim, because a lapse is irreversible', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // Same argument as the graduation statement above, with a larger loss on the end: a
+    // misread Charge costs an agent its TERRITORY and 50,000 of slashable capital, and the
+    // record of it is permanent. A5′ is explicit — never a lapse against a claimant that was
+    // never shown what it owed — and the document is half of "was shown".
+    //
+    // All three, and verbatim rather than "contains the numbers": a paraphrase that agreed on
+    // the price and disagreed on how many misses lapse a claim would pass a looser check and is
+    // the worse bug. The observation ships only the ONE statement that applies right now (§12.1
+    // is a budget, and 3 KB of static prose on every wake measurably crowded out the cast's own
+    // affordances), so this document is the only place all three appear together.
+    //
+    // MUTATION: change `CHARGE_MISSES_TO_LAPSE` or `CESSION_SALVAGE_BPS` in
+    // `src/sovereignty/params.ts` and this goes red immediately, because both statements quote
+    // the constants and this compares the statements.
+    // ══════════════════════════════════════════════════════════════════════
+    const normalised = AGENT_MD.replace(/\n> ?/g, ' ').replace(/[ \t]+/g, ' ');
+    for (const [name, statement] of [
+      ['SOVEREIGNTY_STATEMENT', SOVEREIGNTY_STATEMENT],
+      ['CHARGE_STATEMENT', CHARGE_STATEMENT],
+      ['ARREARS_STATEMENT', ARREARS_STATEMENT],
+    ] as const) {
+      expect(normalised, `${name} is not in agent.md verbatim`).toContain(
+        statement.replace(/[ \t]+/g, ' '),
+      );
+    }
+  });
+
+  it('says the four things about a claim an agent must not have to infer', () => {
+    // The task the document has: territory is not bought once, the bill is in goods at the
+    // place, missing it three times ends it, and there are two exits that beat failing. A
+    // document that only names the verbs teaches an agent to claim without knowing what it
+    // signed up for — which is the graduation failure with a permanent loss attached.
+    expect(AGENT_MD).toContain('territory you have to MAINTAIN');
+    expect(AGENT_MD).toContain('**A bond is locked, not spent.**');
+    expect(AGENT_MD).toContain('**The two exits are cheaper than failing');
+    // And that the recurring price attaches to a CLAIM and not to a graduated body, which is
+    // the one thing an agent could reasonably infer wrongly from §6.3's own wording.
+    expect(AGENT_MD).toContain('attaches to a CLAIM, not');
   });
 
   it('is self-contained: it does not send the player somewhere else to learn the rules', () => {

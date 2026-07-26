@@ -30,6 +30,7 @@ import type {
   WorldStatus,
   InvariantViolation,
   RaidState,
+  ClaimState,
 } from '../../src/core/types.js';
 
 /**
@@ -74,6 +75,17 @@ const SEAL_VERDICT = ['HONOURED', 'CONTRADICTED'] as const;
  * concept may not have two homes — which puts it inside this file's remit.
  */
 const RAID_STATE = ['DEMANDED', 'PAID', 'REPULSED', 'PLUNDERED', 'MISSED'] as const;
+/**
+ * Sovereignty's five (SPEC §6.3). Listed here for `RaidState`'s reason: `ClaimState` lives in
+ * `core/types.ts` because the claim book AND the frame's claim line both need the same five
+ * words, and one pixel signature may not have two homes.
+ *
+ * This union IS the pixel signature, and it is the one that replaced a §11.2 leak: the
+ * rejected design published "Reckonings of Charge remaining", a public recipe divided by a
+ * private stockpile. These five carry no such quantity — they are the world's own published
+ * verdict about how many Charges a claim has already missed.
+ */
+const CLAIM_STATE = ['SUPPLIED', 'STRAINED', 'CONTESTED', 'LAPSED', 'CEDED'] as const;
 const WORLD_STATUS = ['RUNNING', 'PAUSED'] as const;
 const SEVERITY = ['HALT', 'WARN'] as const;
 
@@ -88,6 +100,7 @@ const _sealVerdictComplete: Covers<SealVerdict, typeof SEAL_VERDICT> = true;
 const _worldStatusComplete: Covers<WorldStatus, typeof WORLD_STATUS> = true;
 const _severityComplete: Covers<Severity, typeof SEVERITY> = true;
 const _raidStateComplete: Covers<RaidState, typeof RAID_STATE> = true;
+const _claimStateComplete: Covers<ClaimState, typeof CLAIM_STATE> = true;
 
 /**
  * Every string-literal union in core/types.ts, with the name an error message
@@ -106,6 +119,7 @@ const ALL_ENUMS: readonly (readonly [string, readonly string[]])[] = [
   ['WorldStatus', WORLD_STATUS],
   ['InvariantViolation.severity', SEVERITY],
   ['RaidState', RAID_STATE],
+  ['ClaimState', CLAIM_STATE],
 ];
 
 /** The §3 vocabulary table's Term column, parsed from the canon. */
@@ -136,7 +150,8 @@ describe('the compile-time coverage proofs are live', () => {
       _worldStatusComplete,
       _severityComplete,
       _raidStateComplete,
-    ]).toEqual(new Array<boolean>(11).fill(true));
+      _claimStateComplete,
+    ]).toEqual(new Array<boolean>(12).fill(true));
   });
 
   it('the enum list covers every string-literal union that core/types.ts declares', () => {
@@ -179,7 +194,7 @@ describe('PROP-O3 — the §17 budgets, counted', () => {
   });
 
   it('the union sizes are all pinned, so a quiet addition shows up as a diff', () => {
-    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5]);
+    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5, 5]);
   });
 });
 

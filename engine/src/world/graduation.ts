@@ -134,8 +134,8 @@ export const GRADUATION_STATEMENT =
   'good, charged the moment it lands. From that moment your hands are no longer Commons-bound, everything ' +
   'you hold travels with your body and can be raided where it stands, and world raids can name you. ' +
   'IT IS ONE-WAY: `graduate` never accepts a COMMONS destination and this build has no verb that moves a ' +
-  'holding back in. Recurring upkeep is NOT charged yet — §6.3 makes a Marches or Frontier holding pay it ' +
-  'continuously, and that arrives with the Charge (§16 sovereignty); today you pay once, at the crossing.';
+  'holding back in. The crossing is charged ONCE and standing there costs nothing more. §6.3’s recurring upkeep attaches to a ' +
+  'CLAIM, not to your body: `build` an anchor starts it, and `holding.sovereignty` prices it before you do.';
 
 /**
  * Systems a holding could graduate to right now: outside the Commons, one gate away.

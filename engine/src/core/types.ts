@@ -117,6 +117,36 @@ export type VentureState = 'FORMING' | 'LIVE' | 'SETTLED' | 'DEFAULTED' | 'ABAND
  */
 export type RaidState = 'DEMANDED' | 'PAID' | 'REPULSED' | 'PLUNDERED' | 'MISSED';
 
+// ── Sovereignty ─────────────────────────────────────────────────────────────
+
+/**
+ * A claim's **public legal state** (SPEC §6.3). Three live, two terminal.
+ *
+ * Declared here rather than in `src/sovereignty/` for exactly {@link RaidState}'s reason:
+ * **two** rules surfaces need it — the claim book and the frame's claim line — and §3 is a
+ * rules surface, so the same five words declared twice would be one pixel signature
+ * described in two places, and the two would drift the first time a state was added.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS UNION *IS* THE PIXEL SIGNATURE, AND IT IS THE ONE THAT REPLACED A LEAK.** An
+ * earlier draft rendered sovereignty as a public "Reckonings of Charge remaining" gauge,
+ * which is a public recipe divided by a **private** stockpile — it leaked reserve coverage,
+ * the limiting good, and inbound convoy contents. These five words carry no such quantity:
+ * they say how many Charges the record has already published as unpaid, which is the world's
+ * own verdict and nothing about anybody's warehouse.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `SUPPLIED` rather than `HELD` or `PAID`: `PAID` already names a `RaidState` and one word
+ * may not carry a second concept (§3), and "supplied" is the fact — the world required goods
+ * at this place and they arrived.
+ *
+ * `CEDED` and `LAPSED` are both terminal and a viewer is owed the difference: a lapse is the
+ * world taking the claim and slashing the bond, a cession is the holder choosing to let go
+ * and salvaging part of it. One is a cliff; the other is the story the collapse arc exists
+ * to make possible.
+ */
+export type ClaimState = 'SUPPLIED' | 'STRAINED' | 'CONTESTED' | 'LAPSED' | 'CEDED';
+
 /**
  * A7's two halves. The escrowed part auto-executes at settlement; the elective
  * part **never** does. Full escrow deletes the betrayal; zero escrow enables

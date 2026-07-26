@@ -139,6 +139,14 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // to a principal's goods, so an adopted world that dropped the book would come up
   // owing nobody anything.
   'raid',
+  // Sovereignty. Registered with a restore from the claim book's first commit, and named here
+  // in the same change rather than in a later one — `test/durability/books-in-the-hash.test.ts`
+  // asserts the two sets are equal in BOTH directions, and it is right to: a restorable table
+  // missing from this manifest is a book adoption can drop while the gate reports nothing
+  // missing. That is the `mint`/`delivery` shape, and here it would come up as an adopted world
+  // holding no claims, no arrears counters and no bond locks — every posted bond an orphan lock
+  // INV-4 halts on, and every claim silently un-owned.
+  'sovereignty',
 ];
 
 /** Why a checkpoint was not adopted, or null when one was. */
