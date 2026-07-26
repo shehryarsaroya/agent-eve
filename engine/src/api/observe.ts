@@ -76,7 +76,17 @@ import {
 import { slotClaimAt } from '../observe/forecast.js';
 import { RAID_JOIN_STAKE_MINOR, RAID_TAKE_MULTIPLE } from '../predation/index.js';
 import type { SealRoleRef } from '../seal/index.js';
-import { handsOf, holdingOf, isPresent, occupiesSystem, tierOf, transitTicks } from '../world/index.js';
+import {
+  commonsBoundRejection,
+  GRADUATION_STATEMENT,
+  handsOf,
+  holdingOf,
+  isPresent,
+  occupiesSystem,
+  principalIsCommonsBound,
+  tierOf,
+  transitTicks,
+} from '../world/index.js';
 import {
   defaultTerms,
   DELIVERY_MEASURE,
@@ -336,12 +346,42 @@ export function buildObservation(input: ObserveInput): Observation {
       state: holding.state,
       fell_at_reckoning: holding.fellAtReckoning,
       /**
-       * Empty, and truthfully so: predation lands at step 12, and there is no
-       * mechanism in this build that can threaten a holding. An invented threat
-       * would be a lie in the one field an agent would act on hardest.
+       * Empty, and truthfully so **even now that predation is live**: a raid takes
+       * located goods and sends hands to `RECOVERING`, and §9 has nothing in it that
+       * reaches a holding. Sieges and seizure are the mechanics that would fill this,
+       * and they land with sovereignty. A demand against this principal is not
+       * invented here either — it is a real row in `obligations.raid`, with its
+       * deadline and all three costs. An invented threat would be a lie in the one
+       * field an agent would act on hardest.
        */
       threats: [],
+      /**
+       * Zero, and it is the honest number rather than a stub. §6.3 makes a Marches or
+       * Frontier holding pay upkeep **continuously**, and that recurring charge is not
+       * built — it arrives with the Charge. What *is* charged is the one-off at the
+       * crossing (`graduation.upkeep_minor` + `upkeep_qty`), and
+       * `graduation.statement` says in as many words that the recurring half is not
+       * live yet. A non-zero figure here would be a bill nothing sends.
+       */
       upkeep_due: 0,
+      /**
+       * **THE EXIT, VISIBLE FROM INSIDE** (§4.1, §6.3, A8, A15, A2).
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * A live playtest found that no principal could ever leave the Commons — enrolment
+       * always seats there, a Commons holding grants Commons-bound hands only, and
+       * nothing moved a holding. A8's floor had become the entire world: predation could
+       * not reach a player and the Marches and the Frontier were decorative.
+       *
+       * The verb is only half the fix. **A graduation nobody can find is not a
+       * graduation**, so the choice is published as state — priced, with its
+       * destinations named — and not only as an affordance that a slice or a stale
+       * observation might not carry. `commons_bound` is the fact an agent needs to
+       * explain why `move` refused it; `graduation` is what to do about it.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      commons_bound: principalIsCommonsBound(world, principal),
+      graduation: graduationBlock(runtime, principal),
     },
 
     obligations: {
@@ -543,6 +583,43 @@ interface AffordanceSet {
  * ambiguity worth having, because the alternative is an eleventh top-level key and
  * §17's budget is at ten.
  */
+/**
+ * The exit, as state rather than as an offer — `holding.graduation`.
+ *
+ * Published in **every** observation, including the ones outside a wake that carry no
+ * affordances at all (§12.4), and including the ones where the price is not yet met.
+ * That is the difference between a choice an agent knows it has and a choice it happens
+ * to catch: `affordable: false` with the two exact figures beside it tells a newcomer
+ * what to go and earn, and an absent affordance tells it nothing.
+ *
+ * Every number comes from `Runtime.graduationQuote`, which is also what the verb charges,
+ * so the price shown and the price taken are one arithmetic (scar #1).
+ */
+function graduationBlock(
+  runtime: Runtime,
+  principal: PrincipalId,
+): Readonly<Record<string, unknown>> {
+  const quote = runtime.graduationQuote(principal);
+  if (quote === null) return { open: [], statement: GRADUATION_STATEMENT };
+  return {
+    /** Where `graduate` can put your body this tick. Empty is a real answer. */
+    open: quote.open,
+    upkeep_minor: quote.upkeepMinor,
+    upkeep_qty: quote.upkeepQty,
+    upkeep_good: quote.good,
+    free_minor: quote.freeMinor,
+    /** Unpledged units of the upkeep good standing where your body is. */
+    available_qty: quote.availableQty,
+    /** What would land with you and be raidable there — the contingent half of the price. */
+    travelling_qty: quote.travellingQty,
+    /** Pledged, so it stays behind: a pledged lot cannot be sent away. */
+    left_behind_qty: quote.pledgedQty,
+    affordable: quote.affordable,
+    one_way: true,
+    statement: GRADUATION_STATEMENT,
+  };
+}
+
 function localSummary(
   books: readonly PublicBook[],
   system: SystemId,
@@ -919,6 +996,63 @@ function affordancesFor(
     });
   }
 
+  // 5b. **Leave the Commons.** The one affordance on this list that cannot be undone.
+  //
+  //     ══════════════════════════════════════════════════════════════════════
+  //     **THE CHOICE HAS TO BE OFFERED AND PRICED, OR THE GAME HAS NO RISK IN IT.**
+  //
+  //     A live playtest found that no principal could reach the Marches at all, so
+  //     predation could never touch a player and there was no risk/reward decision
+  //     anywhere in the world. The verb alone does not fix that: an agent plays from
+  //     `affordances[]`, and a crossing that is legal but never offered is a crossing
+  //     that never happens.
+  //
+  //     It sits above `move` because it is strictly more consequential than any lane hop
+  //     and because the affordance list is capped — a routine hop crowding out the exit
+  //     would reproduce the bug one layer up. It sits below the raid answers and the
+  //     signature deadlines because those have clocks and this one does not.
+  //
+  //     **Offered only when it can actually be taken**, exactly like `create`: eligibility
+  //     is affordability in this file, and an offer the engine would refuse costs the
+  //     agent a real action (AGT-S2). When the price is short, the count and the reason
+  //     go to `withheld`, and `holding.graduation` carries the two figures regardless — so
+  //     the choice is legible even in the observation that cannot yet offer it.
+  //     ══════════════════════════════════════════════════════════════════════
+  const crossing = runtime.graduationQuote(principal);
+  if (crossing !== null && crossing.affordable) {
+    for (const destination of crossing.open) {
+      eligible.push({
+        verb: 'graduate',
+        params: { to: destination },
+        cost: 1,
+        // Exact and charged the instant it lands: the currency half of §6.3's upkeep.
+        max_direct_loss: crossing.upkeepMinor,
+        // In UNITS OF `upkeep_good`, not currency, and the sentence below says so —
+        // the same convention `yield` uses, because what a raid can take is goods.
+        // This is everything that travels with the body and is assailable at the far
+        // end from the tick it lands.
+        max_contingent_liability: crossing.travellingQty,
+        what_it_forecloses:
+          `THIS IS ONE-WAY AND IT ENDS A8 FOR YOU. Your holding moves from ${crossing.from} ` +
+          `(${crossing.fromTier}) to ${destination} (${tierOf(world.map, destination)}), and \`graduate\` ` +
+          'never accepts a COMMONS destination — there is no verb in this build that moves a holding back ' +
+          `in. It costs ${String(crossing.upkeepMinor)} of your stores (max_direct_loss, currency, retired ` +
+          `to upkeep) plus ${String(crossing.upkeepQty)} units of ${crossing.good} standing at ` +
+          `${crossing.from}, both charged the moment it lands. ${String(crossing.travellingQty)} units of ` +
+          `${crossing.good} travel with your body (max_contingent_liability, in UNITS not currency) and can ` +
+          `be raided at ${destination} from that tick` +
+          `${crossing.pledgedQty > 0 ? `; ${String(crossing.pledgedQty)} pledged units stay at ${crossing.from}, because a pledged lot cannot be sent away` : ''}. ` +
+          'In exchange your hands stop being Commons-bound and can go anywhere. World raids aim at the ' +
+          'principal with the most goods standing outside the Commons — read header.raid_schedule before ' +
+          'you go. Recurring upkeep is not charged yet; today you pay once, here.',
+        expires_tick: tick + QUOTE_PIN_TICKS,
+        quote_id: quoteId(principal, tick, 'graduate', { to: destination }),
+      });
+    }
+  }
+  const crossingWithheld =
+    crossing !== null && !crossing.affordable ? crossing.open.length : 0;
+
   // 6. Move an idle hand one gate. Loss is time, never capacity (INV-8), so the
   //    direct loss is exactly zero and saying so is the point.
   //
@@ -932,11 +1066,24 @@ function affordancesFor(
   //    Stated as a rule about the resolving tick rather than as an absolute number, because
   //    this quote is good for `QUOTE_PIN_TICKS` and an absolute tick would go stale inside
   //    its own window.
+  //
+  //    **A lane the Commons bind would refuse is not offered** (A15, §4.1). Until this
+  //    check existed, a Commons-seated principal — which is every principal at enrolment —
+  //    was handed a `move` onto every outbound lane and then refused by
+  //    `commonsBoundRejection` when it took one. That is the server telling an agent to do
+  //    something and then declining (AGT-S2), it costs a real action every time, and it is
+  //    the exact surface a playtest probe read as "there is no way out of the Commons":
+  //    the offers were there, the door was not. Now the count says why and names the door.
+  let commonsBoundLanes = 0;
   for (const hand of hands) {
     if (hand.state !== 'IDLE') continue;
     const system = world.map.systems.get(hand.location);
     if (system === undefined) continue;
     for (const lane of [...system.lanes].sort(cmp)) {
+      if (commonsBoundRejection(world, hand, lane) !== null) {
+        commonsBoundLanes += 1;
+        continue;
+      }
       const trip = transitTicks(world.map, hand.location, lane);
       eligible.push({
         verb: 'move',
@@ -1107,6 +1254,26 @@ function affordancesFor(
         'next one. They are still on the board and still yours to take once a hand frees up',
     );
   }
+  if (commonsBoundLanes > 0) {
+    reasons.push(
+      `${String(commonsBoundLanes)} move(s) onto lanes leaving the Commons are not offered because your ` +
+        'holding is civic-leased in the Commons, so your hands are Commons-bound and may only move between ' +
+        'COMMONS systems (A15). That is not a bug and it is not permanent: `graduate` moves your HOLDING one ' +
+        'lane outward for a price, and from the tick it lands your hands are free to go anywhere. ' +
+        'holding.graduation carries the price and the destinations',
+    );
+  }
+  if (crossingWithheld > 0 && crossing !== null) {
+    // Counted, never silent: this is the one omission that, left uncounted, would look
+    // exactly like the defect a playtest already found — an exit that does not exist.
+    reasons.push(
+      `${String(crossingWithheld)} graduate act(s) exist and are not offered because the crossing is not ` +
+        `affordable yet: it costs ${String(crossing.upkeepMinor)} currency (you have free ` +
+        `${String(crossing.freeMinor)}) plus ${String(crossing.upkeepQty)} units of ${crossing.good} standing ` +
+        `at ${crossing.from} (you have ${String(crossing.availableQty)} unpledged there). ` +
+        'holding.graduation carries the same figures and the destinations, so the choice is still readable',
+    );
+  }
   if (boardDropped > 0) {
     // The list this sentence is about is `ventures.board[]` itself, one level above the
     // affordances. It slices at `MAX_LIST_ROWS`, and until this branch existed the payload
@@ -1123,7 +1290,15 @@ function affordancesFor(
   return {
     list,
     withheld: {
-      count: dropped + notLive + alternateHands + rowsWithNoHand + rowsOutOfReach + boardDropped,
+      count:
+        dropped +
+        notLive +
+        alternateHands +
+        rowsWithNoHand +
+        rowsOutOfReach +
+        boardDropped +
+        crossingWithheld +
+        commonsBoundLanes,
       reason:
         reasons.length === 0
           ? 'nothing was withheld: this is every legal act, with its full cost.'

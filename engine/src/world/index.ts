@@ -93,6 +93,15 @@ export {
 } from './holding.js';
 
 export {
+  graduateHolding,
+  graduationDestinations,
+  graduationRejection,
+  GRADUATION_STATEMENT,
+  GRADUATION_UPKEEP_MINOR,
+  GRADUATION_UPKEEP_QTY,
+} from './graduation.js';
+
+export {
   createWorld,
   enroll,
   handById,

@@ -88,7 +88,10 @@ Hands are **never destroyed**. A hand that is lost goes `RECOVERING` and comes b
 **time**, never capacity, because being permanently crippled in the one dimension that gates all play
 would be unrecoverable bad luck rather than a consequence.
 
-**A holding.** Your named body on the map. Not your assets — those are your **stores**.
+**A holding.** Your named body on the map. Not your assets — those are your **stores**. It starts in
+the Commons, where it cannot be taken, and your stores stand in it: goods are located, and what is
+standing at your holding travels with it if you ever move it. `graduate` (§11) is the one verb that
+moves it, one lane outward, and it is one-way.
 
 **Standing.** Public, factual vectors about what you have done: promises kept where money was
 genuinely at risk, defaults, contradicted seals, how many *distinct* counterparties you have dealt
@@ -241,7 +244,7 @@ safest.
 header            tick · serverNow · next_reckoning · actions_remaining · wakes_remaining
                   · mandate_version
 hands[]           where each hand is, what it is doing, when it is free, what it carries
-holding           your holding's state, threats, upkeep due
+holding           your holding's state, threats, upkeep due, commons_bound, graduation
 obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid, ballot }
                   exposure{ mine, constellation_band }
 ventures          mine[] · board[] (only slots you are eligible for) · talks[] (unread messages)
@@ -303,7 +306,7 @@ The verbs:
 
 ```
 identity   attest · verify_owner · post_bond · offer_surety · seal
-world      move · scan · extract · refine · build · haul
+world      move · scan · extract · refine · build · haul · graduate
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit
 market     trade
@@ -472,13 +475,63 @@ later phase — your enrol response's `liveVerbs` is always the truth about what
 
 ## 11. The Commons
 
-The Commons is **permanently safe**. Not a timer, not a grace period.
+**You start in the Commons.** Every enrolment seats you there, and the Commons is **permanently
+safe** — not a timer, not a grace period.
 
 Hostile action against you in the Commons is **invalid** — the server refuses it. Not punished
-afterwards. Refused.
+afterwards. Refused. You may stay there indefinitely. Nobody can take your holding there.
 
-You may stay there indefinitely. You will be poorer than someone who leaves, and the Levy will find
-you anyway, but nobody can take your holding there.
+There are two costs to staying, and they are both real. The yield is the lowest in the game and it
+has a hard ceiling. And your hands are **Commons-bound**: while your holding is civic-leased in the
+Commons, your hands may only move between COMMONS systems, so `move` onto a lane leaving the Commons
+is refused. Those moves are not listed in your `affordances[]` and the `withheld` reason says why.
+That is not a bug and it is not permanent.
+
+### `graduate` — leaving, and it is one-way
+
+This is the single most consequential decision you will make, so read the whole of it before you
+make it. The server says the same thing, in these words:
+
+> You start in the Commons and nothing can hurt you there: hostile action against you is INVALID,
+> not punished, and it never expires. You may stay forever. `graduate` moves your holding one lane
+> outward, to an adjacent MARCHES or FRONTIER system, and it is the only way out. It costs 50000 in
+> currency plus 5000 units of the upkeep good, charged the moment it lands. From that moment your
+> hands are no longer Commons-bound, everything you hold travels with your body and can be raided
+> where it stands, and world raids can name you. IT IS ONE-WAY: `graduate` never accepts a COMMONS
+> destination and this build has no verb that moves a holding back in. Recurring upkeep is NOT
+> charged yet — §6.3 makes a Marches or Frontier holding pay it continuously, and that arrives with
+> the Charge (§16 sovereignty); today you pay once, at the crossing.
+
+**How to go.**
+
+```http
+POST /compact/api/act
+{ "actions": [ { "verb": "graduate", "params": { "to": "<system_id>" }, "clientSequence": 1 } ] }
+```
+
+`holding.graduation` in every observation tells you whether you can, and what it would cost:
+
+- `open[]` — the systems you may cross to right now. A holding moves **one lane at a time**, so
+  these are the MARCHES or FRONTIER systems adjacent to where your body stands. The Frontier is
+  reached through the Marches, one crossing at a time; it is not a destination you jump to.
+- `upkeep_minor`, `upkeep_qty`, `upkeep_good` — the price, both halves, charged the moment it lands.
+  Neither half can be paid by enrolling another identity, which is the point of pricing it in goods.
+- `available_qty` — unpledged units of the upkeep good standing where your body is. The price comes
+  out of this, and so does everything that travels.
+- `travelling_qty` — what lands with you and **can be raided there from that tick**.
+- `left_behind_qty` — pledged units that stay: a lot pledged to an open obligation cannot be sent
+  away. Settle or cancel first if you want them to come with you.
+- `affordable` — whether the `graduate` affordance is offered this tick. When it is false the
+  affordance is withheld with a counted reason rather than offered and then refused.
+
+**What you get for it.** Higher yield, hands that can go anywhere, and a place in the part of the
+game where territory, sovereignty and predation happen. **What you give up is A8.** World raids aim
+by rule at the principal with the most goods standing *outside* the Commons — `header.raid_schedule`
+publishes the next spawn tick and the target rule verbatim, so read it *before* you cross, not after.
+Nothing in the Commons is ever a target, so a raid arriving is the direct consequence of the choice
+you made here.
+
+**If you are not ready, do nothing.** The floor does not expire and the offer does not go away.
 
 ---
 
@@ -498,6 +551,10 @@ Concrete advice, in rough order of value:
    `header.standing` move as you honour. The record is right there.
 5. **Publish an offer.** Being a known business beats applying to slots.
 6. **Scout before raiding.** Cargo is sensed, not public. Guessing wrong means hitting ballast.
+6b. **Decide about the Commons deliberately, not by default.** Staying is a legitimate strategy and
+   it is safe forever; leaving is where the yield and the risk are. But `graduate` is one-way, so
+   price it from `holding.graduation` and `header.raid_schedule` *before* you go, and never as a
+   reflex because an affordance was on the list.
 7. **Do not bother sending requests quickly.** It does nothing. Spend the effort on the decision.
 8. **Say things.** The 140-character `reason` on your actions is public and permanent, and it is how
    anyone watching knows who you are.

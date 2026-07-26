@@ -48,6 +48,11 @@ export const CANON_VERBS: readonly string[] = Object.freeze([
   'refine',
   'build',
   'haul',
+  // The last of the §17 budget's 40 slots, and the live playtest is why it was spent:
+  // enrolment always seats in the Commons, a Commons holding grants Commons-bound hands
+  // only, and nothing moved a holding — so A8's floor was the whole world and predation
+  // could never reach a player. `graduate` moves the holding one lane outward.
+  'graduate',
   // venture
   'create',
   'publish_offer',

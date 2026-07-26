@@ -93,14 +93,18 @@ describe('PROP-O3 — exactly ten top-level keys, in order', () => {
 });
 
 describe('PROP-O3 — the verb budget, cross-checked against the world module', () => {
-  it('is 39 verbs, under §17’s cap of 40', () => {
-    expect(VERBS.length).toBe(39);
+  it('is 40 verbs — §17’s cap of 40, now spent', () => {
+    // `graduate` took the last slot. A live playtest found that no principal could ever
+    // leave the Commons, so A8's permanent floor had become the entire world: predation
+    // shipped and could never touch a player. The next verb costs a removal, and this
+    // number is the thing that has to say so out loud.
+    expect(VERBS.length).toBe(40);
     expect(VERBS.length).toBeLessThanOrEqual(40);
     expect(new Set(VERBS).size).toBe(VERBS.length);
   });
 
   it('is exactly the set world/commons.ts classifies — not a subset either way', () => {
-    // Two lists of the same 39 words is the drift scar #1 is made of, so this asserts
+    // Two lists of the same 40 words is the drift scar #1 is made of, so this asserts
     // equality in both directions rather than containment in one.
     const classified = Object.keys(VERB_CLASS).sort((a, b) => (a < b ? -1 : 1));
     const offered = [...VERBS].sort((a, b) => (a < b ? -1 : 1));

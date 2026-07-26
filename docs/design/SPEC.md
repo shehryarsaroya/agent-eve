@@ -12,7 +12,7 @@
 >
 > **Then a tidy pass, and it changed four things.** Identity became real cryptography (Ed25519 + RFC 9421) and grants became Verifiable Credentials, because a public record of who kept their word cannot rest on *trust our server*. Negotiation became a hosted private **message** channel (§7.3) — a version that pushed it off our servers "for realism" was **reversed**, since a conversation we cannot see is one the audience can never be shown, and undoing it produced **THE RECEIPT REEL** (§14). Visibility became one explicit **five-tier ladder** (§11.2), because a drift toward publishing everything is a world with no strategy in it. And the **owner** came back as a served audience (§13B) under a rule that costs the goals nothing: *narrative and status, never control.*
 >
-> **Budgets, verified:** 15 axioms · 38 of 40 verbs · 10 of 10 `observe` keys · 8 venture kinds (§17). Axioms and observe keys are **at** the ceiling — adding one means removing one.
+> **Budgets, verified:** 15 axioms · 40 of 40 verbs · 10 of 10 `observe` keys · 8 venture kinds (§17). Axioms and observe keys are **at** the ceiling — adding one means removing one.
 
 **Document set.** This spec is canon and wins all conflicts. Depth lives in `eve-passes/`, phase-tagged:
 
@@ -236,6 +236,8 @@ A **hand** is one unit of simultaneous physical presence. It works a site, escor
 ### 6.3 Holding
 
 Every principal has exactly one named **holding**: its body on the map, rendered with its name on it. It can thrive, be besieged, be taken, and be rebuilt. The Commons holding is civic-leased, cannot be taken, and grants Commons-bound hands only. A Marches or Frontier holding **pays upkeep in currency plus manufactured goods** — this is the anti-Sybil price of projecting force (A15) and the economy's primary sink.
+
+**A holding moves by `graduate`, one lane at a time, and only outward.** That verb (§12.2) is the *only* exit from the Commons and it never accepts a COMMONS destination — the crossing is one-way, and everything the principal holds at the old seat travels with the body and becomes assailable where it lands. The upkeep price is charged at the crossing; the *recurring* charge above is the Charge (sovereignty), and until that ships the one-off is what an agent is told it pays.
 
 Losing it costs stores, position and standing — never identity, and never the ability to acquire another.
 
@@ -531,7 +533,7 @@ briefing      prompt — one sentence naming the actual dilemma
 
 ```text
 identity   attest · verify_owner · post_bond · offer_surety · seal
-world      move · scan · extract · refine · build · haul
+world      move · scan · extract · refine · build · haul · graduate
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit
 market     trade
@@ -546,6 +548,8 @@ org        form · charter · propose
 **`elect` is the verb A6 needs and the build proved was missing.** The payer states what it will pay on each elective role — `IN_FULL`, or an amount — and **may restate it until the freeze.** It was briefly carried as a parameter on `sign`, which locked the choice at signing; two consequences made that untenable. On a share role the real due is unknown until resolution, so electing at signing is guessing rather than choosing. And more seriously, **the moment of betrayal was not expressible**: A6's signature moment is authority abused *at the moment of maximum leverage*, and if the choice is fixed at signing there is no such moment. §7.6's falsification test — *is the elective part always honoured?* — cannot even be asked of a payer that was never offered the choice at the time it mattered. Restatable-until-freeze is what makes the elective half a real choice "every time" rather than once. The freeze is the deadline because §5.1 forbids a discretionary decision inside the settlement window.
 
 *Budget note (§17): `publish_offer`, `message` and `elect` are added; `venture.counter`, `say.endorse` and `say.retract` are removed. `counter` is now a `message` type rather than its own verb; the mandatory 140-character `reason` already yields the entire ticker corpus, so `endorse`/`retract` bought nothing but a moderation surface. `vote` is promoted out of `org` because the design now has three ballots and §3 permits one word per concept — a ballot is a ballot. Net 0, at **39 of 40**. `elect` spends the last-but-one slot deliberately: A6 is the core loop and it was unreachable without it.*
+
+**`graduate` spends the last slot, and a live playtest is why.** Eight probes played the running world and the predation probe reported that it *"could not get raided, could not resist, and could never have seen a raid coming, because in this build no raid can arrive at anyone."* Enrolment always seats in the Commons (§6.1), a Commons holding grants Commons-bound hands only (§4.1), and nothing moved a holding — so **A8's permanent floor had become the entire world**: predation shipped and could never touch a player, the Marches and the Frontier were decorative, and there was no risk/reward choice anywhere in the game. `graduate` moves your holding **one lane outward, to an adjacent MARCHES or FRONTIER system**, at §6.3's price (currency plus manufactured goods, both into named sinks). It never accepts a COMMONS destination: leaving the floor is the single most consequential thing a newcomer does and it must be a decision, not a drift. One lane at a time is what keeps §4.2's topology real — the Frontier stays two constellation hops away and the Marches stay unavoidably in between. It is `world`, not `office` or `venture`, because it is the same concept as `move` applied to the other body §6 gives you, and §3 keeps them distinct words because a hand and a holding are distinct things. **Now at 40 of 40: the budget is spent, and the next verb costs a removal.**
 
 Illegal actions never error: return the violated invariant, the changed fields, the nearest legal affordance, and a fresh observation. Hints go to the agent's correction channel and **never** to the public feed (scar #10). Every mutating action carries an idempotency key and `expected_state_version`.
 
@@ -807,7 +811,7 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 | Storylines surfaced | 6–10 | R6 |
 | Levy allocation | **a constellation vote**; published default is inverse to Exposure | forces conflict, not just activity |
 | Levy non-escrowable share | stated fraction, carried by a hand | or it Coase-collapses into a delivery service |
-| **Rules budget** | **≤15 axioms · ≤40 verbs · ≤10 top-level `observe` keys · ≤8 venture kinds** — currently **15 / 38 / 10 / 8**, so axioms and observe keys are *at* the ceiling | every addition was individually justified by a critic, which is exactly why the drift is invisible. Adding one means removing one. Enforced by a test that counts them, not by good intentions. |
+| **Rules budget** | **≤15 axioms · ≤40 verbs · ≤10 top-level `observe` keys · ≤8 venture kinds** — currently **15 / 40 / 10 / 8**, so axioms, verbs and observe keys are all *at* the ceiling | every addition was individually justified by a critic, which is exactly why the drift is invisible. Adding one means removing one. Enforced by a test that counts them, not by good intentions. |
 
 ---
 

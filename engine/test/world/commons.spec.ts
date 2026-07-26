@@ -131,10 +131,13 @@ function merge(a: ActionParams, b: ActionParams): ActionParams {
 
 describe('the verb classification is total against SPEC §12.2', () => {
   it('classifies every verb the canon declares, and declares no verb the canon lacks', () => {
-    // 39, not 38: SPEC §12.2 gained `elect` and deliberately spends the last-but-one
-    // slot of §17's budget of 40 on it, because A6 is the core loop and was unreachable
-    // while the payer's choice was a parameter on a signature it had already sent.
-    expect(VERBS.length).toBe(39);
+    // 40, not 39: §12.2 gained `elect` (the last-but-one slot — A6 is the core loop and
+    // was unreachable while the payer's choice was a parameter on a signature it had
+    // already sent) and then `graduate` (the last slot — a live playtest found that no
+    // principal could ever leave the Commons, so A8's floor was the whole world and
+    // predation could not reach a player). **§17's budget of 40 is now spent**: the next
+    // verb costs a removal, and this number is the thing that will say so.
+    expect(VERBS.length).toBe(40);
     expect(() => assertVerbsClassified(VERBS)).not.toThrow();
     expect(Object.keys(VERB_CLASS)).toHaveLength(VERBS.length);
   });

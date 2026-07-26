@@ -35,7 +35,7 @@ import { engineReport, engineViolation, tickInputsFor } from '../../src/tick/hal
 import { storesAccount } from '../../src/ledger/index.js';
 import { slotClaimAt } from '../../src/observe/forecast.js';
 import { yourTakeAtP50 } from '../../src/venture/index.js';
-import { handsOf } from '../../src/world/index.js';
+import { commonsBoundRejection, handsOf } from '../../src/world/index.js';
 import { FORMATION_WINDOW_TICKS } from '../../src/sim/runtime.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from './harness.js';
 
@@ -759,8 +759,30 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
     // One act per slot is offered, and the rest are counted rather than dropped.
     expect(offered.length).toBe(rows.length);
     const withheld = header(only)['withheld'] as Row;
-    expect(Number(withheld['count'])).toBe(rows.length * (idle.length - 1));
+    // ── THE TOTAL IS THE SUM OF ITS NAMED PARTS, AND THERE ARE TWO NOW ──────
+    //
+    // The second term arrived with `graduate`: a Commons-bound principal is no longer
+    // offered `move` onto the lanes leaving the Commons, because the engine refuses them
+    // (A15) and an affordance the engine refuses costs a real action. Every principal in
+    // this fixture is Commons-seated, so the term is non-zero, and PROP-O1's property is
+    // that the omission is **counted** rather than that it does not exist. Recomputed
+    // here from the same predicate the observation uses, so the assertion stays exact
+    // instead of relaxing to `>=` — a `>=` here would have accepted the silent drop this
+    // test exists to catch.
+    const boundLanes = handsOf(h.runtime.world, filler.principalId as never)
+      .filter((hand) => hand.state === 'IDLE')
+      .reduce(
+        (n, hand) =>
+          n +
+          [...(h.runtime.world.map.systems.get(hand.location)?.lanes ?? [])].filter(
+            (lane) => commonsBoundRejection(h.runtime.world, hand, lane) !== null,
+          ).length,
+        0,
+      );
+    expect(boundLanes).toBeGreaterThan(0);
+    expect(Number(withheld['count'])).toBe(rows.length * (idle.length - 1) + boundLanes);
     expect(String(withheld['reason'])).toContain('further legal fill_role act(s) exist');
+    expect(String(withheld['reason'])).toContain('lanes leaving the Commons');
     // The claim it used to make while dropping them.
     expect(String(withheld['reason'])).not.toBe(
       'nothing was withheld: this is every legal act, with its full cost.',

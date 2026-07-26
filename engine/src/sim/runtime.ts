@@ -80,6 +80,7 @@ import { bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../co
 import { EventLedger, eventsStateTable, type NewEvent } from '../events/index.js';
 import {
   CURRENCY_FAUCET,
+  CURRENCY_SINK,
   DEFAULT_VALUATION_RULE,
   GOODS_FAUCET,
   GOODS_SINK,
@@ -305,8 +306,14 @@ import { MAX_RAID_LINES } from '../frames/contract.js';
 import type { Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
 import {
   DEFENDER_SIDE,
+  GRADUATION_STATEMENT,
+  GRADUATION_UPKEEP_MINOR,
+  GRADUATION_UPKEEP_QTY,
   createWorld,
   enroll,
+  graduateHolding,
+  graduationDestinations,
+  graduationRejection,
   handsOf,
   holdingOf,
   isPresent,
@@ -795,6 +802,48 @@ export class DecisionCensus {
  * array — would make that comparison a tautology, which is the §15.4 false-mark route
  * one layer up.
  */
+/**
+ * **The priced exit from the Commons, as one inert value** (§4.1, §6.3, A8, A15).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ONE HOME, THREE READERS: the `graduate` affordance in `api/observe.ts`, the
+ * `holding` block of the observation, and {@link Runtime.vGraduate} itself. Three copies
+ * of "what does the crossing cost and what travels with me" is three chances for the
+ * server to quote a price it then does not charge — and this is the single most
+ * consequential decision a newcomer makes, so a wrong number here is worse than a
+ * missing one. `test/world/graduation.spec.ts` pins the quote to what the verb charges.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface GraduationQuote {
+  readonly from: SystemId;
+  readonly fromTier: ZoneTier;
+  /** Adjacent MARCHES/FRONTIER systems, canonical order. Empty is a legitimate answer. */
+  readonly open: readonly SystemId[];
+  readonly upkeepMinor: Minor;
+  readonly upkeepQty: Qty;
+  /** The manufactured good the upkeep is paid in. Named here, not in the world layer. */
+  readonly good: GoodId;
+  /** Free (unlocked) currency in STORES right now. */
+  readonly freeMinor: Minor;
+  /** Unpledged, `AVAILABLE` units of {@link good} this principal holds anywhere. */
+  readonly availableQty: Qty;
+  /**
+   * Units standing **at the current seat** that would travel with the body — and become
+   * assailable the moment it lands. This is the contingent half of the price and it is
+   * the number `max_contingent_liability` carries.
+   */
+  readonly travellingQty: Qty;
+  /**
+   * Units at the current seat that would **stay behind**, because a pledged lot backs an
+   * obligation and `lots.ts` is explicit that it "cannot be sent away". Stated rather
+   * than silently dropped: an agent that meant to take its goods with it is entitled to
+   * know which of them are not coming and why.
+   */
+  readonly pledgedQty: Qty;
+  /** False when either half of the price cannot be met right now. */
+  readonly affordable: boolean;
+}
+
 export interface DeliveryRecord {
   readonly venture: VentureId;
   readonly tick: number;
@@ -2885,6 +2934,17 @@ export class Runtime {
       // clearing pass is closed across the same window from the other side
       // (`clear.ts` skips the settlement tick), so the door shuts on both hinges.
       trade: (ctx, req) => this.committing(ctx) ?? this.vTrade(ctx, req),
+      // ── `graduate` — the exit from the Commons, and it was missing ─────────
+      //
+      // Behind `committing` for exactly `trade`'s reason, plus one of its own.
+      // `reckoning/driver.ts:VERIFY_INPUTS` re-reads every payer's free balance between
+      // the freeze and the settlement and halts on any difference; the upkeep charge
+      // moves that figure, so a crossing inside the window would pause a healthy world
+      // on the one night that has an audience (A14). The extra reason is the Levy: a
+      // holding is what decides a principal's constellation and therefore its delivery
+      // place, and moving it while tonight's obligations are frozen would change where a
+      // settling assessment is payable after the inputs that priced it were hashed.
+      graduate: (ctx, req) => this.committing(ctx) ?? this.vGraduate(ctx, req),
     };
   }
 
@@ -5116,6 +5176,311 @@ export class Runtime {
     return qty(taken);
   }
 
+  // ── GRADUATION: the exit from the Commons (§4.1, §6.3, A8, A15) ───────────
+
+  /**
+   * What the crossing costs this principal right now, and what it would carry out.
+   *
+   * Public, and read by the affordance layer and by the `holding` block, because *"a
+   * graduation nobody can find is not a graduation"*: the choice has to be priced in the
+   * observation before it is taken, the way every other high-impact affordance is. Never
+   * throws and never draws — it is read from HTTP (DET-7).
+   *
+   * `null` only when the principal has no holding, which after enrolment means it does
+   * not exist.
+   */
+  graduationQuote(principal: PrincipalId): GraduationQuote | null {
+    if (this.world.holdingByPrincipal.get(principal) === undefined) return null;
+    const holding = holdingOf(this.world, principal);
+    const account = storesAccount(principal);
+    const free = this.ledger.account(account) === undefined
+      ? minor(0)
+      : this.ledger.freeBalance(account);
+
+    let atSeat = 0;
+    let pledged = 0;
+    for (const lot of this.upkeepLotsAt(principal, holding.system)) atSeat += lot.qty;
+    for (const lot of this.pledgedUpkeepLotsAt(principal, holding.system)) pledged += lot.qty;
+
+    return {
+      from: holding.system,
+      fromTier: tierOf(this.world.map, holding.system),
+      open: graduationDestinations(this.world.map, holding),
+      upkeepMinor: GRADUATION_UPKEEP_MINOR,
+      upkeepQty: GRADUATION_UPKEEP_QTY,
+      good: LEVY_GOOD,
+      freeMinor: free,
+      availableQty: qty(atSeat),
+      travellingQty: qty(Math.max(0, atSeat - GRADUATION_UPKEEP_QTY)),
+      pledgedQty: qty(pledged),
+      affordable: free >= GRADUATION_UPKEEP_MINOR && atSeat >= GRADUATION_UPKEEP_QTY,
+    };
+  }
+
+  /**
+   * Unpledged, `AVAILABLE` upkeep-good lots standing at one system, canonical order.
+   *
+   * The pool the price is drawn from **and** the goods that travel — deliberately the
+   * same set, because a price payable out of goods that would not have moved anyway is
+   * not a price on projecting force. Mirrors `levyGoodLots` rather than sharing it: that
+   * one is location-blind on purpose (a delivery may draw from anywhere the payer holds),
+   * and this one must not be (a body carries what is standing in it).
+   */
+  private upkeepLotsAt(
+    principal: PrincipalId,
+    system: SystemId,
+  ): readonly { readonly id: LotId; readonly qty: number }[] {
+    const account = storesAccount(principal);
+    if (this.ledger.account(account) === undefined) return [];
+    return this.ledger
+      .lotsInAccount(account)
+      .filter(
+        (lot) =>
+          lot.good === LEVY_GOOD &&
+          lot.qty > 0 &&
+          lot.state === 'AVAILABLE' &&
+          lot.encumbranceId === null &&
+          lot.location === system,
+      )
+      .sort((a, b) => compareIds(a.id, b.id))
+      .map((lot) => ({ id: lot.id, qty: lot.qty }));
+  }
+
+  /** The lots that stay behind: pledged, so `lots.ts` says they "cannot be sent away". */
+  private pledgedUpkeepLotsAt(
+    principal: PrincipalId,
+    system: SystemId,
+  ): readonly { readonly id: LotId; readonly qty: number }[] {
+    const account = storesAccount(principal);
+    if (this.ledger.account(account) === undefined) return [];
+    return this.ledger
+      .lotsInAccount(account)
+      .filter(
+        (lot) =>
+          lot.good === LEVY_GOOD &&
+          lot.qty > 0 &&
+          lot.state === 'AVAILABLE' &&
+          lot.encumbranceId !== null &&
+          lot.location === system,
+      )
+      .sort((a, b) => compareIds(a.id, b.id))
+      .map((lot) => ({ id: lot.id, qty: lot.qty }));
+  }
+
+  /**
+   * `graduate` — move the holding one lane outward, at §6.3's price.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE ORDER IS THE HONESTY**, exactly as it is in `vDeliver`:
+   *
+   *   1. **Refuse on the merits first**, with a sentence, before anything moves.
+   *   2. **Charge**, and let the ledger be the authority on whether the charge landed.
+   *   3. **Move the body only if the whole price was paid.** A partial charge is refused
+   *      rather than completed at a discount, and it is recorded as a fault so an
+   *      operator sees it — the pre-validation in step 1 makes it unreachable, and the
+   *      one thing that must never happen is a body that crossed for free.
+   *
+   * Everything the principal holds at the old seat moves with the body, and it becomes
+   * assailable the moment it lands. That is not a side effect: it is the entire point of
+   * the choice, and `what_it_forecloses` says so before it is taken.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private vGraduate(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const quote = this.graduationQuote(req.principal);
+    if (quote === null) {
+      return reject('A2', `${req.principal} has no holding, so there is no body to move.`);
+    }
+    const holding = holdingOf(this.world, req.principal);
+    const to = readString(req.params, ['to', 'system', 'destination', 'system_id']);
+    if (to === null) {
+      return reject(
+        'A2',
+        'graduate needs a destination: {"to": "<system_id>"}. It moves your HOLDING — your body on the ' +
+          'map — one lane outward, and it is the only way out of the Commons. Open to you right now: ' +
+          `${quote.open.length === 0 ? 'nothing (no lane out of here leaves the Commons)' : quote.open.join(' · ')}. ` +
+          GRADUATION_STATEMENT,
+      );
+    }
+    const fault = graduationRejection(this.world.map, holding, to as SystemId);
+    if (fault !== null) return fault;
+
+    // ── The price, checked before a unit of it moves (A15, §6.3) ────────────
+    if (quote.freeMinor < quote.upkeepMinor) {
+      return reject(
+        'A15',
+        `a holding outside the Commons pays upkeep in currency plus manufactured goods, and the crossing ` +
+          `charges ${String(quote.upkeepMinor)} of it now. You have ${String(quote.freeMinor)} free — locked ` +
+          'stores do not count. This gate is priced in produced goods and capital and never in identities, ' +
+          'so enrolling again buys you nothing here.',
+      );
+    }
+    if (quote.availableQty < quote.upkeepQty) {
+      return reject(
+        'A15',
+        `the crossing also costs ${String(quote.upkeepQty)} units of ${quote.good}, standing at ` +
+          `${quote.from} where your body is. You have ${String(quote.availableQty)} unpledged there` +
+          `${quote.pledgedQty > 0 ? ` (${String(quote.pledgedQty)} more is pledged to an open obligation and cannot be sent away)` : ''}. ` +
+          'Produce or buy the difference first; this price cannot be paid in currency and cannot be paid ' +
+          'by enrolling a second identity.',
+      );
+    }
+
+    const from = holding.system;
+    const burned = this.burnUpkeepGoods(req.principal, from, quote.upkeepQty, ctx.tick);
+    if (burned < quote.upkeepQty) {
+      return reject(
+        'A15',
+        `only ${String(burned)} of the ${String(quote.upkeepQty)} units of upkeep could be handed over, so ` +
+          'the crossing did not happen and your holding has not moved. Check your stores and try again.',
+      );
+    }
+    try {
+      this.ledger.retireCurrency({
+        eventId: `graduate.upkeep:${req.principal}:${String(ctx.tick)}` as EventId,
+        tick: ctx.tick,
+        sink: CURRENCY_SINK.UPKEEP,
+        from: storesAccount(req.principal),
+        amount: quote.upkeepMinor,
+      });
+    } catch (error: unknown) {
+      this.faults.push(
+        `${req.principal} paid ${String(burned)} of ${quote.good} toward a crossing to ${to} and then could ` +
+          `not pay the currency half (${describeError(error)}); the holding did not move`,
+      );
+      return reject(
+        'A15',
+        'the goods half of the upkeep was handed over but the currency half could not be, so your holding ' +
+          'has not moved. This should not be reachable — please report it with POST /discrepancy.',
+      );
+    }
+
+    // Only now does the body move. `graduateHolding` re-runs the same gate, so the two
+    // roads to "may this crossing happen" cannot drift apart.
+    const moved = graduateHolding(this.world.map, holding, to as SystemId);
+    if (moved !== null) return moved;
+    const carried = this.carryStoresTo(req.principal, from, to as SystemId);
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'holding.graduated',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `holding::${holding.id}`,
+      parentEventId: null,
+      // §11.2 gives PUBLIC to "movement on public lanes", and a body leaving the safe
+      // zone is the loudest motion the map has. A13: this is the pixel signature — the
+      // named holding crosses the Commons boundary and the protection ring comes off.
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        holding: holding.id,
+        name: holding.name,
+        from,
+        to,
+        from_tier: tierOf(this.world.map, from),
+        to_tier: tierOf(this.world.map, to as SystemId),
+        upkeep_minor: quote.upkeepMinor,
+        upkeep_qty: quote.upkeepQty,
+        good: quote.good,
+        carried_qty: carried.qty,
+        carried_lots: carried.lots,
+        left_behind_qty: quote.pledgedQty,
+        // Stated on the receipt so a viewer and an auditor read the same sentence the
+        // agent read before it acted: from here on, A8 does not cover this principal.
+        commons_protection: false,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * Burn the goods half of the upkeep, **where the principal is standing** (§10.2).
+   *
+   * Destroyed at the seat it is leaving rather than at the destination: that is where the
+   * agent and the goods actually were when the act resolved, and D8's lesson is that a
+   * located fact must be true about the place it names. Returns what actually moved;
+   * never throws, for `consumeLevyGood`'s reason — this is an agent-reachable path and a
+   * throw here would be an agent-triggerable halt.
+   */
+  private burnUpkeepGoods(
+    principal: PrincipalId,
+    from: SystemId,
+    want: Qty,
+    tick: number,
+  ): Qty {
+    let left: number = want;
+    let taken = 0;
+    for (const lot of this.upkeepLotsAt(principal, from)) {
+      if (left <= 0) break;
+      const portion = Math.min(left, lot.qty);
+      if (portion <= 0) continue;
+      try {
+        this.ledger.destroyGoods({
+          eventId: `graduate.upkeep:${principal}:${String(tick)}:${lot.id}` as EventId,
+          tick,
+          sink: GOODS_SINK.CONSUMPTION,
+          lotId: lot.id,
+          qty: qty(portion),
+        });
+      } catch (error: unknown) {
+        this.faults.push(
+          `${principal} could not burn ${String(portion)} of ${LEVY_GOOD} at ${from} toward a crossing ` +
+            `(${describeError(error)}); only what actually moved is charged`,
+        );
+        continue;
+      }
+      taken += portion;
+      left -= portion;
+    }
+    return qty(taken);
+  }
+
+  /**
+   * Move what is standing in the body to where the body now stands.
+   *
+   * **This is the risk half of the crossing, and it is deliberate.** A graduate whose
+   * stores stayed behind in the Commons would have bought a Marches address with no
+   * exposure attached — the map would show a body outside the safe zone while `PRD-1`'s
+   * lot-level floor kept every unit of its wealth untouchable, and predation would still
+   * never reach a player. Enrolment already locates the starter allotment *at the
+   * holding's system*, so "your stores stand in your body" is the rule this build already
+   * runs on; this keeps it true through a move.
+   *
+   * Pledged lots stay: `lots.ts` says a pledged lot "cannot be sent away", and moving one
+   * out from under a settling obligation is the shape D8 closed. They are counted and
+   * published rather than dropped silently.
+   */
+  private carryStoresTo(
+    principal: PrincipalId,
+    from: SystemId,
+    to: SystemId,
+  ): { readonly lots: number; readonly qty: Qty } {
+    let moved = 0;
+    let lots = 0;
+    for (const lot of this.upkeepLotsAt(principal, from)) {
+      try {
+        this.ledger.relocate(lot.id, { location: to });
+      } catch (error: unknown) {
+        this.faults.push(
+          `${principal}'s lot ${lot.id} could not follow its holding from ${from} to ${to} ` +
+            `(${describeError(error)}); it stays where it is`,
+        );
+        continue;
+      }
+      moved += lot.qty;
+      lots += 1;
+    }
+    return { lots, qty: qty(moved) };
+  }
+
   /**
    * `deliver` — §5.2's discharge, and the only one.
    *
@@ -5139,8 +5504,24 @@ export class Runtime {
     if (this.world.holdingByPrincipal.get(payer) === undefined) {
       return reject('A2', `there is no principal ${payer} to deliver for; name yourself or a real principal.`);
     }
-    const constellation = constellationOf(this.world, payer);
-    const place = constellation === null ? null : deliveryPlaceOf(this.world.map, constellation);
+    // ── ONE HOME FOR "WHERE IS THIS PAYABLE": THE PLAN THAT ASSESSED IT ─────
+    //
+    // `levyBlockFor` publishes `deliverable_to` from `plan.deliverableTo`, the settlement
+    // sweep reads `plan.deliverableTo`, and the tribute line reads `plan.deliverableTo`.
+    // This handler alone recomputed it from the payer's *current* constellation. The two
+    // agreed for as long as a holding could not move — and `graduate` is exactly the verb
+    // that makes a holding move, so a graduate who crossed a constellation boundary would
+    // have been shown one delivery place and charged against another, mid-Reckoning. That
+    // is scar #1 with a Levy shortfall attached, and a shortfall is an accusation.
+    //
+    // The plan wins, because the plan is what was assessed. The computed place stays as
+    // the fallback for a principal with no line yet (a mid-cycle enroller before its
+    // constellation is assessed), which is the only case where there is no plan to ask.
+    const line = this.levy.lineFor(reckoning, payer);
+    const constellation = line?.plan.constellation ?? constellationOf(this.world, payer);
+    const place =
+      line?.plan.deliverableTo ??
+      (constellation === null ? null : deliveryPlaceOf(this.world.map, constellation));
     if (place === null) {
       return reject(
         'A2',

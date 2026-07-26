@@ -25,6 +25,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+// The engine's own sentence about the exit from the Commons. Imported rather than copied,
+// which is the whole point of this file: a copy would be a third version of the rule.
+import { GRADUATION_STATEMENT } from '../../src/world/index.js';
 
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
 const SPEC = readFileSync(new URL('../../../docs/design/SPEC.md', import.meta.url), 'utf8');
@@ -242,6 +245,40 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     // looks like the careful choice.
     expect(AGENT_MD).toContain('Anything short of the due is a decline');
     expect(AGENT_MD).toMatch(/over-performs, the real due is \*\*higher\*\*/);
+  });
+
+  it('carries the engine’s own graduation sentence VERBATIM, or the exit means two things', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // Scar #1 on the single most consequential decision a newcomer makes.
+    //
+    // A live playtest found that no principal could leave the Commons at all, so A8's
+    // permanent floor was the entire world and predation could never touch a player.
+    // `graduate` is the fix, and it is **irreversible**: an agent that misreads the price,
+    // or reads "one-way" as "reversible", cannot undo it. So the sentence the engine
+    // prints in its refusals and its affordance and the sentence this document teaches
+    // have to be the same bytes, not two compatible paraphrases.
+    //
+    // Verbatim, not "contains the numbers": a paraphrase that agreed on the price and
+    // disagreed on the direction would pass a looser check and is the worse bug.
+    //
+    // MUTATION: change `GRADUATION_UPKEEP_MINOR` in `src/world/graduation.ts` and this
+    // goes red immediately, because the statement quotes the constant and this compares
+    // the statement.
+    // ══════════════════════════════════════════════════════════════════════
+    const normalised = AGENT_MD.replace(/\n> ?/g, ' ').replace(/[ \t]+/g, ' ');
+    const wanted = GRADUATION_STATEMENT.replace(/[ \t]+/g, ' ');
+    expect(normalised).toContain(wanted);
+  });
+
+  it('says the three things about the Commons an agent must not have to infer', () => {
+    // The task the document has: you start safe, nothing can hurt you there, and the
+    // frontier is where the yield and the risk are. A document that only names the verb
+    // teaches an agent to cross without knowing what it is giving up.
+    expect(AGENT_MD).toContain('**You start in the Commons.**');
+    expect(AGENT_MD).toContain('Hostile action against you in the Commons is **invalid**');
+    expect(AGENT_MD).toContain('**What you give up is A8.**');
+    // And that the bind on its hands is the reason `move` refuses, not a bug.
+    expect(AGENT_MD).toContain('Commons-bound');
   });
 
   it('is self-contained: it does not send the player somewhere else to learn the rules', () => {

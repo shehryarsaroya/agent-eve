@@ -38,7 +38,9 @@ import { costOf } from '../tick/index.js';
 import { MAX_FORECLOSE_ENTRIES, MAX_PHRASE_CHARS } from './tokens.js';
 
 /**
- * SPEC §12.2's verbs, in the spec's own group order. 39 of the §17 budget's 40.
+ * SPEC §12.2's verbs, in the spec's own group order. **All 40 of the §17 budget's 40** —
+ * `graduate` spent the last slot, because a live playtest found no principal could ever
+ * leave the Commons and A8's floor had therefore become the entire world.
  *
  * Grouped and commented so a reader can diff this against §12.2 by eye; the
  * mechanical diff is in the test.
@@ -57,6 +59,7 @@ export const VERBS = Object.freeze([
   'refine',
   'build',
   'haul',
+  'graduate',
   // venture
   'create',
   'publish_offer',

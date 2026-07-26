@@ -63,6 +63,13 @@ export const VERB_CLASS: Readonly<Record<string, VerbClass>> = {
   refine: 'PEACEFUL',
   build: 'PEACEFUL',
   haul: 'PEACEFUL',
+  // `graduate` moves the ACTOR'S OWN holding out of the Commons and names no other
+  // principal, so there is nothing for the floor to protect anyone from. Classifying it
+  // HOSTILE would be worse than wrong: every principal in this build is Commons-seated,
+  // so the floor would refuse the only verb that leaves the floor, and A8 would go back
+  // to being the whole world. Leaving the safe zone is a decision about yourself; the
+  // consequences of having left are what predation is for.
+  graduate: 'PEACEFUL',
 
   // venture — a venture is only as hostile as its kind.
   create: 'CONTEXTUAL',
