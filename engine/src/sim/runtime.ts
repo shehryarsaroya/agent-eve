@@ -5987,6 +5987,35 @@ export class Runtime {
       handles.set(h.principal, h.name as unknown as Handle);
     }
 
+    // ── THE SAY-DO GAP, WHICH THE FRAME USED TO DROP ────────────────────────────
+    //
+    // These three fields were hardcoded `null, null, []`. Measured on the live world at
+    // one moment: 371 seals, 126 messages, and ten rundown segments carrying zero of
+    // each. §11.1's three layers are *what it said* → *what it sealed* → *what it did*,
+    // and §14's receipt reel is the first placed beside the last. The frame rendered only
+    // the third, so a viewer saw deeds and consequences and never learned that anybody had
+    // claimed anything — a betrayal was costly but not LEGIBLE, which is the whole product.
+    //
+    // Built once here rather than per-venture: `auditRecords()` and the talk ring are both
+    // whole-world reads, and doing them inside the loop would be O(ventures × seals) on the
+    // settlement tick, which is the heaviest tick there is.
+    const verdictByVenture = new Map<string, 'HONOURED' | 'CONTRADICTED'>();
+    for (const rec of this.seals.auditRecords()) {
+      if (rec.role === null || rec.verdict === null) continue;
+      // CONTRADICTED wins if any seal on the venture was contradicted: the story is that
+      // a pre-commitment was broken, and one broken seal is that story regardless of how
+      // many others held.
+      const key = String(rec.role.venture);
+      if (rec.verdict === 'CONTRADICTED' || !verdictByVenture.has(key)) {
+        verdictByVenture.set(key, rec.verdict);
+      }
+    }
+    const talkByVenture = new Map<string, readonly TalkEntry[]>();
+    for (const entry of this.talk.all) {
+      const key = String(entry.venture);
+      talkByVenture.set(key, [...(talkByVenture.get(key) ?? []), entry]);
+    }
+
     const settled: SettledView[] = [];
     for (const st of outcome.settlements) {
       const v = this.ventures.get(st.venture);
@@ -6005,9 +6034,28 @@ export class Runtime {
         defaulted: st.terminalState === 'DEFAULTED',
         deferred: st.terminalState === 'DEFERRED',
         parties: partiesOf(v),
-        publicLine: null,
-        sealVerdict: null,
-        messages: [],
+        // What it SAID. An `assure` is the reassurance §11.1 layer 1 describes — public,
+        // and allowed to be a lie — so the creator's last one is the line to put beside
+        // the deed. Never the seal's prose: that is SEALED and releases in the season
+        // replay, not tonight (§11.2).
+        publicLine:
+          (talkByVenture.get(String(st.venture)) ?? [])
+            .filter((t) => t.act === 'assure' && t.from === v.creator)
+            .slice(-1)[0]?.text ?? null,
+        // What it SEALED — the flag only. The verdict is a separate PUBLIC fact parented
+        // to the seal; the content is not in this frame and cannot be.
+        sealVerdict: verdictByVenture.get(String(st.venture)) ?? null,
+        // The negotiation, declassified. `PARTIES` while live, public AT SETTLEMENT — which
+        // is now — and carried only where an elective promise BROKE, because a reel on a
+        // kept promise would be the show editorialising (A12).
+        messages:
+          st.terminalState === 'DEFAULTED'
+            ? (talkByVenture.get(String(st.venture)) ?? []).map((t) => ({
+                tick: t.tick,
+                from: t.from,
+                text: t.text,
+              }))
+            : [],
       });
     }
 
