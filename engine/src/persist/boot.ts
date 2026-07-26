@@ -491,8 +491,25 @@ export async function bootFromStore(
  * Awaited and unguarded on purpose: if the annotation cannot be written, boot fails.
  * An accepted divergence that nobody recorded is the exact silent lie A5 forbids, and
  * it would be indistinguishable afterwards from a world that never diverged at all.
- * Deduplicated on `(tick, toRulesVersion)` so a second restart under the same
- * operator instruction annotates once rather than once per restart.
+ *
+ * ── WHAT THE DEDUP KEY HAS TO BE, AND WHY IT IS NOT `(tick, toRulesVersion)` ──
+ *
+ * A second restart under the same operator instruction must annotate once, not once
+ * per restart. But `(tick, toRulesVersion)` is too coarse to say that, because
+ * `RULES_VERSION` is a constant that does not move when semantics change (the
+ * discipline is filed, not yet kept), so the key degenerates to "dedup on tick" — and
+ * two genuinely different rules changes can first diverge at the same tick. Measured:
+ * refusing `p:varrow` and refusing `p:vex` both first diverge at tick 100 in a
+ * six-hand cast, and the second one resumed the world while the record named only the
+ * first. That is the silent lie this table exists to prevent, arriving through the
+ * table itself.
+ *
+ * So the key includes `detail`, which identifies *what* diverged (the action and its
+ * refusal, or the two hashes). For that to stay restart-idempotent `detail` has to be
+ * stable across restarts, which is why the tolerated-divergence count is no longer
+ * interpolated into it: the count grows as the world runs on past the accepted tick,
+ * and it already has its own column (`toleratedAfter`) and its own line in the boot
+ * banner. A duplicated number that made the key unstable was the only thing it bought.
  */
 async function annotate(
   store: JournalStore,
@@ -510,8 +527,7 @@ async function annotate(
     fromRulesVersion: context.journalledRulesVersion,
     toRulesVersion: context.runningRulesVersion,
     detail: safeDetail(
-      `rules change accepted by operator at tick ${String(first.tick)}: ${first.detail}` +
-        (toleratedAfter > 0 ? ` (+${String(toleratedAfter)} further divergences in the same replay)` : ''),
+      `rules change accepted by operator at tick ${String(first.tick)}: ${first.detail}`,
     ),
     expectedHash: first.expected,
     actualHash: first.actual,
@@ -520,7 +536,10 @@ async function annotate(
   };
   const existing = await store.divergences();
   const already = existing.some(
-    (d) => d.tick === record.tick && d.toRulesVersion === record.toRulesVersion,
+    (d) =>
+      d.tick === record.tick &&
+      d.toRulesVersion === record.toRulesVersion &&
+      d.detail === record.detail,
   );
   if (!already) await store.recordDivergence(record);
   return record;

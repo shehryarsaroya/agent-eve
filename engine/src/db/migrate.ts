@@ -38,13 +38,23 @@ const APPEND_ONLY_TABLES = ['event', 'event_audience', 'posting', 'action_log'] 
  * convention (INV-16): a rewritten master seed or a re-minted enrolment would corrupt
  * the record A10 says never resets, so the app role gets INSERT + SELECT and no more.
  */
-const APPEND_ONLY_UNPARTITIONED = [
+export const APPEND_ONLY_UNPARTITIONED = [
   'journal_meta',
   'tick_seed',
   'journal_enrollment',
   // The operator door's annotation. It exists to say "the rules changed at tick N",
   // so it above all must not be editable by the process that writes it.
   'journal_divergence',
+  // THE TRIPWIRE ITSELF. Boot's only detector for "the arithmetic moved" is comparing
+  // the replayed state_hash against `snapshot.state_hash`, so the whole hold-don't-
+  // crash-loop design rests on this column. It was left writable, and the app role
+  // could therefore disable its own integrity check: a stray UPDATE forces a permanent
+  // false HELD, and a DELETE empties the tripwire set so boot reports
+  // `tripwiresChecked: 0` and serves a world it never verified — the silent continue
+  // this module exists to prevent. Costs nothing to close: `writeSnapshot` is
+  // `INSERT ... ON CONFLICT (tick) DO NOTHING`, which needs INSERT only, and nothing
+  // anywhere UPDATEs or DELETEs this table.
+  'snapshot',
 ] as const;
 
 export function partitionIndexForTick(tick: number): number {
