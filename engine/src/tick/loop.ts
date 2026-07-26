@@ -916,18 +916,18 @@ export class Engine {
           // the exhaustiveness check then makes *adding* a phase a compile error
           // here rather than a silently skipped slot. The order is a rules surface,
           // so the compiler is the cheapest reviewer of a change to it.
-          case 'PREDATE':
-          case 'MARKETS':
           case 'PRODUCE':
-            // No module yet. They run, they do nothing, and they hold their slot —
-            // see UNBUILT_PHASES and PHASE_NOTE for which build step fills each.
+            // No module yet. It runs, it does nothing, and it holds its slot — see
+            // UNBUILT_PHASES and PHASE_NOTE for which build step fills it.
             this.runHandler(phase, tick);
             break;
 
+          case 'PREDATE':
+          case 'MARKETS':
           case 'VENTURES':
           case 'HAZARD':
-            // Unfilled rather than unbuilt: they take a registered handler from the
-            // venture and predation modules.
+            // The slot is the tick loop's; the content is a module's. Each takes a
+            // registered handler from the market, predation, venture or Levy module.
             this.runHandler(phase, tick);
             break;
         }

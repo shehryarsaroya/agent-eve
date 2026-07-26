@@ -74,6 +74,7 @@ import type {
   SystemId,
   VentureId,
   VentureState,
+  ZoneTier,
 } from '../core/types.js';
 import { bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { EventLedger, type NewEvent } from '../events/index.js';
@@ -268,13 +269,44 @@ import {
   type TradeRequest,
   type VenueId,
 } from '../market/index.js';
+// ── PREDATION (SPEC §9, §16 step 12) — the mechanic A14 was missing ─────────
+//
+// `PREDATE` was a documented no-op hook from commit #1 and the live world ran thousands
+// of ticks with no conflict in it, because nothing forced any. This is the wiring that
+// fills the slot: a state table, a phase handler, three verbs that already existed in
+// §12.2, and an assertions entry carrying PRD-1 (A8) and PRD-3 (A5′).
+import {
+  Book as RaidBook,
+  MAX_SEIZE_LOTS,
+  RAID_JOIN_STAKE_MINOR,
+  assertRaidSchedule,
+  checkPredationInvariants,
+  payDemand,
+  raidLinesFor,
+  raidStateTable,
+  raidTickerLine,
+  raidViewsFor,
+  runPredate,
+  scheduleAt,
+  type AssailablePile,
+  type PredationPort,
+  type RaidId,
+  type RaidOutcome,
+  type RaidRecord,
+  type RaidSchedule,
+  type RaidView,
+} from '../predation/index.js';
+import { MAX_RAID_LINES } from '../frames/contract.js';
 import type { Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
 import {
+  DEFENDER_SIDE,
   createWorld,
   enroll,
   handsOf,
+  holdingOf,
   isPresent,
   launchMap,
+  loseHand,
   principalIsCommonsBound,
   reject,
   releaseHand,
@@ -306,8 +338,21 @@ import {
  * necessarily changes the hash of **every** tick, including ticks already journalled —
  * so this is the exact case this constant exists for, and the live world crossed the
  * boundary through the operator door at tick 287 rather than by pretending nothing moved.
+ *
+ * ## 2 → 3 (2026-07-25)
+ *
+ * **Predation landed** (SPEC §9, §16 step 12). `PREDATE` stopped being a no-op hook, the
+ * raid book entered the hashed capture as a new state table, and the phase now draws
+ * from its own seeded sub-stream. Each of the three is enough on its own: a new table
+ * changes `state_hash` at every tick including journalled ones, and a phase that draws
+ * changes what a replay of the existing log computes.
+ *
+ * The sub-stream is the *reason the rest did not move*: `PREDATE` has held its slot and
+ * its `Rng.derive('PREDATE')` label since commit #1 precisely so that filling it could
+ * not shift `MOVE`, `HAZARD` or any other phase's draws. So this boundary is the raid
+ * book entering the hash, and nothing else.
  */
-export const RULES_VERSION = 2;
+export const RULES_VERSION = 3;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
@@ -324,6 +369,9 @@ export const MAX_MARKET_ROWS = 24;
  */
 export { STARTER_STAKE } from '../ledger/endowment.js';
 import { STARTER_STAKE } from '../ledger/endowment.js';
+
+/** INV-26: raid ticker lines retained for the frame. Bounded, published. */
+export const MAX_RAID_TICKER_LINES = 32;
 
 /** Ticks a formation window stays open by default. */
 export const FORMATION_WINDOW_TICKS = 12;
@@ -1185,6 +1233,21 @@ export class Runtime {
   private readonly levySummaries = new Ring<LevySummary>(MAX_RECKONING_SUMMARIES);
 
   /**
+   * The raid book. Replaced wholesale by the rollback, so nothing may hold a reference
+   * across a tick boundary — see {@link Runtime.raids}.
+   */
+  private raidBookRef = new RaidBook();
+  /**
+   * One 140-character line per resolved raid, for the frame's ticker (§14).
+   *
+   * A Ring rather than an array: a season is 8,064 ticks and an unbounded string buffer
+   * is scar #3. It is deliberately **outside** `state_hash` — it is a display buffer
+   * derived from the book, not a fact anyone can act on, and hashing a display buffer
+   * would make two identical worlds differ over what a viewer had scrolled past.
+   */
+  private readonly raidTicker = new Ring<string>(MAX_RAID_TICKER_LINES);
+
+  /**
    * Things that went wrong where a halt would have been worse. Bounded, and printed.
    *
    * A restore that could not reproduce its capture, an event the ledger refused at
@@ -1215,6 +1278,11 @@ export class Runtime {
     // Before anything else, because a world whose clock makes every offered seal
     // unkeepable must not start. See {@link assertSealSchedule}.
     assertSealSchedule();
+    // And before anything else again: a world whose clock would make a spawned raid
+    // resolve inside the freeze must not start. §5.1's freeze is hard and admits no raid
+    // resolution, so such a raid could only be dropped or resolved illegally — and both
+    // are a permanent public fact the rules made unavoidable (A5′).
+    assertRaidSchedule();
     this.world = createWorld(launchMap());
     this.ledger = new Ledger();
     this.hazards = options.hazards ?? false;
@@ -1298,6 +1366,19 @@ export class Runtime {
             this.marketBook = book;
           },
         ),
+        // Predation. A live demand decides what a future tick does to a principal's
+        // goods, so a hash blind to it would call two worlds identical while one of
+        // them was about to lose half its stock — and an aborted tick that left a
+        // credited `yield` in the book would have the world believing a payment that
+        // never published. Registered unconditionally from the first commit of this
+        // module, because the `EncumbranceBook` sitting outside the hash was the worst
+        // defect this engine has had and it was found by a verifier, not by us.
+        raidStateTable(
+          () => this.raidBookRef,
+          (book) => {
+            this.raidBookRef = book;
+          },
+        ),
       ],
       verbs: this.verbTable(),
       // §17 and agent.md: "one seal per role you hold is free and costs no action".
@@ -1333,6 +1414,17 @@ export class Runtime {
         // buy at market). The phase existed as an explicit no-op hook from commit #1
         // precisely so filling it would not shift any other phase's seeded sub-stream
         // — that promise is now being cashed, and no other phase moved.
+        // ── PREDATE, and the slot is the rule ──────────────────────────────
+        //
+        // §15.2 puts PREDATE after MOVE (so a hand that marched to the stage to defend
+        // is present on the tick its published ETA promised) and before VENTURES (so a
+        // venture settling tonight settles against goods a raid has already taken or
+        // left). The phase was an explicit no-op hook from commit #1 precisely so that
+        // filling it would shift no other phase's seeded sub-stream — cashed here, and
+        // no other phase moved.
+        PREDATE: (ctx) => {
+          this.predateNow(ctx);
+        },
         MARKETS: (ctx) => {
           this.clearMarketsNow(ctx);
         },
@@ -1374,6 +1466,11 @@ export class Runtime {
         // the posting log by a second road, so a torn fill aborts the tick instead of
         // becoming a permanent lie about who paid whom.
         (tick) => checkMarketInvariants({ book: this.marketBook, ledger: this.ledger, tick }),
+        // PRD-1..6. Not registry entries — see `predation/invariants.ts` on why the 26
+        // stay 26 — but merged into the same ASSERT pass and halting on the same terms.
+        // PRD-1 is A8 (a raid standing in the Commons halts the world) and PRD-3 is A5′
+        // (a recorded loss must equal what the posting log actually moved).
+        (tick) => this.predationViolations(tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     },
@@ -1440,6 +1537,672 @@ export class Runtime {
   /** The Levy's book. Never held across a tick boundary: the rollback replaces it. */
   get levy(): LevyBook {
     return this.levyBookRef;
+  }
+
+  // ── PREDATION (SPEC §9, §16 step 12) ──────────────────────────────────────
+
+  /** The raid book. Never held across a tick boundary: the rollback replaces it. */
+  get raids(): RaidBook {
+    return this.raidBookRef;
+  }
+
+  /** The published schedule, for `observe`. A pure function of the tick (A2, A14). */
+  raidSchedule(tick: number): RaidSchedule {
+    return scheduleAt(tick);
+  }
+
+  /** Raids this principal is the target of, or a party to. Bounded (INV-26). */
+  raidsFor(principal: PrincipalId, tick: number, limit: number): readonly RaidView[] {
+    return raidViewsFor({ book: this.raids, port: this.predationPort(tick), principal, tick, limit });
+  }
+
+  /**
+   * The live demand against this principal right now, if there is one.
+   *
+   * One home for "is this agent under a demand", so the affordance layer, the briefing
+   * and the verb handler cannot disagree about it (scar #5).
+   */
+  liveRaidAgainst(principal: PrincipalId): RaidRecord | undefined {
+    return this.raids.live().find((r) => r.target === principal);
+  }
+
+  /**
+   * Everything predation may do to the world, as the narrow port `src/predation` takes.
+   *
+   * Every value-moving method **returns what actually moved**. That is the mechanical
+   * form of A5′: the predation module never holds an intended figure at the moment it
+   * writes the record, so it cannot write one.
+   *
+   * `rng` is optional because the read-only half of the port (targeting, pricing an
+   * affordance, building an observation) must not draw at all — a draw taken to answer
+   * an HTTP read would shift every downstream outcome and make the world unreplayable
+   * (DET-7). {@link PredationPort.routHand} is the only method that needs one, and
+   * without an `rng` it refuses rather than inventing a recovery length.
+   */
+  private predationPort(tick: number, rng?: Rng): PredationPort {
+    const world = this.world;
+    const ledger = this.ledger;
+    const faults = this.faults;
+    const safeTier = (system: SystemId): ZoneTier =>
+      // Fails toward the floor: a system the map cannot place reads as COMMONS, so a
+      // spawn skips it and PRD-1 halts if such a raid somehow already exists. A8 is the
+      // one promise a newcomer has before it has learned anything else.
+      world.map.systems.has(system) ? tierOf(world.map, system) : 'COMMONS';
+
+    const assailable = (principal: PrincipalId): readonly AssailablePile[] =>
+      ledger
+        .lotsInAccount(storesAccount(principal))
+        .filter(
+          (lot) =>
+            lot.qty > 0 &&
+            // A pledged lot backs an obligation and cannot be sent away (INV-4), and an
+            // in-transit lot is not somewhere anything can be taken from.
+            lot.encumbranceId === null &&
+            lot.state === 'AVAILABLE' &&
+            // THE COMMONS FLOOR, and it is on the LOT rather than on the principal. A
+            // Commons-seated principal that hauled goods into the Marches is raidable
+            // for exactly those goods and for nothing it left at home — A8 read
+            // literally: safety protects your holding, your identity and your record,
+            // not your wealth.
+            safeTier(lot.location) !== 'COMMONS',
+        )
+        .sort((a, b) => compareIds(a.id, b.id))
+        .map((lot) => ({ lotId: lot.id, good: lot.good, qty: lot.qty, location: lot.location }));
+
+    // Only IDLE hands defend, and that is not a simplification.
+    //
+    // A hand filling a venture role is COMMITTED, and INV-9 halts the tick on a hand
+    // that fills a role while RECOVERING. Routing a committed hand would therefore turn
+    // legitimate predation into an agent-reachable world halt — the exact class §15.4
+    // calls out, and three of those have shipped in this repo. It is also the better
+    // rule: a principal that has committed every hand to ventures has genuinely left
+    // nothing at home to fight with, and that is a strategy with a cost.
+    const idleHandsAt = (principal: PrincipalId, stage: SystemId): readonly HandId[] =>
+      handsOf(world, principal)
+        .filter((hand) => hand.state === 'IDLE' && hand.location === stage && isPresent(hand, tick))
+        .map((hand) => hand.id);
+
+    return {
+      principals: () => world.principalOrder,
+      assailableOf: assailable,
+      presentHandsAt: (principal, system) => idleHandsAt(principal, system).length,
+      tierOf: safeTier,
+      handsDefending: idleHandsAt,
+      isSeated: (principal) => {
+        const holdingId = world.holdingByPrincipal.get(principal);
+        if (holdingId === undefined) return false;
+        return world.holdings.get(holdingId)?.state === 'INTACT';
+      },
+
+      seize: (args) => {
+        const account = storesAccount(args.from);
+        const lots = ledger
+          .lotsInAccount(account)
+          .filter(
+            (lot) =>
+              lot.good === args.good &&
+              lot.location === args.stage &&
+              lot.encumbranceId === null &&
+              lot.state === 'AVAILABLE' &&
+              lot.qty > 0,
+          )
+          .sort((a, b) => compareIds(a.id, b.id))
+          .slice(0, MAX_SEIZE_LOTS);
+
+        let left: number = args.want;
+        let moved = 0;
+        for (const [i, lot] of lots.entries()) {
+          if (left <= 0) break;
+          const portion = Math.min(left, lot.qty);
+          if (portion <= 0) continue;
+          // One event id per lot, enumerable by index — which is what lets PRD-3 verify
+          // the recorded loss against the posting log without walking the whole ledger.
+          const eventId = `${args.eventId}#${String(i)}` as EventId;
+          try {
+            if (args.to === null) {
+              ledger.destroyGoods({
+                eventId,
+                tick: args.tick,
+                sink: GOODS_SINK.LOSS,
+                lotId: lot.id,
+                qty: qty(portion),
+              });
+            } else {
+              ledger.transferGoods({
+                eventId,
+                tick: args.tick,
+                lotId: lot.id,
+                to: storesAccount(args.to),
+                qty: qty(portion),
+              });
+            }
+          } catch (error: unknown) {
+            // Never a throw. A raid resolves in a phase, after MOVE and the market have
+            // already run, so a throw here aborts a tick that had already published
+            // arrivals and fills. The raid takes what it can and records exactly that.
+            faults.push(
+              `raid could not take ${String(portion)} of ${args.good} from ${args.from} at ${args.stage} ` +
+                `(${describeError(error)}); the record credits only what actually moved`,
+            );
+            continue;
+          }
+          moved += portion;
+          left -= portion;
+        }
+        return qty(moved);
+      },
+
+      releaseStake: (encumbranceId, releaseTick) => {
+        if (encumbranceId === null) return;
+        try {
+          if (ledger.encumbrances.isOpen(encumbranceId)) {
+            ledger.encumbrances.release(encumbranceId, releaseTick);
+          }
+        } catch (error: unknown) {
+          faults.push(`raid stake ${encumbranceId} could not be released (${describeError(error)})`);
+        }
+      },
+
+      forfeit: (args) => {
+        try {
+          // `seizeCurrency` moves at most what is actually there and returns the figure,
+          // so a raider that spent down between joining and losing forfeits what it has
+          // and the record says so.
+          return ledger.seizeCurrency({
+            eventId: args.eventId as EventId,
+            tick: args.tick,
+            from: storesAccount(args.from),
+            to: storesAccount(args.to),
+            amount: args.amount,
+          }).seized;
+        } catch (error: unknown) {
+          faults.push(`raid stake could not be forfeited from ${args.from} (${describeError(error)})`);
+          return minor(0);
+        }
+      },
+
+      routHand: (handId, routTick) => {
+        if (rng === undefined) return false;
+        const hand = world.hands.get(handId);
+        if (hand === undefined || hand.state !== 'IDLE') return false;
+        const holdingId = world.holdingByPrincipal.get(hand.principal);
+        if (holdingId === undefined) return false;
+        try {
+          const loss = loseHand(hand, routTick, rng, holdingOf(world, hand.principal).system);
+          if (loss.lostCargo.size > 0) {
+            // Goods on a hand are one of INV-2's conservation terms. Nothing in this
+            // build loads a hand (there is no `haul` verb yet), so this is unreachable
+            // today — and it is reported rather than dropped, because silently dropping
+            // it would make supply stop balancing with no event to point at.
+            faults.push(
+              `hand ${handId} was routed carrying cargo, which this build has no lot behind; ` +
+                `supply will not balance until the haul path retires it`,
+            );
+          }
+          return true;
+        } catch (error: unknown) {
+          faults.push(`hand ${handId} could not be routed (${describeError(error)})`);
+          return false;
+        }
+      },
+
+      standingOf: (principal, stage, good) => {
+        let total = 0;
+        for (const pile of assailable(principal)) {
+          if (pile.location !== stage || pile.good !== good) continue;
+          total += pile.qty;
+        }
+        return qty(total);
+      },
+    };
+  }
+
+  /**
+   * The `PREDATE` phase. Resolve what is due, spawn if the schedule says so, prune.
+   *
+   * Every outcome is emitted as a `PUBLIC` event, because §11.2 gives `PUBLIC` to
+   * "movement on public lanes" and a raid is the map's motion. Nothing in a payload here
+   * is a `SENSED` quantity: the demand is a seeded draw from a published band and the
+   * loss is what the ledger moved, which A5 makes public the moment it happens.
+   */
+  private predateNow(ctx: PhaseContext): void {
+    // One step per live raid plus the spawn, so a busy book is paid for out of the
+    // tick's step budget rather than silently exceeding it (DET-9).
+    ctx.step(this.raids.liveCount() + 1);
+    const report = runPredate({
+      book: this.raids,
+      port: this.predationPort(ctx.tick, ctx.rng),
+      rng: ctx.rng,
+      tick: ctx.tick,
+      onFault: (message) => {
+        this.faults.push(message);
+      },
+    });
+
+    for (const raid of report.spawned) {
+      ctx.emit({
+        tick: ctx.tick,
+        kind: 'raid.spawned',
+        rulesVersion: RULES_VERSION,
+        // Nobody acted. A world raid has no actor by construction, which is the whole
+        // reason it cannot be bribed off (§9) and why A12 permits it: a target-selection
+        // rule is physics, and an outcome is never authored.
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: `raid::${raid.id}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        payload: {
+          raid: raid.id,
+          target: raid.target,
+          stage: raid.stage,
+          good: raid.good,
+          demand: raid.demandQty,
+          force: raid.force,
+          resolves_at_tick: raid.resolvesAtTick,
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+      // §12.4: every party to a resolving item is offered one wake BEFORE it resolves.
+      // A demand with a deadline is exactly that, and an agent that is never woken for
+      // one has been given a window it could not use.
+      ctx.offerWake(raid.target, 'THREAT', raid.id);
+      this.raidTicker.push(raidTickerLine(raid));
+    }
+
+    for (const outcome of report.resolved) {
+      this.emitRaidResolved(ctx, outcome);
+      const raid = this.raids.get(outcome.raid);
+      if (raid !== undefined) this.raidTicker.push(raidTickerLine(raid));
+    }
+  }
+
+  /** The resolution receipt. `PUBLIC`, and it is never a default (A5′). */
+  private emitRaidResolved(ctx: PhaseContext, outcome: RaidOutcome): void {
+    ctx.emit({
+      tick: ctx.tick,
+      kind: 'raid.resolved',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: null,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `raid::${outcome.raid}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: null,
+      payload: {
+        raid: outcome.raid,
+        state: outcome.state,
+        target: outcome.target,
+        stage: outcome.stage,
+        good: outcome.good,
+        lost: outcome.lostQty,
+        forfeited: outcome.forfeited,
+        routed: outcome.routed.length,
+        defender_force: outcome.force?.defenderForce ?? 0,
+        raider_force: outcome.force?.raiderForce ?? 0,
+        // Stated on the receipt itself rather than left to be inferred, because the one
+        // thing this record must never be mistaken for is an accusation (§15.4).
+        is_default: false,
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    ctx.offerWake(outcome.target, 'THREAT', outcome.raid);
+  }
+
+
+  // ── §9's three answers to a demand. No new verb: `yield`, `fight` and `join` are
+  //    already in SPEC §12.2's table and already classified in `world/commons.ts`, so
+  //    the 40-verb budget is untouched and the Commons floor already covers them.
+  //
+  //    None is behind `committing`. The schedule guarantees a raid resolves before the
+  //    commitment window opens (`assertRaidSchedule`), so a demand is never live inside
+  //    the freeze and the refusal would be dead code that read as a rule.
+
+  /**
+   * `yield` — pay the demand and the raid leaves. The cheap branch.
+   *
+   * Resolves immediately rather than at the window's end, because paying early is a
+   * legitimate move ("buy them off before they gather") and making an agent wait for a
+   * decision it has already made is the cockpit this design deleted.
+   */
+  private vYield(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const raid = this.raidNamedBy(req, 'yield');
+    if ('ok' in raid) return raid;
+    if (raid.raid.target !== req.principal) {
+      return reject(
+        'A2',
+        `raid ${raid.raid.id} demands from ${raid.raid.target}, not from you. Only the target can pay a ` +
+          `demand; to help, send join with {"side": "DEFENDER"}.`,
+      );
+    }
+    const outcome = payDemand({
+      book: this.raids,
+      port: this.predationPort(ctx.tick, ctx.rng),
+      raid: raid.raid,
+      tick: ctx.tick,
+      onFault: (message) => {
+        this.faults.push(message);
+      },
+    });
+    if (outcome === null) return reject('PRD-6', `raid ${raid.raid.id} could not be closed; nothing moved.`);
+    this.emitRaidResolved(ctx, outcome);
+    const closed = this.raids.get(outcome.raid);
+    if (closed !== undefined) this.raidTicker.push(raidTickerLine(closed));
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `fight` — muster the defence. Resolves at the window's end, not now.
+   *
+   * It commits nothing at the moment it is sent, and that is deliberate: hands can still
+   * march to the stage during the window, so an agent that answers early and reinforces
+   * late gets both. What it buys is that the target's IDLE hands at the stage count at
+   * all — an unanswered raid musters no defence, which is what makes the window a
+   * decision rather than a formality, and it is stated in `RAID_TARGET_STATEMENT`.
+   */
+  private vFight(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const raid = this.raidNamedBy(req, 'fight');
+    if ('ok' in raid) return raid;
+    if (raid.raid.target !== req.principal) {
+      return reject(
+        'A2',
+        `raid ${raid.raid.id} is aimed at ${raid.raid.target}, not at you. To fight on its side send ` +
+          `join with {"side": "DEFENDER"}.`,
+      );
+    }
+    const mismatch = this.raidTargetMismatch(req, raid.raid);
+    if (mismatch !== null) return mismatch;
+    try {
+      this.raids.answer(raid.raid.id, 'FIGHT', ctx.tick);
+    } catch (error: unknown) {
+      return reject('A2', describeError(error));
+    }
+    this.emitRaidAnswer(ctx, req, raid.raid.id, 'FIGHT');
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `join` — take a side in someone else's standoff (§9: "nearby agents may join on
+   * either side").
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS IS WHERE ATTACKER RISK LIVES.** A raider joiner locks
+   * {@link RAID_JOIN_STAKE_MINOR} of its own capital and puts an IDLE hand in. If the
+   * raid is repulsed the stake goes **to the defender** — forfeiture to the counterparty
+   * and never to a sink, exactly as §7.3 rules for an abandoned slot, because forfeiture
+   * to the void is a griefer's bargain — and the hand goes RECOVERING. A defender joiner
+   * stakes no capital and risks only its hand, because charging for the only counter-move
+   * in the mechanic would price it out.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private vJoin(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const found = this.raidNamedBy(req, 'join');
+    if ('ok' in found) return found;
+    const raid = found.raid;
+    const rawSide = (readString(req.params, ['side']) ?? '').toUpperCase();
+    if (rawSide !== 'RAIDER' && rawSide !== DEFENDER_SIDE) {
+      return reject(
+        'A2',
+        `join needs a side: {"side": "RAIDER"} or {"side": "${DEFENDER_SIDE}"}. ` +
+          `Joining the raider's side is a hostile act and is invalid against a Commons target (A8).`,
+      );
+    }
+    if (raid.target === req.principal) {
+      return reject('A2', `you are the target of ${raid.id}; answer it with yield or fight, not join.`);
+    }
+    const mismatch = this.raidTargetMismatch(req, raid);
+    if (mismatch !== null) return mismatch;
+
+    // A hand, present and IDLE, at the stage. Force is per hand and capital buys none:
+    // A4 says strategy must beat throughput, and a side that could be bought outright
+    // would make the standoff an auction.
+    const port = this.predationPort(ctx.tick, ctx.rng);
+    const available = port.handsDefending(req.principal, raid.stage);
+    const named = readString(req.params, ['hand', 'hand_id', 'handId']);
+    const handId = named === null ? available[0] : available.find((id) => id === named);
+    if (handId === undefined) {
+      return reject(
+        'INV-9',
+        `you have no IDLE hand present at ${raid.stage} to put into raid ${raid.id}. A hand already ` +
+          `filling a venture role cannot also stand in a standoff — one hand is one unit of simultaneous ` +
+          `presence (§3) — and a Commons-bound principal cannot march hands out of the Commons at all (A15).`,
+      );
+    }
+
+    let stake = minor(0);
+    let encumbranceId: string | null = null;
+    if (rawSide === 'RAIDER') {
+      const free = freeStores(this.ledger, req.principal);
+      if (free < RAID_JOIN_STAKE_MINOR) {
+        return reject(
+          'A7',
+          `joining a raid stakes ${String(RAID_JOIN_STAKE_MINOR)} of slashable capital and you have ` +
+            `${String(free)} free. An attacker with nothing at risk is weather, not a character: if the raid ` +
+            `is repulsed this goes to the defender.`,
+        );
+      }
+      try {
+        encumbranceId = this.ledger.encumbrances.lock({
+          eventId: `${raid.id}:stake:${req.principal}`,
+          tick: ctx.tick,
+          principal: req.principal,
+          account: storesAccount(req.principal),
+          amountMinor: RAID_JOIN_STAKE_MINOR,
+          // The stake IS the worst case, exactly: it is what the joiner loses if the
+          // raid fails, and EXPOSURE is Σ open max_direct_loss and nothing else (§3).
+          obligationRef: raid.id as unknown as VentureId,
+          maxDirectLoss: RAID_JOIN_STAKE_MINOR,
+        });
+        stake = RAID_JOIN_STAKE_MINOR;
+      } catch (error: unknown) {
+        return reject('INV-4', describeError(error));
+      }
+    }
+
+    try {
+      this.raids.addParty(raid.id, {
+        principal: req.principal,
+        side: rawSide === 'RAIDER' ? 'RAIDER' : 'DEFENDER',
+        handId,
+        stake,
+        encumbranceId,
+        joinedAtTick: ctx.tick,
+      });
+    } catch (error: unknown) {
+      // Put the stake back before refusing: a lock left behind for a party that was
+      // never admitted is an orphan INV-4 halts the tick over, and the agent would have
+      // paid for an action that did nothing.
+      if (encumbranceId !== null) {
+        try {
+          this.ledger.encumbrances.release(encumbranceId, ctx.tick);
+        } catch {
+          this.faults.push(`raid stake ${encumbranceId} was not released after a refused join`);
+        }
+      }
+      return reject('INV-26', describeError(error));
+    }
+
+    ctx.emit({
+      tick: ctx.tick,
+      kind: 'raid.joined',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `raid::${raid.id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      // Taking a side is the most public thing an agent can do — it is the map's motion
+      // and it is what the audience is watching for. The stake is published with it,
+      // because a stake nobody can see is not a stake anyone is impressed by.
+      payload: { raid: raid.id, side: rawSide, hand: handId, stake },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * The Commons floor's target key, cross-checked against the raid it accompanies.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE FLOOR CHECKS A TARGET KEY; THIS CHECKS THAT THE KEY IS THE RIGHT ONE.**
+   *
+   * `fight` and a raider `join` are HOSTILE, so `commonsFloorRejection` refuses them
+   * unless the params name a hand, holding, principal or system it can locate — and
+   * `world/commons.ts` says in as many words that the raid module must use its
+   * spellings. So the affordance sends `system` (the stage) on a `fight` and `principal`
+   * (the target) on a raider `join`, and **this** makes sure the thing the floor cleared
+   * is the thing the handler is about to act on. Without it the two layers could clear
+   * one place and act on another — which is the shape of a floor held up by a caller
+   * behaving well rather than by a rule, and A8 is the one promise a newcomer has.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private raidTargetMismatch(req: ActionRequest, raid: RaidRecord): WorldResult<null> | null {
+    const system = readString(req.params, ['system', 'system_id', 'systemId', 'at']);
+    if (system !== null && system !== raid.stage) {
+      return reject(
+        'A8',
+        `you named ${system} but raid ${raid.id} stands at ${raid.stage}. The Commons floor is checked ` +
+          `against the place you name, so it has to be the place the raid is.`,
+      );
+    }
+    const principal = readString(req.params, ['principal', 'principal_id', 'principalId', 'defender', 'against']);
+    if (principal !== null && principal !== raid.target) {
+      return reject(
+        'A8',
+        `you named ${principal} but raid ${raid.id} is aimed at ${raid.target}. The Commons floor is checked ` +
+          `against the principal you name, so it has to be the one the raid is aimed at.`,
+      );
+    }
+    return null;
+  }
+
+  /** The `raid` parameter, resolved — or the sentence that says why it could not be. */
+  private raidNamedBy(
+    req: ActionRequest,
+    verb: string,
+  ): { readonly raid: RaidRecord } | WorldResult<null> {
+    const named = readString(req.params, ['raid', 'raid_id', 'raidId', 'target', 'id']);
+    if (named === null) {
+      const mine = this.liveRaidAgainst(req.principal);
+      if (mine === undefined) {
+        return reject(
+          'A2',
+          `'${verb}' needs a raid: send {"raid": "<id>"}. There is no live demand against you right now, ` +
+            `and obligations.raid in your observation lists every raid you are in.`,
+        );
+      }
+      return { raid: mine };
+    }
+    const raid = this.raids.get(named as RaidId);
+    if (raid === undefined) {
+      return reject('A2', `there is no raid ${named}. Live raids are listed in obligations.raid.`);
+    }
+    if (raid.state !== 'DEMANDED') {
+      return reject(
+        'A2',
+        `raid ${raid.id} already resolved as ${raid.state} at tick ${String(raid.resolvedAtTick)}. ` +
+          `Nothing you send now can change it — the record is append-only (A5).`,
+      );
+    }
+    return { raid };
+  }
+
+  private emitRaidAnswer(
+    ctx: PhaseContext,
+    req: ActionRequest,
+    raid: RaidId,
+    answer: string,
+  ): void {
+    ctx.emit({
+      tick: ctx.tick,
+      kind: 'raid.answered',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `raid::${raid}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: { raid, answer },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+  }
+
+  /** PRD-1..6, with the two second roads the A5′ clauses need. */
+  private predationViolations(tick: number): readonly InvariantViolation[] {
+    const defaultsThisTick = new Set<PrincipalId>(
+      this.register.all().filter((row) => row.tick === tick).map((row) => row.promisor),
+    );
+    const port = this.predationPort(tick);
+    return checkPredationInvariants({
+      book: this.raids,
+      tick,
+      tierOf: (system) => port.tierOf(system),
+      defaultsThisTick,
+      movedForRaid: (raid) => this.goodsMovedForRaid(raid, tick),
+    });
+  }
+
+  /**
+   * PRD-3's second road: what the **posting log** says this raid took.
+   *
+   * Recomputed from the postings rather than read off the raid row, which is the whole
+   * point — a row checked against itself is a detector agreeing with itself.
+   *
+   * Scoped to the tick the raid resolved on, and that is a deliberate limit rather than
+   * a shortcut: a raid resolved three Reckonings ago was verified on the tick it
+   * resolved and its postings are append-only, so re-walking them every tick forever
+   * would cost O(season) per tick and prove nothing new. Returning `null` skips the
+   * clause, which is what a fixture with no ledger needs too.
+   */
+  private goodsMovedForRaid(raid: RaidRecord, tick: number): number | null {
+    if (raid.resolvedAtTick !== tick) return null;
+    const account = storesAccount(raid.target);
+    const bases = [
+      `${raid.id}:yield`,
+      `${raid.id}:seize`,
+      ...raid.parties.filter((p) => p.side === 'RAIDER').map((p) => `${raid.id}:seize:${p.principal}`),
+    ];
+    let moved = 0;
+    for (const base of bases) {
+      for (let i = 0; i < MAX_SEIZE_LOTS; i += 1) {
+        const postings = this.ledger.postingsFor(`${base}#${String(i)}` as EventId);
+        if (postings.length === 0) continue;
+        for (const posting of postings) {
+          if (posting.account !== account) continue;
+          if (posting.good !== raid.good) continue;
+          const delta: number = posting.amountQty ?? 0;
+          if (delta < 0) moved += 0 - delta;
+        }
+      }
+    }
+    return moved;
   }
 
   /**
@@ -1869,6 +2632,18 @@ export class Runtime {
       // an offline agent can meet it") true without a second execution path.
       deliver: (ctx, req) => this.vDeliver(ctx, req),
       vote: (ctx, req) => this.vVote(ctx, req),
+      // ── §9's three answers, and none of them is a new verb ─────────────────
+      //
+      // `yield`, `fight` and `join` are already in §12.2's table and already classified
+      // in `world/commons.ts` (`demand` and `fight` HOSTILE, `yield` PEACEFUL, `join`
+      // CONTEXTUAL on its `side`), so the 40-verb budget is untouched and the Commons
+      // floor covers all three without a line of new classification. `flee` stays
+      // unregistered on purpose: §9's flee is "targeting misses if the target moved",
+      // which `move` already expresses, and a second spelling of one action would be
+      // §3's forbidden second concept.
+      yield: (ctx, req) => this.vYield(ctx, req),
+      fight: (ctx, req) => this.vFight(ctx, req),
+      join: (ctx, req) => this.vJoin(ctx, req),
       // ── A6: the two grant verbs. Issuing is a COMMITMENT, so it is refused in the
       // freeze like any other (§8.1: no grant spend in the settlement window). Revoking
       // is NOT behind `committing`: SPEC §8.1 #6 makes revocation always accepted, and
@@ -3317,7 +4092,13 @@ export class Runtime {
    */
   private liveObligations(): ReckoningObligations {
     return {
-      isLive: (ref) => this.obligations.isLive(ref) || this.marketBook.isLive(String(ref)),
+      // A joiner's locked stake names its raid as the obligation it secures, so INV-4
+      // would read it as an orphan lock and halt the tick if the raid book were not
+      // consulted here. Same extension the market needed, for the same reason.
+      isLive: (ref) =>
+        this.obligations.isLive(ref) ||
+        this.marketBook.isLive(String(ref)) ||
+        this.raids.isLive(String(ref)),
       securedObligations: () => this.obligations.securedObligations(),
       close: (ref) => {
         this.obligations.close(ref);
@@ -4657,10 +5438,17 @@ export class Runtime {
         broken,
       },
       handles,
-      ticker: [],
+      // The raid ticker, drained into the frame. Bounded by the Ring, and 140-char
+      // capped by `raidTickerLine`; `renderFrame` drops anything longer anyway.
+      ticker: this.raidTicker.all,
       tomorrow: [],
       tributeLines: this.tributeLines(outcome.tick),
       authorityLines,
+      // Predation's pixel signature (A13, §9). Built by the predation layer, never by
+      // the renderer: a red arc thrown at a holding nobody attacked is the worst lie
+      // this frame could tell. The §11.2 clause that admits the key is argued in
+      // `frames/projection.ts`.
+      raidLines: raidLinesFor(this.raids, outcome.tick, MAX_RAID_LINES),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

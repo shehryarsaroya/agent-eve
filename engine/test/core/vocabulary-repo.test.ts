@@ -92,6 +92,8 @@ const SHARED_MEMBERS = new Map<string, string>([
     'value entering the economy against a named faucet; INV-1 treats the batch kind and the direction as one fact'],
   ['BatchKind+SupplyDirection.RETIRE',
     'value leaving the economy against a named sink; the mirror of ISSUE and the same argument'],
+  ['RaidSide+RoleLabel.RAIDER',
+    'one who raids, whether it is a slot inside a RAID venture or the side a joiner takes in a standoff — the identical shape the ESCORT entry above sanctions, and §3 names RAID once for both'],
 ]);
 
 function srcFiles(dir = SRC): string[] {

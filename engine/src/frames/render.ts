@@ -29,12 +29,14 @@ import { compareIds } from '../ledger/order.js';
 import {
   MAX_AUTHORITY_LINES,
   MAX_DOCKET_CARDS,
+  MAX_RAID_LINES,
   MAX_LABELS_PER_FRAME,
   MAX_RUNDOWN_SEGMENTS,
   assertFrameBudgets,
   type AuthorityLine,
   type CastChip,
   type DocketCard,
+  type RaidLine,
   type ReckoningFrame,
   type RundownSegment,
   type TributeLine,
@@ -75,6 +77,14 @@ export interface FrameSource {
    * lines are: a renderer that drew its own would be inventing authority nobody granted.
    */
   readonly authorityLines?: readonly AuthorityLine[];
+  /**
+   * Predation's raid lines (§9, A13), supplied by the predation layer.
+   *
+   * Optional and passed in for the reason tribute and authority lines are: a renderer
+   * that drew its own would be inventing a raid, and a red arc thrown at a holding
+   * nobody attacked is the worst lie this frame could tell.
+   */
+  readonly raidLines?: readonly RaidLine[];
 }
 
 export interface SettledView {
@@ -311,6 +321,18 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
           compareIds(a.delegate, b.delegate),
       )
       .slice(0, MAX_AUTHORITY_LINES),
+    // Live raids first — a countdown is what a viewer looks at — then by the size of
+    // the demand, then by id. Same argument as the authority lines: if the budget bites,
+    // what survives is what the audience most needs, and the order is arithmetic.
+    raidLines: (src.raidLines ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          Number(b.state === 'DEMANDED') - Number(a.state === 'DEMANDED') ||
+          b.demand - a.demand ||
+          compareIds(a.raid, b.raid),
+      )
+      .slice(0, MAX_RAID_LINES),
     glyphs: byStakesAscending.map(glyphFor),
     ticker: src.ticker.filter((t) => t.length <= 140),
     nextDocket: docket,
@@ -332,6 +354,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     rundown: [],
     tributeLines: [],
     authorityLines: [],
+    raidLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],

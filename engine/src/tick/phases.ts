@@ -12,9 +12,11 @@
  *    Each phase draws from its own `Rng.derive(phase)` sub-stream precisely so
  *    that *adding a draw* inside one phase cannot move another's; but adding a
  *    whole *phase* changes the set of labels, and a label change is a new
- *    stream. So the phases that have no module yet — `PREDATE`, `MARKETS`,
- *    `PRODUCE` — are present as explicit no-op hooks from the first commit. They
- *    are not omitted and they are not commented out.
+ *    stream. So the phases that have no module yet are present as explicit no-op
+ *    hooks from the first commit. They are not omitted and they are not commented
+ *    out. **The promise has now been cashed** — `PREDATE` took a registered handler
+ *    (SPEC §16 step 12) — and no other phase's sub-stream moved, because the label set
+ *    never changed. That is the payoff for having reserved the slot in commit #1.
  * 2. **Two of the adjacencies are load-bearing rules**, not tidiness:
  *    `MOVE` before every resolution phase (or every published ETA is a tick
  *    optimistic), and `MARKETS` before `PRODUCE` (§15.2's "clear-before-produce,
@@ -71,8 +73,17 @@ export function isPhaseName(s: string): s is PhaseName {
  * `VENTURES`, `HAZARD` and `OBLIGE` are deliberately **not** on this list even
  * though Phase 0 ships them empty too: they take registered handlers from the
  * venture, predation and Levy modules, so they are unfilled rather than unbuilt.
+ *
+ * `PREDATE` left the list when `src/predation/` landed: it is now in exactly the same
+ * position as `VENTURES` — the slot is the tick loop's and the content is a module's.
+ *
+ * **`MARKETS` is left on the list and that is a reported inconsistency, not a claim.**
+ * `src/market/` exists and `Runtime` registers a `MARKETS` handler, so the phase is
+ * filled in the wired engine; the entry survives because a fixture built without the
+ * market module still runs it empty. Correcting it belongs to whoever owns the market,
+ * not to the predation change that noticed it.
  */
-export const UNBUILT_PHASES: readonly PhaseName[] = ['PREDATE', 'MARKETS', 'PRODUCE'];
+export const UNBUILT_PHASES: readonly PhaseName[] = ['MARKETS', 'PRODUCE'];
 
 /**
  * What each phase is for, and — for the unbuilt ones — which build step fills
@@ -93,8 +104,9 @@ export const PHASE_NOTE: Readonly<Record<PhaseName, string>> = {
     'Resolve every arrival and recovery due this tick. Runs before every resolution phase, or every published ' +
     'ETA is a tick optimistic (SPEC §15.2).',
   PREDATE:
-    'NO-OP HOOK. Filled by SPEC §16 step 12 (predation: world-spawned raids and the Demand window). ' +
-    'Present now so its seeded sub-stream and its slot in the order already exist.',
+    'The world spawns raids on a published schedule, and every demand whose window has run resolves here ' +
+    '(SPEC §9, §16 step 12). Filled by src/predation via a registered handler; the tick loop owns the slot. ' +
+    'After MOVE, so a hand that marched to the stage to defend is present on the tick its ETA promised.',
   MARKETS:
     'NO-OP HOOK. Filled by SPEC §16 step 11 (markets). Must precede PRODUCE — §15.2: clear-before-produce, ' +
     'and jobs may not buy at market.',

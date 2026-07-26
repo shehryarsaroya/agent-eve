@@ -81,11 +81,25 @@ describe('SPEC §15.2 — the fourteen phases', () => {
     }).not.toThrow();
   });
 
-  it('the three unbuilt phases are present as hooks, each naming what fills it', () => {
+  it('PREDATE is no longer a hook — SPEC §16 step 12 landed and cashed the reservation', () => {
+    // The reason the slot was reserved in commit #1: adding a *phase* changes the set of
+    // Rng.derive labels and moves every golden file downstream of the insertion, while
+    // filling a reserved one moves nothing. Predation was filled and nothing else moved,
+    // so this asserts both halves — PREDATE is out of the list, and the order is intact.
+    expect([...UNBUILT_PHASES]).not.toContain('PREDATE');
+    expect(PHASES as readonly string[]).toContain('PREDATE');
+    expect(PHASE_NOTE.PREDATE).not.toContain('NO-OP HOOK');
+    expect(PHASE_NOTE.PREDATE).toContain('§9');
+    // MOVE still precedes it, or a hand that marched to the stage to defend would be
+    // counted a tick after its published ETA said it arrived.
+    expect(phaseIndex('MOVE')).toBeLessThan(phaseIndex('PREDATE'));
+  });
+
+  it('the remaining unbuilt phases are present as hooks, each naming what fills it', () => {
     // Omitting them would be the cheap option now and an expensive one later:
     // adding a phase changes the set of Rng.derive labels, so every golden file
     // downstream of the insertion moves.
-    expect([...UNBUILT_PHASES]).toEqual(['PREDATE', 'MARKETS', 'PRODUCE']);
+    expect([...UNBUILT_PHASES]).toEqual(['MARKETS', 'PRODUCE']);
     for (const phase of UNBUILT_PHASES) {
       expect(PHASES as readonly string[]).toContain(phase);
       expect(PHASE_NOTE[phase]).toContain('NO-OP HOOK');

@@ -74,6 +74,7 @@ import {
  * the only way `board[].your_take_at_p50` can be anything but zero.
  */
 import { slotClaimAt } from '../observe/forecast.js';
+import { RAID_JOIN_STAKE_MINOR, RAID_TAKE_MULTIPLE } from '../predation/index.js';
 import type { SealRoleRef } from '../seal/index.js';
 import { handsOf, holdingOf, isPresent, occupiesSystem, tierOf, transitTicks } from '../world/index.js';
 import {
@@ -273,6 +274,21 @@ export function buildObservation(input: ObserveInput): Observation {
        */
       standing: standingRow(runtime, principal),
       /**
+       * **THE PUBLISHED RAID SCHEDULE** (§9, A14, A2).
+       *
+       * A raid an agent could not see coming is a dice roll, and A2 says known
+       * arithmetic is exact and machine-readable. So the next spawn tick, the window
+       * length, how many the world spawns per Reckoning, and the target rule *verbatim*
+       * are all here — before the first raid of the season, and in every observation
+       * after it.
+       *
+       * It lives on `header` rather than as an eleventh top-level key because §17's
+       * observe budget is *at* its ceiling at ten (`OBSERVE_KEYS` is counted, not
+       * trusted), and `header` is where the payload already keeps the clock. A schedule
+       * is a clock.
+       */
+      raid_schedule: runtime.raidSchedule(tick),
+      /**
        * §13B: the owner mandate is stable text, not per-tick state, so it is a free
        * read with a version announced here rather than a key of its own.
        */
@@ -349,6 +365,21 @@ export function buildObservation(input: ObserveInput): Observation {
         constellation_band: exposureBand(runtime),
       },
       stores_free: stores === undefined ? 0 : runtime.ledger.freeBalance(storesAccount(principal)),
+      /**
+       * **A DEMAND AGAINST YOU, WITH ITS DEADLINE** (§9's Demand window).
+       *
+       * It belongs in `obligations` and not in `briefing`, because that is exactly what
+       * it is: something owed, to a named counterparty, by a named tick, with a stated
+       * consequence for not paying. The only difference from the Levy line above it is
+       * that nobody can be talked out of this one.
+       *
+       * Every row carries `costs.pay`, `costs.if_you_do_nothing` and the force
+       * arithmetic on both sides — exact, never an estimate (A2) — so an agent can price
+       * all three branches without a wiki. `if_you_do_nothing` is the `projectedDrown`
+       * pattern this repo ships as a standing requirement: a decision under a clock
+       * whose default outcome is not stated is not a decision.
+       */
+      raid: runtime.raidsFor(principal, tick, MAX_LIST_ROWS),
     },
 
     ventures: {
@@ -543,6 +574,95 @@ function affordancesFor(
   const free = runtime.ledger.account(storesAccount(principal)) === undefined
     ? minor(0)
     : runtime.ledger.freeBalance(storesAccount(principal));
+
+  // 0. **Answer the demand.** A raid is a decision under a published clock and it is
+  //    the only thing on this list with a deadline nobody can be talked out of, so it
+  //    sorts above everything — including an unsigned venture, which at worst lapses.
+  //
+  //    Both branches carry the exact arithmetic in `max_direct_loss`, which for a raid
+  //    is a quantity of goods rather than currency: `yield` costs what the demand can
+  //    actually take, `fight` costs the multiple if the force reading says the defence
+  //    is short. A2 forbids an estimate here and the numbers come from the same
+  //    `RaidView` the payload publishes, so the affordance and the block cannot
+  //    disagree (scar #1).
+  for (const view of runtime.raidsFor(principal, tick, MAX_LIST_ROWS)) {
+    if (view.state !== 'DEMANDED') continue;
+    if (view.target === principal) {
+      eligible.push({
+        verb: 'yield',
+        params: { raid: view.raid },
+        cost: 1,
+        max_direct_loss: view.costs.pay,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `paying hands over ${String(view.costs.pay)} of ${view.good} at ${view.stage} at once and the raid ` +
+          `leaves. It is not a default and it does not move your standing — nothing a raid does ever does. ` +
+          `Ignoring it costs ${String(view.costs.if_you_do_nothing)} instead (the published multiple is ` +
+          `${String(RAID_TAKE_MULTIPLE)}x, capped at half of what is actually there).`,
+        expires_tick: view.resolves_tick,
+        quote_id: quoteId(principal, tick, 'yield', { raid: view.raid }),
+      });
+      const losing = view.force.verdict_if_resolved_now === 'PLUNDERED';
+      eligible.push({
+        verb: 'fight',
+        // `system` is not decoration: `fight` is HOSTILE, so the Commons floor refuses it
+        // unless the params name a place it can locate (`world/commons.ts` exports the
+        // spellings for exactly this). An affordance is a complete, copyable act — agents
+        // copy these verbatim — so omitting it would hand out a move the floor rejects.
+        params: { raid: view.raid, system: view.stage },
+        cost: 1,
+        // Exact, and it is the honest worst case: if the force reading says the defence
+        // is short, resisting costs the multiple AND every IDLE hand you have there goes
+        // RECOVERING. If it says the defence holds, resisting costs nothing in goods —
+        // and the number says so rather than hedging.
+        max_direct_loss: losing ? view.costs.if_you_do_nothing : 0,
+        max_contingent_liability: view.costs.if_you_do_nothing,
+        what_it_forecloses:
+          `your force at ${view.stage} would be ${String(view.force.defender_if_you_fight)} against the raid's ` +
+          `${String(view.force.raider)}; higher wins and ties go to you, so as it stands you would ` +
+          `${losing ? 'LOSE' : 'HOLD'}. Losing costs ${String(view.costs.if_you_do_nothing)} of ${view.good} and ` +
+          `sends every IDLE hand you have there to RECOVERING — never destroyed, and never your holding, your ` +
+          `identity or your standing. Winning costs nothing and takes any raider's forfeited stake. Others may ` +
+          `still join either side before tick ${String(view.resolves_tick)}.`,
+        expires_tick: view.resolves_tick,
+        quote_id: quoteId(principal, tick, 'fight', { raid: view.raid }),
+      });
+    } else if (view.your_side === null) {
+      eligible.push({
+        verb: 'join',
+        params: { raid: view.raid, side: 'DEFENDER' },
+        cost: 1,
+        // A defender stakes no capital. What it risks is a hand: if the raid wins, the
+        // hand it put in goes RECOVERING with the target's.
+        max_direct_loss: 0,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `standing with ${view.target} at ${view.stage} puts one IDLE hand of yours in the line and adds 1 to ` +
+          `their force (currently ${String(view.force.defender_if_you_fight)} against ${String(view.force.raider)}). ` +
+          `If the raid wins, that hand goes RECOVERING. Nothing else of yours is reachable.`,
+        expires_tick: view.resolves_tick,
+        quote_id: quoteId(principal, tick, 'join', { raid: view.raid, side: 'DEFENDER' }),
+      });
+      if (free >= RAID_JOIN_STAKE_MINOR) {
+        eligible.push({
+          verb: 'join',
+          // `principal` for the same reason `fight` carries `system`: joining the raider's
+          // side is HOSTILE and the floor is checked against the principal named here.
+          params: { raid: view.raid, side: 'RAIDER', principal: view.target },
+          cost: 1,
+          max_direct_loss: RAID_JOIN_STAKE_MINOR,
+          max_contingent_liability: RAID_JOIN_STAKE_MINOR,
+          what_it_forecloses:
+            `joining the raid locks ${String(RAID_JOIN_STAKE_MINOR)} of your stores and puts one IDLE hand in. ` +
+            `If the raid is REPULSED the stake goes to ${view.target} and your hand goes RECOVERING; if it takes ` +
+            `the goods, the raiders split them and your stake comes back. This is a hostile act and is INVALID ` +
+            `against anything in the Commons (A8).`,
+          expires_tick: view.resolves_tick,
+          quote_id: quoteId(principal, tick, 'join', { raid: view.raid, side: 'RAIDER', principal: view.target }),
+        });
+      }
+    }
+  }
 
   // 1. Sign what is waiting on you. Nothing binds until both parties countersign,
   //    so an unsigned venture is the most time-critical thing on the list.

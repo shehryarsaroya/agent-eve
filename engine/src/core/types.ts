@@ -98,6 +98,25 @@ export type VentureKind = 'HAUL' | 'DIG' | 'ESCORT' | 'RAID' | 'BUILD' | 'SURVEY
 
 export type VentureState = 'FORMING' | 'LIVE' | 'SETTLED' | 'DEFAULTED' | 'ABANDONED' | 'DEFERRED';
 
+// ── Predation ───────────────────────────────────────────────────────────────
+
+/**
+ * A raid's life (SPEC §9). One live state and four terminal ones.
+ *
+ * Declared here rather than in `src/predation/` because **two** rules surfaces need it
+ * — the book and the frame's raid line — and §3 is a rules surface: the same five words
+ * declared twice would be one pixel signature described in two places, and the two would
+ * drift the first time an outcome was added. This is the same argument that puts
+ * `VentureState` and `HandState` here.
+ *
+ * `PLUNDERED` rather than `SEIZED` or `TAKEN`: `seizure` already names §14.4's ballot
+ * and `Ledger.seizeCurrency`, and one word may not carry a second concept.
+ *
+ * `MISSED` is the outcome §11.2's `SENSED` cargo tier exists to make possible — the raid
+ * demanded and found nothing worth taking, because it never knew what was there.
+ */
+export type RaidState = 'DEMANDED' | 'PAID' | 'REPULSED' | 'PLUNDERED' | 'MISSED';
+
 /**
  * A7's two halves. The escrowed part auto-executes at settlement; the elective
  * part **never** does. Full escrow deletes the betrayal; zero escrow enables

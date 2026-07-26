@@ -48,7 +48,21 @@ import type { FrameSource } from './render.js';
  * | `tomorrow` | `PUBLIC` | the docket of ventures whose terms are already public |
  * | `tributeLines` | `PUBLIC` | "the Levy vote and its result, tribute lines" |
  * | `authorityLines` | `PUBLIC` | a grant's LIMITS, parties and renewal chain (D9a) |
+ * | `raidLines` | `PUBLIC` | "movement on public lanes"; a raid is the map's motion, and its outcome is a public loss (A5) |
  * | `modelBadges` | `PUBLIC` | which model runs a cast seat; not a game fact |
+ *
+ * **`raidLines` had to argue for itself, and here is the argument.** §11.2 gives
+ * `PUBLIC` to "movement on public lanes — a convoy is visible to anyone, because it is
+ * the map's motion and the map is the show", and gives `SENSED` to "cargo contents and
+ * hold values". A raid arriving somewhere is motion; what the target has in its hold is
+ * not. So the line carries the stage, the target, the state, the countdown, the two
+ * force counts, and two quantities — the **demand**, which is a seeded draw from a
+ * published band and is deliberately *not* a function of the target's stock (see
+ * `predation/params.ts`), and the **loss**, which A5 makes public the moment it happens.
+ * An earlier draft made the demand a percentage of the target's standing stock: that
+ * would have put a `SENSED` hold value on screen inside a fixed multiple, derived from a
+ * public formula and a private stockpile — the "Charge fuel gauge" mistake exactly, in a
+ * different mechanic. It was changed in the engine rather than hidden in the renderer.
  *
  * **Not admissible, and the reason each was considered:** cargo contents and hold values
  * (`SENSED` — "a ship at sea is visible; its manifest is not"); exact hand disposition
@@ -69,6 +83,7 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'tomorrow',
   'tributeLines',
   'authorityLines',
+  'raidLines',
 ]);
 
 export class ProjectionError extends Error {}

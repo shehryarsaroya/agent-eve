@@ -1,0 +1,233 @@
+/**
+ * What an agent reads about predation, and what a viewer sees.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **§11.2, ENFORCED BY WHAT THIS FILE CAN SEE.** A raid in progress is `PUBLIC` — it is
+ * the map's motion, and the map is the show. What the target actually *holds* is
+ * `SENSED`, so nothing here is derived from a stockpile: the demand is a seeded draw
+ * from a published band, the forces are counts of hands and joiners, and the outcome is
+ * what the ledger moved. There is no field on {@link RaidView} or {@link RaidLine} that
+ * a stranger could invert to learn what is in someone's hold.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A9 holds the same way it holds for the event feed: the viewer's value
+ * ({@link raidLinesFor}) is built from the same rows as the agent's
+ * ({@link raidViewsFor}) and carries strictly fewer fields, so a viewer can never be
+ * shown a live fact a non-party agent's own `observe` would not contain.
+ */
+
+import type { HandId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
+import type { Minor, Qty } from '../core/units.js';
+// The frame contract owns the line's shape, and this module fills it. One home per
+// rules surface: a second `RaidLine` declared here would be the same pixel signature
+// described twice, and the two would drift the first time a field was added.
+import type { RaidLine } from '../frames/contract.js';
+import type { Book, RaidRecord, RaidState } from './book.js';
+import { RAID_JOIN_STAKE_MINOR, RAID_TAKE_MULTIPLE } from './params.js';
+import { payFor, readForce, takeFor } from './resolve.js';
+
+/**
+ * One raid, as the agent reads it. Every number an agent needs to price its three
+ * options, and none it would have to derive.
+ *
+ * `if_you_do_nothing` is High Water's `projectedDrown` pattern, which this repo ships as
+ * a standing requirement rather than a nicety: the consequence of silence is stated in
+ * the same payload as the options, because the whole mechanic is a decision under a
+ * clock and an agent that cannot price *not deciding* is not making one.
+ */
+export interface RaidView {
+  readonly raid: string;
+  readonly stage: SystemId;
+  readonly target: PrincipalId;
+  readonly good: string;
+  readonly demand: Qty;
+  readonly state: RaidState;
+  readonly spawned_tick: number;
+  readonly resolves_tick: number;
+  readonly ticks_left: number;
+  /** Your side, if you are in it. Null when you are only watching. */
+  readonly your_side: 'TARGET' | 'RAIDER' | 'DEFENDER' | null;
+  readonly answer: string | null;
+  /** The force arithmetic as it stands **right now** — recomputed, never cached. */
+  readonly force: {
+    readonly raider: number;
+    readonly defender_if_you_fight: number;
+    readonly terrain: number;
+    readonly verdict_if_resolved_now: 'REPULSED' | 'PLUNDERED';
+  };
+  /** Exact, never an estimate (A2). What each branch costs the target. */
+  readonly costs: {
+    readonly pay: Qty;
+    readonly if_you_do_nothing: Qty;
+    readonly join_stake: Minor;
+  };
+  readonly lost: Qty;
+  readonly forfeited: Minor;
+}
+
+/**
+ * What the observation needs from the world to price a live raid.
+ *
+ * A strict subset of `PredationPort`, and it is declared as a separate interface that
+ * the port **extends** rather than as a second set of methods: the number an agent is
+ * shown before it commits and the number the resolver uses must come from one
+ * implementation, or the affordance and the outcome can disagree — which is scar #1 with
+ * a hand and a hold at stake.
+ */
+export interface RaidViewPort {
+  tierOf(system: SystemId): ZoneTier;
+  /** The target's own present, IDLE hands at the stage — the force a `fight` musters. */
+  handsDefending(principal: PrincipalId, stage: SystemId): readonly HandId[];
+  /** What the reader still has at the stage in the raided good. Its OWN stock only. */
+  standingOf(principal: PrincipalId, stage: SystemId, good: string): Qty;
+}
+
+/**
+ * Raids this principal can see: the ones it is **in**, and the live ones it could
+ * **reach**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SECOND CLAUSE IS NOT A CONVENIENCE — WITHOUT IT THERE IS NO ESCORT MARKET.**
+ *
+ * The first draft returned only raids the reader was a party to, and a test found the
+ * consequence immediately: a bystander standing at the stage with three idle hands was
+ * offered no `join` affordance and shown no row, so the only way to help a neighbour was
+ * to already know the raid id from the event feed. §9's argument for world-spawned
+ * predation is that it *"gives escorts a guaranteed market"*, and a market nobody can see
+ * the demand side of is not one.
+ *
+ * The tier is honest: a live raid is `PUBLIC` (it is the map's motion), and having a hand
+ * at the stage is literally §11.2's `SENSED` clause — *"whoever has a hand in range"*. So
+ * this widens what is *convenient*, not what is *permitted*.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Still deliberately **not** every raid in the world: a list of standoffs three
+ * constellations away is a briefing an agent has to filter before it can act, and the cap
+ * keeps the payload bounded (INV-26).
+ */
+export function raidViewsFor(args: {
+  readonly book: Book;
+  readonly port: RaidViewPort;
+  readonly principal: PrincipalId;
+  readonly tick: number;
+  readonly limit: number;
+}): readonly RaidView[] {
+  const mine = new Set(args.book.forPrincipal(args.principal).map((r) => r.id));
+  return args.book
+    .all()
+    .filter(
+      (raid) =>
+        mine.has(raid.id) ||
+        (raid.state === 'DEMANDED' && args.port.handsDefending(args.principal, raid.stage).length > 0),
+    )
+    .slice(-args.limit)
+    .map((raid) => viewOf(raid, args.port, args.principal, args.tick));
+}
+
+function viewOf(
+  raid: RaidRecord,
+  port: RaidViewPort,
+  reader: PrincipalId,
+  tick: number,
+): RaidView {
+  const party = raid.parties.find((p) => p.principal === reader);
+  const side: RaidView['your_side'] =
+    raid.target === reader ? 'TARGET' : party === undefined ? null : party.side;
+
+  // Priced for the TARGET, because the target is the one with a decision. A joiner sees
+  // the same figures and reads them as what it is fighting over.
+  const standing = port.standingOf(raid.target, raid.stage, raid.good);
+  // The counterfactual, not the current state: the field is named
+  // `defender_if_you_fight` and it answers "what would the sum be if the target
+  // answered". An agent deciding needs the number its decision would produce, which is
+  // the whole of A2's "known arithmetic is exact" — the alternative is a zero that
+  // silently becomes a three the moment it acts.
+  const wouldDefend = port.handsDefending(raid.target, raid.stage).length;
+  const reading = readForce({ raid, tier: port.tierOf(raid.stage), defenderHands: wouldDefend });
+
+  return {
+    raid: raid.id,
+    stage: raid.stage,
+    target: raid.target,
+    good: raid.good,
+    demand: raid.demandQty,
+    state: raid.state,
+    spawned_tick: raid.spawnedAtTick,
+    resolves_tick: raid.resolvesAtTick,
+    ticks_left: Math.max(0, raid.resolvesAtTick - tick),
+    your_side: side,
+    answer: raid.answer,
+    force: {
+      raider: reading.raiderForce,
+      defender_if_you_fight: reading.defenderForce,
+      terrain: reading.terms.terrain,
+      verdict_if_resolved_now: reading.verdict,
+    },
+    costs: {
+      pay: payFor(raid.demandQty, standing),
+      // The consequence of silence, exactly: an unanswered raid musters no defence, so
+      // it takes the multiple capped by what is actually there.
+      if_you_do_nothing: takeFor(raid.demandQty, standing),
+      join_stake: RAID_JOIN_STAKE_MINOR,
+    },
+    lost: raid.lostQty,
+    forfeited: raid.forfeited,
+  };
+}
+
+/**
+ * The pixel signature (A13) — **THE RAID LINE**, whose shape is
+ * {@link ../frames/contract.RaidLine} and whose argument for being on screen at all is
+ * in `frames/projection.ts` beside the §11.2 clause that admits it.
+ */
+
+/**
+ * The lines for a frame, biggest demand first, capped by the caller's budget.
+ *
+ * Every raid in the world, not just one principal's — the frame is the viewer's, and a
+ * raid is `PUBLIC`. `renderFrame`'s budget does the truncation; ordering here is by the
+ * one number that says how much is at stake.
+ */
+export function raidLinesFor(book: Book, tick: number, limit: number): readonly RaidLine[] {
+  return book
+    .all()
+    .map((raid) => ({
+      raid: raid.id,
+      stage: raid.stage,
+      target: raid.target,
+      demand: raid.demandQty,
+      state: raid.state,
+      lost: raid.lostQty,
+      raiderForce: raid.raiderForce,
+      defenderForce: raid.defenderForce,
+      ticksLeft: Math.max(0, raid.resolvesAtTick - tick),
+    }))
+    .sort(
+      (a, b) =>
+        // Live raids first — a countdown is the thing to look at — then by size.
+        Number(b.state === 'DEMANDED') - Number(a.state === 'DEMANDED') ||
+        b.demand - a.demand ||
+        (a.raid < b.raid ? -1 : a.raid > b.raid ? 1 : 0),
+    )
+    .slice(0, limit);
+}
+
+/** One 140-character ticker line per resolved raid. The export surface (§14). */
+export function raidTickerLine(raid: RaidRecord): string {
+  const head = `${raid.stage}: `;
+  const body =
+    raid.state === 'REPULSED'
+      ? `${raid.target} held the field ${String(raid.defenderForce)}-${String(raid.raiderForce)}` +
+        (raid.forfeited > 0 ? `, and took ${String(raid.forfeited)} in forfeited stakes` : '')
+      : raid.state === 'PAID'
+        ? `${raid.target} paid ${String(raid.lostQty)} of ${raid.good} and the raid left`
+        : raid.state === 'PLUNDERED'
+          ? `${raid.target} lost ${String(raid.lostQty)} of ${raid.good} ${String(raid.defenderForce)}-${String(raid.raiderForce)}`
+          : raid.state === 'MISSED'
+            ? `the raid on ${raid.target} found nothing worth taking`
+            : `a raid demands ${String(raid.demandQty)} of ${raid.good} from ${raid.target} by tick ${String(raid.resolvesAtTick)}`;
+  return `${head}${body}`.slice(0, 140);
+}
+
+/** The published multiple, for the affordance text. One home (scar #1). */
+export const RAID_SILENCE_MULTIPLE = RAID_TAKE_MULTIPLE;

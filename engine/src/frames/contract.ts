@@ -21,7 +21,15 @@
  * agents is fine. *Naming* hundreds is not.
  */
 
-import type { Handle, PrincipalId, VentureId, SystemId, HoldingId, SealVerdict } from '../core/types.js';
+import type {
+  Handle,
+  HoldingId,
+  PrincipalId,
+  RaidState,
+  SealVerdict,
+  SystemId,
+  VentureId,
+} from '../core/types.js';
 import type { Minor } from '../core/units.js';
 
 /** §17: labels rendered per frame. The legible maximum. */
@@ -32,6 +40,8 @@ export const MAX_DOCKET_CARDS = 7;
 export const MAX_RUNDOWN_SEGMENTS = 12;
 /** §17: authority lines drawn per frame. Convergence is the signature; a hairball is not. */
 export const MAX_AUTHORITY_LINES = 12;
+/** §17: raid lines drawn per frame. A countdown a viewer can follow, not a weather map. */
+export const MAX_RAID_LINES = 6;
 /** §14.3: seconds per segment. Human time — never scaled by TICK_SECONDS. */
 export const SEGMENT_SECONDS = { min: 30, max: 45 } as const;
 
@@ -135,6 +145,39 @@ export interface AuthorityLine {
 }
 
 /**
+ * Predation's pixel signature (A13, §9) — **THE RAID LINE**.
+ *
+ * A red arc thrown at a stage, anchored on the target's holding, thickness ∝ the demand,
+ * with a countdown on it while the window runs. Four terminal looks, each readable in
+ * three seconds without knowing the rules: `PAID` fades, `REPULSED` snaps outward and
+ * leaves the stage marked held, `PLUNDERED` closes onto the holding and scars it, and
+ * `MISSED` closes on nothing — the raid guessed wrong and hit ballast.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **NOTHING ON THIS LINE IS A `SENSED` QUANTITY**, and that is checked rather than
+ * intended. `demand` is a seeded draw from a published band and is *not* a function of
+ * what the target holds — see `predation/params.ts` on why an earlier fraction-of-stock
+ * design was a §11.2 leak of exactly the "Charge fuel gauge" shape. `lost` is what the
+ * ledger moved, which A5 makes public. `raiderForce`/`defenderForce` are counts of hands.
+ * There is no field here a viewer could invert into a hold value.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface RaidLine {
+  readonly raid: string;
+  readonly stage: SystemId;
+  readonly target: PrincipalId;
+  /** Thickness ∝ the demand, in units of the good. Never currency, never a hold value. */
+  readonly demand: number;
+  readonly state: RaidState;
+  /** What was actually taken. Zero until it resolves, and zero on a repulse. */
+  readonly lost: number;
+  readonly raiderForce: number;
+  readonly defenderForce: number;
+  /** The countdown on the arc. Zero once it has resolved. */
+  readonly ticksLeft: number;
+}
+
+/**
  * The venture glyph (§14.5): a ring on its stage, hands as pips on the rim, an
  * unfilled role as an empty socket that pulses — that is what "forming" looks
  * like — the elective share as a hollow arc, and settlement closing it gold or
@@ -219,6 +262,8 @@ export interface ReckoningFrame {
   readonly tributeLines: readonly TributeLine[];
   /** The A6 authority signature: who holds standing power over whom, and by how much. */
   readonly authorityLines: readonly AuthorityLine[];
+  /** Predation's signature (§9, A14): what the world came for, and how it went. */
+  readonly raidLines: readonly RaidLine[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
@@ -302,6 +347,24 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     problems.push(
       `${frame.authorityLines.length} authority lines, budget is ${MAX_AUTHORITY_LINES} — convergence on a few hands is the signature, a hairball is not`,
     );
+  }
+
+  if (frame.raidLines.length > MAX_RAID_LINES) {
+    problems.push(
+      `${frame.raidLines.length} raid lines, budget is ${MAX_RAID_LINES} — a countdown a viewer can follow, not a weather map`,
+    );
+  }
+  for (const line of frame.raidLines) {
+    // A repulse that still took goods is the arithmetic contradicting the pixel, and the
+    // pixel is what a stranger believes. PRD-6 halts the tick on it; this refuses to
+    // draw it, because a frame is written from a settled outcome and a settled outcome
+    // that says two things is worse on screen than off.
+    if (line.state === 'REPULSED' && line.lost > 0) {
+      problems.push(`raid ${line.raid} renders REPULSED and carries a loss of ${line.lost}`);
+    }
+    if (line.lost < 0 || line.demand < 0) {
+      problems.push(`raid ${line.raid} renders a negative quantity`);
+    }
   }
 
   if (problems.length > 0) {
