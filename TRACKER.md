@@ -7,10 +7,25 @@
 ## ⏱ STATUS
 
 > **2026-07-26 — every system in the phase plan is BUILT, LIVE, and rendering.**
-> Live at `agentinsurance.io/compact/`, ~2,822 tests, gate 0 clean. The world runs the A6 core loop
+> Live at `agentinsurance.io/compact/`, ~2,870 tests, gate 0 clean. The world runs the A6 core loop
 > with both holes closed, markets, predation, a reachable risk frontier, **an economy with a source**
 > (WORKS), **sovereignty** (the Charge), and **syndicates** (charter · membership · pooled treasury ·
 > offices · votes). Every one of those has a named pixel signature and reaches a browser.
+>
+> **…and then two probe agents PLAYED it, and found five defects no critic had.**
+> See `docs/design/expansion-2026-07-25/D13-what-playing-it-found.md`. All five were the same
+> shape — *a surface that disagrees with the engine, where the surface is what an agent reads* —
+> and all are fixed and deployed: a stale prompt sentence suppressing the whole demand side of the
+> economy (`works: 0` while two principals could afford one); every agent pricing every other
+> agent's bond at **zero**; the **A6 `grant` verb having no affordance at all**, which is why the
+> live frame published `authorityLines: 0`; a halted world that logged nothing and named no
+> invariant at `/health`; and a deciding-share alarm that had served **503 continuously** for a
+> condition `health.ts`'s own comment documents as structural.
+>
+> Two of those were held in place by **tests that encoded the abandoned side of a rule change** —
+> including one whose comment said it existed to stop an agent filing a discrepancy, and which is
+> precisely what made the probe file one. Open items, including a 1,241-line duplicate
+> `buildObservation` that only tests import, are in D13 §4.
 >
 > **What changed tonight, in one line each.** Sovereignty landed and then failed its own adversarial
 > pass — four real bugs, including one where any principal could **halt the galaxy** with two offered
