@@ -31,6 +31,15 @@
   degradation path working, with a greppable reason (`cast: kestrel reply discarded (empty-plan)`) —
   the member fell back to its heuristic instead of stalling the tick. `deciding_share_bps` will cross
   the 2500 floor as the window fills; until then `unhealthy` is arithmetic, not a fault.
+- **★ A14 IS MET (2026-07-26).** Predation landed (`abd8379`), and I verified the property myself
+  rather than taking the report: a world of six principals that **never issues a single hostile
+  action** was raided anyway — **9 raids in 900 ticks, about one per 100 ticks (~3 a Reckoning)**.
+  The control is the clean half: the identical run staged in a **Commons** system produced **zero**
+  raids, so A8's floor holds and the only difference is the tier. The world now brings the conflict,
+  which is the thing A14 says can never be left to agents choosing it.
+  **Open observation:** all 9 ended `PLUNDERED` — nobody resisted. Correct for a deliberately passive
+  probe, but if the live cast never resists either, a raid is a tax rather than drama. Watch the
+  resist rate once predation is deployed.
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
