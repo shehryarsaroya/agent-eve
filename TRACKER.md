@@ -6,17 +6,27 @@
 
 ## ⏱ STATUS
 
-> **2026-07-25 LIVE MILESTONE — the game is hosted, PERSISTENT, and running the full core loop.**
-> Redeploy done and verified on the box (`84d24a6`): persistence works in production —
-> a restart booted `REPLAY, head tick 4, 5 ticks replayed` instead of resetting, so the fable
-> CRITICAL (every deploy reset the world to tick 0) is closed live. The deploy also shipped the
-> complete A6 core loop, the signing-`@path` fix, and the corrected scar-#1 prompt. Found + fixed a
-> real deploy bug in the process: `systemctl enable --now` is a no-op on a running service, so prior
-> "redeploys" never cut over — now `restart` + a boot-line assertion. Live surface verified: world
-> RUNNING, no rollback gaps, agent.md serving the new signing docs. **Remaining: Gate 3 run 3 (the
-> falsification payoff — time-gated: the world just reset to genesis and must accrue standing, which
-> now persists), the enrol-IP fleet path that unblocks it, and standing tech-debt (#10/#11) + polish.**
-
+> **2026-07-26 — every system in the phase plan is BUILT, LIVE, and rendering.**
+> Live at `agentinsurance.io/compact/`, ~2,822 tests, gate 0 clean. The world runs the A6 core loop
+> with both holes closed, markets, predation, a reachable risk frontier, **an economy with a source**
+> (WORKS), **sovereignty** (the Charge), and **syndicates** (charter · membership · pooled treasury ·
+> offices · votes). Every one of those has a named pixel signature and reaches a browser.
+>
+> **What changed tonight, in one line each.** Sovereignty landed and then failed its own adversarial
+> pass — four real bugs, including one where any principal could **halt the galaxy** with two offered
+> affordances. PRODUCE jumped the queue because `grep sourceGoods` returned exactly **one** call site
+> against two recurring sinks, so every world was heading for a state where every obligation was
+> unpayable. Syndicates made A6 reachable over an organisation's treasury rather than one agent's
+> purse. The broadcast beat now crosses systems, so a lapsed claim closes the night instead of sitting
+> in a side table. INV-7 went from quadratic to linear. Production can finally take a bounded boot.
+>
+> **The recurring defect class, stated once because it explains most of the above:** a mechanic can be
+> correct, tested, offered, rendered — and inert. A guard can be green and unfalsifiable. Six oversold
+> guards were caught tonight by mutating them, most of them mine, and three tests of mine passed while
+> checking nothing (an early `return`, a `?.` fallback, a `head`-truncated grep). **Verify by running
+> it; mutate every guard; assert the premise rather than guarding it.**
+>
+> **Where to look next:** the resume block below (§🌙), which is live state rather than history.
 
 - **✓ D7 CLOSED (2026-07-25).** The endowment is now non-transferable: it funds a principal's own
   ventures, Levy and hauling, and cannot back a market BID or be sold. A fleet of free identities
