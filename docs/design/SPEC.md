@@ -682,7 +682,14 @@ Five defences: the hard freeze (§15.3) · **`acted_on_state_version` compared a
 
 Observation serialization is the term that actually scales — O(P × size). Build blobs from **shared immutable fragments plus a per-principal envelope**: the map, books and public feed are byte-identical within a constellation, so serialize once and concatenate. That is the difference between 300 and 3,000 principals.
 
-Spectator frames are **static cacheable files** behind Cloudflare (`max-age=2`), not per-connection SSE — the Reckoning is exactly when you have an audience. A9 parity is enforced **architecturally**: one `public_facts(tick)` object, and the spectator renderer has no database handle, plus a fuzz test asserting the spectator filter is a strict subset of the union of agent filters.
+Spectator frames are **static cacheable files** behind Cloudflare (`max-age=2`), not per-connection SSE — the Reckoning is exactly when you have an audience. A9 parity is enforced **architecturally**: one `public_facts(tick)` object, and the spectator renderer has no database handle, plus a fuzz test asserting the spectator filter is a subset of what **every** agent may read.
+
+> **Not the union.** An earlier wording said "a strict subset of the **union** of agent filters", and
+> that test would pass on a god view: a union can combine Alice's `SENSED` cargo with Bob's `SENSED`
+> survey into a picture **no single agent possesses**, and a viewer shown that picture is an oracle any
+> agent can farm with a scraper. The implemented test (`test/events/parity.test.ts`) already checks the
+> stronger property — anything a viewer may read, *every* agent may read, at the *same* redaction — so
+> this line is corrected to match the code rather than the code relaxed to match the line.
 
 One single-writer sim process; N stateless API workers serving pre-built blobs; the house cast in its own unit and directory (and `--exclude`d from every rsync — scar #4).
 
