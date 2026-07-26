@@ -224,3 +224,40 @@ describe('prompt caching is priced, because it is most of the bill', () => {
     expect(budget.spentMicros).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('the spend is observable, not merely bounded', () => {
+  it('a tripped cap is a NAMED health failure, not a silent fall back to heuristics', async () => {
+    // The world ran on a real key with a latching cap and no meter, so the only way to
+    // discover the spend was to hit it. A bounded risk is still an unobserved one, and
+    // scars #4 and #14 both presented as a perfectly healthy system. When the cap
+    // latches the world keeps running and looks fine while the expensive path — the
+    // whole reason the cast exists — has switched itself off. That must be said out loud.
+    const { buildHealth } = await import('../../src/api/health.js');
+    const tripped = {
+      enabled: true, model: 'gpt-5.6-luna', members: 20, live: 5, fallback: 2, discarded: 1,
+      spentMicros: 5_000_000, capMicros: 5_000_000, capTripped: true, estimatedCalls: 0,
+    };
+    const { Runtime } = await import('../../src/sim/runtime.js');
+    const { SeatBook } = await import('../../src/api/seats.js');
+    const report = buildHealth(new Runtime({ seed: 'cast-health' }), new SeatBook(), {
+      cast: () => tripped,
+    });
+    expect(report.cast?.spentMicros).toBe(5_000_000);
+    expect(report.failures.join(' ')).toMatch(/spent its cap/i);
+    expect(report.failures.join(' ')).toMatch(/COMPACT_CAST_SPEND_CAP_MICROS/);
+  });
+
+  it('an untripped cast reports its spend without raising a failure about it', async () => {
+    const { buildHealth } = await import('../../src/api/health.js');
+    const { Runtime } = await import('../../src/sim/runtime.js');
+    const { SeatBook } = await import('../../src/api/seats.js');
+    const report = buildHealth(new Runtime({ seed: 'cast-health-2' }), new SeatBook(), {
+      cast: () => ({
+        enabled: true, model: 'gpt-5.6-luna', members: 20, live: 5, fallback: 0, discarded: 0,
+        spentMicros: 1_234, capMicros: 5_000_000, capTripped: false, estimatedCalls: 0,
+      }),
+    });
+    expect(report.cast?.spentMicros).toBe(1_234);
+    expect(report.failures.join(' ')).not.toMatch(/spent its cap/i);
+  });
+});

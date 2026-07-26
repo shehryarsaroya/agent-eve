@@ -91,6 +91,8 @@ export interface HealthReport {
   readonly rollback_gaps: readonly string[];
   /** The durability frontier, when a journal is attached. Null for a store-less run. */
   readonly durability: DurabilityHealth | null;
+  /** The house cast and its spend, when an LLM cast is running. Null otherwise. */
+  readonly cast: CastHealth | null;
   /** Every reason it is unhealthy. Empty when healthy. Read this, not the status. */
   readonly failures: readonly string[];
 }
@@ -116,6 +118,34 @@ export interface HealthOptions {
   readonly warmupTicks?: number;
   /** A live probe of the journal's durability frontier, or absent for a store-less run. */
   readonly durability?: () => DurabilityHealth | null;
+  /**
+   * A live probe of the house cast's spend, or absent when no LLM cast is running.
+   *
+   * Health exists to **assert the interesting property, never just liveness** — that is
+   * the whole lesson of scars #4 and #14, both of which presented as a perfectly healthy
+   * system. Once the cast is on, the interesting property is no longer only "are agents
+   * deciding" but "**what is that costing**": the world was running on a real API key
+   * with a latching cap and no observable meter, so the only way to learn the spend was
+   * to hit the cap. A bounded risk is still an unobserved one.
+   */
+  readonly cast?: () => CastHealth | null;
+}
+
+/** What the house cast is doing and what it is spending. */
+export interface CastHealth {
+  readonly enabled: boolean;
+  readonly model: string;
+  readonly members: number;
+  readonly live: number;
+  readonly fallback: number;
+  readonly discarded: number;
+  /** Micro-dollars, integer. Never a float — this gates spending. */
+  readonly spentMicros: number;
+  readonly capMicros: number;
+  /** True once the cumulative cap has latched and the world is back on heuristics. */
+  readonly capTripped: boolean;
+  /** Calls whose tokens were estimated rather than reported. An unmetered call is not free. */
+  readonly estimatedCalls: number;
 }
 
 export function buildHealth(
@@ -168,6 +198,19 @@ export function buildHealth(
   // Durability is a first-class health signal: a green liveness check on a world
   // whose record is not reaching disk is the exact shape of the defect this whole
   // subsystem closes. Sustained journal failure is an operator alarm (503).
+  const cast = options.cast?.() ?? null;
+  // A tripped cap is a real degradation and must be a named failure, not a silent
+  // fallback to heuristics: the world keeps running and looks fine while the expensive
+  // path — the one the whole cast exists for — has switched itself off. That is
+  // precisely scar #14b, so it is reported in the same voice as the deciding-share floor.
+  if (cast !== null && cast.capTripped) {
+    failures.push(
+      `the house cast has spent its cap (${String(cast.spentMicros)} of ` +
+        `${String(cast.capMicros)} micro-dollars) and has fallen back to heuristics. ` +
+        'Raise COMPACT_CAST_SPEND_CAP_MICROS deliberately, or accept a bots-only world.',
+    );
+  }
+
   const durability = options.durability?.() ?? null;
   if (durability !== null && !durability.healthy) {
     failures.push(
@@ -207,6 +250,7 @@ export function buildHealth(
      */
     rollback_gaps: runtime.engine.rollbackGaps,
     durability,
+    cast,
     failures,
   };
 }

@@ -68,7 +68,7 @@ import {
   type RefusalDiagnostic,
   type SignableRequest,
 } from '../identity/index.js';
-import { buildHealth, type HealthOptions } from './health.js';
+import { buildHealth, type CastHealth, type HealthOptions } from './health.js';
 import { IdempotencyStore } from './idempotency.js';
 import {
   MAX_BODY_BYTES,
@@ -1729,7 +1729,28 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     keyring,
     seats,
     limiter: new RateLimiter(undefined, undefined, rateLimitAllowlist),
-    health: { durability: (): ReturnType<Journal['health']> => journal.health() },
+    health: {
+      durability: (): ReturnType<Journal['health']> => journal.health(),
+      // The spend meter. Probed live rather than snapshotted, so `/health` answers what
+      // the cast is costing *now* — the world ran on a real key with a latching cap and
+      // no observable spend, which made the only way to discover the figure be to hit it.
+      cast: (): CastHealth | null => {
+        const report = cast.report?.();
+        if (report === undefined) return null;
+        return {
+          enabled: report.enabled,
+          model: report.model,
+          members: report.members,
+          live: report.live,
+          fallback: report.fallback,
+          discarded: report.discarded,
+          spentMicros: report.spend.spentMicros,
+          capMicros: report.spend.capMicros,
+          capTripped: report.spend.disabled,
+          estimatedCalls: report.spend.estimatedCalls,
+        };
+      },
+    },
     onEnroll: (enrollment) => {
       journal.recordEnrollment(enrollment);
     },

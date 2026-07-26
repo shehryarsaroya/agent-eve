@@ -30,6 +30,7 @@
 
 import type { Runtime } from '../sim/runtime.js';
 import type { SubmittedAction } from '../tick/index.js';
+import type { LlmCastReport } from './llm.js';
 import { HeuristicCast, type CastMember, type CastOptions } from './heuristic.js';
 import { castSettingsFromEnv, LlmCast, type LlmCastOptions } from './llm.js';
 import type { Clock } from '../core/time.js';
@@ -48,6 +49,13 @@ export interface Cast {
   decide(tick: number, seed: string): readonly SubmittedAction[];
   /** Release anything in flight. Optional: the heuristic cast has nothing to release. */
   close?(): void;
+  /**
+   * What this cast is doing and spending. Optional because the heuristic cast spends
+   * nothing and has nothing to report — its absence is how `/health` distinguishes
+   * "no LLM cast running" from "an LLM cast running at zero cost", which are very
+   * different states to see on a dashboard.
+   */
+  report?(): LlmCastReport;
 }
 
 export interface CreateCastOptions extends CastOptions {
