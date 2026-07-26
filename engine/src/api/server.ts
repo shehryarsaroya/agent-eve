@@ -1813,6 +1813,8 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
           live: report.live,
           fallback: report.fallback,
           discarded: report.discarded,
+          plans: report.plans,
+          plannedActions: report.plannedActions,
           spentMicros: report.spend.spentMicros,
           capMicros: report.spend.capMicros,
           capTripped: report.spend.disabled,

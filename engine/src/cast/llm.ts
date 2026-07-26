@@ -208,6 +208,9 @@ export interface LlmCastReport {
   readonly live: number;
   readonly fallback: number;
   readonly discarded: number;
+  /** Plans accepted from the model this process, and the actions they contained. */
+  readonly plans: number;
+  readonly plannedActions: number;
   readonly spend: CastSpendReport;
 }
 
@@ -232,6 +235,9 @@ export class LlmCast {
   private liveCount = 0;
   private fallbackCount = 0;
   private discardedCount = 0;
+  /** Plans accepted from the model, and the total actions in them. See the note at the increment. */
+  private plansCount = 0;
+  private plannedActions = 0;
 
   constructor(
     private readonly runtime: Runtime,
@@ -412,6 +418,21 @@ export class LlmCast {
       return;
     }
 
+    // ── TELEMETRY THAT DISTINGUISHES THREE CAUSES (see TRACKER) ──────────────
+    //
+    // `/health` reports the deciding share below its floor (1730 bps against 2500) and the ceiling
+    // arithmetic says the cast is at roughly a TENTH of capacity: ~180 wakes a Reckoning times up to
+    // `planMax` actions is ~540 possible LIVE decisions, against 54 observed. Three causes were
+    // indistinguishable from the outside — wakes returning empty plans, plans shorter than
+    // `planMax`, or free verbs eating a wake without a material decision.
+    //
+    // These two counters separate them, and they are counters rather than a comparison harness on
+    // purpose: every telemetry addition tonight has answered its question on the first deploy, and
+    // every comparison harness I built was invalid. `plansCount` with `plannedActions` gives the
+    // mean plan length directly, and a mean near zero means empty plans while a mean near one means
+    // short ones.
+    this.plansCount += 1;
+    this.plannedActions += parsed.plan.length;
     state.plan = [...parsed.plan];
     if (parsed.note !== null) {
       this.memory.remember(member.handle, tick, `you reasoned: ${parsed.note}`);
@@ -622,6 +643,8 @@ export class LlmCast {
       live: this.liveCount,
       fallback: this.fallbackCount,
       discarded: this.discardedCount,
+      plans: this.plansCount,
+      plannedActions: this.plannedActions,
       spend: this.budget.report(),
     };
   }

@@ -156,6 +156,9 @@ export interface CastHealth {
   readonly live: number;
   readonly fallback: number;
   readonly discarded: number;
+  /** Plans accepted from the model, and the actions in them — the mean is the finding. */
+  readonly plans?: number;
+  readonly plannedActions?: number;
   /** Micro-dollars, integer. Never a float — this gates spending. */
   readonly spentMicros: number;
   readonly capMicros: number;
