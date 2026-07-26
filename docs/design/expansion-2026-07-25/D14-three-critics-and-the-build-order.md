@@ -244,11 +244,29 @@ Two things I had not checked:
 
 So the corrected finding is **two partial holes, not seven**:
 
-- **INV-5's second half never runs.** Its skip reads *"the 'served' half was not supplied; only the
-  book's own cache was compared"*, and `servedExposure` — described in the inputs as *"the EXPOSURE
-  the observation layer actually served"* — is supplied by nobody. So the clause compares the book
-  against itself, and the half that would catch **the observation layer disagreeing with the book**
-  is inert. That is a scar #5 detector that cannot see scar #5.
+- **INV-5's second half never runs, and the reason is a real design problem rather than an
+  oversight.** Its skip reads *"the 'served' half was not supplied; only the book's own cache was
+  compared"*, and `servedExposure` — *"the EXPOSURE the observation layer actually served"* — is
+  supplied by nobody. So the clause compares the book against its own cache, and the half that would
+  catch **the observation layer disagreeing with the book** is inert. A scar #5 detector that cannot
+  see scar #5.
+  <br><br>
+  **Why the naive wiring would halt production.** `checkInv5(ledger, tick, served)` takes a
+  `Map<PrincipalId, Minor>`, and `api/observe.ts:474` serves exactly that value per principal, so the
+  plumbing looks like one field. There is even a clean per-tick reset to hang it on, beside
+  `pendingFills = []` and `electionsInFlight.clear()` at the end of `runTick`. But **observations are
+  served between ticks**: a `GET /observe` answered after tick T's ASSERT reflects the book at T's
+  close, and comparing it at T+1's ASSERT — after T+1's phases have moved the book — is a
+  disagreement that is entirely correct. That is a FALSE HALT, on a healthy tick, from an agent
+  merely having read its own exposure at the wrong moment. Exactly the class of defect INV-23 turned
+  out to be (§2).
+  <br><br>
+  So the fix needs staleness semantics, not a field. The shape that looks right: tag each served
+  value with the `state_version` it was computed from and compare only those matching the version
+  under assertion — which is the same primitive §15.4 already uses for the false-default defence
+  (`acted_on_state_version` compared at settlement). That is a small design decision and it should be
+  made deliberately, because the failure mode of getting it wrong is halting the live world on
+  innocent reads.
 - **INV-23's counterparty clause never runs — and it is NOT a safety gap.** Third correction in this
   thread, and it narrows the problem again. *"No signed-deal journal supplied"*, and nothing can
   supply one: **`vSign` does not read `on_behalf_of` at all**, so a deal signed on another's behalf
