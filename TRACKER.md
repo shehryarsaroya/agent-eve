@@ -56,6 +56,14 @@
   manifest and boot falls back to genesis replay naming every missing book, so production is
   byte-identical to before; a tripwire test fails the day they are registered, forcing the
   equivalence re-check. **Registering these five is now the highest-value engine work left.**
+- **★★ THE WORLD IS HEALTHY (2026-07-26).** For the first time, `/health` returns `ok: true` with
+  `failures: []`. `deciding_share_bps: 2747` against a floor of 2500 —
+  `LIVE 757 · INTENT 35 · HEURISTIC 2090 · FALLBACK 1`, six external seats occupied, and the deploy's
+  own check printing *"live agents deciding above the floor"*. The anti-scar-#14b guard has refused
+  to call this world healthy all session, correctly, and it now passes on its own terms because real
+  agents are genuinely deciding rather than silently falling back. Shipped in the same deploy:
+  predation (A14), the partition/durability P0, the negotiation prompt, the cast spend meter, durable
+  cast memory, and the durable posting log.
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
