@@ -244,6 +244,55 @@ Three independent scorers against SPEC v3.0.
 
 ---
 
+## 🌙 OVERNIGHT RUN — RESUME FROM HERE (2026-07-26, unattended)
+
+*The owner is asleep and asked for autonomous work with no questions. If you are a fresh session, or
+this one after compaction, **read this block first** — it is the live state, not history.*
+
+### Where the game actually is
+**LIVE, HEALTHY, and being played.** `/health` returns `ok: true`, `failures: []`,
+`deciding_share_bps` ~3400 against a floor of 2500. Built and deployed: the A6 core loop (grants,
+both holes closed), markets, predation (A14), persistence with an operator divergence door, the LLM
+house cast on `gpt-5.6-luna` with durable memory, and a spectator frame a viewer can actually fetch.
+~2,590 tests.
+
+### In flight
+- **five-books** (`wf_ee452990-c6c`) — registering `StandingBook`, `SealBook`, the obligation book,
+  the `EventLedger` and the attribution register as state tables. **The highest-value engine work
+  left.** Will bump `RULES_VERSION` and need `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` on deploy.
+- **playtest** (`wf_07dee382-abb`) — 8 probes playing the live world, 6 done. A critic reads them
+  against `GATE-3.md` and `EXPERIENCE.md`.
+
+### Queue, in order, with the reason each is next
+1. **Whatever the playtest says.** If the betrayer could not betray *profitably*, that outranks
+   everything — it is the design's falsifiable claim (`GATE-3.md`).
+2. **`PRODUCE`** — the last no-op phase. Goods enter the world ONLY through the enrolment faucet, so
+   the levy allotment drains and never refills. A market with nothing being produced runs out.
+3. **Sovereignty (the Charge)** — task #11, design in `expansion-2026-07-25/DRAFT-2-synthesis.md` §2
+   as corrected (public legal state only; the fuel gauge was killed as a scouting oracle).
+4. **Syndicates** — task #12, `SYNDICATE` as a real asset subject + the constitutional/covenant split.
+5. **The broadcast beat** — three of four systems still cannot reach a viewer as a timed event.
+
+### Standing decisions I am making unattended
+- Deploy whenever gate 0 passes; the replay preflight refuses a bricking deploy with the old process
+  still serving, so deploying is safe by construction.
+- Bump `RULES_VERSION` and use the operator door for any change to past-tick computation. One
+  boundary already exists at tick 287.
+- The cast's $5 latching cap stays; spend is ~$1/Reckoning and the meter is in `/health`.
+- **A subagent's report is not evidence.** Verify every headline claim by running it. This has caught
+  a false CRITICAL, an A15 pricing hole, and a live P0 tonight.
+- **Refusing is an acceptable outcome** for a builder, and has twice been the right one.
+
+### Known-open, recorded so they are not rediscovered
+- `nextDocket` is empty and no segment carries a `receiptReel` — the reel only exists where an
+  elective promise BROKE and the cast keeps paying. Honest, but the signature moment is unwitnessed.
+- `checkInv7` sums the whole posting log every tick, so INV-7's cost grows with history no matter
+  what checkpointing does. The honest next scaling finding.
+- A world raid with no agent joiners loses nothing material if repulsed (predation's own report).
+- Harness richness: no model-written seals, no Reckoning reflection, characters have no relationships
+  or wounds.
+- `UNBUILT_PHASES` still lists `MARKETS`, which is built. Stale.
+
 ## 🏗 BUILD LOG (2026-07-24 →)
 
 **2026-07-25 (later) — Persistence LANDED + Gate 3 run 2 + codex fixes + the A6 plan.**
