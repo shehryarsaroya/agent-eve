@@ -8,6 +8,7 @@
  * it is this file's subject matter.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   FREEZE_FIRST_PHASE,
@@ -76,6 +77,29 @@ describe('the schedule is published, and it is a clock an agent can plan against
     expect(() => {
       assertRaidSchedule();
     }).not.toThrow();
+  });
+
+  /**
+   * **The guard is only a guard if something calls it.**
+   *
+   * A verifier mutated `Runtime`'s constructor to skip `assertRaidSchedule()` and the
+   * whole suite stayed green: every test proved the *function* refuses a bad schedule and
+   * none proved the *world* asks it. A check nobody invokes is a comment with a
+   * signature, and this one is the difference between "a raid can never resolve inside
+   * the freeze" being a property and being a hope — §5.1's freeze is hard, so a schedule
+   * that violates it must stop the world at construction, before it has published a tick
+   * anyone believed.
+   *
+   * Read from the source because the call has no observable effect while the schedule is
+   * valid, which is exactly the condition that let it go untested.
+   */
+  it('the Runtime CONSTRUCTOR calls it — the guard is wired, not merely written', () => {
+    const source = readFileSync(new URL('../../src/sim/runtime.ts', import.meta.url), 'utf8');
+    const constructorBody = source.slice(
+      source.indexOf('constructor(options: RuntimeOptions)'),
+      source.indexOf('constructor(options: RuntimeOptions)') + 6_000,
+    );
+    expect(constructorBody).toContain('assertRaidSchedule()');
   });
 
   it('the schedule an agent reads carries the window, the count and the rule verbatim', () => {

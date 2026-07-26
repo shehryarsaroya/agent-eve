@@ -275,6 +275,9 @@ function resolveOne(
     raid,
     tier: port.tierOf(raid.stage),
     defenderHands: defenders.length,
+    // A joiner counts only while its hand is still standing at the stage — measured
+    // here, at resolution, by the same call the target's own muster is measured with.
+    handsAtStage: (principal) => port.handsDefending(principal, raid.stage),
   });
 
   if (force.verdict === 'REPULSED') {

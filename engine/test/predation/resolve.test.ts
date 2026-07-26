@@ -40,10 +40,19 @@ function party(principal: string, side: 'RAIDER' | 'DEFENDER'): RaidParty {
   };
 }
 
+/**
+ * Every joiner's hand is still standing at the stage. The ordinary case, and the one the
+ * arithmetic tests below are about — `presence.test.ts` owns the case where it is not.
+ */
+function allPresent(raid: { readonly parties: readonly RaidParty[] }) {
+  return (principal: PrincipalId): readonly HandId[] =>
+    raid.parties.filter((p) => p.principal === principal).map((p) => p.handId);
+}
+
 describe('force is arithmetic and higher wins — no dice, no rounds, no positioning', () => {
   it('sums hands, joiners and terrain, and publishes every term', () => {
     const raid = raidRow({ force: 3, parties: [party('p:a', 'DEFENDER'), party('p:b', 'RAIDER')] });
-    const reading = readForce({ raid, tier: 'MARCHES', defenderHands: 2 });
+    const reading = readForce({ raid, tier: 'MARCHES', defenderHands: 2, handsAtStage: allPresent(raid) });
 
     // defender: 2 hands + 1 defender joiner + 1 terrain = 4. raider: 3 + 1 joiner = 4.
     expect(reading.terms).toEqual({
@@ -60,23 +69,25 @@ describe('force is arithmetic and higher wins — no dice, no rounds, no positio
   it('ties go to the defender, and that is a published rule rather than a rounding accident', () => {
     const raid = raidRow({ force: 3 });
     // 3 hands + 0 terrain in the FRONTIER == the raid's 3. Exactly level.
-    const level = readForce({ raid, tier: 'FRONTIER', defenderHands: 3 });
+    const level = readForce({ raid, tier: 'FRONTIER', defenderHands: 3, handsAtStage: allPresent(raid) });
     expect(level.defenderForce).toBe(level.raiderForce);
     expect(level.verdict).toBe('REPULSED');
 
-    const short = readForce({ raid, tier: 'FRONTIER', defenderHands: 2 });
+    const short = readForce({ raid, tier: 'FRONTIER', defenderHands: 2, handsAtStage: allPresent(raid) });
     expect(short.verdict).toBe('PLUNDERED');
   });
 
   it('an unanswered raid has no defence at all — silence is the expensive answer (A14)', () => {
     const raid = raidRow({ force: 2 });
-    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 0 }).verdict).toBe('PLUNDERED');
+    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 0, handsAtStage: allPresent(raid) }).verdict).toBe(
+      'PLUNDERED',
+    );
   });
 
   it('the Frontier gives no terrain bonus and the Marches gives one', () => {
     const raid = raidRow({ force: 2 });
-    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 1 }).defenderForce).toBe(1);
-    expect(readForce({ raid, tier: 'MARCHES', defenderHands: 1 }).defenderForce).toBe(2);
+    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 1, handsAtStage: allPresent(raid) }).defenderForce).toBe(1);
+    expect(readForce({ raid, tier: 'MARCHES', defenderHands: 1, handsAtStage: allPresent(raid) }).defenderForce).toBe(2);
   });
 });
 

@@ -143,7 +143,15 @@ function viewOf(
   // the whole of A2's "known arithmetic is exact" — the alternative is a zero that
   // silently becomes a three the moment it acts.
   const wouldDefend = port.handsDefending(raid.target, raid.stage).length;
-  const reading = readForce({ raid, tier: port.tierOf(raid.stage), defenderHands: wouldDefend });
+  const reading = readForce({
+    raid,
+    tier: port.tierOf(raid.stage),
+    defenderHands: wouldDefend,
+    // The same rule the resolver uses, from the same call. An agent shown a joiner's
+    // force for a hand that has already marched away would be reading a promise the
+    // engine will not keep — scar #1 with a hold at stake.
+    handsAtStage: (principal) => port.handsDefending(principal, raid.stage),
+  });
 
   return {
     raid: raid.id,

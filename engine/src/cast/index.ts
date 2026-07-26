@@ -33,6 +33,8 @@ import type { SubmittedAction } from '../tick/index.js';
 import type { LlmCastReport } from './llm.js';
 import { HeuristicCast, type CastMember, type CastOptions } from './heuristic.js';
 import { castSettingsFromEnv, LlmCast, type LlmCastOptions } from './llm.js';
+import { CastMemory } from './memory.js';
+import { fileVault } from './vault.js';
 import type { Clock } from '../core/time.js';
 import { openAiTransport, type CastTransport } from './transport.js';
 
@@ -64,6 +66,8 @@ export interface CreateCastOptions extends CastOptions {
   /** Overrides the real OpenAI transport. Tests always pass one. */
   readonly transport?: CastTransport;
   readonly env?: NodeJS.ProcessEnv;
+  /** Injected so a test can supply a memory with a double vault. */
+  readonly memory?: CastMemory;
   readonly log?: (line: string) => void;
 }
 
@@ -99,8 +103,20 @@ export function createCast(runtime: Runtime, options: CreateCastOptions): Cast {
     return new HeuristicCast(runtime, options);
   }
 
+  // Memory survives a restart when a path is given. Without one the cast is a goldfish
+  // between deploys, which quietly caps A6's "months of honest work" at the interval
+  // between releases — on this project, hours. Not game state: it is never hashed,
+  // snapshotted, replayed or published, and losing the file costs continuity, not truth.
+  const memoryPath = (env['COMPACT_CAST_MEMORY'] ?? '').trim();
+  const memory =
+    options.memory ??
+    (memoryPath.length > 0
+      ? new CastMemory(undefined, undefined, fileVault(memoryPath))
+      : new CastMemory());
+
   const llmOptions: LlmCastOptions = {
     ...options,
+    memory,
     clock: options.clock,
     transport:
       options.transport ??

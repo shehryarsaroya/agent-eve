@@ -351,8 +351,24 @@ import {
  * its `Rng.derive('PREDATE')` label since commit #1 precisely so that filling it could
  * not shift `MOVE`, `HAZARD` or any other phase's draws. So this boundary is the raid
  * book entering the hash, and nothing else.
+ *
+ * ## 3 → 4 (2026-07-26)
+ *
+ * **A raid joiner's force is now measured at resolution, not at join.** `readForce`
+ * counted `raid.parties` by side, so a joiner that marched its hand out of the stage
+ * during the window still contributed a full unit of force — and `routHand`, which
+ * requires an `IDLE` hand, then declined to rout it. A verifier walked it: join at 49,
+ * `move` at 71, resolve at 72. The raider dodged the hand half of its risk, and a
+ * **defender** joiner — which stakes no capital at all — dodged its risk entirely and
+ * could grant a free repulse to anyone, forever.
+ *
+ * The target's own hands were always re-counted at resolution, so this also removes an
+ * asymmetry that contradicted the book's own rule: *force is per hand, and one hand is
+ * one unit of simultaneous presence* (§3). A replay of any journalled tick in which a
+ * joiner's hand had left the stage now computes a different verdict, which is exactly
+ * what this constant is for.
  */
-export const RULES_VERSION = 3;
+export const RULES_VERSION = 4;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and

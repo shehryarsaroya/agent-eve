@@ -35,9 +35,9 @@
  * wrong, and the cheapest guarantee is that the module which decides cannot also write.
  */
 
-import type { RaidState, ZoneTier } from '../core/types.js';
+import type { HandId, PrincipalId, RaidState, ZoneTier } from '../core/types.js';
 import { qty, type Qty } from '../core/units.js';
-import type { RaidRecord } from './book.js';
+import type { RaidParty, RaidRecord } from './book.js';
 import {
   FORCE_BY_TIER,
   FORCE_PER_HAND,
@@ -78,14 +78,42 @@ export interface ForceReading {
  * `defenderHands` is passed in rather than counted here because commitment has one home
  * and it is not this module: the target's own committed hands are held by
  * `predate.ts`'s port, and a second count here would be scar #5.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A JOINER COUNTS ONLY WHILE ITS HAND IS STILL STANDING THERE**, and
+ * {@link ForceArgs.handsAtStage} is what makes that true rather than assumed. It is a
+ * required argument on purpose: the first version counted `raid.parties` by side alone,
+ * and a verifier walked straight through the hole it left —
+ *
+ *   join at tick 49, `move` the hand out at tick 71, resolve at tick 72. The party row
+ *   still said `+1`, so the joiner bought force with a hand that was a system away, and
+ *   `routHand` then found it `IN_TRANSIT` and declined to rout it. A raider dodged the
+ *   hand half of its stake-and-hand risk; a **defender joiner, which stakes no capital at
+ *   all, dodged its risk entirely and could grant a free repulse forever.**
+ *
+ * The target's own hands were always re-counted at resolution (`handsDefending`), so the
+ * asymmetry also broke the one rule the book states in as many words — *"force is per
+ * hand; capital buys none"* (`book.ts`) and *"one hand is one unit of simultaneous
+ * presence"* (§3). A hand that is elsewhere is not presence.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-export function readForce(args: {
+export interface ForceArgs {
   readonly raid: RaidRecord;
   readonly tier: ZoneTier;
   readonly defenderHands: number;
-}): ForceReading {
-  const defenderJoiners = args.raid.parties.filter((p) => p.side === 'DEFENDER').length;
-  const raiderJoiners = args.raid.parties.filter((p) => p.side === 'RAIDER').length;
+  /**
+   * The hands this principal still has **IDLE and present at the raid's stage**. The same
+   * `handsDefending` the target's own muster is counted with, so both sides of the sum
+   * are measured by one rule at one moment.
+   */
+  readonly handsAtStage: (principal: PrincipalId) => readonly HandId[];
+}
+
+export function readForce(args: ForceArgs): ForceReading {
+  const stillThere = (party: RaidParty): boolean =>
+    args.handsAtStage(party.principal).some((id) => id === party.handId);
+  const defenderJoiners = args.raid.parties.filter((p) => p.side === 'DEFENDER' && stillThere(p)).length;
+  const raiderJoiners = args.raid.parties.filter((p) => p.side === 'RAIDER' && stillThere(p)).length;
   const terrain = FORCE_BY_TIER[args.tier] ?? 0;
 
   const defenderForce =
