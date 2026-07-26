@@ -85,7 +85,32 @@ because it is permanent and it accrues against a name that other agents are supp
 read for trustworthiness. An org that shows a hundred consecutive defaults teaches every reader that
 the default column is noise, which corrodes the one signal the whole game publishes.
 
-### The resolution, stated as one rule
+### The resolution, and it turned out to be structural — VERIFIED 2026-07-26
+
+**The three-part rule below was more machinery than the problem needs, and measuring beat
+reasoning.** Probed directly: a syndicate can hold a `STORES` account with a real balance while
+sitting **outside `world.principalOrder`**, and the tick publishes clean — no Levy assessment, no
+INV-25 violation. The account only has to be *opened* (`openAccount`, because INV-1 refuses a posting
+against an unknown account); it does not have to be on the roll of agents.
+
+And `principalOrder` is the source for **both** hazards. `assessCycle` walks it, and
+`runtime.ts:2212` feeds it to `rankCandidates` as `principals: () => world.principalOrder`. So one
+structural fact — *a syndicate is not registered as an agent* — resolves the Levy collision and the
+raid-magnet consequence together.
+
+That is strictly better than the exclusion predicate proposed below, because it is the **absence of a
+registration** rather than three call sites that agree today. `isSyndicate` stays useful for verbs and
+views, but it is no longer load-bearing for A5′.
+
+**The trade-off, stated rather than absorbed:** pooled goods are consequently **not raidable at all**.
+That is a safe default and probably the wrong long-term answer — an org's warehouse ought to be worth
+attacking, and §11.2 already makes goods standing somewhere public. It is left as a deliberate opening
+rather than fixed, because making a bodiless subject raidable means deciding who defends it, and that
+question belongs with offices (increment 2) where there is finally somebody whose job it is.
+
+---
+
+### The resolution as originally drafted, kept for the reasoning
 
 **A syndicate is not a Levy subject, because the Levy is a duty on a BODY and a syndicate has none.**
 
