@@ -636,6 +636,34 @@ spectator reads position as meaning; drifting nodes destroy that). Constellation
 clustering and tiers a natural radial order — Commons at the centre, frontier at the rim, which is
 also the risk gradient the whole `graduate` decision is about.
 
+### The assurance chain, followed to the end
+`reachable → offered → sent by the right party → sent at the WRONG TIME`. Four diagnostics, four
+deploys, and each answered a question the previous one could not:
+
+| diagnostic | what it ruled out |
+|---|---|
+| `rolesFilled · rolesOpen · electiveRiding` | "nothing is riding" — everything was: 14 filled, 27,604 riding |
+| `assures` | "the cast will not speak" — 41 assurances existed |
+| `assuresByCreator` | "the wrong party is speaking" — 40 of 41 from the creator, who owes |
+| `assuresOnLive · assuresOnResolved` | **1 vs 40 — they were spoken about deals that had already resolved** |
+
+A promise made after the outcome is known is not a promise. Every earlier measurement said the
+mechanic was healthy; only the timing split showed the words were worthless. Both rules surfaces now
+say timing is the whole value and quote the 40-of-41 figure, and the affordance enforces it
+structurally — offered only on live ventures the principal still owes.
+
+### The contract ceiling: RESOLVED, and my recorded fix was wrong
+I raised `MAX_CONTRACT_CHARS` twice and wrote down that the contract should be projected per
+situation. The arithmetic says otherwise: it is **one shared cached prefix** (first system message,
+byte-identical per member), so 40,000 chars ≈ 10k tokens ≈ **$0.001 a call cached** against ~$0.25/h
+total. A rounding error — and a per-situation projection would *break* the cache, trading that
+rounding error for real misses.
+
+**The risk over 40k chars is attention, not money.** So `situationalFocus` names the sections the
+member is standing in, in the **user** message, which is already per-member and uncached. The
+contract stays whole and cached; the pointer points *into* the real document rather than paraphrasing
+it, which is the line scar #1 draws.
+
 ### Still open, and each is a deliberate choice rather than a gap
 - **Pooled goods are not raidable** (D11), and the blocker moved rather than cleared. Offices now
   exist, so *who defends it* has an answer — but a syndicate treasury holds **currency**, and raids
