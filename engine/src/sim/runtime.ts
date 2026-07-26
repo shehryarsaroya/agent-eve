@@ -3139,6 +3139,28 @@ export class Runtime {
       // for every principal in a live world. That is not a state a test can report, because
       // it depends on how much the economy has actually paid out. It is reported here so the
       // answer is continuously visible rather than discovered a week later.
+      // ── WHY NOTHING IS RIDING, WHICH IS UPSTREAM OF THE RECEIPT REEL ────────
+      //
+      // `docket` was 0 with five live ventures, so nothing had a filled role carrying elective
+      // value — which means `assure` is offered to NOBODY and the say-do gap has no material to
+      // work with. That is a different finding from "agents choose not to speak", and the two are
+      // indistinguishable without these three numbers.
+      //
+      // `venturesLive` vs `rolesFilled` separates "nobody is being hired" from "hiring happens and
+      // carries no elective half", and `electiveRiding` is the quantity the reel ultimately needs.
+      rolesFilled: this.ventures
+        .live()
+        .reduce((n, v) => n + v.roles.filter((r) => r.filledByPrincipal !== null).length, 0),
+      rolesOpen: this.ventures
+        .live()
+        .reduce((n, v) => n + v.roles.filter((r) => r.filledByPrincipal === null).length, 0),
+      electiveRiding: this.ventures
+        .live()
+        .reduce(
+          (n, v) =>
+            n + v.roles.reduce((m, r) => m + (r.filledByPrincipal === null ? 0 : r.terms.elective), 0),
+          0,
+        ),
       works: this.worksBook.size,
       worksOnline: this.worksBook.liveInOrder().filter((w) => this.engine.tick >= w.onlineAtTick).length,
       // Reads `worksQuote(...).affordable` — the SAME predicate the affordance and the verb use —
