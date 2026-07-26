@@ -191,6 +191,41 @@ describe('the assurance is OFFERED, not just legal', () => {
       const obs = (await signed(h, idle, 'GET', PATHS.observe)).json['observation'] as Record<string, unknown>;
       const offered = (obs['affordances'] as Record<string, unknown>[]).find((a) => a['verb'] === 'message');
       expect(offered, 'and it is not on the newcomer list').toBeUndefined();
+
+      // ── AND IT IS ON THE LIST OF SOMEBODY WHO OWES ──────────────────────────
+      //
+      // The half I had not tested, and the half that matters: my earlier assertions covered the
+      // HELPER and the newcomer case, so an affordance that never reached `affordances[]` would
+      // have passed both. That is exactly the failure being fixed — a verb that is legal, taught,
+      // and not on the list — so testing everything except the list would have been the same
+      // mistake one level up.
+      //
+      // The owing principals are cast members, which cannot be signed for over HTTP, so this reads
+      // the observation the server would build for them rather than fetching it.
+      const owingPrincipal = owing[0]?.creator;
+      expect(owingPrincipal).toBeDefined();
+      const { buildObservation } = await import('../../src/api/observe.js');
+      const built = buildObservation({
+        runtime: rt,
+        principal: owingPrincipal as never,
+        serverNowMs: 0,
+        fresh: true,
+        wakesRemaining: 1,
+        stale: false,
+        corrections: [],
+        actionsRemaining: 4,
+      }) as unknown as Record<string, unknown>;
+      const assure = (built['affordances'] as Record<string, unknown>[]).find(
+        (a) => a['verb'] === 'message' && (a['params'] as Record<string, unknown>)['act'] === 'assure',
+      );
+      expect(
+        assure,
+        'a principal that owes an elective half must be OFFERED the assurance, not merely allowed it',
+      ).toBeDefined();
+      expect(String(assure?.['what_it_forecloses']), 'and told what it is staking').toMatch(
+        /most damaging sentence/,
+      );
+      expect(Number(assure?.['cost']), 'free, so it never competes with a material action').toBe(0);
     } finally {
       await h.close();
     }
