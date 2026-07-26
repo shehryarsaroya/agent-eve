@@ -337,9 +337,24 @@ failure:
 
 ## 7. The build order all three converge on
 
-**Phase A — before any enrichment.** Bound the encumbrance table (nothing reads a released lock; every
-scan filters them out), index `lotsInAccount`, fix the three population-scaling caps, wire INV-26
-opt-in. These are correctness, not features, and two of them are agent-reachable halts.
+**Phase A — before any enrichment.** Index `lotsInAccount`, fix the three population-scaling caps,
+wire INV-26 opt-in (**done** — see §5). These are correctness, not features.
+
+> ⚠ **The "bound the encumbrance table" recommendation is wrong as written, and I checked before
+> acting on it.** The critic's justification was *"no rule reads one — every scan filters
+> `releasedAtTick === null`"*. Two problems:
+>
+> 1. **`release()` reads it.** `ledger/encumbrance.ts:255` throws *"encumbrance … was already released
+>    at tick N"* — a real double-release guard. Prune the row and a second release either hits an
+>    unknown id (different, weaker refusal) or stops being refused at all. Keeping the guard needs a
+>    tombstone, which is most of the memory you were reclaiming.
+> 2. **The rows are in a hashed state table.** Removing them changes `state_hash`, so every existing
+>    journal replays to a different hash. Production is 4,600+ ticks in. That makes this a migration
+>    with a rules-version bump, not a cleanup.
+>
+> The underlying cost is real — INV-5 is O(P × R) over every encumbrance ever created, and all R rows
+> serialise into `state_hash` every tick. But the fix is an **index plus a bounded live view**, leaving
+> the rows where they are, or a deliberate migration. Not a prune.
 
 **Phase B — the cheapest depth per line of code.** The `ObserveSources` adapter, which unblocks the
 six free services **and** the sensing tier **and** forces the duplicate-`buildObservation` decision.
