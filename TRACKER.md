@@ -361,6 +361,31 @@ minute. **No `RULES_VERSION` bump:** the boot stream still reports 14 tripwires 
 declared divergences, identical to the pre-PRODUCE boot, so no past tick's computation moved. Verified
 by diffing the stream, not by reasoning about it.
 
+### WORKS: reachability was the whole story, and it took three measurements
+The mechanic was correct, tested, offered in `affordances[]` and drawn on the map — and **inert**.
+`worksAffordableBy` read **0 of 21** on its first poll. Three findings in sequence:
+
+1. **The `freeCash` gate was the wrong reading of D7.** D7's rule is that the endowment cannot
+   *leave* a principal; a WORKS build **retires** currency into `sink:upkeep` — destroyed, paid to
+   nobody — so a puppet gains its operator nothing. The residual exploit (extract, then sell) is
+   bounded by the map, which was always the real defence. The cession price keeps `freeCash`,
+   because that one genuinely pays another principal. **Retirement and transfer are different acts.**
+2. **`build` became two acts, and that is a real trap.** Making WORKS affordable turned *four* of
+   this repo's own test helpers ambiguous in one commit — two written the same night — and broke an
+   A8 assertion reading "no `build` is offered in the Commons". That assertion was wrong (a WORKS in
+   the Commons must be legal; a floor you cannot produce on is not a floor) but the speed at which
+   the engine's own tests fell for it is the warning. `agent.md` now tells agents not to match on
+   the verb alone, pinned by a test.
+3. **My own instrument was lying.** `worksAffordableBy` kept reporting 0 after the gate moved,
+   because it recomputed the price test with `freeCash` and was applying a rule the engine no longer
+   had. It now calls `worksQuote(...).affordable`. **A witness with its own copy of the logic can be
+   wrong in exactly the direction that hides what it was built to reveal** — and I believed it once.
+
+Now **2 of 21** can afford one, which is honest rather than good: after eight Reckonings of Levy most
+principals are down near their floor, which is the death spiral PRODUCE was built to stop, caught
+late. Expect the number to climb as the two extract and trade. **Watch `works` go non-zero** — until
+it does, the faucet is reachable but unused.
+
 ### Queue after it
 1. **Syndicates** (task #12) — `SYNDICATE` as a real asset subject + the constitutional/covenant split.
    The last pending system.
