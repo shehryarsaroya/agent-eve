@@ -412,5 +412,17 @@ describe('/discrepancy is long enough for the report a probe actually had', () =
       expect(report.observed.length).toBeLessThanOrEqual(MAX_REPORT_LENGTH);
       expect(report.expected.length).toBeLessThanOrEqual(MAX_REPORT_LENGTH);
     }
-  });
+    // ── AN EXPLICIT TIMEOUT, BECAUSE THE DEFAULT MADE THIS A FALSE ALARM ─────
+    //
+    // This body sends `MAX_DISCREPANCIES + 20` **signed** requests each carrying a
+    // max-length report, so it pays Ed25519 verification and canonicalisation on every
+    // one. Standalone that is ~1.6 s; inside a full parallel suite on a contended box it
+    // crossed vitest's 5 s default and failed Gate 0, refusing a deploy whose engine was
+    // fine. A flaky guard is worse than a slow one: it trains an operator to re-run the
+    // gate until it passes, which is the habit that lets a real failure through.
+    //
+    // The work is genuinely bounded — the assertions above prove the ring holds exactly
+    // MAX_DISCREPANCIES — so the honest fix is to pay for the wall-clock rather than to
+    // shrink the flood, because the flood is the property under test (scar #3).
+  }, 30_000);
 });
