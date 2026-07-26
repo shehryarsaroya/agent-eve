@@ -374,6 +374,43 @@ $2.50/$15, Sol $5/$30). Budget estimate to respect: ~12 members x 16 wakes x ~8k
 ~$1.5–2 per Reckoning, ~$2/hour at `fast`, so the cast ships with hard caps that disable the LLM path
 and fall back to heuristics rather than overspend.
 
+**2026-07-25 — THE OPERATOR DOOR WAS USED FOR REAL, AND THE WHOLE SAFETY STORY HELD.**
+
+The keystone fix (EncumbranceBook into the hashed capture) changes `state_hash` for every tick,
+including ticks already journalled. That is the deploy fable warned would brick the world, and it went
+exactly as the machinery was built to make it go:
+
+1. **The preflight refused the deploy** — `STATE_HASH_MISMATCH at tick 287` — naming the tick, both
+   hashes, and the remedy, **with the old process still serving the live world.** Nothing restarted.
+2. It also reported `rules_version journal 1 -> running 1`: a divergence with the generation *unmoved*,
+   which reads as "the arithmetic changed and nobody declared it". So **`RULES_VERSION` moved to 2**,
+   and the constant now states the rule — bump when a PAST tick would compute differently.
+3. **The door was opened deliberately** at the exact named tick
+   (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK=287`); a different tick would have been refused, because an
+   operator who names another tick is accepting something they were not shown.
+4. **The discontinuity is now in the permanent record**, not in a changelog:
+   `287 | STATE_HASH_MISMATCH | 1 -> 2 | 4 tolerated`. The record says the ticks before and after 287
+   were computed by different code, and no past row was rewritten (INSERT-only, and the app role holds
+   no UPDATE/DELETE on that table).
+5. The world resumed at **tick 1684**, durable, `rollback_gaps: []`.
+
+**This closes the loop opened by the first fable review.** A5 does not say the record must never
+change; it says the record must never be *wrong*. An annotated, publicly declared generation boundary
+is honest. A silent one — which is what shipping this without the door would have been — is the lie
+A5 forbids.
+
+Also fixed this session, all mutation-proven: the **SEALED leak** (`sealContent` was in the nightly
+frame and the client printed it; safe only because the runtime happened to pass `null`), the
+**director cutting its own climax** (`sort(defaults last).slice(0, 12)` selected the FIRST twelve of an
+order built to put the payoff LAST, so busy nights dropped the betrayals), and the **A15 pricing hole**
+(the handle decided who captured the spread on a same-tick cross).
+
+**A method note worth keeping:** Gate 0 caught five lint errors — including a DET-1 bare `.sort()` in a
+test I wrote and two real narrowing bugs in the new encumbrance restore — that my own check had missed,
+because I was piping `eslint` through `tail -1`. That is the **third** truncated-witness mistake in one
+session (`head` on the persistence grep, `tail -1` on lint twice). *A check that cannot show a failure
+is not a check.*
+
 **★ THE KEYSTONE DEFECT — the `EncumbranceBook` is in no state table (2026-07-25, VERIFIED BY EXPERIMENT).**
 `ledgerStateTable.capture()` returns exactly `accounts, lots, postingCount, batchCount`. **No
 encumbrances.** I ran the capture and grepped the blob: no lock, lien or encumbrance row is in it. Yet
