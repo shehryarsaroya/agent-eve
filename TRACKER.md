@@ -461,14 +461,44 @@ three sit and two are needed, and a stale approval carries an appointment that n
   both returned false. Four oversold guards were caught tonight by mutating them; this is the one that
   was caught *twice*, because the first fix was also unproven.
 
-### Still open
-1. **The broadcast beat** — three systems cannot reach a viewer as a *timed* event.
-2. Pooled goods are **not raidable** (D11), deliberately: making a bodiless subject raidable means
-   deciding who defends it.
-3. `agent.md` verb debt from the playtest: 18 of ~40 listed verbs still dead, parameters documented for
-   zero verbs.
-4. `nextDocket` empty · `checkInv7` sums the whole posting log every tick · a repulsed raid with no
-   joiners loses nothing.
+### The four open items are CLOSED
+**1. The broadcast beat.** §14.3's ordering rule — ascending by stakes, largest say-do deltas last —
+was only ever applied to *ventures*; everything else reached a viewer as a static table, so the
+biggest irreversible loss of a night could be in a list. Beats now cross systems: `SETTLEMENT` ·
+`LAPSE` · `PLUNDER`. **Confirmed live**: `rundown` on the published frame carries both `PLUNDER` and
+`SETTLEMENT`. The first draft named them `VENTURE | LEVY | LAPSE | RAID` and `vocabulary-repo.test.ts`
+refused it — three §3 canon terms taking a second meaning, and `RAID` already a `VentureKind` member.
+
+**2. `agent.md` verb debt.** The table listed all forty verbs with no way to tell the twelve reserved
+ones from the twenty-eight that work. Reserved verbs are now marked †, pinned to `VERB_ARRIVES_AT` in
+both directions and mutation-proven both ways. The other half of the debt — "18 of ~40 dead, params for
+zero verbs" — was **partly a false alarm**: ten verbs looked undocumented and are in the §7 table
+unbackticked, which my audit regex could not see. Verified before acting.
+
+**3. Eight verbs claimed to be unbuilt while having handlers**, `grant` among them — the A6 core loop.
+Nothing broke, because `classifyVerb` checks `live` first, so a stale entry is never *shown*; it just
+disagrees with the engine. The discipline is now executable, and the new test caught an **eighth**
+(`approve`) on its first run that my audit could not see because the audit filtered by "mentioned in
+agent.md" — a search blind to the thing it was looking for.
+
+**4. `nextDocket`.** Hardcoded `[]`, so every frame ever published had an empty docket *and* an empty
+closing card. Worse, `firstTimeTogether` was hardcoded `false`, which renders as **"They have dealt
+before, and it held"** about pairs who may never have met — the record wrong about a relationship, in
+the column agents read to decide who to trust. Now derived from resolved shared ventures.
+
+### Watch these two, the same way `works` is watched
+- **`docket` is 0 live** with 5 live ventures, which is legitimate — nothing has a filled role carrying
+  elective value right now. The mechanism is proven in a driven world. **Watch it populate.**
+- **`works` is still 0** with `worksAffordableBy` 2 of 21.
+
+### Still open, smaller
+- `checkInv7` sums the whole posting log every tick, so INV-7's cost grows with history.
+- A world raid with no agent joiners loses nothing material if repulsed.
+- Pooled goods are **not raidable** (D11), deliberately — making a bodiless subject raidable means
+  deciding who defends it, which belongs with a later offices pass.
+- `StandingBook`'s journal is unbounded (INV-26 debt, deliberately uncapped).
+- Production cannot adopt checkpoints until the Pg event tables grow four columns (a refusal, not a
+  crash).
 2. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event. WORKS now
    needs a pixel signature too (A13): a worked system should read as worked.
 3. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
