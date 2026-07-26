@@ -261,3 +261,58 @@ describe('the spend is observable, not merely bounded', () => {
     expect(report.failures.join(' ')).not.toMatch(/spent its cap/i);
   });
 });
+
+describe('scar #14b measured against the population that actually tried', () => {
+  it('a working cast is NOT a failure however small its share of all decisions', async () => {
+    // Measured on the live world: the cast's own counters read live 41, fallback 0,
+    // discarded 0 — working perfectly — while deciding_share_bps sat at 1397 against a
+    // floor of 2500 and health reported unhealthy. The arithmetic is structural: twelve
+    // members waking sixteen times a Reckoning cannot out-count a heuristic cast acting
+    // every tick. A signal that is red while nothing is broken stops being read, which is
+    // how scar #14b wins twice — first by hiding a fallback, then by crying wolf until
+    // somebody silences the detector.
+    const { buildHealth } = await import('../../src/api/health.js');
+    const { Runtime } = await import('../../src/sim/runtime.js');
+    const { SeatBook } = await import('../../src/api/seats.js');
+    const report = buildHealth(new Runtime({ seed: 'fb-ok' }), new SeatBook(), {
+      cast: () => ({
+        enabled: true, model: 'gpt-5.6-luna', members: 12,
+        live: 41, fallback: 0, discarded: 0,
+        spentMicros: 231_000, capMicros: 5_000_000, capTripped: false, estimatedCalls: 0,
+      }),
+    });
+    expect(report.failures.join(' ')).not.toMatch(/fell back on/);
+  });
+
+  it('a cast that keeps FAILING its wakes is a named failure, whatever the share says', async () => {
+    // The state scar #14b actually names: the expensive path is being attempted and
+    // failing, the world keeps running on heuristics, and everything looks fine.
+    const { buildHealth } = await import('../../src/api/health.js');
+    const { Runtime } = await import('../../src/sim/runtime.js');
+    const { SeatBook } = await import('../../src/api/seats.js');
+    const report = buildHealth(new Runtime({ seed: 'fb-bad' }), new SeatBook(), {
+      cast: () => ({
+        enabled: true, model: 'gpt-5.6-luna', members: 12,
+        live: 10, fallback: 40, discarded: 0, // 8000 bps of attempts fell back
+        spentMicros: 1_000, capMicros: 5_000_000, capTripped: false, estimatedCalls: 0,
+      }),
+    });
+    expect(report.failures.join(' ')).toMatch(/fell back on 8000 bps/);
+  });
+
+  it('judges nothing before there is a rate to judge', async () => {
+    // One failure out of one is 10,000 bps and means nothing. Judging a rate before it
+    // exists is how an alarm earns its reputation for lying.
+    const { buildHealth } = await import('../../src/api/health.js');
+    const { Runtime } = await import('../../src/sim/runtime.js');
+    const { SeatBook } = await import('../../src/api/seats.js');
+    const report = buildHealth(new Runtime({ seed: 'fb-few' }), new SeatBook(), {
+      cast: () => ({
+        enabled: true, model: 'gpt-5.6-luna', members: 12,
+        live: 0, fallback: 1, discarded: 0,
+        spentMicros: 100, capMicros: 5_000_000, capTripped: false, estimatedCalls: 0,
+      }),
+    });
+    expect(report.failures.join(' ')).not.toMatch(/fell back on/);
+  });
+});

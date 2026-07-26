@@ -43,6 +43,23 @@ import type { SeatBook } from './seats.js';
 export const DECIDING_FLOOR_BPS = 2_500;
 
 /**
+ * How many wakes the cast must have attempted before its fallback rate means anything.
+ *
+ * One failed wake out of one is 10,000 bps and says nothing. Judging a rate before there
+ * is a rate is how an alarm earns its reputation for lying.
+ */
+export const CAST_ATTEMPTS_BEFORE_JUDGING = 20;
+
+/**
+ * Tolerated share of attempted wakes that may end in FALLBACK.
+ *
+ * Not zero: a provider hiccup or one unparseable reply is the degradation path working,
+ * and the design says degrade rather than freeze. Sustained fallback is the failure —
+ * that is the state where the world looks healthy and nobody is really deciding.
+ */
+export const CAST_FALLBACK_CEILING_BPS = 2_000;
+
+/**
  * Ticks before the floor is enforced.
  *
  * A world that has just started has no decisions yet and is not unhealthy for it.
@@ -195,10 +212,44 @@ export function buildHealth(
     );
   }
 
+
   // Durability is a first-class health signal: a green liveness check on a world
   // whose record is not reaching disk is the exact shape of the defect this whole
   // subsystem closes. Sustained journal failure is an operator alarm (503).
   const cast = options.cast?.() ?? null;
+
+  // ── THE FALLBACK RATE IS THE SIGNAL SCAR #14b ACTUALLY WANTS ────────────────
+  //
+  // The share above is measured against EVERY decision, and that makes it a poor alarm on
+  // its own. Measured on the live world: the cast's own counters read `live 41, fallback 0,
+  // discarded 0` — working perfectly — while the share sat at 1397 bps against a floor of
+  // 2500 and reported unhealthy. The arithmetic is structural, not a fault: twelve members
+  // waking sixteen times a Reckoning cannot out-count a heuristic cast that acts every
+  // tick. The share only cleared the floor earlier because nine external playtest probes
+  // were deciding; when they finished it fell, with nothing wrong.
+  //
+  // A signal that is red while nothing is broken stops being read, which is how scar #14b
+  // wins twice — first by hiding a fallback, then by making the detector cry wolf until
+  // somebody silences it.
+  //
+  // So the thing scar #14b names — *"its players have silently fallen back"* — gets its own
+  // check, against the population that actually tried: of the wakes the cast attempted, how
+  // many ended in FALLBACK? That number is near zero in a healthy world whatever the
+  // heuristic volume is, and it goes bad exactly when the expensive path is failing.
+  if (cast !== null && cast.enabled) {
+    const attempted = cast.live + cast.fallback;
+    if (attempted >= CAST_ATTEMPTS_BEFORE_JUDGING) {
+      const fallbackBps = Math.round((cast.fallback / attempted) * 10_000);
+      if (fallbackBps > CAST_FALLBACK_CEILING_BPS) {
+        failures.push(
+          `the house cast fell back on ${String(fallbackBps)} bps of its ${String(attempted)} attempted wakes ` +
+            `(ceiling ${String(CAST_FALLBACK_CEILING_BPS)} bps). The world keeps running on heuristics and looks ` +
+            'fine, which is exactly scar #14b: the expensive path is being attempted and failing. Read the ' +
+            'cast log lines for the reason — they carry a closed vocabulary.',
+        );
+      }
+    }
+  }
   // A tripped cap is a real degradation and must be a named failure, not a silent
   // fallback to heuristics: the world keeps running and looks fine while the expensive
   // path — the one the whole cast exists for — has switched itself off. That is
