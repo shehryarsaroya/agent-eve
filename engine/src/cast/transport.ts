@@ -309,6 +309,42 @@ export function readReply(payload: unknown): CompletionReply {
     throw new CastTransportError('completions reply carried no text content', null);
   }
 
+  // An EMPTY reply is a failure, and which failure matters enough to say out loud.
+  //
+  // The GPT-5 tiers are reasoning models, and their reasoning tokens are spent out of
+  // `max_completion_tokens`. So a cap that is too low does not truncate the answer — the
+  // model reasons until the budget is gone and returns `finish_reason: 'length'` with
+  // **empty content and HTTP 200**. Measured on gpt-5.6-luna with one small prompt:
+  //
+  //     cap=200  -> finish=length  reasoning=200  content=""
+  //     cap=400  -> finish=stop    reasoning=200  content=207 chars
+  //     cap=1200 -> finish=stop    reasoning=113  content=159 chars
+  //
+  // Returned as a bare empty string this is indistinguishable from a model that answered
+  // with nothing: `parse.ts` rejects it, the member falls back to its heuristic, and the
+  // world looks healthy while no LIVE decision is ever made — a misconfiguration wearing a
+  // model failure's clothes, which is scar #14b's shape. Raising here makes the operator
+  // read the one sentence that fixes it. Found by making a real API call; the builder
+  // could not, because the key had no quota at the time.
+  if (content.length === 0) {
+    const finish =
+      typeof first === 'object' && first !== null
+        ? (first as Record<string, unknown>)['finish_reason']
+        : undefined;
+    if (finish === 'length') {
+      throw new CastTransportError(
+        'the model spent its whole completion budget on reasoning and returned no text ' +
+          '(finish_reason=length). Raise COMPACT_CAST_MAX_OUTPUT_TOKENS — it must cover ' +
+          'reasoning tokens AND the answer, not just the answer.',
+        null,
+      );
+    }
+    throw new CastTransportError(
+      `completions reply was empty (finish_reason=${String(finish ?? 'absent')})`,
+      null,
+    );
+  }
+
   const usage = root['usage'];
   const readCount = (name: string): number | null => {
     if (typeof usage !== 'object' || usage === null) return null;

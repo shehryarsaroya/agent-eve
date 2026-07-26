@@ -43,7 +43,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { reckoningIndex, setSpeed, systemClock, ticksToMs, type Clock } from '../core/time.js';
 import { publishFrame } from '../frames/write.js';
 import { costOf } from '../tick/index.js';
-import { HeuristicCast } from '../cast/index.js';
+import { createCast, type Cast } from '../cast/index.js';
 import { Runtime, RULES_VERSION } from '../sim/runtime.js';
 import type { PrincipalId } from '../core/types.js';
 import {
@@ -1827,7 +1827,7 @@ function closed(server: Server): Promise<void> {
 interface BootedWorld {
   readonly outcome: BootOutcome;
   readonly runtime: Runtime;
-  readonly cast: HeuristicCast;
+  readonly cast: Cast;
   readonly keyring: Keyring;
   readonly seats: SeatBook;
   readonly seed: string;
@@ -1855,7 +1855,10 @@ async function bootTheWorld(
     );
   }
   const runtime = new Runtime({ seed });
-  const cast = new HeuristicCast(runtime, { size: options.castSize });
+  // The cast reads its own settings from the environment and returns the heuristic
+  // cast unless COMPACT_CAST_LLM says otherwise, so this line is the whole switch: an
+  // unconfigured world behaves exactly as it did before, and no key means no spend.
+  const cast = createCast(runtime, { size: options.castSize, clock });
   // Built before boot, because boot re-registers each persisted enrolment's key and
   // seat as it re-seats the world principal — the identity half of A10.
   const keyring = new Keyring();

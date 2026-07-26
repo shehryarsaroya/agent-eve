@@ -145,9 +145,43 @@ describe('the three caps', () => {
 
 describe('the defaults are conservative', () => {
   it('caps a forgotten world at a few dollars, not a weekend', () => {
+    // The bound on `maxOutputTokens` used to be <= 1000 and stood in for cost. It had to
+    // move: gpt-5.6-luna spends REASONING tokens out of the same budget, and a cap that is
+    // too low returns HTTP 200 with EMPTY content (measured: a cap of 200 was consumed
+    // entirely by reasoning). So the token cap is a CORRECTNESS floor, not a cost ceiling,
+    // and pinning it low was pinning the cast broken.
+    //
+    // Rather than just raise the number, assert the property the old bound was a proxy
+    // for: the thing that actually stops a forgotten world spending a weekend is the
+    // LATCHING spend cap, so bound the real worst case instead of one of its inputs.
     expect(DEFAULT_CAST_LIMITS.spendCapMicros).toBeLessThanOrEqual(10_000_000);
     expect(DEFAULT_CAST_LIMITS.callsPerReckoning).toBeLessThanOrEqual(400);
-    expect(DEFAULT_CAST_LIMITS.maxOutputTokens).toBeLessThanOrEqual(1_000);
+
+    // Worst case for one call under the defaults, priced exactly as the budget prices it.
+    const worstInputTokens = Math.ceil(DEFAULT_CAST_LIMITS.maxPromptChars / 4);
+    const worstCallMicros =
+      Math.ceil((worstInputTokens * DEFAULT_CAST_LIMITS.inputMicrosPerMillion) / 1_000_000) +
+      Math.ceil(
+        (DEFAULT_CAST_LIMITS.maxOutputTokens * DEFAULT_CAST_LIMITS.outputMicrosPerMillion) /
+          1_000_000,
+      );
+    // A single call can never be expensive enough to be a surprise on its own.
+    expect(worstCallMicros).toBeLessThanOrEqual(50_000); // $0.05
+
+    // And the latch binds the total regardless of how many Reckonings run unattended:
+    // whatever the per-call cost, spending stops at the cap and the world runs on
+    // heuristics. That is the actual "not a weekend" guarantee.
+    const worstReckoningMicros = worstCallMicros * DEFAULT_CAST_LIMITS.callsPerReckoning;
+    expect(worstReckoningMicros).toBeGreaterThan(0);
+    expect(DEFAULT_CAST_LIMITS.spendCapMicros).toBeLessThanOrEqual(10_000_000);
+  });
+
+  it('the output cap is high enough that a reasoning model can actually answer', () => {
+    // The other side of the same coin, and the reason the bound above changed. Measured on
+    // gpt-5.6-luna: 113-200 reasoning tokens for one small prompt, and a 200-token cap
+    // returned finish_reason=length with no text at all. A default below the observed
+    // reasoning consumption ships a cast that silently never decides.
+    expect(DEFAULT_CAST_LIMITS.maxOutputTokens).toBeGreaterThanOrEqual(1_000);
   });
 
   it('prices gpt-5.6-luna as documented: $1/1M in, $6/1M out', () => {

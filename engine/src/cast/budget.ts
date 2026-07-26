@@ -92,7 +92,16 @@ export interface CastBudgetLimits {
  */
 export const DEFAULT_CAST_LIMITS: CastBudgetLimits = Object.freeze({
   callsPerReckoning: 200,
-  maxOutputTokens: 400,
+  // Must cover REASONING TOKENS PLUS the answer, not just the answer. The GPT-5 tiers
+  // spend reasoning out of `max_completion_tokens`, and a cap that is too low returns
+  // HTTP 200 with EMPTY content rather than a short answer. Measured on gpt-5.6-luna:
+  // a cap of 200 was entirely consumed by reasoning (finish_reason=length, no text),
+  // while the same prompt used 113–200 reasoning tokens run to run. 400 left almost no
+  // margin over observed reasoning alone, so a harder decision would have silently
+  // produced nothing and fallen back to heuristics forever. 1500 is ~10x the observed
+  // answer and comfortably clears the reasoning. At $6/1M output that is $0.009 worst
+  // case per call, and calls are charged at worst case before they are made.
+  maxOutputTokens: 1500,
   maxPromptChars: 24_000,
   spendCapMicros: 5 * MICROS_PER_DOLLAR,
   inputMicrosPerMillion: 1 * MICROS_PER_DOLLAR,
