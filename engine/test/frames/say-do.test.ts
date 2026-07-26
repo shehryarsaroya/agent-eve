@@ -77,7 +77,11 @@ describe('the frame carries what was said and what was sealed', () => {
     const frame = rt.reckoningFrame();
     if (frame === null) return;
     for (const seg of frame.rundown) {
-      const broke = seg.glyph.state === 'SNAPPED_BLACK';
+      // A beat may now be a LAPSE or a PLUNDER rather than a SETTLEMENT, and those carry no glyph
+      // (a glyph is venture-shaped — roles filled, elective fraction — and a lapsed claim has
+      // neither). They also carry no reel, so the A12 property below holds for them too: `broke`
+      // is false, and the assertion demands an empty reel, which is exactly right.
+      const broke = seg.glyph?.state === 'SNAPPED_BLACK';
       if (!broke) {
         expect(
           (seg.receiptReel ?? []).length,

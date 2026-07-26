@@ -367,9 +367,46 @@ export interface DocketCard {
  * with the three largest say-do deltas held to the end (§14.3). Resolving a
  * hundred deals simultaneously is a page refresh; nobody can follow it.
  */
+/**
+ * What a beat is ABOUT, so the running order can cross systems.
+ *
+ * ## Why this exists
+ *
+ * The rundown was built from settled ventures alone, and everything else the night did —
+ * the Levy's result, a claim lapsing, a raid landing — reached a viewer only as a static
+ * table beside it. So a Reckoning read as a narrated sequence followed by some lists, and
+ * the largest irreversible loss of the night could be in one of the lists.
+ *
+ * §14.3 says the ordering IS the format: ascending by stakes, largest say-do deltas held to
+ * the end, because a broken promise is the largest delta there is. That rule was never
+ * specific to ventures — a claim LAPSING is permanent territorial loss with a bond slashed,
+ * which is at least as big a delta as a defaulted promise, and it was being shown in a panel.
+ *
+ * A beat carries a `venture` only when it is about one. `subject` is what the beat names in
+ * every case, so a client can render a running order without knowing which system produced it.
+ */
+/**
+ * Named for what NARRATIVELY happened, not for the system that produced it.
+ *
+ * The first draft used `VENTURE | LEVY | LAPSE | RAID` and `vocabulary-repo.test.ts` refused
+ * it: three of those are §3 canon terms being given a second meaning, and `RAID` already exists
+ * as a `VentureKind` member. Hard rule 4 is a rules surface, not a style guide — a beat kind
+ * called `RAID` and a venture kind called `RAID` are two concepts wearing one word, which is the
+ * exact shape of the bug that survived three critic passes in High Water.
+ *
+ * So a beat is named by its event: something SETTLED, something LAPSED, something was PLUNDERED.
+ * That reads better in a running order anyway, which is the usual result of being made to say
+ * what you actually mean.
+ */
+export type BeatKind = 'SETTLEMENT' | 'LAPSE' | 'PLUNDER';
+
 export interface RundownSegment {
   readonly order: number;
-  readonly venture: VentureId;
+  readonly kind: BeatKind;
+  /** What this beat is about: a venture id, a system, a principal. Always present. */
+  readonly subject: string;
+  /** Present only on a `VENTURE` beat. */
+  readonly venture: VentureId | null;
   readonly cast: readonly CastChip[];
   /** What it said — a public claim, allowed to be a lie. */
   readonly publicLine: string | null;
@@ -389,7 +426,12 @@ export interface RundownSegment {
   readonly sealVerdict: SealVerdict | null;
   /** What it did. Ground truth. */
   readonly deed: string;
-  readonly glyph: VentureGlyph;
+  /**
+   * The venture's arc on the map. **Null on a non-venture beat**, because a glyph is a
+   * venture-shaped object (roles filled, elective fraction) and a lapsed claim has neither.
+   * A client renders the glyph when it is there and the `deed` line when it is not.
+   */
+  readonly glyph: VentureGlyph | null;
   /** Plain language, for a stranger who does not know the rules. */
   readonly consequence: string;
   /**

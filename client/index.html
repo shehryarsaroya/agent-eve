@@ -292,18 +292,30 @@ function renderRundown(segs) {
          </div>`
       : '';
 
+    // A beat is not always a venture. LAPSE and PLUNDER beats have no say-do gap to show — there
+    // was no promise and no seal — so the three-column layout would print two empty boxes and
+    // imply somebody stayed silent when nobody was ever asked. They get the deed alone.
+    const isVenture = s.kind === 'SETTLEMENT' || s.kind === undefined;
+    const body = isVenture
+      ? `<div class="saydo">
+          <div class="sd"><div class="h">What it said</div><div class="t">${
+            s.publicLine ? esc(s.publicLine) : '<em>said nothing</em>'}</div></div>
+          <div class="sd"><div class="h">What it sealed</div><div class="t">${sealBody}</div></div>
+          <div class="sd"><div class="h">What it did</div><div class="t">${esc(s.deed)}</div></div>
+        </div>`
+      : `<div class="saydo">
+          <div class="sd" style="grid-column:1/-1"><div class="h">${
+            s.kind === 'LAPSE' ? 'The world took it back' : 'A raid resolved'
+          }</div><div class="t">${esc(s.deed)}</div></div>
+        </div>`;
+
     return `
       <div class="seg">
         <div class="seg-h">
           <span class="seg-n">${String(s.order).padStart(2, '0')}</span>
           <span class="seg-t">${esc(s.consequence)}</span>
         </div>
-        <div class="saydo">
-          <div class="sd"><div class="h">What it said</div><div class="t">${
-            s.publicLine ? esc(s.publicLine) : '<em>said nothing</em>'}</div></div>
-          <div class="sd"><div class="h">What it sealed</div><div class="t">${sealBody}</div></div>
-          <div class="sd"><div class="h">What it did</div><div class="t">${esc(s.deed)}</div></div>
-        </div>
+        ${body}
         <div class="glyph-row">${glyphLabel(s.glyph)}</div>
         ${reel}
       </div>`;

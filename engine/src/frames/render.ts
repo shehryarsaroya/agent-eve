@@ -295,10 +295,13 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
   const climax = [...defaults].sort(bigFirst).slice(0, MAX_RUNDOWN_SEGMENTS);
   const setup = [...kept].sort(bigFirst).slice(0, MAX_RUNDOWN_SEGMENTS - climax.length);
 
-  const rundown: RundownSegment[] = [...climax, ...setup]
+  const ventureBeats = [...climax, ...setup]
     .sort(broadcastOrder)
-    .map((v, i) => ({
-      order: i + 1,
+    .map((v) => ({
+      kind: 'SETTLEMENT' as const,
+      subject: String(v.venture),
+      defaulted: v.defaulted,
+      atStake: v.atStake,
       venture: v.venture,
       cast: chipsFor(src, v.parties),
       publicLine: v.publicLine,
@@ -317,6 +320,68 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
           ? v.messages.map((m) => ({ tick: m.tick, from: handleOf(src, m.from), text: m.text }))
           : null,
     }));
+
+  // ── THE OTHER SYSTEMS GET BEATS, NOT JUST PANELS (§14.3) ──────────────────
+  //
+  // A lapsed claim is permanent territorial loss with a bond slashed. Under the ordering rule
+  // — largest say-do delta last — that belongs at the END of the night beside the defaults,
+  // and it was being shown in a table off to the side. The Levy's result and a raid that took
+  // something are beats for the same reason: they are things that HAPPENED at a time, and a
+  // running order is how a viewer follows a night.
+  //
+  // Built from the same lines the panels use, so a beat can never claim something the panel
+  // contradicts — one source, two presentations.
+  const lapseBeats = (src.claimLines ?? [])
+    .filter((c) => c.state === 'LAPSED')
+    .map((c) => ({
+      kind: 'LAPSE' as const,
+      subject: String(c.system),
+      // A lapse is the largest delta the territorial system has, so it sorts with the defaults.
+      defaulted: true,
+      atStake: c.slashed,
+      venture: null,
+      cast: [] as readonly CastChip[],
+      publicLine: null,
+      sealVerdict: null,
+      deed: `${String(c.system)} LAPSED — ${String(c.claimant)} missed the Charge ${String(c.arrears)} times and the bond was slashed`,
+      glyph: null,
+      consequence: `${String(c.slashed)} of posted bond taken; the system is open to any claimant`,
+      receiptReel: null,
+    }));
+
+  const raidBeats = (src.raidLines ?? [])
+    .filter((r) => r.state === 'PLUNDERED' || r.state === 'PAID' || r.state === 'REPULSED')
+    .map((r) => ({
+      kind: 'PLUNDER' as const,
+      subject: String(r.stage),
+      // A plunder took something and belongs late; a repulse is a win and belongs early.
+      defaulted: r.state === 'PLUNDERED',
+      atStake: r.lost > 0 ? r.lost : r.demand,
+      venture: null,
+      cast: [] as readonly CastChip[],
+      publicLine: null,
+      sealVerdict: null,
+      deed:
+        r.state === 'REPULSED'
+          ? `${String(r.stage)} held — ${String(r.defenderForce)} stood against ${String(r.raiderForce)}`
+          : `${String(r.stage)} — ${String(r.target)} ${r.state === 'PAID' ? 'paid' : 'lost'} ${String(r.lost > 0 ? r.lost : r.demand)}`,
+      glyph: null,
+      consequence:
+        r.state === 'REPULSED'
+          ? 'the stage is closed to raiders for a Reckoning'
+          : `${String(r.lost)} taken, and A5 makes the loss permanent`,
+      receiptReel: null,
+    }));
+
+  const rundown: RundownSegment[] = [...ventureBeats, ...lapseBeats, ...raidBeats]
+    .sort(
+      (a, b) =>
+        (a.defaulted === b.defaulted ? 0 : a.defaulted ? 1 : -1) ||
+        a.atStake - b.atStake ||
+        compareIds(a.subject, b.subject),
+    )
+    .slice(0, MAX_RUNDOWN_SEGMENTS)
+    .map((beat, i) => ({ ...beat, order: i + 1 }));
 
   // The docket is the DEFAULT view and it looks forward, not back: biggest stakes
   // first, because a viewer arriving cold needs the largest thing at risk tonight.
