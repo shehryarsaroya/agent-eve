@@ -263,6 +263,27 @@ house cast on `gpt-5.6-luna` with durable memory, and a spectator frame a viewer
 - **playtest** (`wf_07dee382-abb`) — 8 probes playing the live world, 6 done. A critic reads them
   against `GATE-3.md` and `EXPERIENCE.md`.
 
+### ★ FOUND 2026-07-26 — THE SAY-DO GAP NEVER REACHES THE VIEWER
+
+`reckoningFrame()` builds each `SettledView` with **`publicLine: null, sealVerdict: null,
+messages: []` hardcoded** (`src/sim/runtime.ts` ~5536). Measured on the live world at the same
+moment: **371 seals, 126 messages, and 10 rundown segments carrying zero of each.**
+
+This is the product. §11.1's three layers are *what it said* (a public claim, allowed to be a lie) →
+*what it sealed* (a pre-commitment) → *what it did* (ground truth), and §14 THE RECEIPT REEL is built
+by putting the first next to the last. The frame currently renders only the third. A viewer sees
+deeds and consequences and never learns that anybody claimed anything, so the say-do gap — the thing
+that makes a betrayal legible rather than merely costly — is invisible.
+
+The data all exists: the seal book holds verdicts, and messages are `PARTIES` while live and
+**declassify at settlement**, which is exactly the moment the frame is built. Nothing needs a new
+mechanism; three fields need reading instead of nulling.
+
+**Do this immediately after `five-books` lands** — it edits the same function, so it was deliberately
+not raced. Then re-check `receiptReel`: it only populates where an elective promise BROKE, and the
+cast currently keeps paying, so the reel may still be empty for an honest reason rather than a
+plumbing one. Those two causes must not be confused.
+
 ### Queue, in order, with the reason each is next
 1. **Whatever the playtest says.** If the betrayer could not betray *profitably*, that outranks
    everything — it is the design's falsifiable claim (`GATE-3.md`).
