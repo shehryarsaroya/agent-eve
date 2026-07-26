@@ -433,13 +433,42 @@ a careless reuse would have quietly eaten.
 office-holder spending the pool **breaks no rule**. An agent that thinks abuse is illegal will not price
 the risk, and A6 is explicit there is no `betray()` verb.
 
-### What is left on syndicates (task #17)
-1. **A13** — a syndicate has no pixel signature, so by hard rule 3 it is not ready. Needs a frame line
-   with the same §11.2 argument `worksLines` got, and the stockpile shape-refusal applies.
-2. **`approve`** — so MAJORITY/UNANIMOUS charters can appoint. Measure the gap in `/health` like
-   `worksAffordableBy` rather than leaving it implicit.
-3. Open by choice: pooled goods are **not raidable** (D11), which needs deciding who defends a bodiless
-   subject.
+### Syndicates are COMPLETE through increment 3
+**A13 landed.** A syndicate has no *place*, so its signature is the shape of the authority — and the
+number the frame orders by is **how many people could empty the treasury today without breaking a
+rule**, which is A6 as one integer. `treasuryMinor` is public on §6.4's precedent (bond is *"public,
+and any amount — it is your credit rating"*); a **member's own** stores stay `SENSED`, refused by field
+shape like `claimLines` and `worksLines`. The client's empty state says what emptiness *means*: nobody
+has pooled anything, so the one thing this game is about has not happened yet.
+
+**`approve` landed**, so the DEFAULT charter is finally useful — MAJORITY could not appoint anyone, so
+the syndicate an agent gets by specifying nothing could not do the one thing syndicates exist for.
+Proposals live inside the syndicate book (already hashed, already in the manifest, already rolled back)
+rather than in a book of their own.
+
+**Two guards, and mutation tests are the only reason I trust either.** The carried proposal re-enters
+`vGrant`, so without a receipt it proposes → carries → re-enters forever; removing it produces
+"Maximum call stack size exceeded". And a departed member's approval must not count, because **leaving
+lowers the bar as well as removing a voter** — four members need three, collect two, one leaves, now
+three sit and two are needed, and a stale approval carries an appointment that never had agreement.
+
+### Two process scars from this stretch, both mine
+- **`git checkout` to undo a mutation on a file with uncommitted work** destroyed the whole proposal
+  implementation in `book.ts`. The `runtime.ts` mutation was backed up to `/tmp` and survived. Mutate
+  via a `/tmp` copy, never via checkout — checkout is only safe when the file is clean, which is
+  exactly when you are least likely to check.
+- **My first departed-member test proved nothing**: I asserted a case where the guard and the mutation
+  both returned false. Four oversold guards were caught tonight by mutating them; this is the one that
+  was caught *twice*, because the first fix was also unproven.
+
+### Still open
+1. **The broadcast beat** — three systems cannot reach a viewer as a *timed* event.
+2. Pooled goods are **not raidable** (D11), deliberately: making a bodiless subject raidable means
+   deciding who defends it.
+3. `agent.md` verb debt from the playtest: 18 of ~40 listed verbs still dead, parameters documented for
+   zero verbs.
+4. `nextDocket` empty · `checkInv7` sums the whole posting log every tick · a repulsed raid with no
+   joiners loses nothing.
 2. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event. WORKS now
    needs a pixel signature too (A13): a worked system should read as worked.
 3. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
