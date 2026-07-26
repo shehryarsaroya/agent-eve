@@ -596,6 +596,46 @@ contradiction.
 affordance offered, the finding changes from "unreachable" to "unwanted", which is a different and
 more interesting answer about what agents actually do.
 
+### The say-do behavioural question: ANSWERED — creators assure, 40 times
+Measured rather than waited for (`assures` / `assuresByCreator` in `/health`): **41 assurances in the
+ring, 40 of them from the venture's own creator** — the party that owes the elective half and is
+therefore the only one that can decline it. So it was never a preference problem and never a prompt
+problem. The cast speaks, and it stakes something when it does.
+
+What remains is narrow and mechanical: `publicLine` reads assurances on the venture that settled *in
+that Reckoning*, and the published frame is stamped tick 4319 while these assurances sit on live and
+recent ventures. The frame at **4607** shows whether they land on settled segments. If they do not,
+the settlement window is the thing to fix — not the prompt, and not the filter.
+
+**Three diagnostics answered three different questions in three deploys**, and each one would have
+been invisible to another scheduled "is it zero yet" check: `rolesFilled/rolesOpen/electiveRiding`
+(nothing was riding → actually everything was), `assures` (talk cannot tell a promise from a haggle),
+and `assuresByCreator` (41 assurances with 0 on the frame has two opposite explanations).
+
+### ★ THE VISUAL MAP — asked 2026-07-26, and it is reachable
+The browser view should be *the map*: systems, lanes, claim tints, works marks, raid arcs, convoys —
+the whole night's activity, legibly. **The architecture already supports it and needs no engine
+change**, which was deliberate:
+
+- The frame is already a **pure inert data artifact** (`latest.json`, static, cacheable, behind
+  Cloudflare, `assertInertPublicFacts` refusing anything holding live state). A visual client is a
+  *renderer over that file*. The engine does not learn about pixels.
+- **A13 has been enforced per mechanic all along**, so the data to draw is already there and already
+  tier-checked: `claimLines` (tint + legend + arrears), `worksLines` (mark + crowding + share),
+  `raidLines` (stage, forces, demand, loss), `syndicateLines` (members, treasury, who can spend),
+  `glyphs` (roles filled, elective fraction as a hollow arc).
+- **§11.2 is enforced by construction, not by care.** `projection.ts` refuses an unargued key and
+  `assertFrameBudgets` refuses stockpile-shaped fields by name. A prettier renderer *cannot* leak
+  what a plain one could not.
+
+**The one thing missing is spatial layout.** `StarSystem` carries `id · constellation · name · tier ·
+lanes` and **no coordinates** — the map is a topology, not a geometry. The right fix is *not* to add
+x/y to the engine: that would put presentation data inside `state_hash`. Derive a **deterministic
+seeded layout from the lane graph**, pinned once so the map does not swim between Reckonings (a
+spectator reads position as meaning; drifting nodes destroy that). Constellations give a natural
+clustering and tiers a natural radial order — Commons at the centre, frontier at the rim, which is
+also the risk gradient the whole `graduate` decision is about.
+
 ### Still open, and each is a deliberate choice rather than a gap
 - **Pooled goods are not raidable** (D11), and the blocker moved rather than cleared. Offices now
   exist, so *who defends it* has an answer — but a syndicate treasury holds **currency**, and raids
