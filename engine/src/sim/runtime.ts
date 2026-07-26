@@ -2885,6 +2885,44 @@ export class Runtime {
     return {
       ledger: this.ledger,
       obligations: this.liveObligations(),
+      // ── INV-26 HAD NEVER SEEN A STRUCTURE ───────────────────────────────────
+      //
+      // The invariant whose entire job is bounded growth — scar #3, an unbounded array that became
+      // an OOM and a disk DoS — always took its skip branch: *"no serialized structures supplied;
+      // the cap walker only sees what it is handed"*. Nothing in `src/` ever supplied `capped`, and
+      // `requireAllInvariants` defaults to false, so the skip was SILENT. Scar #14b inside the
+      // invariant layer, which is the highest-irony defect in this repo.
+      //
+      // **Wiring is OPT-IN per structure, and that is not timidity.** `checkInv26`'s rule is that
+      // *"an array with no declared cap is itself a violation"* — correctly, since scar #3's lesson
+      // was not "cap the arrays we thought of". So handing it a book with one undeclared array would
+      // halt the world on a healthy tick. Structures join this list as their caps are declared and
+      // verified, one at a time.
+      //
+      // The grant book goes first because both its caps are real published constants with real
+      // consequences: `MAX_GRANTS` bounds `state_hash` and every capture, and `MAX_GRANT_SPENDS`
+      // THROWS with no pruning anywhere — so the A6 core loop dies permanently at 16,384 draws. An
+      // invariant that can see that number approach is worth more than one that cannot see anything.
+      //
+      // D14 §5 carries the full array map for the remaining eighteen tables.
+      capped: [
+        {
+          label: 'grant',
+          // Through the state table, because that is the serialised shape INV-26 walks and the one
+          // that reaches `state_hash` — capturing the book any other way would check a different
+          // object than the one growth actually threatens.
+          value: grantsStateTable(
+            () => this.grantBook,
+            () => {
+              /* read-only here: INV-26 never restores */
+            },
+          ).capture(),
+          caps: [
+            { path: 'grants', max: MAX_GRANTS },
+            { path: 'spends', max: MAX_GRANT_SPENDS },
+          ],
+        },
+      ],
       presence: this.world,
       roleFills: this.ventures.roleFills(),
       events: this.events,
