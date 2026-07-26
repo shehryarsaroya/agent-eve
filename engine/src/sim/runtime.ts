@@ -6861,32 +6861,22 @@ export class Runtime {
       map: this.world.map,
       tick: ctx.tick,
     });
-    for (const row of rows) {
-      this.emitRow({
-        tick: ctx.tick,
-        kind: 'works.extracted',
-        rulesVersion: RULES_VERSION,
-        visibility: 'PUBLIC',
-        audience: [],
-        // Nobody acted: extraction is the world giving up what a place yields, on a rule.
-        actorPrincipalId: null,
-        onBehalfOfPrincipalId: null,
-        grantId: null,
-        eventFamilyId: `works::${row.works}`,
-        parentEventId: null,
-        // A place giving up what it yields is the map's own motion, and §11.2 makes the map
-        // public. The QUANTITY is safe for the same reason the Charge's `due` is: it is fixed
-        // by the tier and the occupant count, both public, and is never a function of what
-        // the holder already has in store.
-        isPublic: true,
-        publicAt: ctx.tick,
-        declassifyAt: ctx.tick,
-        provenanceClass: 'FACT',
-        actedOnStateVersion: ctx.frozenStateVersion,
-        decisionSource: null,
-        payload: { works: row.works, system: row.system, holder: row.holder, qty: row.qty },
-      });
-    }
+    // ── EXTRACTION IS A ROUTINE TICK AND EMITS NO EVENT ───────────────────────
+    //
+    // This emitted one `PUBLIC` event per WORKS per TICK, and `soak.test.ts` caught it the moment
+    // the heuristic cast started building: the event ledger went from 204 rows to 2,194 in the same
+    // run. At 288 ticks a Reckoning across a 30-system map that is an unbounded flood into the
+    // PERMANENT record, for the least interesting thing in the game.
+    //
+    // A3 already draws this line: *"Jobs and operations are durable intents with stop conditions.
+    // Creating one costs an action; its routine ticks do not."* Raising a WORKS is the decision and
+    // keeps its event; extracting from it is the routine tick.
+    //
+    // Nothing is lost. The **postings** record every unit that moved and INV-7 reconciles them, so
+    // the value is auditable to the minor unit. The **frame** carries cumulative `extracted` per
+    // WORKS, so a viewer sees the total. What disappears is a per-tick narration nobody reads,
+    // which is the definition of noise in an append-only record.
+    void rows;
   }
 
   /**
