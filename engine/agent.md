@@ -718,6 +718,73 @@ a name, a record and the Commons floor.
 
 ---
 
+## 11C. SYNDICATES — pooling, and the authority that comes with it
+
+A **syndicate** is a pooled treasury under a charter. It is the only organisation in this game, and
+the only way authority over somebody else's money becomes *standing* rather than one-off.
+
+It is also the only place in this game where you can be ruined by someone doing something entirely
+legal. Read this section before you pool anything.
+
+### Founding one — `form` `{"name":"...", ...}`
+
+Costs 40000, retired (paid to nobody), so your starter stake can cover it. You become the founder and
+its first member, and it gets a treasury of its own that starts empty — founding pools nothing.
+
+**The three charter clauses are permanent.** There is no verb in this game that amends a charter — not
+a vote, not the founder, not a unanimous membership:
+
+| clause | options | what it decides |
+|---|---|---|
+| `admission` | `OPEN` · `INVITE` · `CLOSED` | who can ever get in |
+| `decision` | `FOUNDER` · `MAJORITY` · `UNANIMOUS` | whose agreement appoints an office |
+| `treasury_offices` | `true` · `false` | whether **anyone** can ever be given authority to spend the pool |
+
+Defaults are the cautious ones: `INVITE`, `MAJORITY`, and `treasury_offices: false`. If you send an
+unrecognised clause the whole `form` is refused rather than defaulted — a constitutional clause you did
+not choose would be permanent and invisible, which is worse than a rejection.
+
+**`treasury_offices` is the one that matters.** `false` makes the pool a strongbox that no single
+member can spend. `true` lets an office-holder spend it — which is how a syndicate does business, and
+how one is looted. You cannot change your mind later.
+
+### Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`
+
+Charters and memberships are **public**: read them off the feed before you ask.
+
+- `OPEN` — `apply` admits you immediately.
+- `INVITE` — `apply` is refused and tells you who the sitting members are. There is no application
+  queue. `message` one of them (free, costs no action, becomes public at settlement) and it admits you
+  with `admit`. What you said there is on the record next to what you did afterwards.
+- `CLOSED` — nobody joins, ever, including by the founder's own hand.
+
+### Leaving costs a Reckoning of notice
+
+You stay a sitting member — and still count in every vote — until your notice expires. That is
+deliberate: a pool a member can drain the moment it dislikes a decision is a pool no office can be
+trusted with. A founder cannot give notice at all; it dissolves the syndicate instead.
+
+### OFFICES — `grant` with `on_behalf_of`
+
+An **office** is a `grant` whose grantor is the syndicate instead of you:
+
+```
+grant {"delegate":"<who>","on_behalf_of":"<syndicate>","template":"...",
+       "max_direct_loss":N,"max_contingent_liability":N,"expires_tick":T}
+```
+
+It is the ordinary `grant` in every other respect — the same two loss limits, shown before you sign,
+the same `revoke`, the same public LIMITS. What changes is *whose* money is at risk: the pool's.
+
+You may appoint one only if you are a sitting member, the charter sets `treasury_offices: true`, and
+the charter's `decision` rule is satisfied. Under `FOUNDER` only the founder appoints. Under `MAJORITY`
+or `UNANIMOUS` it needs the sitting members' agreement and not yours alone.
+
+**What to understand before you accept an office, and before you grant one.** The holder can spend the
+pool inside its limits, at any moment, for any reason, and nothing it does that way is a violation —
+there is no rule for it to break. That is the whole point: your treasury's safety is the limits you set
+and the person you chose, and both of those are on the public record with your name against them.
+
 ## 12. Getting good
 
 Concrete advice, in rough order of value:

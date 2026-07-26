@@ -32,6 +32,7 @@ import {
   WORKS_SPINUP_TICKS,
   YIELD_PER_TICK,
 } from '../../src/works/params.js';
+import { FOUNDING_COST_MINOR } from '../../src/syndicate/params.js';
 import { readFileSync } from 'node:fs';
 // The engine's own sentence about the exit from the Commons. Imported rather than copied,
 // which is the whole point of this file: a copy would be a third version of the rule.
@@ -505,5 +506,53 @@ describe('agent.md warns about the one verb whose meaning depends on a parameter
   it('names what each kind commits you to, so the choice is not a coin flip', () => {
     expect(AGENT_MD).toContain('Legal in the Commons');
     expect(AGENT_MD).toContain('Invalid in the Commons');
+  });
+});
+
+describe('agent.md teaches the syndicate rules an agent cannot discover by trying', () => {
+  /**
+   * Two of these are unrecoverable if the agent learns them the hard way.
+   *
+   * A charter is permanent, so a founder that misreads `treasury_offices` has built the wrong
+   * organisation forever and cannot fix it. And an office-holder can empty a pool inside its limits
+   * without violating anything, which means a principal that grants one without understanding that
+   * has not been betrayed by a bug — it has been betrayed by the mechanic working, which is A6.
+   *
+   * The numbers are pinned to the engine for the reason §11A's are: params.ts marks them
+   * *(calibrate)*, so the next tuning pass changes one file and the prose keeps promising the old
+   * figure unless something goes red.
+   */
+  it('says a charter can never be amended, in as many words', () => {
+    expect(AGENT_MD).toContain('The three charter clauses are permanent');
+    expect(AGENT_MD).toContain('no verb in this game that amends a charter');
+  });
+
+  it('names all three clauses and every option, so no choice is made blind', () => {
+    for (const option of ['OPEN', 'INVITE', 'CLOSED', 'FOUNDER', 'MAJORITY', 'UNANIMOUS']) {
+      expect(AGENT_MD, `${option} must be documented`).toContain(option);
+    }
+    expect(AGENT_MD).toContain('treasury_offices');
+    expect(AGENT_MD, 'and the consequence of the dangerous setting').toContain('how one is looted');
+  });
+
+  it('quotes the founding cost the engine charges', () => {
+    expect(AGENT_MD).toContain(`Costs ${String(FOUNDING_COST_MINOR)}`);
+  });
+
+  it('explains that an office-holder spending the pool breaks no rule (A6)', () => {
+    // The single most important sentence in the section. An agent that thinks abuse is illegal will
+    // not price the risk, and A6 is explicit that there is no betray() verb and no dice roll.
+    expect(AGENT_MD).toContain('nothing it does that way is a violation');
+    expect(AGENT_MD).toContain('there is no rule for it to break');
+  });
+
+  it('tells an applicant what to do when INVITE refuses it', () => {
+    // Otherwise the refusal is a dead end and the agent concludes syndicates are broken.
+    // Matched across the line wrap: agent.md is hard-wrapped, so a phrase pinned as one line is a
+    // phrase that breaks the next time somebody reflows a paragraph.
+    expect(AGENT_MD.replace(/\s+/g, ' ')).toContain('There is no application queue');
+    // Backtick-tolerant: agent.md marks up verb names, so a literal phrase match is really a match
+    // against the markdown as well as the words.
+    expect(AGENT_MD.replace(/\s+/g, ' ')).toMatch(/`?message`? one of them.*admits you/);
   });
 });
