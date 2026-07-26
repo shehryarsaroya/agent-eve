@@ -185,8 +185,26 @@ export class Journal {
 
   health(): JournalHealth {
     const backlog = this.queue.length;
+    // NOTHING DURABLE YET, WHILE TICKS HAVE BEEN PUBLISHED, IS NEVER HEALTHY.
+    //
+    // The thresholds above exist to stop one transient write error from flapping the
+    // alarm, and they are right for that. They are wrong for the case they let through
+    // in production: partitions ran out, EVERY insert failed with "no partition of
+    // relation event found for row", and health read
+    // `durableTick: -1, headTick: 2305, backlog: 2, healthy: true` — because two
+    // consecutive failures is under a threshold of three. The world was publishing ticks
+    // that could never become durable, and the next restart replayed to the last durable
+    // tick and lost nine ticks of history.
+    //
+    // A counter of recent failures cannot see that, because the condition is not "some
+    // writes failed lately", it is "the record does not exist". Publishing without
+    // persisting is the whole hazard, so it is asserted directly rather than inferred
+    // from a rate.
+    const publishedNothingDurable = this.head >= 0 && this.durable < 0;
     const healthy =
-      this.consecutiveFailures < FAILURE_ALARM_THRESHOLD && backlog <= BACKLOG_ALARM;
+      !publishedNothingDurable &&
+      this.consecutiveFailures < FAILURE_ALARM_THRESHOLD &&
+      backlog <= BACKLOG_ALARM;
     return {
       durableTick: this.durable,
       headTick: this.head,

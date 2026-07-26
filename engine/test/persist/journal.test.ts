@@ -171,3 +171,37 @@ describe('the persistence-failure policy', () => {
     expect((await store.ticksSince(-1)).length).toBe(4);
   }, 30_000);
 });
+
+describe('publishing without persisting is never healthy', () => {
+  it('a journal with a head and NOTHING durable is unhealthy, whatever the failure count', async () => {
+    // Observed in production: partitions ran out, every insert failed with "no partition
+    // of relation event found for row", and health read durableTick -1 / headTick 2305 /
+    // backlog 2 / healthy TRUE — because two consecutive failures is under a threshold of
+    // three. The world was publishing ticks that could never become durable, and the next
+    // restart replayed to the last durable tick and lost nine ticks of history.
+    //
+    // A counter of recent failures cannot see that: the condition is not "some writes
+    // failed lately", it is "the record does not exist".
+    const runtime = new Runtime({ seed: SEED });
+    const alwaysFails = {
+      init: () => Promise.resolve(),
+      appendTick: () =>
+        Promise.reject(new Error('no partition of relation "event" found for row')),
+      writeSnapshot: () => Promise.resolve(),
+      recordEnrollment: () => Promise.resolve(),
+      masterSeed: () => Promise.resolve(null),
+      latestSnapshot: () => Promise.resolve(null),
+      ticksSince: () => Promise.resolve([]),
+      enrollments: () => Promise.resolve([]),
+    };
+    const journal = new Journal(alwaysFails as never);
+    journal.record(runtime, runtime.runTick());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const health = journal.health();
+    expect(health.headTick).toBeGreaterThanOrEqual(0);
+    expect(health.durableTick).toBeLessThan(0);
+    expect(health.consecutiveFailures).toBeLessThan(3); // under the flap threshold
+    expect(health.healthy, 'nothing durable while ticks publish must be unhealthy').toBe(false);
+  });
+});

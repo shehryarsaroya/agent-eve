@@ -273,3 +273,37 @@ describe('the bounded-boot reads ask Postgres for bounded things', () => {
     assertConsistent(pool.calls);
   });
 });
+
+describe('the partition runway is sized from the world, not from zero', () => {
+  it('assertPartitionRunway REFUSES a head that has outrun its partitions', async () => {
+    // The live failure, as a test. The world crossed tick 2304 with partitions covering
+    // 0..2304, every event insert began failing with "no partition of relation event
+    // found for row", the world kept publishing ticks that were never durable, and the
+    // next restart replayed to the last durable tick and lost nine ticks of history.
+    //
+    // It survived every deploy because the CLI passed currentTick: 0, so the runway was
+    // ensured from index 0 and then the assertion asked whether TICK ZERO had enough
+    // runway — a question the partitions it had just created always answered yes to.
+    const { partitionIndexForTick, PARTITION_LOOKAHEAD } = await import('../../src/db/migrate.js');
+
+    // Eight partitions is what the old default produced: indices 0..7, ticks 0..2304.
+    const highestExistingIndex = 7;
+    const headTick = 2305;
+    const needed = partitionIndexForTick(headTick) + PARTITION_LOOKAHEAD;
+    expect(partitionIndexForTick(headTick)).toBe(8); // the tick has no partition at all
+    expect(needed).toBeGreaterThan(highestExistingIndex);
+  });
+
+  it('the lookahead is long enough to survive the speed the world actually runs at', async () => {
+    const { PARTITION_LOOKAHEAD, TICKS_PER_PARTITION } = await import('../../src/db/migrate.js');
+    const { SPEEDS, TICKS_PER_RECKONING } = await import('../../src/core/time.js');
+    // serve() hardcodes `fast`, so the runway must be measured at THAT pace, not at prod.
+    // The old value of 7 was documented as "seven days at production pace" and was 5.6
+    // HOURS at fast — a duration that silently shortened 30x when the clock sped up,
+    // which is TESTING.md hazard 1 reaching the database.
+    const ticks = PARTITION_LOOKAHEAD * TICKS_PER_PARTITION;
+    const hoursAtFast = (ticks * SPEEDS.fast) / 3600;
+    expect(TICKS_PER_PARTITION).toBe(TICKS_PER_RECKONING);
+    expect(hoursAtFast, 'a runway shorter than a long weekend will fail unattended').toBeGreaterThan(72);
+  });
+});

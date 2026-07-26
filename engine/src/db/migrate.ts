@@ -24,11 +24,33 @@ import { TICKS_PER_RECKONING } from '../core/time.js';
 export const TICKS_PER_PARTITION = TICKS_PER_RECKONING;
 
 /**
- * How far ahead partitions must always exist. Seven Reckonings is seven days at
- * production pace — long enough that a failed cron is noticed by a human before
- * it becomes an outage.
+ * How far ahead partitions must always exist.
+ *
+ * ## This was seven, and seven took the live world down
+ *
+ * The old value was 7 with the note "seven Reckonings is seven days at production pace".
+ * Both halves of that failed together:
+ *
+ *   1. **The pace is not production.** `serve()` hardcodes `fast`, where a tick is 10 s,
+ *      so a Reckoning is 48 minutes and seven of them is **5.6 hours** — not seven days.
+ *      A runway denominated in Reckonings silently shortens by 30× the moment the clock
+ *      speeds up, which is TESTING.md hazard 1 (durations that do not scale) reaching the
+ *      database.
+ *   2. **Nothing extended it.** The CLI ran `migrate({ currentTick: 0 })`, so the runway
+ *      was always computed from tick 0 and always produced the same eight partitions.
+ *
+ * What that looked like in production: the world crossed tick 2304, every `event` insert
+ * began failing with *"no partition of relation event found for row"*, the world kept
+ * publishing ticks that were **never durable**, and the next restart replayed to the last
+ * durable tick and **silently lost nine ticks of history**. That is exactly the
+ * published-before-durable hazard, arriving through an operational hole rather than a
+ * crash.
+ *
+ * 200 is deliberately far more than any lookahead argument needs: an empty partition costs
+ * almost nothing, and the failure mode at the far end is a silent loss of the permanent
+ * record. At `fast` this is ~6.6 days; at `prod` it is over six months.
  */
-export const PARTITION_LOOKAHEAD = 7;
+export const PARTITION_LOOKAHEAD = 200;
 
 const PARTITIONED_TABLES = ['event', 'event_audience', 'posting', 'action_log'] as const;
 const APPEND_ONLY_TABLES = ['event', 'event_audience', 'posting', 'action_log'] as const;
@@ -231,6 +253,36 @@ export async function migrate(opts: MigrateOptions): Promise<void> {
 
 // Run directly: `npm run migrate`
 if (import.meta.url === `file://${process.argv[1] ?? ''}`) {
-  await migrate({ appRole: 'compact_app', currentTick: 0 });
+  // ── READ THE REAL HEAD, NEVER ZERO ────────────────────────────────────────
+  //
+  // This used to pass `currentTick: 0`, which is why the runway never moved: partitions
+  // were always ensured from index 0, and `assertPartitionRunway` was then asked whether
+  // tick 0 had enough runway — a question those same partitions always answered yes to.
+  // The assertion validated the thing it had just created and never consulted the world,
+  // which is the self-witnessing shape this project keeps rediscovering. It passed on
+  // every deploy while the live world ran out of partitions and stopped being durable.
+  await migrate({ appRole: 'compact_app', currentTick: await headTick() });
   process.stdout.write('migration complete\n');
+}
+
+/**
+ * The furthest tick the journal has actually written, or 0 for a fresh database.
+ *
+ * Deliberately read from the record rather than taken as an argument: a runway sized from
+ * anything other than where the world really is, is a runway nobody is checking.
+ */
+export async function headTick(): Promise<number> {
+  const client = new Client();
+  await client.connect();
+  try {
+    const res = await client.query<{ head: string | null }>('SELECT MAX(tick) AS head FROM event');
+    const raw = res.rows[0]?.head ?? null;
+    const parsed = raw === null ? 0 : Number.parseInt(raw, 10);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    // A fresh database has no `event` table yet; migrating from tick 0 is correct there.
+    return 0;
+  } finally {
+    await client.end();
+  }
 }
