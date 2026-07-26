@@ -822,8 +822,38 @@ class Ring<T> {
  */
 export class DecisionCensus {
   private readonly byTick = new Map<number, Map<DecisionSource, number>>();
+  private liveFrom = -1;
 
   constructor(private readonly windowTicks: number = CENSUS_WINDOW_TICKS) {}
+
+  /**
+   * Mark where **live play** starts, and forget everything before it.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **REPLAY POISONS THE CENSUS, AND THAT MADE THE SCAR #14b ALARM CRY WOLF.**
+   * Boot replays the action log to rebuild the world, and every replayed decision is
+   * recorded here — correctly, because it *did* happen. But the health floor asks a
+   * question about *now*: "are the expensive players actually deciding?" Measured after a
+   * real deploy at tick 4142: the window held 1,960 replayed HEURISTIC decisions against
+   * 330 LIVE, so the deciding share read 1,441 bps against a 2,500 floor and `/health`
+   * reported the world unhealthy **while the cast was demonstrably spending money.**
+   *
+   * The absolute-tick warmup could not catch it: `tick >= warmup` is long true by the time
+   * a mature world restarts. So the census is told where live play begins, and the floor
+   * is judged on live ticks only. Left alone this would have gone red for roughly five
+   * hours after every deploy — and an alarm that is red while nothing is broken is how
+   * scar #14b happened in the first place: a signal nobody reads.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  beginLivePlay(tick: number): void {
+    this.liveFrom = tick;
+    for (const t of [...this.byTick.keys()]) if (t < tick) this.byTick.delete(t);
+  }
+
+  /** The tick live play began, or -1 if it never was marked (a fresh world). */
+  get liveFromTick(): number {
+    return this.liveFrom;
+  }
 
   record(tick: number, source: DecisionSource): void {
     const row = this.byTick.get(tick) ?? new Map<DecisionSource, number>();
@@ -843,7 +873,8 @@ export class DecisionCensus {
       HEURISTIC: 0,
       FALLBACK: 0,
     };
-    for (const row of this.byTick.values()) {
+    for (const [t, row] of this.byTick) {
+      if (t < this.liveFrom) continue;
       for (const [source, n] of row) out[source] += n;
     }
     return out;

@@ -180,6 +180,12 @@ export function buildHealth(
    * of the kind that becomes a bug the moment anybody diffs them.
    */
   const tick = Math.max(0, runtime.engine.tick);
+  // Ticks of LIVE play, not absolute world age. A restarted world is old and its census is
+  // young, and judging the second by the first is what made this alarm cry wolf after every
+  // deploy — the exact "red while nothing is broken" failure that trains an operator to stop
+  // reading it. -1 means live play was never marked, so absolute age is the honest answer.
+  const liveFrom = runtime.census.liveFromTick;
+  const livePlayed = liveFrom < 0 ? tick : tick - liveFrom;
   const bySource = runtime.census.distribution();
 
   let total = 0;
@@ -199,12 +205,12 @@ export function buildHealth(
         'Replay the failed tick from its triple, fix the defect, and issue a signed resume.',
     );
   }
-  if (tick >= warmup && total === 0) {
+  if (livePlayed >= warmup && total === 0) {
     failures.push(
       `no decisions in the last ${String(CENSUS_WINDOW_TICKS)} ticks. The process is alive and nothing is ` +
         'playing, which is exactly the failure a liveness check cannot see (scar #14b).',
     );
-  } else if (tick >= warmup && shareBps < floorBps) {
+  } else if (livePlayed >= warmup && shareBps < floorBps) {
     failures.push(
       `only ${String(shareBps)} bps of decisions came from LIVE, INTENT or DELEGATE (floor ${String(floorBps)} bps). ` +
         `The rest are HEURISTIC or FALLBACK, which means the expensive path is not being taken — the world looks ` +

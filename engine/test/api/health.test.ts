@@ -20,6 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HeuristicCast } from '../../src/cast/index.js';
+import { DecisionCensus } from '../../src/sim/runtime.js';
 import { PATHS, agent, enrol, harness, raw, signed, tick, type Harness } from './harness.js';
 
 let h: Harness;
@@ -260,5 +261,53 @@ describe('A4 — the clock is a decision, and a window must outlast an inference
     // And the speed the defect shipped under does NOT satisfy it — so this test would
     // have caught the original configuration.
     expect(SHORTEST_WINDOW_TICKS * SPEEDS.fast).toBeLessThan(SLOW_INFERENCE_SECONDS);
+  });
+});
+
+describe('a restarted world is judged on live play, not on the log it re-read', () => {
+  /**
+   * Measured on the real deploy that produced this test: the world came back at tick 4142
+   * with 1,960 replayed HEURISTIC decisions and 330 LIVE in the census window, so the
+   * deciding share read 1,441 bps against a 2,500 floor and `/health` called the world
+   * unhealthy **while the cast was demonstrably spending money** (`spentMicros` climbing,
+   * `capTripped` false).
+   *
+   * The absolute-tick warmup cannot catch this — `tick >= warmup` is long true by the time a
+   * mature world restarts — so it would have gone red for roughly five hours after every
+   * deploy. That is the failure that matters more than the number: an alarm that is red while
+   * nothing is broken is one an operator stops reading, which is how scar #14b happened.
+   */
+  /**
+   * **GUARDED TWICE, AND SAYING SO RATHER THAN LETTING ONE LOOK PROVEN.** `beginLivePlay`
+   * deletes the earlier rows *and* `distribution()` skips anything below `liveFrom`, so
+   * removing either one alone leaves this test green — it only fails when both are mutated
+   * out. The redundancy is deliberate (a row recorded for an old tick after the mark would
+   * still be excluded), but a reader is entitled to know that neither line is individually
+   * load-bearing, because "the mutation did not bite" is otherwise indistinguishable from
+   * "the test does not check anything".
+   */
+  it('forgets replayed decisions when live play begins, so the floor is not pre-poisoned', () => {
+    const census = new DecisionCensus();
+    // Replay: a long stretch of heuristic decisions, exactly as boot re-reads them.
+    for (let tick = 1; tick <= 200; tick += 1) {
+      for (let i = 0; i < 10; i += 1) census.record(tick, 'HEURISTIC');
+    }
+    expect(census.total, 'the replayed decisions are recorded, because they did happen').toBe(2_000);
+
+    // Boot finishes here.
+    census.beginLivePlay(201);
+    expect(census.total, 'and are excluded the moment live play is marked').toBe(0);
+    expect(census.liveFromTick).toBe(201);
+
+    // Live play: a healthy mix the floor should accept.
+    for (let i = 0; i < 8; i += 1) census.record(201, 'LIVE');
+    for (let i = 0; i < 2; i += 1) census.record(201, 'HEURISTIC');
+    const d = census.distribution();
+    expect(d.LIVE, 'live decisions counted').toBe(8);
+    expect(d.HEURISTIC, 'and only the live-tick heuristics alongside them').toBe(2);
+    expect(
+      Math.trunc((d.LIVE * 10_000) / census.total),
+      'so the share reflects the world that is running, not the log it replayed',
+    ).toBe(8_000);
   });
 });

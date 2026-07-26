@@ -1976,6 +1976,10 @@ async function bootTheWorld(
         gate.progress(tick, head);
       },
     });
+    // Replay is over; everything after this tick is live play. The census forgets the
+    // replayed decisions so the scar #14b floor judges the world that is running now
+    // rather than the log it just re-read (see DecisionCensus.beginLivePlay).
+    runtime.census.beginLivePlay(runtime.engine.tick);
     return { ...shell, outcome };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
