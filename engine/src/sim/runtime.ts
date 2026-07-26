@@ -512,6 +512,7 @@ import {
   Book as SyndicateBook,
   syndicateAsPrincipal,
   syndicateStateTable,
+  type SyndicateId,
 } from '../syndicate/book.js';
 import { CHARTER_STATEMENT, parseCharter } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR, MAX_SYNDICATES_PER_PRINCIPAL } from '../syndicate/params.js';
@@ -4043,6 +4044,82 @@ export class Runtime {
     return `g:${String(tick)}:${stamp}` as GrantId;
   }
 
+
+  /**
+   * The syndicate this `grant` is made on behalf of, or null for an ordinary personal grant.
+   *
+   * Read from `on_behalf_of`, so an ordinary grant is untouched and an office is one extra field.
+   */
+  private officeGrantorFor(req: ActionRequest): PrincipalId | null {
+    const named = readString(req.params, ['on_behalf_of', 'syndicate', 'onBehalfOf']);
+    if (named === null) return null;
+    const id = named as unknown as SyndicateId;
+    return this.syndicateBook.at(id) === null ? null : (named as PrincipalId);
+  }
+
+  /**
+   * Why this principal may not appoint an office on that syndicate's behalf, or null.
+   *
+   * Three gates, and each is a clause somebody relied on when they pooled their goods:
+   *
+   *   1. **Membership.** An outsider appointing an office over a treasury it did not fund is not a
+   *      betrayal story, it is a missing check.
+   *   2. **`treasury_offices`.** The constitutional clause a member reads before pooling. False
+   *      makes the pool a strongbox that no single holder can spend; refusing here is the charter
+   *      doing the only job it has.
+   *   3. **The decision rule.** FOUNDER appoints alone. MAJORITY and UNANIMOUS require the sitting
+   *      members to approve, which is `approve` — and that verb has no handler yet, so those
+   *      charters genuinely cannot appoint. Stated as the RULE it is rather than as a missing
+   *      feature, because the rule is true either way: a majority charter requires a majority. The
+   *      reachability gap is measured in `/health` instead of hidden in a hint.
+   */
+  private officeGrantorFault(req: ActionRequest, tick: number): WorldResult<null> | null {
+    const named = readString(req.params, ['on_behalf_of', 'syndicate', 'onBehalfOf']);
+    if (named === null) return null;
+    const id = named as unknown as SyndicateId;
+    const row = this.syndicateBook.at(id);
+    if (row === null) {
+      return reject(
+        'A2',
+        `there is no syndicate ${named}. on_behalf_of names a SYNDICATE whose treasury the office ` +
+          'would have authority over, and you must be a sitting member of it.',
+      );
+    }
+    if (!this.syndicateBook.isMember(id, req.principal, tick)) {
+      return reject(
+        'A2',
+        `you are not a sitting member of ${named}, so you cannot appoint an office over its treasury. ` +
+          'Join it first.',
+      );
+    }
+    if (!row.charter.treasuryOffices) {
+      return reject(
+        'A15',
+        `${named}'s charter sets treasury_offices FALSE, so no office may ever be given authority over ` +
+          'its pool — it is a strongbox, not a business, and every member joined on that basis. A charter ' +
+          'is permanent and there is no verb that amends one, so this will not change: `form` a different ' +
+          'syndicate if you need one that can appoint.',
+      );
+    }
+    if (row.charter.decision !== 'FOUNDER') {
+      return reject(
+        'A2',
+        `${named}'s charter sets decision ${row.charter.decision}, so appointing an office needs the ` +
+          `agreement of its ${String(this.syndicateBook.sittingMembers(id, tick).length)} sitting member(s) ` +
+          'and not yours alone. A charter is permanent: a syndicate that wanted a single appointer would ' +
+          'have been founded with decision FOUNDER.',
+      );
+    }
+    if (req.principal !== row.founder) {
+      return reject(
+        'A2',
+        `${named}'s charter sets decision FOUNDER, so only ${row.founder} may appoint an office over its ` +
+          'treasury. That is the constitution its members joined under.',
+      );
+    }
+    return null;
+  }
+
   /**
    * `grant` — hand a delegate scoped authority over your OWN stores (SPEC §8, A6). This
    * is the core loop's issuance half: the grant, and the worst case accepted before
@@ -4060,7 +4137,21 @@ export class Runtime {
    * travels.
    */
   private vGrant(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
-    const grantor = req.principal;
+    // ── AN OFFICE IS A GRANT WHOSE GRANTOR IS A SYNDICATE (§365) ─────────────
+    //
+    // This is the whole of "offices" and it is deliberately not a new mechanism. A grant already
+    // carries scoped authority over another principal's stores, shows `max_direct_loss` and
+    // `max_contingent_liability` before signing (A7), has INV-22/23 on the spend counter and
+    // lives inside `state_hash`. Pointing the grantor at a syndicate inherits every one of those
+    // guarantees rather than re-deriving them, which is exactly why D11 chose to make a syndicate
+    // a principal-shaped subject in the first place. If this had turned out expensive, the design
+    // would have been wrong.
+    //
+    // The CHARTER decides who may appoint, and it is constitutional — so this is not a permission
+    // check bolted on, it is the constitution being enforced at the one moment it matters.
+    const officeFault = this.officeGrantorFault(req, ctx.tick);
+    if (officeFault !== null) return officeFault;
+    const grantor = this.officeGrantorFor(req) ?? req.principal;
     const delegate = readString(req.params, ['delegate', 'to', 'grantee']) as PrincipalId | null;
     if (delegate === null) {
       return reject(
