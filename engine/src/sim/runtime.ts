@@ -3102,6 +3102,24 @@ export class Runtime {
   bufferSizes(): Readonly<Record<string, number>> {
     return {
       talk: this.talk.size,
+      // ── IS THE ECONOMY'S ONLY FAUCET ACTUALLY REACHABLE? ────────────────────
+      //
+      // `works` counts structures and `worksOnline` counts the ones past spin-up; together
+      // they say whether PRODUCE is doing anything at all. `worksAffordableBy` is the one
+      // that matters, and it exists because of a question the build could not answer by
+      // reading: a WORKS costs EARNINGS, and D10b measured that a principal which has
+      // graduated and posted a bond has a transferable balance of exactly ZERO until income
+      // lifts it clear of the whole endowment floor.
+      //
+      // So the mechanic could be correct, tested, offered, rendered — and still unreachable
+      // for every principal in a live world. That is not a state a test can report, because
+      // it depends on how much the economy has actually paid out. It is reported here so the
+      // answer is continuously visible rather than discovered a week later.
+      works: this.worksBook.size,
+      worksOnline: this.worksBook.liveInOrder().filter((w) => this.engine.tick >= w.onlineAtTick).length,
+      worksAffordableBy: [...this.world.holdingByPrincipal.keys()].filter(
+        (principal) => freeCash(this.ledger, principal) >= WORKS_COST_MINOR,
+      ).length,
       offers: this.offers.size,
       claims: this.claims.size,
       pendingFills: this.pendingFills.length,
