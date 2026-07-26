@@ -51,6 +51,21 @@ import type { FrameSource } from './render.js';
  * | `raidLines` | `PUBLIC` | "movement on public lanes"; a raid is the map's motion, and its outcome is a public loss (A5) |
  * | `claimLines` | `PUBLIC` | sovereignty and its published legal state — the argument is below, in full |
  * | `modelBadges` | `PUBLIC` | which model runs a cast seat; not a game fact |
+ * | `worksLines` | `PUBLIC` | a structure on the map, its tier-fixed yield, and what the world has already handed over |
+ *
+ * **`worksLines` argues itself the same way `claimLines` had to**, and it is worth stating
+ * because this is the third mechanic to reach the frame and the second one where the tempting
+ * field is a stockpile. `yieldPerTick` is fixed by tier and published in `agent.md`'s own table.
+ * `occupants` counts structures each of which was raised by a `PUBLIC` event. `sharePerTick` is
+ * the first divided by the second — arithmetic any stranger can already do, and A2 requires
+ * known arithmetic be exact and machine-readable. `extracted` is cumulative units the world has
+ * **handed over**, one `PUBLIC` event per tick, so it is a sum of completed public acts.
+ *
+ * **What a works line may never carry:** units the holder still has, anywhere (`SENSED`);
+ * Reckonings of Levy or Charge the extraction would cover, which is a public rate divided by a
+ * private stockpile and is the rejected fuel gauge exactly; anything that moves when a convoy
+ * arrives. `extracted` and *held* differ by everything the holder has spent, and only the first
+ * is on the public side of §11.2.
  *
  * **`claimLines` had to argue for itself hardest of all, because this is the exact field the
  * "fuel gauge" would have been.** The argument, field by field:
@@ -121,6 +136,7 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'authorityLines',
   'raidLines',
   'claimLines',
+  'worksLines',
 ]);
 
 export class ProjectionError extends Error {}

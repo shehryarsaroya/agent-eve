@@ -303,7 +303,12 @@ import {
   type RaidSchedule,
   type RaidView,
 } from '../predation/index.js';
-import { MAX_FRAME_CLAIM_LINES, MAX_RAID_LINES, type ClaimLine } from '../frames/contract.js';
+import {
+  MAX_FRAME_CLAIM_LINES,
+  MAX_RAID_LINES,
+  type ClaimLine,
+  type WorksLine,
+} from '../frames/contract.js';
 import {
   ANCHOR_QTY,
   Book as SovereigntyBook,
@@ -5646,6 +5651,40 @@ export class Runtime {
   }
 
 
+  /**
+   * The worked systems, as the map marks them (A13).
+   *
+   * Every field is a property of the map, a count of public structures, or a quantity the world
+   * has already handed over — never a stock reading. `projection.ts` carries that argument in
+   * full, and `assertFrameBudgets` refuses a line whose legend disagrees with its own numbers.
+   */
+  worksLines(tick: number): readonly WorksLine[] {
+    const out: WorksLine[] = [];
+    for (const works of this.worksBook.liveInOrder()) {
+      const tier = tierOf(this.world.map, works.system);
+      const occupants = this.worksBook.liveAt(works.system).length;
+      const online = tick >= works.onlineAtTick;
+      out.push({
+        works: works.id,
+        system: works.system,
+        holder: works.holder,
+        yieldPerTick: YIELD_PER_TICK[tier],
+        occupants,
+        // Divided by the ONLINE count, which is what `sharesAt` actually divides by — a mark
+        // quoting a share the engine does not pay would be the frame contradicting the ledger.
+        sharePerTick: online
+          ? Math.trunc(
+              YIELD_PER_TICK[tier] /
+                Math.max(1, this.worksBook.liveAt(works.system).filter((w) => tick >= w.onlineAtTick).length),
+            )
+          : 0,
+        legend: online ? 'EXTRACTING' : `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`,
+        extracted: works.extracted,
+      });
+    }
+    return out;
+  }
+
   // ── WORKS: the production structure (§10.2, A15) ─────────────────────────
 
   /** Every live WORKS this principal holds. Read by `observe` and by the frame. */
@@ -7685,6 +7724,7 @@ export class Runtime {
       // that no field on this line is a function of anything a claimant STILL holds: the
       // rejected "fuel gauge" was exactly that, and this is what replaced it.
       claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
+      worksLines: this.worksLines(outcome.tick),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

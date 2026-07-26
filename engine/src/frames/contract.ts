@@ -45,6 +45,15 @@ export const MAX_AUTHORITY_LINES = 12;
 export const MAX_RAID_LINES = 6;
 /** §17: claim tints drawn per frame. A map of who owes what, not a heatmap. */
 export const MAX_FRAME_CLAIM_LINES = 12;
+
+/**
+ * Works marks a frame may draw. *(calibrate)*
+ *
+ * Larger than the claim budget because a WORKS is cheaper than a claim and there will be more
+ * of them — but still a legend a viewer reads rather than a heatmap. Overflow drops the LEAST
+ * crowded, so the contested seams survive the cut.
+ */
+export const MAX_FRAME_WORKS_LINES = 16;
 /** §14.3: seconds per segment. Human time — never scaled by TICK_SECONDS. */
 export const SEGMENT_SECONDS = { min: 30, max: 45 } as const;
 
@@ -208,6 +217,42 @@ export interface RaidLine {
  * `projection.ts` will refuse it.
  * ══════════════════════════════════════════════════════════════════════════
  */
+/**
+ * A worked system, as the map draws it (A13).
+ *
+ * ## The signature, and what it may not be
+ *
+ * A claim *tints* a system; a WORKS **marks** it, and the mark carries the one number a
+ * viewer needs to read the map economically: how many are working the place and therefore how
+ * thin each share has become. A system with four WORKS on it is visibly a contested seam, and
+ * that is the picture the whole mechanic exists to produce.
+ *
+ * **What it must never carry, and this is the same boundary the Charge's fuel gauge failed.**
+ * Not the holder's stockpile, not units in store anywhere, not "Reckonings of Levy covered".
+ * Every field below is either a property of the MAP (`yieldPerTick`, fixed by tier and
+ * published), a count of public structures (`occupants`, each one raised by a `PUBLIC` event),
+ * or a quantity the world has already **handed over** (`extracted`, cumulative, an event per
+ * tick). Past-handover and present-holdings are the two sides of §11.2's line, and everything
+ * here is on the safe one — `extracted` says what a place has given up, never what its holder
+ * still has.
+ */
+export interface WorksLine {
+  readonly works: string;
+  /** The system the mark sits on. */
+  readonly system: SystemId;
+  readonly holder: PrincipalId;
+  /** What the PLACE yields per tick. A property of the map, identical for every viewer. */
+  readonly yieldPerTick: number;
+  /** Live WORKS standing there. The crowding, which is the economic story. */
+  readonly occupants: number;
+  /** This one's share per tick at today's crowding. `yieldPerTick / occupants`, published. */
+  readonly sharePerTick: number;
+  /** `EXTRACTING` · `SPINNING UP 6 ticks` — the two words a viewer reads. */
+  readonly legend: string;
+  /** Cumulative units the place has HANDED OVER to this WORKS. Never a stock reading. */
+  readonly extracted: number;
+}
+
 export interface ClaimLine {
   readonly claim: string;
   /** The system the tint sits on. */
@@ -322,6 +367,7 @@ export interface ReckoningFrame {
   readonly raidLines: readonly RaidLine[];
   /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
   readonly claimLines: readonly ClaimLine[];
+  readonly worksLines: readonly WorksLine[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
@@ -422,6 +468,52 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     }
     if (line.lost < 0 || line.demand < 0) {
       problems.push(`raid ${line.raid} renders a negative quantity`);
+    }
+  }
+
+  // ── A WORKS MARK MAY NOT CONTRADICT ITS OWN NUMBERS ──────────────────────
+  //
+  // The claim tint's guard, in the same voice, for the same reason: the frame is a stranger's
+  // only source, so a mark reading EXTRACTING beside a dead share — or SPINNING UP beside a live
+  // one — is a published contradiction with nothing to check it against.
+  if (frame.worksLines.length > MAX_FRAME_WORKS_LINES) {
+    problems.push(
+      `${frame.worksLines.length} works marks, budget is ${MAX_FRAME_WORKS_LINES} — a legend a viewer reads, not a heatmap`,
+    );
+  }
+  for (const line of frame.worksLines) {
+    const extracting = line.legend === 'EXTRACTING';
+    if (extracting && line.sharePerTick <= 0) {
+      problems.push(
+        `${line.works} reads EXTRACTING but quotes a share of ${line.sharePerTick} — the legend and the number disagree`,
+      );
+    }
+    if (!extracting && line.sharePerTick !== 0) {
+      problems.push(
+        `${line.works} reads "${line.legend}" but quotes a live share of ${line.sharePerTick}; a WORKS that is not online extracts nothing`,
+      );
+    }
+    if (line.sharePerTick > line.yieldPerTick) {
+      problems.push(
+        `${line.works} quotes ${line.sharePerTick} from a place that yields ${line.yieldPerTick} — a share can never exceed the whole`,
+      );
+    }
+    if (line.occupants < 1) {
+      problems.push(`${line.works} is drawn on ${line.system} with ${line.occupants} occupants`);
+    }
+    // ── THE REJECTED FUEL GAUGE, REFUSED BY SHAPE RATHER THAN BY REVIEW ─────
+    //
+    // `extracted` — what the world has already HANDED OVER — is admissible: a sum of completed
+    // public acts, one event per tick. What the holder still HAS is `SENSED`, and the two differ
+    // by everything it has spent. Any field naming a stock, a reserve or a coverage figure is a
+    // private stockpile wearing a public formula, which is exactly what the Charge's proposed
+    // gauge was, and an outside critic had to catch that one.
+    for (const key of Object.keys(line)) {
+      if (/cover|remaining|reserve|stock|gauge|held/i.test(key)) {
+        problems.push(
+          `${line.works} carries "${key}", which reads as a stockpile — §11.2 makes hold values SENSED, and a public rate over a private stock is the fuel gauge that was rejected`,
+        );
+      }
     }
   }
 

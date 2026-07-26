@@ -161,6 +161,11 @@
   <div id="raids"></div>
 </section>
 
+<section id="works-sec" style="margin-top:38px">
+  <h2 class="sec">Worked places</h2>
+  <div id="works"></div>
+</section>
+
 <section id="tribute-sec" style="margin-top:38px">
   <h2 class="sec">The Levy</h2>
   <div id="tribute"></div>
@@ -369,6 +374,31 @@ function renderRaids(lines, m) {
   }).join('');
 }
 
+// WORKS: the map's economic signature (A13). A place yields a fixed amount and every WORKS
+// on it divides that amount, so the story here is CROWDING — a system with four marks is a
+// contested seam, and that is what the ordering surfaces.
+//
+// What is deliberately absent: any figure about what a holder still HAS. `extracted` is what
+// the world has already handed over and is a sum of public acts; a stockpile is SENSED, and
+// `assertFrameBudgets` refuses a line carrying one by shape rather than by review.
+function renderWorks(lines, m) {
+  const el = $('works');
+  if (!lines || lines.length === 0) {
+    el.innerHTML = '<div class="empty">Nowhere is being worked. Goods only enter this world through a WORKS, so an empty list means the economy is living off enrolment grants and running down.</div>';
+    return;
+  }
+  el.innerHTML = lines.map((l) => {
+    const crowded = (l.occupants || 1) > 1;
+    return `
+    <div class="card">
+      <p class="hl">${esc(l.system || '')} &mdash; ${esc(String(l.legend || '').toLowerCase())}</p>
+      <p class="tn">${named(l.holder, m)} takes ${money(l.sharePerTick)} a tick of ${money(l.yieldPerTick)}${crowded ? ' &middot; <strong>shared ' + l.occupants + ' ways</strong>' : ' &middot; alone here'}</p>
+      <p class="tn">${money(l.extracted)} handed over so far</p>
+      ${crowded ? '<p class="tn">Every arrival makes every share here thinner. The yield belongs to the place, not to whoever built first.</p>' : ''}
+    </div>`;
+  }).join('');
+}
+
 // The Levy's signature (§5.2): who owed tribute and who actually paid it. Nineteen of
 // these were in the frame and none reached the screen.
 function renderTribute(lines, m) {
@@ -410,6 +440,7 @@ async function load() {
     renderRundown(frame.rundown);
     renderAuthority(frame.authorityLines, handleMap(frame));
     renderRaids(frame.raidLines, handleMap(frame));
+    renderWorks(frame.worksLines, handleMap(frame));
     renderTribute(frame.tributeLines, handleMap(frame));
     renderTicker(frame.ticker);
   } catch (e) {

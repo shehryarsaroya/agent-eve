@@ -39,6 +39,8 @@ import {
   type RaidLine,
   MAX_FRAME_CLAIM_LINES,
   type ClaimLine,
+  MAX_FRAME_WORKS_LINES,
+  type WorksLine,
   type ReckoningFrame,
   type RundownSegment,
   type TributeLine,
@@ -96,6 +98,7 @@ export interface FrameSource {
    * second source for. This file cannot know what is owed and must not guess.
    */
   readonly claimLines?: readonly ClaimLine[];
+  readonly worksLines?: readonly WorksLine[];
 }
 
 export interface SettledView {
@@ -373,6 +376,19 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // is the first thing dropped — but it is still *drawn* while there is room, because a
     // map that showed only failing claims would make the screen quietest on the night the
     // most upkeep was supplied.
+    // Ordered by CROWDING first, because the story a viewer should find is the contested
+    // seam, not the biggest total. A sort by `extracted` would rank the oldest WORKS top
+    // forever and make the map a leaderboard of tenure.
+    worksLines: (src.worksLines ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          b.occupants - a.occupants ||
+          b.yieldPerTick - a.yieldPerTick ||
+          compareIds(a.system, b.system) ||
+          compareIds(a.works, b.works),
+      )
+      .slice(0, MAX_FRAME_WORKS_LINES),
     claimLines: (src.claimLines ?? [])
       .slice()
       .sort(
@@ -405,6 +421,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     authorityLines: [],
     raidLines: [],
     claimLines: [],
+    worksLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],
