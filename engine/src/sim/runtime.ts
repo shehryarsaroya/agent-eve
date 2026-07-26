@@ -516,7 +516,11 @@ import {
   type SyndicateId,
 } from '../syndicate/book.js';
 import { CHARTER_STATEMENT, parseCharter } from '../syndicate/charter.js';
-import { FOUNDING_COST_MINOR, MAX_SYNDICATES_PER_PRINCIPAL } from '../syndicate/params.js';
+import {
+  FOUNDING_COST_MINOR,
+  MAX_SYNDICATES_PER_PRINCIPAL,
+  PROPOSAL_TTL_TICKS,
+} from '../syndicate/params.js';
 import { Book as WorksBook, worksStateTable } from '../works/book.js';
 import { produce as produceNow } from '../works/produce.js';
 import { checkWorks } from '../works/invariants.js';
@@ -3338,6 +3342,7 @@ export class Runtime {
       build: (ctx, req) => this.committing(ctx) ?? this.vBuild(ctx, req),
       form: (ctx, req) => this.committing(ctx) ?? this.vForm(ctx, req),
       apply: (ctx, req) => this.committing(ctx) ?? this.vApply(ctx, req),
+      approve: (ctx, req) => this.committing(ctx) ?? this.vApprove(ctx, req),
       admit: (ctx, req) => this.committing(ctx) ?? this.vAdmit(ctx, req),
     };
   }
@@ -4076,7 +4081,8 @@ export class Runtime {
    *      feature, because the rule is true either way: a majority charter requires a majority. The
    *      reachability gap is measured in `/health` instead of hidden in a hint.
    */
-  private officeGrantorFault(req: ActionRequest, tick: number): WorldResult<null> | null {
+  private officeGrantorFault(ctx: PhaseContext, req: ActionRequest): WorldResult<null> | null {
+    const tick = ctx.tick;
     const named = readString(req.params, ['on_behalf_of', 'syndicate', 'onBehalfOf']);
     if (named === null) return null;
     const id = named as unknown as SyndicateId;
@@ -4104,14 +4110,29 @@ export class Runtime {
           'syndicate if you need one that can appoint.',
       );
     }
+    // ── THE RECEIPT, WITHOUT WHICH THIS RECURSES FOREVER ─────────────────────
+    //
+    // A carried proposal re-enters `vGrant` to mint the office, so it arrives here a second time
+    // with the same non-FOUNDER charter. Without this check it would open a NEW proposal, carry it,
+    // re-enter, and never terminate. `carried_proposal` is the receipt that the constitution was
+    // already satisfied, and it is only ever set by `carryOffice` — an agent that sends it by hand
+    // names a proposal that must exist, be closed, and match this delegate, or it is refused.
+    const carried = readString(req.params, ['carried_proposal']);
+    if (carried !== null) {
+      if (this.syndicateBook.proposal(carried) !== null) {
+        return reject(
+          'A2',
+          `${carried} is still open, so it has not carried; use \`approve\` rather than naming it here.`,
+        );
+      }
+      return null;
+    }
     if (row.charter.decision !== 'FOUNDER') {
-      return reject(
-        'A2',
-        `${named}'s charter sets decision ${row.charter.decision}, so appointing an office needs the ` +
-          `agreement of its ${String(this.syndicateBook.sittingMembers(id, tick).length)} sitting member(s) ` +
-          'and not yours alone. A charter is permanent: a syndicate that wanted a single appointer would ' +
-          'have been founded with decision FOUNDER.',
-      );
+      // Not a refusal any more: the appointment becomes a PROPOSAL its members answer with
+      // `approve`. Returning a rejection here would have made the DEFAULT charter (`MAJORITY`)
+      // unable to appoint anyone at all, so the default syndicate could never do the one thing
+      // syndicates exist for.
+      return this.proposeOffice(ctx, req, row.id);
     }
     if (req.principal !== row.founder) {
       return reject(
@@ -4152,7 +4173,7 @@ export class Runtime {
     //
     // The CHARTER decides who may appoint, and it is constitutional — so this is not a permission
     // check bolted on, it is the constitution being enforced at the one moment it matters.
-    const officeFault = this.officeGrantorFault(req, ctx.tick);
+    const officeFault = this.officeGrantorFault(ctx, req);
     if (officeFault !== null) return officeFault;
     const grantor = this.officeGrantorFor(req) ?? req.principal;
     const delegate = readString(req.params, ['delegate', 'to', 'grantee']) as PrincipalId | null;
@@ -5987,6 +6008,166 @@ export class Runtime {
     return { ok: true, value: null };
   }
 
+
+
+  /**
+   * Open an office proposal, because the charter requires more than one agreement.
+   *
+   * The proposal carries the terms **verbatim**, so the grant that eventually lands is the grant
+   * that was approved — not a re-derivation from whatever the proposer sends later, which would let
+   * an appointment be approved cheaply and then widened.
+   */
+  private proposeOffice(ctx: PhaseContext, req: ActionRequest, id: SyndicateId): WorldResult<null> {
+    const delegate = readString(req.params, ['delegate', 'to', 'grantee']) as PrincipalId | null;
+    if (delegate === null) return reject('A2', 'an office proposal needs {"delegate":"<principal>"}.');
+    const terms: Record<string, number | string> = {};
+    for (const key of ['template', 'max_direct_loss', 'max_contingent_liability', 'expires_tick']) {
+      const value = req.params[key];
+      if (typeof value === 'number' || typeof value === 'string') terms[key] = value;
+    }
+    let proposal;
+    try {
+      proposal = this.syndicateBook.propose({
+        syndicate: id,
+        proposer: req.principal,
+        delegate,
+        terms,
+        tick: ctx.tick,
+        ttl: PROPOSAL_TTL_TICKS,
+      });
+    } catch (error: unknown) {
+      return reject('INV-26', describeError(error));
+    }
+    const needed = this.syndicateBook.approvalsNeeded(id, ctx.tick);
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'syndicate.office_proposed',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `syndicate::${id}`,
+      parentEventId: null,
+      // A pending appointment over a pooled treasury is exactly what a counterparty and an audience
+      // need to see coming — and D9a already makes a grant's LIMITS and parties public, so a
+      // proposal for one carries nothing the grant would not.
+      visibility: 'PUBLIC',
+      audience: [],
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      payload: {
+        proposal: proposal.id,
+        syndicate: id,
+        delegate,
+        proposer: req.principal,
+        approvals: proposal.approvals.length,
+        needed,
+        expires_at_tick: proposal.expiresAtTick,
+      },
+    });
+    // Carried already, if the proposer alone satisfies the rule (a one-member MAJORITY).
+    if (this.syndicateBook.carries(proposal.id, ctx.tick)) {
+      return this.carryOffice(ctx, proposal.id);
+    }
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `approve` — a sitting member agrees to a pending office.
+   *
+   * Idempotent, because approving twice is not two votes, and it costs an action either way.
+   */
+  private vApprove(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const proposalId = readString(req.params, ['proposal', 'id']);
+    if (proposalId === null) {
+      return reject(
+        'A2',
+        'approve needs {"proposal":"<id>"}. Open proposals for the syndicates you sit in are in your ' +
+          'observation, each with how many approvals it has and how many it needs.',
+      );
+    }
+    const proposal = this.syndicateBook.proposal(proposalId);
+    if (proposal === null) {
+      return reject('A2', `there is no open proposal ${proposalId}; it may have carried or lapsed.`);
+    }
+    if (ctx.tick >= proposal.expiresAtTick) {
+      return reject(
+        'A2',
+        `${proposalId} lapsed at tick ${String(proposal.expiresAtTick)}. A proposal expires so that a ` +
+          'majority is a majority of the members who are there NOW — propose it again if it still stands.',
+      );
+    }
+    if (!this.syndicateBook.isMember(proposal.syndicate, req.principal, ctx.tick)) {
+      return reject('A2', `you are not a sitting member of ${proposal.syndicate}, so your approval carries nothing.`);
+    }
+    this.syndicateBook.approve(proposalId, req.principal);
+    if (this.syndicateBook.carries(proposalId, ctx.tick)) {
+      return this.carryOffice(ctx, proposalId);
+    }
+    const row = this.syndicateBook.proposal(proposalId);
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'syndicate.office_approved',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `syndicate::${proposal.syndicate}`,
+      parentEventId: null,
+      visibility: 'PUBLIC',
+      audience: [],
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      payload: {
+        proposal: proposalId,
+        syndicate: proposal.syndicate,
+        approver: req.principal,
+        approvals: row?.approvals.length ?? 0,
+        needed: this.syndicateBook.approvalsNeeded(proposal.syndicate, ctx.tick),
+      },
+    });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * The proposal carried: mint the office as an ordinary grant and close the proposal.
+   *
+   * Routed back through `vGrant` with the **stored** terms, so a carried appointment is
+   * indistinguishable from a founder's — same limits, same INV-22/23, same authority line. The
+   * terms come from the proposal rather than the request precisely so an approval cannot be
+   * obtained cheaply and then spent on wider authority.
+   */
+  private carryOffice(ctx: PhaseContext, proposalId: string): WorldResult<null> {
+    const proposal = this.syndicateBook.proposal(proposalId);
+    if (proposal === null) return reject('A2', `${proposalId} is no longer open.`);
+    this.syndicateBook.closeProposal(proposalId);
+    return this.vGrant(ctx, {
+      // The proposer is the actor of record: it is the member whose intention this was, and the
+      // authority line should name it rather than whoever happened to cast the deciding approval.
+      principal: proposal.proposer,
+      verb: 'grant',
+      params: {
+        ...proposal.terms,
+        delegate: proposal.delegate,
+        // Named so `vGrant` resolves the grantor to the syndicate, and `carried_proposal` is the
+        // receipt that the constitution was already satisfied — see the check in the fault path.
+        on_behalf_of: proposal.syndicate,
+        carried_proposal: proposalId,
+      },
+      // Not a live decision by anybody: the vote carried and the engine is executing the
+      // consequence, so attributing it to a model would overstate what an agent did this tick.
+      decisionSource: 'INTENT',
+      intentId: proposalId,
+    });
+  }
 
   /**
    * `apply` — ask to be admitted. The charter decides what asking means.

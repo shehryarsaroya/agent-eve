@@ -24,7 +24,12 @@ import type { PrincipalId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 import { readArray, readInt, readObject, readString, SnapshotError, type StateTable } from '../tick/snapshot.js';
 import { captureCharter, restoreCharter, type Charter } from './charter.js';
-import { MAX_MEMBERS, MAX_SYNDICATES, MAX_SYNDICATES_PER_PRINCIPAL } from './params.js';
+import {
+  MAX_MEMBERS,
+  MAX_OPEN_PROPOSALS,
+  MAX_SYNDICATES,
+  MAX_SYNDICATES_PER_PRINCIPAL,
+} from './params.js';
 
 export type SyndicateId = string & { readonly __brand: 'SyndicateId' };
 
@@ -49,6 +54,27 @@ export interface Membership {
   readonly leavesAtTick: number | null;
 }
 
+/**
+ * An office appointment awaiting the agreement the charter demands.
+ *
+ * Kept in the syndicate book rather than a book of its own, deliberately: it is already inside
+ * `state_hash`, already in `CHECKPOINT_REQUIRED_TABLES`, and already rolled back with an aborted
+ * tick. A separate table would need all three wired again and would be one more thing
+ * `books-in-the-hash` has to catch somebody forgetting.
+ */
+export interface Proposal {
+  readonly id: string;
+  readonly syndicate: SyndicateId;
+  readonly proposer: PrincipalId;
+  readonly delegate: PrincipalId;
+  /** The terms, carried verbatim so the grant that lands is the grant that was approved. */
+  readonly terms: Readonly<Record<string, number | string>>;
+  readonly openedAtTick: number;
+  readonly expiresAtTick: number;
+  /** Sitting members who have approved. The proposer counts — proposing is agreeing. */
+  readonly approvals: readonly PrincipalId[];
+}
+
 export interface SyndicateRecord {
   readonly id: SyndicateId;
   readonly name: string;
@@ -64,6 +90,7 @@ export class SyndicateError extends Error {}
 
 export class Book {
   private readonly rows = new Map<SyndicateId, SyndicateRecord>();
+  private readonly proposals = new Map<string, Proposal>();
 
   /**
    * Is this principal id actually a syndicate?
@@ -195,8 +222,108 @@ export class Book {
     this.rows.set(id, { ...row, dissolvedAtTick: tick });
   }
 
+  // ── office proposals (the charter's decision rule, made a process) ────────
+
+  /** Open, unexpired proposals for one syndicate, canonical order. */
+  openProposals(id: SyndicateId, tick: number): readonly Proposal[] {
+    return [...this.proposals.values()]
+      .filter((p) => p.syndicate === id && tick < p.expiresAtTick)
+      .sort((a, b) => compareIds(a.id, b.id));
+  }
+
+  proposal(proposalId: string): Proposal | null {
+    return this.proposals.get(proposalId) ?? null;
+  }
+
+  propose(args: {
+    readonly syndicate: SyndicateId;
+    readonly proposer: PrincipalId;
+    readonly delegate: PrincipalId;
+    readonly terms: Readonly<Record<string, number | string>>;
+    readonly tick: number;
+    readonly ttl: number;
+  }): Proposal {
+    if (this.openProposals(args.syndicate, args.tick).length >= MAX_OPEN_PROPOSALS) {
+      throw new SyndicateError(
+        `${args.syndicate} already has ${String(MAX_OPEN_PROPOSALS)} open proposals, which is the cap. ` +
+          'Resolve or let one lapse first.',
+      );
+    }
+    const id = `prop:${args.syndicate}:${args.delegate}:${String(args.tick)}`;
+    if (this.proposals.has(id)) throw new SyndicateError(`${id} already exists`);
+    const row: Proposal = {
+      id,
+      syndicate: args.syndicate,
+      proposer: args.proposer,
+      delegate: args.delegate,
+      terms: args.terms,
+      openedAtTick: args.tick,
+      expiresAtTick: args.tick + args.ttl,
+      // Proposing IS agreeing. A proposer that had to approve its own proposal separately would be
+      // spending two actions to express one intention.
+      approvals: [args.proposer],
+    };
+    this.proposals.set(id, row);
+    return row;
+  }
+
+  /** Record an approval. Idempotent: approving twice is not two votes. */
+  approve(proposalId: string, member: PrincipalId): Proposal {
+    const row = this.proposals.get(proposalId);
+    if (row === undefined) throw new SyndicateError(`${proposalId} does not exist or has lapsed`);
+    if (row.approvals.includes(member)) return row;
+    const next: Proposal = { ...row, approvals: [...row.approvals, member].sort(compareIds) };
+    this.proposals.set(proposalId, next);
+    return next;
+  }
+
+  closeProposal(proposalId: string): void {
+    this.proposals.delete(proposalId);
+  }
+
+  /**
+   * Approvals needed for a proposal to carry, by the charter's own rule.
+   *
+   * Counted against the members sitting **now**, not at proposal time, which is why proposals
+   * expire: a majority has to be a majority of the people who are actually there.
+   */
+  approvalsNeeded(id: SyndicateId, tick: number): number {
+    const row = this.rows.get(id);
+    if (row === undefined) return Number.POSITIVE_INFINITY;
+    const sitting = this.sittingMembers(id, tick).length;
+    switch (row.charter.decision) {
+      case 'FOUNDER':
+        return 1;
+      case 'UNANIMOUS':
+        return sitting;
+      case 'MAJORITY':
+      default:
+        return Math.floor(sitting / 2) + 1;
+    }
+  }
+
+  /**
+   * Has this proposal met the charter's threshold, counting only members still sitting?
+   *
+   * **A departed member's approval does not count**, and that is not tidiness: without it,
+   * notice-then-appoint is a way to carry a vote using people who have left, which is the same
+   * exploit expiry closes on the time axis. `test/syndicate/offices.spec.ts` mutation-tests it,
+   * because the first version of this guard was written and then found to be unproven.
+   */
+  carries(proposalId: string, tick: number): boolean {
+    const row = this.proposals.get(proposalId);
+    if (row === undefined || tick >= row.expiresAtTick) return false;
+    const sitting = new Set(this.sittingMembers(row.syndicate, tick).map(String));
+    const live = row.approvals.filter((a) => sitting.has(String(a))).length;
+    return live >= this.approvalsNeeded(row.syndicate, tick);
+  }
+
   get size(): number {
     return this.rows.size;
+  }
+
+  get proposalCount(): number {
+    return this.proposals.size;
   }
 
   capture(): CanonicalValue {
@@ -217,6 +344,18 @@ export class Book {
               leavesAtTick: m.leavesAtTick,
             })),
           dissolvedAtTick: r.dissolvedAtTick,
+        })),
+      proposals: [...this.proposals.values()]
+        .sort((a, b) => compareIds(a.id, b.id))
+        .map((p) => ({
+          id: p.id,
+          syndicate: p.syndicate,
+          proposer: p.proposer,
+          delegate: p.delegate,
+          terms: p.terms,
+          openedAtTick: p.openedAtTick,
+          expiresAtTick: p.expiresAtTick,
+          approvals: [...p.approvals].sort(compareIds),
         })),
     };
   }
@@ -249,6 +388,30 @@ export class Book {
       };
       if (this.rows.has(row.id)) throw new SnapshotError(`${where}: duplicate syndicate ${row.id}`);
       this.rows.set(row.id, row);
+    }
+    this.proposals.clear();
+    for (const [i, raw] of readArray(root['proposals'] ?? [], 'syndicate.proposals').entries()) {
+      const where = `syndicate.proposals[${String(i)}]`;
+      const o = readObject(raw, where);
+      const row: Proposal = {
+        id: readString(o, 'id', where),
+        syndicate: readString(o, 'syndicate', where) as SyndicateId,
+        proposer: readString(o, 'proposer', where) as PrincipalId,
+        delegate: readString(o, 'delegate', where) as PrincipalId,
+        terms: readObject(o['terms'] ?? {}, `${where}.terms`) as Readonly<Record<string, number | string>>,
+        openedAtTick: readInt(o, 'openedAtTick', where),
+        expiresAtTick: readInt(o, 'expiresAtTick', where),
+        // Read as strings or refuse. `String(unknown)` on a nested object yields "[object Object]",
+        // which would restore a principal id nobody has and let a proposal carry on a phantom vote.
+        approvals: readArray(o['approvals'] ?? [], `${where}.approvals`).map((a, k) => {
+          if (typeof a !== 'string') {
+            throw new SnapshotError(`${where}.approvals[${String(k)}] must be a principal id`);
+          }
+          return a as PrincipalId;
+        }),
+      };
+      if (this.proposals.has(row.id)) throw new SnapshotError(`${where}: duplicate proposal ${row.id}`);
+      this.proposals.set(row.id, row);
     }
   }
 }

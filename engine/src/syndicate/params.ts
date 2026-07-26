@@ -63,3 +63,23 @@ export const FOUNDING_COST_MINOR: Minor = minor(40_000);
  * lands — which is also what makes it *watchable*.
  */
 export const WITHDRAWAL_NOTICE_TICKS = 288;
+
+/**
+ * Open office proposals one syndicate may hold. *(calibrate)*
+ *
+ * Bounded because INV-26 requires it, and because an unbounded proposal list is a way to make a
+ * syndicate's own observation unreadable — spam 500 appointments and the members can no longer see
+ * the one that matters. Small on purpose: an org with eight pending appointments has a decision
+ * problem, not a tooling problem.
+ */
+export const MAX_OPEN_PROPOSALS = 8;
+
+/**
+ * Ticks a proposal stands before it lapses.
+ *
+ * One Reckoning. A proposal that never expires is a permanent latent authority: approve four of
+ * eight members today, wait a month for the fifth, and the appointment lands on a membership that
+ * has completely changed. Expiry means a majority is a majority **of the people who are there now**,
+ * which is the only reading that makes the vote mean anything.
+ */
+export const PROPOSAL_TTL_TICKS = 288;

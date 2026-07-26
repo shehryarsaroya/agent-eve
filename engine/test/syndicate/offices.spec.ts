@@ -151,20 +151,150 @@ describe('the charter is what a member relied on, and it is enforced here', () =
     expect(corrections(member)).toMatch(/only .* may appoint/);
   });
 
-  it('refuses a MAJORITY charter as a RULE, not as a missing feature', async () => {
-    // The distinction matters. `approve` has no handler yet, so a majority charter genuinely cannot
-    // appoint — but the refusal states the constitution ("your charter needs the agreement of its
-    // sitting members"), which is true whether or not the verb exists. An engine limitation phrased
-    // as a rule is a lie; a rule that happens to also be a limitation is just the rule.
+  it('turns a MAJORITY appointment into a PROPOSAL rather than refusing it', async () => {
+    // This test used to assert a REFUSAL, and the refusal was honest at the time — `approve` had no
+    // handler, so a majority charter genuinely could not appoint. But MAJORITY is the DEFAULT
+    // charter, so the default syndicate could never do the one thing syndicates exist for. Now the
+    // appointment becomes a proposal its members answer.
     const founder = await enrolled('democrat');
     const officer = await enrolled('officer5');
     const id = await foundedBy(founder, { decision: 'MAJORITY', treasury_offices: true });
+
     await act(founder, 'grant', { ...OFFICE, delegate: officer.principalId, on_behalf_of: id });
     run(1);
-    const said = corrections(founder);
-    expect(said).toMatch(/decision MAJORITY/);
-    expect(said, 'names whose agreement is needed').toMatch(/sitting member/);
-    expect(said, 'and never blames an unbuilt verb').not.toMatch(/not implemented|unbuilt|coming soon/i);
+    expect(corrections(founder), 'proposing must not be refused').toBe('');
+
+    // A single-member MAJORITY is one approval, and proposing IS agreeing — so it carries at once
+    // and the office exists. A founder that had to approve its own proposal separately would spend
+    // two actions to express one intention.
+    const office = h.runtime.grants
+      .forDelegate(officer.principalId as PrincipalId)
+      .find((g) => String(g.grantor) === id);
+    expect(office, 'a one-member majority carries immediately').toBeDefined();
+  });
+
+  it('needs a real majority once there is more than one member', async () => {
+    const founder = await enrolled('chair6');
+    const second = await enrolled('member6');
+    const third = await enrolled('member6b');
+    const officer = await enrolled('officer6');
+    const id = await foundedBy(founder, {
+      decision: 'MAJORITY',
+      treasury_offices: true,
+      admission: 'OPEN',
+    });
+    for (const m of [second, third]) {
+      h.runtime.syndicates.admit(id as never, m.principalId as PrincipalId, h.runtime.engine.tick);
+    }
+    run(1);
+    expect(h.runtime.syndicates.sittingMembers(id as never, h.runtime.engine.tick).length).toBe(3);
+
+    await act(founder, 'grant', { ...OFFICE, delegate: officer.principalId, on_behalf_of: id });
+    run(1);
+    // Three members means two approvals. The proposer has one, so nothing exists yet.
+    expect(
+      h.runtime.grants.forDelegate(officer.principalId as PrincipalId).length,
+      'one of three is not a majority, so no authority exists yet',
+    ).toBe(0);
+    const open = h.runtime.syndicates.openProposals(id as never, h.runtime.engine.tick);
+    expect(open.length, 'the proposal stands, waiting').toBe(1);
+    expect(h.runtime.syndicates.approvalsNeeded(id as never, h.runtime.engine.tick)).toBe(2);
+
+    // The second approval carries it, and the office that lands is an ordinary grant.
+    await act(second, 'approve', { proposal: open[0]?.id });
+    run(1);
+    expect(corrections(second), 'approving must not be refused for a sitting member').toBe('');
+    const office = h.runtime.grants
+      .forDelegate(officer.principalId as PrincipalId)
+      .find((g) => String(g.grantor) === id);
+    expect(office, 'the second approval carries the appointment').toBeDefined();
+    expect(Number(office?.maxDirectLoss), 'on the TERMS THAT WERE APPROVED, not resent ones').toBe(
+      OFFICE.max_direct_loss,
+    );
+    expect(
+      h.runtime.syndicates.openProposals(id as never, h.runtime.engine.tick).length,
+      'and the proposal is closed, so it cannot carry twice',
+    ).toBe(0);
+  });
+
+  it("does not count a departed member's approval — the threshold drops when they go", async () => {
+    // THE EXPLOIT, and it took two attempts to state correctly. My first version asserted a case
+    // where the guard and the mutation both returned false, so it proved nothing — the mutation
+    // test is the only reason I know this one does.
+    //
+    // The shape is that leaving lowers the BAR as well as removing a voter. Four members need
+    // three approvals. Collect two, one of them from a member who then leaves: now three sit, so
+    // two are needed, and the stale approval plus the lower bar carries an appointment that never
+    // had the agreement it required.
+    const founder = await enrolled('chair8');
+    const leaver = await enrolled('leaver8');
+    const ally = await enrolled('ally8');
+    const fourth = await enrolled('fourth8');
+    const officer = await enrolled('officer8');
+    const id = await foundedBy(founder, {
+      decision: 'MAJORITY',
+      treasury_offices: true,
+      admission: 'OPEN',
+    });
+    for (const m of [leaver, ally, fourth]) {
+      h.runtime.syndicates.admit(id as never, m.principalId as PrincipalId, h.runtime.engine.tick);
+    }
+    run(1);
+    const tickNow = (): number => h.runtime.engine.tick;
+    expect(h.runtime.syndicates.sittingMembers(id as never, tickNow()).length).toBe(4);
+    expect(h.runtime.syndicates.approvalsNeeded(id as never, tickNow()), 'four need three').toBe(3);
+
+    // The leaver proposes (one approval) and an ally agrees (two). Three are needed, so it stands.
+    await act(leaver, 'grant', { ...OFFICE, delegate: officer.principalId, on_behalf_of: id });
+    run(1);
+    const open = h.runtime.syndicates.openProposals(id as never, tickNow());
+    expect(open.length).toBe(1);
+    const proposalId = open[0]?.id ?? '';
+    await act(ally, 'approve', { proposal: proposalId });
+    run(1);
+    expect(
+      h.runtime.grants.forDelegate(officer.principalId as PrincipalId).length,
+      'two of four is not a majority, so nothing exists yet',
+    ).toBe(0);
+
+    // The leaver goes. Three sit, so two are needed — and two approvals are on record, one of them
+    // from somebody who has left.
+    h.runtime.syndicates.giveNotice(id as never, leaver.principalId as PrincipalId, tickNow() + 1);
+    run(2);
+    expect(h.runtime.syndicates.sittingMembers(id as never, tickNow()).length).toBe(3);
+    expect(h.runtime.syndicates.approvalsNeeded(id as never, tickNow()), 'three need two').toBe(2);
+    expect(
+      h.runtime.syndicates.proposal(proposalId)?.approvals.length,
+      'two approvals are still on the record',
+    ).toBe(2);
+
+    // THE ASSERTION: it must not carry, because only ONE of those two approvals is from a member
+    // who is still there.
+    expect(
+      h.runtime.syndicates.carries(proposalId, tickNow()),
+      'a stale approval plus a lowered bar must not carry an appointment',
+    ).toBe(false);
+  });
+
+  it('does not let a non-member approve', async () => {
+    const founder = await enrolled('chair7');
+    const second = await enrolled('member7');
+    const outsider = await enrolled('outsider7');
+    const officer = await enrolled('officer7');
+    const id = await foundedBy(founder, {
+      decision: 'MAJORITY',
+      treasury_offices: true,
+      admission: 'OPEN',
+    });
+    h.runtime.syndicates.admit(id as never, second.principalId as PrincipalId, h.runtime.engine.tick);
+    run(1);
+    await act(founder, 'grant', { ...OFFICE, delegate: officer.principalId, on_behalf_of: id });
+    run(1);
+    const open = h.runtime.syndicates.openProposals(id as never, h.runtime.engine.tick);
+    await act(outsider, 'approve', { proposal: open[0]?.id });
+    run(1);
+    expect(corrections(outsider)).toMatch(/not a sitting member/);
+    expect(h.runtime.grants.forDelegate(officer.principalId as PrincipalId).length).toBe(0);
   });
 });
 
