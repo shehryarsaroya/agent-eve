@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { PrincipalId } from '../../src/core/types.js';
 import { storesAccount } from '../../src/ledger/index.js';
+import { freeCash } from '../../src/market/escrow.js';
 import { FOUNDING_COST_MINOR } from '../../src/syndicate/params.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from '../api/harness.js';
 
@@ -250,5 +251,85 @@ describe('joining is reachable, so a syndicate is not a solo container', () => {
     const said = JSON.stringify(res.json);
     expect(said, 'it must still be the raid answer').toMatch(/hostile act|aimed at/i);
     expect(said, 'and must not have learned about syndicates').not.toMatch(/syndicate/i);
+  });
+});
+
+describe('a treasury that can be filled, because an empty pool is authority over nothing', () => {
+  /**
+   * **The syndicate treasury could hold value and nothing could put value in it.** Measured:
+   * `syndicateAsPrincipal` appeared at exactly two call sites — one read the balance for the frame,
+   * one opened the account at `form`. So every pool was permanently empty, every office was standing
+   * authority over nothing, and A6 at org scale had no stakes in it at all.
+   *
+   * That is the same inertness as an unoffered verb, one layer deeper: not a mechanic an agent cannot
+   * reach, but a mechanic with nothing at the end of it.
+   *
+   * Pooling rides on `apply` rather than spending one of the 40 verb slots: applying puts you in,
+   * applying again deepens the commitment. And it spends EARNINGS only — a pool an office-holder can
+   * spend is exactly the transfer path D7 closed twice already, and this is the largest door yet.
+   */
+  it('pools earnings, and refuses to pool the starter stake (D7 for the third time)', async () => {
+    const founder = agent('treasurer');
+    const funder = agent('income');
+    for (const who of [founder, funder]) expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    const id = await found(founder, { name: 'The Common Purse', treasury_offices: true });
+    expect(id).not.toBeNull();
+    const p = founder.principalId as PrincipalId;
+    const pooledAccount = storesAccount(id as unknown as PrincipalId);
+    expect(h.runtime.ledger.balance(pooledAccount), 'founding pools nothing').toBe(0);
+
+    // With only the grant, a contribution is refused — and says why in D7's own terms.
+    await act(founder, 'apply', { syndicate: id, stake: 10_000 });
+    run(1);
+    const refused = h.runtime.takeCorrections(p).map((c) => c.hint).join(' ');
+    expect(refused, 'the grant cannot reach a pool somebody else can spend').toMatch(/EARNINGS/);
+    expect(refused).toMatch(/starter stake/);
+    expect(h.runtime.ledger.balance(pooledAccount), 'and nothing moved').toBe(0);
+
+    // Income arrives, clearing the endowment floor.
+    h.runtime.ledger.transferCurrency({
+      eventId: 'test.income:pool' as never,
+      tick: h.runtime.engine.tick,
+      from: storesAccount(funder.principalId as PrincipalId),
+      to: storesAccount(p),
+      amount: 200_000 as never,
+    });
+    run(1);
+
+    const spendable = freeCash(h.runtime.ledger, p);
+    expect(spendable, 'income lifts the transferable part above the floor').toBeGreaterThan(0);
+    const stake = Math.min(spendable, 25_000);
+    await act(founder, 'apply', { syndicate: id, stake });
+    run(1);
+    expect(
+      h.runtime.takeCorrections(p).map((c) => c.hint).join(' '),
+      'pooling earnings must not be refused',
+    ).toBe('');
+    expect(h.runtime.ledger.balance(pooledAccount), 'the treasury actually holds it now').toBe(stake);
+  });
+
+  it('the pooled total reaches the frame, so an office is visibly authority over something', async () => {
+    const founder = agent('visible');
+    const funder = agent('income2');
+    for (const who of [founder, funder]) expect((await enrol(h, who)).status).toBe(201);
+    tick(h, 1);
+    const id = await found(founder, { name: 'Seen Company', treasury_offices: true });
+    const p = founder.principalId as PrincipalId;
+    h.runtime.ledger.transferCurrency({
+      eventId: 'test.income:pool2' as never,
+      tick: h.runtime.engine.tick,
+      from: storesAccount(funder.principalId as PrincipalId),
+      to: storesAccount(p),
+      amount: 200_000 as never,
+    });
+    run(1);
+    const stake = Math.min(freeCash(h.runtime.ledger, p), 30_000);
+    await act(founder, 'apply', { syndicate: id, stake });
+    run(1);
+
+    const line = h.runtime.syndicateLines(h.runtime.engine.tick).find((l) => l.syndicate === id);
+    expect(line, 'the syndicate is drawn').toBeDefined();
+    expect(line?.treasuryMinor, 'and the pool it holds is what a counterparty prices').toBe(stake);
   });
 });

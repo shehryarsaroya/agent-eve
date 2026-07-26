@@ -6222,6 +6222,95 @@ export class Runtime {
     });
   }
 
+
+  /**
+   * Put earnings into a syndicate's pool.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`freeCash`, BECAUSE THIS IS THE TRANSFER VERB THE GAME DELIBERATELY LACKED.**
+   * D7's note is explicit that before the market existed the hole was hard to exploit
+   * because *"there is no principal-to-principal transfer verb, and that absence was
+   * quietly doing the work"*. A contribution is exactly such a transfer, and the pool can
+   * be spent by an office-holder — so without this gate an operator founds a syndicate,
+   * takes the office, and has every puppet contribute its endowment to a treasury it
+   * controls. That is D7 reopened for the third time, and by the largest door yet.
+   *
+   * So a contribution spends **earnings only**. A puppet can pool nothing, and a real
+   * agent's pooled capital is capital it produced — which is the whole distinction D7
+   * draws and the reason the cession price draws it too.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private contributeToSyndicate(
+    ctx: PhaseContext,
+    req: ActionRequest,
+    id: SyndicateId,
+  ): WorldResult<null> {
+    const amount = readInt(req.params, ['stake', 'amount', 'contribute']);
+    if (amount === null || amount <= 0) {
+      return reject(
+        'A2',
+        `you are already a member of ${id}. To add to its pool send {"syndicate":"${id}","stake":N} — ` +
+          'a positive integer of currency. It leaves your stores and becomes the syndicate\'s, and ' +
+          'whether anyone can ever spend it is fixed by the charter clause `treasury_offices`, which ' +
+          'cannot change. Read it before you pool anything.',
+      );
+    }
+    const spendable = freeCash(this.ledger, req.principal);
+    if (spendable < amount) {
+      return reject(
+        'A15',
+        `you can pool ${String(spendable)} and asked to pool ${String(amount)}. That figure is your ` +
+          'EARNINGS: locked stores do not count, and neither does the starter stake — a pooled treasury ' +
+          'can be spent by an office-holder, so letting the grant reach it would make free enrolment into ' +
+          'somebody else\'s capital (D7/A15). Earn it by hauling, trading or completing ventures.',
+      );
+    }
+    const pooled = syndicateAsPrincipal(id);
+    const account = storesAccount(pooled);
+    if (this.ledger.account(account) === undefined) {
+      this.ledger.openAccount(account, 'STORES', pooled);
+    }
+    try {
+      this.ledger.transferCurrency({
+        eventId: `syndicate.pool:${id}:${req.principal}:${String(ctx.tick)}` as EventId,
+        tick: ctx.tick,
+        from: storesAccount(req.principal),
+        to: account,
+        amount: minor(amount),
+      });
+    } catch (error: unknown) {
+      return reject('INV-3', `the stake could not be pooled (${describeError(error)}); nothing moved.`);
+    }
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'syndicate.pooled',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `syndicate::${id}`,
+      parentEventId: null,
+      // A pooled treasury is PUBLIC on §6.4's precedent — bond is "public, and any amount — it is
+      // your credit rating" — and a contribution is what moves it. Hiding the inflow while
+      // publishing the total would make the balance unexplainable.
+      visibility: 'PUBLIC',
+      audience: [],
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      payload: {
+        syndicate: id,
+        member: req.principal,
+        staked: amount,
+        treasury: this.ledger.balance(account),
+      },
+    });
+    return { ok: true, value: null };
+  }
+
   /**
    * `apply` — ask to be admitted. The charter decides what asking means.
    *
@@ -6254,6 +6343,39 @@ export class Runtime {
     }
     const id = named as unknown as SyndicateId;
     const row = this.syndicateBook.at(id);
+    // ── AN ALREADY-MEMBER APPLYING AGAIN IS CONTRIBUTING ──────────────────────
+    //
+    // **The syndicate treasury could hold value and nothing could put value in it.** Measured:
+    // `syndicateAsPrincipal` appeared at exactly two call sites — one read the balance for the
+    // frame, one opened the account at `form` — so every pool was permanently empty and every
+    // office was standing authority over nothing. A6 at org scale had no stakes in it at all,
+    // which is the same inertness as an unoffered verb, one layer deeper.
+    //
+    // Pooling is what membership MEANS (§365's "pooled stores"), so it rides on `apply` rather
+    // than spending one of the 40 verb slots: applying puts you in, applying again deepens the
+    // commitment. One concept, not two.
+    //
+    // **This block first landed in `officeGrantorFault` by accident**, because the three-line
+    // `readString → SyndicateId → at(id)` shape appears in three methods and my edit matched the
+    // first one. Every office appointment then routed into the contribution path and eight tests
+    // went red. Anchored on `apply`'s own rejection text now, which is unique to this method.
+    if (row !== null && this.syndicateBook.isMember(id, req.principal, ctx.tick)) {
+      return this.contributeToSyndicate(ctx, req, id);
+    }
+    // ── AN ALREADY-MEMBER APPLYING AGAIN IS CONTRIBUTING ──────────────────────
+    //
+    // **The syndicate treasury could hold value and nothing could put value in it.** Measured:
+    // `syndicateAsPrincipal` appeared at exactly two call sites — one reads the balance for the
+    // frame, one opens the account at `form` — so every pool was permanently empty and every
+    // office was standing authority over nothing. A6 at org scale had no stakes in it at all,
+    // which makes the whole mechanic inert in the same way an unoffered verb is.
+    //
+    // Pooling is what membership MEANS (§365's "pooled stores"), so it rides on `apply` rather
+    // than spending one of the 40 verb slots: applying puts you in, and applying again deepens
+    // the commitment. One concept, not two.
+    if (row !== null && this.syndicateBook.isMember(id, req.principal, ctx.tick)) {
+      return this.contributeToSyndicate(ctx, req, id);
+    }
     if (row === null) {
       return reject(
         'A2',
