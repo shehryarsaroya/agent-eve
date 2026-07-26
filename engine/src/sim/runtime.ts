@@ -1859,6 +1859,17 @@ export class Runtime {
       visibility: 'PUBLIC',
       audience: [],
     });
+    // ── A SECOND OFFER FOR THE SAME ITEM, AND IT IS NOT DEAD CODE ────────────
+    //
+    // `WakeBook.offer` refuses a repeat `(principal, item)` with `ALREADY_OFFERED`, so
+    // for a target that was woken at spawn this is a no-op — and the spawn offer is the
+    // one §5.1 requires, because it comes *before* the thing resolves.
+    //
+    // It fires in exactly one case: a target whose spawn offer was refused for
+    // `BUDGET_SPENT`. That principal was never told about the demand, and the wake book
+    // deliberately does not mark an item offered when it refuses one. Its budget resets
+    // at the Reckoning, so this is the offer that reaches it — and being told you were
+    // raided is the least the record owes somebody it just took goods from.
     ctx.offerWake(outcome.target, 'THREAT', outcome.raid);
   }
 
