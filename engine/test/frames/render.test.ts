@@ -290,7 +290,7 @@ describe('§11.2 — a nightly frame carries the seal FLAG, never the content', 
       rundown: [{ ...seg, sealContent: 'the thing it actually planned' }, ...frame.rundown.slice(1)],
     };
     expect(() => {
-      assertFrameBudgets(smuggled as never);
+      assertFrameBudgets(smuggled);
     }).toThrow(/seal content/i);
   });
 });
@@ -314,6 +314,10 @@ describe('the director must never cut its own climax', () => {
     expect(shown).toContain('v:betrayal-a');
     expect(shown).toContain('v:betrayal-b');
     // And they are still last, because ordering is unchanged — only selection moved.
-    expect(shown.slice(-2).sort()).toEqual(['v:betrayal-a', 'v:betrayal-b']);
+    // Explicit comparator: DET-1 bans a bare .sort(), even in an assertion.
+    expect([...shown.slice(-2)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([
+      'v:betrayal-a',
+      'v:betrayal-b',
+    ]);
   });
 });

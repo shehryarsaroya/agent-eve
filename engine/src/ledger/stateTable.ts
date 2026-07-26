@@ -231,12 +231,22 @@ export function ledgerStateTable(
         exposure: arr(encRoot['exposure'] ?? [], 'ledger.encumbrances.exposure').map((raw, i) => {
           const where = `ledger.encumbrances.exposure[${String(i)}]`;
           const pair = arr(raw, where);
-          return [String(pair[0]) as PrincipalId, minor(Number(pair[1]))] as const;
+          const who = pair[0];
+          const amount = pair[1];
+          if (typeof who !== 'string' || typeof amount !== 'number') {
+            throw new LedgerRestoreError(`${where}: expected [principal, amount]`);
+          }
+          return [who as PrincipalId, minor(amount)] as const;
         }),
         perEvent: arr(encRoot['perEvent'] ?? [], 'ledger.encumbrances.perEvent').map((raw, i) => {
           const where = `ledger.encumbrances.perEvent[${String(i)}]`;
           const pair = arr(raw, where);
-          return [String(pair[0]), Number(pair[1])] as const;
+          const eventId = pair[0];
+          const count = pair[1];
+          if (typeof eventId !== 'string' || typeof count !== 'number') {
+            throw new LedgerRestoreError(`${where}: expected [eventId, count]`);
+          }
+          return [eventId, count] as const;
         }),
       };
 

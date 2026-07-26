@@ -352,7 +352,7 @@ export function readReply(payload: unknown): CompletionReply {
       );
     }
     throw new CastTransportError(
-      `completions reply was empty (finish_reason=${String(finish ?? 'absent')})`,
+      `completions reply was empty (finish_reason=${typeof finish === 'string' ? finish : 'absent'})`,
       null,
     );
   }
