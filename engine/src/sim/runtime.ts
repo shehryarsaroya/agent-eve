@@ -285,7 +285,28 @@ import {
 } from '../world/index.js';
 
 /** The rules version every row this runtime writes is pinned to (INV-15). */
-export const RULES_VERSION = 1;
+/**
+ * The rules generation. **Bump this whenever a change alters what a PAST tick would
+ * compute** — not when a verb is added, not when a message is reworded, but whenever
+ * replaying the existing journal under the new build would produce a different
+ * `state_hash`.
+ *
+ * It is stamped on events and read by boot, which compares the journalled value with the
+ * running one and reports `journal N -> running M` when a replay diverges. A divergence
+ * with the version unmoved says "the arithmetic changed and nobody declared it"; a
+ * divergence with the version moved says "this was deliberate, and here is the
+ * generation boundary". Only the second is a record anyone can audit later.
+ *
+ * ## 1 → 2 (2026-07-25)
+ *
+ * The `EncumbranceBook` entered the hashed capture. Open locks had been in no state
+ * table at all, so `state_hash` could not see escrow, an aborted tick kept its locks, and
+ * a snapshot-restored world had escrowed stake silently spendable (A5′). Closing that
+ * necessarily changes the hash of **every** tick, including ticks already journalled —
+ * so this is the exact case this constant exists for, and the live world crossed the
+ * boundary through the operator door at tick 287 rather than by pretending nothing moved.
+ */
+export const RULES_VERSION = 2;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
