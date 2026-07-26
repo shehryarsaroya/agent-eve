@@ -602,6 +602,19 @@ export const MAX_GRANTS = 4_096;
  * pair; server-computed per-template worst cases are a follow-on. `custom` is the
  * escape hatch for an explicit, un-templated limit pair.
  */
+/**
+ * How many principals a creator may name in its preference order.
+ *
+ * §7.3 resolves a contested slot by "the initiator's stated preference order", and
+ * `allocation.ts` already honours it as the FIRST tiebreak — ahead of stake and ahead of id.
+ * The field was on `VentureRecord` and on `CreateVentureInput` from the start; `create` simply
+ * never read it from request params, so the mechanism was built, specified and unreachable.
+ *
+ * Bounded because every list in this engine is (INV-26). Small, because a preference order longer
+ * than the venture has roles is expressing nothing.
+ */
+export const MAX_VENTURE_PREFERENCE = 8;
+
 export const GRANT_TEMPLATES: readonly string[] = Object.freeze([
   'treasury-hand',
   'quartermaster',
@@ -3614,6 +3627,55 @@ export class Runtime {
     const resolves = nextSettlementAtOrAfter(closes + DELIVERY_LEAD_TICKS);
     const id = this.mintVentureId(ctx.tick, creator);
 
+    // ── §7.3's PREFERENCE ORDER, FINALLY READABLE ───────────────────────────
+    //
+    // Two cooperating agents used to get the same open lottery as strangers: a probe agent lost
+    // three contested slots to in-process heuristic bots — which decide inside the tick loop with
+    // no network latency — before winning a fourth only by collapsing create→observe→fill→sign
+    // into a single script. That is latency being power, which A4 forbids.
+    //
+    // This is the designed answer rather than a new mechanic, and it is deliberately NOT a
+    // reservation: preference orders *simultaneous* claims on a contested slot, it does not hold
+    // the slot open. An unnamed principal still takes it when nobody preferred is contesting, so
+    // a clique cannot lock a newcomer out and A8's floor is untouched.
+    const rawPreference = req.params['preference'] ?? req.params['prefer'] ?? null;
+    let preference: readonly PrincipalId[] = [];
+    if (rawPreference !== null && rawPreference !== undefined) {
+      if (!Array.isArray(rawPreference)) {
+        return reject(
+          'A2',
+          'preference must be an ARRAY of principal ids, best first: ' +
+            '{"preference":["p:alpha","p:beta"]}. It orders whoever contests a slot in the same ' +
+            'tick — it does not reserve one, and naming somebody does not oblige them to fill it.',
+        );
+      }
+      if (rawPreference.length > MAX_VENTURE_PREFERENCE) {
+        return reject(
+          'A2',
+          `preference names ${String(rawPreference.length)} principals and the limit is ` +
+            `${String(MAX_VENTURE_PREFERENCE)}. An order longer than the venture has roles is ` +
+            'expressing nothing.',
+        );
+      }
+      const named: PrincipalId[] = [];
+      for (const entry of rawPreference) {
+        if (typeof entry !== 'string') {
+          return reject('A2', 'every entry in preference must be a principal id string.');
+        }
+        const who = entry as PrincipalId;
+        // Refused, not silently dropped: an agent that names a typo and is quietly given the open
+        // lottery would believe it had stated a preference it had not (A2).
+        if (this.world.holdingByPrincipal.get(who) === undefined) {
+          return reject('A2', `there is no principal ${entry} to prefer; name one that has enrolled.`);
+        }
+        if (named.some((x) => String(x) === String(who))) {
+          return reject('A2', `preference names ${entry} twice; an order with a repeat is ambiguous.`);
+        }
+        named.push(who);
+      }
+      preference = named;
+    }
+
     const made = createVenture({
       id,
       kind,
@@ -3625,6 +3687,7 @@ export class Runtime {
       resolvesAtTick: resolves,
       valuation: pinnedAt(DEFAULT_VALUATION_RULE, ctx.tick),
       rulesVersion: RULES_VERSION,
+      preference,
     });
     if (!made.ok) return made;
 
