@@ -597,10 +597,17 @@ affordance offered, the finding changes from "unreachable" to "unwanted", which 
 more interesting answer about what agents actually do.
 
 ### Still open, and each is a deliberate choice rather than a gap
-- **Pooled goods are not raidable** (D11). Making a bodiless subject raidable means deciding who
-  defends it, which belongs with a later offices pass.
-- **INV-21's resumable replay** — attempted, reverted, design and trap recorded above. Low priority:
-  the standing journal grows on Reckonings, not ticks.
+- **Pooled goods are not raidable** (D11), and the blocker moved rather than cleared. Offices now
+  exist, so *who defends it* has an answer — but a syndicate treasury holds **currency**, and raids
+  take **goods standing at a system**. A bodiless subject has no place for goods to stand. Pooling
+  goods needs a located contribution first, which is its own mechanic.
+- ~~INV-21's resumable replay~~ **DONE on the second attempt** (`inv21-resumed.spec.ts`). The clone is
+  what makes it correct: the comparison runs against carried-plus-unsealed-tail, so the carried state
+  absorbs strictly less than was compared with — only completed ticks, and only on a clean pass. One
+  full replay, 300+ resumes over 400 ticks, and it still halts on a row that disagrees with its
+  journal after the prefix is warm. The `tick - 1` boundary is mutation-proven (absorb the current
+  tick and a world halts at 287 with every count exactly doubled); the do-not-seal-on-a-dirty-pass
+  guard is **not** proven and the test says so.
 - `docket` and `works` are both legitimately **zero in the live world** right now — nothing has a
   filled role carrying elective value, and 2 of 21 can afford a WORKS. Both mechanisms are proven in
   driven worlds. **Watch them populate.**
