@@ -256,8 +256,18 @@ So the corrected finding is **two partial holes, not seven**:
 
 INV-16's database half is legitimately out-of-process (a `REVOKE` in `db/migrate.ts`, reachable only
 by AX-A5-1 against live Postgres) and is flagged `outOfProcess` so `requireAll` cannot escalate it.
-INV-21 needs the same two-call verification I did for INV-6/18/19 before anyone claims anything about
-it.
+
+**INV-21 is fully covered — verified rather than assumed.** It also has two clauses. The journal half
+needs `standingChanges`, `standings`, `events` and `defaults`, and the tick loop supplies all four, so
+it runs every tick. The per-batch half needs `standingDiffs`, supplied at
+`reckoning/driver.ts:718` — so it runs at the Reckoning. Its per-tick listing is correct by design,
+exactly like INV-6/18/19.
+
+**Final tally of the 26.** One was a genuine permanent hole (INV-26 — fixed and mutation-proven). Two
+are genuine partial holes and remain open: INV-5's `servedExposure` half and INV-23's counterparty
+clause. One is legitimately out-of-process (INV-16). The other four that appeared in the skip list —
+INV-6, INV-18, INV-19, INV-21 — run on the settlement call path, which is the only place they mean
+anything.
 
 **The lesson, which is the same one as §8 below:** a skip list is not a coverage report. "Skipped on
 every tick" and "never runs" look identical from outside, and telling them apart took two greps —
