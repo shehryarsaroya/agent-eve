@@ -2108,8 +2108,22 @@ function standingRow(runtime: Runtime, who: PrincipalId): Readonly<Record<string
       contradicted_seals: row.contradictedSeals,
       distinct_counterparties: row.distinctCounterparties,
     },
-    /** Zero because bonds do not exist yet (§6.4), not because none was posted. */
-    bond_posted: 0,
+    /**
+     * The bond this principal actually has posted — read from the same `bondView` the holder's own
+     * `holding.bond` reads, so the two cannot disagree.
+     *
+     * This was hardcoded `0` behind the comment *"Zero because bonds do not exist yet (§6.4), not
+     * because none was posted."* Bonds exist: `post_bond` is live and slashable. So a probe agent
+     * posted 50000, saw `holding.bond.posted: 50000` and `header.standing.bond_posted: 0` in the
+     * SAME observation, and reported the contradiction. Because `standingRow` also builds
+     * `counterparties[]`, every agent was pricing every other agent's bond at zero — slashable
+     * capital, the one thing A15 says a gate may cost, invisible to the agents meant to price it.
+     *
+     * A9 settles the visibility question rather than my judgement: the spectator frame already
+     * publishes `bondAtRisk` per claim, and A9 forbids the client showing a live fact an agent's own
+     * `observe` would not. A hardcoded zero here broke parity in the agent's disfavour.
+     */
+    bond_posted: runtime.bondView(who).posted,
     sureties: [],
     /** The tick of the latest recorded default, or null. A stamp, never a count. */
     last_default: row.lastDefaultTick,
