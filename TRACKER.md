@@ -405,15 +405,41 @@ naive version could never have reached production, and all three invariants were
 **Known-open, deliberately:** pooled goods are not raidable at all. Safe, probably wrong long-term —
 making a bodiless subject raidable means deciding who defends it, which belongs with offices.
 
-### Increment 2, and it should be CHEAP
-**Offices = `grant` with a syndicate as grantor.** `grant`/`approve`/`revoke`/`audit` are live and
-`charter`/`apply`/`admit` are reserved with no handler, so no verb slot is spent. A grant is already
-authority over another principal's stores with `max_direct_loss` shown before signing, INV-22/23 on the
-spend counter, and the book in `state_hash`. **If offices turn out expensive, something has been
-designed wrong** — that is the check on increment 2, not a hope.
+### Increment 2 LANDED, and the "cheap" check passed
+**Offices are a `grant` with `on_behalf_of`.** One optional field plus three charter gates —
+membership, `treasury_offices`, and the decision rule. It inherits the A7 loss limits shown before
+signing, INV-22/23 on the spend counter, `state_hash`, and the rendered authority line, so the tests
+assert the *ordinary grant guarantees came along* rather than testing a new mechanism. That was the
+stated check and it held.
 
-Then: membership verbs (`apply`/`admit`), vote resolution at a Reckoning, and A13 (a syndicate has no
-pixel signature yet, so by hard rule 3 it is not ready).
+**A MAJORITY charter is refused as a RULE, not as a missing feature.** `approve` has no handler, so
+those charters genuinely cannot appoint yet — but the refusal states the constitution ("this needs the
+agreement of its sitting members, not yours alone"), which is true either way. An engine limitation
+phrased as a rule is a lie; a rule that also happens to be a limitation is just the rule. A test
+asserts the message never blames an unbuilt verb.
+
+**`apply`/`admit` landed too**, and with them the fact that a syndicate is no longer a solo container.
+No application queue under INVITE — a pending list grows with enrolments (scar #3) and would need its
+own cap, hash entry and expiry; the refusal names the sitting members and points at `message`, which is
+free and becomes public at settlement.
+
+**I tried to do membership with `join` and hard rule 4 is exactly why it failed.** `join` already means
+*answer a raid* and §9 classifies it HOSTILE, so the A8 pre-check refused it inside the Commons — where
+every principal starts. I argued for one verb *on hard-rule-4 grounds* and picked the one word the rule
+forbids. `apply` was reserved for it all along, and a test now guards the raid path because that is what
+a careless reuse would have quietly eaten.
+
+`agent.md` §11C teaches all of it, including the sentence that must not be learned the hard way: an
+office-holder spending the pool **breaks no rule**. An agent that thinks abuse is illegal will not price
+the risk, and A6 is explicit there is no `betray()` verb.
+
+### What is left on syndicates (task #17)
+1. **A13** — a syndicate has no pixel signature, so by hard rule 3 it is not ready. Needs a frame line
+   with the same §11.2 argument `worksLines` got, and the stockpile shape-refusal applies.
+2. **`approve`** — so MAJORITY/UNANIMOUS charters can appoint. Measure the gap in `/health` like
+   `worksAffordableBy` rather than leaving it implicit.
+3. Open by choice: pooled goods are **not raidable** (D11), which needs deciding who defends a bodiless
+   subject.
 2. **The broadcast beat** — three systems still cannot reach a viewer as a *timed* event. WORKS now
    needs a pixel signature too (A13): a worked system should read as worked.
 3. `agent.md` debt the playtest named: 18 of ~40 listed verbs are dead (including `scan`, which §12
