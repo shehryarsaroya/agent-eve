@@ -38,21 +38,50 @@
  * `principal` are untouched; the keyless-cast mismatch is still reported, but it is
  * an identity question and no longer blocks value.
  *
- * `ticksSince`/`ticksPage` return the **replay-essential** fields (`tick`, `seed`,
- * `seedHash`, `actions`); they do not re-hydrate `events` or `postings` (their only
- * consumer is boot's tail replay, which re-derives both, and reading them per page
- * would double the boot's IO for rows nothing reads). The posting log has its own
- * bounded reader, {@link PgJournalStore.postingsInRange}, used only by the hydrate.
+ * `ticksSince`/`ticksPage` return `tick`, `seed`, `seedHash`, `actions` **and now
+ * `events`**. The comment here used to say events were deliberately omitted because
+ * "their only consumer is boot's tail replay, which re-derives both" — and that was
+ * true until checkpoint adoption arrived, at which point returning `[]` was the reason
+ * production could never take a bounded boot. It replayed from genesis on every restart
+ * at a cost that grew with the age of the world, and A10 forbids ever resetting, so the
+ * cost only went one way.
+ *
+ * Two changes made adoption reachable and neither is sufficient alone: the `event` and
+ * `event_audience` tables gained the four columns the §11.2 ladder needs to be
+ * re-checked (`visibility`, `flag_keys`, `basis`, `admitted_at_tick`), and this store
+ * learned to read events back. The columns had been arriving on `PersistedEvent` all
+ * along and being dropped on the way into SQL, which is why nothing ever failed: the
+ * in-memory path was complete and only the durable one was lossy.
+ *
+ * A row written before the migration has no tier — `is_public` cannot distinguish
+ * PARTIES from SEALED — so it is **skipped rather than guessed**, the ledger comes up
+ * short, `restoreTo` refuses to grow, and adoption falls back to a genesis replay. The
+ * refusal is narrowed to pre-migration history rather than removed, and it expires by
+ * itself as the world moves on.
+ *
+ * `postings` are still omitted here on the original reasoning, which still holds: the
+ * posting log has its own bounded reader, {@link PgJournalStore.postingsInRange}, used
+ * only by the hydrate.
  */
 
 import { Pool, type PoolClient } from 'pg';
-import type { AccountId, DecisionSource, EventId, GoodId, PrincipalId } from '../core/types.js';
+import type {
+  AccountId,
+  DecisionSource,
+  EventId,
+  GameEvent,
+  GoodId,
+  GrantId,
+  PrincipalId,
+  Visibility,
+} from '../core/types.js';
 import type { LoggedAction } from '../tick/index.js';
 import type {
   DivergenceKind,
   DivergenceRecord,
   EnrollmentRecord,
   JournalStore,
+  PersistedAudience,
   PersistedEvent,
   PersistedPosting,
   SnapshotDigest,
@@ -133,14 +162,19 @@ export class PgJournalStore implements JournalStore {
   }
 
   private async insertEvents(client: PoolClient, events: readonly PersistedEvent[]): Promise<void> {
-    for (const { event, audience } of events) {
+    // `visibility` and `flagKeys` were ALWAYS on `PersistedEvent`, as siblings of `event` — they
+    // were simply dropped on the way into SQL. The information the bounded boot needed had been
+    // reaching this function all along and going nowhere, which is why nothing ever failed: the
+    // in-memory path was complete and only the durable one was lossy.
+    for (const { event, visibility, flagKeys, audience } of events) {
       await client.query(
         `INSERT INTO event (
            id, tick, seq_in_tick, kind, rules_version, actor_principal_id,
            on_behalf_of_principal_id, grant_id, event_family_id, parent_event_id,
            is_public, public_at, declassify_at, provenance_class,
-           acted_on_state_version, decision_source, payload
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           acted_on_state_version, decision_source, payload,
+           visibility, flag_keys
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          ON CONFLICT (tick, seq_in_tick) DO NOTHING`,
         [
           event.id,
@@ -160,13 +194,22 @@ export class PgJournalStore implements JournalStore {
           event.actedOnStateVersion,
           event.decisionSource,
           event.payload,
+          // The §11.2 tier and the FLAG_ONLY survivors. Never derived from `is_public`, which
+          // cannot distinguish PARTIES from SEALED — exactly why a bounded boot was impossible.
+          visibility,
+          [...flagKeys],
         ],
       );
       for (const row of audience) {
         await client.query(
-          `INSERT INTO event_audience (tick, seq_in_tick, principal_id) VALUES ($1,$2,$3)
+          `INSERT INTO event_audience (tick, seq_in_tick, principal_id, basis, admitted_at_tick)
+             VALUES ($1,$2,$3,$4,$5)
              ON CONFLICT (tick, seq_in_tick, principal_id) DO NOTHING`,
-          [event.tick, event.seqInTick, row.principal],
+          // `admittedAtTick` comes from the row, not from the event: nothing in the engine admits
+          // late today, but `hydrateEventsForSnapshot` replays late admissions in the order they
+          // were MADE, and re-deriving that order from the event's tick would silently reorder
+          // reveal ordinals the first time something does admit late.
+          [event.tick, event.seqInTick, row.principal, row.basis, row.admittedAtTick],
         );
       }
     }
@@ -385,14 +428,99 @@ export class PgJournalStore implements JournalStore {
       bucket.push(this.rowToAction(r));
       byTick.set(r.tick, bucket);
     }
+    // ── EVENTS, WHICH THIS STORE RETURNED AS `[]` ─────────────────────────────
+    //
+    // The four columns above were necessary and not sufficient: `ticksPage` handed back an
+    // empty event array, so `hydrateEventsForSnapshot` had nothing to read and a bounded boot
+    // was impossible however complete the schema became. Production replayed from genesis on
+    // every restart at a cost that grew with the age of the world, and A10 forbids ever
+    // resetting, so that cost only ever went one way.
+    //
+    // Read in the same page as the seeds and actions rather than per tick: one query for the
+    // range, bucketed in memory. A per-tick query would make boot latency a function of tick
+    // COUNT rather than of row count, which is the shape of slowness this whole paged interface
+    // exists to avoid.
+    const eventRows = await this.pool.query<EventRow>(
+      `SELECT id, tick, seq_in_tick, kind, rules_version, actor_principal_id,
+              on_behalf_of_principal_id, grant_id, event_family_id, parent_event_id,
+              is_public, public_at, declassify_at, provenance_class,
+              acted_on_state_version, decision_source, payload, visibility, flag_keys
+         FROM event WHERE tick > $1 AND tick <= $2
+         ORDER BY tick ASC, seq_in_tick ASC`,
+      [tick, lastTick],
+    );
+    const audienceRows = await this.pool.query<AudienceDbRow>(
+      `SELECT tick, seq_in_tick, principal_id, basis, admitted_at_tick
+         FROM event_audience WHERE tick > $1 AND tick <= $2
+         ORDER BY tick ASC, seq_in_tick ASC, principal_id ASC`,
+      [tick, lastTick],
+    );
+    const audienceByEvent = new Map<string, PersistedAudience[]>();
+    for (const r of audienceRows.rows) {
+      const key = `${String(r.tick)}:${String(r.seq_in_tick)}`;
+      const bucket = audienceByEvent.get(key) ?? [];
+      bucket.push({
+        principal: r.principal_id as PrincipalId,
+        basis: r.basis ?? 'SELF',
+        // Pre-migration rows have no `admitted_at_tick`; the event's own tick is the only
+        // honest reading, and it is what every admission in the engine does today anyway.
+        admittedAtTick: r.admitted_at_tick ?? r.tick,
+      });
+      audienceByEvent.set(key, bucket);
+    }
+
+    const eventsByTick = new Map<number, PersistedEvent[]>();
+    for (const r of eventRows.rows) {
+      // ── THE REFUSAL, NARROWED RATHER THAN REMOVED ──────────────────────────
+      //
+      // A row written before `visibility` existed genuinely does not know its tier: `is_public`
+      // cannot tell PARTIES from SEALED. Guessing would put a fabricated tier in the permanent
+      // record, which is A5′ with our own migration as the cause. So such a row is SKIPPED, the
+      // event ledger comes up short, `EventLedger.restoreTo` refuses to grow, and adoption falls
+      // back to a genesis replay — exactly the behaviour production had before, now confined to
+      // history written before the migration instead of applying forever.
+      if (r.visibility === null || r.visibility === undefined) continue;
+      const bucket = eventsByTick.get(r.tick) ?? [];
+      bucket.push({
+        event: this.rowToEvent(r),
+        visibility: r.visibility as Visibility,
+        flagKeys: r.flag_keys ?? [],
+        audience: audienceByEvent.get(`${String(r.tick)}:${String(r.seq_in_tick)}`) ?? [],
+      });
+      eventsByTick.set(r.tick, bucket);
+    }
+
     return seeds.rows.map((s) => ({
       tick: s.tick,
       seed: s.seed,
       seedHash: s.seed_hash,
-      events: [],
+      events: eventsByTick.get(s.tick) ?? [],
       postings: [],
       actions: byTick.get(s.tick) ?? [],
     }));
+  }
+
+  /** One `event` row back into the shape the ledger appends. */
+  private rowToEvent(r: EventRow): GameEvent {
+    return {
+      id: r.id as EventId,
+      tick: r.tick,
+      seqInTick: r.seq_in_tick,
+      kind: r.kind,
+      rulesVersion: r.rules_version,
+      actorPrincipalId: (r.actor_principal_id ?? null) as PrincipalId | null,
+      onBehalfOfPrincipalId: (r.on_behalf_of_principal_id ?? null) as PrincipalId | null,
+      grantId: (r.grant_id ?? null) as GrantId | null,
+      eventFamilyId: r.event_family_id,
+      parentEventId: (r.parent_event_id ?? null) as EventId | null,
+      isPublic: r.is_public,
+      publicAt: r.public_at,
+      declassifyAt: r.declassify_at,
+      provenanceClass: r.provenance_class as GameEvent['provenanceClass'],
+      actedOnStateVersion: r.acted_on_state_version === null ? null : Number(r.acted_on_state_version),
+      decisionSource: (r.decision_source ?? null) as GameEvent['decisionSource'],
+      payload: r.payload,
+    };
   }
 
   /** Write-once, same shape and same reason as the master seed. */
@@ -532,6 +660,36 @@ interface SeedRow {
   readonly tick: number;
   readonly seed: string;
   readonly seed_hash: string;
+}
+
+interface EventRow {
+  readonly id: string;
+  readonly tick: number;
+  readonly seq_in_tick: number;
+  readonly kind: string;
+  readonly rules_version: number;
+  readonly actor_principal_id: string | null;
+  readonly on_behalf_of_principal_id: string | null;
+  readonly grant_id: string | null;
+  readonly event_family_id: string;
+  readonly parent_event_id: string | null;
+  readonly is_public: boolean;
+  readonly public_at: number | null;
+  readonly declassify_at: number | null;
+  readonly provenance_class: string;
+  readonly acted_on_state_version: string | number | null;
+  readonly decision_source: string | null;
+  readonly payload: Record<string, unknown>;
+  readonly visibility: string | null;
+  readonly flag_keys: readonly string[] | null;
+}
+
+interface AudienceDbRow {
+  readonly tick: number;
+  readonly seq_in_tick: number;
+  readonly principal_id: string;
+  readonly basis: string | null;
+  readonly admitted_at_tick: number | null;
 }
 
 interface PostingRow {

@@ -409,3 +409,84 @@ describe('the partition runway is sized from the world, not from zero', () => {
     expect(hoursAtFast, 'a runway shorter than a long weekend will fail unattended').toBeGreaterThan(72);
   });
 });
+
+describe('the four columns a bounded boot needed', () => {
+  /**
+   * `hydrateEventsForSnapshot` refuses to adopt a checkpoint it cannot re-check the §11.2 ladder
+   * from, so production replayed from genesis on every restart at a cost that grew with the age of
+   * the world — and A10 forbids ever resetting, so that cost only went one way.
+   *
+   * Two things were missing and neither is sufficient alone: the columns, and a store that reads
+   * events back at all (`ticksPage` returned `events: []`). This file guards the half that is
+   * checkable without a live Postgres: that the SQL names the columns, that the writer supplies a
+   * value for each, and that placeholders still match.
+   */
+  it('writes the visibility tier and the flag keys, not just is_public', async () => {
+    const pool = new FakePool();
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    await store.appendTick({
+      tick: 11,
+      seed: 's',
+      seedHash: 'h',
+      events: [anEvent(11, 0)],
+      postings: [],
+      actions: [],
+    });
+    const insert = pool.client.calls.find((c) => c.sql.includes('INTO event '));
+    expect(insert, 'an event insert must happen').toBeDefined();
+    // `is_public` is a boolean and the ladder has FIVE rungs, so a durable record carrying only
+    // the boolean cannot say whether a non-public event was PARTIES, SENSED, SEALED or PRIVATE.
+    expect(insert?.sql).toContain('visibility');
+    expect(insert?.sql).toContain('flag_keys');
+    assertConsistent(pool.client.calls);
+  });
+
+  it('writes the audience BASIS and the tick the admission was made', async () => {
+    const pool = new FakePool();
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    await store.appendTick({
+      tick: 12,
+      seed: 's',
+      seedHash: 'h',
+      events: [anEvent(12, 0)],
+      postings: [],
+      actions: [],
+    });
+    const insert = pool.client.calls.find((c) => c.sql.includes('INTO event_audience'));
+    expect(insert).toBeDefined();
+    // Without the basis a restored world knows the allow-list and not the rule behind it, so
+    // `admitAudience`'s door cannot be re-run and the hydrate has to trust rows instead of
+    // re-checking them. Without `admitted_at_tick`, a late admission's reveal ordinal moves.
+    expect(insert?.sql).toContain('basis');
+    expect(insert?.sql).toContain('admitted_at_tick');
+    assertConsistent(pool.client.calls);
+  });
+
+  it('ticksPage reads events back instead of returning an empty array', async () => {
+    // The other half of the blocker. However complete the schema became, adoption was impossible
+    // while this returned `[]`, because the hydrate had nothing to read.
+    //
+    // `ticksPage` short-circuits on an empty seed page, so the fake has to return one row or the
+    // event query is never reached and this test passes for the wrong reason — which is what it
+    // did on the first run.
+    const pool = new FakePool();
+    let seeded = false;
+    const realQuery = pool.query.bind(pool);
+    (pool as unknown as { query: FakePool['query'] }).query = (sql, params) => {
+      const answer = realQuery(sql, params);
+      if (!seeded && sql.includes('FROM tick_seed')) {
+        seeded = true;
+        return Promise.resolve({ rows: [{ tick: 5, seed: 's', seed_hash: 'h' }] as never, rowCount: 1 });
+      }
+      return answer;
+    };
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    await store.ticksPage(4, 3);
+    const all = pool.calls.map((c) => c.sql).join(' | ');
+    expect(all, 'the page must query the event table').toMatch(/FROM event\b/);
+    expect(all, 'and the audience fan-out with it').toMatch(/FROM event_audience/);
+    expect(all, 'and it must select the tier, or the ladder cannot be re-checked').toContain(
+      'visibility',
+    );
+  });
+});

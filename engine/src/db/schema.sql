@@ -105,6 +105,23 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- The §11.2 ladder, as a type. Five rungs, and the order below is the order the spec
+-- states them in — an enum's declaration order is its sort order in Postgres, so a
+-- reordering here would silently change `ORDER BY visibility` anywhere it is used.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'visibility') THEN
+    CREATE TYPE visibility AS ENUM ('PUBLIC', 'PARTIES', 'SENSED', 'SEALED', 'PRIVATE');
+  END IF;
+END $$;
+
+-- Why a principal is in an event's audience. `admitAudience`'s door checks this, so a
+-- restored world needs it to re-check rather than trust.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'audience_basis') THEN
+    CREATE TYPE audience_basis AS ENUM ('SELF', 'PARTY', 'IN_RANGE', 'INTEL');
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS event (
   id                        text        NOT NULL,
   tick                      integer     NOT NULL,
@@ -121,6 +138,24 @@ CREATE TABLE IF NOT EXISTS event (
   event_family_id           text        NOT NULL,
   -- Causality. One flat field cannot express both cohort and cause.
   parent_event_id           text,
+  -- ── THE §11.2 TIER, WHICH THIS TABLE COULD NOT EXPRESS ──────────────────
+  --
+  -- `is_public` is a boolean and the ladder has five rungs: PUBLIC · PARTIES · SENSED ·
+  -- SEALED · PRIVATE. So a durable record could say whether an event was public and
+  -- could not say which of the other four it was, and `hydrateEventsForSnapshot`
+  -- correctly REFUSED to adopt a checkpoint it could not re-check the ladder from —
+  -- which meant production could never take a bounded boot and replayed from genesis
+  -- every restart, a cost growing with the age of the world.
+  --
+  -- `is_public` is kept rather than derived on read: it carries the partial index that
+  -- makes the public feed a range scan, and INV-14's structural CHECK below is written
+  -- against it. Two columns for one fact is normally scar #5 — here the boolean is an
+  -- index key and the enum is the fact, and the constraint at the bottom of this table
+  -- asserts they cannot disagree.
+  visibility                visibility,
+  -- Keys that survive a FLAG_ONLY projection. An array, not jsonb: it is read as a set
+  -- and never queried into.
+  flag_keys                 text[]      NOT NULL DEFAULT '{}',
   is_public                 boolean     NOT NULL,
   public_at                 integer,
   declassify_at             integer,
@@ -137,7 +172,19 @@ CREATE TABLE IF NOT EXISTS event (
   CONSTRAINT event_public_at_consistent CHECK (
     (is_public AND public_at IS NOT NULL AND public_at <= tick) OR (NOT is_public)
   ),
-  CONSTRAINT event_declassify_after CHECK (declassify_at IS NULL OR declassify_at >= tick)
+  CONSTRAINT event_declassify_after CHECK (declassify_at IS NULL OR declassify_at >= tick),
+  -- The two spellings of one fact cannot disagree. Without this, `is_public` and
+  -- `visibility` are scar #5 — one quantity with two homes and no referee.
+  --
+  -- Permits NULL, and that is the migration's whole shape: rows written before the column
+  -- existed genuinely DO NOT KNOW their tier, because `is_public` cannot distinguish PARTIES
+  -- from SEALED. Backfilling a guess would be worse than the gap — it would put a fabricated
+  -- tier in the permanent record, which is A5′ with our own migration as the cause. So old rows
+  -- stay NULL, the hydrate refuses to adopt a checkpoint that spans them, and the refusal
+  -- narrows by itself as the world moves past the migration.
+  CONSTRAINT event_visibility_agrees CHECK (
+    visibility IS NULL OR (visibility = 'PUBLIC') = is_public
+  )
 ) PARTITION BY RANGE (tick);
 
 CREATE UNIQUE INDEX IF NOT EXISTS event_id_uq ON event (id, tick);
@@ -153,7 +200,18 @@ CREATE TABLE IF NOT EXISTS event_audience (
   tick          integer NOT NULL,
   seq_in_tick   integer NOT NULL,
   principal_id  text    NOT NULL,
-  PRIMARY KEY (tick, seq_in_tick, principal_id)
+  -- WHY this principal may read it. Without the basis a restored world knows the
+  -- allow-list and not the rule behind it, so `admitAudience`'s door cannot be re-run
+  -- and the hydrate has to trust the rows instead of re-checking them.
+  basis         audience_basis,
+  -- The tick the admission was MADE, which is not always the event's own tick: a late
+  -- admission has to replay in the order it happened or its reveal ordinal moves.
+  -- Defaults to the event's tick, which is what every admission in the engine does today.
+  admitted_at_tick integer,
+  PRIMARY KEY (tick, seq_in_tick, principal_id),
+  CONSTRAINT event_audience_not_before CHECK (
+    admitted_at_tick IS NULL OR admitted_at_tick >= tick
+  )
 ) PARTITION BY RANGE (tick);
 
 CREATE INDEX IF NOT EXISTS event_audience_principal_idx
@@ -227,6 +285,19 @@ CREATE INDEX IF NOT EXISTS posting_account_idx ON posting (account_id, tick DESC
 -- that can fail closed on a table the world is writing to. The writer always supplies
 -- all three and the hydrate refuses a null, which puts the check where a failure is a
 -- refusal to boot rather than a refusal to migrate.
+-- ── THE FOUR COLUMNS A BOUNDED BOOT NEEDED ────────────────────────────────────
+--
+-- `hydrateEventsForSnapshot` refuses to adopt a checkpoint it cannot re-check the §11.2
+-- ladder from, so production replayed from genesis on every restart at a cost that grew
+-- with the age of the world. These are the columns it was missing. Added by ALTER as well
+-- as in the CREATE above, because `CREATE TABLE IF NOT EXISTS` does nothing to a table
+-- that already exists — the mistake that would leave a live database silently unmigrated
+-- while the schema file looked correct.
+ALTER TABLE event ADD COLUMN IF NOT EXISTS visibility visibility;
+ALTER TABLE event ADD COLUMN IF NOT EXISTS flag_keys  text[] NOT NULL DEFAULT '{}';
+ALTER TABLE event_audience ADD COLUMN IF NOT EXISTS basis            audience_basis;
+ALTER TABLE event_audience ADD COLUMN IF NOT EXISTS admitted_at_tick integer;
+
 ALTER TABLE posting ADD COLUMN IF NOT EXISTS event_id          text;
 ALTER TABLE posting ADD COLUMN IF NOT EXISTS batch_kind        text;
 ALTER TABLE posting ADD COLUMN IF NOT EXISTS supply_account_id text;
