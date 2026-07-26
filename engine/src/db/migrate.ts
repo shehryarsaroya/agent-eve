@@ -38,7 +38,14 @@ const APPEND_ONLY_TABLES = ['event', 'event_audience', 'posting', 'action_log'] 
  * convention (INV-16): a rewritten master seed or a re-minted enrolment would corrupt
  * the record A10 says never resets, so the app role gets INSERT + SELECT and no more.
  */
-const APPEND_ONLY_UNPARTITIONED = ['journal_meta', 'tick_seed', 'journal_enrollment'] as const;
+const APPEND_ONLY_UNPARTITIONED = [
+  'journal_meta',
+  'tick_seed',
+  'journal_enrollment',
+  // The operator door's annotation. It exists to say "the rules changed at tick N",
+  // so it above all must not be editable by the process that writes it.
+  'journal_divergence',
+] as const;
 
 export function partitionIndexForTick(tick: number): number {
   return Math.floor(tick / TICKS_PER_PARTITION);

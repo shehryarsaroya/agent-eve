@@ -18,8 +18,10 @@ import {
   Journal,
 } from '../../src/persist/index.js';
 import type {
+  DivergenceRecord,
   EnrollmentRecord,
   JournalStore,
+  SnapshotDigest,
   SnapshotRecord,
   TickRecord,
 } from '../../src/persist/index.js';
@@ -52,11 +54,30 @@ class FlakyStore implements JournalStore {
   snapshots(): Promise<readonly SnapshotRecord[]> {
     return this.inner.snapshots();
   }
+  snapshotHashes(): Promise<readonly SnapshotDigest[]> {
+    return this.inner.snapshotHashes();
+  }
   ticksSince(tick: number): Promise<readonly TickRecord[]> {
     return this.inner.ticksSince(tick);
   }
+  ticksPage(tick: number, limit: number): Promise<readonly TickRecord[]> {
+    return this.inner.ticksPage(tick, limit);
+  }
   headTick(): Promise<number> {
     return this.inner.headTick();
+  }
+  recordRulesVersion(version: number): Promise<void> {
+    return this.inner.recordRulesVersion(version);
+  }
+  journalledRulesVersion(): Promise<number | null> {
+    return this.inner.journalledRulesVersion();
+  }
+  recordDivergence(record: DivergenceRecord): Promise<void> {
+    this.guard();
+    return this.inner.recordDivergence(record);
+  }
+  divergences(): Promise<readonly DivergenceRecord[]> {
+    return this.inner.divergences();
   }
   recordEnrollment(record: EnrollmentRecord): Promise<void> {
     this.guard();

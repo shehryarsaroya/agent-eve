@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src test scripts --max-warnings 0",
+    "replay:check": "node scripts/replay-check.mjs",
     "audit:scale": "node scripts/scale-audit.mjs",
     "audit:budgets": "node scripts/budget-audit.mjs",
     "gate0": "npm run typecheck && npm run lint && npm run audit:scale && npm run audit:budgets && npm run test",

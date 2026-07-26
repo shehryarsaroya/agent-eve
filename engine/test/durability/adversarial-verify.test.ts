@@ -16,8 +16,10 @@ import {
   Journal,
   bootFromStore,
   BootError,
+  type DivergenceRecord,
   type EnrollmentRecord,
   type JournalStore,
+  type SnapshotDigest,
   type SnapshotRecord,
   type TickRecord,
 } from '../../src/persist/index.js';
@@ -251,11 +253,29 @@ class FlakyStore implements JournalStore {
   snapshots(): Promise<readonly SnapshotRecord[]> {
     return this.inner.snapshots();
   }
+  snapshotHashes(): Promise<readonly SnapshotDigest[]> {
+    return this.inner.snapshotHashes();
+  }
   ticksSince(t: number): Promise<readonly TickRecord[]> {
     return this.inner.ticksSince(t);
   }
+  ticksPage(t: number, limit: number): Promise<readonly TickRecord[]> {
+    return this.inner.ticksPage(t, limit);
+  }
   headTick(): Promise<number> {
     return this.inner.headTick();
+  }
+  recordRulesVersion(version: number): Promise<void> {
+    return this.inner.recordRulesVersion(version);
+  }
+  journalledRulesVersion(): Promise<number | null> {
+    return this.inner.journalledRulesVersion();
+  }
+  recordDivergence(record: DivergenceRecord): Promise<void> {
+    return this.inner.recordDivergence(record);
+  }
+  divergences(): Promise<readonly DivergenceRecord[]> {
+    return this.inner.divergences();
   }
   recordEnrollment(r: EnrollmentRecord): Promise<void> {
     return this.inner.recordEnrollment(r);

@@ -8,20 +8,36 @@
  */
 
 export {
+  type DivergenceKind,
+  type DivergenceRecord,
   type EnrollmentRecord,
   type JournalStore,
   type PersistedAudience,
   type PersistedEvent,
   type PersistedPosting,
+  type SnapshotDigest,
   type SnapshotRecord,
   type TickRecord,
+  safeDetail,
   snapshotRecord,
 } from './store.js';
 
 export { InMemoryJournalStore, JournalStoreError } from './memory.js';
 export { PgJournalStore, type PgJournalStoreOptions } from './postgres.js';
 export { extractTick, snapshotRecordOf } from './extract.js';
-export { bootFromStore, BootError, type BootOptions, type BootResult } from './boot.js';
+export {
+  bootFromStore,
+  bootWorld,
+  describeDiagnosis,
+  BootError,
+  REPLAY_PAGE_TICKS,
+  type BootDiagnosis,
+  type BootFailureKind,
+  type BootOptions,
+  type BootOutcome,
+  type BootResult,
+} from './boot.js';
+export { replayCheck, type ReplayCheckResult } from './replayCheck.js';
 export {
   Journal,
   BACKLOG_ALARM,

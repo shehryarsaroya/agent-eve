@@ -104,6 +104,40 @@ if [[ "$TARGET" == "api" || "$TARGET" == "sim" || "$TARGET" == "all" ]]; then
   log "migrating database"
   $SSH "set -a && . /etc/compact/env && set +a && cd $CODE_DIR/engine && node dist/db/migrate.js"
   ok "migrations applied, partition runway asserted (OPS-3)"
+
+  # ── THE REPLAY PREFLIGHT — the check that stops a deploy from bricking the world ──
+  #
+  # Boot replays the durable action log under whatever code is deployed. A change that
+  # makes any PAST tick compute differently — an action the record says APPLIED that is
+  # now refused, or arithmetic that moves a state_hash — makes boot unable to reproduce
+  # the record. That is correctly a refusal to serve (A5'), but it means the world stops.
+  #
+  # So we ask the question BEFORE the restart, with the OLD process still serving: replay
+  # the real journal against the NEW build in a throwaway process. It writes nothing.
+  #
+  #   exit 0  reproduces (or the divergence is one the operator already declared)
+  #   exit 3  would NOT reproduce -> the deploy stops here and the world stays up
+  #   exit 1  the check could not run -> also a stop, because an unrun check proves nothing
+  #
+  # To deploy a deliberate rules change, set COMPACT_ACCEPT_DIVERGENCE_AT_TICK to the
+  # exact tick the check names, in /etc/compact/env. The boot then resumes the world and
+  # writes the discontinuity into the permanent public record (journal_divergence).
+  log "replay preflight — would this build still reproduce the record?"
+  set +e
+  $SSH "set -a && . /etc/compact/env && set +a && cd $CODE_DIR/engine && node dist/persist/replayCheck.js"
+  REPLAY_STATUS=$?
+  set -e
+  case "$REPLAY_STATUS" in
+    0) ok "this build reproduces the record — a restart will resume the world" ;;
+    3) fail "THIS BUILD WOULD NOT REPRODUCE THE RECORD. The service was NOT restarted and the
+     live world is still up on the old build. Read the tick and the reason above. Either
+     fix the change, or accept the discontinuity deliberately by setting
+     COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<that exact tick> in /etc/compact/env and
+     re-running this deploy." ;;
+    *) fail "the replay preflight could not run (exit $REPLAY_STATUS). Refusing to restart: an
+     unrun check proves nothing, and the failure mode it guards against is an
+     unrecoverable crash loop with no HTTP surface." ;;
+  esac
 fi
 
 # ── spectator client ────────────────────────────────────────────────────────
@@ -166,9 +200,37 @@ for unit in compact-api; do
 done
 # Prove the restart actually loaded THIS build, not the old process: the new serve()
 # prints a boot line the old one never did. Its absence means the cutover silently failed.
-$SSH "journalctl -u compact-api --since '-60s' --no-pager 2>/dev/null | grep -q 'compact: boot'" \
+$SSH "journalctl -u compact-api --since '-60s' --no-pager 2>/dev/null | grep -qE 'compact: boot'" \
   || fail "the new build did not boot (no 'compact: boot' line in the last 60s) — the restart did not cut over"
 ok "the new build booted (boot line present)"
+
+# Boot REPLAYS the whole action log, which is O(head) and takes minutes on a long
+# season. The port is bound from the first millisecond and answers 503 while it runs,
+# so "not ready yet" and "held" and "dead" are three different things and the deploy
+# must wait for the first to resolve rather than reading a mid-replay 503 as failure.
+log "waiting for the replay to finish"
+WAITED=0
+while $SSH "set -a && . /etc/compact/env && set +a && curl -s --max-time 5 \
+      http://127.0.0.1:\${COMPACT_PORT:-8787}/compact/api/health | grep -q BOOTING"; do
+  WAITED=$((WAITED + 5))
+  [[ $WAITED -lt 600 ]] || fail "still replaying after 600s. The world is not lost — the process is up and
+     answering 503 BOOTING — but boot is O(entire history) and has outgrown this timeout.
+     Checkpoint adoption is the fix; until then, expect this to grow every season."
+  printf '  replaying… %ss\n' "$WAITED"
+  sleep 5
+done
+ok "the replay finished (waited ${WAITED}s)"
+
+# HELD is the honest refusal, not a crash — the process is up and serving 503 with a
+# diagnosis rather than looping. It is still a failed deploy, and the message has to say
+# which of the two it is or the operator debugs the wrong thing.
+if $SSH "journalctl -u compact-api --since '-60s' --no-pager 2>/dev/null | grep -q 'compact api HELD'"; then
+  $SSH "journalctl -u compact-api --since '-120s' --no-pager | tail -40" >&2
+  fail "the world is HELD: this build could not reproduce the record (see the diagnosis above).
+     The process is alive and answering 503 on every route — it is NOT crash-looping — but no
+     world is being served. Accept the discontinuity with COMPACT_ACCEPT_DIVERGENCE_AT_TICK,
+     or roll back."
+fi
 
 # ── post-deploy verification — the scar #4 half ─────────────────────────────
 log "post-deploy verification"

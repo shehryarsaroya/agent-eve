@@ -183,3 +183,93 @@ describe('PgJournalStore builds consistent parameterised SQL', () => {
     expect(pool.client.calls.some((c) => c.sql.trim().startsWith('ROLLBACK'))).toBe(true);
   });
 });
+
+describe('the bounded-boot reads ask Postgres for bounded things', () => {
+  it('ticksPage LIMITs the seed page and bounds the action read to it', async () => {
+    const pool = new FakePool();
+    // Two seed rows come back, so the action query must be bounded by the LAST of
+    // them (28) rather than by arithmetic on the cursor.
+    pool.query = (sql: string, params?: readonly unknown[]) => {
+      pool.calls.push({ sql, params: params ?? [] });
+      if (sql.includes('FROM tick_seed')) {
+        return Promise.resolve({
+          rows: [
+            { tick: 21, seed: 'a', seed_hash: 'ha' },
+            { tick: 28, seed: 'b', seed_hash: 'hb' },
+          ] as never[],
+          rowCount: 2,
+        });
+      }
+      return Promise.resolve({ rows: [] as never[], rowCount: 0 });
+    };
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    const page = await store.ticksPage(20, 2);
+
+    expect(page.map((t) => t.tick)).toEqual([21, 28]);
+    const seedQuery = pool.calls.find((c) => c.sql.includes('FROM tick_seed'));
+    expect(seedQuery?.sql).toContain('LIMIT $2');
+    expect(seedQuery?.params).toEqual([20, 2]);
+
+    // The upper bound is the page's last tick, not `cursor + limit`: `tick_seed` is
+    // only gapless while nothing ever failed to flush, and boot must not skip a tick
+    // because its arithmetic assumed density.
+    const actionQuery = pool.calls.find((c) => c.sql.includes('FROM action_log'));
+    expect(actionQuery?.params).toEqual([20, 28]);
+    assertConsistent(pool.calls);
+  });
+
+  it('ticksPage short-circuits when the log is exhausted, and refuses a bad limit', async () => {
+    const pool = new FakePool();
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    const page = await store.ticksPage(99, 64);
+    expect(page).toEqual([]);
+    // No action query at all: an empty seed page means there is nothing to join to.
+    expect(pool.calls.some((c) => c.sql.includes('FROM action_log'))).toBe(false);
+    await expect(store.ticksPage(0, 0)).rejects.toThrow(/positive integer limit/);
+  });
+
+  it('snapshotHashes reads two columns, never the bodies', async () => {
+    const pool = new FakePool();
+    pool.query = (sql: string, params?: readonly unknown[]) => {
+      pool.calls.push({ sql, params: params ?? [] });
+      return Promise.resolve({ rows: [{ tick: 287, state_hash: 'h287' }] as never[], rowCount: 1 });
+    };
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    expect(await store.snapshotHashes()).toEqual([{ tick: 287, stateHash: 'h287' }]);
+    const q = pool.calls[0]?.sql ?? '';
+    expect(q).toContain('SELECT tick, state_hash FROM snapshot');
+    // The bound: a season of full captures is what this query exists NOT to fetch.
+    expect(q).not.toContain('body');
+  });
+
+  it('the divergence annotation is INSERT-only and fully parameterised', async () => {
+    const pool = new FakePool();
+    const store = new PgJournalStore({ pool: pool as unknown as Pool });
+    await store.recordRulesVersion(1);
+    await store.recordDivergence({
+      tick: 12_400,
+      kind: 'APPLIED_REFUSED',
+      fromRulesVersion: 1,
+      toRulesVersion: 2,
+      // A NUL byte would abort the whole INSERT; it must be scrubbed on the way in.
+      detail: `p:vale create \u0000 refused`,
+      expectedHash: null,
+      actualHash: null,
+      toleratedAfter: 3,
+      acceptedAtMs: 1_700_000_000_000,
+    });
+
+    const rules = pool.calls.find((c) => c.sql.includes('journal_meta'));
+    expect(rules?.sql).toContain('DO NOTHING'); // write-once, like the seed
+    expect(rules?.params).toEqual(['rules_version', '1']);
+
+    const div = pool.calls.find((c) => c.sql.includes('journal_divergence'));
+    expect(div).toBeDefined();
+    expect(div?.sql).toContain('INSERT INTO journal_divergence');
+    // The door annotates; it never rewrites.
+    expect(div?.sql).not.toMatch(/UPDATE|DELETE|ON CONFLICT/);
+    expect(div?.params[4]).toBe('p:vale create   refused');
+    expect(String(div?.params[4])).not.toContain('\u0000');
+    assertConsistent(pool.calls);
+  });
+});

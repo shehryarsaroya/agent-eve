@@ -37,20 +37,23 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { reckoningIndex, setSpeed, systemClock, ticksToMs, type Clock } from '../core/time.js';
 import { publishFrame } from '../frames/write.js';
 import { costOf } from '../tick/index.js';
 import { HeuristicCast } from '../cast/index.js';
-import { Runtime } from '../sim/runtime.js';
+import { Runtime, RULES_VERSION } from '../sim/runtime.js';
 import type { PrincipalId } from '../core/types.js';
 import {
   InMemoryJournalStore,
   Journal,
   PgJournalStore,
-  bootFromStore,
-  type BootResult,
+  bootWorld,
+  describeDiagnosis,
+  type BootDiagnosis,
+  type BootOutcome,
   type JournalStore,
 } from '../persist/index.js';
 import {
@@ -1588,12 +1591,27 @@ export interface ServeOptions {
   readonly store?: JournalStore;
   /** Override the connection string; defaults to the DB environment. */
   readonly databaseUrl?: string | null;
+  /**
+   * **THE OPERATOR DOOR**, normally from `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
+   *
+   * The exact tick at which the operator has decided to accept that this build no
+   * longer reproduces the record. Default null: hold the world instead.
+   */
+  readonly acceptDivergenceFromTick?: number | null;
 }
 
 export interface ServeResult {
-  readonly created: CreatedApp;
-  readonly boot: BootResult;
-  readonly journal: Journal;
+  /** Null while HELD: there is no world to serve, only a diagnosis. */
+  readonly created: CreatedApp | null;
+  readonly boot: BootOutcome;
+  /** Null while HELD: nothing may be written to the journal of a world we cannot resume. */
+  readonly journal: Journal | null;
+  /**
+   * The port actually bound. Equals `options.port` unless that was 0, which asks the
+   * OS for a free one — the only way a test can start two servers without inventing
+   * port numbers and inheriting a stale listener from a crashed run.
+   */
+  readonly port: number;
   readonly close: () => Promise<void>;
 }
 
@@ -1604,49 +1622,85 @@ export interface ServeResult {
  * a restart RESUMES rather than resetting to tick 0, which was the whole defect. The
  * seed the store was born under wins over the provided one, because replaying a
  * persisted world under a different seed diverges every hash.
+ *
+ * ── THE HTTP SURFACE COMES UP FIRST, AND STAYS UP ───────────────────────────
+ *
+ * Two failures were the same bug. Boot is O(head) — minutes on a real season — and
+ * the listener used to be created *after* it, so a restart was minutes of connection
+ * refused with nothing to ask. And a boot that could not reproduce the record threw
+ * out of the top-level await, exited, and was restarted identically forever by
+ * `Restart=always`: an infinite crash loop, re-reading the whole action log from
+ * Postgres each time, serving not even a 503.
+ *
+ * So the socket is bound before anything else and its handler is swapped as the boot
+ * progresses: BOOTING -> RUNNING, or BOOTING -> HELD. **The process never exits for a
+ * reason the record can explain.** Refusing to serve a world we cannot reproduce is
+ * correct (A5′); refusing to *say so* was the defect.
  */
 export async function serve(options: ServeOptions): Promise<ServeResult> {
   setSpeed('fast');
   const clock = systemClock();
   const store = options.store ?? storeFromEnv(options, clock);
 
-  const persistedSeed = await store.masterSeed();
-  const seed = persistedSeed ?? options.seed;
-  if (persistedSeed !== null && persistedSeed !== options.seed) {
+  // Bound first, so there is something to ask from the first millisecond of a
+  // multi-minute replay, and something to answer with if the replay refuses.
+  const gate = new ServeGate();
+  const server = createServer((req, res) => {
+    gate.handle(req, res);
+  });
+  // Awaited, so a port that cannot be bound is a rejection here rather than an
+  // uncaught 'error' event minutes later, in the middle of a replay, with the
+  // operator told nothing.
+  const port = await listening(server, options.port, options.host);
+  // Printed BEFORE the replay, not after. Boot is O(head); a deploy that greps the
+  // log for proof the new build cut over must not have to wait out a whole season's
+  // replay to find it (and must not conclude the restart silently failed).
+  process.stderr.write(
+    `compact: booting — port ${String(port)} is bound and answering 503 while the record replays\n`,
+  );
+
+  const boot = await bootTheWorld(options, store, clock, gate);
+  if (boot.outcome.status === 'HELD') {
+    process.stderr.write(`\n${describeDiagnosis(boot.outcome.diagnosis)}\n\n`);
     process.stderr.write(
-      `compact: resuming under the journalled seed '${persistedSeed}', ignoring the provided '${options.seed}'\n`,
+      'compact: the world is HELD. The process stays up and serves 503 with the diagnosis above ' +
+        'on every route. It is NOT exiting: exiting here is a crash loop under Restart=always.\n',
     );
+    gate.hold(boot.outcome.diagnosis);
+    return {
+      created: null,
+      boot: boot.outcome,
+      journal: null,
+      port,
+      close: async () => {
+        await closed(server);
+        await store.close();
+      },
+    };
   }
 
-  const runtime = new Runtime({ seed });
-  const cast = new HeuristicCast(runtime, { size: options.castSize });
-  cast.seat(seed);
-
-  // Built here, before boot, because boot re-registers each persisted enrolment's key
-  // and seat as it re-seats the world principal — the identity half of "identity never
-  // resets" (A10).
-  const keyring = new Keyring();
-  const seats = new SeatBook();
-
-  const boot = await bootFromStore(runtime, store, {
-    seed,
-    onEnrollment: (enrollment) => {
-      const jwk = jwkFromBase64Url(enrollment.publicKey);
-      if (jwk !== null) {
-        try {
-          keyring.register(enrollment.principal, recordFromJwk(jwk), Math.max(0, enrollment.enrolledAtTick));
-        } catch {
-          // Already registered on a prior boot step; identity is never re-minted.
-        }
-      }
-      seats.claim(enrollment.principal, enrollment.handle, Math.max(0, enrollment.enrolledAtTick));
-    },
-  });
+  const { runtime, cast, keyring, seats, seed } = boot;
+  const result = boot.outcome.result;
   process.stderr.write(
-    `compact: boot ${boot.mode}, head tick ${String(boot.headTick)}, ` +
-      `${String(boot.ticksReplayed)} ticks replayed, ${String(boot.enrollmentsApplied)} enrolments re-seated, ` +
-      `${String(boot.tripwiresChecked)} snapshot tripwires verified\n`,
+    `compact: boot ${result.mode}, head tick ${String(result.headTick)}, ` +
+      `${String(result.ticksReplayed)} ticks replayed, ${String(result.enrollmentsApplied)} enrolments re-seated, ` +
+      `${String(result.tripwiresChecked)} snapshot tripwires verified\n`,
   );
+  if (result.divergenceAccepted !== null) {
+    const d = result.divergenceAccepted;
+    process.stderr.write(
+      `compact: ⚑ DECLARED DISCONTINUITY — an operator accepted a rules change at tick ${String(d.tick)} ` +
+        `(rules_version ${d.fromRulesVersion === null ? 'unrecorded' : String(d.fromRulesVersion)} -> ` +
+        `${String(d.toRulesVersion)}, ${String(d.toleratedAfter)} further divergences tolerated). ` +
+        'It is written into the permanent public record; the ticks before and after it were computed by ' +
+        'different code.\n',
+    );
+  } else if (result.rulesVersionChanged) {
+    process.stderr.write(
+      `compact: rules_version moved ${String(result.journalledRulesVersion)} -> ` +
+        `${String(result.runningRulesVersion)} and the record still reproduced exactly. No discontinuity.\n`,
+    );
+  }
 
   const journal = new Journal(store);
 
@@ -1716,20 +1770,212 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     }
   }, ticksToMs(1));
 
-  const server = created.app.listen(options.port, options.host);
+  // The world is reproduced and running: hand the already-bound socket over to it.
+  gate.run(created.app);
   return {
     created,
-    boot,
+    boot: boot.outcome,
     journal,
+    port,
     close: async () => {
       clearInterval(interval);
       // Drain buffered ticks to the store, then close it. A sustained outage leaves a
       // logged backlog — the bounded tail loss the Journal header describes — never a
       // silent claim of durability.
       await journal.close();
-      server.close();
+      await closed(server);
     },
   };
+}
+
+/** Bind, and resolve with the port actually taken (which is the point when it is 0). */
+function listening(server: Server, port: number, host: string): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.removeListener('listening', onListening);
+      reject(error);
+    };
+    const onListening = (): void => {
+      server.removeListener('error', onError);
+      const address = server.address();
+      resolve(address !== null && typeof address === 'object' ? address.port : port);
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, host);
+  });
+}
+
+/**
+ * Close, and wait until the port is actually free.
+ *
+ * A bare `server.close()` returns before the listener is released, so a test (or a
+ * fast restart) that binds the same port next can lose the race — which presents as
+ * an intermittent EADDRINUSE that looks like a flaky test rather than a leaked socket.
+ */
+function closed(server: Server): Promise<void> {
+  return new Promise<void>((resolve) => {
+    server.close(() => {
+      resolve();
+    });
+    // Keep-alive sockets would otherwise hold the close open for the idle timeout.
+    server.closeAllConnections();
+  });
+}
+
+/** What `serve` got out of boot, held together so the HELD branch can return early. */
+interface BootedWorld {
+  readonly outcome: BootOutcome;
+  readonly runtime: Runtime;
+  readonly cast: HeuristicCast;
+  readonly keyring: Keyring;
+  readonly seats: SeatBook;
+  readonly seed: string;
+}
+
+/**
+ * Seat the cast and replay the record, converting **every** failure into a HELD
+ * outcome rather than a thrown promise.
+ *
+ * The `catch` is deliberately total. `bootWorld` already converts a `BootError`, but
+ * a store that cannot connect, a cast that cannot seat, or any other surprise would
+ * otherwise reject out of `serve` and exit the process — which is the crash loop
+ * again, arriving by a different door.
+ */
+async function bootTheWorld(
+  options: ServeOptions,
+  store: JournalStore,
+  clock: Clock,
+  gate: ServeGate,
+): Promise<BootedWorld> {
+  const seed = (await store.masterSeed().catch(() => null)) ?? options.seed;
+  if (seed !== options.seed) {
+    process.stderr.write(
+      `compact: resuming under the journalled seed '${seed}', ignoring the provided '${options.seed}'\n`,
+    );
+  }
+  const runtime = new Runtime({ seed });
+  const cast = new HeuristicCast(runtime, { size: options.castSize });
+  // Built before boot, because boot re-registers each persisted enrolment's key and
+  // seat as it re-seats the world principal — the identity half of A10.
+  const keyring = new Keyring();
+  const seats = new SeatBook();
+  const shell = { runtime, cast, keyring, seats, seed };
+
+  try {
+    cast.seat(seed);
+    const outcome = await bootWorld(runtime, store, {
+      seed,
+      nowMs: () => clock.nowMs(),
+      acceptDivergenceFromTick: options.acceptDivergenceFromTick ?? null,
+      onEnrollment: (enrollment) => {
+        const jwk = jwkFromBase64Url(enrollment.publicKey);
+        if (jwk !== null) {
+          try {
+            keyring.register(enrollment.principal, recordFromJwk(jwk), Math.max(0, enrollment.enrolledAtTick));
+          } catch {
+            // Already registered on a prior boot step; identity is never re-minted.
+          }
+        }
+        seats.claim(enrollment.principal, enrollment.handle, Math.max(0, enrollment.enrolledAtTick));
+      },
+      onProgress: (tick, head) => {
+        gate.progress(tick, head);
+      },
+    });
+    return { ...shell, outcome };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ...shell,
+      outcome: {
+        status: 'HELD',
+        message,
+        diagnosis: {
+          kind: 'REPLAY_HALTED',
+          tick: runtime.engine.tick,
+          message: `boot could not run at all: ${scrub(message)}`,
+          expectedHash: null,
+          actualHash: null,
+          action: null,
+          journalledRulesVersion: null,
+          runningRulesVersion: RULES_VERSION,
+          rulesVersionChanged: false,
+          operatorInstruction: null,
+        },
+      },
+    };
+  }
+}
+
+/**
+ * The socket's handler, swappable while the world boots.
+ *
+ * One `http.Server` whose request handler moves BOOTING -> RUNNING or BOOTING -> HELD.
+ * Not two servers with a hand-off: closing one listener and opening another on the
+ * same port races on `EADDRINUSE`, and a deploy that intermittently fails to bind is
+ * indistinguishable from the outage it was meant to prevent.
+ */
+class ServeGate {
+  private app: Express | null = null;
+  private diagnosis: BootDiagnosis | null = null;
+  private tick = -1;
+  private head = -1;
+
+  run(app: Express): void {
+    this.app = app;
+    this.diagnosis = null;
+  }
+
+  hold(diagnosis: BootDiagnosis): void {
+    this.app = null;
+    this.diagnosis = diagnosis;
+  }
+
+  progress(tick: number, head: number): void {
+    this.tick = tick;
+    this.head = head;
+  }
+
+  handle(req: IncomingMessage, res: ServerResponse): void {
+    const app = this.app;
+    if (app !== null) {
+      app(req, res);
+      return;
+    }
+    const held = this.diagnosis;
+    const body =
+      held === null
+        ? {
+            status: 'BOOTING',
+            world: 'BOOTING',
+            replayed_tick: this.tick,
+            head_tick: this.head,
+            detail:
+              'the world is replaying the durable record; it will serve as soon as the record is reproduced',
+          }
+        : {
+            status: 'HELD',
+            world: 'HELD',
+            detail: describeDiagnosis(held),
+            failure: held.kind,
+            tick: held.tick,
+            expected_state_hash: held.expectedHash,
+            actual_state_hash: held.actualHash,
+            journalled_rules_version: held.journalledRulesVersion,
+            running_rules_version: held.runningRulesVersion,
+            rules_version_changed: held.rulesVersionChanged,
+            operator_instruction: held.operatorInstruction,
+          };
+    // 503 on every route including /health: the world is genuinely unavailable, and
+    // a 200 anywhere would let a monitor call this healthy.
+    res.writeHead(503, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'retry-after': '30',
+    });
+    res.end(JSON.stringify(body, null, 2));
+  }
 }
 
 /**
@@ -1758,6 +2004,30 @@ function storeFromEnv(options: ServeOptions, clock: Clock): JournalStore {
   return new InMemoryJournalStore();
 }
 
+/**
+ * The operator door, read from the environment.
+ *
+ * A malformed value is refused rather than coerced: `Number('yes')` is `NaN`, and a
+ * door that silently opens on a typo is not a door.
+ */
+function acceptDivergenceFromEnv(): number | null {
+  const raw = process.env['COMPACT_ACCEPT_DIVERGENCE_AT_TICK'];
+  if (raw === undefined || raw.trim().length === 0) return null;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 0) {
+    process.stderr.write(
+      `compact: COMPACT_ACCEPT_DIVERGENCE_AT_TICK='${raw}' is not a tick number. Ignoring it — ` +
+        'the world will hold rather than guess what an operator meant.\n',
+    );
+    return null;
+  }
+  process.stderr.write(
+    `compact: ⚑ operator door armed for tick ${String(n)}. If replay diverges at exactly that tick, ` +
+      'the world resumes and the discontinuity is written into the permanent public record.\n',
+  );
+  return n;
+}
+
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
   const port = Number(process.env['COMPACT_PORT'] ?? '8787');
@@ -1769,8 +2039,17 @@ if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
     trustEdge: process.env['COMPACT_TRUST_EDGE'] === 'true',
     castSize: Number(process.env['COMPACT_CAST'] ?? '12'),
     framesDir: process.env['COMPACT_FRAMES_DIR'] ?? null,
+    acceptDivergenceFromTick: acceptDivergenceFromEnv(),
   });
-  process.stderr.write(
-    `compact api listening on ${API_BASE_PATH}; population ${String(started.created.context.runtime.world.principalOrder.length)}\n`,
-  );
+  if (started.created === null) {
+    // HELD. The socket is bound and answering 503 with the diagnosis; the process
+    // stays alive on purpose so systemd does not restart it into the same wall.
+    process.stderr.write(
+      `compact api HELD on ${API_BASE_PATH}; every route answers 503 with the boot diagnosis\n`,
+    );
+  } else {
+    process.stderr.write(
+      `compact api listening on ${API_BASE_PATH}; population ${String(started.created.context.runtime.world.principalOrder.length)}\n`,
+    );
+  }
 }

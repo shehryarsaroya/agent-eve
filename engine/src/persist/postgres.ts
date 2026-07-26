@@ -40,14 +40,19 @@ import { Pool, type PoolClient } from 'pg';
 import type { DecisionSource, PrincipalId } from '../core/types.js';
 import type { LoggedAction } from '../tick/index.js';
 import type {
+  DivergenceKind,
+  DivergenceRecord,
   EnrollmentRecord,
   JournalStore,
   PersistedEvent,
+  SnapshotDigest,
   SnapshotRecord,
   TickRecord,
 } from './store.js';
+import { safeDetail } from './store.js';
 
 const MASTER_SEED_KEY = 'master_seed';
+const RULES_VERSION_KEY = 'rules_version';
 
 export interface PgJournalStoreOptions {
   /** libpq connection string, or undefined to use `PG*` environment variables. */
@@ -224,6 +229,20 @@ export class PgJournalStore implements JournalStore {
     return rows.map((r) => this.rowToSnapshot(r));
   }
 
+  /**
+   * The tripwire set without the bodies.
+   *
+   * `body` is the whole world; a season holds ~840 of them and boot reads none of
+   * them. Selecting two columns instead of the capture is the difference between a
+   * bounded boot and one that OOMs in the Reckoning it was meant to survive.
+   */
+  async snapshotHashes(): Promise<readonly SnapshotDigest[]> {
+    const { rows } = await this.pool.query<{ tick: number; state_hash: string }>(
+      `SELECT tick, state_hash FROM snapshot ORDER BY tick ASC`,
+    );
+    return rows.map((r) => ({ tick: Number(r.tick), stateHash: r.state_hash }));
+  }
+
   private rowToSnapshot(row: SnapshotRow): SnapshotRecord {
     const tables: unknown = typeof row.body === 'string' ? (JSON.parse(row.body) as unknown) : row.body;
     return {
@@ -237,16 +256,44 @@ export class PgJournalStore implements JournalStore {
   }
 
   async ticksSince(tick: number): Promise<readonly TickRecord[]> {
-    const seeds = await this.pool.query<{ tick: number; seed: string; seed_hash: string }>(
-      `SELECT tick, seed, seed_hash FROM tick_seed WHERE tick > $1 ORDER BY tick ASC`,
-      [tick],
-    );
+    return this.readTicks(tick, null);
+  }
+
+  /**
+   * One bounded page of the action log.
+   *
+   * The upper bound is taken from the seed page rather than computed as `tick +
+   * limit`, because `tick_seed` has no gaps only as long as nothing ever failed to
+   * flush — and a boot that quietly skipped a tick because its arithmetic assumed
+   * density is exactly the kind of silent wrong the record cannot afford.
+   */
+  async ticksPage(tick: number, limit: number): Promise<readonly TickRecord[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new Error(`a page needs a positive integer limit, got ${String(limit)}`);
+    }
+    return this.readTicks(tick, limit);
+  }
+
+  private async readTicks(tick: number, limit: number | null): Promise<readonly TickRecord[]> {
+    const seeds =
+      limit === null
+        ? await this.pool.query<SeedRow>(
+            `SELECT tick, seed, seed_hash FROM tick_seed WHERE tick > $1 ORDER BY tick ASC`,
+            [tick],
+          )
+        : await this.pool.query<SeedRow>(
+            `SELECT tick, seed, seed_hash FROM tick_seed WHERE tick > $1 ORDER BY tick ASC LIMIT $2`,
+            [tick, limit],
+          );
+    if (seeds.rows.length === 0) return [];
+    const lastTick = Number(seeds.rows[seeds.rows.length - 1]?.tick ?? tick);
+
     const actions = await this.pool.query<ActionRow>(
       `SELECT tick, resolution_order, principal_id, client_sequence, arrival_ms, priority,
               verb, params, idempotency_key, expected_state_version, accepted,
               reject_reason, decision_source
-         FROM action_log WHERE tick > $1 ORDER BY tick ASC, resolution_order ASC`,
-      [tick],
+         FROM action_log WHERE tick > $1 AND tick <= $2 ORDER BY tick ASC, resolution_order ASC`,
+      [tick, lastTick],
     );
     const byTick = new Map<number, LoggedAction[]>();
     for (const r of actions.rows) {
@@ -261,6 +308,72 @@ export class PgJournalStore implements JournalStore {
       events: [],
       postings: [],
       actions: byTick.get(s.tick) ?? [],
+    }));
+  }
+
+  /** Write-once, same shape and same reason as the master seed. */
+  async recordRulesVersion(version: number): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO journal_meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+      [RULES_VERSION_KEY, String(version)],
+    );
+  }
+
+  async journalledRulesVersion(): Promise<number | null> {
+    const { rows } = await this.pool.query<{ value: string }>(
+      `SELECT value FROM journal_meta WHERE key = $1`,
+      [RULES_VERSION_KEY],
+    );
+    const raw = rows[0]?.value;
+    if (raw === undefined) return null;
+    const n = Number(raw);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+
+  /**
+   * Append the operator's declaration that the rules changed at a tick.
+   *
+   * INSERT only — the app role holds no UPDATE or DELETE on this table (see
+   * `migrate.ts`), so the door physically cannot rewrite a past row even if a future
+   * caller asked it to. That is the difference between an annotated discontinuity
+   * and a forged record.
+   */
+  async recordDivergence(record: DivergenceRecord): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO journal_divergence (
+         tick, kind, from_rules_version, to_rules_version, detail,
+         expected_hash, actual_hash, tolerated_after, accepted_at_ms
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        record.tick,
+        record.kind,
+        record.fromRulesVersion,
+        record.toRulesVersion,
+        safeDetail(record.detail),
+        record.expectedHash,
+        record.actualHash,
+        record.toleratedAfter,
+        record.acceptedAtMs,
+      ],
+    );
+  }
+
+  async divergences(): Promise<readonly DivergenceRecord[]> {
+    const { rows } = await this.pool.query<DivergenceRow>(
+      `SELECT tick, kind, from_rules_version, to_rules_version, detail,
+              expected_hash, actual_hash, tolerated_after, accepted_at_ms
+         FROM journal_divergence ORDER BY tick ASC, seq ASC`,
+    );
+    return rows.map((r) => ({
+      tick: Number(r.tick),
+      kind: r.kind as DivergenceKind,
+      fromRulesVersion: r.from_rules_version === null ? null : Number(r.from_rules_version),
+      toRulesVersion: Number(r.to_rules_version),
+      detail: r.detail,
+      expectedHash: r.expected_hash,
+      actualHash: r.actual_hash,
+      toleratedAfter: Number(r.tolerated_after),
+      acceptedAtMs: Number(r.accepted_at_ms),
     }));
   }
 
@@ -329,6 +442,24 @@ interface SnapshotRow {
   readonly seed_hash: string;
   readonly state_version: string | number;
   readonly body: unknown;
+}
+
+interface SeedRow {
+  readonly tick: number;
+  readonly seed: string;
+  readonly seed_hash: string;
+}
+
+interface DivergenceRow {
+  readonly tick: string | number;
+  readonly kind: string;
+  readonly from_rules_version: string | number | null;
+  readonly to_rules_version: string | number;
+  readonly detail: string;
+  readonly expected_hash: string | null;
+  readonly actual_hash: string | null;
+  readonly tolerated_after: string | number;
+  readonly accepted_at_ms: string | number;
 }
 
 interface ActionRow {

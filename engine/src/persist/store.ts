@@ -40,8 +40,35 @@
  * snapshots become **verification tripwires**: at every tick that has one, the
  * replayed hash must equal the stored hash, or boot refuses. {@link latestSnapshot}
  * is provided for interface completeness and for operators, but boot cannot use it
- * as an adopt-point until the ledger grows a hydrate-from-journal path — which lives
- * in `ledger.ts`, under review, and is reported rather than touched.
+ * as an adopt-point until the ledger grows a hydrate-from-journal path.
+ *
+ * ── RE-VERIFIED 2026-07-25, AND STILL TRUE FOR THREE REASONS, NOT ONE ───────
+ *
+ * A second pass went looking for a way to adopt a checkpoint anyway. There is not
+ * one yet, and the reasons are worth writing down so the next attempt starts from
+ * facts rather than from the §15.2 story:
+ *
+ *   1. **`restoreTo` refuses to grow the append-only halves** (the original finding;
+ *      re-confirmed empirically — `postings 12 -> 1299`). Liftable on its own.
+ *   2. **The capture holds only `postingCount`/`batchCount`, never the contents** —
+ *      and `checkInv7` recomputes EVERY account balance by summing the whole posting
+ *      log on every tick. A hydrated ledger whose log is short by one row halts the
+ *      first tick after boot. So lifting (1) alone produces a world that boots and
+ *      then dies, which is strictly worse than a slow boot.
+ *   3. **`EncumbranceBook` is in no state table at all.** It is not captured, not
+ *      hashed and not rolled back, so a snapshot cannot carry the open locks. Adopting
+ *      one drops every encumbrance: escrowed stake becomes spendable
+ *      (`freeBalance` reads the book) and any venture role still holding a
+ *      `stakeEncumbranceId` points at a lock that no longer exists. That is an A5′
+ *      defect — the world would be *wrong*, not merely stale.
+ *   4. **`PgJournalStore` does not write the `posting` table** (see its header), so in
+ *      production there is no durable source to hydrate (2) from even if (1) and (3)
+ *      were solved.
+ *
+ * (3) is the decisive one, and closing it means putting the encumbrance book inside
+ * the hashed capture — which changes `state_hash` for every tick and is therefore
+ * itself the kind of rules change {@link DivergenceRecord} exists to declare. It is
+ * reported upward rather than smuggled into the commit that builds the door.
  */
 
 import type { CanonicalValue } from '../core/canonical.js';
@@ -149,6 +176,75 @@ export interface EnrollmentRecord {
 }
 
 /**
+ * Just enough of a snapshot to check a tripwire: the tick and the hash.
+ *
+ * Boot compares hashes and reads nothing else, and a season's worth of full
+ * captures does not fit in a boot's memory budget — 288 ticks per Reckoning over a
+ * 28-day season is ~840 snapshots, each carrying every account, lot, venture and
+ * grant. Loading the digests instead makes the tripwire set O(bytes-per-Reckoning)
+ * rather than O(world-size × Reckonings).
+ */
+export interface SnapshotDigest {
+  readonly tick: number;
+  readonly stateHash: string;
+}
+
+/**
+ * A **declared discontinuity in the record.**
+ *
+ * A5 says the record must never be wrong. When a code change makes a past tick
+ * compute differently, the honest options are to refuse to serve the world or to
+ * say out loud that the rules changed here — and only an operator may choose the
+ * second. This row is that statement: which tick, which rules version was in force
+ * when the tick was written, which one is in force now, and what the divergence
+ * actually was. It is written **once, at the boot that accepted it**, and it never
+ * rewrites a past row: the ticks before and after the divergence keep the bytes
+ * they were written with, and this row is the annotation that says the two halves
+ * were computed by different code.
+ *
+ * A silent discontinuity is a lie. An annotated one is history.
+ */
+export interface DivergenceRecord {
+  /** The first tick whose replay disagreed with the record. */
+  readonly tick: number;
+  readonly kind: DivergenceKind;
+  /** `rules_version` recorded at genesis, or null on a journal written before it was. */
+  readonly fromRulesVersion: number | null;
+  /** `RULES_VERSION` of the build that accepted the divergence. */
+  readonly toRulesVersion: number;
+  /** Human-readable: the action or the hashes. Never a secret; never a NUL byte. */
+  readonly detail: string;
+  /** For a tripwire mismatch: the journalled hash. Null for a refusal. */
+  readonly expectedHash: string | null;
+  /** For a tripwire mismatch: what this build produced. Null for a refusal. */
+  readonly actualHash: string | null;
+  /** How many further divergences the same boot tolerated after this one. */
+  readonly toleratedAfter: number;
+  /** Wall clock at acceptance, injected (DET-7). Audit only; nothing reads it back. */
+  readonly acceptedAtMs: number;
+}
+
+export type DivergenceKind = 'APPLIED_REFUSED' | 'STATE_HASH_MISMATCH';
+
+/**
+ * Strip anything that cannot go in a Postgres text column, and bound the length.
+ *
+ * A NUL byte aborts the whole INSERT, and the one string here not authored by this
+ * codebase is an engine hint quoting an agent-supplied verb. So the sanitiser runs
+ * on the way in, where the alternative failure is "the operator accepted a
+ * divergence and the annotation silently did not write".
+ */
+export function safeDetail(text: string, max = 2000): string {
+  let out = '';
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    out += code < 0x20 || code === 0x7f ? ' ' : ch;
+    if (out.length >= max) break;
+  }
+  return out.slice(0, max);
+}
+
+/**
  * The durable journal. Two implementations: {@link InMemoryJournalStore} (tests, no
  * external dependency) and `PgJournalStore` (production). The abstraction is what
  * lets the durability round-trip — the actual risk — be tested in CI without a
@@ -174,13 +270,51 @@ export interface JournalStore {
 
   /** The highest-tick snapshot, or null. For operators; boot cannot adopt it (see header). */
   latestSnapshot(): Promise<SnapshotRecord | null>;
-  /** Every snapshot, ascending by tick. Boot's tripwire set. */
+  /**
+   * Every snapshot, ascending by tick — full captures.
+   *
+   * **Not what boot uses.** A long season's worth of full captures is unbounded
+   * memory; boot reads {@link snapshotHashes} instead. This stays for operators, for
+   * `verify-restore`, and for tests that need the bodies.
+   */
   snapshots(): Promise<readonly SnapshotRecord[]>;
+  /** Every snapshot's `(tick, state_hash)`, ascending. Boot's tripwire set. */
+  snapshotHashes(): Promise<readonly SnapshotDigest[]>;
 
-  /** Every tick strictly after `tick`, ascending. `ticksSince(-1)` is the whole run. */
+  /**
+   * Every tick strictly after `tick`, ascending. `ticksSince(-1)` is the whole run.
+   *
+   * **Unbounded, so boot does not call it.** Kept because a whole-run read is the
+   * honest thing for an audit or a test to ask for; the boot path pages through
+   * {@link ticksPage}.
+   */
   ticksSince(tick: number): Promise<readonly TickRecord[]>;
+  /**
+   * At most `limit` ticks strictly after `tick`, ascending. The paged form of
+   * {@link ticksSince}, and the only one replay is allowed to use: a season at the
+   * production 10 s tick is ~242 000 ticks, and materialising all of them (with
+   * every action) before the first one is replayed is a boot that gets slower and
+   * hungrier forever while A10 forbids ever resetting.
+   *
+   * A short page means the end of the log. `limit` must be >= 1.
+   */
+  ticksPage(tick: number, limit: number): Promise<readonly TickRecord[]>;
   /** The highest appended tick, or -1 when none. */
   headTick(): Promise<number>;
+
+  /**
+   * Record the `RULES_VERSION` this run was born under. Write-once, like the seed:
+   * the point is to know what the OLD ticks were computed by, and an upsert would
+   * destroy exactly that.
+   */
+  recordRulesVersion(version: number): Promise<void>;
+  /** The rules version at genesis, or null on a journal written before this existed. */
+  journalledRulesVersion(): Promise<number | null>;
+
+  /** Append one operator-accepted discontinuity. Never updates; never deletes. */
+  recordDivergence(record: DivergenceRecord): Promise<void>;
+  /** Every accepted discontinuity, ascending by tick. The public annotation. */
+  divergences(): Promise<readonly DivergenceRecord[]>;
 
   /** Persist one external enrolment so boot can re-seat it. */
   recordEnrollment(record: EnrollmentRecord): Promise<void>;

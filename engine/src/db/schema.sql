@@ -345,4 +345,36 @@ CREATE TABLE IF NOT EXISTS journal_enrollment (
 CREATE INDEX IF NOT EXISTS journal_enrollment_order_idx
   ON journal_enrollment (enrolled_at_tick, seq);
 
+-- A DECLARED DISCONTINUITY IN THE RECORD.
+--
+-- A5 says the record must never be wrong, and a code change that makes a past tick
+-- compute differently makes replay disagree with the bytes already written. Boot's
+-- default answer is to refuse to serve the world at all. An operator may instead
+-- declare the change — naming the tick, the rules version the old ticks were written
+-- under and the one running now — and this table is that declaration.
+--
+-- Append-only by grant like the rest of history (see APPEND_ONLY_UNPARTITIONED in
+-- migrate.ts): the door annotates, it never rewrites. Unpartitioned because there
+-- should be a handful of these in a world's whole life; if this table ever grows
+-- fast, that is the finding, not the storage.
+CREATE TABLE IF NOT EXISTS journal_divergence (
+  seq                 bigserial PRIMARY KEY,
+  tick                integer NOT NULL,
+  kind                text    NOT NULL,
+  -- Null on a journal written before rules_version was recorded at genesis.
+  from_rules_version  integer,
+  to_rules_version    integer NOT NULL,
+  detail              text    NOT NULL,
+  expected_hash       text,
+  actual_hash         text,
+  tolerated_after     integer NOT NULL DEFAULT 0,
+  accepted_at_ms      bigint  NOT NULL,
+  CONSTRAINT journal_divergence_tick_nonneg CHECK (tick >= 0),
+  CONSTRAINT journal_divergence_kind CHECK (kind IN ('APPLIED_REFUSED', 'STATE_HASH_MISMATCH')),
+  CONSTRAINT journal_divergence_detail_len CHECK (length(detail) <= 2000)
+);
+
+CREATE INDEX IF NOT EXISTS journal_divergence_tick_idx
+  ON journal_divergence (tick, seq);
+
 COMMIT;

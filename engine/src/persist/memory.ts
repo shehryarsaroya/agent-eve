@@ -18,8 +18,10 @@
  */
 
 import type {
+  DivergenceRecord,
   EnrollmentRecord,
   JournalStore,
+  SnapshotDigest,
   SnapshotRecord,
   TickRecord,
 } from './store.js';
@@ -28,9 +30,11 @@ export class JournalStoreError extends Error {}
 
 export class InMemoryJournalStore implements JournalStore {
   private seed: string | null = null;
+  private rules: number | null = null;
   private readonly ticksByTick = new Map<number, TickRecord>();
   private readonly snapshotsByTick = new Map<number, SnapshotRecord>();
   private readonly enrollmentLog: EnrollmentRecord[] = [];
+  private readonly divergenceLog: DivergenceRecord[] = [];
   private head = -1;
 
   init(masterSeed: string): Promise<void> {
@@ -98,14 +102,52 @@ export class InMemoryJournalStore implements JournalStore {
     );
   }
 
+  async snapshotHashes(): Promise<readonly SnapshotDigest[]> {
+    return (await this.snapshots()).map((s) => ({ tick: s.tick, stateHash: s.stateHash }));
+  }
+
   ticksSince(tick: number): Promise<readonly TickRecord[]> {
     return Promise.resolve(
       [...this.ticksByTick.values()].filter((t) => t.tick > tick).sort((a, b) => a.tick - b.tick),
     );
   }
 
+  async ticksPage(tick: number, limit: number): Promise<readonly TickRecord[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new JournalStoreError(`a page needs a positive integer limit, got ${String(limit)}`);
+    }
+    // The reference semantics the pg impl is measured against: strictly-after,
+    // ascending, at most `limit`, and a short page means the end.
+    return (await this.ticksSince(tick)).slice(0, limit);
+  }
+
   headTick(): Promise<number> {
     return Promise.resolve(this.head);
+  }
+
+  recordRulesVersion(version: number): Promise<void> {
+    // Write-once, exactly like the seed. What matters is which rules the OLD ticks
+    // were computed under, and an upsert would erase precisely that.
+    if (this.rules === null) this.rules = version;
+    return Promise.resolve();
+  }
+
+  journalledRulesVersion(): Promise<number | null> {
+    return Promise.resolve(this.rules);
+  }
+
+  recordDivergence(record: DivergenceRecord): Promise<void> {
+    this.divergenceLog.push(record);
+    return Promise.resolve();
+  }
+
+  divergences(): Promise<readonly DivergenceRecord[]> {
+    return Promise.resolve(
+      this.divergenceLog
+        .map((d, i) => ({ d, i }))
+        .sort((a, b) => a.d.tick - b.d.tick || a.i - b.i)
+        .map(({ d }) => d),
+    );
   }
 
   recordEnrollment(record: EnrollmentRecord): Promise<void> {
