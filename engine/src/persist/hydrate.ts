@@ -99,13 +99,21 @@ export class HydrateError extends Error {
  *   - `delivery`     — the deed set's only source and the pinned pot a deferral's
  *                      second pass divides (§15.3).
  *
- * **This list is hand-maintained, and that is still its weakness.** It cannot see a
- * book added tomorrow and never listed here, so it under-reports by construction —
+ * **This list was hand-maintained, and that was its weakness.** It could not see a
+ * book added tomorrow and never listed here, so it under-reported by construction —
  * `mint` and `delivery` are the proof, and they were found by comparing two whole
- * worlds rather than by reading this file. The real fix is for the engine to
- * enumerate its own mutable books and assert that each is either captured or
- * explicitly declared ephemeral; until then this is a floor, not a ceiling, and the
- * equivalence test compares whole worlds precisely because a hash cannot check it.
+ * worlds rather than by reading this file. A verifier then found the next instance
+ * sitting here already: `raid` was a restorable state table and was **not** in this
+ * list, so a build that lost the raid registration would have adopted a checkpoint and
+ * dropped every live demand with the gate reporting nothing missing.
+ *
+ * So the list is no longer only hand-maintained. `test/durability/books-in-the-hash`
+ * pins **every restorable table the engine registers** against this array, in both
+ * directions, so a book that has a table can no longer be absent from the list that
+ * decides whether adopting it is safe. The manifest is still a floor rather than a
+ * ceiling for a book in *no* table at all — that is what the whole-world equivalence
+ * test is for, because a hash cannot check it — but it can no longer lag behind the
+ * tables that do exist.
  */
 export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   'election',
@@ -125,6 +133,12 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   'obligation',
   'seal',
   'standing',
+  // Predation. Registered with a restore since the raid book landed, and absent from
+  // this list until a verifier compared the two sets — the same shape as `mint` and
+  // `delivery`, caught one step earlier. A live demand decides what a future tick does
+  // to a principal's goods, so an adopted world that dropped the book would come up
+  // owing nobody anything.
+  'raid',
 ];
 
 /** Why a checkpoint was not adopted, or null when one was. */

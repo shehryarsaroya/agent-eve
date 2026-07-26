@@ -40,6 +40,10 @@ import { DefaultRegister } from '../../src/invariants/index.js';
 import { SimpleObligationBook } from '../../src/ledger/index.js';
 import { StandingBook } from '../../src/reckoning/index.js';
 import { SealBook } from '../../src/seal/index.js';
+import {
+  CHECKPOINT_REQUIRED_TABLES,
+  missingCheckpointTables,
+} from '../../src/persist/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { captureSnapshot, type StateTable } from '../../src/tick/index.js';
 
@@ -149,6 +153,35 @@ describe('every book round-trips through its own capture', () => {
     // A hash-only table attests to a book without being able to put it back, which is
     // the shape that lets an adoption look verified while dropping the contents.
     expect(runtime.engine.rollbackGaps).toEqual([]);
+  }, 30_000);
+
+  it('EVERY restorable table is named in the adoption manifest, not just the seven', () => {
+    // `CHECKPOINT_REQUIRED_TABLES` is the gate `planCheckpoint` decides on, and it was
+    // hand-maintained: `mint` and `delivery` were missing from it until an equivalence
+    // test compared two whole worlds. A verifier then found the next instance already
+    // sitting there — `raid` was restorable and unlisted, so a build that lost the raid
+    // registration would have adopted a checkpoint and dropped every live demand while
+    // the gate reported nothing missing.
+    //
+    // This closes that direction for good. It cannot see a book in NO table (that is
+    // the equivalence test's job), but a book that HAS a table can no longer be absent
+    // from the list that decides whether adopting is safe.
+    const { runtime } = seated();
+    const restorable = runtime.engine.stateTables
+      .filter((t) => t.restore !== undefined)
+      .map((t) => t.name)
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const unlisted = restorable.filter((n) => !CHECKPOINT_REQUIRED_TABLES.includes(n));
+    expect(
+      unlisted,
+      'a restorable state table missing from CHECKPOINT_REQUIRED_TABLES is a book an ' +
+        'adoption could drop with the gate reporting nothing missing',
+    ).toEqual([]);
+    // And the reverse, so the manifest cannot name a book this build does not have:
+    // `missingCheckpointTables` would then refuse every adoption forever.
+    expect(missingCheckpointTables(runtime.engine.stateTables)).toEqual([]);
+    // Non-vacuity: neither set may be empty.
+    expect(restorable.length).toBeGreaterThan(BOOKS.length);
   }, 30_000);
 
   it('a live world captures and restores every book byte-for-byte', () => {
