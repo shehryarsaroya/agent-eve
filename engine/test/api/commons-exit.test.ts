@@ -548,7 +548,16 @@ describe('the crossing is one-way, and the agent is told so in the words it read
     expect(warning).toContain('can be raided at');
     expect(warning).toContain('never accepts a COMMONS destination');
     // The recurring cost is stated honestly rather than implied by silence.
-    expect(warning).toContain('Recurring upkeep is not charged yet');
+    //
+    // This line read `'Recurring upkeep is not charged yet'` until sovereignty landed, and
+    // the pin is why the sentence was updated rather than left to rot: the moment the Charge
+    // became real, an affordance still promising a one-off price was a rules-surface lie of
+    // exactly scar #1's kind — engine and agent-facing text disagreeing about the rules,
+    // with every individual component correct. The assertion's *intent* never moved. What
+    // has to be honest is the recurring cost; what it says about it depends on the engine.
+    expect(warning).toContain('one-off charge');
+    expect(warning).toContain('RECURRING Charge every Reckoning');
+    expect(warning, 'and it names where the agent will meet it').toContain('obligations.charge');
   });
 
   it('refuses a system that is not one lane away, so a body cannot teleport to the Frontier', async () => {

@@ -164,10 +164,29 @@ export interface ChargePlan {
   readonly assessedAtTick: number;
 }
 
-/** What has actually been delivered against one claim's Charge. The audit trail. */
+/**
+ * What has actually been delivered against one **system's** Charge. The audit trail.
+ *
+ * ## Why this is keyed on the system and not on the claim (A5′)
+ *
+ * The Charge is a duty on *territory*, which is what makes "a transfer never resets the
+ * arrears" true. Everything else in the module already agreed with that — `missesAt`,
+ * `liveAt` and `claims` are all keyed on `SystemId`, and settlement resolves the payer by
+ * calling `liveAt(line.system)`. The payment row was the one exception, and the mismatch
+ * was reachable: abandon a claim mid-Reckoning and re-take the same system, and the new
+ * claim carries a new {@link ClaimId}, so an assessment keyed on the old id was invisible
+ * to the new claim's own `observe` while settlement still billed it.
+ *
+ * The agent was shown `if_you_do_nothing: STAYS_SUPPLIED`, took no action because it had
+ * been told it was current, and then lapsed with its bond slashed. That is A5′ — the
+ * record was not merely unhelpful, it was **wrong** — and it is the consequence-preview
+ * field, the one High Water shipped as `projectedDrown` precisely because an agent plans
+ * against it. Keying the duty on the system makes the view, the settlement and the credit
+ * read the same row by construction rather than by three call sites agreeing.
+ */
 export interface ChargePayment {
   readonly reckoning: number;
-  readonly claim: ClaimId;
+  readonly system: SystemId;
   paid: Qty;
   /** Deliveries credited, including third-party ones. Bounded by the assessment. */
   deliveries: number;
@@ -420,18 +439,24 @@ export class Book {
       .sort((a, b) => compareIds(a.constellation, b.constellation));
   }
 
-  /** The assessment line for one claim, or null if it holds none this Reckoning. */
-  lineFor(reckoning: number, claim: ClaimId): { readonly plan: ChargePlan; readonly line: ChargeLine } | null {
+  /**
+   * The assessment line for one **system**, or null if it holds none this Reckoning.
+   *
+   * Keyed on the system for the reason {@link ChargePayment} gives in full: the duty is
+   * territorial, a plan mints at most one line per system per Reckoning, and a claim id
+   * changes under abandon-and-retake while the duty does not.
+   */
+  lineFor(reckoning: number, system: SystemId): { readonly plan: ChargePlan; readonly line: ChargeLine } | null {
     for (const plan of this.plansIn(reckoning)) {
       for (const line of plan.lines) {
-        if (line.claim === claim) return { plan, line };
+        if (line.system === system) return { plan, line };
       }
     }
     return null;
   }
 
-  assessmentOf(reckoning: number, claim: ClaimId): Qty {
-    return this.lineFor(reckoning, claim)?.line.amount ?? qty(0);
+  assessmentOf(reckoning: number, system: SystemId): Qty {
+    return this.lineFor(reckoning, system)?.line.amount ?? qty(0);
   }
 
   /** Every line this principal is the claimant on, canonical order. */
@@ -445,11 +470,11 @@ export class Book {
 
   // ── payment ───────────────────────────────────────────────────────────────
 
-  paymentOf(reckoning: number, claim: ClaimId): ChargePayment {
-    const key = pairKey(reckoning, claim);
+  paymentOf(reckoning: number, system: SystemId): ChargePayment {
+    const key = pairKey(reckoning, system);
     const row = this.payments.get(key);
     if (row !== undefined) return row;
-    const fresh: ChargePayment = { reckoning, claim, paid: qty(0), deliveries: 0 };
+    const fresh: ChargePayment = { reckoning, system, paid: qty(0), deliveries: 0 };
     this.payments.set(key, fresh);
     return fresh;
   }
@@ -461,9 +486,9 @@ export class Book {
    * rather than an all-or-nothing predicate, and the number it returns is the number the
    * observation shows *before* the deadline and the number settlement records *after*.
    */
-  owingOf(reckoning: number, claim: ClaimId): { readonly assessment: Qty; readonly paid: Qty; readonly owed: Qty } {
-    const assessment = this.assessmentOf(reckoning, claim);
-    const paid = qty(Math.min(assessment, this.payments.get(pairKey(reckoning, claim))?.paid ?? 0));
+  owingOf(reckoning: number, system: SystemId): { readonly assessment: Qty; readonly paid: Qty; readonly owed: Qty } {
+    const assessment = this.assessmentOf(reckoning, system);
+    const paid = qty(Math.min(assessment, this.payments.get(pairKey(reckoning, system))?.paid ?? 0));
     return { assessment, paid, owed: qty(Math.max(0, assessment - paid)) };
   }
 
@@ -474,9 +499,9 @@ export class Book {
    * called. A credit written before the goods moved would record a payment that did not
    * happen; a credit written after a failed destruction would record one that failed.
    */
-  credit(reckoning: number, claim: ClaimId, amount: Qty): void {
+  credit(reckoning: number, system: SystemId, amount: Qty): void {
     if (amount <= 0) return;
-    const row = this.paymentOf(reckoning, claim);
+    const row = this.paymentOf(reckoning, system);
     row.paid = qty(row.paid + amount);
     row.deliveries += 1;
   }
@@ -594,12 +619,21 @@ export class Book {
 
   // ── shortfalls ────────────────────────────────────────────────────────────
 
+  /**
+   * File one Reckoning's verdict on one **system**.
+   *
+   * Keyed territorially like the assessment and the payment, and for the same reason: a
+   * retake mints a new {@link ClaimId} while the duty stays put, so a verdict filed under
+   * the claim id was invisible to INV-20's lookup by the assessed line — the mechanic's
+   * own "no claim was silently skipped" check. The row still *names* the claim that was
+   * short, because that is the fact the record publishes; only the key is the territory.
+   */
   recordShortfall(row: ChargeShortfallRow): void {
-    this.shortfalls.set(pairKey(row.reckoning, row.claim), row);
+    this.shortfalls.set(pairKey(row.reckoning, row.system), row);
   }
 
-  shortfallOf(reckoning: number, claim: ClaimId): ChargeShortfallRow | null {
-    return this.shortfalls.get(pairKey(reckoning, claim)) ?? null;
+  shortfallOf(reckoning: number, system: SystemId): ChargeShortfallRow | null {
+    return this.shortfalls.get(pairKey(reckoning, system)) ?? null;
   }
 
   shortfallsIn(reckoning: number): readonly ChargeShortfallRow[] {
@@ -733,10 +767,10 @@ export class Book {
             })),
         })),
       payments: [...this.payments.values()]
-        .sort((a, b) => a.reckoning - b.reckoning || compareIds(a.claim, b.claim))
+        .sort((a, b) => a.reckoning - b.reckoning || compareIds(a.system, b.system))
         .map((row) => ({
           reckoning: row.reckoning,
-          claim: row.claim,
+          system: row.system,
           paid: row.paid,
           deliveries: row.deliveries,
         })),
@@ -867,11 +901,11 @@ export class Book {
       const o = readObject(raw, where);
       const row: ChargePayment = {
         reckoning: readInt(o, 'reckoning', where),
-        claim: readString(o, 'claim', where) as ClaimId,
+        system: readString(o, 'system', where) as SystemId,
         paid: qty(readInt(o, 'paid', where)),
         deliveries: readInt(o, 'deliveries', where),
       };
-      this.payments.set(pairKey(row.reckoning, row.claim), row);
+      this.payments.set(pairKey(row.reckoning, row.system), row);
     }
 
     for (const [i, raw] of readArray(root['ballots'] ?? [], 'sovereignty.ballots').entries()) {
@@ -907,7 +941,7 @@ export class Book {
         state,
         slashed: minor(readInt(o, 'slashed', where)),
       };
-      this.shortfalls.set(pairKey(row.reckoning, row.claim), row);
+      this.shortfalls.set(pairKey(row.reckoning, row.system), row);
     }
 
     for (const [i, raw] of readArray(root['cessions'] ?? [], 'sovereignty.cessions').entries()) {

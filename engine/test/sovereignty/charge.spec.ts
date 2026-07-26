@@ -263,17 +263,17 @@ describe('the collapse arc (DRAFT-2 §2: a fire sale or a rescue, never a cliff)
     const { port } = fullSlash();
 
     assessAt(book, 0);
-    const due = book.assessmentOf(0, claimIdFor('sys-a' as SystemId, 1));
-    book.credit(0, claimIdFor('sys-a' as SystemId, 1), qty(due - 1));
-    expect(book.owingOf(0, claimIdFor('sys-a' as SystemId, 1)).owed).toBe(1);
+    const due = book.assessmentOf(0, 'sys-a' as SystemId);
+    book.credit(0, 'sys-a' as SystemId, qty(due - 1));
+    expect(book.owingOf(0, 'sys-a' as SystemId).owed).toBe(1);
     settleOnce(book, 0, port);
     expect(book.missesAt('sys-a' as SystemId)).toBe(1);
 
     assessAt(book, 1);
-    const cure = book.assessmentOf(1, claimIdFor('sys-a' as SystemId, 1));
+    const cure = book.assessmentOf(1, 'sys-a' as SystemId);
     // The cure is the CURRENT Charge plus the bounded surcharge — never the missed one too.
     expect(cure).toBe(chargeOf({ tier: MARCHES, misses: 1 }));
-    book.credit(1, claimIdFor('sys-a' as SystemId, 1), cure);
+    book.credit(1, 'sys-a' as SystemId, cure);
     settleOnce(book, 1, port);
     expect(book.missesAt('sys-a' as SystemId)).toBe(0);
     expect(book.liveAt('sys-a' as SystemId)?.state).toBe('SUPPLIED');
@@ -301,7 +301,7 @@ describe('the collapse arc (DRAFT-2 §2: a fire sale or a rescue, never a cliff)
     expect(book.liveAt('sys-a' as SystemId)?.state).toBe('STRAINED');
     // And the *next* assessment carries the inherited surcharge, so the buyer pays for it.
     assessAt(book, 1);
-    expect(book.lineFor(1, claimIdFor('sys-a' as SystemId, 1))?.line.missesAtAssessment).toBe(1);
+    expect(book.lineFor(1, 'sys-a' as SystemId)?.line.missesAtAssessment).toBe(1);
   });
 
   it('a cession salvages part of the bond and a lapse takes all of it — the exit is cheaper', () => {
@@ -393,12 +393,13 @@ describe('A5-prime: never an arrears against a claimant that paid or was never b
     // ══════════════════════════════════════════════════════════════════════
     const book = bookWith(claim('sys-a', A));
     assessCharge({ book, tick: 0, tierOf: () => MARCHES });
-    const id = claimIdFor('sys-a' as SystemId, 1);
+    const id = 'sys-a' as SystemId; // the duty key: territorial, not the claim record
+    const rec = claimIdFor(id, 1);
     const due = book.assessmentOf(0, id);
     book.credit(0, id, qty(due - 1));
     book.recordShortfall({
       reckoning: 0,
-      claim: id,
+      claim: rec,
       system: 'sys-a' as SystemId,
       claimant: A,
       assessment: due,
@@ -424,12 +425,13 @@ describe('A5-prime: never an arrears against a claimant that paid or was never b
     // over every unit is still recorded short and nothing halts. RED here.
     const book = bookWith(claim('sys-a', A));
     assessCharge({ book, tick: 0, tierOf: () => MARCHES });
-    const id = claimIdFor('sys-a' as SystemId, 1);
+    const id = 'sys-a' as SystemId; // the duty key: territorial, not the claim record
+    const rec = claimIdFor(id, 1);
     const due = book.assessmentOf(0, id);
     book.credit(0, id, due);
     book.recordShortfall({
       reckoning: 0,
-      claim: id,
+      claim: rec,
       system: 'sys-a' as SystemId,
       claimant: A,
       assessment: due,
@@ -451,10 +453,11 @@ describe('A5-prime: never an arrears against a claimant that paid or was never b
     // assesses everybody. RED here.
     // ══════════════════════════════════════════════════════════════════════
     const book = bookWith(claim('sys-a', A));
-    const id = claimIdFor('sys-a' as SystemId, 1);
+    const id = 'sys-a' as SystemId; // the duty key: territorial, not the claim record
+    const rec = claimIdFor(id, 1);
     book.recordShortfall({
       reckoning: 7,
-      claim: id,
+      claim: rec,
       system: 'sys-a' as SystemId,
       claimant: A,
       assessment: qty(0),
@@ -478,10 +481,11 @@ describe('A5-prime: never an arrears against a claimant that paid or was never b
     // test owns the property alone.
     const book = bookWith(claim('sys-a', A));
     assessCharge({ book, tick: 0, tierOf: () => MARCHES });
-    const id = claimIdFor('sys-a' as SystemId, 1);
+    const id = 'sys-a' as SystemId; // the duty key: territorial, not the claim record
+    const rec = claimIdFor(id, 1);
     book.recordShortfall({
       reckoning: 0,
-      claim: id,
+      claim: rec,
       system: 'sys-a' as SystemId,
       claimant: A,
       assessment: book.assessmentOf(0, id),
@@ -735,7 +739,7 @@ describe('SOV-1..7 and the schedule assertion', () => {
     // — the StandingBook failure exactly, in the book that takes territory. RED here.
     const book = bookWith(claim('sys-a', A), claim('sys-b', B));
     assessCharge({ book, tick: 0, tierOf: () => MARCHES });
-    book.credit(0, claimIdFor('sys-a' as SystemId, 1), qty(1_000));
+    book.credit(0, 'sys-a' as SystemId, qty(1_000));
     book.miss('sys-b' as SystemId, 0);
     book.offerCession({
       system: 'sys-b' as SystemId,

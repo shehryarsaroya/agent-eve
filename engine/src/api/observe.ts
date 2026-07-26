@@ -55,7 +55,7 @@ import {
 import type { Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor, type Minor } from '../core/units.js';
 import { storesAccount } from '../ledger/index.js';
-import { MAX_ORDER_QTY, sellableGoods, type PublicBook } from '../market/index.js';
+import { MAX_ORDER_QTY, freeCash, sellableGoods, type PublicBook } from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
   escrowRequired,
@@ -682,6 +682,13 @@ function graduationBlock(
     /** Pledged, so it stays behind: a pledged lot cannot be sent away. */
     left_behind_qty: quote.pledgedQty,
     affordable: quote.affordable,
+    /**
+     * Live claims keeping your body here (INV-8). Non-empty means `graduate` is not
+     * offered however affordable it is, and the fix is `abandon` or a ceded sale — not
+     * more currency. Named so the agent reads the real obstacle rather than re-checking
+     * a price that was never the problem.
+     */
+    anchoring: quote.anchoring,
     one_way: true,
     statement: GRADUATION_STATEMENT,
   };
@@ -1253,7 +1260,7 @@ function affordancesFor(
   //     the choice is legible even in the observation that cannot yet offer it.
   //     ══════════════════════════════════════════════════════════════════════
   const crossing = runtime.graduationQuote(principal);
-  if (crossing !== null && crossing.affordable) {
+  if (crossing !== null && crossing.affordable && crossing.anchoring.length === 0) {
     for (const destination of crossing.open) {
       eligible.push({
         verb: 'graduate',
@@ -1278,14 +1285,20 @@ function affordancesFor(
           `${crossing.pledgedQty > 0 ? `; ${String(crossing.pledgedQty)} pledged units stay at ${crossing.from}, because a pledged lot cannot be sent away` : ''}. ` +
           'In exchange your hands stop being Commons-bound and can go anywhere. World raids aim at the ' +
           'principal with the most goods standing outside the Commons — read header.raid_schedule before ' +
-          'you go. Recurring upkeep is not charged yet; today you pay once, here.',
+          'you go. This crossing is a one-off charge; territory taken out there carries a RECURRING Charge ' +
+          'every Reckoning, and obligations.charge is where it appears.',
         expires_tick: tick + QUOTE_PIN_TICKS,
         quote_id: quoteId(principal, tick, 'graduate', { to: destination }),
       });
     }
   }
   const crossingWithheld =
-    crossing !== null && !crossing.affordable ? crossing.open.length : 0;
+    crossing !== null && !crossing.affordable && crossing.anchoring.length === 0 ? crossing.open.length : 0;
+  // Counted separately from the price, because the fix is a different act. Silently
+  // dropping it would read as "the exit vanished" — the shape of the defect a playtest
+  // already found once, and the reason every omission in this file carries a reason.
+  const crossingAnchored =
+    crossing !== null && crossing.anchoring.length > 0 ? crossing.open.length : 0;
 
   // 5c. **Rescue, or take.** A claim of somebody else's that is for sale, or contestable
   //     inside the published window. Both are `build`, and the row says which.
@@ -1310,7 +1323,12 @@ function affordancesFor(
     if (claim.route === null) continue;
     if (claim.available_here < ANCHOR_QTY) continue;
     const price = claim.cession?.price ?? 0;
-    if (claim.route === 'CESSION' && free < price) continue;
+    // `freeCash`, matching `vBuild`'s gate, not the raw free balance: a cession price is the
+    // one principal-to-principal transfer in sovereignty, so it is payable out of EARNINGS
+    // and never out of the §12.5 endowment (D7 — see the block above `vBuild`'s own `free`).
+    // Offering it against the raw balance would offer a purchase the engine refuses, which
+    // costs the agent a real action (AGT-S2).
+    if (claim.route === 'CESSION' && freeCash(runtime.ledger, principal) < price) continue;
     eligible.push({
       verb: 'build',
       params: { kind: 'ANCHOR', system: claim.system },
@@ -1631,6 +1649,14 @@ function affordancesFor(
         'holding.graduation carries the same figures and the destinations, so the choice is still readable',
     );
   }
+  if (crossingAnchored > 0 && crossing !== null) {
+    reasons.push(
+      `${String(crossingAnchored)} graduate act(s) exist and are not offered because you hold live claim(s) on ` +
+        `${crossing.anchoring.join(', ')} — a claim is anchored by a body, so your holding cannot leave ` +
+        'territory that would then have nobody standing on it. `abandon` returns part of the bond and ' +
+        '`publish_offer` {"cede":…} sells the claim; either one opens the crossing again',
+    );
+  }
   if (chargeNoHand > 0) {
     // Counted with the sentence that fixes it, because the fix is one ordinary act. Left
     // uncounted this would read as "your Charge is unpayable", which is the shape of the
@@ -1667,6 +1693,7 @@ function affordancesFor(
         rowsOutOfReach +
         boardDropped +
         crossingWithheld +
+        crossingAnchored +
         chargeNoHand +
         commonsBoundLanes,
       reason:

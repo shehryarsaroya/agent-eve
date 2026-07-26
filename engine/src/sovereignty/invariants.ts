@@ -217,7 +217,7 @@ export function checkSov6(input: SovereigntyInvariantInputs): readonly Invariant
         // world on every cession.
         if (claim === null) continue;
         if (isTerminal(claim.state) && (claim.endedAtReckoning ?? reckoning) < reckoning) continue;
-        if (input.book.shortfallOf(reckoning, line.claim) !== null) continue;
+        if (input.book.shortfallOf(reckoning, line.system) !== null) continue;
         if (claim.state === 'CEDED') continue;
         out.push(
           halt(

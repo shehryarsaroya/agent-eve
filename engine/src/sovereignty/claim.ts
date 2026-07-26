@@ -108,7 +108,15 @@ export function claimRejection(args: {
   /** Unpledged units of {@link CHARGE_GOOD} standing at `system` in the actor's stores. */
   readonly anchorAvailable: Qty;
   readonly bondRead: BondRead;
-  /** Free currency, for the cession price. Locked stores do not count. */
+  /**
+   * Currency this principal may spend on a cession price.
+   *
+   * **Earnings, never the §12.5 endowment** (D7): the caller passes `freeCash`, which is the
+   * free balance above `ENDOWMENT_FLOOR_MINOR`. A cession is the only principal-to-principal
+   * transfer in sovereignty — the anchor and the Charge are destroyed, the bond is locked in
+   * the buyer's own stores — so it is the only place the endowment could leave a principal,
+   * and `ledger/endowment.ts` says it may not. `vBuild`'s own block carries the measurement.
+   */
   readonly freeMinor: number;
 }): Rejection | null {
   const { book, map, world, principal, system, tick } = args;
@@ -195,7 +203,11 @@ export function claimRejection(args: {
       return reject(
         'A15',
         `${offer.by} is asking ${String(offer.price)} for the claim on ${system} and you have ` +
-          `${String(args.freeMinor)} free (locked stores do not count). Taking it also makes you the claimant ` +
+          `${String(args.freeMinor)} you can spend on it. That figure is your EARNINGS: locked stores do not ` +
+          'count, and neither does the starter stake the world gave you — a cession price leaves you and goes ' +
+          'to another principal, and the endowment funds your own work only (it can buy no claim, fund no bid ' +
+          'and be sold to nobody). Earn it by hauling, trading or completing ventures. Taking it also makes you ' +
+          'the claimant ' +
           `of record on its arrears: this claim is ${live?.state ?? 'SUPPLIED'} with ` +
           `${String(book.missesAt(system))} consecutive miss(es), and a transfer never resets that count.`,
       );

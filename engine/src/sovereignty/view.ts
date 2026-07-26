@@ -202,8 +202,8 @@ function claimView(
   reckoning: number,
 ): ClaimView {
   const { book } = port;
-  const owing = book.owingOf(reckoning, claim.id);
-  const found = book.lineFor(reckoning, claim.id);
+  const owing = book.owingOf(reckoning, claim.system);
+  const found = book.lineFor(reckoning, claim.system);
   const misses = book.missesAt(claim.system);
   const tier = port.tierOf(claim.system);
   const ticksLeft = ticksUntilReckoning(port.tick);
@@ -319,8 +319,8 @@ export function claimLinesFor(args: {
   const lines: ClaimLine[] = [];
   for (const claim of args.book.claimsInOrder()) {
     const misses = args.book.missesAt(claim.system);
-    const owing = args.book.owingOf(args.reckoning, claim.id);
-    const settled = args.book.shortfallOf(args.reckoning, claim.id);
+    const owing = args.book.owingOf(args.reckoning, claim.system);
+    const settled = args.book.shortfallOf(args.reckoning, claim.system);
     lines.push({
       claim: claim.id,
       system: claim.system,

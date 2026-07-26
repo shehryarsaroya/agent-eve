@@ -259,6 +259,7 @@ import {
   checkMarketInvariants,
   checkReplacement,
   clearMarkets,
+  freeCash,
   marketStateTable,
   MARKET_FEES,
   ownOrdersFor,
@@ -915,6 +916,23 @@ export interface GraduationQuote {
   readonly pledgedQty: Qty;
   /** False when either half of the price cannot be met right now. */
   readonly affordable: boolean;
+  /**
+   * Live claims of this principal's that a departure would strand — **the fourth reader
+   * of INV-8**, and the reason it is here rather than in the verb.
+   *
+   * INV-8 states the rule in its own violation message: *"a claim is anchored by a body;
+   * a claim with no body behind it is territory nobody is standing on"*. Nothing enforced
+   * it. `graduate` stayed offered after `build` took a claim, so an agent copying two
+   * consecutive affordances verbatim moved its holding out from under its own territory
+   * and **halted the world** — an invariant abort is the correct response to a broken
+   * tick (§15.4 fails closed), which made this a total denial of service reachable by
+   * playing legally. A4 is emphatic that throughput must not be power; an ordinary act
+   * that stops the galaxy is the same bug with the sign flipped.
+   *
+   * Empty for the overwhelming majority of principals, and non-empty only for one that
+   * has taken territory — which is exactly when it must not silently vanish.
+   */
+  readonly anchoring: readonly SystemId[];
 }
 
 export interface DeliveryRecord {
@@ -5602,7 +5620,30 @@ export class Runtime {
       );
     }
     const account = storesAccount(req.principal);
-    const free = this.ledger.account(account) === undefined ? minor(0) : this.ledger.freeBalance(account);
+    // ── THE CESSION PRICE IS A TRANSFER, SO IT IS PAID OUT OF EARNINGS ───────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **`freeCash`, NOT `freeBalance`, AND THE RAW BALANCE WAS D7 REOPENED.** §12.5 mints a
+    // 250,000 `STARTER_STAKE` to every free identity, and `ledger/endowment.ts` withholds it
+    // from leaving the principal: *"the endowment funds a principal's own work — its
+    // ventures, its Levy, its hauling — and cannot leave it."* Every other value flow in
+    // sovereignty obeys that for free because it never crosses a principal boundary — the
+    // anchor is DESTROYED, the Charge is DESTROYED, the bond is LOCKED in the poster's own
+    // stores, and both the salvage and the slash are RETIRED. The cession price is the one
+    // exception: it is a principal-to-principal `transferCurrency`.
+    //
+    // Measured through the front door, against the raw free balance: an operator claimed a
+    // system, a fresh puppet enrolled, graduated to it and posted its bond, the operator
+    // published `{"cede":sys,"price":150000}`, and the puppet's `build` moved **150,000 of
+    // pure endowment** to the operator with no correction — while `freeCash` for that puppet
+    // was **0**. That is `market/escrow.ts`'s own sock-puppet extraction with a claim in
+    // place of a wash trade, and it scales linearly in identities (A15).
+    //
+    // Withholding credit is the sanctioned defence and this is it: a principal may buy
+    // territory with what it has EARNED, at any price, and may not buy it with the stake the
+    // world gave it for free. A solo agent that has traded or hauled is unaffected.
+    // ══════════════════════════════════════════════════════════════════════════
+    const free = freeCash(this.ledger, req.principal);
     const fault = claimRejection({
       book: this.sovereignty,
       map: this.world.map,
@@ -5798,7 +5839,7 @@ export class Runtime {
         `there is no live claim on ${system}, so there is no Charge to deliver against. ${CHARGE_STATEMENT}`,
       );
     }
-    const owing = this.sovereignty.owingOf(reckoning, claim.id);
+    const owing = this.sovereignty.owingOf(reckoning, claim.system);
     const available = this.chargeGoodAt(req.principal, system);
     const fault = chargeDeliveryFault({
       world: this.world,
@@ -5824,8 +5865,8 @@ export class Runtime {
     if (moved <= 0) {
       return reject('A14', 'the goods could not be handed over, so nothing was credited against the Charge.');
     }
-    this.sovereignty.credit(reckoning, claim.id, moved);
-    const after = this.sovereignty.owingOf(reckoning, claim.id);
+    this.sovereignty.credit(reckoning, claim.system, moved);
+    const after = this.sovereignty.owingOf(reckoning, claim.system);
 
     this.emitRow({
       tick: ctx.tick,
@@ -6394,6 +6435,10 @@ export class Runtime {
       travellingQty: qty(Math.max(0, atSeat - GRADUATION_UPKEEP_QTY)),
       pledgedQty: qty(pledged),
       affordable: free >= GRADUATION_UPKEEP_MINOR && atSeat >= GRADUATION_UPKEEP_QTY,
+      anchoring: this.sovereignty
+        .claimsInOrder()
+        .filter((c) => c.claimant === principal && c.endedAtReckoning === null)
+        .map((c) => c.system),
     };
   }
 
@@ -6483,6 +6528,21 @@ export class Runtime {
     }
     const fault = graduationRejection(this.world.map, holding, to as SystemId);
     if (fault !== null) return fault;
+
+    // ── The body cannot leave territory it is anchoring (INV-8) ─────────────
+    // Checked before the price, because refusing for a reason the agent can act on beats
+    // charging it and then refusing — and because the alternative outcome is a halted world.
+    if (quote.anchoring.length > 0) {
+      return reject(
+        'A2',
+        `you hold ${quote.anchoring.length === 1 ? 'a live claim' : `${String(quote.anchoring.length)} live claims`} ` +
+          `on ${quote.anchoring.join(' · ')}, and a claim is anchored by a body — moving your holding to ${to} ` +
+          'would leave territory with nobody standing on it, which the world does not permit. Let it go first ' +
+          'and the crossing opens: `abandon` {"claim":"<system>"} hands it back and returns part of the bond, ' +
+          'or `publish_offer` {"cede":"<system>","price":<minor>} sells it to somebody who will stand there. ' +
+          'holding.graduation.anchoring lists exactly what is holding you here.',
+      );
+    }
 
     // ── The price, checked before a unit of it moves (A15, §6.3) ────────────
     if (quote.freeMinor < quote.upkeepMinor) {

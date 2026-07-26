@@ -124,15 +124,40 @@ export function settleCharge(args: {
     .sort((a, b) => compareIds(a.line.system, b.line.system));
 
   for (const { line } of lines) {
-    const claim = book.at(line.system);
-    // A claim that was ceded or lapsed mid-cycle still holds an assessment line — the plan
-    // is minted once and never edited — but it is no longer anybody's obligation. Recording
-    // a shortfall against it would accuse whoever happened to be the claimant at phase 0 of
-    // failing to supply a place it no longer holds (A5′). The line is skipped and the
-    // absence is deliberate: `docketRowsFor` does not claim a row for it either.
+    // ── RESOLVED BY SYSTEM, BECAUSE THE DUTY IS TERRITORIAL ──────────────────
+    //
+    // Two wrong versions came before this one and both were A5′ failures, in opposite
+    // directions. Keeping them both named, because the pair is the actual lesson.
+    //
+    // **V1 billed by system and read `owed` by claim id.** Measured through the front door:
+    // `abandon` a CONTESTED claim at phase 40 and `build` a fresh one on the same system at
+    // phase 42 — three ordinary offered acts — and the new claim's own observation read
+    // `owed: 0 · legend: PAID · if_you_do_nothing: STAYS_SUPPLIED`, because the assessment
+    // line was keyed on the *ended* claim's id. Settlement then billed the system anyway and
+    // recorded the new claim LAPSED with its bond slashed. The worst outcome the mechanic
+    // has, published against a claimant that had been shown the best.
+    //
+    // **V2 fixed that by settling against `byId(line.claim)` and skipping ended claims.** It
+    // cured the lie and opened an exploit: abandon at two misses, retake the same system,
+    // and the line is skipped, so no miss is recorded and the collapse arc stalls at two
+    // forever. Territory could be held indefinitely without ever paying the Charge, for a
+    // bond round-trip — which defeats "territory that must be MAINTAINED", and contradicts
+    // the sentence `claim.ts` publishes to the taker in the same breath: *"a transfer never
+    // resets that count."*
+    //
+    // So the duty is **territorial**, which is what the rules surface already promised and
+    // what `missesAt`, `liveAt` and `claims` were always keyed on. The line is settled
+    // against **whoever holds the system at settlement**, and the accusation names that
+    // holder — never the departed one, which was V1's real sin. A retaker is not ambushed:
+    // `build` refuses to hand over an arrears-carrying system without stating its state and
+    // its miss count first, so inheriting the arc is a priced, published choice.
+    const claim = book.liveAt(line.system);
+    // Nobody holds it. The assessment is not anybody's obligation, so no shortfall is
+    // recorded and no bond is slashed — but the system's misses persist in `delinquency`,
+    // so abandoning does not launder the arc. The next taker inherits what it is shown.
     if (claim === null || claim.state === 'LAPSED' || claim.state === 'CEDED') continue;
 
-    const owing = book.owingOf(reckoning, line.claim);
+    const owing = book.owingOf(reckoning, line.system);
     const paidInFull = owing.owed <= 0;
 
     let misses: number;
@@ -172,7 +197,9 @@ export function settleCharge(args: {
 
     const row: ChargeShortfallRow = {
       reckoning,
-      claim: line.claim,
+      // The claim that was short, which after a retake is not the claim that was assessed.
+      // A5′: the record names who actually failed to supply the place.
+      claim: claim.id,
       system: line.system,
       claimant: claim.claimant,
       assessment: owing.assessment,
@@ -249,8 +276,8 @@ export function checkChargeAttribution(
   if (rows.length === 0) return out;
 
   for (const row of rows) {
-    const payment = book.paymentOf(reckoning, row.claim);
-    const assessed = book.assessmentOf(reckoning, row.claim);
+    const payment = book.paymentOf(reckoning, row.system);
+    const assessed = book.assessmentOf(reckoning, row.system);
     const paid = Math.min(assessed, payment.paid);
     const expected = Math.max(0, assessed - paid);
 
@@ -367,7 +394,7 @@ export function chargeShortNow(book: Book, reckoning: number): {
     for (const line of plan.lines) {
       const claim = book.liveAt(line.system);
       if (claim === null) continue;
-      const owed = book.owingOf(reckoning, line.claim).owed;
+      const owed = book.owingOf(reckoning, line.system).owed;
       if (owed <= 0) continue;
       total += owed;
       red.push(line.system);
