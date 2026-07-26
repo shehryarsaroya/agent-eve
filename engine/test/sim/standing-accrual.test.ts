@@ -40,7 +40,7 @@ function runCast(seed: string, ticks: number): Runtime {
     const report = runtime.runTick();
     if (report.halted) {
       throw new Error(
-        `cast sim halted at tick ${String(report.tick)}: ${report.violations.map((v) => v.code).join(', ')}`,
+        `cast sim halted at tick ${String(report.tick)}: ${report.violations.map((v) => v.id).join(', ')}`,
       );
     }
   }
@@ -85,7 +85,6 @@ describe('standing accrues across distinct counterparties (Gate 3 #7/#8)', () =>
     // (CAST_ELECTIVE_APPETITE_BPS) is what holds both open; the numbers are logged, not
     // hard-asserted, because the exact split is a tuning target, not an invariant.
     expect(totalHonoured).toBeGreaterThan(0);
-    // eslint-disable-next-line no-console
     console.log(
       `standing after ${String(TICKS)} ticks (${String(CAST_SIZE)} cast): ` +
         `honoured=${String(totalHonoured)} (value ${String(totalHonouredValue)}), defaults=${String(totalDefaults)}`,

@@ -236,18 +236,66 @@ Cleared the fable CRITICAL and most of the Gate-3 run-2 defect list; scoped the 
 
 **2026-07-25 — HETEROGENEOUS REVIEW (fable architecture + 3 codex arithmetic). The fable review found the build's biggest gap.**
 
-> ### CRITICAL: the permanent record is process memory (fable Finding 1, VERIFIED)
-> Nothing outside `db/migrate.ts` touches Postgres. The event ledger, action log, ledger, ventures, seals, standing, and **externally-enrolled identities** all live in one Node process's heap. `serve()` does `new Runtime({seed})` from genesis; `deploy.sh` restarts on every deploy; `Restart=always`. **So every deploy in this build silently reset the live world to tick 0, and the Gate-3 probes' enrolled identities died on each restart.** A5 (loss is permanent), A5′, and A10 (identity never resets) are false at the substrate. Replay-from-triple — the whole §15.2 halt-recovery story — has no durable inputs. I built the schema + partitions + WAL + a "verified restore" (OPS-1) and never wired the runtime to WRITE or BOOT from any of it — so **OPS-1 verified restoring a database the game never writes to**, the self-witnessing pattern a fourth time, at the operational layer. Everything ran in one process, so no test could fail on "what does *permanent* mean."
+> ### ⚠ CORRECTION — fable's Finding 1 was FALSE, and so was my verification of it
+> The review reported that the permanent record is process memory: "nothing outside `db/migrate.ts`
+> touches Postgres", so every restart resets the world. **This is wrong.** `src/persist/` — with
+> `store.ts`, `journal.ts`, `memory.ts`, `postgres.ts` (7 INSERTs), `boot.ts`, `extract.ts` — landed in
+> **`2813273` "Persistence: the permanent record gets a home outside the heap"**, an ancestor of HEAD.
+> `serve()` calls `bootFromStore`; `test/durability/` and `test/persist/` exist and pass (26 tests).
+> A5/A5′/A10 hold at the substrate. The review appears to have read `src/db/` and missed `src/persist/`.
 >
-> **Fix (fable's sequence, now the plan):** (1) durable journal + boot-from-snapshot — machinery exists: `captureSnapshot` returns `CanonicalValue`, `adoptSnapshot` verifies byte-for-byte, the tables exist; write events+action-log+seed at COMMIT, snapshot every N ticks, load-and-adopt at boot. (2) The four missing state tables + abort-reset. (3) observe consolidation.
+> **My verification was the worse error.** I "confirmed" it with
+> `grep -rn "INSERT INTO\|pg\|query(" src/ | grep -v migrate.ts | head` — and `grep -rn` walks
+> directories alphabetically, so `api/limits.ts` filled all ten lines `head` allowed and the walk never
+> reached `persist/`. I read "only limits.ts matched" as "nothing persists," escalated a non-existent
+> defect to top priority above all other work, and rewrote this tracker around it.
+>
+> **The lesson is the one this project keeps relearning, now in a fifth costume:** a check that cannot
+> see the evidence will report its absence. `head` on a verification grep is a truncated witness — the
+> same defect class as the seal witness, the bare-term vocabulary detector, INV-24's `floorEligible`,
+> and OPS-1. **A confirming check must be shown capable of failing.** When verifying a claim of the form
+> "X does not exist anywhere," never pipe the search through `head`, and prefer `grep -rl` + a count over
+> a line listing.
+>
+> It also stands as the counter-example to my own rule: *a subagent's report is not evidence* — and
+> that cuts both ways. A confident architecture review from a different model is still a claim, and
+> "verified" has to mean re-derived, not glanced at.
 
 **HIGH (fable), all verified or credible:**
-- **F2 — the settlement tick cannot be honestly resumed.** Four authoritative stores (seal book, standing book, deliveries, obligation book, default register) are OUTSIDE `state_hash` and the rollback set — the "money outside the hash" class with more members. An abort on a settlement tick (the heaviest tick, where the 600-obligation halt fired) leaves published receipts contradicting rolled-back state, and `settleNow` early-returns on resume so the money never re-applies. DET-1 is blind to seal/standing divergence. The comment at `runtime.ts:2843` claims re-run settles again — pinned-as-correct in prose, wrong in code (the freeze/settlement shape again).
+- **F2 — REAL, RE-VERIFIED PROPERLY (2026-07-25).** The hash + rollback set registers exactly **seven** tables: `ledger`, `venture`, `elections`, `levy`, `grants` (in `runtime.ts`) plus `world` and `intent` (in `tick/loop.ts`). A full-tree search finds **no seal, standing, obligation, or deliveries state table anywhere in `src/`** — so those four authoritative stores are OUTSIDE `state_hash` and the rollback set — the "money outside the hash" class with more members. An abort on a settlement tick (the heaviest tick, where the 600-obligation halt fired) leaves published receipts contradicting rolled-back state, and `settleNow` early-returns on resume so the money never re-applies. DET-1 is blind to seal/standing divergence. The comment at `runtime.ts:2843` claims re-run settles again — pinned-as-correct in prose, wrong in code (the freeze/settlement shape again).
 - **F3 — "never publish a broken tick" is false for the product artifact.** Delivery + settlement events append to the ledger mid-tick (`isPublic:true` immediately), bypassing the COMMIT buffer, so an aborted tick's receipts cannot be retracted (INV-16). Fix: a `committed` fence flipped at COMMIT, feeds read through it.
 - **F4 — two observation implementations**, and the SERVED one (`api/observe.ts`) is the weaker — no token-budget ladder, hence the ~20-32KB unbudgeted payload. Every Gate-3 conclusion is about the served surface, not the tested `src/observe/` one. Both files' own banners say one must go. Consolidate onto `src/observe/`, golden-file the payload across the migration.
 - **F5 — the wake budget (A4's cognition meter) is a per-process closure map**, outside the hash, and the heuristic cast pays nothing (reads `runtime.*` directly). The moment the API scales out, A4 multiplies. Emergence is measured against a house cast that sees 18× more state for free.
 
 **MEDIUM:** F6 halt/resume has no production door (`resumeKeys: new Map()`, no operator key read) so PAUSED in prod means "reset on restart"; F7 `acted_on_state_version` is a whole-window applied-actions counter, not "the state the parties acted on" — the §15.4 defence has collapsed to VERIFY_INPUTS plus two narrow checks, and the column name will mislead every future consumer; F8 `setSpeed('fast')` hardcoded in `serve()` so prod runs at 30× — the one regime the docs say A4 cannot be measured at.
+
+**codex A6 review (grant accounting), 2026-07-25 — two REAL defects, both verified by reading the code:**
+
+- **★ The anti-self-dealing guard has a one-tick bypass, and it is the core loop's guard.** `vFillRole`
+  denies a delegate filling a role in its grantor's venture only while the grant is live *at the fill
+  tick* (`liveGrantBetween(venture.creator, req.principal, ctx.tick)`, `runtime.ts:2118`). So: hold a
+  grant, create a venture on the grantor's behalf funded from the grantor's own stores, wait for the
+  grant to expire (or revoke it yourself), then fill a paid role in that venture one tick later. The
+  guard does not run. The comment directly above it names "create on the grantor's behalf, then pay
+  yourself" as *the trivial betrayal it exists to block* — and it is blockable by waiting one tick.
+  The fix is to test authority **at the venture's creation tick**, not the current tick. Same bypass via
+  `vRevoke` at R then fill at R+1. INV-23's counterparty check cannot catch it either: the runtime
+  passes no `deals` journal (`runtime.ts:1354`), so `aggregate.ts:374` marks it **skipped**.
+- **`grantCounter` / `ventureCounter` are outside the state tables** (`runtime.ts:1044`, `:1057`) but they
+  feed ID minting via `canonicalHash({tick, principal, ordinal})`. A restore mid-stream followed by a
+  replayed grant/create mints *different IDs*, so exact replay diverges — the F2 class, in the ID space.
+- Lesser, both real but unreachable through the verbs today: `recordSpend` mutates the row then throws
+  before appending its journal line (`book.ts:123`), so the "row totals always equal the journal" claim
+  is not unconditional; and INV-22 recomputes with bare `+=` rather than `addMinor` (`authority.ts:114`),
+  so the invariant's own arithmetic is not overflow-safe. Also noted: headroom is enforced **per grant**,
+  not per grantor, so two overlapping grants each capped at L authorise 2L aggregate — which matters
+  because `max_direct_loss` is what an owner is shown before signing.
+
+**Real next work, in order** (superseding the panic ordering the false F1 caused): **(1)** the A6
+self-dealing bypass — it is a hole in the core loop's only guardrail; **(2)** register seal / standing /
+obligation / deliveries + the two ID counters as state tables, closing F2 and the replay divergence
+together; **(3)** the observe consolidation (F4) — every Gate 3 conclusion is about the *served* surface,
+which is the one without the token-budget ladder.
 
 **Fable's verdict:** the in-process architecture is genuinely sound — the deterministic core, the tick transaction, the settlement arithmetic, the A5′ discipline are beyond the project's stage. But *as deployed* it is "a simulation of the game it claims to be." **STOP adding mechanics until F1 → F2 → F4 land; all three are wiring over machinery that already exists.**
 

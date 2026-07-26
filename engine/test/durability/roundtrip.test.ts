@@ -220,3 +220,61 @@ describe('durability: boot-from-store reproduces the world', () => {
     await expect(boot('a-different-seed', live.store)).rejects.toThrow(/different seed/);
   }, 60_000);
 });
+
+describe('durability: standing intents regenerate on replay, never double-counted', () => {
+  // The heuristic cast deliberately creates no standing intents, so this is the only
+  // place the intent-run path is exercised through the round-trip. Intent runs are
+  // engine-derived (null arrival) — the extractor must drop them from the durable
+  // action log, and replay must regenerate them from the (replayed) intent so the
+  // hash still reproduces. If either were wrong, an intent run would be replayed twice.
+  const ISEED = 'intent-durability';
+  const seatTrio = (runtime: Runtime): void => {
+    for (const n of ['vale', 'orison', 'halcyon']) runtime.seat(`p:${n}` as PrincipalId, n);
+  };
+
+  it('boots to the exact hash while filtering intent runs from the record', async () => {
+    const runtime = new Runtime({ seed: ISEED });
+    seatTrio(runtime);
+    const store = new InMemoryJournalStore();
+    const journal = new Journal(store);
+    await bootFromStore(runtime, store, { seed: ISEED });
+
+    // One submitted action that creates a standing intent; it then runs every tick.
+    runtime.engine.submit({
+      principal: 'p:vale' as PrincipalId,
+      verb: 'set_delivery_intent',
+      params: { intent: { verb: 'move', params: { hand: 'nope', to: 'nowhere' } }, until_tick: 40 },
+      clientSequence: 1,
+      arrivalMs: 0,
+      decisionSource: 'LIVE',
+    });
+
+    let ticksWithIntentRun = 0;
+    let recordsHeldAnIntentRun = false;
+    for (let i = 0; i < 20; i += 1) {
+      const report = runtime.runTick();
+      journal.record(runtime, report);
+      await journal.flushPending();
+      if (runtime.engine.log.forTick(report.tick).some((a) => a.arrivalOrdinal === null)) {
+        ticksWithIntentRun += 1;
+      }
+    }
+    await journal.drain();
+    const headHash = runtime.engine.stateHash;
+
+    // The intent genuinely ran (non-vacuous), and NO intent run reached the durable log.
+    expect(ticksWithIntentRun).toBeGreaterThan(0);
+    for (const t of await store.ticksSince(-1)) {
+      if (t.actions.some((a) => a.arrivalOrdinal === null)) recordsHeldAnIntentRun = true;
+    }
+    expect(recordsHeldAnIntentRun).toBe(false);
+
+    // Boot: the submitted set_delivery_intent replays, recreates the intent, and its
+    // runs regenerate — reproducing the exact hash.
+    const booted = new Runtime({ seed: ISEED });
+    seatTrio(booted);
+    const result = await bootFromStore(booted, store, { seed: ISEED });
+    expect(result.ticksReplayed).toBe(20);
+    expect(booted.engine.stateHash).toBe(headHash);
+  }, 60_000);
+});
