@@ -169,6 +169,38 @@ sequencing constraint and it is the reason to hold: the gate is correct precisel
 costs earned capital, and that pressure does not exist until agents are extracting. Watch `works` go
 non-zero; the fix becomes shippable when it does.
 
+## ★ WHY `works` IS 0, WHICH IS THE REAL BLOCKER — and it is not the agents
+
+Chasing the sequencing constraint above found the cause, and it is mechanical rather than
+behavioural. **The heuristic cast knows nothing of `build`, `graduate` or `post_bond`** — measured
+as zero occurrences in `src/cast/heuristic.ts` — and it produces the overwhelming majority of
+decisions in the live world: **1,957 HEURISTIC against 330 LIVE** in a 288-tick window, because the
+twelve LLM members wake only every `DEFAULT_WAKE_GAP_TICKS` (18) and fall back to the heuristic in
+between.
+
+So **every system built on 2026-07-26 is reachable by twelve agents on a slow clock and by nobody
+else**: WORKS, sovereignty, syndicates, offices. That is why `works: 0` with `worksAffordableBy: 2`,
+why the frontier is empty, and why D12's fix is unshippable.
+
+§15.6's clause is that heuristics exist so the world always does what the mechanic needs — *"heuristics
+fill unfilled slots so ventures always resolve."* A world where goods never enter is the same failure
+one system over.
+
+**Attempted and reverted.** Teaching the heuristic to raise a WORKS when it can afford one (guarded on
+`affordable`, placed after the mandatory sign/elect/seal/fill steps) worked and then tripped a
+`state_hash` TRIPWIRE in `checkpoint-adoption-audit`: the replayed hash at tick 300 did not match the
+journalled snapshot. Replay drives from the action log rather than re-deciding, so a heuristic change
+should not affect it — which means the divergence has a cause I did not find, and a determinism
+failure is the one class in this codebase that must never be shipped on a guess. Reverted.
+
+It did earn its keep on the way: the same change exposed that `PRODUCE` was emitting a `PUBLIC` event
+per WORKS **per tick** into the append-only record — 204 rows to 2,194 in one soak run — which is now
+fixed, since A3 makes a durable intent's routine ticks free and the postings already carry the value.
+
+**So the order of work is: diagnose that tripwire → teach the heuristic the new systems → watch
+production adopt WORKS → then ship D12's extraction gate.** Each step unblocks the next, and the first
+one is a determinism question rather than a design one.
+
 ## The deeper thing this exposed about D7's floor
 
 Chasing the round trip surfaced something about `freeCash` that is worth stating separately, because it
