@@ -223,8 +223,18 @@ ok "the new build booted (boot line present)"
 # must wait for the first to resolve rather than reading a mid-replay 503 as failure.
 log "waiting for the replay to finish"
 WAITED=0
-while $SSH "set -a && . /etc/compact/env && set +a && curl -s --max-time 5 \
-      http://127.0.0.1:\${COMPACT_PORT:-8787}/compact/api/health | grep -q BOOTING"; do
+# `curl | grep -q BOOTING` exits the loop when curl FAILS, because grep then sees no
+# input — and curl fails for the first few seconds after a restart, while the socket is
+# not yet accepting. So the loop declared the replay finished about as fast as it could
+# be asked, twice tonight, and the post-deploy check then read a genuine BOOTING and
+# called a healthy deploy failed. "Not answering yet" and "answering BOOTING" are the
+# same state to this loop and must both keep it waiting; only a real answer that is not
+# BOOTING may end it.
+while $SSH "set -a && . /etc/compact/env && set +a
+      BODY=\$(curl -s --max-time 5 http://127.0.0.1:\${COMPACT_PORT:-8787}/health || true)
+      [[ -z \"\$BODY\" ]] && exit 0            # not answering yet: keep waiting
+      grep -q BOOTING <<<\"\$BODY\"            # answering BOOTING: keep waiting
+      "; do
   WAITED=$((WAITED + 5))
   [[ $WAITED -lt 600 ]] || fail "still replaying after 600s. The world is not lost — the process is up and
      answering 503 BOOTING — but boot is O(entire history) and has outgrown this timeout.
