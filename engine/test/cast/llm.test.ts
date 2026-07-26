@@ -81,6 +81,7 @@ describe('a well-formed reply becomes a LIVE action', () => {
         }),
         inputTokens: 100,
         outputTokens: 20,
+        cachedInputTokens: null,
       }),
     );
     const h = harness(transport, { size: 1, wakeGapTicks: 50, planMax: 3 });
@@ -181,7 +182,7 @@ describe('degrade, do not freeze', () => {
     const before = sourcesIn(h.runtime, 0).get('LIVE') ?? 0;
 
     expect(held.resolve).not.toBeNull();
-    held.resolve?.({ text: planJson('claim', { text: 'late' }), inputTokens: 10, outputTokens: 10 });
+    held.resolve?.({ text: planJson('claim', { text: 'late' }), inputTokens: 10, outputTokens: 10 , cachedInputTokens: null});
     await settle();
     await h.run(4);
 

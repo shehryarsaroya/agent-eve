@@ -30,7 +30,7 @@ describe('pricing', () => {
   it('never produces a float', () => {
     const budget = new CastBudget({ inputMicrosPerMillion: 333, outputMicrosPerMillion: 777 });
     budget.charge(4_001);
-    budget.settle(budget.charge(1_234), { inputTokens: 7, outputTokens: 3 }, 99);
+    budget.settle(budget.charge(1_234), { inputTokens: 7, outputTokens: 3 , cachedInputTokens: null}, 99);
     expect(Number.isInteger(budget.spentMicros)).toBe(true);
   });
 
@@ -38,7 +38,7 @@ describe('pricing', () => {
     const budget = new CastBudget({ maxOutputTokens: 1_000 });
     const reserved = budget.charge(4_000); // 1000 in + 1000 out worst case = 7000 micros
     expect(reserved).toBe(7_000);
-    budget.settle(reserved, { inputTokens: 1_000, outputTokens: 10 }, 40);
+    budget.settle(reserved, { inputTokens: 1_000, outputTokens: 10 , cachedInputTokens: null}, 40);
     // 1000 in (1000) + 10 out (60) = 1060.
     expect(budget.spentMicros).toBe(1_060);
     expect(budget.report().estimatedCalls).toBe(0);
@@ -47,7 +47,7 @@ describe('pricing', () => {
   it('estimates from characters when the provider reports nothing, and says it did', () => {
     const budget = new CastBudget({ maxOutputTokens: 1_000 });
     const reserved = budget.charge(4_000);
-    budget.settle(reserved, { inputTokens: null, outputTokens: null }, 4 * CHARS_PER_TOKEN);
+    budget.settle(reserved, { inputTokens: null, outputTokens: null , cachedInputTokens: null}, 4 * CHARS_PER_TOKEN);
     // Input estimate kept (1000 micros), output swapped from the 1000-token ceiling to 4
     // estimated tokens (24 micros).
     expect(budget.spentMicros).toBe(1_024);
@@ -137,7 +137,7 @@ describe('the three caps', () => {
     budget.rollTo(0);
     const reserved = budget.charge(4_000);
     expect(budget.disabled).toBe(true);
-    budget.settle(reserved, { inputTokens: 1, outputTokens: 1 }, 4);
+    budget.settle(reserved, { inputTokens: 1, outputTokens: 1 , cachedInputTokens: null}, 4);
     expect(budget.spentMicros).toBeLessThan(2_000);
     expect(budget.disabled).toBe(true);
   });
@@ -193,5 +193,34 @@ describe('the defaults are conservative', () => {
     expect(formatMicros(0)).toBe('$0.000000');
     expect(formatMicros(1_500_000)).toBe('$1.500000');
     expect(formatMicros(1)).toBe('$0.000001');
+  });
+});
+
+describe('prompt caching is priced, because it is most of the bill', () => {
+  it('a cache hit costs a tenth of a fresh token, so the cap tracks the real invoice', () => {
+    // Measured live against gpt-5.6-luna with the real agent.md contract as the first
+    // message: 6498 of 6543 prompt tokens served from cache on the second call, i.e. 99%.
+    // The contract is identical for all 20 members, so once warm the whole cast rides it.
+    const budget = new CastBudget({ maxOutputTokens: 1_000 });
+    const reserved = budget.charge(4 * 6_543);
+    budget.settle(reserved, { inputTokens: 6_543, outputTokens: 10, cachedInputTokens: 6_498 }, 40);
+    // 45 fresh (45 micros) + 6498 cached at a tenth (649) + 10 out (60) = 754.
+    expect(budget.spentMicros).toBe(754);
+
+    // The same call priced as if nothing were cached costs ~8.7x more. That ratio is the
+    // difference between the cast running for hours and being cut off in minutes.
+    const naive = new CastBudget({ maxOutputTokens: 1_000 });
+    const r2 = naive.charge(4 * 6_543);
+    naive.settle(r2, { inputTokens: 6_543, outputTokens: 10, cachedInputTokens: null }, 40);
+    expect(naive.spentMicros).toBe(6_603);
+    expect(naive.spentMicros).toBeGreaterThan(budget.spentMicros * 8);
+  });
+
+  it('a nonsense cached count can never price a call below zero', () => {
+    // The provider is not trusted to be coherent: cached is clamped to the reported total.
+    const budget = new CastBudget({ maxOutputTokens: 100 });
+    const reserved = budget.charge(400);
+    budget.settle(reserved, { inputTokens: 10, outputTokens: 1, cachedInputTokens: 999_999 }, 4);
+    expect(budget.spentMicros).toBeGreaterThanOrEqual(0);
   });
 });

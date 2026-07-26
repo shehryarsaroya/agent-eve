@@ -78,6 +78,17 @@ export interface CastBudgetLimits {
   readonly inputMicrosPerMillion: number;
   /** Micro-dollars per million output tokens. `gpt-5.6-luna`: $6 → 6,000,000. */
   readonly outputMicrosPerMillion: number;
+  /**
+   * Micro-dollars per million input tokens the provider served from its prompt cache.
+   *
+   * This matters more than it looks. The player contract is the first message, ~6.5k
+   * tokens, and byte-identical for all 20 members, so once it is warm essentially the
+   * whole prompt is a cache hit — measured live at 6498/6543 tokens, 99%. Charging those
+   * at full input price does not overspend, but it makes the cumulative cap trip several
+   * times earlier than the real invoice, which cuts the cast off while the money is still
+   * there. Default is a tenth of the input rate.
+   */
+  readonly cachedInputMicrosPerMillion: number;
 }
 
 /**
@@ -105,6 +116,7 @@ export const DEFAULT_CAST_LIMITS: CastBudgetLimits = Object.freeze({
   maxPromptChars: 24_000,
   spendCapMicros: 5 * MICROS_PER_DOLLAR,
   inputMicrosPerMillion: 1 * MICROS_PER_DOLLAR,
+  cachedInputMicrosPerMillion: MICROS_PER_DOLLAR / 10,
   outputMicrosPerMillion: 6 * MICROS_PER_DOLLAR,
 });
 
@@ -213,15 +225,28 @@ export class CastBudget {
    * remembering it here keeps this class free of per-call state, which is what lets a
    * caller drop a call on the floor (a timeout, a shutdown) without leaking a row.
    */
-  settle(reserved: number, reply: { inputTokens: number | null; outputTokens: number | null }, replyChars: number): void {
+  settle(
+    reserved: number,
+    reply: {
+      inputTokens: number | null;
+      outputTokens: number | null;
+      cachedInputTokens?: number | null;
+    },
+    replyChars: number,
+  ): void {
     const measured = reply.inputTokens !== null && reply.outputTokens !== null;
     if (!measured) this.estimated += 1;
     const outputTokens = reply.outputTokens ?? Math.ceil(Math.max(0, replyChars) / CHARS_PER_TOKEN);
     // Input is only corrected when the provider measured it; the character estimate the
     // charge used is the best we have otherwise, and re-deriving it would change nothing.
     const inputTokens = reply.inputTokens;
+    // Split the measured input into cached and fresh. `cached` is clamped to the total
+    // the provider also reported, so a nonsense pair can never price a call as negative.
+    const cached = Math.min(Math.max(0, reply.cachedInputTokens ?? 0), inputTokens ?? 0);
+    const fresh = inputTokens === null ? 0 : inputTokens - cached;
     const actual =
-      (inputTokens === null ? 0 : this.priceInput(inputTokens)) + this.priceOutput(outputTokens);
+      (inputTokens === null ? 0 : this.priceInput(fresh) + this.priceCachedInput(cached)) +
+      this.priceOutput(outputTokens);
     if (inputTokens === null) {
       // Only the output half is known: keep the reserved input estimate, swap the output.
       const reservedOutput = this.priceOutput(this.limits.maxOutputTokens);
@@ -280,6 +305,10 @@ export class CastBudget {
       return;
     }
     if (this.spent >= this.limits.spendCapMicros) this.stopped = 'SPEND_CAP';
+  }
+
+  private priceCachedInput(tokens: number): number {
+    return Math.trunc((tokens * this.limits.cachedInputMicrosPerMillion) / TOKENS_PER_PRICE_UNIT);
   }
 
   private priceInput(tokens: number): number {

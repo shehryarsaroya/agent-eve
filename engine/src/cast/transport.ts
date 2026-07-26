@@ -57,6 +57,18 @@ export interface CompletionReply {
    */
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
+  /**
+   * Input tokens the provider served from its prompt cache, or null if it said nothing.
+   *
+   * These are billed at a large discount, and for this cast they dominate: the player
+   * contract is ~6.5k tokens, is the FIRST message, and is byte-identical for every one
+   * of the 20 members, so after the first call of a Reckoning essentially the whole
+   * prefix is a cache hit. Measured live against gpt-5.6-luna: 6498 of 6543 prompt
+   * tokens cached, i.e. 99%. Pricing those at full rate makes the spend cap trip several
+   * times earlier than real spend, which does not overspend but does cut the cast off
+   * long before the money is gone.
+   */
+  readonly cachedInputTokens: number | null;
 }
 
 export interface CastTransport {
@@ -346,6 +358,13 @@ export function readReply(payload: unknown): CompletionReply {
   }
 
   const usage = root['usage'];
+  const readNested = (group: string, name: string): number | null => {
+    if (typeof usage !== 'object' || usage === null) return null;
+    const inner = (usage as Record<string, unknown>)[group];
+    if (typeof inner !== 'object' || inner === null) return null;
+    const value = (inner as Record<string, unknown>)[name];
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  };
   const readCount = (name: string): number | null => {
     if (typeof usage !== 'object' || usage === null) return null;
     const value = (usage as Record<string, unknown>)[name];
@@ -356,5 +375,6 @@ export function readReply(payload: unknown): CompletionReply {
     text: content,
     inputTokens: readCount('prompt_tokens'),
     outputTokens: readCount('completion_tokens'),
+    cachedInputTokens: readNested('prompt_tokens_details', 'cached_tokens'),
   };
 }

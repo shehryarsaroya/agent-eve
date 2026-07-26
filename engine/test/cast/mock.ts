@@ -72,7 +72,7 @@ export class MockTransport implements CastTransport {
   /** A transport that answers with fixed text. */
   static says(text: string, usage: Partial<CompletionReply> = {}): MockTransport {
     return new MockTransport(() =>
-      Promise.resolve({ text, inputTokens: usage.inputTokens ?? 2_000, outputTokens: usage.outputTokens ?? 60 }),
+      Promise.resolve({ text, inputTokens: usage.inputTokens ?? 2_000, outputTokens: usage.outputTokens ?? 60 , cachedInputTokens: null}),
     );
   }
 
@@ -101,6 +101,7 @@ export class MockTransport implements CastTransport {
           text: JSON.stringify({ note: 'nothing on offer', plan: [] }),
           inputTokens: 2_000,
           outputTokens: 20,
+          cachedInputTokens: null,
         });
       }
       return Promise.resolve({
@@ -110,6 +111,7 @@ export class MockTransport implements CastTransport {
         }),
         inputTokens: 2_000,
         outputTokens: 60,
+        cachedInputTokens: null,
       });
     });
   }

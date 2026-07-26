@@ -81,7 +81,7 @@ describe('a transport that breaks its own interface still cannot break the world
       name: 'returns a promise of a reply whose text is not a string',
       transport: {
         complete: (): Promise<CompletionReply> =>
-          Promise.resolve({ text: 42 as unknown as string, inputTokens: null, outputTokens: null }),
+          Promise.resolve({ text: 42 as unknown as string, inputTokens: null, outputTokens: null, cachedInputTokens: null }),
       },
     },
     {
