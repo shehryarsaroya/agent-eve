@@ -40,7 +40,16 @@ import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { reckoningIndex, setSpeed, systemClock, ticksToMs, type Clock } from '../core/time.js';
+import {
+  SPEEDS,
+  TICKS_PER_RECKONING,
+  isSpeedName,
+  reckoningIndex,
+  setSpeed,
+  systemClock,
+  ticksToMs,
+  type Clock,
+} from '../core/time.js';
 import { publishFrame } from '../frames/write.js';
 import { costOf } from '../tick/index.js';
 import { createCast, type Cast } from '../cast/index.js';
@@ -1643,8 +1652,53 @@ export interface ServeResult {
  * reason the record can explain.** Refusing to serve a world we cannot reproduce is
  * correct (A5′); refusing to *say so* was the defect.
  */
+/**
+ * The clock a world runs at when nobody says otherwise.
+ *
+ * Exported so the A4 test can assert against **the value the server actually applies**
+ * rather than re-typing a speed name. My first version of that test read
+ * `SPEEDS.rehearsal` directly and stayed green when I mutated the default back to
+ * `fast` — a guard that cannot see the thing it guards, which is the defect class this
+ * repo keeps rediscovering. Binding the test here is what makes the mutation bite.
+ */
+export const DEFAULT_SPEED = 'rehearsal';
+
 export async function serve(options: ServeOptions): Promise<ServeResult> {
-  setSpeed('fast');
+  // ── THE SPEED IS A DECISION, NOT A CONSTANT ─────────────────────────────────
+  //
+  // This was hardcoded to `fast` (10 s a tick), and a live playtest found what that
+  // costs: affordance and quote windows are 1–3 TICKS, so at `fast` they are 10–30
+  // seconds — **shorter than one LLM inference.** The probe lost two ventures to expiry
+  // copying an affordance verbatim, then rebuilt as a 281 ms loop and "never missed
+  // again". That is latency deciding outcomes, which is exactly what **A4 forbids**, and
+  // TESTING.md hazard 2 predicted it in as many words: a compressed run systematically
+  // advantages fast models, and "A4 is a wall-clock property and is measured at `prod`
+  // only".
+  //
+  // So the clock is now chosen by the operator, and the default moves to `rehearsal`
+  // (60 s). At `rehearsal` a 1–3 tick window is 1–3 MINUTES, comfortably longer than any
+  // reasoning model's round trip, so a slow deep model and a fast shallow one face the
+  // same real deadline — and a Reckoning is still under five hours, so the world remains
+  // watchable in a sitting. `prod` (300 s) is the canonical speed of §5 and the only one
+  // A4 may be *measured* at; `fast` remains right for unattended overnight economy runs
+  // where no agent is thinking.
+  //
+  // Deliberately NOT silent: an unrecognised value refuses rather than falling back, and
+  // the chosen speed is printed, because a world running at a speed nobody chose is how
+  // this defect survived for weeks.
+  const requested = (process.env['COMPACT_SPEED'] ?? DEFAULT_SPEED).trim();
+  if (!isSpeedName(requested)) {
+    throw new Error(
+      `COMPACT_SPEED=${requested} is not a speed. One of: ${Object.keys(SPEEDS).join(', ')}. ` +
+        'A4 is a wall-clock property: at 10 s a tick an affordance window is shorter than one ' +
+        'inference, so latency decides outcomes. Prefer rehearsal or prod for a world with agents in it.',
+    );
+  }
+  setSpeed(requested);
+  process.stderr.write(
+    `compact: clock = ${requested} (${String(SPEEDS[requested])}s a tick, ` +
+      `Reckoning every ${String(Math.round((SPEEDS[requested] * TICKS_PER_RECKONING) / 60))} min)\n`,
+  );
   const clock = systemClock();
   const store = options.store ?? storeFromEnv(options, clock);
 

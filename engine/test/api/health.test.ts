@@ -220,3 +220,45 @@ function pause(harnessed: Harness): void {
     },
   );
 }
+
+describe('A4 — the clock is a decision, and a window must outlast an inference', () => {
+  it('refuses an unrecognised COMPACT_SPEED rather than quietly picking one', async () => {
+    // A world running at a speed nobody chose is how this defect survived for weeks:
+    // serve() hardcoded `fast`, so affordance windows of 1-3 ticks were 10-30 seconds —
+    // shorter than one LLM inference. A live probe lost two ventures to expiry copying an
+    // affordance verbatim, then rebuilt as a 281ms loop and never missed again. That is
+    // latency deciding outcomes, which A4 forbids.
+    const { serve } = await import('../../src/api/server.js');
+    const prev = process.env['COMPACT_SPEED'];
+    process.env['COMPACT_SPEED'] = 'brisk';
+    try {
+      await expect(serve({ port: 0, host: '127.0.0.1', seed: 's', trustEdge: false, castSize: 1, framesDir: null }))
+        .rejects.toThrow(/not a speed/);
+    } finally {
+      if (prev === undefined) delete process.env['COMPACT_SPEED'];
+      else process.env['COMPACT_SPEED'] = prev;
+    }
+  });
+
+  it('every window an agent must react inside outlasts a slow inference at the default', async () => {
+    // The property, stated as arithmetic rather than as a hope. Take the shortest window
+    // an agent is ever asked to act inside and require it to exceed a generous round trip
+    // for a deep reasoning model. At `fast` this is 10s and fails; at `rehearsal` it is
+    // 60s and passes, which is why the default moved.
+    const { SPEEDS } = await import('../../src/core/time.js');
+    const { DEFAULT_SPEED } = await import('../../src/api/server.js');
+    const SHORTEST_WINDOW_TICKS = 1; // a quote pins for 1-3 ticks; an affordance can expire next tick
+    const SLOW_INFERENCE_SECONDS = 30;
+    // Bound to the value the SERVER applies, not to a speed name retyped here. My first
+    // version read SPEEDS.rehearsal and stayed green when the default was mutated back to
+    // fast — a guard that cannot see what it guards.
+    const defaultSpeed = SPEEDS[DEFAULT_SPEED];
+    expect(
+      SHORTEST_WINDOW_TICKS * defaultSpeed,
+      'the shortest window must outlast a slow model, or being fast is power (A4)',
+    ).toBeGreaterThan(SLOW_INFERENCE_SECONDS);
+    // And the speed the defect shipped under does NOT satisfy it — so this test would
+    // have caught the original configuration.
+    expect(SHORTEST_WINDOW_TICKS * SPEEDS.fast).toBeLessThan(SLOW_INFERENCE_SECONDS);
+  });
+});
