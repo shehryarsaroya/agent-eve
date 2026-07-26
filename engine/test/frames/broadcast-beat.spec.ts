@@ -15,7 +15,12 @@
 import { describe, expect, it } from 'vitest';
 import type { PrincipalId, SystemId, VentureId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
-import { MAX_RUNDOWN_SEGMENTS, type ClaimLine, type RaidLine } from '../../src/frames/contract.js';
+import {
+  MAX_RUNDOWN_SEGMENTS,
+  type ClaimLine,
+  type MapSystem,
+  type RaidLine,
+} from '../../src/frames/contract.js';
 import { renderFrame, type FrameSource, type SettledView } from '../../src/frames/render.js';
 
 /** The full shape, not a cast — a stub with holes in it fails inside the renderer, not usefully. */
@@ -88,6 +93,7 @@ function source(over: Partial<FrameSource> = {}): FrameSource {
     claimLines: [],
     worksLines: [],
     syndicateLines: [],
+    map: [] as readonly MapSystem[],
     ...over,
   };
 }
@@ -161,5 +167,65 @@ describe('the running order crosses systems', () => {
     expect(frame.rundown.map((b) => b.order)).toEqual(
       Array.from({ length: frame.rundown.length }, (_, i) => i + 1),
     );
+  });
+});
+
+describe('the frame carries the MAP, or nothing downstream can draw one', () => {
+  /**
+   * A13 calls the map *"the game's only agreed representation"*, and the frame carried **no map at
+   * all**. A client saw system IDs mentioned inside claim tints, works marks and raid arcs, with no
+   * topology and no way to know which other systems existed — so every line in this artifact was a
+   * caption on a picture nobody could render.
+   *
+   * I told the user the missing piece was *coordinates*. It was not: a client can derive a layout
+   * from a lane graph itself. The missing piece was the graph.
+   */
+  it('carries every system with its tier, constellation and lanes', () => {
+    const frame = renderFrame(
+      source({
+        map: [
+          { id: 'sys-01' as SystemId, name: 'Hearth', tier: 'COMMONS', constellation: 'con-1' as never, lanes: ['sys-02' as SystemId] },
+          { id: 'sys-02' as SystemId, name: 'Verge', tier: 'MARCHES', constellation: 'con-1' as never, lanes: ['sys-01' as SystemId] },
+        ],
+      }),
+    );
+    expect(frame.map.length).toBe(2);
+    expect(frame.map[0]?.lanes, 'a lane graph, so a client can lay it out').toEqual(['sys-02']);
+    expect(frame.map.map((m) => m.id), 'sorted, so the file is diffable').toEqual(['sys-01', 'sys-02']);
+  });
+
+  it('carries NO coordinates, because position is presentation', () => {
+    // Putting x/y on a system would put presentation inside `state_hash`, where a layout tweak
+    // becomes a rules change and a replay divergence. This asserts the absence, so somebody adding
+    // them later has to argue for it.
+    const frame = renderFrame(
+      source({
+        map: [{ id: 'sys-01' as SystemId, name: 'Hearth', tier: 'COMMONS', constellation: 'con-1' as never, lanes: [] }],
+      }),
+    );
+    const keys = Object.keys(frame.map[0] ?? {});
+    expect(keys.filter((k) => /^x$|^y$|coord|position|angle|radius/i.test(k))).toEqual([]);
+    // Explicit comparator: DET-1 bans a bare .sort() even on a key list. Sixth time tonight.
+    expect(keys.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([
+      'constellation',
+      'id',
+      'lanes',
+      'name',
+      'tier',
+    ]);
+  });
+
+  it('is never truncated by a budget, because a partial map has holes in it', () => {
+    // Every other line type is capped — a legend a viewer reads, not a heatmap. The map is not a
+    // legend: cut it and a client draws lanes to systems it cannot place, which is worse than
+    // drawing nothing.
+    const many = Array.from({ length: 64 }, (_, i) => ({
+      id: `sys-${String(i).padStart(2, '0')}` as SystemId,
+      name: `S${String(i)}`,
+      tier: 'FRONTIER' as const,
+      constellation: 'con-1' as never,
+      lanes: [] as SystemId[],
+    }));
+    expect(renderFrame(source({ map: many })).map.length).toBe(64);
   });
 });

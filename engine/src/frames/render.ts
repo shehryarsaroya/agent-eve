@@ -41,6 +41,7 @@ import {
   type ClaimLine,
   MAX_FRAME_WORKS_LINES,
   MAX_FRAME_SYNDICATE_LINES,
+  type MapSystem,
   type WorksLine,
   type SyndicateLine,
   type ReckoningFrame,
@@ -102,6 +103,7 @@ export interface FrameSource {
   readonly claimLines?: readonly ClaimLine[];
   readonly worksLines?: readonly WorksLine[];
   readonly syndicateLines?: readonly SyndicateLine[];
+  readonly map?: readonly MapSystem[];
 }
 
 export interface SettledView {
@@ -447,6 +449,10 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // Ordered by HOW MANY CAN SPEND IT first, then by size. The story a viewer should find is the
     // treasury with the most people able to empty it, which is the one where A6 is closest to
     // happening — not simply the richest org.
+    // The topology, passed through unchanged and sorted so the file is diffable. Not truncated by
+    // any budget: a partial map is a map with holes in it, which is worse than none — a client
+    // would draw lanes to systems it cannot place.
+    map: [...(src.map ?? [])].sort((a, b) => compareIds(a.id, b.id)),
     syndicateLines: (src.syndicateLines ?? [])
       .slice()
       .sort(
@@ -504,6 +510,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     claimLines: [],
     worksLines: [],
     syndicateLines: [],
+    map: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],

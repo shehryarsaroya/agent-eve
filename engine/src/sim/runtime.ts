@@ -8677,6 +8677,22 @@ export class Runtime {
       claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
       worksLines: this.worksLines(outcome.tick),
       syndicateLines: this.syndicateLines(outcome.tick),
+      // ── THE MAP, WHICH THE FRAME HAS NEVER CARRIED ──────────────────────────
+      //
+      // A13 calls the map "the game's only agreed representation", and the frame carried no map at
+      // all: a client saw system IDS inside claim tints and works marks and had no topology, so
+      // every line in this artifact was a caption on a picture nobody could draw.
+      //
+      // Passed straight through from `world.map` — no coordinates, because position is presentation
+      // and x/y on a system would put presentation inside `state_hash`, where a layout tweak becomes
+      // a replay divergence. `lanes` is a graph and a graph is enough.
+      map: [...this.world.map.systems.values()].map((sys) => ({
+        id: sys.id,
+        name: sys.name,
+        tier: sys.tier,
+        constellation: sys.constellation,
+        lanes: [...sys.lanes],
+      })),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

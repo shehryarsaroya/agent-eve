@@ -53,6 +53,17 @@ import type { FrameSource } from './render.js';
  * | `modelBadges` | `PUBLIC` | which model runs a cast seat; not a game fact |
  * | `worksLines` | `PUBLIC` | a structure on the map, its tier-fixed yield, and what the world has already handed over |
  * | `syndicateLines` | `PUBLIC` | an organisation's standing legal shape, its pooled capital, and who may spend it |
+ * | `map` | `PUBLIC` | the topology itself — A13 calls the map the game's only agreed representation |
+ *
+ * **`map` needed the least argument of anything here and was missing the longest.** §11.2 gives
+ * `PUBLIC` to *"movement on public lanes — a convoy is visible to anyone, because it is the map's
+ * motion and the map is the show"*, and a lane an agent could not see is a lane it could not have
+ * moved along. It carries `id`, `name`, `tier`, `constellation` and `lanes` — every one of which any
+ * agent reads out of its own `observe`.
+ *
+ * **What it deliberately does NOT carry is coordinates.** Position is presentation; putting x/y on
+ * `StarSystem` would put presentation inside `state_hash`, where a layout tweak becomes a rules
+ * change and a replay divergence. A graph is enough: a client derives a layout and pins it.
  *
  * **`syndicateLines.treasuryMinor` is the third field to argue against the stockpile line, and it
  * wins on §6.4's precedent rather than on convenience.** Bond is *"posted slashable capital,
@@ -149,6 +160,7 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'claimLines',
   'worksLines',
   'syndicateLines',
+  'map',
 ]);
 
 export class ProjectionError extends Error {}

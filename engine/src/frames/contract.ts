@@ -28,8 +28,10 @@ import type {
   PrincipalId,
   RaidState,
   SealVerdict,
+  ConstellationId,
   SystemId,
   VentureId,
+  ZoneTier,
 } from '../core/types.js';
 import type { Minor } from '../core/units.js';
 
@@ -276,6 +278,39 @@ export interface RaidLine {
  * anything derived from a member's private stock. `assertFrameBudgets` refuses the stockpile shapes
  * by field name, the same executable form `claimLines` and `worksLines` use.
  */
+/**
+ * One system, as the map needs it to be drawable.
+ *
+ * ## Why the frame carries the MAP and not a picture of it
+ *
+ * A13 calls the map *"the game's only agreed representation"*, and the frame carried no map at
+ * all: a client saw system **ids** mentioned inside claim tints and works marks, with no topology
+ * and no way to know which other systems existed. So nothing downstream could draw the thing the
+ * axiom is about. Every line in this frame was a caption on a picture nobody could render.
+ *
+ * **Deliberately no coordinates.** Position is presentation, and putting x/y on `StarSystem` would
+ * put presentation inside `state_hash` — where a layout tweak becomes a rules change and a replay
+ * divergence. `lanes` is a graph, and a graph is enough: a client computes a layout from it
+ * deterministically and pins it, which also keeps the map from swimming between Reckonings (a
+ * spectator reads position as meaning, so drifting nodes destroy the meaning).
+ *
+ * `tier` and `constellation` come along because they are the two facts a layout should honour:
+ * constellations cluster, and tiers run outward — Commons at the centre, frontier at the rim,
+ * which is the risk gradient the whole `graduate` decision is about.
+ *
+ * All of it is `PUBLIC` and none of it is derived: §11.2 gives `PUBLIC` to *"movement on public
+ * lanes — a convoy is visible to anyone, because it is the map's motion and the map is the show"*,
+ * and a lane an agent could not see is a lane it could not have moved along.
+ */
+export interface MapSystem {
+  readonly id: SystemId;
+  readonly name: string;
+  readonly tier: ZoneTier;
+  readonly constellation: ConstellationId;
+  /** Adjacent systems. A graph, never a geometry. */
+  readonly lanes: readonly SystemId[];
+}
+
 export interface SyndicateLine {
   readonly syndicate: string;
   readonly name: string;
@@ -468,6 +503,8 @@ export interface ReckoningFrame {
   readonly claimLines: readonly ClaimLine[];
   readonly worksLines: readonly WorksLine[];
   readonly syndicateLines: readonly SyndicateLine[];
+  /** The topology, so the map can be drawn at all (A13). Fixed per world. */
+  readonly map: readonly MapSystem[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];

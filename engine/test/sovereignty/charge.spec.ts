@@ -587,6 +587,7 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
       tick: 0,
       worksLines: [],
       syndicateLines: [],
+      map: [],
       stateHash: 'x',
       meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0 },
       docket: [],
