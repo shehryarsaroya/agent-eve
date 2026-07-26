@@ -172,9 +172,20 @@ export interface RundownSegment {
   readonly cast: readonly CastChip[];
   /** What it said — a public claim, allowed to be a lie. */
   readonly publicLine: string | null;
-  /** What it sealed — content is viewer-only, never agent-readable (PROP-D2). */
+  /**
+   * What it sealed — **the flag only, never the content.**
+   *
+   * §11.2's ladder gives `SEALED` to *nobody* among agents, and to viewers only as
+   * "the flag at the Reckoning"; the content arrives "in the season replay… when it is
+   * archaeology rather than intelligence". This frame is the nightly artifact, so the
+   * content has no business in it and the field that used to carry it is gone.
+   *
+   * It was not leaking, and that is the point: `sealContent` existed here and the client
+   * printed it, and the only reason nothing escaped was that the runtime happened to pass
+   * `null`. A tier boundary held up by a coincidence in a caller is not held up. Season
+   * content belongs to a separate replay artifact that does not exist yet.
+   */
   readonly sealVerdict: SealVerdict | null;
-  readonly sealContent: string | null;
   /** What it did. Ground truth. */
   readonly deed: string;
   readonly glyph: VentureGlyph;
@@ -262,11 +273,16 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     }
   }
 
-  // Seal content may reach a viewer but must never reach this frame without a
-  // verdict, or the renderer is inventing a reveal.
+  // Seal CONTENT must never appear in a nightly frame at all (§11.2: viewers get the
+  // flag on the night, the content in the season replay). The field is gone from the
+  // type, so this checks the shape rather than the value — a future edit that puts it
+  // back, or a hand-built frame carrying it, fails here instead of on screen.
   for (const seg of frame.rundown) {
-    if (seg.sealContent !== null && seg.sealVerdict === null) {
-      problems.push(`segment ${seg.order} carries seal content with no verdict`);
+    if (Object.prototype.hasOwnProperty.call(seg, 'sealContent')) {
+      problems.push(
+        `segment ${seg.order} carries seal content; §11.2 releases seal content in the ` +
+          'season replay, never in a nightly frame',
+      );
     }
   }
 

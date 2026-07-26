@@ -4572,7 +4572,6 @@ export class Runtime {
         parties: partiesOf(v),
         publicLine: null,
         sealVerdict: null,
-        sealContent: null,
         messages: [],
       });
     }

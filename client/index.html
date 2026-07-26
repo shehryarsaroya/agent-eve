@@ -254,11 +254,11 @@ function renderRundown(segs) {
       ? `<span class="verdict ${v === 'HONOURED' ? 'h' : 'c'}">${esc(v)}</span>`
       : '<span class="verdict">no seal</span>';
 
-    // Seal content reaches viewers, never agents (PROP-D2). Publishing it into
-    // an agent-readable channel would be a perfect cartel-monitoring tool.
-    const sealBody = s.sealContent
-      ? `${verdict}<br>${esc(s.sealContent)}`
-      : verdict;
+    // THE FLAG, NEVER THE CONTENT. §11.2 gives viewers "the flag at the Reckoning" and
+    // the content only "in the season replay, when it is archaeology rather than
+    // intelligence". This page is the nightly artifact, so it shows the verdict and
+    // stops. The frame no longer carries content to print even if this changed.
+    const sealBody = verdict;
 
     const reel = (s.receiptReel && s.receiptReel.length)
       ? `<div class="reel">

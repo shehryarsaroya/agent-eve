@@ -93,7 +93,6 @@ export interface SettledView {
   readonly parties: readonly PrincipalId[];
   readonly publicLine: string | null;
   readonly sealVerdict: 'HONOURED' | 'CONTRADICTED' | null;
-  readonly sealContent: string | null;
   /** Declassified negotiation, present only when an elective promise broke. */
   readonly messages: readonly { readonly tick: number; readonly from: PrincipalId; readonly text: string }[];
 }
@@ -214,16 +213,40 @@ function consequenceFor(src: FrameSource, v: SettledView): string {
  * the rundown is a broadcast rather than a batch.
  */
 export function renderFrame(src: FrameSource): ReckoningFrame {
-  const byStakesAscending = [...src.settled].sort((a, b) => {
+  const broadcastOrder = (a: SettledView, b: SettledView): number => {
     // Defaults last regardless of size: the delta, not the amount, is the story.
     if (a.defaulted !== b.defaulted) return a.defaulted ? 1 : -1;
     if (a.atStake !== b.atStake) return a.atStake - b.atStake;
     // Ties broken by id so the running order is reproducible from the same outcome.
     return compareIds(a.venture, b.venture);
-  });
+  };
 
-  const rundown: RundownSegment[] = byStakesAscending
-    .slice(0, MAX_RUNDOWN_SEGMENTS)
+  // ── SELECT THE CLIMAX FIRST, THEN FILL AROUND IT ──────────────────────────
+  //
+  // The cut used to be `sort(defaults last).slice(0, MAX)`, which selects by taking the
+  // FIRST twelve of an order that deliberately puts the payoff at the END. On any
+  // Reckoning with more than twelve settled ventures that silently dropped the defaults
+  // — the show cutting its own climax and broadcasting only the setup, most reliably on
+  // the busiest and most interesting nights.
+  //
+  // Selection and ordering are now separate concerns, which is the actual fix: choose
+  // what must be shown, then order what was chosen. A default is never cut while a kept
+  // promise is available to cut instead; if defaults alone overflow the budget, the
+  // biggest ones win.
+  const defaults = src.settled.filter((v) => v.defaulted);
+  const kept = src.settled.filter((v) => !v.defaulted);
+  const bigFirst = (a: SettledView, b: SettledView): number =>
+    b.atStake - a.atStake || compareIds(a.venture, b.venture);
+
+  // Every settled venture, in broadcast order. The GLYPHS use this rather than the cut:
+  // the map shows the whole night's work even though the rundown narrates only part of it.
+  const byStakesAscending = [...src.settled].sort(broadcastOrder);
+
+  const climax = [...defaults].sort(bigFirst).slice(0, MAX_RUNDOWN_SEGMENTS);
+  const setup = [...kept].sort(bigFirst).slice(0, MAX_RUNDOWN_SEGMENTS - climax.length);
+
+  const rundown: RundownSegment[] = [...climax, ...setup]
+    .sort(broadcastOrder)
     .map((v, i) => ({
       order: i + 1,
       venture: v.venture,
@@ -233,7 +256,6 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       // Seal content reaches VIEWERS only. Agents get the verdict and nothing else,
       // at any tier, on any delay (PROP-D2) — a fixed-lag reveal of private
       // pre-commitments is exactly what makes a collusive stalemate stable.
-      sealContent: v.sealContent,
       // What it did, phrased as the deed; the headline above it says what was riding.
       deed: `${headlineFor(src, v)} ${consequenceFor(src, v)}`,
       glyph: glyphFor(v),

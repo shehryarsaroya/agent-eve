@@ -38,7 +38,6 @@ function settled(over: Partial<SettledView> = {}): SettledView {
     parties: [P('halcyon'), P('vex')],
     publicLine: 'the cargo moves tonight',
     sealVerdict: 'HONOURED',
-    sealContent: 'I will deliver',
     messages: [],
     ...over,
   };
@@ -239,16 +238,22 @@ describe('renderFrame', () => {
     );
     const f = renderFrame(source({ settled: tooMany }));
     expect(f.rundown.length).toBe(MAX_RUNDOWN_SEGMENTS);
-    // The dropped segments are the LARGEST stakes, which is a real editorial choice and
-    // therefore worth pinning: ascending order means a budget cut loses the top of the
-    // show. If that is ever wrong, it should fail here and be argued.
-    expect(f.rundown[0]?.venture).toBe('v-0');
-  });
-
-  it('never carries seal content without a verdict', () => {
-    // Content with no verdict means the renderer invented a reveal.
-    const f = renderFrame(source({ settled: [settled({ sealVerdict: null, sealContent: null })] }));
-    expect(f.rundown[0]?.sealContent).toBeNull();
+    // ARGUED, as the previous version of this test asked to be. It pinned that "the
+    // dropped segments are the LARGEST stakes… if that is ever wrong, it should fail here
+    // and be argued." It was wrong, and the same line was cutting the defaults too.
+    //
+    // The cause was selecting and ordering with one expression: sort ascending (payoff
+    // last), then take the FIRST twelve. A budget cut must drop the LEAST interesting
+    // items; that dropped the most interesting ones, and on a busy night it dropped the
+    // betrayals the running order exists to build toward. Selection is now separate from
+    // ordering — choose the biggest stakes (defaults first), then order them ascending.
+    //
+    // So the smallest stakes are cut and the largest survive, still narrated last.
+    const shown = f.rundown.map((seg) => String(seg.venture));
+    expect(shown).not.toContain('v-0'); // smallest stake: correctly cut
+    expect(shown).toContain(`v-${String(MAX_RUNDOWN_SEGMENTS + 4)}`); // largest: kept
+    // Ordering is unchanged: still ascending by stakes, so the biggest closes the show.
+    expect(f.rundown[f.rundown.length - 1]?.venture).toBe(`v-${String(MAX_RUNDOWN_SEGMENTS + 4)}`);
   });
 
   it('drops a ticker line over 140 characters instead of publishing it', () => {
@@ -263,5 +268,52 @@ describe('renderFrame', () => {
     expect(f.rundown).toEqual([]);
     expect(f.docket).toEqual([]);
     expect(f.meters.kept).toBe(0);
+  });
+});
+
+describe('§11.2 — a nightly frame carries the seal FLAG, never the content', () => {
+  it('the frame carries no field that could hold seal content', () => {
+    // This existed as `sealContent`, the client printed it, and nothing leaked only
+    // because the runtime happened to pass null. A tier boundary held up by a
+    // coincidence in one caller is not held up. §11.2: agents get SEALED content never,
+    // viewers get the flag on the night and the content in the season replay.
+    const rendered = JSON.stringify(renderFrame(source()));
+    expect(rendered).not.toContain('sealContent');
+  });
+
+  it('validation REFUSES a hand-built frame that smuggles seal content back in', () => {
+    const frame = renderFrame(source());
+    const seg = frame.rundown[0];
+    if (seg === undefined) return; // nothing to smuggle into; the shape test covers it
+    const smuggled = {
+      ...frame,
+      rundown: [{ ...seg, sealContent: 'the thing it actually planned' }, ...frame.rundown.slice(1)],
+    };
+    expect(() => {
+      assertFrameBudgets(smuggled as never);
+    }).toThrow(/seal content/i);
+  });
+});
+
+describe('the director must never cut its own climax', () => {
+  it('keeps every default on a Reckoning that overflows the segment budget', () => {
+    // The old cut was `sort(defaults last).slice(0, MAX)` — taking the FIRST twelve of an
+    // order that deliberately puts the payoff at the END. On a busy night that silently
+    // dropped the betrayals and broadcast only the setup.
+    const many: SettledView[] = [];
+    for (let i = 0; i < MAX_RUNDOWN_SEGMENTS + 8; i += 1) {
+      many.push(settled({ venture: `v:kept${String(i).padStart(2, '0')}` as VentureId, atStake: minor(1_000 + i), defaulted: false }));
+    }
+    many.push(settled({ venture: 'v:betrayal-a' as VentureId, atStake: minor(5), defaulted: true }));
+    many.push(settled({ venture: 'v:betrayal-b' as VentureId, atStake: minor(7), defaulted: true }));
+
+    const f = renderFrame(source({ settled: many }));
+    expect(f.rundown.length).toBe(MAX_RUNDOWN_SEGMENTS);
+    const shown = f.rundown.map((s) => String(s.venture));
+    // Both defaults survive, despite being the SMALLEST stakes in the set.
+    expect(shown).toContain('v:betrayal-a');
+    expect(shown).toContain('v:betrayal-b');
+    // And they are still last, because ordering is unchanged — only selection moved.
+    expect(shown.slice(-2).sort()).toEqual(['v:betrayal-a', 'v:betrayal-b']);
   });
 });
