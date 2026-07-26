@@ -214,6 +214,42 @@ describe('the observation is projected, never truncated into invalid JSON', () =
   });
 });
 
+describe('the prompt names the talk acts, or a layer of the record stays empty', () => {
+  it('names every act the engine accepts, and assure among them', () => {
+    // `publicLine` in the settled frame — §11.1's layer 1, what a principal SAID — is read
+    // from the creator's last `assure`. The cast talked (126 messages on the live world) and
+    // never once assured, because nothing in the prompt mentioned the acts. So the field was
+    // wired correctly and would have read null forever: a layer of the say-do gap empty not
+    // because nobody lied but because nobody was told the word existed.
+    //
+    // The acts are asserted against the ENGINE's own list rather than retyped, so a prompt
+    // that drifts from what `vMessage` accepts fails here (scar #1).
+    const contract = loadContract();
+    expect(contract).not.toBeNull();
+    if (contract === null) return;
+    const runtime = new Runtime({ seed: 'acts' });
+    const cast = new HeuristicCast(runtime, { size: 1 });
+    const members = cast.seat('acts');
+    const character = charactersFor(members, 'acts').values().next().value;
+    if (character === undefined) return;
+    const text = buildPrompt({
+      contract,
+      character,
+      observation: anObservation(),
+      memory: 'nothing',
+      liveVerbs: [...runtime.liveVerbs].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+      planMax: 2,
+    })
+      .messages.map((m) => m.content)
+      .join('\n');
+    for (const act of ['offer', 'counter', 'accept', 'decline', 'assure']) {
+      expect(text, `the prompt must name the '${act}' act`).toContain(act);
+    }
+    // And it must say what assure COSTS, not merely that it exists.
+    expect(text).toMatch(/quoted back at you/i);
+  });
+});
+
 describe('scar #1 — the prompt tells the truth about what talk costs', () => {
   it('names exactly the verbs the ENGINE charges nothing for, never a hand-written list', () => {
     // The live world ran eight Reckonings with 510 ventures, 297 seals — and ZERO
