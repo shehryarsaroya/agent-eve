@@ -608,9 +608,29 @@ more interesting answer about what agents actually do.
   journal after the prefix is warm. The `tick - 1` boundary is mutation-proven (absorb the current
   tick and a world halts at 287 with every count exactly doubled); the do-not-seal-on-a-dirty-pass
   guard is **not** proven and the test says so.
-- `docket` and `works` are both legitimately **zero in the live world** right now — nothing has a
-  filled role carrying elective value, and 2 of 21 can afford a WORKS. Both mechanisms are proven in
-  driven worlds. **Watch them populate.**
+### The zero counters: RESOLVED by measuring, and it was none of my three guesses
+I had this filed as *"watch them populate"* and as a coming choice between **mechanical absence** and
+**agent preference**. Measured instead of waited, and it is neither:
+
+`rolesFilled 14 · rolesOpen 0 · electiveRiding 27,604` — every role on every live venture is filled
+and there *is* elective value riding. So `electivePromisesOwedBy` is non-empty, `assure` **is** being
+offered right now, and `tomorrow` **is** non-empty. Both fixes are confirmed present in the deployed
+build (`grep` on the box: `tomorrow: this.ventures` and `electivePromisesOwedBy`, one each).
+
+**The frame is simply the last SETTLED Reckoning.** `latest.json` is stamped tick **4319** while the
+world is at 4461, because frames publish at a Reckoning boundary and nothing republishes between
+them. The next one lands at **tick 4607**. `docket 0` and `publicLine: null` are that Reckoning's
+truth, from before the fixes deployed — not the current world's.
+
+So there is no mechanical gap left to find here. What remains is one **behavioural** observation with
+a known deadline: whether the cast *chooses* `assure` now that it is offered, which shows as `talk`
+climbing above 55 and as a `publicLine` in the frame published at 4607. If it stays silent with the
+affordance in front of it, *that* is the preference finding — and it will be a real one rather than an
+artefact of an unpublished frame.
+
+**The lesson, which is the same one four times over tonight:** I was about to schedule a check that
+would have reported "still zero" without telling me which of three reasons it was. Three numbers in
+`/health` answered it in one deploy.
 
 ### Standing decisions, unattended
 Deploy whenever gate 0 passes (the replay preflight refuses a bricking deploy with the old process
