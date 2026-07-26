@@ -228,21 +228,91 @@ export function checkInv5(
  * work handler added gold to an agent and to a district mirror, and the loss
  * handler summed both, so a drowning destroyed exactly 2× the real value.
  */
+/**
+ * The verified prefix of the posting log, carried between ticks.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **WHY THIS IS NOT A TAUTOLOGY, WHICH IS THE ONLY QUESTION THAT MATTERS.**
+ *
+ * INV-7's whole value is that a cached balance is checked against an **independently
+ * recomputed** sum. The obvious way to make this cheap — keep a running total and
+ * compare it to the balance — destroys exactly that: two numbers maintained by the
+ * same code path agreeing tells you nothing.
+ *
+ * So the prefix is not a running total. It is a **sum that was independently
+ * recomputed at the tick it was verified**, carried forward on one condition: that the
+ * postings it summed cannot have changed. Two facts make that safe, and both are
+ * checked rather than assumed:
+ *
+ *   1. The log is **append-only in time** — `applyBatch` throws if a tick arrives
+ *      before the last one, and A5 has no opt-out.
+ *   2. It can still **shrink**: `restoreTo` truncates positionally when a tick aborts.
+ *      So the boundary is re-identified every tick by length AND by the `eventId` at
+ *      the last verified index. A shrink, or a truncate-then-append that lands on the
+ *      same length with different rows, fails that check and forces a **full**
+ *      recompute — the expensive path, taken on the rare tick that needs it.
+ *
+ * Measured before: `checkInv7` summed every posting ever written, every tick, so
+ * INV-7's cost grew with history without bound. At 4,300 ticks the live world was
+ * re-summing tens of thousands of rows 60 times a minute to prove nothing had moved.
+ *
+ * The cache lives here rather than on `Ledger` deliberately: it is *verification*
+ * state, not game state, so it must never reach `state_hash` — and a `WeakMap` keyed
+ * on the ledger instance means a restored ledger starts with no prefix and re-verifies
+ * from scratch, which is the correct behaviour and needs no rollback wiring.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+interface VerifiedPrefix {
+  count: number;
+  /** The `eventId` at `count - 1`, so a same-length replacement is detected. */
+  boundary: string | null;
+  readonly currency: Map<string, number>;
+  readonly goods: Map<string, number>;
+}
+
+const PREFIX = new WeakMap<Ledger, VerifiedPrefix>();
+
+/** How many full recomputes have been forced. Read by the soak test, not by the engine. */
+export const inv7Stats = { fullRecomputes: 0, incremental: 0 };
+
 export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
   const out: InvariantViolation[] = [];
+  const postings = l.allPostings();
 
-  // Mirror 1: Account.balanceMinor for world accounts is Σ its currency postings.
-  const fromPostings = new Map<string, number>();
-  const goodsFromPostings = new Map<string, number>();
-  for (const p of l.allPostings()) {
+  let prefix = PREFIX.get(l);
+  const boundaryStillMatches =
+    prefix !== undefined &&
+    prefix.count <= postings.length &&
+    (prefix.count === 0 || String(postings[prefix.count - 1]?.eventId) === prefix.boundary);
+
+  if (prefix === undefined || !boundaryStillMatches) {
+    // The expensive path: no prefix, or the log shrank / was rewritten under us.
+    prefix = { count: 0, boundary: null, currency: new Map(), goods: new Map() };
+    PREFIX.set(l, prefix);
+    inv7Stats.fullRecomputes += 1;
+  } else {
+    inv7Stats.incremental += 1;
+  }
+
+  // Fold only what has arrived since the last verified boundary.
+  for (let i = prefix.count; i < postings.length; i += 1) {
+    const p = postings[i];
+    if (p === undefined) continue;
     const leg = postingLedger(p);
     if (leg === 'CURRENCY') {
-      fromPostings.set(p.account, (fromPostings.get(p.account) ?? 0) + p.amountMinor);
+      prefix.currency.set(p.account, (prefix.currency.get(p.account) ?? 0) + p.amountMinor);
     } else if (leg === 'GOODS' && p.good !== null && p.amountQty !== null) {
       const k = `${p.account}\u0000${p.good}`;
-      goodsFromPostings.set(k, (goodsFromPostings.get(k) ?? 0) + p.amountQty);
+      prefix.goods.set(k, (prefix.goods.get(k) ?? 0) + p.amountQty);
     }
   }
+  prefix.count = postings.length;
+  prefix.boundary =
+    postings.length === 0 ? null : String(postings[postings.length - 1]?.eventId ?? '');
+
+  // Mirror 1: Account.balanceMinor for world accounts is Σ its currency postings.
+  const fromPostings = prefix.currency;
+  const goodsFromPostings = prefix.goods;
   for (const a of l.allAccounts()) {
     if (!isWorldAccount(a.kind)) continue;
     const recomputed = fromPostings.get(a.id) ?? 0;
