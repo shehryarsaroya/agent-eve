@@ -60,7 +60,12 @@ describe('the API verb list is the canon verb list', () => {
       if (!line.trim()) continue;
       const rest = line.slice(line.indexOf(' ')).trim();
       for (const v of rest.split('·')) {
-        const t = v.trim();
+        // Dagger stripped: it marks a RESERVED verb, and this test asks which verbs the document
+        // OFFERS, not which of them work. Two copies of this parser now exist — here and in
+        // `rules-surface/agent-md.test.ts` — and both had to learn the dagger separately, which is
+        // the duplication showing its cost. Left as two on purpose: they check different claims and
+        // a shared helper would make one test's failure look like the other's.
+        const t = v.trim().replace(/†$/, '');
         if (/^[a-z_]+$/.test(t)) fromDoc.add(t);
       }
     }

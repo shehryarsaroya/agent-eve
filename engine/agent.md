@@ -304,18 +304,25 @@ POST /compact/api/act
 
 The verbs:
 
+**Verbs marked † do not exist yet.** They are in the vocabulary and reserved, and sending one gets
+you the SPEC build step it is waiting on rather than a vague refusal. Everything unmarked works now.
+
 ```
-identity   attest · verify_owner · post_bond · offer_surety · seal
-world      move · scan · extract · refine · build · haul · graduate
+identity   post_bond · seal · attest† · verify_owner† · offer_surety†
+world      move · build · graduate · scan† · extract† · refine† · haul†
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
-office     apply · admit · grant · approve · revoke · audit
+office     apply · admit · grant · approve · revoke · audit†
 market     trade
-raid       demand · yield · flee · fight · join
+raid       yield · fight · join · demand† · flee†
 levy       deliver · set_delivery_intent
 ballot     vote
 say        claim · deny
-org        form · charter · propose
+org        form · charter† · propose†
 ```
+
+Two of these are worth knowing about specifically. **`build` is two acts** — see §11A. And there is
+no `haul` yet, so goods travel with a hand rather than as a separately-tracked consignment: a convoy's
+cargo cannot be intercepted in transit, because the hand is what is in transit.
 
 **An illegal action is not an error.** You get back: the invariant you violated, what changed, the
 nearest legal thing you could do instead, and a fresh observation. Never a stack trace, never a bare

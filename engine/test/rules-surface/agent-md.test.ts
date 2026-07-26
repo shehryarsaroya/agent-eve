@@ -33,6 +33,7 @@ import {
   YIELD_PER_TICK,
 } from '../../src/works/params.js';
 import { FOUNDING_COST_MINOR } from '../../src/syndicate/params.js';
+import { VERB_ARRIVES_AT } from '../../src/api/verbs.js';
 import { readFileSync } from 'node:fs';
 // The engine's own sentence about the exit from the Commons. Imported rather than copied,
 // which is the whole point of this file: a copy would be a third version of the rule.
@@ -72,7 +73,11 @@ function agentMdVerbs(): ReadonlySet<string> {
     if (!line.trim()) continue;
     const rest = line.slice(line.indexOf(' ')).trim();
     for (const v of rest.split('·')) {
-      const t = v.trim();
+      // The dagger marks a RESERVED verb — in the vocabulary, no handler yet. Stripped here so this
+      // parser keeps answering "which verbs does the document offer", which is a different question
+      // from "which of them work". The second question has its own test below, pinned to
+      // VERB_ARRIVES_AT, because conflating the two is how a reserved verb ends up looking live.
+      const t = v.trim().replace(/†$/, '');
       if (/^[a-z_]+$/.test(t)) verbs.add(t);
     }
   }
@@ -554,5 +559,44 @@ describe('agent.md teaches the syndicate rules an agent cannot discover by tryin
     // Backtick-tolerant: agent.md marks up verb names, so a literal phrase match is really a match
     // against the markdown as well as the words.
     expect(AGENT_MD.replace(/\s+/g, ' ')).toMatch(/`?message`? one of them.*admits you/);
+  });
+});
+
+describe("agent.md's verb table says which verbs actually exist", () => {
+  /**
+   * The table listed all forty canon verbs with no way to tell the twelve reserved ones from the
+   * twenty-eight that work. An agent budgeting actions off that list spends them discovering which
+   * half is real — and `agent.md` is the document three tester agents played from with no other
+   * reading, so it is the rules surface that matters most.
+   *
+   * Pinned against `VERB_ARRIVES_AT` in both directions, so the marks cannot rot the way the map
+   * itself just did: seven live verbs had been sitting in that map claiming to be unbuilt, `grant`
+   * among them, and nothing failed because nothing checked.
+   */
+  it('marks every reserved verb with a dagger, and marks nothing else', () => {
+    const table = AGENT_MD.slice(AGENT_MD.indexOf('identity   '), AGENT_MD.indexOf('```', AGENT_MD.indexOf('identity   ')));
+    const daggered = new Set([...table.matchAll(/([a-z_]+)†/g)].map((m) => m[1] ?? ''));
+    const reserved = new Set(Object.keys(VERB_ARRIVES_AT));
+
+    const unmarked = [...reserved].filter((v) => !daggered.has(v)).sort((a, b) => (a < b ? -1 : 1));
+    expect(unmarked, `reserved verbs offered without a dagger: ${unmarked.join(', ')}`).toEqual([]);
+
+    const overmarked = [...daggered].filter((v) => !reserved.has(v)).sort((a, b) => (a < b ? -1 : 1));
+    expect(
+      overmarked,
+      `these are marked as not existing but they work: ${overmarked.join(', ')}. Telling an agent a ` +
+        'live verb is unavailable costs it every action it would have spent there.',
+    ).toEqual([]);
+  });
+
+  it('explains what the dagger means, so the mark is not decoration', () => {
+    expect(AGENT_MD).toContain('do not exist yet');
+    expect(AGENT_MD, 'and that a refusal names the build step').toMatch(/build step it is waiting on/);
+  });
+
+  it('names the two consequences an agent would otherwise discover by losing something', () => {
+    expect(AGENT_MD, '`build` being two acts').toContain('`build` is two acts');
+    // No `haul` means cargo cannot be intercepted, which changes how predation is priced.
+    expect(AGENT_MD.replace(/\s+/g, ' ')).toContain('cannot be intercepted in transit');
   });
 });
