@@ -130,11 +130,26 @@ export interface DurabilityHealth {
   readonly lastError: string | null;
 }
 
+/**
+ * What aborted the tick that stopped the world.
+ *
+ * Captured by the tick loop at the moment of the halt, because the violations are on the run
+ * report and nothing else keeps them. Without this the endpoint can say a world is PAUSED and
+ * nothing more, which is the state this shape was added to end.
+ */
+export interface HaltRecord {
+  readonly tick: number;
+  readonly stateHash: string;
+  readonly violations: readonly { readonly id: string; readonly message: string }[];
+}
+
 export interface HealthOptions {
   readonly floorBps?: number;
   readonly warmupTicks?: number;
   /** A live probe of the journal's durability frontier, or absent for a store-less run. */
   readonly durability?: () => DurabilityHealth | null;
+  /** What halted the world, or null while it is running. */
+  readonly halt?: () => HaltRecord | null;
   /**
    * A live probe of the house cast's spend, or absent when no LLM cast is running.
    *
@@ -203,9 +218,29 @@ export function buildHealth(
 
   const failures: string[] = [];
   if (runtime.engine.status === 'PAUSED') {
+    // ── NAME THE INVARIANT, OR THE HALT IS UNDIAGNOSABLE ────────────────────
+    //
+    // This used to say only *"an invariant failed"* and tell the operator to replay the
+    // failed tick from its triple — without naming the invariant, the tick, or the hash.
+    // Found by living it: a probe agent's world went PAUSED at tick 1281 and there was no
+    // way to learn why from outside the process. The tick loop logged nothing either (it
+    // had `if (!report.halted) { persist }` and no `else`), so a halted world was silent in
+    // its log AND anonymous at its health endpoint.
+    //
+    // Halting is right — "never publish a broken tick". Being unable to say what broke is
+    // not, and it is worse here than in most systems: A5′ says the record must never be
+    // wrong, so the one thing an operator must be able to do quickly is tell a real
+    // violation from a false one.
+    const halt = options.halt?.() ?? null;
+    const named =
+      halt === null || halt.violations.length === 0
+        ? ''
+        : ` Violations at tick ${String(halt.tick)} (state_hash ${halt.stateHash.slice(0, 16)}): ` +
+          halt.violations.map((v) => `${v.id} — ${v.message}`).join(' | ');
     failures.push(
       'the world is PAUSED: an invariant failed and the tick was aborted rather than published. ' +
-        'Replay the failed tick from its triple, fix the defect, and issue a signed resume.',
+        'Replay the failed tick from its triple, fix the defect, and issue a signed resume.' +
+        named,
     );
   }
   if (livePlayed >= warmup && total === 0) {
@@ -213,11 +248,36 @@ export function buildHealth(
       `no decisions in the last ${String(CENSUS_WINDOW_TICKS)} ticks. The process is alive and nothing is ` +
         'playing, which is exactly the failure a liveness check cannot see (scar #14b).',
     );
-  } else if (livePlayed >= warmup && shareBps < floorBps) {
+  } else if (livePlayed >= warmup && deciding === 0) {
+    // ── A COLLAPSE TO ZERO, NOT A PROPORTION ────────────────────────────────
+    //
+    // This used to fire on `shareBps < floorBps`, and the analysis a few lines below —
+    // written when the fallback-rate check was added — already explained why that could not
+    // work: *"twelve members waking sixteen times a Reckoning cannot out-count a heuristic
+    // cast that acts every tick"*. The share cleared the floor exactly once, while nine
+    // external playtest probes were deciding, and fell back under it when they finished with
+    // nothing wrong.
+    //
+    // The better detector was added and **the broken one was left wired up**, so
+    // `/health` served 503 continuously for a condition the code itself documents as
+    // structural. That is worse than no alarm: a permanently red check is a check nobody
+    // reads, and it hid the fact that the endpoint could no longer report a real outage. It
+    // is also the second half of the sentence in that same comment — scar #14b winning twice,
+    // "by making the detector cry wolf until somebody silences it".
+    //
+    // Silencing it is what this is, and it is done deliberately and narrowly: the condition
+    // becomes the one `DECIDING_FLOOR_BPS`'s own doc comment always claimed it was for — *"to
+    // catch a collapse to zero, not to police the cast's proportion"*. A world where the
+    // heuristic is playing and NOT ONE decision came from a player is unambiguously broken,
+    // and it has no structural false positive: a healthy cast always decides something.
+    //
+    // `deciding_share_bps` and `floor_bps` stay in the payload. The number is worth watching;
+    // it just no longer decides whether the world is up.
     failures.push(
-      `only ${String(shareBps)} bps of decisions came from LIVE, INTENT or DELEGATE (floor ${String(floorBps)} bps). ` +
-        `The rest are HEURISTIC or FALLBACK, which means the expensive path is not being taken — the world looks ` +
-        'healthy and its players have silently fallen back (scar #14b).',
+      `${String(total)} decisions in the last ${String(CENSUS_WINDOW_TICKS)} ticks and NOT ONE came from ` +
+        'LIVE, INTENT or DELEGATE. The heuristic is holding the stage by itself, which means the expensive ' +
+        'path is not being taken at all — the world looks healthy and its players have silently fallen back ' +
+        `(scar #14b). The share is reported as ${String(shareBps)} bps against an advisory ${String(floorBps)}.`,
     );
   }
 

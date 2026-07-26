@@ -77,7 +77,7 @@ import {
   type RefusalDiagnostic,
   type SignableRequest,
 } from '../identity/index.js';
-import { buildHealth, type CastHealth, type HealthOptions } from './health.js';
+import { buildHealth, type CastHealth, type HaltRecord, type HealthOptions } from './health.js';
 import { IdempotencyStore } from './idempotency.js';
 import {
   MAX_BODY_BYTES,
@@ -1800,6 +1800,8 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     limiter: new RateLimiter(undefined, undefined, rateLimitAllowlist),
     health: {
       durability: (): ReturnType<Journal['health']> => journal.health(),
+      /** Named so a PAUSED world can be diagnosed without a debugger on the box. */
+      halt: (): HaltRecord | null => halted,
       // The spend meter. Probed live rather than snapshotted, so `/health` answers what
       // the cast is costing *now* — the world ran on a real key with a latching cap and
       // no observable spend, which made the only way to discover the figure be to hit it.
@@ -1830,12 +1832,47 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
   // The scheduler is the one place a real clock drives the world, and it derives its
   // interval from `ticksToMs(1)` so that changing the speed changes the schedule and
   // nothing else has to be told (TESTING.md §1.1, hazard 1).
+  /** Set once, by the tick that aborted. Read by `/health` so a halt is diagnosable remotely. */
+  let halted: HaltRecord | null = null;
+
   const interval = setInterval(() => {
     if (runtime.engine.status === 'PAUSED') return;
     for (const action of cast.decide(runtime.engine.tick + 1, seed)) {
       runtime.engine.submit(action);
     }
     const report = runtime.runTick();
+
+    // ── A HALT MUST SAY SO, ONCE, LOUDLY ────────────────────────────────────
+    //
+    // This branch did not exist. `if (!report.halted) { persist }` had no `else`, so a world
+    // that aborted a tick skipped persistence and the frame, logged NOTHING, and then
+    // returned early from every subsequent interval because the status was PAUSED. It
+    // stopped dead in silence.
+    //
+    // Found by living it: a probe agent's local world went PAUSED at tick 1281 with four
+    // Reckonings and twenty-one principals in it, and the whole log was the six boot lines.
+    // `/health` said PAUSED and named nothing, so there was no way, from inside or outside
+    // the process, to learn which invariant had fired.
+    //
+    // Halting is correct — "on assertion failure, abort the tick and halt; never publish a
+    // broken tick". Saying nothing about it is not. Recorded once (the loop returns early
+    // afterwards, but a guard makes that explicit rather than incidental) and served from
+    // `/health`, because the operator is usually not the person tailing this log.
+    if (report.halted && halted === null) {
+      halted = {
+        tick: report.tick,
+        stateHash: runtime.engine.stateHash,
+        violations: report.violations.map((v) => ({ id: String(v.id), message: String(v.message) })),
+      };
+      process.stderr.write(
+        `compact: ⚑ WORLD HALTED at tick ${String(report.tick)} — the tick was aborted and NOT ` +
+          `published. state_hash ${runtime.engine.stateHash.slice(0, 16)}. ` +
+          (halted.violations.length === 0
+            ? 'No violations were carried on the report, which is itself a defect worth chasing.'
+            : halted.violations.map((v) => `${v.id}: ${v.message}`).join(' | ')) +
+          ' The world is now PAUSED and will not tick again until an operator resumes it.\n',
+      );
+    }
 
     // Persist the committed tick BEFORE the frame: the record is sacred, the show is
     // cosmetic. `record` buffers synchronously and never throws; `flushPending` is
