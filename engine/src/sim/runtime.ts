@@ -3126,6 +3126,16 @@ export class Runtime {
   bufferSizes(): Readonly<Record<string, number>> {
     return {
       talk: this.talk.size,
+      // ── HOW MANY OF THOSE ARE ASSURANCES ────────────────────────────────────
+      //
+      // `talk` alone cannot answer the question the receipt reel depends on: an `offer` and an
+      // `assure` both increment it, and only the second is a promise a viewer can hold somebody to.
+      // Without this the choice between "the cast will not speak" and "the cast speaks but never
+      // stakes anything" is unreadable, and those are different findings with different fixes.
+      //
+      // Counted over the ring rather than tracked incrementally: the ring is bounded at
+      // MAX_TALK_ENTRIES, so this is a walk over at most 512 rows on a diagnostic path.
+      assures: this.talk.all.filter((t) => t.act === 'assure').length,
       // ── IS THE ECONOMY'S ONLY FAUCET ACTUALLY REACHABLE? ────────────────────
       //
       // `works` counts structures and `worksOnline` counts the ones past spin-up; together
