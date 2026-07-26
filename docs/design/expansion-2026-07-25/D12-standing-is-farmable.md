@@ -268,6 +268,23 @@ snapshot from a world with a WORKS in it, then compare the adopted state field-b
 live state at the same tick. Do not compare hashes — hashes say *that* something differs, and this
 needs *what*.
 
+**A SECOND HARNESS ATTEMPT, ALSO INVALID — and the control caught it.** I tried the field-by-field
+comparison by restoring each state table from a fuller runtime into a fresh one. It threw
+**`restore would grow an append-only table (postings …)`** — because **adoption does not restore the
+ledger from the snapshot at all.** It *hydrates* postings from the store (`postingsInRange`) and events
+through `hydrateEventsForSnapshot`. A table-by-table restore is therefore **not** adoption, and any
+diagnostic built that way is measuring something the engine never does.
+
+This is the second invalid instrument in a row, and both times the **control** is what revealed it —
+first a world with no WORKS showing the same divergence, then an append-only guard refusing the
+restore. **The control is the whole method.** Write it first, and a broken harness announces itself
+instead of producing a finding.
+
+**So the harness already exists: `checkpoint-adoption-audit` itself.** The way in is to instrument
+*that* test — it goes through the real boot path — rather than to rebuild adoption by hand. Concretely:
+log each table's capture on both sides of its existing adoption and diff the strings. Everything needed
+is already wired; only the diff is missing.
+
 Reverted rather than shipped. A determinism failure is the one class in this codebase that must never
 be shipped on a guess, and `state_hash` divergence on a live world at ~4,500 ticks means a boot that
 refuses to resume.
