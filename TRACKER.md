@@ -562,6 +562,40 @@ refuses to grow, adoption falls back to a genesis replay, and the refusal expire
 world moves past the migration. Added by `ALTER` as well as in `CREATE`, because `CREATE TABLE IF NOT
 EXISTS` does nothing to a table that already exists.
 
+### ★ GATE 3 HAS BEEN READ, AND THE DESIGN SURVIVES (2026-07-26)
+`GATE-3.md` §0: *"the gate is passed by being READ, not by being green."* This is its **first fair
+run** — grants and offices are live, so the authority is real and the treasuries are large enough for
+defection to be rational. Every prior run could only observe the elective-half proxy, which was too
+small-stakes to mean anything.
+
+**Read off the live world at tick 4,395: `kept 13 · broken 1`.**
+
+Zero was the falsifying answer — *"if the elective part is always honoured, trust is worthless,
+because betrayal is never rational"* (§7.6). It is not always honoured. Betrayal occurs, it is not a
+dice roll, and it renders: one rundown segment carries `SNAPPED_BLACK` and the deed reads **"kestrel
+walked away from 6K it had promised."** A6 is not decoration on a logistics game.
+
+**But `publicLine` was null on all twelve segments**, so §14's RECEIPT REEL — the signature moment of
+the whole design — had **never fired in production**. Not broken: the path is now proven end to end.
+Nobody was ever invited to speak. `message` is live, free, taught in `agent.md` *and* the cast prompt,
+and appeared **zero times** in `observe.ts`.
+
+That is the **third instance of one shape in a single night**: `graduate` legal-and-unoffered (no
+principal reached the Marches), `build {"kind":"WORKS"}` legal-and-unoffered (the economy's only
+faucet unreachable), and now `assure`. **An agent plays from `affordances[]`; prose is not an
+interface.** `assure` is now offered to the party that owes an elective half — free, and to nobody
+who owes nothing.
+
+**Checked and NOT a bug:** the break renders `sealVerdict: HONOURED` beside a broken promise. A seal
+judges whether the deed matched the sealed *intention*, which is a different claim from paying the
+elective half. kestrel kept its sealed word and broke its priced promise — a better story than a
+contradiction.
+
+**The falsifiable follow-up:** `talk` was 55 before the deploy and the cast has not re-planned yet.
+**Watch `publicLine` go non-null and a reel appear.** If assurances still never happen with the
+affordance offered, the finding changes from "unreachable" to "unwanted", which is a different and
+more interesting answer about what agents actually do.
+
 ### Still open, and each is a deliberate choice rather than a gap
 - **Pooled goods are not raidable** (D11). Making a bodiless subject raidable means deciding who
   defends it, which belongs with a later offices pass.
