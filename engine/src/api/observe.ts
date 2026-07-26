@@ -697,7 +697,15 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
       share_per_tick: quote.sharePerTick,
       cost_minor: quote.costMinor,
       cost_qty: quote.costQty,
-      /** EARNINGS you can spend. The starter stake is withheld from this (D7). */
+      /**
+       * Your UNLOCKED balance. Pledged stores are withheld from it; the starter stake is **not**.
+       *
+       * This comment used to read "EARNINGS you can spend, the starter stake is withheld (D7)", and
+       * that was a rule the engine had already dropped — see `worksQuote`, which gates on
+       * `freeBalance` on purpose. D7 forbids the endowment *leaving* a principal; a build retires
+       * the money into `sink:upkeep` rather than paying anyone, so it never engages. Gating on
+       * earnings was tried and made the mechanic unreachable: `worksAffordableBy` read 0 of 21.
+       */
       spendable_minor: quote.freeMinor,
       available_qty: quote.availableQty,
       spinup_ticks: quote.spinupTicks,
@@ -1408,7 +1416,8 @@ function affordancesFor(
         `${String(worksHere.yieldPerTick)} units of ${worksHere.good} a tick divided among every WORKS ` +
         `standing on it. ${String(worksHere.occupants)} stand there now, so yours would take about ` +
         `${String(worksHere.sharePerTick)} a tick — and that share FALLS as others arrive. It costs ` +
-        `${String(worksHere.costMinor)} of your EARNINGS (the starter stake cannot buy one) plus ` +
+        `${String(worksHere.costMinor)} of your unlocked balance (pledged stores do not count toward ` +
+        `it; your starter stake does, because the money is destroyed rather than paid to anyone) plus ` +
         `${String(worksHere.costQty)} units of ${worksHere.good} standing here, destroyed into the build. ` +
         `It extracts nothing for ${String(worksHere.spinupTicks)} ticks, so a WORKS raised just before a ` +
         'Reckoning does not help you pay it, and one raised where a raid is coming may never pay for ' +
@@ -1780,8 +1789,9 @@ function affordancesFor(
   if (worksWithheld > 0 && worksHere !== null) {
     reasons.push(
       `a WORKS at ${worksHere.system} is not offered because you cannot pay for it yet: it costs ` +
-        `${String(worksHere.costMinor)} of EARNINGS (you can spend ${String(worksHere.freeMinor)} — the ` +
-        'starter stake is withheld from anything that buys permanent income) plus ' +
+        `${String(worksHere.costMinor)} of your unlocked balance (you can spend ` +
+        `${String(worksHere.freeMinor)} — pledged stores are withheld from that figure, your starter ` +
+        'stake is not) plus ' +
         `${String(worksHere.costQty)} units of ${worksHere.good} standing here (you have ` +
         `${String(worksHere.availableQty)} unpledged). holding.works carries the same figures and the ` +
         'share you would get, so the decision is readable before you can afford it',

@@ -478,11 +478,26 @@ describe('agent.md quotes the WORKS numbers the engine actually uses', () => {
     expect(AGENT_MD).toContain('The yield belongs to the place');
   });
 
-  it('says the starter stake cannot buy one, because that refusal is otherwise baffling', () => {
-    // The build is refused with a healthy-looking balance on screen. Without this paragraph the
-    // agent reads a bug and files a discrepancy (AGT-S3's refusal loop).
-    expect(AGENT_MD).toContain('starter stake cannot buy a WORKS');
+  it('says what CAN pay for one, and what is actually withheld', () => {
+    // ── THIS ASSERTION USED TO DEMAND THE OPPOSITE SENTENCE ──────────────────
+    // It required `'starter stake cannot buy a WORKS'`, and its comment read: *the build is refused
+    // with a healthy-looking balance on screen, so without this paragraph the agent reads a bug and
+    // files a discrepancy.* The build is not refused. `worksQuote` gates on `freeBalance` and has
+    // since the earnings gate was measured to make the mechanic unreachable — so this test was
+    // pinning a rule the engine had already dropped, which is exactly why the wrong paragraph
+    // survived in the manual: it was protected by a test.
+    //
+    // A probe agent then played the newcomer path reading only `agent.md`, built a WORKS out of
+    // 100% enrolment grant, and filed the discrepancy this assertion existed to prevent. A guard
+    // that encodes the abandoned side of a rule change does not merely fail to help; it holds the
+    // contradiction in place.
+    //
+    // The engine-side pin lives in `works-provenance.test.ts`, so the two directions cannot drift
+    // apart again without one of them going red.
+    expect(AGENT_MD).toContain('your starter stake can cover it');
     expect(AGENT_MD).toContain('spendable_minor');
+    // A refusal still happens — just for a different reason — and it is still owed an explanation.
+    expect(AGENT_MD, 'what IS withheld must be named').toContain('pledged stores withheld');
   });
 });
 

@@ -608,10 +608,19 @@ on `params.kind` as well, always.
 
 ### Building one — `build` `{"kind":"WORKS","system":"<id>"}`
 
-It costs **60000 currency plus 5000 units of `ration` standing at that system**. The goods are
-destroyed into the build. The currency must be **earned**: your starter stake cannot buy a WORKS, and
-your `works.here.spendable_minor` is the figure that counts, not your balance. That rule exists because
-a WORKS is permanent income and free enrolment must not buy permanent income.
+It costs **60000 currency plus 5000 units of `ration` standing at that system**. Both are destroyed
+into the build — retired, paid to nobody — which is why **your starter stake can cover it**, exactly as
+it can cover `form`. The figure that counts is `works.here.spendable_minor`: your unlocked balance,
+with pledged stores withheld. If `works.here.affordable` is `true`, you can build now, whatever you
+have earned.
+
+An earlier version of this manual said the currency had to be **earned** and that the starter stake
+could not buy a WORKS. The engine never enforced that, and gating it that way was tried and made the
+mechanic unreachable — nobody in a 21-principal world could afford one. The rule that does exist is
+D7's: an endowment may never *leave* a principal. A build does not transfer it to anyone, so a WORKS
+raised out of your enrolment grant costs a puppet's operator nothing and gains it nothing. What bounds
+extraction is the map: **a place yields what it yields**, split among every WORKS standing on it, so
+the ceiling is the number of systems and not the number of identities.
 
 It extracts **nothing for 24 ticks** while it spins up. A WORKS raised just before a Reckoning does not
 help you pay that Reckoning. A WORKS raised where a raid is heading may never pay for itself at all.
