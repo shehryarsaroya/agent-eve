@@ -48,6 +48,7 @@ import {
   type RundownSegment,
   type TributeLine,
   type VentureGlyph,
+  type BeatKind,
 } from './contract.js';
 
 /** Everything the renderer is allowed to know. Deliberately small. */
@@ -376,14 +377,58 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       receiptReel: null,
     }));
 
-  const rundown: RundownSegment[] = [...ventureBeats, ...lapseBeats, ...raidBeats]
+  // ── BEAT CLASS, BECAUSE `atStake` MIXES CURRENCY WITH UNITS OF A GOOD ─────
+  //
+  // The old comparator was `defaulted` (false first) then `atStake` ascending, and it summed
+  // three different quantities on one numeric axis:
+  //
+  //     settlement  atStake = electiveDue        MINOR      (currency)
+  //     lapse       atStake = slashed            MINOR      (currency)
+  //     plunder     atStake = lost || demand     QTY        (units of a good)
+  //
+  // `contract.ts` says so about the last one in as many words: *"in units of the good. Never
+  // currency, never a hold value."* With `RAID_DEMAND_QTY` topping out at 6,000 and
+  // `RAID_TAKE_MULTIPLE` of 2, a plunder of 7,000 ORE outranked a default of 6,000 MINOR every
+  // time — and 6,000 minor is the size of a typical elective half, so it was not an edge case.
+  //
+  // Measured on the live world: the night's one broken promise sat at beat 7 of 12 and three
+  // plunders followed it. §14.3 says *"largest say-do deltas held to the end, because a broken
+  // promise is the largest delta there is"* — the show was not choosing to end on ore, an integer
+  // in one unit was beating an integer in another.
+  //
+  // Also `defaulted` was doing duty as "big delta" for three unrelated things: lapses set it
+  // unconditionally and plunders set it on `PLUNDERED`. A plunder has NO say-do gap at all — its
+  // `publicLine`, `sealVerdict` and `cast` are null and empty by construction — so it must never
+  // be able to outrank one.
+  //
+  // A beat CLASS fixes both: rank across classes, magnitude only WITHIN a class, so two different
+  // units are never compared.
+  const beatRank = (b: { readonly kind: BeatKind; readonly defaulted: boolean }): number =>
+    b.kind === 'SETTLEMENT' && b.defaulted
+      ? 3 // a broken elective promise — the say-do delta itself
+      : b.kind === 'LAPSE'
+        ? 2 // permanent territorial loss with a bond slashed
+        : b.kind === 'PLUNDER' && b.defaulted
+          ? 1 // goods taken: a real loss, but nobody said anything they then didn't do
+          : 0; // a promise kept, a raid repulsed
+
+  const allBeats = [...ventureBeats, ...lapseBeats, ...raidBeats];
+
+  // SELECT, then ORDER — the same separation the venture-level cut above already makes, applied
+  // to the combined set. Sorting ascending and slicing the first N would cut the highest-ranked
+  // beats, which is exactly the "show cutting its own climax" failure documented above, one level
+  // up and reintroduced by the lapse and raid beats joining the list.
+  const chosen = [...allBeats]
     .sort(
       (a, b) =>
-        (a.defaulted === b.defaulted ? 0 : a.defaulted ? 1 : -1) ||
-        a.atStake - b.atStake ||
-        compareIds(a.subject, b.subject),
+        beatRank(b) - beatRank(a) || b.atStake - a.atStake || compareIds(a.subject, b.subject),
     )
-    .slice(0, MAX_RUNDOWN_SEGMENTS)
+    .slice(0, MAX_RUNDOWN_SEGMENTS);
+
+  const rundown: RundownSegment[] = chosen
+    .sort(
+      (a, b) => beatRank(a) - beatRank(b) || a.atStake - b.atStake || compareIds(a.subject, b.subject),
+    )
     .map((beat, i) => ({ ...beat, order: i + 1 }));
 
   // The docket is the DEFAULT view and it looks forward, not back: biggest stakes

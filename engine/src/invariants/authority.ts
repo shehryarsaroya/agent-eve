@@ -210,6 +210,18 @@ export interface SignedDeal {
 }
 
 /**
+ * Whether a grant is a link in a real delegation chain rather than a root grant.
+ *
+ * A chain needs a parent: "B may act for A, and C may act for A **through B**". `Grant`
+ * (`core/types.ts`) has no `parentGrantId`, so in this build the answer is always no — every grant
+ * is a root over its own grantor's stores. Written as a predicate rather than as a deleted branch
+ * so that the fact is stated in one place, testable, and impossible to forget when parentage lands.
+ */
+function hasDelegationParentage(grant: Grant): boolean {
+  return Object.prototype.hasOwnProperty.call(grant, 'parentGrantId');
+}
+
+/**
  * INV-23 — no grant chain contains a cycle; no principal is transitively its own
  * delegate; no delegate is counterparty to a deal it signs on another's behalf.
  *
@@ -239,6 +251,33 @@ export function checkInv23(
       );
       continue;
     }
+    // ── THE EDGE THAT DOES NOT EXIST ────────────────────────────────────────
+    //
+    // This used to be unconditional, and it manufactured a permanent, agent-reachable HALT out of
+    // entirely legal play. Measured: four grants — a→b, b→c, c→d, d→e — produce
+    // `HALT INV-23: grant chain from p:a is 5 deep`. Nobody re-delegated anything. Each of those
+    // five principals granted authority over ITS OWN stores to one other principal, which is the
+    // single most ordinary thing a cast of neighbours does, and it is exactly what the `grant`
+    // affordance now offers to every counterparty with a kept promise.
+    //
+    // The walk models a relationship this build cannot have. `vGrant` sets `grantor` to the actor
+    // (or the syndicate it holds an office in) and the grant binds the GRANTOR'S OWN stores; `Grant`
+    // has no `parentGrantId`, so holding a grant from A does not let you delegate A's authority
+    // onward. Read as a graph of "who may spend whose money", the two shapes this walk halts on are:
+    //
+    //     a -> b -> a        two neighbours who each trust the other
+    //     a -> b -> c -> d   four principals who each trust one other
+    //
+    // Both are legal, desirable, and the point of A6. "A chain nobody can audit is authority nobody
+    // granted" is the right sentence about the wrong graph: nobody granted TRANSITIVE authority
+    // here, because every grant is explicit, bounded, and shown to its grantor before signing.
+    //
+    // So no edge is added, and the walk below runs over an empty graph. It is kept rather than
+    // deleted because it is correct code for the model that lands with `parentGrantId` — and
+    // `test/invariants/authority-no-false-halt.test.ts` FAILS the moment that field appears, so the
+    // walk cannot stay inert once there is a real chain to check. The self-grant refusal above is
+    // untouched: authority over yourself is meaningless whatever the model.
+    if (!hasDelegationParentage(g)) continue;
     const to = edges.get(g.grantor);
     if (to === undefined) edges.set(g.grantor, [g.delegate]);
     else to.push(g.delegate);

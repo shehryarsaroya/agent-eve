@@ -595,6 +595,30 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
       `${frame.raidLines.length} raid lines, budget is ${MAX_RAID_LINES} — a countdown a viewer can follow, not a weather map`,
     );
   }
+  // ── §14.3 AS ARITHMETIC: THE CLIMAX CLOSES THE NIGHT ─────────────────────
+  //
+  // *"The ordering IS the format. Ascending by stakes, largest say-do deltas held to the end,
+  // because a broken promise is the largest delta there is."* That was a comment and a comparator,
+  // and the comparator had a category error in it: `atStake` compares MINOR for settlements and
+  // lapses against QTY for plunders, so a plunder of 7,000 ore closed a night whose one broken
+  // promise was worth 6,000 minor. Measured on the live frame — the default sat at beat 7 of 12
+  // with three plunders after it.
+  //
+  // A comment cannot fail. This can. A broken elective promise is `SNAPPED_BLACK` on the glyph —
+  // the one state the published segment exposes that means "said one thing, did another" — so the
+  // rule is expressible on the contract without adding a field for it.
+  const snapped = frame.rundown.filter((s) => s.glyph?.state === 'SNAPPED_BLACK');
+  if (snapped.length > 0) {
+    const last = frame.rundown[frame.rundown.length - 1];
+    if (last?.glyph?.state !== 'SNAPPED_BLACK') {
+      problems.push(
+        `the rundown carries ${String(snapped.length)} broken promise(s) and ends on ` +
+          `${String(last?.kind)} ${String(last?.subject)} instead. §14.3 holds the largest say-do ` +
+          'delta to the end; a night that buries its own betrayal is a batch, not a broadcast',
+      );
+    }
+  }
+
   for (const line of frame.raidLines) {
     // A repulse that still took goods is the arithmetic contradicting the pixel, and the
     // pixel is what a stranger believes. PRD-6 halts the tick on it; this refuses to

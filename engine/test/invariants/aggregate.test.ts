@@ -833,7 +833,31 @@ describe('the authority group fires', () => {
     ).toBe(true);
   });
 
-  it('INV-23 — a grant chain cycle', () => {
+  // ── THE THREE TESTS BELOW USED TO ASSERT A HALT, AND THE HALT WAS A FALSE ONE ──
+  //
+  // They encoded the CREDENTIAL-chain model applied to the GRANT BOOK, which has no parentage.
+  // `vGrant` sets `grantor` to the actor and binds the grantor's OWN stores, and `Grant` has no
+  // `parentGrantId` — so holding a grant from A does not let you delegate A's authority onward.
+  // Read as a graph of *who may spend whose money*:
+  //
+  //     p0 -> p1 -> p2 -> p0     three neighbours who each trust one other
+  //     p0 -> p1 -> ... -> p6    seven principals who each trust one other
+  //
+  // Neither amplifies anything: holding p2's grant gives you no access to p1's money, because each
+  // grant is bounded by its own two limits over its own grantor's stores. Both were halting the
+  // world, permanently, from four ordinary grants — and the `grant` affordance now offers exactly
+  // this shape to every counterparty with a kept promise, so a latent halt became a likely one.
+  //
+  // The real property — a credential chain laundering authority into a namespace where the limits
+  // were stripped — is unchanged and still enforced where chains actually exist:
+  // `identity/vc.ts:394-420`, covered by `test/identity/vc.test.ts:335`
+  // (`CREDENTIAL_CHAIN_CYCLE`). Nothing was disarmed; a check was pointed at the right book.
+  //
+  // See `test/invariants/authority-no-false-halt.test.ts`, which also carries the tripwire that
+  // FAILS the moment `parentGrantId` appears, so the transitive walk cannot stay inert once there
+  // is a real chain to check.
+
+  it('INV-23 — a ring of independent grants is trust, not a cycle', () => {
     const report = checkInvariants(
       {
         grants: [
@@ -844,7 +868,10 @@ describe('the authority group fires', () => {
       },
       1,
     );
-    expect(fired(report.violations)).toContain('INV-23');
+    expect(
+      report.violations.filter((v) => v.id === 'INV-23'),
+      'three principals each granting over their own stores is the most desirable state in the game',
+    ).toEqual([]);
   });
 
   it('INV-23 — a principal made its own delegate', () => {
@@ -854,14 +881,11 @@ describe('the authority group fires', () => {
     ).toBe(true);
   });
 
-  it('INV-23 — an over-deep chain halts, and does NOT invent cycles that are not there', () => {
-    // A legal linear chain p0 -> p1 -> ... -> p6. It exceeds the delegation depth cap,
-    // which is a real violation and must halt. What must not happen is the rest of the
-    // message: abandoning the walk used to leave nodes coloured GREY, so the next
-    // starting point read them as on its own path and the halt record published
-    // "p2 is transitively its own delegate" about three principals whose grants form no
-    // cycle at all. A permanent operator-facing record inventing an accusation is the
-    // A5' failure in miniature.
+  it('INV-23 — a long line of independent grants does not halt, and invents nothing', () => {
+    // Still asserts the no-invented-accusation property, which was a real fix: abandoning the walk
+    // used to leave nodes GREY so a later start read them as on its own path and published
+    // "p2 is transitively its own delegate" about principals whose grants form no cycle. That
+    // sentence must never appear, and now neither must the depth halt.
     const chain = Array.from({ length: MAX_DELEGATION_DEPTH + 3 }, (_unused, i) =>
       grant({
         id: `g:${i}` as never,
@@ -871,25 +895,7 @@ describe('the authority group fires', () => {
     );
     const report = checkInvariants({ grants: chain }, 1);
     const messages = report.violations.filter((v) => v.id === 'INV-23').map((v) => v.message);
-    expect(messages.some((m) => m.includes('past the limit'))).toBe(true);
-    expect(messages.filter((m) => m.includes('cycle'))).toEqual([]);
-    expect(messages.filter((m) => m.includes('transitively its own delegate'))).toEqual([]);
-  });
-
-  it('INV-23 — a real cycle is still caught after the depth fix', () => {
-    const report = checkInvariants(
-      {
-        grants: [
-          grant({ id: 'g:a' as never, grantor: 'p0' as PrincipalId, delegate: 'p1' as PrincipalId }),
-          grant({ id: 'g:b' as never, grantor: 'p1' as PrincipalId, delegate: 'p2' as PrincipalId }),
-          grant({ id: 'g:c' as never, grantor: 'p2' as PrincipalId, delegate: 'p0' as PrincipalId }),
-        ],
-      },
-      1,
-    );
-    expect(
-      report.violations.some((v) => v.id === 'INV-23' && v.message.includes('cycle')),
-    ).toBe(true);
+    expect(messages, `INV-23 fired on ${String(chain.length)} independent grants`).toEqual([]);
   });
 
   it('INV-23 — a delegate on both sides of a deal it signed for someone else', () => {

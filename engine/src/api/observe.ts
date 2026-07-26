@@ -1787,7 +1787,10 @@ function affordancesFor(
         `act they have already taken — only \`revoke\` what is left. They have kept ${String(relation.kept)} ` +
         `promise(s) to you and broken ${String(relation.broke)}. That record is why this is offered and it ` +
         `is not a prediction: the grant, this warning, and whatever they do with it all land on the same ` +
-        `public record, and it is read back at settlement.`,
+        `public record, and it is read back at settlement. This list is a SHORTLIST, not a ` +
+        `restriction — \`grant\` accepts any enrolled principal, including one you have never dealt ` +
+        `with, and the engine will not stop you. What is shown here is the ${String(MAX_GRANT_OFFERS)} ` +
+        `with the strongest record with you, because an office is the heaviest thing you can hand out.`,
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'grant', { to: relation.other }),
     });
