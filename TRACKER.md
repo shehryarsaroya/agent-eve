@@ -40,6 +40,22 @@
   **Open observation:** all 9 ended `PLUNDERED` — nobody resisted. Correct for a deliberately passive
   probe, but if the live cast never resists either, a raid is a tax rather than drama. Watch the
   resist rate once predation is deployed.
+- **★ NEXT ENGINE JOB — five books are outside `state_hash`, and one of them is STANDING.**
+  The checkpoint-adoption build closed three of its four blockers (durable `posting` log, faucet/sink
+  carried, `hydrateAppendOnly` with `restoreTo` **unchanged** — the hydrate runs first so the
+  no-growth refusal is *satisfied*, never relaxed) and **measured the win: adopt-plus-tail boots in
+  59 ms replaying 24 ticks against 552 ms replaying 600 — O(tail), not O(head).** Then it refused to
+  ship it, correctly, because of a fifth blocker bigger than the other four:
+  **`StandingBook`, `SealBook`, the obligation book, the `EventLedger` and the attribution register
+  are in no state table.** A snapshot carries the state tables and `state_hash` hashes exactly those,
+  so those five are *neither carried nor missed*: at the checkpoint the hash matched **to the byte**
+  while `electiveHonoured` went from `4, 6, 2, 4` to **all zeros**, and the hashes only parted six
+  ticks into the tail.
+  This is the `EncumbranceBook` keystone again, in the book A10 is actually about — **the permanent
+  public record of who kept their word is not covered by the world hash.** Adoption is gated behind a
+  manifest and boot falls back to genesis replay naming every missing book, so production is
+  byte-identical to before; a tripwire test fails the day they are registered, forcing the
+  equivalence re-check. **Registering these five is now the highest-value engine work left.**
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
