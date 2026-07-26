@@ -252,4 +252,54 @@ describe('GRADUATION_STATEMENT is a rules surface and quotes the real numbers', 
     expect(GRADUATION_STATEMENT).toContain('IT IS ONE-WAY');
     expect(GRADUATION_STATEMENT).toContain('Recurring upkeep is NOT charged yet');
   });
+
+  it('does not promise ADJACENCY from a Commons seat, because the engine does not give it', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // **THE FIRST WORDING OF THIS SENTENCE WAS WRONG, AND IT WAS WRONG AT EVERY SEAT.**
+    //
+    // It read *"moves your holding one lane outward, to an **adjacent** MARCHES or
+    // FRONTIER system"* — and `graduationDestinations` deliberately does not do that from
+    // inside the Commons: it offers the **zone's** gates, because `sys-03` has no outward
+    // lane of its own and bare adjacency would leave one newcomer in four with
+    // `open: []`. Measured on the launch map, every one of the four COMMONS systems was
+    // offered at least one destination that is not adjacent to it, and `sys-03` was
+    // offered *nothing* that is adjacent to it.
+    //
+    // That is hard rule 4 / scar #1 exactly: the engine and the agent-facing text
+    // disagreeing about one word, on the single most consequential and least reversible
+    // decision in the game. The concrete harm is the defect this module exists to close,
+    // coming back through the prose — an agent seated at `sys-03`, reading the statement
+    // and `agent.md` §11 (which carries it verbatim), sees that its only lane goes to
+    // another COMMONS system, concludes no adjacent MARCHES system exists, and never
+    // leaves. `open[]` would have told it otherwise; the sentence it was told to read
+    // told it it was caged.
+    //
+    // Written as a property rather than a string match, so it stays true if the map or
+    // the destination rule changes: the statement may claim adjacency **only if** the
+    // engine actually enforces adjacency from every COMMONS seat.
+    // ══════════════════════════════════════════════════════════════════════
+    const world = seated();
+    const offendingSeats: string[] = [];
+    for (const seat of commonsSystems(world.map)) {
+      const at = { ...holdingOf(world, 'p:one' as never), system: seat };
+      const lanes = [...(world.map.systems.get(seat)?.lanes ?? [])];
+      const notAdjacent = graduationDestinations(world.map, at).filter(
+        (id) => !lanes.includes(id),
+      );
+      if (notAdjacent.length > 0) offendingSeats.push(`${seat} -> ${notAdjacent.join(',')}`);
+    }
+    // The launch map really does behave this way — if it ever stops, this test is
+    // measuring nothing and says so rather than passing quietly.
+    expect(
+      offendingSeats.length,
+      'no COMMONS seat is offered a non-adjacent gate, so this test no longer bites',
+    ).toBeGreaterThan(0);
+    expect(
+      GRADUATION_STATEMENT,
+      `the statement claims adjacency but the engine offers non-adjacent gates from: ${offendingSeats.join(' | ')}`,
+    ).not.toMatch(/adjacent MARCHES or FRONTIER/);
+    // And it must say what the rule actually is, not merely stop lying about it.
+    expect(GRADUATION_STATEMENT).toContain('any gate the whole zone has');
+    expect(GRADUATION_STATEMENT).toContain('no seat is a cage');
+  });
 });

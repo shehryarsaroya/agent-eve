@@ -93,6 +93,22 @@
   `graduation.open: []` — the same cage one layer down, and *intermittent*. Departure is therefore
   measured from the **zone**, not the node: the Commons is one place and you may leave by any of its
   gates.
+- **★★ ALL FOUR PLAYTEST FINDINGS CLOSED AND DEPLOYED (2026-07-26).**
+  1. **Enrolment** — burst 3→8 and both hints stopped telling players to do the thing that locks them
+     out. (The 429 said *"resend at once"* to someone just refused for a taken handle.)
+  2. **The frontier** — `graduate` shipped; verified enrol→leave→**be raided** from where enrolment
+     really puts a principal. A8's floor still inviolable, proven by a 900-tick Commons control.
+  3. **The Levy ballot** — `vote` now accepts the ballot **id** the observation hands you. It matched
+     the *kind* exactly (`LEVY`) while giving agents `LEVY::11::con-1`, so the politics §5.2 says
+     nobody sits out was unreachable for everyone — and `commons.spec.ts` *asserted* the classification
+     that did it.
+  4. **A4 and the clock** — `COMPACT_SPEED` chooses the clock; default `rehearsal`. At `fast` a 1–3
+     tick window was 10–30 s, shorter than one inference, and the probe won by rebuilding as a 281 ms
+     loop. Now 1–3 minutes, so a deep model and a shallow one face the same deadline. Live boot log:
+     `clock = rehearsal (60s a tick, Reckoning every 288 min)`.
+  **Also fixed on the way:** the deploy's replay wait exited on a *failed curl* rather than a finished
+  replay (it now genuinely waits — observed 40 s), a client deploy no longer restarts the world, and
+  the spectator frames are actually served.
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.

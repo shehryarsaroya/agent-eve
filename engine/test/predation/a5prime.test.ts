@@ -25,6 +25,7 @@ import {
   Book,
   DEMAND_WINDOW_TICKS,
   MAX_LIVE_RAIDS,
+  RAID_SPAWN_PHASES,
   MAX_RAID_PARTIES,
   MAX_SEIZE_LOTS,
   checkPrd1,
@@ -53,6 +54,7 @@ import {
   runToFirstRaid,
   tick,
 } from './fixture.js';
+import { tierOf } from '../../src/world/index.js';
 
 function inputs(book: Book, over: Partial<PredationInvariantInputs> = {}): PredationInvariantInputs {
   return {
@@ -461,6 +463,81 @@ describe('the three defences that only bite when something else has already gone
     expect(report.halted).toBe(true);
     expect(report.violations.map((v) => v.id)).toContain('PRD-1');
     expect(runtime.engine.status).toBe('PAUSED');
+  });
+
+  it('the SPAWNER refuses a Commons stage on its own, with nothing else helping', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // **A8 HAS TWO INDEPENDENT GUARDS AND, UNTIL THIS TEST, NEITHER WAS PINNED ALONE.**
+    //
+    // The `graduate` change was shipped with an honest caveat: deleting *either* the
+    // spawner's `port.tierOf(candidate.stage) === 'COMMONS'` skip **or** the runtime's
+    // `safeTier(lot.location) !== 'COMMONS'` lot filter left the whole suite green,
+    // because each guard alone is sufficient and the pipeline runs both. Verified: both
+    // single-line mutations pass all 106 tests in `commons-exit` + `predation/`.
+    //
+    // Defence in depth is right for A8. "No test bites when one layer is removed" is not
+    // — it means a future edit can silently spend the redundancy without anything going
+    // red, and the next edit is then the one that opens the floor. So each guard gets a
+    // test at its own seam.
+    //
+    // This one is the spawner's, isolated by handing it a port that reports a pile in a
+    // COMMONS system. Target selection cannot save it here: the port IS the selection.
+    //
+    // MUTATION: delete `if (port.tierOf(candidate.stage) === 'COMMONS') continue;` from
+    // `spawnOne` in `src/predation/predate.ts`. RED on `spawned` — and PRD-1 would then
+    // be the only thing left, which is a halt rather than a floor.
+    // ══════════════════════════════════════════════════════════════════════
+    const inCommons: PredationPort = {
+      ...inertPort(),
+      principals: () => ['p:sitting-duck' as PrincipalId],
+      assailableOf: () => [
+        { lotId: 'lot:duck', good: GOOD, qty: qty(50_000), location: 'commons-1' as SystemId },
+      ],
+      // Honest about the tier, which is the whole point: the world knows this is the
+      // Commons and must decline to aim at it anyway.
+      tierOf: () => 'COMMONS',
+    };
+    const book = new Book();
+    const report = runPredate({
+      book,
+      port: inCommons,
+      rng: Rng.fromSeed('commons-stage'),
+      tick: 48,
+      onFault: () => undefined,
+    });
+    expect(report.spawned, 'a raid was aimed into the Commons').toHaveLength(0);
+    expect(book.liveCount()).toBe(0);
+    // And it is reported as "came looking, found nobody outside the walls" rather than
+    // swallowed — A8 working is a fact about the world, not an absence.
+    expect(report.noTarget).toBeGreaterThan(0);
+  });
+
+  it('a world entirely inside the floor is never aimed at, however long it runs', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // The end-to-end half, and a finding recorded rather than papered over.
+    //
+    // A8's second guard — `predationPort.assailableOf`'s `safeTier(lot.location) !==
+    // 'COMMONS'` lot filter — **cannot be pinned alone by any black-box test, and that is
+    // a fact about the code rather than a gap in the suite.** Removing it changes no
+    // observable behaviour: its only consumers are target ranking, where the spawner's
+    // stage skip refuses the Commons candidate it would produce, and `standingOf`, which
+    // already filters `pile.location !== stage` and so never sees a Commons pile for a
+    // legal stage. It is real defence in depth, not redundant code — but a test claiming
+    // to pin it would pass under its own mutation, which is a worse artifact than none.
+    // (Tried and discarded: a `commonsWorld` run, and a graduate with goods left behind.)
+    //
+    // So the guards are pinned where each is actually load-bearing: the spawner's skip by
+    // the test above, PRD-1 by the backstop test above that, and the whole pipeline here.
+    // ══════════════════════════════════════════════════════════════════════
+    const { runtime } = commonsWorld('lot-filter', 3);
+    for (const holding of runtime.world.holdings.values()) {
+      expect(tierOf(runtime.world.map, holding.system)).toBe('COMMONS');
+    }
+    // Two spawn phases and both their windows: nothing may ever be aimed at anyone.
+    runTo(runtime, (RAID_SPAWN_PHASES[1] ?? 120) + DEMAND_WINDOW_TICKS + 2);
+    expect(eventsOfKind(runtime, 'raid.spawned')).toHaveLength(0);
+    expect(runtime.raids.size()).toBe(0);
+    expect(runtime.engine.status).toBe('RUNNING');
   });
 });
 

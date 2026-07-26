@@ -397,6 +397,71 @@ describe('the crossing is priced in produced goods and capital, never in identit
     expect(Number(supply.retired)).toBeGreaterThanOrEqual(Number(GRADUATION_UPKEEP_MINOR));
   });
 
+  it('charges each crossing under its OWN event id when several land in one tick', async () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // **THE ACTION BUDGET IS MORE THAN ONE, SO "ONE CROSSING" IS NOT A GIVEN.**
+    //
+    // `MAX_ACTIONS_PER_BATCH` is 8 and the per-tick budget is 4, so a principal may submit
+    // several `graduate`s in one batch and land several crossings in one tick — each a
+    // separate, legitimate charge. The first cut keyed the upkeep postings on
+    // `(principal, tick)` and the goods burn on `(principal, tick, lot)`, so every crossing
+    // after the first wrote a second posting batch under an id the first had already used.
+    // Measured on the real HTTP path: two crossings in one tick produced
+    // `graduate.upkeep:<p>:<t>` **twice** and, because both burns drew from the surviving
+    // remainder of the same starting lot, `graduate.upkeep:<p>:<t>:lot:...` twice as well.
+    //
+    // Nothing halted, and that is what makes it worth a test rather than a comment:
+    // `posting.event_id` is how a charge is traced back to the act that caused it, so
+    // `Ledger.postingsFor` returned two unrelated charges as one event, and any store that
+    // puts a uniqueness constraint on that column would have had to drop one — silently
+    // losing 50,000 of retired currency from the audit trail while the balances stayed
+    // right. `to` disambiguates them and cannot collide, because a crossing to where the
+    // body already stands is refused.
+    //
+    // MUTATION: drop `:${to}` from either event id in `vGraduate` / `burnUpkeepGoods`. RED.
+    // ══════════════════════════════════════════════════════════════════════
+    const who = agent('twicegate');
+    await enrol(h, who);
+    tick(h, 1);
+    const first = await observe(who);
+    const seat = String(holding(first)['system']);
+    const account = storesAccount(who.principalId as PrincipalId);
+    const cashBefore = h.runtime.ledger.freeBalance(account);
+    const hop1 = String(((affordance(first, 'graduate') ?? {})['params'] as Row)['to']);
+    // The onward gate from `hop1`, read off the map rather than hard-coded.
+    const hop2 = [...(h.runtime.world.map.systems.get(hop1 as SystemId)?.lanes ?? [])].find(
+      (id) => tierOf(h.runtime.world.map, id) !== 'COMMONS' && id !== hop1,
+    );
+    expect(hop2, 'the launch map must offer an onward gate, or this proves nothing').toBeDefined();
+
+    const res = await signed(h, who, 'POST', PATHS.act, {
+      actions: [
+        { verb: 'graduate', params: { to: hop1 }, clientSequence: 1 },
+        { verb: 'graduate', params: { to: hop2 }, clientSequence: 2 },
+      ],
+    });
+    expect(res.status, res.text.slice(0, 400)).toBe(200);
+    tick(h, 1);
+    expectResolved(who, 'two legal crossings in one batch must both resolve');
+
+    // Both really happened: two receipts, two charges, the body at the far end.
+    expect(eventsOfKind('holding.graduated')).toHaveLength(2);
+    expect(h.runtime.world.holdings.get(`${who.principalId}:holding` as never)?.system).toBe(hop2);
+    expect(h.runtime.ledger.freeBalance(account)).toBe(
+      cashBefore - 2 * Number(GRADUATION_UPKEEP_MINOR),
+    );
+    expect(goodsAt(who, seat)).toBe(0);
+
+    // And every posting the tick wrote carries a DISTINCT event id, so each charge is
+    // traceable to the crossing that caused it.
+    const ids = h.runtime.ledger
+      .allPostings()
+      .map((p) => String(p.eventId))
+      .filter((id) => id.startsWith('graduate.'));
+    expect(ids.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(ids).size, `duplicate event ids: ${ids.join(' | ')}`).toBe(ids.length);
+  });
+
   it('refuses when the price is not met, and does not offer what it would refuse', async () => {
     // MUTATION: drop the `crossing.affordable` guard in `affordancesFor`. The affordance
     // is offered, the agent copies it, the engine refuses, and one real action is gone —
