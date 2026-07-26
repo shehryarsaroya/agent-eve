@@ -91,6 +91,57 @@ export class SimpleObligationBook implements ObligationBook {
   securedObligations(): readonly ObligationRef[] {
     return [...this.secured].sort(compareIds);
   }
+
+  /**
+   * Both sets, for the hashed capture and the abort path.
+   *
+   * **Both, not just `live`.** `secured` is a strict subset by construction and it
+   * would be tempting to carry only the superset and rebuild — but nothing in the
+   * remaining state says *which* live obligations required an encumbrance, so a
+   * rebuild would either mark every obligation secured (INV-4 halts on the first
+   * unsecured one) or none (INV-4's "must be backed by an open encumbrance" clause
+   * silently stops checking). Carrying only the headline set is precisely the
+   * `EncumbranceBook` mistake this whole change exists to close.
+   *
+   * Sorted, because a `Set`'s iteration order is insertion order and two worlds that
+   * opened the same obligations in different orders must hash the same.
+   */
+  capture(): CanonicalValue {
+    return {
+      live: [...this.live].sort(compareIds),
+      secured: [...this.secured].sort(compareIds),
+    };
+  }
+
+  /**
+   * Replace both sets with a captured state. The inverse of {@link capture}.
+   *
+   * Refuses a `secured` entry that is not `live`: the two sets move together in
+   * {@link open} and {@link close}, so a capture where they disagree describes a world
+   * this class cannot produce, and restoring it would leave INV-4 demanding an
+   * encumbrance for an obligation that no longer exists — a halt with no cause
+   * attached to it, one tick after boot.
+   */
+  restore(state: ObligationCapture): void {
+    for (const ref of state.secured) {
+      if (!state.live.includes(ref)) {
+        throw new EncumbranceError(
+          `obligation ${ref} is captured as secured but not as live; a secured obligation is always ` +
+            'live (both sets move together), so this capture describes a world the book cannot reach',
+        );
+      }
+    }
+    this.live.clear();
+    this.secured.clear();
+    for (const ref of state.live) this.live.add(ref);
+    for (const ref of state.secured) this.secured.add(ref);
+  }
+}
+
+/** The shape {@link SimpleObligationBook.restore} accepts, parsed from a capture. */
+export interface ObligationCapture {
+  readonly live: readonly ObligationRef[];
+  readonly secured: readonly ObligationRef[];
 }
 
 export interface LockRequest {

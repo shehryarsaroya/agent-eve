@@ -55,12 +55,23 @@ import type {
   SealVerdict,
   VentureId,
 } from '../core/types.js';
+import type { CanonicalValue } from '../core/canonical.js';
 import { inFreeze, isSettlementTick, reckoningIndex } from '../core/time.js';
 import { compareIds } from '../ledger/order.js';
+import type { StateTable } from '../tick/snapshot.js';
+import {
+  readArray as snapArray,
+  readInt as snapInt,
+  readIntOrNull as snapIntOrNull,
+  readObject as snapObject,
+  readString as snapString,
+  readStringOrNull as snapStringOrNull,
+} from '../tick/snapshot.js';
 import { accept, reject, type Rejection, type WorldResult } from '../world/result.js';
 import type { Deed } from './deed.js';
 import {
   MAX_PROSE_LENGTH,
+  SEAL_MEASURES,
   intentFaults,
   intentToCanonical,
   intentWorldFaults,
@@ -911,6 +922,241 @@ export class SealBook {
       verdict: rec.verdict,
     });
   }
+
+  // ── The capture ─────────────────────────────────────────────────────────────
+
+  /**
+   * Everything this book owns, for the hashed capture and the abort path.
+   *
+   * This book was in **no state table**, which cost three things at once: two worlds
+   * with different sealed intentions hashed the same, an aborted tick kept the seals
+   * it accepted, and a snapshot-adopted world came up with every seal gone — so
+   * `checkInv20` would find a resolved Reckoning it had no record of resolving and
+   * the say-do gap (§14, the Receipt Reel) would have nothing in it.
+   *
+   * **Three of the five internal maps are carried; two are derived.**
+   *
+   *   - `byId` — the records, in id order. The whole content, including the six
+   *     verdict-side fields, because a restored world that lost `evaluations` would
+   *     let INV-20's exactly-once witness be re-earned and a seal be judged twice.
+   *   - `resolvedReckonings` — carried, and it is the one that cannot be derived. A
+   *     Reckoning with **no seals at all** still resolves, and the only trace of that
+   *     is this set; rebuilding it from the records would make such a Reckoning
+   *     resolvable a second time, which is scar #7's re-judgement arriving through
+   *     the restore path.
+   *   - `watermark` — carried. It is `max(sealedAtTick)` today and therefore looks
+   *     derivable, but the derivation is a coincidence of the current writer rather
+   *     than a rule, and a watermark that came back one tick low would re-open a
+   *     window that had already been played.
+   *   - `byReckoning` and `byScope` are **derived** on restore. They are indexes over
+   *     the same records — one quantity in two homes is scar #5 — and every read of
+   *     them either sorts (`idsInReckoning`, `idsOf`) or uses only their length
+   *     (`commit`'s ordinal, the free-slot count), so nothing depends on the order
+   *     they were built in.
+   *
+   * The injected {@link SealWorldIndex} is **not** state and is not captured: it is
+   * how the book asks the world about a target at commit time, `targetWitnessed` is
+   * already recorded per record, and {@link restore} therefore mutates in place
+   * rather than building a fresh book, so a production book cannot be silently
+   * downgraded to the degraded mode by a rollback.
+   */
+  capture(): CanonicalValue {
+    return {
+      watermark: this.watermark,
+      resolved: this.resolved(),
+      seals: this.auditRecords().map((rec) => ({
+        id: rec.id,
+        principal: rec.principal,
+        reckoningIndex: rec.reckoningIndex,
+        sealedAtTick: rec.sealedAtTick,
+        actedOnStateVersion: rec.actedOnStateVersion,
+        role: rec.role === null ? null : { venture: rec.role.venture, roleIndex: rec.role.roleIndex },
+        intent: {
+          verb: rec.intent.verb,
+          target: rec.intent.target,
+          measure: rec.intent.measure,
+          outcomeLow: rec.intent.outcomeLow,
+          outcomeHigh: rec.intent.outcomeHigh,
+        },
+        prose: rec.prose,
+        targetWitnessed: rec.targetWitnessed,
+        disposition: rec.disposition,
+        verdict: rec.verdict,
+        verdictAtTick: rec.verdictAtTick,
+        basis: rec.basis,
+        citedDeedEventId: rec.citedDeedEventId,
+        evaluations: rec.evaluations,
+      })),
+    };
+  }
+
+  /**
+   * Replace this book's contents with a captured state, in place.
+   *
+   * **Parsed strictly.** A seal is an intention someone will be judged against, so a
+   * capture this reader cannot account for is a refusal with a located error rather
+   * than a book that comes back short — a missing seal is a promise that was made and
+   * then unmade by the engine, and nothing downstream could tell.
+   */
+  restore(captured: CanonicalValue): void {
+    const root = snapObject(captured, 'seal');
+    const watermark = snapInt(root, 'watermark', 'seal');
+    const resolved = snapArray(root['resolved'] ?? [], 'seal.resolved').map((raw, i) => {
+      if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < 0) {
+        throw new SealHalt([
+          sealViolation('INV-20', watermark, `seal.resolved[${String(i)}]: expected a Reckoning index`),
+        ]);
+      }
+      return raw;
+    });
+
+    const records = snapArray(root['seals'] ?? [], 'seal.seals').map((raw, i) =>
+      readSealRecord(raw, `seal.seals[${String(i)}]`),
+    );
+
+    this.byId.clear();
+    this.byReckoning.clear();
+    this.byScope.clear();
+    this.resolvedReckonings.clear();
+
+    for (const rec of records) {
+      if (this.byId.has(rec.id)) {
+        throw new SealHalt([
+          sealViolation('INV-20', rec.sealedAtTick, `seal ${rec.id} appears twice in one capture`),
+        ]);
+      }
+      this.byId.set(rec.id, rec);
+      // The indexes, derived from the rows in canonical id order.
+      push(this.byReckoning, rec.reckoningIndex, rec.id);
+      push(this.byScope, scopeKey(rec.principal, rec.reckoningIndex), rec.id);
+    }
+    for (const r of resolved) this.resolvedReckonings.add(r);
+    this.watermark = watermark;
+  }
+}
+
+const SEAL_MEASURE_SET: ReadonlySet<string> = new Set(SEAL_MEASURES);
+const SEAL_DISPOSITIONS: ReadonlySet<string> = new Set<SealDisposition>([
+  'HONOURED',
+  'CONTRADICTED',
+  'UNMARKED',
+]);
+const SEAL_VERDICTS: ReadonlySet<string> = new Set<SealVerdict>(['HONOURED', 'CONTRADICTED']);
+const VERDICT_BASES: ReadonlySet<string> = new Set<VerdictBasis>([
+  'IN_BAND',
+  'OUT_OF_BAND',
+  'NO_ATTRIBUTABLE_DEED',
+  'MEASURE_DISAGREEMENT',
+  'STALE_MEASUREMENT',
+  'UNWITNESSED_DEED_SET',
+  'UNWITNESSED_TARGET',
+]);
+
+function readSealRecord(raw: CanonicalValue, where: string): SealAuditRecord {
+  const o = snapObject(raw, where);
+  const sealedAtTick = snapInt(o, 'sealedAtTick', where);
+  const bad = (message: string): SealHalt =>
+    new SealHalt([sealViolation('INV-20', sealedAtTick, `${where}: ${message}`)]);
+
+  const intentRaw = snapObject(o['intent'] ?? {}, `${where}.intent`);
+  const measure = snapString(intentRaw, 'measure', `${where}.intent`);
+  if (!SEAL_MEASURE_SET.has(measure)) throw bad(`'${measure}' is not a seal measure`);
+
+  const roleRaw = o['role'];
+  let role: SealRoleRef | null = null;
+  if (roleRaw !== null && roleRaw !== undefined) {
+    const r = snapObject(roleRaw, `${where}.role`);
+    role = Object.freeze({
+      venture: snapString(r, 'venture', `${where}.role`) as VentureId,
+      roleIndex: snapInt(r, 'roleIndex', `${where}.role`),
+    });
+  }
+
+  const disposition = snapStringOrNull(o, 'disposition', where);
+  if (disposition !== null && !SEAL_DISPOSITIONS.has(disposition)) {
+    throw bad(`'${disposition}' is not a seal disposition`);
+  }
+  const verdict = snapStringOrNull(o, 'verdict', where);
+  if (verdict !== null && !SEAL_VERDICTS.has(verdict)) {
+    throw bad(`'${verdict}' is not a verdict`);
+  }
+  const basis = snapStringOrNull(o, 'basis', where);
+  if (basis !== null && !VERDICT_BASES.has(basis)) throw bad(`'${basis}' is not a verdict basis`);
+
+  const evaluations = snapInt(o, 'evaluations', where);
+  if (evaluations < 0) throw bad(`evaluations is ${String(evaluations)}`);
+  // INV-20's witness, checked at the door of the restore as well as at the door of
+  // `resolve`: a capture claiming two evaluations describes a seal that was judged
+  // twice, and letting it back in would make the invariant that exists to catch
+  // exactly that agree with it.
+  if (evaluations > 1) throw bad(`evaluations is ${String(evaluations)}; every seal is judged once`);
+  // The disposition and the verdict are two halves of one judgement written in one
+  // place, so a capture where only one of them is set is a torn row.
+  if ((disposition === null) !== (evaluations === 0)) {
+    throw bad(
+      `disposition ${String(disposition)} does not match ${String(evaluations)} evaluation(s); a ` +
+        'judged seal has a disposition and an unjudged one has none',
+    );
+  }
+  if ((verdict === null) !== (disposition === null || disposition === 'UNMARKED')) {
+    throw bad(`verdict ${String(verdict)} disagrees with disposition ${String(disposition)}`);
+  }
+
+  return Object.freeze({
+    id: snapString(o, 'id', where) as SealId,
+    principal: snapString(o, 'principal', where) as PrincipalId,
+    reckoningIndex: snapInt(o, 'reckoningIndex', where),
+    sealedAtTick,
+    actedOnStateVersion: snapInt(o, 'actedOnStateVersion', where),
+    role,
+    intent: Object.freeze({
+      verb: snapString(intentRaw, 'verb', `${where}.intent`),
+      target: snapString(intentRaw, 'target', `${where}.intent`),
+      measure: measure as SealIntent['measure'],
+      outcomeLow: snapInt(intentRaw, 'outcomeLow', `${where}.intent`),
+      outcomeHigh: snapInt(intentRaw, 'outcomeHigh', `${where}.intent`),
+    }),
+    prose: snapString(o, 'prose', where),
+    targetWitnessed: snapBoolean(o, 'targetWitnessed', where),
+    disposition: disposition as SealDisposition | null,
+    verdict: verdict as SealVerdict | null,
+    verdictAtTick: snapIntOrNull(o, 'verdictAtTick', where),
+    basis: basis as VerdictBasis | null,
+    citedDeedEventId: snapStringOrNull(o, 'citedDeedEventId', where) as EventId | null,
+    evaluations,
+  });
+}
+
+function snapBoolean(
+  o: { readonly [k: string]: CanonicalValue },
+  key: string,
+  where: string,
+): boolean {
+  const v = o[key];
+  if (typeof v !== 'boolean') throw new SealHalt([sealViolation('INV-20', 0, `${where}.${key}: expected a boolean`)]);
+  return v;
+}
+
+/**
+ * The state-table descriptor: how the seal book enters `state_hash`, the abort
+ * rollback, and a checkpoint adoption.
+ *
+ * `restore` mutates the book handed to it rather than replacing the object, unlike
+ * `grantsStateTable` and `marketStateTable`. The reason is the injected
+ * {@link SealWorldIndex}: a fresh `new SealBook()` has none, and a book with none
+ * refuses to mark any seal from the *absence* of a deed. A rollback that silently
+ * downgraded the production book into that mode would leave the world running, quiet,
+ * and unable to contradict anybody — the failure would show up as an absence of
+ * verdicts, which is the hardest kind to notice.
+ */
+export function sealsStateTable(read: () => SealBook): StateTable {
+  return {
+    name: 'seal',
+    capture: (): CanonicalValue => read().capture(),
+    restore: (captured: CanonicalValue): void => {
+      read().restore(captured);
+    },
+  };
 }
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {

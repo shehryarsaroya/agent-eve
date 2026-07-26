@@ -196,6 +196,30 @@ class RevealStream {
     return this.count;
   }
 
+  /**
+   * Drop every entry minted at or after `ordinal`. The exact inverse of the adds
+   * made since the capture that recorded it.
+   *
+   * Ordinals are global and strictly increasing in write order (see
+   * {@link EventLedger.nextOrdinal}), so "written after the capture" and "ordinal
+   * >= the captured next ordinal" are the same set — which is what makes this a
+   * truncation rather than a guess about what to remove.
+   */
+  truncateAtOrdinal(ordinal: number): void {
+    for (const [tick, bucket] of [...this.buckets.entries()]) {
+      const kept = bucket.filter((entry) => entry.ordinal < ordinal);
+      if (kept.length === bucket.length) continue;
+      this.count -= bucket.length - kept.length;
+      if (kept.length === 0) {
+        this.buckets.delete(tick);
+        const at = lowerBound(this.tickIndex, tick);
+        if (this.tickIndex[at] === tick) this.tickIndex.splice(at, 1);
+        continue;
+      }
+      this.buckets.set(tick, kept);
+    }
+  }
+
   /** Entries strictly after `after`, revealed by `uptoTick`, in feed order. */
   *iterate(
     after: FeedCursor | null,

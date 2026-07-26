@@ -49,9 +49,18 @@
  * "only scheduled decay lowers standing" unenforceable from the one place that writes.
  */
 
+import type { CanonicalValue } from '../core/canonical.js';
 import type { EventId, PrincipalId, Standing } from '../core/types.js';
 import { minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
+import {
+  readArray,
+  readInt,
+  readIntOrNull,
+  readObject,
+  readString,
+  readStringOrNull,
+} from '../tick/snapshot.js';
 import type { StandingChange, StandingDiff } from '../invariants/index.js';
 import {
   applySealStandingCharges,
@@ -267,6 +276,206 @@ export class StandingBook {
 
     return { changes: Object.freeze(changes), diffs: Object.freeze(diffs) };
   }
+
+  // ── The capture (A10) ───────────────────────────────────────────────────────
+
+  /**
+   * Everything this book owns, for the hashed capture and the abort path.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS BOOK WAS IN NO STATE TABLE, AND THAT IS THE A10 FAILURE.** A snapshot
+   * carries the engine's state tables and `state_hash` hashes exactly those, so a
+   * book outside them is neither carried nor missed. Measured on a 600-tick run
+   * adopting the checkpoint at tick 575: the adopted world's hash equalled the
+   * genesis-replayed hash **to the byte** and every balance agreed, while the cast's
+   * `electiveHonoured` went from `4, 6, 2, 4, …` to all zeros. A10 says identity,
+   * reputation, relationships and legend never reset; they reset silently, past a
+   * tripwire that reported success — a wrong boot that passes its own integrity
+   * check, which is strictly worse than a slow one.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * **Two of the three maps are carried, and the third is derived — on purpose.**
+   *
+   *   - `byPrincipal` (the rows an agent reads) and `journal` (the history INV-21
+   *     recomputes from) are both carried, exactly as `grantsStateTable` carries both
+   *     the grant rows and the spend journal. Carrying only the journal and replaying
+   *     it would be slower and would put the arithmetic of `apply` on the restore
+   *     path; carrying only the rows would let a restored world pass INV-21's
+   *     sum-vs-cache check vacuously, over an empty history.
+   *   - `counterparties` is **not** carried. It is an index over the journal — the
+   *     set of counterparties a principal has already earned diversity credit against
+   *     — and every `ELECTIVE_HONOURED` change records its `counterparty`, so the set
+   *     is exactly `{c.counterparty}` over that principal's honoured changes.
+   *     Capturing it too would give one fact two homes (scar #5), and the anti-farm
+   *     term is the one place this codebase has already been burned by a count and a
+   *     set disagreeing (scar #9). It is rebuilt in {@link restore} from the same
+   *     journal INV-21 audits, which is the `worldStateTable` rule: derive the index
+   *     from the rows, never read a captured copy of it.
+   */
+  capture(): CanonicalValue {
+    return {
+      rows: this.rows().map((r) => ({
+        principal: r.principal,
+        electiveHonoured: r.electiveHonoured,
+        electiveHonouredValue: r.electiveHonouredValue,
+        defaults: r.defaults,
+        contradictedSeals: r.contradictedSeals,
+        distinctCounterparties: r.distinctCounterparties,
+        lastDefaultTick: r.lastDefaultTick,
+      })),
+      // Write order, not sorted. The journal IS a sequence and INV-21 recomputes by
+      // replaying it; re-ordering it would change nothing about the sums and would
+      // quietly destroy the one thing a journal is for.
+      changes: this.journal.map((c) => ({
+        principal: c.principal,
+        tick: c.tick,
+        cause: c.cause,
+        eventId: c.eventId,
+        // Fixed key order, absent fields omitted rather than nulled: the canonical
+        // serialiser sorts keys, and `undefined` may never reach a hashed structure.
+        delta: standingDeltaOut(c.delta),
+        counterparty: c.counterparty,
+      })),
+    };
+  }
+
+  /**
+   * Replace this book's contents with a captured state. The inverse of {@link capture}.
+   *
+   * **Parsed strictly, and a capture that cannot be read is a refusal with a located
+   * error.** An empty `StandingBook` is indistinguishable from *nobody has ever kept a
+   * promise*, and this is the record whose only claim is that it is permanent (A5,
+   * A10). A restore that swallowed a malformed row would publish that claim as a lie
+   * and nothing downstream could tell.
+   */
+  restore(captured: CanonicalValue): void {
+    const root = readObject(captured, 'standing');
+    const rows = readArray(root['rows'] ?? [], 'standing.rows').map((raw, i) => {
+      const where = `standing.rows[${String(i)}]`;
+      const o = readObject(raw, where);
+      const row: Standing = {
+        principal: readString(o, 'principal', where) as PrincipalId,
+        electiveHonoured: readInt(o, 'electiveHonoured', where),
+        electiveHonouredValue: minor(readInt(o, 'electiveHonouredValue', where)),
+        defaults: readInt(o, 'defaults', where),
+        contradictedSeals: readInt(o, 'contradictedSeals', where),
+        distinctCounterparties: readInt(o, 'distinctCounterparties', where),
+        lastDefaultTick: readIntOrNull(o, 'lastDefaultTick', where),
+      };
+      for (const field of STANDING_ROW_COUNTS) {
+        if (row[field] < 0) {
+          throw new ReckoningHalt(
+            `${where}.${field} is ${String(row[field])}; standing vectors are non-negative integers`,
+          );
+        }
+      }
+      return row;
+    });
+
+    const changes = readArray(root['changes'] ?? [], 'standing.changes').map((raw, i) => {
+      const where = `standing.changes[${String(i)}]`;
+      const o = readObject(raw, where);
+      const cause = readString(o, 'cause', where);
+      if (!STANDING_CAUSES.has(cause)) {
+        throw new ReckoningHalt(`${where}.cause: '${cause}' is not a standing cause`);
+      }
+      const change: StandingChange = {
+        principal: readString(o, 'principal', where) as PrincipalId,
+        tick: readInt(o, 'tick', where),
+        cause: cause as StandingCause,
+        eventId: readString(o, 'eventId', where) as EventId,
+        delta: standingDeltaIn(o['delta'] ?? {}, `${where}.delta`),
+        counterparty: readStringOrNull(o, 'counterparty', where) as PrincipalId | null,
+      };
+      return change;
+    });
+
+    this.byPrincipal.clear();
+    this.journal.length = 0;
+    this.counterparties.clear();
+
+    for (const row of rows) {
+      if (this.byPrincipal.has(row.principal)) {
+        throw new ReckoningHalt(
+          `standing.rows names ${row.principal} twice; one principal has one standing row`,
+        );
+      }
+      this.byPrincipal.set(row.principal, row);
+    }
+    for (const change of changes) {
+      this.journal.push(change);
+      // The derived index, rebuilt from the journal rather than from a captured copy.
+      // This is what keeps the distinct-counterparty count and the distinct set
+      // agreeing through a restore — the exact disagreement scar #9 was.
+      if (change.cause !== 'ELECTIVE_HONOURED' || change.counterparty === null) continue;
+      let seen = this.counterparties.get(change.principal);
+      if (seen === undefined) {
+        seen = new Set<PrincipalId>();
+        this.counterparties.set(change.principal, seen);
+      }
+      seen.add(change.counterparty);
+    }
+  }
+}
+
+/** The five vectors that are counts. `lastDefaultTick` is a stamp and may be null. */
+const STANDING_ROW_COUNTS = [
+  'electiveHonoured',
+  'electiveHonouredValue',
+  'defaults',
+  'contradictedSeals',
+  'distinctCounterparties',
+] as const;
+
+const STANDING_CAUSES: ReadonlySet<string> = new Set<StandingCause>([
+  'ELECTIVE_HONOURED',
+  'DEFAULT',
+  'CONTRADICTED_SEAL',
+  'DECAY',
+]);
+
+/** The fields a `StandingChange.delta` may carry, in one place, in one order. */
+const STANDING_DELTA_FIELDS = [
+  'electiveHonoured',
+  'electiveHonouredValue',
+  'defaults',
+  'contradictedSeals',
+  'distinctCounterparties',
+] as const;
+
+type StandingDeltaField = (typeof STANDING_DELTA_FIELDS)[number];
+
+function standingDeltaOut(
+  delta: StandingChange['delta'],
+): Record<string, CanonicalValue> {
+  const out: Record<string, CanonicalValue> = {};
+  for (const field of STANDING_DELTA_FIELDS) {
+    const value = delta[field];
+    // Absent, not null: an omitted vector is one this cause did not move, and
+    // `VECTORS_BY_CAUSE` is what says which it may. A null would read as "moved by
+    // nothing", which is a different claim.
+    if (value === undefined) continue;
+    out[field] = value;
+  }
+  return out;
+}
+
+function standingDeltaIn(raw: CanonicalValue, where: string): StandingChange['delta'] {
+  const o = readObject(raw, where);
+  const out: Partial<Record<StandingDeltaField, number>> = {};
+  for (const key of Object.keys(o)) {
+    if (!(STANDING_DELTA_FIELDS as readonly string[]).includes(key)) {
+      throw new ReckoningHalt(
+        `${where}.${key} is not a standing vector; a cause moving a field it does not authorise is an ` +
+          'INV-21 halt, and a capture may not smuggle one in',
+      );
+    }
+  }
+  for (const field of STANDING_DELTA_FIELDS) {
+    if (o[field] === undefined) continue;
+    out[field] = readInt(o, field, where);
+  }
+  return out;
 }
 
 function assertNonNegative(value: number, field: string, venture: string): void {

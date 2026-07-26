@@ -41,7 +41,14 @@ import type {
   PrincipalId,
   VentureId,
 } from '../core/types.js';
+import type { CanonicalValue } from '../core/canonical.js';
 import type { EventLedger } from '../events/ledger.js';
+import type { StateTable } from '../tick/snapshot.js';
+import {
+  readInt as snapInt,
+  readObject as snapObject,
+  readString as snapString,
+} from '../tick/snapshot.js';
 import { halt } from './registry.js';
 
 /**
@@ -201,6 +208,99 @@ export class DefaultRegister {
   against(promisor: PrincipalId): readonly DefaultAttribution[] {
     return this.all().filter((r) => r.promisor === promisor);
   }
+
+  /**
+   * Everything this register owns, for the hashed capture and the abort path.
+   *
+   * `rows` is the whole of it — there is no counter, no cache and no secondary index
+   * here, and `all()`/`against()` are computed on demand from the one map. That is
+   * worth stating rather than leaving implied: the `EncumbranceBook` fix's lesson was
+   * that carrying only the headline map is the shape of a capture that looks right and
+   * is wrong, so a book with genuinely one map should say so out loud.
+   *
+   * Sorted by `defaultEventId`, which is a total order over the keys of a `Map` whose
+   * keys are unique — so the capture cannot depend on the order accusations were
+   * recorded in, and two worlds that attributed the same defaults in different orders
+   * hash the same.
+   */
+  capture(): CanonicalValue {
+    return this.all().map((row) => ({
+      defaultEventId: row.defaultEventId,
+      promisor: row.promisor,
+      obligation: row.obligation,
+      cause: row.cause,
+      causeEventId: row.causeEventId,
+      tick: row.tick,
+      reckoningIndex: row.reckoningIndex,
+    }));
+  }
+
+  /**
+   * Replace this register's contents with a captured state.
+   *
+   * Rebuilt **through {@link attribute}**, not by writing the map: the door's five
+   * refusals are the only thing standing between a malformed row and a permanent
+   * public accusation, and a restore path that bypassed them would be a second way in
+   * with none of them. A capture that cannot be read is a refusal with a located
+   * error — never a silently empty register, which reads as *nobody has ever been
+   * accused of anything* and would let INV-17's backward walk pass over a real default
+   * with no evidence behind it.
+   */
+  restore(captured: CanonicalValue): void {
+    const rows = readAttributionRows(captured);
+    this.rows.clear();
+    for (const row of rows) this.attribute(row);
+  }
+}
+
+function readAttributionRows(captured: CanonicalValue): readonly DefaultAttribution[] {
+  if (!Array.isArray(captured)) {
+    throw new AttributionError('attribution capture: expected an array of attributions');
+  }
+  return (captured as readonly CanonicalValue[]).map((raw, i) => {
+    const where = `attribution capture[${String(i)}]`;
+    const o = snapObject(raw, where);
+    const cause = snapString(o, 'cause', where);
+    if (!DEFAULT_CAUSE_KINDS.includes(cause as DefaultCauseKind)) {
+      throw new AttributionError(`${where}: '${cause}' is not one of the three causes`);
+    }
+    return {
+      defaultEventId: snapString(o, 'defaultEventId', where) as EventId,
+      promisor: snapString(o, 'promisor', where) as PrincipalId,
+      obligation: snapString(o, 'obligation', where) as VentureId | GrantId,
+      cause: cause as DefaultCauseKind,
+      causeEventId: snapString(o, 'causeEventId', where) as EventId,
+      tick: snapInt(o, 'tick', where),
+      reckoningIndex: snapInt(o, 'reckoningIndex', where),
+    };
+  });
+}
+
+/**
+ * The state-table descriptor: how the register enters `state_hash`, the abort
+ * rollback, and a checkpoint adoption.
+ *
+ * Why a register of *evidence links* belongs in the hash at all: INV-17 walks it in
+ * both directions every tick, so a world that lost it would find every published
+ * default unattributed and halt — and a world that kept a stale one would hold an
+ * attribution for an event an aborted tick never published, which is INV-17's own
+ * backward-walk violation arriving from the engine rather than from a bug in
+ * settlement. Two worlds that disagree about which accusations have evidence must
+ * never hash the same.
+ */
+export function attributionStateTable(
+  read: () => DefaultRegister,
+  write: (restored: DefaultRegister) => void,
+): StateTable {
+  return {
+    name: 'attribution',
+    capture: (): CanonicalValue => read().capture(),
+    restore: (captured: CanonicalValue): void => {
+      const register = new DefaultRegister();
+      register.restore(captured);
+      write(register);
+    },
+  };
 }
 
 export interface Inv17Options {

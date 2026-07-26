@@ -64,6 +64,21 @@
   agents are genuinely deciding rather than silently falling back. Shipped in the same deploy:
   predation (A14), the partition/durability P0, the negotiation prompt, the cast spend meter, durable
   cast memory, and the durable posting log.
+- **★ THE SHOW IS REACHABLE (2026-07-26).** Frames were being written correctly for days and **no
+  viewer could fetch one**: a regex nginx `location` with `alias` does not append the remaining URI,
+  so `/compact/frames/latest.json` fell through to the SPA and the client was handed `index.html`
+  with a 200. Second bug in the same block: `latest.json` was cached `immutable` for a year although
+  it is overwritten every Reckoning, so a viewer who watched once would never see another. Both fixed
+  (`root` not `alias`; the pointer gets 2 s, numbered frames keep the year), and **the deploy now
+  fetches the URL the client fetches** and refuses a body that is HTML or not JSON — the same check
+  agent.md got after a probe once parsed a web page as rules.
+  What a viewer now gets: **10 rundown segments, 14 ticker lines, 5 authority lines, 6 raid lines, 19
+  tribute lines**, with deeds like *"varrow's 479 was riding on ashlin's dig. varrow paid 479 it could
+  have kept."* and a ticker reading *"sys-07: a raid demands 3816 of ration from p:corvid by tick 72"*.
+  **Two real gaps remain in the frame:** `nextDocket` is empty (the closing card, §14.3), and no
+  segment carries a `receiptReel` — the reel only exists where an elective promise BROKE, and so far
+  the cast keeps paying. That is the game being honest, not the reel being broken, but it means the
+  signature moment is still unwitnessed.
 - **Phase:** 0 — **LIVE and now PERSISTENT (in repo; redeploy pending).** The fable review's CRITICAL defect is closed: `src/persist/**` gives the record a home outside the heap — a durable journal (Pg + in-memory), `bootFromStore` that replays the action log from genesis and reproduces the exact `state_hash` (with journalled snapshots as divergence tripwires), and `serve()` wired to boot-then-journal every tick. Proven by the durability tier (600-tick round-trip, mid-Reckoning kill, mutation proof). A5/A5′/A10 are true at the substrate. **The deployed box still runs a stale build (heap-only, plus a scar-#1 prompt Gate 3 saw live) — a redeploy ships persistence + the signing-`@path` fix + the prompt fix.** Codex arithmetic review also closed three `units.ts` defects (zero-weight remainder, `sumMinor` 2⁵³ drift, `-0`). **The A6 core loop — offices/grants — is COMPLETE** (grants issuable/revocable/enforced/visible; all six §8.1 guardrails incl. anti-self-dealing; the A13 authority-line pixel signature; betrayal-via-legitimate-authority expressible with no `betray()` verb; 2173 tests green). Genuinely remaining: the **redeploy** (a deliberate live op — ships persistence + A6 + the Gate-3 fixes, resets the ephemeral world once so it persists after), **Gate 3 run 3** (needs the redeploy; the run that can finally read conduct), then the client authority-line draw + tech-debt (#10/#11). See BUILD LOG.
 - **Code:** `engine/` (TypeScript, Node 22, ESM, vitest + fast-check) · `client/` (static spectator) · `deploy/` (systemd, nginx, deploy + restore scripts).
 - **Canon:** `docs/design/SPEC.md` **v3.0**. v2.0 archived at `docs/design/archive-SPEC-v2.0.md`; the pre-critique draft is `docs/design/REARCHITECTURE-2026-07-24.md`.
