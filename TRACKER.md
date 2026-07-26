@@ -707,6 +707,32 @@ permitting any band with a real quantity behind it — and deliberately does *no
 promise is a good one, because a wide-but-finite band is a weak claim and the record showing it as
 weak is the mechanic working.
 
+### ⚠ MEASURED: the deciding-share floor is failing legitimately, and the cast is at ~10% capacity
+`/health` reports **`ok: false`** — *"only 1730 bps of decisions came from LIVE… floor 2500"* — and this
+time it is **not** cry-wolf. Earlier today I fixed this alarm for firing on a healthy world (replay was
+poisoning the census); it is now firing on a real condition.
+
+The arithmetic, from the numbers `/health` reports itself:
+
+| | |
+|---|---|
+| window | 288 ticks |
+| `by_source` | `LIVE 54 · HEURISTIC 258` |
+| cast | 12 members of a 21 population |
+| cadence | `DEFAULT_WAKE_GAP_TICKS 18`, `wakes_remaining 15`/Reckoning, `DEFAULT_PLAN_MAX 3` |
+
+**Ceiling: ~180 wakes × up to 3 actions ≈ 540 LIVE decisions. Observed: 54.** So the 25% floor is not
+unreachable — the cast is running at roughly **a tenth of its capacity**, and most wakes are yielding
+less than one material action. The floor is doing its job: it is reporting that the expensive path is
+under-used, which is exactly scar #14b's question.
+
+**This is a calibration/behaviour question, not a bug, and it is the most direct lever on watchability
+that exists right now** — the show's liveliness is bounded by how often the cast actually acts. Three
+candidate causes, none yet distinguished: wakes returning empty plans, plans shorter than `planMax`, or
+free verbs (`message`/`claim`) consuming a wake without producing a material decision. **Distinguish
+them before touching the floor or the cadence** — lowering a floor that is correctly reporting a real
+condition is how a signal stops being read.
+
 ### Still open, and each is a deliberate choice rather than a gap
 - **Pooled goods are not raidable** (D11), and the blocker moved rather than cleared. Offices now
   exist, so *who defends it* has an answer — but a syndicate treasury holds **currency**, and raids
