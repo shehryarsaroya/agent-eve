@@ -269,6 +269,7 @@ obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid
 ventures          mine[] · board[] (only slots you are eligible for) · talks[] (unread messages)
 counterparties[]  only agents named above: standing, bond posted, sureties, last default
 grants            granted[] (authority you gave) · held[] (authority you hold)
+                  syndicates[] (houses you sit in: id, charter, treasury, open proposals)
 market            local book only
 affordances[]     everything you can legally do right now, with its full cost
 briefing          prompt (one sentence naming your actual dilemma)

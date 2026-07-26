@@ -516,6 +516,7 @@ ventures      mine[] {roles filled/open, my stake, projected_settlement, resolve
               talks[] — unread acts on live negotiations (§7.3); never wakes me by itself
 counterparties[]  only agents named above: standing line, bond posted, sureties, last default
 grants        granted[] {delegate, template, limits, headroom, expires} · held[]
+              syndicates[] {id, charter, treasury, office count, open proposals}
 market        local book only: best bid/ask + depth at two quantity bands
 affordances[] verb · params · cost · max_direct_loss · max_contingent_liability
               · what_it_forecloses · expires_tick · quote_id

@@ -90,6 +90,7 @@ import {
   type ClaimView,
 } from '../sovereignty/index.js';
 import { LEVY_BALLOT, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.js';
+import { syndicateAsPrincipal } from '../syndicate/book.js';
 import type { SealRoleRef } from '../seal/index.js';
 import {
   commonsBoundRejection,
@@ -524,14 +525,98 @@ export function buildObservation(input: ObserveInput): Observation {
       // against the worst case you signed. And authority you HOLD (you are the delegate):
       // read your remaining headroom before your next on-behalf act. Both from the one
       // book, through {@link grantView}, so the two sides can never disagree (A6, §8.1).
-      granted: runtime.grants
-        .forGrantor(principal)
+      // ── AN OFFICE'S GRANTOR IS THE SYNDICATE, NOT THE FOUNDER ──────────────
+      //
+      // `forGrantor(principal)` alone loses every office a syndicate issued: the grant's
+      // grantor is `syn:<founder>:<tick>`, so the founder's `granted[]` stayed `[]` forever
+      // while the delegate's `held[]` showed the office perfectly. A probe agent found this
+      // by granting an office and then being unable to see that it had.
+      //
+      // That is A6 legibility failing on the side that carries the risk. §8.1's whole point
+      // is that both roles read the same row so the two sides cannot disagree — and here the
+      // grantor side could not read it at all, which is worse than disagreeing.
+      //
+      // Scoped to syndicates the reader SITS IN, and that is not a widening: members vote
+      // offices into existence through `propose`/`approve`, so the authority a syndicate
+      // holds is already theirs to decide. Being unable to see what they voted for is the
+      // anomaly.
+      granted: [
+        ...runtime.grants.forGrantor(principal),
+        ...runtime.syndicates
+          .of(principal, tick)
+          .flatMap((s) => runtime.grants.forGrantor(syndicateAsPrincipal(s.id))),
+      ]
         .slice(0, MAX_LIST_ROWS)
         .map((g) => grantView(runtime, g, tick)),
       held: runtime.grants
         .forDelegate(principal)
         .slice(0, MAX_LIST_ROWS)
         .map((g) => grantView(runtime, g, tick)),
+
+      /**
+       * The syndicates this principal SITS IN.
+     *
+       * `observe` mentioned syndicates nowhere at all. A probe agent formed one, then had to
+       * reconstruct its own id by hand from the `syn:<founder>:<tick>` convention in order to use
+       * any of `admit` · `apply` · `propose` · `approve` · `grant on_behalf_of` — every one of
+       * which takes that id as a parameter. A subsystem whose primary key is unpublished is a
+       * subsystem no agent can reach without reading our source, which is A2's *"never make an
+       * agent need a wiki"* with the wiki being the repository.
+       *
+       * **Nested under `grants` rather than given its own top-level key**, because SPEC §17's
+       * rules budget is `≤10 top-level observe keys` and it is AT ten: *"adding one means removing
+       * one, enforced by a test that counts them, not by good intentions."* The test caught this
+       * exactly as designed. `grants` is the right home anyway — it is the authority block, and
+       * after the office-grantor fix above the offices a syndicate issued already appear in
+       * `granted[]`. The house and the authority it delegates belong together.
+       *
+       * The numbers come from {@link Runtime.syndicateLines} — the same producer the spectator
+       * frame reads — filtered to this principal's houses. One home for the arithmetic, so an
+       * agent and a viewer can never be shown different treasuries (scar #5), and A9's parity
+       * holds by construction rather than by care.
+       */
+      syndicates: (() => {
+      const rows = runtime.syndicates.of(principal, tick).slice(0, MAX_LIST_ROWS);
+      if (rows.length === 0) return [];
+      const lines = new Map(runtime.syndicateLines(tick).map((l) => [String(l.syndicate), l]));
+      return rows.flatMap((row) => {
+        const line = lines.get(String(row.id));
+        // A live membership with no published line would mean the two producers disagree about
+        // which syndicates exist. Dropped rather than half-reported, and the frame's own budget
+        // assertions are what would catch it.
+        if (line === undefined) return [];
+        return [{
+          id: row.id,
+          name: line.name,
+          founder: line.founder,
+          i_founded_it: String(line.founder) === String(principal),
+          members: line.members,
+          /** Fixed at founding. There is no verb that amends a charter (`charter.ts`). */
+          admission: line.admission,
+          decision: line.decision,
+          treasury_offices: line.treasuryOffices,
+          treasury_minor: line.treasuryMinor,
+          office_holders: line.officeHolders,
+          /** The same legend the frame prints, so what you read is what a viewer reads. */
+          legend: line.legend,
+          open_proposals: runtime.syndicates
+            .openProposals(row.id, tick)
+            .slice(0, MAX_LIST_ROWS)
+            .map((proposal) => ({
+              id: proposal.id,
+              /** Who the office would go to, which is the whole substance of the vote. */
+              delegate: proposal.delegate,
+              proposer: proposal.proposer,
+              terms: proposal.terms,
+              expires_tick: proposal.expiresAtTick,
+              approvals: proposal.approvals.length,
+              approvals_needed: runtime.syndicates.approvalsNeeded(row.id, tick),
+              i_approved: proposal.approvals.some((a) => String(a) === String(principal)),
+              carries: runtime.syndicates.carries(proposal.id, tick),
+            })),
+        }];
+      });
+      })(),
     },
 
     /**

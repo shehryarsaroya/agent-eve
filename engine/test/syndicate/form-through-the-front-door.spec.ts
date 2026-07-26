@@ -248,9 +248,19 @@ describe('joining is reachable, so a syndicate is not a solo container', () => {
       actions: [{ verb: 'join', params: {}, clientSequence: 1 }],
     });
     expect(res.status).toBe(200);
-    const said = JSON.stringify(res.json);
-    expect(said, 'it must still be the raid answer').toMatch(/hostile act|aimed at/i);
-    expect(said, 'and must not have learned about syndicates').not.toMatch(/syndicate/i);
+    // Narrowed to the REFUSAL TEXT, not the whole response body. This used to stringify the entire
+    // payload, which worked only while no observation mentioned syndicates — and `observe` now
+    // publishes `grants.syndicates[]`, so the whole-body form started failing on a legitimate data
+    // block. The claim being guarded was always about the VERB'S MEANING: `join` answers a raid and
+    // must never be overloaded into syndicate membership (that is `apply`), per §3's one-word-per-
+    // concept rule. That claim lives in the hint, so the hint is what is read.
+    const outcome = res.json['outcome'] as Record<string, unknown>;
+    const hints = ((outcome['corrections'] ?? []) as readonly Record<string, unknown>[])
+      .map((c) => String(c['hint']))
+      .join(' ');
+    expect(hints.length, 'a refusal with no hint would make both assertions vacuous').toBeGreaterThan(0);
+    expect(hints, 'it must still be the raid answer').toMatch(/hostile act|aimed at/i);
+    expect(hints, 'and must not have learned about syndicates').not.toMatch(/syndicate/i);
   });
 });
 

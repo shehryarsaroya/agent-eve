@@ -4,9 +4,27 @@
  * `agent.md`'s own warning: *"It is part of the rules, not a description of them. If
  * anything here disagrees with what the server actually does, **that is a bug and we
  * want to know**."* `test/rules-surface/agent-md.test.ts` checks the document against
- * SPEC. This file checks the document against **this module's output**, which is the
+ * SPEC. This file checks the document against the builder's output, which is the
  * other half and the half scar #1 actually lived in: every individual piece was
  * correct, and the engine and the agent-facing text disagreed about one word.
+ *
+ * ── WHICH BUILDER, AND WHY IT WAS THE WRONG ONE ─────────────────────────────
+ *
+ * There are TWO `buildObservation`s. `src/observe/` has one; `src/api/observe.ts` has the
+ * other, and **only the second is reachable from the server**. `src/observe/` is imported by
+ * eight test files and zero production files.
+ *
+ * The §6 key assertions below used to read `src/observe/`, so they compared the document an
+ * agent reads against a builder no agent can reach. Discovered by adding a real key
+ * (`syndicates`) to the live payload: the live builder, `SPEC.md` and `agent.md` all agreed at
+ * eleven, and this file failed at ten — the one file whose entire job is to notice that
+ * disagreement was pointing at the wrong side of it.
+ *
+ * The KEY-CONTRACT assertions now read `src/api/observe.ts`. Everything else here still
+ * exercises `src/observe/` and its fixture, because those tests are about that module's
+ * internals rather than about the promise. The duplicate itself is recorded as open in
+ * `D13-what-playing-it-found.md` §4: deleting 1,241 lines is a decision to take deliberately,
+ * not one to slip into a fix for something else.
  *
  * Everything below is parsed from the document rather than copied out of it. A test
  * that hard-codes the promise cannot notice the promise changing.
@@ -18,16 +36,17 @@ import { minor } from '../../src/core/units.js';
 import { ACTIONS_PER_TICK, WAKES_PER_RECKONING } from '../../src/core/time.js';
 import {
   AFFORDANCE_KEYS,
-  OBSERVE_KEYS,
   SERVICE_NAMES,
   WITHHELD_GROUNDS,
   buildObservation,
 } from '../../src/observe/index.js';
+// The LIVE contract: the key list the server actually serves. See the note above.
+import { OBSERVE_KEYS } from '../../src/api/observe.js';
 import { ALICE, BRAM, CASS, fixture, goLive, levyOwing, makeHaul, sourcesFor } from './fixture.js';
 
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
 
-/** The ten keys, as the document's own §6 block lists them. */
+/** The keys, as the document's own §6 block lists them. Counted, never hard-coded. */
 function documentedKeys(): readonly string[] {
   const block = AGENT_MD.match(/```\nheader {12}([\s\S]*?)```/);
   if (block === null) throw new Error('agent.md observe block not found');
@@ -40,19 +59,23 @@ function documentedKeys(): readonly string[] {
 describe('the parse is non-trivial, so a silent regex failure cannot pass this suite', () => {
   it('finds the document and its observe block', () => {
     expect(AGENT_MD.length).toBeGreaterThan(5_000);
-    expect(documentedKeys().length).toBe(10);
+    expect(documentedKeys().length).toBeGreaterThanOrEqual(10);
   });
 });
 
-describe('agent.md §6 — the ten keys are the ten keys', () => {
+describe('agent.md §6 — the documented keys are the served keys', () => {
   it('the engine publishes exactly the keys the document names, in order', () => {
     expect(OBSERVE_KEYS).toEqual([...documentedKeys()]);
   });
 
   it('a real observation has them', () => {
+    // Deliberately NOT asserted against `src/observe/`'s builder: it is not the payload an agent
+    // receives, so an equality here would be a promise about the wrong object. `test/api/
+    // contract.test.ts` makes this assertion against a real HTTP response, which is the only
+    // version of it that means anything.
     const f = fixture();
     const built = buildObservation(sourcesFor(f), ALICE);
-    expect(Object.keys(built.observation)).toEqual([...documentedKeys()]);
+    expect(Object.keys(built.observation).length, 'the dead builder still builds something').toBeGreaterThan(0);
   });
 });
 
