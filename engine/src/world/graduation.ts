@@ -126,8 +126,10 @@ export const GRADUATION_UPKEEP_QTY: Qty = qty(5_000);
  */
 export const GRADUATION_STATEMENT =
   'You start in the Commons and nothing can hurt you there: hostile action against you is INVALID, not ' +
-  'punished, and it never expires. You may stay forever. `graduate` moves your holding one lane outward, to ' +
-  'an adjacent MARCHES or FRONTIER system, and it is the only way out. It costs ' +
+  'punished, and it never expires. You may stay forever. `graduate` moves your holding one lane outward, to a ' +
+  'MARCHES or FRONTIER system listed in `holding.graduation.open`, and it is the only way out. From a Commons ' +
+  'seat that is any gate the whole zone has, not just your own system’s lanes, so no seat is a cage; from ' +
+  'outside, only what is adjacent to you. It costs ' +
   `${String(GRADUATION_UPKEEP_MINOR)} in currency plus ${String(GRADUATION_UPKEEP_QTY)} units of the upkeep ` +
   'good, charged the moment it lands. From that moment your hands are no longer Commons-bound, everything ' +
   'you hold travels with your body and can be raided where it stands, and world raids can name you. ' +

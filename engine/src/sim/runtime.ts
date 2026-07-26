@@ -5326,7 +5326,13 @@ export class Runtime {
     }
 
     const from = holding.system;
-    const burned = this.burnUpkeepGoods(req.principal, from, quote.upkeepQty, ctx.tick);
+    const burned = this.burnUpkeepGoods(
+      req.principal,
+      from,
+      to as SystemId,
+      quote.upkeepQty,
+      ctx.tick,
+    );
     if (burned < quote.upkeepQty) {
       return reject(
         'A15',
@@ -5335,8 +5341,19 @@ export class Runtime {
       );
     }
     try {
+      // ── THE DESTINATION IS IN THE ID, AND IT HAS TO BE ────────────────────
+      //
+      // The action budget is more than one, so a principal may submit several
+      // `graduate`s in one batch and land several crossings in one tick — each a
+      // separate charge. Keyed on `(principal, tick)` alone, every crossing after the
+      // first wrote a *second* posting batch under an id the first had already used, so
+      // `Ledger.postingsFor` returned two unrelated charges as one event and any store
+      // with a uniqueness constraint on `posting.event_id` would have had to drop one.
+      // `to` disambiguates them for free and cannot collide: a crossing to where the
+      // body already stands is refused above, so no two crossings in one tick share a
+      // destination.
       this.ledger.retireCurrency({
-        eventId: `graduate.upkeep:${req.principal}:${String(ctx.tick)}` as EventId,
+        eventId: `graduate.upkeep:${req.principal}:${String(ctx.tick)}:${to}` as EventId,
         tick: ctx.tick,
         sink: CURRENCY_SINK.UPKEEP,
         from: storesAccount(req.principal),
@@ -5413,6 +5430,7 @@ export class Runtime {
   private burnUpkeepGoods(
     principal: PrincipalId,
     from: SystemId,
+    to: SystemId,
     want: Qty,
     tick: number,
   ): Qty {
@@ -5424,7 +5442,10 @@ export class Runtime {
       if (portion <= 0) continue;
       try {
         this.ledger.destroyGoods({
-          eventId: `graduate.upkeep:${principal}:${String(tick)}:${lot.id}` as EventId,
+          // `to` for the same reason the currency half carries it: two crossings in one
+          // tick may both draw from the surviving remainder of the *same* lot, and
+          // `(principal, tick, lot)` cannot tell those two burns apart.
+          eventId: `graduate.upkeep:${principal}:${String(tick)}:${to}:${lot.id}` as EventId,
           tick,
           sink: GOODS_SINK.CONSUMPTION,
           lotId: lot.id,

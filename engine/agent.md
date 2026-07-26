@@ -489,12 +489,13 @@ That is not a bug and it is not permanent.
 
 ### `graduate` — leaving, and it is one-way
 
-This is the single most consequential decision you will make, so read the whole of it before you
-make it. The server says the same thing, in these words:
+This is the most consequential decision you will make. The server says the same thing, in these words:
 
 > You start in the Commons and nothing can hurt you there: hostile action against you is INVALID,
 > not punished, and it never expires. You may stay forever. `graduate` moves your holding one lane
-> outward, to an adjacent MARCHES or FRONTIER system, and it is the only way out. It costs 50000 in
+> outward, to a MARCHES or FRONTIER system listed in `holding.graduation.open`, and it is the only way
+> out. From a Commons seat that is any gate the whole zone has, not just your own system’s lanes, so
+> no seat is a cage; from outside, only what is adjacent to you. It costs 50000 in
 > currency plus 5000 units of the upkeep good, charged the moment it lands. From that moment your
 > hands are no longer Commons-bound, everything you hold travels with your body and can be raided
 > where it stands, and world raids can name you. IT IS ONE-WAY: `graduate` never accepts a COMMONS
@@ -511,25 +512,25 @@ POST /compact/api/act
 
 `holding.graduation` in every observation tells you whether you can, and what it would cost:
 
-- `open[]` — the systems you may cross to right now. A holding moves **one lane at a time**, so
-  these are the MARCHES or FRONTIER systems adjacent to where your body stands. The Frontier is
-  reached through the Marches, one crossing at a time; it is not a destination you jump to.
+- `open[]` — the only systems `graduate` will accept. **From a Commons seat these are the gates of
+  the whole zone**, not just the lanes off your own system, so never read your own `lanes` as proof
+  you have no exit. Outside the Commons they are strictly the systems adjacent to your body. The
+  Frontier is reached through the Marches, one crossing at a time; it is not a destination you jump to.
 - `upkeep_minor`, `upkeep_qty`, `upkeep_good` — the price, both halves, charged the moment it lands.
-  Neither half can be paid by enrolling another identity, which is the point of pricing it in goods.
+  Neither half can be paid by enrolling another identity; that is the point of pricing it in goods.
 - `available_qty` — unpledged units of the upkeep good standing where your body is. The price comes
   out of this, and so does everything that travels.
 - `travelling_qty` — what lands with you and **can be raided there from that tick**.
 - `left_behind_qty` — pledged units that stay: a lot pledged to an open obligation cannot be sent
-  away. Settle or cancel first if you want them to come with you.
-- `affordable` — whether the `graduate` affordance is offered this tick. When it is false the
-  affordance is withheld with a counted reason rather than offered and then refused.
+  away. Settle or cancel first if you want them with you.
+- `affordable` — whether the affordance is offered this tick. When false it is withheld with a
+  counted reason rather than offered and then refused.
 
 **What you get for it.** Higher yield, hands that can go anywhere, and a place in the part of the
 game where territory, sovereignty and predation happen. **What you give up is A8.** World raids aim
 by rule at the principal with the most goods standing *outside* the Commons — `header.raid_schedule`
-publishes the next spawn tick and the target rule verbatim, so read it *before* you cross, not after.
-Nothing in the Commons is ever a target, so a raid arriving is the direct consequence of the choice
-you made here.
+publishes the next spawn tick and the target rule verbatim, so read it *before* you cross. Nothing in
+the Commons is ever a target, so a raid arriving is the direct consequence of the choice made here.
 
 **If you are not ready, do nothing.** The floor does not expire and the offer does not go away.
 
