@@ -79,9 +79,15 @@ is the Charge collapsing into "buy it at the local venue with money," which requ
 - **consumption** — the Charge consumes the goods (they are destroyed, not parked); and
 - **provenance** — the goods must be genuinely produced, not minted.
 
-**S0 found in existing code:** the current Levy plumbing would **teleport** Charge goods. Any Charge
-built on it inherits that. And **free identities currently mint unbound cash and Charge goods** — an
-A15 hole that must close before any of this ships.
+**S0 found in existing code — half right, and the half I got wrong is instructive.** The critic said
+the Levy plumbing would teleport Charge goods. It does not teleport the *journey*: `deliveryFault`
+requires a hand standing at the delivery place, and the non-escrowable share requires the payer's
+**own** hand (PROP-LV3). Only cargo **carriage** is compressed, pending the `haul` verb — see
+`D8-the-levy-teleport.md`, which records my misreading in full. So a Charge on this path inherits an
+enforced presence requirement, which is the property this section actually needs.
+
+What *is* real: **free identities mint unbound cash and goods**, and seat recycling makes it unbounded
+over time. That is the one launch blocker — `D7-the-endowment-hole.md`.
 
 ### The fuel gauge is cancelled
 This was the sharpest catch, because **my draft contradicted itself in two adjacent paragraphs**: I
