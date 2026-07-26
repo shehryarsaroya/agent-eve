@@ -491,9 +491,42 @@ the column agents read to decide who to trust. Now derived from resolved shared 
   elective value right now. The mechanism is proven in a driven world. **Watch it populate.**
 - **`works` is still 0** with `worksAffordableBy` 2 of 21.
 
+### Two of the five closed; one attempted and deliberately reverted
+**`checkInv7` is now linear** (`INV-7 goes from quadratic to linear without becoming a tautology`).
+It re-summed every posting ever written, every tick. The carried prefix is a sum that **was
+independently recomputed** at the tick it was verified — not a running total, which would have made
+the check a tautology — reused only while length **and** the boundary `eventId` both match, because
+`restoreTo` truncates positionally on an aborted tick. Measured after: 1 full recompute, 902
+incremental over 900 ticks.
+
+**The repulsed raid was not a defect.** A world raid is *physics* — A12 permits it because a
+target-selection rule is not an authored outcome — so it has no stake to forfeit and no hand to rout.
+Inventing a punishment for the weather was the wrong fix. The real question had no test: *is defending
+ever rational?* It is, and it is now pinned — hands give force 3 (+1 MARCHES) against a raid of 2–5
+with ties to the defender, so an unaided newcomer repulses the median draw; the strongest draw still
+beats a lone defender, so `join` is worth an action; and ignoring costs `RAID_TAKE_MULTIPLE` × the
+demand. Every one of those is *(calibrate)*, which is why they needed a test and not a comment.
+
+### ⚠ INV-21's resumable replay: ATTEMPTED, REVERTED, and here is the trap
+`checkStandingJournal` replays **and sorts** the whole standing journal every tick — O(n log n),
+worse than INV-7 was. I built the same resumable-prefix fix and **it broke 100 tests**, so it is
+reverted. The design and the bug are recorded because the bug is not obvious:
+
+- The boundary must be a **completed tick**, not an array index: the canonical order is
+  `(tick, principal, eventId)`, so entries within one tick interleave and resuming mid-tick can fold
+  a later-sorting change before an earlier one, moving `lastDefault`'s sequencing.
+- **The trap I hit:** fold everything through the current tick but seal the boundary at `tick - 1`,
+  and the next call re-folds the previous tick and **double-counts**. The fix is a scratch clone —
+  replay the unsealed tail into a *copy* for the comparison, then fold only completed ticks into the
+  carried state. Cloning is O(principals), not O(journal), so it is affordable.
+- Key the cache on the `EventLedger` instance (stable for a world's life) in a `WeakMap`, so it never
+  reaches `state_hash` and a restored world replays from scratch.
+
+**Priority: low.** Unlike postings, the standing journal only grows on standing changes — Reckonings,
+not ticks — so it grows far more slowly. It is a halting invariant, and shipping a delicate
+optimisation to one of those under time pressure is how a world halts on a world that does not exist.
+
 ### Still open, smaller
-- `checkInv7` sums the whole posting log every tick, so INV-7's cost grows with history.
-- A world raid with no agent joiners loses nothing material if repulsed.
 - Pooled goods are **not raidable** (D11), deliberately — making a bodiless subject raidable means
   deciding who defends it, which belongs with a later offices pass.
 - `StandingBook`'s journal is unbounded (INV-26 debt, deliberately uncapped).
