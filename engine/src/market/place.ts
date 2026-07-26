@@ -30,7 +30,7 @@
 import type { GoodId, PrincipalId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import type { Ledger } from '../ledger/index.js';
-import { reject, type WorldResult } from '../world/result.js';
+import { reject, type Rejection, type WorldResult } from '../world/result.js';
 import { isPresent } from '../world/hands.js';
 import { handsOf, type WorldState } from '../world/state.js';
 import { MarketBook, MAX_OPEN_ORDERS, MAX_OPEN_ORDERS_PER_PRINCIPAL } from './book.js';
@@ -49,6 +49,7 @@ import {
   escrowGoods,
   freeCash,
   lockOrderCash,
+  lockedCash,
   releaseGoods,
   releaseLock,
   sellableGoods,
@@ -91,15 +92,37 @@ export interface PlaceContext {
   readonly clientSequence: number;
 }
 
+/** Everything an accepted order needs, once every rule has said yes. */
+interface OrderPlan {
+  readonly id: OrderId;
+  readonly venue: VenueId;
+  readonly good: GoodId;
+  readonly side: Side;
+  readonly quantity: Qty;
+  readonly limitPrice: Minor;
+  readonly timeInForce: TimeInForce;
+  readonly expiresTick: number;
+  /** What a BID must lock. Zero on an ASK, which escrows goods instead. */
+  readonly cashRequired: Minor;
+}
+
 /**
- * Place an order, fully escrowed, or refuse.
+ * Every rule an order must satisfy, in **one** place, and nothing moves here.
  *
- * The returned order is already on the book and already escrowed. It is **not yet
- * matchable** — it carries `placedTick = tick` and the matcher only looks at orders
- * placed strictly earlier, which is §15.2's rule that a within-tick action never
- * reacts to another within-tick action.
+ * `replacing` is the order a `modify` is about to cancel, and it changes three
+ * answers: that order is out of the self-cross scan and out of the caps, and the
+ * escrow it is about to give back is credited to the affordability check, because
+ * once the cancel lands that value really is free.
+ *
+ * Splitting this out is not tidiness. `modify` is cancel-and-replace, so a
+ * replacement refused *after* the cancel would destroy a live order while telling
+ * its owner the act was refused — and §12.2's contract is the opposite: an illegal
+ * action returns the violated invariant and **changes nothing**. Checking the
+ * replacement here, before anything is cancelled, is what makes that true. Two
+ * copies of these rules would drift, and a `place` and a `modify` that disagree
+ * about what is legal is scar #1 with an order book attached.
  */
-export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Order> {
+function planOrder(ctx: PlaceContext, req: TradeRequest, replacing: Order | null): WorldResult<OrderPlan> {
   const shape = checkShape(req);
   if (shape !== null) return shape;
   // `checkShape` has established all five, but the compiler cannot see through it.
@@ -125,17 +148,19 @@ export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Or
     );
   }
 
-  const selfCross = checkSelfCross(ctx, venue, good, side, minor(price));
+  const selfCross = checkSelfCross(ctx, venue, good, side, minor(price), replacing);
   if (selfCross !== null) return selfCross;
 
-  if (ctx.book.countOpen() >= MAX_OPEN_ORDERS) {
+  // A replacement frees a slot before it takes one, so its own row does not count.
+  const held = replacing === null ? 0 : 1;
+  if (ctx.book.countOpen() - held >= MAX_OPEN_ORDERS) {
     return reject(
       'INV-26',
       `the book is full at its published cap of ${String(MAX_OPEN_ORDERS)} open orders. Cancel one, or ` +
         'trade at a venue with room.',
     );
   }
-  if (ctx.book.countOpenFor(ctx.principal) >= MAX_OPEN_ORDERS_PER_PRINCIPAL) {
+  if (ctx.book.countOpenFor(ctx.principal) - held >= MAX_OPEN_ORDERS_PER_PRINCIPAL) {
     return reject(
       'INV-26',
       `you already hold ${String(MAX_OPEN_ORDERS_PER_PRINCIPAL)} open orders, which is the cap. Cancel one ` +
@@ -144,7 +169,8 @@ export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Or
   }
 
   const id = orderIdFor(ctx.principal, ctx.tick, ctx.clientSequence);
-  if (ctx.book.get(id) !== undefined) {
+  const collides = ctx.book.get(id);
+  if (collides !== undefined && collides.id !== replacing?.id) {
     return reject(
       'A2',
       `you have already placed an order this tick under client_sequence ${String(ctx.clientSequence)}. ` +
@@ -152,14 +178,14 @@ export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Or
     );
   }
 
-  // ── escrow, and nothing has moved before this point ──────────────────────
   const wanted = qty(amount);
   const unitPrice = minor(price);
-  let encumbranceId: string | null = null;
+  const required = side === 'BID' ? multiplyPrice(unitPrice, wanted) : minor(0);
 
   if (side === 'BID') {
-    const required = multiplyPrice(unitPrice, wanted);
-    const free = freeCash(ctx.ledger, ctx.principal);
+    // What the cancel is about to hand back is spendable by the replacement.
+    const credit = replacing !== null && replacing.side === 'BID' ? lockedCash(ctx.ledger, replacing.encumbranceId) : 0;
+    const free = minor(freeCash(ctx.ledger, ctx.principal) + credit);
     if (free < required) {
       return reject(
         'A7',
@@ -168,18 +194,15 @@ export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Or
           'refused rather than half-placed — unescrowed depth is fake depth. Lower the quantity or the price.',
       );
     }
-    encumbranceId = lockOrderCash({
-      ledger: ctx.ledger,
-      principal: ctx.principal,
-      order: id,
-      amount: required,
-      tick: ctx.tick,
-    });
-    if (encumbranceId === null) {
-      return reject('A7', `the escrow of ${String(required)} could not be locked, so no order was placed.`);
-    }
   } else {
-    const have = sellableGoods(ctx.ledger, ctx.principal, good, venue);
+    // Only an ASK on the SAME book gives goods back where this one needs them:
+    // `sellableGoods` is per `(good, venue)`, and a reprice that also moves venue
+    // returns its units to the old one.
+    const credit =
+      replacing !== null && replacing.side === 'ASK' && replacing.good === good && replacing.venue === venue
+        ? remainingOf(replacing)
+        : 0;
+    const have = qty(sellableGoods(ctx.ledger, ctx.principal, good, venue) + credit);
     if (have < wanted) {
       return reject(
         'A7',
@@ -188,32 +211,102 @@ export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Or
           'refused rather than half-placed.',
       );
     }
+  }
+
+  return {
+    ok: true,
+    value: {
+      id,
+      venue,
+      good,
+      side,
+      quantity: wanted,
+      limitPrice: unitPrice,
+      timeInForce,
+      expiresTick: ctx.tick + durationTicks,
+      cashRequired: required,
+    },
+  };
+}
+
+/**
+ * Would this replacement be accepted, if `previous` were cancelled first?
+ *
+ * Returns the refusal a `modify` must give **before** it cancels anything, or
+ * `null` when the replacement will land. See {@link planOrder} on why this exists:
+ * a refusal that has already destroyed a resting order is not a refusal.
+ *
+ * `null` for an order that is missing, closed, or somebody else's — those are
+ * {@link cancelOrder}'s sentences, and duplicating them here would be two answers
+ * to one question.
+ */
+export function checkReplacement(
+  ctx: PlaceContext,
+  previous: Order | undefined,
+  req: TradeRequest,
+): Rejection | null {
+  if (previous === undefined || previous.principal !== ctx.principal || previous.state !== 'OPEN') return null;
+  const planned = planOrder(ctx, req, previous);
+  return planned.ok ? null : planned;
+}
+
+/**
+ * Place an order, fully escrowed, or refuse.
+ *
+ * The returned order is already on the book and already escrowed. It is **not yet
+ * matchable** — it carries `placedTick = tick` and the matcher only looks at orders
+ * placed strictly earlier, which is §15.2's rule that a within-tick action never
+ * reacts to another within-tick action.
+ */
+export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Order> {
+  const planned = planOrder(ctx, req, null);
+  if (!planned.ok) return planned;
+  const plan = planned.value;
+
+  // ── escrow, and nothing has moved before this point ──────────────────────
+  let encumbranceId: string | null = null;
+
+  if (plan.side === 'BID') {
+    encumbranceId = lockOrderCash({
+      ledger: ctx.ledger,
+      principal: ctx.principal,
+      order: plan.id,
+      amount: plan.cashRequired,
+      tick: ctx.tick,
+    });
+    if (encumbranceId === null) {
+      return reject('A7', `the escrow of ${String(plan.cashRequired)} could not be locked, so no order was placed.`);
+    }
+  } else {
     const escrowed = escrowGoods({
       ledger: ctx.ledger,
       principal: ctx.principal,
-      good,
-      venue,
-      amount: wanted,
+      good: plan.good,
+      venue: plan.venue,
+      amount: plan.quantity,
       tick: ctx.tick,
-      order: id,
+      order: plan.id,
     });
     if (!escrowed) {
-      return reject('A7', `the ${String(wanted)} of ${good} could not be escrowed, so no order was placed.`);
+      return reject(
+        'A7',
+        `the ${String(plan.quantity)} of ${plan.good} could not be escrowed, so no order was placed.`,
+      );
     }
   }
 
   const order: Order = {
-    id,
+    id: plan.id,
     principal: ctx.principal,
-    venue,
-    good,
-    side,
-    limitPrice: unitPrice,
-    quantity: wanted,
+    venue: plan.venue,
+    good: plan.good,
+    side: plan.side,
+    limitPrice: plan.limitPrice,
+    quantity: plan.quantity,
     filled: qty(0),
-    timeInForce,
+    timeInForce: plan.timeInForce,
     placedTick: ctx.tick,
-    expiresTick: ctx.tick + durationTicks,
+    expiresTick: plan.expiresTick,
     clientSequence: ctx.clientSequence,
     state: 'OPEN',
     encumbranceId,
@@ -287,7 +380,7 @@ function unwind(ctx: PlaceContext, order: Order): void {
 
 // ── the checks ──────────────────────────────────────────────────────────────
 
-function checkShape(req: TradeRequest): WorldResult<Order> | null {
+function checkShape(req: TradeRequest): Rejection | null {
   if (req.venue === null) {
     return reject('A2', 'trade needs a venue: {"venue": "<system>"}. A book is location-bound.');
   }
@@ -314,7 +407,7 @@ function checkShape(req: TradeRequest): WorldResult<Order> | null {
   return null;
 }
 
-function checkVenue(ctx: PlaceContext, venue: VenueId, good: GoodId): WorldResult<Order> | null {
+function checkVenue(ctx: PlaceContext, venue: VenueId, good: GoodId): Rejection | null {
   if (!ctx.world.map.systems.has(venue)) {
     return reject('A2', `there is no system ${venue}, so there is no book there.`);
   }
@@ -351,8 +444,11 @@ function checkSelfCross(
   good: GoodId,
   side: Side,
   limitPrice: Minor,
-): WorldResult<Order> | null {
+  replacing: Order | null,
+): Rejection | null {
   for (const own of ctx.book.openForIn(ctx.principal, venue, good)) {
+    // An order cannot cross the order it is replacing: the cancel lands first.
+    if (own.id === replacing?.id) continue;
     if (own.side === side) continue;
     const crosses =
       side === 'BID' ? limitPrice >= own.limitPrice : own.limitPrice >= limitPrice;

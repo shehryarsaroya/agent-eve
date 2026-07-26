@@ -85,6 +85,7 @@ export {
 
 export {
   cancelOrder,
+  checkReplacement,
   escrowFor,
   placeOrder,
   releaseEscrow,

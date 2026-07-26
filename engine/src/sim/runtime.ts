@@ -93,7 +93,6 @@ import {
   ledgerStateTable,
   valueGood,
   type LotId,
-  type ObligationBook,
   type Valuation,
 } from '../ledger/index.js';
 // ── THE LEVY (SPEC §5.2) ─────────────────────────────────────────────────────
@@ -145,6 +144,7 @@ import {
   type ObligationPlan,
   type ReckoningOutcome,
   type ReckoningWorld,
+  type ReckoningObligations,
 } from '../reckoning/index.js';
 // §7.1: "there is one function that answers 'what is this role owed', and both the quote
 // and the payout read it." `slotClaimAt` is that function with the holder lookup lifted,
@@ -249,6 +249,7 @@ import {
   booksFor,
   cancelOrder,
   checkMarketInvariants,
+  checkReplacement,
   clearMarkets,
   marketStateTable,
   MARKET_FEES,
@@ -3267,11 +3268,32 @@ export class Runtime {
    * be backed by an open encumbrance" would be false for half the book. The
    * equivalent guarantee for bids is MKT-3, which checks exactly that and only for
    * the side it is true of.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **AND IT IS USED IN BOTH PLACES INV-4 RUNS, WHICH IS WHY `close` IS HERE.**
+   *
+   * The tick loop is not the only caller of `checkInvariants`. `reckoning/driver.ts`
+   * runs its own ASSERT stage inside the settlement transaction, out of
+   * `reckoningWorld()`, and that one was handed the raw `SimpleObligationBook` — a
+   * book that has never heard of an order. So every open BID's cash lock read as
+   * "an encumbrance for a dead obligation", INV-4 fired once per resting bid, and
+   * the Reckoning halted.
+   *
+   * Measured before this was fixed: four principals resting ordinary buy orders
+   * across one Reckoning produced 90 INV-4 violations and PAUSED THE WORLD at tick
+   * 287. Nobody did anything wrong — leaving a bid on the book overnight is the most
+   * ordinary market act there is — so the halt was agent-reachable (AGT-X9), on the
+   * one night that has an audience (A14), and §15.4 puts a false halt in the same
+   * class as a false default. One widened book, both callers, one answer.
+   * ══════════════════════════════════════════════════════════════════════════
    */
-  private liveObligations(): ObligationBook {
+  private liveObligations(): ReckoningObligations {
     return {
       isLive: (ref) => this.obligations.isLive(ref) || this.marketBook.isLive(String(ref)),
       securedObligations: () => this.obligations.securedObligations(),
+      close: (ref) => {
+        this.obligations.close(ref);
+      },
     };
   }
 
@@ -3412,13 +3434,24 @@ export class Runtime {
         return reject('A2', `${operation} needs {"operation": "${operation}", "order": "<order id>"}.`);
       }
       const previous = this.marketBook.get(id);
+      // Cancel-replace: anything the agent did not restate is inherited from the
+      // order it replaced, so a price change does not silently reset the quantity.
+      const replacement = tradeRequestOf(req.params, previous);
+      if (operation === 'modify') {
+        // **Checked BEFORE the cancel, and that is the whole point.** `modify` is
+        // cancel-and-replace, so a replacement refused after the cancel would
+        // destroy a live resting order and its queue position while returning
+        // `{ok:false}` — and §12.2's contract is that a refused action changes
+        // nothing. `{"operation":"modify","quantity":0}` reached exactly that:
+        // the order vanished and the hint talked about the quantity.
+        const blocked = checkReplacement(place, previous, replacement);
+        if (blocked !== null) return blocked;
+      }
       const cancelled = cancelOrder(place, id);
       if (!cancelled.ok) return cancelled;
       this.emitOrderPlaced(ctx, cancelled.value, 'CANCELLED', req.decisionSource);
       if (operation === 'cancel') return { ok: true, value: null };
-      // Cancel-replace: anything the agent did not restate is inherited from the
-      // order it replaced, so a price change does not silently reset the quantity.
-      const placed = placeOrder(place, tradeRequestOf(req.params, previous));
+      const placed = placeOrder(place, replacement);
       if (!placed.ok) return placed;
       this.emitOrderPlaced(ctx, placed.value, 'OPEN', req.decisionSource);
       return { ok: true, value: null };
@@ -4327,7 +4360,10 @@ export class Runtime {
       register: this.register,
       seals: this.seals,
       standing: this.standing,
-      obligations: this.obligations,
+      // The WIDENED book, not the raw one. The driver's own ASSERT stage runs INV-4,
+      // and with `this.obligations` here every resting market bid was an orphan lock
+      // and the settlement halted. See `liveObligations`.
+      obligations: this.liveObligations(),
       accounts: this.accounts,
       presence: this.world,
     };
