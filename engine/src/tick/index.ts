@@ -121,6 +121,7 @@ export { SeedBook, SeedDisclosureError, type SeedRecord } from './seed.js';
 export {
   canonicalParams,
   captureSnapshot,
+  snapshotHashOf,
   hashOnlyTable,
   readCanonicalParams,
   restoreSnapshot,

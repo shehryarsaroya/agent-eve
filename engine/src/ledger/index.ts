@@ -45,6 +45,7 @@ export {
   type LockableAccount,
   type LockRequest,
   type ObligationBook,
+  type ObligationCapture,
   type ObligationRef,
   type SafeLockRequest,
 } from './encumbrance.js';

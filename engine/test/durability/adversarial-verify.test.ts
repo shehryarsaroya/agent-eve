@@ -2,10 +2,15 @@
  * ADVERSARIAL VERIFICATION PROBE (reviewer-authored, not the builder's).
  *
  * Distrusts the builder's own round-trip. It re-proves the crux INCLUDING the four
- * state stores that are NOT in `state_hash` (standing, the default register, the
- * obligation book, the seal book), because a hash-only round-trip is blind to exactly
- * the A5' record whose corruption is "worse than a crash". Then it drives four
+ * state stores that used to be outside `state_hash` (standing, the default register,
+ * the obligation book, the seal book), because a hash-only round-trip is blind to
+ * exactly the A5' record whose corruption is "worse than a crash". Then it drives four
  * distinct mutations and the persistence-failure policy.
+ *
+ * All four are hashed and restorable now, so `fullCapture` no longer reaches for
+ * anything the hash cannot see — and that is precisely why it must keep comparing them
+ * field by field. A hash that has only just learned to see a book is not yet evidence
+ * that the book survives; the two worlds put side by side are.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -108,15 +113,30 @@ describe('ADVERSARIAL: boot reproduces the whole world, not just the hash', () =
     ).length;
     expect(settledOrDefaulted).toBeGreaterThan(0);
 
+    // The genesis replay, explicitly: every tick re-run, every snapshot tripwire
+    // checked on the way past.
     const booted = seatedGenesis(SEED);
-    const result = await bootFromStore(booted, store, { seed: SEED });
+    const result = await bootFromStore(booted, store, {
+      seed: SEED,
+      checkpoint: { disabled: true },
+    });
     expect(result.mode).toBe('REPLAY');
     expect(result.headTick).toBe(TICKS - 1);
     expect(result.tripwiresChecked).toBeGreaterThanOrEqual(2);
 
-    // THE CRUX, widened: the unhashed stores too.
+    // THE CRUX, widened: the once-unhashed stores too.
     expect(fullCapture(booted)).toEqual(live);
     expect(perTick.get(TICKS - 1)).toBe(live['hash']);
+
+    // AND THE BOUNDED PATH, which is the default now. This is the assertion the
+    // adoption bug would have failed while reporting success: same hash, and
+    // `standing` — the permanent record of promises kept — byte-identical rather
+    // than reset to zero.
+    const adopted = seatedGenesis(SEED);
+    const adoptedResult = await bootFromStore(adopted, store, { seed: SEED });
+    expect(adoptedResult.adoptedAtTick).not.toBeNull();
+    expect(adoptedResult.ticksReplayed).toBeLessThan(TICKS);
+    expect(fullCapture(adopted)).toEqual(live);
   }, 120_000);
 });
 

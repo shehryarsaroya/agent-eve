@@ -99,19 +99,36 @@ function tablePairs(tables: readonly StateTable[]): (readonly [string, Canonical
   return pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
+/**
+ * The `state_hash` formula, in one place.
+ *
+ * Exported so a *stored* snapshot can be checked against its own recorded hash
+ * without being adopted first — a record whose tables do not hash to the hash it
+ * claims is internally inconsistent, and the honest response to that is to refuse it
+ * before anything is mutated rather than to discover it half way through a restore.
+ * A second implementation of this formula anywhere would be scar #5 applied to the
+ * one number the whole record is compared on.
+ */
+export function snapshotHashOf(
+  tables: readonly (readonly [string, CanonicalValue])[],
+  tick: number,
+  stateVersion: number,
+): string {
+  return canonicalHash({
+    v: SNAPSHOT_VERSION,
+    tick,
+    stateVersion,
+    tables: tables.map(([name, value]) => [name, value] as CanonicalValue),
+  });
+}
+
 export function captureSnapshot(
   tables: readonly StateTable[],
   tick: number,
   stateVersion: number,
 ): Snapshot {
   const pairs = tablePairs(tables);
-  const stateHash = canonicalHash({
-    v: SNAPSHOT_VERSION,
-    tick,
-    stateVersion,
-    tables: pairs.map(([name, value]) => [name, value] as CanonicalValue),
-  });
-  return { tick, stateVersion, tables: pairs, stateHash };
+  return { tick, stateVersion, tables: pairs, stateHash: snapshotHashOf(pairs, tick, stateVersion) };
 }
 
 /**

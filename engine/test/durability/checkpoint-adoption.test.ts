@@ -18,20 +18,30 @@
  * byte, `checkInv7` passes on the first tick after an adopted boot, and the boot
  * replays a bounded tail instead of the whole run.
  *
- * **It is still not equivalent, and that is the finding.** A snapshot carries the
- * engine's *state tables*, and `state_hash` hashes exactly those tables. Five books
- * are in no table — `StandingBook` (A10 reputation), the `SealBook`, the obligation
- * book INV-4 checks locks against, the `EventLedger`, and the attribution register —
- * so an adopted world starts with them empty. At the checkpoint itself the hash
- * matches anyway, because the hash cannot see them. Then the tail replays, the tail
- * *reads* them, and the two worlds part company: measured, the first tick whose hash
- * differs is six ticks after the adoption point.
+ * **AND IT IS EQUIVALENT NOW.** It was not, and the finding that it was not is the
+ * reason this file exists in this shape. A snapshot carries the engine's *state
+ * tables* and `state_hash` hashes exactly those, so five books in no table —
+ * `StandingBook` (A10 reputation), the `SealBook`, the obligation book INV-4 checks
+ * locks against, the `EventLedger`, and the attribution register — were neither
+ * carried nor missed. At the checkpoint the hash matched anyway, *because the hash
+ * could not see them*; then the tail replayed, the tail read them, and the two worlds
+ * parted company six ticks later. `electiveHonoured` for the cast went `4, 6, 2, 4, …`
+ * → all zeros: reputation reset silently, past a tripwire that reported success.
  *
- * So: **adopt-plus-tail does NOT reach the same `state_hash` as a genesis replay, and
- * checkpointing is therefore unsafe.** Boot refuses it and says which books are
- * missing. These tests pin both halves — the machinery that works, and the gap that
- * makes using it a lie — so that whoever closes the gap has to come back here and turn
- * the inequality into an equality on purpose.
+ * All five are restorable state tables now. Registering them then exposed two more
+ * that no list had named — `mint` (the venture and grant id counters, which an adopted
+ * world re-minted from zero, so the first venture after the checkpoint got a different
+ * id) and `delivery` (the deed set's only source and a deferral's pinned pot) — and
+ * those are in too. The inequality below is now an equality, turned on purpose and
+ * with the evidence beside it:
+ *
+ *   - adopt-plus-tail reaches the **same `state_hash`** as a full genesis replay;
+ *   - `electiveHonoured` **survives** adoption instead of going to zero;
+ *   - and every mutation proof still bites, including one per newly-registered book.
+ *
+ * Nothing was relaxed to get here. `adoptSnapshot` still re-captures and compares
+ * byte-for-byte, the manifest still names every required book, and boot still refuses
+ * to adopt across a `RULES_VERSION` change.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -47,6 +57,7 @@ import {
   bootFromStore,
   hydrateLedgerForSnapshot,
   missingCheckpointTables,
+  planCheckpoint,
   type SnapshotRecord,
   type TickRecord,
 } from '../../src/persist/index.js';
@@ -268,7 +279,7 @@ describe('checkpoint adoption: the machinery', () => {
 });
 
 describe('checkpoint adoption: THE EQUIVALENCE TEST', () => {
-  it('adopt+tail does NOT reach the genesis state_hash — so checkpointing is UNSAFE', async () => {
+  it('adopt+tail reaches the SAME genesis state_hash — so checkpointing is honest', async () => {
     const live = await liveRun();
 
     const genesis = seated(SEED);
@@ -281,20 +292,48 @@ describe('checkpoint adoption: THE EQUIVALENCE TEST', () => {
     expect(genesis.engine.stateHash).toBe(live.headHash);
 
     const adopted = seated(SEED);
-    const adoptedResult = await bootFromStore(adopted, live.store, {
-      seed: SEED,
-      checkpoint: { requiredTables: registeredTables(adopted) },
-    });
+    const adoptedResult = await bootFromStore(adopted, live.store, { seed: SEED });
     expect(adoptedResult.adoptedAtTick).not.toBeNull();
+    expect(adoptedResult.checkpointRefusal).toBeNull();
+    // It really is the bounded path and not a genesis replay in disguise.
+    expect(adoptedResult.ticksReplayed).toBeLessThan(TICKS);
+    expect(adoptedResult.eventsHydrated).toBeGreaterThan(0);
 
     // ── THE RESULT ──────────────────────────────────────────────────────────
-    // If this ever becomes `toBe`, the gap below has been closed and the manifest
-    // in `hydrate.ts` should shrink to match. Until then it is `not.toBe`, and it
-    // is why boot does not adopt.
-    expect(adopted.engine.stateHash).not.toBe(live.headHash);
+    // This was `not.toBe` for as long as five books sat outside the state tables.
+    // It is `toBe` because they are inside them now, not because anything here was
+    // relaxed to let it through.
+    expect(adopted.engine.stateHash).toBe(live.headHash);
   }, 180_000);
 
-  it('and the cause is books outside the state tables, which the hash cannot see', async () => {
+  it('a tail that CROSSES a Reckoning still reaches the head hash — the latent case', async () => {
+    // The equivalence above adopts the latest checkpoint, so its tail settles nothing.
+    // That is the easy half, and it is the half a broken capture can still pass: a
+    // book the tail only *reads at a Reckoning* — `delivery`, which is the deed set's
+    // only source — goes missing with no visible effect until the next settlement,
+    // hundreds of ticks later, in a process that has long since reported a clean boot.
+    //
+    // So: keep every tick, but hide the LATEST snapshot, forcing adoption at 287 and a
+    // tail of 312 ticks that crosses the settlement at 575.
+    const live = await liveRun();
+    const early = [...live.snapshots].sort((a, b) => a.tick - b.tick)[0];
+    expect(early).toBeDefined();
+    if (early === undefined) return;
+
+    const store = new InMemoryJournalStore();
+    await store.init(SEED);
+    for (const t of [...live.ticks].sort((a, b) => a.tick - b.tick)) await store.appendTick(t);
+    await store.writeSnapshot(early);
+
+    const adopted = seated(SEED);
+    const result = await bootFromStore(adopted, store, { seed: SEED });
+    expect(result.adoptedAtTick).toBe(early.tick);
+    // Non-vacuity: the tail really did settle a Reckoning after the adoption point.
+    expect(result.ticksReplayed).toBeGreaterThan(TICKS_PER_RECKONING);
+    expect(adopted.engine.stateHash).toBe(live.headHash);
+  }, 180_000);
+
+  it('and the books the hash could not see are carried: standing survives adoption', async () => {
     const live = await liveRun();
     const snapshot = live.snapshots[live.snapshots.length - 1];
     expect(snapshot).toBeDefined();
@@ -305,58 +344,127 @@ describe('checkpoint adoption: THE EQUIVALENCE TEST', () => {
     await bootFromStore(genesis, store, { seed: SEED, checkpoint: { disabled: true } });
 
     const adopted = seated(SEED);
-    await bootFromStore(adopted, store, {
-      seed: SEED,
-      checkpoint: { requiredTables: registeredTables(adopted) },
-    });
+    await bootFromStore(adopted, store, { seed: SEED });
 
-    // Same tick, and — this is the trap — the SAME HASH.
+    // Same tick, same hash — and that was never the hard part. The hash matched
+    // before this change too, which is exactly what made the old bug so dangerous.
     expect(adopted.engine.tick).toBe(genesis.engine.tick);
     expect(adopted.engine.stateHash).toBe(genesis.engine.stateHash);
 
     const g = unhashedFacts(genesis);
     const a = unhashedFacts(adopted);
-    // The money agrees, because the ledger IS in a state table and IS hydrated.
     expect(a.balances).toEqual(g.balances);
-    // Reputation does not, because `StandingBook` is in none. A10 says identity,
-    // reputation, relationships and legend never reset; here they reset silently,
-    // past a tripwire that reported success. THIS is why adoption is gated.
+    // THE CLAIM THIS FILE EXISTS FOR. A10: identity, reputation, relationships and
+    // legend never reset. `electiveHonoured` used to come back as 0 here.
     expect(g.electiveHonoured).toBeGreaterThan(0);
-    expect(a.electiveHonoured).toBe(0);
+    expect(a.electiveHonoured).toBe(g.electiveHonoured);
+    expect(a.defaults).toBe(g.defaults);
+
+    // And the rest of what a snapshot used to drop, book by book.
+    expect(adopted.seals.size).toBe(genesis.seals.size);
+    expect(adopted.seals.auditRecords()).toEqual(genesis.seals.auditRecords());
+    expect(adopted.events.eventCount).toBe(genesis.events.eventCount);
+    expect(adopted.events.audienceRowCount).toBe(genesis.events.audienceRowCount);
+    expect(adopted.events.lastTick).toBe(genesis.events.lastTick);
+    expect(adopted.register.all()).toEqual(genesis.register.all());
+    expect(adopted.obligations.capture()).toEqual(genesis.obligations.capture());
+    expect(adopted.standing.changes()).toEqual(genesis.standing.changes());
+    // A restored world must be able to answer the two questions an observer asks of
+    // the record, not merely hold the right number of rows.
+    expect(
+      adopted.events.spectatorFeed({ atTick: adopted.engine.tick, after: null, limit: 8 }).views,
+    ).toEqual(
+      genesis.events.spectatorFeed({ atTick: genesis.engine.tick, after: null, limit: 8 }).views,
+    );
   }, 180_000);
 });
 
 describe('checkpoint adoption: the gate', () => {
-  it('the default boot refuses to adopt, names every missing book, and replays from genesis', async () => {
+  it('the default boot ADOPTS now, and a build missing one book still refuses by name', async () => {
     const live = await liveRun();
     const runtime = seated(SEED);
     const result = await bootFromStore(runtime, live.store, { seed: SEED });
 
-    expect(result.adoptedAtTick).toBeNull();
-    expect(result.postingsHydrated).toBe(0);
-    expect(result.ticksReplayed).toBe(TICKS);
-    // The safe path is byte-identical to what it has always been.
+    // The gate has cleared: no override, no narrowed manifest, and it adopts.
+    expect(result.adoptedAtTick).not.toBeNull();
+    expect(result.checkpointRefusal).toBeNull();
+    expect(result.postingsHydrated).toBeGreaterThan(0);
+    expect(result.ticksReplayed).toBeLessThan(TICKS);
     expect(runtime.engine.stateHash).toBe(live.headHash);
 
-    const refusal = result.checkpointRefusal ?? '';
+    // And the refusal still works, because that is the half that must never rot: a
+    // build that drops one book from its table list is told which one, by name, and
+    // replays from genesis to the identical head.
     for (const book of ['standing', 'seal', 'obligation', 'event', 'attribution']) {
-      expect(refusal, `the refusal must name ${book}`).toContain(book);
+      const crippled = seated(SEED);
+      const without = crippled.engine.stateTables.filter((t) => t.name !== book);
+      const refusal = (
+        await planCheckpoint(without, live.store, {})
+      ).refusal;
+      expect(refusal, `dropping ${book} must be refused`).toContain(book);
     }
   }, 180_000);
 
-  it('names exactly the books that are missing today — change this only WITH the equivalence test', () => {
+  it('names no missing book — change this only WITH the equivalence test', () => {
     const runtime = seated(SEED);
-    // A deliberate tripwire. When someone registers one of these as a restorable
-    // state table this test fails, which is the prompt to re-run the equivalence test
-    // above and decide — with evidence — whether adoption is now honest.
-    expect([...missingCheckpointTables(runtime.engine.stateTables)]).toEqual([
-      'attribution',
-      'event',
-      'obligation',
-      'seal',
-      'standing',
-    ]);
+    // The tripwire that used to list five names. It is empty because every book in
+    // the manifest is a restorable state table; if it ever grows a name again, the
+    // equivalence test above is lying and adoption must be re-gated.
+    expect([...missingCheckpointTables(runtime.engine.stateTables)]).toEqual([]);
+    // And the manifest is not empty of the books that mattered — an empty manifest
+    // would make the line above pass vacuously.
+    for (const book of ['attribution', 'delivery', 'event', 'mint', 'obligation', 'seal', 'standing']) {
+      expect(CHECKPOINT_REQUIRED_TABLES).toContain(book);
+    }
   }, 30_000);
+
+  it('a store that does not persist the record REFUSES, and does not crash-loop', async () => {
+    // The production shape today. `PgJournalStore.ticksPage` returns `events: []` —
+    // the durable `event` table carries no `visibility`, no `flag_keys` and no
+    // audience `basis`, so the record cannot be rebuilt at full fidelity from it yet.
+    // An adopted world would therefore come up with an EMPTY public ledger, which to
+    // every reader is a world where nothing has ever happened.
+    //
+    // That must be a refusal (slow boot, correct world), never a throw. A throw here
+    // is `serve()` crash-looping on a healthy journal, which is the failure mode the
+    // whole held-boot design exists to avoid.
+    const live = await liveRun();
+    const store = new InMemoryJournalStore();
+    await store.init(SEED);
+    for (const t of [...live.ticks].sort((a, b) => a.tick - b.tick)) {
+      await store.appendTick({ ...t, events: [] });
+    }
+    for (const s of [...live.snapshots].sort((a, b) => a.tick - b.tick)) await store.writeSnapshot(s);
+
+    const runtime = seated(SEED);
+    const result = await bootFromStore(runtime, store, { seed: SEED });
+    expect(result.adoptedAtTick).toBeNull();
+    expect(result.checkpointRefusal ?? '').toContain('does not persist the append-only record');
+    // And the slow path produced the right world anyway.
+    expect(result.ticksReplayed).toBe(TICKS);
+    expect(runtime.engine.stateHash).toBe(live.headHash);
+  }, 180_000);
+
+  it('a self-inconsistent snapshot REFUSES too, so the operator door stays reachable', async () => {
+    // A stored snapshot whose own tables do not hash to its own `state_hash`. Adopting
+    // it would fail inside `adoptSnapshot`, after the runtime had been mutated, where
+    // the only possible answer is a hard stop with no door. Caught before anything
+    // moves, it is a plain refusal — genesis replay, tripwire, and
+    // `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
+    const live = await liveRun();
+    const store = new InMemoryJournalStore();
+    await store.init(SEED);
+    for (const t of [...live.ticks].sort((a, b) => a.tick - b.tick)) await store.appendTick(t);
+    const sorted = [...live.snapshots].sort((a, b) => a.tick - b.tick);
+    for (const [i, s] of sorted.entries()) {
+      const last = i === sorted.length - 1;
+      await store.writeSnapshot(last ? { ...s, stateHash: 'a'.repeat(64) } : s);
+    }
+
+    const plan = await planCheckpoint(seated(SEED).engine.stateTables, store, {});
+    expect(plan.snapshot).toBeNull();
+    expect(plan.refusal ?? '').toContain('disagrees with itself');
+  }, 180_000);
 
   it('the gate clears itself, and counts a hash-only table as missing', () => {
     const runtime = seated(SEED);

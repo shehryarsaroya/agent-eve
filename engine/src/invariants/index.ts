@@ -41,6 +41,7 @@ export {
   DEFAULT_CAUSE_KINDS,
   DEFAULT_EVENT_KINDS,
   DefaultRegister,
+  attributionStateTable,
   checkInv17,
   isDefaultEventKind,
   type DefaultAttribution,

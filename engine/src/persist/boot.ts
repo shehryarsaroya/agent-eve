@@ -67,6 +67,7 @@
 import { RULES_VERSION, type Runtime } from '../sim/runtime.js';
 import type { SubmittedAction } from '../tick/index.js';
 import {
+  hydrateEventsForSnapshot,
   hydrateLedgerForSnapshot,
   planCheckpoint,
   snapshotOf,
@@ -167,6 +168,15 @@ export interface BootResult {
   readonly checkpointRefusal: string | null;
   /** Postings rebuilt from the durable log to make the adoption legitimate. */
   readonly postingsHydrated: number;
+  /**
+   * Events rebuilt from the durable log to make the adoption legitimate.
+   *
+   * The `event` capture is four counts, not the contents (the record is append-only
+   * and a season of payloads in every snapshot would be a snapshot larger than the
+   * world), so the rows come from the journal and `EventLedger.restoreTo` refuses to
+   * grow. This number is what that refusal was satisfied with.
+   */
+  readonly eventsHydrated: number;
   readonly ticksReplayed: number;
   readonly enrollmentsApplied: number;
   /** Journalled snapshots the replay was checked against. Every one that passed. */
@@ -286,6 +296,7 @@ export async function bootFromStore(
       adoptedAtTick: null,
       checkpointRefusal: 'genesis: the store holds no run to resume',
       postingsHydrated: 0,
+      eventsHydrated: 0,
       ticksReplayed: 0,
       enrollmentsApplied: 0,
       tripwiresChecked: 0,
@@ -377,6 +388,7 @@ export async function bootFromStore(
   });
   let adoptedAtTick: number | null = null;
   let postingsHydrated = 0;
+  let eventsHydrated = 0;
   const checkpointRefusal = plan.refusal;
   if (plan.snapshot !== null) {
     const snapshot = plan.snapshot;
@@ -388,6 +400,16 @@ export async function bootFromStore(
       // that did not reproduce the captured bytes throws there rather than serving.)
       const restored = await hydrateLedgerForSnapshot(runtime.ledger, store, snapshot);
       postingsHydrated = restored.postings;
+      // And the record, for the same reason and with the same ordering rule: the
+      // append-only halves must be back BEFORE the snapshot is adopted, because
+      // `EventLedger.restoreTo` refuses to grow and the hydrate is what makes the
+      // counts already match — the refusal satisfied rather than relaxed.
+      // The boot's own page size, not the hydrate's default: `bootFromStore`'s
+      // memory bound is "never ask the store for the whole log, and never for more
+      // than one page", and an inner read that pages at its own larger size would
+      // quietly make that claim false for the adopted path.
+      const record = await hydrateEventsForSnapshot(runtime.events, store, snapshot, pageSize);
+      eventsHydrated = record.events;
       runtime.engine.adoptSnapshot(snapshotOf(snapshot));
       adoptedAtTick = snapshot.tick;
       cursor = snapshot.tick;
@@ -594,6 +616,7 @@ export async function bootFromStore(
     adoptedAtTick,
     checkpointRefusal,
     postingsHydrated,
+    eventsHydrated,
     ticksReplayed,
     tripwiresChecked,
     enrollmentsApplied,

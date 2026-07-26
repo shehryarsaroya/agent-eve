@@ -32,6 +32,16 @@ import {
 import type { PrincipalId } from '../../src/core/types.js';
 import type { SubmittedAction } from '../../src/tick/index.js';
 
+/**
+ * Every boot in this file exercises the **divergence door**, and the door only exists
+ * on the replay path: an adopted boot re-derives nothing, so it can neither find a
+ * divergence nor annotate one. That is not a gap this file should paper over — it is
+ * why `planCheckpoint` refuses adoption across a `RULES_VERSION` change, and why
+ * `checkpoint-adoption-audit.test.ts` pins `tripwiresChecked === 0` for an adopted
+ * boot. Here the path is named rather than inherited from a default.
+ */
+const GENESIS = { disabled: true } as const;
+
 const SEED = 'divergence-annotation-1';
 const CAST = 6;
 
@@ -71,7 +81,7 @@ async function runLive(ticks: number): Promise<InMemoryJournalStore> {
   cast.seat(SEED);
   const store = new InMemoryJournalStore();
   const journal = new Journal(store);
-  await bootFromStore(rt, store, { seed: SEED });
+  await bootFromStore(rt, store, { seed: SEED, checkpoint: GENESIS });
   for (let i = 0; i < ticks; i += 1) {
     for (const a of cast.decide(rt.engine.tick + 1, SEED)) rt.engine.submit(a);
     const report = rt.runTick();
@@ -87,7 +97,7 @@ async function runLive(ticks: number): Promise<InMemoryJournalStore> {
 async function acceptAt(store: InMemoryJournalStore, fromTick: number): Promise<number> {
   const probe = seated();
   refuseAfter(probe, fromTick);
-  const held = await bootWorld(probe, store, { seed: SEED });
+  const held = await bootWorld(probe, store, { seed: SEED, checkpoint: GENESIS });
   expect(held.status).toBe('HELD');
   if (held.status !== 'HELD') throw new Error('unreachable');
   const at = held.diagnosis.tick;
@@ -98,6 +108,7 @@ async function acceptAt(store: InMemoryJournalStore, fromTick: number): Promise<
     seed: SEED,
     acceptDivergenceFromTick: at,
     nowMs: nextClock,
+    checkpoint: GENESIS,
   });
   expect(opened.status).toBe('READY');
   return at;
@@ -169,7 +180,7 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
     // Resume and run on past tick 287, so a NEW snapshot lands in the journal.
     const rt = seated();
     refuseAfter(rt, 60);
-    await bootWorld(rt, store, { seed: SEED, acceptDivergenceFromTick: at, nowMs: nextClock });
+    await bootWorld(rt, store, { seed: SEED, acceptDivergenceFromTick: at, nowMs: nextClock, checkpoint: GENESIS });
     const journal = new Journal(store);
     const cast = new HeuristicCast(rt, { size: CAST });
     for (let i = 0; i < 60; i += 1) {
@@ -191,13 +202,14 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
       seed: SEED,
       acceptDivergenceFromTick: at,
       nowMs: nextClock,
+      checkpoint: GENESIS,
     });
     expect(restarted.status).toBe('READY');
 
     for (let restart = 0; restart < 2; restart += 1) {
       const more = seated();
       refuseAfter(more, 60);
-      await bootWorld(more, store, { seed: SEED, acceptDivergenceFromTick: at, nowMs: nextClock });
+      await bootWorld(more, store, { seed: SEED, acceptDivergenceFromTick: at, nowMs: nextClock, checkpoint: GENESIS });
     }
     // One discontinuity happened, so the record says so exactly once.
     expect((await store.divergences()).length).toBe(1);
@@ -213,7 +225,7 @@ async function firstDivergenceTickPerPrincipal(
   for (const principal of [...probe.world.principalOrder].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0))) {
     const rt = seated();
     refuseOne(rt, principal, 100, `change targeting ${principal}`);
-    const held = await bootWorld(rt, store, { seed: SEED });
+    const held = await bootWorld(rt, store, { seed: SEED, checkpoint: GENESIS });
     if (held.status === 'HELD') found.set(principal, held.diagnosis.tick);
   }
   return found;
@@ -248,6 +260,7 @@ async function acceptChange(
     seed: SEED,
     acceptDivergenceFromTick: tick,
     nowMs: nextClock,
+    checkpoint: GENESIS,
   });
   expect(opened.status).toBe('READY');
   return (await store.divergences()).length;

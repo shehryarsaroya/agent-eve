@@ -41,6 +41,7 @@ export {
   CHECKPOINT_REQUIRED_TABLES,
   HYDRATE_PAGE_TICKS,
   HydrateError,
+  hydrateEventsForSnapshot,
   hydrateLedgerForSnapshot,
   missingCheckpointTables,
   planCheckpoint,

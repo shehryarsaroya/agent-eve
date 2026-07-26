@@ -182,6 +182,19 @@ $SSH 'nginx -t' || fail "nginx config invalid — NOT reloading, the landing pag
 $SSH 'systemctl reload nginx'
 ok "nginx reloaded"
 
+# ── ONLY THE API NEEDS A RESTART ────────────────────────────────────────────
+#
+# A client-only deploy is static files and an nginx reload; restarting the API for it
+# bounces a running world through a multi-minute replay for no reason, and then the
+# post-deploy check reads the mid-replay 503 and calls the deploy failed. That is
+# exactly what happened on the first client deploy after the frames fix: nothing was
+# wrong, the world was simply replaying 3,071 of 3,297 ticks because a page of HTML
+# had changed.
+#
+# The world checks below are gated with it: "is the world RUNNING" is not a question a
+# client deploy is entitled to fail on, because a client deploy cannot affect it.
+if [[ "$TARGET" == "api" || "$TARGET" == "sim" || "$TARGET" == "all" ]]; then
+
 log "restarting services"
 # `enable --now` was the bug: on an ALREADY-ACTIVE service `--now` runs `start`, and
 # `start` on a running unit is a no-op — so a redeploy synced, built and migrated the new
@@ -296,5 +309,7 @@ if [[ -n "${BEFORE:-}" ]]; then
   [[ -z "$MISSING" ]] || fail "these were running before the deploy and are not now: $MISSING"
 fi
 ok "nothing that was running stopped running"
+
+fi  # end api-only restart + world verification
 
 printf '\n\033[1;32mdeploy complete\033[0m  https://agentinsurance.io/compact/\n\n'

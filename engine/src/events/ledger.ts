@@ -45,7 +45,10 @@
  * event enters a reader's feed exactly once, at {@link firstAgentRevealTick}.
  */
 
+import type { CanonicalValue } from '../core/canonical.js';
 import type { EventId, GameEvent, PrincipalId, Visibility } from '../core/types.js';
+import type { StateTable } from '../tick/snapshot.js';
+import { readInt as snapInt, readObject as snapObject } from '../tick/snapshot.js';
 import {
   agentView,
   describeVisibility,
@@ -676,6 +679,176 @@ export class EventLedger implements AudienceIndex {
   recordDescriptor(id: EventId, descriptor: VisibilityDescriptor): void {
     this.visibilitySnapshot.set(id, descriptor);
   }
+
+  // ── The capture ─────────────────────────────────────────────────────────────
+
+  /**
+   * The record's place in `state_hash` and in the abort path — **four counts, not
+   * the contents.**
+   *
+   * This follows `ledgerStateTable`'s precedent exactly, and for the same reason it
+   * gives: the rows here are immutable and only ever grow, so **truncation to a
+   * captured length is an exact inverse** and re-listing every event in every
+   * snapshot would make the hash input grow without bound while attesting to nothing
+   * the counts do not already pin. A season is ~242 000 ticks; a capture that carried
+   * the payloads would be a snapshot larger than the world.
+   *
+   * What the four numbers pin, and why each is here:
+   *
+   *   - `events` — how many rows the permanent public record holds. Two worlds that
+   *     published a different number of facts can no longer hash the same.
+   *   - `audience` — the fan-out table's length. §11.2's ladder is enforced by who is
+   *     admitted to what, so a world that admitted one more reader is a different
+   *     world even when the events match.
+   *   - `ordinals` — the global reveal counter. It is what {@link RevealStream}
+   *     truncation keys on and what every feed cursor is ordered by, so a restore
+   *     that reset it would re-mint ordinals a cursor had already been issued from
+   *     and an agent's feed would repeat or skip.
+   *   - `watermark` — the highest tick written. Time only moves forward here, and a
+   *     watermark restored too low would let a row be backdated into a window that
+   *     has already been played (the same rule, and the same reason, as the seal
+   *     book's).
+   *
+   * `seqByTick`, `byTick`, `byFamily`, `audienceByEvent` and the reveal streams are
+   * **derived** and are rebuilt from the surviving rows — one quantity, one home
+   * (scar #5). `visibilitySnapshot` and `touched` are INV-14's before-and-after
+   * mirror rather than world facts: they are observations *of* this ledger, they are
+   * re-established by the next ASSERT pass, and they are pruned rather than restored
+   * (see {@link restoreTo}). `metrics` is instrumentation for PROP-VI5 and is
+   * deliberately outside the hash — hashing a performance counter would make two
+   * identical worlds differ over how many rows somebody's feed had walked.
+   */
+  capture(): CanonicalValue {
+    return {
+      events: this.byId.size,
+      audience: this.audienceTable.length,
+      ordinals: this.nextOrdinal,
+      watermark: this.watermark,
+    };
+  }
+
+  /**
+   * Truncate this ledger back to a captured set of counts. The inverse of
+   * {@link capture}.
+   *
+   * **It refuses to grow, and that refusal is the point.** A ledger holding fewer
+   * rows than the capture describes cannot be repaired from four integers — the
+   * contents are not in the snapshot, by design — so the honest answer is a located
+   * error, never a book that comes back short and looks restored. That is what makes
+   * a checkpoint adoption safe: boot must rebuild the record from the durable journal
+   * *first*, and this is the check that says whether it did.
+   *
+   * Truncating is legitimate in exactly one direction and for exactly one reason: an
+   * aborted tick's rows were never published — nothing outside this process has ever
+   * read them, because the tick that would have published them did not — so removing
+   * them is not the retraction INV-16 forbids. It is the same argument
+   * `ledgerStateTable` makes for `postingCount`.
+   */
+  restoreTo(counts: EventLedgerCounts): void {
+    const problems: string[] = [];
+    if (this.byId.size < counts.events) {
+      problems.push(
+        `the record holds ${String(this.byId.size)} events and the capture describes ` +
+          `${String(counts.events)}; a snapshot carries counts, not contents, so the missing rows ` +
+          'must be rebuilt from the durable journal before this snapshot can be adopted',
+      );
+    }
+    if (this.audienceTable.length < counts.audience) {
+      problems.push(
+        `the fan-out table holds ${String(this.audienceTable.length)} rows and the capture describes ` +
+          `${String(counts.audience)}`,
+      );
+    }
+    if (this.nextOrdinal < counts.ordinals) {
+      problems.push(
+        `the reveal counter is at ${String(this.nextOrdinal)} and the capture describes ` +
+          `${String(counts.ordinals)}`,
+      );
+    }
+    if (problems.length > 0) {
+      throw new EventLedgerError(`event ledger restore refused:\n  - ${problems.join('\n  - ')}`);
+    }
+
+    // Reveal entries first: they key on the ordinal, which is the only field that
+    // orders audience rows and everyone-reveals against each other.
+    this.everyoneStream.truncateAtOrdinal(counts.ordinals);
+    for (const [principal, stream] of [...this.audienceByPrincipal.entries()]) {
+      stream.truncateAtOrdinal(counts.ordinals);
+      // An empty stream is not the same as no stream for anything that iterates the
+      // map, so it goes — a restore must be idempotent against its own capture.
+      if (stream.size === 0) this.audienceByPrincipal.delete(principal);
+    }
+
+    this.audienceTable.length = counts.audience;
+    this.audienceByEvent.clear();
+    for (const row of this.audienceTable) {
+      let byPrincipal = this.audienceByEvent.get(row.eventId);
+      if (byPrincipal === undefined) {
+        byPrincipal = new Map<PrincipalId, AudienceRow>();
+        this.audienceByEvent.set(row.eventId, byPrincipal);
+      }
+      byPrincipal.set(row.principal, row);
+    }
+
+    // `byId` is insertion-ordered and insertion order IS append order, so the first
+    // `counts.events` keys are exactly the rows that existed at the capture.
+    const keep = [...this.byId.keys()].slice(0, counts.events);
+    const dropped = [...this.byId.keys()].slice(counts.events);
+    for (const id of dropped) {
+      this.byId.delete(id);
+      // INV-14's mirror must not hold a descriptor for a row that no longer exists,
+      // or the next audit compares this world against a ghost.
+      this.visibilitySnapshot.delete(id);
+      this.touched.delete(id);
+    }
+    this.byTick.clear();
+    this.byFamily.clear();
+    this.seqByTick.clear();
+    for (const id of keep) {
+      const rec = this.byId.get(id);
+      if (rec === undefined) continue;
+      pushInto(this.byTick, rec.event.tick, rec);
+      pushInto(this.byFamily, rec.event.eventFamilyId, rec);
+      this.seqByTick.set(rec.event.tick, rec.event.seqInTick + 1);
+    }
+
+    this.nextOrdinal = counts.ordinals;
+    this.watermark = counts.watermark;
+  }
+}
+
+/** The four numbers {@link EventLedger.capture} writes and {@link EventLedger.restoreTo} reads. */
+export interface EventLedgerCounts {
+  readonly events: number;
+  readonly audience: number;
+  readonly ordinals: number;
+  readonly watermark: number;
+}
+
+/**
+ * The state-table descriptor: how the append-only record enters `state_hash`, the
+ * abort rollback, and a checkpoint adoption.
+ *
+ * The ledger was previously registered — when it was registered at all — through
+ * `hashOnlyTable`, which attests to a book without being able to put it back. That
+ * shape is precisely what would let an adoption look verified while dropping the
+ * record, so `missingCheckpointTables` counts a hash-only table as missing. This one
+ * restores.
+ */
+export function eventsStateTable(read: () => EventLedger): StateTable {
+  return {
+    name: 'event',
+    capture: (): CanonicalValue => read().capture(),
+    restore: (captured: CanonicalValue): void => {
+      const root = snapObject(captured, 'event');
+      read().restoreTo({
+        events: snapInt(root, 'events', 'event'),
+        audience: snapInt(root, 'audience', 'event'),
+        ordinals: snapInt(root, 'ordinals', 'event'),
+        watermark: snapInt(root, 'watermark', 'event'),
+      });
+    },
+  };
 }
 
 /**

@@ -65,12 +65,32 @@ describe('external enrolment survives a restart', () => {
     // Restart: a fresh runtime with only the cast seated, then boot from the journal.
     const booted = seatedRuntime(SEED);
     expect(booted.world.holdingByPrincipal.has(NEWCOMER)).toBe(false); // not from the seed
-    const result = await bootFromStore(booted, store, { seed: SEED });
+    // The genesis path first, explicitly: every tick replayed, the newcomer re-seated
+    // by the replay, the snapshot tripwires checked on the way past.
+    const result = await bootFromStore(booted, store, { seed: SEED, checkpoint: { disabled: true } });
 
     expect(result.enrollmentsApplied).toBe(1);
     expect(result.tripwiresChecked).toBeGreaterThanOrEqual(1); // the 287 snapshot verified
     expect(booted.world.holdingByPrincipal.has(NEWCOMER)).toBe(true); // re-seated from the journal
     expect(booted.engine.tick).toBe(headTick);
     expect(booted.engine.stateHash).toBe(headHash); // the enrolment is inside the reproduced hash
+
+    // AND THE ADOPTED PATH, which is the default now that every book is a restorable
+    // state table. An enrolment inside the adopted prefix is already in the snapshot's
+    // `world` capture, so it is NOT re-seated (`enrollmentsApplied` is honestly zero)
+    // — but the newcomer must still be here, with a keyring identity, or a real agent
+    // boots into a world that holds its holdings and cannot verify its signature.
+    const adopted = seatedRuntime(SEED);
+    const reseated: string[] = [];
+    const adoptedResult = await bootFromStore(adopted, store, {
+      seed: SEED,
+      onEnrollment: (e) => reseated.push(e.principal),
+    });
+    expect(adoptedResult.adoptedAtTick).not.toBeNull();
+    expect(adoptedResult.ticksReplayed).toBeLessThan(headTick);
+    expect(reseated).toEqual([NEWCOMER]);
+    expect(adopted.world.holdingByPrincipal.has(NEWCOMER)).toBe(true);
+    expect(adopted.engine.tick).toBe(headTick);
+    expect(adopted.engine.stateHash).toBe(headHash);
   }, 120_000);
 });

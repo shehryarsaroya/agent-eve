@@ -8,11 +8,13 @@
 export {
   EventLedger,
   EventLedgerError,
+  eventsStateTable,
   mintEventId,
   type AgentFeedRequest,
   type FeedCursor,
   type FeedPage,
   type FeedRequest,
+  type EventLedgerCounts,
   type LedgerMetrics,
   type NewEvent,
 } from './ledger.js';

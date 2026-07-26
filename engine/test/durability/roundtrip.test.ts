@@ -153,6 +153,18 @@ async function storeUpTo(
 /** Boot a fresh runtime from a store and return it plus the boot result. */
 async function boot(seed: string, store: InMemoryJournalStore): Promise<{ runtime: Runtime; result: Awaited<ReturnType<typeof bootFromStore>> }> {
   const runtime = seatedRuntime(seed);
+  // The GENESIS path, explicitly. Boot's default is now to adopt the latest
+  // checkpoint (every book it needs is a restorable state table), and this file's
+  // subject is the replay: "the whole log, re-run, produces the same world". The
+  // adopted path has its own equivalence test in `checkpoint-adoption.test.ts`, and
+  // {@link bootAdopting} below asserts the two agree.
+  const result = await bootFromStore(runtime, store, { seed, checkpoint: { disabled: true } });
+  return { runtime, result };
+}
+
+/** The same boot, taking the bounded path. */
+async function bootAdopting(seed: string, store: InMemoryJournalStore): Promise<{ runtime: Runtime; result: Awaited<ReturnType<typeof bootFromStore>> }> {
+  const runtime = seatedRuntime(seed);
   const result = await bootFromStore(runtime, store, { seed });
   return { runtime, result };
 }
@@ -176,10 +188,19 @@ describe('durability: boot-from-store reproduces the world', () => {
 
     // THE CRUX: byte-for-byte the same world.
     expect(booted.engine.stateHash).toBe(live.facts.stateHash);
-    // And the legible facts, beyond the hash (standing is not even a hashed table —
-    // it is reproduced only by replaying every Reckoning, so this proves replay
-    // rebuilt derived state too).
+    // And the legible facts, beyond the hash. Standing IS a hashed table now, so this
+    // no longer proves that replay rebuilds unhashed derived state — it proves the
+    // stronger and simpler thing, that the whole world comes back.
     expect(factsOf(booted)).toEqual(live.facts);
+
+    // The bounded path reaches the same place. Same assertion, both boots, so a
+    // divergence between them cannot hide behind whichever one this file happens to
+    // exercise.
+    const { runtime: adopted, result: adoptedResult } = await bootAdopting(SEED, live.store);
+    expect(adoptedResult.adoptedAtTick).not.toBeNull();
+    expect(adoptedResult.ticksReplayed).toBeLessThan(TICKS);
+    expect(adopted.engine.stateHash).toBe(live.facts.stateHash);
+    expect(factsOf(adopted)).toEqual(live.facts);
   }, 120_000);
 
   it('a mid-Reckoning kill boots to the correct head', async () => {

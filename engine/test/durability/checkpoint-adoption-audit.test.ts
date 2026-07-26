@@ -225,7 +225,7 @@ describe('A5′: escrow across a checkpoint adoption, with locks that are actual
     expect(checkInv7(adopted.ledger, adopted.engine.tick)).toEqual([]);
   }, 120_000);
 
-  it('and the obligation book does NOT come back, so the first tick after HALTS on INV-4', async () => {
+  it('and the obligation book DOES come back, so the first tick after is clean', async () => {
     const live = await lockedRun();
     const adopted = seated(SEED);
     await bootFromStore(adopted, live.store, {
@@ -233,15 +233,34 @@ describe('A5′: escrow across a checkpoint adoption, with locks that are actual
       checkpoint: { requiredTables: registeredTables(adopted) },
     });
     const ref = `raid:audit:${String(live.lockedPrincipals[0])}`;
-    // The lock is back; the obligation it secures is not. This is the manifest's
-    // `obligation` entry, measured rather than asserted.
-    expect(adopted.obligations.isLive(ref as never)).toBe(false);
+    // The lock is back AND the obligation it secures is back. This used to be the
+    // manifest's `obligation` entry measured rather than asserted: the lock returned,
+    // its obligation did not, and INV-4 halted the first tick after boot on an
+    // orphan lock that nobody had orphaned.
+    expect(adopted.obligations.isLive(ref as never)).toBe(true);
 
+    const report = adopted.runTick();
+    expect(
+      report.halted,
+      report.violations.map((v) => `${v.id} ${v.message}`).join(' | '),
+    ).toBe(false);
+    expect(report.violations.map((v) => v.id)).not.toContain('INV-4');
+  }, 120_000);
+
+  it('MUTATION PROOF: drop the obligation book from the capture and INV-4 halts again', async () => {
+    const live = await lockedRun();
+    const adopted = seated(SEED);
+    await bootFromStore(adopted, live.store, {
+      seed: SEED,
+      checkpoint: { requiredTables: registeredTables(adopted) },
+    });
+    // Exactly what an unregistered obligation book looked like from here: the locks
+    // restored, the obligations gone. If INV-4 does not halt on this, the check that
+    // this whole capture exists to satisfy has stopped biting.
+    adopted.obligations.restore({ live: [], secured: [] });
     const report = adopted.runTick();
     expect(report.halted).toBe(true);
     expect(report.violations.map((v) => v.id)).toContain('INV-4');
-    // A HALT, not a wrong number. If this ever becomes a clean tick with the
-    // obligation book still empty, INV-4 stopped checking and A5′ lost its guard.
     expect(report.violations.map((v) => v.message).join(' ')).toMatch(/dead obligation/);
   }, 120_000);
 });

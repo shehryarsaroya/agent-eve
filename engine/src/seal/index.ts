@@ -56,6 +56,7 @@ export {
   SealBook,
   allDeedsWitness,
   roleKey,
+  sealsStateTable,
   type DeedSetWitness,
   type DeedTally,
   type SealAccepted,

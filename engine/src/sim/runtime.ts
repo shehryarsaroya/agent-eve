@@ -77,7 +77,7 @@ import type {
   ZoneTier,
 } from '../core/types.js';
 import { bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
-import { EventLedger, type NewEvent } from '../events/index.js';
+import { EventLedger, eventsStateTable, type NewEvent } from '../events/index.js';
 import {
   CURRENCY_FAUCET,
   DEFAULT_VALUATION_RULE,
@@ -94,6 +94,8 @@ import {
   ledgerStateTable,
   valueGood,
   type LotId,
+  type ObligationCapture,
+  type ObligationRef,
   type Valuation,
 } from '../ledger/index.js';
 // ── THE LEVY (SPEC §5.2) ─────────────────────────────────────────────────────
@@ -133,6 +135,7 @@ import {
 import {
   DefaultRegister,
   HaltController,
+  attributionStateTable,
   type InvariantInputs,
 } from '../invariants/index.js';
 import {
@@ -166,6 +169,7 @@ import type { LevyBlock } from '../observe/sources.js';
 import {
   SealBook,
   cmpDeeds,
+  sealsStateTable,
   type Deed,
   type SealMeasure,
   type SealRoleRef,
@@ -174,6 +178,7 @@ import {
 import {
   Engine,
   EngineError,
+  MAX_BUFFERED_EVENTS,
   MAX_QUEUED_PER_PRINCIPAL,
   tickInputsFor,
   type ActionRequest,
@@ -367,8 +372,40 @@ import {
  * one unit of simultaneous presence* (§3). A replay of any journalled tick in which a
  * joiner's hand had left the stage now computes a different verdict, which is exactly
  * what this constant is for.
+ *
+ * ## 4 → 5 (2026-07-26)
+ *
+ * **Seven books entered the hashed capture, and the record moved inside the hash that
+ * covers it.** Five were the named ones — `StandingBook` (A10 reputation), the
+ * `SealBook`, the obligation book INV-4 checks every lock against, the `EventLedger`,
+ * and the attribution register — and two more (`mint`, `delivery`) were found by the
+ * equivalence test once those five were in. All of them were in no state table, so
+ * `state_hash` could not see them: an adopted checkpoint reproduced the hash *to the
+ * byte* while the cast's `electiveHonoured` went `4, 6, 2, 4, …` → all zeros. This is
+ * the third instance of the shape (money, then the `EncumbranceBook`, now standing),
+ * and the one A5′ and A10 are actually about.
+ *
+ * Two changes here move the hash, and either would be enough on its own:
+ *
+ *   1. **New tables.** A table added to the capture changes `state_hash` at *every*
+ *      tick, including ticks already journalled.
+ *   2. **The record is written in DERIVE, not COMMIT.** With the `event` table in the
+ *      hash, a row appended after the capture is a row outside the hash that claims to
+ *      cover it — and the next tick's abort, which restores that snapshot, would
+ *      truncate away rows this tick legitimately published. So the flush moved one
+ *      phase earlier, into the slot immediately before `captureSnapshot`. The order of
+ *      the rows did not change (DERIVE runs after OBLIGE, and nothing appends between
+ *      DERIVE and COMMIT), but the tick at which the record's own counts enter the
+ *      hash did.
+ *
+ * The live world therefore needs the operator divergence door
+ * (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the next deploy, exactly as it did at the
+ * 1 → 2 boundary: boot will replay the journal, find the first tick whose recomputed
+ * hash differs, and hold — which is the correct behaviour and the reason the door
+ * exists. Crossing it deliberately is a record an auditor can read; crossing it by
+ * pretending nothing moved is not.
  */
-export const RULES_VERSION = 4;
+export const RULES_VERSION = 5;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
@@ -1151,10 +1188,33 @@ export class Runtime {
   readonly ledger: Ledger;
   readonly events = new EventLedger();
   readonly seals: SealBook;
-  /** INV-17's index. The only door through which a default may be recorded. */
-  readonly register = new DefaultRegister();
+  /**
+   * INV-17's index, behind a getter because the rollback **replaces** it — the same
+   * shape as `ventureBook` and `grantBook`, and for the same reason: the register has
+   * no removal door and must not grow one, so undoing an aborted tick's attribution
+   * means restoring into a fresh register.
+   */
+  private registerRef = new DefaultRegister();
   /** The only writer of standing (§6.4, INV-21). */
   readonly standing = new StandingBook();
+  /**
+   * This tick's rows on their way to the record, flushed in `DERIVE`.
+   *
+   * **Why the runtime holds this rather than the engine.** `Engine` buffers `ctx.emit`
+   * and flushes at COMMIT, which is *after* DERIVE — and DERIVE is where `state_hash`
+   * is taken. With the record inside the hash that ordering is unusable: the snapshot
+   * for tick T would describe a ledger the world no longer holds by the end of T, and
+   * the abort at T+1 (which restores T's snapshot) would truncate away rows tick T had
+   * legitimately published. So every row this runtime writes goes into the record
+   * *before* the hash that claims to cover it, in the same slot and the same order it
+   * used to reach the ledger in — DERIVE runs after OBLIGE and nothing between DERIVE
+   * and COMMIT appends.
+   *
+   * Nothing is published earlier as a result: an aborted tick's rows are removed by
+   * the `event` table's restore, which is the same inverse `ledgerStateTable` uses for
+   * the posting log. Bounded by {@link MAX_BUFFERED_RECORD_ROWS} (INV-26).
+   */
+  private readonly pendingRecord: NewEvent[] = [];
   /** INV-4's input: which obligations may still hold a lock. */
   readonly obligations = new SimpleObligationBook();
   readonly engine: Engine;
@@ -1395,6 +1455,111 @@ export class Runtime {
             this.raidBookRef = book;
           },
         ),
+        // ══════════════════════════════════════════════════════════════════════
+        // THE FIVE BOOKS THAT WERE IN NO TABLE.
+        //
+        // A snapshot carries the state tables and `state_hash` hashes exactly those,
+        // so a book outside them is **neither carried nor missed**. Measured on a
+        // 600-tick run adopting the checkpoint at tick 575: the adopted world's hash
+        // equalled the genesis-replayed hash to the byte and every balance agreed,
+        // while the cast's `electiveHonoured` went 4, 6, 2, 4 … → all zeros. A wrong
+        // boot that passes its own integrity check is worse than a slow one.
+        //
+        // This is the third instance of the shape. Money was outside the hash; the
+        // `EncumbranceBook` was outside it, so no snapshot carried an open lock and
+        // escrowed stake was silently spendable; now the record of who kept their
+        // word. Each of the five below is registered with a restore, because a
+        // hash-only table attests to a book without being able to put it back — which
+        // is exactly the shape that lets an adoption look verified while dropping the
+        // contents (`missingCheckpointTables` counts one as missing).
+        // ══════════════════════════════════════════════════════════════════════
+        //
+        // A10 and A5: the permanent public record of promises kept and broken. This
+        // one is the reason the other four are here — reputation resetting silently
+        // is the exact thing A10 says never happens.
+        {
+          name: 'standing',
+          capture: () => this.standing.capture(),
+          restore: (captured) => {
+            this.standing.restore(captured);
+          },
+        },
+        // §11 and §14: sealed intentions and their verdicts. Two worlds that disagree
+        // about what an agent promised must never hash the same, and an aborted tick
+        // must not keep the seal it accepted.
+        sealsStateTable(() => this.seals),
+        // INV-4's input. An empty obligation book turns every open encumbrance into an
+        // orphan lock and halts the first tick after boot — so this book being outside
+        // the snapshot was not only a hash gap, it was the reason an adopted world
+        // stopped.
+        {
+          name: 'obligation',
+          capture: () => this.obligations.capture(),
+          restore: (captured) => {
+            this.obligations.restore(readObligationCapture(captured));
+          },
+        },
+        // The append-only public record. Counts, not contents — the same treatment
+        // and the same argument as `ledgerStateTable`'s `postingCount`: the rows are
+        // immutable, truncation to a captured length is an exact inverse, and
+        // re-listing a season of payloads in every snapshot would make the hash input
+        // grow without bound while attesting to nothing the counts do not pin.
+        //
+        // The restore also drops anything this tick had queued for the record, which
+        // is the half a truncation alone cannot do: an aborted tick's drafts have not
+        // reached the ledger yet, and leaving them in the queue would publish them
+        // into the *next* tick, at a tick number the ledger's watermark refuses.
+        withRecordQueueCleared(eventsStateTable(() => this.events), () => {
+          this.pendingRecord.length = 0;
+        }),
+        // INV-17's register: the evidence behind every accusation. A world that lost
+        // it would find every published default unattributed (A5′, the top
+        // engineering risk), and a world that kept an aborted tick's attribution would
+        // hold evidence for an event nobody published.
+        attributionStateTable(
+          () => this.register,
+          (restored) => {
+            this.registerRef = restored;
+          },
+        ),
+        // ── AND TWO THE EQUIVALENCE TEST FOUND, WHICH NOBODY HAD NAMED ────────
+        //
+        // Registering the five books above made adopt-plus-tail reproduce the
+        // checkpoint exactly and then diverge on the FIRST tick after it — in
+        // `ledger` and `venture`, over an id. These two are why, and they are here
+        // because the measurement said so rather than because a list did. That is
+        // also the honest reading of `CHECKPOINT_REQUIRED_TABLES`'s own warning that
+        // a hand-maintained manifest under-reports by construction.
+        {
+          // The id minters. `v:576:485d0ad6` vs `v:576:44358a2f` — same tick, same
+          // creator, different stamp, because the stamp hashes an ordinal that an
+          // adopted world restarts from zero. Two ids for one thing is the whole
+          // failure: escrow accounts, `terms_hash`, every posting and every event
+          // family carry the id, so a world that re-mints them is a world whose
+          // permanent record names ventures that never existed. `hydrate.ts` named
+          // the grant half of this as a known gap; the venture half was unnamed.
+          name: 'mint',
+          capture: () => ({ venture: this.ventureCounter, grant: this.grantCounter }),
+          restore: (captured) => {
+            const root = snapObject(captured, 'mint');
+            this.ventureCounter = snapInt(root, 'venture', 'mint');
+            this.grantCounter = snapInt(root, 'grant', 'mint');
+          },
+        },
+        {
+          // Deliveries: the deed set's only source, and the pinned pot a deferral's
+          // second pass divides (§15.3). Losing it is two failures at once — a
+          // Reckoning whose deed set is empty defers every seal and marks nobody, and
+          // a deferred venture re-quotes proceeds that `guardProgressFitsClaims`
+          // correctly halts on.
+          name: 'delivery',
+          capture: () => deliveryCapture(this.deliveries),
+          restore: (captured) => {
+            const rows = readDeliveryCapture(captured);
+            this.deliveries.clear();
+            for (const row of rows) this.deliveries.set(row.venture, row);
+          },
+        },
       ],
       verbs: this.verbTable(),
       // §17 and agent.md: "one seal per role you hold is free and costs no action".
@@ -1415,12 +1580,21 @@ export class Runtime {
       // agent-reachable halt (AGT-X9). See `STEP_BUDGET.perRestingOrder`.
       restingOrders: () => this.marketBook.countOpen(),
       obligations: this.obligationSource(),
-      // Buffered until COMMIT and appended here, so nothing an observer can read moves
-      // until the tick is checked. The settlement's own receipts are the deliberate
-      // exception: they are appended inside the batch, which is what makes the batch
-      // one transaction with its own ASSERT (see `settleNow`).
+      // ── THE COMMIT SINK IS A TRIPWIRE NOW, NOT THE WRITER ──────────────────
+      //
+      // Every row this runtime writes goes through `emitRow` and reaches the record in
+      // DERIVE, inside the `state_hash` that covers it. Nothing calls `ctx.emit` any
+      // more, so this sink should never fire; if it does, a new call site is emitting
+      // through the engine's buffer and its rows would land *after* the hash — the
+      // exact ordering that makes the record unrestorable. Reported rather than
+      // appended, because appending here would put the ledger out of step with the
+      // snapshot and the next abort would truncate a published row.
       events: (drafts, tick) => {
-        this.recordEvents(drafts, tick);
+        this.faults.push(
+          `${String(drafts.length)} row(s) reached the COMMIT sink at tick ${String(tick)} ` +
+            `(${drafts.map((d) => d.kind).join(', ')}); the record is written in DERIVE and a row ` +
+            'emitted through the engine buffer would land outside the hash that claims to cover it',
+        );
       },
       handlers: {
         // ── MARKETS, and the slot is the rule ──────────────────────────────
@@ -1468,6 +1642,18 @@ export class Runtime {
           // pause a healthy world on the one tick that has an audience (A14).
           this.assessLevyNow(ctx);
           this.settleLevyNow(ctx);
+        },
+        // ── DERIVE, and the slot is the rule ────────────────────────────────
+        //
+        // The record is written here, in the phase whose handler runs immediately
+        // before `captureSnapshot`. That is not a convenience: with the `event` table
+        // in `state_hash`, a row appended after the capture is a row outside the hash
+        // that claims to cover it, and the snapshot would describe a ledger the world
+        // stops holding one phase later. `test/tick/determinism.test.ts` states the
+        // general rule ("nothing written after DERIVE is inside the hash it claims to
+        // be in"); this is that rule obeyed rather than worked around.
+        DERIVE: (ctx) => {
+          this.flushRecord(ctx.tick);
         },
       },
       assertions: [
@@ -1543,6 +1729,17 @@ export class Runtime {
   /** The venture book. Never held across a tick boundary: the rollback replaces it. */
   get ventures(): VentureBook {
     return this.ventureBook;
+  }
+
+  /**
+   * INV-17's register. Never held across a tick boundary: the rollback replaces it.
+   *
+   * Read through the accessor for the same reason the venture and grant books are: an
+   * aborted tick's attribution must not survive, and the only way to remove one from a
+   * register whose single door is `attribute` is to restore into a fresh register.
+   */
+  get register(): DefaultRegister {
+    return this.registerRef;
   }
 
   /** The grant book (A6). Never held across a tick boundary: the rollback replaces it. */
@@ -1796,7 +1993,7 @@ export class Runtime {
     });
 
     for (const raid of report.spawned) {
-      ctx.emit({
+      this.emitRow({
         tick: ctx.tick,
         kind: 'raid.spawned',
         rulesVersion: RULES_VERSION,
@@ -1842,7 +2039,7 @@ export class Runtime {
 
   /** The resolution receipt. `PUBLIC`, and it is never a default (A5′). */
   private emitRaidResolved(ctx: PhaseContext, outcome: RaidOutcome): void {
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'raid.resolved',
       rulesVersion: RULES_VERSION,
@@ -2062,7 +2259,7 @@ export class Runtime {
       return reject('INV-26', describeError(error));
     }
 
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'raid.joined',
       rulesVersion: RULES_VERSION,
@@ -2160,7 +2357,7 @@ export class Runtime {
     raid: RaidId,
     answer: string,
   ): void {
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'raid.answered',
       rulesVersion: RULES_VERSION,
@@ -3053,7 +3250,7 @@ export class Runtime {
     }
 
     this.ventures.add(made.value);
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'venture.formed',
       rulesVersion: RULES_VERSION,
@@ -3488,7 +3685,7 @@ export class Runtime {
       revokedAtTick: null,
     };
     this.grantBook.add(grant);
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'grant.issued',
       rulesVersion: RULES_VERSION,
@@ -3540,7 +3737,7 @@ export class Runtime {
     // Idempotent: a second revoke is accepted (§8.1 #6) but does not re-post — the record
     // already carries the revocation, and a second identical row would be noise.
     if (alreadyRevoked) return { ok: true, value: null };
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'grant.revoked',
       rulesVersion: RULES_VERSION,
@@ -4177,7 +4374,7 @@ export class Runtime {
     if (report.skipped) return;
 
     for (const fill of report.fills) {
-      ctx.emit({
+      this.emitRow({
         tick: ctx.tick,
         kind: 'market.filled',
         rulesVersion: RULES_VERSION,
@@ -4208,7 +4405,7 @@ export class Runtime {
     }
 
     for (const closed of report.closed) {
-      ctx.emit({
+      this.emitRow({
         tick: ctx.tick,
         kind: 'market.order_closed',
         rulesVersion: RULES_VERSION,
@@ -4314,7 +4511,7 @@ export class Runtime {
     state: string,
     decisionSource: DecisionSource,
   ): void {
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: state === 'OPEN' ? 'market.order_placed' : 'market.order_cancelled',
       rulesVersion: RULES_VERSION,
@@ -4633,7 +4830,7 @@ export class Runtime {
     ctx.step(assessed.plans.length + assessed.tallies.length);
 
     for (const plan of assessed.plans) {
-      ctx.emit({
+      this.emitRow({
         tick: ctx.tick,
         kind: 'levy.assessed',
         rulesVersion: RULES_VERSION,
@@ -4666,7 +4863,7 @@ export class Runtime {
     // nothing. Published because Law 2 asks for a *named* loss by the group's action, and
     // a loss nobody can name is not one.
     for (const loser of assessed.losers) {
-      ctx.emit({
+      this.emitRow({
         tick: ctx.tick,
         kind: 'levy.borne',
         rulesVersion: RULES_VERSION,
@@ -4727,7 +4924,7 @@ export class Runtime {
 
     for (const row of settlement.shortfalls) {
       if (row.owed <= 0) continue;
-      ctx.emit({
+      this.emitRow({
         tick: ctx.tick,
         kind: 'levy.short',
         rulesVersion: RULES_VERSION,
@@ -4763,7 +4960,7 @@ export class Runtime {
     }
 
     for (const principal of settlement.demoted) {
-      ctx.emit({
+      this.emitRow({
         tick: ctx.tick,
         kind: 'levy.capacity',
         rulesVersion: RULES_VERSION,
@@ -4989,7 +5186,7 @@ export class Runtime {
     this.levy.credit(reckoning, payer, minor(moved), byOwnHand);
 
     const carrier = carrierAt(this.world, req.principal, place, ctx.tick);
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'levy.delivered',
       rulesVersion: RULES_VERSION,
@@ -5066,7 +5263,7 @@ export class Runtime {
     } catch (error: unknown) {
       return reject('INV-26', describeError(error));
     }
-    ctx.emit({
+    this.emitRow({
       tick: ctx.tick,
       kind: 'levy.voted',
       rulesVersion: RULES_VERSION,
@@ -5494,14 +5691,43 @@ export class Runtime {
   // ── The record ────────────────────────────────────────────────────────────
 
   /**
-   * Append this tick's buffered events at COMMIT.
+   * Queue one row for the record. The runtime's replacement for `ctx.emit`.
    *
-   * Never throws. COMMIT runs *after* ASSERT — the tick is already published by the time
-   * this is called — so a throw here would take down a tick that had passed every check,
-   * and there is nothing left to abort. A refused row is an operator's alarm, bounded,
-   * and reported.
+   * Same contract as the engine's buffer — bounded by the same published cap, dropped
+   * wholesale if the tick aborts — and one difference that is the whole point of it:
+   * these rows reach the ledger in `DERIVE`, *inside* the `state_hash` that claims to
+   * cover them, rather than at COMMIT after it. See {@link Runtime.pendingRecord}.
    */
-  private recordEvents(drafts: readonly NewEvent[], tick: number): void {
+  private emitRow(draft: NewEvent): void {
+    if (this.pendingRecord.length >= MAX_BUFFERED_EVENTS) {
+      // The same refusal the engine's `emit` makes, in the same words and against the
+      // same number: INV-26 bounds every array, and one home for the cap.
+      throw new EngineError(
+        `a tick may buffer at most ${String(MAX_BUFFERED_EVENTS)} events (INV-26)`,
+      );
+    }
+    this.pendingRecord.push(draft);
+  }
+
+  /**
+   * Append this tick's queued rows to the record, in `DERIVE`.
+   *
+   * **Before the hash, not after it.** This used to run from the engine's COMMIT sink,
+   * which was correct while the record was outside `state_hash` and is unusable now
+   * that it is inside: the snapshot taken at DERIVE would have described a ledger the
+   * world no longer held by the end of the tick, and the next tick's abort — which
+   * restores that snapshot — would have truncated away rows this tick published. The
+   * slot moved; the order did not. DERIVE runs after OBLIGE, so the settlement's own
+   * receipts still get the lower sequence numbers they have always had.
+   *
+   * Never throws. A refused row is an operator's alarm, bounded and printed, because
+   * halting the world over one malformed row would cost more than the row does — and
+   * the rows that matter (settlement receipts, deeds) are appended directly by the
+   * batch, which does halt.
+   */
+  private flushRecord(tick: number): void {
+    const drafts = [...this.pendingRecord];
+    this.pendingRecord.length = 0;
     for (const draft of drafts) {
       try {
         this.events.append(draft);
@@ -5718,6 +5944,93 @@ export function electionsStateTable(
       write(restored);
     },
   };
+}
+
+/**
+ * The `event` table, plus the half a truncation alone cannot do.
+ *
+ * Restoring the record puts back the rows the ledger holds; it says nothing about the
+ * rows this tick had *queued* for it. An aborted tick's queue must go too, or those
+ * drafts are appended by the next tick's DERIVE carrying the old tick number — which
+ * the ledger's watermark then refuses, one operator fault per row, for a tick nobody
+ * published.
+ */
+function withRecordQueueCleared(table: StateTable, clear: () => void): StateTable {
+  if (table.restore === undefined) {
+    // Unreachable: `eventsStateTable` always supplies one. Checked rather than
+    // `?.`-ed, because a silently un-restorable record is exactly the shape
+    // `missingCheckpointTables` exists to refuse.
+    throw new EngineError('the event state table must be restorable');
+  }
+  return {
+    name: table.name,
+    capture: () => table.capture(),
+    restore: (captured: CanonicalValue): void => {
+      clear();
+      // Read off `table` at call time rather than destructured above: a bare method
+      // reference would be an unbound `this`, and `eventsStateTable`'s restore is a
+      // closure today but need not stay one.
+      table.restore?.(captured);
+    },
+  };
+}
+
+/** Delivery records in venture order, so the capture cannot depend on write order. */
+function deliveryCapture(deliveries: ReadonlyMap<VentureId, DeliveryRecord>): CanonicalValue {
+  return [...deliveries.values()]
+    .sort((a, b) => compareIds(a.venture, b.venture))
+    .map((d) => ({
+      venture: d.venture,
+      tick: d.tick,
+      proceeds: d.proceeds,
+      stateVersion: d.stateVersion,
+      eventId: d.eventId,
+      // Order as written: `holders` is who was on the role when it delivered, and the
+      // settlement pays them in this order.
+      holders: [...d.holders],
+    }));
+}
+
+/** Read the delivery book's capture. Strictly: a lost pot is a re-quoted pot. */
+function readDeliveryCapture(captured: CanonicalValue): readonly DeliveryRecord[] {
+  return snapArray(captured, 'delivery').map((raw, i) => {
+    const where = `delivery[${String(i)}]`;
+    const o = snapObject(raw, where);
+    return {
+      venture: snapString(o, 'venture', where) as VentureId,
+      tick: snapInt(o, 'tick', where),
+      proceeds: minor(snapInt(o, 'proceeds', where)),
+      stateVersion: snapInt(o, 'stateVersion', where),
+      eventId: snapString(o, 'eventId', where) as EventId,
+      holders: snapArray(o['holders'] ?? [], `${where}.holders`).map((h, j) => {
+        if (typeof h !== 'string' || h.length === 0) {
+          throw new EngineError(`${where}.holders[${String(j)}]: expected a principal id`);
+        }
+        return h as PrincipalId;
+      }),
+    };
+  });
+}
+
+/**
+ * Read the obligation book's capture. Strictly, and both sets.
+ *
+ * INV-4 checks every open lock against a live obligation, so a book that came back
+ * short turns legitimate escrow into an orphan lock and halts the first tick after
+ * boot; a book that came back long keeps an obligation alive that the world has
+ * settled. Neither is a state a caller can recover from, so a capture this reader
+ * cannot account for is a refusal naming the row it choked on.
+ */
+export function readObligationCapture(captured: CanonicalValue): ObligationCapture {
+  const root = snapObject(captured, 'obligation');
+  const refs = (key: string): readonly ObligationRef[] =>
+    snapArray(root[key] ?? [], `obligation.${key}`).map((raw, i) => {
+      if (typeof raw !== 'string' || raw.length === 0) {
+        throw new EngineError(`obligation.${key}[${String(i)}]: expected a non-empty obligation id`);
+      }
+      return raw as ObligationRef;
+    });
+  return { live: refs('live'), secured: refs('secured') };
 }
 
 /**
