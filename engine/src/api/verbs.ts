@@ -121,7 +121,6 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   approve: 'step 9 (offices and grants)',
   revoke: 'step 9 (offices and grants)',
   audit: 'step 9 (offices and grants)',
-  trade: 'step 11 (markets)',
   demand: 'step 12 (predation)',
   yield: 'step 12 (predation)',
   flee: 'step 12 (predation)',

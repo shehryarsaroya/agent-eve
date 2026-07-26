@@ -339,11 +339,16 @@ describe('PROP-O7 — an illegal action is a correction, not an error', () => {
   it('a canon verb whose mechanic has not landed says so, and costs nothing', async () => {
     // The alternative is the tick loop's `unknownVerb` — "there is no such verb" —
     // which contradicts agent.md §7, the document the agent learned the game from.
+    //
+    // The verb was `trade` until the market landed and made it live. `haul` replaces it
+    // because the mechanism — a canon-but-unbuilt verb refused at the HTTP boundary,
+    // charging nothing — needs a verb that is genuinely still unbuilt to exercise it,
+    // and `haul` names the same build step so the assertion below is unchanged.
     const a = agent('ashlin');
     await enrol(h, a);
     const before = h.runtime.engine.budget.remaining(a.principalId as never);
     const res = await signed(h, a, 'POST', PATHS.act, {
-      actions: [{ verb: 'trade', params: {}, clientSequence: 1 }],
+      actions: [{ verb: 'haul', params: {}, clientSequence: 1 }],
     });
     expect(res.status).toBe(200);
     const outcome = res.json['outcome'] as Record<string, unknown>;
@@ -693,7 +698,7 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     const budgetBefore = h.runtime.engine.budget.remaining(a.principalId as never);
     for (let n = 0; n < 5; n += 1) {
       const res = await signed(h, a, 'POST', PATHS.act, {
-        actions: [{ verb: 'trade', params: {}, clientSequence: n }],
+        actions: [{ verb: 'haul', params: {}, clientSequence: n }],
       });
       const corrections = (res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<
         string,
@@ -728,7 +733,7 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     let served = 0;
     for (let n = 0; n < 3; n += 1) {
       const res = await signed(h, a, 'POST', PATHS.act, {
-        actions: [{ verb: 'trade', params: {}, clientSequence: n }],
+        actions: [{ verb: 'haul', params: {}, clientSequence: n }],
       });
       const c = ((res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<string, unknown>[])[0];
       if (c?.['nearest_legal'] !== null && c?.['nearest_legal'] !== undefined) served += 1;
@@ -746,7 +751,7 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     const a = agent('awake');
     await enrol(h, a);
     const res = await signed(h, a, 'POST', PATHS.act, {
-      actions: [{ verb: 'trade', params: {}, clientSequence: 1 }],
+      actions: [{ verb: 'haul', params: {}, clientSequence: 1 }],
     });
     const corrections = (res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<
       string,

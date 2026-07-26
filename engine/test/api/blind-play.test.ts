@@ -256,7 +256,10 @@ describe('AGT-S1 / §16 step 7 — the blind-play gate', () => {
     expect(Array.isArray(enrolled.json['liveVerbs'])).toBe(true);
     expect(Array.isArray(enrolled.json['notYetLive'])).toBe(true);
     expect(enrolled.json['liveVerbs']).toContain('create');
-    expect(enrolled.json['notYetLive']).toContain('trade');
+    // `trade` used to be the example here and is live as of the market build, so the
+    // assertion names one that is still unbuilt. The property under test is the gap
+    // being *reported*, not which verb happens to be in it.
+    expect(enrolled.json['notYetLive']).toContain('haul');
     // And it says how to sign, so §2 is actionable without a second document.
     const signing = enrolled.json['signing'] as Record<string, unknown>;
     expect(signing['algorithm']).toBe('ed25519');

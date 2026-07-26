@@ -1,0 +1,382 @@
+/**
+ * The `trade` verb's rules — place, modify, cancel.
+ *
+ * Every refusal here is a *sentence*, never an error: SPEC §12.2's "illegal actions
+ * never error: return the violated invariant, the changed fields, the nearest legal
+ * affordance". The hint names the exact shortfall — how much cash was free, how
+ * many units were sellable at that venue — because an agent can only correct the
+ * mistake it is told about, and a market is the surface where a vague refusal costs
+ * the most attempts.
+ *
+ * ## The order of the checks is the design
+ *
+ *   1. **Shape** — operation, venue, good, side, quantity, price, duration.
+ *   2. **Standing to trade there** — a hand present at the venue. §12.1 gives an
+ *      agent the *local* book, so an agent that could trade a book it has nobody
+ *      standing in would be acting on a `SENSED` fact from orbit.
+ *   3. **Self-cross** — one principal may never be both sides of a print.
+ *   4. **Caps** — the book's published ceilings.
+ *   5. **Escrow, last, and all-or-nothing.** Nothing has moved until here, so
+ *      every refusal above leaves the world exactly as it was.
+ *
+ * ## `modify` is cancel-and-replace, and it loses its place in the queue
+ *
+ * M4: "a price change or quantity increase is cancel-replace ... and loses age".
+ * Repricing therefore costs an action and costs seniority, which is what stops the
+ * continuous undercut war M11 describes — in an agent economy that war would be a
+ * contest in polling frequency, i.e. A4 violated through the order book.
+ */
+
+import type { GoodId, PrincipalId } from '../core/types.js';
+import { minor, qty, type Minor, type Qty } from '../core/units.js';
+import type { Ledger } from '../ledger/index.js';
+import { reject, type WorldResult } from '../world/result.js';
+import { isPresent } from '../world/hands.js';
+import { handsOf, type WorldState } from '../world/state.js';
+import { MarketBook, MAX_OPEN_ORDERS, MAX_OPEN_ORDERS_PER_PRINCIPAL } from './book.js';
+import {
+  crossPrice,
+  multiplyPrice,
+  orderIdFor,
+  remainingOf,
+  type Order,
+  type OrderId,
+  type Side,
+  type TimeInForce,
+  type VenueId,
+} from './order.js';
+import {
+  escrowGoods,
+  freeCash,
+  lockOrderCash,
+  releaseGoods,
+  releaseLock,
+  sellableGoods,
+} from './escrow.js';
+
+/** The three operations. Not a string union type: it is parsed, not declared. */
+export const TRADE_OPERATIONS: readonly string[] = ['place', 'modify', 'cancel'];
+
+/** The largest single order. Bounds `price x quantity` far inside the safe range. */
+export const MAX_ORDER_QTY = 1_000_000;
+/** The highest unit price an order may name. Same reason. */
+export const MAX_UNIT_PRICE = 1_000_000_000;
+/**
+ * The longest a resting order may live, in ticks. One Reckoning's worth
+ * *(calibrate)*: long enough that an offline agent's order survives the night it
+ * was placed for, short enough that the book cannot silently fill with the orders
+ * of principals that stopped playing.
+ */
+export const MAX_DURATION_TICKS = 288;
+
+export interface TradeRequest {
+  readonly operation: string;
+  readonly venue: VenueId | null;
+  readonly good: GoodId | null;
+  readonly side: Side | null;
+  readonly quantity: number | null;
+  readonly limitPrice: number | null;
+  readonly durationTicks: number | null;
+  readonly timeInForce: TimeInForce | null;
+  readonly order: OrderId | null;
+}
+
+export interface PlaceContext {
+  readonly book: MarketBook;
+  readonly ledger: Ledger;
+  readonly world: WorldState;
+  readonly principal: PrincipalId;
+  readonly tick: number;
+  /** The agent's own `client_sequence`. Mints the id; never orders it against others. */
+  readonly clientSequence: number;
+}
+
+/**
+ * Place an order, fully escrowed, or refuse.
+ *
+ * The returned order is already on the book and already escrowed. It is **not yet
+ * matchable** — it carries `placedTick = tick` and the matcher only looks at orders
+ * placed strictly earlier, which is §15.2's rule that a within-tick action never
+ * reacts to another within-tick action.
+ */
+export function placeOrder(ctx: PlaceContext, req: TradeRequest): WorldResult<Order> {
+  const shape = checkShape(req);
+  if (shape !== null) return shape;
+  // `checkShape` has established all five, but the compiler cannot see through it.
+  const venue = req.venue;
+  const good = req.good;
+  const side = req.side;
+  const amount = req.quantity;
+  const price = req.limitPrice;
+  if (venue === null || good === null || side === null || amount === null || price === null) {
+    return reject('A2', 'trade needs venue, good, side, quantity and limit_price.');
+  }
+
+  const standing = checkVenue(ctx, venue, good);
+  if (standing !== null) return standing;
+
+  const timeInForce: TimeInForce = req.timeInForce ?? 'GTC';
+  const durationTicks = timeInForce === 'IOC' ? 1 : (req.durationTicks ?? MAX_DURATION_TICKS);
+  if (!Number.isSafeInteger(durationTicks) || durationTicks < 1 || durationTicks > MAX_DURATION_TICKS) {
+    return reject(
+      'A2',
+      `duration_ticks must be 1..${String(MAX_DURATION_TICKS)} ticks, got ${String(req.durationTicks)}. ` +
+        'An IOC order ignores it: it gets exactly one matching pass.',
+    );
+  }
+
+  const selfCross = checkSelfCross(ctx, venue, good, side, minor(price));
+  if (selfCross !== null) return selfCross;
+
+  if (ctx.book.countOpen() >= MAX_OPEN_ORDERS) {
+    return reject(
+      'INV-26',
+      `the book is full at its published cap of ${String(MAX_OPEN_ORDERS)} open orders. Cancel one, or ` +
+        'trade at a venue with room.',
+    );
+  }
+  if (ctx.book.countOpenFor(ctx.principal) >= MAX_OPEN_ORDERS_PER_PRINCIPAL) {
+    return reject(
+      'INV-26',
+      `you already hold ${String(MAX_OPEN_ORDERS_PER_PRINCIPAL)} open orders, which is the cap. Cancel one ` +
+        'before placing another.',
+    );
+  }
+
+  const id = orderIdFor(ctx.principal, ctx.tick, ctx.clientSequence);
+  if (ctx.book.get(id) !== undefined) {
+    return reject(
+      'A2',
+      `you have already placed an order this tick under client_sequence ${String(ctx.clientSequence)}. ` +
+        'Give each action in a batch its own client_sequence.',
+    );
+  }
+
+  // ── escrow, and nothing has moved before this point ──────────────────────
+  const wanted = qty(amount);
+  const unitPrice = minor(price);
+  let encumbranceId: string | null = null;
+
+  if (side === 'BID') {
+    const required = multiplyPrice(unitPrice, wanted);
+    const free = freeCash(ctx.ledger, ctx.principal);
+    if (free < required) {
+      return reject(
+        'A7',
+        `a buy order escrows the maximum it could spend: ${String(wanted)} x ${String(unitPrice)} = ` +
+          `${String(required)}, and you have ${String(free)} free. An order that cannot be escrowed is ` +
+          'refused rather than half-placed — unescrowed depth is fake depth. Lower the quantity or the price.',
+      );
+    }
+    encumbranceId = lockOrderCash({
+      ledger: ctx.ledger,
+      principal: ctx.principal,
+      order: id,
+      amount: required,
+      tick: ctx.tick,
+    });
+    if (encumbranceId === null) {
+      return reject('A7', `the escrow of ${String(required)} could not be locked, so no order was placed.`);
+    }
+  } else {
+    const have = sellableGoods(ctx.ledger, ctx.principal, good, venue);
+    if (have < wanted) {
+      return reject(
+        'A7',
+        `a sell order escrows the goods: you asked to sell ${String(wanted)} of ${good} at ${venue} and hold ` +
+          `${String(have)} there that is neither pledged nor in transit. An order that cannot be escrowed is ` +
+          'refused rather than half-placed.',
+      );
+    }
+    const escrowed = escrowGoods({
+      ledger: ctx.ledger,
+      principal: ctx.principal,
+      good,
+      venue,
+      amount: wanted,
+      tick: ctx.tick,
+      order: id,
+    });
+    if (!escrowed) {
+      return reject('A7', `the ${String(wanted)} of ${good} could not be escrowed, so no order was placed.`);
+    }
+  }
+
+  const order: Order = {
+    id,
+    principal: ctx.principal,
+    venue,
+    good,
+    side,
+    limitPrice: unitPrice,
+    quantity: wanted,
+    filled: qty(0),
+    timeInForce,
+    placedTick: ctx.tick,
+    expiresTick: ctx.tick + durationTicks,
+    clientSequence: ctx.clientSequence,
+    state: 'OPEN',
+    encumbranceId,
+  };
+  try {
+    ctx.book.add(order);
+  } catch {
+    // The caps were checked above, so this is our bug. Undo the escrow rather than
+    // leave value locked behind an order that does not exist.
+    unwind(ctx, order);
+    return reject('INV-26', 'the book refused the order, so its escrow was released and nothing was placed.');
+  }
+  return { ok: true, value: order };
+}
+
+/**
+ * Cancel an open order and release **exactly** what it locked.
+ *
+ * A BID's lock is released whole; an ASK's remaining escrowed goods go back to
+ * STORES at the same venue. A partly-filled order returns only what is left — the
+ * filled part is already the counterparty's and was never this order's to give back.
+ */
+export function cancelOrder(ctx: PlaceContext, id: OrderId): WorldResult<Order> {
+  const order = ctx.book.get(id);
+  if (order === undefined) {
+    return reject(
+      'A2',
+      `there is no open order ${id}. An order that filled, expired or was already cancelled is gone from ` +
+        'the book; look in market.recent for what became of it.',
+    );
+  }
+  if (order.principal !== ctx.principal) {
+    return reject('A2', `order ${id} is not yours. You may only cancel your own orders.`);
+  }
+  if (order.state !== 'OPEN') {
+    return reject('A2', `order ${id} is already ${order.state.toLowerCase()}.`);
+  }
+  releaseEscrow(ctx.ledger, order, ctx.tick, `mkt.cancel:${order.id}`);
+  ctx.book.close(order.id, 'CANCELLED', ctx.tick);
+  return { ok: true, value: order };
+}
+
+/**
+ * Release whatever an order still holds. The single home of "give it back".
+ *
+ * Called by cancel, by expiry, by the self-cross backstop and by the fill path when
+ * an order closes — four callers, one rule, so a release can never be a different
+ * amount depending on which door closed the order.
+ */
+export function releaseEscrow(ledger: Ledger, order: Order, tick: number, label: string): void {
+  if (order.side === 'BID') {
+    releaseLock(ledger, order.encumbranceId, tick);
+    return;
+  }
+  const left = remainingOf(order);
+  if (left <= 0) return;
+  releaseGoods({
+    ledger,
+    principal: order.principal,
+    good: order.good,
+    venue: order.venue,
+    amount: left,
+    tick,
+    label,
+  });
+}
+
+function unwind(ctx: PlaceContext, order: Order): void {
+  releaseEscrow(ctx.ledger, order, ctx.tick, `mkt.unwind:${order.id}`);
+}
+
+// ── the checks ──────────────────────────────────────────────────────────────
+
+function checkShape(req: TradeRequest): WorldResult<Order> | null {
+  if (req.venue === null) {
+    return reject('A2', 'trade needs a venue: {"venue": "<system>"}. A book is location-bound.');
+  }
+  if (req.good === null) {
+    return reject('A2', 'trade needs a good: {"good": "<good id>"}.');
+  }
+  if (req.side === null) {
+    return reject('A2', 'trade needs a side: "BID" to buy or "ASK" to sell.');
+  }
+  if (req.quantity === null || req.quantity < 1 || req.quantity > MAX_ORDER_QTY) {
+    return reject(
+      'A2',
+      `quantity must be a whole number from 1 to ${String(MAX_ORDER_QTY)}, got ${String(req.quantity)}.`,
+    );
+  }
+  if (req.limitPrice === null || req.limitPrice < 1 || req.limitPrice > MAX_UNIT_PRICE) {
+    return reject(
+      'A2',
+      `limit_price is per unit, in minor units, and must be 1..${String(MAX_UNIT_PRICE)}, got ` +
+        `${String(req.limitPrice)}. There is no market order in this game: every order names its limit, ` +
+        'and an IOC limit order is the only way to take liquidity.',
+    );
+  }
+  return null;
+}
+
+function checkVenue(ctx: PlaceContext, venue: VenueId, good: GoodId): WorldResult<Order> | null {
+  if (!ctx.world.map.systems.has(venue)) {
+    return reject('A2', `there is no system ${venue}, so there is no book there.`);
+  }
+  const present = handsOf(ctx.world, ctx.principal).some(
+    (hand) => isPresent(hand, ctx.tick) && hand.location === venue,
+  );
+  if (!present) {
+    return reject(
+      'A2',
+      `you have no hand standing at ${venue}, and a book is local: §12.1 gives you the local book only, so ` +
+        'trading one you are not present at would be acting on a sensed fact from orbit. Move a hand there first.',
+    );
+  }
+  if (!ctx.ledger.goodsSupply().has(good)) {
+    return reject(
+      'A2',
+      `nothing called ${good} has ever been produced, so there is no book for it. Trade a good that exists.`,
+    );
+  }
+  return null;
+}
+
+/**
+ * One principal may never be both sides of a print.
+ *
+ * `ledger/valuation.ts` rejects self-matched prints from the mark and calls the
+ * attack the game's most dangerous exploit; this refuses to create one. Checked
+ * against the live book including orders placed this same tick, so the pass that
+ * runs next tick can never find a self-crossing pair.
+ */
+function checkSelfCross(
+  ctx: PlaceContext,
+  venue: VenueId,
+  good: GoodId,
+  side: Side,
+  limitPrice: Minor,
+): WorldResult<Order> | null {
+  for (const own of ctx.book.openForIn(ctx.principal, venue, good)) {
+    if (own.side === side) continue;
+    const crosses =
+      side === 'BID' ? limitPrice >= own.limitPrice : own.limitPrice >= limitPrice;
+    if (!crosses) continue;
+    return reject(
+      'A15',
+      `that order would trade against your own ${own.side.toLowerCase()} ${own.id} at ${String(own.limitPrice)}, ` +
+        'and one principal may never be both sides of a print — a self-match prints a price nobody paid. ' +
+        'Cancel that order first, or name a price that does not cross it.',
+    );
+  }
+  return null;
+}
+
+/** Would these two of one principal's orders cross? Exposed for the invariant. */
+export function selfCrossing(a: Order, b: Order): boolean {
+  if (a.principal !== b.principal || a.venue !== b.venue || a.good !== b.good) return false;
+  if (a.side === b.side) return false;
+  const bid = a.side === 'BID' ? a : b;
+  const ask = a.side === 'BID' ? b : a;
+  return crossPrice(bid, ask) !== null;
+}
+
+/** What a BID would need escrowed for a fresh order of this size. */
+export function escrowFor(side: Side, unitPrice: Minor, amount: Qty): Minor {
+  return side === 'BID' ? multiplyPrice(unitPrice, amount) : minor(0);
+}

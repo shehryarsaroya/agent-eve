@@ -91,7 +91,10 @@ import {
   principalPosition,
   storesAccount,
   ledgerStateTable,
+  valueGood,
   type LotId,
+  type ObligationBook,
+  type Valuation,
 } from '../ledger/index.js';
 // ── THE LEVY (SPEC §5.2) ─────────────────────────────────────────────────────
 //
@@ -233,11 +236,42 @@ import {
   type VentureRecord,
 } from '../venture/index.js';
 import { MAX_GRANT_SPENDS, GrantBook, grantsStateTable } from '../grant/index.js';
+// ── THE MARKET (SPEC §12.2 `trade`, PASS-ECONOMY-RISK-extended §4/M1) ────────
+//
+// Wired here for the same reason the Levy is: a book that exists in `src/market/`
+// and is not registered on the tick is a book nobody can trade on. Three
+// registrations make it real — the state table (so orders join `state_hash` and the
+// abort path), the `MARKETS` phase handler (so it clears inside the tick, in its
+// named slot, once), and the `trade` verb.
+import {
+  MarketBook,
+  TRADE_OPERATIONS,
+  booksFor,
+  cancelOrder,
+  checkMarketInvariants,
+  clearMarkets,
+  marketStateTable,
+  MARKET_FEES,
+  ownOrdersFor,
+  ownPrintsFor,
+  placeOrder,
+  publicBook,
+  recentPrints,
+  type ClearReport,
+  type Order,
+  type OrderId,
+  type PlaceContext,
+  type Side,
+  type TimeInForce,
+  type TradeRequest,
+  type VenueId,
+} from '../market/index.js';
 import type { Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
 import {
   createWorld,
   enroll,
   handsOf,
+  isPresent,
   launchMap,
   principalIsCommonsBound,
   reject,
@@ -251,6 +285,13 @@ import {
 
 /** The rules version every row this runtime writes is pinned to (INV-15). */
 export const RULES_VERSION = 1;
+
+/**
+ * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
+ * is declared here rather than imported, because that module imports *this* one and a
+ * cycle for one integer is not a trade worth making. INV-26: bounded, published.
+ */
+export const MAX_MARKET_ROWS = 24;
 
 /** The starter stake, in minor units. §12.5: "a bound starter stake". */
 export const STARTER_STAKE = minor(250_000);
@@ -1044,6 +1085,18 @@ export class Runtime {
   private grantBook = new GrantBook();
   private grantCounter = 0;
 
+  /**
+   * The order books, behind a getter because the rollback **replaces** the object.
+   *
+   * Same shape as `ventureBook`, `levyBookRef` and `grantBook`, and for the same
+   * reason: `marketStateTable.restore` builds a fresh `MarketBook`, so every reader
+   * has to go through the accessor or half the engine keeps trading on the pre-abort
+   * book.
+   */
+  private marketBook = new MarketBook();
+  /** What the last `MARKETS` phase did. Read by the event emitter and by tests. */
+  private lastClear: ClearReport | null = null;
+
   /** Resolution-time refusals awaiting delivery, per principal. See the type's note. */
   private readonly pendingCorrections = new Map<PrincipalId, Ring<PendingCorrection>>();
   private readonly talk = new Ring<TalkEntry>(MAX_TALK_ENTRIES);
@@ -1203,6 +1256,19 @@ export class Runtime {
             this.grantBook = book;
           },
         ),
+        // The order books. An order is a claim on value, so the same two arguments
+        // that put money and grants in here apply with more force: two worlds whose
+        // books disagree must never hash the same, and an aborted tick must leave no
+        // order, no fill and no escrow behind. That last clause is exactly the
+        // `EncumbranceBook` omission — the worst defect this engine has had — and the
+        // market is a strictly larger instance of it, because there are far more
+        // orders than there are ventures.
+        marketStateTable(
+          () => this.marketBook,
+          (book) => {
+            this.marketBook = book;
+          },
+        ),
       ],
       verbs: this.verbTable(),
       // §17 and agent.md: "one seal per role you hold is free and costs no action".
@@ -1226,6 +1292,16 @@ export class Runtime {
         this.recordEvents(drafts, tick);
       },
       handlers: {
+        // ── MARKETS, and the slot is the rule ──────────────────────────────
+        //
+        // §15.2 puts MARKETS after MOVE (so a hand that arrived this tick can trade
+        // where it arrived) and before PRODUCE (clear-before-produce; a job may not
+        // buy at market). The phase existed as an explicit no-op hook from commit #1
+        // precisely so filling it would not shift any other phase's seeded sub-stream
+        // — that promise is now being cashed, and no other phase moved.
+        MARKETS: (ctx) => {
+          this.clearMarketsNow(ctx);
+        },
         VENTURES: (ctx) => {
           this.resolveFills(ctx);
         },
@@ -1258,6 +1334,12 @@ export class Runtime {
         // A5′ for the Levy: a shortfall is an accusation, so it is held to INV-17's
         // standard — reproducible from the payment journal by a second road, or halt.
         (tick) => checkLevyAttribution(this.levy, reckoningOf(tick), tick),
+        // MKT-1..7. Not registry entries — see `market/invariants.ts` on why the 26
+        // stay 26 — but merged into the same ASSERT pass and halting on the same
+        // terms. MKT-4 is the one that matters most: it recomputes every fill from
+        // the posting log by a second road, so a torn fill aborts the tick instead of
+        // becoming a permanent lie about who paid whom.
+        (tick) => checkMarketInvariants({ book: this.marketBook, ledger: this.ledger, tick }),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     },
@@ -1354,7 +1436,7 @@ export class Runtime {
     const docket = roll.length === 0 ? undefined : docketRowsFor(this.levy, reckoning);
     return {
       ledger: this.ledger,
-      obligations: this.obligations,
+      obligations: this.liveObligations(),
       presence: this.world,
       roleFills: this.ventures.roleFills(),
       events: this.events,
@@ -1759,6 +1841,17 @@ export class Runtime {
       // the attempted revocation is itself what posts — better drama than either extreme.
       grant: (ctx, req) => this.committing(ctx) ?? this.vGrant(ctx, req),
       revoke: (ctx, req) => this.vRevoke(ctx, req),
+      // ── `trade` — §12.2's one market verb, now live ────────────────────────
+      //
+      // Behind `committing` for a reason that is not obvious and is load-bearing:
+      // `reckoning/driver.ts:VERIFY_INPUTS` re-reads every payer's **free balance**
+      // between the freeze and the settlement and halts on any difference in either
+      // direction. Placing a bid locks cash, cancelling releases it, and either would
+      // move that figure inside the window — pausing a healthy world on the one night
+      // that has an audience (A14), over a trade nobody did anything wrong in. The
+      // clearing pass is closed across the same window from the other side
+      // (`clear.ts` skips the settlement tick), so the door shuts on both hinges.
+      trade: (ctx, req) => this.committing(ctx) ?? this.vTrade(ctx, req),
     };
   }
 
@@ -3153,6 +3246,283 @@ export class Runtime {
     };
   }
 
+  /**
+   * INV-4's input, widened to know what a market order is.
+   *
+   * A market lock's `obligationRef` is an order id, so INV-4 — "every encumbrance
+   * references a live obligation" — has to be able to ask the book. Deriving the
+   * answer from the book rather than registering orders in `SimpleObligationBook` is
+   * deliberate: that book is **not** a state table, so an aborted tick would leave a
+   * registration behind for an order that no longer exists, and the leak would grow
+   * for the life of the world. The book *is* a state table, so asking it is
+   * rollback-correct for free — one home for "is this order live".
+   *
+   * `securedObligations()` is passed through untouched. Orders are deliberately not
+   * added to it: an ask escrows goods rather than currency, so "this obligation must
+   * be backed by an open encumbrance" would be false for half the book. The
+   * equivalent guarantee for bids is MKT-3, which checks exactly that and only for
+   * the side it is true of.
+   */
+  private liveObligations(): ObligationBook {
+    return {
+      isLive: (ref) => this.obligations.isLive(ref) || this.marketBook.isLive(String(ref)),
+      securedObligations: () => this.obligations.securedObligations(),
+    };
+  }
+
+  // ── the market (SPEC §12.2 `trade`) ───────────────────────────────────────
+
+  /** The order books. Read-only to everything outside this file. */
+  get market(): MarketBook {
+    return this.marketBook;
+  }
+
+  /** What the last clearing pass did, or `null` before the first one. */
+  get lastMarketClear(): ClearReport | null {
+    return this.lastClear;
+  }
+
+  /**
+   * The `MARKETS` phase: clear every book once, then publish what happened.
+   *
+   * Events are emitted here rather than inside `clear.ts` so that the market module
+   * never learns what a `NewEvent` is — the same separation that lets the tick loop
+   * stay content-free. Two kinds, at two tiers, and the split is §11.2's:
+   *
+   *   - `market.filled` is **PUBLIC**. A completed trade is durable economic history
+   *     (economy law 10), it is the print `ledger/valuation.ts` marks goods from, and
+   *     a price moving because a lane closed is the most legible thing this design
+   *     has (A13).
+   *   - `market.order_closed` is **PRIVATE** to its owner. Who owns which order is
+   *     never published: a resting ask is a hold value, and §11.2 keeps hold values
+   *     off any surface an ambusher can read without scouting.
+   */
+  private clearMarketsNow(ctx: PhaseContext): void {
+    const report = clearMarkets({
+      book: this.marketBook,
+      ledger: this.ledger,
+      tick: ctx.tick,
+      isSettlementTick: ctx.clock.isSettlementTick,
+      step: (n) => {
+        ctx.step(n);
+      },
+      fault: (message) => {
+        this.faults.push(message);
+      },
+    });
+    this.lastClear = report;
+    if (report.skipped) return;
+
+    for (const fill of report.fills) {
+      ctx.emit({
+        tick: ctx.tick,
+        kind: 'market.filled',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: null,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: `market::${fill.venue}::${fill.good}`,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        payload: {
+          venue: fill.venue,
+          good: fill.good,
+          unit_price: fill.unitPrice,
+          qty: fill.qty,
+          buyer: fill.buyer,
+          seller: fill.seller,
+        },
+        visibility: 'PUBLIC',
+        audience: [],
+      });
+      ctx.offerWake(fill.buyer, 'SETTLEMENT', fill.id);
+      ctx.offerWake(fill.seller, 'SETTLEMENT', fill.id);
+    }
+
+    for (const closed of report.closed) {
+      ctx.emit({
+        tick: ctx.tick,
+        kind: 'market.order_closed',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: closed.principal,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: `market::${closed.principal}`,
+        parentEventId: null,
+        isPublic: false,
+        publicAt: null,
+        declassifyAt: null,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        payload: {
+          order: closed.id,
+          venue: closed.venue,
+          good: closed.good,
+          side: closed.side,
+          limit_price: closed.limitPrice,
+          quantity: closed.quantity,
+          filled: closed.filled,
+          state: closed.state,
+        },
+        visibility: 'PRIVATE',
+        audience: [{ principal: closed.principal, basis: 'SELF' }],
+      });
+    }
+  }
+
+  /**
+   * `trade` — place, modify or cancel one order.
+   *
+   * `modify` is **cancel-and-replace** and it loses its place in the queue (M4). It
+   * is one action, not two, because charging twice for a reprice would make the
+   * cheapest strategy "cancel and hope", but the seniority it forfeits is real: a
+   * repriced order is a new order, so nobody can hold a queue position by editing it.
+   */
+  private vTrade(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const operation = (readString(req.params, ['operation', 'op']) ?? 'place').toLowerCase();
+    if (!TRADE_OPERATIONS.includes(operation)) {
+      return reject(
+        'A2',
+        `trade needs an operation: ${TRADE_OPERATIONS.join(' · ')}. Got "${operation}".`,
+      );
+    }
+    const place: PlaceContext = {
+      book: this.marketBook,
+      ledger: this.ledger,
+      world: this.world,
+      principal: req.principal,
+      tick: ctx.tick,
+      clientSequence: this.sequenceOf(ctx, req),
+    };
+
+    if (operation === 'cancel' || operation === 'modify') {
+      const id = readString(req.params, ['order', 'order_id', 'id']) as OrderId | null;
+      if (id === null) {
+        return reject('A2', `${operation} needs {"operation": "${operation}", "order": "<order id>"}.`);
+      }
+      const previous = this.marketBook.get(id);
+      const cancelled = cancelOrder(place, id);
+      if (!cancelled.ok) return cancelled;
+      this.emitOrderPlaced(ctx, cancelled.value, 'CANCELLED', req.decisionSource);
+      if (operation === 'cancel') return { ok: true, value: null };
+      // Cancel-replace: anything the agent did not restate is inherited from the
+      // order it replaced, so a price change does not silently reset the quantity.
+      const placed = placeOrder(place, tradeRequestOf(req.params, previous));
+      if (!placed.ok) return placed;
+      this.emitOrderPlaced(ctx, placed.value, 'OPEN', req.decisionSource);
+      return { ok: true, value: null };
+    }
+
+    const placed = placeOrder(place, tradeRequestOf(req.params, undefined));
+    if (!placed.ok) return placed;
+    this.emitOrderPlaced(ctx, placed.value, 'OPEN', req.decisionSource);
+    return { ok: true, value: null };
+  }
+
+  /**
+   * A principal's own receipt for its own order. **PRIVATE, audience of one.**
+   *
+   * §11.2's PRIVATE row is "the principal itself / never / never", which is exactly
+   * the promise: the aggregate book is the public price signal, and who placed what
+   * is not published now and does not declassify later. Publishing it would let a
+   * raider read a manifest off the depth ladder without ever scouting, which deletes
+   * the intel market and breaks A9.
+   */
+  private emitOrderPlaced(
+    ctx: PhaseContext,
+    order: Order,
+    state: string,
+    decisionSource: DecisionSource,
+  ): void {
+    ctx.emit({
+      tick: ctx.tick,
+      kind: state === 'OPEN' ? 'market.order_placed' : 'market.order_cancelled',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: order.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `market::${order.principal}`,
+      parentEventId: null,
+      isPublic: false,
+      publicAt: null,
+      declassifyAt: null,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource,
+      payload: {
+        order: order.id,
+        venue: order.venue,
+        good: order.good,
+        side: order.side,
+        limit_price: order.limitPrice,
+        quantity: order.quantity,
+        filled: order.filled,
+        time_in_force: order.timeInForce,
+        expires_tick: order.expiresTick,
+        state,
+      },
+      visibility: 'PRIVATE',
+      audience: [{ principal: order.principal, basis: 'SELF' }],
+    });
+  }
+
+  /**
+   * The `market` observation block, for one principal.
+   *
+   * Aggregate books for everywhere it has a hand, its own orders and its own recent
+   * prints, the published fee schedule, and the world ticker. Nothing here can name
+   * another principal's order — `booksFor` builds levels from quantities and counts,
+   * and `mine` is filtered to the reader before it leaves the market module.
+   */
+  marketView(principal: PrincipalId, tick: number): Readonly<Record<string, unknown>> {
+    const venues = new Set<SystemId>(
+      handsOf(this.world, principal)
+        .filter((hand) => isPresent(hand, tick))
+        .map((hand) => hand.location),
+    );
+    const books = booksFor(this.marketBook, principal, venues, tick);
+    return {
+      at: [...venues].sort(compareIds),
+      // Each book carries the **reference mark** beside its executable prices, and
+      // they are deliberately two different numbers (M3: "separate execution and
+      // valuation marks"). `best_ask` is what you can buy at right now; the mark is
+      // what the good is worth for a BOND, and it is `ledger/valuation.ts`'s windowed,
+      // related-party-filtered, haircut-aware median — never last-trade, which is
+      // launderable. Reused rather than reimplemented: two answers to "what is this
+      // worth" is the disagreement a thin book turns into custody of other people's
+      // assets (§10.3).
+      books: books.map((book) => ({ ...book, reference_mark: markOf(this.referenceMark(book.good, tick)) })),
+      mine: ownOrdersFor(this.marketBook, principal),
+      recent: ownPrintsFor(this.marketBook, principal, MAX_MARKET_ROWS),
+      ticker: recentPrints(this.marketBook, MAX_MARKET_ROWS),
+      fees: MARKET_FEES,
+    };
+  }
+
+  /**
+   * What a good is worth **as a bond**, as of a tick.
+   *
+   * One line, and it is the whole point: `valueGood` already implements the
+   * manipulation-resistant rule — a multi-tick window, a volume-weighted median
+   * rather than a mean, self-matches and related-party edges excluded, and a floor of
+   * independent volume below which the good is simply `UNPRICED` and worth nothing.
+   * The market's job is to supply the prints; it must never form a second opinion.
+   */
+  referenceMark(good: GoodId, tick: number): Valuation {
+    return valueGood(good, tick, this.marketBook.prints(), DEFAULT_VALUATION_RULE);
+  }
+
+  /** One book, for a viewer frame or a test. Aggregate only; no reader, no `mine`. */
+  publicBookAt(venue: VenueId, good: GoodId, tick: number): ReturnType<typeof publicBook> {
+    return publicBook(this.marketBook, venue, good, null, tick);
+  }
+
   /** The frozen set's members, or nothing. Canonical order comes from the freeze. */
   private settlementDue(tick: number): readonly string[] {
     if (!isSettlementTick(tick)) return [];
@@ -4461,9 +4831,79 @@ export function electionsStateTable(
   };
 }
 
+/**
+ * The publishable half of a valuation.
+ *
+ * `reason` is carried, always, and it is the field that matters: `THIN_BOOK` and
+ * `NO_INDEPENDENT_VOLUME` mean the good is worth **nothing** as a bond, and an agent
+ * that saw a null price without the reason would read it as "not loaded yet" rather
+ * than "this book cannot be trusted to price it". A2: genuine uncertainty stays
+ * uncertain *and sourced*.
+ */
+function markOf(v: Valuation): Readonly<Record<string, unknown>> {
+  return {
+    unit_price: v.markUnitPrice,
+    bondable_unit_price: v.bondableUnitPrice,
+    reason: v.reason,
+    window_ticks: v.rule.windowTicks,
+    independent_qty: v.independentQty,
+    independent_prints: v.independentPrints,
+    distinct_pairs: v.distinctPairs,
+    excluded_prints: v.excludedPrints,
+  };
+}
+
 /** The settlement tick at or after `tick`. Settlement is the last tick of a day. */
 export function nextSettlementAtOrAfter(tick: number): number {
   return tick + ticksUntilReckoning(tick) - 1;
+}
+
+/**
+ * Parse a `trade` payload, accepting the spellings the rest of the game already
+ * uses.
+ *
+ * The synonym list is not laxity — it is scar #1 avoidance. `observe/catalogue.ts`
+ * already offers a `trade` affordance shaped `{at, good, qty, unit_price, side:
+ * 'BUY'}`, `agent.md` and M1 both write `limit_price` and `location_id`, and the
+ * §12.2 signature says `venue`. A parser that accepted only one of those would make
+ * the server refuse the exact payload its own affordance handed the agent, which is
+ * the engine and the agent-facing text disagreeing about one word.
+ *
+ * `BUY`/`SELL` normalise to `BID`/`ASK` for the same reason and one more: `BID` and
+ * `ASK` are places on a book, `BUY` and `SELL` are what an agent means, and §3
+ * lets one concept have one name in the engine while the door stays wide.
+ *
+ * `previous` is the order a `modify` replaces; every field it does not restate is
+ * inherited, so changing a price cannot silently reset the quantity.
+ */
+function tradeRequestOf(
+  params: Readonly<Record<string, unknown>>,
+  previous: Order | undefined,
+): TradeRequest {
+  const rawSide = (readString(params, ['side']) ?? '').toUpperCase();
+  const side: Side | null =
+    rawSide === 'BID' || rawSide === 'BUY'
+      ? 'BID'
+      : rawSide === 'ASK' || rawSide === 'SELL'
+        ? 'ASK'
+        : (previous?.side ?? null);
+  const rawTif = (readString(params, ['time_in_force', 'timeInForce', 'tif']) ?? '').toUpperCase();
+  const timeInForce: TimeInForce | null =
+    rawTif === 'IOC' ? 'IOC' : rawTif === 'GTC' ? 'GTC' : (previous?.timeInForce ?? null);
+  return {
+    operation: 'place',
+    venue: (readString(params, ['venue', 'at', 'location', 'location_id', 'system']) ??
+      previous?.venue ??
+      null) as VenueId | null,
+    good: (readString(params, ['good', 'good_id', 'type_id', 'item']) ?? previous?.good ?? null) as GoodId | null,
+    side,
+    quantity: readInt(params, ['quantity', 'qty', 'amount']) ?? previous?.quantity ?? null,
+    limitPrice:
+      readInt(params, ['limit_price', 'limitPrice', 'unit_price', 'price']) ?? previous?.limitPrice ?? null,
+    durationTicks: readInt(params, ['duration_ticks', 'durationTicks']),
+    timeInForce,
+    order: readString(params, ['order', 'order_id']) as OrderId | null,
+  };
 }
 
 function readString(params: Readonly<Record<string, unknown>>, keys: readonly string[]): string | null {

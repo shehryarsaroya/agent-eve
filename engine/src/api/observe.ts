@@ -55,6 +55,7 @@ import {
 import type { Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
 import { storesAccount } from '../ledger/index.js';
+import { MAX_ORDER_QTY, sellableGoods, type PublicBook } from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
   escrowRequired,
@@ -212,11 +213,18 @@ export function buildObservation(input: ObserveInput): Observation {
 
   const solved = boardFor(runtime, principal, tick);
   const board = solved.rows;
+  // The market block is built ONCE and both published and used to price the `trade`
+  // affordances, for the same reason the board is: two solves would let
+  // `market.books[]` and the `trade` list disagree about a price, and an affordance
+  // quoting a price the payload does not show is the two-homes shape of scar #1 with
+  // money attached.
+  const market = runtime.marketView(principal, tick);
+  const books = (market['books'] ?? []) as readonly PublicBook[];
   // The **same rows** the payload publishes are the rows the affordances are built from.
   // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
   // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick, board, solved.dropped)
+    ? affordancesFor(runtime, principal, tick, board, solved.dropped, books)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
   const exposure = runtime.ledger.encumbrances.cachedExposure(principal);
@@ -369,12 +377,25 @@ export function buildObservation(input: ObserveInput): Observation {
         .map((g) => grantView(runtime, g, tick)),
     },
 
+    /**
+     * §12.1's `market` key, now carrying a real book.
+     *
+     * **The tier split, in one sentence** (§11.2, and `market/observe.ts` argues it
+     * at length): the aggregate ladder — best bid, best ask, spread, price levels,
+     * depth — is `PUBLIC`, because it is the price signal and the price signal is
+     * the show; **who owns which order is `PRIVATE`**, because a resting ask is a
+     * hold value and §11.2 keeps hold values off any surface an ambusher can read
+     * without scouting. `mine` is filtered to the reader inside the market module
+     * before it reaches here, and no level ever carries a principal.
+     *
+     * `system`, `best_bid`, `best_ask` and `depth` are kept at the top level as the
+     * local summary they always were — now sourced from the book at the reader's own
+     * holding instead of hard-coded nulls.
+     */
     market: {
-      /** Markets land at step 11. An empty book, and no invented spread. */
       system: holding.system,
-      best_bid: null,
-      best_ask: null,
-      depth: [],
+      ...localSummary(books, holding.system),
+      ...market,
       offers: runtime
         .publishedOffers()
         .slice(-MAX_LIST_ROWS)
@@ -480,6 +501,31 @@ interface AffordanceSet {
  * bites, what survives is what the agent most needs. Within a group, canonical id
  * order, so the list is byte-stable across two fetches in one tick.
  */
+/**
+ * The one-line local summary `market` has always carried: the book at the reader's
+ * own holding.
+ *
+ * Kept because it is the shape `agent.md` and every existing reader already know,
+ * and because a principal with one holding should not have to scan `books[]` to
+ * answer "what is it worth here". When more than one good trades at that system the
+ * summary names the first in canonical order and `books[]` carries them all — an
+ * ambiguity worth having, because the alternative is an eleventh top-level key and
+ * §17's budget is at ten.
+ */
+function localSummary(
+  books: readonly PublicBook[],
+  system: SystemId,
+): Readonly<Record<string, unknown>> {
+  const local = books.filter((b) => b.venue === system).sort((a, b) => cmp(a.good, b.good))[0];
+  if (local === undefined) return { best_bid: null, best_ask: null, spread: null, depth: [] };
+  return {
+    best_bid: local.best_bid,
+    best_ask: local.best_ask,
+    spread: local.spread,
+    depth: local.depth,
+  };
+}
+
 function affordancesFor(
   runtime: Runtime,
   principal: PrincipalId,
@@ -487,6 +533,8 @@ function affordancesFor(
   board: readonly BoardRow[],
   /** Eligible slots the board's own cap dropped. See {@link boardFor}. */
   boardDropped: number,
+  /** The same books the payload publishes, so a quote cannot disagree with the ladder. */
+  books: readonly PublicBook[],
 ): AffordanceSet {
   const eligible: Affordance[] = [];
   const world = runtime.world;
@@ -782,6 +830,82 @@ function affordancesFor(
           `R+${String(trip)} and it is PRESENT — able to fill a role, work or escort — on R+${String(trip + 1)}.`,
         expires_tick: tick + QUOTE_PIN_TICKS,
         quote_id: quoteId(principal, tick, 'move', { hand: hand.id, to: lane }),
+      });
+    }
+  }
+
+  // 6b. Trade the local book, both sides, and **only what is actually takeable**.
+  //
+  //     Every offer here is an `IOC` limit order, because IOC is the only market-take
+  //     primitive in this game (M1) and because an affordance is a *complete, copyable
+  //     act*: an agent that copies this gets the fill that is on the book now or gets
+  //     nothing, never an unintended resting order it has to remember to cancel.
+  //
+  //     Eligibility is affordability, exactly as it is for `create`. A bid is offered
+  //     only for a quantity the free stores can escrow in full, and an ask only for
+  //     goods the principal actually holds at that venue, unpledged and not in
+  //     transit — the same two doors `place.ts` refuses at. Offering more would be the
+  //     server telling an agent to do something and then declining (AGT-S2).
+  for (const book of books) {
+    const askLevel = book.levels.ask[0];
+    if (askLevel !== undefined && askLevel.price > 0) {
+      const affordable = Math.min(askLevel.qty, Math.floor(free / askLevel.price), MAX_ORDER_QTY);
+      if (affordable > 0) {
+        const spend = minor(affordable * askLevel.price);
+        eligible.push({
+          verb: 'trade',
+          params: {
+            operation: 'place',
+            venue: book.venue,
+            good: book.good,
+            side: 'BID',
+            quantity: affordable,
+            limit_price: askLevel.price,
+            time_in_force: 'IOC',
+          },
+          cost: 1,
+          // The whole escrow, stated as the worst case even though a fill can only be
+          // at this price or better and the remainder is released. Overstating a cost
+          // is the safe direction for PROP-O4; understating one is how A7's honesty
+          // guarantee stops meaning anything.
+          max_direct_loss: spend,
+          max_contingent_liability: minor(0),
+          what_it_forecloses:
+            `${String(spend)} of your free stores is escrowed the moment this is accepted and stays escrowed ` +
+            `until the next MARKETS phase. It buys at ${String(askLevel.price)} or better; anything unfilled ` +
+            'expires that same pass and the cash comes back. The goods land at ' +
+            `${book.venue} — a trade settles where it happened, and moving them is a separate journey.`,
+          expires_tick: tick + QUOTE_PIN_TICKS,
+          quote_id: quoteId(principal, tick, 'trade', { venue: book.venue, good: book.good, side: 'BID' }),
+        });
+      }
+    }
+    const bidLevel = book.levels.bid[0];
+    const holding = sellableGoods(runtime.ledger, principal, book.good, book.venue);
+    if (bidLevel !== undefined && holding > 0) {
+      const amount = Math.min(bidLevel.qty, holding, MAX_ORDER_QTY);
+      eligible.push({
+        verb: 'trade',
+        params: {
+          operation: 'place',
+          venue: book.venue,
+          good: book.good,
+          side: 'ASK',
+          quantity: amount,
+          limit_price: bidLevel.price,
+          time_in_force: 'IOC',
+        },
+        cost: 1,
+        // A sale escrows goods, not money, and it sells at its own limit or better —
+        // so nothing is at risk of being lost. What it forecloses is the goods.
+        max_direct_loss: minor(0),
+        max_contingent_liability: minor(0),
+        what_it_forecloses:
+          `${String(amount)} of ${book.good} leaves your stores into escrow immediately and cannot back ` +
+          'anything else — not a Levy delivery, not a second order — until this resolves. It sells at ' +
+          `${String(bidLevel.price)} or better; anything unfilled comes back on the same pass.`,
+        expires_tick: tick + QUOTE_PIN_TICKS,
+        quote_id: quoteId(principal, tick, 'trade', { venue: book.venue, good: book.good, side: 'ASK' }),
       });
     }
   }
