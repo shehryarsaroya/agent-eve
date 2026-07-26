@@ -221,6 +221,20 @@ Ruled out, each by measurement:
 4. **Lot-selection order in `burnAnchorGoods`.** `chargeGoodLotsAt` sorts by `compareIds(a.id, b.id)`
    — canonical, so the goods burned are the same in both runs.
 
+**A LOCALISATION ATTEMPT THAT FAILED, recorded so nobody repeats it.** I built a throwaway test to
+find the *first* divergent tick — live run recording a hash per tick, then a fresh runtime booted from
+the same store. It reported divergence at **tick 0**, before any WORKS existed, which would have meant
+the build was merely the detector rather than the cause. **That conclusion was false.** Re-running the
+same test with the heuristic change stashed produced the *identical* tick-0 mismatch and the identical
+hash with `first WORKS at tick never` — so the instrument was broken, not the engine. A live run that
+calls `bootFromStore` against an empty store and is then compared to a fresh boot is not a valid
+comparison the way I set it up.
+
+**The real signal remains `checkpoint-adoption-audit`**, which passes without the heuristic change and
+fails with it. That is the thing to reproduce. Do not use a hand-built per-tick comparison to localise
+it without first proving the harness reproduces a KNOWN-GOOD run — an instrument that reports
+divergence on an unmodified engine cannot tell you anything about a modified one.
+
 **The remaining suspect, and where to start:** `vBuildWorks` **re-validates on replay**. It calls
 `worksQuote` and gates on `affordable`, so any difference in free balance at that instant flips the
 gate — the build succeeds live and is *refused* during replay, which diverges everything after it.
