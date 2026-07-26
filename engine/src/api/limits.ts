@@ -155,7 +155,18 @@ export const RATE_LIMITS = {
    * permanent rows, and High Water's was unbounded. Tight on purpose, and the
    * seat cap (`seats.ts`) is the second, independent bound.
    */
-  enroll: { burst: 3, windowSeconds: 600 },
+  // Raised from 3 after a live playtest spent **54 minutes and four attempts** getting an
+  // identity. Shape refusals were already free — `meter` deliberately runs after
+  // validation — so that was not the cause. The cause is that a HANDLE COLLISION is
+  // charged, correctly, because trying handles is enumeration and a free path would hand
+  // an attacker the whole namespace. With a burst of three that meant three guesses per
+  // ten minutes, and there is no way to test a handle without spending one.
+  //
+  // Eight still bounds row creation hard, and the seat cap is a second independent bound.
+  // It buys a newcomer enough guesses to get in on its first sitting, which matters more
+  // than it sounds: enrolment is the first thing every agent meets, and A15 says the door
+  // must stay free — a door that takes an hour is a door priced in patience.
+  enroll: { burst: 8, windowSeconds: 600 },
   /** Reads are cheap and memoised per `(principal, tick)`; generous. */
   observe: { burst: 240, windowSeconds: 60 },
   /** Writes are bounded by the action budget anyway; this only protects the host. */
@@ -271,6 +282,7 @@ export class RateLimiter {
     existing.count += 1;
     return { allowed: true, retryAfterSeconds: 0, remaining: allowance.burst - existing.count };
   }
+
 
   /**
    * Drop windows that have rolled. Called on admission pressure rather than on a

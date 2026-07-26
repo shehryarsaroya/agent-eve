@@ -17,13 +17,17 @@ import { wallSeconds } from '../../src/identity/index.js';
 const NOW = wallSeconds(1000);
 
 describe('RateLimiter allowlist', () => {
-  it('an unlisted client is metered exactly as before — the enrol burst is 3', () => {
+  it('an unlisted client is metered exactly as before — the enrol burst is 8', () => {
     const rl = new RateLimiter();
     const ip = '2001:db8::stranger';
-    expect(rl.check('enroll', ip, NOW).allowed).toBe(true);
-    expect(rl.check('enroll', ip, NOW).allowed).toBe(true);
-    expect(rl.check('enroll', ip, NOW).allowed).toBe(true);
-    expect(rl.check('enroll', ip, NOW).allowed).toBe(false); // the 4th trips the burst
+    // Eight, raised from three after a playtest spent 54 minutes enrolling: a handle
+    // collision is charged (it is enumeration), so three guesses per ten minutes was not
+    // enough to get in on a first sitting. The bound is still hard and the seat cap is a
+    // second, independent one.
+    for (let i = 0; i < 8; i += 1) {
+      expect(rl.check('enroll', ip, NOW).allowed, `enrol #${String(i + 1)}`).toBe(true);
+    }
+    expect(rl.check('enroll', ip, NOW).allowed).toBe(false); // the 9th trips the burst
   });
 
   it('an allowlisted client is never metered, on any route, however many requests', () => {
@@ -43,17 +47,15 @@ describe('RateLimiter allowlist', () => {
   it('exempting one IP grants no exemption to any other (not a global weakening, scar #3)', () => {
     const rl = new RateLimiter(undefined, undefined, new Set(['1.2.3.4']));
     const other = '5.6.7.8';
-    expect(rl.check('enroll', other, NOW).allowed).toBe(true);
-    expect(rl.check('enroll', other, NOW).allowed).toBe(true);
-    expect(rl.check('enroll', other, NOW).allowed).toBe(true);
+    for (let i = 0; i < 8; i += 1) expect(rl.check('enroll', other, NOW).allowed).toBe(true);
     expect(rl.check('enroll', other, NOW).allowed).toBe(false); // metered normally
   });
 
   it('the default limiter has an empty allowlist, so production is unchanged', () => {
     const rl = new RateLimiter();
     const ip = '9.9.9.9';
-    // Four enrols: the fourth must be refused, proving nothing is silently exempt.
-    const verdicts = [0, 1, 2, 3].map(() => rl.check('enroll', ip, NOW).allowed);
-    expect(verdicts).toEqual([true, true, true, false]);
+    // Nine enrols: the ninth must be refused, proving nothing is silently exempt.
+    const verdicts = Array.from({ length: 9 }, () => rl.check('enroll', ip, NOW).allowed);
+    expect(verdicts).toEqual([true, true, true, true, true, true, true, true, false]);
   });
 });

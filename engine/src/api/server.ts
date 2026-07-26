@@ -420,7 +420,10 @@ export function createApp(options: ApiOptions): CreatedApp {
             WIRE_REASON.HANDLE_TAKEN,
             `the handle '${handle.value}' already belongs to a principal in this world — it is one of the ` +
               'named characters the house runs. A handle is a public name and an address, so it is never ' +
-              'reissued. Pick another one; nothing about it is competitive.',
+              'reissued. Pick another one — nothing about it is competitive — but know that this attempt ' +
+              'COST YOU A SLOT against the enrolment limit, because trying handles is enumeration and a ' +
+              'free path would hand over the whole namespace. Choose your next one deliberately rather ' +
+              'than sending a series of guesses.',
           ),
         );
       }
@@ -964,7 +967,10 @@ export function createApp(options: ApiOptions): CreatedApp {
           WIRE_REASON.RATE_LIMITED,
           `too many ${route} requests from ${ip}; retry in ${String(verdict.retryAfterSeconds)}s. ` +
             'This limit protects the host and is not a game rule: sending requests faster never helps you. ' +
-            'A request refused for a malformed field costs you nothing here, so fix it and resend at once.',
+            'A request refused for a MALFORMED FIELD costs you nothing — validation runs before this ' +
+            'check — so fix the shape and resend at once. A request that reached real state DID cost a ' +
+            'slot, including a handle that was already taken, because trying handles is enumeration. ' +
+            'So if you are here after a taken handle, waiting is the only thing that helps.',
         ),
       );
       return null;
