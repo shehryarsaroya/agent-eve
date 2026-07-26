@@ -252,9 +252,21 @@ selection is canonical, no gate flips, and the payload is no longer derived. Wha
 is the *ordering* surface: `clientSequence` in a live heuristic batch is the position in that batch
 (`out.length`), and the replay takes it from the action log — so a change to which members produce
 actions changes the sequence numbers a live run assigns, and the comparison is between two runs whose
-batches differ, not between a run and its own replay. **That is the next thing to test, and it may mean
-`checkpoint-adoption-audit` is comparing runs that were never meant to match.** Prove the harness
-reproduces an unmodified run first; see the warning above.
+batches differ, not between a run and its own replay. **Tested: it is NOT that.** The test has **no baked-in hashes** — `plainRun()` writes a snapshot every
+`SNAPSHOT_EVERY = 10` ticks from its own live run and the replay compares against those, so it is a run
+against its own replay and the divergence is **self-inconsistent**. That upgrades the finding from
+"possibly a fixture artifact" to **definitely a bug**.
+
+**And the test's own name points at the mechanism I had not considered: ADOPTION.** It does not replay
+from genesis. It adopts a snapshot near tick 300 and replays only the tail, so the question is not
+"does re-executing a build diverge" but **"does an ADOPTED snapshot restore everything the WORKS path
+then reads?"** A tail replayed onto a state that is missing something diverges at the first action that
+touches it — and a build is exactly such an action, which is why nothing noticed until bots built.
+
+That is where to start, and it is a much narrower question than any of the five already closed: adopt a
+snapshot from a world with a WORKS in it, then compare the adopted state field-by-field against the
+live state at the same tick. Do not compare hashes — hashes say *that* something differs, and this
+needs *what*.
 
 Reverted rather than shipped. A determinism failure is the one class in this codebase that must never
 be shipped on a guess, and `state_hash` divergence on a live world at ~4,500 ticks means a boot that
