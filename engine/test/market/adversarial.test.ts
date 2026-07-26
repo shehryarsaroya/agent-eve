@@ -30,7 +30,8 @@ import { storesAccount } from '../../src/ledger/index.js';
 import { checkMarketInvariants, marketEscrowAccount } from '../../src/market/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { commonsSystems } from '../../src/world/index.js';
-import { GOOD, permutations } from './fixture.js';
+import { GOOD, fundAboveEndowment, permutations } from './fixture.js';
+import { freeCash, sellableGoods } from '../../src/market/escrow.js';
 
 const CAST: readonly PrincipalId[] = ['p:v1', 'p:v2', 'p:v3', 'p:v4'] as unknown as readonly PrincipalId[];
 
@@ -42,6 +43,10 @@ function build(seed: string, cast: readonly PrincipalId[] = CAST): { runtime: Ru
   for (const p of cast) {
     runtime.seat(p, p.replace('p:', ''), venue);
     runtime.standing.open(p);
+    // D7: the starter stake is non-transferable, so a seated principal has zero trading
+    // capital by design. These are adversarial MARKET tests, so they need earned capital;
+    // `test/market/endowment.test.ts` is what asserts a fresh identity can commit nothing.
+    fundAboveEndowment(runtime, p, venue);
   }
   runtime.runTick();
   return { runtime, venue };
@@ -390,7 +395,11 @@ describe('a REFUSED modify changes nothing (SPEC §12.2)', () => {
     const w = build('modify-legal');
     const A = CAST[0] as PrincipalId;
     const free = w.runtime.ledger.freeBalance(storesAccount(A));
-    const price = Math.floor(free / 10);
+    // Price against what the MARKET will let this principal commit, not against the raw
+    // balance. D7 withholds the endowment from trading, so the two differ by the starter
+    // stake — and sizing an order from the raw balance now over-commits by exactly that.
+    const spendable = freeCash(w.runtime.ledger, A);
+    const price = Math.floor(spendable / 10);
     go(w.runtime, A, { operation: 'place', venue: w.venue, good: GOOD, side: 'BID', quantity: 10, limit_price: price });
     runOk(w.runtime, 'place');
     expect(w.runtime.ledger.freeBalance(storesAccount(A))).toBe(free - price * 10);
@@ -413,11 +422,16 @@ describe('a REFUSED modify changes nothing (SPEC §12.2)', () => {
   it('still ACCEPTS an ASK reprice funded by the goods the cancel returns', () => {
     const w = build('modify-ask');
     const A = CAST[0] as PrincipalId;
-    const all = w.runtime.ledger.goodsInAccount(storesAccount(A)).get(GOOD) ?? 0;
+    // SELLABLE, not owned. D7 withholds the endowment allotment from trading, so an ASK
+    // for everything in the account would be refused for the part that is endowment —
+    // the test is about repricing on returned escrow, not about the floor.
+    const owned = w.runtime.ledger.goodsInAccount(storesAccount(A)).get(GOOD) ?? 0;
+    const all = sellableGoods(w.runtime.ledger, A, GOOD, w.venue);
     expect(all).toBeGreaterThan(0);
+    expect(owned).toBeGreaterThan(all); // the withheld endowment is the difference
     go(w.runtime, A, { operation: 'place', venue: w.venue, good: GOOD, side: 'ASK', quantity: all, limit_price: 10 });
     runOk(w.runtime, 'place');
-    expect(w.runtime.ledger.goodsInAccount(storesAccount(A)).get(GOOD) ?? 0).toBe(0);
+    expect(sellableGoods(w.runtime.ledger, A, GOOD, w.venue)).toBe(0);
     const first = w.runtime.market.openFor(A)[0];
     expect(first).toBeDefined();
     if (first === undefined) return;

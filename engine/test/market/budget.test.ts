@@ -21,7 +21,7 @@ import { STEP_BUDGET, stepBudgetFor } from '../../src/tick/loop.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { commonsSystems } from '../../src/world/index.js';
 import type { PrincipalId } from '../../src/core/types.js';
-import { GOOD, tickAllowingHalt } from './fixture.js';
+import { GOOD, tickAllowingHalt, fundAboveEndowment } from './fixture.js';
 
 const SELLERS = 20;
 const ROUNDS = 6;
@@ -46,11 +46,13 @@ describe('the step budget covers a full book walk', () => {
       const p = `p:s${String(i).padStart(2, '0')}` as PrincipalId;
       runtime.seat(p, `s${String(i)}`, venue);
       runtime.standing.open(p);
+      fundAboveEndowment(runtime, p, venue);
       sellers.push(p);
     }
     const buyer = 'p:zbuyer' as PrincipalId;
     runtime.seat(buyer, 'zbuyer', venue);
     runtime.standing.open(buyer);
+    fundAboveEndowment(runtime, buyer, venue);
     expect(tickAllowingHalt(runtime).halted).toBe(false);
 
     // Fill the book at four actions per principal per tick — the published budget,

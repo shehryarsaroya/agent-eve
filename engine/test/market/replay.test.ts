@@ -22,6 +22,7 @@ import { Runtime } from '../../src/sim/runtime.js';
 import { InMemoryJournalStore, Journal, bootFromStore } from '../../src/persist/index.js';
 import { commonsSystems } from '../../src/world/index.js';
 import type { PrincipalId } from '../../src/core/types.js';
+import { fundAboveEndowment } from './fixture.js';
 import { ALICE, BOB, CARA, GOOD } from './fixture.js';
 
 const SEED = 'market-replay-1';
@@ -74,6 +75,7 @@ function seated(): { readonly runtime: Runtime; readonly venue: string } {
   for (const p of TRADERS) {
     runtime.seat(p, p.replace('p:', ''), venue);
     runtime.standing.open(p);
+    fundAboveEndowment(runtime, p, venue);
   }
   return { runtime, venue };
 }

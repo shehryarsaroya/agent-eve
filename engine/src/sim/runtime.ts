@@ -317,7 +317,13 @@ export const RULES_VERSION = 2;
 export const MAX_MARKET_ROWS = 24;
 
 /** The starter stake, in minor units. §12.5: "a bound starter stake". */
-export const STARTER_STAKE = minor(250_000);
+/**
+ * Re-exported from its new home. The enrolment grant and the endowment FLOOR must be the
+ * same number — two homes for one quantity is scar #5, and a drift between them silently
+ * reopens D7 — so `ledger/endowment.ts` owns it and this is the alias callers already use.
+ */
+export { STARTER_STAKE } from '../ledger/endowment.js';
+import { STARTER_STAKE } from '../ledger/endowment.js';
 
 /** Ticks a formation window stays open by default. */
 export const FORMATION_WINDOW_TICKS = 12;

@@ -51,6 +51,11 @@
 import type { AccountId, EventId, GoodId, PrincipalId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { Ledger, compareIds, storesAccount, type LotId, type ObligationRef } from '../ledger/index.js';
+import {
+  ENDOWMENT_FLOOR_MINOR,
+  ENDOWMENT_GOOD,
+  ENDOWMENT_GOOD_FLOOR_QTY,
+} from '../ledger/endowment.js';
 import type { OrderId, VenueId } from './order.js';
 
 /**
@@ -102,10 +107,38 @@ export function ensureMarketEscrow(ledger: Ledger, principal: PrincipalId): Acco
   return id;
 }
 
-/** Free currency a principal could still commit to a new BID. */
+/**
+ * Free currency a principal could still commit to a new BID — **its earnings, never its
+ * endowment.**
+ *
+ * ## D7: the endowment is not transferable
+ *
+ * Enrolment is free and must stay free (A15), and it mints a `STARTER_STAKE`. Free
+ * identities therefore mint capital, and **seat recycling makes it unbounded over time**:
+ * enrol, mint, go idle, the seat recycles, enrol again — `seats.ts` never touches the
+ * ledger, so the retired principal keeps its stores (A10). Measured: ten free identities
+ * minted 2,500,000 currency and 500,000 goods at zero cost.
+ *
+ * Before the market there was no principal-to-principal transfer verb, and that friction
+ * was quietly doing the work. A market removes it: a sock puppet bids far above value for
+ * its operator's junk goods and the whole stake moves, using ordinary legal orders that
+ * violate nothing in the matcher.
+ *
+ * A15 forbids the obvious defences — capping enrolments per source is a gate priced in
+ * identities, and punishing wash trades requires proving intent when "the flow graph may
+ * withhold credit, never accuse". **Withholding credit is exactly what this does.** The
+ * endowment funds a principal's own work — its ventures, its Levy, its hauling — and
+ * cannot leave it. A solo agent is unaffected. A sock puppet is worth zero.
+ *
+ * No new state: the endowment is a known constant, so the transferable balance is simply
+ * everything above it. Spending endowment on legitimate costs leaves the floor in place,
+ * which errs toward withholding — the safe direction for a Sybil guard.
+ */
 export function freeCash(ledger: Ledger, principal: PrincipalId): Minor {
   const id = storesAccount(principal);
-  return ledger.account(id) === undefined ? minor(0) : ledger.freeBalance(id);
+  if (ledger.account(id) === undefined) return minor(0);
+  const free = ledger.freeBalance(id);
+  return minor(Math.max(0, free - ENDOWMENT_FLOOR_MINOR));
 }
 
 /**
@@ -131,7 +164,7 @@ function sellableLots(
 ): readonly { readonly id: LotId; readonly qty: number }[] {
   const account = storesAccount(principal);
   if (ledger.account(account) === undefined) return [];
-  return ledger
+  const lots = ledger
     .lotsInAccount(account)
     .filter(
       (lot) =>
@@ -142,6 +175,25 @@ function sellableLots(
     )
     .sort((a, b) => compareIds(a.id, b.id))
     .map((lot) => ({ id: lot.id, qty: lot.qty }));
+
+  // D7, the goods half. The starter allotment exists so a newcomer can meet a Levy that
+  // is payable only in located goods — an obligation the rules would otherwise make
+  // impossible to meet on arrival, which is A5′ with our own economy as the cause. It is
+  // not trading stock, and selling it is the other half of the sock-puppet extraction.
+  // Withheld the same way as the cash: everything above the allotment is sellable.
+  if (good !== ENDOWMENT_GOOD) return lots;
+  let floor: number = ENDOWMENT_GOOD_FLOOR_QTY;
+  const sellable: { readonly id: LotId; readonly qty: number }[] = [];
+  for (const lot of lots) {
+    if (floor <= 0) {
+      sellable.push(lot);
+      continue;
+    }
+    const withheld = Math.min(floor, lot.qty);
+    floor -= withheld;
+    if (lot.qty > withheld) sellable.push({ id: lot.id, qty: lot.qty - withheld });
+  }
+  return sellable;
 }
 
 /** Goods this principal currently has escrowed for one book. The matcher's ceiling. */

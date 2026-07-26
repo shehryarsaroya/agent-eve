@@ -19,6 +19,9 @@ import { LEVY_GOOD } from '../../src/levy/index.js';
 import { commonsSystems } from '../../src/world/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { orderIdFor, type Order, type Side, type TimeInForce } from '../../src/market/index.js';
+import type { EventId } from '../../src/core/types.js';
+import { CURRENCY_FAUCET, GOODS_FAUCET, storesAccount } from '../../src/ledger/index.js';
+import { ENDOWMENT_GOOD } from '../../src/ledger/endowment.js';
 
 export const ALICE = 'p:alice' as PrincipalId;
 export const BOB = 'p:bob' as PrincipalId;
@@ -81,6 +84,14 @@ export function world(seed: string, ...principals: readonly PrincipalId[]): Mark
   for (const principal of principals) {
     runtime.seat(principal, principal.replace('p:', ''), venue);
     runtime.standing.open(principal);
+    // Fund ABOVE the endowment floor. D7 makes the starter stake non-transferable — it
+    // funds a principal's own work and can never be committed to a trade — so a seated
+    // principal has exactly zero trading capital by design. These tests are about
+    // matching, conservation and abort, not about whether a newcomer may trade, so they
+    // need principals with EARNED capital. Granting it here rather than relaxing the
+    // floor keeps the guard honest: `test/market/endowment.test.ts` is what asserts a
+    // fresh identity can commit nothing.
+    fundAboveEndowment(runtime, principal, venue);
   }
   return { runtime, venue };
 }
@@ -149,4 +160,41 @@ export function permutations<T>(items: readonly T[]): T[][] {
     for (const tail of permutations(rest)) out.push([head, ...tail]);
   }
   return out;
+}
+
+
+/**
+ * Give a principal spendable capital on top of its untouchable endowment.
+ *
+ * Deliberately issued from the same faucets enrolment uses, so supply stays accounted
+ * (INV-2 counts against a closed faucet set) and these worlds remain conservation-clean.
+ */
+export function fundAboveEndowment(
+  runtime: Runtime,
+  principal: PrincipalId,
+  venue: SystemId,
+  // Deliberately below the 5,000,000 an adversarial probe uses to test an UNAFFORDABLE
+  // reprice: fund the tests enough to trade, never so much that "cannot afford it" stops
+  // being reachable. A fixture that quietly makes a refusal path unreachable turns its
+  // test green while deleting the thing it checks.
+  cash = 2_000_000,
+  goods = 100_000,
+): void {
+  runtime.ledger.issueCurrency({
+    eventId: `test:fund:${principal}` as EventId,
+    tick: 0,
+    faucet: CURRENCY_FAUCET.STARTER_STAKE,
+    to: storesAccount(principal),
+    amount: minor(cash),
+  });
+  runtime.ledger.sourceGoods({
+    eventId: `test:goods:${principal}` as EventId,
+    tick: 0,
+    faucet: GOODS_FAUCET.PRODUCTION,
+    to: storesAccount(principal),
+    good: ENDOWMENT_GOOD,
+    qty: qty(goods),
+    location: venue,
+    origin: principal,
+  });
 }
