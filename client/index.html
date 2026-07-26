@@ -156,6 +156,16 @@
   <div id="authority"></div>
 </section>
 
+<section id="raids-sec" style="margin-top:38px">
+  <h2 class="sec">Raids</h2>
+  <div id="raids"></div>
+</section>
+
+<section id="tribute-sec" style="margin-top:38px">
+  <h2 class="sec">The Levy</h2>
+  <div id="tribute"></div>
+</section>
+
 <section class="ticker" id="ticker-sec">
   <h2 class="sec">The ticker</h2>
   <div id="ticker"></div>
@@ -331,6 +341,57 @@ function renderAuthority(lines, m) {
     </div>`).join('');
 }
 
+// A13: predation had a named pixel signature and no pixels. The frame carried six
+// raid lines and the client read five keys, none of them this one — a mechanic that
+// ships without its render is a mechanic a viewer cannot know happened.
+function renderRaids(lines, m) {
+  const el = $('raids');
+  if (!lines || lines.length === 0) {
+    el.innerHTML = '<div class="empty">No raid this Reckoning. The world spawns them on a published clock, so this is quiet rather than safe.</div>';
+    return;
+  }
+  const verdict = {
+    PAID: ['paid', 'the demand was met and nothing was taken'],
+    REPULSED: ['repulsed', 'the defenders held, and the stage is closed to raiders for a Reckoning'],
+    PLUNDERED: ['plundered', 'nobody stood in the way'],
+    MISSED: ['missed', 'the raid found nothing worth taking'],
+    DEMANDED: ['demanded', 'the window is still open'],
+  };
+  el.innerHTML = lines.map((l) => {
+    const [word, why] = verdict[l.state] || [String(l.state || '').toLowerCase(), ''];
+    return `
+    <div class="card">
+      <p class="hl">${esc(l.stage || '')} &mdash; ${word}</p>
+      <p class="tn">${money(l.demand)} demanded from ${named(l.target, m)}${l.lost ? ' &middot; <strong>' + money(l.lost) + ' lost</strong>' : ''}</p>
+      <p class="tn">force ${l.raiderForce ?? 0} against ${l.defenderForce ?? 0}${l.ticksLeft ? ' &middot; ' + l.ticksLeft + ' ticks left' : ''}</p>
+      ${why ? `<p class="tn">${why}</p>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// The Levy's signature (§5.2): who owed tribute and who actually paid it. Nineteen of
+// these were in the frame and none reached the screen.
+function renderTribute(lines, m) {
+  const el = $('tribute');
+  if (!lines || lines.length === 0) {
+    el.innerHTML = '<div class="empty">No tribute assessed this Reckoning.</div>';
+    return;
+  }
+  const shown = lines.slice(0, 12);
+  const tstate = {
+    DASHED: 'no hand assigned',
+    SOLID: 'a hand is en route',
+    RED: 'unpaid at the freeze',
+    REVERSING: 'being seized',
+  };
+  el.innerHTML = shown.map((t) => `
+    <div class="card">
+      <p class="hl">${named(t.principal, m)} &rarr; ${esc(t.to || '')}</p>
+      <p class="tn">${money(t.owed)} owed &middot; ${esc(tstate[t.state] || String(t.state || '').toLowerCase())}</p>
+    </div>`).join('')
+    + (lines.length > shown.length ? `<div class="empty">and ${lines.length - shown.length} more</div>` : '');
+}
+
 async function load() {
   try {
     // latest.json is a small pointer so the big immutable frames can be cached
@@ -348,6 +409,8 @@ async function load() {
     renderDocket(frame.docket, 'docket');
     renderRundown(frame.rundown);
     renderAuthority(frame.authorityLines, handleMap(frame));
+    renderRaids(frame.raidLines, handleMap(frame));
+    renderTribute(frame.tributeLines, handleMap(frame));
     renderTicker(frame.ticker);
   } catch (e) {
     $('m-status').textContent = 'no frame';
