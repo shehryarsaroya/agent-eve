@@ -1,4 +1,4 @@
-# D18 — The WORKS tripwire: no engine bug, one seam left open
+# D18 — The WORKS tripwire: SOLVED. No engine bug; a fixture reaches past the API
 
 *2026-07-26. The `state_hash` tripwire has blocked "teach the heuristic cast to build a WORKS" for the
 whole project, with four causes ruled out and no diagnosis. It now has a one-line reproduction and a
@@ -397,9 +397,36 @@ problem inside the ledger hydrate, not a missing-input problem — and that is a
 of the two proposed above.
 
 I am recording this rather than pursuing it because the honest state of a nine-framing investigation is
-"measured what I measured, and here is the seam I did not close." Marking it SOLVED without this
-paragraph would be the tenth wrong framing, and the only one that would have been avoidable by writing
-carefully rather than by measuring.
+"measured what I measured, and here is the seam I did not close."
+
+### ⚑ THE CAVEAT ABOVE IS WRONG — the seam is closed, and the withdrawal was the overcorrection
+
+Ran the print. Injected two locks at tick 40 into a cast-driven world, journalled it, forced a genesis
+replay — **with no build branch at all** — and boot threw:
+
+```
+BootError … operatorInstruction: 'COMPACT_ACCEPT_DIVERGENCE_AT_TICK=40'
+```
+
+**Divergence at tick 40, which is exactly the injection tick, with no cast change involved.** So the
+injected locks *are* unreproducible on genesis replay, measured directly. The original account was
+correct.
+
+And the inference that made me withdraw it was wrong. I reasoned: *the two slow-path tests pass, so the
+locks must be reconstructible.* They pass because **neither of them completes a genesis replay to a hash
+comparison** — one asserts `planCheckpoint` *refuses* on a rules change (which happens before any
+replay), the other asserts what an adopted boot verifies. Neither reaches the tripwire. And the test
+does not use `acceptDivergenceFromTick`; only `boot.ts` defines it.
+
+So the count is now **ten framings, nine wrong** — and the tenth error was *withdrawing a correct
+answer* on an untested assumption about what two tests do. That is a new failure mode for this thread:
+every previous one was over-confidence, and this one was over-correction. Both came from the same
+habit — reasoning about code instead of running it — and the fix was the same one print.
+
+**The conclusion stands:** no engine bug; replay is faithful; the audit fixture's setup bypasses the
+action log and cannot be genesis-replayed; adoption normally hides that because it never replays; and a
+cast branch exposes it by pushing the case onto a path the fixture was never able to survive. The
+remedies proposed above are the right ones.
 
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
