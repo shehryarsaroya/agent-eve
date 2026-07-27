@@ -245,6 +245,7 @@ describe('PgJournalStore builds consistent parameterised SQL', () => {
       tick: 287,
       stateHash: 'abc',
       stateVersion: 42,
+      rulesVersion: 6,
       tables: [['world', { x: 1 }]],
       seed: 's:t287',
       seedHash: 'h:t287',
@@ -261,7 +262,12 @@ describe('PgJournalStore builds consistent parameterised SQL', () => {
     // The snapshot body is passed as a bound parameter (jsonb), never spliced in.
     const snap = pool.calls.find((c) => c.sql.includes('INTO snapshot'));
     expect(snap).toBeDefined();
-    expect(snap?.params.length).toBe(7);
+    expect(snap?.params.length).toBe(8);
+    // And the provenance stamp is actually bound, not just present in the column list —
+    // an INSERT naming `rules_version` while passing undefined would write NULL, which
+    // `planCheckpoint` reads as "unknown provenance" and refuses forever.
+    expect(snap?.sql).toContain('rules_version');
+    expect(snap?.params).toContain(6);
     // init upserts write-once and never overwrites.
     expect(pool.calls.some((c) => c.sql.includes('journal_meta') && c.sql.includes('DO NOTHING'))).toBe(true);
   });

@@ -379,13 +379,22 @@ export async function bootFromStore(
   // Before a single tick is replayed: is there a snapshot, and does it carry the
   // whole world? Only then is the tail the honest thing to replay. A refusal is not
   // an error — it is the slow, correct boot, carried out loud.
-  const plan = await planCheckpoint(runtime.engine.stateTables, store, {
-    ...opts.checkpoint,
-    // Not the caller's to override: a rules change is a fact about the record, and
-    // adoption is the one boot shape that would never notice it (see
-    // `CheckpointOptions.rulesChanged`).
-    rulesChanged: rulesChanged || opts.checkpoint?.rulesChanged === true,
-  });
+  // `rulesChanged` — the world's BIRTH version against this build — is deliberately NOT
+  // passed here any more, though it is still computed and still reported in the
+  // diagnosis (it is the honest first explanation when a tripwire trips).
+  //
+  // It cannot be the adoption gate because it is write-once: derived from
+  // `journal_meta.rules_version`, it records what the world was born under, so the first
+  // rules change makes it permanently true and every boot forever pays a full genesis
+  // replay to re-discover a divergence an operator already adjudicated once. Production
+  // was doing exactly that — 4,809 ticks and 2m12s per restart, growing without bound,
+  // 4,500 ticks after the operator accepted the change at tick 287.
+  //
+  // `planCheckpoint` now asks the narrower and more honest question instead: did THIS
+  // BUILD's arithmetic write the snapshot I am about to take as given? That refuses the
+  // same first boot after a rules change — the newest snapshot still carries the old
+  // stamp — and then clears itself once the world checkpoints under the new rules.
+  const plan = await planCheckpoint(runtime.engine.stateTables, store, opts.checkpoint);
   let adoptedAtTick: number | null = null;
   let postingsHydrated = 0;
   let eventsHydrated = 0;

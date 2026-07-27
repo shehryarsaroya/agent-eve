@@ -406,6 +406,26 @@ CREATE TABLE IF NOT EXISTS snapshot (
   created_ms     bigint  NOT NULL
 );
 
+-- The RULES_VERSION that COMPUTED this snapshot, which is what makes adoption
+-- decidable per-snapshot instead of per-world.
+--
+-- `journal_meta.rules_version` is write-once and records what the world was BORN
+-- under, so once the rules move it never matches the running build again and every
+-- boot re-replays from genesis forever — 4,809 ticks and 2m12s at the time this was
+-- found, growing without bound. That is a real cost paid to re-discover a mismatch an
+-- operator already adjudicated at tick 287.
+--
+-- Stamping the producing version on each snapshot makes the question local and
+-- self-healing: adopt only a snapshot this build's own arithmetic wrote. A rules change
+-- still forces exactly one genesis replay (the newest snapshot is stamped old, so it is
+-- refused, divergence is found, the operator door opens) — and once the world runs on
+-- and checkpoints again, later boots adopt normally.
+--
+-- NULL on rows written before this column existed. Unknown provenance is refused, not
+-- assumed current: guessing is how a build whose arithmetic moved resumes silently, the
+-- A5' failure the door exists to prevent.
+ALTER TABLE snapshot ADD COLUMN IF NOT EXISTS rules_version integer;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- World status. A world that stops with no resume path is an outage in front of
 -- an audience, so PAUSED has defined semantics (SPEC §15.2).

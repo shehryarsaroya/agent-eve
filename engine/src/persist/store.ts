@@ -155,6 +155,15 @@ export interface SnapshotRecord {
    */
   readonly seed: string;
   readonly seedHash: string;
+  /**
+   * The `RULES_VERSION` whose arithmetic produced this snapshot, or null on a row
+   * written before the column existed.
+   *
+   * Adoption is gated on this rather than on the world's write-once birth version, so a
+   * rules change costs ONE genesis replay instead of one per boot forever. Null means
+   * unknown provenance and is refused — see the column comment in `schema.sql`.
+   */
+  readonly rulesVersion: number | null;
 }
 
 /**
@@ -352,6 +361,7 @@ export function snapshotRecord(
   },
   seed: string,
   seedHash: string,
+  rulesVersion: number,
 ): SnapshotRecord {
   return {
     tick: snapshot.tick,
@@ -360,5 +370,8 @@ export function snapshotRecord(
     tables: snapshot.tables,
     seed,
     seedHash,
+    // Required, not defaulted. A snapshot's provenance is not guessable, and a default
+    // would let a caller that forgot to stamp it produce a row that looks adoptable.
+    rulesVersion,
   };
 }

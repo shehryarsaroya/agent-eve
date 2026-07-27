@@ -324,8 +324,8 @@ export class PgJournalStore implements JournalStore {
 
   async writeSnapshot(record: SnapshotRecord): Promise<void> {
     await this.pool.query(
-      `INSERT INTO snapshot (tick, state_hash, seed, seed_hash, state_version, body, created_ms)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO snapshot (tick, state_hash, seed, seed_hash, state_version, body, created_ms, rules_version)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (tick) DO NOTHING`,
       [
         record.tick,
@@ -337,13 +337,14 @@ export class PgJournalStore implements JournalStore {
         record.stateVersion,
         JSON.stringify(record.tables),
         this.nowMs(),
+        record.rulesVersion,
       ],
     );
   }
 
   async latestSnapshot(): Promise<SnapshotRecord | null> {
     const { rows } = await this.pool.query<SnapshotRow>(
-      `SELECT tick, state_hash, seed, seed_hash, state_version, body FROM snapshot ORDER BY tick DESC LIMIT 1`,
+      `SELECT tick, state_hash, seed, seed_hash, state_version, body, rules_version FROM snapshot ORDER BY tick DESC LIMIT 1`,
     );
     const row = rows[0];
     return row === undefined ? null : this.rowToSnapshot(row);
@@ -351,7 +352,7 @@ export class PgJournalStore implements JournalStore {
 
   async snapshots(): Promise<readonly SnapshotRecord[]> {
     const { rows } = await this.pool.query<SnapshotRow>(
-      `SELECT tick, state_hash, seed, seed_hash, state_version, body FROM snapshot ORDER BY tick ASC`,
+      `SELECT tick, state_hash, seed, seed_hash, state_version, body, rules_version FROM snapshot ORDER BY tick ASC`,
     );
     return rows.map((r) => this.rowToSnapshot(r));
   }
@@ -379,6 +380,7 @@ export class PgJournalStore implements JournalStore {
       tables: tables as SnapshotRecord['tables'],
       seed: row.seed,
       seedHash: row.seed_hash,
+      rulesVersion: row.rules_version === null ? null : Number(row.rules_version),
     };
   }
 
@@ -654,6 +656,7 @@ interface SnapshotRow {
   readonly seed_hash: string;
   readonly state_version: string | number;
   readonly body: unknown;
+  readonly rules_version: number | null;
 }
 
 interface SeedRow {

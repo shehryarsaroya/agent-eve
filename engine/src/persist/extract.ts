@@ -9,7 +9,7 @@
  * must not persist it.
  */
 
-import type { Runtime } from '../sim/runtime.js';
+import { RULES_VERSION, type Runtime } from '../sim/runtime.js';
 import type { TickReport } from '../tick/index.js';
 import type { PersistedEvent, PersistedPosting, SnapshotRecord, TickRecord } from './store.js';
 import { snapshotRecord } from './store.js';
@@ -96,5 +96,11 @@ export function extractTick(runtime: Runtime, report: TickReport): TickRecord {
  * tick's boundary snapshot and the report carries that tick's revealed seed pair.
  */
 export function snapshotRecordOf(runtime: Runtime, report: TickReport): SnapshotRecord {
-  return snapshotRecord(runtime.engine.snapshot(), report.seedRevealed, report.seedCommitment);
+  // Stamped with the version that COMPUTED it — the whole basis of per-snapshot adoption.
+  return snapshotRecord(
+    runtime.engine.snapshot(),
+    report.seedRevealed,
+    report.seedCommitment,
+    RULES_VERSION,
+  );
 }

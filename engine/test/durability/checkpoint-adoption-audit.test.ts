@@ -46,6 +46,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { RULES_VERSION } from '../../src/sim/runtime.js';
 import { HeuristicCast } from '../../src/cast/index.js';
 import type { AccountId, EventId, PrincipalId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
@@ -318,6 +319,9 @@ function snapshotOver(
     tick: 0,
     stateHash: 'h',
     stateVersion: 1,
+    // Current-build provenance: this fixture exercises the MANIFEST gate, so it must
+    // clear the rules gate to reach it.
+    rulesVersion: RULES_VERSION,
     seed: 's',
     seedHash: 'sh',
     tables: [['ledger', { accounts: accounts.map((id) => ({ id })), postingCount, batchCount }]],
@@ -438,29 +442,103 @@ describe('a rules change forces the slow path, because adoption re-derives nothi
     expect(changed.refusal).toMatch(/RULES_VERSION/);
   }, 180_000);
 
-  it('and boot supplies that fact itself, so a caller cannot narrow its way past it', async () => {
+  it('a caller cannot narrow its way past it: a foreign-stamped snapshot is refused anyway', async () => {
     const live = await plainRun();
 
-    // The same journal read by a build whose rules moved. `bootFromStore` reads the
-    // journalled version itself and ORs it in, so `rulesChanged: false` cannot unset it.
+    // The same journal, but every snapshot stamped by rules that are not this build's.
+    // The caller then asks for adoption as loudly as the API allows.
     const store = new InMemoryJournalStore();
     await store.init(SEED);
     for (const t of await live.store.ticksSince(-1)) await store.appendTick(t);
-    for (const s of await live.store.snapshots()) await store.writeSnapshot(s);
-    // `recordRulesVersion` is write-once, so this is the only way to stage the case.
-    await store.recordRulesVersion(-1);
+    for (const s of await live.store.snapshots()) {
+      await store.writeSnapshot({ ...s, rulesVersion: -1 });
+    }
 
     const fresh = seated(SEED);
     const result = await bootFromStore(fresh, store, {
       seed: SEED,
       checkpoint: { requiredTables: registeredTables(fresh), rulesChanged: false },
     });
-    expect(result.rulesVersionChanged).toBe(true);
+
+    // `rulesChanged: false` does not help, and this is a STRONGER guarantee than the
+    // version this replaced. That one rested on a boolean `bootFromStore` computed and
+    // OR-ed in — correct, but only as long as boot kept doing it. This rests on the
+    // provenance stamped into the record itself, which no caller can reach through
+    // `CheckpointOptions` at all.
     expect(result.adoptedAtTick).toBeNull();
     expect(result.checkpointRefusal).toMatch(/RULES_VERSION/);
     // The slow path ran, checked the record, and landed on the recorded world.
     expect(result.ticksReplayed).toBe(TICKS);
     expect(result.tripwiresChecked).toBeGreaterThan(0);
     expect(fresh.engine.stateHash).toBe(live.headHash);
+  }, 180_000);
+
+  it('UNKNOWN provenance is refused, not guessed — the state every existing world is in', async () => {
+    // Found by mutation: relaxing the gate to `rulesVersion !== null && ... !== RULES_VERSION`
+    // — the "a row with no stamp is probably mine" guess — passed all 84 durability tests.
+    // Nothing checked the null branch, so the refusal was a comment rather than a guard.
+    //
+    // It is the branch that matters most in practice. Every snapshot written before the
+    // column existed carries NULL, so this is the state the LIVE world is in right now: if
+    // null were treated as current, the next deploy would adopt a checkpoint whose
+    // arithmetic is genuinely unknown, which is the A5′ failure the door exists to prevent.
+    // Unknown provenance must cost one genesis replay, exactly like a foreign stamp.
+    const live = await plainRun();
+    const store = new InMemoryJournalStore();
+    await store.init(SEED);
+    for (const t of await live.store.ticksSince(-1)) await store.appendTick(t);
+    for (const s of await live.store.snapshots()) {
+      await store.writeSnapshot({ ...s, rulesVersion: null });
+    }
+
+    const fresh = seated(SEED);
+    const result = await bootFromStore(fresh, store, {
+      seed: SEED,
+      checkpoint: { requiredTables: registeredTables(fresh) },
+    });
+
+    expect(result.adoptedAtTick, 'an unstamped snapshot must not be adopted').toBeNull();
+    // And the refusal must say WHY in terms an operator can act on: "unknown" is a
+    // different situation from "written by version 5" and leads to a different decision.
+    expect(result.checkpointRefusal).toMatch(/provenance is unknown/);
+    // Still lands on the recorded world, the slow way.
+    expect(result.ticksReplayed).toBe(TICKS);
+    expect(fresh.engine.stateHash).toBe(live.headHash);
+  }, 180_000);
+
+  it('ONE genesis replay per rules change, not one per boot, and the adopted world is identical', async () => {
+    // The regression this whole change exists to close. `journal_meta.rules_version` is
+    // write-once and records what the world was BORN under, so once the rules moved it
+    // never matched again and EVERY boot forever re-replayed from genesis to re-discover a
+    // divergence an operator had already adjudicated. Production was paying 4,809 ticks
+    // and 2m12s per restart, growing without bound, 4,500 ticks after accepting the change
+    // at tick 287.
+    //
+    // Here the world was born under foreign rules and has since checkpointed under this
+    // build's — which is exactly the state a world is in after the door has been walked
+    // through. Adoption must clear.
+    const live = await plainRun();
+    const store = new InMemoryJournalStore();
+    await store.init(SEED);
+    for (const t of await live.store.ticksSince(-1)) await store.appendTick(t);
+    for (const s of await live.store.snapshots()) await store.writeSnapshot(s);
+    await store.recordRulesVersion(-1); // born elsewhere, and permanently so
+
+    const fresh = seated(SEED);
+    const result = await bootFromStore(fresh, store, {
+      seed: SEED,
+      checkpoint: { requiredTables: registeredTables(fresh) },
+    });
+
+    // The birth mismatch is still REPORTED — it is the honest first explanation when a
+    // tripwire trips — it just no longer forces the slow path on a snapshot this build
+    // wrote itself.
+    expect(result.rulesVersionChanged).toBe(true);
+    expect(result.adoptedAtTick, 'a snapshot this build produced must be adoptable').not.toBeNull();
+
+    // And adoption is not cheaper by being wrong: same head state as the live world.
+    expect(fresh.engine.stateHash).toBe(live.headHash);
+    // Bounded work, which is the entire point of a checkpoint.
+    expect(result.ticksReplayed).toBeLessThan(TICKS);
   }, 180_000);
 });

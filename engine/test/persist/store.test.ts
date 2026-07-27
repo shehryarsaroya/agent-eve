@@ -48,19 +48,19 @@ describe('InMemoryJournalStore is append-only in time', () => {
 describe('InMemoryJournalStore snapshots', () => {
   it('latestSnapshot returns the highest-tick snapshot', async () => {
     const store = new InMemoryJournalStore();
-    await store.writeSnapshot({ tick: 5, stateHash: 'a', stateVersion: 1, tables: [], seed: 's', seedHash: 'h' });
-    await store.writeSnapshot({ tick: 11, stateHash: 'b', stateVersion: 2, tables: [], seed: 's', seedHash: 'h' });
+    await store.writeSnapshot({ tick: 5, stateHash: 'a', stateVersion: 1, tables: [], seed: 's', seedHash: 'h', rulesVersion: 1 });
+    await store.writeSnapshot({ tick: 11, stateHash: 'b', stateVersion: 2, tables: [], seed: 's', seedHash: 'h', rulesVersion: 1 });
     expect((await store.latestSnapshot())?.tick).toBe(11);
     expect((await store.snapshots()).map((s) => s.tick)).toEqual([5, 11]);
   });
 
   it('refuses two different snapshots at one tick', async () => {
     const store = new InMemoryJournalStore();
-    await store.writeSnapshot({ tick: 5, stateHash: 'a', stateVersion: 1, tables: [], seed: 's', seedHash: 'h' });
+    await store.writeSnapshot({ tick: 5, stateHash: 'a', stateVersion: 1, tables: [], seed: 's', seedHash: 'h', rulesVersion: 1 });
     // Idempotent re-write of the same hash is fine.
-    await store.writeSnapshot({ tick: 5, stateHash: 'a', stateVersion: 1, tables: [], seed: 's', seedHash: 'h' });
+    await store.writeSnapshot({ tick: 5, stateHash: 'a', stateVersion: 1, tables: [], seed: 's', seedHash: 'h', rulesVersion: 1 });
     await expect(
-      store.writeSnapshot({ tick: 5, stateHash: 'DIFFERENT', stateVersion: 1, tables: [], seed: 's', seedHash: 'h' }),
+      store.writeSnapshot({ tick: 5, stateHash: 'DIFFERENT', stateVersion: 1, tables: [], seed: 's', seedHash: 'h', rulesVersion: 1 }),
     ).rejects.toThrow(/different state_hash/);
   });
 });

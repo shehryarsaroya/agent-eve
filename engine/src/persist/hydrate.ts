@@ -55,6 +55,7 @@ import { minor } from '../core/units.js';
 import type { AudienceAdmission, AudienceBasis, EventLedger } from '../events/index.js';
 import { qtyDelta } from '../ledger/delta.js';
 import type { AppliedBatch, BatchKind, Ledger, SupplyDirection } from '../ledger/index.js';
+import { RULES_VERSION } from '../sim/runtime.js';
 import { snapshotHashOf, type Snapshot, type StateTable } from '../tick/index.js';
 import type { JournalStore, PersistedPosting, SnapshotRecord } from './store.js';
 
@@ -235,22 +236,64 @@ export async function planCheckpoint(
         `tripwire would still pass. Replaying from genesis instead.`,
     };
   }
-  // After the manifest, not before it: the manifest is the standing reason and the one
-  // an operator needs named on every boot today. The rules gate is the one that bites
-  // on the day the manifest clears.
+  // The caller's explicit "force the slow path", kept as a lever (the deploy preflight
+  // uses it) but no longer derived from the world's write-once birth version — see the
+  // per-snapshot gate below for why that distinction is the whole fix.
   if (options.rulesChanged === true) {
     return {
       snapshot: null,
       refusal:
-        'checkpoint adoption refused: the journal was written under a different RULES_VERSION. ' +
-        'Adoption re-derives nothing and the tail after the latest Reckoning carries no snapshot to ' +
-        'check against, so a rules change would take effect with no tripwire and no divergence ' +
-        'record. Replaying from genesis so the mismatch is found and the operator door is offered.',
+        'checkpoint adoption refused: the caller required a genesis replay under a different ' +
+        'RULES_VERSION. Adoption re-derives nothing and the tail after the latest Reckoning ' +
+        'carries no snapshot to check against, so a rules change would take effect with no ' +
+        'tripwire and no divergence record. Replaying from genesis so the mismatch is found and ' +
+        'the operator door is offered.',
     };
   }
   const snapshot = await store.latestSnapshot();
   if (snapshot === null) {
     return { snapshot: null, refusal: 'no snapshot in the journal to adopt' };
+  }
+
+  // ── THE RULES GATE IS PER-SNAPSHOT, AND THAT IS NOT A RELAXATION ──────────────
+  //
+  // It used to be per-WORLD, read from `journal_meta.rules_version` — which is write-once
+  // and records what the world was BORN under. So the first rules change made the
+  // mismatch permanent: every boot forever re-replayed from genesis to re-discover a
+  // divergence an operator had already adjudicated once. Measured in production at the
+  // time this was found: 4,809 ticks, 2m12s, growing without bound, on every restart.
+  //
+  // The honest question is not "was this world born under my rules" but **"did my own
+  // arithmetic write the state I am about to take as given"** — and that is a property of
+  // the snapshot, not of the world's birth. Gating on it keeps the safety property intact
+  // and makes it self-healing:
+  //
+  //   rules move 6 -> 7  ->  newest snapshot is stamped 6  ->  REFUSED  ->  genesis
+  //   replay  ->  divergence found  ->  operator door  ->  world runs on  ->  new
+  //   checkpoints stamped 7  ->  later boots adopt.
+  //
+  // Exactly ONE genesis replay per rules change, which was always the intent. A build
+  // whose arithmetic moved still cannot resume silently, because the snapshot it would
+  // need to adopt carries the old stamp and is refused before anything is restored.
+  //
+  // Null is refused rather than assumed current: a row written before the column existed
+  // has unknown provenance, and guessing "probably mine" is precisely the A5′ failure the
+  // door exists to prevent.
+  if (snapshot.rulesVersion !== RULES_VERSION) {
+    const wrote =
+      snapshot.rulesVersion === null
+        ? 'was written before snapshots recorded which rules produced them, so its provenance is unknown'
+        : `was produced by RULES_VERSION ${String(snapshot.rulesVersion)}, not this build's ${String(RULES_VERSION)}`;
+    return {
+      snapshot: null,
+      refusal:
+        `checkpoint adoption refused: the snapshot at tick ${String(snapshot.tick)} ${wrote}. ` +
+        'Adoption re-derives nothing, so taking it as given would let changed arithmetic resume ' +
+        'with no tripwire and no divergence record. Replaying from genesis so the mismatch is ' +
+        'found and the operator door is offered. This costs one replay per rules change, not one ' +
+        'per boot: the checkpoints this build writes from here carry its own version and later ' +
+        'boots adopt them normally.',
+    };
   }
   // ── THE RECORD MUST AGREE WITH ITSELF, AND IT IS CHECKED BEFORE ANYTHING MOVES ──
   //
