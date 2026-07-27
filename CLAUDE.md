@@ -72,25 +72,60 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 ---
 
-## 3. State of play (2026-07-24)
+## 3. State of play (2026-07-26)
 
-- **Design: complete, adversarially reviewed, and rewritten.** SPEC v3.0 + EXPERIENCE (R1–R24) + ~9,000 lines of phase-tagged catalogs. Six critics (quiet-equilibrium, spectator-legibility, LLM-playability/cost, exploit/economy, cohesion, architecture) were run against the v3 draft and all FATAL/SEVERE findings are integrated; a scoring panel followed.
-- **Code: zero.** This is the standing imbalance and it is now the only thing that matters.
-- **Predecessor: gone.** High Water was built, hardened, deployed, and fully deleted (repo, server, services). Its 14 scars are the most valuable input in the repo and v3.0 closes them by name.
-- **Closed:** name, theme, scope, core loop, phase order, the Reckoning's format, the trust ladder. Reasoning for each is in `TRACKER.md` § DECISIONS.
-- **Open** (`TRACKER.md`): gate transit times and hands-per-principal · the Levy's total and formula · how much a season resets · whether hands can be acquired · whether arrival counts as present in the same tick · cast composition and inference budget · currency naming.
+> **This section was "Code: zero" for two days and then went stale for weeks.** Do not trust it over
+> `docs/design/COMPLETION.md`, which is command-verified and updated per session. What follows is the
+> orientation; that file is the ledger.
+
+- **Design: complete, adversarially reviewed, rewritten.** SPEC v3.0 + EXPERIENCE (R1–R24) + ~9,000
+  lines of phase-tagged catalogs. Six critics run against the v3 draft, all FATAL/SEVERE integrated.
+- **Code: ~78,000 lines of engine, 2,939 tests, lint 0, tsc 0.** Phase 0's sixteen build steps and
+  Phase 1's five areas all have real implementations. All **40 of 40** canon verbs are implemented —
+  that is the §17 *ceiling*, so adding a mechanic now means spending a verb, not adding one.
+- **Live in production**, one shard, ~tick 5,000, `failures: []`, a 12-member LLM cast on its own keys
+  plus heuristics. `agentinsurance.io/compact/`.
+- **★ GATE 3 IS RUN AND THE DESIGN SURVIVED IT.** `AGT-E1`: `kept 22 · broken 3` — **12% of settled
+  elective promises broken, unprompted**, with the rundown naming it. §7.6's negative branch does not
+  obtain: trust is not worthless and betrayal is not irrational. Neither zero (which would have
+  invalidated the premise) nor universal (which would make the elective half a fee).
+- **A6 closes end to end** (2026-07-26): a world nobody steers issues ~31 grants per 900 ticks and
+  *draws on ~27 of them* — a delegate acting in its grantor's name inside the LIMITS the grantor was
+  shown. INV-22 audits every draw; before this it audited an always-empty journal and reported green.
+- **Predecessor: gone.** High Water deleted (repo, server, services). Its 14 scars are still the most
+  valuable input in the repo, and several were re-encountered and closed by name during the build.
+- **Open** (`TRACKER.md` + `COMPLETION.md`): a **second good** (the real bottleneck — `market` is 3,065
+  lines pricing one fungible commodity) · whether a role releases a hand at delivery or settlement ·
+  checkpoint adoption's closed-account bug · the three-humans watchability gate, never run.
 
 ### The next action
 
-**Build the first vertical slice — "one convoy, one predator, one Reckoning"** (`SPEC.md` §16). Two principals, three hands each, two systems, one good, no market. A hires B's hand as escort for a share, part escrowed and part elective; C attempts interception; it settles or defaults at the Reckoning and renders as a link that holds or snaps.
+**Read `docs/design/COMPLETION.md` first.** It carries the done/left ledger with two honest
+denominators (~90% "the machine works and the premise held", ~40% "there is depth here"), the §16
+acceptance criteria with an honest column, and what is left in priority order.
 
-It is the smallest thing that can **fail interestingly**, and it carries the design's own falsification test: *if the elective part is always honoured, trust is worthless because betrayal is never rational, and the design changes before anything else is built.*
+Then, in rough order of value:
 
-Put the retrofit-proof event fields in on day one (§15.1) and build the test rig before the game (§16 step 0).
+1. **A second good.** The distance between the two numbers above is almost entirely this. The four
+   goods constants are now independently declared, so it is a local edit rather than one that silently
+   moves three mechanics.
+2. **Measure whether an LLM abuses a mandate.** `AGT-E1` answered the venture question; authority is
+   the one the design is actually named for, and production now produces the artifact.
+3. **The escrow root cause** behind checkpoint adoption (`COMPLETION.md` §7). Boot is O(history) and
+   growing until it is fixed — it just can no longer take the world down.
 
-**Commit #1 carries more than it looks like.** Per `TESTING.md` Gate 0: `NODE_ENV=production` + error middleware · seeded RNG + the banned-construct lint · `assert_invariants(world)` · the `sim` CLI printing per-tick `state_hash` · Ed25519 + RFC 9421 verification · the canonical serialiser **golden-filed** · the `TICK_SECONDS` scale audit · and a **verified** restore. Each of these is far cheaper now than retrofitted, and four of them are golden-file surfaces that only work if they predate the bugs.
+### The lesson this project keeps re-teaching
 
-**The gate that matters most is Gate 3** (`TESTING.md` §15): as soon as a slice is playable, run the falsification probes and *read* them. If betrayal never happens or trust has no price, the design changes there — before anything else is built on a false premise.
+**A capability that exists and is never exercised is indistinguishable from one that is missing** — in
+every report, on every frame, and to every reader including its author. It has now appeared at three
+depths: verbs with no affordance (nine mechanics, including `grant`), affordances no cast ever selects
+(the four empty panels, including the core loop), and invariants whose subject cannot occur (INV-22
+green over an empty journal for the project's whole life; INV-23 the same before it).
+
+The corollary, learned expensively on 2026-07-26: **a negative claim from one grep spelling is only as
+strong as the spelling.** "No verb accepts a mandate" was false, `TRACKER.md` already said so, and the
+method was `recordSpend` rather than the `spend` that was searched for. Read the log before asserting
+an absence.
 
 ---
 

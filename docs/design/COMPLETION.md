@@ -12,14 +12,21 @@ trusting — this file goes stale the moment someone commits.*
 
 ## The one-paragraph answer
 
-**The machine is built and correct. The show is running on 8 of 13 surfaces. The cast does not
-exercise four of the richest mechanics, and one of those four is the core loop.**
+**The machine is built and correct, the core loop closes without a human in it, and 12 of 13 show
+surfaces carry data. The gap is no longer mechanics — it is that the world has ONE GOOD.**
 
-Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and 2,916
-tests pass against them. Phase 2 and Phase 3 do not exist, which is by design — §16 marks Phase 2
-"optional, possibly forever." The gap between "built" and "good" is not missing systems. It is that
-the world has **one good**, and that the live cast has never once issued a grant, built a WORKS, or
-formed a syndicate.
+Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **2,939
+tests** pass against them. Phase 2 and Phase 3 do not exist, by design — §16 marks Phase 2 "optional,
+possibly forever."
+
+As of 2026-07-26 (late), a world nobody steers hands out authority *and draws on it* (~31 grants, ~27
+draws per 900 ticks), raises WORKS so goods have a source, founds syndicates, and carries all three of
+§16's world-memory projections. The four empty panels were a **cast** gap in every case: the mechanic
+built, the affordance offered, and no branch ever selecting it.
+
+What is left is depth, not machinery. `market` is 3,065 lines pricing a single fungible commodity, so
+there is no trade, no specialization and no supply chain to reason about — **that is the whole distance
+between the two numbers below.**
 
 ## Two honest denominators
 
@@ -28,7 +35,7 @@ Both numbers are defensible; they answer different questions, and quoting either
 | Question | Answer | What it counts |
 |---|---|---|
 | Does the machine work, and did the premise survive falsification? | **~90%** | Phase 0+1 systems, invariants, determinism, durability, Gate 3 |
-| Is there enough strategic depth for months of interesting agent decisions? | **~30%** | Distinct goods, real tradeoffs, mechanics the cast actually uses |
+| Is there enough strategic depth for months of interesting agent decisions? | **~40%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~30% on 2026-07-26: the cast now exercises authority, production and syndicates, which were built-but-idle. Capped well below 90% by the single good |
 | Phase 2 (combat depth) | **0%** | Optional by design — §16 says "possibly forever" |
 | Phase 3 (risk market) | **0%** | Deferred deliberately in the v2.0 reframe |
 
@@ -72,7 +79,7 @@ surface is full rather than partial. Adding a mechanic now means spending a verb
 | **A9:** spectator filter is a strict subset of agent filters | ✅ tested |
 | Supply conservation across 10k transfers | ✅ tested |
 | Replay determinism — identical `state_hash` | ✅ tested |
-| **Watchable (2):** ≥1 authority-betrayal occurs unprompted, replay shows grant + warning + seal + deed | ⚠️ **betrayal yes, grant no** — `AGT-E1` measured `kept 22 · broken 3` (12%), but via ventures; no *grant* has ever been issued in the live world, so the A6 replay artifact does not exist yet |
+| **Watchable (2):** ≥1 authority-betrayal occurs unprompted, replay shows grant + warning + seal + deed | ⚠️ **now MEASURABLE, not yet measured.** `AGT-E1` found `kept 22 · broken 3` (12%) — but via *ventures*, not authority. As of 2026-07-26 grants are issued AND drawn on (~27 draws/900 ticks), so the seat betrayal happens from finally exists and production produces the artifact. Whether an LLM in that seat turns a mandate against its grantor is the open measurement, and §7.6 requires the answer be allowed to come back "no" |
 | **Remembered:** permanent ruin at a fallen holding | ✅ implemented |
 | **Remembered:** Hall of Fame projection | ✅ built — 4 rows on the frame, honesty mutation-tested |
 | **Remembered:** places named after the principal that first developed them | ✅ built — razed WORKS included, so a place keeps its founder's name |
@@ -98,12 +105,18 @@ instead of one that silently moves three mechanics. Nothing below `GoodId` assum
 
 With one commodity there is no trade, no specialization, no comparative advantage and no supply
 chain — so `market` (3,065 loc, fully built) prices a single fungible thing. **This is the whole
-distance between the 30% and the 90%.**
+distance between the 40% and the 90%.**
 
-### 2. Four of the show's thirteen surfaces are empty, and one is the core loop
+### 2. ~~Four of the show's thirteen surfaces are empty~~ → ONE, and it is not a cast gap
 
-The live frame publishes 13 keys. Eight carry data: `map` 30 rows, `tributeLines` 21, `ticker` 14,
-`rundown` 12, `glyphs` 7, `raidLines` 6, `docket` 1, `meters` 4. Four are empty:
+The live frame publishes 13 keys (15 now, with the two world-memory projections). Every one carries
+data except `claimLines`. All four that were empty on 2026-07-26 morning turned out to be the SAME
+defect — the mechanic built, the affordance offered, and **no cast branch ever selecting it** — which is
+the "legal-but-unoffered" sweep one layer up, and reads in every report exactly like a missing feature:
+
+**Production fills FORWARD, not retroactively.** Boot replays the recorded action log, and those ticks
+were produced by the old cast, so a restart does not backfill the panels — they populate as the world
+runs on from the deploy.
 
 | Surface | Rows | Why — verified, not guessed |
 |---|---|---|

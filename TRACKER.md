@@ -11,20 +11,30 @@
 > written down the denominator. Every claim in it is checked by a command, and the ones that are not
 > are marked UNVERIFIED.
 >
-> **2026-07-26 — every system in the phase plan is BUILT and LIVE. Four of them do not RENDER, and
-> one of those four is the core loop.**
-> Live at `agentinsurance.io/compact/`, 2,916 tests, gate 0 clean, `failures: []`. The world runs the
-> A6 core loop with both holes closed, markets, predation, a reachable risk frontier, **an economy
-> with a source** (WORKS), **sovereignty** (the Charge), and **syndicates** (charter · membership ·
-> pooled treasury · offices · votes).
+> **2026-07-26 (late) — A6 CLOSES END TO END, and the empty panels were a CAST gap, not a render gap.**
+> Live at `agentinsurance.io/compact/`, **2,939 tests**, gate 0 clean, `failures: []`, tick ~5,000.
+> The world runs the A6 core loop, markets, predation, a reachable risk frontier, **an economy with a
+> source** (WORKS), **sovereignty** (the Charge), and **syndicates**.
 >
-> ⚑ **The previous version of this line claimed "every one of those has a named pixel signature and
-> reaches a browser." The first half is true and the second half was not.** Measured on the live
-> frame: `authorityLines 0 · worksLines 0 · syndicateLines 0 · claimLines 0`, against `map 30 ·
-> tributeLines 21 · ticker 14 · rundown 12 · raidLines 6`. Every render path is implemented AND wired
-> into `FrameSource` — the panels are empty because **the live cast has never issued a grant, built a
-> WORKS, or formed a syndicate.** A13 is satisfied in the code and unsatisfied in the world, and
-> those are different claims that this line had collapsed into one.
+> **The core loop now completes without a human in it.** A plain 900-tick world issues ~31 grants and
+> *draws on ~27 of them* — a delegate acting in its grantor's name, inside the LIMITS the grantor was
+> shown before signing. INV-22 audits every draw. Before today it audited an always-empty journal and
+> reported green, for the whole life of the project.
+>
+> ⚑ **Three empty panels were fixed and the diagnosis took three tries to get right.** The frame
+> showed `authorityLines 0 · worksLines 0 · syndicateLines 0`. Read first as "the cast chooses not
+> to", then as "the capability does not exist" (**wrong — see the corrections log**), and finally
+> correctly: every mechanic was built, every affordance was offered, and **no cast branch ever
+> selected any of them.** A capability that exists and is never exercised reads, in every report and
+> on every frame, exactly like one that is missing.
+>
+> Local worlds now render `authorityLines 12 · worksLines 4 · syndicateLines 8` plus both new
+> world-memory projections. **Production fills FORWARD, not retroactively** — boot replays the
+> recorded action log, and those ticks were produced by the old cast, so the panels populate as the
+> world runs on from the deploy rather than on the next restart.
+>
+> `claimLines` is the one still empty and it is **not** a cast gap: `claimLinesFor` filters to the
+> current Reckoning, and 424 claims exist without any falling in the live window.
 >
 > **★ AGT-E1 IS ANSWERED: THEY BETRAY.** Live world, LLM cast, 8 Reckonings: `kept 22 · broken 3`
 > — 12% of settled elective promises broken, unprompted, with the rundown naming it
@@ -857,6 +867,84 @@ raid is physics), and `UNBUILT_PHASES` listing `MARKETS`. What actually remains:
 - No model-written seals, no Reckoning reflection, and cast characters have no relationships or wounds.
 
 ## 🏗 BUILD LOG (2026-07-24 →)
+
+**2026-07-26 (late) — A6 CLOSES; three panels filled; and four corrections of mine.**
+
+Commits `b559409` → `dfc9b5e`, all deployed. 2,939 tests, lint 0, tsc 0, production healthy at tick
+~5,000 with `failures: []`.
+
+**What actually shipped**
+
+- **A6 completes end to end.** `elect` learned to accept a mandate (a delegate electing on a venture
+  it did not create draws on a live grant from the creator, inside the LIMITS), and the heuristic cast
+  learned to *use* mandates it holds. A plain 900-tick world: ~31 grants, **~27 draws**. INV-22 has a
+  producible subject for the first time in the project's life. `inv22-is-vacuous.test.ts` — which said
+  in its own failure message "the day this fails, invert it" — failed, and is now `inv22-is-live`.
+- **The economy has a source.** The cast had no `build` branch, so D17's finding ("offered 70/70,
+  never once built, `levyShort` past 345,000") was a *missing branch*, not a pricing problem. Now 3–4
+  WORKS per world, EXTRACTING.
+- **Syndicates get founded** (`form` branch) — 8 houses per world.
+- **All three §16 world-memory projections exist.** Ruins already did; `hallOfFame` and `places` are
+  new read-only projections (`src/frames/memory.ts`), no new state, no `state_hash` movement.
+- **Adoption can no longer take the world down** — see the outage entry below.
+- **Goods constants decoupled** (scar #5 in the import graph), **HARD RULE 4 violation fixed** in the
+  LLM prompt and `agent.md` ("enrolment grant" for goods, while `grant` is canon for delegated
+  authority), and a **cry-wolf event probe** that had been passing vacuously.
+
+**⚑ I CAUSED A 4-MINUTE PRODUCTION OUTAGE, and the fix is the valuable part**
+
+`planCheckpoint` gated adoption on `journal_meta.rules_version`, which is **write-once** and records
+what the world was *born* under — so the first rules change made the mismatch permanent and every boot
+forever paid a full genesis replay (4,809 ticks, 2m12s, growing) to re-discover a divergence an
+operator had already adjudicated. Fixed by stamping each snapshot with the version that produced it.
+
+Which revealed that **the adopt path had never once executed in production**, and it failed:
+`CHECKPOINT_UNUSABLE` on a tick-2830 posting against an escrow account the tick-4895 capture no longer
+held. The world HELD — correct fail-closed behaviour — on a record that was completely sound (the next
+boot verified 17 tripwires and reached the identical head). **The account check's premise is false:** it
+assumed the final account set is a superset of every account ever referenced, and an escrow that opened
+and closed in between is legitimately absent.
+
+Now `CheckpointUnusableError` degrades to a genesis replay instead of holding, verified against the real
+production condition. `COMPACT_CHECKPOINT_ADOPTION=off` exists as a kill switch so nobody has to
+`UPDATE snapshot SET rules_version = NULL` over SSH again. **Root cause still open** — boot remains
+O(history) at ~139 s and growing, it just cannot cause an outage.
+
+**⚑ FOUR THINGS I GOT WRONG, because the pattern is worth more than the fixes**
+
+1. **"No verb accepts a mandate."** False, and **this tracker already said so** — the 2026-07-25 A6
+   entry below states plainly that `create` with `on_behalf_of` draws on a grant with the LIMITS
+   enforced. I grepped `grantBook.spend` and `.spend(`; the method is `recordSpend`. *A negative claim
+   from one grep spelling is only as strong as the spelling, and the record was right there.* Read the
+   log before asserting an absence.
+2. **"This needs its own session."** I told the user A6's delegation needed a captured-schema change,
+   a `RULES_VERSION` bump and a settlement-path rewrite. All three followed from a wrong premise. It
+   took about an hour and touched no schema.
+3. **Diagnosing production from a stale file.** A `curl` returned `http=000`; I analysed the
+   leftover JSON anyway and confidently reported the cast had died. It was healthy.
+4. **A second spelling for delegation.** I added a `grant:` param to `elect` before noticing `create`
+   already spells this `on_behalf_of` — one concept, two words, in a rules surface. Removed.
+
+**Three tests passed for the wrong reason** and were caught only by mutating each guard: one returned
+early when its fixture found nobody, one matched a regex any refusal satisfied, and one I had *widened*
+with `|nothing left` so it passed on an unrelated refusal while claiming to test expiry.
+
+**What I am trying to do next**, in order:
+
+1. **Measure, not build:** does an LLM in a delegate seat turn a mandate against its grantor? That is
+   `AGT-E1` for *authority* rather than ventures, and §7.6 insists the answer be allowed to come back
+   "no". Production now produces draws, so the instrument exists.
+2. **The escrow root cause** — needs a local reproduction with *enrolled* principals (a 700-tick
+   heuristic world adopts cleanly; `p:vale` is an external enrolment, and idle-seat recycling is the
+   first mechanism to check).
+3. **A second good.** Still the bottleneck between "the machine works" and "there is depth here":
+   `market` is 3,065 lines pricing one fungible commodity. The four goods constants are now
+   independent, so this is a local edit rather than one that silently moves three mechanics.
+
+**Two decisions that are the user's, not mine** — both change what the game *is*: whether a role should
+release a hand at **delivery** rather than settlement (D19's lever), and **what a second good should
+be**.
+
 
 **2026-07-25 (later) — Persistence LANDED + Gate 3 run 2 + codex fixes + the A6 plan.**
 
