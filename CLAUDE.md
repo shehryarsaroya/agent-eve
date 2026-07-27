@@ -12,7 +12,19 @@
 4. **One word per concept.** `SPEC.md` §3 is the vocabulary canon and it is a *rules surface*, not a style guide. Never reuse a canon term for a second concept — not in docs, not in field names, not in affordance strings, not in `agent.md`. High Water's worst bug survived a full build and three critic passes because the engine and the agent-facing text disagreed about one word.
 5. **Any gate priced in identities is unpriced** (A15). Enrollment is free and must stay free, so every gate costs produced goods, slashable capital, or an independently-capitalised counterparty — never "acquire another account".
 6. **Read before adding.** ~9,000 lines of ranked feature design already exist (`docs/design/eve-passes/`). Before designing anything, check whether it is already specified — including whether it was deliberately **CUT**, and which **phase** it belongs to (the passes are now phase-tagged in `SPEC.md` §0).
-7. **Parallel agents must never share an output file.** Concurrent writers thrash and lose everything (this cost a full codex pass; see `docs/background/HIGH-WATER-LESSONS.md` scar #12).
+7. **Parallel agents must never share an output file — nor a WORKING TREE.** Concurrent writers thrash
+   and lose everything (this cost a full codex pass; see `docs/background/HIGH-WATER-LESSONS.md` scar
+   #12).
+
+   The second half was added on 2026-07-27 after I ran four writer agents in one checkout with
+   carefully disjoint *directories*, which is not enough. Git is the shared resource, not the files:
+   one agent's commit swept another's in-progress `demand.ts` into an unrelated message; a second's
+   commit had to carry a third's half-finished validator because without it the tree did not compile;
+   one agent ran `git stash push --keep-index` to answer a question and stashed *two* agents' work at
+   once (recovered, but only because it noticed). A lint error from one agent's live file rode into
+   another's commit.
+   **Disjoint file ownership does not make concurrent agents safe. Give each writer its own worktree
+   (`isolation: "worktree"`), or run them one at a time.** Readers and probes can share freely.
 
 ---
 
