@@ -258,11 +258,39 @@ describe('the sim reports the Levy, and reports it honestly', () => {
     // Every assertion above held while `totalise` reported `levyShort: 0` unconditionally —
     // which is precisely the number §14.2 calls the headline and A14's abstention-trivial
     // failure "wearing a number". So it is asserted against the rows it is summed from, by a
-    // second road, and asserted non-zero: this cast pays what it can and still cannot lift
-    // the presence share of every tribute in the run.
+    // second road.
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **IT USED TO BE ASSERTED NON-ZERO, AND THAT ASSERTION WAS PINNING TWO CAST DEFECTS.**
+    //
+    // The original note here read *"this cast pays what it can and still cannot lift the
+    // presence share of every tribute in the run"*. It could not, and the reason was not the
+    // Levy biting. It was `src/cast/heuristic.ts`, twice:
+    //
+    //   1. `levyMove` gated every hop on `tierOf(map, member.seat)`, and constellation 1's
+    //      delivery place is a COMMONS system while three of its systems are MARCHES — so a
+    //      member seated there had its ONLY legal route refused by the cast rather than by the
+    //      engine, and delivered nothing for its whole life while being assessed in full.
+    //   2. Nothing reserved a hand for the tribute, so a member with all three hands filled
+    //      into roles could neither deliver nor walk. Traced: 109,052 units of the good in
+    //      stores, 19,304 owed, 264 consecutive ticks with no free hand, swept at the Reckoning.
+    //
+    // Both are fixed and named at their call sites. With them fixed this cast pays in full, so
+    // the shortfall is **zero** — which is the honest reading of the meter: §14.2 says it *"rises
+    // when everyone hides"*, and a cast that produces, refines and delivers is not hiding.
+    //
+    // The Levy's bite is not left unasserted; it is asserted where it can be asserted on purpose
+    // rather than by a bot that cannot walk — `chronic.test.ts` (short exactly the non-escrowable
+    // share when nobody carries it), `tribute.test.ts` (red lines and a non-zero meter),
+    // `coase.test.ts`, `docket.test.ts` and `halt.test.ts` all still pin a non-zero shortfall
+    // from a deliberate fixture. What this run may still not do is *manufacture* one.
+    // ══════════════════════════════════════════════════════════════════════════
     const summedByHand = result.perLevy.reduce((n, row) => n + row.shortMinor, 0);
     expect(result.reckonings.levyShort).toBe(summedByHand);
-    expect(result.reckonings.levyShort).toBeGreaterThan(0);
+    expect(result.reckonings.levyShort).toBeGreaterThanOrEqual(0);
+    // Not runaway either: a cast that pays should never be reported short of a whole
+    // Reckoning's total, whatever else moves.
+    expect(result.reckonings.levyShort).toBeLessThan(result.reckonings.levyTotal);
     expect(result.reckonings.levyTotal).toBe(result.perLevy.reduce((n, r) => n + r.totalMinor, 0));
     expect(result.reckonings.levyAssessed).toBe(ARGS.principals * result.perLevy.length);
   });

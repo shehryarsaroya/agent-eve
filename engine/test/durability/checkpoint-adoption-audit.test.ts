@@ -197,10 +197,17 @@ describe('A5′: escrow across a checkpoint adoption, with locks that are actual
     const live = await lockedRun();
     const snapshot = await live.store.latestSnapshot();
     expect(snapshot?.tick).toBe(TICKS - 1);
-    // The control the builder's equivalence test does not have. Two locks, non-zero,
-    // still open at the tick the snapshot was taken over.
+    // The control the builder's equivalence test does not have: locks, non-zero, still open at the
+    // tick the snapshot was taken over.
+    //
+    // `toBe(2)` for as long as escrow was the only thing that locked capital. A bond is the second
+    // — `post_bond` opens a lock in the claimant's own stores that stays open for as long as the
+    // claim does (§3: *"posted slashable capital, continuous"*) — so a world where the cast takes
+    // ground carries a third row. The assertion this test needs is non-vacuity, and pinning the
+    // exact count made a *stronger* fixture fail: three open locks including a continuous one is a
+    // better control than two, not a worse one.
     const rows = JSON.parse(live.liveRows) as readonly { amountMinor: number }[];
-    expect(rows.length).toBe(2);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
     for (const r of rows) expect(r.amountMinor).toBeGreaterThan(0);
   }, 120_000);
 

@@ -641,6 +641,38 @@ import {
  *
  * The live world needs the operator divergence door (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the
  * next deploy, as at 1 → 2, 4 → 5, 5 → 6, 6 → 7 and 7 → 8.
+ *
+ * ## 9 → 10 (2026-07-27)
+ *
+ * **Two reads stopped writing, and the assessment memo stopped being the authority.** This boundary
+ * has nothing to do with the cast branches that motivated it — the cast is never consulted during
+ * replay, its decisions enter the record as logged actions, so `graduate`, the claim, the Charge, the
+ * refine threshold and the create appetite are all invisible to a replay. Three engine edits move the
+ * hash and it is worth stating exactly where each one lands:
+ *
+ *   1. **`Book.paymentOf` no longer inserts a zero row** — in `levy/book.ts` *and*
+ *      `sovereignty/book.ts`. Both maps are inside `capture()` and both books are state tables, so a
+ *      lazily-inserted row was a state change caused by a **read**. The first read over an absent
+ *      pair happens inside `settleLevy` / `settleCharge`, which run at **phase 287** — so the
+ *      signature is: agreement everywhere up to the first settlement, divergence from that tick
+ *      onward. Tick **287** is exactly where this world's operator door is already armed, and this
+ *      boundary needs no new acceptance if that door is still open.
+ *   2. **`assessCycle` skips a constellation whose whole roll is already on a docket.** This one is
+ *      **not expected to diverge a genesis replay at all**: `assessLevyNow`'s memo already stops the
+ *      second call inside a Reckoning, and at phase 0 nobody holds a line, so the new guard is false
+ *      on every road a replay takes. It exists for the road a replay does *not* take — an adopted
+ *      boot, where the memo starts empty — and it is asserted there by
+ *      `test/durability/a-mid-cycle-mover-does-not-fork-the-record.spec.ts`.
+ *   3. **`api/observe.ts` moved the `assure` affordance out of the `seal` loop.** A read path with no
+ *      state in it; it cannot diverge anything and is named only so the diff is fully accounted for.
+ *
+ * **Nothing draws from the RNG and no phase gained a draw.** No event kind was added and no event
+ * row moved: the removed writes were map insertions with no posting and no ledger row behind them,
+ * which is precisely why nothing else noticed them for the life of the build.
+ *
+ * The live world needs the operator divergence door (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the
+ * next deploy, as at 1 → 2, 4 → 5, 5 → 6, 6 → 7, 7 → 8 and 8 → 9 — and the tick to expect is the
+ * **first settlement in the record**, not a later one.
  */
 /**
  * Bumped 9 → 10 by SPEC §9A (combat).
@@ -663,8 +695,26 @@ import {
  *     still refused. The rejection's wording changed; its outcome did not.
  *
  * So this adds a declared discontinuity of the *hash* kind and none of the *identity* kind.
+ *
+ * ── WHY THIS IS 11 AND NOT 10, WHICH IS A RECORDED MISTAKE ───────────────────
+ *
+ * **Two independent changes each bumped 9 → 10, and both reached production.** Combat (above) and the
+ * territorial cast branches were built concurrently in separate worktrees, neither could see the
+ * other's bump, and each was individually correct to make one. They were deployed minutes apart, so
+ * the live record briefly carried snapshots stamped `10` produced by **two different rule sets** — and
+ * a version stamp whose meaning depends on which deploy wrote it is not a version stamp.
+ *
+ * That is the defect the checkpoint investigation had just finished diagnosing, arriving from a new
+ * direction. There the cause was nine accepted divergences sharing two tables; here it is two rule
+ * sets sharing one integer. Adoption is already refused for this world, so the practical cost was nil
+ * *this time* — which is precisely why it is written down rather than quietly renumbered.
+ *
+ * The union of both changes is therefore **11**, a number no partial build ever claimed. The general
+ * rule, for the next time work runs in parallel worktrees: `RULES_VERSION` is a **shared resource**,
+ * exactly like the working tree in HARD RULE 7. A bump is not a local edit, and two agents cannot each
+ * own the next integer.
  */
-export const RULES_VERSION = 10;
+export const RULES_VERSION = 11;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.

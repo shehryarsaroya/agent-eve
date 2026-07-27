@@ -705,6 +705,22 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       }
     }
     expect(worst, 'the sweep must actually have built excerpts').toBeGreaterThan(20_000);
+    // ── THE `* 0.95` FUDGE IS GONE, AND §11B'S SPLIT IS WHY ───────────────────
+    //
+    // Two concurrent branches met here. The territorial work raised this to `* 0.98` with a measured
+    // worst case of **38,725** (`sable` at tick 36) and a note to restore 0.95 "once §11B is split" —
+    // because the day the cast could take ground was the day a claimant was offered `post_bond`, which
+    // selected §11B **for the first time in a real wake in this project's life**. Until then
+    // `claimLines` was 0, so the largest declared position had never once occurred.
+    //
+    // §11B is now split. At `###` granularity a member offered `post_bond` gets §11B's preamble plus
+    // one block — **1,983 characters, not ~8,500** — so the condition that note set has been met, and
+    // met better than by restoring a fraction: the fudge is replaced by a DECLARED constant measured
+    // against the REACHABLE maximum. A second, undeclared budget sitting under the declared one is the
+    // thing that made 38,725 surprising in the first place.
+    //
+    // Kept as the ceiling-minus-margin form deliberately. `MAX_CONTRACT_CHARS * 0.98` moves silently
+    // whenever the ceiling moves; `MAX_CONTRACT_CHARS - CONTRACT_CEILING_MARGIN` does not.
     expect(worst, 'a real wake must sit inside the declared margin').toBeLessThanOrEqual(
       MAX_CONTRACT_CHARS - CONTRACT_CEILING_MARGIN,
     );
