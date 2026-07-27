@@ -134,13 +134,17 @@ describe('the good exists in one zone, and that is the whole mechanic', () => {
     // **THE LLM CAST IS PROMPTED FROM `agent.md`, AND §11A IS THE ONLY PART OF IT THE CAST READS.**
     // `sovereigntyStatementFor` now serves `FUEL_STATEMENT` as the fourth statement (2026-07-27) —
     // for a day it served three and the statement was exported to nobody — but the served slot is an
-    // *observation* field, and `CONTRACT_SECTIONS` excerpts §11 and §11A and not §11B, so §11A is
-    // still the whole of what a cast member reads about the third good before it is a claimant.
-    // The prose here is compressed rather than verbatim — the cast contract is at ~37,900 of 40,000
-    // characters and a verbatim copy pushed it to 39,706, at which size the excerpt silently DROPS a
-    // later section — so the numbers are pinned against the constants instead of the prose being
-    // pinned against the statement. §11B carries the statement itself verbatim, at no cost to the
-    // contract, and `test/rules-surface/agent-md.test.ts` pins that.
+    // *observation* field, and the cast contract excerpts §11A and not §11B, so §11A is still the
+    // whole of what a cast member reads about the third good before it is a claimant.
+    //
+    // The prose here is compressed rather than verbatim, and the reason is worth keeping as a
+    // record of what a byte budget on a rules surface actually costs: the excerpt was at 37,902 of
+    // a 38,000 bar and a verbatim copy pushed it to 39,706, at which size a later section was
+    // silently dropped. So the numbers are pinned against the constants instead of the prose being
+    // pinned against the statement. **The budget is no longer paid by everybody on every wake**
+    // (`src/cast/prompt.ts:CONTRACT_CATALOG` selects per situation, and §11A is floor), but §11B is
+    // 8,491 characters and still does not fit — see `CONTRACT_NOT_EXCERPTED`. §11B carries the
+    // statement verbatim for an external agent, and `test/rules-surface/agent-md.test.ts` pins it.
     //
     // MUTATION: change `ANCHOR_FUEL_BY_TIER.FRONTIER` or `FUEL_YIELD_PER_TICK.FRONTIER`. RED here,
     // which is the whole point: scar #1 is the engine and the agent-facing text disagreeing about one

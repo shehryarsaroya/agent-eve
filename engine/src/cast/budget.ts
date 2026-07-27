@@ -60,13 +60,14 @@ export interface CastBudgetLimits {
    *
    * Named for the prompt and applied to the observation, which is worth stating plainly
    * because the difference is most of the bill: `llm.ts` passes this as
-   * `buildPrompt`'s `maxObservationChars`, and the ~22k-character `agent.md` contract
-   * and the character brief sit outside it. Setting this to 2,000 measurably yields a
-   * ~26,400-character prompt, not a 2,000-character one.
+   * `buildPrompt`'s `maxObservationChars`, and the `agent.md` contract excerpt (25k–38k
+   * depending on the wake — `prompt.ts:CONTRACT_CATALOG`) and the character brief sit
+   * outside it. Setting this to 2,000 measurably yields a ~26,400-character prompt, not a
+   * 2,000-character one.
    *
    * That is deliberate rather than an oversight to fix: the contract is the rules
    * surface, and scar #1 is what happens when a player reasons from a partial copy of
-   * the rules — `loadContract` would rather drop whole named sections and say so
+   * the rules — the excerpt would rather drop whole named sections and say so
    * ({@link MAX_CONTRACT_CHARS}) than have a byte budget quietly shave it. Cost is
    * still counted honestly either way: `charge()` prices the prompt that was actually
    * built, so a prompt over this figure is billed at what it really costs.
@@ -81,12 +82,13 @@ export interface CastBudgetLimits {
   /**
    * Micro-dollars per million input tokens the provider served from its prompt cache.
    *
-   * This matters more than it looks. The player contract is the first message, ~6.5k
-   * tokens, and byte-identical for all 20 members, so once it is warm essentially the
-   * whole prompt is a cache hit — measured live at 6498/6543 tokens, 99%. Charging those
-   * at full input price does not overspend, but it makes the cumulative cap trip several
-   * times earlier than the real invoice, which cuts the cast off while the money is still
-   * there. Default is a tenth of the input rate.
+   * This matters more than it looks. The player contract is the first message, and it opens
+   * with a ~5.2k-token floor that is byte-identical for all 20 members, so once it is warm
+   * essentially the whole prompt is a cache hit — measured live at 6498/6543 tokens, 99%,
+   * before per-wake section selection landed. Charging those at full input price does not
+   * overspend, but it makes the cumulative cap trip several times earlier than the real
+   * invoice, which cuts the cast off while the money is still there. Default is a tenth of
+   * the input rate. See `transport.ts:cachedInputTokens` for what selection changed.
    */
   readonly cachedInputMicrosPerMillion: number;
 }

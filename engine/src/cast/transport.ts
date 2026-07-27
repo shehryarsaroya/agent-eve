@@ -61,12 +61,19 @@ export interface CompletionReply {
    * Input tokens the provider served from its prompt cache, or null if it said nothing.
    *
    * These are billed at a large discount, and for this cast they dominate: the player
-   * contract is ~6.5k tokens, is the FIRST message, and is byte-identical for every one
-   * of the 20 members, so after the first call of a Reckoning essentially the whole
-   * prefix is a cache hit. Measured live against gpt-5.6-luna: 6498 of 6543 prompt
-   * tokens cached, i.e. 99%. Pricing those at full rate makes the spend cap trip several
-   * times earlier than real spend, which does not overspend but does cut the cast off
-   * long before the money is gone.
+   * contract is the FIRST message and **opens with a ~5.2k-token floor that is
+   * byte-identical for every one of the 20 members**, so after the first call of a
+   * Reckoning essentially the whole prefix is a cache hit. Measured live against
+   * gpt-5.6-luna: 6498 of 6543 prompt tokens cached, i.e. 99%. Pricing those at full rate
+   * makes the spend cap trip several times earlier than real spend, which does not
+   * overspend but does cut the cast off long before the money is gone.
+   *
+   * The measurement predates per-wake section selection (`prompt.ts:CONTRACT_CATALOG`),
+   * which is why the sentence says *floor* rather than *contract*: the excerpt is now cut
+   * from each member's own observation, so the tail after the floor varies. The floor is
+   * emitted first, in one fixed order for everybody, precisely to keep this true — there
+   * are eight reachable variants and a twelve-member cast clusters into two or three, so
+   * the tail warms as well. Re-measure before quoting 99% again.
    */
   readonly cachedInputTokens: number | null;
 }

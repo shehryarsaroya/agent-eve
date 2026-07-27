@@ -19,7 +19,7 @@
 import { setSpeed } from '../../src/core/time.js';
 import type { Clock } from '../../src/core/time.js';
 import { Runtime } from '../../src/sim/runtime.js';
-import { LlmCast, loadContract, type CastTransport, type CompletionReply, type CompletionRequest, type ContractExcerpt, type LlmCastOptions } from '../../src/cast/index.js';
+import { LlmCast, loadContractDocument, type CastTransport, type CompletionReply, type CompletionRequest, type ContractDocument, type LlmCastOptions } from '../../src/cast/index.js';
 
 /** A clock that never moves. `serverNow` is display-only, so a constant is honest. */
 export const stoppedClock: Clock = { nowMs: () => 1_700_000_000_000 };
@@ -172,9 +172,15 @@ export async function settle(): Promise<void> {
   await Promise.resolve();
 }
 
-/** The real `agent.md` excerpt, loaded once. Tests that need a contract share it. */
-export const CONTRACT: ContractExcerpt = (() => {
-  const loaded = loadContract();
+/**
+ * The real `agent.md`, parsed once. Tests that need a contract share it.
+ *
+ * The **document**, not one excerpt: the cast cuts a per-wake excerpt from each member's own
+ * observation, so handing it a frozen excerpt here would leave the live selection path
+ * untested by the entire cast suite.
+ */
+export const CONTRACT: ContractDocument = (() => {
+  const loaded = loadContractDocument();
   if (loaded === null) throw new Error('agent.md could not be read; the cast suite needs it');
   return loaded;
 })();

@@ -47,6 +47,50 @@
 > pins. **37,902.** The next addition to §1–§12 has ~100 characters of room. `MAX_CONTRACT_CHARS`'s own
 > note names the real fix: select sections from the observation instead of shipping all of them.
 >
+> ### ★ THE CONTRACT IS NOW SELECTED PER WAKE — and the interesting part is what that did NOT fix
+>
+> `src/cast/prompt.ts:CONTRACT_CATALOG` replaces the flat section list with an **eight-section floor
+> plus three conditionals**, each with a predicate read off the member's own observation. `llm.ts` cuts
+> the excerpt at the wake instead of once at construction. Measured (`excerptFor`, pinned in
+> `prompt.test.ts`): **newcomer 25,062 · mid-game with ventures 32,664 · claim-holder 33,830 · every
+> conditional at once 37,902.**
+>
+> **The guarantee is structural, not diligent.** `sectionIsNeeded` includes a section whose verb appears
+> in `affordances[]` *before* consulting any predicate, so no predicate can forget it — being refused
+> for a rule you were never given costs a real action out of four (AGT-S2) and is worse than a long
+> prompt. Four mutations, four named failures: dropping `graduate` from §11's verb list → *"EVERY VERB
+> HAS A HOME"*; removing the verb clause → *"A SECTION WHOSE VERB IS OFFERED IS ALWAYS INCLUDED"*;
+> reading `commons_bound` off the wrong path → *"at the paths observe actually uses"*; making §12 a
+> never-true conditional → five tests.
+>
+> **The negative result is the headline, and it should be read before the next section is written.**
+> Measured over a real 900-tick, 12-member world: 43% of wakes are 32,664 and **57% are still 37,902**,
+> because this world offers `create`, `publish_offer` and `graduate` on essentially every wake, so §4
+> and §11 are genuinely needed and §10 arrives with the first grant. Selection bounds the *typical*
+> excerpt; it **cannot bound the maximum, because the maximum is the catalog** and always will be. So
+> the immediate "no room to add rules" blocker is only half removed: a new section is now charged to the
+> situations that need it rather than to everybody, but a section a maximal Commons member needs still
+> does not fit. The 38,000 assertion is now an **exhaustive enumeration of all eight reachable
+> selections** that fails naming the combination — verified by mutation: adding §11D as a conditional
+> reports *"## 4 + ## 10 is 38438 of 38000"*, 438 over.
+>
+> **Two things this turned up that were nothing to do with the budget.**
+>
+> 1. **`situationalFocus` read a top-level `syndicates` key and `observe` nests it under `grants`.** So
+>    the §11C line was `undefined.length > 0` on every real observation and had **never fired once in
+>    production** — a pointer that existed, was tested green, and reached nobody. The old test passed
+>    because its fixture put the key where the code looked instead of where the engine puts it.
+> 2. **Nine live verbs have no rules any cast member can read.** `post_bond` (§11B),
+>    `form`/`apply`/`admit`/`approve` (§11C), `yield`/`fight`/`join`/`demand` (§11D). Two test comments
+>    recorded this with a shrug — *"which costs the cast contract nothing"* — and the sign was wrong: the
+>    house cast reads only the excerpt. It is now counted in `CONTRACT_NOT_EXCERPTED`, asserted at
+>    exactly nine, **named in every prompt** with the reason and where the observation carries the facts,
+>    and priced: §11D needs 438 characters more than the bar allows, §11C trades against nothing, §11B
+>    is 8,491 and cannot fit at `##` granularity at all. Closing it is an owner decision with three
+>    options — `###`-granularity selection (§4's 7,600 → 3,656 for a member offered only `create`;
+>    §11's 4,070 → 786 for one that cannot graduate), shorten §4/§11A, or raise the ceiling on the cost
+>    grounds `situationalFocus`'s note already argues (≈$0.001 a call cached against ~$0.25/hour).
+>
 > **Deploy notes, both of which will recur.** The preflight named tick **287** and the operator door was
 > **already armed there** from an earlier rules change, so no `/etc/compact/env` edit was needed — 287
 > is still the *first* divergence and later ones are tolerated once through the door (`rules_version

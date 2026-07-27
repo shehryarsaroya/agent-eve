@@ -67,7 +67,13 @@ import { characterOf, type CastCharacter } from './characters.js';
 import { HeuristicCast, type CastMember, type CastOptions } from './heuristic.js';
 import { CastMemory } from './memory.js';
 import { parseReply, type ParsedAction } from './parse.js';
-import { buildPrompt, loadContract, type ContractExcerpt } from './prompt.js';
+import {
+  buildPrompt,
+  excerptFor,
+  loadContractDocument,
+  readSituation,
+  type ContractDocument,
+} from './prompt.js';
 import {
   CastTransportError,
   DEFAULT_CAST_MODEL,
@@ -131,10 +137,14 @@ export interface LlmCastOptions extends CastOptions {
   /** Where log lines go. Redacted before they get here; redacted again on the way out. */
   readonly log?: (line: string) => void;
   /**
-   * The player contract. Omit to read `agent.md`; pass `null` to force the disabled
-   * path (which is what a test for "the contract could not be read" needs).
+   * `agent.md`, parsed. Omit to read it from disk; pass `null` to force the disabled path
+   * (which is what a test for "the contract could not be read" needs).
+   *
+   * The **document**, not an excerpt: the excerpt is cut per wake from the member's own
+   * observation ({@link excerptFor}), so what is shared between members and across ticks is
+   * the parsed file rather than one fixed selection.
    */
-  readonly contract?: ContractExcerpt | null;
+  readonly contract?: ContractDocument | null;
   readonly memory?: CastMemory;
 }
 
@@ -221,7 +231,7 @@ export class LlmCast {
   private readonly memory: CastMemory;
   private readonly state = new Map<string, MemberState>();
   private readonly characters = new Map<string, CastCharacter>();
-  private readonly contract: ContractExcerpt | null;
+  private readonly contract: ContractDocument | null;
   private readonly model: string;
   private readonly wakeGapTicks: number;
   private readonly deadlineTicks: number;
@@ -246,7 +256,7 @@ export class LlmCast {
     this.heuristic = new HeuristicCast(runtime, options);
     this.budget = new CastBudget(options.limits ?? {});
     this.memory = options.memory ?? new CastMemory();
-    this.contract = options.contract === undefined ? loadContract() : options.contract;
+    this.contract = options.contract === undefined ? loadContractDocument() : options.contract;
     this.model = options.model ?? DEFAULT_CAST_MODEL;
     this.wakeGapTicks = Math.max(1, options.wakeGapTicks ?? DEFAULT_WAKE_GAP_TICKS);
     this.deadlineTicks = Math.max(1, options.deadlineTicks ?? DEFAULT_DEADLINE_TICKS);
@@ -546,7 +556,19 @@ export class LlmCast {
     });
 
     const prompt = buildPrompt({
-      contract: this.contract,
+      // ── THE CONTRACT IS CUT HERE, FROM THIS MEMBER'S OWN OBSERVATION ────────
+      //
+      // Not once at construction. A member with no venture is not handed §4's formation
+      // rules, one that has never been granted authority is not handed §10's office rules,
+      // one whose holding has left the Commons is not handed §11 — and the prompt names each
+      // omission with its reason. Deterministic: `readSituation` reads only the payload built
+      // three lines up, so the same observation always cuts the same excerpt, which is what
+      // makes this safe to run inside the tick.
+      //
+      // The guarantee that matters is in `sectionIsNeeded`: a section whose verb is offered in
+      // `affordances[]` is included before any predicate is consulted, so a member is never
+      // refused for a rule it was not given.
+      contract: excerptFor(this.contract, readSituation(observation as unknown as Record<string, unknown>)),
       // Derived per wake from the record. Cheap: one pass over the standing journal, which the
       // resumed INV-21 check already keeps small enough to walk.
       relations: this.runtime.relationsFor(member.principal).map((r) => ({

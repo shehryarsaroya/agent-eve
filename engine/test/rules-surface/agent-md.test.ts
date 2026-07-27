@@ -319,8 +319,16 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     // it. It was exported, pinned, and served NOWHERE for a day — this document was the whole of an
     // agent's access to the rule — and it is the statement whose failure is silent: a cold anchor
     // takes no arrears, lapses nothing and is slashed nothing, so no other field in the observation
-    // moves when the income stops. §11B carries it under its own heading, which costs the cast
-    // contract nothing because `CONTRACT_SECTIONS` excerpts §11 and §11A and not §11B.
+    // moves when the income stops. §11B carries it under its own heading.
+    //
+    // **It used to say that cost the cast contract "nothing" because `CONTRACT_SECTIONS` excerpts
+    // §11 and §11A and not §11B. That was the wrong sign on the cost.** The house cast reads only
+    // the excerpt, so §11B being outside it means `post_bond` — the verb that takes a claim — has
+    // rules no cast member has ever been able to read. The gap is now counted and disclosed in
+    // `src/cast/prompt.ts:CONTRACT_NOT_EXCERPTED`, which also carries the arithmetic for closing
+    // it: §11B is 8,491 characters against 4,000 of room, so it needs a decision, not a comment.
+    // This document remains the only place all four statements appear together, and for an
+    // external agent over HTTP it is the whole of the rule either way.
     //
     // MUTATION: change `CHARGE_MISSES_TO_LAPSE`, `CESSION_SALVAGE_BPS` or
     // `ANCHOR_FUEL_BY_TIER.FRONTIER` in `src/sovereignty/params.ts` and this goes red immediately,

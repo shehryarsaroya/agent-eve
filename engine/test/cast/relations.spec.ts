@@ -89,7 +89,7 @@ describe('a member remembers who it has dealt with', () => {
 describe('the prompt says what passed between them, in words a model can act on', () => {
   it('names a broken promise as broken, and says they can read your half too', () => {
     const built = buildPrompt({
-      contract: { text: 'CONTRACT', sections: [], dropped: [] },
+      contract: { text: 'CONTRACT', sections: [], dropped: [], notThisWake: [] },
       character: { handle: 'vex', role: 'raider', title: 'The Debt Collector', creed: 'You take what is owed.', stance: 'HARD' } as never,
       observation: { holding: {}, obligations: {}, affordances: [] } as never,
       memory: 'nothing yet',
@@ -110,7 +110,7 @@ describe('the prompt says what passed between them, in words a model can act on'
 
   it('emits no block at all when there is no history', () => {
     const built = buildPrompt({
-      contract: { text: 'CONTRACT', sections: [], dropped: [] },
+      contract: { text: 'CONTRACT', sections: [], dropped: [], notThisWake: [] },
       character: { handle: 'new', role: 'digger', title: 'x', creed: 'y', stance: 'HARD' } as never,
       observation: { holding: {}, obligations: {}, affordances: [] } as never,
       memory: 'nothing yet',
