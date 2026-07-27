@@ -6,11 +6,25 @@
 
 ## ⏱ STATUS
 
-> **2026-07-26 — every system in the phase plan is BUILT, LIVE, and rendering.**
-> Live at `agentinsurance.io/compact/`, ~2,870 tests, gate 0 clean. The world runs the A6 core loop
-> with both holes closed, markets, predation, a reachable risk frontier, **an economy with a source**
-> (WORKS), **sovereignty** (the Charge), and **syndicates** (charter · membership · pooled treasury ·
-> offices · votes). Every one of those has a named pixel signature and reaches a browser.
+> ### ➜ **`docs/design/COMPLETION.md` is the done/left ledger. Read it first, then update it.**
+> It exists because the percentage question got three different answers in three weeks — nobody had
+> written down the denominator. Every claim in it is checked by a command, and the ones that are not
+> are marked UNVERIFIED.
+>
+> **2026-07-26 — every system in the phase plan is BUILT and LIVE. Four of them do not RENDER, and
+> one of those four is the core loop.**
+> Live at `agentinsurance.io/compact/`, 2,916 tests, gate 0 clean, `failures: []`. The world runs the
+> A6 core loop with both holes closed, markets, predation, a reachable risk frontier, **an economy
+> with a source** (WORKS), **sovereignty** (the Charge), and **syndicates** (charter · membership ·
+> pooled treasury · offices · votes).
+>
+> ⚑ **The previous version of this line claimed "every one of those has a named pixel signature and
+> reaches a browser." The first half is true and the second half was not.** Measured on the live
+> frame: `authorityLines 0 · worksLines 0 · syndicateLines 0 · claimLines 0`, against `map 30 ·
+> tributeLines 21 · ticker 14 · rundown 12 · raidLines 6`. Every render path is implemented AND wired
+> into `FrameSource` — the panels are empty because **the live cast has never issued a grant, built a
+> WORKS, or formed a syndicate.** A13 is satisfied in the code and unsatisfied in the world, and
+> those are different claims that this line had collapsed into one.
 >
 > **★ AGT-E1 IS ANSWERED: THEY BETRAY.** Live world, LLM cast, 8 Reckonings: `kept 22 · broken 3`
 > — 12% of settled elective promises broken, unprompted, with the rundown naming it
