@@ -98,21 +98,46 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
   lines pricing one fungible commodity) · whether a role releases a hand at delivery or settlement ·
   checkpoint adoption's closed-account bug · the three-humans watchability gate, never run.
 
-### The next action
+### The goal, restated 2026-07-27
 
-**Read `docs/design/COMPLETION.md` first.** It carries the done/left ledger with two honest
-denominators (~90% "the machine works and the premise held", ~40% "there is depth here"), the §16
-acceptance criteria with an honest column, and what is left in priority order.
+**Build the whole game, including combat.** §16 calls Phase 2 *"optional, possibly forever"* and
+`PASS-SHIPS-COMBAT` argues the layer may never be needed — **the owner has overridden that.** Combat
+depth is in scope. Phase 3's risk market follows it. The "optional" framing appears in three docs and
+had become the standing reason not to start; it is no longer a reason.
 
-Then, in rough order of value:
+**Read `docs/design/COMPLETION.md` first** — the command-verified done/left ledger, with two honest
+denominators (~90% "the machine works and the premise held", ~40% "there is depth here").
 
-1. **A second good.** The distance between the two numbers above is almost entirely this. The four
-   goods constants are now independently declared, so it is a local edit rather than one that silently
-   moves three mechanics.
-2. **Measure whether an LLM abuses a mandate.** `AGT-E1` answered the venture question; authority is
-   the one the design is actually named for, and production now produces the artifact.
-3. **The escrow root cause** behind checkpoint adoption (`COMPLETION.md` §7). Boot is O(history) and
-   growing until it is fixed — it just can no longer take the world down.
+Then, in order:
+
+1. **`demand` — §9's agent-initiated standoff.** The first piece of Phase 2 and the one that makes
+   conflict a *choice* rather than only a world event. Most of it exists: the whole raid machinery
+   (sides, `join`, force reading, YIELD/FIGHT, resolution, scheduling, views, invariants) plus §9's
+   **aggression capacity**, already built and mutation-verified in `src/predation/aggression.ts` with
+   no caller and a self-destructing test saying so. What is missing is an initiator on `RaidRecord` —
+   a CAPTURED table, so a `RULES_VERSION` bump and a declared discontinuity through the operator door.
+   Routine here: this world is at version 6 and the deploy carries
+   `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
+2. **The rest of Phase 2** — `PASS-SHIPS-COMBAT-extended`'s operation model, fitting, tackle,
+   logistics, EWAR, capacitor, doctrines. Roadmap now, not a maybe.
+3. **A second good beyond `ore`/`ration`.** §10 specifies four; two exist. The constants are
+   independently declared so each addition is a local edit.
+4. **Phase 3's risk market** — `PASS-ECONOMY-RISK*` §7–8, deferred in the v2.0 reframe with specs
+   intact.
+5. **The two open design calls**, both surfaced by blind probes and written up with trade-offs in
+   `D22`: should **standing gate** access (three shapes, one costing §3's canon nothing), and should a
+   delegated `create` **bind without the grantor's countersignature** (today going dark defeats a
+   delegate, which contradicts §9).
+6. **The three-humans watchability gate** — needs three people and cannot be automated. §16 says
+   everything downstream depends on it, and it is the cheapest item on this list.
+
+**How to work on it:** blind probe agents are the highest-yield instrument this project has. Three of
+them found five bugs that 26 invariants and 2,939 tests did not (`D22`) — every one the engine being
+internally consistent while the agent-facing surface lied. Run them after any change an agent can see.
+
+**Where new code goes:** not `sim/runtime.ts`. It is 9,700 lines and three edits landed in the wrong
+place there in one day, all passing `tsc`. `D21` ranks the remaining 21 handlers by coupling; six are
+already extracted, and `works/refine.ts` is the worked example of the port-and-adapter shape.
 
 ### The lesson this project keeps re-teaching
 
