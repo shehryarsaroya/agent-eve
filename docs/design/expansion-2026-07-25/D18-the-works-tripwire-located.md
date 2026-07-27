@@ -1,4 +1,4 @@
-# D18 — The WORKS tripwire, reproduced and located
+# D18 — The WORKS tripwire: SOLVED (no engine bug; a fixture reaches past the API)
 
 *2026-07-26. The `state_hash` tripwire has blocked "teach the heuristic cast to build a WORKS" for the
 whole project, with four causes ruled out and no diagnosis. It now has a one-line reproduction and a
@@ -321,6 +321,57 @@ single clue in the file and it has not yet been explained by anything eliminated
 the replayed world's venture/works counts at tick 300 beside the journalled world's. If the replayed
 world is *sparse* rather than merely *different*, the loss is wholesale and early — which is a different
 search than a single verb going missing, and every candidate above assumed the latter.
+
+## ✅ SOLVED — replay is sound; the fixture's setup is not replayable
+
+The measurement that closes it. A 120-tick cast-driven world, journalled, then **fully replayed from
+genesis** into a fresh runtime with adoption forced off:
+
+```
+LIVE     tick 119  ventures 23  hash 6e3a28fe…
+REPLAYED tick 119  ventures 23  hash 6e3a28fe…      ticksReplayed 120, adoptedAtTick null
+MATCH
+```
+
+**Genesis replay is faithful.** It reproduces a cast-driven world exactly — every cast action, the
+right venture count, an identical `state_hash`. So replay is not lossy, not sparse, and not
+verb-selective, and the eighth reframe ("the loss is wholesale and early") is wrong too.
+
+### Which makes the invariant hash explain itself
+
+`8198caa6` was invariant across my stake change because it is **the genesis replay of the action log,
+and the fixture's locks were never in the action log.** The audit test creates them by calling
+`runtime.obligations.open(...)` and `runtime.ledger.encumbrances.lock(...)` **directly on the runtime** —
+those are mutations, not submitted actions. So:
+
+- the **journalled snapshot** contains the locks → its hash moved when I changed the stake;
+- the **genesis replay** never sees them → its hash could not move, whatever the stake was.
+
+Two observations, one cause. That invariance was the whole answer and I read it three different wrong
+ways before measuring the thing it was actually about.
+
+### Why the test passes today and fails with a cast branch
+
+Normal run: `adoptedAtTick = TICKS - 1`, `ticksReplayed = 0`. **Adoption succeeds, so no genesis replay
+happens and no comparison is ever made** — the unreproducible locks are simply loaded from the snapshot.
+Add a cast branch and something pushes these cases onto the verify-or-replay path, at which point the
+locks cannot be reconstructed and the tripwire fires. Correctly: the tripwire is doing exactly its job,
+refusing to resume a world the record and the build disagree about.
+
+### The fix, and it is a test fix
+
+**Make the fixture's setup go through the action log** — submit the stake as an action rather than
+mutating the runtime — so genesis replay can reproduce it. Then the fixture works on both paths and a
+cast change cannot break it.
+
+If that is impractical (there may be no verb that opens a bare obligation with a lock behind it, which
+is *why* the fixture reaches past the API), the alternative is to **assert only the adoption path and
+skip the genesis comparison explicitly**, with a comment saying the setup is deliberately
+non-replayable. That is honest and keeps the test's real purpose — proving locks survive *adoption* —
+which never needed genesis replay to be meaningful.
+
+**Either way: no engine bug. The engine has been correct throughout.** Nine framings, eight wrong, and
+the one that held is a test whose setup reaches around the interface it is testing through.
 
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
