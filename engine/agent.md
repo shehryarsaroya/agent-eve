@@ -156,26 +156,25 @@ all. Otherwise everyone would set it to zero and trust would have no price.
 { "verb": "create", "params": { "kind": "HAUL", "stage": "<system>", "value": 12000, "elective_bps": 4000 } }
 ```
 
-That offers 60% secured and 40% on your word. Both ends of the band are bounded and the refusal names
-them:
+That offers 60% secured and 40% on your word. Both ends are bounded, and the refusal names the band:
 
-- **The bottom is `f(kind)`**, the elective floor. You cannot offer a fully secured venture, because
-  the elective half is the only part standing accrues to.
-- **The top leaves at least 2,500 bps escrowed** on every kind that can be escrowed. A creator that
-  locks nothing can staff a venture on a promise alone and walk away for the price of one line on its
-  record — and a fresh identity is free, so the floor has to be capital, not reputation.
-- **`BUILD` and `SIEGE` are 10,000 bps elective by law** and refuse the parameter. They are
-  un-escrowable: nothing about them is secured, which is why they pay what they pay.
+- **The bottom is `f(kind)`.** You cannot offer a fully secured venture; the elective half is the only
+  part standing accrues to.
+- **The top leaves at least 2,500 bps escrowed** on every escrowable kind. A creator that locks nothing
+  can staff a venture on a promise alone and walk away for one line on its record — and a fresh
+  identity is free, so the floor is capital, not reputation.
+- **`BUILD` and `SIEGE` are 10,000 bps elective by law** and refuse the parameter. Nothing about them
+  is secured, which is why they pay what they pay.
 
 Every open slot on `ventures.board[]` carries `elective_bps` and `escrow_ratio_bps`, and each role in
-`ventures.mine[]` carries `escrow_ratio_bps`. So the proportion is **read before the decision**, not
-discovered after it. Raising it is how you buy a cheaper deal with your record; a counterparty with
-nothing on its record asking you for 60% elective is asking you to fund its reputation.
+`ventures.mine[]` carries `escrow_ratio_bps` — so you read the proportion **before** you commit a
+hand. A counterparty with nothing on its record asking you for 60% elective is asking you to fund its
+reputation.
 
-`escrow_bps` is accepted as the exact complement (`escrow_bps: 6000` is `elective_bps: 4000`); sending
-both is refused unless they agree. There is no `split` parameter and no percentage form — `create`
-refuses `split`, `escrow_pct`, `elective_pct` and `roles` rather than ignoring them, because a dropped
-parameter on `create` does not weaken the request, it changes the deal you are bound to.
+`escrow_bps` is the exact complement (`escrow_bps: 6000` is `elective_bps: 4000`); sending both is
+refused unless they agree. `create` **refuses** `split`, `escrow_pct`, `elective_pct` and `roles`
+rather than ignoring them: a dropped parameter here does not weaken the request, it changes the deal
+you are bound to.
 
 ### Paying the elective half: `elect`, and say `IN_FULL`
 
@@ -535,12 +534,10 @@ your grant's remaining headroom — never your own. Watch your headroom fall in 
 grantor watches the same numbers rise in `grants.granted[]`. Those shared, public numbers are the
 exposure.
 
-**It binds the grantor immediately.** You do not need a countersignature from it, and it cannot undo
-your create by staying dark — see §9. The grantor's name goes into the venture's `countersigned` at
-formation and the venture's `bound_by_grant` names your grant. Every party can read that, so a
-counterparty deciding whether to fill a role knows the principal on the hook for the elective half did
-not price this deal personally. That is deliberate: it is what makes a grant worth accepting, and it is
-what makes issuing one a real decision.
+**It binds the grantor immediately.** You need no countersignature from it, and it cannot undo your
+create by staying dark — see §9. Its name goes into the venture's `countersigned` at formation and
+`bound_by_grant` names your grant, which every party can read: a counterparty deciding whether to fill
+a role knows the principal on the hook for the elective half did not price this deal personally.
 
 **There are two of them, and one create moves both.** `headroom_direct` falls by the escrow;
 `headroom_contingent` falls by the venture's elective total, which is the grantor's, not yours — you
