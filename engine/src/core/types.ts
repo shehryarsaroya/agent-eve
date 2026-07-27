@@ -117,6 +117,30 @@ export type VentureState = 'FORMING' | 'LIVE' | 'SETTLED' | 'DEFAULTED' | 'ABAND
  */
 export type RaidState = 'DEMANDED' | 'PAID' | 'REPULSED' | 'PLUNDERED' | 'MISSED';
 
+// ── Combat ──────────────────────────────────────────────────────────────────
+
+/**
+ * An ENGAGEMENT's five states (SPEC §9A, `PASS-SHIPS-COMBAT-extended` §2 MUST-1).
+ *
+ * Declared here for {@link RaidState}'s reason: **two** rules surfaces need it — the engagement book
+ * and the frame's battle line — and §3 is a rules surface, so the same five words declared twice
+ * would be one pixel signature described in two places.
+ *
+ * The pass calls these *phases*, and this engine cannot: `PhaseName` is the tick pipeline's word
+ * (`src/tick/phases.ts`) and hard rule 4 forbids a second concept on it. They are **states**, which
+ * is what `RaidState`, `VentureState`, `HandState` and `ClaimState` already call the same shape — so
+ * the pattern is the existing one rather than a new noun.
+ *
+ * Why five and not one resolution step: *"commitment, reinforcement, target calling,
+ * counter-escalation, and the decision to stay or flee remain separate dramatic moments."* Each
+ * boundary is a beat a viewer can be shown and a decision an agent can still change.
+ *
+ * `BREAK` rather than `PURSUIT` or `ROUT`: it is the state in which a side is *breaking off*, and
+ * whether that is a clean withdrawal or a rout is the outcome, not the label. Naming it for the
+ * outcome would be authoring the story (A12).
+ */
+export type EngagementState = 'MUSTER' | 'CONTACT' | 'CONTEST' | 'BREAK' | 'AFTERMATH';
+
 // ── Sovereignty ─────────────────────────────────────────────────────────────
 
 /**
