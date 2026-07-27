@@ -453,12 +453,26 @@ w/ build : refusal="…taken over 28 events…"  (otherwise identical)
                     snapshotTick=null | adoptedAtTick=null ticksReplayed=41
 ```
 
-**So a build does not change adoption's decision.** Adoption is refused for a reason with nothing to do
-with the cast — the store does not persist the event ledger — and *both* paths were already genesis
-replay. The last question's premise was wrong: nothing "pushes these cases onto the slow path" because
-they were never on the fast one.
+**⚠ THAT MEASUREMENT IS VACUOUS AND THE CONCLUSION IS WITHDRAWN.** Adoption was refused in **both**
+arms — the harness store does not persist the event ledger, so `adoptedAtTick` was `null` either way. A
+measurement whose outcome cannot vary between arms proves nothing about the variable, and I wrote "a
+build does not change adoption's decision" off exactly that. Same vacuous-witness shape this session
+found repeatedly in other people's tests, committed by me an hour after documenting it.
 
-Which leaves the shape of the answer complete: replay is faithful for ordinary cast worlds (measured);
+**The audit test does not share that limitation.** Its assertions are
+`expect(result.adoptedAtTick).toBe(TICKS - 1)` and `expect(result.ticksReplayed).toBe(0)` — it expects
+adoption to SUCCEED, and it passes today. So its store *does* persist events, and with a cast branch it
+falls to genesis replay. **The build therefore does change adoption's decision in the test's
+configuration** — which is the opposite of what I concluded, and the original question stands unanswered.
+
+**To measure it properly:** reuse the audit test's own `lockedRun()` helper rather than a hand-rolled
+store, so events are persisted and adoption can actually succeed in the control arm. Then print
+`planCheckpoint`'s refusal with and without the branch. The control arm must show `adoptedAtTick =
+TICKS - 1` before the comparison means anything — assert that first, or the next attempt repeats this
+mistake.
+
+What remains true, each measured on a configuration that could have shown otherwise: replay is faithful
+for ordinary cast worlds (measured);
 the audit fixture's directly-injected locks are not replayable (measured — divergence at exactly the
 injection tick with no build present); adoption is refused for an unrelated store limitation; and so the
 fixture's genesis path was always carrying an unreproducible mutation. A cast branch changes *which
