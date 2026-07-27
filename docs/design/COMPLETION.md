@@ -215,8 +215,42 @@ adoption is relied on for speed.
   `grant=27` of 2,881 actions over 900 ticks and `authorityLines=12` on the frame — **A13 for the core
   loop, true for the first time.** The branch fires only when no hand is idle, so it adds a move for
   the hand-starved member (D19's halcyon, 96% committed) without displacing the busy one.
-  **Still one of three links:** every grant is `UNUSED`, `spent: 0`. No cast path ever *acts* on
-  delegated authority, so betrayal remains impossible and §16's acceptance is unmet.
+
+### ⚠ A6 IS ONE-THIRD BUILT, AND THE MISSING TWO-THIRDS IS NOT A CAST PROBLEM
+
+This was recorded on 2026-07-26 as "the cast never acts on delegated authority." That was wrong, and
+the correction matters because it changes what has to be built. **No delegate CAN act on delegated
+authority — the capability does not exist:**
+
+- `grantBook.spend()` is **never called from anywhere outside `src/grant/book.ts`**;
+- **no verb accepts a grant to act under** — the only verb taking a `grant` param is `revoke`;
+- `onBehalfOfPrincipalId` is written `null` at every venture/seal/audit site (the non-null uses in
+  `runtime.ts` are sovereignty and claim attribution, not delegation).
+
+So every grant is `UNUSED`/`spent: 0` permanently, and **betrayal via legitimate authority is
+impossible by construction.** §16's acceptance criterion — "≥1 authority-betrayal occurs unprompted,
+and its replay shows the grant, the accepted warning, the seal, and the deed" — cannot be met, and
+`AGT-E1`'s measured 12% betrayal rate came through *ventures*, not authority.
+
+| A6 link | state |
+|---|---|
+| trust accrues from kept promises | ✅ standing, relations, `AGT-E1` answered |
+| authority is granted, bounded, warned, rendered, revocable | ✅ built and now exercised |
+| **a delegate ACTS under that authority** | ❌ **no code path exists** |
+| **that action is abused = betrayal** | ❌ impossible without the above |
+
+**INV-22 audits the spend journal and reports green over an always-empty list.** `aggregate.ts` skips
+the clause only when `grantSpends` is `undefined`, and `Runtime` always supplies
+`grantBook.allSpends()` — so it is *supplied and empty*, INV-22 counts as having run, and no report can
+tell that apart from an invariant that is genuinely holding. Pinned by
+`test/invariants/inv22-is-vacuous.test.ts`, which fails the day the loop closes and says so in its
+message. Same unfalsifiable-witness shape as INV-23 before `hasDelegationParentage`.
+
+This is the **largest single piece of unbuilt design in the repo** and it is the thing the whole
+project is named for. It needs: a grant param on material verbs, an authorisation check (live, in
+scope, headroom), spend accounting, event attribution via `onBehalfOfPrincipalId`, and a cast branch.
+It touches the action pipeline, which is the most safety-critical surface in the engine — so it wants
+its own session, not the tail of one.
 - **"enrolment grant" violated HARD RULE 4** — `grant` is canon for delegated authority (§8, A6) and
   the engine calls enrolment goods an ENDOWMENT. The agent-facing text disagreed with the engine
   about the design's most load-bearing noun. Guarded by a banned-phrase test.
