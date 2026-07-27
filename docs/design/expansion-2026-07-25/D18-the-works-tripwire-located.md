@@ -441,10 +441,32 @@ what `tripwiresChecked` counts. So the tick-300 tripwire is the snapshot at 300 
 genesis replay that reached it. This confirms the failing case is on the genesis path rather than the
 adoption path, which is what makes "why was adoption refused" the whole remaining question.
 
-**The measurement:** call `planCheckpoint` on two stores — one built with a build in the world, one
-without — and print `refusal` and `snapshot.tick` for each. Mind the signature; my first attempt at this
-passed the wrong argument shape and threw inside `hydrate.ts`, which is why this is written as a note
-rather than an answer.
+**The measurement, run:** `planCheckpoint(tables, store, options)` — note the argument order, which my
+first attempt got wrong. With and without a build in the world, the refusal is **byte-identical apart
+from an event count**:
+
+```
+no build : refusal="…snapshot at tick 40 was taken over 27 events and this store returns none for that
+                    tick. It does not persist the append-only record… Replaying from genesis."
+                    snapshotTick=null | adoptedAtTick=null ticksReplayed=41
+w/ build : refusal="…taken over 28 events…"  (otherwise identical)
+                    snapshotTick=null | adoptedAtTick=null ticksReplayed=41
+```
+
+**So a build does not change adoption's decision.** Adoption is refused for a reason with nothing to do
+with the cast — the store does not persist the event ledger — and *both* paths were already genesis
+replay. The last question's premise was wrong: nothing "pushes these cases onto the slow path" because
+they were never on the fast one.
+
+Which leaves the shape of the answer complete: replay is faithful for ordinary cast worlds (measured);
+the audit fixture's directly-injected locks are not replayable (measured — divergence at exactly the
+injection tick with no build present); adoption is refused for an unrelated store limitation; and so the
+fixture's genesis path was always carrying an unreproducible mutation. A cast branch changes *which
+tick* the divergence surfaces at, not whether the fixture is replayable.
+
+**The fix is unchanged and now fully justified:** submit the fixture's stake as an action so genesis
+replay can rebuild it, or assert only the adoption path with a comment that the setup is deliberately
+non-replayable.
 
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
