@@ -111,6 +111,21 @@
 > A5 forbids rewriting a row, so the Reckonings already recorded short stay short. Fresh enrolments are
 > **not required**; they would only add population.
 >
+> ★★★ **DEPLOYED, AND THE TRAPPED CAST BUILT WITHIN TWO TICKS.** Live at tick 5,643 → 5,645,
+> `failures: []` · `operatorFaults: 0` · `status healthy RUNNING`:
+>
+> | | before deploy | tick 5,643 | tick 5,645 |
+> |---|---|---|---|
+> | `worksAffordableBy` | **15** (the abandoned probes) | **36 of 36** — every principal in the world | 33 (three now hold one) |
+> | `works` | 5, frozen since ~tick 1,200 | 5 | **8** |
+>
+> `worksAffordableBy` went from the 15 abandoned probe accounts to **all 36 seated principals**, which
+> is the gate opening for the twelve members the diagnosis measured at zero goods — and then three of
+> them raised a WORKS on the next tick, paying 85,000 of retired currency for a structure they had no
+> `ration` to build. **The counter that sat at 5 for four thousand ticks moved.** The replay preflight
+> named tick 287 as the divergence — the pre-existing one, journal `rules_version 1` — so no new
+> discontinuity was declared and `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=287` was already in place.
+>
 > ➜ **DEPLOY:** `RULES_VERSION` 14 (13 is §9's, and the two branches were arbitrated *before* either
 > bump — the first time the rule written above 11 has been applied in advance rather than reconstructed
 > afterwards). The only way a past tick recomputes differently is a historical `build {kind:"WORKS"}`
