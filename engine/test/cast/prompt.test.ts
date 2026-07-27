@@ -492,7 +492,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
 
   it('★ EVERY DECLARED POSITION IS ENUMERATED, and the assertion names the position', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // 2^28 over the units is neither enumerable nor the right space: most combinations are
+    // 2^41 over the units is neither enumerable nor the right space: most combinations are
     // unreachable, and that is exactly what bit the `##` version — its worst "combination"
     // paired §11 with the whole of §11B, which no principal can be in.
     //
