@@ -60,6 +60,25 @@ export const MAX_FRAME_WORKS_LINES = 16;
 
 /** Syndicate lines a frame may draw. Fewer than works marks: an org is a bigger object. *(calibrate)* */
 export const MAX_FRAME_SYNDICATE_LINES = 8;
+
+/**
+ * Battle lines a frame may draw. Equal to `MAX_LIVE_ENGAGEMENTS` + the ones that closed this
+ * Reckoning, and deliberately the **smallest** of every line budget here.
+ *
+ * A battle is the most detailed object on this frame — up to twelve formation bars inside one line —
+ * and §14.1's hard rule is *"≤7 labels per frame"*. Four battles is already more than a viewer can
+ * follow; the point of the budget is that a battle gets the screen, not that many do.
+ */
+export const MAX_FRAME_BATTLE_LINES = 4;
+
+/**
+ * Formation bars one battle line may carry. Both sides, both caps.
+ *
+ * `MAX_FORMATIONS_PER_SIDE` is 6, so twelve is the honest ceiling. Not independently tunable: a
+ * truncated battle draws a line with a side missing, which is worse than drawing none — a viewer
+ * would read a one-sided massacre where there was a fight.
+ */
+export const MAX_BATTLE_FORMATIONS = 12;
 /** §14.3: seconds per segment. Human time — never scaled by TICK_SECONDS. */
 export const SEGMENT_SECONDS = { min: 30, max: 45 } as const;
 
@@ -251,6 +270,99 @@ export interface RaidLine {
   readonly defenderForce: number;
   /** The countdown on the arc. Zero once it has resolved. */
   readonly ticksLeft: number;
+}
+
+/**
+ * One formation, as a bar. The unit **THE BATTLE LINE** is drawn out of.
+ *
+ * `ehpBps` is a **fraction and never an absolute**, and that is the §11.2 line in this whole
+ * projection. A bar's height says *how hurt* something is, which is what a wound looks like from
+ * outside. Its absolute EHP would let a viewer — and therefore any agent with a scraper — invert the
+ * fit, which §10 SHOULD-2 names as the failure that *"would make private scouting pointless."*
+ *
+ * The four booleans are the four force multipliers, each rendered as an overlay rather than a number:
+ * `pinned` a chain, `capOut` a dark bar, `repairing` a tether to what it is mending, and role tags a
+ * glyph. All four are **observable effects** — the same tier `observed_effects` already publishes to
+ * the agents in the fight — so A9's parity holds: a viewer sees nothing a combatant's own `observe`
+ * would not contain.
+ */
+export interface BattleFormationLine {
+  readonly formation: string;
+  readonly principal: PrincipalId;
+  /** `RAIDER` or `DEFENDER`. Which line of bars it is drawn in. */
+  readonly side: string;
+  readonly hull: string;
+  /** Bar width. Hulls still standing, never hulls owned. */
+  readonly hulls: number;
+  /** Which of the four rows it is drawn in: SCREEN · MAIN · SUPPORT · RESERVE. */
+  readonly echelon: string;
+  /** CLOSE · HOLD · KITE. The arrow on the bar, and its side of the range race. */
+  readonly posture: string;
+  /** Bar height, in bps of full. A fraction on purpose — see the interface doc. */
+  readonly ehpBps: number;
+  /** Wrecks out of this cohort. What the bar has already lost. */
+  readonly hullsLost: number;
+  /** **The chain.** Tackle is holding it; it cannot leave. */
+  readonly pinned: boolean;
+  /** **The dark bar.** Capacitor empty: undamaged and operationally dead. */
+  readonly capOut: boolean;
+  /** It has left the field. Drawn leaving, then gone. */
+  readonly withdrawn: boolean;
+  /** **The tether.** This formation put repair into a friend this battle. */
+  readonly repairing: boolean;
+  /** LINE · TACKLE · REPAIR · EWAR · COMMAND — earned from the fit, never declared. */
+  readonly roleTags: readonly string[];
+}
+
+/**
+ * Combat's pixel signature (A13, §9A) — **THE BATTLE LINE.**
+ *
+ * Two lines of {@link BattleFormationLine} bars facing each other across a **gap that narrows or
+ * widens every tick**. That gap is the range race and it is the most legible thing on the board: a
+ * brawler fleet drags it shut, a kiting fleet holds it open, and a web wing decides which of them
+ * wins. Bars stack in four rows by echelon — screen at the front, reserve greyed out behind
+ * everything — width ∝ hull count, height ∝ EHP fraction, so a formation visibly *thins* as it dies
+ * instead of vanishing at zero. Wreck marks persist at the stage into AFTERMATH.
+ *
+ * With the sound off and the text off a viewer can read: how many are on each side, who is winning
+ * the range race, who cannot leave, whose repairs just stopped, and who just died. That is the A13
+ * test, and it is the reason this projection carries `gap` and `ehpBps` at all.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **NOTHING HERE IS A `SENSED` QUANTITY.** Hulls on a field are the map's own motion, which §11.2
+ * gives to `PUBLIC` for the same reason a convoy is public (*"a convoy is visible to anyone, because
+ * it is the map's motion and the map is the show"*). `ehpBps` is a fraction, not a hold value. The
+ * four flags are effects that have already landed. Wrecks are losses, and A5 gives a loss no opt-out.
+ *
+ * **Deliberately absent:** fit hashes, module lists, absolute EHP, capacitor totals, the trace's
+ * numeric amounts, and any forecast. A frame carrying a fit would turn the spectator feed into a
+ * scraper's intelligence service, and *"a ship at sea is visible; its manifest is not"* — a fit is a
+ * manifest.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface BattleLine {
+  readonly engagement: string;
+  /** The standoff it is fought inside. A battle never exists without one. */
+  readonly raid: string;
+  readonly stage: SystemId;
+  /** MUSTER · CONTACT · CONTEST · BREAK · AFTERMATH. Five beats, five looks. */
+  readonly state: string;
+  /** **The motion.** 0 (CONTACT) to 4 (EXTREME): how far apart the two lines stand, this tick. */
+  readonly gap: number;
+  /** The gap as a word, so the client needs no lookup table. */
+  readonly rangeName: string;
+  /** The countdown on the current state. Zero once it has closed. */
+  readonly ticksLeft: number;
+  /** `RAIDER` · `DEFENDER` · `CONTESTED`, or null while it is still running. */
+  readonly fieldControl: string | null;
+  readonly formations: readonly BattleFormationLine[];
+  /** Permanent, public, and the reason any of the rest of it matters (A5). */
+  readonly wrecks: readonly {
+    readonly principal: PrincipalId;
+    readonly hull: string;
+    readonly tick: number;
+    readonly killedBy: PrincipalId | null;
+  }[];
 }
 
 /**
@@ -639,6 +751,8 @@ export interface ReckoningFrame {
   readonly authorityLines: readonly AuthorityLine[];
   /** Predation's signature (§9, A14): what the world came for, and how it went. */
   readonly raidLines: readonly RaidLine[];
+  /** Combat's signature (§9A, A13): the two lines, the gap between them, and what burned. */
+  readonly battleLines: readonly BattleLine[];
   /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
   readonly claimLines: readonly ClaimLine[];
   readonly worksLines: readonly WorksLine[];
@@ -761,6 +875,50 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     problems.push(
       `${frame.raidLines.length} raid lines, budget is ${MAX_RAID_LINES} — a countdown a viewer can follow, not a weather map`,
     );
+  }
+
+  if (frame.battleLines.length > MAX_FRAME_BATTLE_LINES) {
+    problems.push(
+      `${frame.battleLines.length} battle lines, budget is ${MAX_FRAME_BATTLE_LINES} — a battle gets the screen, ` +
+        'and the point of the budget is not that many do',
+    );
+  }
+  for (const line of frame.battleLines) {
+    if (line.formations.length > MAX_BATTLE_FORMATIONS) {
+      problems.push(
+        `battle ${line.engagement} draws ${String(line.formations.length)} formation bars, budget is ` +
+          `${String(MAX_BATTLE_FORMATIONS)}`,
+      );
+    }
+    if (line.gap < 0 || line.gap > 4) {
+      problems.push(
+        `battle ${line.engagement} has gap ${String(line.gap)}, outside the five range cells — a client would ` +
+          'draw the two lines at a distance the rules cannot express',
+      );
+    }
+    // ── THE §11.2 REFUSAL, AS ARITHMETIC ────────────────────────────────────
+    //
+    // `ehpBps` is a FRACTION and never an absolute, and the ClaimLine's `fuelDue` field-shape
+    // refusal is the precedent. An absolute EHP on this line is invertible into the fit — divide by
+    // hull count and you have the buffer, which names the tank modules — and a fit is a manifest.
+    // §11.2: *a ship at sea is visible; its manifest is not.* So the bound is checked rather than
+    // documented, because the failure mode is a viewer's client quietly becoming an intel service.
+    for (const bar of line.formations) {
+      if (bar.ehpBps < 0 || bar.ehpBps > 10_000) {
+        problems.push(
+          `battle ${line.engagement} formation ${bar.formation} carries ehpBps ${String(bar.ehpBps)}, which is ` +
+            'not a fraction of full. An absolute here is invertible into the fit, and a fit is a manifest (§11.2)',
+        );
+      }
+      if (bar.hulls < 0 || bar.hullsLost < 0) {
+        problems.push(`battle ${line.engagement} formation ${bar.formation} has a negative hull count`);
+      }
+    }
+    // A closed battle with no field control leaves the record silent about who won, which is the one
+    // thing a permanent public account of a fight has to say (A5, and OPS-7 halts the tick on it).
+    if (line.state === 'AFTERMATH' && line.ticksLeft === 0 && line.fieldControl === null) {
+      problems.push(`battle ${line.engagement} renders AFTERMATH with no field control published`);
+    }
   }
   // ── §14.3 AS ARITHMETIC: THE CLIMAX CLOSES THE NIGHT ─────────────────────
   //

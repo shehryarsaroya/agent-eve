@@ -50,6 +50,7 @@ import type { FrameSource } from './render.js';
  * | `tributeLines` | `PUBLIC` | "the Levy vote and its result, tribute lines" |
  * | `authorityLines` | `PUBLIC` | a grant's LIMITS, parties and renewal chain (D9a) |
  * | `raidLines` | `PUBLIC` | "movement on public lanes"; a raid is the map's motion, and its outcome is a public loss (A5) |
+ * | `battleLines` | `PUBLIC` | hulls on a field are the map's motion; `ehpBps` is a fraction, never a hold value — the argument is below |
  * | `claimLines` | `PUBLIC` | sovereignty and its published legal state — the argument is below, in full |
  * | `modelBadges` | `PUBLIC` | which model runs a cast seat; not a game fact |
  * | `worksLines` | `PUBLIC` | a structure on the map, its tier-fixed yield, and what the world has already handed over |
@@ -138,6 +139,27 @@ import type { FrameSource } from './render.js';
  * public formula and a private stockpile — the "Charge fuel gauge" mistake exactly, in a
  * different mechanic. It was changed in the engine rather than hidden in the renderer.
  *
+ * **`battleLines` needed the tightest argument here, because a battle is the most detailed thing
+ * on this frame.** The admissible half is the same one `raidLines` won on: hulls standing on a
+ * field are *motion*, and §11.2 gives `PUBLIC` to the map's motion *"because the map is the show"*.
+ * `state`, `gap`, `echelon`, `posture`, `hulls` and the wreck list are all that.
+ *
+ * The inadmissible half is **a fit**, and it took one decision to keep out. §11.2 gives `SENSED` to
+ * *"cargo contents and hold values"*, and a fit is a manifest by exactly that reasoning — it is what
+ * a hull is carrying. So a bar's height is `ehpBps`, **a fraction of full and never an absolute**:
+ * an absolute EHP divided by the hull count *is* the buffer, and a buffer names the tank modules.
+ * `assertFrameBudgets` refuses an `ehpBps` outside 0..10000, which is that rule made executable
+ * rather than remembered — the same instrument as the claim line's `/cover|remaining|reserve/` field
+ * refusal, and for the same reason: the failure mode is a viewer's client quietly becoming an
+ * intelligence service that any agent can scrape, which §10 SHOULD-2 of the ships pass names as the
+ * thing that *"would make private scouting pointless."*
+ *
+ * The four flags — `pinned`, `capOut`, `repairing`, `roleTags` — are **effects that have already
+ * landed**, which is the tier the combat observation already publishes to every agent in the fight
+ * as `observed_effects`. So A9's parity holds by construction: a viewer sees nothing a combatant's
+ * own `observe` would not contain. And the world's own fleet is public in full, deliberately: the
+ * world is not a principal, so §11.2 protects no strategy of its.
+ *
  * **Not admissible, and the reason each was considered:** cargo contents and hold values
  * (`SENSED` — "a ship at sea is visible; its manifest is not"); exact hand disposition
  * off public lanes (`SENSED`); seal *content* (`SEALED`, and it releases in the season
@@ -175,6 +197,7 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'tributeLines',
   'authorityLines',
   'raidLines',
+  'battleLines',
   'claimLines',
   'worksLines',
   'syndicateLines',

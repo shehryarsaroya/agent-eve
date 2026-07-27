@@ -85,6 +85,40 @@ import {
   RAID_JOIN_STAKE_MINOR,
   RAID_TAKE_MULTIPLE,
 } from '../predation/index.js';
+// ── COMBAT (SPEC §9A) ───────────────────────────────────────────────────────
+//
+// The offer BUILDERS live in `combat/view.ts`, not here. This file is 3,300 lines and the last two
+// affordances added to it went in the wrong place — the `refine` offer was spliced inside `build`'s
+// `if (affordable && !alreadyHeld)` and was never shown to anyone holding ore, who by definition
+// already hold a WORKS. So combat's offers are a function of their inputs in their own module and
+// this is the adapter that gathers them.
+import { engageOffersFor, hullOfferFor, hullQuote } from '../combat/index.js';
+
+/**
+ * Combat offers in one observation. INV-26: every list here is bounded.
+ *
+ * Four rather than three: a commit is offered per (hull × echelon) and a battle worth entering is a
+ * battle worth entering *somewhere specific*, so the menu has to be able to show a screen and a main
+ * line for the same hull. Beyond four it stops being a decision and becomes a table.
+ */
+const MAX_COMBAT_AFFORDANCES = 4;
+
+/**
+ * The hull the `build` offer proposes, and its fit.
+ *
+ * **One offer, not thirty-five.** Five hulls × twenty-nine modules is a combinatorial menu, and
+ * §12.1's budget is enforced by eligibility filtering rather than truncation — so the honest move is
+ * to offer *one complete, legal, useful* fit and say in the prose that simulating any other is free
+ * and unlimited. A menu that listed every hull would crowd out the rest of the observation and would
+ * still not contain the fit an agent wanted.
+ *
+ * The PIKE because it is the cheapest hull in the game and the one §3 MUST-1 calls *"the best answer
+ * to how can a new agent matter immediately"* — a frigate that catches a battleship. And a TACKLE fit
+ * rather than a gun fit, because `POINT` is the module that decides who leaves the field, which is
+ * §12 relationship #3 and the thing without which *"agents rationally disengage."*
+ */
+const STARTER_HULL = 'PIKE';
+const STARTER_FIT: readonly string[] = ['SMALL_GUN', 'POINT', 'WEB', 'AFTERBURNER'];
 
 /**
  * Demands offered in one observation. INV-26: every list here is bounded.
@@ -562,6 +596,24 @@ export function buildObservation(input: ObserveInput): Observation {
        * whose default outcome is not stated is not a decision.
        */
       raid: runtime.raidsFor(principal, tick, MAX_LIST_ROWS),
+      /**
+       * **THE BATTLE OVER A REFUSED DEMAND** (§9A, A13).
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * **It goes inside `obligations`, beside the raid row, and NOT in a key of its own.** §12.1's
+       * budget is *"exactly 10 top-level keys — at the §17 budget, so adding one means removing
+       * one"*, and combat does not get to spend that: an engagement is what a `raid` row becomes
+       * when its target answers FIGHT, so it belongs adjacent to the thing it is a consequence of,
+       * which is the same argument that put `levy` and `exposure` together in the first place
+       * (*"both are 'what I could lose', and adjacency is what an agent needs"*).
+       * ══════════════════════════════════════════════════════════════════════
+       *
+       * Own formations exact, hostile contacts banded, the forecast in p10/p50/p90 with **named
+       * swing factors** and never a percentage, the causal trace so a loss can be understood, and
+       * `if_you_do_nothing` — the `projectedDrown` pattern, and the field that closes the trap a
+       * fleet with no withdrawal threshold walks into.
+       */
+      battle: runtime.engagementsFor(principal, tick, MAX_LIST_ROWS),
       /**
        * **THE CHARGE, WITH ITS DEADLINE AND ITS CONSEQUENCE** (§6.3, A5′).
        *
@@ -1184,6 +1236,83 @@ function affordancesFor(
         });
       }
     }
+  }
+
+  // ── 0. COMBAT (SPEC §9A) ─────────────────────────────────────────────────
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // **A VERB WITH NO AFFORDANCE IS THIS PROJECT'S SIGNATURE DEFECT**, and combat is the most
+  // exposed thing yet built to it: an agent that has never seen `engage` on its menu has no reason
+  // to believe a battle is something it can take part in, and A14's whole premise is that agents
+  // left to themselves choose silence.
+  //
+  // Worse today than usual, and measured rather than feared: **the LLM cast cannot currently read
+  // the standoff's rules at all.** `agent.md` §11D is over the per-wake excerpt bar and is omitted
+  // from every wake, so `demand`, `yield`, `fight` and `join` are already offered and
+  // unexplained. Until that is fixed, `what_it_forecloses` IS the documentation — which is why the
+  // strings `combat/view.ts` builds are paragraphs rather than phrases.
+  //
+  // **Gated on `runtime.engageRefusalFor`, which is the gate `vEngage` itself runs.** Not a copy
+  // of it — the same function.
+  // ══════════════════════════════════════════════════════════════════════════
+  for (const offer of engageOffersFor(runtime.battles, runtime.fleet, {
+    principal,
+    tick,
+    committable: (stage: SystemId) => runtime.committableHulls(principal, stage),
+    refusal: (probe: {
+      readonly raid: string;
+      readonly hull: string | null;
+      readonly echelon: string;
+      readonly posture: string;
+    }) =>
+      runtime.engageRefusalFor({
+        principal,
+        raid: probe.raid,
+        tick,
+        hull: probe.hull === null ? null : (probe.hull as never),
+        echelon: probe.echelon as never,
+        posture: probe.posture as never,
+        primary: ['REPAIR', 'COMMAND', 'TACKLE', 'WEAKEST'] as never,
+        withdrawWhen: { ehpBelowBps: 0, hullsLost: 0, now: false },
+        handId: null,
+      }) === null,
+    limit: MAX_COMBAT_AFFORDANCES,
+  })) {
+    eligible.push({
+      ...offer,
+      quote_id: quoteId(principal, tick, 'engage', offer.params as CanonicalValue),
+    });
+  }
+
+  // ── 0b. BUILD A HULL ────────────────────────────────────────────────────
+  //
+  // Offered only when it can actually be taken, exactly like `create` and `graduate`: eligibility
+  // is affordability in this file, and an offer the engine would refuse costs the agent a real
+  // action (AGT-S2). When the price is short, the reason goes to `withheld`.
+  const hullSeat = holdingOf(world, principal).system;
+  const hullPrice = hullQuote(STARTER_HULL);
+  if (
+    hullPrice !== null &&
+    runtime.hullRefusalFor({
+      principal,
+      system: hullSeat,
+      hull: STARTER_HULL,
+      modules: STARTER_FIT,
+      tick,
+    }) === null
+  ) {
+    eligible.push({
+      ...hullOfferFor({
+        system: hullSeat,
+        hull: STARTER_HULL,
+        modules: STARTER_FIT,
+        frame: Number(hullPrice.frame),
+        fuel: Number(hullPrice.fuel),
+        readyAtTick: tick + 4,
+        wrecks: runtime.fleet.wrecksOf(principal),
+      }),
+      quote_id: quoteId(principal, tick, 'build', { kind: 'HULL', hull: STARTER_HULL, system: hullSeat }),
+    });
   }
 
   // 0a. **OPEN ONE OF YOUR OWN.** §9's agent-initiated standoff — the only act in this game

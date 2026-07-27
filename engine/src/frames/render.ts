@@ -33,6 +33,7 @@ import {
   MAX_AUTHORITY_LINES,
   MAX_DOCKET_CARDS,
   MAX_RAID_LINES,
+  MAX_FRAME_BATTLE_LINES,
   MAX_LABELS_PER_FRAME,
   MAX_RUNDOWN_SEGMENTS,
   assertFrameBudgets,
@@ -40,6 +41,7 @@ import {
   type CastChip,
   type DocketCard,
   type RaidLine,
+  type BattleLine,
   MAX_FRAME_CLAIM_LINES,
   type ClaimLine,
   MAX_FRAME_WORKS_LINES,
@@ -106,6 +108,15 @@ export interface FrameSource {
    * nobody attacked is the worst lie this frame could tell.
    */
   readonly raidLines?: readonly RaidLine[];
+  /**
+   * Combat's battle lines (§9A, A13), supplied by the combat layer.
+   *
+   * Optional and passed in for the reason every other line set is, with one addition specific to
+   * this one: a renderer that computed its own bar heights would be inventing damage. `ehpBps` is
+   * the only field on this frame that says how badly a named principal's asset is hurt, and a
+   * half-empty bar over a fleet that took no fire is a lie a stranger has no second source for.
+   */
+  readonly battleLines?: readonly BattleLine[];
   /**
    * Sovereignty's claim lines (§6.3, A13), supplied by the sovereignty layer.
    *
@@ -613,6 +624,18 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
           compareIds(a.raid, b.raid),
       )
       .slice(0, MAX_RAID_LINES),
+    // Live battles first, then the bloodiest, then by id. Same argument as the raid lines, with the
+    // tiebreak chosen for what a viewer came for: a battle still running beats one that ended, and
+    // among those that ended the one that destroyed the most is the one worth the screen.
+    battleLines: (src.battleLines ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          Number(a.fieldControl === null) - Number(b.fieldControl === null) ||
+          b.wrecks.length - a.wrecks.length ||
+          compareIds(a.engagement, b.engagement),
+      )
+      .slice(0, MAX_FRAME_BATTLE_LINES),
     // Claims about to fall first, then the largest shortfall, then by id. Same argument as
     // the raid lines: if the budget bites, what survives is what the audience most needs,
     // and the order is arithmetic rather than taste. A discharged claim is a hairline and it
@@ -699,6 +722,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     tributeLines: [],
     authorityLines: [],
     raidLines: [],
+    battleLines: [],
     claimLines: [],
     worksLines: [],
     standings: [],

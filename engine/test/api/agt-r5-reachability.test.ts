@@ -67,6 +67,14 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'RESPONSE-ONLY — needs a live grant you issued. `grant` itself is now offered (first office at ' +
     'tick 290 in test/api/legal-but-unoffered.test.ts), so this state is reachable once a cast acts ' +
     'on it.',
+  engage:
+    'REACHABLE ELSEWHERE — needs the narrowest conjunction of any verb in the game: a LIVE raid the ' +
+    'observer is party to, ANSWERED FIGHT, plus a READY hull berthed at the stage and an IDLE hand to ' +
+    'crew it. The heuristic cast does not build hulls (it has no combat branch yet — see the report ' +
+    'that landed §9A), so this sweep cannot enter that state at all, and widening the run would not ' +
+    'help: the missing step is a decision no code makes. It is NOT unreachable in the game — ' +
+    'test/combat/reachable.spec.ts drives build{kind:HULL} → demand → fight → engage through the real ' +
+    'verb table and asserts both that the menu offers it AND that the verb accepts what the menu said.',
   join:
     'REACHABLE ELSEWHERE — needs a LIVE RAID the observer is not already a side of, at a stage where it ' +
     'has a hand. That window is a handful of ticks and the conjunction is narrow enough that this sweep ' +

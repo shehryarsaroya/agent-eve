@@ -222,6 +222,18 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // tick, so an adopted world that dropped it would come up with every place unworked — and the
   // holders would watch their income stop with no event saying why.
   'works',
+  // Combat (§9A). Named in the same change that registered the two tables, because
+  // `test/durability/books-in-the-hash.test.ts` asserts the two sets are equal in BOTH directions
+  // and it is right to: a restorable table missing from this manifest is a book adoption can drop
+  // while the gate reports nothing missing.
+  //
+  // Here the drop would be worse than most. An adopted world without `engagement` comes up with
+  // every live battle gone — and OPS-1 would then find hulls the `fleet` book still calls ENGAGED
+  // flying in no formation, or the reverse. An adopted world without `fleet` comes up with **every
+  // warship in the galaxy deleted and no event saying so**, which is A5′ (the record must never be
+  // wrong) at the largest scale this engine can express it.
+  'engagement',
+  'fleet',
   // Syndicates. A charter can never be amended, so a checkpoint that dropped the book would
   // bring the world up with the constitution every member relied on simply gone — and there is
   // no verb that could restate it. Named in the same change that registered the table, which is
