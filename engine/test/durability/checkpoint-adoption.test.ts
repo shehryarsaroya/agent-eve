@@ -245,13 +245,29 @@ describe('checkpoint adoption: the machinery', () => {
     expect(dropped).toBe(true);
     for (const s of live.snapshots) if (s.tick <= snapshot.tick) await store.writeSnapshot(s);
 
+    // ── THIS USED TO ASSERT A THROW, AND THE THROW WAS THE BUG ──────────────────
+    //
+    // `hydrateAppendOnly` refuses a short log with a plain `LedgerError`, which boot turned into a
+    // `BootError` with `operatorInstruction: null` — a HELD world, 503 on every route, over an
+    // optimisation that failed safely. Production has that condition permanently (its posting log
+    // only became durable at tick 2,810, so ~4,000 postings below its checkpoints were never
+    // written) and escaped an outage only because a renamed account happened to be found first.
+    //
+    // So the count is now compared before the hydrate mutates anything and the refusal is a
+    // `CheckpointUnusableError`: adoption backs out and the world boots the slow way. The property
+    // this proof exists for — **a short log is never adopted** — is asserted directly, which is
+    // strictly more than "it threw", because it also pins where the world ends up.
     const runtime = seated(SEED);
-    await expect(
-      bootFromStore(runtime, store, {
-        seed: SEED,
-        checkpoint: { requiredTables: registeredTables(runtime) },
-      }),
-    ).rejects.toThrow(/checkpoint adoption failed/);
+    const result = await bootFromStore(runtime, store, {
+      seed: SEED,
+      checkpoint: { requiredTables: registeredTables(runtime) },
+    });
+    expect(result.adoptedAtTick, 'a short posting log must never be adopted').toBeNull();
+    expect(result.refusalKind).toBe('LEDGER_UNREBUILDABLE');
+    expect(result.checkpointRefusal ?? '').toMatch(/postings/);
+    // And the slow path is correct: the dropped row was never an input to replay.
+    expect(runtime.engine.tick).toBe(snapshot.tick);
+    expect(runtime.engine.stateHash).toBe(snapshot.stateHash);
   }, 120_000);
 
   it('MUTATION PROOF: a store with no durable posting log refuses rather than adopting an empty ledger', async () => {
@@ -268,13 +284,18 @@ describe('checkpoint adoption: the machinery', () => {
     }
     for (const s of live.snapshots) if (s.tick <= snapshot.tick) await store.writeSnapshot(s);
 
+    // Same change of expectation as the proof above, for the same reason: a store that cannot
+    // rebuild the ledger costs a slow boot, never an outage. The refusal still says exactly what is
+    // wrong with it.
     const runtime = seated(SEED);
-    await expect(
-      bootFromStore(runtime, store, {
-        seed: SEED,
-        checkpoint: { requiredTables: registeredTables(runtime) },
-      }),
-    ).rejects.toThrow(/does not persist the posting log/);
+    const result = await bootFromStore(runtime, store, {
+      seed: SEED,
+      checkpoint: { requiredTables: registeredTables(runtime) },
+    });
+    expect(result.adoptedAtTick, 'an empty posting log must never be adopted').toBeNull();
+    expect(result.refusalKind).toBe('LEDGER_UNREBUILDABLE');
+    expect(result.checkpointRefusal ?? '').toMatch(/does not persist the posting log/);
+    expect(runtime.engine.stateHash).toBe(snapshot.stateHash);
   }, 120_000);
 });
 

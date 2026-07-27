@@ -35,11 +35,18 @@
  * than refusing to serve. Those still throw. The second test pins that, because a fix that made
  * every adoption failure recoverable would have traded an outage for a corrupt world.
  *
- * The condition is constructed here by dropping an account from a snapshot's capture rather than by
- * reproducing production's exact mechanism, which is not yet reproduced locally (a 700-tick heuristic
- * world adopts cleanly; the live case involves an externally enrolled principal). The property under
- * test — *an unrebuildable snapshot degrades instead of holding* — does not depend on which account
- * went missing or why.
+ * The condition is constructed here by re-pointing one posting at an account no capture contains,
+ * which is the shape rather than the cause. **The cause is now reproduced**, in
+ * `a-forked-record-cannot-be-adopted.test.ts`: an accepted divergence forks the world from its own
+ * durable log, and a venture id derived from a world-global ordinal is renamed by any action the new
+ * rules refuse. The property under test here — *an unrebuildable snapshot degrades instead of
+ * holding* — does not depend on which account went missing or why, so this fixture stands as
+ * written.
+ *
+ * What DID change under it: "everything else still throws" is no longer the ordering accident it was.
+ * Boot now reads and checks both append-only halves before applying either, so a recoverable refusal
+ * cannot arrive with the ledger already rebuilt. That was not caution: making the event half
+ * recoverable without it produced a fallback that halted on its first replayed tick.
  */
 
 import { describe, expect, it } from 'vitest';

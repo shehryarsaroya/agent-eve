@@ -109,6 +109,25 @@ function victim(runtime: Runtime): PrincipalId {
   return first;
 }
 
+/**
+ * Boot under the changed rules, **re-deriving every tick**.
+ *
+ * ── WHY THE CHECKPOINT IS DISABLED HERE, AND WHY IT IS NOT FIXTURE CONVENIENCE ──
+ *
+ * These tests used to let adoption run, and the door they exercised was quietly broken by it. The
+ * store holds snapshots at 287 and 575; boot adopted 575, replayed only 576–599, and reported its
+ * first divergence at tick **576** — while the injected rule refuses the victim from tick 300, so
+ * the record's first divergence is far earlier. The tests passed only because the *accepting* boot
+ * also adopted and also saw 576. The moment one boot replays further back — which is what every
+ * boot after a real `RULES_VERSION` bump does, since the newest snapshot then carries the old
+ * stamp — the accepted tick is no longer the first divergence and `onDivergence` refuses it. The
+ * door closes behind the operator who walked through it.
+ *
+ * So `planCheckpoint` now refuses adoption on any boot carrying an accepted tick, `replayCheck`
+ * disables it outright, and an adopted boot that finds a divergence offers **no** instruction (it
+ * cannot claim "first"). This helper models the boot an operator actually gets: the preflight, and
+ * then the restart that judges the record.
+ */
 async function bootUnderChangedRules(
   store: InMemoryJournalStore,
   fromTick: number,
@@ -116,7 +135,11 @@ async function bootUnderChangedRules(
 ): Promise<{ runtime: Runtime; outcome: Awaited<ReturnType<typeof bootWorld>> }> {
   const runtime = seatedRuntime();
   refuseAfter(runtime, victim(runtime), fromTick);
-  const outcome = await bootWorld(runtime, store, { seed: SEED, ...extra });
+  const outcome = await bootWorld(runtime, store, {
+    seed: SEED,
+    checkpoint: { disabled: true },
+    ...extra,
+  });
   return { runtime, outcome };
 }
 
@@ -149,6 +172,32 @@ describe('a rules change under the record HOLDS the world instead of crash-loopi
     expect(briefing).toContain('THE WORLD IS HELD');
     expect(briefing).toContain(String(outcome.diagnosis.tick));
   }, 120_000);
+
+  it('an ADOPTED boot offers no instruction, because it cannot know what "first" means', async () => {
+    // The hazard the helper above describes, pinned rather than described. Adoption left ON.
+    const live = await runLive();
+    const runtime = seatedRuntime();
+    refuseAfter(runtime, victim(runtime), 300);
+    const adopted = await bootWorld(runtime, live.store, { seed: SEED });
+    expect(adopted.status).toBe('HELD');
+    if (adopted.status !== 'HELD') throw new Error('unreachable');
+
+    // It found a divergence in the TAIL, past the checkpoint it adopted…
+    expect(adopted.diagnosis.tick).toBeGreaterThan(575);
+    // …so it must not hand the operator a tick to accept, and it must say why.
+    expect(adopted.diagnosis.operatorInstruction).toBeNull();
+    expect(adopted.message).toContain('ADOPTED the checkpoint at tick');
+    expect(describeDiagnosis(adopted.diagnosis)).toContain('No operator instruction can accept this');
+
+    // And the proof that the caution is not theoretical: re-deriving the same journal from genesis
+    // finds an EARLIER first divergence, and offers that one.
+    const genesis = await bootUnderChangedRules(live.store, 300);
+    if (genesis.outcome.status !== 'HELD') throw new Error('expected HELD');
+    expect(genesis.outcome.diagnosis.tick).toBeLessThan(adopted.diagnosis.tick);
+    expect(genesis.outcome.diagnosis.operatorInstruction).toBe(
+      `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(genesis.outcome.diagnosis.tick)}`,
+    );
+  }, 180_000);
 
   it('a tripwire hash mismatch holds the same way, with both hashes named', async () => {
     const live = await runLive(400);

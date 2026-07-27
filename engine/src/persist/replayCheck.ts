@@ -93,6 +93,12 @@ export async function replayCheck(opts: ReplayCheckOptions): Promise<ReplayCheck
     // Always null: the CHECK never walks through the operator door. It reports
     // whether the door would be needed, and whether the operator already opened it.
     acceptDivergenceFromTick: null,
+    // And it never adopts a checkpoint. The question this answers is "does this build re-derive the
+    // record", and adoption re-derives nothing — an adopted preflight would report the first
+    // divergence in the tail, which is a different (and later) tick than the one boot will demand.
+    // Measured: adopt-at-100 reports tick 117 where genesis finds 66. The preflight exists to hand
+    // an operator the tick to type; handing them the wrong one is worse than being slow.
+    checkpoint: { disabled: true },
     ...(opts.onProgress === undefined ? {} : { onProgress: opts.onProgress }),
   });
 

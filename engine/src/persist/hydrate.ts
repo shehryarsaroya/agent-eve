@@ -78,23 +78,62 @@ export class HydrateError extends Error {
  * write-once rules gate had refused it since the world's first rules change) and threw on a tick-2830
  * posting against an escrow account the tick-4895 capture no longer holds. Boot reported *"the
  * posting log and the snapshot describe different worlds… the record itself is inconsistent"* and
- * HELD the world with no door. **That diagnosis was wrong.** The very next boot replayed the same
- * journal from genesis, verified 17 snapshot tripwires, and came up healthy. The record was fine;
- * adoption's account check was not.
+ * HELD the world with no door. **That diagnosis was wrong** in its conclusion, though right in its
+ * words: the very next boot replayed the same journal from genesis, verified 17 snapshot tripwires,
+ * and came up healthy. The two artifacts *do* describe different worlds; the record is not corrupt.
  *
  * A boot path that cannot handle a snapshot must degrade to the slow path, never to an outage. So
- * this is thrown **only from validation that provably precedes any mutation** —
- * {@link hydrateLedgerForSnapshot} builds its batches in memory and touches `ledger` on its last
- * line, so the runtime is still clean and the caller can fall through to a genesis replay. Anything
- * thrown at or after `hydrateAppendOnly` stays a plain `HydrateError` and stays fatal, because by
- * then the runtime has been mutated and a fallback would be replaying into a dirty world.
+ * this is thrown **only from validation that provably precedes any mutation** — both hydrates now
+ * verify everything they can before touching the runtime, and the ledger hydrate touches `ledger` on
+ * its last line. The runtime is still clean and the caller can fall through to a genesis replay.
+ * Anything thrown at or after that stays a plain `HydrateError` and stays fatal, because by then the
+ * runtime has been mutated and a fallback would be replaying into a dirty world.
  */
 export class CheckpointUnusableError extends HydrateError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** Which artifact could not be rebuilt, for the boot line and for tests. */
+    readonly kind: 'LEDGER_UNREBUILDABLE' | 'RECORD_UNREBUILDABLE',
+  ) {
     super(message);
     this.name = 'CheckpointUnusableError';
   }
 }
+
+/**
+ * Why adoption did not happen, as a fact rather than a sentence.
+ *
+ * Every one of these used to be a prose refusal only, and prose is what let this bug live for three
+ * sessions: the message named the last account the hydrate happened to look at, so three
+ * investigations went looking at the ledger. A caller (and a test) can assert on a kind; nobody can
+ * assert on a paragraph.
+ */
+export type CheckpointRefusalKind =
+  /** The caller said never adopt. */
+  | 'ADOPTION_DISABLED'
+  /** A book the world needs is in no restorable state table. */
+  | 'MANIFEST_INCOMPLETE'
+  /** The caller required a genesis replay under changed rules. */
+  | 'CALLER_REQUIRED_REPLAY'
+  /** The operator is walking through the divergence door on this boot. */
+  | 'OPERATOR_JUDGING_DIVERGENCE'
+  /** Nothing to adopt. */
+  | 'NO_SNAPSHOT'
+  /** The snapshot was computed by other arithmetic than this build's. */
+  | 'RULES_VERSION_MISMATCH'
+  /** The snapshot's own tables do not hash to its own claim. */
+  | 'SNAPSHOT_SELF_INCONSISTENT'
+  /** The store does not keep the append-only record at all. */
+  | 'RECORD_CARRIES_NO_EVENTS'
+  /**
+   * A declared discontinuity at or before the snapshot: the durable append-only logs below it were
+   * written by a world this one has been declared not to be. **This is the production case.**
+   */
+  | 'RECORD_SUPERSEDED'
+  /** The posting log cannot rebuild this snapshot's ledger. */
+  | 'LEDGER_UNREBUILDABLE'
+  /** The event log cannot rebuild this snapshot's record. */
+  | 'RECORD_UNREBUILDABLE';
 
 /**
  * Every state table that must be present **and restorable** before a checkpoint may
@@ -197,6 +236,8 @@ export interface CheckpointPlan {
   readonly snapshot: SnapshotRecord | null;
   /** Operator-readable, and null exactly when {@link snapshot} is non-null. */
   readonly refusal: string | null;
+  /** Machine-readable, and null exactly when {@link snapshot} is non-null. */
+  readonly kind: CheckpointRefusalKind | null;
 }
 
 export interface CheckpointOptions {
@@ -220,6 +261,22 @@ export interface CheckpointOptions {
    * rules change forces the slow path.
    */
   readonly rulesChanged?: boolean;
+  /**
+   * True when this boot has been handed `acceptDivergenceFromTick`, i.e. an operator is judging a
+   * divergence on it.
+   *
+   * **The door is a claim about the WHOLE record, and adoption re-derives none of it.** Boot refuses
+   * any accepted tick that is not the FIRST divergence, and "first" is only meaningful if every tick
+   * was re-derived. An adopted boot skips the prefix, so it reports the first divergence *in the
+   * tail* — measured in the fixture: a boot that adopted the checkpoint at tick 100 reported tick
+   * 117, while a genesis replay of the same journal found tick 66. An operator told 117 who sets it
+   * would then be refused by the next boot that happens to replay from genesis, and the door would
+   * have closed behind them.
+   *
+   * So a boot that is judging a divergence re-derives everything. Set by {@link BootOptions} rather
+   * than by the caller.
+   */
+  readonly operatorJudgingDivergence?: boolean;
 }
 
 /**
@@ -253,12 +310,17 @@ export async function planCheckpoint(
   options: CheckpointOptions = {},
 ): Promise<CheckpointPlan> {
   if (options.disabled === true) {
-    return { snapshot: null, refusal: 'checkpoint adoption disabled by the caller' };
+    return {
+      snapshot: null,
+      kind: 'ADOPTION_DISABLED',
+      refusal: 'checkpoint adoption disabled by the caller',
+    };
   }
   const missing = missingCheckpointTables(tables, options.requiredTables);
   if (missing.length > 0) {
     return {
       snapshot: null,
+      kind: 'MANIFEST_INCOMPLETE',
       refusal:
         `checkpoint adoption refused: ${String(missing.length)} book(s) the world needs are in no ` +
         `restorable state table — ${missing.join(', ')}. A snapshot carries the state tables and ` +
@@ -272,6 +334,7 @@ export async function planCheckpoint(
   if (options.rulesChanged === true) {
     return {
       snapshot: null,
+      kind: 'CALLER_REQUIRED_REPLAY',
       refusal:
         'checkpoint adoption refused: the caller required a genesis replay under a different ' +
         'RULES_VERSION. Adoption re-derives nothing and the tail after the latest Reckoning ' +
@@ -282,7 +345,59 @@ export async function planCheckpoint(
   }
   const snapshot = await store.latestSnapshot();
   if (snapshot === null) {
-    return { snapshot: null, refusal: 'no snapshot in the journal to adopt' };
+    return { snapshot: null, kind: 'NO_SNAPSHOT', refusal: 'no snapshot in the journal to adopt' };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ── THE RECORD BELOW A DECLARED DISCONTINUITY BELONGS TO ANOTHER WORLD ────────
+  //
+  // **This is the gate that explains the production failure, and it is checked here — before a
+  // single posting row is read — because the answer is a fact about the journal, not something to
+  // be discovered one row at a time.**
+  //
+  // A `journal_divergence` row says: from tick D, this world's state is not what the record says.
+  // The operator was shown it and accepted it. What no code noticed is the consequence for the two
+  // append-only artifacts: the world runs on and keeps appending to the SAME `posting` and `event`
+  // tables, so from D onward those tables hold rows from the world that was, while every snapshot
+  // written afterwards describes the world that is. Adoption then asks the superseded log to rebuild
+  // the current ledger, and it cannot.
+  //
+  // Production, measured directly (2026-07-27):
+  //
+  //   journal_divergence   9 rows, every one at tick 287, STATE_HASH_MISMATCH, rules 1 -> 2,4,5,6…9
+  //   posting log @ 2830   escrow:v:2830:117e86ad:p:vale    escrow:v:2830:69c52d4d:p:varrow
+  //   capture   @ 4895     escrow:v:2830:516e910d:p:vale    escrow:v:2830:f34917a2:p:varrow
+  //   counts    @ 4895     capture 5,542 postings / 2,791 events; log 1,495 / 3,180
+  //
+  // Same tick, same principals, same two ventures, DIFFERENT IDS — because a venture id is
+  // `hash(tick, principal, ordinal)` over a world-global ordinal (`Runtime.mintVentureId`), so one
+  // action refused under new rules renames every venture minted after it, forever. The account the
+  // old refusal named was never "an escrow that closed": the same capture carries 1,303 closed
+  // escrows at zero balance. It was an account this world never minted.
+  //
+  // The refusal is therefore CORRECT, and it stays. What was wrong was the diagnosis, which sent
+  // three investigations into `ledger.ts` looking for a deletion that does not exist.
+  // ══════════════════════════════════════════════════════════════════════════════
+  const superseded = (await store.divergences()).filter((d) => d.tick <= snapshot.tick);
+  if (superseded.length > 0) {
+    const first = superseded.reduce((a, b) => (a.tick <= b.tick ? a : b));
+    return {
+      snapshot: null,
+      kind: 'RECORD_SUPERSEDED',
+      refusal:
+        `checkpoint adoption refused: the record carries ${String(superseded.length)} declared ` +
+        `discontinuit${superseded.length === 1 ? 'y' : 'ies'}, the earliest a ${first.kind} at tick ` +
+        `${String(first.tick)} (rules_version ` +
+        `${first.fromRulesVersion === null ? 'unrecorded' : String(first.fromRulesVersion)} -> ` +
+        `${String(first.toRulesVersion)}), and the snapshot being offered is at tick ` +
+        `${String(snapshot.tick)} — after it. From tick ${String(first.tick)} on, the durable posting ` +
+        'and event logs were written by a world an operator has declared this one is not, while the ' +
+        'snapshot describes this one. Adoption rebuilds the append-only halves FROM those logs, so it ' +
+        'would rebuild another world’s ledger under this world’s balances. Replaying from genesis ' +
+        'instead, which re-derives every tick from the action log — the artifact a rules change does ' +
+        'not invalidate. This boot is O(history) and will stay so until the world’s record and its ' +
+        'state are reconciled (a record epoch, or a world that has not been forked).',
+    };
   }
 
   // ── THE RULES GATE IS PER-SNAPSHOT, AND THAT IS NOT A RELAXATION ──────────────
@@ -316,6 +431,7 @@ export async function planCheckpoint(
         : `was produced by RULES_VERSION ${String(snapshot.rulesVersion)}, not this build's ${String(RULES_VERSION)}`;
     return {
       snapshot: null,
+      kind: 'RULES_VERSION_MISMATCH',
       refusal:
         `checkpoint adoption refused: the snapshot at tick ${String(snapshot.tick)} ${wrote}. ` +
         'Adoption re-derives nothing, so taking it as given would let changed arithmetic resume ' +
@@ -325,6 +441,25 @@ export async function planCheckpoint(
         'boots adopt them normally.',
     };
   }
+
+  // ── THE DOOR IS A CLAIM ABOUT THE WHOLE RECORD ────────────────────────────────
+  //
+  // See `CheckpointOptions.operatorJudgingDivergence`. Checked AFTER the superseded gate on purpose:
+  // when both hold, the durable fact ("this world's record was superseded at tick 287") is the one an
+  // operator needs, and the flag on this particular boot is the lesser statement.
+  if (options.operatorJudgingDivergence === true) {
+    return {
+      snapshot: null,
+      kind: 'OPERATOR_JUDGING_DIVERGENCE',
+      refusal:
+        'checkpoint adoption refused: this boot was handed an accepted divergence tick, so it is ' +
+        'judging whether this build reproduces the record. Adoption re-derives nothing and would ' +
+        'report the first divergence in the TAIL rather than the first in the record — an operator ' +
+        'who accepted that tick would be refused by the next boot that replayed further back. ' +
+        'Replaying from genesis so "first" means first.',
+    };
+  }
+
   // ── THE RECORD MUST AGREE WITH ITSELF, AND IT IS CHECKED BEFORE ANYTHING MOVES ──
   //
   // `adoptSnapshot` re-captures and compares, but by then the ledger and the record
@@ -339,6 +474,7 @@ export async function planCheckpoint(
   if (recomputed !== snapshot.stateHash) {
     return {
       snapshot: null,
+      kind: 'SNAPSHOT_SELF_INCONSISTENT',
       refusal:
         `checkpoint adoption refused: the snapshot at tick ${String(snapshot.tick)} claims ` +
         `state_hash ${snapshot.stateHash} and its own tables hash to ${recomputed}. The record ` +
@@ -396,6 +532,7 @@ export async function planCheckpoint(
     if (carried === 0) {
       return {
         snapshot: null,
+        kind: 'RECORD_CARRIES_NO_EVENTS',
         refusal:
           `checkpoint adoption refused: the snapshot at tick ${String(snapshot.tick)} was taken over ` +
           `${String(want)} events and this store returns none for that tick or the ` +
@@ -405,7 +542,7 @@ export async function planCheckpoint(
       };
     }
   }
-  return { snapshot, refusal: null };
+  return { snapshot, refusal: null, kind: null };
 }
 
 /**
@@ -472,24 +609,36 @@ export const HYDRATE_PAGE_TICKS = 512;
 
 const BATCH_KINDS: ReadonlySet<string> = new Set<BatchKind>(['TRANSFER', 'ISSUE', 'RETIRE']);
 
+/** The ledger's append-only halves, read and checked, and not yet given to a ledger. */
+export interface LedgerHydration {
+  readonly batches: readonly AppliedBatch[];
+  readonly postingCount: number;
+  readonly batchCount: number;
+}
+
 /**
- * Rebuild the ledger's append-only halves for `snapshot`, from the durable posting log.
+ * Read and CHECK the ledger's append-only halves for `snapshot`, mutating nothing.
  *
  * Refuses rather than repairs, at every step. A group whose rows disagree about the
  * batch they belong to, a posting against an account the snapshot never held, a row
  * written before the batch columns existed, a count that does not match the capture —
- * each is a boot that stops, because each of them silently produces a ledger whose
- * INV-7 mirrors are wrong in a way that would surface a tick later as a halt with no
- * cause attached to it.
+ * each is a refusal, because each of them silently produces a ledger whose INV-7
+ * mirrors are wrong in a way that would surface a tick later as a halt with no cause
+ * attached to it.
  *
- * Returns the number of postings and batches restored.
+ * **Separated from the apply so that every recoverable refusal precedes every
+ * mutation.** Boot used to hydrate the ledger and then the record, which meant a
+ * refusal from the event half arrived with the ledger already rebuilt — and the
+ * genesis replay it fell back to then ran on a ledger holding 800 batches from a
+ * world it was about to rebuild from tick 0, halting on the first tick with a
+ * diagnosis that named the wrong thing. Found by making the event half recoverable
+ * and watching the fallback take the world down anyway.
  */
-export async function hydrateLedgerForSnapshot(
-  ledger: Ledger,
+export async function readLedgerHydration(
   store: JournalStore,
   snapshot: SnapshotRecord,
   pageTicks: number = HYDRATE_PAGE_TICKS,
-): Promise<{ readonly postings: number; readonly batches: number }> {
+): Promise<LedgerHydration> {
   if (!Number.isSafeInteger(pageTicks) || pageTicks < 1) {
     throw new HydrateError(`hydrate needs a positive integer page size, got ${String(pageTicks)}`);
   }
@@ -498,6 +647,8 @@ export async function hydrateLedgerForSnapshot(
   const batches: AppliedBatch[] = [];
   let open: { key: string; batch: AppliedBatch; postings: Posting[] } | null = null;
   let seen = 0;
+  /** The log's earliest row. A log that starts after genesis can never rebuild a genesis-rooted count. */
+  let earliest: number | null = null;
 
   const close = (): void => {
     if (open === null) return;
@@ -510,6 +661,7 @@ export async function hydrateLedgerForSnapshot(
     const page = await store.postingsInRange(from, to);
     for (const row of page) {
       seen += 1;
+      earliest ??= row.tick;
       assertRowShape(row, facts.accounts);
       const key = `${String(row.tick)}:${String(row.seqInTick)}`;
       if (open !== null && open.key !== key) close();
@@ -544,20 +696,81 @@ export async function hydrateLedgerForSnapshot(
   close();
 
   if (seen === 0 && facts.postingCount > 0) {
-    throw new HydrateError(
+    throw new CheckpointUnusableError(
       `the snapshot at tick ${String(snapshot.tick)} was taken over ${String(facts.postingCount)} ` +
         'postings and the journal returned none. This store does not persist the posting log, so ' +
         'there is nothing to hydrate from and an adopted ledger would fail INV-7 on its first tick.',
+      'LEDGER_UNREBUILDABLE',
     );
   }
 
-  // The counts are checked inside `hydrateAppendOnly` against these same numbers, so
-  // a short or long log is a refusal there rather than a truncation here.
-  ledger.hydrateAppendOnly(batches, {
-    postingCount: facts.postingCount,
-    batchCount: facts.batchCount,
+  // ── THE COUNTS ARE COMPARED HERE, AND THAT IS THE WHOLE POINT ────────────────
+  //
+  // `hydrateAppendOnly` compares them too, and correctly, and refuses BEFORE it mutates — but it
+  // refuses with a plain `LedgerError`, which boot can only turn into a `BootError` with no operator
+  // door: a HELD world answering 503 on every route, over an optimisation that failed safely.
+  //
+  // **That path is armed in production right now.** The capture at 4895 was taken over 5,542 postings
+  // and the durable log holds 1,495 rows for ticks ≤ 4895 (the posting log only became durable when
+  // the world was already at tick 2,810, so ~4,000 of those postings were never written anywhere).
+  // The ONLY reason production got a recoverable refusal instead of an outage is that a renamed
+  // escrow account turned up at tick 2830 — twenty ticks into the log — before the count was ever
+  // compared. Luck, not design.
+  //
+  // So the comparison happens here as well, before the call, as a `CheckpointUnusableError`. The one
+  // inside `hydrateAppendOnly` stays exactly as strict; reaching it now means an engine bug rather
+  // than a record this build cannot rebuild, and it is right for that to be fatal.
+  const postingsFound = batches.reduce((n, b) => n + b.postings.length, 0);
+  if (postingsFound !== facts.postingCount || batches.length !== facts.batchCount) {
+    throw new CheckpointUnusableError(
+      `the durable posting log yields ${String(postingsFound)} postings in ${String(batches.length)} ` +
+        `batches for ticks 0..${String(snapshot.tick)}, and the snapshot at tick ` +
+        `${String(snapshot.tick)} was taken over ${String(facts.postingCount)} postings in ` +
+        `${String(facts.batchCount)} batches` +
+        (earliest !== null && earliest > 0
+          ? `. The log's earliest row is at tick ${String(earliest)}, so it does not reach genesis and ` +
+            'cannot supply the postings written before it existed'
+          : '') +
+        '. INV-7 sums the whole posting log every tick, so an adopted ledger that is short or long ' +
+        'halts the first tick after boot. Replaying from genesis instead, which rebuilds the ledger ' +
+        'from the action log rather than from the posting log.',
+      'LEDGER_UNREBUILDABLE',
+    );
+  }
+
+  return { batches, postingCount: facts.postingCount, batchCount: facts.batchCount };
+}
+
+/**
+ * Hand a checked {@link LedgerHydration} to the ledger. The mutation, and nothing else.
+ *
+ * `hydrateAppendOnly` re-checks the counts and refuses with a plain `LedgerError`, which is fatal
+ * and right to be: reaching it means {@link readLedgerHydration} passed and the numbers still
+ * disagree, which is an engine bug rather than a record this build cannot rebuild.
+ */
+export function applyLedgerHydration(
+  ledger: Ledger,
+  plan: LedgerHydration,
+): { readonly postings: number; readonly batches: number } {
+  ledger.hydrateAppendOnly(plan.batches, {
+    postingCount: plan.postingCount,
+    batchCount: plan.batchCount,
   });
-  return { postings: facts.postingCount, batches: facts.batchCount };
+  return { postings: plan.postingCount, batches: plan.batchCount };
+}
+
+/**
+ * Read, check and apply in one call, for callers that hold no other half-built state.
+ *
+ * Boot does NOT use this: it reads both halves, checks both, and only then applies either.
+ */
+export async function hydrateLedgerForSnapshot(
+  ledger: Ledger,
+  store: JournalStore,
+  snapshot: SnapshotRecord,
+  pageTicks: number = HYDRATE_PAGE_TICKS,
+): Promise<{ readonly postings: number; readonly batches: number }> {
+  return applyLedgerHydration(ledger, await readLedgerHydration(store, snapshot, pageTicks));
 }
 
 /**
@@ -597,6 +810,20 @@ export async function hydrateEventsForSnapshot(
   }
   const want = readEventCapture(snapshot);
 
+  // ── COUNT FIRST, APPEND SECOND ───────────────────────────────────────────────
+  //
+  // The same lesson as the ledger hydrate's count check, in the artifact where getting it wrong is
+  // worse. Every refusal below this point comes AFTER `events.append` has started mutating the
+  // runtime, so it can only ever be fatal — a HELD world, 503 on every route. And the condition is
+  // live: production's capture at 4895 counts 2,791 events while the durable log holds 3,180 for
+  // ticks ≤ 4895, because an accepted divergence at tick 287 left the log describing a world the
+  // snapshot does not. Reaching the append pass with those numbers would take the world down.
+  //
+  // One extra pass over the tick log, counting lengths and keeping no bodies. On the adopted path
+  // that is the read we were going to do anyway, done twice; the alternative is buffering the whole
+  // record in memory to inspect it, which costs more than it saves.
+  await verifyRecordRebuildable(store, snapshot, pageTicks);
+
   let appended = 0;
   let lateAdmissions = 0;
   let cursor = -1;
@@ -618,6 +845,7 @@ export async function hydrateEventsForSnapshot(
   while (cursor < snapshot.tick) {
     const page = await store.ticksPage(cursor, pageTicks);
     if (page.length === 0) break;
+    const before = cursor;
     for (const record of page) {
       if (record.tick > snapshot.tick) break;
       cursor = record.tick;
@@ -656,9 +884,18 @@ export async function hydrateEventsForSnapshot(
       late.sort((a, b) => a.tick - b.tick || (a.eventId < b.eventId ? -1 : a.eventId > b.eventId ? 1 : 0));
     }
     if (page.length < pageTicks) break;
+    // A page whose first row is already past the snapshot leaves the cursor where it was, and
+    // `while (cursor < snapshot.tick)` would then ask for the same page forever. Reachable on a
+    // journal with a hole in it (ticks 90 -> 105 across a checkpoint at 100), which is exactly the
+    // shape a lost tail produces.
+    if (cursor === before) break;
   }
   drainLate(snapshot.tick);
 
+  // The two checks below are now guards against an engine bug rather than against a record this
+  // build cannot rebuild — the count was compared before a single append, so a disagreement here
+  // means `EventLedger.append` dropped or minted something. They stay fatal, and it is right that
+  // they do: by this line the runtime has been mutated and there is no clean world to fall back to.
   if (appended === 0 && want.events > 0) {
     throw new HydrateError(
       `the snapshot at tick ${String(snapshot.tick)} was taken over ${String(want.events)} events and ` +
@@ -675,6 +912,66 @@ export async function hydrateEventsForSnapshot(
     );
   }
   return { events: appended, lateAdmissions };
+}
+
+/**
+ * Refuse, before anything is mutated, a durable record that cannot rebuild this snapshot's own
+ * event count.
+ *
+ * **Boot calls this before it applies either half of the adoption**, because every refusal inside
+ * {@link hydrateEventsForSnapshot} lands after `events.append` has started and can therefore only be
+ * fatal — a HELD world, 503 on every route. The condition is live: production's capture at tick 4895
+ * counts 2,791 events while its durable log holds 3,180 for ticks ≤ 4895, an accepted divergence at
+ * tick 287 having left the log describing a world the snapshot does not.
+ *
+ * Costs one paged scan of the tick log, counting lengths and keeping no bodies.
+ */
+export async function verifyRecordRebuildable(
+  store: JournalStore,
+  snapshot: SnapshotRecord,
+  pageTicks: number = HYDRATE_PAGE_TICKS,
+): Promise<number> {
+  const want = readEventCapture(snapshot);
+  const carried = await countJournalledEvents(store, snapshot.tick, pageTicks);
+  if (carried !== want.events) {
+    throw new CheckpointUnusableError(
+      `the durable event log holds ${String(carried)} events for ticks 0..${String(snapshot.tick)} and ` +
+        `the snapshot at tick ${String(snapshot.tick)} was taken over ${String(want.events)}. The two ` +
+        'describe different worlds, or the log has holes in it; either way an adopted world would ' +
+        'serve a public record that is not its own. Replaying from genesis instead, which rebuilds ' +
+        'the record tick by tick from the action log.',
+      'RECORD_UNREBUILDABLE',
+    );
+  }
+  return carried;
+}
+
+/**
+ * How many events the durable log holds for ticks `0..throughTick`.
+ *
+ * Pages like everything else here, and keeps nothing: the bodies are dropped as each page goes out
+ * of scope, so the memory bound is one page whatever the age of the world.
+ */
+async function countJournalledEvents(
+  store: JournalStore,
+  throughTick: number,
+  pageTicks: number,
+): Promise<number> {
+  let total = 0;
+  let cursor = -1;
+  while (cursor < throughTick) {
+    const page = await store.ticksPage(cursor, pageTicks);
+    if (page.length === 0) break;
+    const before = cursor;
+    for (const record of page) {
+      if (record.tick > throughTick) break;
+      cursor = record.tick;
+      total += record.events.length;
+    }
+    if (page.length < pageTicks) break;
+    if (cursor === before) break;
+  }
+  return total;
 }
 
 /** What {@link hydrateEventsForSnapshot} rebuilt. */
@@ -744,30 +1041,36 @@ function assertRowShape(row: PersistedPosting, accounts: ReadonlySet<string>): v
     );
   }
   if (!accounts.has(row.account)) {
-    // ── THIS CHECK'S PREMISE IS WRONG, AND IT COST AN OUTAGE ────────────────────
+    // ── WHAT THIS CHECK ACTUALLY CATCHES, AFTER TWO WRONG ANSWERS ───────────────
     //
-    // It used to read: "compares against the accounts the snapshot itself held AT that tick, not
-    // against whatever exists now." But the snapshot is not at the posting's tick. A checkpoint at
-    // 4895 captures the accounts alive at 4895, and this loop feeds it every posting since genesis —
-    // so a posting from tick 2830 against an escrow that opened and CLOSED in between is legitimately
-    // absent from the capture. The check assumes the final account set is a superset of every account
-    // ever referenced, which only holds if accounts are never removed.
+    // Wrong answer #1, the original: "compares against the accounts the snapshot held AT that tick".
+    // It does not — the snapshot is at the checkpoint's tick and this loop feeds it every posting
+    // since genesis.
     //
-    // Production disproved that with `escrow:v:2830:117e86ad:p:vale`, and then disproved the
-    // conclusion too: a genesis replay of the same journal verified 17 tripwires and came up healthy.
-    // So this is not the record disagreeing with itself — it is adoption being unable to rebuild a
-    // ledger whose history includes closed accounts.
+    // Wrong answer #2, which cost an outage and then three sessions: "so an escrow that opened and
+    // CLOSED before the checkpoint is legitimately absent." **That is false, and measuring it was
+    // the whole fix.** `capture()` lists every account (`allAccounts()`, no filter, no cap), nothing
+    // in `ledger.ts` deletes one, and the live capture at 4895 carries 1,303 escrow accounts sitting
+    // at a zero balance. Closed escrows are all there. `escrow:v:2830:117e86ad:p:vale` was missing
+    // for a different reason: the same capture holds `escrow:v:2830:516e910d:p:vale` — the same
+    // venture, the same tick, the same funder, a DIFFERENT ORDINAL. A venture id is
+    // `hash(tick, principal, ordinal)`, so one action refused under changed rules renames every
+    // venture minted afterwards. The world never minted the account the log names.
     //
-    // Downgraded to recoverable rather than deleted. The check still has value as a tripwire against
-    // a genuinely mismatched log, and the honest fix for closed accounts needs a record of closures
-    // that does not exist yet (see `COMPLETION.md` §7). Until then the safe answer is the slow boot,
-    // which is what {@link CheckpointUnusableError} buys.
+    // So this fires when the posting log and the capture come from different worlds, which after an
+    // accepted divergence they do. `planCheckpoint`'s `RECORD_SUPERSEDED` gate now catches that case
+    // first and by name; this stays as the tripwire for a mismatch nothing declared — and stays
+    // recoverable, because a log this build cannot rebuild is a reason to take the slow path and
+    // never a reason to stop serving.
     throw new CheckpointUnusableError(
       `${where} moves value in account ${row.account}, which the snapshot's ledger capture does ` +
-        'not contain. Most likely an account that closed before the checkpoint — its postings are ' +
-        'still in the log and the capture no longer lists it — which adoption cannot currently ' +
-        'rebuild. The record itself may be sound: replaying from genesis re-derives every tick and ' +
-        'checks it against its own snapshots.',
+        'not contain. The capture lists every account the world holds and deletes none, so this is ' +
+        'not an account that closed: it is one this world never minted. Two things produce that — a ' +
+        'posting log written by a world a declared discontinuity has superseded (ids derived from a ' +
+        'world-global ordinal are renamed by any refused action), or a log that belongs to a ' +
+        'different journal. The record may be perfectly sound either way: replaying from genesis ' +
+        're-derives every tick from the action log and checks it against its own snapshots.',
+      'LEDGER_UNREBUILDABLE',
     );
   }
 }

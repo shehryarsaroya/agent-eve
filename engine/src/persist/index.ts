@@ -42,13 +42,18 @@ export {
   HYDRATE_PAGE_TICKS,
   CheckpointUnusableError,
   HydrateError,
+  applyLedgerHydration,
   hydrateEventsForSnapshot,
   hydrateLedgerForSnapshot,
   missingCheckpointTables,
   planCheckpoint,
+  readLedgerHydration,
   snapshotOf,
+  verifyRecordRebuildable,
   type CheckpointOptions,
   type CheckpointPlan,
+  type CheckpointRefusalKind,
+  type LedgerHydration,
 } from './hydrate.js';
 export { replayCheck, type ReplayCheckResult } from './replayCheck.js';
 export {

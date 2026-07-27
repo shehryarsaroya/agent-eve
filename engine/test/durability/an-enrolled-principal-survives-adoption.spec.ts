@@ -1,4 +1,26 @@
 /**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **CLOSED. THE ANSWER IS IN `a-forked-record-cannot-be-adopted.test.ts`, AND IT WAS NOT THIS.**
+ *
+ * The bug this file was built to hunt is reproduced, diagnosed and fixed, and the diagnosis is that
+ * `p:vale` being an ENROLLED principal was a coincidence. Production's world has accepted a declared
+ * discontinuity at tick 287 **nine times** (`journal_divergence`, one row per rules change), so from
+ * tick 287 on its durable `posting` and `event` logs were written by worlds it has been declared not
+ * to be — while every snapshot after that describes the world that is. Adoption rebuilds the ledger
+ * FROM those logs, so it was asking a superseded record to justify the current one. The account it
+ * named was never missing: the log holds `escrow:v:2830:117e86ad:p:vale` and the capture holds
+ * `escrow:v:2830:516e910d:p:vale` — same tick, same funder, same venture, a different world-global
+ * ordinal in `hash(tick, principal, ordinal)`.
+ *
+ * The refusal was CORRECT. Only the message was wrong, and it was wrong in the most expensive
+ * possible way: it named the ledger, so three sessions searched the ledger.
+ *
+ * **This file keeps its place unchanged**, for the reason its last paragraph already gives: the
+ * durability tier should not be able to claim adoption works while never once adopting a world
+ * containing the kind of principal the game is built for. The investigation log below is left as
+ * written, because the order the theories died in is the useful part.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
  * THE FIXTURE `test/durability/` NEVER HAD: A WORLD WITH A REAL ENROLLED AGENT IN IT.
  *
  * Every other durability fixture is **cast-only**. The house cast is re-seated deterministically from

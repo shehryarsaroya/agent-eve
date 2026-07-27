@@ -67,11 +67,14 @@
 import { RULES_VERSION, type Runtime } from '../sim/runtime.js';
 import type { SubmittedAction } from '../tick/index.js';
 import {
+  applyLedgerHydration,
   hydrateEventsForSnapshot,
-  hydrateLedgerForSnapshot,
   planCheckpoint,
+  readLedgerHydration,
   snapshotOf,
+  verifyRecordRebuildable,
   type CheckpointOptions,
+  type CheckpointRefusalKind,
   CheckpointUnusableError,
 } from './hydrate.js';
 import {
@@ -167,6 +170,14 @@ export interface BootResult {
    * state table" is.
    */
   readonly checkpointRefusal: string | null;
+  /**
+   * The same fact as {@link checkpointRefusal}, as a value.
+   *
+   * Added because prose is what let the escrow bug live for three sessions: the refusal named the
+   * last account the hydrate happened to look at, so three investigations went looking at the
+   * ledger. `RECORD_SUPERSEDED` is a claim a test can pin and a health check can count.
+   */
+  readonly refusalKind: CheckpointRefusalKind | null;
   /** Postings rebuilt from the durable log to make the adoption legitimate. */
   readonly postingsHydrated: number;
   /**
@@ -296,6 +307,7 @@ export async function bootFromStore(
       headTick: runtime.engine.tick,
       adoptedAtTick: null,
       checkpointRefusal: 'genesis: the store holds no run to resume',
+      refusalKind: 'NO_SNAPSHOT',
       postingsHydrated: 0,
       eventsHydrated: 0,
       ticksReplayed: 0,
@@ -395,7 +407,12 @@ export async function bootFromStore(
   // BUILD's arithmetic write the snapshot I am about to take as given? That refuses the
   // same first boot after a rules change — the newest snapshot still carries the old
   // stamp — and then clears itself once the world checkpoints under the new rules.
-  const plan = await planCheckpoint(runtime.engine.stateTables, store, opts.checkpoint);
+  const plan = await planCheckpoint(runtime.engine.stateTables, store, {
+    ...opts.checkpoint,
+    // The door is a claim about the whole record; adoption re-derives none of it. See
+    // `CheckpointOptions.operatorJudgingDivergence` for the measured reason this is not optional.
+    ...(accept === null ? {} : { operatorJudgingDivergence: true }),
+  });
   let adoptedAtTick: number | null = null;
   let postingsHydrated = 0;
   let eventsHydrated = 0;
@@ -403,24 +420,31 @@ export async function bootFromStore(
   // in place of `plan.refusal` because "I tried and backed out" is a different fact from "I never
   // tried", and an operator reading one boot line must be able to tell them apart.
   let adoptionFallback: string | null = null;
+  let adoptionFallbackKind: CheckpointRefusalKind | null = null;
   if (plan.snapshot !== null) {
     const snapshot = plan.snapshot;
     try {
-      // Order is load-bearing. The append-only log must be back BEFORE the snapshot is
-      // adopted: `Ledger.restoreTo` refuses to grow those halves, and the hydrate is
-      // what makes the lengths already match so the refusal is satisfied rather than
-      // relaxed. (And `adoptSnapshot` re-captures and compares hashes, so a restore
-      // that did not reproduce the captured bytes throws there rather than serving.)
-      const restored = await hydrateLedgerForSnapshot(runtime.ledger, store, snapshot);
-      postingsHydrated = restored.postings;
-      // And the record, for the same reason and with the same ordering rule: the
-      // append-only halves must be back BEFORE the snapshot is adopted, because
-      // `EventLedger.restoreTo` refuses to grow and the hydrate is what makes the
-      // counts already match — the refusal satisfied rather than relaxed.
-      // The boot's own page size, not the hydrate's default: `bootFromStore`'s
-      // memory bound is "never ask the store for the whole log, and never for more
-      // than one page", and an inner read that pages at its own larger size would
-      // quietly make that claim false for the adopted path.
+      // ── EVERY RECOVERABLE CHECK FIRST, EVERY MUTATION SECOND ─────────────────
+      //
+      // This used to hydrate the ledger and then the record, and the ordering was a trap: a
+      // recoverable refusal from the SECOND half arrives with the FIRST half already applied, so the
+      // genesis replay it falls back to runs on a ledger holding a completed world's batch log and
+      // halts on its first tick — an outage produced by the very fallback that exists to prevent one.
+      // Found by making the event count recoverable and watching the world go down anyway.
+      //
+      // So the two reads and both checks happen while the runtime is untouched, and only then is
+      // anything applied. `pageSize` is boot's own, not the hydrate's default: boot's memory bound is
+      // "never ask the store for the whole log, and never for more than one page", and an inner read
+      // that paged at its own larger size would quietly make that claim false for the adopted path.
+      const ledgerPlan = await readLedgerHydration(store, snapshot, pageSize);
+      await verifyRecordRebuildable(store, snapshot, pageSize);
+
+      // Order is load-bearing here too. The append-only halves must be back BEFORE the snapshot is
+      // adopted: `Ledger.restoreTo` and `EventLedger.restoreTo` both refuse to GROW, and the hydrate
+      // is what makes the lengths already match so the refusal is satisfied rather than relaxed.
+      // (And `adoptSnapshot` re-captures and compares hashes, so a restore that did not reproduce
+      // the captured bytes throws there rather than serving.)
+      postingsHydrated = applyLedgerHydration(runtime.ledger, ledgerPlan).postings;
       const record = await hydrateEventsForSnapshot(runtime.events, store, snapshot, pageSize);
       eventsHydrated = record.events;
       runtime.engine.adoptSnapshot(snapshotOf(snapshot));
@@ -434,10 +458,12 @@ export async function bootFromStore(
     } catch (error: unknown) {
       // ── A BOOT PATH THAT CANNOT HANDLE A SNAPSHOT MUST NOT TAKE THE WORLD DOWN ──
       //
-      // `CheckpointUnusableError` is thrown only by validation that provably precedes any mutation,
-      // so the runtime is still clean here and the genesis replay below can run exactly as if
-      // `planCheckpoint` had refused. That is the honest outcome: adoption is an OPTIMISATION, and
-      // the slow path is always available and always correct.
+      // `CheckpointUnusableError` is thrown only by validation that provably precedes any mutation —
+      // and since both halves are now read and checked before either is applied, that claim is
+      // structural rather than a property of the order two calls happen to be written in. The runtime
+      // is still clean here and the genesis replay below can run exactly as if `planCheckpoint` had
+      // refused. That is the honest outcome: adoption is an OPTIMISATION, and the slow path is always
+      // available and always correct.
       //
       // This is not hypothetical caution. Adoption ran in production for the first time ever, threw
       // here, and boot reported "the record itself is inconsistent" and HELD the world with no
@@ -452,6 +478,7 @@ export async function bootFromStore(
         adoptionFallback =
           `checkpoint adoption abandoned at tick ${String(snapshot.tick)} and the world was replayed ` +
           `from genesis instead: ${error.message}`;
+        adoptionFallbackKind = error.kind;
         process.stderr.write(`compact: ${adoptionFallback}\n`);
       } else {
       throw new BootError(
@@ -505,14 +532,29 @@ export async function bootFromStore(
       return;
     }
     if (accept !== tick) {
+      // ── AN ADOPTED BOOT MAY NOT SAY "FIRST" ─────────────────────────────────
+      //
+      // Adoption skips re-deriving the prefix, so the earliest divergence it can SEE is the earliest
+      // in the tail. Measured in `a-forked-record-cannot-be-adopted.test.ts`: a boot that adopted the
+      // checkpoint at tick 100 reported tick 117, and a genesis replay of the same journal found tick
+      // 66. Offering `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=117` there hands the operator an instruction
+      // the next genesis-replaying boot will refuse — a door that closes behind them. So an adopted
+      // boot names no tick and points at the question that can answer it. (A boot that IS given an
+      // accepted tick never adopts, so this branch and that one cannot both apply.)
+      const partial = adoptedAtTick !== null;
       throw new BootError(
         `${kind === 'APPLIED_REFUSED' ? 'replay refused an action the record says was applied' : 'TRIPWIRE'} ` +
           `at tick ${String(tick)}: ${detail}. The record and this build disagree, so the world is NOT ` +
           'resumed and must not accept writes.' +
-          (accept === null
-            ? ''
-            : ` (An operator accepted divergence from tick ${String(accept)}, but the FIRST divergence is at ` +
-              `tick ${String(tick)}. The instruction must name the tick it was given.)`),
+          (partial
+            ? ` (This boot ADOPTED the checkpoint at tick ${String(adoptedAtTick)} and replayed only the ` +
+              'tail, so tick ' +
+              `${String(tick)} is the first divergence in the tail and not necessarily the first in the ` +
+              'record. Run the replay preflight, which re-derives from genesis, to get the tick to accept.)'
+            : accept === null
+              ? ''
+              : ` (An operator accepted divergence from tick ${String(accept)}, but the FIRST divergence is at ` +
+                `tick ${String(tick)}. The instruction must name the tick it was given.)`),
         {
           ...context,
           kind,
@@ -521,7 +563,7 @@ export async function bootFromStore(
           expectedHash: expected,
           actualHash: actual,
           action: kind === 'APPLIED_REFUSED' ? detail : null,
-          operatorInstruction: `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(tick)}`,
+          operatorInstruction: partial ? null : `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(tick)}`,
         },
       );
     }
@@ -651,6 +693,7 @@ export async function bootFromStore(
     headTick: runtime.engine.tick,
     adoptedAtTick,
     checkpointRefusal: adoptionFallback ?? plan.refusal,
+    refusalKind: adoptionFallbackKind ?? plan.kind,
     postingsHydrated,
     eventsHydrated,
     ticksReplayed,
