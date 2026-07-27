@@ -374,12 +374,37 @@ No adversarial brief. Just: play well. These answer whether the *design* works, 
   *collateral* and not *conduct*, which is a weaker and more interesting result: it would say the
   slashable half of A15 is doing the work and the standing vectors are decoration.
 
-  **Confounds to control, or the number means nothing.** Role scarcity (a slot nobody else can fill
-  pays more regardless of who fills it — use `rolesFilled`/`rolesTotal` and the board's own
-  `withheld` count); the elective *fraction*, since a role that is 34% elective is a different
-  instrument from one that is 5% and the two broken promises measured on 2026-07-26 were both at the
-  joint-highest elective share on the card; and tenure, because a principal with 40 settled ventures
-  has both a record and a network, and A15's `distinct_counterparties` term is what separates them.
+  **Confounds to control, or the number means nothing.** Role scarcity — a slot nobody else can fill
+  pays more regardless of who fills it. **Not** via `rolesFilled`/`rolesTotal`: those are fields on
+  the spectator frame's `VentureGlyph`, not on an agent's `ventures.board[]` row, and the first probe
+  to run this brief correctly flagged that I had conflated the two. Control it from what a board row
+  really carries: count the rows sharing one `venture` id (each role is its own row), and track how
+  many polls a row *persists* — a slot that lingers is one nobody wants, which is the scarcity signal.
+  Then the elective *fraction*, since a role that is 34% elective is a different instrument from one
+  that is 5% and both broken promises measured on 2026-07-26 sat at the joint-highest elective share
+  on the card; and tenure, because a principal with 40 settled ventures has both a record and a
+  network, and A15's `distinct_counterparties` term is what separates them.
+
+  **⚑ RUN IT LONGITUDINALLY, NOT CROSS-SECTIONALLY — measured 2026-07-26.** The first run of this
+  brief returned *insufficient data*, and the reason is the finding. Across 14 polls over ~58 minutes,
+  **exactly one** venture-creating counterparty appeared on the eligible board, posting a byte-identical
+  templated 2-role RAID at a constant 35.0% elective fraction. With n=1 creator the trust vectors are
+  **constants, not variables** — there is no variance for a spread to exist in, and reporting
+  "spread ≈ 0" would dress a missing comparison up as a null result.
+  
+  This is not fixable by polling longer in one sitting. The shard holds 12–20 named principals by
+  design (§15.6's house cast), so a **between-principal** comparison can never reach adequate N — it
+  would need more independent creators than the population contains. The viable design is
+  **within-creator over time**: track the same principals across many Reckonings and look for changes
+  in the terms *they* offer after *they* take a default or post a bond. A Reckoning is a daily event,
+  so this is a weeks-long instrument, and it should be built as a standing collector rather than a
+  session.
+  
+  Two more things that run showed, both worth knowing before the next attempt: **8 of 14 snapshots had
+  an entirely empty board**, and the single creator had a *bad* record (2 defaults, 25 contradicted
+  seals, no bond) while being the only source of work in the world. **Trust cannot be priced in a
+  market with one seller** — so `AGT-E2` is gated on the board carrying competing offers at all, which
+  is an economy-liveness precondition and not a measurement problem.
 
   **The stronger version, if the probe finds a spread worth showing.** Publish per-role take beside
   the filler's record in the frame, so the spread is visible to a *viewer* — that turns "is trust
