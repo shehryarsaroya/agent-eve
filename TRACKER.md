@@ -1167,15 +1167,35 @@ operator had already adjudicated. Fixed by stamping each snapshot with the versi
 
 Which revealed that **the adopt path had never once executed in production**, and it failed:
 `CHECKPOINT_UNUSABLE` on a tick-2830 posting against an escrow account the tick-4895 capture no longer
-held. The world HELD — correct fail-closed behaviour — on a record that was completely sound (the next
-boot verified 17 tripwires and reached the identical head). **The account check's premise is false:** it
-assumed the final account set is a superset of every account ever referenced, and an escrow that opened
-and closed in between is legitimately absent.
+held. The world HELD — correct fail-closed behaviour.
 
 Now `CheckpointUnusableError` degrades to a genesis replay instead of holding, verified against the real
 production condition. `COMPACT_CHECKPOINT_ADOPTION=off` exists as a kill switch so nobody has to
-`UPDATE snapshot SET rules_version = NULL` over SSH again. **Root cause still open** — boot remains
-O(history) at ~139 s and growing, it just cannot cause an outage.
+`UPDATE snapshot SET rules_version = NULL` over SSH again.
+
+**★ CLOSED 2026-07-27 — and the account check's premise was RIGHT.** Two paragraphs above used to say it
+was false ("an escrow that opened and closed in between is legitimately absent") and that the record was
+"completely sound". Both wrong, and they cost three sessions. One database query settled it: the
+`journal_divergence` table holds **nine rows, every one at tick 287**, and the posting log and the
+capture name the *same* ventures at the *same* tick with **different ids** —
+`escrow:v:2830:117e86ad:p:vale` in the log against `escrow:v:2830:516e910d:p:vale` in the capture.
+
+A venture id is `hash(tick, principal, ordinal)` over a **world-global** counter, so one action refused
+under changed rules shifts the ordinal and renames every venture minted afterwards, permanently. Nine
+accepted divergences at tick 287 means the `posting` and `event` tables carry rows written by nine
+different worlds, while every snapshot after 287 describes only the current one. The counts disagree by
+~4,000 rows. **The refusal was correct**, and the account check was the only thing preventing a HELD
+world with 503 on every route — it escaped that only because a renamed account appeared 20 ticks into
+the log first. `p:vale` being an enrolled principal was a coincidence; re-seating works.
+
+**Boot stays at 170 s and no code may change that for this world** (A5 forbids rewriting a past row;
+A5′ makes a wrong ledger worse than a slow boot). An unforked world adopts today, and the suite pins
+that so the fix cannot decay into silently disabling adoption. The open item is a **record epoch** —
+re-journal the re-derived ticks under a new epoch id on accepting a divergence, append-only, and have
+adoption read only the current epoch. Reproduced first, in
+`test/durability/a-forked-record-cannot-be-adopted.test.ts`; a second bug fell out of building it, an
+adopted boot **naming the wrong tick for the operator door** (575 → "divergence at 576"; genesis replay
+of the same journal finds 66).
 
 **⚑ FOUR THINGS I GOT WRONG, because the pattern is worth more than the fixes**
 

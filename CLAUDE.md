@@ -108,7 +108,16 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
   valuable input in the repo, and several were re-encountered and closed by name during the build.
 - **Open** (`TRACKER.md` + `COMPLETION.md`): a **second good** (the real bottleneck — `market` is 3,065
   lines pricing one fungible commodity) · whether a role releases a hand at delivery or settlement ·
-  checkpoint adoption's closed-account bug · the three-humans watchability gate, never run.
+  a **record epoch** for a forked record · the three-humans watchability gate, never run.
+- **Checkpoint adoption is no longer an open bug — it was never a ledger bug.** Closed 2026-07-27: this
+  world's durable record was **superseded at tick 287** by nine accepted divergences, and since a venture
+  id is `hash(tick, principal, ordinal)` over a *world-global* counter, one action refused under changed
+  rules renames every venture minted after it forever. The `posting`/`event` tables therefore hold rows
+  from nine worlds; the refusal was **correct**, and the account check was the only thing standing between
+  production and a 503-on-every-route outage (the counts disagree by ~4,000 rows). Boot stays at 170 s and
+  **no code may fix that for this world** — A5 forbids rewriting a past row. The open item is a *record
+  epoch*, or a world that never forked. The three theories this cost — a closed escrow account, world
+  length, enrolment re-seating — were each killed by one database query.
 
 ### The goal, restated 2026-07-27
 

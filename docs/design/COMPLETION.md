@@ -294,7 +294,62 @@ The world **HELD** — the correct fail-closed answer, refusing to serve a recor
 reproduce — but it was down ~4 minutes and the only lever was `UPDATE snapshot SET rules_version =
 NULL` over SSH.
 
-### ✅ The outage risk is closed. The root cause is not.
+### ✅ RESOLVED 2026-07-27 — the record was superseded, and the refusal is CORRECT
+
+**The ledger was never missing an account. The world was appending to a record it had been declared not
+to own.** Diagnosed by querying the production database instead of reasoning about it:
+
+```
+journal_divergence   9 rows, EVERY one at tick 287, STATE_HASH_MISMATCH, rules 1 -> 2,4,5,6…9
+posting log @ 2830   escrow:v:2830:117e86ad:p:vale    escrow:v:2830:69c52d4d:p:varrow
+capture   @ 4895     escrow:v:2830:516e910d:p:vale    escrow:v:2830:f34917a2:p:varrow
+counts    @ 4895     capture 5,542 postings / 2,791 events;  log 1,495 / 3,180
+posting log min tick 2810   (action_log / event / tick_seed all start at 0)
+```
+
+Same tick, same principals, same two ventures — **different ids**. A venture id is
+`hash(tick, principal, ordinal)` over a world-**global** counter (`Runtime.mintVentureId`), so a single
+action refused under changed rules shifts the ordinal and **renames every venture minted after it,
+forever.** The operator has accepted that discontinuity at tick 287 nine times; each acceptance forks
+the live world from its own record at 287, while the world keeps appending to the *same* `posting` and
+`event` tables. Those tables therefore hold rows from as many worlds as there have been rules changes,
+and every snapshot after 287 describes only the current one.
+
+So `p:vale` being an enrolled principal was **a coincidence** — `stores:p:vale` is present and
+re-seating works fine. The enrolment/re-seating theory was chasing the one detail that did not matter.
+
+**And the account check was the only thing standing between production and an outage.**
+`hydrateAppendOnly` refused a count mismatch with a plain `LedgerError`, which boot could only turn into
+a `BootError` with `operatorInstruction: null` — a HELD world, 503 on every route. Production's counts
+disagree by **~4,000 rows**. It escaped that solely because a renamed account happened to appear 20
+ticks into the log first.
+
+**Boot time: 170 s → 170 s, and that is the answer, not a failure to fix it.** No code may reconcile
+this record: A5 forbids rewriting a past row and A5′ says a wrong ledger is worse than a slow boot. A
+world that has *not* forked adopts today and boots bounded, and the suite now pins that so the fix
+cannot degrade into quietly disabling adoption. Moving the number requires a **decision, not a patch**:
+a *record epoch* (on accepting a divergence, re-journal the re-derived ticks under a new epoch id —
+append-only, nothing rewritten — and have adoption read only the current epoch; needs `epoch` on
+`posting`/`event` plus the feed and archive readers), or a world that was never forked.
+
+What landed: `planCheckpoint` refuses `RECORD_SUPERSEDED` **before reading a row**, naming the
+discontinuity and both rules versions; refusals carry a machine-readable `CheckpointRefusalKind`
+(prose is what let this survive three sessions); both count checks became **pre-mutation**
+`CheckpointUnusableError`s; boot reads and checks **both** append-only halves before applying either
+(getting this backwards produced a genesis replay running on an already-hydrated ledger — INV-1 ×30);
+and adoption is refused outright on any boot carrying an accepted divergence tick. Reproduced first, in
+`test/durability/a-forked-record-cannot-be-adopted.test.ts`.
+
+**A second bug fell out of building the reproduction:** an adopted boot **named the wrong tick for the
+operator door** — adopting at 575 it reported "first divergence at 576", while a genesis replay of the
+same journal finds **66**. An operator who accepted 576 would be refused by the next boot that replayed
+further back. A surface reporting a confidently wrong number, with a test that agreed with it.
+
+---
+
+*Everything below is the investigation trail, retained because its refuted theories are the lesson —
+three sessions of confident reasoning that checking overturned in one. The conclusions in it are
+**superseded** by the section above; the negative results still stand.*
 
 Adoption now **degrades to a genesis replay instead of holding the world**, and this was verified
 against the real production condition rather than a fixture: the tick-4895 snapshot was re-stamped,
@@ -309,7 +364,7 @@ boot REPLAY, head tick 4909, 4910 ticks replayed, 17 snapshot tripwires verified
 — healthy, `failures: []`. `COMPACT_CHECKPOINT_ADOPTION` is back **on**, because a failed adoption now
 costs exactly the genesis replay we were already paying and nothing more.
 
-**The account check's premise was wrong**, and that is the root cause still open. It claimed to
+**[SUPERSEDED — the account check's premise was right, and it prevented an outage. See above.]** It claimed to
 compare against "the accounts the snapshot itself held AT that tick" — but the snapshot is at 4895 and
 the postings start at genesis, so an escrow that opened and closed in between is legitimately absent.
 It assumed the final account set is a superset of every account ever referenced. Downgraded to
@@ -317,7 +372,8 @@ recoverable rather than deleted, because it still catches a genuinely mismatched
 fix needs a record of account closures that does not exist yet.
 
 **So boot is still O(history)** — 4,910 ticks, ~139 s, growing — and will be until that is fixed. What
-changed is that it can no longer take the world down.
+changed is that it can no longer take the world down. *(Confirmed 2026-07-27 at 170 s, and now known to
+be unfixable in code for THIS world — the record is forked. See the resolution above.)*
 
 **★ NARROWED 2026-07-26 (late), and the first theory was wrong.** The working explanation was "the
 escrow closed before the checkpoint and its account was removed, so the capture no longer lists it."
