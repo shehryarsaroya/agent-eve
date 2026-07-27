@@ -244,7 +244,28 @@ export class StandingBook {
         // authorises `defaults` and `lastDefaultTick` only, and a cause moving a field
         // it does not authorise is an INV-21 halt.
         delta: { defaults: delta.defaults },
-        counterparty: null,
+        // ── WHO IT WAS BROKEN AGAINST, WHICH USED TO BE `null` ──────────────
+        //
+        // `counterparty` is metadata on the change, not one of the vectors — the authorised-fields
+        // rule above governs `delta`, and `ELECTIVE_HONOURED` sets this same field a few lines up.
+        // It was `null` here, and that silently emptied everything downstream that asks *"what
+        // passed between these two"*:
+        //
+        //   - `relationsFor` skips any change with a null counterparty, so its `broke` and
+        //     `youBroke` counters were **structurally always zero**. They could not increment,
+        //     because the only cause that increments them carried nobody to attribute it to.
+        //   - `priorDealings` — added the same day to stop the docket publishing *"they have dealt
+        //     before, and it held"* about a pair whose only prior deal was a DEFAULT — decides
+        //     `BROKEN` from `relation.broke > 0`. So that fix was INERT and the docket kept lying.
+        //     Its mutation test did not bite, and I misread that as "the heuristic never defaults"
+        //     when the cause was that this field was null.
+        //   - The cast prompt maps `relationsFor` into the relationship history it shows an LLM
+        //     player, so every agent was told every counterparty had broken **zero** promises. A
+        //     rules surface stating something false about a real agent's record.
+        //
+        // The delta already carries the counterparty — the self-dealing guard above compares it —
+        // so this was propagation that had been dropped, not information that was missing.
+        counterparty: delta.counterparty,
       });
     }
 
