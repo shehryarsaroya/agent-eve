@@ -11,6 +11,21 @@
  * graph, and it also inverted the layering: `ledger/` and `works/` had to import from `levy/` to
  * learn the name of a good, so the lowest layer in the engine depended on one of the highest.
  *
+ * ── WHAT "ONE GOOD" MEANS NOW THAT THERE ARE THREE ───────────────────────────
+ *
+ * Updated 2026-07-27, when `works/params.ts:FUEL_GOOD` landed. The world now has **three** goods —
+ * `ore` (what a WORKS yields), `ration` (what `refine` makes and every obligation is payable in) and
+ * `fuel` (yielded only at FRONTIER systems, and the economy's only comparative advantage).
+ *
+ * The four constants below still name ONE good, and that is unchanged and still load-bearing: they
+ * are the four *obligation* goods — what the Levy takes, what a WORKS costs, what a Charge is payable
+ * in, and what a newcomer is handed — and they agree so that the Levy is payable from domestic
+ * production. Fuel is deliberately NOT among them, and `a-good-only-the-frontier-makes.spec.ts`
+ * asserts that inequality directly: a fuel-denominated obligation would be unpayable in three of the
+ * four zones, and a fuel-denominated WORKS cost is the bootstrap deadlock made permanent by geography.
+ *
+ * So read "this build has one good" below as "this build has one good every obligation is priced in".
+ *
  * ── WHAT THIS FILE PINS, AND WHY IT IS TWO ASSERTIONS AND NOT ONE ────────────
  *
  * The two halves pull in opposite directions and both matter:
@@ -57,7 +72,7 @@ function sourceOf(relative: string): string {
 }
 
 describe('the four goods constants agree, and do so independently', () => {
-  it('all name the same good, because this build has one', () => {
+  it('all name the same good, because every obligation is priced in one', () => {
     // Load-bearing: the Levy is payable only in a located good, and a WORKS is the only source of
     // goods. If these two diverged the Levy would be unpayable from production — an unwinnable
     // obligation, which is worse than a hard error because it looks like a balance problem.
