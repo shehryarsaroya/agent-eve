@@ -714,7 +714,62 @@ import {
  * exactly like the working tree in HARD RULE 7. A bump is not a local edit, and two agents cannot each
  * own the next integer.
  */
-export const RULES_VERSION = 11;
+/**
+ * Bumped 11 → 12 because **the heuristic cast now goes to war**, and a cast decision is a rules change
+ * even though the cast is never consulted during replay.
+ *
+ * ── WHY A CAST BRANCH MOVES THE STAMP AT ALL, WHICH 9 → 10 GOT EXACTLY RIGHT ──
+ *
+ * The 9 → 10 note above states the principle and it is worth repeating rather than re-deriving: *"the
+ * cast is never consulted during replay, its decisions enter the record as logged actions, so
+ * `graduate`, the claim, the Charge, the refine threshold and the create appetite are all invisible to
+ * a replay."* True, and half the story. What a changed cast branch **does** change is the action log a
+ * *fresh* world produces from genesis — and a venture id is `hash(tick, principal, ordinal)` over a
+ * **world-global** counter, so an action this cast now takes at tick T renames every venture minted
+ * after T in any world seeded from here. A record whose ids depend on which cast was running is a
+ * record that needs a version on it.
+ *
+ * ## What changes, and none of it is a new acceptance
+ *
+ *   1. **Four new cast branches**: `raidAnswerFor` (`fight` · `yield`), `engageFor` (`engage`),
+ *      `hullFor` (`build {kind:"HULL"}`) and `crewMove` (`move`). Every verb and every param shape is
+ *      one the engine already accepted at version 11 — combat landed there. **No handler, gate,
+ *      refusal, invariant or state table is touched**, so nothing that has ever been submitted is
+ *      classified differently and no ordinal moves for a reason other than the cast acting.
+ *   2. **One new read accessor**, {@link Runtime.goodsAt}, delegating to the existing shipyard port.
+ *      A read; it cannot diverge anything. (And it is a *read that does not write* — `paymentOf`'s
+ *      lesson from 9 → 10 was checked here before it was written.)
+ *   3. **Three hand reservations** inside the cast (`musteredAt`, read by `fill_role`, `levyMove`,
+ *      `chargeMove` and the aimless walk). Cast policy; invisible to every handler.
+ *
+ * **Nothing draws from the RNG that did not before**, and that is the claim worth checking rather than
+ * asserting: the four new branches take **no roll at all**. `hullFor` is a hard arithmetic gate,
+ * `raidAnswerFor` and `engageFor` read published views, and `crewMove` walks a route. The per-tick cast
+ * stream (`Rng.fromSeed(seed:cast:principal:tick)`, freshly derived every tick, so nothing carries
+ * across ticks) therefore reaches the existing `syndicateChance` / `graduateChance` / `worksChance` /
+ * `claimChance` draws in the same order on every tick the new branches decline.
+ *
+ * ## The divergence signature — and this is the first bump that expects NO door
+ *
+ * Boot replays the **durable action log**, and the cast is not consulted while it does. So a changed
+ * cast branch cannot move a past tick's computation: the actions the record holds are the actions
+ * replayed, whatever this file would have decided. Every other edit in this bump is a read
+ * ({@link Runtime.goodsAt}, `battleLinesFor`'s retention window) or a hashed-state no-op. **The replay
+ * preflight is therefore expected to exit 0 and `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` is expected to be
+ * unnecessary** — the first bump since 1 → 2 for which that is true, and it is a claim to check rather
+ * than trust: the preflight runs against the real journal with the old process still serving.
+ *
+ * If it *does* name a tick, the tick to expect is **49**. That is where a *genesis* replay would part
+ * company — `RAID_SPAWN_PHASES` is `[48, 120, 192]`, so the first raid a cast could answer spawns at 48
+ * and the answer lands at 49 — and it would mean something reads the cast during boot that this note
+ * believes does not.
+ *
+ * ── AND THIS INTEGER IS OWNED BY ONE BRANCH, WHICH IS THE LESSON OF 11 ───────
+ *
+ * 11 exists because two agents each took 10. Nothing in this change ran in parallel with anything else,
+ * so 12 is the union of one branch. If that stops being true, the note above 11 is the rule.
+ */
+export const RULES_VERSION = 12;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -2955,6 +3010,20 @@ export class Runtime {
     readonly tick: number;
   }): Rejection | null {
     return buildHullRefusal(this.shipyardPort(), this.fleet, args);
+  }
+
+  /**
+   * Unpledged units of a named good standing at one system — **the read a `build` draws from.**
+   *
+   * Delegates to {@link Runtime.shipyardPort} rather than filtering lots again, which is the whole
+   * point of it existing: `chargeGoodAt` and `fuelAt` each answer this question for one good, and a
+   * caller that needed a third was about to write the locality-and-encumbrance filter a fourth time.
+   * `CHARGE_GOOD`, `WORKS_GOOD` and `HULL_COST_GOODS.frame` are equal *today* and independently
+   * declared precisely so that reading one for another is a defect rather than a shortcut
+   * (`goods-are-independent.test.ts`).
+   */
+  goodsAt(principal: PrincipalId, system: SystemId, good: GoodId): Qty {
+    return this.shipyardPort().goodsAt(principal, system, good);
   }
 
   /** Hulls this principal could commit at a place right now. What the affordance offers. */

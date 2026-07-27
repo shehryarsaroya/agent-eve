@@ -25,6 +25,14 @@
  * silent failure permanently green.
  */
 
+import {
+  HULL_COST_GOODS,
+  hullQuote,
+  simulateFit,
+  SLICES_PER_TICK,
+  WORLD_PRINCIPAL,
+  worldFleetProfile,
+} from '../combat/index.js';
 import { Rng } from '../core/rng.js';
 import { inFreeze, isSettlementTick, TICKS_PER_RECKONING } from '../core/time.js';
 import type { PrincipalId, SystemId, VentureKind } from '../core/types.js';
@@ -49,6 +57,7 @@ import {
   handsOf,
   holdingOccupancy,
   holdingOf,
+  isPresent,
   principalIsCommonsBound,
   route,
   tierOf,
@@ -372,6 +381,128 @@ export const CAST_REFINE_MIN_QTY = 500;
 export const CAST_REFINE_MIN_TICKS = 12;
 
 /**
+ * The fleet a cast member will build, **in build order**, and why it is these three ships.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THREE, BECAUSE THREE IS THE REAL CAP, AND `MAX_HULLS_PER_PRINCIPAL` IS 6.** `combat/index.ts`
+ * states the property this list is written against: *"a principal has three hands and `engage`
+ * requires an IDLE hand at the stage to crew each hull, so the real cap on a fleet one principal
+ * can field is three… a fleet larger than three hulls is a coalition, not a purchase."* Building a
+ * fourth would buy a spare, and a spare is a berth the cast cannot fly and a Levy's worth of
+ * `ration` it cannot deliver.
+ *
+ * **The composition is `scripts/combat-sim.ts`'s `LINE`, which is the doctrine that actually beats
+ * the world.** Measured (2 seeds × 600 ticks, phase A): three PIKEs — the `SWARM` doctrine, and the
+ * fit the affordance menu offers a newcomer — went **0 won · 2 lost**, losing all three hulls both
+ * times. Two missile WARDENs plus a tackle PIKE went **4 won · 0 lost** for one hull. The arithmetic
+ * says why and it is `catalogue.ts`'s own: a PIKE is 400 EHP against a LANCE's 700, so a swarm
+ * brings a third of the world's buffer for two thirds of its output.
+ *
+ * The PIKE is **last** on purpose. It carries the only `POINT` in the doctrine, so it is the hull
+ * that decides who leaves the field (§12 relationship #3) — but a member that has built one ship and
+ * then cannot afford another has a tackle frigate and nothing to tackle *for*. So the buffer is
+ * bought first and the control last, which is also the order the ships are lost in.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_DOCTRINE: readonly { readonly hull: string; readonly modules: readonly string[] }[] =
+  Object.freeze([
+    Object.freeze({
+      hull: 'WARDEN',
+      modules: Object.freeze([
+        'MISSILE',
+        'MISSILE',
+        'MISSILE',
+        'SHIELD_EXTENDER',
+        'SHIELD_EXTENDER',
+        'AFTERBURNER',
+        'DAMAGE_MOD',
+        'DAMAGE_MOD',
+      ]),
+    }),
+    Object.freeze({
+      hull: 'WARDEN',
+      modules: Object.freeze([
+        'MISSILE',
+        'MISSILE',
+        'MISSILE',
+        'SHIELD_EXTENDER',
+        'SHIELD_EXTENDER',
+        'AFTERBURNER',
+        'DAMAGE_MOD',
+        'DAMAGE_MOD',
+      ]),
+    }),
+    Object.freeze({
+      hull: 'PIKE',
+      modules: Object.freeze(['SMALL_GUN', 'POINT', 'WEB', 'AFTERBURNER']),
+    }),
+  ]);
+
+/**
+ * How many times over a hull's price must be standing there before the cast will build one.
+ * *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **"NEVER COMMIT A HULL A MEMBER CANNOT REPLACE", AS ARITHMETIC.** A hull is destroyed
+ * **permanently** (A5, no salvage), and its frame good is `ration` — the good the Levy, the
+ * sovereignty Charge and a WORKS build are all denominated in. So a member that spends its last
+ * affordable hull on a battle has converted a tribute into a wreck, and the tribute is the meter
+ * §14.2 puts on screen as the headline.
+ *
+ * Two, so the *next* one is always affordable out of what is standing at the berth after this one is
+ * paid for. Not three: at three a Frontier member that has just come online never arms at all, and a
+ * gate that never opens is indistinguishable from a missing branch — which is the defect this whole
+ * change exists to close.
+ *
+ * Applied to **both** goods, and the fuel half is the one that binds: a WARDEN's 90 units of `fuel`
+ * is nine ticks of a sole-occupant FRONTIER yield, where its 1,500 `ration` is ten.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_ARMS_RESERVE_MULTIPLE = 2;
+
+/**
+ * How much stronger than the other side the cast's committed hulls must be. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS IS THE COMBAT BALANCE GATE, AND WHAT IT PROTECTS IS THE STANDOFF RATHER THAN THE HULL.**
+ *
+ * A hull adds **no force to the raid** — `readForce` counts hands, and a hand crewing a hull is
+ * still IDLE at the stage, so committing one changes the standoff's arithmetic not at all. What
+ * committing does is put that hand at risk: `applyLoss` routs the hand of every wrecked hull, and a
+ * routed hand is gone from `handsAtStage` **at resolution**. So a member that answers FIGHT on a
+ * force reading of 3-2 and then loses a hull reads 2-2 at the window's end — still a repulse — and
+ * one that loses two reads 1-2 and is plundered for twice the demand.
+ *
+ * That is the coupling `combat/index.ts` calls *"composition beats headcount, through hands"*, seen
+ * from the defender's side, and it means the honest gate is not *"can I afford the hull"* but
+ * **"will this fleet lose one at all"**. Strength is the forecast's own formula —
+ * `ehp + alpha × SLICES_PER_TICK`, `view.ts:forecastFor` — so the bot budgets against the number the
+ * observation publishes rather than a second one of its own (scar #5).
+ *
+ * 13,000 bps means *"favoured by 30%"*. At the published numbers one missile WARDEN (3,067 EHP,
+ * 52 alpha → 3,483) clears three world LANCEs (884 each → 2,652) and does **not** clear five
+ * (4,420), so the branch commits a second hull against a heavy raid and one against a light one —
+ * which is the composition decision this layer exists to create, taken from published facts.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_ENGAGE_FAVOUR_BPS = 13_000;
+
+/**
+ * The EHP fraction at which a cast formation breaks off. *(calibrate)*
+ *
+ * A3's stop condition rather than an act: §9A's `withdraw_if` is *"the one field that survives being
+ * offline"*, and a formation that withdraws in time keeps its hull **and** its hand — `runBattles`
+ * calls `fleet.release` on a withdrawal and routs nothing. Set rather than left at zero because
+ * `if_you_do_nothing` is right to scold a fit with no threshold: *"will fight to the last hull."*
+ *
+ * It is deliberately **not** a substitute for the gate above, and the reason is published in
+ * `ENGAGEMENT_RULE_STATEMENT`: *"a hull under tackle of 1 or more cannot leave"*, and the world's
+ * fleet flies a POINT and a WEB by `assertWorldFleet`'s requirement. A threshold saves a formation
+ * the world has not caught; nothing saves one it has.
+ */
+export const CAST_WITHDRAW_BELOW_BPS = 3_000;
+
+/**
  * How much of its **free** stores a cast payer will commit to elective parts across
  * everything settling in one Reckoning. *(calibrate)*
  *
@@ -613,6 +744,38 @@ export class HeuristicCast {
     return need;
   }
 
+  /**
+   * How many hands are **mustered** at each stage: promised to a FIGHT this member has already given.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **MEASURED: A REPULSE AT THE ANSWER TICK THAT WAS A PLUNDER AT RESOLUTION.** Seed `gate-c`
+   * answered FIGHT twice and one came back `FIGHT/PLUNDERED`. `handsDefending` counts only **IDLE**
+   * hands present at the stage — `predationPort` says so and gives the reason (routing a COMMITTED
+   * hand would be an agent-reachable world halt) — and `readForce` re-reads it at the window's end. So
+   * filling a role with a hand standing at the stage silently spends the answer this member had
+   * already given, and the standoff flips from taking nothing to taking twice the demand.
+   *
+   * The reservation is {@link carriageNeeded}'s shape and its argument: do not spend the hand a
+   * commitment you have already made depends on. **Narrow in the same way, too** — it reserves the
+   * number of hands the *reading* needs and not every hand standing there, so a member with three
+   * hands at a stage that only takes two to hold still has a third that is genuinely idle. A
+   * reservation wider than the requirement would cost the world filled roles for nothing, which is
+   * the tug-of-war that cost it a fifth of its ventures once already.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private musteredAt(member: CastMember, tick: number): ReadonlyMap<SystemId, number> {
+    const out = new Map<SystemId, number>();
+    for (const view of this.runtime.raidsFor(member.principal, tick, MAX_CAST)) {
+      if (view.your_side !== 'TARGET' || view.state !== 'DEMANDED' || view.answer !== 'FIGHT') continue;
+      // Hands at the stage = the reading minus the terms that are not hands. The view publishes both
+      // sides, so this is arithmetic over published figures rather than a second count of the world.
+      const mine = view.force.defender_if_you_fight - view.force.terrain;
+      const needed = Math.max(0, view.force.raider - view.force.terrain);
+      out.set(view.stage, Math.max(out.get(view.stage) ?? 0, Math.min(mine, needed)));
+    }
+    return out;
+  }
+
   /** Is a hand of this member standing at, or walking to, `place`? */
   private carriageUnderwayTo(member: CastMember, place: SystemId, tick: number): boolean {
     const world = this.runtime.world;
@@ -698,6 +861,39 @@ export class HeuristicCast {
       arrivalMs: tick,
       decisionSource: 'HEURISTIC' as const,
     };
+
+    // ── ANSWER THE RAID FIRST, BECAUSE THE WORLD SET THIS DEADLINE AND IT IS TWO TICKS ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE ONLY BRANCH IN THIS FILE WITH A DEADLINE MEASURED IN SINGLE TICKS.** `battlesNow`
+    // opens a battle only over a standoff where `tick + ENGAGEMENT_TICKS <= raid.resolvesAtTick` —
+    // 22 against a 24-tick window — so a FIGHT answered later than **two ticks after the spawn** is
+    // a standoff decided on hands with no battle in it at all. Its own comment calls that a real
+    // strategic consequence rather than a repair: *"answering FIGHT promptly is what buys you a
+    // fleet fight."* A branch placed below `sign` and `elect` would inherit that as a coin flip
+    // over whether a venture happened to be waiting, which is not a decision anybody made.
+    //
+    // It is also **free** — `fight` commits no hand, locks no capital and destroys no goods; it
+    // only makes the target's own IDLE hands at the stage count at all. So placing it first costs
+    // at most one action per raid, three times a Reckoning, and only for the member the world
+    // named.
+    //
+    // Measured before it existed: **every raid in every seed was `null/PLUNDERED`** — 9 of 9 on
+    // each of the four gate seeds. The cast had no branch that could answer, so it paid
+    // `RAID_TAKE_MULTIPLE` (twice the demand) nine times a run in the good its tribute is
+    // denominated in, and the meter that reads it is the one §14.2 puts on screen.
+    // ══════════════════════════════════════════════════════════════════════════
+    const answer = this.raidAnswerFor(member, tick);
+    if (answer !== null) return { ...base, ...answer };
+
+    // ── COMMIT A HULL WHILE THE MUSTER WINDOW IS OPEN ─────────────────────────
+    //
+    // Second, and for the same reason one place further down the same clock: MUSTER is six ticks and
+    // it is *"the only window in which a hull may be committed"*. A member that spends those six
+    // ticks signing ventures owns a fleet it cannot bring, which is the most expensive form of the
+    // defect this file's combat branches exist to close — an asset that exists and is never used.
+    const committing = this.engageFor(member, tick);
+    if (committing !== null) return { ...base, ...committing };
 
     for (const venture of runtime.ventures.forPrincipal(member.principal)) {
       if (venture.state !== 'FORMING') continue;
@@ -797,6 +993,21 @@ export class HeuristicCast {
     // strongest case for owning its ground (D19, and the same argument the `grant` branch makes).
     const ground = this.claimFor(member, tick, rng);
     if (ground !== null) return { ...base, ...ground };
+
+    // ── ARM THE GROUND YOU OWN — the fourth rung of the same ladder ────────────
+    //
+    // Cross, work, own, **arm**. Placed here for the reason D17 gave for `build {WORKS}` and
+    // `claimFor` repeat: a capital commitment that pays nothing this Reckoning loses every
+    // action-budget contest to immediate income, so a branch sitting behind `fill_role` would
+    // inherit a fleet count of zero and prove nothing about why.
+    //
+    // It needs **no hand and no roll**. No hand because a berth is anchored by the body, exactly as
+    // a claim is; no roll because unlike the WORKS and the charter there is nothing to spread out —
+    // {@link CAST_ARMS_RESERVE_MULTIPLE} is a hard arithmetic gate and `fuel` exists at one tier in
+    // the whole map, so the population of members that can reach this branch at all is already
+    // small enough that a roll would only make combat rarer than the geography already does.
+    const arming = this.hullFor(member, tick);
+    if (arming !== null) return { ...base, ...arming };
 
     // ── A6, END TO END: ACT ON AUTHORITY SOMEBODY HANDED YOU ──────────────────
     //
@@ -904,7 +1115,15 @@ export class HeuristicCast {
 
     if (spendable > 0) {
       const slot = this.openSlotFor(member, tick);
-      const hand = idle[0];
+      // A hand you have publicly promised to defend with is not idle — {@link musteredAt} carries
+      // the measurement. It reserves only as many as the reading needs, so the surplus is spendable.
+      const spare = new Map(this.musteredAt(member, tick));
+      const hand = idle.find((h) => {
+        const left = spare.get(h.location) ?? 0;
+        if (left <= 0) return true;
+        spare.set(h.location, left - 1);
+        return false;
+      });
       if (slot !== null && hand !== undefined) {
         return {
           ...base,
@@ -974,6 +1193,32 @@ export class HeuristicCast {
     const supplying = this.chargeMove(member, tick);
     if (supplying !== null) return { ...base, ...supplying };
 
+    // ── BRING YOUR HANDS TO YOUR FLEET ────────────────────────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE MEASUREMENT THAT FORCED THIS BRANCH: A MEMBER WITH THREE READY WARSHIPS AND NOBODY TO
+    // FLY THEM.**
+    //
+    // Traced tick by tick on seed `fz-13`, member `brannock` — the only member in twenty-four seeds
+    // that reached the Frontier. It crossed, worked the ground, claimed it, and built the whole
+    // doctrine: two WARDENs and a PIKE, all READY, all berthed at `sys-26`. Then the world raided
+    // `sys-26` twice and it **paid both times**, because its three hands were at `sys-25`, `sys-29`
+    // and `sys-08` — scattered across the constellation by the aimless walk, which was the only thing
+    // in this file with an opinion about where a hand should be when nothing was owed.
+    //
+    // `engage` refuses a hull with no crew in as many words: *"a hull without a hand is a berthed
+    // asset, not a combatant — which is the presence scarcity every other mechanic in this game is
+    // priced against."* So the fleet was complete, legal, in the fleet book, and **unflyable** —
+    // which is this project's signature defect one level below the one this change was written for.
+    //
+    // Placed **after** the Levy and the Charge for `chargeMove`'s reason exactly: those are
+    // obligations with a public consequence and this is an option. Placed **before** the aimless walk
+    // for the other half of that argument: a hand walking to a berth where a warship is waiting is
+    // motion with a destination, and §5.2 asks for exactly that.
+    // ══════════════════════════════════════════════════════════════════════════
+    const crewing = this.crewMove(member, tick);
+    if (crewing !== null) return { ...base, ...crewing };
+
     // ── A HAND STANDING WHERE YOUR TRIBUTE IS PAYABLE IS STATIONED, NOT IDLE ──
     //
     // The aimless walk was pulling hands off the one system they were needed on, every Reckoning,
@@ -995,6 +1240,13 @@ export class HeuristicCast {
     // walk has all of the ticks in between to carry the hand out of reach again.
     if (owedAt !== null) stationed.add(owedAt.deliverable_to);
     for (const claim of runtime.sovereignty.claimsOf(member.principal)) stationed.add(claim.system);
+    // And a hand standing beside a warship of yours is **crew**, for the same reason with a sharper
+    // edge: a hull does not travel, so the only place its hand is any use is the berth. The aimless
+    // walk was measured carrying the crew away — see {@link crewMove}.
+    for (const hull of runtime.fleet.readyOrBusyOf(member.principal)) stationed.add(hull.location);
+    // And a stage this member has answered FIGHT at, for the whole window: the force reading is taken
+    // again at resolution, so a hand that wanders off during it un-answers the raid.
+    for (const stage of this.musteredAt(member, tick).keys()) stationed.add(stage);
     const roamers = idle.filter((h) => !stationed.has(h.location));
     if (roamers.length > 0) {
       const hand = roamers[rng.int(roamers.length)];
@@ -1357,6 +1609,387 @@ export class HeuristicCast {
   }
 
   /**
+   * Answer the standoff the world opened on this member: `fight`, `yield`, or nothing.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **PRICED OFF THE PUBLISHED VIEW, NEVER RECOMPUTED.** `raidsFor` is the same `RaidView` the
+   * observation serves, and every figure this branch reads is one an agent is shown before it
+   * decides: `force.verdict_if_resolved_now`, `costs.pay`, `costs.if_you_do_nothing`. Recomputing
+   * the force here would be a second arithmetic for the number the resolver uses, which is scar #1
+   * with a hold at stake — and `resolve.ts` says so in as many words: *"the number an agent is shown
+   * before it commits and the number the resolver uses are literally the same call."*
+   *
+   * ## The four branches, and the second one is a finding rather than a preference
+   *
+   *   1. **The reading says REPULSED → `fight`.** Free: it commits nothing and locks no capital, and
+   *      a repulse takes **nothing at all** plus a Reckoning of `RAID_STAGE_HELD_TICKS` peace at that
+   *      place. There is no case in which a target that would win declines to answer.
+   *
+   *   2. **A favoured fleet at the stage → `fight`, and it costs one demand to do it.**
+   *
+   *      ══════════════════════════════════════════════════════════════════════
+   *      **WINNING A BATTLE AGAINST THE WORLD CANNOT WIN THE STANDOFF, AND THAT IS WHY THIS CLAUSE
+   *      HAS TO BE WRITTEN DOWN RATHER THAN DERIVED.**
+   *
+   *      The coupling `combat/index.ts` advertises — *"a wrecked hull routs its hand and `readForce`
+   *      counts hands, so losing the battle loses the force reading for free"* — runs in **one
+   *      direction only**. `predation/resolve.ts` computes `raiderForce = args.raid.force + joiners`,
+   *      and for a world raid `raid.force` is a scalar drawn at spawn. `mustWorldFleet` gives that
+   *      raid exactly `force` LANCEs, and `applyLoss` returns early on a world hull — *"the world
+   *      loses nothing it owned"* — so a defender that destroys **all** of them faces the same number
+   *      at the window's end. Destroying the weather's fleet accomplishes, materially, nothing.
+   *
+   *      Measured: `fz-13`, tick 192. `brannock` answers FIGHT with one missile WARDEN, kills all
+   *      three world LANCEs, holds the field at 2,395 EHP of 4,400 — and the standoff resolves
+   *      **PLUNDERED 2-3**, because it had two hands at the stage and the raid had a 3 written on it.
+   *
+   *      So a purely material heuristic never flies, and the layer would stay dark for a *reason*
+   *      rather than for want of a branch. This clause is the cast's answer and it is priced rather
+   *      than free: resisting instead of paying costs the difference between two published figures
+   *      (`if_you_do_nothing - pay`, one demand at `RAID_TAKE_MULTIPLE = 2`), and it is only taken
+   *      when the tribute is still covered afterwards. A member that owns a fleet and refuses every
+   *      fight owns a monument.
+   *
+   *      **The fix, if the owner wants one, is in `readForce`'s caller**: count the world's
+   *      *surviving* hulls rather than `raid.force`. That is a §9 balance change with a gate of its
+   *      own, so it is reported and not taken here.
+   *      ══════════════════════════════════════════════════════════════════════
+   *
+   *   3. **Otherwise `yield` when paying is cheaper than silence.** `yield` pays exactly the demand
+   *      where silence pays `RAID_TAKE_MULTIPLE` of it, and both numbers are on the view.
+   *   4. **Neither → nothing.** When `costs.pay >= costs.if_you_do_nothing` the cap
+   *      (`RAID_MAX_TAKE_BPS`, half of what is standing) has already made silence the cheaper answer,
+   *      and an action spent to pay *more* than the raid would take is a worse outcome dressed as
+   *      diligence.
+   *
+   * A `RAID` venture the member created is **not** this branch's business: that is a venture with
+   * roles and a settlement, and `raidsFor` returns standoffs.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private raidAnswerFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    // No freeze guard, and that is checked rather than assumed: `fight` and `yield` are absent from
+    // the `committing` table in `runtime.ts`, because a raid answer is a deadline the world imposed
+    // rather than a new commitment. `assertRaidSchedule` also proves no world raid can still be live
+    // in the freeze, so this cannot fire there anyway.
+    for (const view of runtime.raidsFor(member.principal, tick, MAX_CAST)) {
+      if (view.your_side !== 'TARGET') continue;
+      if (view.state !== 'DEMANDED' || view.answer !== null) continue;
+      const fight = { verb: 'fight', params: { raid: view.raid, system: view.stage } };
+      if (view.force.verdict_if_resolved_now === 'REPULSED') return fight;
+      // 2. Only against the world, whose composition is published, and only while the extra take
+      //    still leaves the tribute covered. `if_you_do_nothing` is charged in full against the
+      //    Levy's own good — the pessimistic reading, because `raid.good` need not be that good and
+      //    a gate that assumed otherwise would be optimistic about the one meter §14.2 headlines.
+      if (view.initiator !== null) continue;
+      const owed = runtime.levyBlockFor(member.principal, tick)?.shortfall_if_unpaid ?? 0;
+      const affordable =
+        Number(runtime.levyGoodAvailable(member.principal)) - view.costs.if_you_do_nothing >= owed;
+      if (affordable && this.fleetIsFavouredAt(member, view.stage, tick, view.force.raider)) return fight;
+      if (view.costs.pay > 0 && view.costs.pay < view.costs.if_you_do_nothing) {
+        return { verb: 'yield', params: { raid: view.raid, system: view.stage } };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Would the hulls this member could actually **bring** to `stage` beat `worldHulls` of the world's?
+   *
+   * "Could actually bring" is the load-bearing half. A READY hull with no hand to crew it is a berthed
+   * asset — `engage` says exactly that in the refusal it would give — so counting the fleet rather
+   * than the flyable part of it would answer FIGHT on ships that cannot leave the dock. Hands are
+   * counted the way `engage` counts them, less {@link carriageNeeded}, so this and {@link engageFor}
+   * cannot disagree about how many are coming.
+   *
+   * Strength is `ehp + alpha × SLICES_PER_TICK` on both sides — `view.ts:forecastFor`'s own formula —
+   * so the bot budgets against the number the observation publishes rather than a second one of its
+   * own (scar #5).
+   */
+  private fleetIsFavouredAt(
+    member: CastMember,
+    stage: SystemId,
+    tick: number,
+    worldHulls: number,
+  ): boolean {
+    if (worldHulls <= 0) return false;
+    const world = worldFleetProfile();
+    if (world === null) return false;
+    const bringable = this.crewableAt(member, stage, tick);
+    if (bringable < 1) return false;
+    const ours = this.runtime
+      .committableHulls(member.principal, stage)
+      .slice(0, bringable)
+      .reduce((n, row) => n + this.strengthOfHull(row.id), 0);
+    const theirs = worldHulls * (world.ehp + world.alpha * SLICES_PER_TICK);
+    return ours * BPS_ONE >= theirs * CAST_ENGAGE_FAVOUR_BPS;
+  }
+
+  /**
+   * How many more hulls this member has a hand for at `stage`.
+   *
+   * IDLE, present, at the stage, not already crewing a hull — the same four conditions
+   * `engageRefusal`'s hand gate applies — less the hands {@link carriageNeeded} is holding back for a
+   * world obligation, because a wrecked hull routs its crew and a routed hand cannot deliver.
+   */
+  private crewableAt(member: CastMember, stage: SystemId, tick: number): number {
+    const runtime = this.runtime;
+    const crewed = runtime.battles.committedHands(member.principal);
+    const free = handsOf(runtime.world, member.principal).filter(
+      (hand) =>
+        hand.state === 'IDLE' && hand.location === stage && isPresent(hand, tick) && !crewed.has(hand.id),
+    ).length;
+    return Math.max(0, free - this.carriageNeeded(member, tick));
+  }
+
+  /**
+   * Commit one hull to a battle in MUSTER, or null.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ONE HULL PER ACTION, RE-DECIDED EVERY TICK.** `engage` commits one hull per call, so a
+   * three-ship fleet is three actions across the six ticks of MUSTER — and the gate below is
+   * re-evaluated between each of them, which is what lets a heavy raid draw two hulls and a light
+   * one draw a single hull without a second policy field.
+   *
+   * ## Four gates, and the reason for each
+   *
+   *   1. **The engine's own gate**, asked through `engageRefusalFor` — the identical function
+   *      `vEngage` runs. Never a copy: an affordance with its own copy offers moves the handler
+   *      refuses, which costs an agent an action and its trust in the menu (AGT-S2).
+   *   2. **Only against the world's published fleet.** §11.2 makes a rival's fit a *manifest* — the
+   *      view carries hull class and count and deliberately not EHP — so a bot that sized up another
+   *      principal's formation would be playing a rule the observation does not publish. The world is
+   *      not a principal and `WORLD_FLEET_FIT` is public *by design* (`battle.ts`: *"you do not get
+   *      to be surprised by the weather's composition"*), so the arithmetic against it is exact and
+   *      the arithmetic against anybody else is not available. A rival's battle is therefore an
+   *      LLM's decision, not a heuristic's, and the branch declines rather than guessing.
+   *   3. **{@link CAST_ENGAGE_FAVOUR_BPS}** — never feed a hull to a fleet that out-trades it.
+   *   4. **A hand the tribute does not need**, through {@link crewableAt}. {@link carriageNeeded}
+   *      carries the measurement that forced it into existence for the Levy: a member holding 109,052
+   *      units of the good it owed 19,304 of, recorded short, because it had no free hand. A wrecked
+   *      hull routs its crew, so a hull flown by the hand reserved for a world obligation is a
+   *      tribute one bad battle away from a public shortfall.
+   *   5. **THE MARGIN**, and only while the standoff is still winnable — see the block comment at the
+   *      gate itself. Measured: seed `gate-c` answered FIGHT twice before this clause existed and one
+   *      came back **`FIGHT/PLUNDERED`**, a repulse at the answer tick that was not one at resolution.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private engageFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    // `engage` IS in the `committing` table, so the freeze refuses it — asked here as well to stay
+    // out of AGT-S3's per-tick refusal noise.
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+
+    for (const record of runtime.battles.forPrincipal(member.principal)) {
+      if (record.resolvedAtTick !== null || record.state !== 'MUSTER') continue;
+      const side = record.target === member.principal ? 'DEFENDER' : 'RAIDER';
+      const hostile = record.formations.filter((f) => f.side !== side && f.hands.length > 0);
+      if (hostile.length === 0) continue;
+      // Gate 2. One non-world formation and the whole reading becomes a guess.
+      if (hostile.some((f) => f.principal !== WORLD_PRINCIPAL)) continue;
+
+      const hulls = runtime.committableHulls(member.principal, record.stage);
+      const candidate = hulls[0];
+      if (candidate === undefined) continue;
+
+      // Gate 4. The hands the tribute and the Charge need are not crew.
+      if (this.crewableAt(member, record.stage, tick) < 1) continue;
+
+      // Gate 5. The margin, read off the same published view `raidAnswerFor` answered from.
+      //
+      // ══════════════════════════════════════════════════════════════════════
+      // A hull adds **nothing** to the raid's force reading — `readForce` counts hands and a hand
+      // crewing a hull is still IDLE at the stage — but a *wreck* subtracts one, because `applyLoss`
+      // routs the crew and the reading is taken again at the window's end. So on a standoff the hands
+      // would win, every hull committed is one hand of insurance spent: at 3 against 2, losing one
+      // hull still repulses and losing two does not.
+      //
+      // **Skipped when the reading already says PLUNDERED**, and that is not a loophole: there is no
+      // margin left to protect, the goods are lost either way at `RAID_TAKE_MULTIPLE`, and a routed
+      // hand costs the standoff nothing it had not already lost. A hopeless standoff is the cheapest
+      // place to bring a fleet, which is a strange sentence and a true one.
+      //
+      // ⚑ **MEASURED NOT TO BIND YET, AND KEPT ANYWAY — WRITTEN DOWN RATHER THAN DISCOVERED.**
+      // Mutation-tested: defanging this clause (`> margin + 99`) leaves every test in
+      // `the-cast-goes-to-war.spec.ts` green, because its subject has not occurred in any measured
+      // seed. The two roads to it are still disjoint: on the gate seeds a member answers FIGHT on a
+      // REPULSED reading and owns **no hull**, and on the war seeds the only member with hulls stands
+      // on the Frontier where `FORCE_BY_TIER` is 0, so with two hands home its reading is PLUNDERED
+      // and this branch is skipped. The subject appears the moment `crewMove` gets a third hand to a
+      // Frontier berth and the world draws `RAID_FORCE` 2 — a reading of 3-2, one hand of margin, and
+      // a fleet that wants to fly three hulls into it. `claimFor`'s tribute clause carries the same
+      // note for the same reason: **an unexercised guard reads exactly like a missing one**, so the
+      // absence is stated rather than left for the next reader to rediscover.
+      // ══════════════════════════════════════════════════════════════════════
+      const view = runtime.raidsFor(member.principal, tick, MAX_CAST).find((row) => row.raid === record.raid);
+      if (view !== undefined && view.force.verdict_if_resolved_now === 'REPULSED') {
+        const margin = view.force.defender_if_you_fight - view.force.raider;
+        const flying = runtime.battles
+          .formationsOf(record.id, member.principal)
+          .reduce((n, f) => n + f.hands.length, 0);
+        if (flying + 1 > margin) continue;
+      }
+
+      // Gate 3. Strength on the field after this commit, in the forecast's own units.
+      const world = worldFleetProfile();
+      if (world === null) continue;
+      const theirs = hostile.reduce((n, f) => n + f.hands.length, 0) * (world.ehp + world.alpha * SLICES_PER_TICK);
+      let ours = this.strengthOfHull(candidate.id);
+      for (const hull of runtime.fleet.of(member.principal)) {
+        if (hull.state !== 'ENGAGED' || hull.location !== record.stage) continue;
+        ours += this.strengthOfHull(hull.id);
+      }
+      if (ours * BPS_ONE < theirs * CAST_ENGAGE_FAVOUR_BPS) continue;
+
+      const params = {
+        raid: record.raid,
+        system: record.stage,
+        hull: candidate.id,
+        echelon: 'MAIN',
+        posture: 'HOLD',
+        // The competent default, stated rather than inherited: kill what holds you, then what
+        // repairs, then whatever is nearest death. `DEFAULT_PRIMARY` leads with REPAIR, which is
+        // the right order against a fleet that HAS one — the world's does not, and it flies a POINT.
+        primary: ['TACKLE', 'REPAIR', 'WEAKEST'],
+        withdraw_below_bps: CAST_WITHDRAW_BELOW_BPS,
+      };
+      // Gate 1, last, so a refusal can never be the thing this branch reports as a decision.
+      if (
+        runtime.engageRefusalFor({
+          principal: member.principal,
+          raid: record.raid,
+          tick,
+          hull: candidate.id,
+          echelon: 'MAIN',
+          posture: 'HOLD',
+          primary: ['TACKLE', 'REPAIR', 'WEAKEST'],
+          withdrawWhen: { ehpBelowBps: CAST_WITHDRAW_BELOW_BPS, hullsLost: 0, now: false },
+          handId: null,
+        }) !== null
+      ) {
+        continue;
+      }
+      return { verb: 'engage', params };
+    }
+    return null;
+  }
+
+  /**
+   * One hull's strength in {@link CAST_ENGAGE_FAVOUR_BPS}'s units: `ehp + alpha × slices`.
+   *
+   * Read off the fleet record and re-simulated, which is `profileOfFit`'s rule: the fleet holds the
+   * modules and a hash is an identity, so the profile is a lookup rather than a second copy of the
+   * fit. Zero for a hull the catalogue no longer knows, so an unreadable fit can only ever make the
+   * branch *less* willing to commit.
+   */
+  private strengthOfHull(id: string): number {
+    const record = this.runtime.fleet.get(id as never);
+    if (record === undefined) return 0;
+    const simulated = simulateFit(record.hull, record.modules);
+    if (!simulated.ok) return 0;
+    return simulated.value.ehp + simulated.value.alpha * SLICES_PER_TICK;
+  }
+
+  /**
+   * Build the next ship in {@link CAST_DOCTRINE}, or null.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A HULL IS THE FIRST THING THIS CAST BUYS THAT IS PAID FOR IN THE TRIBUTE'S OWN GOOD AND
+   * DESTROYED PERMANENTLY.** `HULL_COST_GOODS.frame` is `WORKS_GOOD`, which is `LEVY_GOOD`, which is
+   * `CHARGE_GOOD` — one quantity, four bills — and `catalogue.ts` prices a WARDEN at 1,500 of it. So
+   * three ships are 3,400 units of a tribute that runs about 20,000 a Reckoning, and there is no
+   * salvage: a wreck removes the whole build cost from the world (`battlePort.burnHull`, *"A5 with no
+   * discount"*).
+   *
+   * The gate is therefore ordered **world's bills first, then a replacement, then the ship**:
+   *
+   *   1. **Under the fleet cap**, which is {@link CAST_DOCTRINE}'s own length and not
+   *      `MAX_HULLS_PER_PRINCIPAL`.
+   *   2. **The engine's own refusal**, through `hullRefusalFor` — the same function `vBuildHull`
+   *      runs, and the thing that enforces "not the Commons", "your holding stands here" and "the
+   *      goods are unpledged and present". Asking it means this branch cannot want something the
+   *      menu would not have offered (scar #5), and it is also why there is no tier test here: A8's
+   *      floor is the engine's rule, not a copy of it.
+   *   3. **The tribute is still covered after the spend**, read off `levyBlockFor` — location-blind,
+   *      exactly as the settlement's own reader is.
+   *   4. **Every Charge owed at this berth is still covered**, read off `claimsFor`, which is the
+   *      same `ClaimView` the observation publishes.
+   *   5. **{@link CAST_ARMS_RESERVE_MULTIPLE}** of the price is standing there in *both* goods, so
+   *      the ship this branch buys is one the member could replace.
+   *   6. **The anchor's `fuel` is not what pays for the fleet.** A cold anchor takes no arrears,
+   *      lapses nothing and slashes no bond — `FUEL_STATEMENT` exists because *"nothing else in the
+   *      observation goes red while the income is zero"* — so a hull bought out of
+   *      `ANCHOR_FUEL_BY_TIER` is a claim quietly earning nothing, which is the least visible way
+   *      this branch could make a member poorer.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private hullFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+
+    // 1.
+    const held = runtime.fleet.readyOrBusyOf(member.principal).length;
+    const ship = CAST_DOCTRINE[held];
+    if (ship === undefined) return null;
+
+    const system = this.bodyOf(member);
+    const price = hullQuote(ship.hull);
+    if (price === null) return null;
+    const frame = Number(price.frame);
+    const fuel = Number(price.fuel);
+
+    // 3. The tribute, first and location-blind, exactly as the sweep reads it.
+    const owed = runtime.levyBlockFor(member.principal, tick)?.shortfall_if_unpaid ?? 0;
+    if (Number(runtime.levyGoodAvailable(member.principal)) - frame < owed) return null;
+
+    // 4 and 6. The Charge and the anchor's fuel, both read off the published claim view.
+    let anchorFuel = 0;
+    for (const claim of runtime.claimsFor(member.principal, tick)) {
+      if (claim.system !== system) continue;
+      if (claim.available_here - frame < claim.owed) return null;
+      anchorFuel += claim.fuel_due;
+    }
+
+    // 5. A replacement, in both goods, standing where a berth can spend it.
+    if (Number(runtime.goodsAt(member.principal, system, HULL_COST_GOODS.frame)) < frame * CAST_ARMS_RESERVE_MULTIPLE) {
+      return null;
+    }
+    if (
+      Number(runtime.goodsAt(member.principal, system, HULL_COST_GOODS.fuel)) - fuel * CAST_ARMS_RESERVE_MULTIPLE <
+      anchorFuel
+    ) {
+      return null;
+    }
+
+    // 2. Last, so the branch never reports a refusal as a decision.
+    if (
+      runtime.hullRefusalFor({
+        principal: member.principal,
+        system,
+        hull: ship.hull,
+        modules: ship.modules,
+        tick,
+      }) !== null
+    ) {
+      return null;
+    }
+
+    return {
+      verb: 'build',
+      params: { kind: 'HULL', system, hull: ship.hull, modules: [...ship.modules] },
+    };
+  }
+
+  /**
    * Elect on a venture belonging to a principal that granted this member authority, or null.
    *
    * The honest use of a mandate: the grantor owes an elective part, the grantor's stores pay it, and a
@@ -1649,7 +2282,11 @@ export class HeuristicCast {
     const hands = handsOf(runtime.world, member.principal);
     if (hands.some((h) => h.destination === place)) return null;
 
-    const idle = hands.filter((h) => h.state === 'IDLE');
+    // A hand mustered at a stage this member has answered FIGHT at is not available to walk: the
+    // reading is re-taken at resolution, so walking it out un-answers the raid. Same rule the
+    // `fill_role` branch applies, same measurement behind it (`gate-c`, `FIGHT/PLUNDERED`).
+    const mustered = this.musteredAt(member, tick);
+    const idle = hands.filter((h) => h.state === 'IDLE' && (mustered.get(h.location) ?? 0) === 0);
     // The LAST idle hand, mirroring {@link carriageNeeded}: the branches above spend `idle[0]`
     // on roles, so taking from the other end means the hand a member reserved for its tribute
     // is the hand this walks, and the two ends of the list do not fight over one hand.
@@ -1719,7 +2356,9 @@ export class HeuristicCast {
       }
       const hands = handsOf(runtime.world, member.principal);
       if (hands.some((h) => h.destination === claim.system)) continue;
-      const idle = hands.filter((h) => h.state === 'IDLE');
+      // Mustered hands are not available to walk — see {@link musteredAt}.
+      const mustered = this.musteredAt(member, tick);
+      const idle = hands.filter((h) => h.state === 'IDLE' && (mustered.get(h.location) ?? 0) === 0);
       // The last idle hand, as `levyMove` takes: the role branches spend `idle[0]`.
       const hand = idle[idle.length - 1];
       if (hand === undefined) continue;
@@ -1727,6 +2366,73 @@ export class HeuristicCast {
       if (next === undefined) continue;
       if (!this.mayEnter(member, next)) continue;
       return { verb: 'move', params: { hand: hand.id, to: next } };
+    }
+    return null;
+  }
+
+  /**
+   * Walk one idle hand a gate closer to a berth where this member's hulls are waiting, or null.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE LOGISTICS HALF OF A FLEET, AND WITHOUT IT THE OTHER HALF IS A MONUMENT.** `combat/index.ts`
+   * states the constraint this branch exists to satisfy: *"`MAX_HULLS_PER_PRINCIPAL` is 6 and a
+   * principal has three hands, and `engage` requires an IDLE hand at the stage to crew each hull. So
+   * the real cap on a fleet one principal can field is three."* That is a cap on hands **at the
+   * stage**, not hands owned — and nothing in this file moved a hand toward a warship until now.
+   *
+   * `graduate` is why: it moves a HOLDING and leaves every hand where it was, so a member that
+   * crossed twice to reach the Frontier has its body, its stores, its claim and its whole fleet in one
+   * constellation and its hands in another. `chargeMove` exists for the same reason one obligation
+   * down.
+   *
+   * ## Three guards, each stopping a refusal the branch could have predicted (AGT-S3)
+   *
+   *   - **Only while the berth is short of crew.** One hand per hull, so a berth with as many hands
+   *     standing on it as hulls needs nothing, and a member with three hulls and three hands home
+   *     stops walking. `COMMITTED` hands count as present: a hand filling a role at the berth is a
+   *     hand that will be idle again there, and walking a fourth one in would be permanent churn.
+   *   - **Never the hand a world obligation is standing on.** A hand on the Levy's delivery place or
+   *     on a claim is stationed by the paragraph above this one in `decideOne`, and pulling it away
+   *     for a warship would reopen the tug-of-war that cost the world a fifth of its ventures.
+   *   - **Never into a tier this principal's hands may not enter**, through {@link mayEnter} — the
+   *     engine's own rule, read live, for the reason that guard had to be rewritten once already.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private crewMove(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    const hulls = runtime.fleet.readyOrBusyOf(member.principal);
+    if (hulls.length === 0) return null;
+
+    // Where a hand is genuinely needed elsewhere. The same set the aimless walk treats as stationed.
+    const owing = new Set<SystemId>();
+    const owedAt = runtime.levyBlockFor(member.principal, tick);
+    if (owedAt !== null) owing.add(owedAt.deliverable_to);
+    for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
+
+    const hands = handsOf(runtime.world, member.principal);
+    // Canonical order over the berths, so one seed walks one sequence.
+    const berths = [...new Set(hulls.map((hull) => hull.location))].sort(compareIds);
+    for (const berth of berths) {
+      const want = hulls.filter((hull) => hull.location === berth).length;
+      const here = hands.filter(
+        (hand) => hand.location === berth && (hand.state === 'IDLE' || hand.state === 'COMMITTED'),
+      ).length;
+      const coming = hands.filter((hand) => hand.destination === berth).length;
+      if (here + coming >= want) continue;
+      for (const hand of hands) {
+        if (hand.state !== 'IDLE' || hand.location === berth) continue;
+        // A claim is a berth too, so a hand standing on one is already where it is needed — with the
+        // exception of the berth itself, which the loop above has just found short of crew.
+        if (owing.has(hand.location)) continue;
+        const next = route(runtime.world.map, hand.location, berth)?.path[1];
+        if (next === undefined) continue;
+        if (!this.mayEnter(member, next)) continue;
+        return { verb: 'move', params: { hand: hand.id, to: next } };
+      }
     }
     return null;
   }

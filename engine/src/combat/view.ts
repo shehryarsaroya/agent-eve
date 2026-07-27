@@ -31,6 +31,7 @@ import { compareIds } from '../ledger/order.js';
 import type { BattleLine, BattleFormationLine } from '../frames/contract.js';
 import { nextStateNote, profileLookup, ticksLeftOf, WORLD_PRINCIPAL } from './battle.js';
 import {
+  BATTLE_LINE_RETAIN_TICKS,
   ECHELON_DEPTH,
   ENGAGEMENT_RULE_STATEMENT,
   PIN_THRESHOLD,
@@ -397,7 +398,29 @@ function ifYouDoNothing(record: EngagementRecord, mine: readonly Formation[], ti
 export function battleLinesFor(book: Book, fleet: Fleet, tick: number, limit: number): readonly BattleLine[] {
   return book
     .all()
-    .filter((r) => r.resolvedAtTick === null || r.resolvedAtTick >= tick - 2)
+    // ── THE RETENTION WINDOW WAS TWO TICKS, AND IT MADE A13 FALSE FOR COMBAT ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **MEASURED: A BATTLE THAT DESTROYED THREE HULLS AND HELD THE FIELD APPEARED ON NO PUBLISHED
+    // FRAME AT ALL.** Seed `fz-13`, engagement over `raid:192:0` — opened at tick 193, resolved at 212,
+    // `fieldControl: DEFENDER`, three wrecks. The frame this world publishes is the **Reckoning** frame
+    // (`runtime.reckoningFrame`, written at the settlement tick), and settlement is tick 287. At a
+    // two-tick window the filter dropped it, and `battleLines: []` was served for the day a battle was
+    // fought and won.
+    //
+    // An engagement runs at most `ENGAGEMENT_TICKS` = 22 of a 288-tick Reckoning, so a two-tick window
+    // put the odds of combat ever reaching its own pixel signature at roughly **8%**. A13 is a hard
+    // rule — *"every mechanic renders; no named pixel signature, not ready"* — and THE BATTLE LINE was
+    // built, correct, tested, and statistically invisible. That is this project's signature defect
+    // wearing a retention policy, which is exactly where the wreck tally was found hiding too.
+    //
+    // So the window is a Reckoning: the frame is a **daily digest** and the battles of that day belong
+    // on it, in the same way its tribute lines and claim lines do. Nothing else changes — the rows are
+    // still there (`Book.prune` keeps `MAX_ENGAGEMENT_ROWS / 2` and only drops what resolved earlier),
+    // the budget still truncates at the caller's `limit`, and a resolved line carries its
+    // `fieldControl` and its wrecks, which is what a reader wants from a battle that is over.
+    // ══════════════════════════════════════════════════════════════════════════
+    .filter((r) => r.resolvedAtTick === null || r.resolvedAtTick >= tick - BATTLE_LINE_RETAIN_TICKS)
     .map((record) => {
       const profileOf = profileLookup(fleet, record);
       const repairers = new Set(

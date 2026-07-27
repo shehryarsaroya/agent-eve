@@ -419,4 +419,230 @@ for (const name of Object.keys(DOCTRINES)) {
       `(~${String(Math.trunc(hulls * perHull))} in goods) · goods a raid took: ${String(goods)}`,
   );
 }
+
+// ── PHASE D ─────────────────────────────────────────────────────────────────
+//
+// ══════════════════════════════════════════════════════════════════════════
+// **D. DOES COMPOSITION PAY AT COALITION SCALE?** — the question phase B cannot answer.
+//
+// Phase B found `LINE` (pure damage) beating every specialist, and the diagnosis was structural
+// rather than a balance number: **a three-hull cap makes a support wing a third of the fleet**, where
+// EVE's logistics ratio is about 1:5. A REPAIR hull that replaces a third of your damage has to offset
+// a third of your damage to break even, and `catalogue.ts` deliberately calibrated remote repair to
+// *"a force multiplier rather than an answer"* (~40% of incoming). So at three hulls the specialist is
+// mathematically behind before the first volley, and phase B was measuring the cap, not the doctrine.
+//
+// `join` is the mechanic that lifts the cap — §9's *"nearby agents may join on either side"*, and
+// `combat/index.ts` says so in as many words: *"a big battle is many principals on one side, each
+// bringing what its own hands can crew… a fleet larger than three hulls is a coalition, not a
+// purchase."* It was built, it is reachable, and **no sim had ever put two principals on one side of a
+// battle.**
+//
+// So this phase fields five principals a side and varies only the *composition* of the defence at
+// matched hull count:
+//
+//   - `ALL_LINE`    — 5 × three missile WARDENs. Fifteen hulls, no support at all.
+//   - `LOGI_1_IN_5` — 4 × three missile WARDENs + 1 × three remote-repair WARDENs. Fifteen hulls, a
+//                     support wing that is a fifth of the fleet rather than a third: EVE's ratio.
+//
+// Both against the same attacker, so the only difference on the field is what the fifteenth, and the
+// thirteenth, and the fourteenth hull are carrying. If the specialist still loses, multipliers do not
+// pay at coalition scale either and §12's relationship #4 is decoration; if it wins, phase B's finding
+// was the cap.
+// ══════════════════════════════════════════════════════════════════════════
+
+const LOGI_WING: Ship = {
+  hull: 'WARDEN',
+  modules: ['REMOTE_REPAIR', 'REMOTE_REPAIR', 'CAP_BATTERY', 'SHIELD_EXTENDER', 'AFTERBURNER', 'CAP_RELAY', 'CAP_RELAY'],
+};
+
+interface Wing {
+  readonly ships: readonly Ship[];
+  readonly echelon: string;
+  readonly posture: string;
+}
+
+const LINE_WING: Wing = { ships: [MISSILE_LINE, MISSILE_LINE, MISSILE_LINE], echelon: 'MAIN', posture: 'HOLD' };
+const SUPPORT_WING: Wing = { ships: [LOGI_WING, LOGI_WING, LOGI_WING], echelon: 'SUPPORT', posture: 'HOLD' };
+
+interface Coalition {
+  readonly defence: readonly Wing[];
+  readonly attack: readonly Wing[];
+}
+
+/**
+ * Field two coalitions against each other through `demand` + `join`, and report the field.
+ *
+ * Every principal is seated at one stage and stocked for its own wing; the raid is opened by the first
+ * attacker and every other attacker `join`s `RAIDER` while every other defender `join`s `DEFENDER`. The
+ * target answers `fight`. That is the whole of §9's coalition machinery, driven through the verb table.
+ */
+function coalition(seed: string, plan: Coalition, ticks: number): {
+  readonly battles: number;
+  readonly defenderWins: number;
+  readonly contested: number;
+  readonly raiderWins: number;
+  readonly defenderWrecks: number;
+  readonly raiderWrecks: number;
+  readonly fielded: number;
+} {
+  const runtime = new Runtime({ seed });
+  const stage = runtime.seatInTier('MARCHES', Rng.fromSeed(`${seed}:stage`));
+  if (stage === undefined) throw new Error('no MARCHES system');
+
+  const defenders: PrincipalId[] = [];
+  const attackers: PrincipalId[] = [];
+  const wingOf = new Map<PrincipalId, Wing>();
+  const seatWing = (label: string, index: number, wing: Wing, into: PrincipalId[]): void => {
+    const principal = `p:${label}${String(index)}` as PrincipalId;
+    runtime.seat(principal, `${label}${String(index)}`, stage);
+    runtime.standing.open(principal);
+    stock(runtime, principal, stage, HULL_COST_GOODS.frame, START_GOODS);
+    stock(runtime, principal, stage, HULL_COST_GOODS.fuel, 4_000);
+    wingOf.set(principal, wing);
+    into.push(principal);
+  };
+  for (const [i, wing] of plan.defence.entries()) seatWing('def', i, wing, defenders);
+  for (const [i, wing] of plan.attack.entries()) seatWing('atk', i, wing, attackers);
+  const watch = [...defenders, ...attackers];
+  step(runtime, watch);
+
+  for (const principal of watch) {
+    for (const ship of wingOf.get(principal)?.ships ?? []) {
+      submit(runtime, principal, 'build', { kind: 'HULL', system: stage, hull: ship.hull, modules: [...ship.modules] });
+      step(runtime, watch);
+    }
+  }
+  for (let i = 0; i < 8; i += 1) step(runtime, watch);
+
+  const target = defenders[0];
+  const opener = attackers[0];
+  if (target === undefined || opener === undefined) throw new Error('a coalition needs a side each');
+
+  let battles = 0;
+  let defenderWins = 0;
+  let contested = 0;
+  let raiderWins = 0;
+  let defenderWrecks = 0;
+  let raiderWrecks = 0;
+  let fielded = 0;
+  const closed = new Set<string>();
+  const engaged = new Set<string>();
+  const joined = new Set<string>();
+
+  for (let t = 0; t < ticks; t += 1) {
+    // One demand per Reckoning-ish, aimed at the lead defender. `AGGRESSION_PER_RECKONING` caps it.
+    if (t % 96 === 20) {
+      submit(runtime, opener, 'demand', { principal: target, system: stage, good: HULL_COST_GOODS.frame, qty: 2_000 });
+    }
+    for (const raid of runtime.raids.live()) {
+      if (raid.target !== target) continue;
+      // Everybody else takes a side. A defender joiner stakes nothing; a raider joiner stakes capital.
+      for (const principal of watch) {
+        if (principal === target || principal === raid.initiator) continue;
+        const key = `${raid.id}/${principal}`;
+        if (joined.has(key)) continue;
+        joined.add(key);
+        submit(runtime, principal, 'join', {
+          raid: raid.id,
+          system: raid.stage,
+          side: defenders.includes(principal) ? 'DEFENDER' : 'RAIDER',
+        });
+      }
+      if (raid.answer === null) submit(runtime, target, 'fight', { raid: raid.id, system: raid.stage });
+    }
+
+    for (const battle of runtime.battles.live()) {
+      if (battle.state !== 'MUSTER') continue;
+      for (const principal of watch) {
+        const wing = wingOf.get(principal);
+        if (wing === undefined) continue;
+        for (const hull of runtime.committableHulls(principal, battle.stage)) {
+          const key = `${battle.id}/${hull.id}`;
+          if (engaged.has(key)) continue;
+          engaged.add(key);
+          submit(runtime, principal, 'engage', {
+            raid: battle.raid,
+            system: battle.stage,
+            hull: hull.id,
+            echelon: wing.echelon,
+            posture: wing.posture,
+            primary: ['TACKLE', 'REPAIR', 'WEAKEST'],
+          });
+          // One `engage` per principal per tick: the action budget is four and the point of the phase
+          // is the composition, not a throughput race (A4).
+          break;
+        }
+      }
+      fielded = Math.max(
+        fielded,
+        battle.formations.reduce((n, f) => n + f.hands.length, 0),
+      );
+    }
+
+    const before = new Set(runtime.battles.all().filter((b) => b.resolvedAtTick !== null).map((b) => b.id));
+    step(runtime, watch);
+    for (const battle of runtime.battles.all()) {
+      if (battle.resolvedAtTick === null || before.has(battle.id) || closed.has(battle.id)) continue;
+      closed.add(battle.id);
+      battles += 1;
+      if (battle.fieldControl === 'CONTESTED') contested += 1;
+      else if (battle.fieldControl === 'DEFENDER') defenderWins += 1;
+      else raiderWins += 1;
+      for (const wreck of battle.wrecks) {
+        if (defenders.includes(wreck.principal)) defenderWrecks += 1;
+        else raiderWrecks += 1;
+      }
+    }
+  }
+
+  return { battles, defenderWins, contested, raiderWins, defenderWrecks, raiderWrecks, fielded };
+}
+
+console.log('\n──── D. does composition pay at COALITION scale? (§12 #4, join) ────');
+console.log('defence         hulls  battles  def wins cont raid wins   def lost  raid lost  fielded');
+const COALITIONS: readonly (readonly [string, Coalition])[] = [
+  [
+    'ALL_LINE',
+    {
+      defence: [LINE_WING, LINE_WING, LINE_WING, LINE_WING, LINE_WING],
+      attack: [LINE_WING, LINE_WING, LINE_WING, LINE_WING, LINE_WING],
+    },
+  ],
+  [
+    'LOGI_1_IN_5',
+    {
+      defence: [LINE_WING, LINE_WING, LINE_WING, LINE_WING, SUPPORT_WING],
+      attack: [LINE_WING, LINE_WING, LINE_WING, LINE_WING, LINE_WING],
+    },
+  ],
+  [
+    'LOGI_1_IN_3',
+    {
+      defence: [LINE_WING, LINE_WING, SUPPORT_WING],
+      attack: [LINE_WING, LINE_WING, LINE_WING],
+    },
+  ],
+];
+for (const [name, plan] of COALITIONS) {
+  const agg = { b: 0, d: 0, c: 0, r: 0, dw: 0, rw: 0, f: 0 };
+  for (const seed of SEEDS) {
+    refusals = [];
+    const out = coalition(`${seed}:${name}`, plan, TICKS);
+    agg.b += out.battles;
+    agg.d += out.defenderWins;
+    agg.c += out.contested;
+    agg.r += out.raiderWins;
+    agg.dw += out.defenderWrecks;
+    agg.rw += out.raiderWrecks;
+    agg.f = Math.max(agg.f, out.fielded);
+  }
+  const hulls = plan.defence.reduce((n, w) => n + w.ships.length, 0);
+  console.log(
+    `${name.padEnd(15)} ${String(hulls).padStart(5)} ${String(agg.b).padStart(8)} ${String(agg.d).padStart(9)}` +
+      ` ${String(agg.c).padStart(4)} ${String(agg.r).padStart(9)}   ${String(agg.dw).padStart(8)}` +
+      ` ${String(agg.rw).padStart(10)}  ${String(agg.f).padStart(7)}`,
+  );
+  if (refusals.length > 0) console.log(`  ! ${refusals.slice(0, 3).join('\n  ! ')}`);
+}
 console.log('');

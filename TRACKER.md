@@ -6,6 +6,99 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **COMBAT IS EXERCISED. `RULES_VERSION` 12, hulls built, a formation on a field, and a hull destroyed in a world nobody steers.**
+>
+> Phase 2 shipped complete and unentered: `heuristic.ts` had no combat branch, so **nothing in the
+> world had ever built a hull**. Four cast branches close it — `raidAnswerFor` (`fight` · `yield`),
+> `engageFor` (`engage`), `hullFor` (`build {kind:"HULL"}`) and `crewMove` (`move`) — plus one hand
+> reservation (`musteredAt`). Measured on a world nobody steers: **hulls built out of goods a member
+> produced, a formation of its own at CONTEST, sixteen world LANCEs destroyed across 32 seeds, and
+> THE BATTLE LINE on a published frame with two sides on it.**
+>
+> **THE BALANCE GATE.** 900 ticks × 8 members, master (`280ead0`) → here:
+>
+> | metric | 4 seeds (`gate-a..d`) | | 32 seeds (`g01..g32`) | |
+> |---|---|---|---|---|
+> | | master | here | master | here |
+> | `levyShort` | 0 | **0** | 0 | **0** |
+> | red tribute lines | 0/32 | **0/32** | 0/256 | **0/256** |
+> | `kept` | 172 | 171 | 1,408 | **1,408** |
+> | `broken` | 16 | 17 | 177 | **176** |
+> | ventures | 905 | **993** | 6,592 | **6,682** |
+> | live claims | 11 | **12** | 108 | 105 |
+> | rent collected | 31,350 | **34,001** | 280,687 | 276,518 |
+> | hulls · battles · world hulls killed | 0 · 0 · 0 | 3 · 3 · 0 | 0 · 0 · 0 | **18 · 25 · 16** |
+>
+> **The two meters that decide safety are exactly equal on all 36 seeds: `levyShort` 0 and zero red
+> tribute lines.** Everything else moves within ±3% and the *direction* depends on the seed set —
+> which is the finding: at 8 members × 900 ticks a **single displaced action moves the venture count
+> by 20%** (`gate-b`, one `fight` at tick ~121, 228 → 274). The 4-seed table the territorial gate
+> published is one sample, not a tolerance. On the four-seed set `kept` is −1 and `broken` +1; on the
+> 32-seed set `kept` is equal and `broken` is one better. The mechanism is attributed rather than
+> assumed: the cast stops donating `RAID_TAKE_MULTIPLE` (twice the demand) nine times a run, is
+> therefore richer, and a richer cast opens more ventures against a currency-denominated elective
+> appetite — the same curve `DEFAULT_CREATE_CHANCE_BPS` was calibrated on, one point further along.
+>
+> ⚑ **THE FINDING THAT MATTERS MOST: WINNING A BATTLE AGAINST THE WORLD CANNOT WIN THE STANDOFF.**
+> `combat/index.ts` advertises *"a wrecked hull routs its hand and `readForce` counts hands, so losing
+> the battle loses the force reading for free"* — and that coupling runs **one way only**.
+> `predation/resolve.ts` reads `raiderForce = raid.force + joiners`; for a world raid `raid.force` is a
+> scalar drawn at spawn, `mustWorldFleet` gives it exactly `force` LANCEs, and `applyLoss` returns
+> early on a world hull. Measured, `fz-13` tick 192: `brannock` commits one missile WARDEN, **destroys
+> all three world LANCEs**, holds the field at 2,395 EHP of 4,400 — and the standoff resolves
+> **PLUNDERED 2-3**. So `engage` against the weather is all downside for a material agent, which is
+> why a cast that only did the arithmetic would never fly. The cast's fleet clause buys the battle for
+> one demand and says so at the call site. **The fix is in `readForce`'s caller: count the world's
+> surviving hulls instead of `raid.force`.** That is a §9 balance change with its own gate, so it is
+> reported and not taken.
+>
+> ★ **COMPOSITION PAYS AT COALITION SCALE, AND THE THREE-HULL CAP WAS THE CONFOUND.** `combat-sim.ts`
+> gains a phase D that fields five principals a side through `join` — the first sim in this project to
+> put two principals on one side of a battle. 3 seeds × 400 ticks, 9 battles each, matched hull count:
+>
+> | defence | hulls | field (won · contested · lost) | **its own hulls lost** | world/raider hulls killed |
+> |---|---|---|---|---|
+> | `ALL_LINE` (no support) | 15 | 6 · 3 · 0 | **17** | 36 |
+> | `LOGI_1_IN_5` (EVE's ratio) | 15 | 6 · 3 · 0 | **0** | 36 |
+> | `LOGI_1_IN_3` | 9 | 3 · 6 · 0 | 0 | 27 |
+>
+> At 1:5 the support wing costs **nothing** in field control and turns **17 lost hulls into zero**. At
+> 1:3 it still saves every hull and costs the field (6 won → 3 won · 6 contested), which is the damage
+> given up, quantified. So the earlier "pure damage beats every specialist" result was measuring
+> `MAX_HULLS_PER_PRINCIPAL` against three hands, not the doctrine. **Also found: `MAX_RAID_PARTIES` is
+> 8, so a ten-principal battle cannot happen** — the ninth and tenth `join` are refused INV-26 and
+> then get a cascading `engage: A2 you are not a party` for the rest of the window.
+>
+> ⚑ **A13 WAS FALSE FOR COMBAT AND ONE CONSTANT FIXED IT.** `battleLinesFor` retained a resolved
+> battle for **two ticks**; the published frame is the *Reckoning* frame, written at the settlement
+> tick; an engagement runs at most 22 ticks of 288. So the odds that combat ever reached its own pixel
+> signature were about **8%**, and `fz-13`'s battle — three wrecks, field held — appeared on no frame
+> at all. `BATTLE_LINE_RETAIN_TICKS = TICKS_PER_RECKONING` now, the same window the tribute and claim
+> lines are drawn over. Mutation-verified: back to 2 and the named test goes red.
+>
+> **Two more measurements worth carrying forward.** (1) **Combat's reachability is the map, not the
+> cast.** A hull needs `fuel`, `fuel` is FRONTIER-only, and the launch map has exactly two lanes in
+> (`sys-09 → sys-26`, `sys-16 → sys-25`) which only a raider seated *on* them can cross. At 8 members
+> **1 of 24 seeds** produces a Frontier member; at 20 members it is **7 of 16**, matching the seating
+> combinatorics. That is `D23` #3's *"the map is ~4x too big for the population"* one mechanic further
+> along. (2) **The affordance menu offers the hull that loses.** `observe.ts` offers a PIKE on a tackle
+> fit; three PIKEs went 0-2 against world raids losing all three hulls both times, where two missile
+> WARDENs and a PIKE went 4-0. The cast flies the second and the reason is pinned by test.
+>
+> **Six mutations, five named failures, one honest absence.** `crewMove` off → *"never had a formation
+> in one past MUSTER"*; favour gate never clears → *"no hull was destroyed"*; retention → 2 → *"empty
+> on every published frame"*; muster reservation off → *"`gate-c`: answered FIGHT on a REPULSED reading
+> and resolved PLUNDERED"*; doctrine lead → PIKE → *"does not clear CAST_ENGAGE_FAVOUR_BPS"*. The
+> sixth — `engageFor`'s **margin** gate — is **not** detected, and that is written at the call site
+> rather than left to be found: its subject needs a member with hulls whose standoff it would win, and
+> the two roads to that are still disjoint (gate seeds fight with no hulls; the Frontier's
+> `FORCE_BY_TIER` is 0, so the one armed member reads PLUNDERED). Same note `claimFor`'s tribute clause
+> carries: an unexercised guard reads exactly like a missing one.
+>
+> **Process:** `git checkout HEAD -- <path>` after a WIP commit **discards every later edit** — it cost
+> the crewMove/muster/gate-5 work once and it had to be re-applied from the transcript. Committing
+> before every baseline checkout is the habit; `git stash` is not (HARD RULE 7).
+
 > ### ★★★ **PHASE 2 IS IN. `RULES_VERSION` 11 live, tick 5,400, `failures: []`, 3,169 tests.**
 >
 > Four agents ran in parallel worktrees overnight (2026-07-27) and all four landed. Master `5a85bdb`,

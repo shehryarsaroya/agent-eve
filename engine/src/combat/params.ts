@@ -24,6 +24,7 @@
 
 import { qty, type Bps, type Minor, type Qty } from '../core/units.js';
 import type { GoodId } from '../core/types.js';
+import { TICKS_PER_RECKONING } from '../core/time.js';
 import { DEMAND_WINDOW_TICKS } from '../predation/params.js';
 import { FUEL_GOOD, WORKS_GOOD } from '../works/params.js';
 
@@ -300,6 +301,26 @@ export const MAX_WRECKS_PER_ENGAGEMENT = 24;
 
 /** Trace entries one engagement keeps for its explanation. The causal record, bounded. */
 export const MAX_TRACE_ENTRIES = 48;
+
+/**
+ * How long after it ends a battle still draws on **THE BATTLE LINE**.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A RECKONING, BECAUSE THE PUBLISHED FRAME IS A DAILY DIGEST AND A BATTLE IS 22 TICKS OF 288.**
+ *
+ * This was two ticks, and at two ticks A13 was false for the whole layer: `runtime.reckoningFrame()`
+ * is written at the settlement tick, an engagement runs at most {@link ENGAGEMENT_TICKS}, and the odds
+ * that one of them is inside a two-tick window at settlement are about 8%. Measured on seed `fz-13`:
+ * a battle that destroyed three hulls and held the field appeared on **no** published frame, and the
+ * day it was fought served `battleLines: []`.
+ *
+ * A Reckoning is the same window the tribute lines and the claim lines are drawn over, so the three
+ * signatures on one frame now describe one day rather than one day and two instants. Bounded twice
+ * over regardless: `Book.prune` drops resolved rows once the book is over half full, and the caller's
+ * `limit` ({@link import('../frames/contract.js').MAX_FRAME_BATTLE_LINES}) truncates the list.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const BATTLE_LINE_RETAIN_TICKS = TICKS_PER_RECKONING;
 
 // ── The world's fleet ───────────────────────────────────────────────────────
 

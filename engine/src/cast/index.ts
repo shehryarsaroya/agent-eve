@@ -136,8 +136,12 @@ export function createCast(runtime: Runtime, options: CreateCastOptions): Cast {
 }
 
 export {
+  CAST_ARMS_RESERVE_MULTIPLE,
+  CAST_DOCTRINE,
+  CAST_ENGAGE_FAVOUR_BPS,
   CAST_NAMES,
   CAST_ROLES,
+  CAST_WITHDRAW_BELOW_BPS,
   DEFAULT_CREATE_CHANCE_BPS,
   HeuristicCast,
   MAX_CAST,

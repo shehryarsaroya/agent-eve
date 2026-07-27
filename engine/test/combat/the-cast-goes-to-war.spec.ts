@@ -1,0 +1,565 @@
+/**
+ * **COMBAT IS LIVE — asserted on a world nobody steers.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **WHY THIS FILE EXISTS.** Phase 2 landed 5,987 lines, `engage`, five hulls, twenty-nine modules, a
+ * published stacking curve and five roles earned from fittings — and `src/cast/heuristic.ts` had no
+ * combat branch, so **nothing in the world had ever built a hull.** That is this project's signature
+ * defect at its largest scale yet: *a capability that exists and is never exercised is
+ * indistinguishable from one that is missing — in every report, on every frame, and to every reader
+ * including its author.*
+ *
+ * `test/combat/reachable.spec.ts` already proves combat is reachable **from the menu**, with the goods
+ * stocked straight from the faucet and every step driven by hand. It says so itself: *"what this file
+ * proves is reachability of the menu, not the economics of the supply chain."* This file is the other
+ * half, and the assertions are deliberately about **outcomes in a running world** rather than about
+ * branches firing:
+ *
+ *   1. a member reaches the Frontier, and **builds the doctrine out of goods it produced**;
+ *   2. a formation **of ours** stands on a field and the battle reaches **CONTEST** — not a battle in
+ *      which the world's fleet arrived and nobody came out, which is what a hull-less FIGHT looks
+ *      like and which would satisfy a naive "did a battle happen" assertion;
+ *   3. **a hull is destroyed**, permanently, on the public record (A5);
+ *   4. **THE BATTLE LINE** (A13) carries two sides on a published frame;
+ *   5. and none of it makes the **Levy** or the **Charge** harder, which is the gate that decides
+ *      whether the branches were right to exist.
+ *
+ * ── THE SEED IS CHOSEN, AND THE REASON IS THE MAP RATHER THAN THE BRANCH ─────
+ *
+ * A hull costs `ration` **and `fuel`**, and `FUEL_YIELD_PER_TICK` is zero at every tier but FRONTIER.
+ * The launch map has exactly **two** lanes into the Frontier — `sys-09 → sys-26` and
+ * `sys-16 → sys-25` — and `graduate` moves a body one lane at a time, so the only members that can
+ * ever reach fuel are the raiders the cast seats *on those two systems*. Measured over twenty-four
+ * seeds at eight members: **one** produced a Frontier member. At twenty members it is seven of
+ * sixteen, which matches the seating combinatorics exactly.
+ *
+ * So combat's reachability in a world nobody steers is gated by **the map's two chokepoints and the
+ * seating lottery**, not by the cast's willingness — the same shape as `D23` #3's *"the map is ~4x too
+ * big for the population"*, one mechanic further along. `fz-13` is the eight-member seed that seats
+ * `brannock` on `sys-09`. If the map or the seating changes, re-pick a seed that seats a raider at
+ * `sys-09` or `sys-16` rather than deleting the assertion.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+
+import { describe, expect, it } from 'vitest';
+import {
+  CAST_DOCTRINE,
+  CAST_ENGAGE_FAVOUR_BPS,
+  HeuristicCast,
+  type CastMember,
+} from '../../src/cast/index.js';
+import { setSpeed } from '../../src/core/time.js';
+import type { PrincipalId, SystemId } from '../../src/core/types.js';
+import { BPS_ONE } from '../../src/core/units.js';
+import {
+  HULL_COST_GOODS,
+  simulateFit,
+  SLICES_PER_TICK,
+  WORLD_PRINCIPAL,
+  worldFleetProfile,
+} from '../../src/combat/index.js';
+import type { BattleLine } from '../../src/frames/contract.js';
+import { Runtime } from '../../src/sim/runtime.js';
+import { holdingOf, tierOf } from '../../src/world/index.js';
+
+/**
+ * The eight-member seeds whose raiders are seated on a Frontier gate. See the header.
+ *
+ * **Two, and asserted per seed rather than in aggregate**, because one of them is what makes the
+ * logistics branch detectable at all: with `crewMove` deleted `fz-13` still fights (its hands happen to
+ * be home when the world arrives) and `g16` builds three hulls and flies **none** — `engage: 0`, zero
+ * wrecks. An aggregate over both would pass with the branch removed, which is the vacuous shape this
+ * project keeps finding and which the first version of this file had.
+ */
+export const WAR_SEEDS = ['fz-13', 'g16'] as const;
+
+/** Seeds the balance half is asserted over. The four the territorial gate was measured on. */
+const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
+
+interface Wreck {
+  readonly battle: string;
+  readonly principal: PrincipalId;
+  readonly hull: string;
+  readonly tick: number;
+}
+
+interface Answered {
+  readonly raid: string;
+  readonly answer: string;
+  /** The verdict the published view showed **at the tick the answer was sent**. */
+  readonly verdictWhenAnswered: string;
+  readonly state: string;
+  readonly lost: number;
+}
+
+interface War {
+  readonly runtime: Runtime;
+  readonly cast: HeuristicCast;
+  readonly verbs: Map<string, number>;
+  readonly refusals: Map<string, number>;
+  /** Hull classes built, in build order, by principal. */
+  readonly built: Map<string, string[]>;
+  /** The deepest state each battle reached, and whether one of ours was standing in it. */
+  readonly battles: Map<string, { deepest: string; ours: number; sides: Set<string> }>;
+  /** Every wreck the run produced. **Accumulated per tick**, because the book PRUNES. */
+  readonly wrecks: Wreck[];
+  /** Raids this cast answered, with the reading it answered on. */
+  readonly answered: Answered[];
+  /** The richest `battleLines` any published frame carried. */
+  readonly lines: readonly BattleLine[];
+}
+
+const STATES = ['MUSTER', 'CONTACT', 'CONTEST', 'BREAK', 'AFTERMATH'] as const;
+
+/**
+ * Run a world nobody steers and tally what its combat actually did.
+ *
+ * **The wreck tally is accumulated inside the loop and that is not a style choice.** `Book.prune`
+ * drops settled engagements once the book is over `MAX_ENGAGEMENT_ROWS`, and a settled battle's
+ * wrecks go with it — so a tally read at the end of a 900-tick run reports **zero wrecks on a run
+ * that destroyed nine hulls**. Measured exactly that way before this comment existed.
+ */
+function play(seed: string, ticks: number, size = 8): War {
+  setSpeed('instant');
+  const runtime = new Runtime({ seed });
+  const cast = new HeuristicCast(runtime, { size });
+  cast.seat(seed);
+  const verbs = new Map<string, number>();
+  const refusals = new Map<string, number>();
+  const built = new Map<string, string[]>();
+  const battles = new Map<string, { deepest: string; ours: number; sides: Set<string> }>();
+  const wrecks: Wreck[] = [];
+  const seenWreck = new Set<string>();
+  const answered: Answered[] = [];
+  const answeredAt = new Map<string, string>();
+  const mine = new Set(cast.roster.map((m) => String(m.principal)));
+  let lines: readonly BattleLine[] = [];
+
+  for (let n = 0; n < ticks; n += 1) {
+    const tick = runtime.engine.tick + 1;
+    // The reading each member would answer on, captured BEFORE the tick applies its actions. That
+    // is the number `raidAnswerFor` decided from, and comparing it to the resolution is the only way
+    // to catch a force reading that leaked away during the window.
+    const readingNow = new Map<string, string>();
+    for (const member of cast.roster) {
+      for (const view of runtime.raidsFor(member.principal, runtime.engine.tick, 8)) {
+        if (view.your_side !== 'TARGET') continue;
+        readingNow.set(view.raid, view.force.verdict_if_resolved_now);
+      }
+    }
+    for (const action of cast.decide(tick, seed)) runtime.engine.submit(action);
+    const report = runtime.runTick();
+    expect(
+      report.halted,
+      `halted at ${String(report.tick)}: ${report.violations.map((v) => `${v.id} ${v.message}`).join(' | ')}`,
+    ).toBe(false);
+
+    for (const entry of runtime.engine.log.forTick(report.tick)) {
+      if (entry.outcome === 'REFUSED' && entry.rejection !== null) {
+        const key = `${entry.verb} ${entry.rejection.invariant}`;
+        refusals.set(key, (refusals.get(key) ?? 0) + 1);
+        continue;
+      }
+      verbs.set(entry.verb, (verbs.get(entry.verb) ?? 0) + 1);
+      const params = entry.params as Record<string, unknown>;
+      if (entry.verb === 'build' && params['kind'] === 'HULL') {
+        const list = built.get(String(entry.principal)) ?? [];
+        list.push(String(params['hull']));
+        built.set(String(entry.principal), list);
+      }
+      if (entry.verb === 'fight' || entry.verb === 'yield') {
+        const raid = String(params['raid']);
+        answeredAt.set(raid, `${entry.verb}|${readingNow.get(raid) ?? 'UNSEEN'}`);
+      }
+    }
+
+    for (const record of runtime.battles.all()) {
+      const held = battles.get(record.id) ?? { deepest: record.state, ours: 0, sides: new Set<string>() };
+      if (STATES.indexOf(record.state) >= STATES.indexOf(held.deepest as (typeof STATES)[number])) {
+        held.deepest = record.state;
+      }
+      for (const formation of record.formations) {
+        held.sides.add(formation.side);
+        if (mine.has(String(formation.principal))) held.ours = Math.max(held.ours, formation.hands.length);
+      }
+      battles.set(record.id, held);
+      for (const wreck of record.wrecks) {
+        const key = `${record.id}:${wreck.hand}:${String(wreck.tick)}`;
+        if (seenWreck.has(key)) continue;
+        seenWreck.add(key);
+        wrecks.push({ battle: record.id, principal: wreck.principal, hull: wreck.hull, tick: wreck.tick });
+      }
+    }
+    const frame = runtime.reckoningFrame();
+    if (frame !== null && frame.battleLines.length > lines.length) lines = frame.battleLines;
+  }
+
+  for (const raid of runtime.raids.all()) {
+    const record = answeredAt.get(raid.id);
+    if (record === undefined) continue;
+    const [answer, verdict] = record.split('|');
+    answered.push({
+      raid: raid.id,
+      answer: answer ?? '?',
+      verdictWhenAnswered: verdict ?? '?',
+      state: raid.state,
+      lost: raid.lostQty,
+    });
+  }
+
+  return { runtime, cast, verbs, refusals, built, battles, wrecks, answered, lines };
+}
+
+/** Where a member's body stands now. */
+function bodyOf(runtime: Runtime, member: CastMember): SystemId {
+  return holdingOf(runtime.world, member.principal).system;
+}
+
+describe('★ the cast builds a fleet out of goods it produced, and flies it', () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE ASSERTION THE WHOLE CHANGE EXISTS TO MAKE, AND THE VACUOUS VERSION OF IT.**
+   *
+   * "A battle happened" is *not* the claim. A member that answers FIGHT with hands and no hulls gets
+   * a battle too: `runBattles` opens one over any standoff answered FIGHT, `mustWorldFleet` gives the
+   * world its LANCEs, and the engagement runs MUSTER → CONTACT → CONTEST → AFTERMATH with **one side
+   * empty**. Measured: three of the four territorial gate seeds produce exactly that, and a test that
+   * asserted `battles.size > 0` would have passed on a world where no hull was ever built.
+   *
+   * So the assertion is `ours >= 1` **and** the deepest state reached is CONTEST or later: a
+   * formation this cast commanded, on a field, past the tick where damage starts.
+   *
+   * MUTATION: delete the `crewMove` call from `decideOne` — RED here, because `brannock`'s three
+   * hands stay scattered across `sys-25`, `sys-29` and `sys-08` and `engage` refuses a hull with no
+   * crew. That is the exact failure this branch was written from.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('builds the doctrine at a FRONTIER berth and brings a formation to CONTEST', () => {
+    for (const seed of WAR_SEEDS) oneWar(seed);
+  }, 600_000);
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A HULL IS DESTROYED, WHICH IS THE ONLY IRREVERSIBLE THING IN THE LAYER (A5).**
+   *
+   * The wreck tally is accumulated per tick because `Book.prune` drops settled engagements — read at
+   * the end of a 900-tick run the same world reports **zero**. That is the "invariant whose subject
+   * cannot occur" failure wearing a retention policy, and it cost the first version of this test.
+   *
+   * MUTATION: raise {@link CAST_ENGAGE_FAVOUR_BPS} to 10_000_000 (never favoured) — RED, because
+   * nothing is ever committed and nothing of the world's is ever shot at.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('destroys hulls, permanently, on the public record', () => {
+    for (const seed of WAR_SEEDS) oneKill(seed);
+  }, 600_000);
+
+  /**
+   * A13: **THE BATTLE LINE**, on a frame a viewer is served.
+   *
+   * Two lines of bars is the signature, so the assertion is on the *pair*: a frame carrying only the
+   * world's formations is the same picture as surrender, which is precisely what A13 calls having no
+   * pixel signature.
+   *
+   * MUTATION: set {@link BATTLE_LINE_RETAIN_TICKS} back to 2 — RED on both seeds, which is the state
+   * combat shipped in.
+   */
+  it('publishes THE BATTLE LINE with two sides on it', () => {
+    for (const seed of WAR_SEEDS) oneLine(seed);
+  }, 600_000);
+});
+
+/** One war seed's fleet, asserted per seed. See {@link WAR_SEEDS} on why not in aggregate. */
+function oneWar(seed: string): void {
+    const war = play(seed, 900);
+
+    // ── The supply chain, not the faucet ──────────────────────────────────
+    const armed = war.cast.roster.filter((m) => war.runtime.fleet.of(m.principal).length > 0);
+    expect(
+      armed.length,
+      'no cast member built a hull. `fuel` exists only at FRONTIER systems, so this is either the ' +
+        'seating (see the header) or the arming branch — check `frontier` in scratch/scan before ' +
+        'touching the gate.',
+    ).toBeGreaterThan(0);
+    for (const member of armed) {
+      const berth = bodyOf(war.runtime, member);
+      expect(
+        tierOf(war.runtime.world.map, berth),
+        `${member.handle} built at ${berth}, which is not the Frontier — and fuel exists nowhere else`,
+      ).toBe('FRONTIER');
+      // Built from the doctrine, in the doctrine's order. The order is load-bearing: the buffer is
+      // bought before the tackle, because a member that builds the frigate first and then cannot
+      // afford a line ship has a tackle hull and nothing to tackle for.
+      const order = war.built.get(String(member.principal)) ?? [];
+      expect(order.length, `${member.handle} owns hulls it never built`).toBeGreaterThan(0);
+      for (const [index, hull] of order.entries()) {
+        expect(hull, `${member.handle}'s ship ${String(index)} is off-doctrine`).toBe(
+          CAST_DOCTRINE[index]?.hull,
+        );
+      }
+      // And the goods went into it. A hull is `ration` the Levy will never see again.
+      expect(
+        war.runtime.fleet.of(member.principal).every((h) => h.location === berth),
+        'a hull is berthed where it was built and never travels',
+      ).toBe(true);
+    }
+
+    // ── A formation of ours, past the tick damage starts ───────────────────
+    const contested = [...war.battles.values()].filter(
+      (b) => b.ours >= 1 && STATES.indexOf(b.deepest as (typeof STATES)[number]) >= STATES.indexOf('CONTEST'),
+    );
+    expect(
+      contested.length,
+      'battles happened and this cast never had a formation in one past MUSTER. A FIGHT answered with ' +
+        'hands and no hulls produces a battle with one side empty, which is what a naive ' +
+        '"did a battle happen" assertion passes on.',
+    ).toBeGreaterThan(0);
+    for (const battle of contested) {
+      expect(battle.sides.has('RAIDER'), 'and the world was on the other side of it').toBe(true);
+      expect(battle.sides.has('DEFENDER'), 'and we were on ours').toBe(true);
+    }
+    expect(war.verbs.get('engage') ?? 0, `${seed}: \`engage\` was submitted and accepted`).toBeGreaterThan(0);
+}
+
+/** One war seed's losses. */
+function oneKill(seed: string): void {
+    const war = play(seed, 900);
+    expect(
+      war.wrecks.length,
+      'no hull was destroyed in the whole run. A5 makes loss permanent and public and there is nothing ' +
+        'to be permanent about.',
+    ).toBeGreaterThan(0);
+    // The world's, at least — which is what says our guns fired rather than that we were shot at.
+    const worldLost = war.wrecks.filter((w) => w.principal === WORLD_PRINCIPAL);
+    expect(
+      worldLost.length,
+      'every wreck belongs to this cast, so the fleet has only ever been a target. `worldFleetProfile` ' +
+        'is public exactly so a defender can compute whether it can win.',
+    ).toBeGreaterThan(0);
+    // A wreck names a hull the catalogue knows, at a tick, and the fleet book agrees it is gone.
+    for (const wreck of war.wrecks) {
+      expect(wreck.tick, 'a wreck is dated').toBeGreaterThan(0);
+      if (wreck.principal === WORLD_PRINCIPAL) continue;
+      const gone = war.runtime.fleet
+        .all()
+        .filter((h) => h.owner === wreck.principal && h.state === 'WRECKED');
+      expect(
+        gone.length,
+        `${String(wreck.principal)} is recorded as having lost a ${wreck.hull} and its fleet book still ` +
+          'holds no wreck. Two homes for one fact disagreeing is A5′ with a warship in it.',
+      ).toBeGreaterThan(0);
+    }
+}
+
+/** One war seed's frame. */
+function oneLine(seed: string): void {
+    const war = play(seed, 900);
+    expect(
+      war.lines.length,
+      `${seed}: \`battleLines\` is empty on every published frame`,
+    ).toBeGreaterThan(0);
+    const both = war.lines.filter(
+      (line) =>
+        line.formations.some((f) => f.side === 'RAIDER') &&
+        line.formations.some((f) => f.side === 'DEFENDER'),
+    );
+    expect(
+      both.length,
+      'every battle line on every frame has one side only — the world turned up and nobody contested ' +
+        'it, which renders identically to peace',
+    ).toBeGreaterThan(0);
+    for (const line of both) {
+      expect(line.gap, 'the gap is the motion, and it is inside the range table').toBeGreaterThanOrEqual(0);
+      expect(line.gap).toBeLessThanOrEqual(4);
+      expect(line.rangeName.length, 'and it carries the word, so the client needs no lookup').toBeGreaterThan(0);
+      for (const formation of line.formations) {
+        expect(formation.ehpBps, 'a bar height is a FRACTION, never an absolute').toBeLessThanOrEqual(10_000);
+        expect(formation.ehpBps).toBeGreaterThanOrEqual(0);
+      }
+    }
+}
+
+describe('★ THE BALANCE GATE — a fleet must not make the tribute harder', () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A HULL IS PAID FOR IN THE GOOD EVERY OBLIGATION IN THIS GAME IS DENOMINATED IN.**
+   * `HULL_COST_GOODS.frame` is `WORKS_GOOD`, which equals `LEVY_GOOD` and `CHARGE_GOOD`, so three
+   * ships are 3,400 units of a tribute that runs ~20,000 a Reckoning — and unlike a WORKS or an
+   * anchor there is **no salvage**, so every unit of it can leave the world in one battle.
+   *
+   * The territorial gate is the precedent and the warning: the naive claim branch took `levyShort`
+   * from 0 to 14,792. So the two meters that decide whether territory was safe to open decide the
+   * same thing here, on the same four seeds, plus the war seed where a fleet actually exists.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('levyShort stays ZERO and no tribute line goes red, with a fleet on the board', () => {
+    for (const seed of [...GATE_SEEDS, ...WAR_SEEDS]) {
+      const war = play(seed, 900);
+      const frame = war.runtime.reckoningFrame();
+      expect(frame, `${seed}: no frame`).not.toBeNull();
+      expect(frame?.meters.levyShort ?? -1, `${seed}: the Levy went short`).toBe(0);
+      expect(
+        (frame?.tributeLines ?? []).filter((l) => l.state === 'RED').length,
+        `${seed}: a tribute line is RED`,
+      ).toBe(0);
+    }
+  }, 900_000);
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE CLAUSE THAT MAKES THE ARMING BRANCH SAFE, AS A PROPERTY.** `hullFor` refuses to build
+   * unless {@link CAST_ARMS_RESERVE_MULTIPLE} of the price is still standing at the berth in **both**
+   * goods, and unless every Charge owed there is covered after the spend. So a member that owns a
+   * fleet is never a member that owes goods it cannot reach.
+   *
+   * Asserted on the state rather than on the branch, exactly as the territorial gate learned to: a
+   * test that `hullFor` returned null in some case is a test of a function, and what has to be true
+   * is that no claim carries arrears while its holder owns warships.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('a member that owns hulls is not a member in arrears', () => {
+    for (const seed of WAR_SEEDS) {
+    const war = play(seed, 900);
+    const armed = war.cast.roster.filter((m) => war.runtime.fleet.of(m.principal).length > 0);
+    expect(armed.length, 'nobody armed, so this proves nothing').toBeGreaterThan(0);
+    for (const member of armed) {
+      for (const claim of war.runtime.claimsFor(member.principal)) {
+        expect(
+          claim.arrears,
+          `${member.handle} owns ${String(war.runtime.fleet.of(member.principal).length)} hulls and ` +
+            `${claim.system} is in arrears — the fleet was bought out of the Charge`,
+        ).toBe(0);
+      }
+      // And the fuel the anchor burns was never the fuel that paid for a hull.
+      const berth = bodyOf(war.runtime, member);
+      const due = war.runtime.claimsFor(member.principal).find((c) => c.system === berth)?.fuel_due ?? 0;
+      expect(
+        Number(war.runtime.goodsAt(member.principal, berth, HULL_COST_GOODS.fuel)),
+        `${member.handle}'s anchor needs ${String(due)} fuel and the fleet spent it`,
+      ).toBeGreaterThanOrEqual(due);
+    }
+    }
+  }, 600_000);
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE FORCE READING IS TAKEN AGAIN AT RESOLUTION, AND THE CAST USED TO SPEND ITS OWN ANSWER.**
+   *
+   * `handsDefending` counts only **IDLE** hands present at the stage, and `readForce` re-reads it at
+   * the window's end. So filling a role with a hand standing at the stage — or walking it toward the
+   * Levy — silently un-answers a FIGHT already given, and the standoff flips from taking nothing to
+   * taking twice the demand.
+   *
+   * Measured before the reservation existed: seed `gate-c` answered FIGHT twice and one came back
+   * **`FIGHT/PLUNDERED`**. This asserts the property that makes that impossible: a FIGHT answered on
+   * a reading that said REPULSED must **resolve** REPULSED.
+   *
+   * The converse is deliberately NOT asserted. `raidAnswerFor`'s fleet clause answers FIGHT on a
+   * PLUNDERED reading on purpose — see its doc comment on why winning a battle against the world
+   * cannot win the standoff — so a `FIGHT/PLUNDERED` whose reading was already PLUNDERED is a
+   * decision, not a leak.
+   *
+   * MUTATION: delete the `mustered` filter from the `fill_role` branch — RED on `gate-c`.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('a FIGHT answered on a winning reading is still winning at resolution', () => {
+    let winnable = 0;
+    for (const seed of [...GATE_SEEDS, ...WAR_SEEDS]) {
+      const war = play(seed, 900);
+      for (const row of war.answered) {
+        if (row.answer !== 'fight' || row.verdictWhenAnswered !== 'REPULSED') continue;
+        winnable += 1;
+        expect(
+          row.state,
+          `${seed}: ${row.raid} was answered FIGHT on a REPULSED reading and resolved ${row.state}, ` +
+            `losing ${String(row.lost)}. The hands that were the answer were spent during the window.`,
+        ).toBe('REPULSED');
+      }
+    }
+    expect(
+      winnable,
+      'no raid in any of these seeds was answered FIGHT on a winning reading, so the assertion above ' +
+        'never ran. That is the vacuous shape this project keeps finding: a green test over a subject ' +
+        'that cannot occur.',
+    ).toBeGreaterThan(0);
+  }, 900_000);
+});
+
+describe('the doctrine is the one that wins, and the arithmetic says so', () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE AFFORDANCE MENU OFFERS THE HULL THAT LOSES, AND THE CAST DELIBERATELY DOES NOT FLY IT.**
+   *
+   * `api/observe.ts` offers one `build {kind:"HULL"}` — a PIKE on a tackle fit — and argues for it
+   * well: cheapest hull, §3 MUST-1's *"best answer to how can a new agent matter immediately"*.
+   * Measured against the world's own fleet it is also a trap: `scripts/combat-sim.ts`'s `SWARM`
+   * (three PIKEs) went **0 won · 2 lost**, losing all three hulls both times, where two missile
+   * WARDENs and a PIKE went **4 won · 0 lost**. Three PIKEs bring 1,200 EHP against a force-2 raid's
+   * 1,400 and a force-5 raid's 3,500.
+   *
+   * So this test pins the *reason* the cast flies WARDENs, in the same units the strength gate uses,
+   * rather than pinning the names. MUTATION: make {@link CAST_DOCTRINE}'s first ship a PIKE — RED.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it("the first ship built out-trades a force-3 world raid on its own; a PIKE would not", () => {
+    const world = worldFleetProfile();
+    expect(world, 'the world must be able to field its fleet').not.toBeNull();
+    if (world === null) return;
+    const worldStrength = 3 * (world.ehp + world.alpha * SLICES_PER_TICK);
+
+    const lead = CAST_DOCTRINE[0];
+    expect(lead, 'the doctrine must have a first ship').toBeDefined();
+    if (lead === undefined) return;
+    const simulated = simulateFit(lead.hull, lead.modules);
+    expect(simulated.ok, `the doctrine's lead ship does not fit: ${simulated.ok ? '' : simulated.hint}`).toBe(
+      true,
+    );
+    if (!simulated.ok) return;
+    const ours = simulated.value.ehp + simulated.value.alpha * SLICES_PER_TICK;
+    expect(
+      ours * BPS_ONE,
+      `the lead ship is ${String(ours)} against a force-3 world raid's ${String(worldStrength)}, which does ` +
+        `not clear CAST_ENGAGE_FAVOUR_BPS. The strength gate would then refuse every commit and the ` +
+        `fleet would be a monument.`,
+    ).toBeGreaterThanOrEqual(worldStrength * CAST_ENGAGE_FAVOUR_BPS);
+
+    // The negative half: the menu's PIKE, alone, does not clear it — which is why the cast does not
+    // copy the affordance verbatim, and why that decision is written down rather than assumed.
+    const pike = simulateFit('PIKE', ['SMALL_GUN', 'POINT', 'WEB', 'AFTERBURNER']);
+    expect(pike.ok, 'the menu offers a fit that must at least be legal').toBe(true);
+    if (!pike.ok) return;
+    const alone = pike.value.ehp + pike.value.alpha * SLICES_PER_TICK;
+    expect(
+      alone * BPS_ONE,
+      'a single starter PIKE clears the strength gate against three world LANCEs. If that is now true, ' +
+        'the cast should be flying the hull the menu offers and this whole doctrine is a needless ' +
+        'divergence from the affordance an agent is shown.',
+    ).toBeLessThan(worldStrength * CAST_ENGAGE_FAVOUR_BPS);
+  });
+
+  /**
+   * The negative half of the arming branch, and it is not decoration: `buildHullRefusal` makes a
+   * Commons berth **invalid** (A8 — *"a shipyard inside a place nobody may attack would make the
+   * sanctuary the arsenal"*), so a cast that asked anyway would generate one refusal per tick
+   * forever, which is the AGT-S3 noise that buries real defects.
+   */
+  it('never asks for a hull in the Commons, and never gets refused for one', () => {
+    const war = play('gate-a', 640);
+    const commons = war.cast.roster.filter(
+      (m) => tierOf(war.runtime.world.map, bodyOf(war.runtime, m)) === 'COMMONS',
+    );
+    expect(commons.length, 'the Commons must have residents or this proves nothing').toBeGreaterThan(0);
+    for (const member of commons) {
+      expect(
+        war.runtime.fleet.of(member.principal).length,
+        `${member.handle} stands in the Commons and owns a hull`,
+      ).toBe(0);
+    }
+    for (const [key, count] of war.refusals) {
+      expect(key.startsWith('build A8'), `${String(count)} × ${key}: a predictable refusal, repeated`).toBe(
+        false,
+      );
+    }
+    expect(war.verbs.get('engage') ?? 0, 'and nothing engaged, because nothing was armed').toBe(0);
+  }, 300_000);
+});
