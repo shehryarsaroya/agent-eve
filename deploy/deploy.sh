@@ -92,8 +92,23 @@ if [[ "$TARGET" == "api" || "$TARGET" == "sim" || "$TARGET" == "all" ]]; then
   # extension (correct for compiled ESM), and Node's --experimental-strip-types does
   # not rewrite those to `.ts`, so running src/ raw dies on the first relative import.
   # Building makes the extensions true rather than aspirational.
+  # ── A FAILED BUILD USED TO REPORT SUCCESS ─────────────────────────────────
+  #
+  # This line was `npm run build 2>&1 | tail -2`, and a pipeline exits with the status of
+  # its LAST command — so `tail` returning 0 hid every compile error, the script printed
+  # "compiled to dist/", and the restart below brought the service back up on whatever
+  # `dist/` happened to be there from the previous deploy. A deploy that says it worked
+  # while production runs older code is scar #4's shape by a different route: the failure
+  # is invisible from the server side, everything looks right, and the only symptom is that
+  # the change you shipped is not there.
+  #
+  # No pipe, so ssh returns the remote exit status; the log is tailed separately.
   log "building"
-  $SSH "cd $CODE_DIR/engine && npm run build 2>&1 | tail -2"
+  $SSH "cd $CODE_DIR/engine && npm run build > /tmp/compact-build.log 2>&1" || {
+    $SSH "tail -30 /tmp/compact-build.log" || true
+    fail "the build FAILED on the server — dist/ is stale and the service was NOT restarted"
+  }
+  $SSH "tail -2 /tmp/compact-build.log" || true
   ok "compiled to dist/"
 
   # Devtime deps were needed for the build; drop them now so the runtime module path
@@ -291,6 +306,25 @@ FRAME=$(curl -s --max-time 20 https://agentinsurance.io/compact/frames/latest.js
 grep -qv '<!DOCTYPE' <<<"$FRAME" || fail "frames/latest.json fell through to index.html — the client polls this and would parse HTML as a frame"
 grep -q '{' <<<"$FRAME" || fail "frames/latest.json is not JSON (got: ${FRAME:0:60})"
 ok "the spectator frame is served as JSON"
+
+# THE ARCHIVE, FETCHED THE WAY A VIEWER REACHES IT.
+#
+# D23 #5 reported `frames/r-15.json` as a 404 and read it as "the per-Reckoning archive
+# is not served". It was served the whole time: frames are padded to six digits, so the
+# file is `r-000015.json`, and nothing published that naming rule — so the history was
+# reachable and undiscoverable, which for a viewer is the same thing. The index is the
+# fix, and it is checked the same way the frame is: by fetching the URL and reading the
+# body, because a 200 carrying HTML looks like success to everything but the parser.
+IDX=$(curl -s --max-time 20 https://agentinsurance.io/compact/frames/index.json | head -c 200)
+grep -qv '<!DOCTYPE' <<<"$IDX" || fail "frames/index.json fell through to index.html — the history strip would parse HTML as an index"
+grep -q '"reckonings"' <<<"$IDX" || fail "frames/index.json carries no reckonings (got: ${IDX:0:80})"
+# And the file it names must actually be there. A table of contents with a broken link in
+# it is worse than no table of contents, because a viewer blames the show.
+ARCHIVED=$(sed -n 's/.*"file":"\(r-[0-9]*\.json\)".*/\1/p' <<<"$IDX" | head -1)
+[[ -n "$ARCHIVED" ]] || fail "frames/index.json names no archive file"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://agentinsurance.io/compact/frames/$ARCHIVED" || echo 000)
+[[ "$CODE" == "200" ]] || fail "the index names $ARCHIVED and it returns $CODE — the archive has a broken link in it"
+ok "the archive is indexed and $ARCHIVED resolves"
 
 # Post-deploy health has TWO distinct questions, and conflating them was a bug:
 # "did the deploy work" vs "is a live run in progress". The service being up with a

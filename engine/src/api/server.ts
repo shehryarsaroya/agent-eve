@@ -50,7 +50,7 @@ import {
   ticksToMs,
   type Clock,
 } from '../core/time.js';
-import { publishFrame } from '../frames/write.js';
+import { publishFrame, publishReplayedFrame } from '../frames/write.js';
 import { costOf } from '../tick/index.js';
 import { createCast, type Cast } from '../cast/index.js';
 import { Runtime, RULES_VERSION } from '../sim/runtime.js';
@@ -2034,6 +2034,12 @@ async function bootTheWorld(
       },
       onProgress: (tick, head) => {
         gate.progress(tick, head);
+        // Republish every Reckoning the replay crosses. Without this the ONLY publisher is
+        // the live tick loop, so a restart that swallowed a settlement tick lost that
+        // night's frame permanently, and a renderer change reached a viewer only at the
+        // next settlement — up to a whole Reckoning of wall clock after the deploy. See
+        // `frames/write.ts:publishReplayedFrame`; unchanged Reckonings are a no-op write.
+        publishReplayedFrame(options.framesDir, tick, () => runtime.reckoningFrame());
       },
     });
     // Replay is over; everything after this tick is live play. The census forgets the

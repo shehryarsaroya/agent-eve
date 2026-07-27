@@ -6,15 +6,36 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { emptyFrame } from '../../src/frames/render.js';
-import { LATEST, frameFileName, publishFrame, serialiseFrame } from '../../src/frames/write.js';
+import {
+  FRAME_INDEX,
+  LATEST,
+  frameFileName,
+  frameIndexRow,
+  publishFrame,
+  publishReplayedFrame,
+  serialiseFrame,
+  type FrameIndex,
+} from '../../src/frames/write.js';
 import { CanonicalError } from '../../src/core/canonical.js';
+import { TICKS_PER_RECKONING, isSettlementTick } from '../../src/core/time.js';
 
 function dir(): string {
   return mkdtempSync(join(tmpdir(), 'compact-frames-'));
+}
+
+function index(d: string): FrameIndex {
+  return JSON.parse(readFileSync(join(d, FRAME_INDEX), 'utf8')) as FrameIndex;
+}
+
+/** The tick Reckoning `n` settles on. */
+function settlesAt(n: number): number {
+  const t = n * TICKS_PER_RECKONING + (TICKS_PER_RECKONING - 1);
+  if (!isSettlementTick(t)) throw new Error(`test arithmetic is wrong: ${String(t)} is not a settlement tick`);
+  return t;
 }
 
 describe('publishFrame', () => {
@@ -72,5 +93,172 @@ describe('publishFrame', () => {
   it('refuses a negative or fractional Reckoning index', () => {
     expect(() => frameFileName(-1)).toThrow(/non-negative integer/);
     expect(() => frameFileName(1.5)).toThrow(/non-negative integer/);
+  });
+});
+
+/**
+ * THE ARCHIVE'S TABLE OF CONTENTS.
+ *
+ * D23 #5 read as "the per-Reckoning archive is not served". It was: the audit fetched
+ * `r-15.json` and the file is `r-000015.json`. What was genuinely missing is anything that
+ * published the naming rule or the set of indices, so no client could reach a Reckoning it
+ * was not already looking at, and §14's replay had nothing to read.
+ */
+describe('the archive index', () => {
+  it('names every published Reckoning and the file it actually lives in', () => {
+    const d = dir();
+    publishFrame(d, emptyFrame(15, settlesAt(15), 'h15'));
+    const rows = index(d).reckonings;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.reckoning).toBe(15);
+    // The whole point: the padded filename is PUBLISHED rather than guessed at. An
+    // unpadded guess is exactly the 404 the audit reported.
+    expect(rows[0]?.file).toBe('r-000015.json');
+    expect(readdirSync(d)).toContain(rows[0]?.file);
+  });
+
+  it('orders numerically, so a timeline past nine nights still reads in sequence', () => {
+    // DET-1: a bare `.sort()` puts 10 before 2. On this file that is a history strip that
+    // reads out of order for every archive older than nine Reckonings.
+    const d = dir();
+    for (const n of [2, 10, 1]) publishFrame(d, emptyFrame(n, settlesAt(n), `h${String(n)}`));
+    expect(index(d).reckonings.map((r) => r.reckoning)).toEqual([1, 2, 10]);
+  });
+
+  it('carries no field the published frame does not', () => {
+    // The §11.2 argument, executable. `frameIndexRow` takes a whole `ReckoningFrame` — a
+    // value that already passed `assertInertPublicFacts` — so the index cannot disclose
+    // anything the frame beside it does not. `file` is the one exception and is the naming
+    // rule itself, which is the fact this index exists to publish.
+    const frame = emptyFrame(4, settlesAt(4), 'h4');
+    const row = frameIndexRow(frame);
+    const published = JSON.parse(serialiseFrame(frame)) as Record<string, unknown> & {
+      meters: Record<string, unknown>;
+      rundown: unknown[];
+    };
+    expect(row.reckoning).toBe(published['reckoningIndex']);
+    expect(row.tick).toBe(published['tick']);
+    expect(row.stateHash).toBe(published['stateHash']);
+    expect(row.levyShort).toBe(published.meters['levyShort']);
+    expect(row.kept).toBe(published.meters['kept']);
+    expect(row.broken).toBe(published.meters['broken']);
+    expect(row.beats).toBe(published.rundown.length);
+    expect(Object.keys(row).sort((a, b) => (a < b ? -1 : 1))).toEqual([
+      'beats',
+      'broken',
+      'file',
+      'kept',
+      'levyShort',
+      'reckoning',
+      'stateHash',
+      'tick',
+    ]);
+  });
+
+  it('upserts rather than duplicating when a Reckoning is republished', () => {
+    const d = dir();
+    publishFrame(d, emptyFrame(3, settlesAt(3), 'h3'));
+    publishFrame(d, emptyFrame(3, settlesAt(3), 'h3'));
+    expect(index(d).reckonings).toHaveLength(1);
+  });
+
+  it('rebuilds from a corrupt table of contents rather than refusing to publish', () => {
+    // A damaged derivative must never take the show down. Boot replay walks every settled
+    // Reckoning in order, so the next restart refills the whole table from the record.
+    const d = dir();
+    writeFileSync(join(d, FRAME_INDEX), 'not json at all', 'utf8');
+    publishFrame(d, emptyFrame(6, settlesAt(6), 'h6'));
+    expect(index(d).reckonings.map((r) => r.reckoning)).toEqual([6]);
+  });
+});
+
+/**
+ * REPUBLISHING ON BOOT REPLAY.
+ *
+ * The live tick loop was the only publisher, so a restart whose replay swallowed a
+ * settlement tick lost that night's frame permanently — and a renderer change reached a
+ * viewer only at the next settlement, up to a whole Reckoning of wall clock later. Sixty
+ * restarts in one day were measured on the deployed world.
+ */
+describe('publishReplayedFrame', () => {
+  it('publishes the Reckoning a replayed settlement tick just settled', () => {
+    const d = dir();
+    const w = publishReplayedFrame(d, settlesAt(9), () => emptyFrame(9, settlesAt(9), 'h9'));
+    expect(w?.file).toBe('r-000009.json');
+    expect(readdirSync(d)).toContain('r-000009.json');
+  });
+
+  it('does not render on a non-settlement tick', () => {
+    // A frame render is a whole-world read. Doing it on all 5,000 replayed ticks would turn
+    // a two-minute boot into an outage, so the guard is the cheap one and comes first.
+    const d = dir();
+    let rendered = 0;
+    for (const tick of [0, 1, 100, 286]) {
+      publishReplayedFrame(d, tick, () => {
+        rendered += 1;
+        return emptyFrame(0, tick, 'h');
+      });
+    }
+    expect(rendered).toBe(0);
+    expect(readdirSync(d)).toEqual([]);
+  });
+
+  it('does nothing at all when no frames directory is configured', () => {
+    let rendered = 0;
+    expect(
+      publishReplayedFrame(null, settlesAt(1), () => {
+        rendered += 1;
+        return emptyFrame(1, settlesAt(1), 'h');
+      }),
+    ).toBeNull();
+    expect(rendered).toBe(0);
+  });
+
+  it('reports and swallows a render or write failure instead of stopping the replay', () => {
+    // The world reproducing its own record outranks the show. A budget violation in some
+    // historical night must not stop a boot.
+    const d = dir();
+    const said: string[] = [];
+    const w = publishReplayedFrame(
+      d,
+      settlesAt(2),
+      () => {
+        throw new Error('a historical night violates a budget that did not exist then');
+      },
+      (m) => said.push(m),
+    );
+    expect(w).toBeNull();
+    expect(said.join('')).toMatch(/republish failed at replayed tick/);
+  });
+
+  it('is a no-op write when the bytes have not moved', () => {
+    // Sixty restarts a day would otherwise restamp the whole archive, destroying the one
+    // cheap operator signal for when a Reckoning actually landed and quietly contradicting
+    // the `immutable` cache-control those files are served under.
+    const d = dir();
+    const first = publishFrame(d, emptyFrame(8, settlesAt(8), 'h8'));
+    expect(first.rewritten).toBe(true);
+    const before = statSync(join(d, first.file)).mtimeMs;
+    const again = publishReplayedFrame(d, settlesAt(8), () => emptyFrame(8, settlesAt(8), 'h8'));
+    expect(again?.rewritten).toBe(false);
+    expect(statSync(join(d, first.file)).mtimeMs).toBe(before);
+  });
+
+  it('rewrites when the renderer has gained a field, which is how the archive backfills', () => {
+    const d = dir();
+    publishFrame(d, emptyFrame(11, settlesAt(11), 'h11'));
+    const grown = { ...emptyFrame(11, settlesAt(11), 'h11'), ticker: ['t287 a line the old renderer did not emit'] };
+    const again = publishReplayedFrame(d, settlesAt(11), () => grown);
+    expect(again?.rewritten).toBe(true);
+    const onDisk = JSON.parse(readFileSync(join(d, 'r-000011.json'), 'utf8')) as { ticker: string[] };
+    expect(onDisk.ticker).toHaveLength(1);
+  });
+
+  it('leaves the pointer and the index consistent with the newest replayed Reckoning', () => {
+    const d = dir();
+    for (const n of [0, 1, 2]) publishReplayedFrame(d, settlesAt(n), () => emptyFrame(n, settlesAt(n), `h${String(n)}`));
+    const latest = JSON.parse(readFileSync(join(d, LATEST), 'utf8')) as { reckoningIndex: number };
+    expect(latest.reckoningIndex).toBe(2);
+    expect(index(d).reckonings.map((r) => r.reckoning)).toEqual([0, 1, 2]);
   });
 });

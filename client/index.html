@@ -118,11 +118,44 @@
   .ticker div{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);
     padding:3px 0;border-bottom:1px dotted var(--rule)}
 
+  /* ── the archive strip ────────────────────────────────────────
+     Structural only. The owner does the visual design; this exists so the data is
+     present, correctly shaped and reachable. */
+  .hist{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px}
+  .hist button{
+    flex:0 0 auto;background:#fffdf7;border:1px solid var(--rule);cursor:pointer;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--ink-soft);
+    padding:7px 10px;text-align:left;line-height:1.5;
+  }
+  .hist button b{display:block;color:var(--ink);font-size:11.5px;letter-spacing:.1em}
+  .hist button[aria-current="true"]{border-color:var(--ink);border-left:3px solid var(--gold)}
+  .replay{border:1px solid var(--gold);background:#fbf6ea;padding:10px 14px;margin-bottom:18px;
+    font-family:var(--mono);font-size:11.5px;color:var(--ink-soft)}
+  .replay button{font-family:var(--mono);font-size:11px;cursor:pointer;margin-left:10px}
+
+  /* ── plain tabular surfaces (standings, hall of fame, places) ── */
+  .tbl{border:1px solid var(--rule);border-top:none}
+  .row{display:grid;gap:12px;padding:9px 14px;border-top:1px solid var(--rule);
+    background:#fffdf7;font-size:14px;align-items:baseline}
+  .row.st{grid-template-columns:minmax(110px,1.1fr) repeat(4,minmax(58px,.7fr)) minmax(90px,1fr)}
+  .row.hof{grid-template-columns:minmax(150px,1fr) minmax(110px,.7fr) 2fr}
+  .row.pl{grid-template-columns:minmax(110px,1fr) minmax(110px,1fr) 1.4fr}
+  .row.hd{background:#f2eee1;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-soft)}
+  .row b{font-weight:600}
+  .row .num{font-variant-numeric:tabular-nums}
+  .row .bad{color:var(--red)}
+  .row .note{color:var(--ink-soft);font-size:12.5px;font-style:italic}
+
   .empty{border:1px dashed var(--rule);padding:36px;text-align:center;color:var(--ink-soft);
     font-style:italic}
   .err{border-left:3px solid var(--red);background:#fbf1ee;padding:14px 16px;
     font-family:var(--mono);font-size:12.5px}
-  @media(max-width:640px){.saydo{grid-template-columns:1fr}.reel-l{grid-template-columns:1fr}}
+  @media(max-width:640px){
+    .saydo{grid-template-columns:1fr}.reel-l{grid-template-columns:1fr}
+    .row.st,.row.hof,.row.pl{grid-template-columns:1fr}
+    .row.hd{display:none}
+  }
 </style>
 </head>
 <body>
@@ -138,6 +171,19 @@
     <span id="m-status">loading…</span>
   </div>
 </header>
+
+<!--
+  THE ARCHIVE. Every settled Reckoning is written as its own immutable file and had no
+  table of contents, so a viewer could see the latest night and had no way to learn there
+  had been sixteen before it. frames/index.json publishes the set and the naming rule;
+  this strip is what makes the history clickable, which is what §14's replay needs.
+-->
+<section id="archive-sec">
+  <h2 class="sec">The archive &mdash; every Reckoning that has settled</h2>
+  <div class="hist" id="archive"></div>
+</section>
+
+<div id="replay-note"></div>
 
 <div class="meters" id="meters"></div>
 
@@ -174,6 +220,41 @@
 <section id="tribute-sec" style="margin-top:38px">
   <h2 class="sec">The Levy</h2>
   <div id="tribute"></div>
+</section>
+
+<!--
+  THE PUBLIC READ (§11.2: "standing: the public factual vectors").
+
+  Three blind probes independently reported the same gap: you cannot look up a
+  counterparty's record before dealing with them, which is the only moment it matters. The
+  frame has carried these vectors since they were added and no surface showed them.
+
+  A9 holds by construction: `standingRow` already serves exactly this row to every agent
+  through `observe`, including in `counterparties[]` about principals other than the
+  reader. Nothing here is a fact an agent's own observe would not answer.
+
+  NOT a score (§3). The vectors are stated; what they are worth is the reader's judgement.
+-->
+<section id="standings-sec" style="margin-top:38px">
+  <h2 class="sec">The directory &mdash; who has kept their word</h2>
+  <div id="standings"></div>
+</section>
+
+<!--
+  §16's world memory. Both are read-only projections over books that already exist, and
+  both are what tell a spectator arriving at Reckoning 40 that the map was EARNED rather
+  than configured. A place keeps the name of whoever first opened it whether or not they
+  still hold it — a world where losing everything also erases that you built the place is
+  a world with no history in it.
+-->
+<section id="hof-sec" style="margin-top:38px">
+  <h2 class="sec">The hall of fame</h2>
+  <div id="hof"></div>
+</section>
+
+<section id="places-sec" style="margin-top:38px">
+  <h2 class="sec">Named places</h2>
+  <div id="places"></div>
 </section>
 
 <section class="ticker" id="ticker-sec">
@@ -330,10 +411,17 @@ function renderTicker(lines) {
 // Authority lines carry principal ids; the map's rule is names, not ids (A13). Build a
 // principal→handle lookup from the cast chips already in the frame (docket + rundown),
 // and fall back to the id (minus its "p:" prefix) for anyone not currently on screen.
+//
+// `standings` is folded in because it is the only whole-population name table on the
+// frame: before it, every line about an agent that was not on tonight's docket rendered a
+// raw id, which A13 forbids and which reads to a stranger as a serial number.
 function handleMap(frame) {
   const m = new Map();
   const collect = (cast) => (cast || []).forEach((c) => {
     if (c && c.principal && c.handle) m.set(c.principal, c.handle);
+  });
+  (frame.standings || []).forEach((s) => {
+    if (s && s.principal && s.handle) m.set(s.principal, s.handle);
   });
   (frame.docket || []).forEach((c) => collect(c.cast));
   (frame.rundown || []).forEach((s) => collect(s.cast));
@@ -369,22 +457,42 @@ function renderAuthority(lines, m) {
 function renderRaids(lines, m) {
   const el = $('raids');
   if (!lines || lines.length === 0) {
-    el.innerHTML = '<div class="empty">No raid this Reckoning. The world spawns them on a published clock, so this is quiet rather than safe.</div>';
+    el.innerHTML = '<div class="empty">No raid this Reckoning. The world spawns them on a published clock, so this is quiet rather than safe — and nobody chose to open one of their own either, which they may: two per Reckoning, each with a name on it.</div>';
     return;
   }
-  const verdict = {
-    PAID: ['paid', 'the demand was met and nothing was taken'],
-    REPULSED: ['repulsed', 'the defenders held, and the stage is closed to raiders for a Reckoning'],
-    PLUNDERED: ['plundered', 'nobody stood in the way'],
-    MISSED: ['missed', 'the raid found nothing worth taking'],
-    DEMANDED: ['demanded', 'the window is still open'],
+  // ── TWO KINDS OF RAID, AND THE DIFFERENCE IS THE WHOLE STORY (§9, A13) ──────
+  //
+  // A WORLD raid is weather: nobody owns it, so nobody can be bribed to call it off, and the
+  // card names no attacker because naming one would accuse an agent that did nothing. A DEMAND
+  // is somebody's decision — a raider with a name, a stake and a hand in the line, who will
+  // still be on this map next Reckoning. Drawing them identically would delete the half of §9
+  // that makes conflict a choice.
+  //
+  // The consequence line differs too, and that is not cosmetic: only an ownerless raid's
+  // repulse closes the stage. A demand's repulse gives the defender the raider's stake and
+  // nothing else, so the old sentence would have published a peace that does not exist.
+  const verdict = (l) => {
+    const own = !!l.initiator;
+    switch (l.state) {
+      case 'PAID': return ['paid', 'the demand was met and nothing was taken'];
+      case 'REPULSED': return own
+        ? ['repulsed', 'the defender held and took the raider’s stake; the stage stays open']
+        : ['repulsed', 'the defenders held, and the stage is closed to raiders for a Reckoning'];
+      case 'PLUNDERED': return ['plundered', 'nobody stood in the way'];
+      case 'MISSED': return ['missed', own ? 'the raider guessed wrong and hit ballast' : 'the raid found nothing worth taking'];
+      case 'DEMANDED': return ['demanded', 'the window is still open'];
+      default: return [String(l.state || '').toLowerCase(), ''];
+    }
   };
   el.innerHTML = lines.map((l) => {
-    const [word, why] = verdict[l.state] || [String(l.state || '').toLowerCase(), ''];
+    const [word, why] = verdict(l);
+    const who = l.initiator
+      ? named(l.initiator, m) + ' demanded'
+      : 'the world demanded';
     return `
     <div class="card">
-      <p class="hl">${esc(l.stage || '')} &mdash; ${word}</p>
-      <p class="tn">${money(l.demand)} demanded from ${named(l.target, m)}${l.lost ? ' &middot; <strong>' + money(l.lost) + ' lost</strong>' : ''}</p>
+      <p class="hl">${esc(l.stage || '')} &mdash; ${word}${l.initiator ? '' : ' <span class="tn">(no owner)</span>'}</p>
+      <p class="tn">${who} ${money(l.demand)} from ${named(l.target, m)}${l.lost ? ' &middot; <strong>' + money(l.lost) + ' lost</strong>' : ''}</p>
       <p class="tn">force ${l.raiderForce ?? 0} against ${l.defenderForce ?? 0}${l.ticksLeft ? ' &middot; ' + l.ticksLeft + ' ticks left' : ''}</p>
       ${why ? `<p class="tn">${why}</p>` : ''}
     </div>`;
@@ -466,28 +574,154 @@ function renderTribute(lines, m) {
     + (lines.length > shown.length ? `<div class="empty">and ${lines.length - shown.length} more</div>` : '');
 }
 
-async function load() {
+// THE DIRECTORY. §11.2 puts "standing: the public factual vectors" at PUBLIC and `observe`
+// already serves exactly this row to every agent, including about principals other than
+// the reader — so this adds no disclosure and A9's parity holds by construction.
+//
+// The vectors are STATED and not ranked into a score (§3). A principal with no row is
+// absent rather than present with zeros: a fabricated all-zero standing reads as a clean
+// record, which is a claim about a real agent that nothing supports.
+function renderStandings(rows) {
+  const el = $('standings');
+  if (!rows || rows.length === 0) {
+    el.innerHTML = '<div class="empty">Nobody has a record yet. Standing is earned on settled elective halves, so an empty directory means no promise has yet come due.</div>';
+    return;
+  }
+  const ordered = rows.slice().sort((a, b) =>
+    (b.electiveHonouredValue || 0) - (a.electiveHonouredValue || 0) ||
+    (a.defaults || 0) - (b.defaults || 0) ||
+    String(a.handle).localeCompare(String(b.handle)));
+  el.innerHTML = '<div class="tbl">'
+    + '<div class="row st hd"><span>Handle</span><span>Kept</span><span>Paid</span>'
+    + '<span>Defaults</span><span>Seals broken</span><span>Counterparties</span></div>'
+    + ordered.map((s) => `
+      <div class="row st">
+        <span><b>${esc(s.handle)}</b></span>
+        <span class="num">${s.electiveHonoured ?? 0}</span>
+        <span class="num">${money(s.electiveHonouredValue)}</span>
+        <span class="num${(s.defaults || 0) > 0 ? ' bad' : ''}">${s.defaults ?? 0}${
+          s.lastDefaultTick !== null && s.lastDefaultTick !== undefined ? ' <span class="note">t' + s.lastDefaultTick + '</span>' : ''}</span>
+        <span class="num${(s.contradictedSeals || 0) > 0 ? ' bad' : ''}">${s.contradictedSeals ?? 0}</span>
+        <span class="num">${s.distinctCounterparties ?? 0}</span>
+      </div>`).join('')
+    + '</div>';
+}
+
+// §16's hall of fame. Each row says what the number IS, not what it suggests — the titles
+// are the engine's own, and the clause beside each is the arithmetic that earned it.
+function renderHallOfFame(rows) {
+  const el = $('hof');
+  if (!rows || rows.length === 0) {
+    el.innerHTML = '<div class="empty">Nothing to record yet. Every line here is earned on the record, so an empty hall means the world is young rather than dull.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="tbl">'
+    + '<div class="row hof hd"><span>Title</span><span>Held by</span><span>What earned it</span></div>'
+    + rows.map((r) => `
+      <div class="row hof">
+        <span><b>${esc(r.title)}</b></span>
+        <span>${esc(r.handle)}</span>
+        <span class="note">${esc(r.clause)}</span>
+      </div>`).join('')
+    + '</div>';
+}
+
+// §16's toponymy: a place carries the name of whoever first opened it. Deliberately
+// including places whose founding WORKS has since been razed — that is the whole
+// asymmetry between a world with a history and one with only a state, and it means this
+// table can name a principal that currently holds nothing at all.
+function renderPlaces(rows) {
+  const el = $('places');
+  if (!rows || rows.length === 0) {
+    el.innerHTML = '<div class="empty">No place has been developed yet, so nowhere carries anybody&rsquo;s name.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="tbl">'
+    + '<div class="row pl hd"><span>Place</span><span>Named for</span><span>Since</span></div>'
+    + rows.map((p) => `
+      <div class="row pl">
+        <span><b>${esc(p.system)}</b></span>
+        <span>${esc(p.handle)}</span>
+        <span class="note">tick ${p.sinceTick}${p.founderStillThere ? '' : ' &middot; the works that named it has fallen; the name has not'}</span>
+      </div>`).join('')
+    + '</div>';
+}
+
+// THE ARCHIVE STRIP. One fetch of the index draws the whole timeline, and clicking a night
+// fetches only that night. Fetching all of them to draw a strip would cost the entire
+// archive to render one row of labels, which is why the index carries the three meters.
+let selected = null;   // the Reckoning a viewer has scrubbed to, or null for the latest
+let archive = [];
+
+function renderArchive() {
+  const el = $('archive');
+  if (archive.length === 0) { el.innerHTML = ''; return; }
+  const newest = archive[archive.length - 1].reckoning;
+  el.innerHTML = archive.slice().reverse().map((r) => {
+    const current = (selected === null ? newest : selected) === r.reckoning;
+    return `<button type="button" data-file="${esc(r.file)}" data-reck="${r.reckoning}"
+      aria-current="${current}">
+      <b>R${r.reckoning}</b>tick ${r.tick}<br>kept ${r.kept} / broken ${r.broken}<br>${r.beats} beat${r.beats === 1 ? '' : 's'}
+    </button>`;
+  }).join('');
+  el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    const reck = Number(b.dataset.reck);
+    selected = reck === newest ? null : reck;
+    load(selected === null ? null : b.dataset.file);
+  }));
+}
+
+function renderReplayNote() {
+  const el = $('replay-note');
+  if (selected === null) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="replay">Showing Reckoning ${selected} from the archive &mdash; a settled night, not the newest one.
+    <button type="button" id="to-latest">back to the latest</button></div>`;
+  $('to-latest').addEventListener('click', () => { selected = null; load(null); });
+}
+
+async function loadArchive() {
+  try {
+    const r = await fetch('frames/index.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    const idx = await r.json();
+    archive = Array.isArray(idx.reckonings) ? idx.reckonings : [];
+    renderArchive();
+  } catch {
+    // A missing table of contents costs the history strip and nothing else. The latest
+    // frame is fetched independently, so the show still runs.
+  }
+}
+
+async function load(file) {
   try {
     // latest.json is a small pointer so the big immutable frames can be cached
-    // hard. no-store on the pointer only.
-    const r = await fetch('frames/latest.json', { cache: 'no-store' });
-    if (!r.ok) throw new Error('frames/latest.json → HTTP ' + r.status);
+    // hard. no-store on the pointer only — an archived Reckoning never changes, so it
+    // is fetched under the default cache and served `immutable` for a year.
+    const path = file ? 'frames/' + file : 'frames/latest.json';
+    const r = await fetch(path, file ? {} : { cache: 'no-store' });
+    if (!r.ok) throw new Error(path + ' → HTTP ' + r.status);
     const frame = await r.json();
 
     $('m-reck').textContent = frame.reckoningIndex ?? '—';
     $('m-tick').textContent = frame.tick ?? '—';
     $('m-hash').textContent = (frame.stateHash || '').slice(0, 12) || '—';
-    $('m-status').textContent = 'settled';
+    $('m-status').textContent = selected === null ? 'settled' : 'from the archive';
 
+    const names = handleMap(frame);
+    renderReplayNote();
     renderMeters(frame.meters || {});
     renderDocket(frame.docket, 'docket');
     renderRundown(frame.rundown);
-    renderAuthority(frame.authorityLines, handleMap(frame));
-    renderRaids(frame.raidLines, handleMap(frame));
-    renderSyndicates(frame.syndicateLines, handleMap(frame));
-    renderWorks(frame.worksLines, handleMap(frame));
-    renderTribute(frame.tributeLines, handleMap(frame));
+    renderAuthority(frame.authorityLines, names);
+    renderRaids(frame.raidLines, names);
+    renderSyndicates(frame.syndicateLines, names);
+    renderWorks(frame.worksLines, names);
+    renderTribute(frame.tributeLines, names);
+    renderStandings(frame.standings);
+    renderHallOfFame(frame.hallOfFame);
+    renderPlaces(frame.places);
     renderTicker(frame.ticker);
+    renderArchive();
   } catch (e) {
     $('m-status').textContent = 'no frame';
     $('docket').innerHTML =
@@ -500,10 +734,18 @@ async function load() {
   }
 }
 
-load();
+function poll() {
+  loadArchive();
+  // Never yank a viewer off a night they scrubbed to. The archive keeps refreshing so a
+  // new Reckoning appears in the strip either way.
+  if (selected === null) load(null);
+}
+
+loadArchive();
+load(null);
 // Poll-primary delivery, proven on the predecessor. Frames are immutable once
 // written, so this only ever fetches a new pointer.
-setInterval(load, 15000);
+setInterval(poll, 15000);
 </script>
 </body>
 </html>
