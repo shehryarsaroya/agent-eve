@@ -73,6 +73,51 @@ member over 900 ticks, how many wakes had a fillable slot available versus how m
 `create`. If members with slots essentially never create, the ordering is confirmed as the cause rather
 than the 20% roll.
 
+## ⚑ THE MECHANISM ABOVE IS REFUTED — by the confirmation I said to run first
+
+I proposed counting, per member over 900 ticks, how many wakes had a fillable slot versus produced a
+`create`, *before* changing any ordering. That was right, and it killed the hypothesis:
+
+```
+member       acts  creates  fills
+brannock      585       67     67
+kestrel       623       67     66
+vex           429       51     58
+thessaly      273       37     27
+varrow        276       27     53
+orrin          72        5     17
+sable          82        1     26
+halcyon        51        1     12
+
+members that NEVER created: 0 of 8
+```
+
+**Every member creates.** `create` does not lose to `fill_role` — the two move together, roughly
+one-for-one in the active members. So the branch ordering is not the cause and raising it above
+`fill_role` would have changed nothing while adding a cast-ordering diff of exactly the kind D18 showed
+can surface a determinism fault.
+
+**The real variable is total activity, and it is wildly concentrated.** An 11× spread in how often a
+member acts at all — 585 acts against 51 — and creates scale with it (11% of acts for brannock, 2% for
+halcyon). Three of eight members do most of everything.
+
+**That is what made the probe see one seller.** brannock and kestrel create 67 ventures each; halcyon
+and sable create one. Any snapshot of live FORMING ventures is dominated by the prolific few, so a
+14-poll session over 58 minutes reads as a one-seller market even though all eight eventually create.
+The concentration is real; the "one creator" was a sampling consequence of it.
+
+**So the question moves, and it is a better question:** why do five of eight members barely act? 51
+acts in 900 ticks is a member that returns nothing from `decide` on ~94% of ticks. Candidates, none
+tested: hands committed to long-running roles so no `idle` hand exists to act with (the `idle.length >
+0` gate fronts both `fill_role` and `create`); or hands in transit for most of the run, since `move` was
+the single most common action at 1003; or a seat whose holding sits somewhere with nothing reachable.
+The `idle`-hand gate is the first thing to instrument, because it fronts every branch that does anything
+material.
+
+That reframes the AGT-E2 blocker too. It is not "the cast prefers not to create" — it is **"most of the
+cast is idle most of the time,"** which is a different problem with a different fix and would have been
+mis-solved by the ordering change I was about to make.
+
 ## The correction worth keeping
 
 I recorded "8 of 14 empty boards" as an economy-liveness fact and then wrote two candidates rather than
