@@ -62,34 +62,50 @@ describe("tomorrow's docket is built from what is actually riding", () => {
     expect(frame?.docket.length).toBeLessThanOrEqual(MAX_DOCKET_CARDS);
   });
 
+  /**
+   * Seeds that have produced a docket with at least one never-dealt pairing.
+   *
+   * **A list, not a seed, and that is the fix for a fragility this file hit twice in one day.** The
+   * discriminating case lives in whatever world a seed happens to grow, so it moves whenever the cast
+   * changes: giving the heuristic a `grant` branch emptied `docket-b`'s never-dealt count, and adding a
+   * `build` branch emptied `docket-h`'s. Each time the assertion went VACUOUS while still passing,
+   * which is the worst failure mode a test has — green, and checking nothing.
+   *
+   * Re-pinning a fresh seed each time treats the symptom. Scanning until one discriminates is
+   * self-healing, still fully discriminating (the mutation proof below holds on whichever is picked),
+   * and fails loudly if the cast ever stops producing the case at all — which would itself be worth
+   * knowing, because it would mean no two cast members ever meet as strangers.
+   */
+  const CANDIDATE_SEEDS = ['docket-k', 'docket-q', 'docket-s', 'docket-u', 'docket-h', 'docket-f'] as const;
+
   it('orders by stakes descending, because the biggest thing riding leads', () => {
-    const rt = world('docket-h');
-    const frame = rt.reckoningFrame();
-    const stakes = (frame?.docket ?? []).map((c) => c.atStake);
+    // Ordering holds on every seed, so it is asserted on the first one regardless.
+    const ordered = world(CANDIDATE_SEEDS[0]);
+    const stakes = (ordered.reckoningFrame()?.docket ?? []).map((c) => c.atStake);
     expect(stakes.length, 'there must be cards to order').toBeGreaterThan(1);
     expect([...stakes].sort((a, b) => b - a), 'biggest stakes first').toEqual(stakes);
+  });
 
-    // ── AND THE DISCRIMINATING CASE FOR `firstTimeTogether` ──────────────────
-    //
-    // This seed produces exactly one pairing with no shared resolved venture. That is the whole
-    // reason the assertion lives on THIS seed: with the field hardcoded `false`, that card would
-    // read "They have dealt before, and it held" about two agents who had never met — and the
-    // other two seeds in this file cannot tell the difference, because their pairs really had all
-    // dealt before. Mutation-proven here and nowhere else.
-    //
-    // **The seed moved from `docket-b` to `docket-h`, and the reason is worth keeping.** Giving the
-    // heuristic cast a `grant` branch changed which pairings share a resolved venture at
-    // `docket-b`, so its never-dealt count went to zero and this assertion became VACUOUS while
-    // still passing its neighbours. A seed-specific discriminating case is only as durable as the
-    // world that seed happens to grow; when the cast changes, re-scan for a seed that still
-    // discriminates rather than relaxing the assertion, because the relaxed version cannot catch
-    // the bug this one was written for. Scanned 12 seeds; `docket-f` (2) and `docket-k` (1) also
-    // qualify if this one stops.
-    const tensions = (frame?.docket ?? []).map((c) => c.tension);
+  it('describes a pairing with no shared resolved venture as NEW, not as trusted', () => {
+    // The discriminating case. With `priorDealings` hardcoded to `HELD`, such a card would read "They
+    // have dealt before, and it held" about two agents who had never met — a false claim about real
+    // agents on a public frame, which is A5′ in the one place nobody would look for it.
+    let found: { seed: string; never: number } | null = null;
+    for (const seed of CANDIDATE_SEEDS) {
+      const cards = world(seed).reckoningFrame()?.docket ?? [];
+      const never = cards.filter((c) => /never dealt/.test(c.tension)).length;
+      if (never > 0) {
+        found = { seed, never };
+        break;
+      }
+    }
     expect(
-      tensions.filter((t) => /never dealt/.test(t)).length,
-      'a pairing with no shared resolved venture must be described as new, not as trusted',
-    ).toBeGreaterThan(0);
+      found,
+      `none of ${CANDIDATE_SEEDS.length} seeds produced a docket with a never-dealt pairing, so this ` +
+        `assertion cannot discriminate. Either the cast stopped letting members meet as strangers, or ` +
+        `the seed list needs extending — do not delete the assertion.`,
+    ).not.toBeNull();
+    expect(found?.never ?? 0).toBeGreaterThan(0);
   });
 
   it('never claims two agents have dealt before unless a resolved venture shares them', () => {

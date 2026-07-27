@@ -42,7 +42,7 @@ import {
   type LevyRule,
 } from '../levy/index.js';
 import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
-import { handsOf, route, tierOf } from '../world/index.js';
+import { handsOf, holdingOf, route, tierOf } from '../world/index.js';
 import {
   DELIVERY_MEASURE,
   DELIVERY_VERB,
@@ -137,6 +137,8 @@ export interface CastOptions {
    * Integers only, for the same reason as `createChanceBps`.
    */
   readonly grantChanceBps?: number;
+  /** Chance in 10 000 that a member raises its one WORKS on a tick it could afford to. */
+  readonly worksChanceBps?: number;
 }
 
 /** Default appetite. *(calibrate)* — high enough that a day has ventures in it. */
@@ -152,6 +154,21 @@ export const DEFAULT_CREATE_CHANCE_BPS = 2_000;
  * supposed to have a *decision* in it. Variance is what makes the timing legible as a choice.
  */
 export const DEFAULT_GRANT_CHANCE_BPS = 1_200;
+
+/**
+ * Default appetite for raising a WORKS. *(calibrate)*
+ *
+ * A roll rather than "build the moment you can afford it", and the reason is variance rather than
+ * balance. Building immediately is arguably the *right* play — the affordance says so, and every member
+ * can afford one out of its endowment at tick 0 — but every member doing the same thing on the same
+ * tick is a monoculture: the whole cast spends its currency simultaneously, the `build` affordance then
+ * vanishes for want of an affordable buyer, and a world with no spread in it stops being a useful
+ * fixture. Four unrelated tests broke on exactly that.
+ *
+ * At this rate the eight members raise theirs across the first Reckoning or so instead of all at once,
+ * which is also what a real cohort would look like.
+ */
+export const DEFAULT_WORKS_CHANCE_BPS = 400;
 
 /**
  * How much of its **free** stores a cast payer will commit to elective parts across
@@ -284,6 +301,26 @@ export class HeuristicCast {
 
     const election = this.electionFor(member, tick);
     if (election !== null) return { ...base, ...election };
+
+    // ── THE ONE DOOR GOODS ENTER THROUGH, AND NOBODY WAS OPENING IT ───────────
+    //
+    // D17 measured this precisely: the `build {WORKS}` affordance was offered in **70 of 70**
+    // principal-observations, and neither cast had EVER built one — the heuristic spent 900 ticks on
+    // `move 1003 · sign 502 · fill_role 353 · elect 264 · create 232` and issued `build` zero times,
+    // while production ran eight Reckonings at `works: 0` with `levyShort` climbing past 345,000. A
+    // WORKS is the only thing in the game that makes goods, so the economy was living off enrolment
+    // endowments and running down.
+    //
+    // Placed HIGH on purpose. D17's hypothesis for the zero was that a capital investment loses an
+    // action-budget contest to immediate income — a `create` pays at the next settlement, a WORKS pays
+    // nothing for 24 ticks — so a branch sitting behind `create` and `fill_role` would have inherited
+    // the same zero and proved nothing.
+    //
+    // Self-limiting without a roll: one WORKS per member. A member that already extracts has made the
+    // investment, and `affordable` is the SAME predicate the affordance and the verb use, so the bot
+    // cannot ask for something the menu would not have offered it.
+    const build = this.worksFor(member, tick, rng);
+    if (build !== null) return { ...base, ...build };
 
     // ── A6, END TO END: ACT ON AUTHORITY SOMEBODY HANDED YOU ──────────────────
     //
@@ -484,6 +521,30 @@ export class HeuristicCast {
    *      is allowed, and it is the whole reason this game has drama in it."
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * Raise a WORKS, or null. The economy's only source of goods.
+   *
+   * Gated on `worksQuote(...).affordable` — the same predicate the affordance publishes and the verb
+   * enforces, never a recomputation. D17 records what happens otherwise: an instrument that recomputed
+   * this with `freeCash` kept reporting 0 after the gate moved to the free balance, so it measured a
+   * rule the engine no longer had, in exactly the direction that hid what it was built to reveal.
+   */
+  private worksFor(
+    member: CastMember,
+    tick: number,
+    rng: { chance(n: number, of: number): boolean },
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    if (!rng.chance(this.options.worksChanceBps ?? DEFAULT_WORKS_CHANCE_BPS, 10_000)) return null;
+    // One per member. A second WORKS on the same system also DIVIDES the yield it already draws, so
+    // stacking them is close to self-defeating anyway (`share_per_tick` falls as occupants arrive).
+    if (runtime.works.ofPrincipal(member.principal).length > 0) return null;
+    const system = holdingOf(runtime.world, member.principal).system;
+    if (!runtime.worksQuote(member.principal, system).affordable) return null;
+    return { verb: 'build', params: { kind: 'WORKS', system } };
+  }
+
   /**
    * Elect on a venture belonging to a principal that granted this member authority, or null.
    *

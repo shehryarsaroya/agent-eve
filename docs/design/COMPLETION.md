@@ -108,7 +108,7 @@ The live frame publishes 13 keys. Eight carry data: `map` 30 rows, `tributeLines
 | Surface | Rows | Why — verified, not guessed |
 |---|---|---|
 | `authorityLines` | ~~0~~ **FIXED** | The cast had no `grant` branch. Now 12 lines on a 900-tick world — see §"Fixed" below. Production will fill as the new build runs |
-| `worksLines` | 0 | Nobody has built a WORKS (D17). The affordance is offered in 70/70 observations and states its payback; the cast still never chooses it |
+| `worksLines` | ~~0~~ **FIXED** | The cast had no `build` branch. Now 3 WORKS per 900-tick world, `EXTRACTING`, 35,040 goods — the economy has a source for the first time |
 | `syndicateLines` | 0 | No syndicate has ever been formed |
 | `claimLines` | 0 | 424 claims exist in the world, but `claimLinesFor` filters to the current Reckoning and none fall in it |
 

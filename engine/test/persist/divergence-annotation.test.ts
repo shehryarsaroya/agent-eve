@@ -151,10 +151,10 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
     // a constant that does not move when semantics change, so a `(tick, rules_version)`
     // key cannot tell these two apart — and the second world resumed with the record
     // naming only the first.
-    const [a, b] = collidingPair(await firstDivergenceTickPerPrincipal(store));
-    const rowsAfterA = await acceptChange(store, a.principal, a.tick);
+    const { a, b, fromTick } = await findCollidingPair(store);
+    const rowsAfterA = await acceptChange(store, a.principal, a.tick, fromTick);
     expect(rowsAfterA).toBe(1);
-    const rowsAfterB = await acceptChange(store, b.principal, b.tick);
+    const rowsAfterB = await acceptChange(store, b.principal, b.tick, fromTick);
     expect(a.tick).toBe(b.tick);
     expect(a.principal).not.toBe(b.principal);
     expect(rowsAfterB).toBe(2);
@@ -219,21 +219,31 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
 /** The first-divergence tick each single-principal rules change produces. */
 async function firstDivergenceTickPerPrincipal(
   store: InMemoryJournalStore,
+  fromTick: number,
 ): Promise<ReadonlyMap<PrincipalId, number>> {
   const found = new Map<PrincipalId, number>();
   const probe = seated();
   for (const principal of [...probe.world.principalOrder].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0))) {
     const rt = seated();
-    refuseOne(rt, principal, 100, `change targeting ${principal}`);
+    refuseOne(rt, principal, fromTick, `change targeting ${principal}`);
     const held = await bootWorld(rt, store, { seed: SEED, checkpoint: GENESIS });
     if (held.status === 'HELD') found.set(principal, held.diagnosis.tick);
   }
   return found;
 }
 
-function collidingPair(
+/**
+ * Two principals whose single-principal rules change first diverges at the SAME tick, or null.
+ *
+ * Returns null rather than throwing so {@link findCollidingPair} can sweep. It used to throw, with the
+ * refusal tick hardcoded to 100 — and a cast change (a `build` branch) moved which actions land there,
+ * so no pair collided, and the test died in its own fixture with a message that read like a finding.
+ * Which world grows a collision is incidental to what is under test: that two DIFFERENT discontinuities
+ * at one tick are both recorded.
+ */
+function collidingPairAt(
   byPrincipal: ReadonlyMap<PrincipalId, number>,
-): readonly [{ principal: PrincipalId; tick: number }, { principal: PrincipalId; tick: number }] {
+): readonly [{ principal: PrincipalId; tick: number }, { principal: PrincipalId; tick: number }] | null {
   const groups = new Map<number, PrincipalId[]>();
   for (const [p, t] of byPrincipal) groups.set(t, [...(groups.get(t) ?? []), p]);
   for (const [tick, ps] of groups) {
@@ -245,7 +255,24 @@ function collidingPair(
       ];
     }
   }
-  throw new Error('no two single-principal rules changes diverge at the same tick in this world');
+  return null;
+}
+
+/** Sweep candidate refusal ticks until one produces a colliding pair, and say which tick it used. */
+async function findCollidingPair(store: InMemoryJournalStore): Promise<{
+  readonly a: { principal: PrincipalId; tick: number };
+  readonly b: { principal: PrincipalId; tick: number };
+  readonly fromTick: number;
+}> {
+  for (const fromTick of [100, 60, 140, 40, 180, 20, 220]) {
+    const pair = collidingPairAt(await firstDivergenceTickPerPrincipal(store, fromTick));
+    if (pair !== null) return { a: pair[0], b: pair[1], fromTick };
+  }
+  throw new Error(
+    'no refusal tick in the sweep produced two single-principal rules changes diverging at the same ' +
+      'tick. Widen the sweep — do not weaken the assertion: the property under test is that two ' +
+      'DIFFERENT discontinuities at one tick are both recorded, and it needs a genuine collision.',
+  );
 }
 
 /** Walk one principal-specific change through the door; return the row count after. */
@@ -253,9 +280,13 @@ async function acceptChange(
   store: InMemoryJournalStore,
   principal: PrincipalId,
   tick: number,
+  fromTick = 100,
 ): Promise<number> {
   const rt = seated();
-  refuseOne(rt, principal, 100, `change targeting ${principal}`);
+  // `fromTick` must be the SAME refusal tick the divergence was discovered at. It was hardcoded to
+  // 100 while the search learned to sweep, so a pair found at another tick was accepted against a
+  // world built from a different change — the divergence landed elsewhere and the world stayed HELD.
+  refuseOne(rt, principal, fromTick, `change targeting ${principal}`);
   const opened = await bootWorld(rt, store, {
     seed: SEED,
     acceptDivergenceFromTick: tick,

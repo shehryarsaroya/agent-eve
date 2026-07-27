@@ -68,10 +68,6 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'tick 290 in test/api/legal-but-unoffered.test.ts), so this state is reachable once a cast acts ' +
     'on it.',
   trade: 'REACHABLE ELSEWHERE — needs a resting order on the local book. Covered by test/market/verb.test.ts.',
-  vote:
-    'REACHABLE ELSEWHERE — the LEVY ballot IS offered, and the heuristic casts it before this sweep ' +
-    'samples, at which point the affordance correctly disappears. Covered directly by ' +
-    'test/api/legal-but-unoffered.test.ts.',
   withdraw: 'RESPONSE-ONLY — needs a syndicate membership to give notice on.',
   // `set_delivery_intent` USED TO LIVE HERE as the one HONEST GAP, and its removal is this list
   // working as designed: it is offered now, and the rot test above failed by name the moment the
