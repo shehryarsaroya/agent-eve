@@ -125,6 +125,62 @@ That reframes the AGT-E2 blocker too. It is not "the cast prefers not to create"
 cast is idle most of the time,"** which is a different problem with a different fix and would have been
 mis-solved by the ordering change I was about to make.
 
+## The answer: filling roles is self-limiting
+
+Instrumented the `idle`-hand gate as the refutation said to. Hand-state mix over 900 ticks, three hands
+per member (2,700 hand-ticks each):
+
+```
+member      acts   ticks w/ an IDLE hand   hand-state mix
+halcyon       62          49/900           COMMITTED 2595   IDLE 93    IN_TRANSIT 12
+orrin         75          66/900           COMMITTED 2540   IDLE 124   IN_TRANSIT 36
+sable         84          76/900           COMMITTED 2540   IDLE 141   IN_TRANSIT 19
+thessaly     267         245/900           COMMITTED 2041   IDLE 371   IN_TRANSIT 288
+varrow       418         375/900           COMMITTED 1575   IDLE 671   IN_TRANSIT 454
+vex          564         494/900           COMMITTED 1235   IDLE 799   IN_TRANSIT 666
+brannock     557         510/900           IN_TRANSIT 1385  IDLE 693   COMMITTED 622
+kestrel      599         554/900           IN_TRANSIT 1221  IDLE 794   COMMITTED 685
+```
+
+**The idle members are COMMITTED, not in transit** — and that inverts the guess in the refutation
+above, which offered transit as the likelier candidate because `move` was the most common action.
+halcyon's three hands are locked into roles for **96% of all hand-ticks**; it has an idle hand on 49 of
+900 ticks, hence 62 acts. brannock and kestrel are the mirror image: low commitment, high transit, and
+they are the two prolific creators.
+
+So the chain is:
+
+```
+fill_role commits a hand for the venture's life
+  -> a committed hand cannot act
+    -> the members who WORK most ACT least
+      -> the free members are the ones creating
+        -> creation concentrates in whoever is not locked in
+```
+
+**Filling roles is self-limiting**, and the 11× activity spread is that, not a preference.
+
+## Is this a bug? No — and that is the interesting part
+
+A hand is *"one unit of simultaneous physical presence"* and three hands is the design's tightest
+constraint by intent. A member that fills three roles **should** be fully committed until they resolve.
+So every step above is the specification working.
+
+What it produces, though, is a world where the supply side is staffed by whoever happens to be
+unemployed — which is a real economic result and not obviously the intended one. §4's arithmetic is that
+three hands is *"enough to run small things forever by yourself, not enough to run anything worth
+running"*, and the observed consequence is sharper than that: **participating as a worker removes you
+from the market as a principal.**
+
+The lever is not the cast. It is **role duration against hand count**. If a role holds a hand for a
+large fraction of a Reckoning, three hands is full lockup after three fills, and the number of active
+principals collapses to whoever is between jobs. That is worth measuring directly — mean ticks a hand
+spends COMMITTED per fill, against `TICKS_PER_RECKONING` — before anyone tunes a cast branch, because no
+cast ordering can fix a capacity constraint.
+
+And it gives `AGT-E2` its real precondition: competing offers need several *uncommitted* principals at
+the same time, which is a function of how long work holds a hand.
+
 ## The correction worth keeping
 
 I recorded "8 of 14 empty boards" as an economy-liveness fact and then wrote two candidates rather than
