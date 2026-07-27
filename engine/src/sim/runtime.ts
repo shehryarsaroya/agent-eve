@@ -169,6 +169,7 @@ import { readInt, readString } from '../core/params.js';
 import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
 import { sign } from '../venture/sign.js';
+import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
 import { refine } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
@@ -4839,36 +4840,32 @@ export class Runtime {
     );
   }
 
+  /**
+   * `abandon` — an ADAPTER. The venture half lives in `venture/abandon.ts` (D21).
+   *
+   * The claim branch is dispatched here rather than moved: abandoning a claim salvages part of its
+   * bond, which needs sovereignty and the bond book. Keeping it out leaves the extracted port narrow.
+   * The argument for venture-and-claim being ONE verb rather than two — and the counter-argument from
+   * `graduate`'s precedent — is written out above `vPostBond`.
+   */
   private vAbandon(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
-    // A claim, if one is named. `abandon` means relinquishing your own object, publicly and
-    // irreversibly; the object is a venture or a claim. The argument for that being ONE concept
-    // rather than two — and the counter-argument from `graduate`'s precedent — is written out
-    // above `vPostBond`, because it is the one mode in this mechanic that review may reject.
     const claimSystem = readString(req.params, ['claim', 'system', 'system_id']) as SystemId | null;
     if (claimSystem !== null) return this.abandonClaim(ctx, req, claimSystem);
-    const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
-    if (ventureId === null) {
-      return reject(
-        'A2',
-        'abandon needs {"venture": "<id>"} to give up a FORMING venture, or {"claim": "<system_id>"} to give up ' +
-          'a claim and salvage part of its bond.',
-      );
-    }
-    const venture = this.ventures.get(ventureId);
-    if (venture === undefined) return reject('PROP-V6', `there is no venture ${ventureId}.`);
-    if (venture.creator !== req.principal) {
-      return reject('PROP-V6', `only ${venture.creator} can abandon ${ventureId}.`);
-    }
-    if (venture.state !== 'FORMING') {
-      return reject('PROP-V6', `${ventureId} is ${venture.state}; only a FORMING venture can be abandoned.`);
-    }
-    for (const hand of this.ventures.resolve(ventureId, 'ABANDONED', ctx.tick)) {
-      const record = this.world.hands.get(hand);
-      if (record !== undefined && record.state === 'COMMITTED') record.state = 'IDLE';
-    }
-    // The escrow returns to the funder. Checked, wrapped, and never a halt.
-    this.refundEscrow(ctx.tick, venture);
-    return { ok: true, value: null };
+    return abandon(
+      {
+        ventureOf: (id) => this.ventures.get(id),
+        resolveAbandoned: (id) => this.ventures.resolve(id, 'ABANDONED', ctx.tick),
+        freeHand: (hand) => {
+          const record = this.world.hands.get(hand);
+          if (record !== undefined && record.state === 'COMMITTED') record.state = 'IDLE';
+        },
+        refundEscrow: (venture) => {
+          this.refundEscrow(ctx.tick, venture);
+        },
+      },
+      req.principal,
+      req.params,
+    );
   }
 
   /**
