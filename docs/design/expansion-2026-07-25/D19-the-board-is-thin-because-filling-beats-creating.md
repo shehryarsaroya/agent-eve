@@ -181,6 +181,59 @@ cast ordering can fix a capacity constraint.
 And it gives `AGT-E2` its real precondition: competing offers need several *uncommitted* principals at
 the same time, which is a function of how long work holds a hand.
 
+## The lever, measured: it is not duration, it is WHEN you fill
+
+Mean COMMITTED ticks per fill, over 900 ticks and 239 completed spans:
+
+```
+mean   60.4 ticks   = 21.0% of a Reckoning
+median 11   ticks
+p90    276  ticks
+max    293  ticks
+```
+
+**Bimodal, and the tail is the whole story.** Half of all commitments end within 11 ticks; a tenth run
+276–293, which is essentially a full Reckoning (288). So it is not that filling a role is expensive on
+average — it is that filling one *at the wrong moment* costs a third of your capacity for an entire
+cycle.
+
+**And the cause is structural, not incidental.** A venture's `resolvesAtTick` is
+`nextSettlementAtOrAfter(closes + DELIVERY_LEAD_TICKS)` — it resolves at a **Reckoning boundary**. So a
+hand committed at phase 10 is held until phase 288; a hand committed at phase 270 is free in a few
+ticks. Same act, same venture kind, same pay, and an ~25× difference in what it costs you.
+
+That closes the chain from the probe's null result all the way down:
+
+```
+ventures resolve at the Reckoning boundary
+  -> filling early locks a hand for the whole cycle
+    -> a member that fills three early is inert for a Reckoning
+      -> the active principals are whoever filled late or not at all
+        -> creation concentrates in those few  (11x activity spread, measured)
+          -> the board shows one or two sellers at any moment
+            -> trust has no competing offers to be priced against
+              -> AGT-E2 cannot be measured
+```
+
+## What to do about it, and it is an A2 problem before it is a balance one
+
+**Nothing tells an agent this.** The board publishes `resolvesInTick`, so the information is *present* —
+but framed as *when the venture pays*, never as *how long your hand is gone*. Those are the same number
+and completely different decisions, and an agent optimising for pay-per-action has no reason to compute
+the second. This is the WORKS payback problem again in a third place: the surface states the reward and
+leaves the cost to be derived.
+
+The cheap fix is one field on a board row — `hand_committed_ticks`, or the same number under a name that
+says what it costs — plus a line in the affordance that contrasts an early fill with a late one. That is
+legibility, and it should be tried before any balance change, because if agents are simply not seeing
+the opportunity cost then the capacity constraint is not actually binding on *judgement* yet.
+
+**The balance question, if legibility does not move it:** should a role release a hand at delivery rather
+than at settlement? Delivery is when the work is done; settlement is when the money moves. Holding
+physical presence until the accounting completes is defensible but it is not obviously the intent, and
+§4's *"three hands is the tightest constraint in the game"* becomes a much tighter constraint than
+three-at-once when one fill can cost a whole cycle.
+
 ## The correction worth keeping
 
 I recorded "8 of 14 empty boards" as an economy-liveness fact and then wrote two candidates rather than
