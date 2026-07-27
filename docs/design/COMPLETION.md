@@ -168,26 +168,43 @@ The posting log and the snapshot describe different worlds.
 
 The world **HELD** — the correct fail-closed answer, refusing to serve a record it could not
 reproduce — but it was down ~4 minutes and the only lever was `UPDATE snapshot SET rules_version =
-NULL` over SSH. `COMPACT_CHECKPOINT_ADOPTION=off` now exists and **is set on the box**, so every boot
-replays from genesis (4,901 ticks, ~139 s, growing).
+NULL` over SSH.
 
-**Not reproduced locally, and the negative result narrows it.** A 700-tick heuristic world adopts
-correctly — tick 576, 123 ticks replayed, head hash identical — so "long world" is not the trigger.
-`p:vale` is an externally **enrolled** principal, not a house-cast member, and no local fixture
-enrols agents. Idle-seat recycling is the first mechanism to check for an account leaving the capture
-while its historical postings remain.
+### ✅ The outage risk is closed. The root cause is not.
 
-Three things to do, in order:
+Adoption now **degrades to a genesis replay instead of holding the world**, and this was verified
+against the real production condition rather than a fixture: the tick-4895 snapshot was re-stamped,
+adoption re-enabled, and the boot log reads
 
-1. **Adoption must never be able to HELD the world.** A checkpoint problem should degrade to a genesis
-   replay, never to an outage. `hydrate.ts`'s own header already identifies the pattern — it
-   pre-probes events precisely because "by then the runtime has been mutated and the refusal can only
-   be a hard stop." The account-set check needs the same pre-flight treatment. This is fixable
-   *without* knowing the root cause and is the highest-value item.
-2. **Reproduce with enrolled principals**, then fix the root cause.
-3. **The deploy preflight cannot catch this and could not have.** `replayCheck` replays from genesis,
-   which works. Nothing exercises the adopt path against the real journal. Close that before
-   re-enabling.
+```
+checkpoint adoption abandoned at tick 4895 and the world was replayed from genesis instead:
+posting (tick 2830 …) moves value in account escrow:v:2830:117e86ad:p:vale …
+boot REPLAY, head tick 4909, 4910 ticks replayed, 17 snapshot tripwires verified
+```
+
+— healthy, `failures: []`. `COMPACT_CHECKPOINT_ADOPTION` is back **on**, because a failed adoption now
+costs exactly the genesis replay we were already paying and nothing more.
+
+**The account check's premise was wrong**, and that is the root cause still open. It claimed to
+compare against "the accounts the snapshot itself held AT that tick" — but the snapshot is at 4895 and
+the postings start at genesis, so an escrow that opened and closed in between is legitimately absent.
+It assumed the final account set is a superset of every account ever referenced. Downgraded to
+recoverable rather than deleted, because it still catches a genuinely mismatched log and the honest
+fix needs a record of account closures that does not exist yet.
+
+**So boot is still O(history)** — 4,910 ticks, ~139 s, growing — and will be until that is fixed. What
+changed is that it can no longer take the world down.
+
+**Not reproduced locally, and the negative results narrow it sharply.** A 700-tick heuristic world
+adopts correctly (hash-identical). Two fixture attempts failed instructively: dropping an account
+from the capture is refused two gates earlier, and recomputing the hash makes the genesis replay trip
+on that snapshot — because production's snapshot was **not wrong**, so any fixture that corrupts one
+tests a different bug. `p:vale` is an externally **enrolled** principal and no local fixture enrols
+agents; idle-seat recycling is the first mechanism to check.
+
+**The deploy preflight cannot catch this and could not have.** `replayCheck` replays from genesis,
+which works. Nothing exercises the adopt path against the real journal — the gap to close before
+adoption is relied on for speed.
 
 ## Fixed on 2026-07-26, worth not re-finding
 
