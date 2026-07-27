@@ -61,6 +61,40 @@ measured before touching the cast. The book is fine. The *replay of the build ac
    equivalent — but it is a lot-ordering change made the same day, and that coincidence deserves
    checking before anything else.
 
+## All three candidates ELIMINATED — and the real suspect is the cast, not the build
+
+Checked each with direct evidence rather than reasoning:
+
+| candidate | verdict |
+|---|---|
+| the online-at tick recomputed at replay | **stored.** `WorksBook.raise` writes `onlineAtTick: args.tick + WORKS_SPINUP_TICKS` into the row |
+| occupant order in `sharesAt`'s split | **sorted.** `liveAt` ends `.sort((a, b) => compareIds(a.id, b.id))`, and `splitQty` walks that order |
+| lot selection order for the burned goods | **double-sorted.** `burnAnchorGoods` iterates `chargeGoodLotsAt`, which itself ends `.sort((a, b) => compareIds(a.id, b.id))` — and today's `lotsInAccount` index also returns `compareIds` order, so the same-day change is eliminated too |
+
+**So the WORKS build path is deterministic**, and the divergence is not in it. Which reframes the whole
+thing, because the tripwire still only appears when the *cast* gains a build branch.
+
+**New leading hypothesis: an early-returning branch shifts the shared RNG stream.** The branch I added
+returns as soon as a member can afford a WORKS — *before* reaching
+`rng.chance(appetite, 10_000)` in the `create` branch. If the cast draws from one stream across
+members in roster order, then a member that returns early **does not consume its draw**, and every
+member decided after it sees a different stream position. That changes what the whole cast does from
+that tick onward.
+
+That would explain every observation: the WORKS path is clean, the divergence needs a *cast* change to
+appear, and it shows up as a genesis-replay mismatch rather than a capture/restore one — because
+capture/restore never re-runs the cast, and genesis replay of these tests does.
+
+**How to settle it in one run:** log the RNG draw count per tick with and without the branch. If they
+diverge from the first tick a member could afford a WORKS, it is the stream and the fix is to draw
+*before* branching (or give the branch its own labelled sub-stream via `Rng.derive`, which is the
+pattern `world/map.ts` already uses so that adding a consumer cannot re-wire existing draws).
+
+**If that is right, this is not a WORKS bug at all** — it is a latent hazard in the heuristic cast that
+*any* new branch would trip, and the WORKS branch merely happened to be the first one added since the
+tests were written. That is a much more important finding than a faucet fix, because it means the cast
+cannot be extended safely today.
+
 ## What this unblocks, and why it matters more than it looks
 
 The heuristic never building is why **`worksLines` has been empty on every frame ever published** —
