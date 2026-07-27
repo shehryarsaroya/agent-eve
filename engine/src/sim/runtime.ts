@@ -3380,7 +3380,11 @@ export class Runtime {
   // ── Verbs ─────────────────────────────────────────────────────────────────
 
   private verbTable(): Readonly<Record<string, VerbHandler>> {
-    return {
+    // Every handler is fronted by the delegation-param guard, filtering here rather than at each
+    // branch — a per-verb check is one somebody forgets when they add a verb, and the verb they forget
+    // it on is the one that silently acts on the sender instead.
+    const guarded = (h: VerbHandler): VerbHandler => (ctx, req) => this.unhonouredOnBehalf(req) ?? h(ctx, req);
+    const table: Readonly<Record<string, VerbHandler>> = {
       refine: (ctx, req) => this.committing(ctx) ?? this.vRefine(ctx, req),
       create: (ctx, req) =>
         this.committing(ctx) ??
@@ -3497,6 +3501,7 @@ export class Runtime {
       approve: (ctx, req) => this.committing(ctx) ?? this.vApprove(ctx, req),
       admit: (ctx, req) => this.committing(ctx) ?? this.vAdmit(ctx, req),
     };
+    return Object.fromEntries(Object.entries(table).map(([verb, h]) => [verb, guarded(h)]));
   }
 
   /**
@@ -3639,6 +3644,41 @@ export class Runtime {
    * point of the pair being two ticks: INV-18's interval is `(frozenAtTick,
    * settlementTick]`, so the tick that settles is inside the window it protects.
    */
+  /**
+   * Verbs that read `on_behalf_of`. Everything else must REFUSE it rather than drop it.
+   *
+   * A blind probe sent `graduate {"on_behalf_of": "<victim>", "to": "sys-05"}` intending to graduate
+   * somebody else's holding. `graduate` does not read the param, so it was silently ignored and the
+   * probe **irreversibly graduated its own holding out of the Commons** — permanently losing A8's
+   * protection, with no refusal and no correction, from a param the docs never said the verb takes.
+   *
+   * Silently dropping an unrecognised param is the worst available failure mode on a one-way verb, and
+   * `graduate` is the most one-way verb in the game. The general rule is better than a special case: a
+   * param that means "act for someone else" must never be quietly discarded, because the act it
+   * modifies is exactly the act you did not intend to perform on yourself.
+   */
+  private static readonly HONOURS_ON_BEHALF: ReadonlySet<string> = new Set([
+    'create',
+    'grant',
+    'approve',
+    'deliver',
+  ]);
+
+  /** Refuse a delegation param on a verb that would ignore it. */
+  private unhonouredOnBehalf(req: ActionRequest): Rejection | null {
+    if (Runtime.HONOURS_ON_BEHALF.has(req.verb)) return null;
+    const named = readString(req.params, ['on_behalf_of', 'onBehalfOf', 'for']);
+    if (named === null) return null;
+    return reject(
+      'A2',
+      `${req.verb} does not act on another principal's behalf, and it will not quietly ignore ` +
+        `on_behalf_of=${named} either — a dropped delegation param means the act lands on YOU instead, ` +
+        `which on a one-way verb is unrecoverable. The verbs that read it are ` +
+        `${[...Runtime.HONOURS_ON_BEHALF].sort((a, b) => (a < b ? -1 : 1)).join(', ')}. Nothing was done. ` +
+        `Send ${req.verb} without it if you meant to act for yourself.`,
+    );
+  }
+
   private committing(ctx: PhaseContext): Rejection | null {
     if (!ctx.clock.inFreeze && !ctx.clock.isSettlementTick) return null;
     return reject(
