@@ -6,6 +6,56 @@
 
 ## ⏱ STATUS
 
+> ### ★★ **OWNER DECISIONS 1 AND 4 ARE BUILT (2026-07-27). `RULES_VERSION` 7 → 8.**
+>
+> **1. A delegated `create` BINDS THE GRANTOR.** The creator is seeded into `countersigned` at
+> formation and `VentureRecord.boundByGrant` records under whose authority. `agent.md` §9 carries
+> `GRANT_IS_CONSENT` verbatim, tested. So `D22`'s finding 2 is closed: going dark is no longer a
+> defence against a delegate, a mandate is worth accepting, and **the LIMITS are now the only
+> protection a grantor has** — which is what §8.1 always said they were. A self-create is untouched;
+> the creator still signs its own terms.
+>
+> ⚑ **And it closes a latent bug nobody had found: a SYNDICATE could never sign.** A house has no
+> keypair and `signatoriesRequired` includes the creator, so every venture an office-holder created
+> for its house was **unactivatable by construction** — §8's quartermaster could spend the vault and
+> the venture it spent it on could never go LIVE. It failed silently (ABANDONED at window close, escrow
+> refunded, reads as "nobody wanted the roles"). Fixed by the same rule, not a special case.
+>
+> **4. `create` TAKES `elective_bps`**, inside a band each kind publishes: `f(kind)` at the bottom,
+> `10000 − MIN_ESCROW_BPS` at the top. **`MIN_ESCROW_BPS = 2500` *(calibrate)*** — the argument is
+> written out in `venture/kinds.ts`: A7's fake counterparty priced in locked capital rather than in
+> reputation, because A15 says a fresh identity is free. Deliberately **not** called `split` (§3
+> reserves that for the division of proceeds); `split`, `escrow_pct`, `elective_pct` and `roles` are
+> **refused**, not ignored. Every escrowable kind keeps ≥4,000 bps of room, and `assertKindTable`
+> refuses an empty or single-point band so a calibration cannot silently delete a venture kind.
+>
+> It reaches the filler: `ventures.board[]` carries `elective_bps` + `escrow_ratio_bps`, both
+> `fill_role` affordances name the proportion **and the payer**, the `create` affordance carries the
+> knob in its copyable params with the band, and `DocketCard.electiveBps` puts the offer on the frame.
+> `AuthorityLine.boundVentures` counts what each delegate has committed in its grantor's name, and a
+> docket card whose venture a delegate bound now says so instead of guessing at prior dealings.
+>
+> **Two silent drops fixed on the way**, both the `graduate`/`on_behalf_of` class: a probe *sent*
+> `elective_bps` and `roles` and both were dropped with no correction; and `readInt` returns `null` for
+> both "absent" and "present and unreadable", so `elective_bps: 40.5` fell through to the default and
+> the agent believed it had priced the unsecured half. Found by mutating my own fix.
+>
+> ★ **`BUILD` IS ON THE AFFORDANCE MENU AT LAST.** Legal since day one, worked by hand, never offered,
+> never counted in `withheld`. It is the only 100%-elective four-role venture — §7.6's grand-venture
+> shape, the only instrument that puts a large amount of trust at risk — and **the cast is prompted
+> from this same observation, so no agent in this world had ever been shown it.** `AGT-E2` (*is trust
+> priced?*) was being asked of a world with no instrument that prices it. Placed LAST in
+> `OFFERED_KINDS`, because the prioritiser keeps the first offer of each verb ahead of every repeat and
+> BUILD first would make every blind copier open a four-role venture and nothing else; verified it
+> survives the 64-affordance cap in a world with 400 ticks of activity in it.
+>
+> Next deploy needs `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`. The 7 → 8 note in `sim/runtime.ts` says why
+> this boundary diverges **behaviourally** as well as structurally: it agrees up to the first delegated
+> `create` in the record and disagrees from there. 3,079 tests, 21 mutations verified.
+>
+> ⚑ **Process, and it cost real time:** four writers shared one working tree, so most of this change
+> was swept into `631b951`'s commit with a message that says nothing about it. See `8fc1b52`.
+
 > ### ★ **`demand` IS BUILT — §9's agent-initiated standoff, and Phase 2's first piece (2026-07-27).**
 >
 > **RULES_VERSION 6 → 7.** `RaidRecord` gained an `initiator` (`null` = the world), which is the whole
