@@ -46,6 +46,21 @@ export const FREEZE_TICKS = 1;
 /** Wakes granted per principal per Reckoning (SPEC §17). */
 export const WAKES_PER_RECKONING = 16;
 
+/**
+ * How many principals the world admits at once (SPEC §15.6's architecture note). *(calibrate)*
+ *
+ * Here, in `core`, rather than in `api/seats.ts` where it began, because **two modules need to
+ * derive from it and one of them may not import the other.** `api/seats.ts` owns the seat POLICY;
+ * this is the number the policy and the domain caps both read, so they cannot drift apart.
+ *
+ * They had drifted. `MAX_LEVY_BALLOTS` was a flat 512 while the ballot book keys one row per
+ * principal per Reckoning and retains three — so it bound at 512/3 ≈ 171 concurrently-voting
+ * principals, well below the 300 the world seats. Past that, the first 171 to vote filled the book
+ * and everyone else was refused: a denial of the Levy ballot decided by arrival order, which is A4's
+ * "never let requests-per-second be power" arriving through the cap table.
+ */
+export const MAX_PRINCIPALS = 300;
+
 /** Material actions per tick (SPEC §17). Social verbs are free. */
 export const ACTIONS_PER_TICK = 4;
 

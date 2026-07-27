@@ -32,6 +32,7 @@
  */
 
 import { TICKS_PER_RECKONING } from '../core/time.js';
+import { MAX_PRINCIPALS } from '../core/time.js';
 import type { PrincipalId } from '../core/types.js';
 import { compareIds } from '../ledger/index.js';
 
@@ -42,7 +43,7 @@ import { compareIds } from '../ledger/index.js';
  * principals; 300 is therefore the cap, not an aspiration, and the number is
  * *(calibrate)*.
  */
-export const DEFAULT_SEATS = 300;
+export const DEFAULT_SEATS = MAX_PRINCIPALS;
 
 /**
  * Ticks of silence before a seat is recyclable.

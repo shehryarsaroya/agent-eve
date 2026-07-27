@@ -20,7 +20,7 @@
  *      *"the total is fixed by rule and cannot be dodged; that is the alarm."*
  */
 
-import { TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
+import { MAX_PRINCIPALS, TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
 import type { GoodId } from '../core/types.js';
 import { minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
 
@@ -243,8 +243,32 @@ export const LEVY_EXPOSURE_UNIT = 1_000;
  * vote without stranding a Reckoning. That is the difference between the two caps.
  */
 export const MAX_LEVY_ASSESSMENTS = 512;
-export const MAX_LEVY_BALLOTS = 512;
 /** Reckonings of Levy history kept in memory. The record is in the event ledger. */
 export const LEVY_RETAINED_RECKONINGS = 3;
+
+/**
+ * ── DERIVED, BECAUSE A FLAT 512 BOUND BELOW THE POPULATION ───────────────────
+ *
+ * The ballot book keys one row per principal per Reckoning and keeps
+ * {@link LEVY_RETAINED_RECKONINGS} of them, so its legitimate size is
+ * `principals x retained`. At a flat 512 that bound at 512/3 ≈ 171 concurrently-voting
+ * principals — below the {@link MAX_PRINCIPALS} the world seats. Past that point the first 171 to
+ * vote filled the book and `castBallot` refused everyone else: a denial of the Levy ballot decided
+ * by ARRIVAL ORDER, which is A4's "never let requests-per-second be power" arriving through the cap
+ * table rather than through a verb.
+ *
+ * The extra Reckoning of headroom is not padding. A seat recycles only after four Reckonings of
+ * silence (`SEAT_IDLE_TICKS`), which is longer than the three retained here — so within one
+ * retention window a recycled seat's new occupant can cast a ballot while the previous occupant's
+ * row is still held. `principals x (retained + 1)` covers that overlap by construction instead of by
+ * hoping it does not happen.
+ *
+ * The cap still exists and still bounds growth (INV-26, scar #3). What it no longer does is bind
+ * during legitimate play. And note the difference from `MAX_LEVY_ASSESSMENTS`, whose cap was
+ * REMOVED from two paths after it produced an exploit and a halt: `castBallot`'s refusal reaches the
+ * agent as a hint from `vVote` and strands nothing, which is why raising this one is the right fix
+ * where removing that one was.
+ */
+export const MAX_LEVY_BALLOTS = MAX_PRINCIPALS * (LEVY_RETAINED_RECKONINGS + 1);
 /** Tribute lines a frame may carry. One per assessed principal, and the map is the show. */
 export const MAX_TRIBUTE_LINES = 512;
