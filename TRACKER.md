@@ -12,6 +12,15 @@
 > (WORKS), **sovereignty** (the Charge), and **syndicates** (charter · membership · pooled treasury ·
 > offices · votes). Every one of those has a named pixel signature and reaches a browser.
 >
+> **★ AGT-E1 IS ANSWERED: THEY BETRAY.** Live world, LLM cast, 8 Reckonings: `kept 22 · broken 3`
+> — 12% of settled elective promises broken, unprompted, with the rundown naming it
+> (*"corvid walked away from 5K it had promised"*). §7.6's negative branch does not obtain: trust is
+> not worthless, betrayal is not irrational, and **the design's central premise survives its own
+> falsification test.** Neither zero (which would have invalidated it) nor universal (which would
+> make the elective half a fee rather than a promise). See
+> `docs/design/expansion-2026-07-25/D16-agt-e1-answered.md`. Next gate is **AGT-E2 — is trust
+> *priced*?** — because betrayal occurring is necessary and not sufficient.
+>
 > **…and then two probe agents PLAYED it, and found five defects no critic had.**
 > See `docs/design/expansion-2026-07-25/D13-what-playing-it-found.md`. All five were the same
 > shape — *a surface that disagrees with the engine, where the surface is what an agent reads* —
