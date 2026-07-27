@@ -134,6 +134,40 @@ export function assessCycle(args: {
   )) {
     if (roll.length === 0) continue;
     if (args.book.isAssessed(reckoning, constellation)) continue;
+    // ── AND NOTHING TO ASSESS IF EVERY PRINCIPAL HERE IS ALREADY ON A DOCKET ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS CLOSED A `state_hash` DIVERGENCE THAT ONLY A MID-CYCLE MOVER CAN CAUSE.**
+    //
+    // `Runtime.assessLevyNow` guards this call with `levyAssessedReckoning`, a plain field that is
+    // **not a state table**. Its own comment says *"the memo is a fast path, never the authority"* —
+    // and it was the authority, because it is the only thing that stopped a second `assessCycle`
+    // mid-Reckoning from finding a constellation that had gained a principal since phase 0 and
+    // minting it a plan.
+    //
+    // Nothing could gain one, for the whole life of this build: a holding could not move, so the
+    // constellation roll was fixed when the cycle opened. `graduate` across a constellation boundary
+    // is exactly what changes that, and the cast only started crossing today. Measured, seed
+    // `unforked-1`, 8 members, 200 ticks: `p:kestrel` crossed into `con-4`, the continuous world held
+    // ONE plan for Reckoning 0 and an adopted boot replaying from tick 100 held **two** — the second
+    // stamped `assessedAtTick: 101`, the first tick after adoption, because a fresh process starts
+    // with an empty memo. Two worlds, same action log, different hash, and the event counters one row
+    // apart (80 against 81).
+    //
+    // The live behaviour is the correct one and this makes it a RULE instead of a cache: a principal
+    // keeps the docket it was assessed on, which is what `vDeliver` already relies on ("the plan
+    // wins, because the plan is what was assessed" — otherwise a mid-cycle mover is shown one
+    // delivery place and charged against another). Minting a second plan would put it on **two**
+    // dockets for one Reckoning, which is a double assessment and an A5′ accusation waiting to be
+    // recorded.
+    //
+    // `every` rather than a filter on the roll, deliberately: filtering would change `eligible` and
+    // therefore the ballot quorum, and the mixed case it would serve — a constellation holding both
+    // an already-assessed mover and an unassessed newcomer — cannot occur, because newcomers seat in
+    // the Commons and only `graduate` moves a body out. If a verb ever seats a principal outside the
+    // Commons directly, this is the line that has to become that filter.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (roll.every((principal) => args.book.lineFor(reckoning, principal) !== null)) continue;
     const place = deliveryPlaceOf(args.world.map, constellation);
     if (place === null) continue;
 

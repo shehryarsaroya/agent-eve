@@ -79,7 +79,7 @@ const CAST = 6;
 /** The world the record describes. Two checkpoints at ticks 0 and 100. */
 const TICKS = 200;
 /** Where the rules move. Early enough that plenty of ventures are minted after it. */
-const FORK_FROM = 60;
+const FORK_FROM = 20;
 /** Ticks the forked world runs on for, so it writes a checkpoint of its OWN at tick 200. */
 const AFTER = 60;
 
@@ -162,18 +162,46 @@ async function build(): Promise<Forked> {
   // The victim is whoever the RECORD says created a venture after the fork point. Reading it
   // rather than guessing is what stops this fixture from going vacuous the day the cast's
   // heuristics change and the principal it hard-coded stops creating anything.
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // **AND IT HAS TO BE A TICK WITH A SECOND CREATOR IN IT, WHICH THE FIRST VERSION DID NOT CHECK.**
+  //
+  // The finding this fixture exists for is that a venture id is `hash(tick, principal, ordinal)`
+  // over a **world-global** counter, so refusing one create RENAMES every venture minted after it.
+  // The proof of a rename rather than a deletion is a same-tick same-funder twin — and the funder
+  // of the twin has to be somebody *other* than the victim, because the victim's creates are the
+  // ones being refused and it therefore mints nothing in the forked world at all.
+  //
+  // Taking the first APPLIED create found leaves that to luck. It held while the cast created
+  // freely enough that two members regularly created on one tick; the day `create` acquired a
+  // solvency gate (`canPromiseOneMore`) the creates spread out, every log-only escrow belonged to
+  // the victim, `onlyInCapture` was EMPTY, and the rename assertion failed with nothing renamed —
+  // a vacuous fixture reporting a real finding as absent.
+  //
+  // The ordinal is world-global, so a rename does NOT need two creators on one tick — it needs at
+  // least one create by somebody *other* than the victim, anywhere after it. What went vacuous is
+  // narrower and it is stated as an assertion rather than left to luck: **brannock was the only
+  // principal creating anything in the whole post-fork window**, so every log-only escrow was the
+  // victim's own and there was nothing left to rename.
+  // ══════════════════════════════════════════════════════════════════════════
+  const creators: PrincipalId[] = [];
   let victim: PrincipalId | null = null;
   for (const tick of await store.ticksSince(FORK_FROM - 1)) {
     for (const a of tick.actions) {
-      if (a.verb === 'create' && a.outcome === 'APPLIED') {
-        victim = a.principal;
-        break;
-      }
+      if (a.verb !== 'create' || a.outcome !== 'APPLIED') continue;
+      victim ??= a.principal;
+      if (!creators.includes(a.principal)) creators.push(a.principal);
     }
-    if (victim !== null) break;
   }
   if (victim === null) {
     throw new Error('no venture was created after the fork point; this fixture would prove nothing');
+  }
+  if (creators.length < 2) {
+    throw new Error(
+      `only ${String(creators.length)} principal created anything after the fork point ` +
+        `(${creators.join(', ')}), so refusing its creates leaves no other venture to RENAME and the ` +
+        'rename assertion would be vacuous. Widen the world (CAST or TICKS) rather than relaxing it.',
+    );
   }
 
   // ── 2. THE RULES MOVE, AND THE OPERATOR ACCEPTS IT ──────────────────────────
