@@ -28,7 +28,7 @@ Every one with the same error, from `src/persist/boot.ts:472`:
 That is a deterministic, four-minute reproduction of a blocker that previously took a full session to
 fail to find.
 
-## What it actually is, and why the earlier hunt missed it
+## First reading (WRONG — kept because the reasoning was sound and the premise was not)
 
 **Replay is cast-independent.** §15.1 is explicit: `(snapshot, action_log, seed) → snapshot`, and
 *"events are output, not input"*. So a new heuristic branch cannot change what replay does by
@@ -44,7 +44,7 @@ and the append-only guard) — all of them about whether the WORKS *book* surviv
 tables round-trip with an identical `state_hash` in a world with a WORKS built and spun up**, which I
 measured before touching the cast. The book is fine. The *replay of the build action* is not.
 
-## Where to look, in order
+## The three candidates that first reading produced — all since eliminated (see below)
 
 1. **`vBuildWorks`'s use of the tick.** A build that reads anything phase- or tick-derived at apply
    time and recomputes it at replay time will diverge. `WORKS_SPINUP_TICKS` is a constant, but the
@@ -107,11 +107,24 @@ So this single bug sits underneath: A13 for the economy, D17's behavioural measu
 
 ## The honest state
 
-The branch is **reverted** — a six-test failure is not something to leave in the tree, and the fix is
-in the build path rather than in the cast. Reproducing it costs one branch and four minutes, so the
-next attempt starts from a failing test rather than from a search.
+The branch is **reverted** — a six-test failure is not something to leave in the tree. Reproducing it
+costs one branch and four minutes, so the next attempt starts from a failing test rather than a search,
+and it should start by counting RNG draws per tick with and without the branch.
 
-And one methodological note worth more than the finding: the four previously ruled-out causes were all
-about the WORKS *book*, because the tripwire *looked* like a persistence problem. It is a **replay**
-problem. Those are different subsystems, and "state_hash diverges after adoption" reads as the first
-when it was always the second.
+**Read this file in order, because it records two wrong turns.** The first reading (above) argued the
+divergence had to be in the WORKS build path, on the sound premise that replay is cast-independent. The
+three candidates it produced were each checked and each clean — so the premise was right and the
+inference from it was wrong, which usually means the premise does not apply to the *test* rather than to
+the engine. These tests replay from genesis in a way that does re-run the cast.
+
+Two methodological notes, both worth more than the finding:
+
+1. **The four originally ruled-out causes were all about the WORKS *book*, because the tripwire *looked*
+   like a persistence problem.** Then my three were all about the WORKS *build*, because it looked like a
+   replay problem. Both framings were reading the symptom's location as the cause's location. The
+   symptom appears when a WORKS exists; the cause is most likely in what *adding any cast branch* does
+   to a shared RNG stream.
+2. **If that is right, "teach the cast to build a WORKS" was never the blocked thing.** Extending the
+   cast *at all* is blocked, and the WORKS branch was simply the first extension anyone tried since
+   these tests were written. D19's proposed ordering change would have hit the identical wall — which is
+   exactly why D19 says to wait for this.
