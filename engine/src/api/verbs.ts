@@ -133,17 +133,19 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   extract: 'step 11 (markets and the production graph)',
   haul: 'step 11 (markets and the production graph)',
   audit: 'step 9 (offices and grants)',
-  // `yield`, `fight` and `join` were here and all three are now live, so their entries
-  // are gone rather than left to read as a promise about a verb that already works.
+  // `yield`, `fight`, `join` and now `demand` were all here and all four are live, so their
+  // entries are gone rather than left to read as a promise about a verb that already works.
+  // `demand` — §9's AGENT-initiated standoff, and the only caller of the aggression capacity
+  // that prices sit-and-collect out — landed with the raid initiator; `test/api/verbs.test.ts`
+  // fails by name if a live verb keeps an arrival note, which is what removes the guesswork.
   //
-  // `demand` and `flee` stay, and their step is now honest about what is missing.
-  // `demand` is §9's AGENT-initiated standoff, which needs the aggression capacity that
-  // prices sit-and-collect out; the world-spawned half needs no verb at all, because
-  // nobody issues it. `flee` is not a second verb in this build on purpose: §9's flee is
-  // "targeting misses if the target moved", which `move` already expresses, and a second
-  // spelling of one action would be §3's forbidden second concept.
-  demand: 'step 12b (the agent-initiated Demand window; world-spawned raids are live now)',
-  flee: 'step 12b — move a hand off the stage and the raid misses; `move` already does this',
+  // `flee` stays, and it is the one entry here that is not a gap. §9's flee is "targeting
+  // misses if the target moved", which `move` already expresses, so a second spelling of one
+  // action would be §3's forbidden second concept. It cites step 12 because that is where the
+  // mechanic actually arrived — predation — and the rest of the sentence says plainly that no
+  // further step is coming, which is more useful to an agent than a date it should stop waiting
+  // for.
+  flee: 'step 12 (predation, live) — and flee is not a second verb: move a hand off the stage and the raid misses; `move` already does this',
   charter: 'step 9 (syndicates)',
   propose: 'step 9 (syndicates)',
 });

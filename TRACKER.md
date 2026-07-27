@@ -6,6 +6,55 @@
 
 ## ⏱ STATUS
 
+> ### ★ **`demand` IS BUILT — §9's agent-initiated standoff, and Phase 2's first piece (2026-07-27).**
+>
+> **RULES_VERSION 6 → 7.** `RaidRecord` gained an `initiator` (`null` = the world), which is the whole
+> difference between §9's two forms of predation and is read by six rules. `raid` is a CAPTURED table,
+> so the next deploy needs `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` — routine, and the boundary note in
+> `sim/runtime.ts` says what moved and why the divergence signature differs from 5 → 6 (a new *field*
+> diverges from the first raid row onward; a new *table* diverges everywhere).
+>
+> The rules live in **`src/predation/demand.ts`**, not in `runtime.ts` (`D21`); the runtime method is a
+> ~90-line adapter. `demand.ts` reuses the raid book, the window, `join` on either side, `YIELD |
+> FIGHT`, `readForce` and the pixel signature — §9 asks for exactly that (*"use the corpus's own
+> deterministic engine, which was already written"*), so there is no second raid engine.
+>
+> **`aggression.ts` finally has a caller.** Its self-destructing tripwire fired as designed and is now
+> inverted: it fails if the caller goes away, and asserts that the *gate* is what enforces the price.
+>
+> Four decisions worth knowing, each argued at the call site:
+>
+> 1. **A demand carries NO force of its own.** All of it is hands, re-measured at resolution through
+>    the initiator's own party row. Consequence: one hand ties the Marches (terrain 1, ties to the
+>    defender) and loses; one hand takes the Frontier (terrain 0). The zones now mean different things
+>    as an *outcome* rather than as prose, and a Marches demand needs an ally — §9's escort market from
+>    the attacker's side.
+> 2. **A demand writes NO stage hold and NO victim cooldown.** Those are the ownerless raid's price for
+>    losing (it holds no capital to slash). If an agent's choice could write them, two cooperating
+>    principals could mint a Reckoning of world-raid immunity by arranging to be attacked — §9's
+>    Coase-collapse run backwards, needing no declared related-party edge, so a graph lookup could not
+>    catch it and A15 forbids inferring one. Honoured by everyone, minted by nobody.
+> 3. **No gate reads the target's stock.** A "does it have anything" check would answer a `SENSED`
+>    question through a refusal. §11.2 promises the opposite — *"a raider that guesses wrong hits
+>    ballast"* — and `MISSED` delivers it. **Scouting stays a real counterplay.**
+> 4. **One live raid per TARGET, and deliberately not one per stage.** Copying the world's per-stage
+>    rule was caught by a test: it would make one 500-minor demand a veto over everybody else's
+>    predation at that hub for a whole window.
+>
+> `PRD-7` is new and halts on the two states a reader depends on: a raid naming one principal as both
+> raider and target (§9's related-party clause, in the form decidable without a graph), and a staked
+> raider under an ownerless raid — a demand that lost its name, which would refund capacity and start
+> writing the world's protections on an agent's behalf.
+>
+> **Reachability, both directions, one predicate.** `demandRefusal` is what the affordance asks and
+> what the verb runs — not a copy. A sweep over a whole Reckoning asserts "offered" ⊆ "legal", and the
+> capacity being spent is *counted* in `withheld` with the expiry named, because a menu that shrinks in
+> silence teaches an agent that predation is unreliable rather than rationed.
+>
+> **22 mutations, all caught.** Every gate, both capture directions, the prune ordering, all three
+> PRD-7 clauses, the frame consequence line and the affordance gate were each broken in isolation and
+> named a failing test.
+
 > ### ⚑⚑ **FOUR OWNER DECISIONS, 2026-07-27. These unblock A6, the economy and Phase 2.**
 >
 > **1. A delegated `create` BINDS THE GRANTOR without a fresh countersignature.** *The grant IS the

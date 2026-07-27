@@ -53,15 +53,19 @@ export {
 export {
   KindError,
   MAX_ROLES_PER_VENTURE,
+  MIN_ESCROW_BPS,
   MIN_ROLES,
   MIN_ROLES_TOP_YIELD,
   TOP_YIELD_THRESHOLD_MINOR,
   VENTURE_KINDS,
   assertKindTable,
+  electiveBandProblem,
   electiveFloor,
   isEscrowable,
   isTopYield,
   kindSpec,
+  maxElectiveBps,
+  minElectiveBps,
   minRoles,
   principalsRequired,
   topYieldKinds,
@@ -69,6 +73,15 @@ export {
   type RoleLabel,
   type RoleSpec,
 } from './kinds.js';
+
+export {
+  ELECTIVE_BPS_STATEMENT,
+  GRANT_IS_CONSENT,
+  bindingNote,
+  boundAtFormation,
+  readElectiveBps,
+  unhonouredCreateParam,
+} from './create.js';
 
 export {
   SHARE_PRIORITY,
@@ -80,6 +93,7 @@ export {
   pinnedAt,
   pinnedConsideration,
   roleTerms,
+  roleTermsFor,
   seniorityOf,
   shareTerms,
   termsCanonical,

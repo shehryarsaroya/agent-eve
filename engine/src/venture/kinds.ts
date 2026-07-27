@@ -268,6 +268,105 @@ export function electiveFloor(kind: VentureKind, pinnedConsideration: Minor): Mi
 }
 
 /**
+ * **THE ESCROW FLOOR — the least of a role that must be locked before a stranger staffs it.**
+ * *(calibrate)*
+ *
+ * `f(kind)` above is the floor under the ELECTIVE half, and until `create` took a proportion it was
+ * also the ceiling: every venture in the world was priced at exactly `f(kind)` elective and the rest
+ * escrowed, because there was one pricer and it took no argument. `create` now takes `elective_bps`,
+ * and the moment a creator can choose, the interesting question is the other end.
+ *
+ * ── WHY THERE HAS TO BE ONE, AND WHY IT IS PRICED IN CAPITAL ─────────────────
+ *
+ * A7: *"zero escrow enables fake counterparties."* Concretely — a creator offering 100% elective
+ * stakes nothing. It posts a large `value`, a stranger commits a hand for a whole Reckoning (median
+ * 11 ticks, p90 276), the venture delivers, and at settlement the creator declines the whole thing.
+ * Its cost is one default on the record; the filler's cost is real. And A15 forbids pricing that in
+ * reputation: *"any gate priced in identities is unpriced"* — a fresh keypair is free, so a record is
+ * worth nothing to an agent that can mint another. **The price of walking away has to be capital that
+ * was actually locked**, which is what escrow is.
+ *
+ * ── WHY 2,500 AND NOT 1 OR 9,000 ─────────────────────────────────────────────
+ *
+ *   - **It must be well above zero**, per the paragraph above.
+ *   - **It must be well below `10_000 − f(kind)` or there is nothing to negotiate.** The whole point
+ *     of the parameter is that two creators can make visibly different offers and a filler can weigh
+ *     them against their public records. At 2,500 every escrowable kind keeps a band of at least
+ *     4,000 bps (RAID's `f` is the largest, at 3,500), so `60/40 from you and 95/5 from him` is
+ *     expressible and so is everything between.
+ *   - **It is HAUL's own `f(kind)`**, which makes the vertical slice's kind symmetric: a `HAUL` can be
+ *     offered as secured as the rules allow or as unsecured as they allow, and the two ends are the
+ *     same distance from the middle. That is a property worth having on the kind an agent meets first.
+ *
+ * ── WHAT IT IS NOT ───────────────────────────────────────────────────────────
+ *
+ * It is a rule about the **offer**, not an invariant over the resulting minor amounts, and the
+ * difference is deliberate. `f(kind)`'s *absolute* term (`electiveFloorMinor`) can push a very small
+ * role fully elective — `electiveFloor` already clamps to the whole consideration — and when the two
+ * floors meet, PROP-V5 wins, because a role priced at 50 minor has nothing worth stealing and the
+ * elective floor is what makes trust exist at all. So this bounds `elective_bps`; it does not assert
+ * `escrowed >= 25%` after the fact.
+ */
+export const MIN_ESCROW_BPS = bps(2_500);
+
+/**
+ * The band `create`'s `elective_bps` may name, per kind. Both ends are published — `agent.md` and the
+ * `create` affordance quote these functions rather than restating the numbers, so there is one answer
+ * to *"how unsecured may this be"* and it cannot drift from the validator (scar #1).
+ *
+ * On an un-escrowable kind the band collapses to the single point `10_000`: §7.5 makes the top-yield
+ * prizes 100% elective by law, so there is no proportion to choose and pretending otherwise would
+ * offer a knob that does nothing.
+ */
+export function minElectiveBps(kind: VentureKind): Bps {
+  return isEscrowable(kind) ? kindSpec(kind).electiveFloorBps : bps(BPS_ONE);
+}
+
+export function maxElectiveBps(kind: VentureKind): Bps {
+  return isEscrowable(kind) ? bps(BPS_ONE - MIN_ESCROW_BPS) : bps(BPS_ONE);
+}
+
+/**
+ * What is wrong with one kind's elective band, if anything. **Exported so the guard can be bitten.**
+ *
+ * `assertKindTable` calls this and the whole table currently satisfies it, which means a test that
+ * only calls `assertKindTable` cannot tell the check from its absence — *"a guard no test can bite on
+ * is indistinguishable from a clean bill of health"*, which this repo has written down twice and
+ * shipped past anyway (INV-26 checked zero structures, silently, for the life of the project).
+ * Mutation-verified: deleting either clause below fails a test, because the test calls this with the
+ * crossing values the real table does not have. Same device as `vocabulary-repo.test.ts`'s simulated
+ * mutant.
+ */
+export function electiveBandProblem(args: {
+  readonly kind: string;
+  readonly low: number;
+  readonly high: number;
+  readonly escrowable: boolean;
+}): string | null {
+  // ── THE TWO FLOORS MUST NOT CROSS ────────────────────────────────────────
+  //
+  // `f(kind)` floors the ELECTIVE half and `MIN_ESCROW_BPS` floors the escrowed half. Raise either far
+  // enough and there is no legal proportion at all: `create` would refuse every value of
+  // `elective_bps` including its own default, and the kind would silently become uncreatable — a whole
+  // venture kind deleted by a calibration, with every test still green.
+  if (args.low > args.high) {
+    return (
+      `${args.kind}'s elective band is empty: f(kind) is ${String(args.low)} bps and the escrow floor ` +
+      `leaves at most ${String(args.high)}, so no proportion is legal and the kind cannot be created`
+    );
+  }
+  // A band with one point in it is legal only where the law makes it one — the un-escrowable kinds,
+  // which are 100% elective by §7.5. Anywhere else it means the parameter exists and does nothing.
+  if (args.escrowable && args.low === args.high) {
+    return (
+      `${args.kind} has a single-point elective band at ${String(args.low)} bps, so elective_bps is a ` +
+      'knob with one setting and there is nothing for a filler to weigh'
+    );
+  }
+  return null;
+}
+
+/**
  * CI totality check on the table itself, in both directions — the same shape as
  * `assertVerbsClassified` in `world/commons.ts`, and for the same reason: the
  * engine and the canon disagreeing about the vocabulary *is* scar #1.
@@ -296,6 +395,15 @@ export function assertKindTable(): void {
     if (!isEscrowable(kind) && !isTopYield(kind)) {
       problems.push(`${kind} is un-escrowable but not top-yield; the two must be derived together`);
     }
+    // The elective band, through the exported predicate so the check itself is testable — see
+    // {@link electiveBandProblem} on why a guard the real table always satisfies needs one.
+    const band = electiveBandProblem({
+      kind,
+      low: minElectiveBps(kind),
+      high: maxElectiveBps(kind),
+      escrowable: isEscrowable(kind),
+    });
+    if (band !== null) problems.push(band);
   }
   const tops = topYieldKinds();
   if (tops.length === 0) {

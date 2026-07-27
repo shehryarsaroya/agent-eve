@@ -58,9 +58,12 @@ import { storesAccount } from '../ledger/index.js';
 import { MAX_ORDER_QTY, freeCash, sellableGoods, type PublicBook } from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
+  escrowRatioBps,
   escrowRequired,
   IN_FULL,
   kindSpec,
+  maxElectiveBps,
+  minElectiveBps,
   openIndices,
   pinnedValue,
   roleOfPrincipal,
@@ -76,10 +79,22 @@ import {
 import { slotClaimAt } from '../observe/forecast.js';
 import {
   AGGRESSION_PER_RECKONING,
+  DEMAND_WINDOW_TICKS,
+  FORCE_BY_TIER,
   RAID_DEMAND_QTY,
   RAID_JOIN_STAKE_MINOR,
   RAID_TAKE_MULTIPLE,
 } from '../predation/index.js';
+
+/**
+ * Demands offered in one observation. INV-26: every list here is bounded.
+ *
+ * Small on purpose and not only for the budget: the capacity is {@link AGGRESSION_PER_RECKONING}
+ * per cycle, so a menu of twelve targets would be twelve rows an agent can act on twice. Three
+ * is enough to make it a choice about *whom* — which is the decision §9 wants — without turning
+ * the affordance list into a directory of everybody standing nearby.
+ */
+const MAX_DEMAND_AFFORDANCES = 3;
 import {
   ANCHOR_QTY,
   ARREARS_STATEMENT,
@@ -94,7 +109,7 @@ import {
   chargeConstituencyOf,
   type ClaimView,
 } from '../sovereignty/index.js';
-import { LEVY_BALLOT, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.js';
+import { LEVY_BALLOT, LEVY_GOOD, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.js';
 import { syndicateAsPrincipal } from '../syndicate/book.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR, MAX_SYNDICATES_PER_PRINCIPAL } from '../syndicate/params.js';
@@ -154,14 +169,55 @@ export const MAX_LIST_ROWS = 24;
 /**
  * Kinds offered as a `create` affordance.
  *
- * The two-role kinds only: a four-role kind needs four independently-capitalised
- * principals to be live in one window, and offering it to a newcomer with three
- * hands and nobody to call is an affordance that cannot be taken. RAID is excluded
- * because it is hostile and every newcomer is Commons-seated, where a hostile act
- * is *invalid* rather than merely refused (A8) — offering it would be offering a
- * move the floor will always reject.
+ * RAID and SIEGE are excluded because they are hostile and every newcomer is Commons-seated, where a
+ * hostile act is *invalid* rather than merely refused (A8) — offering one would be offering a move
+ * the floor will always reject. LEVY is the world's own obligation, not a deal an agent opens.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **`BUILD` IS HERE NOW, AND ITS ABSENCE WAS THE COSTLIEST OMISSION ON THIS LIST.**
+ *
+ * The original reason read: *"the two-role kinds only: a four-role kind needs four
+ * independently-capitalised principals to be live in one window, and offering it to a newcomer with
+ * three hands and nobody to call is an affordance that cannot be taken."* That conflates two
+ * different things, and the difference is this file's whole standard:
+ *
+ *   - **an act the engine would REFUSE** must not be offered (AGT-S2, and it costs a real action);
+ *   - **a deal nobody might take** is a judgement about other agents, which §1 says is the game.
+ *
+ * `create {kind: "BUILD"}` is legal, always was, and works when sent by hand. It escrows **nothing**
+ * — top-yield kinds are un-escrowable — so it passes the affordability gate below trivially, and if
+ * no counterparty ever fills a role it retires ABANDONED at window close having cost one action and
+ * zero currency. There is no refusal to protect anybody from.
+ *
+ * What its absence cost: `BUILD` is the only venture in the game that is 100% elective at four roles,
+ * which makes it the only one where a large amount of trust is genuinely at risk — the *"grand
+ * venture"* shape §7.6 says the design needs to make defection ever rational. **The LLM cast is
+ * prompted from this same observation.** So no agent in this world has ever been shown the four-role
+ * fully-unsecured venture the entire social premise rests on, and `AGT-E2` — *is trust priced?* — was
+ * being asked of a world where the instrument that prices it was never on the menu.
+ *
+ * It was not counted in `withheld` either, against §6's *"we never truncate this list"*. A capability
+ * that exists, is legal, and is never offered reads exactly like one that is missing (the diagnosis
+ * that took three tries on the empty panels), and this is the third time that shape has cost a
+ * mechanic.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * **It is LAST, and the order is load-bearing.** The prioritiser below keeps *the first offer of each
+ * verb* ahead of every repeat, so whichever kind is first here is the one guaranteed to survive
+ * truncation and the one a blind copier takes. Put `BUILD` first and every agent that copies its
+ * highest affordance opens a four-role fully-unsecured venture and nothing else — the daily texture
+ * the economy runs on comes from the two-role kinds, and it would stop. Last means the ordinary loop
+ * keeps the guaranteed slot and `BUILD` is offered beside it; if the list ever truncates that far, the
+ * drop is counted in `header.withheld` with its reason, which is the standard this file holds itself to
+ * everywhere else.
  */
-export const OFFERED_KINDS: readonly VentureKind[] = Object.freeze(['DIG', 'HAUL', 'ESCORT', 'SURVEY']);
+export const OFFERED_KINDS: readonly VentureKind[] = Object.freeze([
+  'DIG',
+  'HAUL',
+  'ESCORT',
+  'SURVEY',
+  'BUILD',
+]);
 
 export interface Affordance {
   readonly verb: string;
@@ -1060,6 +1116,106 @@ function affordancesFor(
     }
   }
 
+  // 0a. **OPEN ONE OF YOUR OWN.** §9's agent-initiated standoff — the only act in this game
+  //     that starts a fight with your name on it.
+  //
+  //     ══════════════════════════════════════════════════════════════════════
+  //     **A VERB WITH NO AFFORDANCE IS THIS PROJECT'S SIGNATURE DEFECT.** Nine mechanics were
+  //     once legal and unreachable, `grant` — the A6 core loop — among them, and the live frame
+  //     published `authorityLines: 0` as the direct result while the cast prompt told players
+  //     "the safest plan is built from entries in affordances[]". Predation is more exposed to
+  //     it than most: an agent that has never seen a `demand` on its menu has no reason to
+  //     believe it can attack anybody, and A14's whole premise is that agents left to
+  //     themselves choose silence.
+  //
+  //     **Gated on `runtime.demandRefusalFor`, which is the gate `vDemand` itself runs.** Not a
+  //     copy of it — the same function. An affordance with its own copy offers moves the handler
+  //     refuses, which costs an agent an action and its trust in the menu.
+  //     ══════════════════════════════════════════════════════════════════════
+  //
+  //     The candidate targets are principals whose **holding** stands where a hand of yours
+  //     does. A holding is a named body on the map and is `PUBLIC` (§3, §11.2), so this offers
+  //     no fact a stranger could not already read — deliberately *not* "principals with goods
+  //     here", which would answer a `SENSED` question through the menu.
+  const demandsLeft = runtime.demandsRemainingFor(principal, tick);
+  const myStages = new Set(
+    hands
+      .filter((hand) => hand.state === 'IDLE' && tierOf(world.map, hand.location) !== 'COMMONS')
+      .map((hand) => hand.location),
+  );
+  /**
+   * Reported below and **counted**, because capacity spent is a PRICE and a price nobody is told
+   * about is not one.
+   *
+   * Counted as one rather than as "how many targets were suppressed": the thing withheld is the
+   * *act*, and the agent has zero of them regardless of how many neighbours it is standing next
+   * to. Counting neighbours would make the number move for a reason that has nothing to do with
+   * what was actually taken away.
+   */
+  const demandCapacitySpent = demandsLeft <= 0 && myStages.size > 0;
+  let demandsOffered = 0;
+  if (demandsLeft > 0) {
+    for (const stage of [...myStages].sort(cmp)) {
+      if (demandsOffered >= MAX_DEMAND_AFFORDANCES) break;
+      for (const other of world.principalOrder) {
+        if (demandsOffered >= MAX_DEMAND_AFFORDANCES) break;
+        if (other === principal) continue;
+        const holdingId = world.holdingByPrincipal.get(other);
+        if (holdingId === undefined || world.holdings.get(holdingId)?.system !== stage) continue;
+        const ask = RAID_DEMAND_QTY.min;
+        if (
+          runtime.demandRefusalFor({
+            initiator: principal,
+            target: other,
+            stage,
+            good: LEVY_GOOD,
+            demand: ask,
+            tick,
+            handId: null,
+          }) !== null
+        ) {
+          continue;
+        }
+        demandsOffered += 1;
+        // A2: exact arithmetic, not an impression. One hand is force 1; a target that answers
+        // with nothing musters only its terrain; ties go to the defender. So the whole verdict
+        // against a silent target is a comparison of two integers the agent can check.
+        const tier = tierOf(world.map, stage);
+        const terrain = FORCE_BY_TIER[tier] ?? 0;
+        const aloneWins = 1 > terrain;
+        eligible.push({
+          verb: 'demand',
+          // `principal` AND `system`: `demand` is HOSTILE, so the Commons floor refuses it
+          // unless the params name something it can locate, and `world/commons.ts` exports the
+          // spellings for exactly this. An affordance is a complete, copyable act.
+          params: { principal: other, system: stage, good: LEVY_GOOD, qty: ask },
+          cost: 1,
+          // Exact, and it is the honest worst case rather than the hoped-for one: what you
+          // lose is the stake, in full, the moment the target repulses you. What you might
+          // *take* is not a figure this field has any business predicting — you cannot see
+          // what is there, and predicting it would be the "Charge fuel gauge" mistake with
+          // the sign flipped.
+          max_direct_loss: RAID_JOIN_STAKE_MINOR,
+          max_contingent_liability: RAID_JOIN_STAKE_MINOR,
+          what_it_forecloses:
+            `demanding ${String(ask)} of ${LEVY_GOOD} from ${other} at ${stage} spends 1 of your ` +
+            `${String(AGGRESSION_PER_RECKONING)} demands this Reckoning (${String(demandsLeft)} left, and ` +
+            `unspent capacity DOES NOT CARRY — what you do not use is gone), locks ` +
+            `${String(RAID_JOIN_STAKE_MINOR)} of your stores and puts one IDLE hand in for ` +
+            `${String(DEMAND_WINDOW_TICKS)} ticks. A demand brings NO force of its own: all of it is hands, ` +
+            `counted when the window closes. Yours is 1; ${stage} is ${tier}, worth ${String(terrain)} of ` +
+            `terrain to the defender, and ties go to the DEFENDER — so against a target that answers with ` +
+            `nothing you ${aloneWins ? 'TAKE IT ALONE' : 'LOSE ALONE and need one ally on your side'}. If ` +
+            `it repulses you, your stake goes to ${other} and your hand goes RECOVERING (never destroyed). ` +
+            `Nothing tells you what ${other} actually holds there: guess wrong and the raid finds ballast, ` +
+            `takes nothing, and you have paid all of the above for a MISSED.`,
+          expires_tick: tick + DEMAND_WINDOW_TICKS,
+          quote_id: quoteId(principal, tick, 'demand', { principal: other, system: stage, qty: ask }),
+        });
+      }
+    }
+  }
+
   // 0b. **Supply a claim of yours.** Second only to a raid, and for the same reason: the
   //     deadline is the Reckoning, nobody can be talked out of it, and the consequence is
   //     the only thing in this build that can take TERRITORY and slashable capital.
@@ -1400,6 +1556,22 @@ function affordancesFor(
             'costs no wake: POST /act is not wake-gated.'
           : 'Closing it needs a sign on the NEXT tick with this row’s own terms_hash and your_take_at_p50 — ' +
             'the first fill_role affordance spells the body out.';
+    // ── WHAT THIS SLOT IS OFFERING YOU, IN THE ONE SENTENCE YOU READ BEFORE COMMITTING ──
+    //
+    // The proportion, both amounts, and **who** is on the hook for the unsecured part. Since `create`
+    // took `elective_bps`, two slots that pay the same total can be very different deals — and the
+    // filler is the party bearing that difference. `max_direct_loss` on a fill is 0 and always was,
+    // which a probe correctly read as *"filling costs nothing"*; what it costs is the elective part
+    // never arriving, and that is not a loss the engine can price, so it has to be a sentence.
+    const offer =
+      `Of the ${String(row.escrowed + row.elective)} on this slot, ${String(row.escrowed)} is escrowed ` +
+      `(${String(row.escrow_ratio_bps)} bps — it executes automatically and nobody can stop it) and ` +
+      `${String(row.elective)} is elective (${String(row.elective_bps)} bps — ${row.creator} chooses at ` +
+      `the Reckoning whether to pay it, and silence is a default on ITS record, not yours).` +
+      (row.creator_bound_by_grant === null
+        ? ''
+        : ` ${row.creator} was bound to this by a delegate under grant ${row.creator_bound_by_grant}, ` +
+          'not by its own signature.');
     eligible.push({
       verb: 'fill_role',
       params: { venture: row.venture, role: row.role, hand: idle.id, stake: 0 },
@@ -1408,12 +1580,12 @@ function affordancesFor(
       max_contingent_liability: 0,
       what_it_forecloses: first
         ? `hand ${idle.id} cannot fill another role while it is committed to this one, and you may hold at ` +
-          `most one role in ${row.venture}. FILLING IS NOT CLOSING: the fill is allocated at tick close and ` +
-          `the venture stays FORMING until every party has countersigned the same terms_hash. ${close} ` +
-          `Unsigned by tick ${String(row.expires_tick)} and the window closes, the venture retires ABANDONED, ` +
-          'and nothing you spent comes back.'
+          `most one role in ${row.venture}. ${offer} FILLING IS NOT CLOSING: the fill is allocated at tick ` +
+          `close and the venture stays FORMING until every party has countersigned the same terms_hash. ` +
+          `${close} Unsigned by tick ${String(row.expires_tick)} and the window closes, the venture retires ` +
+          'ABANDONED, and nothing you spent comes back.'
         : `hand ${idle.id} is committed until this resolves, and you may hold at most one role in ` +
-          `${row.venture}. ${close} Unsigned by tick ${String(row.expires_tick)}: retired ABANDONED.`,
+          `${row.venture}. ${offer} ${close} Unsigned by tick ${String(row.expires_tick)}: retired ABANDONED.`,
       expires_tick: row.expires_tick,
       quote_id: quoteId(principal, tick, 'fill_role', { venture: row.venture, role: row.role }),
     });
@@ -1421,18 +1593,47 @@ function affordancesFor(
 
   // 5. Create a venture, for each kind the stores can actually fund. Affordability
   //    is part of *eligibility*, so an affordance is never an offer you cannot take.
+  //
+  //    ══════════════════════════════════════════════════════════════════════
+  //    **THE PROPORTION IS ON THE OFFER, BECAUSE A KNOB NOBODY IS SHOWN IS NOT A KNOB.**
+  //
+  //    `create` takes `elective_bps` — how much of every role stays a promise instead of being
+  //    locked — inside a band the kind publishes. It is in `params` at the default rather than
+  //    omitted, because an agent plays from this list: a parameter that exists and never appears in
+  //    a copyable request is the defect that hid nine mechanics including the core loop, and a probe
+  //    that *guessed* this exact spelling had it silently dropped.
+  //
+  //    The two `max_*` figures quote the DEFAULT proportion, and the string says so and names the
+  //    band. They have to: `max_direct_loss` is *exact, never an estimate* (A2), and raising
+  //    `elective_bps` moves value from the direct column to the contingent one — so a single pair of
+  //    numbers covering the whole band would be wrong at every point in it except one.
+  //    ══════════════════════════════════════════════════════════════════════
   for (const kind of OFFERED_KINDS) {
     const seat = hands[0]?.location;
     if (seat === undefined) continue;
     const probe = probeEscrow(kind);
     if (probe > free) continue;
+    const low = minElectiveBps(kind);
+    const high = maxElectiveBps(kind);
+    const band =
+      low === high
+        ? `${kind} is legally un-escrowable, so all ${String(BPS_ONE)} bps of it is elective and ` +
+          'elective_bps cannot be moved: nothing about it is secured, and the whole of it is a promise ' +
+          'you are asked for at the Reckoning.'
+        : `elective_bps is yours to set anywhere in ${String(low)}..${String(high)} and these two ` +
+          `figures quote ${String(low)}. Raise it and you lock less now and promise more later — ` +
+          'every filler reads it on its own board row before it commits a hand, and weighs it against ' +
+          'your public record.';
     eligible.push({
       verb: 'create',
-      params: { kind, stage: seat },
+      params: { kind, stage: seat, elective_bps: low },
       cost: 1,
       max_direct_loss: probe,
       max_contingent_liability: probeElective(kind),
-      what_it_forecloses: `${String(probe)} of your stores is locked in escrow until this settles or is abandoned.`,
+      what_it_forecloses:
+        `${String(probe)} of your stores is locked in escrow until this settles or is abandoned, and ` +
+        `${String(probeElective(kind))} stays elective — you are asked for it at the Reckoning and ` +
+        `staying silent is a permanent public default. ${band}`,
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'create', { kind, stage: seat }),
     });
@@ -2183,6 +2384,22 @@ function affordancesFor(
         'readable; and any principal\'s hand may pay any claim\'s Charge, so hiring a carrier also works',
     );
   }
+  if (demandCapacitySpent) {
+    // ── COUNTED, BECAUSE A MENU THAT SHRINKS WITHOUT SAYING WHY TEACHES THE WRONG RULE ──
+    //
+    // §9's capacity is the anti-toll-cartel price and it is only a price if the agent knows it
+    // is being charged. An agent that saw `demand` yesterday and does not see it today, with no
+    // sentence, will conclude that predation is unreliable rather than that it is rationed —
+    // and will not plan the one decision the mechanic exists to force: WHICH target, given that
+    // you get two.
+    reasons.push(
+      `every demand you could open is withheld because you have spent all ${String(AGGRESSION_PER_RECKONING)} ` +
+        'of this Reckoning\'s aggression capacity (§9). It refreshes at the next Reckoning and does NOT ' +
+        'accumulate: unspent capacity is gone, so a standing toll is unfundable by design, and the real cost ' +
+        'of a demand is the other demand you gave up. Answering somebody else\'s standoff with `join` costs ' +
+        'none of it',
+    );
+  }
   if (boardDropped > 0) {
     // The list this sentence is about is `ventures.board[]` itself, one level above the
     // affordances. It slices at `MAX_LIST_ROWS`, and until this branch existed the payload
@@ -2210,7 +2427,8 @@ function affordancesFor(
         crossingAnchored +
         worksWithheld +
         chargeNoHand +
-        commonsBoundLanes,
+        commonsBoundLanes +
+        (demandCapacitySpent ? 1 : 0),
       reason:
         reasons.length === 0
           ? 'nothing was withheld: this is every legal act, with its full cost.'
@@ -2278,10 +2496,42 @@ interface BoardRow {
    * someone") is only followable from the board if the board names who to look up.
    */
   readonly creator: PrincipalId;
+  /**
+   * The grant a **delegate** bound the creator under, or null when the creator committed itself.
+   *
+   * The elective half of this role is paid by `creator`, and a creator that was bound by somebody
+   * else's act is a materially different counterparty from one that signed its own terms: it may not
+   * be awake, it did not price this deal, and what it agreed to was a set of LIMITS rather than this
+   * venture. `counterparties[]` carries its standing; this says whose decision it actually was.
+   *
+   * Publishes nothing an agent could not already read — §11.2 puts a grant's parties at `PUBLIC`
+   * (D9a) and `venture.formed` carries the grant id on a public row.
+   */
+  readonly creator_bound_by_grant: string | null;
   readonly wage: number | null;
   readonly share: number | null;
   readonly escrowed: number;
   readonly elective: number;
+  /**
+   * **The proportion of this slot that is a PROMISE rather than an execution**, in bps.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS IS THE NUMBER THE WHOLE PREMISE TURNS ON, AND IT USED TO BE A CONSTANT.**
+   *
+   * `create` now takes `elective_bps`, so a creator chooses anywhere inside the kind's published band
+   * — and *that* is what makes reading a counterparty's record worth an action. A filler weighing a
+   * 40%-elective offer from an agent with 22 kept promises against a 25%-elective offer from an agent
+   * with a default is making the decision §1 says this game is about. It cannot make it if the two
+   * offers are identical by construction, which they were.
+   *
+   * `escrowed` and `elective` are already here in minor, and the ratio is derivable from them — but
+   * A2 requires known arithmetic be *exact and machine-readable* on the surface where the decision
+   * happens, and §7.5 says the escrow ratio is published on the card, not inferred from it.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly elective_bps: number;
+  /** The complement: §7.5's *"the escrow ratio is published on the venture card"*, as an integer. */
+  readonly escrow_ratio_bps: number;
   /**
    * Ticks this slot will hold a hand — the OPPORTUNITY COST of filling it.
    *
@@ -2343,10 +2593,17 @@ function boardFor(
         kind: venture.kind,
         stage: venture.stage,
         creator: venture.creator,
+        creator_bound_by_grant: venture.boundByGrant,
         wage: role.terms.wage,
         share: role.terms.share,
         escrowed: role.terms.escrowed,
         elective: role.terms.elective,
+        // `escrowRatioBps` is the venture module's own function, not a division written here: the
+        // number on the recruiting surface and the number §7.5 puts on the card have to be one
+        // number, and the ratio is truncated there on purpose (a ratio shown one bp high reads as
+        // more secured than it is).
+        escrow_ratio_bps: escrowRatioBps(role.terms),
+        elective_bps: BPS_ONE - escrowRatioBps(role.terms),
         // The slot's claim, not the reader's. Same arithmetic settlement will run.
         your_take_at_p50: slotClaimAt(venture, index, 'p50').claim,
         terms_hash: venture.termsHash,
@@ -2418,6 +2675,10 @@ function ventureRow(
       filled_by: r.filledByPrincipal,
       escrowed: r.terms.escrowed,
       elective: r.terms.elective,
+      // §7.5: "the escrow ratio is published on the venture card". It became worth publishing the
+      // moment `create` took `elective_bps` — before that it was the same number on every venture in
+      // the world, which is why nothing read it.
+      escrow_ratio_bps: escrowRatioBps(r.terms),
     })),
     my_role: role === null ? null : role.index,
     my_escrowed: role === null ? 0 : role.terms.escrowed,
@@ -2435,6 +2696,19 @@ function ventureRow(
       role === null ? null : venture.creator === principal ? 'SELF' : 'OWED_TO_ME',
     countersigned: [...venture.countersigned].sort(cmp),
     i_have_signed: venture.countersigned.has(principal),
+    /**
+     * The grant that stood in for the creator's countersignature, or null.
+     *
+     * On a venture **you** created through a delegate, this is the answer to "why is my name in
+     * `countersigned` when I never signed anything": your grant is the consent, and a delegated
+     * `create` binds you at formation (`venture/create.ts`). A grantor that reads its own name here
+     * and cannot see why would reasonably file a discrepancy — which is exactly what a probe did
+     * about a different silent behaviour, and the remedy each time is to say the reason on the row.
+     *
+     * On somebody else's venture it is the fact worth having before you fill a role in it: the
+     * principal on the hook for the elective half did not personally agree to this deal.
+     */
+    bound_by_grant: venture.boundByGrant,
     projected_settlement: yourTakeAtP50(venture, principal),
     talks: runtime.talksFor(principal).filter((t) => t.venture === venture.id).length,
   };

@@ -66,6 +66,11 @@ function raid(state: string, lost: number): RaidLine {
   return {
     raid: `raid:1:${state}`,
     target: 'p:hit' as PrincipalId,
+    // A WORLD raid: ownerless, which is what every beat in this file was about before `demand`
+    // existed. An agent's demand renders a different sentence (the raider is named, and a
+    // repulse does NOT close the stage), so leaving this undefined would have made the ordering
+    // assertions below quietly about a third thing that is neither.
+    initiator: null,
     stage: 'sys-07' as SystemId,
     state,
     demand: 2_000,

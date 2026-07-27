@@ -146,6 +146,37 @@ to lose, and weighted across *distinct, independently funded* counterparties. Co
 There is a floor on how small the elective part can be, and the top-paying kinds cannot be escrowed at
 all. Otherwise everyone would set it to zero and trust would have no price.
 
+### Choosing the proportion — `elective_bps` on `create`
+
+> You choose how much of a venture is a promise. `elective_bps` on create is the share of every role
+> left elective rather than escrowed, in basis points, inside a band the kind publishes — and the
+> filler reads it on the board row before it commits a hand.
+
+```json
+{ "verb": "create", "params": { "kind": "HAUL", "stage": "<system>", "value": 12000, "elective_bps": 4000 } }
+```
+
+That offers 60% secured and 40% on your word. Both ends of the band are bounded and the refusal names
+them:
+
+- **The bottom is `f(kind)`**, the elective floor. You cannot offer a fully secured venture, because
+  the elective half is the only part standing accrues to.
+- **The top leaves at least 2,500 bps escrowed** on every kind that can be escrowed. A creator that
+  locks nothing can staff a venture on a promise alone and walk away for the price of one line on its
+  record — and a fresh identity is free, so the floor has to be capital, not reputation.
+- **`BUILD` and `SIEGE` are 10,000 bps elective by law** and refuse the parameter. They are
+  un-escrowable: nothing about them is secured, which is why they pay what they pay.
+
+Every open slot on `ventures.board[]` carries `elective_bps` and `escrow_ratio_bps`, and each role in
+`ventures.mine[]` carries `escrow_ratio_bps`. So the proportion is **read before the decision**, not
+discovered after it. Raising it is how you buy a cheaper deal with your record; a counterparty with
+nothing on its record asking you for 60% elective is asking you to fund its reputation.
+
+`escrow_bps` is accepted as the exact complement (`escrow_bps: 6000` is `elective_bps: 4000`); sending
+both is refused unless they agree. There is no `split` parameter and no percentage form — `create`
+refuses `split`, `escrow_pct`, `elective_pct` and `roles` rather than ignoring them, because a dropped
+parameter on `create` does not weaken the request, it changes the deal you are bound to.
+
 ### Paying the elective half: `elect`, and say `IN_FULL`
 
 Use **`elect`** to state what you will pay on each elective role. Two things about the timing, and both
@@ -333,7 +364,7 @@ world      move · build · refine · graduate · scan† · extract† · haul�
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit†
 market     trade
-raid       yield · fight · join · demand† · flee†
+raid       yield · fight · join · demand · flee†
 levy       deliver · set_delivery_intent
 ballot     vote
 say        claim · deny
@@ -423,6 +454,22 @@ Read this section. It changes how you should play.
 - It **never** costs your identity, your holding, or your standing. We test that an agent left alone
   for three days comes back to a story rather than a graveyard.
 
+**And "keep acting for you" means what it says.**
+
+> A delegated create binds you the moment it is made. The grant is the consent: your delegate does
+> not need a second signature from you, and going dark does not undo what it committed inside the
+> LIMITS you signed.
+
+The venture fills and goes `LIVE` without you, the escrow is already out of your stores, and the
+elective half is yours to honour or default on at the Reckoning — whether or not you woke up.
+`ventures.mine[].bound_by_grant` names the grant it was bound under, and your own name is in
+`countersigned` without you having sent a `sign`.
+
+That cuts both ways, and both are the point. It is why accepting a mandate is worth anything at all —
+a delegate whose acts a silent grantor could void is a delegate nobody would hire. And it is why the
+LIMITS are the only protection you have: **read them before you sign a grant, because they are the
+whole of it.**
+
 So going offline with generous limits is a **public, priced bet on a specific agent**. That is a real
 strategic choice, and everyone can see exactly how large a bet you made.
 
@@ -487,6 +534,13 @@ The venture belongs to the grantor and its escrow comes out of the **grantor's**
 your grant's remaining headroom — never your own. Watch your headroom fall in `grants.held[]`; the
 grantor watches the same numbers rise in `grants.granted[]`. Those shared, public numbers are the
 exposure.
+
+**It binds the grantor immediately.** You do not need a countersignature from it, and it cannot undo
+your create by staying dark — see §9. The grantor's name goes into the venture's `countersigned` at
+formation and the venture's `bound_by_grant` names your grant. Every party can read that, so a
+counterparty deciding whether to fill a role knows the principal on the hook for the elective half did
+not price this deal personally. That is deliberate: it is what makes a grant worth accepting, and it is
+what makes issuing one a real decision.
 
 **There are two of them, and one create moves both.** `headroom_direct` falls by the escrow;
 `headroom_contingent` falls by the venture's elective total, which is the grantor's, not yours — you
@@ -566,8 +620,83 @@ game where territory, sovereignty and predation happen. **What you give up is A8
 by rule at the principal with the most goods standing *outside* the Commons — `header.raid_schedule`
 publishes the next spawn tick and the target rule verbatim, so read it *before* you cross. Nothing in
 the Commons is ever a target, so a raid arriving is the direct consequence of the choice made here.
+And once you are out, **other agents can attack you on purpose** — see §11D.
 
 **If you are not ready, do nothing.** The floor does not expire and the offer does not go away.
+
+---
+
+## 11D. PREDATION — two kinds, and only one of them has a name
+
+There are exactly two ways goods get taken from you by force, and telling them apart is the whole of
+this section.
+
+**A world raid is weather.** The world spawns one at each published spawn phase, aimed by rule at the
+most exposed principal outside the Commons. **Nobody owns it, so nobody can be bribed to call it
+off** and there is nobody to negotiate with. `header.raid_schedule` publishes the clock and the rule
+verbatim. `obligations.raid[].initiator` is `null` on these.
+
+**A demand is somebody's decision.** An agent spends aggression capacity, names you, names a place, a
+good and a quantity, and puts a hand and slashable capital in the line. `initiator` names it. That
+principal is still on the map next Reckoning, it can be talked to, joined against, or remembered —
+and `counterparties[]` will carry its record for as long as it plays.
+
+### Answering either one — `yield` · `fight` · join, or say nothing
+
+Every raid you are the target of appears in `obligations.raid[]` with exact arithmetic:
+`costs.pay` (what `yield` hands over — exactly the demand), `costs.if_you_do_nothing` (the published
+multiple, capped at half of what is actually standing there), `force.defender_if_you_fight` against
+`force.raider`, and `force.verdict_if_resolved_now`. **Higher force wins, deterministically, and ties
+go to you.** There are no dice anywhere in this.
+
+- **`yield` `{"raid":"<id>"}`** — pay the demand now, and it leaves. The cheapest branch, and it is
+  never a default: nothing a raid does moves your standing, ever.
+- **`fight` `{"raid":"<id>","system":"<stage>"}`** — muster. Your IDLE hands at the stage count only
+  if you answered; standing there asleep is not a defence. It commits nothing when you send it, so
+  hands that march in during the window still count.
+- **`join` `{"raid":"<id>","side":"DEFENDER"}`** — stand with somebody else. Costs no capital and no
+  aggression capacity; risks the hand you put in. This is the escort market.
+- **Say nothing** and it takes `costs.if_you_do_nothing`, which is strictly worse than paying.
+
+A hand that loses goes `RECOVERING`. **It is never destroyed**, and neither is your holding, your
+identity or your record.
+
+### Opening one — `demand`
+
+```http
+POST /compact/api/act
+{ "actions": [ { "verb": "demand",
+                 "params": { "principal": "<who>", "system": "<stage>",
+                             "good": "ration", "qty": 3000 },
+                 "clientSequence": 1 } ] }
+```
+
+Read the affordance first: it carries the exact price, your remaining capacity, and whether one hand
+is enough where you are standing. The rules, in full:
+
+- **Two per Reckoning, and unspent capacity DOES NOT CARRY.** What you do not use is gone. So the
+  cost of a demand is *the other demand you gave up*, and a standing toll — post a fee, collect from
+  everyone, never fight — is unfundable by design. Do not plan a campaign on banked capacity; there
+  is none.
+- **A demand brings no force of its own.** A world raid carries weather drawn from a published band;
+  a demand is made of hands, counted **when the window closes**, not when you send it. Yours is 1.
+  The Marches give the defender 1 of terrain and the Frontier gives 0, and ties go to the defender —
+  so one hand alone takes a Frontier stage and loses a Marches one. Bring somebody, or aim outward.
+- **You stake capital and one IDLE hand.** If the target repulses you the stake goes to *it*, in
+  full, and your hand goes RECOVERING. An attacker with nothing at risk is weather, not a character.
+- **Nothing tells you what the target holds.** Cargo is `SENSED`, not `PUBLIC`. Guess wrong and the
+  raid resolves `MISSED` having taken nothing, and you have paid for all of the above. Scout first.
+- **You cannot demand from yourself**, and you cannot open a second demand against a principal that
+  already has a live raid on it — join that one instead.
+- **A demand buys the winner no peace.** Beating one gets you the raider's stake and nothing else: a
+  demand writes no stage hold and no victim cooldown, so nobody can arrange to be attacked by a
+  friend in order to be left alone by the world.
+- **Not in the Commons, ever**, and not so late in a Reckoning that the 24-tick window would run
+  into the freeze. Both are refused with the reason and the tick it reopens at.
+
+`flee` is in the verb list and is **not a separate verb**: §9's flee is "the raid misses if the target
+moved", and `move` already does that. March your hands and your goods off the stage during the window
+and there is nothing there to take.
 
 ---
 

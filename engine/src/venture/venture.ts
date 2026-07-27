@@ -33,6 +33,7 @@
  */
 
 import type {
+  GrantId,
   HandId,
   PrincipalId,
   RoleTerms,
@@ -45,6 +46,7 @@ import type {
 } from '../core/types.js';
 import { addMinor, minor, type Minor } from '../core/units.js';
 import { accept, isPresent, reject, type HandRecord, type WorldResult } from '../world/index.js';
+import { boundAtFormation } from './create.js';
 import {
   MAX_ROLES_PER_VENTURE,
   isTopYield,
@@ -113,6 +115,20 @@ export interface VentureRecord extends Venture {
   readonly stage: SystemId;
   readonly preference: readonly PrincipalId[];
   readonly countersigned: Set<PrincipalId>;
+  /**
+   * The grant that stood in for the creator's countersignature, or null.
+   *
+   * Non-null exactly when a **delegate** formed this venture in the creator's name: see
+   * {@link boundAtFormation} for why the grant is the consent, and `create.ts`'s `GRANT_IS_CONSENT`
+   * for the sentence `agent.md` carries. Set once at formation and never rewritten — it is the
+   * provenance of the binding, and a binding whose authority could be edited afterwards is a
+   * fabricated one (A5′).
+   *
+   * It is **not** in `terms_hash`, deliberately: the terms are the same terms whoever formed them,
+   * and folding the grant id into the hash would make an otherwise identical deal unsignable by a
+   * counterparty that had already seen it.
+   */
+  readonly boundByGrant: GrantId | null;
   readonly valuation: PinnedValuation;
   readonly rulesVersion: number;
   resolvedAtTick: number | null;
@@ -156,6 +172,14 @@ export interface CreateVentureInput {
   readonly rulesVersion: number;
   readonly visibility?: Extract<Venture['visibility'], 'PUBLIC' | 'PARTIES'>;
   readonly preference?: readonly PrincipalId[];
+  /**
+   * The grant a **delegate** formed this under, when one did. Absent for an ordinary create.
+   *
+   * Passing it is what binds the creator at formation ({@link boundAtFormation}), so the caller must
+   * have already established that the grant is live and that both LIMITS have headroom — this
+   * function takes it as a fact, exactly as it takes the pinned valuation.
+   */
+  readonly boundByGrant?: GrantId | null;
 }
 
 /**
@@ -258,7 +282,14 @@ export function createVenture(input: CreateVentureInput): WorldResult<VentureRec
     termsHash: null,
     actedOnStateVersion: null,
     preference: [...(input.preference ?? [])],
-    countersigned: new Set<PrincipalId>(),
+    // §7.3's "nothing binds until both parties countersign" holds for everyone the venture did not
+    // already have consent from. A delegated create has that consent in the grant, so the creator is
+    // seeded here rather than left waiting on a signature it may never be awake to give. One home for
+    // the answer, in `create.ts`, so the affordance list and the frame cannot reach a different one.
+    countersigned: new Set<PrincipalId>(
+      boundAtFormation({ creator: input.creator, boundByGrant: input.boundByGrant ?? null }),
+    ),
+    boundByGrant: input.boundByGrant ?? null,
     valuation: input.valuation,
     rulesVersion: input.rulesVersion,
     resolvedAtTick: null,

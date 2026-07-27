@@ -238,8 +238,12 @@ describe('the verb table and the canon agree about what is live', () => {
     expect(notLive).not.toContain('yield');
     expect(notLive).not.toContain('fight');
     expect(notLive).not.toContain('join');
-    // `demand` and `flee` genuinely are not built, and are still declared as such.
-    expect(notLive).toContain('demand');
+    // `demand` joined them: §9's agent-initiated standoff is built, so telling an agent it is
+    // waiting on a build step would cost it every action it spent waiting.
+    expect(notLive).not.toContain('demand');
+    // `flee` is the one that stays, and it is not a gap: §9's flee is "targeting misses if the
+    // target moved", which `move` already expresses. A second spelling would be §3's forbidden
+    // second concept, and `VERB_ARRIVES_AT` says exactly that rather than promising a step.
     expect(notLive).toContain('flee');
   });
 });

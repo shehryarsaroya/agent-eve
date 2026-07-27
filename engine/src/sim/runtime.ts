@@ -222,10 +222,10 @@ import {
   allocateFills,
   activate,
   allRoleIndices,
+  bindingNote,
   computeProceeds,
   createVenture,
   drawResidual,
-  electiveFloor,
   electiveTotal,
   escrowRequired,
   filledIndices,
@@ -233,15 +233,17 @@ import {
   isEscrowable,
   isFullyFilled,
   kindSpec,
+  minElectiveBps,
   NEUTRAL_STAGE_BPS,
   openIndices,
   partiesOf,
   pinnedAt,
   proceedsBand,
+  readElectiveBps,
   roleOfPrincipal,
   roleTerms,
-  scaleByBps,
-  shareTerms,
+  roleTermsFor,
+  ventureEscrowRatioBps,
   VentureBook,
   VENTURE_KINDS,
   type Election,
@@ -506,8 +508,38 @@ import {
  * So the live world needs the operator divergence door
  * (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the next deploy, exactly as it did at 1 → 2 and
  * 4 → 5.
+ *
+ * ## 6 → 7 (2026-07-27)
+ *
+ * **`demand` landed — §9's agent-initiated standoff — and `RaidRecord` gained an `initiator`.**
+ * The `raid` table was already registered and already hashed, so this is not a new table; it is
+ * a **new field inside a hashed capture**, which moves `state_hash` at every tick that has any
+ * raid row in it and at no other tick. That is a different signature from the 5 → 6 boundary
+ * and the difference is worth naming, because it is how a reader tells the two apart in a
+ * divergence report: a new table diverges *everywhere*, a new field diverges from the first
+ * row onward.
+ *
+ * Three further changes move behaviour rather than only the hash, and each is deliberate:
+ *
+ *   1. **A repulsed or resolved raid writes the stage hold and the victim cooldown only when it
+ *      is ownerless** (`grantWorldProtections`). Nothing journalled can be affected — before
+ *      this commit every raid was ownerless, so the guard is true for every historical row —
+ *      but it is a rule change and a replay of a *future* journal depends on it.
+ *   2. **`Book.prune` takes the tick** and drops the current Reckoning's rows last, so a pruned
+ *      demand cannot refund its raider's aggression capacity. Unreachable today (the cap is 96
+ *      rows and one Reckoning cannot produce that many at the current cast size) and it is
+ *      wired now because the alternative is an exploit whose only requirement is a bigger world.
+ *   3. **`demand` is registered in the verb table**, so `classifyVerb` stops answering "not live
+ *      yet" for a word `agent.md` has always listed.
+ *
+ * Demands use their own id namespace (`raid:<tick>:d<n>`) so an agent demanding on a world spawn
+ * tick cannot collide with `raid:<tick>:0` — `spawnOne` calls `book.spawn` outside a try, so a
+ * collision would have been an agent-reachable abort of a tick that had already moved hands.
+ *
+ * The live world therefore needs the operator divergence door
+ * (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the next deploy, as at 1 → 2, 4 → 5 and 5 → 6.
  */
-export const RULES_VERSION = 6;
+export const RULES_VERSION = 7;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
@@ -1153,6 +1185,13 @@ export function ventureStateTable(
         valuationAsOfTick: v.valuation.asOfTick,
         preference: [...v.preference],
         countersigned: [...v.countersigned].sort(compareIds),
+        // A6's provenance: the grant that stood in for the creator's countersignature. Captured
+        // because a restore that forgot it would rebuild the venture UNBOUND — the creator dropping
+        // out of `countersigned`, `activate` refusing a venture that was already live, and the
+        // authority line under-stating what a delegate has committed. `boundByGrant` is not in
+        // `terms_hash` (the terms are the same terms), so the hash witness cannot catch it and the
+        // capture has to carry it explicitly.
+        boundByGrant: v.boundByGrant,
         roles: v.roles.map((r) => ({
           index: r.index,
           label: r.label,
@@ -1241,6 +1280,10 @@ function readVenture(raw: CanonicalValue, where: string): VentureRecord {
       if (typeof p !== 'string') throw new VentureRestoreError(`${where}.preference[${String(i)}]`);
       return p as PrincipalId;
     }),
+    // Rebuilt through the constructor rather than written back afterwards, so the restored row's
+    // `countersigned` is seeded by the same `boundAtFormation` call the live path used. Writing the
+    // field and then the signature set separately would be two homes for one fact.
+    boundByGrant: snapStringOrNull(o, 'boundByGrant', where) as GrantId | null,
   });
   if (!made.ok) {
     throw new VentureRestoreError(`${where}: ${made.invariant} ${made.hint}`);
@@ -1330,26 +1373,18 @@ export interface RuntimeOptions {
   readonly hazards?: boolean;
 }
 
-/** Default terms for a kind, derived from the kind's own template. */
+/**
+ * Terms for a kind at the kind's own elective floor — what `create` prices when the creator names no
+ * proportion.
+ *
+ * The arithmetic moved to `venture/terms.ts:roleTermsFor`, which takes the proportion `create` now
+ * accepts. This stays as the *default*, because that is a different fact from the pricing rule and it
+ * is read in three places (the probe quotes in `api/observe.ts`, the CLI's table, and here). A wrapper
+ * rather than a re-export so the name keeps saying "the default" while the pricer says "at this
+ * proportion".
+ */
 export function defaultTerms(kind: VentureKind, value: Minor): readonly RoleTerms[] {
-  const spec = kindSpec(kind);
-  const out: RoleTerms[] = [];
-  for (const role of spec.roles) {
-    // A role's share of the residual is its marginal contribution to the yield:
-    // one number, used both to price the slot and to divide the proceeds, so the
-    // quote an agent is shown and the split it is paid come from one place.
-    const share = role.marginalOutputBps;
-    const consideration = scaleByBps(value, share);
-    const priced = consideration > 0 ? consideration : minor(1);
-    if (!isEscrowable(kind)) {
-      out.push(shareTerms(share, minor(0), priced));
-      continue;
-    }
-    const floor = electiveFloor(kind, priced);
-    const elective = floor > priced ? priced : floor;
-    out.push(shareTerms(share, minor(priced - elective), elective));
-  }
-  return out;
+  return roleTermsFor(kind, value, minElectiveBps(kind));
 }
 
 /**
@@ -2345,9 +2380,11 @@ export class Runtime {
   private demandPort(tick: number): DemandPort {
     const port = this.predationPort(tick);
     return {
-      tierOf: port.tierOf,
-      handsDefending: port.handsDefending,
-      isSeated: port.isSeated,
+      // Wrapped rather than passed by reference: `unbound-method` is right to object, and the
+      // delegation is the point anyway — one implementation, reached three ways.
+      tierOf: (system) => port.tierOf(system),
+      handsDefending: (principal, stage) => port.handsDefending(principal, stage),
+      isSeated: (principal) => port.isSeated(principal),
       freeStoresOf: (principal) => freeStores(this.ledger, principal),
       lockStake: (args) => {
         try {
@@ -4018,6 +4055,20 @@ export class Runtime {
     if (value <= 0 || value > 1_000_000_000) {
       return reject('PROP-V5', `value must be a positive amount under 1000000000, got ${String(value)}.`);
     }
+    // ── HOW MUCH OF THIS IS A PROMISE, AND WHO DECIDES ──────────────────────
+    //
+    // The creator does, inside the band the kind publishes. Before this, every venture in the world
+    // was exactly `f(kind)` elective, so *"the elective half is a real choice, every time"* was a
+    // fixed tax with a fixed answer and there was nothing to negotiate (`D22` finding 4). Read here,
+    // ahead of the escrow arithmetic, because it changes both the escrow that gets locked and the
+    // contingent tail the grant is charged for — a proportion applied after either would be gating
+    // one number and owing another, which is scar #1's shape (see the note on `elective` below).
+    //
+    // It also refuses the spellings a probe sent and lost (`roles`, `split`, `escrow_pct`): a dropped
+    // param on a verb that shapes a binding commitment does not degrade the request, it changes what
+    // was committed to.
+    const proportion = readElectiveBps(kind, req.params);
+    if (!proportion.ok) return proportion;
 
     const opens = ctx.tick;
     const closes = opens + FORMATION_WINDOW_TICKS;
@@ -4078,18 +4129,43 @@ export class Runtime {
       preference = named;
     }
 
+    // ── THE GRANT IS FOUND BEFORE THE VENTURE IS BUILT, BECAUSE IT IS THE CONSENT ──
+    //
+    // It used to be looked up after `createVenture`, which was fine while the grant only had to be
+    // *checked*. It now also has to be **recorded on the venture**: a delegated create binds the
+    // grantor at formation, and the row must say under whose authority (`GRANT_IS_CONSENT`,
+    // `venture/create.ts`). The headroom checks stay where they are — they need the terms — so this
+    // is only the existence half moving up. Still before any value moves, so a refusal here leaves
+    // the world untouched.
+    let grant: Grant | null = null;
+    if (delegated) {
+      grant = this.grantBook.liveGrantBetween(creator, req.principal, ctx.tick);
+      if (grant === null) {
+        return reject(
+          'INV-23',
+          `you hold no live grant from ${creator} to act on its behalf. Ask it to grant you scoped authority ` +
+            '(verb: grant), or create on your own account.',
+        );
+      }
+    }
+
     const made = createVenture({
       id,
       kind,
       creator,
       stage: here,
-      terms: defaultTerms(kind, minor(value)),
+      terms: roleTermsFor(kind, minor(value), proportion.value),
       windowOpensTick: opens,
       windowClosesTick: closes,
       resolvesAtTick: resolves,
       valuation: pinnedAt(DEFAULT_VALUATION_RULE, ctx.tick),
       rulesVersion: RULES_VERSION,
       preference,
+      // A6. The grantor is bound the moment its delegate acts, inside the LIMITS it signed — it does
+      // not get a second veto by staying dark, and `agent.md` §9 has always said so. See
+      // `venture/create.ts:boundAtFormation` for the whole argument and for what it cost while it was
+      // the other way round.
+      boundByGrant: grant?.id ?? null,
     });
     if (!made.ok) return made;
 
@@ -4128,16 +4204,7 @@ export class Runtime {
     // the elective tail against CONTINGENT headroom (value the grantor is asked for at
     // settlement and defaults on by staying silent). Neither may pass the worst case the
     // grantor was shown (A7). This is the gate; INV-22 is the net.
-    let grant: Grant | null = null;
-    if (delegated) {
-      grant = this.grantBook.liveGrantBetween(creator, req.principal, ctx.tick);
-      if (grant === null) {
-        return reject(
-          'INV-23',
-          `you hold no live grant from ${creator} to act on its behalf. Ask it to grant you scoped authority ` +
-            '(verb: grant), or create on your own account.',
-        );
-      }
+    if (grant !== null) {
       const headroom = this.grantBook.headroom(grant.id);
       if (required > headroom.direct) {
         return reject(
@@ -4277,7 +4344,27 @@ export class Runtime {
         // would describe an un-escrowable BUILD as a venture with nothing at stake.
         elective,
         termsHash: made.value.termsHash,
-        ...(delegated ? { creator, onBehalfOf: creator, grant: grant?.id ?? null } : {}),
+        ...(delegated && grant !== null
+          ? {
+              creator,
+              onBehalfOf: creator,
+              grant: grant.id,
+              // ── THE BINDING, ON THE RECORD, AT THE MOMENT IT HAPPENS ────────────────
+              //
+              // A6's signature moment is *"a grant used against you through an entirely legitimate
+              // act"*, and the replay has to be able to point at the act. `boundByGrant` says the
+              // creator was committed here, by this delegate, under this authority, **without a
+              // signature of its own** — the fact a viewer needs to understand why the grantor is
+              // liable for something it never agreed to individually, and the fact a counterparty
+              // needs before it fills a role in it.
+              //
+              // It publishes nothing new: `grantId` is already on this row, §11.2 puts a grant's
+              // parties and LIMITS at `PUBLIC` (D9a), and the authority line has drawn them since
+              // the grant layer shipped.
+              boundByGrant: grant.id,
+              boundNote: bindingNote({ creator, delegate: req.principal, grant: grant.id }),
+            }
+          : {}),
       },
       visibility: 'PUBLIC',
       audience: [],
@@ -9528,6 +9615,14 @@ export class Runtime {
     // settlement, and how much of it has been drawn. Dead-expired grants are dropped;
     // live and revoked ones render (a revocation is drama). renderFrame sorts by the most
     // authority and caps to the budget — convergence is the signature, a hairball is not.
+    // How many ventures each grant has BOUND in its grantor's name (`AuthorityLine.boundVentures`).
+    // Counted once over the book rather than per grant, so the frame stays linear in the book rather
+    // than quadratic in grants × ventures — INV-7 was pulled off that same shape.
+    const boundByGrant = new Map<GrantId, number>();
+    for (const v of this.ventures.all()) {
+      if (v.boundByGrant === null) continue;
+      boundByGrant.set(v.boundByGrant, (boundByGrant.get(v.boundByGrant) ?? 0) + 1);
+    }
     const authorityLines: AuthorityLine[] = this.grantBook
       .all()
       .filter((g) => g.expiresTick >= outcome.tick)
@@ -9554,6 +9649,7 @@ export class Runtime {
           spent: g.spentDirect,
           grantedContingent: g.maxContingentLiability,
           spentContingent: g.spentContingent,
+          boundVentures: boundByGrant.get(g.id) ?? 0,
           state,
         };
       });
@@ -9626,6 +9722,16 @@ export class Runtime {
             v.roles.map((r) => r.filledByPrincipal).filter((x): x is PrincipalId => x !== null),
             v.id,
           ),
+          // A6 on the docket. Present only when a delegate committed the creator under a grant; the
+          // delegate is read off the grant rather than off the venture, because the venture records
+          // the AUTHORITY and the grant records who holds it, and duplicating the delegate onto the
+          // venture row would be two homes for one fact (scar #5).
+          boundGrantor: v.boundByGrant === null ? null : v.creator,
+          boundBy: v.boundByGrant === null ? null : (this.grantBook.get(v.boundByGrant)?.delegate ?? null),
+          // The creator's OFFER, as one bps figure over the whole venture: A7's unsecured share. Read
+          // off `ventureEscrowRatioBps`, the venture module's own function, so the arc a viewer sees
+          // and the ratio §7.5 puts on the card are one number.
+          electiveBps: BPS_ONE - ventureEscrowRatioBps(v),
         }))
         .filter((u) => u.atStake > 0),
       tributeLines: this.tributeLines(outcome.tick),

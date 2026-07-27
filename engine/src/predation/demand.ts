@@ -248,7 +248,13 @@ export function demandRefusal(port: DemandPort, book: Book, req: DemandRequest):
     return reject('A14', aggressionNote(0));
   }
 
-  // 6 & 7. The world's two protections, honoured and never minted (decision 3).
+  // 6 & 7. The world's two protections, honoured and never minted (decision 3). Honouring the
+  //        stage hold does leave one asymmetry worth naming rather than hiding: a live raid at a
+  //        stage also makes the world's own `spawnOne` skip that stage, so a demand timed just
+  //        before a spawn phase can push tonight's world raid somewhere else. That is a real
+  //        strategy — "I would rather be raided by somebody I chose" — and it costs a demand, a
+  //        hand and a stake, so it is priced. It is *not* the immunity-minting exploit decision 3
+  //        closes: the world still raids, just not there, and nobody gains a Reckoning of peace.
   if (book.isStageHeld(req.stage, req.tick)) {
     return reject(
       'A2',
@@ -268,27 +274,29 @@ export function demandRefusal(port: DemandPort, book: Book, req: DemandRequest):
     );
   }
 
-  // 8 & 9. One live raid per target and one per stage — the world's own rule (`predate.ts`),
-  //        because two at once on one principal stack the take past the cap that keeps an
-  //        absent agent's loss proportionate, and two arcs on one system is a map a viewer
-  //        cannot read (A13).
+  // 8. **One live raid per TARGET — and deliberately NOT one per stage.**
+  //
+  //    Per-target is the principled half and it is the world's own rule (`predate.ts`): two
+  //    standoffs at once on one principal stack the take past `RAID_MAX_TAKE_BPS`, which is the
+  //    cap that keeps an offline agent's loss proportionate (§1.1: *"offline costs opportunity,
+  //    never catastrophe"*).
+  //
+  //    Per-*stage* is the world's rule too, and copying it here was a mistake caught by a test:
+  //    it would make one 500-minor demand a **veto over everybody else's predation at that
+  //    place** for the whole window. That is a denial-of-predation gate at a price §9 would call
+  //    cheap and bounded — and worse than a toll, because the toll operator at least has to be
+  //    willing to fight. `MAX_LIVE_RAIDS` and `MAX_RAID_LINES` are both 6, so the map stays
+  //    legible on its own terms: several arcs at one hub, each with a different target, is a
+  //    contested system rather than a weather map.
   for (const live of book.live()) {
-    if (live.target === req.target) {
-      return reject(
-        'A2',
-        `${req.target} is already under raid ${live.id}, which resolves at tick ` +
-          `${String(live.resolvesAtTick)}. One live raid per target: two at once would stack the take past ` +
-          'the cap that keeps an offline principal\'s loss proportionate. You may join that one instead — ' +
-          'send join with {"side": "RAIDER"}.',
-      );
-    }
-    if (live.stage === req.stage) {
-      return reject(
-        'A2',
-        `raid ${live.id} already stands at ${req.stage} until tick ${String(live.resolvesAtTick)}. One ` +
-          'standoff per place, so the map stays a countdown a viewer can follow rather than a weather map.',
-      );
-    }
+    if (live.target !== req.target) continue;
+    return reject(
+      'A2',
+      `${req.target} is already under raid ${live.id}, which resolves at tick ` +
+        `${String(live.resolvesAtTick)}. One live raid per target: two at once would stack the take past ` +
+        'the cap that keeps an offline principal\'s loss proportionate. You may join that one instead — ' +
+        'send join with {"side": "RAIDER"}.',
+    );
   }
   if (book.liveCount() >= MAX_LIVE_RAIDS) {
     return reject(

@@ -151,6 +151,12 @@ describe('§11.2 — the frame projection admits the key, and admits nothing mor
     expect(Object.keys(line ?? {}).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([
       'defenderForce',
       'demand',
+      // `initiator` is admissible and had to argue for itself like every other field here.
+      // Taking a side in a standoff is already `PUBLIC` — `raid.joined` publishes the joiner
+      // AND its stake, and §11.2 gives `PUBLIC` to the map's motion — and the initiator is
+      // simply the first party to have taken one. It is an IDENTITY, not a quantity, so there
+      // is nothing in it to invert into a hold value, which is the property this test guards.
+      'initiator',
       'lost',
       'raid',
       'raiderForce',

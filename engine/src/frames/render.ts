@@ -149,6 +149,25 @@ export interface UpcomingView {
   readonly parties: readonly PrincipalId[];
   /** NEVER · HELD · BROKEN. A boolean here printed "and it held" about defaults (A5′). */
   readonly priorDealings: 'NEVER' | 'HELD' | 'BROKEN';
+  /**
+   * The principal whose money is riding on this, when a **delegate** committed it rather than the
+   * principal itself. Null on an ordinary venture.
+   *
+   * Optional so `emptyFrame` and the existing fixtures stay valid, and so a caller that does not know
+   * says nothing rather than asserting "this was signed by its creator" — which for a delegated
+   * venture would be false, and A5′ is specifically about the record being wrong.
+   */
+  readonly boundGrantor?: PrincipalId | null;
+  /** The delegate that bound it, when one did. See {@link boundGrantor}. */
+  readonly boundBy?: PrincipalId | null;
+  /**
+   * The proportion of this venture that is elective, in bps — what the creator OFFERED.
+   *
+   * Optional and defaulted to 0 by the renderer rather than computed: a docket card that invented an
+   * arc would be drawing a proportion nobody agreed to, the same reason tribute and authority lines
+   * are passed in. Zero draws no arc, which is honest for a caller that does not know.
+   */
+  readonly electiveBps?: number;
 }
 
 function handleOf(src: FrameSource, p: PrincipalId): Handle {
@@ -311,6 +330,31 @@ function headlineForUpcoming(src: FrameSource, u: UpcomingView): string {
   return `${handleOf(src, first)}'s ${money(u.atStake)} is riding on ${handleOf(src, second)}.`;
 }
 
+/**
+ * The clause under a docket headline — **and a delegated binding outranks every other one.**
+ *
+ * Three prior-dealings states, because two of them used to share one sentence, and `BROKEN` is the
+ * better card anyway: a pair with a default between them is the most watchable row on a docket.
+ *
+ * But a venture a **delegate** committed in someone else's name beats all three, because it is the one
+ * card where the party with the money at risk did not agree to *this deal* at all — it agreed to a set
+ * of LIMITS, and this is what came out of them. That is A6 in one sentence, and it is the sentence
+ * §14.1 wants a cold viewer to read first.
+ */
+function tensionFor(src: FrameSource, u: UpcomingView): string {
+  const delegate = u.boundBy ?? null;
+  const grantor = u.boundGrantor ?? null;
+  if (delegate !== null && grantor !== null) {
+    return (
+      `${handleOf(src, delegate)} committed ${handleOf(src, grantor)} to this under a grant. ` +
+      `${handleOf(src, grantor)} never signed it.`
+    );
+  }
+  if (u.priorDealings === 'NEVER') return 'These two have never dealt with each other before.';
+  if (u.priorDealings === 'BROKEN') return 'They have dealt before, and a promise between them was broken.';
+  return 'They have dealt before, and it held.';
+}
+
 function consequenceFor(src: FrameSource, v: SettledView): string {
   const payer = handleOf(src, v.creator);
   if (v.deferred) return `${payer}'s ${v.kind.toLowerCase()} did not resolve. It carries to tomorrow.`;
@@ -415,7 +459,15 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
 
   const raidBeats = (src.raidLines ?? [])
     .filter((r) => r.state === 'PLUNDERED' || r.state === 'PAID' || r.state === 'REPULSED')
-    .map((r) => ({
+    .map((r) => {
+      // ── THE RAIDER'S NAME, AND `?? null` RATHER THAN TRUSTING THE FIELD ────
+      //
+      // A world raid is weather and a demand is somebody's decision (§9), and A13 asks for a
+      // *named* pixel signature — so the beat says who, when there is a who. Coerced because a
+      // frame source crosses a boundary: an absent initiator printed into a deed would read
+      // "undefined took it" on a screen a stranger is using to decide who to root for.
+      const by = r.initiator ?? null;
+      return {
       kind: 'PLUNDER' as const,
       subject: String(r.stage),
       // A plunder took something and belongs late; a repulse is a win and belongs early.
@@ -425,11 +477,14 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       cast: [] as readonly CastChip[],
       publicLine: null,
       sealVerdict: null,
+      // "forfeited", never "lost". `lost` is what the TARGET does in the plundered branch, and
+      // a repulse deed carrying the word made the rundown's own ordering test unable to tell a
+      // win from a loss by reading its text — which is what a viewer does too.
       deed:
         r.state === 'REPULSED'
           ? `${String(r.stage)} held — ${String(r.defenderForce)} stood against ${String(r.raiderForce)}` +
-            (r.initiator === null ? '' : `, and ${String(r.initiator)} lost the stake it opened with`)
-          : `${String(r.stage)} — ${r.initiator === null ? '' : String(r.initiator) + ' took it: '}` +
+            (by === null ? '' : `, and ${String(by)} forfeited the stake it opened with`)
+          : `${String(r.stage)} — ${by === null ? '' : String(by) + ' took it: '}` +
             `${String(r.target)} ${r.state === 'PAID' ? 'paid' : 'lost'} ${String(r.lost > 0 ? r.lost : r.demand)}`,
       glyph: null,
       // ── THE CONSEQUENCE LINE HAD TO LEARN THE DIFFERENCE ─────────────────────
@@ -442,12 +497,13 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       // believes — the same defect `assertFrameBudgets` refuses a REPULSED-with-a-loss line over.
       consequence:
         r.state === 'REPULSED'
-          ? r.initiator === null
+          ? by === null
             ? 'the stage is closed to raiders for a Reckoning'
             : 'the defender keeps everything and takes the raider’s stake; the stage stays open'
           : `${String(r.lost)} taken, and A5 makes the loss permanent`,
       receiptReel: null,
-    }));
+      };
+    });
 
   // ── BEAT CLASS, BECAUSE `atStake` MIXES CURRENCY WITH UNITS OF A GOOD ─────
   //
@@ -511,15 +567,9 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     .map((u) => ({
       venture: u.venture,
       headline: headlineForUpcoming(src, u),
-      // Three states, because two of them used to share one sentence. `BROKEN` is the better card
-      // anyway: a pair with a default between them is the most watchable row on a docket.
-      tension:
-        u.priorDealings === 'NEVER'
-          ? 'These two have never dealt with each other before.'
-          : u.priorDealings === 'BROKEN'
-            ? 'They have dealt before, and a promise between them was broken.'
-            : 'They have dealt before, and it held.',
+      tension: tensionFor(src, u),
       atStake: u.atStake,
+      electiveBps: u.electiveBps ?? 0,
       cast: chipsFor(src, u.parties),
     }));
 

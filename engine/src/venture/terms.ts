@@ -52,6 +52,7 @@ import { BPS_ONE, addMinor, bps, minor, type Bps, type Minor } from '../core/uni
 import type { ValuationRule } from '../ledger/index.js';
 import { compareIds } from '../ledger/index.js';
 import { accept, reject, type WorldResult } from '../world/index.js';
+import { scaleByBps, scaleByBpsCeil } from './arith.js';
 import { electiveFloor, isEscrowable, kindSpec, type RoleLabel } from './kinds.js';
 
 /** `escrowed + elective` — the total the parties pinned at signing. */
@@ -305,6 +306,53 @@ export function roleTerms(args: {
     escrowed: args.escrowed,
     elective: args.elective,
   };
+}
+
+/**
+ * **Price every role of a kind at `value`, leaving `electiveBps` of each one as a promise.**
+ *
+ * The single pricer. It was `defaultTerms` in `sim/runtime.ts` and took no proportion, so every
+ * venture in the world was exactly `f(kind)` elective and the rest escrowed — *"the elective half is a
+ * real choice, every time"* was, in practice, a fixed tax with a fixed answer, which is `D22`'s fourth
+ * finding and the reason nothing was ever negotiated. Moved here because this file already owns
+ * `RoleTerms` and its validator, and a pricer three modules from the rule it has to satisfy is how the
+ * quoted number and the enforced number drift apart (scar #1).
+ *
+ * Three properties, each load-bearing:
+ *
+ *   - **The share is the role's marginal output.** One number prices the slot and divides the
+ *     proceeds, so the quote an agent is shown and the split it is paid come from one place.
+ *   - **`f(kind)` still wins.** The requested proportion is a floor-respecting *request*: the elective
+ *     part is raised to `electiveFloor` where the kind's absolute term demands it, because PROP-V5 is
+ *     a rule and `elective_bps` is an offer. `readElectiveBps` refuses a proportion below the floor up
+ *     front, so this only bites on roles small enough for the absolute term to dominate.
+ *   - **The elective part rounds UP.** A proportion that rounded the unsecured half down would let a
+ *     creator shave a minor unit off what it is trusted for on every role of every venture, forever,
+ *     which is how a margin requirement quietly stops binding (`scaleByBpsCeil`'s own note).
+ */
+export function roleTermsFor(
+  kind: VentureKind,
+  value: Minor,
+  electiveBps: Bps,
+): readonly RoleTerms[] {
+  const spec = kindSpec(kind);
+  const out: RoleTerms[] = [];
+  for (const role of spec.roles) {
+    const share = role.marginalOutputBps;
+    const consideration = scaleByBps(value, share);
+    // A role priced at zero is refused by `validateRoleTerms` ("a role priced at zero risks nothing
+    // and earns no standing"), so a tiny `value` becomes a 1-minor role rather than an error.
+    const priced = consideration > 0 ? consideration : minor(1);
+    if (!isEscrowable(kind)) {
+      out.push(shareTerms(share, minor(0), priced));
+      continue;
+    }
+    const wanted = scaleByBpsCeil(priced, electiveBps);
+    const floor = electiveFloor(kind, priced);
+    const elective = minor(Math.min(priced, Math.max(wanted, floor)));
+    out.push(shareTerms(share, minor(priced - elective), elective));
+  }
+  return out;
 }
 
 /** A wage role, with the `wage === escrowed + elective` identity held for you. */

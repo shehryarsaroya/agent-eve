@@ -92,31 +92,43 @@ describe('aggression capacity expires unspent, which is what prices out a standi
     expect(aggressionNote(0), 'and why it is capped at all').toMatch(/toll|tariff/i);
   });
 
-  it('⚑ NOTHING SPENDS THIS YET — invert this test the day something does', () => {
-    // The self-destructing tripwire, the same shape as `inv22-is-vacuous` (which failed today, exactly
-    // as designed, and became `inv22-is-live`). A helper that nothing calls is the defect class this
-    // project keeps finding at every depth: verbs with no affordance, affordances no cast selects,
-    // invariants whose subject cannot occur. A module with no caller is the same thing one level down,
-    // and it reads as "built" in every report.
+  it('★ SOMETHING SPENDS THIS NOW — and the caller, not this helper, is what enforces it', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // **THIS TEST USED TO SAY THE OPPOSITE, AND IT FIRED EXACTLY AS DESIGNED.**
     //
-    // So this is written down rather than left to be noticed. `demand` — §9's agent-initiated standoff —
-    // is what spends aggression capacity, and it is NOT built: `RaidRecord` has no initiator, and adding
-    // one is a captured-table change (`raid` is in CHECKPOINT_REQUIRED_TABLES), which means a
-    // RULES_VERSION bump and a declared discontinuity in the permanent public record.
+    // It was a self-destructing tripwire — the same shape as `inv22-is-vacuous`, which also fired
+    // and also became `-is-live` — against this project's most persistent defect class: a
+    // capability that exists and is never exercised is indistinguishable from one that is
+    // missing, in every report, on every frame, and to every reader including its author. Verbs
+    // with no affordance (nine, `grant` among them), affordances no cast ever selects, invariants
+    // whose subject cannot occur, and *a module with no caller* — which is the same thing one
+    // level down and reads as "built" in every summary.
     //
-    // The expiry semantics above are the subtle half and they are done and mutation-verified. What
-    // remains is wiring: the initiator field and its capture, a `vDemand` handler that reuses the raid
-    // machinery already there (sides, join, force, YIELD/FIGHT, resolution), the affordance, and the
-    // rules bump. When that lands, DELETE this test — do not weaken it.
+    // `demand` — §9's agent-initiated standoff — is now the caller, so the check is inverted
+    // rather than deleted: it now fails if the caller goes away again. And it asserts the second
+    // half the old text asked for, which is the load-bearing one: **this helper only REPORTS
+    // capacity, it never enforces it.** `aggressionRemaining` returning 0 does nothing on its
+    // own; `demandRefusal` refusing on it is the price.
+    // ══════════════════════════════════════════════════════════════════════
     const callers = readdirSync(new URL('../../src/', import.meta.url), { recursive: true, encoding: 'utf8' })
       .filter((f) => typeof f === 'string' && f.endsWith('.ts') && !f.endsWith('predation/aggression.ts'))
       .filter((f) => readFileSync(new URL(`../../src/${f}`, import.meta.url), 'utf8').includes('aggressionRemaining'));
     expect(
       callers,
-      `aggressionRemaining now has ${String(callers.length)} caller(s) — ${callers.join(', ')} — which ` +
-        `means §9's demand window is being built. Good. This test is now backwards: delete it, and make ` +
-        `sure the caller's gate is what refuses an over-spend, because this helper only REPORTS ` +
-        `capacity and never enforces it.`,
-    ).toEqual([]);
+      'aggressionRemaining has no caller in src/ any more. §9\'s anti-toll-cartel price is the only ' +
+        'thing standing between predation and a standing tariff, and a price nothing charges is not a ' +
+        'price. Find what removed the `demand` gate rather than relaxing this.',
+    ).not.toEqual([]);
+    expect(
+      callers.some((f) => f === 'predation/demand.ts'),
+      'the caller must be `demand` — §9 names the aggression capacity as what an AGENT-INITIATED raid ' +
+        'spends, and nothing else in the design has a claim on it',
+    ).toBe(true);
+
+    // And the enforcement lives in the gate, not here. Over-spending is representable at this
+    // level — the helper clamps to 0 and carries no debt forward — so a reader must not mistake
+    // "remaining is 0" for "the act is refused".
+    const overspent = Array.from({ length: AGGRESSION_PER_RECKONING + 3 }, (_, i) => spend(RAIDER, i));
+    expect(aggressionRemaining(overspent, RAIDER, 50, reckoningOf)).toBe(0);
   });
 });

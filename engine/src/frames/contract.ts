@@ -184,6 +184,23 @@ export interface AuthorityLine {
    */
   readonly spentContingent: Minor;
   /**
+   * **How many ventures this delegate has bound its grantor to WITHOUT the grantor signing.**
+   *
+   * A6's signature moment made countable. §8.1 promises *"your delegates act within their limits,
+   * which an offline principal cannot revise"*, and since a delegated `create` binds at formation
+   * (`venture/create.ts`) that promise has teeth: every count here is a compact the grantor is a
+   * party to and never individually agreed to. A grant with a large `granted` and a zero here is
+   * authority nobody has used; the same grant at six is a delegate running an estate.
+   *
+   * `spent`/`spentContingent` cannot say this. They are money, and money is drawn by acts that are
+   * not bindings; the *count of commitments made in someone else's name* is the fact §8.1 is about
+   * and the one a viewer needs to read the line as a story rather than as a budget.
+   *
+   * Publishes nothing new: each of those ventures emitted a `PUBLIC` `venture.formed` carrying this
+   * grant's id, and §11.2 puts a grant's parties at `PUBLIC` (D9a).
+   */
+  readonly boundVentures: number;
+  /**
    * UNUSED nothing drawn on EITHER limit · DRAWN some headroom used · EXHAUSTED no
    * headroom left on either limit · REVOKED ending next tick.
    */
@@ -477,6 +494,19 @@ export interface DocketCard {
   /** e.g. "Vex has never escorted for Halcyon before." */
   readonly tension: string;
   readonly atStake: Minor;
+  /**
+   * **How much of this deal is unsecured, in bps — the creator's offer, made visible.**
+   *
+   * `VentureGlyph.electiveBps` renders this as the hollow arc for a venture that has already settled;
+   * the docket is the FORWARD view (§14.1) and needed the same number about a deal still forming.
+   * It became worth drawing the moment `create` took `elective_bps`: before that every venture in the
+   * world carried the identical proportion, so an arc that never varied said nothing.
+   *
+   * Now it is the offer. Two cards with the same `atStake` and arcs of 25% and 60% are two different
+   * bets by two different creators, which is exactly what §14.1 wants a cold viewer to be able to see
+   * — and what a filler weighing a record against a proportion is deciding about.
+   */
+  readonly electiveBps: number;
   readonly cast: readonly CastChip[];
 }
 

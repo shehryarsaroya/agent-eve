@@ -69,6 +69,7 @@ describe('authority lines — the A6 pixel signature (§8, §14)', () => {
       spent: minor(0),
       grantedContingent: minor(0),
       spentContingent: minor(0),
+      boundVentures: 0,
       state: 'UNUSED',
       ...over,
     };
