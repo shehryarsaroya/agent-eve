@@ -30,8 +30,9 @@
  *     what the posting log moved).
  *   - **`liveObligations().isLive` must be extended with `book.isLive`**, or a joiner's
  *     locked stake reads to INV-4 as an orphan lock and halts the tick.
- *   - **No new verb and no new canon word.** `yield`, `fight` and `join` are already in
- *     SPEC §12.2 and already classified in `world/commons.ts`; the budget is untouched.
+ *   - **No new verb and no new canon word.** `yield`, `fight`, `join` and `demand` are all
+ *     already in SPEC §12.2 and already classified in `world/commons.ts`; the budget is
+ *     untouched.
  *   - **Nothing here halts the world on an agent's input.** Every agent-reachable path
  *     returns a sentence; the phase itself reports faults and never throws.
  *
@@ -44,14 +45,36 @@
  *     raid is none of those.
  *   - **It records no default, ever** (`RaidOutcome.isDefault` is the literal `false`,
  *     and PRD-5 halts on a raid and a default landing on one principal in one tick).
- *   - **It does not implement the agent-initiated Demand window.** §9's second form —
- *     an *agent* spending aggression capacity to open a standoff of its own — is not
- *     built here. What is built is the world-spawned half plus the three answers, which
- *     is the half A14 needs.
+ *
+ * ## Both of §9's forms are now here, and `initiator` is the whole difference
+ *
+ * `demand.ts` adds the **agent-initiated** half: a principal spends from an aggression
+ * capacity that expires unspent, states one explicit demand, and opens a standoff in the
+ * **same book** with the same window, the same `join` on either side, the same `YIELD |
+ * FIGHT`, the same arithmetic and the same pixel signature. There is no second raid engine,
+ * which is what §9 means by *"use the corpus's own deterministic engine, which was already
+ * written"*.
+ *
+ * One field on the record carries it — {@link RaidRecord.initiator}, `null` for weather —
+ * and six rules read it. The two worth naming here:
+ *
+ *   - a demand brings **no force of its own**; all of it is hands, counted at resolution, so
+ *     one hand ties the Marches and loses, and beats the Frontier;
+ *   - a demand **writes neither the stage hold nor the victim cooldown**, because those are
+ *     the ownerless raid's price for losing, and an agent able to write them could mint a
+ *     Reckoning of world-raid immunity for a friend by arranging to be attacked.
  */
 
 export {
+  AGGRESSION_PER_RECKONING,
+  aggressionNote,
+  aggressionRemaining,
+  type AggressionSpend,
+} from './aggression.js';
+
+export {
   Book,
+  demandIdFor,
   isRaidAnswer,
   isRaidSide,
   isRaidState,
@@ -67,6 +90,18 @@ export {
 } from './book.js';
 
 export {
+  DEMAND_OWN_FORCE,
+  DEMAND_RULE_STATEMENT,
+  demandRefusal,
+  demandsRemaining,
+  demandsRemainingNote,
+  LAST_DEMAND_PHASE,
+  openDemand,
+  type DemandPort,
+  type DemandRequest,
+} from './demand.js';
+
+export {
   checkPredationInvariants,
   checkPrd1,
   checkPrd2,
@@ -74,6 +109,7 @@ export {
   checkPrd4,
   checkPrd5,
   checkPrd6,
+  checkPrd7,
   raidArithmeticProblems,
   type PredationInvariantInputs,
 } from './invariants.js';

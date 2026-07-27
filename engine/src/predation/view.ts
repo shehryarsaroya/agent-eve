@@ -39,6 +39,15 @@ export interface RaidView {
   readonly raid: string;
   readonly stage: SystemId;
   readonly target: PrincipalId;
+  /**
+   * Who opened it, or `null` for a world raid — **and this changes what the reader should do.**
+   *
+   * A world raid cannot be negotiated with, because nobody owns it; a demand has somebody at
+   * the other end who can be talked to, joined against, or remembered. Telling an agent only
+   * that "a raid is here" would leave it unable to tell the two apart, and the second one is
+   * the whole of §9's agent-initiated form.
+   */
+  readonly initiator: PrincipalId | null;
   readonly good: string;
   readonly demand: Qty;
   readonly state: RaidState;
@@ -157,6 +166,7 @@ function viewOf(
     raid: raid.id,
     stage: raid.stage,
     target: raid.target,
+    initiator: raid.initiator,
     good: raid.good,
     demand: raid.demandQty,
     state: raid.state,
@@ -203,6 +213,14 @@ export function raidLinesFor(book: Book, tick: number, limit: number): readonly 
       raid: raid.id,
       stage: raid.stage,
       target: raid.target,
+      // ── THE FIELD THAT MAKES THE ARC A STORY RATHER THAN WEATHER ────────────
+      //
+      // A13 asks for a named pixel signature, and "a raid is happening at OPS-7" and
+      // "p:kestrel is taking something from p:wren" are not the same picture. §11.2 admits
+      // it without an argument: taking a side in a standoff is already `PUBLIC` (the
+      // `raid.joined` event publishes the joiner and its stake), and the initiator is the
+      // first party to have taken one.
+      initiator: raid.initiator,
       demand: raid.demandQty,
       state: raid.state,
       lost: raid.lostQty,
@@ -220,9 +238,18 @@ export function raidLinesFor(book: Book, tick: number, limit: number): readonly 
     .slice(0, limit);
 }
 
-/** One 140-character ticker line per resolved raid. The export surface (§14). */
+/**
+ * One 140-character ticker line per resolved raid. The export surface (§14).
+ *
+ * **The raider is named when there is one**, and it is the first thing in the sentence for the
+ * reason A13 asks for a pixel signature at all: "a raid demanded 4,000" is weather, and
+ * "p:kestrel demanded 4,000 of p:wren" is a story with somebody in it who will still be here
+ * next Reckoning. The world's own raids stay unattributed, because attributing them to anybody
+ * would be a permanent public accusation against an agent that did nothing (A5′).
+ */
 export function raidTickerLine(raid: RaidRecord): string {
   const head = `${raid.stage}: `;
+  const by = raid.initiator === null ? '' : `${raid.initiator}'s demand — `;
   const body =
     raid.state === 'REPULSED'
       ? `${raid.target} held the field ${String(raid.defenderForce)}-${String(raid.raiderForce)}` +
@@ -233,8 +260,12 @@ export function raidTickerLine(raid: RaidRecord): string {
           ? `${raid.target} lost ${String(raid.lostQty)} of ${raid.good} ${String(raid.defenderForce)}-${String(raid.raiderForce)}`
           : raid.state === 'MISSED'
             ? `the raid on ${raid.target} found nothing worth taking`
-            : `a raid demands ${String(raid.demandQty)} of ${raid.good} from ${raid.target} by tick ${String(raid.resolvesAtTick)}`;
-  return `${head}${body}`.slice(0, 140);
+            : raid.initiator === null
+              ? `a raid demands ${String(raid.demandQty)} of ${raid.good} from ${raid.target} by tick ${String(raid.resolvesAtTick)}`
+              : `${raid.initiator} demands ${String(raid.demandQty)} of ${raid.good} from ${raid.target} by tick ${String(raid.resolvesAtTick)}`;
+  // The prefix is dropped on the DEMANDED branch, which already names the raider in the verb.
+  const prefix = raid.state === 'DEMANDED' ? '' : by;
+  return `${head}${prefix}${body}`.slice(0, 140);
 }
 
 /** The published multiple, for the affordance text. One home (scar #1). */

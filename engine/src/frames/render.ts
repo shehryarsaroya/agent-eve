@@ -427,12 +427,24 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       sealVerdict: null,
       deed:
         r.state === 'REPULSED'
-          ? `${String(r.stage)} held — ${String(r.defenderForce)} stood against ${String(r.raiderForce)}`
-          : `${String(r.stage)} — ${String(r.target)} ${r.state === 'PAID' ? 'paid' : 'lost'} ${String(r.lost > 0 ? r.lost : r.demand)}`,
+          ? `${String(r.stage)} held — ${String(r.defenderForce)} stood against ${String(r.raiderForce)}` +
+            (r.initiator === null ? '' : `, and ${String(r.initiator)} lost the stake it opened with`)
+          : `${String(r.stage)} — ${r.initiator === null ? '' : String(r.initiator) + ' took it: '}` +
+            `${String(r.target)} ${r.state === 'PAID' ? 'paid' : 'lost'} ${String(r.lost > 0 ? r.lost : r.demand)}`,
       glyph: null,
+      // ── THE CONSEQUENCE LINE HAD TO LEARN THE DIFFERENCE ─────────────────────
+      //
+      // "the stage is closed to raiders for a Reckoning" is TRUE OF A WORLD RAID AND FALSE OF A
+      // DEMAND: `grantWorldProtections` writes the stage hold only for the ownerless kind,
+      // because an agent that could mint world-raid immunity for a friend by losing on purpose
+      // would have found the Coase-collapse running backwards. A frame that claimed the peace
+      // anyway would be the pixel contradicting the arithmetic, and the pixel is what a stranger
+      // believes — the same defect `assertFrameBudgets` refuses a REPULSED-with-a-loss line over.
       consequence:
         r.state === 'REPULSED'
-          ? 'the stage is closed to raiders for a Reckoning'
+          ? r.initiator === null
+            ? 'the stage is closed to raiders for a Reckoning'
+            : 'the defender keeps everything and takes the raider’s stake; the stage stays open'
           : `${String(r.lost)} taken, and A5 makes the loss permanent`,
       receiptReel: null,
     }));

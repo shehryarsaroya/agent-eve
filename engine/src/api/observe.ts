@@ -74,7 +74,12 @@ import {
  * the only way `board[].your_take_at_p50` can be anything but zero.
  */
 import { slotClaimAt } from '../observe/forecast.js';
-import { RAID_JOIN_STAKE_MINOR, RAID_TAKE_MULTIPLE } from '../predation/index.js';
+import {
+  AGGRESSION_PER_RECKONING,
+  RAID_DEMAND_QTY,
+  RAID_JOIN_STAKE_MINOR,
+  RAID_TAKE_MULTIPLE,
+} from '../predation/index.js';
 import {
   ANCHOR_QTY,
   ARREARS_STATEMENT,

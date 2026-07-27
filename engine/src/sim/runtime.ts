@@ -290,10 +290,15 @@ import {
 // §12.2, and an assertions entry carrying PRD-1 (A8) and PRD-3 (A5′).
 import {
   Book as RaidBook,
+  DEMAND_RULE_STATEMENT,
   MAX_SEIZE_LOTS,
+  RAID_DEMAND_QTY,
   RAID_JOIN_STAKE_MINOR,
   assertRaidSchedule,
   checkPredationInvariants,
+  demandRefusal,
+  demandsRemaining,
+  openDemand,
   payDemand,
   raidLinesFor,
   raidStateTable,
@@ -302,6 +307,8 @@ import {
   runPredate,
   scheduleAt,
   type AssailablePile,
+  type DemandPort,
+  type DemandRequest,
   type PredationPort,
   type RaidId,
   type RaidOutcome,
@@ -2231,6 +2238,71 @@ export class Runtime {
   }
 
   /**
+   * §9's aggression capacity: how many demands this principal may still open this Reckoning.
+   *
+   * Derived from the raid book, never stored — see `predation/aggression.ts` for why a counter
+   * would be a second home for a quantity the record already determines, and why deriving it
+   * makes it correct across a restart for free (A4: uptime is never power).
+   */
+  demandsRemainingFor(principal: PrincipalId, tick: number): number {
+    return demandsRemaining(this.raids, principal, tick);
+  }
+
+  /**
+   * **The one gate on `demand`, exposed so the affordance can ask it the same question the
+   * verb will.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * This project's signature defect runs in both directions and one predicate closes both.
+   * Nine mechanics were once legal and unreachable — `grant`, the A6 core loop, among them —
+   * because an affordance was never written; and an affordance with its own copy of a gate
+   * offers moves the handler then refuses, which costs an agent an action and its trust in
+   * the menu. `api/observe.ts` calls this before offering a `demand`, and `vDemand` calls it
+   * again through `openDemand`. They cannot disagree, because there is only one of them.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  demandRefusalFor(req: DemandRequest): Rejection | null {
+    return demandRefusal(this.demandPort(req.tick), this.raids, req);
+  }
+
+  /**
+   * Everything a `demand` may touch. Two reads shared with the resolver, two of its own.
+   *
+   * `tierOf` and `handsDefending` come from {@link predationPort} rather than being written a
+   * second time here: the force an agent is shown when it decides and the force the resolver
+   * computes at the window's end have to be one implementation, or the affordance and the
+   * outcome can disagree about who would win (scar #1, with a hand and a hold at stake).
+   */
+  private demandPort(tick: number): DemandPort {
+    const port = this.predationPort(tick);
+    return {
+      tierOf: port.tierOf,
+      handsDefending: port.handsDefending,
+      isSeated: port.isSeated,
+      freeStoresOf: (principal) => freeStores(this.ledger, principal),
+      lockStake: (args) => {
+        try {
+          return this.ledger.encumbrances.lock({
+            eventId: `${args.raid}:stake:${args.principal}`,
+            tick: args.tick,
+            principal: args.principal,
+            account: storesAccount(args.principal),
+            amountMinor: args.amount,
+            // The stake IS the worst case, exactly: it is what the raider loses if the demand
+            // is repulsed, and EXPOSURE is Σ open max_direct_loss and nothing else (§3).
+            obligationRef: args.raid as unknown as VentureId,
+            maxDirectLoss: args.amount,
+          });
+        } catch {
+          // Never a throw into a verb handler. `openDemand` turns the null into a sentence and
+          // nothing has been written, so the agent is refused rather than 500'd (scar #11).
+          return null;
+        }
+      },
+    };
+  }
+
+  /**
    * Everything predation may do to the world, as the narrow port `src/predation` takes.
    *
    * Every value-moving method **returns what actually moved**. That is the mechanical
@@ -2545,6 +2617,120 @@ export class Runtime {
   //    None is behind `committing`. The schedule guarantees a raid resolves before the
   //    commitment window opens (`assertRaidSchedule`), so a demand is never live inside
   //    the freeze and the refusal would be dead code that read as a rule.
+
+  /**
+   * `demand` — §9's **agent-initiated** standoff, and a deliberately thin adapter.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE RULES ARE IN `src/predation/demand.ts` AND NOT HERE.** This file is 9,700 lines and
+   * on 2026-07-26 three mechanical edits landed in the wrong place in it and all three passed
+   * `tsc`; `D21` is the ordering that unwinds it and `works/refine.ts` is the worked example of
+   * the shape. So this method does what an adapter does and no more: read the params, call the
+   * port-and-function, publish the receipt. Every gate, every sentence and every number an
+   * agent reads lives beside the mechanic.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Not behind `committing`, and for a reason rather than by omission: `demandRefusal` refuses
+   * any demand whose 24-tick window would run into the commitment window at all, which closes
+   * a strictly wider door than `committing` does and closes it with a sentence that names the
+   * tick demands reopen at.
+   */
+  private vDemand(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const target = readString(req.params, [
+      'principal',
+      'principal_id',
+      'principalId',
+      'target',
+      'target_principal',
+      'against',
+      'defender',
+    ]) as PrincipalId | null;
+    if (target === null) {
+      return reject(
+        'A2',
+        'demand needs somebody to demand from: send {"principal": "<id>", "system": "<stage>", ' +
+          `"good": "<good>", "qty": <units>}. ${DEMAND_RULE_STATEMENT}`,
+      );
+    }
+    const stage = readString(req.params, ['system', 'system_id', 'systemId', 'at', 'stage']) as SystemId | null;
+    if (stage === null) {
+      return reject(
+        'A2',
+        'demand needs a place: send {"system": "<id>"}. A raid happens at one system, against one good — ' +
+          'the goods your target keeps somewhere else are not reachable from here, and your own hand has ' +
+          'to be standing at the place you name.',
+      );
+    }
+    const good = (readString(req.params, ['good', 'good_id', 'goodId']) ?? LEVY_GOOD) as GoodId;
+    const wanted = readInt(req.params, ['qty', 'quantity', 'demand', 'units']);
+    if (wanted === null) {
+      return reject(
+        'A2',
+        `demand needs a quantity: send {"qty": <units>}, between ${String(RAID_DEMAND_QTY.min)} and ` +
+          `${String(RAID_DEMAND_QTY.max)}. It is pinned when you send it and never recomputed — the number ` +
+          'you state is the number the target is held to.',
+      );
+    }
+
+    const outcome = openDemand(this.demandPort(ctx.tick), this.raids, {
+      initiator: req.principal,
+      target,
+      stage,
+      good,
+      demand: qty(wanted),
+      tick: ctx.tick,
+      handId: readString(req.params, ['hand', 'hand_id', 'handId']) as HandId | null,
+    });
+    if (!outcome.ok) return outcome;
+    const raid = outcome.value;
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'raid.demanded',
+      rulesVersion: RULES_VERSION,
+      // ── THE FIELD THAT MAKES THIS A DIFFERENT EVENT FROM `raid.spawned` ──────
+      //
+      // `raid.spawned` carries `actorPrincipalId: null` and it has to: nobody issues a world
+      // raid, which is the entire reason it cannot be bribed off. This one has an actor, so it
+      // is a different kind rather than the same kind with a field filled in — a reader that
+      // treated them as one would have to check a nullable field to know whether the record was
+      // accusing anybody, and the one thing this record must never be mistaken for is an
+      // accusation against somebody who did nothing (A5′).
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `raid::${raid.id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        raid: raid.id,
+        initiator: req.principal,
+        target: raid.target,
+        stage: raid.stage,
+        good: raid.good,
+        demand: raid.demandQty,
+        stake: RAID_JOIN_STAKE_MINOR,
+        resolves_at_tick: raid.resolvesAtTick,
+        // Published with the act, so an agent reading the feed can see the price of predation
+        // falling as a Reckoning goes on — which is the information that makes a demand a
+        // decision about targets rather than a tariff.
+        demands_left_this_reckoning: this.demandsRemainingFor(req.principal, ctx.tick),
+      },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
+    // §12.4: every party to a resolving item is offered one wake BEFORE it resolves. A demand
+    // with a deadline is exactly that, and a target that is never woken has been handed a
+    // window it could not use — which would make the loss one it was never shown (A5′).
+    ctx.offerWake(raid.target, 'THREAT', raid.id);
+    this.raidTicker.push(raidTickerLine(raid));
+    return { ok: true, value: null };
+  }
 
   /**
    * `yield` — pay the demand and the raid leaves. The cheap branch.
@@ -3457,6 +3643,14 @@ export class Runtime {
       yield: (ctx, req) => this.vYield(ctx, req),
       fight: (ctx, req) => this.vFight(ctx, req),
       join: (ctx, req) => this.vJoin(ctx, req),
+      // ── `demand` — the fourth, and §9's OTHER form of predation ─────────────
+      //
+      // Also not a new verb: §12.2 has held the word since the first commit and
+      // `world/commons.ts` already classifies it HOSTILE, so the §17 budget is untouched and
+      // the Commons floor covers it with no new classification. What it adds is the thing world
+      // raids structurally cannot — conflict somebody CHOSE, with a name on it — and it is the
+      // only caller of the aggression capacity that prices a standing toll out of existence.
+      demand: (ctx, req) => this.vDemand(ctx, req),
       // ── A6: the two grant verbs. Issuing is a COMMITMENT, so it is refused in the
       // freeze like any other (§8.1: no grant spend in the settlement window). Revoking
       // is NOT behind `committing`: SPEC §8.1 #6 makes revocation always accepted, and

@@ -180,6 +180,11 @@ export function runToFirstRaid(runtime: Runtime, limit = TICKS_PER_RECKONING): R
 export function raidRow(over: Partial<RaidRecord> = {}): RaidRecord {
   return {
     id: raidIdFor(48, 0),
+    // A WORLD raid by default, because that is what every test written before `demand` existed
+    // was about. `raidRow({ initiator: ... })` is the agent-initiated one, and the two differ in
+    // six rules — the aggression count, the two world protections, the frame, the ticker and
+    // PRD-7 — so a default of "somebody" would have made those tests quietly about the wrong thing.
+    initiator: null,
     target: 'p:target' as PrincipalId,
     stage: 'sys-x' as SystemId,
     good: LEVY_GOOD,

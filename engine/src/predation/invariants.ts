@@ -261,6 +261,59 @@ export function checkPrd6(input: PredationInvariantInputs): readonly InvariantVi
   return out;
 }
 
+/**
+ * **PRD-7** — nobody predates themselves, and a demand always names a raider.
+ *
+ * §9: *"related-party losses yield **zero** salvage, zero standing (else mutual predation
+ * between my own principals is a faucet plus a bravery receipt)."* The general clause needs a
+ * declared related-party graph and this build populates none, so the enforceable core of it is
+ * the case that needs no inference at all: `initiator === target`. `demandRefusal` gates it and
+ * this asserts the **result**, because a gate is one caller behaving well and A15's whole
+ * argument is that a price held up by good behaviour is not a price.
+ *
+ * The second clause is the one a *reader* depends on. Six rules branch on `initiator`, and the
+ * dangerous direction is a demand that lost its name: it would read as weather, refund its
+ * raider's aggression capacity, and start writing the world's stage hold and victim cooldown —
+ * which is precisely the immunity-minting exploit `grantWorldProtections` exists to close. A
+ * raid with a raider party that staked capital and no initiator is that state, so it halts.
+ */
+export function checkPrd7(input: PredationInvariantInputs): readonly InvariantViolation[] {
+  const out: InvariantViolation[] = [];
+  for (const raid of input.book.all()) {
+    if (raid.initiator !== null && raid.initiator === raid.target) {
+      out.push(
+        halt(
+          'PRD-7',
+          input.tick,
+          `raid ${raid.id} names ${raid.target} as both its initiator and its target. §9 gives ` +
+            `related-party losses zero salvage and zero standing: predating yourself is a faucet plus a ` +
+            `bravery receipt, and it must not be reachable at all.`,
+        ),
+      );
+    }
+    if (raid.initiator !== null) continue;
+    // A world raid has no author, so nothing may have staked capital on its raider side: the
+    // only path that stakes is `join`, and `join` refuses the target's own side. A staked
+    // raider on an ownerless raid means either a demand whose initiator was lost — see above —
+    // or a join admitted against a resolved row.
+    for (const party of raid.parties) {
+      if (party.side !== 'RAIDER' || party.stake <= 0) continue;
+      if (party.joinedAtTick > raid.spawnedAtTick) continue;
+      out.push(
+        halt(
+          'PRD-7',
+          input.tick,
+          `raid ${raid.id} has no initiator and yet ${party.principal} staked ${String(party.stake)} on ` +
+            `its raider side at the tick it opened. A world raid is nobody's, so nobody can have opened ` +
+            `it; a demand that lost its initiator would refund aggression capacity and start writing the ` +
+            `world's own protections on an agent's behalf.`,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 /** The per-raid consistency rules, as a list, so a test can name the one it broke. */
 export function raidArithmeticProblems(raid: RaidRecord): readonly string[] {
   const problems: string[] = [];

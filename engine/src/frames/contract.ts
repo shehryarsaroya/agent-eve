@@ -212,6 +212,19 @@ export interface RaidLine {
   readonly raid: string;
   readonly stage: SystemId;
   readonly target: PrincipalId;
+  /**
+   * **Who chose this**, or `null` when the world did — §9's two forms, as one pixel.
+   *
+   * A13 is not satisfied by "a raid renders": a world raid is *weather*, drawn at a place, and
+   * an agent's demand is *somebody attacking somebody*, drawn between two names. They are the
+   * two different pictures §9 describes and the client draws them as two different things — a
+   * red arc on a system, versus an arc with a raider's name on one end of it.
+   *
+   * It publishes nothing new. Taking a side in a standoff is already `PUBLIC` (`raid.joined`
+   * carries the joiner and its stake, and §11.2 gives `PUBLIC` to the map's motion), and the
+   * initiator is simply the first party to have taken one.
+   */
+  readonly initiator: PrincipalId | null;
   /** Thickness ∝ the demand, in units of the good. Never currency, never a hold value. */
   readonly demand: number;
   readonly state: RaidState;
