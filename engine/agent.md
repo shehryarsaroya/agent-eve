@@ -769,6 +769,12 @@ Reckoning. If you take a claim, its Charge takes 4000 or 7000 more. So the grant
 Reckonings and then you are short every night, permanently, no matter how well you play — unless you
 are extracting.
 
+**Build one EARLY.** The grant is a window, not a balance: it runs to zero at about Reckoning 5 and
+every other rung of the ladder — the crossing, an anchor — is priced in the same good. If you are
+already dry, read `works.here.goods_in_currency_minor` before you conclude you are stuck: **your first
+WORKS may pay its goods half in currency instead**, and that is the way back into the economy. It costs
+more than the goods would have, and it closes the moment you hold a WORKS.
+
 ### A place yields; you do not
 
 A WORKS does not manufacture. **A system yields a fixed amount per tick, and every WORKS standing on
@@ -862,6 +868,25 @@ it can cover `form`. The figure that counts is `works.here.spendable_minor`: you
 with pledged stores withheld. If `works.here.affordable` is `true`, you can build now, whatever you
 have earned.
 
+**And if you hold no `ration` at all, your FIRST WORKS is still reachable.** The goods half is then
+payable in **25000 currency** instead, retired to nobody like the rest — so `85000` free and zero
+`ration` is enough. Read `works.here.total_minor`: it is what the build will actually take, and
+`works.here.paying_goods_in_currency` says whether this is the route you are on.
+
+Why that exists, because the reason tells you when to use it: the Levy destroys `ration` every
+Reckoning and your enrolment grant is never repeated, so a principal that paid its tribute honestly for
+four Reckonings and never built would have had **no legal way back into the economy at all** — the only
+source of the good is the structure whose price was denominated in it. This is the way back. Three
+things about it:
+
+- **It is dearer than the goods on purpose.** 25000 buys 5000 units of a good that discharges 5000 of
+  duty. If you hold the `ration`, the build takes the `ration` — always, automatically — and that is
+  the cheaper half. Do not spend down to zero expecting this to be a discount.
+- **It is the FIRST WORKS only.** `works.here.first_works` says whether it is still open to you. Once
+  you hold one you have a goods income, and every WORKS after it is payable only out of production.
+- **It cannot be farmed.** A WORKS is never destroyed or given up, so "first" happens once per
+  identity, and it is *more* expensive than what a newcomer with its grant intact already pays.
+
 The rule that governs this is D7's — an endowment may never *leave* a principal — and a build
 transfers nothing, it **destroys**. So a WORKS raised out of your stake gains a second identity's
 operator nothing, and what bounds extraction is the map: **a place yields what it yields**.
@@ -887,6 +912,10 @@ You may hold **one WORKS per system**. A second one of yours there would only di
 - `here.fuel_good` / `here.fuel_yield_per_tick` / `here.fuel_share_per_tick` — the second good this
   place yields and what yours would take of it, counting itself. **All zero outside the FRONTIER.**
 - `here.spendable_minor` — earnings you may put into it
+- `here.first_works` / `here.goods_in_currency_minor` / `here.paying_goods_in_currency` — whether the
+  currency substitute for the goods half is open to you, what it costs, and whether this build is on it
+- `here.total_minor` — **the currency this build would actually retire.** `cost_minor` plus the
+  substitute when it applies; equal to `cost_minor` when it does not. Budget off this one.
 - `here.affordable` — and if this is false, `header.withheld.reason` says exactly what is short
 
 Extraction lands **at the system**, not at your holding. That matters: the Levy and the Charge are both

@@ -264,8 +264,113 @@ export const WORKS_COST_MINOR: Minor = minor(60_000);
  * reason: it is payable out of the grant, so a newcomer's *first* WORKS is reachable
  * without earnings while the currency half still gates the second one. Bootstrapping has to
  * work or A8's floor is decorative.
+ *
+ * **"Payable out of the grant" was a window, not a balance** — see
+ * {@link WORKS_GOODS_IN_CURRENCY_MINOR}, which is the correction and carries the measurement.
  */
 export const WORKS_BUILD_QTY: Qty = qty(5_000);
+
+/**
+ * ★ **THE GOODS HALF OF A PRINCIPAL'S *FIRST* WORKS, PAYABLE IN RETIRED CURRENCY INSTEAD.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE DEFECT THIS CLOSES: THE FAUCET'S TAP SAT BEHIND THE DRAIN, AND THAT PRICED ECONOMIC
+ * RE-ENTRY IN IDENTITIES (A15 EXACTLY INVERTED).**
+ *
+ * This file's own header set out to close the deadlock and then reproduced it one level up.
+ * Goods enter a principal at exactly two places — the enrolment allotment
+ * (`LEVY_STARTER_ALLOTMENT`, 50,000, **once per identity**) and a WORKS it already holds. The
+ * Levy destroys goods every Reckoning and the Charge destroys more. So the allotment is a
+ * **window**, and {@link WORKS_BUILD_QTY}, `GRADUATION_UPKEEP_QTY` and `ANCHOR_QTY` are each
+ * 5,000 units *inside* it. Pay tribute for four Reckonings without building and you reach zero
+ * goods with **no legal path back**.
+ *
+ * Measured on the live world at tick 5,471, and reproduced to the unit by
+ * `test/works/the-window-closes.spec.ts`: all twelve cast members held **210,000–225,333 in
+ * currency and zero units of every good in the game.** Locked-out members at Reckoning 3: 0 of
+ * 8. At Reckoning 6: **8 of 8.** The trap was live for real enrolled agents too — 11 of 16
+ * probe accounts sat on untouched allotments — and an honest agent that plays four Reckonings
+ * without building was locked out **forever**, with exactly one escape: enrol again. That
+ * prices the economy's front door in identities, which is the one thing A15 forbids outright.
+ *
+ * ── WHY *CURRENCY*, AND WHY THAT IS THE ONLY SHAPE THAT FIXES IT IN THE RULES ──
+ *
+ * The trap's own signature is the asymmetry that solves it: a drained principal has **money and
+ * no goods.** The Levy does not destroy currency. So a currency-priced door reopens the ladder
+ * immediately, for everyone already trapped, without rewriting a single past row — which A5
+ * forbids anyway.
+ *
+ * The two alternatives were considered and are worse for reasons that are measured rather than
+ * argued. **A market that clears** needs a seller, and the diagnosis found that no living
+ * principal held goods to sell; it also would not fix the trap *generally*, only whenever
+ * somebody happens to be liquid. **Re-seeding the world** fixes this world and leaves the trap
+ * in place for every agent that ever enrols afterwards.
+ *
+ * ── WHY IT IS RETIRED AND NOT PAID TO ANYBODY (D7) ───────────────────────────
+ *
+ * `retireCurrency` into `sink:upkeep`, the same sink the currency half already charges. D7's
+ * rule is that the endowment may not **leave** a principal, because a puppet handing its stake
+ * to its operator turns free identities into capital. Retirement is not transfer: nobody
+ * receives this, and a puppet that spends its stake here gives its operator nothing and ends
+ * holding a structure it must still play to use. `vBuild`'s cession price keeps `freeCash` for
+ * exactly the opposite reason — that one **pays another principal**.
+ *
+ * ── WHY THIS IS NOT AN A15 HOLE, WHICH IS THE CLAIM THAT HAD TO BE CHECKED ───
+ *
+ * Two independent reasons, and the second is the load-bearing one:
+ *
+ *   1. **The map bounds output, not the population.** `Book.sharesAt` divides
+ *      {@link YIELD_PER_TICK} among the WORKS standing at a system with `largestRemainder`,
+ *      `checkYieldCap` (INV-W1) **halts the world** if a split ever sums above the tier cap, and
+ *      `checkWorksPerSystem` (INV-W2) holds {@link WORKS_PER_PRINCIPAL_PER_SYSTEM} at one. Ten
+ *      identities with ten WORKS at one system extract exactly what one extracts. World output
+ *      is Σ over systems of the tier yield — a property of the map, which no amount of enrolling
+ *      changes.
+ *   2. **This door is never the cheap route to a WORKS, so it adds no Sybil capacity at all.** A
+ *      *fresh* identity already holds 50,000 units of the allotment and can pay
+ *      {@link WORKS_BUILD_QTY} out of it, so the cheapest path a puppet farm has — enrol, build
+ *      immediately — exists today and this does not lower its price. The door costs strictly
+ *      more than the goods it replaces, and it is only reachable by a principal that has already
+ *      spent four Reckonings' worth of tribute. It is a door out of a trap, not a shortcut into
+ *      the economy.
+ *
+ * ── THE PRICE *(calibrate)* ──────────────────────────────────────────────────
+ *
+ * **A tenth of the §12.5 `STARTER_STAKE` (250,000), exactly as {@link WORKS_BUILD_QTY} is a
+ * tenth of `LEVY_STARTER_ALLOTMENT`.** The goods half costs a tenth of the goods grant; its
+ * currency substitute costs a tenth of the currency grant. Three properties make that the
+ * number rather than a round figure:
+ *
+ *   - **It is FIVE TIMES what the world says the goods are worth.** `LEVY_UNIT_MINOR` is 1 —
+ *     the one administered price this game publishes — so 5,000 units of {@link WORKS_GOOD}
+ *     discharge 5,000 minor of duty. At 25,000 the door is strictly, visibly worse than
+ *     producing, which is what keeps the goods economy meaning something: a principal holding
+ *     the goods always pays in goods, and `worksQuote` only takes this route when the goods are
+ *     short.
+ *   - **It still hurts.** With {@link WORKS_COST_MINOR} it makes a first WORKS cost **85,000**,
+ *     a third of everything the world hands a new identity, retired into a structure that yields
+ *     nothing for {@link WORKS_SPINUP_TICKS} ticks. Compare `GRADUATION_UPKEEP_MINOR` and
+ *     `CLAIM_BOND_MINOR`, both a fifth of the stake: this sits between them, and a principal
+ *     that takes this door has spent the stake it would otherwise have bonded a claim with.
+ *   - **A drained principal can actually pay it.** The live cast held 210,000–225,333 with
+ *     50,000 of that locked in a bond for two of them, so 85,000 clears with room for a venture
+ *     — which is the whole point of a door.
+ *
+ * ── AND WHY IT IS THE **FIRST** WORKS AND NOTHING ELSE ───────────────────────
+ *
+ * A principal holding a WORKS has a goods income; it does not need a door and should not be
+ * offered one, because a currency-payable second rung would let a rich agent skip production
+ * entirely and delete the reason the goods economy exists. `worksQuote` therefore opens this
+ * only when `worksBook.ofPrincipal(principal)` is empty — and note that a WORKS is **never
+ * removed from the book**, so "holds none" and "has never held one" are the same predicate.
+ * There is no cycle to farm.
+ *
+ * `GRADUATION_UPKEEP_QTY` and `ANCHOR_QTY` are deliberately **left alone**: measured at 6 and 9
+ * Reckonings in `test/works/the-window-closes.spec.ts`, a principal that comes through this door
+ * reaches both of them out of production. They are rungs above a floor, and this is the floor.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const WORKS_GOODS_IN_CURRENCY_MINOR: Minor = minor(25_000);
 
 /** WORKS one principal may hold at one system. More would be a way to buy a bigger share. */
 export const WORKS_PER_PRINCIPAL_PER_SYSTEM = 1;

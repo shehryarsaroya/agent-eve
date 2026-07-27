@@ -769,7 +769,56 @@ import {
  * 11 exists because two agents each took 10. Nothing in this change ran in parallel with anything else,
  * so 12 is the union of one branch. If that stops being true, the note above 11 is the rule.
  */
-export const RULES_VERSION = 12;
+/**
+ * Bumped to **14, skipping 13 on purpose**, because the goods half of a principal's FIRST WORKS is now
+ * payable in retired currency (`works/params.ts:WORKS_GOODS_IN_CURRENCY_MINOR`).
+ *
+ * ── WHY 14 AND NOT 13, WHICH IS THE RULE OF 11 APPLIED IN ADVANCE ─────────────
+ *
+ * This branch was built **concurrently with the §9 resolve-path fix**, in a separate worktree, and
+ * neither could see the other. 11's note states the general rule that came out of that exact
+ * situation: *"`RULES_VERSION` is a **shared resource**, exactly like the working tree in HARD RULE 7.
+ * A bump is not a local edit, and two agents cannot each own the next integer."* Two agents each taking
+ * 10 is what produced 11.
+ *
+ * So 13 is **left to the branch that was told it might take it**, and this one takes 14. A gap costs
+ * nothing — `hydrate.ts` is the only reader and it compares for equality, so no code anywhere assumes
+ * contiguity, and a version nobody ever claimed is indistinguishable from a version that was skipped.
+ * A *duplicate* costs the stamp its whole meaning. When the two branches meet, master carries 13 and 14
+ * as two rule sets rather than one integer with two meanings, which is the property that matters.
+ *
+ * ## What changes
+ *
+ *   1. **One new price**, `WORKS_GOODS_IN_CURRENCY_MINOR` (25,000), and it is only ever charged where
+ *      the build would otherwise have been **refused**: the goods are short, the principal holds no
+ *      WORKS, and the currency covers the whole total. `worksQuote.affordable` therefore flips from
+ *      `false` to `true` for exactly that set of principals and for nobody else.
+ *   2. **`vBuildWorks` retires `totalMinor` rather than `costMinor`** — one atomic posting into the
+ *      same `sink:upkeep` it always used, equal to the old amount on the goods route.
+ *   3. **`works.raised` carries `goods_in_currency_minor`.** A payload field, so the event ledger is
+ *      hashed differently for every future build **including the ones that pay nothing extra**, which
+ *      is where the divergence comes from rather than from any decision.
+ *   4. **Four new published fields** (`first_works`, `goods_in_currency_minor`,
+ *      `paying_goods_in_currency`, `total_minor`) and the affordance's `max_direct_loss` /
+ *      `max_contingent_liability` now describe the route actually taken. Reads.
+ *
+ * **Nothing draws from the RNG that did not before.** No roll is added, removed or reordered; the cast
+ * gains no branch. `worksFor` gates on the same `affordable` predicate it always did, so the only
+ * behavioural change in the cast is that the predicate is now true in a state where it used to be
+ * false — and that state does not occur in a world seeded from genesis, which is the next paragraph.
+ *
+ * ## The divergence signature, and this one is asymmetric on purpose
+ *
+ * A **genesis** replay diverges at the first `works.raised` — the payload gained a field — so the
+ * preflight is expected to name a tick and `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` **is** needed. What it
+ * must *not* find is a changed **decision**: no historical action is classified differently, because
+ * the new route is only ever reachable where the old rules refused. Measured, and this is the claim to
+ * check rather than trust: the full-cast balance gate at 900 ticks and at 6 Reckonings is expected to
+ * be **identical on every balance metric** across 8 seeds, because a member holding its allotment is
+ * never short of goods and the door never opens. If a balance number moves, the door is firing
+ * somewhere it was not designed to and this note is wrong.
+ */
+export const RULES_VERSION = 14;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -843,6 +892,7 @@ import {
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
   WORKS_GOOD,
+  WORKS_GOODS_IN_CURRENCY_MINOR,
   WORKS_YIELD_GOOD,
   WORKS_SPINUP_TICKS,
   YIELD_PER_TICK,
@@ -8398,6 +8448,50 @@ export class Runtime {
     readonly availableQty: Qty;
     readonly spinupTicks: number;
     readonly alreadyHeld: boolean;
+    /**
+     * This principal holds **no WORKS anywhere**, so the currency door below is open to it.
+     *
+     * A WORKS is never removed from the book, so this is also "has never held one" — see
+     * {@link WORKS_GOODS_IN_CURRENCY_MINOR}, which is why there is no cycle to farm.
+     */
+    readonly firstWorks: boolean;
+    /**
+     * What {@link costQty} costs in **retired currency** instead, on a first WORKS. Zero otherwise.
+     *
+     * The whole of the fix for the endowment window: a drained principal has money and no goods,
+     * so the goods half of the one door into the economy has a currency price. Published even when
+     * it is not being used, because an agent that cannot see the alternative price cannot plan for
+     * it — which is the difference between a choice it knows it has and one it happens to catch.
+     */
+    readonly goodsInCurrencyMinor: Minor;
+    /**
+     * Whether a `build` here would take that door — the goods are short and this is a first WORKS.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * **THE ROUTE, NOT THE VERDICT — and it deliberately does NOT include "and the currency
+     * covers it".** It did, for one iteration, and a test on the refusal text caught what that
+     * costs: a principal short of *both* halves fell off the currency route, so `totalMinor`
+     * collapsed to {@link costMinor} and the refusal quoted 60,000 to an agent the verb wanted
+     * 85,000 from. The one reader who most needs the whole price is the one who cannot yet pay it.
+     *
+     * {@link affordable} is where "can you pay" lives. This field answers "what would this cost",
+     * and the two are separate questions on purpose.
+     * ══════════════════════════════════════════════════════════════════════════
+     *
+     * The goods route wins whenever it is open: a principal holding {@link costQty} pays in
+     * {@link costQty}, always. This is a floor under a drained principal, never an alternative price.
+     */
+    readonly payingGoodsInCurrency: boolean;
+    /**
+     * The currency this build would actually retire: {@link costMinor}, plus
+     * {@link goodsInCurrencyMinor} when {@link payingGoodsInCurrency}.
+     *
+     * **One field, because two figures an agent has to add up is arithmetic we made it do** (A2).
+     * It is also what `max_direct_loss` publishes, what the refusal quotes and what the verb
+     * charges, so the price shown and the price taken are one number rather than four that agree
+     * today.
+     */
+    readonly totalMinor: Minor;
     readonly affordable: boolean;
     /** The FUEL good this place also yields, and what one more WORKS would take of it. */
     readonly fuelGood: GoodId;
@@ -8449,12 +8543,46 @@ export class Runtime {
     // second occupant, taking 40 and quoted 26). `agent.md` calls this "what YOURS would take,
     // counting itself" and "the number that decides whether the build pays for itself", so an agent
     // budgeting off it under-plans its income by a third.
+    //
+    // `held` is read ONCE and used twice — here and by the currency door below. Two calls would be
+    // two chances to disagree about whether this is a first WORKS, which is the same shape as the
+    // occupancy bug this comment records.
+    const held = this.worksBook.ofPrincipal(principal).length > 0;
     const quotedGross = Math.trunc(
-      YIELD_PER_TICK[tier] /
-        (this.worksBook.ofPrincipal(principal).length > 0 ? Math.max(1, occupants) : occupants + 1),
+      YIELD_PER_TICK[tier] / (held ? Math.max(1, occupants) : occupants + 1),
     );
     const quotedTerms = this.rentTermsAt(system);
     const quotedSplit = rentOn({ terms: quotedTerms, extractor: principal, gross: qty(quotedGross) });
+    // ── THE CURRENCY DOOR, AND WHY THE GOODS ROUTE ALWAYS WINS ───────────────
+    //
+    // `WORKS_GOODS_IN_CURRENCY_MINOR` carries the whole argument: the entry price of the
+    // economy's only faucet was denominated in the good it is the only source of, so a
+    // principal drained by four Reckonings of tribute was locked out permanently and its only
+    // escape was a second identity — A15 exactly inverted.
+    //
+    // Two clauses decide the ROUTE, and each of them is a rule rather than a convenience:
+    //
+    //   - **`goodsShort`.** The door is taken only when the goods are not there, so a principal
+    //     holding `WORKS_BUILD_QTY` pays in goods and the currency price never applies to it.
+    //     Reversed, this would be an alternative price and the goods economy would stop meaning
+    //     anything for anybody solvent.
+    //   - **`!held`.** A principal holding a WORKS has a goods income. This is a bootstrap floor,
+    //     not a rung.
+    //
+    // **Affordability is NOT one of them, and that was a bug for one iteration.** With
+    // `free >= total` folded in here, a principal short of both halves fell off the currency route,
+    // `totalMinor` collapsed to the currency half, and the refusal quoted 60,000 to an agent the
+    // verb wanted 85,000 from — the one reader who most needs the whole price being the one who
+    // cannot pay it yet. So this is the route and `affordable` below is the verdict.
+    //
+    // The ordering hazard that reasoning was trying to avoid is real and is handled where it
+    // belongs: `vBuildWorks` refuses on `freeMinor < totalMinor` **before** anything moves, so the
+    // whole price is checked in one comparison and the build can never retire the currency half and
+    // then find itself short of the substitute.
+    const goodsShort = available < WORKS_BUILD_QTY;
+    const goodsInCurrency = held ? minor(0) : WORKS_GOODS_IN_CURRENCY_MINOR;
+    const payingGoodsInCurrency = goodsShort && !held;
+    const totalMinor = minor(WORKS_COST_MINOR + (payingGoodsInCurrency ? goodsInCurrency : 0));
     return {
       system,
       tier,
@@ -8490,15 +8618,28 @@ export class Runtime {
       availableQty: available,
       spinupTicks: WORKS_SPINUP_TICKS,
       alreadyHeld: this.worksBook.atCapacity(principal, system),
-      affordable: free >= WORKS_COST_MINOR && available >= WORKS_BUILD_QTY,
+      firstWorks: !held,
+      goodsInCurrencyMinor: goodsInCurrency,
+      payingGoodsInCurrency,
+      totalMinor,
+      // ── AFFORDABLE MEANS "CAN I BUILD THIS", THROUGH EITHER DOOR ─────────────
+      //
+      // One predicate with three readers — the affordance, the observation and the verb — so it
+      // has to answer the question all three ask, which is not "are the goods here" but "can this
+      // build happen". Publishing a goods-only `affordable` beside a currency route the verb would
+      // accept is scar #1's exact shape: the engine right and the agent-facing surface lying, and
+      // the heuristic cast reads this field too, so it would decline a door it was standing in.
+      //
+      // `totalMinor` already folds the substitute in, and `payingGoodsInCurrency` already requires
+      // the whole of it, so this stays a two-clause test rather than a four-clause one.
+      affordable: free >= totalMinor && (!goodsShort || payingGoodsInCurrency),
       fuelGood: FUEL_GOOD,
       fuelYieldPerTick: FUEL_YIELD_PER_TICK[tier],
       // Divided the same way the ore share is — `occupants + 1` for a prospective build, the live
       // occupancy once you already hold one — because two divisions of the same occupancy is how
       // one number ends up telling an agent two things.
       fuelSharePerTick: Math.trunc(
-        FUEL_YIELD_PER_TICK[tier] /
-          (this.worksBook.ofPrincipal(principal).length > 0 ? Math.max(1, occupants) : occupants + 1),
+        FUEL_YIELD_PER_TICK[tier] / (held ? Math.max(1, occupants) : occupants + 1),
       ),
     };
   }
@@ -8537,29 +8678,61 @@ export class Runtime {
           'it — a second one of yours would only divide your own share. Raise it somewhere else.',
       );
     }
-    if (quote.freeMinor < quote.costMinor) {
+    // ── THE CURRENCY GATE IS QUOTED AGAINST THE **TOTAL**, NOT THE CURRENCY HALF ──
+    //
+    // `totalMinor` is `costMinor` plus the goods substitute when this build is taking the currency
+    // door, so this one comparison covers both routes and the sentence can state the whole price.
+    // Splitting it into two gates would refuse an 84,999 balance with a message naming 60,000.
+    if (quote.freeMinor < quote.totalMinor) {
       return reject(
         'A15',
-        `a WORKS costs ${String(quote.costMinor)} and you have ${String(quote.freeMinor)} free (locked ` +
-          'stores do not count). Your starter stake CAN pay for this one: the money is retired, not paid ' +
-          'to anybody, so your first WORKS is reachable before you have earned anything. What the stake ' +
-          'cannot buy is a claim from another principal — that price leaves you and goes to them.',
+        `a WORKS costs ${String(quote.costMinor)}` +
+          (quote.totalMinor > quote.costMinor
+            ? ` plus ${String(quote.goodsInCurrencyMinor)} for the goods half you cannot cover in ` +
+              `${WORKS_GOOD} — ${String(quote.totalMinor)} in all`
+            : '') +
+          `, and you have ${String(quote.freeMinor)} free (locked stores do not count). Your starter stake ` +
+          'CAN pay for this one: the money is retired, not paid to anybody, so your first WORKS is ' +
+          'reachable before you have earned anything. What the stake cannot buy is a claim from another ' +
+          'principal — that price leaves you and goes to them.',
       );
     }
+    // ── THE GOODS HALF, NOW REACHABLE ONLY BY A PRINCIPAL THAT ALREADY PRODUCES ──
+    //
+    // `payingGoodsInCurrency` is `goodsShort && !held`, so `goodsShort && !paying` is exactly
+    // `held`: this refusal now belongs to a principal that owns a WORKS and is being asked to fund
+    // the next one out of it. A drained newcomer reaches the currency gate above instead, which is
+    // the whole fix — the old version of this sentence named the goods and stopped, so a principal
+    // read a price it could never pay again with no way to learn that the same act had another.
+    //
+    // The sentence says WHY the door is shut rather than only that it is, and names the act that
+    // opens the way (`refine`), because a refusal that leaves an agent with no next move costs it a
+    // wake to discover one (AGT-S2).
     if (quote.availableQty < quote.costQty) {
       return reject(
         'A15',
         `a WORKS also consumes ${String(quote.costQty)} units of ${WORKS_GOOD} standing at ${system}, and you ` +
-          `have ${String(quote.availableQty)} unpledged there. They are destroyed into the build, not stored.`,
+          `have ${String(quote.availableQty)} unpledged there. They are destroyed into the build, not stored. ` +
+          `The currency substitute for that half is for a FIRST WORKS only and you already hold one, so this ` +
+          `one is payable out of what yours produces: \`refine\` turns the ${WORKS_YIELD_GOOD} it extracts ` +
+          `into ${WORKS_GOOD}, at the system where the ${WORKS_YIELD_GOOD} stands.`,
       );
     }
 
+    // ── ONE RETIREMENT OF THE WHOLE PRICE, NOT TWO ────────────────────────────
+    //
+    // The header's rule is *"refuse on every ground first, then charge"*, and its reason is that a
+    // build which took the currency and then failed on the goods leaves a principal poorer with
+    // nothing standing. Charging the substitute as a second `retireCurrency` would rebuild that
+    // exact hazard inside the fix, so the two halves are one atomic posting into one sink and the
+    // split is recorded on the event instead. `totalMinor === costMinor` on the goods route, so
+    // nothing about a build that pays in goods changes.
     try {
       this.ledger.retireCurrency({
         eventId: `works.build:${system}:${String(ctx.tick)}:${req.principal}` as EventId,
         tick: ctx.tick,
         from: storesAccount(req.principal),
-        amount: quote.costMinor,
+        amount: quote.totalMinor,
         sink: CURRENCY_SINK.UPKEEP,
       });
     } catch (error: unknown) {
@@ -8568,13 +8741,17 @@ export class Runtime {
         `the WORKS cost could not be paid (${describeError(error)}); nothing moved and nothing was raised.`,
       );
     }
-    const burned = this.burnAnchorGoods(req.principal, system, quote.costQty, ctx.tick);
-    if (burned < quote.costQty) {
-      this.faults.push(
-        `${req.principal} raised only ${String(burned)} of the ${String(quote.costQty)} units a WORKS at ` +
-          `${system} consumes; the WORKS was not raised`,
-      );
-      return reject('INV-3', 'the WORKS materials could not be raised; nothing was built.');
+    // Nothing is burned on the currency route: the goods half was already retired above, and a burn
+    // that found a stray unit or two would charge for the same half twice.
+    if (!quote.payingGoodsInCurrency) {
+      const burned = this.burnAnchorGoods(req.principal, system, quote.costQty, ctx.tick);
+      if (burned < quote.costQty) {
+        this.faults.push(
+          `${req.principal} raised only ${String(burned)} of the ${String(quote.costQty)} units a WORKS at ` +
+            `${system} consumes; the WORKS was not raised`,
+        );
+        return reject('INV-3', 'the WORKS materials could not be raised; nothing was built.');
+      }
     }
 
     const row = this.worksBook.raise({ system, holder: req.principal, tick: ctx.tick });
@@ -8615,6 +8792,16 @@ export class Runtime {
         holder: req.principal,
         tier: quote.tier,
         online_at_tick: row.onlineAtTick,
+        // ── WHICH DOOR IT CAME THROUGH, WHICH IS A FACT AND NOT A DERIVATION ────
+        //
+        // Zero on the goods route and `WORKS_GOODS_IN_CURRENCY_MINOR` when the goods half was paid
+        // in retired currency instead. It belongs in the record for the same reason `online_at_tick`
+        // does — it is something that HAPPENED, not something recomputable later: the postings show
+        // one retirement of 85,000 into `sink:upkeep` and nothing in them says whether that was a
+        // rich builder or a drained one coming back. It is also the only way to answer *"how many
+        // principals used the bootstrap door, and when did that stop"*, which is the question this
+        // price will be calibrated against.
+        goods_in_currency_minor: quote.payingGoodsInCurrency ? quote.goodsInCurrencyMinor : 0,
       },
     });
     return { ok: true, value: null };

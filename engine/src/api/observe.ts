@@ -980,6 +980,34 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
       available_qty: quote.availableQty,
       spinup_ticks: quote.spinupTicks,
       already_held: quote.alreadyHeld,
+      /**
+       * You hold no WORKS anywhere, so {@link goods_in_currency_minor} is open to you.
+       *
+       * A WORKS is never removed from the game, so this can only ever go from `true` to `false`. It
+       * is published rather than left to be inferred from `held: []` because the two are the same
+       * fact today and an agent should not have to know that.
+       */
+      first_works: quote.firstWorks,
+      /**
+       * ★ **What `cost_qty` costs in RETIRED CURRENCY instead, on a FIRST WORKS.** Zero after that.
+       *
+       * The endowment allotment is a window: the Levy destroys goods every Reckoning and this build,
+       * the crossing and an anchor are each priced in the same good, so a principal that pays tribute
+       * for four Reckonings without building reached zero goods and had **no legal path back** — its
+       * only escape a second identity, which is the one thing A15 forbids. This is the way back. It is
+       * retired to nobody, it is deliberately dearer than the goods it replaces, and it closes the
+       * moment you hold a WORKS, because from then on you are producing.
+       */
+      goods_in_currency_minor: quote.goodsInCurrencyMinor,
+      /** Whether a `build` NOW would take that route: the goods are short and the currency covers it. */
+      paying_goods_in_currency: quote.payingGoodsInCurrency,
+      /**
+       * The currency this build would actually retire — `cost_minor`, plus the substitute if it applies.
+       *
+       * **Read this, not `cost_minor`, to decide whether you can pay.** It is what the verb charges and
+       * what the affordance publishes as `max_direct_loss`, so all three are one number.
+       */
+      total_minor: quote.totalMinor,
       affordable: quote.affordable,
     },
   };
@@ -1968,8 +1996,14 @@ function affordancesFor(
       cost: 1,
       // Both halves are charged the instant it lands, and both are gone: the currency is
       // retired and the goods are destroyed into the build.
-      max_direct_loss: worksHere.costMinor,
-      max_contingent_liability: worksHere.costQty,
+      //
+      // `totalMinor`, not `costMinor` — on the currency door the goods half is retired too, so a
+      // `max_direct_loss` of 60,000 beside an 85,000 charge would understate EXPOSURE (§3: "Σ of
+      // your open `max_direct_loss`, and nothing else") by the whole of what is new. And the goods
+      // liability is ZERO on that route, because no goods are destroyed: quoting 5,000 units an
+      // agent does not hold and will not spend is the shape of lie this file keeps finding.
+      max_direct_loss: worksHere.totalMinor,
+      max_contingent_liability: worksHere.payingGoodsInCurrency ? 0 : worksHere.costQty,
       what_it_forecloses:
         `A WORKS extracts what a PLACE yields, and ${worksHere.system} (${worksHere.tier}) yields ` +
         `${String(worksHere.yieldPerTick)} units of ${worksHere.good} a tick divided among every WORKS ` +
@@ -2029,6 +2063,32 @@ function affordancesFor(
         // — while `refine` runs the other way (ore INTO ration), so hoarding ore to fund a build is
         // exactly backwards. Scar #1: two surfaces, one word, each coherent alone.
         `${String(worksHere.costQty)} units of ${WORKS_GOOD} standing here, destroyed into the build. ` +
+        // ── AND WHICH OF THE TWO PRICES *THIS* BUILD WOULD ACTUALLY TAKE ────────
+        //
+        // `WORKS_GOODS_IN_CURRENCY_MINOR` carries the finding: the goods half of the one door into the
+        // economy was denominated in the good the door is the only source of, so a principal drained by
+        // four Reckonings of tribute was locked out permanently — with a quarter of a million in
+        // currency in hand. The substitute is the way back, and an affordance that named only the goods
+        // price would leave the way back invisible to the exact agent it was built for.
+        //
+        // Stated in BOTH directions rather than only when it fires: a principal paying in goods is told
+        // the door exists and closes, because "you had a cheaper option once" is not a thing to find out
+        // afterwards.
+        (worksHere.payingGoodsInCurrency
+          ? `YOU DO NOT HOLD THOSE GOODS, AND THIS BUILD DOES NOT NEED THEM: your FIRST WORKS may pay ` +
+            `that half in currency instead — ${String(worksHere.goodsInCurrencyMinor)} more, retired to ` +
+            `nobody, so ${String(worksHere.totalMinor)} in all and no ${WORKS_GOOD} at any point. That ` +
+            `exists because the Levy destroys ${WORKS_GOOD} every Reckoning and your enrolment grant is ` +
+            `never repeated, so without it a principal that paid its tribute honestly for four ` +
+            `Reckonings could never enter the economy again. It costs more than the goods are worth on ` +
+            `purpose, and it CLOSES the moment you hold a WORKS — after that this half is payable only ` +
+            `out of what you produce. `
+          : worksHere.firstWorks
+            ? `You hold those goods, so they are what this build takes — that is the cheaper half. Had ` +
+              `you not, your FIRST WORKS could have paid it in currency instead ` +
+              `(${String(worksHere.goodsInCurrencyMinor)}, retired), and that door closes the moment you ` +
+              `hold a WORKS. `
+            : '') +
         `It extracts nothing for ${String(worksHere.spinupTicks)} ticks, so a WORKS raised just before a ` +
         'Reckoning does not help you pay it, and one raised where a raid is coming may never pay for ' +
         'itself. This is the only way goods enter the world: everything you owe consumes them. ' +

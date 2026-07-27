@@ -71,6 +71,22 @@ export interface AgedWorld {
   readonly verbs: ReadonlyMap<string, number>;
   /** The first tick each member emitted `build`, if it ever did. */
   readonly firstBuild: ReadonlyMap<PrincipalId, number>;
+  /**
+   * Keep running the SAME world with the ladder switched **on**, and report what the cast did.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE ONLY WAY TO OBSERVE A FEATURE ARRIVING, RATHER THAN A FEATURE BEING PRESENT.**
+   * `cast: 'no-ladder'` ages a world the branches did not exist for; this is the deploy. Together
+   * they are the live world's exact shape: 5,400 ticks with no `worksFor`, then `worksFor`.
+   *
+   * It flips the three ladder rolls back to their defaults on the options object the cast reads,
+   * rather than seating a second cast — because `runtime.seat` refuses a second seating of the same
+   * identity in as many words (A10, identity is never re-minted), so a fresh `HeuristicCast` over
+   * this runtime cannot exist. The roster, the holdings, the stores, the standing and the tick
+   * counter are all continuous, which is the whole point: a *new* world would be a fresh one again.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  resume(options: { readonly reckonings: number }): ReadonlyMap<string, number>;
 }
 
 export interface AgedWorldOptions {
@@ -97,36 +113,70 @@ export interface AgedWorldOptions {
 export function agedWorld(options: AgedWorldOptions): AgedWorld {
   setSpeed('instant');
   const runtime = new Runtime({ seed: options.seed });
-  const cast = new HeuristicCast(runtime, {
+  // ── THE ONE MUTABLE OBJECT IN THE FIXTURE, AND WHY IT IS DELIBERATE ─────────
+  //
+  // `HeuristicCast` reads `this.options.worksChanceBps ?? DEFAULT_WORKS_CHANCE_BPS` on every draw,
+  // so switching a branch on mid-run is a property write on the options object this file owns.
+  // {@link AgedWorld.resume} needs exactly that — see its own note for why a second `HeuristicCast`
+  // over the same runtime is impossible — and nothing in `src/` is touched to allow it.
+  const rolls: {
+    size: number;
+    worksChanceBps?: number;
+    graduateChanceBps?: number;
+    claimChanceBps?: number;
+  } = {
     size: options.size ?? 8,
     ...(options.cast === 'no-ladder'
       ? { worksChanceBps: 0, graduateChanceBps: 0, claimChanceBps: 0 }
       : {}),
-  });
+  };
+  // Passed BY REFERENCE, not spread: a spread would copy the rolls and `resume` would silently
+  // mutate an object nothing reads — a fixture that reports a switch it did not throw.
+  const cast = new HeuristicCast(runtime, rolls);
   const roster = cast.seat(options.seed);
 
   const verbs = new Map<string, number>();
   const firstBuild = new Map<PrincipalId, number>();
-  const ticks = options.reckonings * TICKS_PER_RECKONING;
-  for (let i = 0; i < ticks; i += 1) {
-    const next = runtime.engine.tick + 1;
-    for (const action of cast.decide(next, options.seed)) {
-      verbs.set(action.verb, (verbs.get(action.verb) ?? 0) + 1);
-      if (action.verb === 'build' && !firstBuild.has(action.principal)) {
-        firstBuild.set(action.principal, next);
+  const run = (reckonings: number, into: Map<string, number>): void => {
+    const ticks = reckonings * TICKS_PER_RECKONING;
+    for (let i = 0; i < ticks; i += 1) {
+      const next = runtime.engine.tick + 1;
+      for (const action of cast.decide(next, options.seed)) {
+        into.set(action.verb, (into.get(action.verb) ?? 0) + 1);
+        if (action.verb === 'build' && !firstBuild.has(action.principal)) {
+          firstBuild.set(action.principal, next);
+        }
+        runtime.engine.submit(action);
       }
-      runtime.engine.submit(action);
+      const report = runtime.runTick();
+      // A halt makes every count below meaningless, so it fails here rather than downstream.
+      expect(
+        report.halted,
+        `aged world halted at ${String(report.tick)}: ${report.violations
+          .map((v) => `${v.id} ${v.message}`)
+          .join(' | ')}`,
+      ).toBe(false);
     }
-    const report = runtime.runTick();
-    // A halt makes every count below meaningless, so it fails here rather than downstream.
-    expect(
-      report.halted,
-      `aged world halted at ${String(report.tick)}: ${report.violations
-        .map((v) => `${v.id} ${v.message}`)
-        .join(' | ')}`,
-    ).toBe(false);
-  }
-  return { runtime, roster, reckonings: options.reckonings, verbs, firstBuild };
+  };
+  run(options.reckonings, verbs);
+  return {
+    runtime,
+    roster,
+    reckonings: options.reckonings,
+    verbs,
+    firstBuild,
+    resume: (resumed) => {
+      // The deploy: the three ladder rolls go back to their shipping defaults, in the world the
+      // cast without them has already made. `delete` rather than a number, so the resumed cast runs
+      // on `DEFAULT_*_CHANCE_BPS` and this fixture cannot pin a calibration of its own.
+      delete rolls.worksChanceBps;
+      delete rolls.graduateChanceBps;
+      delete rolls.claimChanceBps;
+      const after = new Map<string, number>();
+      run(resumed.reckonings, after);
+      return after;
+    },
+  };
 }
 
 /**
@@ -174,4 +224,124 @@ export function soloPayerRationByReckoning(
     perReckoning.push(runtime.worksQuote(who, holdingOf(runtime.world, who).system).availableQty);
   }
   return { runtime, who, perReckoning };
+}
+
+/**
+ * ★ **A PRINCIPAL THAT DRAINS TO ZERO GOODS, COMES BACK THROUGH THE CURRENCY DOOR, AND THEN
+ * LIVES OFF WHAT IT PRODUCES.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS IS THE ONLY FIXTURE THAT MEASURES THE FIX RATHER THAN THE TRAP**, and the shape of it is
+ * the whole argument for `WORKS_GOODS_IN_CURRENCY_MINOR` being scoped to a first WORKS:
+ *
+ *   1. pay tribute honestly until the enrolment allotment is gone (~4 Reckonings);
+ *   2. build **only when `payingGoodsInCurrency` is true** — so the goods route is never taken and
+ *      what is observed afterwards is a WORKS that was bought with money alone;
+ *   3. then `refine` every spare action, because a WORKS yields `ore` and every obligation is
+ *      payable in `ration`. Nothing here skips that step: a fixture that credited `ration` directly
+ *      would prove the door works while hiding that the goods arrive in the wrong form.
+ *
+ * The tribute always comes first, so the principal never goes short to fund the build — which
+ * matters, because a fix that pays for itself out of an unpaid Levy has moved the failure onto the
+ * public record (A5′) instead of removing it.
+ *
+ * Measured, `probe-rungs`, seed `probe-rungs`: dry at R5 with `graduate.affordable false` and
+ * `0/5,000` anchor goods; through the door in R6 at 250,000 → 165,000; **23,920 units at seat by
+ * R7**, both rungs open, and +3,040 a Reckoning after that — which is `YIELD_PER_TICK.COMMONS`
+ * against a nominal Levy, exactly as `works/params.ts` calibrated it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function drainedThenBuilds(
+  seed: string,
+  reckonings = 6,
+): {
+  readonly runtime: Runtime;
+  readonly who: PrincipalId;
+  /** Free currency the tick before the build landed, so the price can be checked by subtraction. */
+  readonly freeMinor: number;
+  readonly freeBefore: number;
+  /** The tick the WORKS was raised on, or null if the door never opened. */
+  readonly builtAtTick: number | null;
+} {
+  setSpeed('instant');
+  const runtime = new Runtime({ seed });
+  const seat = commonsSystems(runtime.world.map)[0];
+  if (seat === undefined) throw new Error('the launch map has no Commons system');
+  const who = 'p:door-payer' as PrincipalId;
+  runtime.seat(who, 'door-payer', seat);
+  runtime.standing.open(who);
+
+  let builtAtTick: number | null = null;
+  let freeBefore = 0;
+  for (let i = 0; i < reckonings * TICKS_PER_RECKONING; i += 1) {
+    const tick = runtime.engine.tick + 1;
+    const system = holdingOf(runtime.world, who).system;
+    const block = runtime.levyBlockFor(who, tick);
+    // ── ONE ACTION A TICK, AND THE TRIBUTE OUTRANKS EVERYTHING ────────────────
+    //
+    // Not a budget shortcut: it is the order that keeps the measurement honest. A principal that
+    // built while it owed would be funding the fix out of a breach on the permanent record.
+    let submitted = false;
+    if (block !== null && block.shortfall_if_unpaid > 0) {
+      runtime.engine.submit({
+        principal: who,
+        verb: 'deliver',
+        params: {},
+        clientSequence: 0,
+        arrivalMs: 0,
+        decisionSource: 'LIVE',
+      });
+      submitted = true;
+    }
+    if (!submitted && builtAtTick === null) {
+      const quote = runtime.worksQuote(who, system);
+      // **Only the currency door.** `affordable` would fire at tick 1 out of the allotment and
+      // measure the fresh path, which proves nothing about the state this fixture exists for.
+      if (quote.payingGoodsInCurrency) {
+        freeBefore = quote.freeMinor;
+        runtime.engine.submit({
+          principal: who,
+          verb: 'build',
+          params: { kind: 'WORKS', system },
+          clientSequence: 0,
+          arrivalMs: 0,
+          decisionSource: 'LIVE',
+        });
+        builtAtTick = tick;
+        submitted = true;
+      }
+    }
+    if (!submitted && builtAtTick !== null) {
+      // Raw yield is not payable. This is the step that turns `ore` into the good every obligation
+      // is denominated in, and it is submitted every spare tick because `refine` takes whole
+      // batches and a missed tick is only a missed batch.
+      runtime.engine.submit({
+        principal: who,
+        verb: 'refine',
+        params: { system },
+        clientSequence: 0,
+        arrivalMs: 0,
+        decisionSource: 'LIVE',
+      });
+    }
+    const report = runtime.runTick();
+    expect(
+      report.halted,
+      `drained payer halted at ${String(report.tick)}: ${report.violations
+        .map((v) => `${v.id} ${v.message}`)
+        .join(' | ')}`,
+    ).toBe(false);
+  }
+  expect(
+    builtAtTick,
+    'the currency door never opened, so this fixture measured nothing. Either the drain no longer ' +
+      'reaches zero inside the run, or `payingGoodsInCurrency` is unreachable.',
+  ).not.toBeNull();
+  return {
+    runtime,
+    who,
+    freeMinor: runtime.worksQuote(who, holdingOf(runtime.world, who).system).freeMinor,
+    freeBefore,
+    builtAtTick,
+  };
 }
