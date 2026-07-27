@@ -40,6 +40,7 @@ export {
 export {
   CHECKPOINT_REQUIRED_TABLES,
   HYDRATE_PAGE_TICKS,
+  CheckpointUnusableError,
   HydrateError,
   hydrateEventsForSnapshot,
   hydrateLedgerForSnapshot,

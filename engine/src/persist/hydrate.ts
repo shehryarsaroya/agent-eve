@@ -67,6 +67,36 @@ export class HydrateError extends Error {
 }
 
 /**
+ * **Adoption cannot proceed, but the record may be perfectly sound — replay from genesis.**
+ *
+ * A `HydrateError` says the durable record disagrees with itself, which is a hard stop with no
+ * operator door. This subclass says something narrower and much less alarming: *this snapshot is not
+ * adoptable by this code*, which a genesis replay of the same journal may reproduce without
+ * complaint — and in the case that produced it, demonstrably does.
+ *
+ * The distinction was learned in an outage. Adoption ran in production for the first time ever (the
+ * write-once rules gate had refused it since the world's first rules change) and threw on a tick-2830
+ * posting against an escrow account the tick-4895 capture no longer holds. Boot reported *"the
+ * posting log and the snapshot describe different worlds… the record itself is inconsistent"* and
+ * HELD the world with no door. **That diagnosis was wrong.** The very next boot replayed the same
+ * journal from genesis, verified 17 snapshot tripwires, and came up healthy. The record was fine;
+ * adoption's account check was not.
+ *
+ * A boot path that cannot handle a snapshot must degrade to the slow path, never to an outage. So
+ * this is thrown **only from validation that provably precedes any mutation** —
+ * {@link hydrateLedgerForSnapshot} builds its batches in memory and touches `ledger` on its last
+ * line, so the runtime is still clean and the caller can fall through to a genesis replay. Anything
+ * thrown at or after `hydrateAppendOnly` stays a plain `HydrateError` and stays fatal, because by
+ * then the runtime has been mutated and a fallback would be replaying into a dirty world.
+ */
+export class CheckpointUnusableError extends HydrateError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CheckpointUnusableError';
+  }
+}
+
+/**
  * Every state table that must be present **and restorable** before a checkpoint may
  * be adopted, because losing what it holds makes the world wrong rather than stale.
  *
@@ -714,11 +744,30 @@ function assertRowShape(row: PersistedPosting, accounts: ReadonlySet<string>): v
     );
   }
   if (!accounts.has(row.account)) {
-    // Stronger than the foreign key this table used to carry: it compares against the
-    // accounts the snapshot itself held AT that tick, not against whatever exists now.
-    throw new HydrateError(
+    // ── THIS CHECK'S PREMISE IS WRONG, AND IT COST AN OUTAGE ────────────────────
+    //
+    // It used to read: "compares against the accounts the snapshot itself held AT that tick, not
+    // against whatever exists now." But the snapshot is not at the posting's tick. A checkpoint at
+    // 4895 captures the accounts alive at 4895, and this loop feeds it every posting since genesis —
+    // so a posting from tick 2830 against an escrow that opened and CLOSED in between is legitimately
+    // absent from the capture. The check assumes the final account set is a superset of every account
+    // ever referenced, which only holds if accounts are never removed.
+    //
+    // Production disproved that with `escrow:v:2830:117e86ad:p:vale`, and then disproved the
+    // conclusion too: a genesis replay of the same journal verified 17 tripwires and came up healthy.
+    // So this is not the record disagreeing with itself — it is adoption being unable to rebuild a
+    // ledger whose history includes closed accounts.
+    //
+    // Downgraded to recoverable rather than deleted. The check still has value as a tripwire against
+    // a genuinely mismatched log, and the honest fix for closed accounts needs a record of closures
+    // that does not exist yet (see `COMPLETION.md` §7). Until then the safe answer is the slow boot,
+    // which is what {@link CheckpointUnusableError} buys.
+    throw new CheckpointUnusableError(
       `${where} moves value in account ${row.account}, which the snapshot's ledger capture does ` +
-        'not contain. The posting log and the snapshot describe different worlds.',
+        'not contain. Most likely an account that closed before the checkpoint — its postings are ' +
+        'still in the log and the capture no longer lists it — which adoption cannot currently ' +
+        'rebuild. The record itself may be sound: replaying from genesis re-derives every tick and ' +
+        'checks it against its own snapshots.',
     );
   }
 }

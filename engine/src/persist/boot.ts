@@ -72,6 +72,7 @@ import {
   planCheckpoint,
   snapshotOf,
   type CheckpointOptions,
+  CheckpointUnusableError,
 } from './hydrate.js';
 import {
   safeDetail,
@@ -398,7 +399,10 @@ export async function bootFromStore(
   let adoptedAtTick: number | null = null;
   let postingsHydrated = 0;
   let eventsHydrated = 0;
-  const checkpointRefusal = plan.refusal;
+  // Set when adoption was attempted, failed recoverably, and the genesis path ran instead. Reported
+  // in place of `plan.refusal` because "I tried and backed out" is a different fact from "I never
+  // tried", and an operator reading one boot line must be able to tell them apart.
+  let adoptionFallback: string | null = null;
   if (plan.snapshot !== null) {
     const snapshot = plan.snapshot;
     try {
@@ -428,6 +432,28 @@ export async function bootFromStore(
       // operator reads to decide how much of the record was actually re-derived.
       // Every snapshot in the replayed tail still counts.
     } catch (error: unknown) {
+      // ── A BOOT PATH THAT CANNOT HANDLE A SNAPSHOT MUST NOT TAKE THE WORLD DOWN ──
+      //
+      // `CheckpointUnusableError` is thrown only by validation that provably precedes any mutation,
+      // so the runtime is still clean here and the genesis replay below can run exactly as if
+      // `planCheckpoint` had refused. That is the honest outcome: adoption is an OPTIMISATION, and
+      // the slow path is always available and always correct.
+      //
+      // This is not hypothetical caution. Adoption ran in production for the first time ever, threw
+      // here, and boot reported "the record itself is inconsistent" and HELD the world with no
+      // operator door — while the very next boot replayed the same journal from genesis, verified 17
+      // tripwires, and came up healthy. The record was sound and the diagnosis was wrong; the world
+      // was down for four minutes over an optimisation that failed safely.
+      //
+      // Everything else still throws. A failure at or after `hydrateAppendOnly`, or in the event
+      // hydrate, or in `adoptSnapshot`, leaves a half-built world, and replaying into that would be
+      // worse than refusing to serve.
+      if (error instanceof CheckpointUnusableError) {
+        adoptionFallback =
+          `checkpoint adoption abandoned at tick ${String(snapshot.tick)} and the world was replayed ` +
+          `from genesis instead: ${error.message}`;
+        process.stderr.write(`compact: ${adoptionFallback}\n`);
+      } else {
       throw new BootError(
         `checkpoint adoption failed at tick ${String(snapshot.tick)}: ` +
           `${error instanceof Error ? error.message : String(error)}. The snapshot and the durable ` +
@@ -447,6 +473,7 @@ export async function bootFromStore(
           operatorInstruction: null,
         },
       );
+      }
     }
     // Enrolments inside the adopted prefix are already in the snapshot's `world`
     // capture, so they must NOT be re-seated. Their out-of-world identity — keyring
@@ -623,7 +650,7 @@ export async function bootFromStore(
     mode: 'REPLAY',
     headTick: runtime.engine.tick,
     adoptedAtTick,
-    checkpointRefusal,
+    checkpointRefusal: adoptionFallback ?? plan.refusal,
     postingsHydrated,
     eventsHydrated,
     ticksReplayed,
