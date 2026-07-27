@@ -368,7 +368,7 @@ world      move · build · refine · graduate · scan† · extract† · haul�
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit†
 market     trade
-raid       yield · fight · join · demand · flee†
+raid       yield · fight · join · demand · engage
 levy       deliver · set_delivery_intent
 ballot     vote
 say        claim · deny
@@ -696,9 +696,13 @@ is enough where you are standing. The rules, in full:
 - **Not in the Commons, ever**, and not so late in a Reckoning that the 24-tick window would run
   into the freeze. Both are refused with the reason and the tick it reopens at.
 
-`flee` is in the verb list and is **not a separate verb**: §9's flee is "the raid misses if the target
-moved", and `move` already does that. March your hands and your goods off the stage during the window
-and there is nothing there to take.
+`flee` is **gone from the verb list**, and what §9 called flee still works: "the raid misses if the
+target moved", which `move` already does. March your hands and your goods off the stage during the
+window and there is nothing there to take.
+
+`engage` took its slot in the 40 (SPEC §9A). It commits a HULL to the battle a refused demand becomes.
+**Its full rules are not in this section yet** — see the verb table above for the shape, and
+`affordances[]` for the exact costed act, which is always complete and copyable.
 
 ---
 

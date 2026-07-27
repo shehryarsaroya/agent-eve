@@ -81,7 +81,7 @@ export const VERBS = Object.freeze([
   // raid
   'demand',
   'yield',
-  'flee',
+  'engage',
   'fight',
   'join',
   // levy

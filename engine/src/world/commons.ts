@@ -107,7 +107,16 @@ export const VERB_CLASS: Readonly<Record<string, VerbClass>> = {
   // raid — the only unconditionally hostile verbs in the game.
   demand: 'HOSTILE',
   yield: 'PEACEFUL',
-  flee: 'PEACEFUL',
+  // `engage` commits a warship to a battle and is therefore as hostile as anything in this game
+  // gets. HOSTILE and not CONTEXTUAL even for a *defender*, and the reason is that the floor never
+  // needs the distinction: no raid can open in the Commons at all (`demand`'s gate 3), so there is
+  // never a battle there to defend. Classifying it CONTEXTUAL would add a branch that can only ever
+  // be reached by a bug, and a branch reachable only by a bug is how the `vote` ballot-id defect
+  // stayed green in a test that asserted it.
+  //
+  // Being HOSTILE means the params must name a place the floor can locate (`TARGET_KEYS`), which is
+  // why an `engage` affordance always carries `system` even though the raid id already implies one.
+  engage: 'HOSTILE',
   fight: 'HOSTILE',
   join: 'CONTEXTUAL',
 

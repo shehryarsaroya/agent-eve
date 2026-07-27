@@ -164,6 +164,7 @@ describe('the verb classification is total against SPEC §12.2', () => {
       'approve',
       'create',
       'demand',
+      'engage',
       'fight',
       'fill_role',
       'join',

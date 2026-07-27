@@ -165,7 +165,12 @@ describe('the window is frozen for its whole length', () => {
     // out-raced by the `demand` that provoked them.
     expect(defaultPriority('move', {})).toBe(PRIORITY.ORDINARY);
     expect(defaultPriority('yield', {})).toBe(PRIORITY.ORDINARY);
-    expect(defaultPriority('flee', {})).toBe(PRIORITY.ORDINARY);
+    // `engage` replaced `flee` (SPEC §9A) and is CONTEST rather than ORDINARY, which is the
+    // classification doing its job: committing a warship is an act of force, so it resolves after
+    // every peaceful act in the same tick — including the `yield` of a target that decided not to
+    // fight after all. That ordering is the whole reason the priority is derived from the Commons
+    // floor's classification rather than from a second table.
+    expect(defaultPriority('engage', {})).toBe(PRIORITY.CONTEST);
     expect(defaultPriority('demand', {})).toBe(PRIORITY.CONTEST);
     expect(defaultPriority('fight', {})).toBe(PRIORITY.CONTEST);
     // An unknown verb is hostile by default, so it sorts last too.
