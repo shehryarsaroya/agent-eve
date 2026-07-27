@@ -165,6 +165,7 @@ import type { AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } f
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 import { hallOfFame, namesFor } from '../frames/memory.js';
+import { refine } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
@@ -529,8 +530,6 @@ import { checkWorks } from '../works/invariants.js';
 import {
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
-  REFINE_IN_QTY,
-  REFINE_OUT_QTY,
   WORKS_GOOD,
   WORKS_YIELD_GOOD,
   WORKS_SPINUP_TICKS,
@@ -4395,84 +4394,45 @@ export class Runtime {
   }
 
   /**
-   * `refine` — turn raw {@link WORKS_YIELD_GOOD} into the consumable everything else wants.
+   * `refine` — an ADAPTER now. The operation lives in `works/refine.ts`.
    *
-   * §10's *"one build step"*, and the verb the newcomer path has always named (*"`extract` a bounded
-   * batch → `refine`"*) while `verbs.ts` declared it not-live. Without it a WORKS yields something no
-   * mechanic consumes, so goods enter the world unpayable and `levyShort` climbs regardless of how much
-   * anyone extracts.
-   *
-   * **PRODUCTION, not EXTRACTION**, and the distinction is the audit's not mine: `produce.ts` posts
-   * EXTRACTION because "a *place* is giving up a bounded amount", checkable against the map. Refining
-   * makes goods out of other goods, which is what the PRODUCTION faucet is for and is checkable against
-   * recipes. Merged into one faucet, neither claim could be tested.
-   *
-   * Located, like everything else (§10.2): ore is refined WHERE IT STANDS and the output appears there,
-   * never at the actor's seat. Goods that appeared at a holding the hand had left would be a located
-   * fact that was false — the error D8 corrected in the Levy.
+   * Moved out as the worked example of the shape that replaces this file: a narrow port, a pure
+   * function, and a method here that only gathers inputs. See that file's header for why — three
+   * mechanical edits landed in the wrong place in this class on 2026-07-26 and all three passed `tsc`.
    */
   private vRefine(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
-    const system = readString(req.params, ['system', 'at', 'place']) as SystemId | null;
-    const where = system ?? holdingOf(this.world, req.principal).system;
-    const wanted = readInt(req.params, ['qty', 'quantity', 'amount']);
-
-    const lots = this.goodLotsAt(req.principal, where, WORKS_YIELD_GOOD);
-    const have = lots.reduce((n, l) => n + l.qty, 0);
-    if (have < REFINE_IN_QTY) {
-      return reject(
-        'A2',
-        `refine turns ${WORKS_YIELD_GOOD} into ${WORKS_GOOD}, and you have ${String(have)} unpledged ` +
-          `${WORKS_YIELD_GOOD} at ${where} — the recipe needs ${String(REFINE_IN_QTY)}. A WORKS yields ` +
-          `${WORKS_YIELD_GOOD} where it stands; ${WORKS_GOOD} is what the Levy, a Charge and a WORKS ` +
-          `build are payable in. Encumbered lots do not count.`,
-      );
-    }
-    // Whole batches only. A partial batch would either round in the actor's favour or silently destroy
-    // the remainder, and §10.2's rounding must be published rather than chosen here.
-    const batches = wanted === null ? Math.trunc(have / REFINE_IN_QTY) : Math.trunc(wanted / REFINE_OUT_QTY);
-    if (batches <= 0) {
-      return reject('A2', `refine needs a positive quantity; ${String(wanted)} rounds to no whole batch.`);
-    }
-    const takeQty = batches * REFINE_IN_QTY;
-    if (takeQty > have) {
-      return reject(
-        'A2',
-        `${String(batches)} batch(es) would consume ${String(takeQty)} ${WORKS_YIELD_GOOD} and you have ` +
-          `${String(have)} at ${where}.`,
-      );
-    }
-
-    // ── DESTROY FIRST, THEN SOURCE ────────────────────────────────────────────
-    //
-    // Same ordering rule the delegated `create` documents (AGT-X9): if the second half failed after the
-    // first, a destroy-then-fail leaves the actor poorer, which is safe and visible, where
-    // source-then-fail mints goods from nothing and breaks supply conservation — the one thing INV-1
-    // exists to catch and the worst residue to leave.
-    let taken = 0;
-    for (const lot of lots) {
-      if (taken >= takeQty) break;
-      const portion = Math.min(takeQty - taken, lot.qty);
-      if (portion <= 0) continue;
-      this.ledger.destroyGoods({
-        eventId: `refine.in:${req.principal}:${String(ctx.tick)}:${lot.id}` as EventId,
-        tick: ctx.tick,
-        sink: GOODS_SINK.CONSUMPTION,
-        lotId: lot.id,
-        qty: qty(portion),
-      });
-      taken += portion;
-    }
-    this.ledger.sourceGoods({
-      eventId: `refine.out:${req.principal}:${String(ctx.tick)}:${where}` as EventId,
-      tick: ctx.tick,
-      faucet: GOODS_FAUCET.PRODUCTION,
-      to: storesAccount(req.principal),
-      good: WORKS_GOOD,
-      qty: qty(batches * REFINE_OUT_QTY),
-      location: where,
-      origin: req.principal,
-    });
-    return { ok: true, value: null };
+    const named = readString(req.params, ['system', 'at', 'place']) as SystemId | null;
+    const system = named ?? holdingOf(this.world, req.principal).system;
+    return refine(
+      {
+        lotsOf: (p, sys, good) => this.goodLotsAt(p, sys, good),
+        destroy: (a) => {
+          this.ledger.destroyGoods({
+            eventId: a.eventId,
+            tick: ctx.tick,
+            sink: GOODS_SINK.CONSUMPTION,
+            lotId: a.lotId as LotId,
+            qty: a.qty,
+          });
+        },
+        source: (a) => {
+          this.ledger.sourceGoods({
+            eventId: a.eventId,
+            tick: ctx.tick,
+            faucet: GOODS_FAUCET.PRODUCTION,
+            to: storesAccount(req.principal),
+            good: a.good,
+            qty: a.qty,
+            location: a.location,
+            origin: req.principal,
+          });
+        },
+      },
+      req.principal,
+      system,
+      ctx.tick,
+      readInt(req.params, ['qty', 'quantity', 'amount']),
+    );
   }
 
   private mintGrantId(tick: number, principal: PrincipalId): GrantId {
