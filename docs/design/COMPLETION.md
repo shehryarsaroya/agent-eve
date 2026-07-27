@@ -195,6 +195,51 @@ For scale: the next largest are `api/observe.ts` (2,866), `api/server.ts` (2,236
 - **Zero `TODO`/`FIXME`/`HACK` markers in 78,466 lines.** Deferred work is argued in prose with a
   reason, or it is not deferred.
 
+### 4c. Scale: MEASURED at last — the number is wrong by ~10×, the conclusion survives
+
+`SPEC.md` §15 and `CLAUDE.md` §6 both rest on *"at 300 principals a deterministic tick is **single-digit
+milliseconds** on the target box, so every remaining risk is a correctness risk, not a capacity risk."*
+That sentence decided where the entire engineering budget went — invariants over performance — and it
+had **never been measured**, because it could not be: `--principals P` feeds `HeuristicCast({size: P})`
+and the roster caps at `MAX_CAST` (20 names, since a cast name may never collide with a handle
+`agent.md` uses as a worked example). Load-bearing and unfalsifiable at once, which is this project's
+signature defect class one level above the code.
+
+`scripts/population-scale.ts` is the instrument. 300 ticks per run, 20 warm-up ticks discarded:
+
+```
+  pop   total ms   per-tick ms   per-tick-per-principal   ventures
+    4        569         1.895                   0.4738         55
+    8       1243         4.143                   0.5178         94
+   12       1123         3.745                   0.3121         71
+   16       1468         4.894                   0.3059         75
+   20       2318         7.727                   0.3864        110
+
+  population ×5.0 → per-tick cost ×4.08   (scaling exponent ≈ 0.87)
+```
+
+**Sub-linear** — fixed overhead still dominates at these sizes, which is the good outcome. Naive
+projection at 300: **~82 ms/tick**, an order of magnitude above "single-digit". So the *number* in the
+docs is wrong.
+
+**The conclusion it was used to justify is nevertheless sound, with enormous margin.** At the 5-minute
+production tick, 82 ms is 0.03% of the budget; even at the 10-second `fast` speed it is 0.8%. Capacity
+is genuinely not the risk. The docs should say "tens of milliseconds and comfortably inside any tick
+budget" rather than a figure that is precise and false.
+
+**Three caveats, because the measurement is worth exactly what its method is worth:**
+
+- It is a **projection**, not a measurement at 300. Nothing here observed the target population.
+- It ran on a dev machine, not on the VPS the claim names as "the target box".
+- The curve is **non-monotonic** (pop 8 costs more per tick than pop 12) because different populations
+  grow different worlds — 94 ventures against 71. Per-tick cost tracks *world content* at least as much
+  as population, so a 300-principal world with proportionally more live ventures could sit well above
+  the projection.
+
+Known super-linear costs that will bend this curve upward eventually, both recorded as INV-26 debt:
+INV-7 sums the whole posting log every tick, and `checkStandingJournal` replays **and sorts** its
+journal every tick. Neither binds at 20.
+
 ### 5. The three-humans watchability gate has never been run
 
 It cannot be automated and §16 makes it the gate that decides whether anything downstream matters.

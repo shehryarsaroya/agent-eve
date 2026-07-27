@@ -163,6 +163,12 @@ The predecessor validated a lot. Its code is **gone by choice** (clean slate —
 
 Detail in `SPEC.md` §15. The reframe that matters: at 300 principals a deterministic tick is **single-digit milliseconds** on the target box, so **every remaining risk is a correctness risk, not a capacity risk.** Spend the hardware budget on invariants.
 
+- **Capacity is not the risk, but the old number was wrong.** §6 used to say a tick is "single-digit
+  milliseconds at 300 principals". **Measured 2026-07-26** (`scripts/population-scale.ts`): scaling is
+  sub-linear (exponent ≈ 0.87), 7.7 ms/tick at 20 principals, projecting to **~82 ms/tick at 300** — ten
+  times the old figure and still only 0.03% of a 5-minute tick. So spend the budget on invariants, as
+  before; just do not quote "single-digit". The harness caps at `MAX_CAST` = 20, so 300 remains a
+  projection rather than a measurement.
 - **Three write artifacts, two projections.** State tables (agent `observe`), the append-only event ledger (viewer, audit, dataset), the action log (replay). **Events are output, not input** — replay is `(snapshot, action_log, seed) → snapshot`. "Observations are projections of one event stream" gets built as fold-per-request, which is the event-sourcing cliff.
 - **`posting` is authoritative for value.** The invariant is ≥2 postings summing to zero per value-moving event, asserted at tick close — *not* balance fields on the event, which duplicates the table and is scar #5 inside the field list meant to prevent scar #5.
 - **Within-tick actions never react to another within-tick action.** Agents act from snapshot T; valid actions land in T+1. Order by `(priority, principal_id, client_sequence)`, never arrival.
