@@ -28,7 +28,12 @@ import {
   SnapshotError,
   type StateTable,
 } from '../tick/snapshot.js';
-import { WORKS_PER_PRINCIPAL_PER_SYSTEM, WORKS_SPINUP_TICKS, YIELD_PER_TICK } from './params.js';
+import {
+  FUEL_YIELD_PER_TICK,
+  WORKS_PER_PRINCIPAL_PER_SYSTEM,
+  WORKS_SPINUP_TICKS,
+  YIELD_PER_TICK,
+} from './params.js';
 
 /** A WORKS id is content-derived from its place and the tick it was raised. */
 export type WorksId = string & { readonly __brand: 'WorksId' };
@@ -61,6 +66,18 @@ export interface WorksRecord {
    * `extracted` stays GROSS: the place handed that much over, which is what it means.
    */
   rentPaid: Qty;
+  /**
+   * Cumulative units of {@link import('./params.js').FUEL_GOOD} this WORKS has been handed.
+   *
+   * **A second counter and not a second meaning for `extracted`** (hard rule 4). Fuel and ore are
+   * different goods with different sinks and different geography; one number summing both would
+   * make `worksLines.extracted` a quantity of nothing in particular, and it would silently widen
+   * INV-W4's and INV-W5's bounds — both of which are stated against the ORE yield — so a rent
+   * above the ore a place handed over would stop tripping.
+   *
+   * Zero forever outside the Frontier, which is what `checkFuelIsFrontierOnly` asserts.
+   */
+  fuelExtracted: Qty;
 }
 
 /** Rent collected at one system during one Reckoning, and who is collecting it. */
@@ -107,6 +124,14 @@ export class Book {
    * second place that had to agree about which Reckoning it is.
    */
   private readonly rent = new Map<SystemId, RentTally>();
+  /**
+   * The Reckoning each system's anchor was last fuelled for. Absent means cold.
+   *
+   * Bounded by the map for the same reason the rent tally is, and dropped wholesale when a later
+   * Reckoning lights one: an anchor fuelled two Reckonings ago is not fuelled now, and a stale row
+   * would keep the rent flowing on fuel that was burned for a different cycle.
+   */
+  private readonly hot = new Map<SystemId, number>();
 
   /** Live WORKS at a system, canonical order. The order the share split depends on. */
   liveAt(system: SystemId): readonly WorksRecord[] {
@@ -175,6 +200,7 @@ export class Book {
       razedAtTick: null,
       extracted: qty(0),
       rentPaid: qty(0),
+      fuelExtracted: qty(0),
     };
     this.rows.set(id, row);
     return row;
@@ -247,15 +273,59 @@ export class Book {
    * output by raising a structure it never finishes. The share is over the *online* set.
    */
   sharesAt(system: SystemId, tier: ZoneTier, tick: number): ReadonlyMap<WorksId, Qty> {
+    return this.sharesOf(system, YIELD_PER_TICK[tier], tick);
+  }
+
+  /**
+   * The same split, for a system's yield in the FUEL good. Zero outside the Frontier.
+   *
+   * A second call into {@link sharesOf} rather than a second algorithm: `FUEL_YIELD_PER_TICK` is a
+   * different total over the *same* set of online WORKS, and a fuel split that divided among a
+   * different set — or rounded differently — would let one good's arithmetic drift from the
+   * other's while both looked correct (scar #5 across two goods).
+   */
+  fuelSharesAt(system: SystemId, tier: ZoneTier, tick: number): ReadonlyMap<WorksId, Qty> {
+    return this.sharesOf(system, FUEL_YIELD_PER_TICK[tier], tick);
+  }
+
+  /** Divide any total across the ONLINE WORKS at a system, summing to it exactly. */
+  sharesOf(system: SystemId, total: Qty, tick: number): ReadonlyMap<WorksId, Qty> {
     const online = this.liveAt(system).filter((w) => tick >= w.onlineAtTick);
     const out = new Map<WorksId, Qty>();
-    if (online.length === 0) return out;
-    const yieldHere = YIELD_PER_TICK[tier];
+    if (online.length === 0 || total <= 0) return out;
     // Equal weights: a WORKS is a WORKS. Weighting by anything a principal controls would
     // be a lever to buy a bigger share of a fixed pool, which is the cap defeated.
-    const shares = splitQty(yieldHere, online.length);
+    const shares = splitQty(total, online.length);
     for (const [i, w] of online.entries()) out.set(w.id, shares[i] ?? qty(0));
     return out;
+  }
+
+  /** Cumulative fuel credited to one WORKS. Separate counter: fuel is a separate good. */
+  creditFuel(id: WorksId, amount: Qty): void {
+    const row = this.rows.get(id);
+    if (row === undefined) throw new WorksError(`${id} does not exist`);
+    row.fuelExtracted = qty(row.fuelExtracted + amount);
+  }
+
+  // ── THE HOT ANCHOR: FUEL BOUGHT ONCE A RECKONING, NOT ONCE A TICK ─────────
+
+  /**
+   * Record that a system's anchor has been fuelled for `reckoning`.
+   *
+   * Per Reckoning rather than per tick because a per-tick burn of a whole Reckoning's fuel would be
+   * unpayable, and a per-tick burn of 1/288th of it would round to nothing at every published
+   * figure. One purchase, one Reckoning, and `agent.md` can state the number.
+   */
+  lightAnchor(system: SystemId, reckoning: number): void {
+    for (const [key, at] of [...this.hot.entries()]) {
+      if (at !== reckoning) this.hot.delete(key);
+    }
+    this.hot.set(system, reckoning);
+  }
+
+  /** Has this system's anchor been fuelled for `reckoning`? */
+  anchorHot(system: SystemId, reckoning: number): boolean {
+    return this.hot.get(system) === reckoning;
   }
 
   get size(): number {
@@ -276,6 +346,7 @@ export class Book {
           razedAtTick: w.razedAtTick,
           extracted: w.extracted,
           rentPaid: w.rentPaid,
+          fuelExtracted: w.fuelExtracted,
         })),
       // Inside the hash for the same reason the rest of the book is: two worlds that disagree
       // about what a claim collected this Reckoning would hash the same, and an aborted tick
@@ -288,12 +359,18 @@ export class Book {
           claimant: r.claimant,
           taken: r.taken,
         })),
+      // Inside the hash: two worlds that disagree about whether an anchor is fuelled disagree about
+      // whether rent flows next tick, which is a value movement.
+      hot: [...this.hot.entries()]
+        .sort((a, b) => compareIds(a[0], b[0]))
+        .map(([system, reckoning]) => ({ system, reckoning })),
     };
   }
 
   restore(captured: CanonicalValue): void {
     this.rows.clear();
     this.rent.clear();
+    this.hot.clear();
     const root = readObject(captured, 'works');
     for (const [i, raw] of readArray(root['works'] ?? [], 'works.works').entries()) {
       const where = `works.works[${String(i)}]`;
@@ -312,6 +389,9 @@ export class Book {
         // counter on its WORKS, and zero is the true history for a world in which no rent was
         // ever taken. Strictness would refuse to restore the live world across this deploy.
         rentPaid: qty(o['rentPaid'] === undefined ? 0 : readInt(o, 'rentPaid', where)),
+        // Tolerant for one deploy, like `rentPaid`: a snapshot from before fuel existed recorded
+        // none, and zero is the true history of a world in which none was ever extracted.
+        fuelExtracted: qty(o['fuelExtracted'] === undefined ? 0 : readInt(o, 'fuelExtracted', where)),
       };
       if (this.rows.has(row.id)) throw new SnapshotError(`${where}: duplicate WORKS ${row.id}`);
       this.rows.set(row.id, row);
@@ -328,6 +408,14 @@ export class Book {
       };
       if (this.rent.has(row.system)) throw new SnapshotError(`${where}: duplicate rent row for ${row.system}`);
       this.rent.set(row.system, row);
+    }
+
+    for (const [i, raw] of readArray(root['hot'] ?? [], 'works.hot').entries()) {
+      const where = `works.hot[${String(i)}]`;
+      const o = readObject(raw, where);
+      const system = readString(o, 'system', where) as SystemId;
+      if (this.hot.has(system)) throw new SnapshotError(`${where}: duplicate hot row for ${system}`);
+      this.hot.set(system, readInt(o, 'reckoning', where));
     }
   }
 }

@@ -422,6 +422,18 @@ export interface WorksLine {
   readonly rentPerTick: number;
   /** Cumulative units this WORKS has handed to a landlord. The grievance, as a number. */
   readonly rentPaid: number;
+  /**
+   * The FUEL good this place also yields to this WORKS per tick. **Zero outside the Frontier.**
+   *
+   * A tier constant divided by a public occupancy, which is the same argument `sharePerTick` is
+   * admitted on. It is on the frame because the third good is the only asymmetry in the economy and
+   * a map that did not draw it would leave a viewer unable to see why the Frontier is fought over —
+   * A13 refuses a mechanic with no pixel signature, and "some ground makes a thing no other ground
+   * makes" is the mechanic.
+   */
+  readonly fuelPerTick: number;
+  /** Cumulative fuel the place has HANDED OVER to this WORKS. Never a stock reading. */
+  readonly fuelExtracted: number;
 }
 
 export interface ClaimLine {
@@ -468,6 +480,21 @@ export interface ClaimLine {
   readonly rentTaken: number;
   /** Live WORKS here held by somebody else — who is paying, and how many of them. */
   readonly tenants: number;
+  /**
+   * Is this claim's anchor fuelled for this Reckoning? **`false` means it is collecting nothing.**
+   *
+   * The pixel signature for the third good's sink, and the only new failure state sovereignty has
+   * gained: a cold anchor keeps the claim, the arrears count and the bond exactly as they were and
+   * loses only the income. A viewer watching a frontier landlord's rent stop while its tenants keep
+   * their whole share is watching a supply failure it can see the cause of, which is the difference
+   * between a story and a number that moved.
+   *
+   * True by construction where no fuel is required, because reporting `false` for a Marches claim
+   * would tint it as switched off when nothing is wrong with it.
+   */
+  readonly anchorHot: boolean;
+  /** Units of fuel this claim's tier asks per Reckoning. Zero where none is asked. */
+  readonly fuelDue: number;
 }
 
 /**
@@ -857,6 +884,15 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
           `${line.yieldPerTick} — the split sums above the whole`,
       );
     }
+    if (line.fuelPerTick < 0 || line.fuelExtracted < 0) {
+      problems.push(`${line.works} renders a negative fuel quantity`);
+    }
+    if (!extracting && line.fuelPerTick !== 0) {
+      problems.push(
+        `${line.works} reads "${line.legend}" but is handed ${line.fuelPerTick} of fuel; a WORKS that is ` +
+          'not online extracts nothing of either good',
+      );
+    }
     if (!extracting && line.rentPerTick !== 0) {
       problems.push(
         `${line.works} reads "${line.legend}" but pays ${line.rentPerTick} in rent; a WORKS that is not ` +
@@ -934,6 +970,15 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
         `claim ${line.claim} renders ${line.rentTaken} of rent taken with ${line.tenants} tenants — rent comes ` +
           'out of another principal\'s extraction, so there is nowhere for that number to have come from',
       );
+    }
+    if (line.rentTaken > 0 && !line.anchorHot) {
+      problems.push(
+        `claim ${line.claim} renders ${line.rentTaken} of rent taken with a COLD anchor — a cold anchor ` +
+          'collects nothing, so the legend and the ledger disagree about the one thing this field is for',
+      );
+    }
+    if (line.fuelDue < 0) {
+      problems.push(`claim ${line.claim} renders a negative fuel requirement`);
     }
     if (line.rentTaken > 0 && line.rentBps === 0) {
       problems.push(

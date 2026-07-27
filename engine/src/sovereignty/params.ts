@@ -206,6 +206,53 @@ export const ANCHOR_QTY: Qty = qty(Math.trunc(LEVY_STARTER_ALLOTMENT / 10));
 export const CLAIM_RENT_BPS: Bps = bps(2_000);
 
 /**
+ * **FUEL: what an anchor burns per Reckoning to keep collecting rent, by tier** *(calibrate)*.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SINK FOR THE THIRD GOOD, AND THE ONE PLACE IT COULD SAFELY GO.** `works/params.ts`
+ * carries the full argument for `FUEL_GOOD`; this is the half of it that belongs to sovereignty.
+ *
+ * Fuel exists only at FRONTIER systems and no verb moves goods between systems, so a fuel
+ * requirement is only satisfiable where fuel is *made*. Two consequences, both load-bearing:
+ *
+ *   - **`MARCHES` is zero, and that is a rule rather than a gap.** A Marches claim asked for fuel
+ *     could never supply it — no local yield, and nothing in the game hauls — so the requirement
+ *     would be an obligation the rules make impossible to meet. That is the sentence
+ *     `ledger/endowment.ts` uses to refuse removing the starter allotment (*"a newcomer with no
+ *     allotment holds an obligation the rules make impossible to meet, which is A5′ with our own
+ *     economy as the cause"*), and it applies here unchanged.
+ *   - **`COMMONS` is zero because a Commons claim cannot exist** (A8, `claim.ts` refuses it). Zero
+ *     is the arithmetic statement of that refusal, exactly as it is in {@link CHARGE_BY_TIER}, and
+ *     it is not dead code: a missing key would read `undefined` and propagate `NaN` into a value
+ *     path.
+ *
+ * ## What being short costs, and what it deliberately does NOT cost
+ *
+ * A cold anchor **collects no rent**. It does not miss a Charge, it does not enter arrears, it
+ * does not lapse, and nothing is slashed. Three reasons, in order of how much they matter:
+ *
+ *   1. **A5′.** A new way to be recorded short is a new way for the permanent public record to
+ *      accuse a real agent, and this mechanic depends on a good that only exists in one zone. The
+ *      record must never carry a breach the geography made unavoidable.
+ *   2. **No death spiral.** `CHARGE_ARREARS_SURCHARGE_BPS` carries the economic critic's rule that
+ *      *"the cure must never become arithmetically unreachable"*. A claim that lost its income for
+ *      missing a Charge would be exactly that, and rent is the thing that funds the cure.
+ *   3. **It is the canon failure step.** `PASS-TERRITORY-POLITICS.md` §16.2 #5's ladder begins
+ *      *"`STRAINED` (upgrades shed)"* and #6 says *"priority determines which shuts off under
+ *      shortage"*. The rent IS the upgrade. Shedding it is the published answer to a shortage.
+ *
+ * So the only thing a claimant risks by not fuelling is the income it would otherwise have had —
+ * which makes this a **pure opportunity cost**, the one shape of sanction that cannot make the
+ * Levy or the Charge harder to pay for anybody.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const ANCHOR_FUEL_BY_TIER: Readonly<Record<ZoneTier, Qty>> = Object.freeze({
+  COMMONS: qty(0),
+  MARCHES: qty(0),
+  FRONTIER: qty(1_200),
+});
+
+/**
  * **A RULES SURFACE** (hard rule 4). What a claim now PAYS, and what it costs a resident.
  *
  * Carried verbatim in `agent.md` and pinned by `test/sovereignty/rent.spec.ts`. The rent
@@ -222,6 +269,24 @@ export const RENT_STATEMENT =
   'its quoted share. The rate is fixed when the claim is raised and a takeover cannot raise it on you. ' +
   'Rent is why territory is worth holding: it is what funds the Charge. Rent arrives raw, so a holder ' +
   'still has to `refine` it before any obligation can be paid with it.';
+
+/**
+ * **A RULES SURFACE.** Fuel: where it comes from, what it keeps alive, and what running out costs.
+ *
+ * Published because a claimant that was never told its anchor needs fuel would watch its income
+ * stop for no stated reason — and the fix (buy fuel from a neighbour who has some) is only
+ * discoverable if the rule is written down. A2: known arithmetic is exact and machine-readable.
+ */
+export const FUEL_STATEMENT =
+  `A FRONTIER claim's anchor burns ${String(ANCHOR_FUEL_BY_TIER.FRONTIER)} units of \`fuel\` once per ` +
+  'Reckoning to keep collecting RENT, and the fuel must be unpledged and standing AT the claimed system. ' +
+  'A cold anchor collects nothing — the tenants keep their whole share — and that is the ONLY penalty: ' +
+  'no arrears, no lapse, no bond slashed. Bring fuel mid-Reckoning and the rent starts again for the rest ' +
+  'of it. `fuel` is yielded ONLY by a WORKS standing at a FRONTIER system, it is not produced anywhere ' +
+  'else at any price, and no verb in this build moves goods between systems — so if you hold frontier ' +
+  'territory and work none of it, you must BUY fuel from the residents you are taxing. A MARCHES claim ' +
+  'needs no fuel at all: none can be made there, and an obligation the rules make impossible is not one ' +
+  'we will record you as having missed.';
 
 /**
  * Bond returned to a claimant that cedes or abandons **before** it lapses, in bps.

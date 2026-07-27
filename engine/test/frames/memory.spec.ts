@@ -84,6 +84,7 @@ describe('the world remembers who built it and who kept their word', () => {
       razedAtTick: 50,
       extracted: 0 as never,
       rentPaid: 0 as never,
+      fuelExtracted: 0 as never,
     };
     const later = { ...first, id: 'works:sys-01:80:p:latecomer' as never, holder: 'p:latecomer' as unknown as PrincipalId, raisedAtTick: 80, razed: false, razedAtTick: null };
 
@@ -98,7 +99,7 @@ describe('the world remembers who built it and who kept their word', () => {
     // Two WORKS raised on one system in one tick is legal, and JS Map iteration order is a determinism
     // killer this repo bans by name. Argument order is reversed between the two runs; the answer may
     // not move.
-    const a = { id: 'works:sys-02:5:p:aaa' as never, system: 'sys-02' as never, holder: 'p:aaa' as unknown as PrincipalId, raisedAtTick: 5, onlineAtTick: 29, razed: false, razedAtTick: null, extracted: 0 as never, rentPaid: 0 as never };
+    const a = { id: 'works:sys-02:5:p:aaa' as never, system: 'sys-02' as never, holder: 'p:aaa' as unknown as PrincipalId, raisedAtTick: 5, onlineAtTick: 29, razed: false, razedAtTick: null, extracted: 0 as never, rentPaid: 0 as never, fuelExtracted: 0 as never };
     const b = { ...a, id: 'works:sys-02:5:p:zzz' as never, holder: 'p:zzz' as unknown as PrincipalId };
     expect(namesFor([a, b], NO_HANDLES)[0]?.namedFor).toBe(namesFor([b, a], NO_HANDLES)[0]?.namedFor);
   });

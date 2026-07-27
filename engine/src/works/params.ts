@@ -106,6 +106,52 @@ export const WORKS_YIELD_GOOD = 'ore' as GoodId;
 export const WORKS_GOOD = 'ration' as GoodId;
 
 /**
+ * **THE THIRD GOOD, AND THE FIRST ONE THAT DOES NOT EXIST EVERYWHERE.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * `D23`'s audit calls the economy *"ABSENT, and it is the bottleneck"*, and it names the exact
+ * cause rather than asking for more market code:
+ *
+ * > *"Two goods, one lossless 1:1 conversion. **No comparative advantage exists anywhere in the
+ * > world** — every agent needs the same good and can make it at the same rate. That is why the
+ * > book has never cleared, and why more market code cannot fix it."*
+ *
+ * Its cheapest prescribed fix, ranked first of the three things most missing: *"a third good
+ * produced only at FRONTIER systems, consumed by something everyone needs"*. This is that good.
+ * `ore` and `ration` are produced identically at every tier and convert into each other 1:1, so a
+ * trade between two principals was never anything but a transport of the same thing. **Fuel is
+ * the first good in this world that some agents need and cannot make.**
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## The name is canon, not invented
+ *
+ * §10.1 names it — *"Hands consume a consumable per venture — rations or **fuel**, one of the four
+ * goods"* — and `PASS-TERRITORY-POLITICS.md` §16.2 #5 makes it sovereignty's input by name: *"Each
+ * claim owes a transparent mix of currency, manufactured administration goods, and **hub fuel**"*,
+ * with a failure ladder whose first rung is *"`STRAINED` (upgrades shed)"*. That is exactly what a
+ * cold anchor is here: the claim survives, its income does not.
+ *
+ * ## THE BOOTSTRAP DEADLOCK, AND WHY THIS GOOD IS NOT ON ANYBODY'S CRITICAL PATH
+ *
+ * {@link WORKS_YIELD_GOOD} carries the trap in full: *if a build consumed the good it yields, a
+ * principal would need `ore` to build the thing that makes `ore` — a bootstrap deadlock with no
+ * first move and no error message, because every individual rule reads correctly.* Fuel is one
+ * step worse, because it is **geographically** bounded as well: anything on the road to a FRONTIER
+ * WORKS that required fuel would be unreachable **forever**, not merely at the start.
+ *
+ * So the road to fuel is priced in things fuel is not needed for: `graduate` twice (currency and
+ * `ration`), then a WORKS ({@link WORKS_COST_MINOR} and {@link WORKS_BUILD_QTY}, both in
+ * `ration`). **Nothing a WORKS or a holding costs is payable in fuel, and that is a rule and not
+ * an accident.** What fuel buys is *territorial income* — see `sovereignty/params.ts`'s
+ * `ANCHOR_FUEL_BY_TIER` — which nothing else in the game is a precondition of.
+ *
+ * A fifth goods constant, independently declared like the other four
+ * (`test/core/goods-are-independent.test.ts` pins that discipline). It is deliberately **not**
+ * equal to them: that inequality is the whole feature.
+ */
+export const FUEL_GOOD = 'fuel' as GoodId;
+
+/**
  * The recipe: how much {@link WORKS_YIELD_GOOD} `refine` consumes, and how much {@link WORKS_GOOD} it
  * produces. *(calibrate)*
  *
@@ -152,6 +198,51 @@ export const YIELD_PER_TICK: Readonly<Record<ZoneTier, Qty>> = Object.freeze({
   COMMONS: qty(80),
   MARCHES: qty(110),
   FRONTIER: qty(150),
+});
+
+/**
+ * What a system yields per tick in {@link FUEL_GOOD}. **Zero everywhere but the Frontier.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE ZEROES ARE THE MECHANIC.** This is not a table with two dead rows in it: the fact that a
+ * COMMONS and a MARCHES system yield *no* fuel at any occupancy is the entire comparative
+ * advantage, and `invariants.ts:checkFuelIsFrontierOnly` halts a world that ever extracts fuel
+ * where this says zero. Read together with `YIELD_PER_TICK`, the map now says two different things
+ * about a place instead of one, which is the first time in this build that *where* an agent stands
+ * decides *what* it can make rather than only how much.
+ *
+ * There is also no verb that moves goods between systems — `haul` is declared not-live, `graduate`
+ * carries stores strictly outward, and a market book is venue-bound — so fuel cannot merely be
+ * *cheaper* at the Frontier. Outside it, fuel does not exist. That is a much stronger asymmetry
+ * than a price gradient, and it is why the sovereignty side had to be careful about which tiers can
+ * be asked for it at all (`ANCHOR_FUEL_BY_TIER`).
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## Why 10 a tick *(calibrate)*
+ *
+ * A FRONTIER system yields 2,880 fuel a Reckoning, split among the WORKS standing on it, against
+ * an `ANCHOR_FUEL_BY_TIER.FRONTIER` of 1,200 to keep one anchor collecting. Worked through, because
+ * the interesting property is a consequence of the ratio rather than of either number:
+ *
+ * | who works the ground | fuel that reaches the claimant | vs. 1,200 |
+ * |---|---|---|
+ * | one tenant, landlord works nothing | **0** — rent is taken in ore, never in fuel | must buy all of it |
+ * | two tenants, landlord works nothing | **0** | must buy all of it |
+ * | landlord + one tenant | 1,440 (its own half) | covered, 240 spare |
+ * | landlord alone | 2,880, and no rent to collect | nothing to fuel |
+ *
+ * So the number produces the design's sharpest sentence: **a landlord that works its own ground
+ * fuels itself; a pure rentier must buy fuel from the tenant it taxes, every Reckoning, from a
+ * seller with no competitor at that venue.** That is a bilateral trade with no substitute — the
+ * first one in this world — and it is the reason a book might clear.
+ *
+ * Ten rather than a hundred because fuel must stay *scarce relative to its sink*. At 100 a tick a
+ * single frontier WORKS would fuel every claim on the map and the asymmetry would price at nothing.
+ */
+export const FUEL_YIELD_PER_TICK: Readonly<Record<ZoneTier, Qty>> = Object.freeze({
+  COMMONS: qty(0),
+  MARCHES: qty(0),
+  FRONTIER: qty(10),
 });
 
 /**

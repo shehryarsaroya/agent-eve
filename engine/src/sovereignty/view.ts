@@ -39,7 +39,7 @@
  */
 
 import { reckoningIndex, ticksUntilReckoning } from '../core/time.js';
-import type { PrincipalId, SystemId, ZoneTier } from '../core/types.js';
+import type { GoodId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import type { ClaimLine } from '../frames/contract.js';
@@ -49,6 +49,10 @@ import { chargeOf } from './charge.js';
 import { claimRouteFor, type ClaimRoute } from './claim.js';
 import { vulnerabilityViewAt, type VulnerabilityView } from './cycle.js';
 import { CHARGE_GOOD, CHARGE_MISSES_TO_LAPSE, MAX_CLAIM_LINES } from './params.js';
+// The FUEL good's name has one home, and it is the module that yields it — importing the constant
+// keeps `fuel_good` from becoming a second literal that could drift from the extraction that makes
+// it (the exact shape `test/core/goods-are-independent.test.ts` exists to forbid).
+import { FUEL_GOOD } from '../works/params.js';
 
 /**
  * The arrears steps before a lapse. Two, given three misses to lapse.
@@ -175,6 +179,20 @@ export interface ClaimView {
   readonly tenants: number;
   /** What the rent is worth to this claim per tick at today's tenancy. Arithmetic, published. */
   readonly rent_per_tick: Qty;
+  /** The good an anchor burns. Named here so nothing has to infer it from a statement. */
+  readonly fuel_good: GoodId;
+  /** Units of it this claim's tier asks per Reckoning. Zero where none is asked. */
+  readonly fuel_due: Qty;
+  /**
+   * Is the anchor fuelled for this Reckoning? **`false` means the rent is not being collected.**
+   *
+   * The consequence-preview pattern applied to income rather than to loss: a claimant whose anchor
+   * is cold is losing rent it can restart at any tick by bringing fuel, and it can only know that
+   * if the state is published rather than inferable from a number that stopped moving.
+   */
+  readonly anchor_hot: boolean;
+  /** Unpledged fuel standing HERE in the claimant's stores. What is available to light it. */
+  readonly fuel_here: Qty;
 }
 
 /**
@@ -203,6 +221,12 @@ export interface RentRead {
   readonly tenants: number;
   /** What the claim takes per tick at today's tenancy and crowding. */
   readonly perTick: Qty;
+  /** Fuel this claim's tier asks per Reckoning to keep collecting. Zero where none is asked. */
+  readonly fuelDue: Qty;
+  /** Is it fuelled for this Reckoning? `true` where no fuel is asked, so cold always means cold. */
+  readonly anchorHot: boolean;
+  /** Unpledged fuel standing at this system in the CLAIMANT's stores. What would light it. */
+  readonly fuelHere: Qty;
 }
 
 export interface ClaimViewPort {
@@ -292,6 +316,10 @@ function claimView(
     rent_taken: rent.taken,
     tenants: rent.tenants,
     rent_per_tick: rent.perTick,
+    fuel_good: FUEL_GOOD,
+    fuel_due: rent.fuelDue,
+    anchor_hot: rent.anchorHot,
+    fuel_here: rent.fuelHere,
   };
 }
 
@@ -402,6 +430,8 @@ export function claimLinesFor(args: {
       rentBps: claim.rentBps,
       rentTaken: rent.taken,
       tenants: rent.tenants,
+      anchorHot: rent.anchorHot,
+      fuelDue: rent.fuelDue,
     });
   }
   return lines

@@ -556,7 +556,14 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
       // No WORKS book in this unit test, so nothing is being extracted and nothing is collected.
       // The three rent keys still have to be ON the row: A13 wants the territory layer's income
       // drawn, and the key list below is what pins that.
-      rentAt: () => ({ taken: qty(0), tenants: 0, perTick: qty(0) }),
+      rentAt: () => ({
+        taken: qty(0),
+        tenants: 0,
+        perTick: qty(0),
+        fuelDue: qty(0),
+        anchorHot: true,
+        fuelHere: qty(0),
+      }),
       bondRead: () => minor(CLAIM_BOND_MINOR),
     });
     expect(lines.length).toBe(1);
@@ -564,6 +571,7 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
     // implementation-defined for anything that is not a string and a habit is easier to guard
     // than an exception.
     expect(Object.keys(lines[0] ?? {}).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([
+      'anchorHot',
       'arrears',
       'arrearsOf',
       'bondAtRisk',
@@ -573,6 +581,7 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
       'deadlineTick',
       'due',
       'forSale',
+      'fuelDue',
       'legend',
       'owed',
       'rentBps',
@@ -625,6 +634,8 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
           rentBps: 0,
           rentTaken: 0,
           tenants: 0,
+          anchorHot: true,
+          fuelDue: 0,
           contestable: false,
         },
       ],

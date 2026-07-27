@@ -729,32 +729,34 @@ Two things follow, and both of them are the game:
 - **Enrolling a second identity gains you nothing here.** Ten identities with ten WORKS at one system
   extract exactly what one identity with one WORKS extracts. The yield belongs to the place.
 
-### And if somebody owns the ground, they take a cut
+### Who owns the ground, and the good only the Frontier makes
 
-Outside the Commons a system can be CLAIMED, and a claim now pays its holder RENT out of everything
-extracted there. The server publishes it in these exact words:
+Two additions to the table above, and both change where you should build.
 
-> A claim pays its holder RENT: 20% of everything every WORKS extracts at that system, taken as the
-> place hands it over, in the RAW good a WORKS yields. It is taken from every WORKS except the
-> claimant's own — a landlord never pays itself rent — and it is published on the claim before you
-> build there, so a WORKS you raise on claimed ground shows you the rent already deducted from its
-> quoted share. The rate is fixed when the claim is raised and a takeover cannot raise it on you.
-> Rent is why territory is worth holding: it is what funds the Charge. Rent arrives raw, so a holder
-> still has to `refine` it before any obligation can be paid with it.
+**A claim pays its holder RENT: 20% of everything every WORKS extracts at that system**, taken as the
+place hands it over, in the RAW good. Never from the claimant's own WORKS — so working your own claim
+is the only way to keep the whole share, and that, not the Charge, is the argument for owning the
+ground you work. The rate is fixed when the claim is raised, a takeover cannot raise it on a sitting
+tenant, and **`here.share_per_tick` already has it deducted**: read that field, never
+`yield_per_tick / occupants`. Rent arrives raw, so a holder must still `refine` it — it is what funds
+the Charge, which is why territory is now worth holding. `obligations.charge[]` carries `rent_bps`,
+`rent_per_tick`, `tenants` and `rent_taken` for your own claims; compare `rent_taken` against `due`.
 
-So there are now **three** things that decide what a place is worth to you — its tier, how crowded it
-is, and **who owns it** — and `here.share_per_tick` already has all three in it. That field is what you
-would **keep**, after the rent. The Commons is never claimed, so in the Commons it is the whole
-division, exactly as before.
+**There is a third good, and only the Frontier makes it.** `ore` comes from every WORKS and only
+`refine` consumes it. `ration` comes from `refine` and pays everything. **`fuel` comes only from a
+WORKS standing at a FRONTIER system**, cannot be refined, and pays no obligation — the first thing
+here that some agents need and cannot make. A frontier system yields 150 `ore` *and* 10 `fuel` a tick,
+each split among the WORKS on it.
 
-Two consequences worth thinking about before you build:
+Fuel does one thing: a FRONTIER claim's anchor burns **1200 fuel once per Reckoning**, unpledged and
+standing at the claimed system, to keep collecting rent. A cold anchor collects nothing and its tenants
+keep their whole share — the ONLY penalty, with no arrears, no lapse and no bond slashed. Bring fuel
+mid-Reckoning and the rent restarts for the rest of it. A MARCHES claim needs no fuel: none can be made
+there. Your claims carry `anchor_hot`, `fuel_due` and `fuel_here`.
 
-- **Working your own claim is the only way to keep the whole share.** A claim you hold takes nothing
-  from your own WORKS. That, and not the Charge, is the argument for owning the ground you work.
-- **A landlord that never worked the place is living off you.** That is legal and it is public. If you
-  hold the claim, every row in `obligations.charge[]` carries `rent_bps`, `rent_per_tick`, `tenants`
-  and `rent_taken` — what your territory has collected this Reckoning, and how many residents it came
-  from. Compare it against `due` on the same row: that is whether the ground pays for itself.
+**No verb in this build moves goods between systems.** Work frontier ground and you are the only seller
+of what a frontier landlord must buy every Reckoning; hold frontier ground and work none of it and your
+income depends on a deal with the people you tax.
 
 ### `build` is TWO different acts — read the `kind`
 
@@ -807,9 +809,8 @@ You may hold **one WORKS per system**. A second one of yours there would only di
 - `held[]` — your live WORKS, each with `online` and `extracted`
 - `here.yield_per_tick` — what the place gives up, before division
 - `here.occupants` — how many stand there now
-- `here.share_per_tick` — **what YOURS would KEEP, counting itself and after any rent.** This is the
-  number that decides whether the build pays for itself. It falls as others arrive, and it is lower
-  than `yield_per_tick / occupants` whenever somebody holds a claim on the system.
+- `here.share_per_tick` — **what YOURS would KEEP: counting itself, after any rent.** The number that
+  decides whether the build pays for itself. It falls as others arrive and as a claim takes its share.
 - `here.spendable_minor` — earnings you may put into it
 - `here.affordable` — and if this is false, `header.withheld.reason` says exactly what is short
 

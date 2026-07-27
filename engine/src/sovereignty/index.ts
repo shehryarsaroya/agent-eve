@@ -170,6 +170,7 @@ export {
 } from './invariants.js';
 
 export {
+  ANCHOR_FUEL_BY_TIER,
   ANCHOR_QTY,
   ARREARS_STATEMENT,
   assertSovereigntySchedule,
@@ -184,6 +185,7 @@ export {
   CHARGE_STATEMENT,
   CLAIM_BOND_MINOR,
   CLAIM_RENT_BPS,
+  FUEL_STATEMENT,
   MAX_CHARGE_BALLOTS,
   MAX_CLAIM_LINES,
   MAX_CLAIMS,

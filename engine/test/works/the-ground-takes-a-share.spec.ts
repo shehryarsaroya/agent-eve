@@ -166,7 +166,7 @@ describe('the arithmetic of a split, before any of it moves', () => {
   it('a landlord never pays itself rent, and unclaimed ground charges none', () => {
     const me = 'p:me' as PrincipalId;
     const them = 'p:them' as PrincipalId;
-    const terms = { claimant: me, bps: CLAIM_RENT_BPS };
+    const terms = { claimant: me, bps: CLAIM_RENT_BPS, fuelWant: 0 };
     // MUTATION: drop the `terms.claimant === extractor` clause in `rentApplies`. RED here, and
     // the frame would then report rent taken where nothing changed hands.
     expect(rentOn({ terms, extractor: me, gross: qty(150) })).toEqual({ rent: 0, net: 150 });

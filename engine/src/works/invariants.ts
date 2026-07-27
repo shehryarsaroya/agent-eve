@@ -12,7 +12,7 @@ import { BPS_ONE } from '../core/units.js';
 import { halt } from '../invariants/registry.js';
 import { tierOf, type WorldMap } from '../world/map.js';
 import type { Book } from './book.js';
-import { WORKS_PER_PRINCIPAL_PER_SYSTEM, YIELD_PER_TICK } from './params.js';
+import { FUEL_YIELD_PER_TICK, WORKS_PER_PRINCIPAL_PER_SYSTEM, YIELD_PER_TICK } from './params.js';
 
 export interface WorksInvariantInputs {
   readonly book: Book;
@@ -193,6 +193,43 @@ export function checkRentBoundedByMap(input: WorksInvariantInputs): readonly Inv
   return out;
 }
 
+/**
+ * INV-W6 — the third good exists **only** where the map says it does.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE GEOGRAPHIC SCARCITY, MADE EXECUTABLE.** `FUEL_YIELD_PER_TICK` is zero at COMMONS and
+ * MARCHES, and those zeroes are the entire comparative advantage `D23` says the economy is missing:
+ * *"no comparative advantage exists anywhere in the world — every agent needs the same good and can
+ * make it at the same rate."* A single fuel unit appearing at a Commons system would make fuel
+ * producible by every newcomer for free, the asymmetry would price at nothing, and the failure
+ * would be silent — a book that stopped clearing, which is indistinguishable from the world we
+ * already had.
+ *
+ * Cheap, and checked against the CUMULATIVE counter rather than this tick's split, so it catches a
+ * unit that leaked at any point in the world's history rather than only one leaking right now.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function checkFuelIsFrontierOnly(input: WorksInvariantInputs): readonly InvariantViolation[] {
+  const out: InvariantViolation[] = [];
+  for (const works of input.book.everInOrder()) {
+    if (works.fuelExtracted <= 0) continue;
+    const tier = tierOf(input.map, works.system);
+    if (FUEL_YIELD_PER_TICK[tier] <= 0) {
+      out.push(
+        halt(
+          'INV-W6',
+          input.tick,
+          `${works.id} has been handed ${String(works.fuelExtracted)} of fuel at ${works.system}, a ${tier} ` +
+            'system, which the map yields none at. Fuel existing outside the Frontier makes it producible ' +
+            'anywhere, which deletes the only comparative advantage in the economy — and it would do it ' +
+            'silently, as a book that quietly stops clearing',
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 export function checkWorks(input: WorksInvariantInputs): readonly InvariantViolation[] {
   return [
     ...checkYieldCap(input),
@@ -200,6 +237,7 @@ export function checkWorks(input: WorksInvariantInputs): readonly InvariantViola
     ...checkNoEarlyExtraction(input),
     ...checkRentWithinGross(input),
     ...checkRentBoundedByMap(input),
+    ...checkFuelIsFrontierOnly(input),
   ];
 }
 

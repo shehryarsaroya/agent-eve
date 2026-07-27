@@ -48,6 +48,15 @@ export interface RentTerms {
   readonly claimant: PrincipalId;
   /** Bps of extraction the claimant takes. Pinned when the claim was raised. */
   readonly bps: number;
+  /**
+   * Units of the FUEL good this claim burns per Reckoning to keep collecting. Zero means none.
+   *
+   * A tier fact rather than a term of tenancy, so — unlike {@link RentTerms.bps} — it is **not**
+   * pinned on the claim record. The distinction is exact: the rate is a number a resident relied on
+   * before it spent 60,000 raising a WORKS, and the fuel figure is the landlord's own cost, which
+   * no tenant plans against. `sovereignty/params.ts:ANCHOR_FUEL_BY_TIER` is the one home for it.
+   */
+  readonly fuelWant: number;
 }
 
 /** A gross share, split into what the landlord takes and what the extractor keeps. */

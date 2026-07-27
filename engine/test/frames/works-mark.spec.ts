@@ -36,6 +36,8 @@ function mark(over: Partial<WorksLine> = {}): WorksLine {
     rentBps: 0,
     rentPerTick: 0,
     rentPaid: 0,
+    fuelPerTick: 0,
+    fuelExtracted: 0,
     ...over,
   };
 }

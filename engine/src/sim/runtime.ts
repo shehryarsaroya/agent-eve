@@ -326,6 +326,7 @@ import {
   type SyndicateLine,
 } from '../frames/contract.js';
 import {
+  ANCHOR_FUEL_BY_TIER,
   ANCHOR_QTY,
   Book as SovereigntyBook,
   CESSION_SALVAGE_BPS,
@@ -538,8 +539,68 @@ import {
  *
  * The live world therefore needs the operator divergence door
  * (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the next deploy, as at 1 → 2, 4 → 5 and 5 → 6.
+ *
+ * ## 7 → 8 (2026-07-27)
+ *
+ * **Two owner decisions on `create`, and both change what a recorded action means.**
+ *
+ *   1. **A delegated `create` binds the grantor at formation** (`venture/create.ts`). `VentureRecord`
+ *      gained `boundByGrant` — a new field inside the already-hashed `venture` capture, so the same
+ *      *from the first row onward* signature as 6 → 7 — and, more importantly, a **behaviour** change:
+ *      the creator is seeded into `countersigned`, so a journalled delegated `create` now produces a
+ *      venture that activates on its counterparties' signatures alone. Every such venture in the
+ *      record replays differently, including ones that historically expired unsigned.
+ *   2. **`create` reads `elective_bps`** and refuses `roles`, `split`, `escrow_pct`, `elective_pct`
+ *      and a malformed proportion. A create that says nothing about the proportion is priced exactly
+ *      as before — `defaultTerms` is `roleTermsFor` at `f(kind)`, which is the same arithmetic, and
+ *      that was checked term by term rather than assumed. But the journal contains at least one probe
+ *      action that **sent** `elective_bps`, and that action was accepted-with-the-param-dropped and is
+ *      now either honoured or refused. Either way it replays differently.
+ *
+ * So this boundary diverges for a *behavioural* reason as well as a structural one, which is worth
+ * naming because it is the harder of the two to read in a divergence report: it will agree up to the
+ * first delegated `create` in the record and disagree from there.
+ *
+ * The live world needs the operator divergence door (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the next
+ * deploy, as at 1 → 2, 4 → 5, 5 → 6 and 6 → 7.
+ *
+ * ## 8 → 9 (2026-07-27)
+ *
+ * **Territory pays, and the Frontier makes a good nowhere else does.** Both halves of `D23`'s
+ * ranked correction, and this boundary is **structural at every tick with a WORKS in it and
+ * behavioural from the first tick a claim stands over somebody else's WORKS.** Naming both, because
+ * the two have different signatures in a divergence report and this boundary has one of each:
+ *
+ *   1. **Structural.** `WorksRecord` gained `rentPaid` and `fuelExtracted`, the `works` capture
+ *      gained a `rent[]` tally and a `hot[]` row per system, and `ClaimRecord` gained `rentBps`.
+ *      New fields inside already-hashed captures, so the 6 → 7 signature: divergence *from the
+ *      first row onward* rather than everywhere. Measured on four seeds at 900 ticks — every
+ *      economic number is byte-identical to 8 and only `state_hash` moves, which is the signature
+ *      of the hash's input set growing rather than of behaviour changing partway through.
+ *   2. **Behavioural, and only where a claim meets a tenant.** A claim-holder now takes
+ *      `CLAIM_RENT_BPS` of every *other* principal's extraction at its system, and a FRONTIER
+ *      system yields `FUEL_YIELD_PER_TICK.FRONTIER` of a second good. Both are value movements
+ *      inside the PRODUCE phase, so a journal replays identically up to the first tick at which a
+ *      live claim stood over a WORKS it did not hold, and differently from there. The live world
+ *      has `claimLines: 0`, so today that tick does not exist in the record — but it is the tick to
+ *      look for if a divergence report names one.
+ *
+ * **Nothing draws from the RNG and no phase gained a draw**, so no seeded sub-stream shifts: the
+ * rent is a pure `trunc` over a share the yield cap already fixed, and the fuel yield is a tier
+ * constant. **No event kind was added** — extraction is a routine tick and emits no event row
+ * (`produceNow`), so the two new value movements appear as postings under new `event_id`s
+ * (`works.rent:*`, `works.fuel:*`, `claim.fuel:*`) rather than as new ledger rows.
+ *
+ * One behaviour to state plainly because it *removes* an outcome rather than adding one: a FRONTIER
+ * claim that is not fuelled collects **nothing**. That is a rule and not a failure — see
+ * `ANCHOR_FUEL_BY_TIER` for why a cold anchor costs the income and never an arrears — and it means
+ * a replayed frontier claim's income depends on fuel that was standing at the system at the tick,
+ * which is journalled state rather than anything derived.
+ *
+ * The live world needs the operator divergence door (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the
+ * next deploy, as at 1 → 2, 4 → 5, 5 → 6, 6 → 7 and 7 → 8.
  */
-export const RULES_VERSION = 7;
+export const RULES_VERSION = 9;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
@@ -573,6 +634,8 @@ import { produce as produceNow } from '../works/produce.js';
 import { checkWorks } from '../works/invariants.js';
 import { rentApplies, rentOn, type RentTerms } from '../works/rent.js';
 import {
+  FUEL_GOOD,
+  FUEL_YIELD_PER_TICK,
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
   WORKS_GOOD,
@@ -2249,7 +2312,67 @@ export class Runtime {
    */
   rentTermsAt(system: SystemId): RentTerms | null {
     const claim = this.sovereignty.liveAt(system);
-    return claim === null ? null : { claimant: claim.claimant, bps: claim.rentBps };
+    if (claim === null) return null;
+    return {
+      claimant: claim.claimant,
+      bps: claim.rentBps,
+      // A TIER fact, read live, unlike the rate — `RentTerms.fuelWant` states the distinction: the
+      // rate is a term a resident relied on, the fuel is the landlord's own cost.
+      fuelWant: ANCHOR_FUEL_BY_TIER[tierOf(this.world.map, system)],
+    };
+  }
+
+  /**
+   * Burn a claim's fuel to light its anchor for this Reckoning. **All or nothing.**
+   *
+   * `goodLotsAt` for the availability so locality and encumbrance are the same rule the Charge and
+   * the anchor already use: the fuel has to be unpledged and standing AT the claimed system. There
+   * is no verb in this build that moves goods between systems, which is exactly why
+   * `ANCHOR_FUEL_BY_TIER` asks only the tier that produces fuel for any.
+   *
+   * The two-pass shape is the point: a single pass that destroyed what it found would leave a
+   * claimant poorer with a cold anchor — worse than either outcome, and unrecoverable.
+   */
+  private lightAnchorWithFuel(args: {
+    readonly claimant: PrincipalId;
+    readonly system: SystemId;
+    readonly want: Qty;
+    readonly tick: number;
+  }): boolean {
+    const lots = this.goodLotsAt(args.claimant, args.system, FUEL_GOOD);
+    let have = 0;
+    for (const lot of lots) have += lot.qty;
+    if (have < args.want) return false;
+    let left: number = args.want;
+    for (const lot of lots) {
+      if (left <= 0) break;
+      const portion = Math.min(left, lot.qty);
+      if (portion <= 0) continue;
+      try {
+        this.ledger.destroyGoods({
+          eventId: `claim.fuel:${args.claimant}:${String(args.tick)}:${args.system}:${lot.id}` as EventId,
+          tick: args.tick,
+          sink: GOODS_SINK.CONSUMPTION,
+          lotId: lot.id,
+          qty: qty(portion),
+        });
+      } catch (error: unknown) {
+        this.faults.push(
+          `${args.claimant} could not burn ${String(portion)} of ${FUEL_GOOD} into the anchor at ` +
+            `${args.system} (${describeError(error)}); the anchor stays cold and nothing more is taken`,
+        );
+        return false;
+      }
+      left -= portion;
+    }
+    return left <= 0;
+  }
+
+  /** Unpledged fuel standing at a system, in one principal's stores. What lights an anchor. */
+  fuelAt(principal: PrincipalId, system: SystemId): Qty {
+    let total = 0;
+    for (const lot of this.goodLotsAt(principal, system, FUEL_GOOD)) total += lot.qty;
+    return qty(total);
   }
 
   /**
@@ -2267,10 +2390,16 @@ export class Runtime {
       if (works === null) continue;
       perTick += rentOn({ terms, extractor: works.holder, gross: amount }).rent;
     }
+    const tier = tierOf(this.world.map, system);
     return {
       taken: this.worksBook.rentTakenAt(system, reckoningOf(tick)),
       tenants: this.worksBook.tenantsAt(system, claimant),
       perTick: qty(perTick),
+      fuelDue: ANCHOR_FUEL_BY_TIER[tier],
+      // Hot means "already fuelled for this Reckoning". A claim that needs no fuel is never cold:
+      // reporting `false` for a Marches claim would tell a viewer its income was switched off.
+      anchorHot: ANCHOR_FUEL_BY_TIER[tier] <= 0 || this.worksBook.anchorHot(system, reckoningOf(tick)),
+      fuelHere: this.fuelAt(claimant, system),
     };
   }
 
@@ -6638,6 +6767,10 @@ export class Runtime {
         rentBps: rentApplies(terms, works.holder) ? (terms?.bps ?? 0) : 0,
         rentPerTick: split.rent,
         rentPaid: works.rentPaid,
+        // The second good. A property of the tier divided by the online count, exactly like the
+        // first — so the map, and not a stockpile, is what a viewer reads (§11.2).
+        fuelPerTick: online ? (this.worksBook.fuelSharesAt(works.system, tier, tick).get(works.id) ?? 0) : 0,
+        fuelExtracted: works.fuelExtracted,
       });
     }
     return out;
@@ -7532,6 +7665,18 @@ export class Runtime {
     readonly spinupTicks: number;
     readonly alreadyHeld: boolean;
     readonly affordable: boolean;
+    /** The FUEL good this place also yields, and what one more WORKS would take of it. */
+    readonly fuelGood: GoodId;
+    readonly fuelYieldPerTick: number;
+    /**
+     * What YOURS would take per tick in fuel, counting itself. **Zero outside the Frontier.**
+     *
+     * Published beside the ore share because it is the only reason to prefer frontier ground over
+     * a quieter Marches system beyond the raw yield: fuel is the one good some agents need and
+     * cannot make, and this number is the whole of an agent's access to it. A quote that named the
+     * ore and not the fuel would understate the frontier's premium by everything that is new.
+     */
+    readonly fuelSharePerTick: number;
   } {
     const tier = tierOf(this.world.map, system);
     const occupants = this.worksBook.liveAt(system).length;
@@ -7612,6 +7757,15 @@ export class Runtime {
       spinupTicks: WORKS_SPINUP_TICKS,
       alreadyHeld: this.worksBook.atCapacity(principal, system),
       affordable: free >= WORKS_COST_MINOR && available >= WORKS_BUILD_QTY,
+      fuelGood: FUEL_GOOD,
+      fuelYieldPerTick: FUEL_YIELD_PER_TICK[tier],
+      // Divided the same way the ore share is — `occupants + 1` for a prospective build, the live
+      // occupancy once you already hold one — because two divisions of the same occupancy is how
+      // one number ends up telling an agent two things.
+      fuelSharePerTick: Math.trunc(
+        FUEL_YIELD_PER_TICK[tier] /
+          (this.worksBook.ofPrincipal(principal).length > 0 ? Math.max(1, occupants) : occupants + 1),
+      ),
     };
   }
 
@@ -7749,6 +7903,7 @@ export class Runtime {
       // `rentTermsAt`: unclaimed ground and an ended claim both answer null, so a landlord that
       // lost the system stops collecting on the same tick it lost it.
       rentAt: (system) => this.rentTermsAt(system),
+      fuelAnchor: (args) => this.lightAnchorWithFuel(args),
     });
     // ── EXTRACTION IS A ROUTINE TICK AND EMITS NO EVENT ───────────────────────
     //
