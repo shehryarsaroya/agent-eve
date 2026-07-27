@@ -75,6 +75,7 @@ import type {
   VentureId,
   VentureState,
   ZoneTier,
+  Standing,
 } from '../core/types.js';
 import { BPS_ONE, bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { EventLedger, eventsStateTable, type NewEvent } from '../events/index.js';
@@ -8796,6 +8797,12 @@ export class Runtime {
       handles.set(h.principal, h.name as unknown as Handle);
     }
 
+    // The vectors behind each name's one clause. Only principals the book actually HOLDS: an absent
+    // row renders as "day one", never as a row of zeros, because a fabricated clean record is a claim
+    // about a real agent that nothing supports.
+    const standings = new Map<PrincipalId, Standing>();
+    for (const row of this.standing.rows()) standings.set(row.principal, row);
+
     // ── THE SAY-DO GAP, WHICH THE FRAME USED TO DROP ────────────────────────────
     //
     // These three fields were hardcoded `null, null, []`. Measured on the live world at
@@ -8921,6 +8928,7 @@ export class Runtime {
         broken,
       },
       handles,
+      standings,
       // The raid ticker, drained into the frame. Bounded by the Ring, and 140-char
       // capped by `raidTickerLine`; `renderFrame` drops anything longer anyway.
       ticker: this.raidTicker.all,

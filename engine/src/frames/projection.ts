@@ -44,6 +44,7 @@ import type { FrameSource } from './render.js';
  * | `settled` | `PUBLIC` | "settled ventures, defaults and cures" |
  * | `meters` | `PUBLIC` | derived from settled ventures and the Levy's public result |
  * | `handles` | `PUBLIC` | "holdings" — a holding is rendered with its name on it |
+ * | `standings` | `PUBLIC` | "standing: the public factual vectors" — the same row every agent reads |
  * | `ticker` | `PUBLIC` | published lines, already 140-char bounded |
  * | `tomorrow` | `PUBLIC` | the docket of ventures whose terms are already public |
  * | `tributeLines` | `PUBLIC` | "the Levy vote and its result, tribute lines" |
@@ -151,6 +152,23 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'settled',
   'meters',
   'handles',
+  // ── STANDING VECTORS, AND WHY THEY ARE ALREADY PUBLIC ──────────────────────
+  //
+  // §11.2 puts "standing: the public factual vectors" at `PUBLIC`, and `standingRow` already
+  // serves exactly this row to every agent through `observe` — including in `counterparties[]`
+  // about principals other than the reader. So publishing it to a viewer adds no disclosure and
+  // A9's parity holds by construction: there is no live fact here an agent's own `observe` would
+  // not answer.
+  //
+  // It is here because `CastChip.line` was hardcoded '' and every name rendered bare, so a
+  // stranger had no basis on which to root for anyone — §14.1's "who am I watching" answered by
+  // two dead fields. The vectors are the answer, and they were already computed.
+  //
+  // NOT a score (§3). The frame carries the vectors; the renderer states them and leaves the
+  // meaning to the viewer. And a principal with no row is ABSENT from the map rather than present
+  // with zeros — a fabricated all-zero standing reads as a clean record, which is a claim about a
+  // real agent that nothing supports.
+  'standings',
   'modelBadges',
   'ticker',
   'tomorrow',

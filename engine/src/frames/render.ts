@@ -23,7 +23,9 @@
  * Legible scored lowest precisely because bolted-on mechanics got prose and no pixels.
  */
 
-import type { Handle, PrincipalId, VentureId } from '../core/types.js';
+import type { Handle, PrincipalId, VentureId,
+  Standing,
+} from '../core/types.js';
 import { addMinor, minor, type Minor } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
@@ -66,6 +68,14 @@ export interface FrameSource {
   /** Handle per principal, for labels. A frame never shows a raw id. */
   readonly handles: ReadonlyMap<PrincipalId, Handle>;
   readonly modelBadges?: ReadonlyMap<PrincipalId, string>;
+  /**
+   * The public standing vectors, for the one clause under each name.
+   *
+   * Absent means "no row", not "a clean record" — the same distinction `standingOf` makes in the
+   * observation port, and for the same reason: a fabricated all-zero standing reads as a clean
+   * record, which is a claim about a real agent that nothing supports.
+   */
+  readonly standings?: ReadonlyMap<PrincipalId, Standing>;
   /** Ticker lines already produced by the world (140 chars, tick-stamped). */
   readonly ticker: readonly string[];
   /** What is scheduled for the next Reckoning, for the closing card. */
@@ -189,6 +199,50 @@ function money(n: Minor): string {
  * hundreds is not. Dropping a label costs legibility nothing; keeping it costs
  * everything.
  */
+/**
+ * The one clause under a name — §14.1's answer to *"who am I watching"*.
+ *
+ * This was hardcoded `''`, so every chip rendered as a bare handle and a stranger had no basis on
+ * which to root for anyone. A spectacle critic called it the fastest high-value fix available and it
+ * is: the vectors were already public (`SPEC` §11.2), already computed, and already carried past this
+ * function.
+ *
+ * Built from the vectors and never a score (§3): the numbers are stated, and what they mean is left
+ * to the viewer. `defaults` leads when there are any, because a broken promise is the most
+ * interesting true thing about a principal — and `contradicted_seals` is named separately, because
+ * saying one thing and doing another is a different failure from not paying.
+ *
+ * Absent row → *"day one"* rather than a row of zeros. A principal with no history has honoured
+ * nothing and broken nothing, and the honest way to say that is that it is new.
+ */
+function characterLine(src: FrameSource, principal: PrincipalId): string {
+  const row = src.standings?.get(principal);
+  if (row === undefined) return 'day one';
+  const parts: string[] = [];
+  if (row.defaults > 0) {
+    parts.push(row.defaults === 1 ? 'defaulted once' : `defaulted ${String(row.defaults)} times`);
+  }
+  if (row.electiveHonoured > 0) {
+    parts.push(
+      row.electiveHonoured === 1
+        ? 'kept 1 elective promise'
+        : `kept ${String(row.electiveHonoured)} elective promises`,
+    );
+  }
+  if (row.contradictedSeals > 0) {
+    parts.push(
+      row.contradictedSeals === 1 ? 'contradicted a seal' : `contradicted ${String(row.contradictedSeals)} seals`,
+    );
+  }
+  if (row.distinctCounterparties > 0) {
+    parts.push(`${String(row.distinctCounterparties)} counterparties`);
+  }
+  // Nothing to say is itself the story: enrolled, and has risked nothing yet.
+  if (parts.length === 0) return 'nothing at risk yet';
+  // Capped at three, because §14.1 asks for a clause a stranger reads in three seconds.
+  return parts.slice(0, 3).join(' \u00b7 ');
+}
+
 function chipsFor(src: FrameSource, parties: readonly PrincipalId[]): readonly CastChip[] {
   return [...parties]
     .sort(compareIds)
@@ -198,7 +252,7 @@ function chipsFor(src: FrameSource, parties: readonly PrincipalId[]): readonly C
       return {
         principal: p,
         handle: handleOf(src, p),
-        line: '',
+        line: characterLine(src, p),
         modelBadge: badge,
       };
     });
