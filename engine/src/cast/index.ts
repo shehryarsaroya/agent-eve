@@ -184,11 +184,13 @@ export {
 export {
   CONTRACT_CATALOG,
   CONTRACT_NOT_EXCERPTED,
+  CONTRACT_POSITIONS,
   CONTRACT_SECTIONS,
   DROP_ORDER,
   EVERY_SITUATION,
   MAX_CONTRACT_CHARS,
   MAX_OBSERVATION_CHARS,
+  NO_SITUATION,
   REPLY_SCHEMA,
   buildPrompt,
   citedSection,
@@ -197,15 +199,17 @@ export {
   loadContractDocument,
   projectObservation,
   readSituation,
-  sectionIsNeeded,
   situationalFocus,
+  unitGrade,
+  unitName,
   type BuiltPrompt,
   type ContractDocument,
   type ContractExcerpt,
   type ContractOmission,
-  type ContractSection,
   type ContractSituation,
+  type ContractUnit,
   type PromptInput,
+  type UnitGrade,
 } from './prompt.js';
 
 export {

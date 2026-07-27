@@ -47,209 +47,492 @@ import type { CompletionMessage } from './transport.js';
 export interface ContractSituation {
   /**
    * The verbs offered in `affordances[]` this wake. **This is the refusal surface**, and
-   * it is why the selector — not each section's own predicate — is what maps a verb to
-   * its rules: see {@link sectionIsNeeded}.
+   * it is why the selector — not each unit's own predicate — is what maps a verb to
+   * its rules: see {@link unitGrade}.
    */
   readonly verbs: ReadonlySet<string>;
   readonly inCommons: boolean;
   readonly commonsBound: boolean;
+  /** Predation can legally reach it: A8 makes hostile action in the Commons *invalid*. */
+  readonly outsideCommons: boolean;
   /** It holds a role in at least one live venture, so settlement is about to happen to it. */
   readonly inVenture: boolean;
   /**
    * It has issued authority, or holds authority somebody else issued.
    *
-   * **This covers syndicate offices too, and that is why there is no separate
-   * `inSyndicate`.** `observe` builds `grants.granted` as this principal's own grants *plus*
-   * every office issued by a syndicate it sits in, so a house with an office over its
-   * treasury already reads `true` here. Measured on a 900-tick world: adding `inSyndicate`
-   * as its own trigger selected §10 on a further **562 of 1,548 wakes** — 36% — for members
-   * that held no authority, had issued none, and were offered no grant verb. Those were
-   * syndicates with no office in existence yet, so there was nothing in §10 to act on.
+   * **This covers syndicate offices too.** `observe` builds `grants.granted` as this
+   * principal's own grants *plus* every office issued by a syndicate it sits in, so a house
+   * with an office over its treasury already reads `true` here. Measured on a 900-tick world:
+   * adding `inSyndicate` as a *second* trigger for §10 selected it on a further **562 of 1,548
+   * wakes** — 36% — for members that held no authority, had issued none, and were offered no
+   * grant verb. Those were syndicates with no office in existence yet, so there was nothing
+   * in §10 to act on. `inSyndicate` still exists below, because §11C is about the house.
    */
   readonly holdsGrant: boolean;
+  readonly inSyndicate: boolean;
+  /** `obligations.charge` is this principal's own claim rows — one per claim it holds. */
+  readonly holdsClaim: boolean;
+  /** Any claim of its own carrying arrears. The window before a lapse. */
+  readonly inArrears: boolean;
+  /**
+   * Any claim of its own whose anchor is COLD.
+   *
+   * The one failure in this game that is otherwise **silent**: a cold anchor takes no
+   * arrears, lapses nothing and is slashed nothing, so no other field in the observation
+   * moves when the income stops. `agent-md.test.ts` says so about `FUEL_STATEMENT`.
+   */
+  readonly anchorCold: boolean;
+  /** A demand or a world raid stands against it, with a deadline. */
+  readonly underRaid: boolean;
+  readonly holdsWorks: boolean;
+  /** `holding.works.here.affordable` — it could raise one right now. */
+  readonly canBuildWorks: boolean;
 }
 
-/** One section of the player contract, with the rule for whether THIS wake needs it. */
-export type ContractSection =
-  | {
-      readonly heading: string;
-      /** In every excerpt, whatever the observation says. See {@link CONTRACT_CATALOG}. */
-      readonly floor: true;
-      readonly verbs: readonly string[];
-    }
-  | {
-      readonly heading: string;
-      readonly floor: false;
-      readonly verbs: readonly string[];
-      /** Facts other than an offered verb that make this section needed. */
-      readonly standing: (situation: ContractSituation) => boolean;
-      /** One clause, printed in the prompt when the section is left out. */
-      readonly because: string;
-    };
+/**
+ * One selectable piece of the contract: a `##` section's preamble, or one `###` block in it.
+ *
+ * Addressed by the pair, because a `###` heading is only unique inside its section (`### What
+ * to read` could recur) and because the section is what carries the framing.
+ */
+export interface ContractUnit {
+  readonly section: string;
+  /** The `###` heading, or `null` for the text between the `##` heading and the first `###`. */
+  readonly block: string | null;
+  /** In every excerpt, whatever the observation says. */
+  readonly floor?: true;
+  /**
+   * Verbs whose rules are HERE. Any one of them offered ⇒ this unit ships, whatever the
+   * budget. This is the list the guarantee runs on; see {@link unitGrade}.
+   */
+  readonly verbs: readonly string[];
+  /**
+   * Standing facts that make this unit **mandatory** even with no verb offered.
+   *
+   * Reserved for rules whose absence is an A5′ problem rather than a missed option — a
+   * claimant that was never shown what it owed, an anchor whose failure is silent. Not "it
+   * would be nice to know".
+   */
+  readonly required?: (situation: ContractSituation) => boolean;
+  /** Standing facts that make it worth having. Shipped only if it FITS, and named if not. */
+  readonly wanted?: (situation: ContractSituation) => boolean;
+  /** One clause, printed in the prompt when this unit is left out. */
+  readonly because: string;
+}
+
+/** What a wake owes a unit. `RULES` never drops; `CONTEXT` fills the remaining budget. */
+export type UnitGrade = 'FLOOR' | 'RULES' | 'CONTEXT' | 'NO';
+
+/** The `##` headings, named once so a renumbering is one edit and the catalog reads short. */
+const S1 = '## 1. The loop';
+const S3 = '## 3. What you have';
+const S4 = '## 4. Work happens in ventures';
+const S5 = '## 5. Time';
+const S6 = '## 6. Reading an observation';
+const S7 = '## 7. Acting';
+const S8 = '## 8. What is public, and what is not';
+const S10 = '## 10. Granting authority';
+const S11 = '## 11. The Commons';
+const S11A = '## 11A. WORKS — the only reason goods exist';
+const S11B = '## 11B. Sovereignty — territory you have to MAINTAIN';
+const S11C = '## 11C. SYNDICATES — pooling, and the authority that comes with it';
+const S11D = '## 11D. PREDATION — two kinds, and only one of them has a name';
+const S12 = '## 12. Getting good';
 
 /**
- * The `agent.md` sections the cast plays from, in document order, each with the rule for
+ * Every selectable unit of the player contract, in document order, each with the rule for
  * whether a given wake needs it.
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * **WHY THIS IS A CATALOG WITH PREDICATES AND NOT A LIST.**
+ * **WHY THIS IS A CATALOG OF `###` BLOCKS AND NOT A LIST OF `##` SECTIONS.**
  *
- * It was a flat list, and every member got every section every wake. That was right when
- * `agent.md` was 300 lines. At ~1,070 the excerpt measured **37,902 of a 38,000 bar** — about
- * a hundred characters of room — and the two changes before this one each had to *trim real
- * rules prose* to land, one of them compressing a verbatim sovereignty statement down to a
- * numbers check because a faithful copy pushed the excerpt to 39,706. At ~40,000 the next
- * section added would silently drop **§12 Getting good** off the end: no error, the cast just
- * stops being told part of the game. That is scar #1's class exactly.
+ * It was a flat list of `##` sections and every member got all of them every wake. That was
+ * right when `agent.md` was 300 lines. At ~1,070 the excerpt measured **37,902 of a 38,000
+ * bar** and two consecutive changes had to *trim real rules prose* to land — one compressing a
+ * verbatim sovereignty statement to a numbers check because a faithful copy pushed it to
+ * 39,706. At ~40,000 the next section added would silently drop **§12 Getting good** off the
+ * end: no error, the cast just stops being told part of the game. That is scar #1's class.
  *
- * So the fix is not a bigger ceiling, it is not shipping rules a member cannot use this wake.
- * A member with no venture does not need §4's formation rules; one that has never been
- * granted authority does not need §10's office rules yet; one whose holding has left the
- * Commons does not need §11. The observation already says which of those are true.
+ * Section-level selection was built first and **did not free enough**: measured over a real
+ * 900-tick 12-member world, 57% of wakes still took the whole catalog, because this world
+ * offers `create`, `publish_offer` and `graduate` on essentially every wake. And it left
+ * **nine live verbs with no readable rules at all** — `post_bond`, `form`, `apply`, `admit`,
+ * `approve`, `yield`, `fight`, `join`, `demand` — because §11B (8,491), §11C (3,741) and §11D
+ * (4,606) could not fit as whole sections at any arrangement.
+ *
+ * `###` granularity is what fixes both, and the reason is that the *rules for a verb* are
+ * almost always one block, not a section. A member about to take territory needs §11B's
+ * preamble and `### Taking one — post_bond then build` — **1,983 characters, not 8,491.** The
+ * rest of §11B is what a *claimant* needs, and it arrives when it holds one.
  *
  * ── THE GUARANTEE, AND WHERE IT LIVES ────────────────────────────────────────
  *
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
- * needed is refused for something it was never told, and a refusal costs it a real action
- * out of four (AGT-S2). So the rule that matters is **not** in any individual predicate,
- * where one could be forgotten. It is in {@link sectionIsNeeded}: *a section whose verb is
- * offered in `affordances[]` is always included.* `verbs` below is that map, and
- * `prompt.test.ts` asserts every verb the ENGINE implements has a home — in the catalog or
- * in {@link CONTRACT_NOT_EXCERPTED} — so a verb can never be silently rules-less.
+ * needed is refused for something it was never told, and a refusal costs it a real action out
+ * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
+ * of twenty-eight could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
+ * `RULES` is never dropped for any reason including length.*
  *
- * ── WHY THESE EIGHT ARE FLOOR ────────────────────────────────────────────────
+ * `prompt.test.ts` asserts every verb the ENGINE implements has a home here, and that offering
+ * it alone pulls that home in.
  *
- * Identity and the loop (§1), what a principal *is* — hands, holding, standing (§3), the
- * clock and the Reckoning and the Levy (§5), how to read the payload it is holding (§6),
- * the verbs and the four-actions budget and *"an illegal action is not an error"* (§7), the
- * five privacy tiers (§8), where goods come from (§11A), and the standing advice that tells
- * it to read `briefing.if_you_do_nothing` first (§12).
+ * ── FLOOR · RULES · CONTEXT ──────────────────────────────────────────────────
  *
- * Each is either unconditional machinery or a rule whose absence makes a member **misread
- * its own position** rather than merely miss an option. §11A is floor for a reason worth
- * naming: it is the only source of goods in the world, the endowment covers about two
- * Reckonings of Levy, and a member with a covered Levy and no WORKS is the one most in need
- * of it. It was dropped once, disclosed, and the cast watched its shortfall climb with no
- * idea what to do — the same reachability failure as a verb that is legal and never offered.
+ * **FLOOR** ships always: identity and the loop (§1), what a principal *is* (§3), the clock
+ * and the Reckoning and the Levy (§5), how to read the payload it is holding (§6), the verbs
+ * and the four-action budget and *"an illegal action is not an error"* (§7), the privacy tiers
+ * (§8's preamble), where goods come from and that a place yields rather than a principal
+ * (§11A's first two units), and the advice that says to read `briefing.if_you_do_nothing`
+ * first (§12). Each is unconditional machinery, or a rule whose absence makes a member
+ * **misread its own position** rather than merely miss an option.
  *
- * ── WHAT IS STILL DELIBERATELY OUTSIDE ──────────────────────────────────────
+ * **RULES** is a verb offered, or a `required` fact — reserved for rules whose absence is an
+ * A5′ problem: a claimant that was never shown what it owed, an anchor whose failure to
+ * collect is otherwise invisible in every field of the observation.
  *
- * {@link CONTRACT_NOT_EXCERPTED}, and it is now NAMED IN THE PROMPT rather than left to
- * silence.
+ * **CONTEXT** is `wanted` — worth having, dropped if the budget binds, and named when it is.
  *
- * `agent.md` numbers its headings, and the number is part of the match: a section
- * renumbered is a section reordered, and the cast should notice — {@link loadContractDocument}
- * returns `null` for a heading that moved, whatever this wake needs.
+ * ── WHAT THE BUDGET NOW GOVERNS, WHICH IS A CHANGE ───────────────────────────
+ *
+ * FLOOR and RULES are emitted **whatever the total**; {@link MAX_CONTRACT_CHARS} governs
+ * CONTEXT. That is the same trade `projectObservation` already makes one field over — *"it
+ * overshoots the cap rather than cutting the document in half, and that is the right trade"* —
+ * and it is the only arrangement in which "a needed rule is never dropped" is true by
+ * construction rather than by the numbers happening to fit. The bar did not move; what moved
+ * is which half of the excerpt it disciplines. An overshoot is loud: `overBudget` is set, the
+ * prompt says so, and `prompt.test.ts` fails naming the position.
+ *
+ * `agent.md` numbers its headings, and the number is part of the match: a section renumbered
+ * is a section reordered, and the cast should notice — {@link loadContractDocument} returns
+ * `null` for any catalogued `##` or `###` heading that moved, whatever this wake needs.
+ *
+ * ── ONE THING THIS CATALOG RECORDS RATHER THAN FIXES ─────────────────────────
+ *
+ * `claim`, `deny`, `withdraw` and `propose` appear in `agent.md` **only as names in §7's verb
+ * table**. §7 is FLOOR so they are always readable, and the guarantee below holds — but a row
+ * in a table is not a rule, and `withdraw` is listed under `venture` there while its only
+ * actual rules (`### Leaving costs a Reckoning of notice`) are about leaving a *syndicate*.
+ * That is a hard-rule-4 smell in the document, not in the selection, and it wants a separate
+ * change.
  * ══════════════════════════════════════════════════════════════════════════════
  */
-export const CONTRACT_CATALOG: readonly ContractSection[] = Object.freeze([
-  { heading: '## 1. The loop', floor: true, verbs: [] },
-  { heading: '## 3. What you have', floor: true, verbs: [] },
+export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
+  // ── §1 ────────────────────────────────────────────────────────────────────
+  { section: S1, block: null, floor: true, verbs: [], because: 'floor' },
+
+  // ── §3 ────────────────────────────────────────────────────────────────────
+  { section: S3, block: null, floor: true, verbs: [], because: 'floor' },
+
+  // ── §4 · the venture. `create` needs the two halves AND the proportion; `elect` needs the
+  //    paying rules; `message` needs the negotiation rules. A member in no venture and
+  //    offered none of them needs none of it.
   {
-    heading: '## 4. Work happens in ventures',
-    floor: false,
-    // The venture row of §7's verb table, whole. §4 is where every one of them is explained.
-    verbs: ['create', 'publish_offer', 'message', 'fill_role', 'sign', 'elect', 'withdraw', 'abandon'],
-    standing: (s) => s.inVenture,
-    because: 'you hold no role in a live venture and no venture verb is offered to you this wake',
+    section: S4,
+    block: null,
+    verbs: ['fill_role', 'sign', 'abandon'],
+    wanted: (s) => s.inVenture,
+    because: 'you hold no role in a live venture and no venture verb is offered to you',
   },
-  // The Levy and the ballot live here, so `deliver`, `set_delivery_intent` and `vote` do.
-  { heading: '## 5. Time', floor: true, verbs: ['deliver', 'set_delivery_intent', 'vote'] },
-  { heading: '## 6. Reading an observation', floor: true, verbs: [] },
-  // §7 is the verb table itself and the production chain, and it is the only place `trade`
-  // is documented at all. Floor, so the market is never a verb with no rules.
-  { heading: '## 7. Acting', floor: true, verbs: ['trade'] },
-  // Seals and the say-do gap are §8's second half, so `seal`, `claim` and `deny` are its verbs.
-  { heading: '## 8. What is public, and what is not', floor: true, verbs: ['seal', 'claim', 'deny'] },
   {
-    heading: '## 10. Granting authority',
-    floor: false,
-    // §10 covers `grant`/`revoke`/`audit` and says in as many words that the rest of the
-    // office row needs syndicates and *"lands in a section of its own"* — §11C, which is in
-    // CONTRACT_NOT_EXCERPTED. So those verbs are not claimed here.
-    verbs: ['grant', 'revoke', 'audit'],
-    standing: (s) => s.holdsGrant,
+    section: S4,
+    block: '### Every promise has two halves',
+    verbs: ['create', 'elect'],
+    required: (s) => s.inVenture,
+    because: 'nothing of yours is settling and you are creating nothing',
+  },
+  {
+    section: S4,
+    block: '### Choosing the proportion — `elective_bps` on `create`',
+    verbs: ['create'],
+    because: '`create` is not offered to you this wake, so there is no proportion to choose',
+  },
+  {
+    section: S4,
+    block: '### Paying the elective half: `elect`, and say `IN_FULL`',
+    verbs: ['elect'],
+    wanted: (s) => s.inVenture,
+    because: 'you owe no elective half you can pay right now',
+  },
+  {
+    section: S4,
+    block: '### Negotiating',
+    verbs: ['message', 'publish_offer'],
+    because: 'neither `message` nor `publish_offer` is offered to you this wake',
+  },
+
+  // ── §5 · the clock. All floor: nobody sits the Levy out (A14).
+  { section: S5, block: null, floor: true, verbs: [], because: 'floor' },
+  {
+    section: S5,
+    block: '### The Reckoning has three parts, and the boundaries matter',
+    floor: true,
+    verbs: [],
+    because: 'floor',
+  },
+  {
+    section: S5,
+    block: '### The Levy — nobody sits this out',
+    floor: true,
+    verbs: ['deliver', 'set_delivery_intent', 'vote'],
+    because: 'floor',
+  },
+
+  // ── §6 · how to read the payload it is holding. All floor.
+  { section: S6, block: null, floor: true, verbs: [], because: 'floor' },
+  { section: S6, block: '### Read `affordances[]` carefully', floor: true, verbs: [], because: 'floor' },
+  { section: S6, block: '### Read `briefing.if_you_do_nothing`', floor: true, verbs: [], because: 'floor' },
+  {
+    section: S6,
+    block: '### Free things that do not cost an action',
+    floor: true,
+    verbs: [],
+    because: 'floor',
+  },
+
+  // ── §7 · the verb table, the action budget, the production chain. Floor, and the only
+  //    place `trade`, `refine`, `claim`, `deny`, `withdraw` and `propose` are named at all.
+  {
+    section: S7,
+    block: null,
+    floor: true,
+    verbs: ['trade', 'refine', 'claim', 'deny', 'propose'],
+    because: 'floor',
+  },
+
+  // ── §8 · the privacy tiers are floor; the seal rules arrive with a seal.
+  { section: S8, block: null, floor: true, verbs: [], because: 'floor' },
+  {
+    section: S8,
+    block: '### Seals — the say-do gap',
+    verbs: ['seal'],
+    wanted: (s) => s.inVenture,
+    because: '`seal` is not offered to you and nothing of yours is riding on one',
+  },
+
+  // ── §10 · offices. The A6 core loop, and it arrives with the first grant.
+  {
+    section: S10,
+    block: null,
+    verbs: [],
+    // `wanted`, not `required`: knowing what a grant IS matters, but it is not an A5′ rule and a
+    // member offered `grant` or `revoke` pulls this preamble in structurally anyway. Graded
+    // `required` it added 1,989 characters to every wake of every member that had ever been
+    // handed authority, whether or not it could act on it.
+    wanted: (s) => s.holdsGrant,
     because: 'you have issued no authority and hold none, including through any syndicate you sit in',
   },
   {
-    heading: '## 11. The Commons',
-    floor: false,
-    // `move` is claimed here because §11 is where its REFUSAL rule lives — *"your hands may
-    // only move between COMMONS systems"*. The refusal only applies inside the Commons,
-    // which is exactly when this section is selected, so a graduated member loses nothing.
-    verbs: ['graduate', 'move'],
-    standing: (s) => s.inCommons || s.commonsBound,
-    because: 'your holding has left the Commons and the crossing is behind you',
+    section: S10,
+    block: '### Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
+    verbs: ['grant', 'revoke', 'audit'],
+    wanted: (s) => s.holdsGrant,
+    because: 'no grant verb is offered to you this wake',
   },
-  // The only source of goods in the game. Floor — see the note above.
-  { heading: '## 11A. WORKS — the only reason goods exist', floor: true, verbs: ['build', 'refine', 'extract'] },
-  { heading: '## 12. Getting good', floor: true, verbs: [] },
+
+  // ── §11 · the Commons. The preamble carries the Commons-bound `move` REFUSAL, which is
+  //    why `move` is claimed here and not in §7: being refused for that rule is the AGT-S2
+  //    harm this catalog exists to prevent. `graduate` gets its own 3,282-character block,
+  //    and a claim-holder is never offered it (`crossing.anchoring.length === 0` in
+  //    `observe.ts`, INV-8, `test/sovereignty/anchored-and-territorial.spec.ts`) — which is
+  //    the exclusion that makes §11 and most of §11B affordable together.
+  {
+    section: S11,
+    block: null,
+    verbs: ['move'],
+    required: (s) => s.inCommons || s.commonsBound,
+    because: 'your holding has left the Commons and your hands are no longer Commons-bound',
+  },
+  {
+    section: S11,
+    block: '### `graduate` — leaving, and it is one-way',
+    verbs: ['graduate'],
+    because: '`graduate` is not offered to you — you cannot afford the crossing, or a claim anchors your body',
+  },
+
+  // ── §11A · WORKS. The first two units are FLOOR: the only source of goods in the world,
+  //    and the yield-division rule that decides where building is worth anything. A member
+  //    with a covered Levy and no WORKS is about two Reckonings from being short every night,
+  //    and it is the one that most needs to read this.
+  { section: S11A, block: null, floor: true, verbs: [], because: 'floor' },
+  { section: S11A, block: '### A place yields; you do not', floor: true, verbs: [], because: 'floor' },
+  {
+    section: S11A,
+    block: '### Who owns the ground, and the good only the Frontier makes',
+    verbs: [],
+    // The rent a claim RECEIVES and which good the Frontier makes. Real, and not A5′: the
+    // consequence of not reading it is a worse choice of ground, not a bill from a rule nobody
+    // showed you. §11B's own fuel block keeps `required` for the silent failure.
+    wanted: (s) => s.holdsClaim || s.holdsWorks || s.canBuildWorks,
+    because: 'you neither hold ground that takes rent nor work ground that pays it',
+  },
+  {
+    section: S11A,
+    block: '### `build` is TWO different acts — read the `kind`',
+    verbs: ['build'],
+    because: '`build` is not offered to you this wake',
+  },
+  {
+    section: S11A,
+    block: '### Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
+    verbs: ['build'],
+    because: '`build` is not offered to you this wake',
+  },
+  {
+    section: S11A,
+    block: '### What to read',
+    verbs: [],
+    wanted: (s) => s.holdsWorks || s.canBuildWorks,
+    because: 'you hold no WORKS and cannot raise one right now',
+  },
+
+  // ── §11B · sovereignty. THE SECTION THE CAST COULD NEVER READ. 8,491 characters as a
+  //    whole, which is why it was in CONTRACT_NOT_EXCERPTED — but a member about to take
+  //    territory needs 1,983 of it, and a claimant needs the rest for A5′ reasons: never a
+  //    lapse against a claimant that was never shown what it owed.
+  {
+    section: S11B,
+    block: null,
+    verbs: ['post_bond'],
+    required: (s) => s.holdsClaim,
+    because: 'you hold no territory and `post_bond` is not offered to you',
+  },
+  {
+    section: S11B,
+    block: '### Taking one — `post_bond` then `build`',
+    verbs: ['post_bond'],
+    because: '`post_bond` is not offered to you, so no claim is available to take right now',
+  },
+  {
+    section: S11B,
+    block: '### Paying for it — the CHARGE',
+    verbs: [],
+    // A5′. `obligations.charge` carries the arithmetic; this is the rule behind it, and a
+    // claimant billed from a rule it was never given is the libel case §15.4 is about.
+    required: (s) => s.holdsClaim,
+    because: 'you hold no claim, so no Charge falls due on you',
+  },
+  {
+    section: S11B,
+    block: '### Losing it — arrears, the window, and two exits that beat a lapse',
+    verbs: ['abandon'],
+    required: (s) => s.inArrears,
+    wanted: (s) => s.holdsClaim,
+    because: 'no claim of yours is in arrears',
+  },
+  {
+    section: S11B,
+    block: "### Keeping it COLLECTING — the anchor's fuel",
+    verbs: [],
+    // The silent one: a cold anchor moves NO other field in the observation.
+    required: (s) => s.anchorCold,
+    wanted: (s) => s.holdsClaim,
+    because: 'every anchor of yours is hot and collecting',
+  },
+
+  // ── §11C · syndicates. The only place you can be ruined by something entirely legal.
+  {
+    section: S11C,
+    block: null,
+    verbs: [],
+    wanted: (s) => s.inSyndicate,
+    because: 'you sit in no syndicate and no syndicate verb is offered to you',
+  },
+  {
+    section: S11C,
+    block: '### Founding one — `form` `{"name":"...", ...}`',
+    verbs: ['form'],
+    because: '`form` is not offered to you this wake',
+  },
+  {
+    section: S11C,
+    block: '### Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
+    verbs: ['apply', 'admit'],
+    because: 'neither `apply` nor `admit` is offered to you this wake',
+  },
+  {
+    section: S11C,
+    block: '### Leaving costs a Reckoning of notice',
+    verbs: ['withdraw'],
+    wanted: (s) => s.inSyndicate,
+    because: 'you sit in no syndicate to give notice on',
+  },
+  {
+    section: S11C,
+    block: '### OFFICES — `grant` with `on_behalf_of`',
+    verbs: ['approve'],
+    wanted: (s) => s.inSyndicate,
+    because: 'no office vote is open to you',
+  },
+
+  // ── §11D · predation. Weather versus a demand somebody owns, and telling them apart is
+  //    the whole section. A8 makes hostile action in the Commons INVALID, so this is
+  //    reachable exactly when a member is outside it.
+  {
+    section: S11D,
+    block: null,
+    verbs: [],
+    required: (s) => s.underRaid,
+    wanted: (s) => s.outsideCommons,
+    because: 'nothing stands against you, and inside the Commons hostile action is INVALID rather than merely rare',
+  },
+  {
+    section: S11D,
+    block: '### Answering either one — `yield` · `fight` · join, or say nothing',
+    verbs: ['yield', 'fight', 'join'],
+    required: (s) => s.underRaid,
+    because: 'no raid or demand stands against you',
+  },
+  {
+    section: S11D,
+    block: '### Opening one — `demand`',
+    verbs: ['demand'],
+    because: '`demand` is not offered to you this wake',
+  },
+
+  // ── §12 ───────────────────────────────────────────────────────────────────
+  { section: S12, block: null, floor: true, verbs: [], because: 'floor' },
 ]);
 
 /**
- * Every heading the catalog names, in document order.
+ * Every `##` heading the catalog names, in document order.
  *
  * Kept as its own export because it is what the scar-#1 tests read: *"every section it asks
- * for exists in `agent.md`, verbatim"*. Selection changes which of these ship on a wake; it
- * never changes which of them must exist.
+ * for exists in `agent.md`, verbatim"*. Selection changes which units of these ship on a
+ * wake; it never changes which of them must exist.
  */
-export const CONTRACT_SECTIONS: readonly string[] = Object.freeze(
-  CONTRACT_CATALOG.map((section) => section.heading),
-);
+export const CONTRACT_SECTIONS: readonly string[] = Object.freeze([
+  ...new Set(CONTRACT_CATALOG.map((unit) => unit.section)),
+]);
 
 /**
  * Sections of `agent.md` the cast is never shown, each with the reason — **and the prompt
  * prints this list.**
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * Three of these were a silent hole until now, and two test comments recorded it with a
- * shrug (*"which costs the cast contract nothing because `CONTRACT_SECTIONS` excerpts §11
- * and §11A and not §11B"*). The cost is not nothing: `post_bond` lives only in §11B,
- * `yield`/`fight`/`join`/`demand` only in §11D, and `admit`/`form`/`apply`/`approve` only in
- * §11C. A member offered `yield` tonight has never been given the rules for it.
+ * This list held §11B, §11C and §11D, and with them the only rules for nine live verbs. That
+ * was a silent hole recorded in two test comments with a shrug (*"which costs the cast
+ * contract nothing"*) — the sign was wrong, because the house cast reads only the excerpt.
+ * `###` granularity closed it: all three are now in {@link CONTRACT_CATALOG}, block by block,
+ * and every live verb's rules are reachable.
  *
- * They stay out because they do not fit, and the arithmetic is worth writing down so the
- * next person does not have to rediscover it. Against a 38,000 bar and a 20,976-character
- * floor: §11D is 4,606 and is only ever needed *outside* the Commons, so it trades against
- * §11's 4,070 — a maximal member lands at **38,418**, over by 418. §11C is 3,741 and trades
- * against nothing. §11B is **8,491** and cannot fit at any arrangement of `##` sections.
- *
- * Closing the hole therefore needs a decision this change is not the place for: select at
- * `###` granularity (§4's 7,600 becomes 3,656 for a member offered only `create`; §11's
- * 4,070 becomes 786 for one that cannot graduate yet), or shorten §4 and §11A, or raise the
- * ceiling on cost grounds. What this change does is make the hole **legible**: every wake's
- * prompt names these sections, and `prompt.test.ts` fails if a live verb's only home is one
- * of them without this list saying so.
+ * What remains are the three that are **not about size**. Each is a genuine "you cannot use
+ * this" rather than "it did not fit", which is why the list is now short and should stay that
+ * way: an entry here for a reason that is really the budget is the shrug coming back.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 export const CONTRACT_NOT_EXCERPTED: readonly {
   readonly heading: string;
   readonly because: string;
   /**
-   * Live verbs whose ONLY rules are in this section. **Nine of them, and that is the size of
-   * the hole**, counted rather than described: `prompt.test.ts` asserts every verb the engine
-   * implements is claimed either by {@link CONTRACT_CATALOG} or here, so the number can never
-   * grow quietly.
+   * Live verbs whose ONLY rules are in this section. **Zero, now** — `prompt.test.ts` asserts
+   * every verb the engine implements is claimed by {@link CONTRACT_CATALOG}, so a non-empty
+   * list here is a mechanic shipping with rules no player can read.
    */
   readonly verbs: readonly string[];
 }[] = Object.freeze([
   { heading: '## 2. Enrolling', because: 'you were seated at boot and never enrol', verbs: [] },
   { heading: '## 9. Being offline', because: 'you run in-process and are never offline', verbs: [] },
-  {
-    heading: '## 11B. Sovereignty — territory you have to MAINTAIN',
-    because: 'it does not fit; `holding.sovereignty` carries the one statement that applies to you, verbatim',
-    verbs: ['post_bond'],
-  },
-  {
-    heading: '## 11C. SYNDICATES — pooling, and the authority that comes with it',
-    because: 'it does not fit; `grants.syndicates` carries your houses and their charters',
-    verbs: ['form', 'apply', 'admit', 'approve'],
-  },
-  {
-    heading: '## 11D. PREDATION — two kinds, and only one of them has a name',
-    because: 'it does not fit; `obligations.raid` carries each demand with its deadline and the cost of every branch',
-    verbs: ['yield', 'fight', 'join', 'demand'],
-  },
   {
     heading: '## 13. When something seems wrong',
     because: 'it is a bug-report channel you cannot reach from a plan',
@@ -259,19 +542,185 @@ export const CONTRACT_NOT_EXCERPTED: readonly {
 
 /**
  * The situation that needs everything — what {@link loadContract} selects for when there is
- * no observation to read.
+ * no observation to read, and the analytic ceiling of the catalog.
  *
- * Not a default for the live path. It exists so "the whole catalog" is expressible in the
- * same terms as any other wake, rather than as a second code path that could disagree with
- * the first one.
+ * Not a default for the live path, and **not reachable**: `graduate` and `holdsClaim` cannot
+ * both hold (a claim anchors the body, so `observe` withholds the crossing). It exists so
+ * "the whole catalog" is expressible in the same terms as any other wake rather than as a
+ * second code path that could disagree with the first, and so the ceiling has a number.
  */
 export const EVERY_SITUATION: ContractSituation = Object.freeze({
-  verbs: new Set(CONTRACT_CATALOG.flatMap((section) => [...section.verbs])),
+  verbs: new Set(CONTRACT_CATALOG.flatMap((unit) => [...unit.verbs])),
   inCommons: true,
   commonsBound: true,
+  outsideCommons: true,
   inVenture: true,
   holdsGrant: true,
+  inSyndicate: true,
+  holdsClaim: true,
+  inArrears: true,
+  anchorCold: true,
+  underRaid: true,
+  holdsWorks: true,
+  canBuildWorks: true,
 });
+
+/**
+ * Verbs a claimant in trouble is not offered, each for a reason in the ENGINE.
+ *
+ * A position padded with verbs a member cannot hold is the ceiling wearing a name, and that is
+ * what made the `##` version's arithmetic wrong.
+ */
+const CLAIMANT_CANNOT_HOLD: ReadonlySet<string> = new Set([
+  // A claim anchors the body, so `observe` withholds the crossing (INV-8, and
+  // `crossing.anchoring.length === 0` in `observe.ts`).
+  'graduate',
+  // Offered only when `your_side === null`; a raid standing against it makes it a side, and
+  // `yield`/`fight` are its answers instead.
+  'join',
+  // Needs aggression capacity AND a target. A principal in arrears under raid opening one of
+  // its own is a different position, not this one.
+  'demand',
+  // It already sits in a house; founding a second is a different position.
+  'form',
+  // Needs a syndicate it is NOT in whose charter admits applications.
+  'apply',
+  // Needs a pending application to its own.
+  'admit',
+]);
+
+/** Nothing held, nothing offered. The other end of the range. */
+export const NO_SITUATION: ContractSituation = Object.freeze({
+  verbs: new Set<string>(),
+  inCommons: false,
+  commonsBound: false,
+  outsideCommons: false,
+  inVenture: false,
+  holdsGrant: false,
+  inSyndicate: false,
+  holdsClaim: false,
+  inArrears: false,
+  anchorCold: false,
+  underRaid: false,
+  holdsWorks: false,
+  canBuildWorks: false,
+});
+
+/**
+ * The named positions a principal can occupy, each **maximal** for its position.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
+ *
+ * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
+ * was free. At `###` granularity there are twenty-eight units: 2^28 is not enumerable, and it
+ * would be the wrong space anyway. Most of those combinations are not reachable — that is what
+ * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
+ * no principal can be in.
+ *
+ * Selection is **monotone**: adding an offered verb or a standing fact never removes a unit. So
+ * the worst excerpt over any set of wakes is the excerpt for the position that dominates them
+ * all, and enumerating the maximal positions is exact rather than a sample. `prompt.test.ts`
+ * does both halves:
+ *
+ *   1. every position's excerpt is measured, and the budget assertion names the position;
+ *   2. a real world is swept and **every observed situation must be dominated by one of these**
+ *      — so a position list that has gone stale fails by name instead of quietly narrowing
+ *      what the budget was checked against.
+ *
+ * The exclusions the numbers depend on are engine-enforced, not assumed: `graduate` is withheld
+ * from a principal whose body anchors a claim (`observe.ts`, `crossing.anchoring.length === 0`,
+ * INV-8), and A8 makes hostile action inside the Commons *invalid*, so no Commons wake carries a
+ * raid. Both are asserted in `prompt.test.ts` against a real observation.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+export const CONTRACT_POSITIONS: readonly {
+  readonly name: string;
+  readonly situation: ContractSituation;
+  /**
+   * Must fit under the bar, with room for CONTEXT.
+   *
+   * **False is a finding, not an escape hatch.** Two positions carry `false`, and the number
+   * is what matters: a fully-developed claimant — arrears, a cold anchor, a grant, a syndicate,
+   * a raid standing against it — needs **41,286 characters of rules it can be refused for not
+   * knowing**, and the analytic ceiling is 51,289. Neither fits in 38,000 and no arrangement of
+   * `##` or `###` blocks makes them, because the content is genuinely all needed.
+   *
+   * So they overshoot, on purpose and out loud: `overBudget` is set, the prompt says so, and
+   * **nothing needed is dropped**. Dropping §11B's `### Paying for it — the CHARGE` from a
+   * claimant that is about to be billed under it is an A5′ violation — a bill from a rule
+   * nobody showed it — and the alternative costs about $0.0003 more per cached call.
+   *
+   * The sizes of these two are pinned in `prompt.test.ts`, which is the growth governor for
+   * them: a new block moves the number and somebody has to look.
+   */
+  readonly budgeted: boolean;
+}[] = Object.freeze([
+  {
+    name: 'a newcomer on its first wake — Commons, no venture, no grant, nothing held',
+    budgeted: true,
+    situation: {
+      ...NO_SITUATION,
+      inCommons: true,
+      commonsBound: true,
+      canBuildWorks: true,
+      verbs: new Set(['create', 'publish_offer', 'message', 'graduate', 'move', 'build', 'form']),
+    },
+  },
+  {
+    name: 'mid-game in the Commons — ventures, a WORKS, no grant, no claim',
+    budgeted: true,
+    situation: {
+      ...NO_SITUATION,
+      inCommons: true,
+      commonsBound: true,
+      inVenture: true,
+      holdsWorks: true,
+      canBuildWorks: true,
+      verbs: new Set([
+        'create', 'publish_offer', 'message', 'elect', 'fill_role', 'sign', 'seal',
+        'graduate', 'move', 'build', 'refine', 'form', 'apply', 'deliver', 'vote',
+      ]),
+    },
+  },
+  {
+    name: 'about to take territory — graduated, offered `post_bond`, holds no claim yet',
+    budgeted: true,
+    situation: {
+      ...NO_SITUATION,
+      outsideCommons: true,
+      inVenture: true,
+      holdsWorks: true,
+      canBuildWorks: true,
+      verbs: new Set([
+        'create', 'publish_offer', 'message', 'elect', 'seal', 'move', 'build', 'refine',
+        'post_bond', 'deliver', 'vote', 'graduate',
+      ]),
+    },
+  },
+  {
+    name: 'a claimant in trouble — arrears, a cold anchor, a grant, a syndicate, a raid standing',
+    // 41,286 characters, and every one of them is a rule this member can be refused for not
+    // knowing. See `budgeted` above: it overshoots rather than dropping any of it.
+    budgeted: false,
+    situation: {
+      ...EVERY_SITUATION,
+      inCommons: false,
+      commonsBound: false,
+      // See CLAIMANT_CANNOT_HOLD: six verbs come off, each for a reason in the engine.
+      verbs: new Set(
+        [...EVERY_SITUATION.verbs].filter(
+          (verb) => !CLAIMANT_CANNOT_HOLD.has(verb),
+        ),
+      ),
+    },
+  },
+  {
+    name: 'the analytic ceiling — every fact and every verb at once, which no principal can be',
+    budgeted: false,
+    situation: EVERY_SITUATION,
+  },
+]);
 
 /**
  * Hard ceiling on the contract excerpt. *(calibrate)*
@@ -315,29 +764,18 @@ export const EVERY_SITUATION: ContractSituation = Object.freeze({
  *
  * ## 40k stays, and the question above is now ANSWERED — {@link CONTRACT_CATALOG}
  *
- * The ceiling did not move a third time. The excerpt did: a wake now carries the floor plus the
- * sections the *observation* says the member is standing in, and nothing else. Measured against
- * the same 38,000 bar the previous two raises were caught by:
+ * The ceiling did not move a third time. The excerpt did, twice: first by `##` section, and then
+ * — because that freed too little and left nine verbs unreadable — by `###` block.
  *
- * | a wake | of 38,000 |
- * |---|---|
- * | newcomer, Commons, no venture, no grant | **25,062** (66%) |
- * | mid-game, Commons, in ventures, no grant | **32,666** (86%) |
- * | claim-holding, out of the Commons, in ventures, holds a grant | **33,832** (89%) |
- * | every conditional at once — the ceiling of the catalog | **37,902** (99.7%) |
+ * **What this number now governs is CONTEXT, not the excerpt.** FLOOR and RULES ship whatever
+ * the total, because "a needed rule is never dropped" has to be true by construction and not by
+ * the numbers happening to fit; this is the ceiling on discretionary `wanted` blocks. Same trade
+ * `projectObservation` makes one field over. An overshoot sets `overBudget`, is printed in the
+ * prompt, and fails `prompt.test.ts` naming the position — so it can never be the silent cliff
+ * the bar exists to prevent.
  *
- * **Read the last row before adding a section.** Selection bounds the *typical* excerpt; it
- * cannot bound the maximum, because the maximum is the catalog and always will be. So the
- * headroom this buys is conditional headroom: a section needed only by claimants costs a
- * Commons newcomer nothing, and `prompt.test.ts` enumerates **all eight** combinations of the
- * conditionals and fails on the one that breaks the bar, naming it. That is a far better
- * instrument than one number over one blob — a failure now tells you which situation to make
- * the new section conditional on, instead of only that you are out of room.
- *
- * The next 8,000 characters, if they are needed, are at `###` granularity: §4's 7,600 is 3,656
- * for a member offered only `create`, and §11's 4,070 is 786 for one that cannot graduate yet.
- * That is left undone on purpose — a `##` section shipped without one of its `###` blocks looks
- * complete and is not, which is nearer scar #1 than omitting the section outright.
+ * `CONTRACT_POSITIONS` carries the measured table and is the thing to read before adding a
+ * section, because it is executable and this comment is not.
  */
 export const MAX_CONTRACT_CHARS = 40_000;
 
@@ -365,50 +803,81 @@ export const DROP_ORDER: readonly string[] = Object.freeze([
   'ventures',
 ]);
 
-/** A section left out of a wake's excerpt, and why. Printed in the prompt. */
+/** A unit left out of a wake's excerpt, and why. Printed in the prompt. */
 export interface ContractOmission {
+  /** `## 11B. …` for a whole section, or `## 11B. … › ### Paying for it — the CHARGE`. */
   readonly heading: string;
   readonly because: string;
 }
 
 export interface ContractExcerpt {
   readonly text: string;
-  /** Sections actually included, in order. */
+  /** `##` sections with at least one unit in the excerpt, in emission order. */
   readonly sections: readonly string[];
-  /** Sections that did not fit under {@link MAX_CONTRACT_CHARS}. Usually empty. */
-  readonly dropped: readonly string[];
+  /** Every unit included, as `section › block` (or just the section, for a preamble). */
+  readonly units: readonly string[];
   /**
-   * Sections this wake's situation does not touch, each with its reason.
+   * CONTEXT units that did not fit under {@link MAX_CONTRACT_CHARS}, each with its reason.
    *
-   * A separate word from `dropped` on purpose: *did not fit* and *not needed here* are two
-   * different facts about the world and a reader has to be able to tell them apart. One is
-   * a budget problem and one is the design working.
+   * A separate word from `notThisWake` on purpose: *did not fit* and *your situation does not
+   * touch it* are two different facts and a reader has to tell them apart. One is a budget
+   * problem; one is the design working. **No FLOOR or RULES unit can ever appear here** —
+   * that is the guarantee, and `excerptFor` enforces it by never consulting the budget for
+   * them.
    */
+  readonly dropped: readonly ContractOmission[];
+  /** Units this wake's situation does not touch, each with its reason. */
   readonly notThisWake: readonly ContractOmission[];
+  /**
+   * True when FLOOR + RULES alone exceeded the ceiling.
+   *
+   * The excerpt is still complete — nothing needed was dropped — and this says the budget was
+   * the thing that gave. Loud on purpose: the prompt prints it and `prompt.test.ts` fails
+   * naming the position, because "the rules got longer than the budget" is a fact somebody
+   * has to decide about rather than one to discover from a bill.
+   */
+  readonly overBudget: boolean;
 }
 
 /**
- * `agent.md`, parsed and validated once.
+ * `agent.md`, parsed to units and validated once.
  *
- * Split from the excerpt because the excerpt is now per-wake: the document is read from
- * disk once at cast construction, and every wake selects from this. Re-reading a 63 KB file
- * per member per tick would be a filesystem call inside the tick, for no gain.
+ * Split from the excerpt because the excerpt is per-wake: the document is read from disk once
+ * at cast construction, and every wake selects from this. Re-reading a 63 KB file per member
+ * per tick would be a filesystem call inside the tick, for no gain.
  */
 export interface ContractDocument {
-  readonly bodies: ReadonlyMap<string, string>;
+  /** `section` → (`block` heading or `''` for the preamble) → verbatim text. */
+  readonly bodies: ReadonlyMap<string, ReadonlyMap<string, string>>;
+}
+
+/** The key a unit's text is stored under. `''` is the section's own preamble. */
+function unitKey(unit: ContractUnit): string {
+  return unit.block ?? '';
+}
+
+/** How a unit is named in `units`, `dropped` and the prompt. */
+export function unitName(unit: ContractUnit): string {
+  return unit.block === null ? unit.section : `${unit.section} › ${unit.block}`;
 }
 
 /**
- * Read `agent.md` and check that every section the catalog names is still there.
+ * Read `agent.md` and check that every unit the catalog names is still there.
  *
- * Resolved by the **same URL expression `server.ts` uses** (`../../agent.md` relative to
- * the module), so the compiled `dist/cast/prompt.js` and the source both land on
- * `engine/agent.md`, and the cast and the API can never be reading two different files.
+ * Resolved by the **same URL expression `server.ts` uses** (`../../agent.md` relative to the
+ * module), so the compiled `dist/cast/prompt.js` and the source both land on `engine/agent.md`,
+ * and the cast and the API can never be reading two different files.
  *
- * Returns `null` — and the caller disables the LLM cast — when the file cannot be read
- * or when **any** catalogued section is missing, *including one no current wake needs*.
- * See the module note: a missing section is a rules surface that moved, and the safe
- * response to that is to stop, not to guess.
+ * Returns `null` — and the caller disables the LLM cast — when the file cannot be read or when
+ * **any** catalogued unit is missing, *including one no current wake needs*. See the module
+ * note: a missing heading is a rules surface that moved, and the safe response is to stop, not
+ * to guess.
+ *
+ * **`###` granularity triples what this tripwire watches**, and that is the cost of the
+ * granularity rather than a flaw in it: a `###` heading carries verb names and prose and so
+ * moves more often than a `##` number. It is the right direction to fail in. A renamed block
+ * turns the LLM cast off and logs why; the alternative is prompting from a rulebook missing a
+ * block nobody noticed.
  */
 export function loadContractDocument(source?: string): ContractDocument | null {
   let raw: string;
@@ -422,17 +891,26 @@ export function loadContractDocument(source?: string): ContractDocument | null {
     }
   }
 
-  const bodies = new Map<string, string>();
+  const bodies = new Map<string, Map<string, string>>();
   for (const chunk of raw.split(/\n(?=## )/)) {
-    const heading = (chunk.split('\n', 1)[0] ?? '').trim();
-    bodies.set(heading, chunk.trim());
+    const section = (chunk.split('\n', 1)[0] ?? '').trim();
+    const blocks = new Map<string, string>();
+    const parts = chunk.trim().split(/\n(?=### )/);
+    // Part 0 is the `##` heading plus everything before the first `###`. The heading travels
+    // WITH the preamble and nowhere else, which is what makes "a block never ships without its
+    // preamble" the same thing as "a block never ships without its section heading".
+    blocks.set('', (parts[0] ?? '').trim());
+    for (const part of parts.slice(1)) {
+      blocks.set((part.split('\n', 1)[0] ?? '').trim(), part.trim());
+    }
+    bodies.set(section, blocks);
   }
 
-  // The scar-#1 tripwire, and it fires on the whole catalog rather than on this wake's
-  // selection: a heading that moved is a rules surface that moved either way, and a
-  // selection that happens not to want it this tick must not hide that.
-  for (const section of CONTRACT_CATALOG) {
-    if (!bodies.has(section.heading)) return null;
+  for (const unit of CONTRACT_CATALOG) {
+    const blocks = bodies.get(unit.section);
+    if (blocks === undefined) return null;
+    const text = blocks.get(unitKey(unit));
+    if (text === undefined || text.length === 0) return null;
   }
   return { bodies };
 }
@@ -440,10 +918,26 @@ export function loadContractDocument(source?: string): ContractDocument | null {
 /**
  * Read the situation off one observation. The only input to selection.
  *
- * Typed loosely on purpose — it is handed the same `Observation` the member is about to be
- * shown, and it must not fall over on a partial one (`relations.spec.ts` builds a two-key
- * stub). A missing key reads as "no", which is the safe direction only because
- * {@link sectionIsNeeded} keys the guarantee on `affordances[]`, and a member with no
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **EVERY PATH HERE IS ASSERTED AGAINST A REAL OBSERVATION, NOT A FIXTURE.**
+ *
+ * `situationalFocus` read a top-level `syndicates` key for its whole life. `observe` nests it
+ * under `grants` — §17's ten-key budget is at its ceiling and the comment there says so — so
+ * the condition was `undefined.length > 0` on every real observation and the line had **never
+ * fired once in production**. Its test passed because the fixture put the key where the code
+ * looked instead of where the engine puts it.
+ *
+ * That is the same defect class as four of the five bugs blind probes found last week, and a
+ * predicate is a perfect place for it to hide: a wrong path reads as `false`, which reads as
+ * "this member does not need that section", which reads as the design working. So
+ * `prompt.test.ts` asserts every field below against `buildObservation`'s own output, and the
+ * two that cannot be true at once for one member (`inCommons` and `outsideCommons`) are
+ * asserted to disagree.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * Typed loosely on purpose — it must not fall over on a partial observation
+ * (`relations.spec.ts` builds a two-key stub). A missing key reads as "no", which is safe only
+ * because {@link unitGrade} keys the guarantee on `affordances[]`, and a member with no
  * affordances has nothing to be refused for.
  */
 export function readSituation(observation: Readonly<Record<string, unknown>>): ContractSituation {
@@ -454,104 +948,157 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
   const holding = obj(observation['holding']);
   const grants = obj(observation['grants']);
   const ventures = obj(observation['ventures']);
+  const obligations = obj(observation['obligations']);
+  const works = obj(holding['works']);
+  // `obligations.charge` is `myClaims` — one row per claim THIS principal holds, each with its
+  // arrears, its deadline, its bond at risk and whether its anchor is hot.
+  const claims = list(obligations['charge']).map(obj);
+  const tier = String(holding['tier']);
 
   return {
     verbs: new Set(list(observation['affordances']).map((a) => String(obj(a)['verb']))),
-    inCommons: String(holding['tier']) === 'COMMONS',
+    inCommons: tier === 'COMMONS',
     commonsBound: holding['commons_bound'] === true,
+    // Not `!inCommons`: an observation with no `holding` at all must not read as "predation can
+    // reach you", because that would ship §11D to a stub and, worse, read as a fact.
+    outsideCommons: tier === 'MARCHES' || tier === 'FRONTIER',
     inVenture: list(ventures['mine']).length > 0,
     holdsGrant: list(grants['granted']).length > 0 || list(grants['held']).length > 0,
+    inSyndicate: list(grants['syndicates']).length > 0,
+    holdsClaim: claims.length > 0,
+    inArrears: claims.some((claim) => Number(claim['arrears'] ?? 0) > 0),
+    anchorCold: claims.some((claim) => claim['anchor_hot'] === false),
+    underRaid: list(obligations['raid']).length > 0,
+    holdsWorks: list(works['held']).length > 0,
+    canBuildWorks: obj(works['here'])['affordable'] === true,
   };
 }
 
 /**
- * Does this wake need this section?
+ * What this wake owes this unit.
  *
+ * ══════════════════════════════════════════════════════════════════════════════
  * **THE GUARANTEE IS THE SECOND CLAUSE AND IT LIVES HERE, NOT IN THE PREDICATES.**
  *
- * A section whose verb is offered in `affordances[]` is included, always, before any
- * per-section predicate is consulted. That ordering is the whole safety argument: an
- * agent is refused for breaking a rule it was given, never for one it was not. Put the
- * same rule inside eleven separate predicates and the twelfth will forget it.
+ * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
+ * per-unit predicate, and `RULES` is never dropped for any reason including length. That
+ * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
+ * never for one it was not. There are twenty-eight units; put the same rule inside each
+ * predicate and the twenty-ninth will forget it.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
-export function sectionIsNeeded(section: ContractSection, situation: ContractSituation): boolean {
-  if (section.floor) return true;
-  for (const verb of section.verbs) {
-    if (situation.verbs.has(verb)) return true;
+export function unitGrade(unit: ContractUnit, situation: ContractSituation): UnitGrade {
+  if (unit.floor === true) return 'FLOOR';
+  for (const verb of unit.verbs) {
+    if (situation.verbs.has(verb)) return 'RULES';
   }
-  return section.standing(situation);
+  if (unit.required?.(situation) === true) return 'RULES';
+  if (unit.wanted?.(situation) === true) return 'CONTEXT';
+  return 'NO';
 }
 
 /**
  * Cut the excerpt for one wake.
  *
- * ── WHY THE FLOOR COMES FIRST AND NOT DOCUMENT ORDER ─────────────────────────
+ * ── FOUR RULES, IN THIS ORDER ────────────────────────────────────────────────
  *
- * The contract is the first system message, so a provider that discounts a repeated prefix
- * does — measured live at 6,498 of 6,543 prompt tokens cached. Selection puts that at risk,
- * because two members in different situations no longer share a byte-identical message. In
- * document order the first conditional (§4) starts at character 1,530, so the shared prefix
- * would collapse to 1,530 characters for any two members who disagree about it.
- *
- * Floor first, in one fixed order for everybody, keeps a **20,976-character prefix identical
- * for every member on every wake** — and members who agree on their conditionals share more.
- * The order is fixed globally and never permuted per member, which is the property that
- * matters; a per-member ordering would have exactly the problem this avoids.
- *
- * The cost is that § numbers are no longer ascending across the whole excerpt. They are
- * ascending within each block, they are `agent.md`'s own numbers, and the excerpt says what
- * the order is — which is cheaper than losing the cache.
+ * 1. **A block never ships without its section's preamble.** The `##` heading lives in the
+ *    preamble, so a block without it is prose with no name on it. Structural, not a predicate.
+ * 2. **Units of one section stay contiguous and in document order.** A `### Paying for it`
+ *    emitted three sections away from `## 11B.` is a rule with its framing removed, which is
+ *    nearer scar #1 than omitting it.
+ * 3. **FLOOR-only sections first, then the rest in document order.** A provider that discounts
+ *    a repeated prefix needs the front of the message to be identical for every member; the
+ *    six sections whose every unit is FLOOR are exactly that, and they come first. This is
+ *    weaker than it was at `##` granularity (11,527 characters rather than 20,976) because
+ *    §8 and §11A now have variable tails, and that is the price of the granularity — paid
+ *    knowingly, because the alternative was trading rules prose against a ceiling.
+ * 4. **The budget is spent on CONTEXT only.** FLOOR and RULES are emitted whatever the total,
+ *    and `overBudget` says when that overran. See {@link MAX_CONTRACT_CHARS}.
  */
 export function excerptFor(
   document: ContractDocument,
   situation: ContractSituation,
   maxChars: number = MAX_CONTRACT_CHARS,
 ): ContractExcerpt {
-  const needed = CONTRACT_CATALOG.filter((section) => sectionIsNeeded(section, situation));
-  const notThisWake = CONTRACT_CATALOG.filter(
-    (section) => !sectionIsNeeded(section, situation),
-  ).map((section) => ({
-    heading: section.heading,
-    // Unreachable for a floor section: `sectionIsNeeded` returns true for those first.
-    because: section.floor ? 'floor' : section.because,
-  }));
+  const graded = CONTRACT_CATALOG.map((unit) => ({ unit, grade: unitGrade(unit, situation) }));
+  const lengthOf = (unit: ContractUnit): number =>
+    document.bodies.get(unit.section)?.get(unitKey(unit))?.length ?? 0;
 
-  const ordered = [...needed.filter((s) => s.floor), ...needed.filter((s) => !s.floor)];
-
-  const kept: string[] = [];
-  const dropped: string[] = [];
-  const parts: string[] = [];
-  let used = 0;
-  for (const section of ordered) {
-    const body = document.bodies.get(section.heading);
-    if (body === undefined) {
-      // Cannot happen: `loadContractDocument` refuses a document missing any catalogued
-      // heading. Recorded rather than thrown, because a cast that stops mid-Reckoning is
-      // worse than one that names the gap.
-      dropped.push(section.heading);
-      continue;
+  // RULE 1. A section with any unit in it needs its preamble, at the strongest grade present.
+  const strongest = new Map<string, UnitGrade>();
+  for (const { unit, grade } of graded) {
+    if (grade === 'NO') continue;
+    const held = strongest.get(unit.section);
+    if (held === undefined || grade === 'FLOOR' || (grade === 'RULES' && held === 'CONTEXT')) {
+      strongest.set(unit.section, grade === 'FLOOR' ? 'FLOOR' : grade);
     }
-    // `+ 2` for the join, so the budget counts the string that is actually built rather
-    // than a number two characters smaller per section than the truth.
-    const cost = body.length + (parts.length === 0 ? 0 : 2);
-    if (used + cost > maxChars) {
-      dropped.push(section.heading);
-      continue;
+  }
+  for (const row of graded) {
+    if (row.unit.block !== null) continue;
+    const carried = strongest.get(row.unit.section);
+    if (carried === undefined) continue;
+    if (row.grade === 'NO' || (row.grade === 'CONTEXT' && carried === 'RULES')) {
+      row.grade = carried === 'FLOOR' ? 'FLOOR' : 'RULES';
     }
-    used += cost;
-    kept.push(section.heading);
-    parts.push(body);
   }
 
-  return { text: parts.join('\n\n'), sections: kept, dropped, notThisWake };
+  // RULE 3. FLOOR-only sections first, then document order.
+  const sectionOrder = [...CONTRACT_SECTIONS];
+  const floorOnly = new Set(
+    sectionOrder.filter((section) =>
+      CONTRACT_CATALOG.filter((u) => u.section === section).every((u) => u.floor === true),
+    ),
+  );
+  const emissionOrder = [
+    ...sectionOrder.filter((s) => floorOnly.has(s)),
+    ...sectionOrder.filter((s) => !floorOnly.has(s)),
+  ];
+
+  // RULE 4. Price the mandatory half first; CONTEXT then fills what is left.
+  const mandatory = graded.filter((r) => r.grade === 'FLOOR' || r.grade === 'RULES');
+  let spent = mandatory.reduce((n, r) => n + lengthOf(r.unit), 0) + Math.max(0, mandatory.length - 1) * 2;
+
+  const dropped: ContractOmission[] = [];
+  const keep = new Set<ContractUnit>(mandatory.map((r) => r.unit));
+  for (const { unit, grade } of graded) {
+    if (grade !== 'CONTEXT') continue;
+    const cost = lengthOf(unit) + 2;
+    if (spent + cost > maxChars) {
+      dropped.push({ heading: unitName(unit), because: `${unit.because}, and it did not fit` });
+      continue;
+    }
+    spent += cost;
+    keep.add(unit);
+  }
+
+  // RULE 2 + emission.
+  const parts: string[] = [];
+  const units: string[] = [];
+  const sections: string[] = [];
+  for (const section of emissionOrder) {
+    const chosen = CONTRACT_CATALOG.filter((u) => u.section === section && keep.has(u));
+    if (chosen.length === 0) continue;
+    sections.push(section);
+    for (const unit of chosen) {
+      units.push(unitName(unit));
+      parts.push(document.bodies.get(section)?.get(unitKey(unit)) ?? '');
+    }
+  }
+
+  const notThisWake = graded
+    .filter((r) => r.grade === 'NO')
+    .map((r) => ({ heading: unitName(r.unit), because: r.unit.because }));
+
+  const text = parts.join('\n\n');
+  return { text, sections, units, dropped, notThisWake, overBudget: text.length > maxChars };
 }
 
 /**
  * The whole catalog, for a caller with no observation to select from.
  *
- * Used by the tests and as the shape-preserving default. It is the *ceiling* of the
- * catalog, not what any live wake ships — `llm.ts` selects per wake through
- * {@link excerptFor}.
+ * The analytic **ceiling**, not what any live wake ships, and not even reachable — see
+ * {@link EVERY_SITUATION}. `llm.ts` selects per wake through {@link excerptFor}.
  */
 export function loadContract(
   source?: string,
@@ -671,10 +1218,25 @@ export function situationalFocus(observation: Readonly<Record<string, unknown>>)
   if (has('graduate')) focus.push('§11 `graduate` — the crossing is affordable to you right now');
   if (has('build', 'WORKS') || ((holding['works'] as Record<string, unknown>)?.['held'] as unknown[])?.length)
     focus.push('§11A WORKS — the only source of goods in this world');
-  if (holding['sovereignty'] !== null && holding['sovereignty'] !== undefined)
+  // ── A SECOND PATH THAT SAID SOMETHING FALSE, FOUND BY CHECKING THEM ALL ────
+  //
+  // This line was `holding['sovereignty'] !== null`, and it told the member it HELD TERRITORY.
+  // `sovereigntyStatementFor` does not mean that: it serves whichever of four statements applies
+  // to what the member can do *next*, and its last branch returns `SOVEREIGNTY_STATEMENT` — how
+  // to TAKE a claim — to any principal outside the Commons holding nothing at all. So every
+  // graduated member with no territory was being told it had territory to maintain.
+  //
+  // Worse than the `grants.syndicates` path-bug in the same function, which was merely silent:
+  // this one asserted a fact about the reader's own position that was not true, on a surface
+  // A5′ says must never be wrong. The claim rows are the fact — `obligations.charge` is
+  // `myClaims`, one row per claim held — so both branches now read those.
+  const claims = (obligations['charge'] ?? []) as unknown[];
+  if (claims.length > 0) {
     focus.push('§11B Sovereignty — you hold territory that has to be MAINTAINED');
-  if (((obligations['charge'] ?? []) as unknown[]).length > 0)
     focus.push('§11B The Charge — a bill falls due on your claim this Reckoning');
+  } else if (holding['sovereignty'] !== null && holding['sovereignty'] !== undefined) {
+    focus.push('§11B Sovereignty — you hold NO territory; this is what taking some would cost');
+  }
   // `grants.syndicates`, not a top-level key. Read from the top level this condition was
   // `undefined.length > 0` on every real observation, so the line had never once fired in
   // production — a pointer that existed and reached nobody, checked green by a test whose
@@ -714,21 +1276,27 @@ export function citedSection(focusLine: string): string | null {
  * an absence is about its situation, not about the world.
  *
  * Three kinds of absence, told apart because they mean different things: **not needed this
- * wake** (the design working), **did not fit** (a budget problem, and it should never fire —
- * `prompt.test.ts` enumerates the reachable selections), and **never excerpted** (a standing
- * decision, listed with its reason in {@link CONTRACT_NOT_EXCERPTED}).
+ * wake** (the design working), **did not fit** (discretionary CONTEXT the budget squeezed out —
+ * never a rule for a verb offered to you), and **never excerpted** (a standing decision, listed
+ * with its reason in {@link CONTRACT_NOT_EXCERPTED}).
+ *
+ * **A partial section is named unit by unit**, which is the price of `###` granularity and the
+ * thing that keeps it honest: a `## 11B.` shipped with two of its five blocks *looks* complete,
+ * and that is nearer scar #1 than omitting §11B outright — unless the excerpt says which three
+ * are missing and why. So it does.
  */
 function absenceNotice(contract: ContractExcerpt): string {
   const clauses = [
     ...contract.notThisWake.map((o) => `${o.heading} — ${o.because}`),
-    ...contract.dropped.map((heading) => `${heading} — it did not fit, which is a bug worth reporting`),
+    ...contract.dropped.map((o) => `${o.heading} — ${o.because}`),
     ...CONTRACT_NOT_EXCERPTED.map((o) => `${o.heading} — ${o.because}`),
   ];
   if (clauses.length === 0) return '';
   return (
-    `(NOT IN THIS EXCERPT, and why: ${clauses.join('; ')}. Nothing above is paraphrased and ` +
-    'nothing is hidden — every section is verbatim, and the complete document is `agent.md`, ' +
-    'served at GET /compact/api/agent.md.)'
+    '(NOT IN THIS EXCERPT, and why. Every rule for every verb offered to you in `affordances[]` ' +
+    `IS above; these are not: ${clauses.join('; ')}. Nothing above is paraphrased and nothing ` +
+    'is hidden — every block is verbatim, and the complete document is `agent.md`, served at ' +
+    'GET /compact/api/agent.md.)'
   );
 }
 
@@ -746,9 +1314,10 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
       'verbatim from the same document every other agent in this world reads. It is the only',
       'rules surface. Where it and anything else in this prompt disagree, IT WINS.',
       '',
-      'It carries the sections every principal needs, then the sections YOUR position touches —',
-      'which is why the § numbers restart once. They are the document’s own numbers, in two',
-      'blocks. What is not here is named at the end, with the reason.',
+      'It carries what every principal needs, then the parts YOUR position touches — which is why',
+      'the § numbers restart once. They are the document’s own numbers and headings. Where a',
+      'section appears with only some of its `###` blocks, the missing ones are named at the end',
+      'with the reason. Every rule for every verb in your `affordances[]` is here.',
       '',
       '--- BEGIN PLAYER CONTRACT ---',
       input.contract.text,

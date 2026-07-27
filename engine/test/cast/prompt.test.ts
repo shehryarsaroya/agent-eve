@@ -1,4 +1,4 @@
-import { citedSection, sectionIsNeeded, situationalFocus } from '../../src/cast/prompt.js';
+import { citedSection, situationalFocus } from '../../src/cast/prompt.js';
 /**
  * SCAR-1, again, at the cast's own boundary.
  *
@@ -20,6 +20,7 @@ import {
   buildPrompt,
   CONTRACT_CATALOG,
   CONTRACT_NOT_EXCERPTED,
+  CONTRACT_POSITIONS,
   CONTRACT_SECTIONS,
   DROP_ORDER,
   EVERY_SITUATION,
@@ -27,9 +28,13 @@ import {
   loadContract,
   loadContractDocument,
   MAX_CONTRACT_CHARS,
+  NO_SITUATION,
   projectObservation,
   readSituation,
   REPLY_SCHEMA,
+  unitGrade,
+  unitName,
+  type ContractDocument,
   type ContractSituation,
 } from '../../src/cast/index.js';
 import { buildObservation, OBSERVE_KEYS, type Observation } from '../../src/api/observe.js';
@@ -76,17 +81,30 @@ describe('the contract comes from agent.md, or the cast does not play', () => {
     expect([...(contract?.sections ?? [])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual(
       [...CONTRACT_SECTIONS].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     );
-    expect(contract?.dropped).toEqual([]);
-    expect(contract?.notThisWake).toEqual([]);
-    expect((contract?.text ?? '').length).toBeLessThanOrEqual(MAX_CONTRACT_CHARS);
+    expect(contract?.notThisWake, 'the ceiling needs everything').toEqual([]);
+    // `loadContract()` selects for EVERY_SITUATION — the analytic ceiling, 51,289 characters,
+    // which no principal can occupy. It OVERSHOOTS the budget rather than dropping a rule, and
+    // the only things it loses are the two discretionary §11A blocks. That is the trade stated
+    // in `MAX_CONTRACT_CHARS`, and it is asserted here rather than assumed.
+    expect(contract?.overBudget, 'the ceiling does not fit and must say so').toBe(true);
+    for (const omission of contract?.dropped ?? []) {
+      const unit = CONTRACT_CATALOG.find((u) => unitName(u) === omission.heading);
+      expect(unit?.floor, 'a FLOOR unit was dropped').not.toBe(true);
+      expect(
+        unitGrade(unit as never, EVERY_SITUATION),
+        `${omission.heading} was dropped and it is not CONTEXT`,
+      ).toBe('CONTEXT');
+    }
     // It is the document, not a paraphrase of it: a distinctive sentence survives.
     expect(contract?.text).toContain('An illegal action is not an error.');
   });
 
-  it('emits the floor first, in one order, so the cached prefix is not per-member', () => {
+  it('emits the FLOOR-ONLY sections first, in one order, so the cached prefix is not per-member', () => {
     const contract = loadContract();
-    const floors = CONTRACT_CATALOG.filter((s) => s.floor).map((s) => s.heading);
-    expect(contract?.sections.slice(0, floors.length)).toEqual(floors);
+    const floorOnly = CONTRACT_SECTIONS.filter((section) =>
+      CONTRACT_CATALOG.filter((u) => u.section === section).every((u) => u.floor === true),
+    );
+    expect(contract?.sections.slice(0, floorOnly.length)).toEqual(floorOnly);
   });
 
   it('RETURNS NULL when a required heading has moved — which disables the LLM cast', () => {
@@ -100,12 +118,27 @@ describe('the contract comes from agent.md, or the cast does not play', () => {
     expect(loadContract('')).toBeNull();
   });
 
-  it('drops from the end and says so when a section grows without bound', () => {
+  it('under an absurd cap, CONTEXT goes and the RULES DO NOT — and it says so', () => {
+    // This used to assert that sections dropped off the end. They no longer can: FLOOR and RULES
+    // are emitted whatever the total, so a cap of 4,000 squeezes out every discretionary block
+    // and NOTHING ELSE. That is the change `MAX_CONTRACT_CHARS` documents, and asserting the old
+    // behaviour would now be asserting that a needed rule can vanish.
     const contract = loadContract(AGENT_MD, 4_000);
     expect(contract).not.toBeNull();
-    expect((contract?.dropped ?? []).length).toBeGreaterThan(0);
-    // Never silently: the omission is named, and `buildPrompt` prints the names.
-    expect(contract?.sections.length).toBeLessThan(CONTRACT_SECTIONS.length);
+    if (contract === null) return;
+    expect(contract.overBudget, 'a 4,000 cap must be reported as overrun').toBe(true);
+    expect(contract.dropped.length, 'every discretionary block goes').toBeGreaterThan(0);
+    // Every section is still present, because every one of them has a FLOOR or RULES unit here.
+    expect(contract.sections.length).toBe(CONTRACT_SECTIONS.length);
+    for (const omission of contract.dropped) {
+      const unit = CONTRACT_CATALOG.find((u) => unitName(u) === omission.heading);
+      expect(unit, omission.heading).toBeDefined();
+      expect(unit?.floor, `${omission.heading} is FLOOR and was dropped`).not.toBe(true);
+      expect(unit?.verbs.some((v) => EVERY_SITUATION.verbs.has(v)) === true && unit?.required === undefined)
+        .toBe(false);
+    }
+    // And the omission is never silent.
+    expect(contract.dropped.every((o) => o.because.length > 10)).toBe(true);
   });
 });
 
@@ -349,199 +382,367 @@ describe('the cast can always read where goods come from', () => {
    */
   it('never drops the WORKS section, and keeps room to spare', () => {
     const contract = loadContract();
-    expect(contract?.dropped, 'nothing may be dropped at the current size').toEqual([]);
     expect(contract?.text, 'the yield table has to survive the excerpt').toContain('| FRONTIER |');
     expect(contract?.text).toContain('The yield belongs to the place');
     // §11A is FLOOR now, so this cannot be lost to a situation either — only to length.
-    expect(CONTRACT_CATALOG.find((s) => s.heading.startsWith('## 11A'))?.floor).toBe(true);
-    // Headroom, so the next section added to agent.md does not repeat this. `loadContract()`
-    // is the CEILING of the catalog — every conditional at once — which is the number to read
-    // before adding a section, and the enumeration below is what says which combination broke.
-    const used = contract?.text.length ?? 0;
-    expect(used, `the excerpt is ${String(used)} of ${String(MAX_CONTRACT_CHARS)} — too tight`)
-      .toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+    expect(
+      CONTRACT_CATALOG.filter((u) => u.section.startsWith('## 11A') && u.floor === true).length,
+      'the WORKS preamble and the yield rule are FLOOR',
+    ).toBe(2);
+    // Headroom is measured on the positions a principal can actually occupy, not on the
+    // analytic ceiling, which overshoots by design. `CONTRACT_POSITIONS` is the governor.
+    const doc = document();
+    for (const position of CONTRACT_POSITIONS.filter((x) => x.budgeted)) {
+      const excerpt = excerptFor(doc, position.situation);
+      expect(excerpt.text, `${position.name} lost the yield table`).toContain('| FRONTIER |');
+      const used = excerpt.text.length;
+      expect(used, `${position.name} is ${String(used)} of ${String(MAX_CONTRACT_CHARS * 0.95)} — too tight`)
+        .toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+    }
   });
 });
 
 /** A situation with nothing in it. Fields are turned on one at a time from here. */
-const NOTHING: ContractSituation = {
-  verbs: new Set<string>(),
-  inCommons: false,
-  commonsBound: false,
-  inVenture: false,
-  holdsGrant: false,
-};
-
-function document() {
+function document(): ContractDocument {
   const doc = loadContractDocument();
   if (doc === null) throw new Error('agent.md could not be read');
   return doc;
 }
 
+/** Turn one verb on and nothing else. The tightest situation that can need a unit. */
+function offering(...verbs: readonly string[]): ContractSituation {
+  return { ...NO_SITUATION, verbs: new Set(verbs) };
+}
+
 describe('the excerpt is SELECTED from the observation, and a needed rule is never dropped', () => {
   /**
    * ══════════════════════════════════════════════════════════════════════════════
-   * The excerpt was every section on every wake. At 37,902 of a 38,000 bar that had become a
-   * content tax: the two changes before this one each traded rules prose for room, one
-   * compressing a verbatim sovereignty statement to a numbers check. And at ~40,000 the next
+   * The excerpt was every `##` section on every wake. At 37,902 of a 38,000 bar that had
+   * become a content tax — two consecutive changes traded rules prose for room, one
+   * compressing a verbatim sovereignty statement to a numbers check — and at ~40,000 the next
    * section would have dropped §12 off the end silently.
    *
-   * These tests are the guarantee, not the saving. The saving is measured at the bottom.
+   * Section-level selection freed too little (57% of real wakes still took the whole catalog)
+   * and left **nine live verbs with no readable rules**, because §11B/§11C/§11D could not fit
+   * as whole sections. `###` granularity is what closed both.
+   *
+   * These tests are the guarantee. The measurement is at the bottom.
    * ══════════════════════════════════════════════════════════════════════════════
    */
 
-  it('★ A SECTION WHOSE VERB IS OFFERED IS ALWAYS INCLUDED — every verb, exhaustively', () => {
+  it('★ A UNIT WHOSE VERB IS OFFERED IS ALWAYS INCLUDED — every verb, exhaustively', () => {
     // ══════════════════════════════════════════════════════════════════════════
     // THE ONE THAT MATTERS. Omitting a rule a member is about to act on is worse than the
     // ceiling ever was: it is refused for something it was never told, and a refusal costs it
     // one of four material actions (AGT-S2). So this does not sample — it walks every verb in
-    // the catalog and asserts that offering that verb ALONE, to a member with no venture, no
-    // grant and no Commons, pulls its section in.
+    // the catalog and asserts that offering that verb ALONE, to a member holding nothing,
+    // pulls its unit in, at grade RULES, with its section's preamble for company.
     //
-    // MUTATION: delete a verb from any section's `verbs`, or make `sectionIsNeeded` consult
-    // `standing` before the verb list, and this goes red naming the verb and the section.
+    // MUTATION: delete a verb from any unit's `verbs`, or make `unitGrade` consult `required`
+    // or `wanted` before the verb list, and this goes red naming the verb and the unit.
     // ══════════════════════════════════════════════════════════════════════════
     const doc = document();
-    for (const section of CONTRACT_CATALOG) {
-      for (const verb of section.verbs) {
-        const excerpt = excerptFor(doc, { ...NOTHING, verbs: new Set([verb]) });
+    for (const unit of CONTRACT_CATALOG) {
+      for (const verb of unit.verbs) {
+        const situation = offering(verb);
+        expect(unitGrade(unit, situation), `${verb} → ${unitName(unit)}`).toBe(
+          unit.floor === true ? 'FLOOR' : 'RULES',
+        );
+        const excerpt = excerptFor(doc, situation);
         expect(
-          excerpt.sections,
-          `'${verb}' is offered and ${section.heading} is its rules — a member refused for a ` +
-            'rule it was never given loses a real action, which is worse than a long prompt',
-        ).toContain(section.heading);
-        expect(sectionIsNeeded(section, { ...NOTHING, verbs: new Set([verb]) })).toBe(true);
+          excerpt.units,
+          `'${verb}' is offered and ${unitName(unit)} is its rules — a member refused for a rule ` +
+            'it was never given loses a real action, which is worse than a long prompt',
+        ).toContain(unitName(unit));
+        // And never in `dropped`: RULES does not consult the budget.
+        expect(excerpt.dropped.map((o) => o.heading)).not.toContain(unitName(unit));
       }
     }
   });
 
-  it('★ EVERY VERB THE ENGINE IMPLEMENTS HAS A HOME, in the catalog or named as absent', () => {
+  it('★ EVERY VERB THE ENGINE IMPLEMENTS NOW HAS READABLE RULES — none left unclaimed', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // The other half of the guarantee, and it is what makes the previous test complete rather
-    // than merely true: a verb missing from every `verbs` list would pass above (nothing to
-    // check) and ship with no rules at all.
+    // This assertion used to allow nine exceptions. `post_bond` (§11B), `form`/`apply`/`admit`/
+    // `approve` (§11C) and `yield`/`fight`/`join`/`demand` (§11D) had rules no cast member could
+    // read, because those three sections did not fit as whole `##` sections and lived in
+    // CONTRACT_NOT_EXCERPTED. Two test comments recorded it as costing "nothing"; the sign was
+    // wrong, since the house cast reads only the excerpt.
     //
-    // Nine live verbs' only home is a section the excerpt has NEVER carried — `post_bond`
-    // (§11B), `form`/`apply`/`admit`/`approve` (§11C), `yield`/`fight`/`join`/`demand` (§11D).
-    // That was silent until now and two test comments recorded it with a shrug. It is now
-    // counted here and named in every prompt. Read `CONTRACT_NOT_EXCERPTED` for why they do
-    // not fit and what closing it costs.
+    // `###` granularity closed it: §11B ships as 1,983 characters to a member offered
+    // `post_bond` rather than 8,491 to everybody. So the exception list is now EMPTY, and this
+    // asserts that rather than describing it — a tenth unreadable verb is a mechanic shipping
+    // with rules no player can read.
     //
     // Verbs come off the ENGINE, never a list retyped here (scar #1).
     // ══════════════════════════════════════════════════════════════════════════
     setSpeed('instant');
     const runtime = new Runtime({ seed: 'homes' });
-    const inCatalog = new Set(CONTRACT_CATALOG.flatMap((s) => [...s.verbs]));
-    const named = new Set(CONTRACT_NOT_EXCERPTED.flatMap((s) => [...s.verbs]));
-
-    const homeless = [...runtime.liveVerbs].filter((v) => !inCatalog.has(v) && !named.has(v));
+    const claimed = new Set(CONTRACT_CATALOG.flatMap((u) => [...u.verbs]));
+    const unreadable = [...runtime.liveVerbs].filter((v) => !claimed.has(v));
     expect(
-      homeless,
-      `these live verbs have no rules anywhere the cast can read and nothing says so: ` +
-        `${homeless.join(', ')}. Claim each one in CONTRACT_CATALOG (if its section is ` +
-        'excerpted) or in CONTRACT_NOT_EXCERPTED (if it is not, with the reason).',
+      unreadable,
+      `these live verbs have no rules the cast can read: ${unreadable.join(', ')}. Claim each in ` +
+        'CONTRACT_CATALOG against the `###` block that actually documents it.',
     ).toEqual([]);
-
-    // And the size of the hole is pinned, so it cannot grow quietly.
-    const unreadable = [...runtime.liveVerbs].filter((v) => !inCatalog.has(v));
-    expect(
-      unreadable.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-      'nine, and the same nine: a tenth means a new mechanic shipped with no rules the cast ' +
-        'can read, which is exactly the class of bug agent.md exists to prevent',
-    ).toEqual(['admit', 'apply', 'approve', 'demand', 'fight', 'form', 'join', 'post_bond', 'yield']);
+    // And nothing may be parked in the not-excerpted list as a verb's only home.
+    for (const outside of CONTRACT_NOT_EXCERPTED) {
+      expect(outside.verbs, `${outside.heading} is outside the excerpt and claims verbs`).toEqual([]);
+    }
   });
 
-  it('★ EVERY REACHABLE SELECTION FITS — the whole space, enumerated', () => {
+  it('★ EVERY DECLARED POSITION IS ENUMERATED, and the assertion names the position', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // This replaces "the one excerpt is under the bar" with "the whole selection space is",
-    // which is the only form of the assertion that is a guarantee. Three conditionals means
-    // eight reachable excerpts, and exhaustion is cheap.
+    // 2^28 over the units is neither enumerable nor the right space: most combinations are
+    // unreachable, and that is exactly what bit the `##` version — its worst "combination"
+    // paired §11 with the whole of §11B, which no principal can be in.
     //
-    // It is also the instrument for the NEXT section added to agent.md. The old assertion
-    // could only say "you are out of room"; this one names the combination, so the answer
-    // ("make it conditional on something the biggest combination does not have") is readable
-    // off the failure. Verified by mutation: adding §11D PREDATION as a conditional fails here
-    // with *"## 4. Work happens in ventures + ## 10. Granting authority is 38438 of 38000"* —
-    // 438 over, which is the number `CONTRACT_NOT_EXCERPTED` cites for why §11D is still out.
+    // Selection is MONOTONE (an extra verb or fact never removes a unit), so the worst excerpt
+    // over a set of wakes is the excerpt for the position that dominates them, and enumerating
+    // the maximal positions is exact. The coverage half — that these positions really do
+    // dominate what a live world produces — is the next test.
     // ══════════════════════════════════════════════════════════════════════════
     const doc = document();
     const bar = MAX_CONTRACT_CHARS * 0.95;
-    const conditionals = CONTRACT_CATALOG.filter((s) => !s.floor);
-    const sizes: { combination: string; chars: number }[] = [];
+    for (const position of CONTRACT_POSITIONS) {
+      const excerpt = excerptFor(doc, position.situation);
 
-    for (let mask = 0; mask < 1 << conditionals.length; mask += 1) {
-      const on = conditionals.filter((_, i) => (mask & (1 << i)) !== 0);
-      // Turned on through the VERB path, because that is the path with no escape hatch.
-      const verbs = new Set(on.map((s) => s.verbs[0] ?? ''));
-      const excerpt = excerptFor(doc, { ...NOTHING, verbs });
-      const combination = on.length === 0 ? '(floor only)' : on.map((s) => s.heading).join(' + ');
-      sizes.push({ combination, chars: excerpt.text.length });
+      // ── TRUE FOR EVERY POSITION, BUDGETED OR NOT ──────────────────────────
+      // Nothing FLOOR and nothing RULES is ever in `dropped`. That is the guarantee, and it is
+      // checked on the positions that OVERSHOOT as well — those are exactly where a
+      // length-driven drop would bite if the budget were allowed near the mandatory half.
+      for (const omission of excerpt.dropped) {
+        const unit = CONTRACT_CATALOG.find((u) => unitName(u) === omission.heading);
+        expect(unit, omission.heading).toBeDefined();
+        if (unit === undefined) continue;
+        expect(
+          unitGrade(unit, position.situation),
+          `${position.name} dropped ${omission.heading}, which is not CONTEXT`,
+        ).toBe('CONTEXT');
+      }
 
-      expect(
-        excerpt.dropped,
-        `${combination} overflowed and dropped ${excerpt.dropped.join(', ')} — a NEEDED ` +
-          'section was lost to length, which is the failure this whole mechanism exists to ' +
-          'prevent. Do not raise the ceiling: make the newest section conditional on ' +
-          'something this combination does not have.',
-      ).toEqual([]);
-      expect(
-        excerpt.text.length,
-        `${combination} is ${String(excerpt.text.length)} of ${String(bar)} — over the bar`,
-      ).toBeLessThan(bar);
+      if (position.budgeted) {
+        expect(
+          excerpt.text.length,
+          `${position.name} — ${String(excerpt.text.length)} of ${String(bar)}. Make the newest ` +
+            'block conditional on something this position does not have, or move it to `wanted`.',
+        ).toBeLessThan(bar);
+        expect(excerpt.overBudget, `${position.name} overran the ceiling`).toBe(false);
+      } else {
+        // ── AN OVERSHOOT IS ASSERTED TO BE HONEST, NOT ASSERTED AWAY ────────
+        // A fully-developed claimant needs 43,789 characters of rules it can be refused for not
+        // knowing, and no arrangement of blocks makes that 38,000. Asserting it fits would be
+        // the failure to fear here: a surface reporting something about itself that is not true.
+        // So instead — it overshoots, it SAYS it overshoots, and it carries everything needed.
+        expect(excerpt.overBudget, `${position.name} must declare its overshoot`).toBe(true);
+        expect(excerpt.text.length).toBeGreaterThan(MAX_CONTRACT_CHARS);
+      }
     }
-
-    // The floor is the same in all of them; only the conditionals move.
-    expect(sizes.length).toBe(2 ** conditionals.length);
-    const worst = sizes.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, `worst reachable selection: ${worst.combination}`).toBeLessThan(bar);
   });
 
-  it('a newcomer with no venture and no grant is not handed the venture or office rules', () => {
+  it('★ THE POSITIONS DOMINATE A REAL WORLD — swept, not assumed', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The budget above is only as good as the position list. A list that has gone stale would
+    // narrow what was checked and read green — the same shape as a predicate on a path
+    // `observe` does not use. So a real world is driven and every observed situation must be
+    // dominated by some declared position: its offered verbs a subset, its standing facts no
+    // stronger. A situation that escapes fails HERE, naming the member and the fact, and the
+    // fix is to widen the position and re-check the budget.
+    // ══════════════════════════════════════════════════════════════════════════
+    setSpeed('instant');
+    const seed = 'dominates';
+    const runtime = new Runtime({ seed });
+    const cast = new HeuristicCast(runtime, { size: 6 });
+    const members = cast.seat(seed);
     const doc = document();
-    const excerpt = excerptFor(doc, { ...NOTHING, inCommons: true, commonsBound: true });
-    expect(excerpt.sections).toContain('## 11. The Commons');
-    expect(excerpt.sections).not.toContain('## 4. Work happens in ventures');
-    expect(excerpt.sections).not.toContain('## 10. Granting authority');
-    // Never silently — each absence is named with its reason, and the reason is about the
-    // member's situation rather than about the world.
-    const left = excerpt.notThisWake.map((o) => o.heading);
-    expect(left).toContain('## 4. Work happens in ventures');
-    expect(left).toContain('## 10. Granting authority');
-    for (const omission of excerpt.notThisWake) expect(omission.because.length).toBeGreaterThan(20);
+
+    const dominates = (big: ContractSituation, small: ContractSituation): boolean => {
+      for (const verb of small.verbs) if (!big.verbs.has(verb)) return false;
+      const bits = [
+        'inCommons', 'commonsBound', 'outsideCommons', 'inVenture', 'holdsGrant',
+        'inSyndicate', 'holdsClaim', 'inArrears', 'anchorCold', 'underRaid',
+        'holdsWorks', 'canBuildWorks',
+      ] as const;
+      return bits.every((bit) => !small[bit] || big[bit]);
+    };
+
+    let worst = 0;
+    for (let i = 0; i < 240; i += 1) {
+      for (const action of cast.decide(runtime.engine.tick + 1, seed)) runtime.engine.submit(action);
+      const report = runtime.runTick();
+      expect(report.halted, `halted at ${String(report.tick)}`).toBe(false);
+      if (i % 12 !== 0) continue;
+      for (const member of members) {
+        const observation = buildObservation({
+          runtime,
+          principal: member.principal,
+          serverNowMs: 0,
+          fresh: true,
+          wakesRemaining: 16,
+          stale: false,
+          corrections: [],
+          actionsRemaining: 4,
+        });
+        const situation = readSituation(observation as unknown as Record<string, unknown>);
+        const covered = CONTRACT_POSITIONS.some((p) => dominates(p.situation, situation));
+        expect(
+          covered,
+          `no declared position dominates ${String(member.handle)} at tick ${String(runtime.engine.tick)}: ` +
+            `verbs=[${[...situation.verbs].join(',')}] claim=${String(situation.holdsClaim)} ` +
+            `raid=${String(situation.underRaid)} syndicate=${String(situation.inSyndicate)}`,
+        ).toBe(true);
+        const excerpt = excerptFor(doc, situation);
+        expect(excerpt.overBudget).toBe(false);
+        expect(excerpt.dropped, 'a real wake should not be squeezing out CONTEXT').toEqual([]);
+        worst = Math.max(worst, excerpt.text.length);
+      }
+    }
+    expect(worst, 'the sweep must actually have built excerpts').toBeGreaterThan(20_000);
+    expect(worst).toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
   });
 
-  it('a member whose holding has left the Commons is not handed §11, and is told why', () => {
+  it('★ THE TWO EXCLUSIONS THE NUMBERS REST ON ARE ENGINE-ENFORCED, not assumed', () => {
+    // The `##` version's arithmetic was wrong because it ASSUMED §11 and §11B were mutually
+    // exclusive, and they are not — a MARCHES member is offered `graduate` too. What IS true,
+    // and is enforced in `observe.ts` by `crossing.anchoring.length === 0`, is that a principal
+    // whose body anchors a claim is never offered the crossing. `CONTRACT_POSITIONS` depends on
+    // it, so it is asserted rather than believed.
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'exclusions' });
+    const cast = new HeuristicCast(runtime, { size: 4 });
+    const members = cast.seat('exclusions');
+    for (let i = 0; i < 60; i += 1) {
+      for (const a of cast.decide(runtime.engine.tick + 1, 'exclusions')) runtime.engine.submit(a);
+      runtime.runTick();
+      for (const member of members) {
+        const situation = readSituation(
+          buildObservation({
+            runtime,
+            principal: member.principal,
+            serverNowMs: 0,
+            fresh: true,
+            wakesRemaining: 16,
+            stale: false,
+            corrections: [],
+            actionsRemaining: 4,
+          }) as unknown as Record<string, unknown>,
+        );
+        if (situation.holdsClaim) {
+          expect(
+            situation.verbs.has('graduate'),
+            'a claim anchors the body, so the crossing must be withheld (INV-8)',
+          ).toBe(false);
+        }
+        if (situation.inCommons) {
+          // A8: hostile action in the Commons is INVALID, not merely rare.
+          expect(situation.underRaid, 'nothing may stand against a Commons holding').toBe(false);
+        }
+        expect(
+          situation.inCommons && situation.outsideCommons,
+          'a holding is in one tier',
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('a `###` block never ships without its section’s preamble, which carries the heading', () => {
+    // The heading lives in the preamble. A block emitted without it is prose with no name on
+    // it, and a member cannot tell which section a rule belongs to — nearer scar #1 than
+    // omitting the block. Structural in `excerptFor`, not a predicate, so it cannot be forgotten.
     const doc = document();
-    const excerpt = excerptFor(doc, { ...NOTHING, inVenture: true, holdsGrant: true });
-    expect(excerpt.sections).not.toContain('## 11. The Commons');
-    expect(excerpt.sections).toContain('## 4. Work happens in ventures');
-    expect(excerpt.sections).toContain('## 10. Granting authority');
-    expect(excerpt.notThisWake.find((o) => o.heading === '## 11. The Commons')?.because).toContain(
-      'left the Commons',
+    for (const unit of CONTRACT_CATALOG) {
+      if (unit.block === null) continue;
+      for (const verb of unit.verbs.length > 0 ? unit.verbs : ['__none__']) {
+        const excerpt = excerptFor(doc, offering(verb));
+        if (!excerpt.units.includes(unitName(unit))) continue;
+        expect(
+          excerpt.units,
+          `${unitName(unit)} shipped without ${unit.section}'s preamble`,
+        ).toContain(unit.section);
+        expect(excerpt.text, 'and the `##` heading itself must be in the text').toContain(unit.section);
+      }
+    }
+  });
+
+  it('keeps a section’s units CONTIGUOUS and in document order', () => {
+    // A `### Paying for it — the CHARGE` emitted three sections away from `## 11B.` is a rule
+    // with its framing removed.
+    const doc = document();
+    for (const position of CONTRACT_POSITIONS) {
+      const excerpt = excerptFor(doc, position.situation);
+      const sectionOf = (name: string): string => name.split(' › ')[0] ?? name;
+      const runs: string[] = [];
+      for (const name of excerpt.units) {
+        const section = sectionOf(name);
+        if (runs[runs.length - 1] !== section) runs.push(section);
+      }
+      expect(new Set(runs).size, `${position.name}: a section appears in two runs`).toBe(runs.length);
+      // And within each section, document order.
+      for (const section of excerpt.sections) {
+        const wanted = CONTRACT_CATALOG.filter(
+          (u) => u.section === section && excerpt.units.includes(unitName(u)),
+        ).map(unitName);
+        const got = excerpt.units.filter((n) => sectionOf(n) === section);
+        expect(got, `${position.name}: ${section} is out of document order`).toEqual(wanted);
+      }
+    }
+  });
+
+  it('★ A PARTIAL SECTION SAYS WHICH BLOCKS ARE MISSING, or it looks complete and is not', () => {
+    // The one real hazard of `###` granularity. `## 11B.` with two of its five blocks reads as
+    // a complete section, and that is worse than omitting §11B outright — unless the excerpt
+    // names the three that are absent and why. It does, unit by unit.
+    const doc = document();
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'partial' });
+    const cast = new HeuristicCast(runtime, { size: 1 });
+    const members = cast.seat('partial');
+    const character = charactersFor(members, 'partial').values().next().value;
+    if (character === undefined) throw new Error('no character');
+
+    // Offered `post_bond`, holds no claim: §11B ships two of five blocks.
+    const contract = excerptFor(doc, offering('post_bond'));
+    expect(contract.sections).toContain('## 11B. Sovereignty — territory you have to MAINTAIN');
+    expect(contract.units).toContain(
+      '## 11B. Sovereignty — territory you have to MAINTAIN › ### Taking one — `post_bond` then `build`',
     );
+    expect(contract.units).not.toContain(
+      '## 11B. Sovereignty — territory you have to MAINTAIN › ### Paying for it — the CHARGE',
+    );
+
+    const text = buildPrompt({
+      contract,
+      character,
+      observation: anObservation(),
+      memory: 'nothing',
+      liveVerbs: ['post_bond'],
+      planMax: 1,
+    })
+      .messages.map((m) => m.content)
+      .join('\n');
+
+    for (const omission of contract.notThisWake) {
+      expect(text, `${omission.heading} is absent and unnamed`).toContain(omission.heading);
+      expect(text).toContain(omission.because);
+    }
+    expect(text).toContain('NOT IN THIS EXCERPT');
+    expect(text).toContain('GET /compact/api/agent.md');
   });
 
-  it('the FLOOR is in every excerpt, whatever the situation', () => {
+  it('the FLOOR is in every excerpt, and is the identical prefix two members share', () => {
     const doc = document();
-    const floors = CONTRACT_CATALOG.filter((s) => s.floor).map((s) => s.heading);
-    for (const situation of [
-      NOTHING,
-      { ...NOTHING, inCommons: true },
-      { ...NOTHING, inVenture: true, holdsGrant: true },
-      EVERY_SITUATION,
-    ]) {
+    const floors = CONTRACT_CATALOG.filter((u) => u.floor === true).map(unitName);
+    for (const situation of [NO_SITUATION, ...CONTRACT_POSITIONS.map((p) => p.situation)]) {
       const excerpt = excerptFor(doc, situation);
-      for (const heading of floors) expect(excerpt.sections).toContain(heading);
+      for (const name of floors) expect(excerpt.units).toContain(name);
     }
-    // And the floor really is the identical prefix two different situations share, which is
-    // the answer to "selection breaks the cached prefix".
-    const a = excerptFor(doc, { ...NOTHING, inCommons: true }).text;
-    const b = excerptFor(doc, { ...NOTHING, inVenture: true }).text;
+    // FLOOR-only sections come first, so the front of the message is byte-identical whatever
+    // the situation. Weaker than at `##` granularity (11,527 rather than 20,976) because §8 and
+    // §11A now have variable tails — the price of the granularity, paid knowingly.
+    const a = excerptFor(doc, CONTRACT_POSITIONS[0]?.situation ?? NO_SITUATION).text;
+    const b = excerptFor(doc, CONTRACT_POSITIONS[3]?.situation ?? NO_SITUATION).text;
     let shared = 0;
     while (shared < a.length && shared < b.length && a[shared] === b[shared]) shared += 1;
-    expect(shared, 'the shared prefix must be the whole floor, not the first section').toBeGreaterThan(
-      20_000,
-    );
+    expect(shared, 'the shared prefix must be the whole FLOOR-only run').toBeGreaterThan(11_000);
   });
 
   it('is DETERMINISTIC — the same observation cuts the same excerpt, byte for byte', () => {
@@ -551,109 +752,275 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const first = excerptFor(doc, readSituation(observation as unknown as Record<string, unknown>));
     const second = excerptFor(doc, readSituation(observation as unknown as Record<string, unknown>));
     expect(second.text).toBe(first.text);
-    expect(second.sections).toEqual(first.sections);
+    expect(second.units).toEqual(first.units);
     expect(second.notThisWake).toEqual(first.notThisWake);
+    expect(second.dropped).toEqual(first.dropped);
   });
 
-  it('reads the situation off the REAL observation, at the paths observe actually uses', () => {
-    // `readSituation` looking in the wrong place is the failure mode that reads green forever:
-    // `situationalFocus` looked for a top-level `syndicates` key for its whole life, and
-    // `observe` nests it under `grants`, so that line never fired once in production.
-    const observation = anObservation();
-    const situation = readSituation(observation as unknown as Record<string, unknown>);
-    expect(situation.verbs.size, 'a seated member is offered something').toBeGreaterThan(0);
-    for (const affordance of observation.affordances) {
-      expect(situation.verbs).toContain(affordance.verb);
-    }
-    expect(situation.inCommons, 'enrolment seats in the Commons').toBe(true);
-    expect(situation.commonsBound).toBe(observation.holding['commons_bound']);
-  });
-
-  it('states every absence in the PROMPT, with the reason and where the rest lives', () => {
-    const doc = document();
-    setSpeed('instant');
-    const runtime = new Runtime({ seed: 'absence' });
-    const cast = new HeuristicCast(runtime, { size: 1 });
-    const members = cast.seat('absence');
-    const character = charactersFor(members, 'absence').values().next().value;
-    if (character === undefined) throw new Error('no character');
-
-    const contract = excerptFor(doc, { ...NOTHING, inCommons: true });
-    expect(contract.notThisWake.length).toBeGreaterThan(0);
-    const text = buildPrompt({
-      contract,
-      character,
-      observation: anObservation(),
-      memory: 'nothing',
-      liveVerbs: ['move'],
-      planMax: 1,
-    })
-      .messages.map((m) => m.content)
-      .join('\n');
-
-    expect(text).toContain('NOT IN THIS EXCERPT');
-    for (const omission of contract.notThisWake) {
-      expect(text, `${omission.heading} is absent and unnamed`).toContain(omission.heading);
-      expect(text).toContain(omission.because);
-    }
-    // The standing absences too — the nine verbs with no readable rules are disclosed rather
-    // than left to silence.
-    for (const omission of CONTRACT_NOT_EXCERPTED) expect(text).toContain(omission.heading);
-    // And how to get it.
-    expect(text).toContain('GET /compact/api/agent.md');
-  });
-
-  it('★ MEASURED, on a real world: the three wakes that matter, in characters', () => {
+  it('★ EVERY FIELD OF THE SITUATION FLIPS WHEN ITS REAL PATH CHANGES, and only then', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // Not a synthetic situation — `readSituation` over a real observation from a real seated
-    // world, so a predicate that reads a field `observe` does not publish cannot pass here.
+    // **THE FIRST VERSION OF THIS TEST WAS VACUOUS AND A MUTATION PROVED IT.**
     //
-    // Measured over 900 ticks × 12 members (1,548 wakes, `scripts/` throwaway): 43% of wakes
-    // are 32,664 and 57% are 37,902. The 57% is honest rather than a bug — this world offers
-    // `create`, `publish_offer` and `graduate` on essentially every wake, so §4 and §11 are
-    // genuinely needed, and §10 arrives with the first grant. **Selection bounds the typical
-    // excerpt; it cannot bound the maximum, because the maximum is the catalog.**
+    // The defect class is the one this change kept turning up: `situationalFocus` read a
+    // top-level `syndicates` key that `observe` nests under `grants`, so its §11C line never
+    // fired once in production, and its test passed because the FIXTURE matched the code instead
+    // of the engine. Twelve predicates is twelve chances to do it again.
+    //
+    // So I wrote `expect(situation.anchorCold).toBe(rows.some((r) => r['anchor_hot'] === false))`
+    // against a REAL observation — and changing the code to read `claim['anchorHot']` still broke
+    // nothing, because a fresh claim has a hot anchor and no arrears, so **both sides of the
+    // assertion were `false`**. An equality between two expressions that are both false in the
+    // only state the test can reach proves precisely nothing. Same for `inVenture`, `holdsGrant`,
+    // `inSyndicate`, `underRaid`, `holdsWorks` and `outsideCommons` — every field whose real
+    // value at tick 1 is `false`.
+    //
+    // The fix is to take the shape from the engine and the DISCRIMINATION from a flip: mutate the
+    // exact path `observe` publishes, and require the field to change. A predicate reading any
+    // other key cannot pass, because flipping the real key would leave it unmoved.
     // ══════════════════════════════════════════════════════════════════════════
-    const doc = document();
-    const bar = MAX_CONTRACT_CHARS * 0.95;
+    const observation = anObservation();
+    const base = readSituation(observation as unknown as Record<string, unknown>);
+    const holding = observation.holding as Record<string, unknown>;
+    const grants = observation.grants as Record<string, unknown>;
+    const obligations = observation.obligations as Record<string, unknown>;
+    const ventures = observation.ventures as Record<string, unknown>;
+    const works = holding['works'] as Record<string, unknown>;
 
-    const newcomer = excerptFor(doc, { ...NOTHING, inCommons: true, commonsBound: true });
-    const midGame = excerptFor(doc, {
-      ...NOTHING,
-      inCommons: true,
-      commonsBound: true,
-      inVenture: true,
-      verbs: new Set(['create', 'message', 'elect']),
-    });
-    const claimHolder = excerptFor(doc, {
-      ...NOTHING,
-      inVenture: true,
-      holdsGrant: true,
-      verbs: new Set(['create', 'build', 'post_bond', 'deliver']),
-    });
+    expect(base.verbs.size, 'a seated member is offered something').toBeGreaterThan(0);
+    for (const affordance of observation.affordances) expect(base.verbs).toContain(affordance.verb);
 
-    // Pinned, so a section added to agent.md moves a number here and somebody has to look.
-    expect(newcomer.text.length, 'newcomer: Commons, no venture, no grant').toBe(25_062);
-    expect(midGame.text.length, 'mid-game: Commons, in ventures, no grant').toBe(32_664);
-    expect(claimHolder.text.length, 'claim-holder: out of the Commons, ventures, holds a grant').toBe(
-      33_830,
-    );
+    // The nesting that was got wrong once, pinned against the engine.
+    expect(Object.keys(observation), '`syndicates` is NOT a top-level key').not.toContain('syndicates');
+    expect(Object.keys(grants), '`observe` nests it under the authority block').toContain('syndicates');
+    // And `holding.sovereignty` is NOT the claim indicator: its last branch returns "how to take
+    // one" to a graduated principal holding nothing. `obligations.charge` is `myClaims`.
+    expect(Object.keys(obligations)).toContain('charge');
 
-    for (const [name, excerpt] of [
-      ['newcomer', newcomer],
-      ['mid-game', midGame],
-      ['claim-holder', claimHolder],
-    ] as const) {
-      expect(excerpt.dropped, `${name} lost a section to length`).toEqual([]);
-      expect(excerpt.text.length, `${name} is over the bar`).toBeLessThan(bar);
+    /** Rebuild the observation with one real path changed, and read the situation off that. */
+    const flipped = (patch: Record<string, unknown>): ContractSituation =>
+      readSituation({ ...(observation as unknown as Record<string, unknown>), ...patch });
+
+    const claimRow = { arrears: 0, anchor_hot: true, owed: 4_000 };
+    const cases: readonly {
+      readonly field: keyof ContractSituation;
+      readonly to: boolean;
+      readonly patch: Record<string, unknown>;
+    }[] = [
+      { field: 'inCommons', to: false, patch: { holding: { ...holding, tier: 'MARCHES' } } },
+      { field: 'outsideCommons', to: true, patch: { holding: { ...holding, tier: 'MARCHES' } } },
+      { field: 'commonsBound', to: false, patch: { holding: { ...holding, commons_bound: false } } },
+      { field: 'inVenture', to: true, patch: { ventures: { ...ventures, mine: [{ venture: 'v1' }] } } },
+      { field: 'holdsGrant', to: true, patch: { grants: { ...grants, granted: [{ id: 'g1' }] } } },
+      { field: 'holdsGrant', to: true, patch: { grants: { ...grants, held: [{ id: 'g2' }] } } },
+      { field: 'inSyndicate', to: true, patch: { grants: { ...grants, syndicates: [{ id: 'syn:a:1' }] } } },
+      { field: 'holdsClaim', to: true, patch: { obligations: { ...obligations, charge: [claimRow] } } },
+      {
+        field: 'inArrears',
+        to: true,
+        patch: { obligations: { ...obligations, charge: [{ ...claimRow, arrears: 5_000 }] } },
+      },
+      {
+        field: 'anchorCold',
+        to: true,
+        patch: { obligations: { ...obligations, charge: [{ ...claimRow, anchor_hot: false }] } },
+      },
+      { field: 'underRaid', to: true, patch: { obligations: { ...obligations, raid: [{ raid: 'r1' }] } } },
+      { field: 'holdsWorks', to: true, patch: { holding: { ...holding, works: { ...works, held: [{}] } } } },
+      {
+        field: 'canBuildWorks',
+        to: false,
+        patch: { holding: { ...holding, works: { ...works, here: { affordable: false } } } },
+      },
+    ];
+
+    for (const { field, to, patch } of cases) {
+      // The flip must be a real change, or the case proves nothing — the exact trap above.
+      expect(base[field], `${String(field)} already reads ${String(to)}; this case is vacuous`).toBe(!to);
+      expect(
+        flipped(patch)[field],
+        `${String(field)} did not move when the path \`observe\` publishes for it changed — it is ` +
+          'reading somewhere else, and it will read false for every member for ever',
+      ).toBe(to);
     }
 
-    // The claim-holder is offered `post_bond`, whose only rules are §11B — and §11B has never
-    // been in the excerpt. The prompt has to say so rather than leave the member to find out
-    // by being refused. This is the gap, asserted, not described.
+    // Every field is covered. A new field with no case is a new unchecked path.
+    const covered = new Set(cases.map((c) => String(c.field)));
+    for (const field of Object.keys(base)) {
+      if (field === 'verbs') continue;
+      expect(covered, `${field} has no flip case, so its path is unverified`).toContain(field);
+    }
+
+    // ── AN ABSENT KEY IS "NO", NEVER AN ASSERTION ─────────────────────────────
+    // `readSituation` is handed partial observations (`relations.spec.ts` builds a two-key stub),
+    // and every field must read `false` from nothing. This is not decoration: writing
+    // `outsideCommons: tier !== 'COMMONS'` — which is equivalent to the real code on every REAL
+    // observation, and passed every case above — makes an observation with no `holding` read as
+    // *predation can reach you*, which ships §11D to a stub and states a fact that is not true.
+    // Caught only here, by mutation.
+    const nothing = readSituation({});
+    for (const [field, value] of Object.entries(nothing)) {
+      if (field === 'verbs') continue;
+      expect(value, `${field} read something out of an empty observation`).toBe(false);
+    }
+    expect(nothing.verbs.size).toBe(0);
+  });
+
+  it('★ THE CLAIM FIELDS ARE READ OFF A REAL CLAIM ROW, not off a world that has none', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS TEST EXISTS BECAUSE A MUTATION FOUND NOTHING.**
+    //
+    // Changing `anchorCold` to read `claim['anchorHot']` instead of `claim['anchor_hot']` broke
+    // no test at all. The predicate would have read `false` for every claimant for ever, so
+    // §11B's fuel block — the ONE rule in this game whose failure is otherwise silent, because a
+    // cold anchor takes no arrears, lapses nothing and slashes no bond — would never have been
+    // selected for the members it exists for.
+    //
+    // The check for it was already in the test above, and it was **vacuous**: it guarded on
+    // `if (claimKeys.size > 0)`, and the heuristic world never takes a claim, so the branch never
+    // ran. That is CLAUDE.md's "an invariant whose subject cannot occur" one level in — and it is
+    // the same shape as the adopted-boot reporting a confidently wrong divergence tick with a
+    // test that agreed with it.
+    //
+    // So this drives a world into actually holding a claim — `graduate`, `post_bond`, `build`
+    // ANCHOR, submitted straight into the engine — and reads the row `observe` really publishes.
+    // ══════════════════════════════════════════════════════════════════════════
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'claimant' });
+    const cast = new HeuristicCast(runtime, { size: 3 });
+    const members = cast.seat('claimant');
+    const me = members[0];
+    if (me === undefined) throw new Error('no member');
+
+    const observeMe = (): Observation =>
+      buildObservation({
+        runtime,
+        principal: me.principal,
+        serverNowMs: 0,
+        fresh: true,
+        wakesRemaining: 16,
+        stale: false,
+        corrections: [],
+        actionsRemaining: 4,
+      });
+    /** Take the affordance the engine is offering, so the path is the real one. */
+    const take = (verb: string, kind?: string): boolean => {
+      const offered = observeMe().affordances.find(
+        (a) => a.verb === verb && (kind === undefined || a.params['kind'] === kind),
+      );
+      if (offered === undefined) return false;
+      runtime.engine.submit({
+        principal: me.principal,
+        verb,
+        params: offered.params,
+        clientSequence: 1,
+        arrivalMs: 0,
+        decisionSource: 'HEURISTIC',
+      });
+      const report = runtime.runTick();
+      expect(report.halted, `halted taking ${verb}`).toBe(false);
+      return true;
+    };
+
+    expect(take('graduate'), '`graduate` must be offered to a funded newcomer').toBe(true);
+    expect(take('post_bond'), '`post_bond` must be offered once out of the Commons').toBe(true);
+    expect(take('build', 'ANCHOR'), '`build` ANCHOR must be offered with a bond posted').toBe(true);
+
+    const observation = observeMe();
+    const rows = (observation.obligations as Record<string, unknown>)['charge'] as Record<
+      string,
+      unknown
+    >[];
+    expect(rows.length, 'the whole point of this test is a REAL claim row').toBeGreaterThan(0);
+    const row = rows[0];
+    if (row === undefined) throw new Error('no claim row');
+
+    // The two field names the predicates depend on, asserted against the row the engine built.
+    expect(Object.keys(row), 'inArrears reads `arrears`').toContain('arrears');
+    expect(Object.keys(row), 'anchorCold reads `anchor_hot`').toContain('anchor_hot');
+
+    const situation = readSituation(observation as unknown as Record<string, unknown>);
+    expect(situation.holdsClaim, 'a claim was taken and holdsClaim says so').toBe(true);
+    // NOT `expect(situation.inArrears).toBe(rows.some(...))` — a fresh claim has no arrears and a
+    // hot anchor, so both sides are `false` and the equality proves nothing. That version passed a
+    // mutation that read `claim['anchorHot']`. The discriminating half is the flip test above;
+    // this test's job is the ROW SHAPE, which only a real claim can supply.
+    expect(situation.inArrears, 'a claim taken this tick is not yet in arrears').toBe(false);
+
+    // ── AND THE PAYOFF: THE CLAIMANT CAN READ THE RULES IT IS BILLED UNDER ──
+    // A5′. Before `###` granularity this was impossible for anybody: §11B was 8,491 characters
+    // and lived in CONTRACT_NOT_EXCERPTED, so `post_bond` was a verb with no readable rules.
+    const excerpt = excerptFor(document(), situation);
+    expect(excerpt.sections).toContain('## 11B. Sovereignty — territory you have to MAINTAIN');
+    expect(excerpt.text, 'the Charge rules reach the member the Charge bills').toContain(
+      '### Paying for it — the CHARGE',
+    );
+    expect(excerpt.dropped.map((o) => o.heading)).not.toContain(
+      '## 11B. Sovereignty — territory you have to MAINTAIN › ### Paying for it — the CHARGE',
+    );
+    // And the engine-enforced exclusion the position arithmetic rests on, on a REAL claimant.
     expect(
-      CONTRACT_NOT_EXCERPTED.find((s) => s.verbs.includes('post_bond'))?.heading,
-    ).toBe('## 11B. Sovereignty — territory you have to MAINTAIN');
+      situation.verbs.has('graduate'),
+      'a claim anchors the body, so the crossing must be withheld (INV-8)',
+    ).toBe(false);
+  });
+
+  it('a claimant is REQUIRED the Charge rules; a member with no claim is not', () => {
+    // M5 in the mutation sweep — making §11B's CHARGE block non-required — was caught only by
+    // the pinned size table, which says "a number moved" rather than "a claimant lost the rule
+    // it is billed under". This says the second thing.
+    const chargeBlock = CONTRACT_CATALOG.find(
+      (u) => u.block === '### Paying for it — the CHARGE',
+    );
+    expect(chargeBlock).toBeDefined();
+    if (chargeBlock === undefined) return;
+    expect(
+      unitGrade(chargeBlock, { ...NO_SITUATION, holdsClaim: true }),
+      'A5′: never a lapse against a claimant that was never shown what it owed',
+    ).toBe('RULES');
+    expect(unitGrade(chargeBlock, NO_SITUATION)).toBe('NO');
+
+    // Same for the two whose failure is silent or terminal.
+    for (const [block, fact] of [
+      ["### Keeping it COLLECTING — the anchor's fuel", 'anchorCold'],
+      ['### Losing it — arrears, the window, and two exits that beat a lapse', 'inArrears'],
+    ] as const) {
+      const unit = CONTRACT_CATALOG.find((u) => u.block === block);
+      expect(unit, block).toBeDefined();
+      if (unit === undefined) continue;
+      expect(unitGrade(unit, { ...NO_SITUATION, [fact]: true }), `${block} on ${fact}`).toBe('RULES');
+    }
+  });
+
+  it('★ MEASURED: what each position actually costs, in characters', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // Pinned, so a block added to agent.md moves a number here and somebody has to look. The
+    // last row is the analytic ceiling — every fact and every verb at once, which no principal
+    // can be, since a claim anchors the body and withholds the crossing.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
+    expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
+      30_998, // a newcomer on its first wake
+      34_922, // mid-game in the Commons
+      35_564, // about to take territory — and §11B is READABLE now, which it was not
+      43_789, // a claimant in trouble — overshoots, and says so
+      51_289, // the analytic ceiling, which no principal can occupy
+    ]);
+    // ── WHAT `###` GRANULARITY ACTUALLY BOUGHT, IN CHARACTERS ────────────────
+    //
+    // **Not headroom. Reachability, at roughly its own cost**, and that is worth writing down
+    // because the estimate that justified this change said 7,400 characters would come free.
+    //
+    // The old `##` catalog would have shipped the newcomer 32,646 (floor 20,976 + §4 + §11) and
+    // could not carry §11C at all; the new one ships 30,998 INCLUDING §11C's founding rules —
+    // 1,648 fewer characters carrying 1,672 more of newly-readable rules. For the member about
+    // to take territory the old number was the same 32,646 with **no §11B whatsoever**; the new
+    // one is 35,564 with it. So the freed space went into the nine verbs rather than into slack.
+    // That is what it was asked to do, and the budgeted positions now sit at 82–94% of the bar.
+    for (const [i, position] of CONTRACT_POSITIONS.entries()) {
+      if (!position.budgeted) continue;
+      expect(sizes[i] ?? 0, position.name).toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+    }
   });
 });
 
@@ -726,10 +1093,20 @@ describe('the contract stays whole and cached; the FOCUS is per-member', () => {
     expect(Object.keys(observation)).not.toContain('syndicates');
   });
 
-  it('MARKS a focus line whose section is not in this wake’s excerpt', () => {
-    // Pointing at §11B is right — the member does hold territory. Pointing at it as though it
-    // were in the rulebook the member was handed is not: §11B has never been excerpted. The
-    // marker is derived from the excerpt's own `sections`, so it cannot drift from what shipped.
+  it('MARKS a focus line whose section is not in this wake’s excerpt — and DOES NOT when it is', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // This test used to prove the marker on a CLAIMANT citing §11B, because §11B had never been
+    // excerpted for anybody. `###` granularity changed the answer: a claimant now gets §11B, so
+    // the honest version of this test is the pair — the marker fires for a member whose cited
+    // section really is absent, and does NOT fire for one whose is present. Asserting the old
+    // case would now be asserting that a claimant is denied the Charge rules.
+    //
+    // The remaining marker case is the line I had to fix: a graduated principal holding NOTHING
+    // still gets a non-null `holding.sovereignty` (the last branch of `sovereigntyStatementFor`
+    // returns "how to take one"), so it cites §11B — and §11B is not selected for it, because
+    // `post_bond` is not offered and it holds no claim. Right to point, wrong to imply it was
+    // handed the section.
+    // ══════════════════════════════════════════════════════════════════════════
     const doc = loadContractDocument();
     if (doc === null) throw new Error('no document');
     setSpeed('instant');
@@ -739,26 +1116,43 @@ describe('the contract stays whole and cached; the FOCUS is per-member', () => {
     const character = charactersFor(members, 'marker').values().next().value;
     if (character === undefined) throw new Error('no character');
 
-    const observation = {
+    const render = (observation: Observation): string => {
+      const contract = excerptFor(doc, readSituation(observation as unknown as Record<string, unknown>));
+      return buildPrompt({
+        contract,
+        character,
+        observation,
+        memory: 'nothing',
+        liveVerbs: ['move'],
+        planMax: 1,
+      })
+        .messages.map((m) => m.content)
+        .join('\n');
+    };
+
+    // ── ABSENT: graduated, holds nothing, offered no `post_bond`. §11B is cited, not given.
+    const landless = render({
+      ...anObservation(),
+      holding: { tier: 'MARCHES', sovereignty: 'a statement', commons_bound: false, works: { held: [] } },
+      obligations: { charge: [] },
+      affordances: [],
+    });
+    expect(landless).toMatch(/§11B Sovereignty — you hold NO territory[^\n]*NOT IN THIS EXCERPT/);
+
+    // ── PRESENT: a claimant. §11B IS in its excerpt now, so the marker must NOT appear — and
+    // the Charge rules must really be there, verbatim.
+    const claimant = render({
       ...anObservation(),
       holding: { tier: 'MARCHES', sovereignty: 'a statement', commons_bound: false, works: { held: [{}] } },
-      obligations: { charge: [{ owed: 4_000 }] },
-    } as unknown as Observation;
-    const contract = excerptFor(doc, readSituation(observation as unknown as Record<string, unknown>));
-    const text = buildPrompt({
-      contract,
-      character,
-      observation,
-      memory: 'nothing',
-      liveVerbs: ['move'],
-      planMax: 1,
-    })
-      .messages.map((m) => m.content)
-      .join('\n');
-
-    expect(text).toMatch(/§11B Sovereignty[^\n]*NOT IN THIS EXCERPT/);
+      obligations: { charge: [{ owed: 4_000, arrears: 0, anchor_hot: true }] },
+    });
+    expect(claimant).toContain('§11B Sovereignty — you hold territory that has to be MAINTAINED');
+    expect(claimant).not.toMatch(/§11B Sovereignty — you hold territory[^\n]*NOT IN THIS EXCERPT/);
+    expect(claimant, 'a claimant must be able to read the Charge it is billed under (A5′)').toContain(
+      '### Paying for it — the CHARGE',
+    );
     // §11A is floor, so its line is never marked.
-    expect(text).toMatch(/§11A WORKS — the only source of goods in this world\n/);
+    expect(claimant).toMatch(/§11A WORKS — the only source of goods in this world\n/);
   });
 
   it('every § a focus line cites resolves to a real section of agent.md', () => {
