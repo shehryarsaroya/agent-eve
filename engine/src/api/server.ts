@@ -1613,6 +1613,8 @@ export interface ServeOptions {
    * longer reproduces the record. Default null: hold the world instead.
    */
   readonly acceptDivergenceFromTick?: number | null;
+  /** Force a genesis replay, whatever the snapshot says. See {@link checkpointAdoptionDisabledFromEnv}. */
+  readonly disableCheckpointAdoption?: boolean;
 }
 
 export interface ServeResult {
@@ -2000,6 +2002,9 @@ async function bootTheWorld(
       seed,
       nowMs: () => clock.nowMs(),
       acceptDivergenceFromTick: options.acceptDivergenceFromTick ?? null,
+      ...(options.disableCheckpointAdoption === true
+        ? { checkpoint: { disabled: true } as const }
+        : {}),
       onEnrollment: (enrollment) => {
         const jwk = jwkFromBase64Url(enrollment.publicKey);
         if (jwk !== null) {
@@ -2146,6 +2151,45 @@ function storeFromEnv(options: ServeOptions, clock: Clock): JournalStore {
  * A malformed value is refused rather than coerced: `Number('yes')` is `NaN`, and a
  * door that silently opens on a typo is not a door.
  */
+/**
+ * **THE ADOPTION KILL SWITCH**, from `COMPACT_CHECKPOINT_ADOPTION=off`.
+ *
+ * Checkpoint adoption took the live world down the first time it was ever allowed to run. The rules
+ * gate had been refusing it on every boot since the world's first rules change (write-once
+ * `journal_meta.rules_version`), so the adopt path had **never executed in production** — and when
+ * it finally did, `hydrateLedgerForSnapshot` found a posting at tick 2830 against an escrow account
+ * the tick-4895 ledger capture no longer holds, because that escrow had long since closed. Correct
+ * fail-closed behaviour: the world HELD rather than serving a wrong record. But it HELD, and the
+ * only lever available was a manual `UPDATE snapshot SET rules_version = NULL` over SSH.
+ *
+ * An operator needs to be able to turn off a boot path without editing the database. `disabled` is
+ * the option `planCheckpoint` has always had; this just makes it reachable from the environment.
+ *
+ * Anything other than the exact string `off` leaves adoption ON, and a value that is neither `off`
+ * nor empty is reported rather than guessed — same discipline as the operator door above: a switch
+ * that silently flips on a typo is not a switch.
+ */
+function checkpointAdoptionDisabledFromEnv(): boolean {
+  const raw = process.env['COMPACT_CHECKPOINT_ADOPTION'];
+  if (raw === undefined || raw.trim().length === 0) return false;
+  const v = raw.trim().toLowerCase();
+  if (v === 'off') {
+    process.stderr.write(
+      'compact: ⚑ checkpoint adoption DISABLED by COMPACT_CHECKPOINT_ADOPTION=off. Every boot will ' +
+        'replay from genesis, which is O(history) and grows without bound. Correct while the adopt ' +
+        'path is known-broken; remove it once that is fixed, or restarts get slower forever.\n',
+    );
+    return true;
+  }
+  if (v !== 'on') {
+    process.stderr.write(
+      `compact: COMPACT_CHECKPOINT_ADOPTION='${raw}' is not 'on' or 'off'. Leaving adoption ON — ` +
+        'a kill switch that engages on a typo is worse than none.\n',
+    );
+  }
+  return false;
+}
+
 function acceptDivergenceFromEnv(): number | null {
   const raw = process.env['COMPACT_ACCEPT_DIVERGENCE_AT_TICK'];
   if (raw === undefined || raw.trim().length === 0) return null;
@@ -2176,6 +2220,7 @@ if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
     castSize: Number(process.env['COMPACT_CAST'] ?? '12'),
     framesDir: process.env['COMPACT_FRAMES_DIR'] ?? null,
     acceptDivergenceFromTick: acceptDivergenceFromEnv(),
+    disableCheckpointAdoption: checkpointAdoptionDisabledFromEnv(),
   });
   if (started.created === null) {
     // HELD. The socket is bound and answering 503 with the diagnosis; the process
