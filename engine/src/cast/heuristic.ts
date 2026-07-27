@@ -26,7 +26,7 @@
  */
 
 import { Rng } from '../core/rng.js';
-import { inFreeze, isSettlementTick } from '../core/time.js';
+import { inFreeze, isSettlementTick, TICKS_PER_RECKONING } from '../core/time.js';
 import type { PrincipalId, SystemId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
@@ -41,7 +41,7 @@ import {
   weightOf,
   type LevyRule,
 } from '../levy/index.js';
-import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
+import { IN_FULL, kindSpec, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
 import { REFINE_IN_QTY, YIELD_PER_TICK } from '../works/params.js';
@@ -53,9 +53,10 @@ import {
   route,
   tierOf,
 } from '../world/index.js';
-import { CLAIM_BOND_MINOR } from '../sovereignty/index.js';
+import { ANCHOR_QTY, chargeOf, CLAIM_BOND_MINOR } from '../sovereignty/index.js';
 import { WORKS_COST_MINOR } from '../works/params.js';
 import {
+  defaultTerms,
   DELIVERY_MEASURE,
   DELIVERY_VERB,
   ELECTABLE_VENTURE_STATES,
@@ -155,10 +156,38 @@ export interface CastOptions {
   readonly syndicateChanceBps?: number;
   /** Chance in 10 000 that a member leaves the Commons on a tick the crossing pays. */
   readonly graduateChanceBps?: number;
+  /** Chance in 10 000 that a member takes the ground it already works, on a tick it can. */
+  readonly claimChanceBps?: number;
 }
 
-/** Default appetite. *(calibrate)* — high enough that a day has ventures in it. */
-export const DEFAULT_CREATE_CHANCE_BPS = 2_000;
+/**
+ * Default appetite. *(calibrate)* — high enough that a day has ventures in it.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **RAISED FROM 2,000 THE DAY {@link HeuristicCast.canPromiseOneMore} LANDED, AND THE TWO GO
+ * TOGETHER.** This roll used to be the only brake on how many unsecured promises a member opened,
+ * so its value was doing two jobs: setting the pace of the board *and* standing in for solvency.
+ * With an A7 gate in front of `create` — a payer may not add to a book its appetite already fails to
+ * cover — solvency has its own answer, and at 2,000 the roll then became the binding constraint in
+ * the wrong direction: measured, the board thinned 22% (venture count 689 against 886) while the
+ * defaults it was supposed to be pacing had already been fixed by the gate.
+ *
+ * Doubling it restores the board without restoring the breaches, and the two numbers were chosen
+ * against each other rather than separately (4 seeds x 900 ticks x 8 members):
+ *
+ * | create bps | A7 gate | ventures | kept | broken |
+ * |---|---|---|---|---|
+ * | 2,000 | no | 1,123 | 124 | **78** |
+ * | 2,000 | yes | 689 | 156 | 30 |
+ * | **4,000** | **yes** | **905** | **172** | **16** |
+ * | 6,000 | yes | 1,063 | 168 | 24 |
+ *
+ * The middle row is the one that matters: the gate is what removes the defaults, and this constant
+ * is what pays for it. Six thousand is also defensible and buys a busier board for eight more
+ * breaches; four is where the world is closest to the one the corpus was measured on.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const DEFAULT_CREATE_CHANCE_BPS = 4_000;
 
 /**
  * Default appetite for handing out an office. *(calibrate)*
@@ -243,6 +272,63 @@ export const DEFAULT_GRADUATE_CHANCE_BPS = 1_200;
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const CAST_GRADUATE_RESERVE_MINOR = WORKS_COST_MINOR + CLAIM_BOND_MINOR;
+
+/**
+ * Default appetite for taking the ground under your own WORKS. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE LOWEST ROLL IN THE FILE, AND LOWER THAN THE CHARTER'S.** A claim is the only thing a
+ * member can acquire that bills it **forever**: `CHARGE_BY_TIER` every Reckoning, three
+ * consecutive misses and the claim lapses with `CLAIM_BOND_MINOR` slashed into a sink. A syndicate's
+ * charter is permanent but free to hold; territory is permanent *and* metered.
+ *
+ * It is also the only branch whose downside lands on the **public record**: an arrears is a
+ * published accusation and a lapse is a permanent one. A5 has no opt-out, so a cast that claimed
+ * eagerly would fill the record with breaches, and the breaches would be OURS rather than the
+ * agents' — which is the shape A5′ calls worse than a crash.
+ *
+ * Self-limiting three times over besides the roll: one claim per member, only on ground the member
+ * already works, and only where the arithmetic gate below clears. Measured at this rate a claim
+ * appears within the first Reckoning or two of a member's WORKS coming online, which is when the
+ * decision is actually available to it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const DEFAULT_CLAIM_CHANCE_BPS = 100;
+
+/**
+ * How many times over the ground must cover its own Charge before a member will take it.
+ * *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS IS THE BALANCE GATE, AND IT IS THE WHOLE REASON THE BRANCH IS SAFE.**
+ *
+ * Claiming destroys `ANCHOR_QTY` (5,000) of the good the Levy is payable in, locks
+ * `CLAIM_BOND_MINOR` (50,000) out of the free balance that keeps elective promises, and adds a
+ * recurring Charge **in the same good as the tribute**. Naively taken, that is three ways to make
+ * `levyShort` worse at once, and the Levy is already the meter §14.2 puts on screen as the headline.
+ *
+ * So the branch will not touch ground that does not pay for its own upkeep several times over. At
+ * `TICKS_PER_RECKONING = 288` and the published yields:
+ *
+ * | tier | occupants | share/tick | per Reckoning | Charge x 3 | takes it? |
+ * |---|---|---|---|---|---|
+ * | MARCHES | 1 (yours) | 110 | 31,680 | 12,000 | yes |
+ * | MARCHES | 2 | 55 | 15,840 | 12,000 | yes — and this is the tenanted case that pays RENT |
+ * | MARCHES | 3 | 36 | 10,368 | 12,000 | **no** |
+ * | FRONTIER | 1 | 150 | 43,200 | 21,000 | yes |
+ * | FRONTIER | 2 | 75 | 21,600 | 21,000 | yes, barely |
+ * | FRONTIER | 3 | 50 | 14,400 | 21,000 | **no** |
+ *
+ * Three rather than two so the margin also covers the tribute, and rather than four because four
+ * refuses the two-occupant MARCHES case — which is exactly the case where a claim collects rent
+ * from somebody, and a gate that only permitted claims on empty ground would produce
+ * `rent_to: null` forever, which is the defect this whole branch exists to end.
+ *
+ * The projection deliberately ignores the rent the claim would collect, so the gate is an
+ * **understatement**: income can only be better than it reads here.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_CLAIM_COVER_MULTIPLE = 3;
 
 /**
  * How much raw ore a cast member waits for before spending an action to refine. *(calibrate)*
@@ -370,36 +456,6 @@ export class HeuristicCast {
   }
 
   /**
-   * Does this member owe the world goods at a place **no hand of its can currently reach**?
-   *
-   * ══════════════════════════════════════════════════════════════════════════
-   * **MEASURED, AND IT IS THE WORST THING IN THE FILE: A MEMBER SAT ON 109,052 UNITS OF
-   * `ration`, OWED 19,304, AND WAS RECORDED SHORT.**
-   *
-   * Traced tick by tick on seed `gate-a`, Reckoning 2, member `thessaly`: all three hands
-   * `COMMITTED` from tick 600 to tick 863 — filled into roles at `sys-07` and `sys-21` — while its
-   * delivery place was `sys-01` and its stores climbed from 87,000 to 109,000. `levyMove` could
-   * neither deliver (no hand *at* the place) nor walk (no hand IDLE), so it returned `null` on all
-   * 264 ticks and the settlement swept what it could reach. Its tribute line rendered REVERSING:
-   * a seizure against a member that could have paid twenty times over.
-   *
-   * This is `D19`'s finding — *"the members who work most therefore act least; halcyon held three
-   * hands committed for 96% of all hand-ticks"* — with the Levy on the end of it, and it is
-   * **older than the crossing**: `graduate` only made it visible, because a Commons member's hands
-   * wander among four systems one of which IS the delivery place, so a committed hand was often
-   * standing on it by luck. Take the body out to the Marches and the luck runs out.
-   *
-   * The policy: **never commit your last free hand while a world obligation is out of reach.**
-   * Narrow on purpose — it reserves exactly ONE hand, only while something is genuinely owed, only
-   * while there is stock to pay it with, and only until a hand is standing there or walking there.
-   * A member with two idle hands still fills roles, which is §15.6's whole reason for the cast.
-   *
-   * One hand is enough for both obligations because `levyMove` runs before {@link chargeMove}: the
-   * reserved hand serves the tribute first and the Charge afterwards, which is the order the two
-   * deserve (the Levy's subject is every principal; a Charge's is one claim).
-   * ══════════════════════════════════════════════════════════════════════════
-   */
-  /**
    * The elective total this member has already **stated** it will pay, across everything open.
    *
    * ══════════════════════════════════════════════════════════════════════════
@@ -452,16 +508,116 @@ export class HeuristicCast {
     );
   }
 
-  private carriageNeeded(member: CastMember, tick: number): boolean {
+  /**
+   * Could this member honour **one more** unsecured promise of this shape, on top of its open ones?
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A7 APPLIED TO THE PAYER'S OWN SIDE, AND IT IS WHAT STOPS THE CAST MANUFACTURING DEFAULTS.**
+   *
+   * `electionFor` does not decline quietly. When its budget will not stretch it states the part it
+   * can cover — `minor(room)` — and a stated part below what is due is a `DECLINED` default at
+   * settlement, permanently, on the payer's record. So a payer that keeps opening ventures past its
+   * purse is not "over-committed", it is **generating public breaches on a schedule**, and every one
+   * of them is a breach *we* authored rather than an agent's decision.
+   *
+   * Attributed rather than assumed. With the territorial road open, every extra default in a
+   * 900-tick run was `DECLINED` and every one belonged to a member that had spent 50,000 on a
+   * crossing: `thessaly` 12, `vex` 10, `orrin` 5, and the two raiders that only ever posted a bond
+   * — capital LOCKED rather than spent — produced **none**. The mechanism is exact:
+   * {@link CAST_ELECTIVE_APPETITE_BPS} is a share of free stores, currency in this economy comes
+   * only from venture proceeds, and territory consumes currency while paying in goods. So a
+   * claimant is permanently poorer in the thing that keeps promises.
+   *
+   * The gate is the honest response and it belongs on `create` rather than on the crossing: the
+   * crossing is a one-off, and the promise it eventually breaks is the *next* one opened afterwards.
+   * A payer whose appetite already covers everything it has said may open another; one whose does
+   * not, waits for a settlement. Priced off `defaultTerms(kind, baseYield)` — the runtime's single
+   * pricing home, the same call the `create` affordance quotes `max_contingent_liability` from — so
+   * the bot cannot budget against a number the menu does not publish.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private canPromiseOneMore(member: CastMember, kind: VentureKind): boolean {
+    let elective = 0;
+    for (const t of defaultTerms(kind, kindSpec(kind).baseYieldMinor)) elective += t.elective;
+    const free = freeStores(this.runtime.ledger, member.principal);
+    const appetite = Math.trunc((free * CAST_ELECTIVE_APPETITE_BPS) / BPS_ONE);
+    // ── ROOM FOR *PART* OF IT, NOT ALL OF IT, AND THE HALF-MEASURE IS THE POINT ──
+    //
+    // `appetite >= stated + elective` was measured and over-corrected: `broken` fell to 30 and the
+    // venture count fell to 689 against HEAD's 886. The cast is *supposed* to promise more than it
+    // will certainly keep — that is what gives §7.6 a real answer rather than a rigged one, and
+    // `CAST_ELECTIVE_APPETITE_BPS`'s own note says so: *"at `BPS_ONE` every promise is honoured and
+    // the falsification test has a rigged answer."* A gate that made the cast solvent by
+    // construction would delete the mechanic it is here to feed.
+    //
+    return appetite >= this.statedElectiveOf(member) + elective;
+  }
+
+  /**
+   * How many hands this member must keep free for goods it owes the WORLD and cannot reach.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **MEASURED, AND IT WAS THE WORST THING IN THIS FILE: A MEMBER SAT ON 109,052 UNITS OF
+   * `ration`, OWED 19,304, AND WAS RECORDED SHORT.**
+   *
+   * Traced tick by tick on seed `gate-a`, Reckoning 2, member `thessaly`: all three hands
+   * `COMMITTED` from tick 600 to tick 863 — filled into roles at `sys-07` and `sys-21` — while its
+   * delivery place was `sys-01` and its stores climbed from 87,000 to 109,000. `levyMove` could
+   * neither deliver (no hand *at* the place) nor walk (no hand IDLE), so it returned `null` on all
+   * 264 ticks and the settlement swept what it could reach. Its tribute line rendered REVERSING:
+   * a seizure against a member that could have paid twenty times over.
+   *
+   * This is `D19`'s finding — *"the members who work most therefore act least; halcyon held three
+   * hands committed for 96% of all hand-ticks"* — with the Levy on the end of it, and it is
+   * **older than the crossing**: `graduate` only made it visible, because a Commons member's hands
+   * wander among four systems one of which IS the delivery place, so a committed hand was often
+   * standing on it by luck. Take the body out to the Marches and the luck runs out.
+   *
+   * The policy: **never commit your last free hand while a world obligation is out of reach.**
+   * Narrow on purpose — only while something is genuinely owed, only while there is stock to pay it
+   * with, and only until a hand is standing there or walking there.
+   *
+   * **It returns a COUNT, and the second one is the Charge's.** A tribute is payable at its
+   * constellation's named place and a Charge only at the claimed system, and for a member that has
+   * crossed those are two different systems — `graduate` moves a holding and leaves the hands where
+   * they were. One reserved hand cannot serve both: the aimless walk treats a hand on the delivery
+   * berth as stationed, so it stays there and the claim never gets a carrier. A principal with
+   * obligations in two places has to keep hands in two places, which is the logistics the mechanic
+   * is made of rather than an inconvenience in it. Capped at two by construction, so a member with
+   * three hands is never fully reserved.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private carriageNeeded(member: CastMember, tick: number): number {
     const runtime = this.runtime;
-    if (inFreeze(tick) || isSettlementTick(tick)) return false;
+    if (inFreeze(tick) || isSettlementTick(tick)) return 0;
+    let need = 0;
     const block = runtime.levyBlockFor(member.principal, tick);
-    if (block === null || block.shortfall_if_unpaid <= 0) return false;
-    // Nothing to carry is not the same problem, and reserving a hand would not fix it.
-    if (runtime.levyGoodAvailable(member.principal) <= 0) return false;
-    const place = block.deliverable_to;
-    if (carrierAt(runtime.world, member.principal, place, tick) !== null) return false;
-    return !handsOf(runtime.world, member.principal).some((h) => h.destination === place);
+    if (
+      block !== null &&
+      block.shortfall_if_unpaid > 0 &&
+      // Nothing to carry is not the same problem, and reserving a hand would not fix it.
+      runtime.levyGoodAvailable(member.principal) > 0 &&
+      !this.carriageUnderwayTo(member, block.deliverable_to, tick)
+    ) {
+      need += 1;
+    }
+    for (const claim of runtime.claimsFor(member.principal, tick)) {
+      if (claim.owed <= 0) continue;
+      // A Charge is payable ONLY in goods already standing at the claimed system, so a hand there
+      // with nothing to hand over is not what is missing and a reservation would not supply it.
+      if (claim.available_here <= 0) continue;
+      if (this.carriageUnderwayTo(member, claim.system, tick)) continue;
+      need += 1;
+      break;
+    }
+    return need;
+  }
+
+  /** Is a hand of this member standing at, or walking to, `place`? */
+  private carriageUnderwayTo(member: CastMember, place: SystemId, tick: number): boolean {
+    const world = this.runtime.world;
+    if (carrierAt(world, member.principal, place, tick) !== null) return true;
+    return handsOf(world, member.principal).some((h) => h.destination === place);
   }
 
   /**
@@ -626,6 +782,22 @@ export class HeuristicCast {
     const build = this.worksFor(member, tick, rng);
     if (build !== null) return { ...base, ...build };
 
+    // ── TAKE THE GROUND YOU ALREADY WORK ──────────────────────────────────────
+    //
+    // The third rung of one ladder — cross, work, own — and it is placed here for the reason D17
+    // gave for putting `build {WORKS}` high: a capital commitment that pays nothing for a
+    // Reckoning loses every action-budget contest to immediate income, so a branch sitting behind
+    // `fill_role` would inherit `claimLines: 0` and prove nothing about why. All three rungs are
+    // once-per-member with their own low rolls, so together they spend eight actions in 7,200 and
+    // cannot crowd anything out — measured: `build` fires 8 times in a 900-tick run of 8 members.
+    //
+    // It needs **no hand**, which is why it sits above every branch fronted by an idle hand: a
+    // claim is anchored by the body and paid for out of goods already standing under it. The
+    // member that works hardest has the fewest free hands and is exactly the member with the
+    // strongest case for owning its ground (D19, and the same argument the `grant` branch makes).
+    const ground = this.claimFor(member, tick, rng);
+    if (ground !== null) return { ...base, ...ground };
+
     // ── A6, END TO END: ACT ON AUTHORITY SOMEBODY HANDED YOU ──────────────────
     //
     // Placed AFTER the member's own elections, and that ordering is the whole ethic of the branch: you
@@ -728,7 +900,7 @@ export class HeuristicCast {
     // A subtraction rather than a separate branch, because the *decision* is not "walk a hand"
     // (that is `levyMove`'s, further down) — it is "do not spend this one". Those are different
     // acts and only the first costs an action.
-    const spendable = idle.length - (this.carriageNeeded(member, tick) ? 1 : 0);
+    const spendable = idle.length - this.carriageNeeded(member, tick);
 
     if (spendable > 0) {
       const slot = this.openSlotFor(member, tick);
@@ -748,7 +920,7 @@ export class HeuristicCast {
     const appetite = this.options.createChanceBps ?? DEFAULT_CREATE_CHANCE_BPS;
     if (idle.length > 0 && rng.chance(appetite, 10_000)) {
       const hand = idle[0];
-      if (hand !== undefined) {
+      if (hand !== undefined && this.canPromiseOneMore(member, CREATES[member.role])) {
         const kind = CREATES[member.role];
         return {
           ...base,
@@ -778,6 +950,29 @@ export class HeuristicCast {
     //     noise that looks like it.
     const paying = this.levyMove(member, tick);
     if (paying !== null) return { ...base, ...paying };
+
+    // ── SUPPLY THE CLAIM, OR LOSE IT AND THE BOND WITH IT ─────────────────────
+    //
+    // **After the Levy and not before it, deliberately, and the ordering is the balance gate in one
+    // line.** The Charge is by far the more consequential of the two — three consecutive misses end
+    // the claim and slash `CLAIM_BOND_MINOR` into a sink, where a tribute miss costs reduced Commons
+    // capacity, which `D23` #8 records the population pricing at zero. Prioritised on consequence
+    // alone the Charge would go first.
+    //
+    // It goes second because of what it is denominated in: the Charge and the Levy want the **same
+    // good**, `levyShort` is the meter §14.2 puts on screen as the headline and the one no single
+    // agent can lower, and the whole risk of making territory attractive is that the tribute pays
+    // for it. Paying the world first cannot starve the claim, because {@link claimFor} only takes
+    // ground that out-earns its own Charge threefold and only after checking the anchor is not being
+    // bought out of goods the tribute needs — so by the time a member holds a claim at all, both
+    // bills are covered by construction. Measured: `levyShort` is 0 on every gate seed with claims
+    // live and Charges paid.
+    //
+    // Two steps, the same shape `levyMove` uses: hand over what is standing there, or walk a hand
+    // to it. Partial payment counts (`CHARGE_STATEMENT`), so it hands over whatever it can rather
+    // than waiting to be able to clear the whole bill.
+    const supplying = this.chargeMove(member, tick);
+    if (supplying !== null) return { ...base, ...supplying };
 
     // ── A HAND STANDING WHERE YOUR TRIBUTE IS PAYABLE IS STATIONED, NOT IDLE ──
     //
@@ -1013,6 +1208,13 @@ export class HeuristicCast {
       // member that has spent its stores keeps fewer promises. All 25 of the extra defaults the
       // crossing produced were `DECLINED` and every one of them was a member that had crossed. A
       // wanderer is not a story; it is a bot buying gate fees with money it needed to keep its word.
+      //
+      // Re-measured once {@link HeuristicCast.canPromiseOneMore} landed, because that gate absorbed
+      // most of the defaults: deleting this line now costs the world its TENANTS rather than its
+      // solvency — `tenants 5 -> 1` and rent collected `31,350 -> 3,113` across the four gate seeds,
+      // because members that keep moving never settle next to each other. So the rule earns its place
+      // twice, and the second reason is the better one: territory is worth holding only if somebody
+      // else is standing on it.
       if (YIELD_PER_TICK[tierOf(runtime.world.map, to)] <= hereTier) continue;
       const share = runtime.worksQuote(member.principal, to).sharePerTick;
       if (share <= hereShare) continue;
@@ -1048,6 +1250,110 @@ export class HeuristicCast {
     const system = holdingOf(runtime.world, member.principal).system;
     if (!runtime.worksQuote(member.principal, system).affordable) return null;
     return { verb: 'build', params: { kind: 'WORKS', system } };
+  }
+
+  /**
+   * Post the bond, or raise the anchor, or null. **`claimLines: 0` was the whole finding.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ONE BRANCH FOR TWO VERBS, BECAUSE A BOND WITHOUT A CLAIM IS CAPITAL LOCKED FOR NOTHING.**
+   *
+   * `post_bond` and `build {ANCHOR}` are not two decisions. `claimRejection` refuses the anchor
+   * unless the bond is already posted, and a bond posted by a member that then never claims is
+   * 50,000 taken out of the balance that keeps its elective promises in exchange for nothing at
+   * all. So the same gate decides both and the branch emits whichever step is next: they are one
+   * act that costs two actions.
+   *
+   * ## The gate, and every clause of it is the balance gate
+   *
+   *   1. **One claim per member.** Self-limiting, like the WORKS and the charter. `requiredBondOf`
+   *      scales with claims held, so a second claim doubles the locked capital.
+   *   2. **Outside the Commons.** A Commons claim is INVALID rather than refused (A8) — asking
+   *      would be one refusal per tick forever, which is the AGT-S3 noise that buries real defects.
+   *   3. **On ground this member already WORKS, and works ONLINE.** The recurring Charge is funded
+   *      by income at that exact place, in the good the Charge is payable in once `refine` has run,
+   *      standing where the Charge requires it to stand. It is also, and not by coincidence, the
+   *      fuel rule: a FRONTIER claimant's own WORKS is the only thing that yields the `fuel` its
+   *      anchor burns, and `works/params.ts` states the consequence — *"a landlord that works its
+   *      own ground fuels itself; a pure rentier must buy fuel from the tenant it taxes."* Claim
+   *      where you work and the anchor is warm by construction; claim where you do not and it is
+   *      cold from the first Reckoning.
+   *   4. **{@link CAST_CLAIM_COVER_MULTIPLE}** — the place must out-earn its own Charge threefold.
+   *   5. **The anchor may not be paid out of goods the tribute needs.** Checked against
+   *      `levyGoodAvailable` minus `ANCHOR_QTY` against what is still owed tonight, so the one act
+   *      that destroys 5,000 units of the Levy's own good can never be the reason a tribute is
+   *      short. This is the clause that makes the branch answerable to §14.2's headline directly
+   *      rather than through a projection.
+   *   6. **The bond may not be locked out of money already promised** —
+   *      {@link canSpendWithoutBreakingAPromise}. A bond is not spent, but it leaves the *free*
+   *      balance, and `CAST_ELECTIVE_APPETITE_BPS` is a share of exactly that. Measured on the
+   *      crossing: unfunded capital commitments turn into `DECLINED` defaults on the public record.
+   *
+   * Everything the ENGINE decides is asked of the engine: `bondView` for the shortfall,
+   * `chargeGoodAt` for the anchor goods, `worksQuote` for the income, `chargeOf` for the bill.
+   * Nothing here recomputes a rule the affordance publishes (scar #5).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private claimFor(
+    member: CastMember,
+    tick: number,
+    rng: { chance(n: number, of: number): boolean },
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    if (!rng.chance(this.options.claimChanceBps ?? DEFAULT_CLAIM_CHANCE_BPS, 10_000)) return null;
+    if (runtime.sovereignty.claimsOf(member.principal).length > 0) return null;
+
+    const system = this.bodyOf(member);
+    const tier = tierOf(runtime.world.map, system);
+    if (tier === 'COMMONS') return null;
+    // Somebody else's ground. A takeover is a real move and it is deliberately NOT this branch's:
+    // it needs a CONTESTED incumbent, the published window, and the arrears inherited with it —
+    // §6.3's collapse arc, which belongs to an agent with a reason and not to a populator's roll.
+    if (runtime.sovereignty.liveAt(system) !== null) return null;
+
+    // Working it, and *online*: a WORKS inside its spin-up has produced nothing, so its income is
+    // a promise rather than a fact and the Charge it would fund is not yet fundable.
+    const mine = runtime.works
+      .liveAt(system)
+      .filter((w) => w.holder === member.principal && tick >= w.onlineAtTick);
+    if (mine.length === 0) return null;
+
+    const quote = runtime.worksQuote(member.principal, system);
+    const bill = chargeOf({ tier, misses: 0 });
+    if (quote.sharePerTick * TICKS_PER_RECKONING < bill * CAST_CLAIM_COVER_MULTIPLE) return null;
+
+    // ── THE TRIBUTE COMES FIRST, ALWAYS ──────────────────────────────────────
+    //
+    // `levyGoodAvailable` is location-blind exactly as the Levy's own reader is, so this asks the
+    // question the settlement will ask: after the anchor destroys `ANCHOR_QTY` of the good the
+    // tribute is payable in, is the tribute still covered?
+    //
+    // **Measured NOT to bind in an 8-to-20-member sim, and kept anyway.** Removing it moves nothing
+    // — `levyShort 0 · kept 172 · broken 16 · ventures 905 · claims 11`, identical to four decimal
+    // places — because a member that has crossed, built and waited out a spin-up is holding tens of
+    // thousands of units by the time it can claim at all. So this is a **property** today and not a
+    // behaviour, and that is written down rather than left to be discovered: an unexercised guard
+    // reads exactly like a missing one.
+    //
+    // It stays because the world it guards is the one the population is heading toward, not away
+    // from: the Commons crowds as the cast grows (`YIELD_PER_TICK` is divided, never multiplied), and
+    // the first member to reach a claim while genuinely short of ration is the first one whose anchor
+    // would be paid for out of its tribute. That breach would be the *cast's*, on a permanent public
+    // record with no opt-out — the one class of failure A5′ calls worse than a crash.
+    const owed = runtime.levyBlockFor(member.principal, tick)?.shortfall_if_unpaid ?? 0;
+    if (runtime.levyGoodAvailable(member.principal) - ANCHOR_QTY < owed) return null;
+
+    const bond = runtime.bondView(member.principal);
+    const shortfall = CLAIM_BOND_MINOR + bond.required - bond.posted;
+    if (shortfall > 0) {
+      if (freeStores(runtime.ledger, member.principal) < shortfall) return null;
+      if (!this.canSpendWithoutBreakingAPromise(member, shortfall)) return null;
+      return { verb: 'post_bond', params: { amount: shortfall } };
+    }
+    // The anchor's own price, asked with the SAME accessor the verb and the affordance use.
+    if (runtime.chargeGoodAt(member.principal, system) < ANCHOR_QTY) return null;
+    return { verb: 'build', params: { kind: 'ANCHOR', system } };
   }
 
   /**
@@ -1362,6 +1668,67 @@ export class HeuristicCast {
     // carries the measurement — one member in six could never pay a Levy it was fully assessed.
     if (!this.mayEnter(member, next)) return null;
     return { verb: 'move', params: { hand: hand.id, to: next } };
+  }
+
+  /**
+   * Hand goods over against a Charge, or walk a hand to the ground that owes it, or null.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **WITHOUT THIS BRANCH THE CLAIM BRANCH IS A MACHINE FOR LOSING BONDS.** Measured before it
+   * existed: 11 claims taken across four seeds and 8 still live — **three had LAPSED**, each one an
+   * arrears published three Reckonings running and 50,000 slashed. A5 has no opt-out, so those
+   * three would have stayed on the record forever, and they would have been the *cast's* breaches
+   * rather than any agent's decision — the shape A5′ calls worse than a crash.
+   *
+   * Everything the engine decides is read off `claimsFor`, which is the same `ClaimView` the
+   * observation publishes: `owed` (what settlement will bill), `available_here` (unpledged goods
+   * standing at the claimed system — location-strict, because the Charge is), and `hand_here`
+   * (presence, the field the acceptance test found missing when the affordance offered a delivery
+   * the engine refused). Nothing here recomputes any of the three.
+   *
+   * `hand_here` is why the walk exists at all: `graduate` moves a HOLDING and leaves the hands where
+   * they were, so a member that has just claimed has its body and its stores on the ground and every
+   * hand somewhere else. That is the ordinary state of a new claimant, not an edge case.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private chargeMove(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    // `claimsFor` is already in canonical system order, so one seed walks one sequence.
+    for (const claim of runtime.claimsFor(member.principal, tick)) {
+      if (claim.owed <= 0) continue;
+      // Goods must already be standing THERE. Nothing in this build moves goods between systems, so
+      // a claimant with an empty warehouse on its own ground cannot fix it this tick and asking
+      // would be a refusal it could have predicted (AGT-S3).
+      if (claim.available_here <= 0) continue;
+      if (claim.hand_here) {
+        return {
+          verb: 'deliver',
+          params: {
+            obligation: 'CHARGE',
+            system: claim.system,
+            // Partial payment counts and reduces what is owed, so hand over what is there rather
+            // than waiting to clear the whole bill — waiting is how a claim reaches its third miss
+            // holding goods.
+            amount: Math.min(claim.owed, claim.available_here),
+          },
+        };
+      }
+      const hands = handsOf(runtime.world, member.principal);
+      if (hands.some((h) => h.destination === claim.system)) continue;
+      const idle = hands.filter((h) => h.state === 'IDLE');
+      // The last idle hand, as `levyMove` takes: the role branches spend `idle[0]`.
+      const hand = idle[idle.length - 1];
+      if (hand === undefined) continue;
+      const next = route(runtime.world.map, hand.location, claim.system)?.path[1];
+      if (next === undefined) continue;
+      if (!this.mayEnter(member, next)) continue;
+      return { verb: 'move', params: { hand: hand.id, to: next } };
+    }
+    return null;
   }
 
   /**

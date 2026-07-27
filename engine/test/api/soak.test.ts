@@ -159,15 +159,31 @@ describe('PERF-8 — a day unattended, reconciling every tick', () => {
     // default somebody could change.
     const cast = new HeuristicCast(h.runtime, { size: 12 });
     cast.seat('ledger-bound');
+    let accepted = 0;
     for (let n = 0; n < 200; n += 1) {
       for (const action of cast.decide(h.runtime.engine.tick + 1, 'ledger-bound')) {
         h.runtime.engine.submit(action);
       }
-      h.runtime.runTick();
+      const report = h.runtime.runTick();
+      for (const entry of h.runtime.engine.log.forTick(report.tick)) {
+        if (entry.outcome !== 'REFUSED') accepted += 1;
+      }
     }
     expect(h.runtime.engine.log.ticks.length).toBeLessThanOrEqual(65);
-    // The event ledger is the product and grows on purpose — but it must grow only
-    // with events, not with refusals (scar #10).
-    expect(h.runtime.events.eventCount).toBeLessThanOrEqual(h.runtime.ventures.size * 4);
+    // ── THE EVENT LEDGER IS THE PRODUCT AND GROWS ON PURPOSE ─────────────────
+    //
+    // What it must never do is grow with REFUSALS (scar #10), and the bound has to be against the
+    // thing that legitimately drives it. This was `ventures.size * 4`, which read the venture count
+    // as a proxy for "how much happened" — true while a venture was the only thing that emitted a
+    // public row. It stopped being true the day the cast could cross the Commons and take ground:
+    // `holding.graduated`, `bond.posted`, `claim.taken` and `charge.delivered` are all published
+    // rows with no venture behind them, so the proxy failed at 77 events against a 60 bound while
+    // nothing had leaked.
+    //
+    // Bounded against ACCEPTED ACTIONS instead, which is the shape of scar #10 itself: a
+    // refusal-driven leak grows the ledger while this counter stays flat, and no legitimate
+    // mechanic can emit an unbounded number of rows per act.
+    expect(accepted).toBeGreaterThan(0);
+    expect(h.runtime.events.eventCount).toBeLessThanOrEqual((accepted + h.runtime.ventures.size) * 4);
   });
 });

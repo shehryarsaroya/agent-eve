@@ -76,7 +76,9 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'test/predation/observe.test.ts, wired.test.ts, presence.test.ts and a5prime.test.ts. Declared here ' +
     'rather than left failing, because a sweep that cannot construct a state is a limit of the sweep, ' +
     'and re-tuning it after every unrelated change (three times now: a grant branch, a build branch, a ' +
-    'Levy fix) is treating the fixture as the finding.',
+    'Levy fix) is treating the fixture as the finding. NOTE 2026-07-27: once the cast could leave the ' +
+    'Commons, a 900-tick world DID offer it while the 1,800-tick sweep still did not — which is what ' +
+    'forced both directions onto one shared sweep, because the pair was otherwise unsatisfiable.',
   trade: 'REACHABLE ELSEWHERE — needs a resting order on the local book. Covered by test/market/verb.test.ts.',
   withdraw: 'RESPONSE-ONLY — needs a syndicate membership to give notice on.',
   // `set_delivery_intent` USED TO LIVE HERE as the one HONEST GAP, and its removal is this list
@@ -85,46 +87,71 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
   // the check runs in both directions. See test/api/offline-path-is-expressible.test.ts.
 });
 
+/**
+ * The sweep, run **once** and shared by both directions of the reconciliation.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE TWO DIRECTIONS USED TO SWEEP DIFFERENT WORLDS, AND THAT MADE THEM CONTRADICTORY.**
+ *
+ * `agt-r5` (1,800 ticks) fed the "nothing live is unoffered" check and `agt-r5-rot` (900 ticks) fed
+ * the "no exception has gone stale" check. For any verb whose state is *narrow* — `join` needs a live
+ * raid the observer is not a side of, standing at its stage — the two worlds can disagree, and then
+ * the pair is unsatisfiable: keep the entry and the rot test calls it stale, remove it and the sweep
+ * test calls it undeclared. Exactly that happened the day the cast started leaving the Commons, and
+ * bodies began standing where raids happen: `join` offered in one world, absent in the other.
+ *
+ * The reconciliation is between the live verb set and **an** observation set, and it only means
+ * anything if both directions read the same one. So there is one sweep, memoised, and `UNOFFERED` is
+ * judged against it in both directions. That also makes the file's own standing rule enforceable —
+ * *"re-tuning the fixture after every unrelated change is treating the fixture as the finding"* —
+ * because there is now only one fixture to tune.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+let sweptOnce: { readonly offered: ReadonlySet<string>; readonly live: readonly string[] } | null = null;
+function sweep(): { readonly offered: ReadonlySet<string>; readonly live: readonly string[] } {
+  if (sweptOnce !== null) return sweptOnce;
+  setSpeed('instant');
+  const seed = 'agt-r5';
+  const rt = new Runtime({ seed });
+  const cast = new HeuristicCast(rt, { size: 8 });
+  cast.seat(seed);
+
+  const offered = new Set<string>();
+  // 1,800 ticks, not 900. `join` needs a LIVE RAID the observer is not already a side of — a real
+  // state with a narrow window, and whether the sweep lands inside one is incidental to what this
+  // test asserts. Two Reckonings of headroom rather than one, because the cast gained `grant`,
+  // `build` and `form` branches today and each shifted which ticks carry a raid; re-tuning the seed
+  // every time a branch lands is treating the symptom.
+  for (let i = 0; i < 1_800; i += 1) {
+    const target = rt.engine.tick + 1;
+    for (const a of cast.decide(target, seed)) rt.engine.submit(a);
+    const r = rt.runTick();
+    if (r.halted) throw new Error(`halted at ${String(r.tick)}`);
+    // Sample every fifth tick — EXCEPT while a raid is live, when sample every tick, because
+    // `join`'s window is a handful of ticks and a stride of 5 steps over it.
+    const raidLive = rt.raids.all().some((x) => x.state === 'DEMANDED');
+    if (!raidLive && i % 5 !== 0) continue;
+    for (const m of cast.roster) {
+      const o = buildObservation({
+        runtime: rt,
+        principal: m.principal,
+        serverNowMs: 0,
+        fresh: true,
+        wakesRemaining: 9,
+        stale: false,
+        corrections: [],
+        actionsRemaining: 4,
+      });
+      for (const a of o.affordances) offered.add(a.verb);
+    }
+  }
+  sweptOnce = { offered, live: [...rt.liveVerbs].sort(cmp) };
+  return sweptOnce;
+}
+
 describe('AGT-R5 — every live verb is offered somewhere, or declared with a reason', () => {
   it('sweeps a real world and reconciles the offered set against the live set', () => {
-    setSpeed('instant');
-    const seed = 'agt-r5';
-    const rt = new Runtime({ seed });
-    const cast = new HeuristicCast(rt, { size: 8 });
-    cast.seat(seed);
-
-    const offered = new Set<string>();
-    // 1,800 ticks, not 900. `join` needs a LIVE RAID the observer is not already a side of — a real
-    // state with a narrow window, and whether the sweep lands inside one is incidental to what this
-    // test asserts. Two Reckonings of headroom rather than one, because the cast gained `grant`,
-    // `build` and `form` branches today and each shifted which ticks carry a raid; re-tuning the seed
-    // every time a branch lands is treating the symptom, and adding `join` to UNOFFERED would be
-    // recording a reachable verb as unreachable to keep the suite quiet.
-    for (let i = 0; i < 1_800; i += 1) {
-      const target = rt.engine.tick + 1;
-      for (const a of cast.decide(target, seed)) rt.engine.submit(a);
-      const r = rt.runTick();
-      expect(r.halted, `halted at ${String(r.tick)}`).toBe(false);
-      // Sample every fifth tick — EXCEPT while a raid is live, when sample every tick, because
-      // `join`'s window is a handful of ticks and a stride of 5 steps over it.
-      const raidLive = rt.raids.all().some((x) => x.state === 'DEMANDED');
-      if (!raidLive && i % 5 !== 0) continue;
-      for (const m of cast.roster) {
-        const o = buildObservation({
-          runtime: rt,
-          principal: m.principal,
-          serverNowMs: 0,
-          fresh: true,
-          wakesRemaining: 9,
-          stale: false,
-          corrections: [],
-          actionsRemaining: 4,
-        });
-        for (const a of o.affordances) offered.add(a.verb);
-      }
-    }
-
-    const live = [...rt.liveVerbs].sort(cmp);
+    const { offered, live } = sweep();
     // Non-vacuity: a sweep that observed almost nothing would pass by accident.
     expect(live.length, 'the engine must have live verbs').toBeGreaterThan(20);
     expect(offered.size, 'the sweep must have seen a real menu').toBeGreaterThan(12);
@@ -144,31 +171,11 @@ describe('AGT-R5 — every live verb is offered somewhere, or declared with a re
     // The other direction. Without this, a verb that BECOMES offered keeps its exception forever and
     // the list slowly stops describing reality — the same drift `verbs.test.ts` caught when seven
     // live verbs still claimed to be waiting on a build step.
-    setSpeed('instant');
-    const seed = 'agt-r5-rot';
-    const rt = new Runtime({ seed });
-    const cast = new HeuristicCast(rt, { size: 8 });
-    cast.seat(seed);
-    const offered = new Set<string>();
-    for (let i = 0; i < 900; i += 1) {
-      const target = rt.engine.tick + 1;
-      for (const a of cast.decide(target, seed)) rt.engine.submit(a);
-      expect(rt.runTick().halted).toBe(false);
-      if (i % 5 !== 0) continue;
-      for (const m of cast.roster) {
-        const o = buildObservation({
-          runtime: rt,
-          principal: m.principal,
-          serverNowMs: 0,
-          fresh: true,
-          wakesRemaining: 9,
-          stale: false,
-          corrections: [],
-          actionsRemaining: 4,
-        });
-        for (const a of o.affordances) offered.add(a.verb);
-      }
-    }
+    //
+    // Against the SAME sweep the direction above uses. It had its own world (`agt-r5-rot`, 900
+    // ticks) and {@link sweep} carries the measurement of why that could not stand: two worlds can
+    // disagree about a narrow state, and then the pair of tests has no satisfying answer.
+    const { offered } = sweep();
     const stale = Object.keys(UNOFFERED).filter((v) => offered.has(v)).sort(cmp);
     expect(
       stale,
