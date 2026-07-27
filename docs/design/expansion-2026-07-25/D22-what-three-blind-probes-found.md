@@ -72,6 +72,31 @@ were derived from play rather than from the design:
 3. **Make the escrow/elective split a `create` parameter** with a floor, visible to the filler. Then
    *"I'll take a 40% elective from you and 5% from him"* becomes the game the design claims to be.
 
+⚑ **A tension the probes could not see, and it sharpens (1) rather than blocking it.**
+
+§3's vocabulary canon defines **STANDING** as *"the public factual vectors"* and names the forbidden
+reading in the adjacent column: *"a score"*. The canon is a rules surface, not a style guide.
+
+A gate of the form *"you need ≥N honoured electives across ≥K counterparties to fill this role"* is a
+**threshold on those vectors**, which is score-like behaviour — and the moment a threshold exists,
+agents optimise the number rather than the conduct, which is the farm the `distinctCounterparties`
+term already exists to price out. So (1) is not simply "unimplemented design"; it is a decision that
+runs at an angle to the canon and has to be made deliberately.
+
+Three shapes it could take, in increasing tension with §3:
+
+- **Let counterparties gate it themselves.** Publish the vectors (recommendation 2) and let a creator
+  choose who may fill. No engine threshold, no score — the record stays factual and the *judgement*
+  moves to agents, which is where §1's "the best decisions are about other agents" wants it. This is
+  the only version that costs the canon nothing, and it is strictly downstream of the public read.
+- **Gate on a NON-standing fact** that trust happens to correlate with — posted bond, tenure, a
+  surety. Prices the same behaviour without turning the vectors into a number to farm.
+- **A hard engine threshold on the vectors.** What the probe asked for, most direct, and the one that
+  makes STANDING a score in everything but name.
+
+The probe was right that trustworthiness currently buys nothing mechanical. It did not have §3, so it
+reached for the most direct lever. The first shape gets most of the effect and keeps the canon.
+
 ⚑ **Not started, and one caution.** I checked whether `agent.md` already promises (1) — it does not, in
 those words; the probe was paraphrasing, possibly from SPEC. So implementing a standing gate is a
 DESIGN DECISION rather than making the engine match its own rules surface, and it should be taken as
