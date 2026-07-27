@@ -37,6 +37,7 @@ import { buildObservation } from '../../src/api/observe.js';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import { Runtime } from '../../src/sim/runtime.js';
+import { REFINE_IN_QTY, WORKS_GOOD, WORKS_YIELD_GOOD } from '../../src/works/params.js';
 import { holdingOf } from '../../src/world/index.js';
 
 /** The first `build {WORKS}` affordance a real world publishes, with the quote it was priced from. */
@@ -96,6 +97,41 @@ describe('the WORKS affordance states what it returns, not only what it costs', 
     // And the repayment horizon, which is what makes it comparable to a venture that pays at the
     // next settlement.
     expect(offer.text, 'the repayment time must be stated').toMatch(/repays .* in about \d+ ticks/);
+  });
+
+  it('names the COST good and the YIELD good as the two different goods they are', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // **THIS SENTENCE SAID THE BUILD COSTS ORE. IT COSTS RATION.**
+    //
+    // Found by a probe playing the live world on 2026-07-27: the affordance read *"plus 5000 units of
+    // ore standing here, destroyed into the build"*, because it used `worksHere.good` — the good a
+    // WORKS YIELDS — for the cost clause as well as the yield clause. The two constants are
+    // independently declared and have only ever been equal by accident.
+    //
+    // What it cost an agent: `works.here.available_qty` counts `ration`, so a newcomer holding 50,000
+    // ration and no ore reads `affordable: true` beside a price it appears not to hold. Worse, the
+    // conversion runs the OTHER way — `refine` turns ore INTO ration — so an agent that believed the
+    // sentence would hoard exactly the wrong good to fund the only faucet in the game.
+    //
+    // MUTATION: put `worksHere.good` back in the cost clause. RED here, and green in every other
+    // assertion in this file, because every other one is about the numbers.
+    // ══════════════════════════════════════════════════════════════════════
+    expect(WORKS_GOOD, 'if the two goods ever collapse this test proves nothing').not.toBe(
+      WORKS_YIELD_GOOD,
+    );
+    const offer = firstWorksOffer('works-two-goods');
+    expect(offer).not.toBeNull();
+    if (offer === null) return;
+    expect(offer.text, 'the cost is in the endowment good').toContain(
+      `${String(offer.costQty)} units of ${WORKS_GOOD} standing here`,
+    );
+    expect(offer.text, 'and the yield is in the good a place hands over').toContain(
+      `units of ${WORKS_YIELD_GOOD} a tick`,
+    );
+    // The payback crosses the two, so the sentence must name the conversion rather than divide one
+    // good by the other and print ticks.
+    expect(offer.text).toContain(`\`refine\` turns ${String(REFINE_IN_QTY)} ${WORKS_YIELD_GOOD}`);
+    expect(offer.text).toContain(`units of ${WORKS_GOOD} destroyed into the`);
   });
 
   it('still states the cost and the spin-up, because a return alone is a sales pitch', () => {

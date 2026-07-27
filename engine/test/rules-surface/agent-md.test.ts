@@ -352,6 +352,36 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     expect(AGENT_MD).toContain('attaches to a CLAIM, not');
   });
 
+  it('names `briefing.corrections[]`, because a channel the manual omits does not exist', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // **THE DEFERRED-REFUSAL CHANNEL WAS BUILT, COMMENTED AT LENGTH, AND UNDOCUMENTED.**
+    //
+    // `observe.ts` carries a long note on why `corrections[]` lives under `briefing` and why the drain
+    // is tied to a wake, and `server.ts` carries another on a probe that "burned 62% of a Reckoning's
+    // wakes … then reported that refused actions produced no correction at all". **A probe reproduced
+    // that report on 2026-07-27 from the opposite cause**: it read `agent.md`, found no mention of
+    // `corrections` anywhere in the document, looked for a top-level key, found none, and concluded
+    // the engine had accepted two `create`s and silently dropped them. The `action_log` said
+    // `accepted=false, reject_reason=PROP-V5` for both, and `briefing.corrections[]` was carrying two
+    // exemplary hints — naming the band, the reason and a copyable alternative — to a field the
+    // manual never named.
+    //
+    // So this is the same defect as an accessor with no observation and a verb with no affordance,
+    // one layer further out: the surface exists and the reader cannot find it. An agent that cannot
+    // find its verdicts is the *confidently wrong* failure, which `server.ts` already calls the worse
+    // one — "a stuck agent retries; a confidently-wrong agent makes commitments".
+    //
+    // MUTATION: delete the §13 subsection. RED here, and green in every engine test, because the
+    // channel keeps working perfectly while nobody knows where to look.
+    // ══════════════════════════════════════════════════════════════════════
+    expect(AGENT_MD, 'the field, by its exact path').toContain('`briefing.corrections[]`');
+    expect(AGENT_MD, 'that `accepted` is not `done`').toMatch(/`accepted`\s*\n?means QUEUED|means QUEUED/);
+    expect(AGENT_MD, 'that a poll does not deliver it').toContain('A wake drains it, a poll does not');
+    // And the falsification instruction, which is what makes the channel auditable by its readers:
+    // an accepted no-op with no verdict is a bug, and the manual has to say so or nobody reports it.
+    expect(AGENT_MD).toContain('accepted no-op with no verdict');
+  });
+
   it('is self-contained: it does not send the player somewhere else to learn the rules', () => {
     // High Water verified that three tester agents played from one document with
     // zero extra reading. That property is worth keeping, and it is easy to lose

@@ -1870,7 +1870,19 @@ function affordancesFor(
         `It costs ` +
         `${String(worksHere.costMinor)} of your unlocked balance (pledged stores do not count toward ` +
         `it; your starter stake does, because the money is destroyed rather than paid to anyone) plus ` +
-        `${String(worksHere.costQty)} units of ${worksHere.good} standing here, destroyed into the build. ` +
+        // ── THE COST GOOD IS NOT THE YIELD GOOD, AND THIS SENTENCE SAID IT WAS ──
+        //
+        // `WORKS_GOOD`, not `worksHere.good`. This read "plus 5000 units of ORE standing here" while a
+        // build consumes `ration` — found by a probe playing the live world on 2026-07-27, on the same
+        // sentence and for the same reason `worksQuote.good` was corrected the day before: ONE field
+        // was being used for two goods that had only ever been equal by accident.
+        //
+        // What it cost an agent: `works.here.available_qty` counts `ration` and the affordance named
+        // `ore`, so a newcomer holding 50,000 ration and no ore reads `affordable: true` beside a
+        // price it appears not to hold, and an agent that believes the sentence hoards the wrong good
+        // — while `refine` runs the other way (ore INTO ration), so hoarding ore to fund a build is
+        // exactly backwards. Scar #1: two surfaces, one word, each coherent alone.
+        `${String(worksHere.costQty)} units of ${WORKS_GOOD} standing here, destroyed into the build. ` +
         `It extracts nothing for ${String(worksHere.spinupTicks)} ticks, so a WORKS raised just before a ` +
         'Reckoning does not help you pay it, and one raised where a raid is coming may never pay for ' +
         'itself. This is the only way goods enter the world: everything you owe consumes them. ' +
@@ -1894,10 +1906,22 @@ function affordancesFor(
         // they are read.
         (worksHere.sharePerTick <= 0
           ? 'At this crowding it would extract nothing, so there is no payback to quote.'
-          : `WHAT IT RETURNS: about ${String(worksHere.sharePerTick * TICKS_PER_RECKONING)} units of ` +
-            `${worksHere.good} every Reckoning once online, which repays the ` +
-            `${String(worksHere.costQty)} units destroyed into the build in about ` +
-            `${String(Math.ceil(worksHere.costQty / worksHere.sharePerTick) + worksHere.spinupTicks)} ` +
+          : // ── AND THE PAYBACK CROSSES TWO GOODS, SO IT NAMES THE CONVERSION ─────
+            //
+            // The return is in `WORKS_YIELD_GOOD` and the cost is in `WORKS_GOOD`, so "repays the
+            // 5,000 units" was dividing one good by another and printing the answer as a number of
+            // ticks. It happens to be right at today's 1:1 recipe and would go silently wrong the
+            // moment `refine` stopped being lossless — so the ratio is IN the arithmetic and named in
+            // the sentence, rather than assumed by both.
+            `WHAT IT RETURNS: about ${String(worksHere.sharePerTick * TICKS_PER_RECKONING)} units of ` +
+            `${worksHere.good} every Reckoning once online, and \`refine\` turns ` +
+            `${String(REFINE_IN_QTY)} ${worksHere.good} into ${String(REFINE_OUT_QTY)} ${WORKS_GOOD} — ` +
+            `so it repays the ${String(worksHere.costQty)} units of ${WORKS_GOOD} destroyed into the ` +
+            `build in about ` +
+            `${String(
+              Math.ceil((worksHere.costQty * REFINE_IN_QTY) / REFINE_OUT_QTY / worksHere.sharePerTick) +
+                worksHere.spinupTicks,
+            )} ` +
             `ticks. Compare that with what one venture pays you at the next settlement: the venture ` +
             `pays sooner and the WORKS pays forever, and nothing else in this game makes goods at all.`),
       expires_tick: tick + QUOTE_PIN_TICKS,

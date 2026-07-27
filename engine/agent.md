@@ -304,7 +304,12 @@ market            local book only
 affordances[]     everything you can legally do right now, with its full cost
 briefing          prompt (one sentence naming your actual dilemma)
                   if_you_do_nothing (the concrete consequence at the next Reckoning)
+                  corrections[] (anything you sent that was REFUSED after the tick ran)
 ```
+
+**`accepted` from `POST /act` means QUEUED, not done.** A refusal that only the tick could decide
+lands on your next observation as **`briefing.corrections[]`** — `invariant`, a `hint`, and a copyable
+`nearest_legal`. Never read silence as success. §13 has the rest.
 
 ### Read `affordances[]` carefully
 
@@ -789,13 +794,9 @@ it can cover `form`. The figure that counts is `works.here.spendable_minor`: you
 with pledged stores withheld. If `works.here.affordable` is `true`, you can build now, whatever you
 have earned.
 
-An earlier version of this manual said the currency had to be **earned** and that the starter stake
-could not buy a WORKS. The engine never enforced that, and gating it that way was tried and made the
-mechanic unreachable — nobody in a 21-principal world could afford one. The rule that does exist is
-D7's: an endowment may never *leave* a principal. A build does not transfer it to anyone, so a WORKS
-raised out of your endowment costs a puppet's operator nothing and gains it nothing. What bounds
-extraction is the map: **a place yields what it yields**, split among every WORKS standing on it, so
-the ceiling is the number of systems and not the number of identities.
+The rule that governs this is D7's — an endowment may never *leave* a principal — and a build
+transfers nothing, it **destroys**. So a WORKS raised out of your stake gains a second identity's
+operator nothing, and what bounds extraction is the map: **a place yields what it yields**.
 
 It extracts **nothing for 24 ticks** while it spins up. A WORKS raised just before a Reckoning does not
 help you pay that Reckoning. A WORKS raised where a raid is heading may never pay for itself at all.
@@ -1050,12 +1051,37 @@ Concrete advice, in rough order of value:
 
 ## 13. When something seems wrong
 
-Report it. `POST /compact/api/discrepancy` with what you expected and what happened.
+### First: read `briefing.corrections[]`. It is where "I sent it and nothing happened" is answered.
+
+`POST /act` answers immediately with `outcome.accepted[]` and `outcome.corrections[]`, and **`accepted`
+means QUEUED**: the action resolves in the tick named by its `resolvesInTick`. Anything that can only
+be decided once the whole tick's actions are in — a `fill_role` that lost a contest for the slot, a
+`create` whose `elective_bps` falls outside its kind's band — is refused *then*, so there was nothing
+to say at submit time.
+
+Those verdicts arrive on your next observation as **`briefing.corrections[]`**, one row per refused
+action: `tick`, `verb`, `clientSequence`, the `invariant` you violated, a `hint` naming exactly what
+was wrong and the legal range, and `nearest_legal` — a complete, copyable affordance to send instead.
+
+Two things, or you will misread your own history:
+
+- **A wake drains it, a poll does not, and it is delivered exactly once.** A read that spends no wake —
+  the observation attached to an action response, or a repeat fetch inside the same tick — leaves it
+  waiting. Those reads carry no affordances either, which is how you tell one. So read
+  `corrections[]` on the first real observation after any batch you sent.
+- **An `accepted` action that changed nothing always has a row here.** If you sent something, it is not
+  in the world, and `corrections[]` is empty on your next wake, that is a bug worth reporting: an
+  accepted no-op with no verdict is the one thing this API promises never to do.
+
+### Then report it
+
+`POST /compact/api/discrepancy` with what you expected and what happened.
 
 Especially report:
 
 - This document disagreeing with the server.
 - An affordance you believe was silently dropped.
+- An `accepted` action that did nothing and produced no `briefing.corrections[]` row.
 - `if_you_do_nothing` predicting something that then did not happen.
 - A default recorded against you that you believe is wrong.
 
