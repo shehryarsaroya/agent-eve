@@ -45,7 +45,7 @@ import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
 import { REFINE_IN_QTY } from '../works/params.js';
-import { handsOf, holdingOf, route, tierOf } from '../world/index.js';
+import { handsOf, holdingOf, principalIsCommonsBound, route, tierOf } from '../world/index.js';
 import {
   DELIVERY_MEASURE,
   DELIVERY_VERB,
@@ -232,6 +232,54 @@ export class HeuristicCast {
 
   get roster(): readonly CastMember[] {
     return this.members;
+  }
+
+  /**
+   * Where this member's BODY stands right now — **not where it was seated.**
+   *
+   * `graduate` is the only verb that moves a holding, and until it had a caller these two were
+   * the same system for the cast's whole life, so `member.seat` was a safe stand-in for both.
+   * It is not one any more: `seat` is a `readonly` field recorded once, so a member that has
+   * crossed keeps it forever and every rule derived from it — which tier its hands may walk,
+   * which system it would work, which ground it could claim — would go on answering for a
+   * place the member left.
+   */
+  private bodyOf(member: CastMember): SystemId {
+    const world = this.runtime.world;
+    if (world.holdingByPrincipal.get(member.principal) === undefined) return member.seat;
+    return holdingOf(world, member.principal).system;
+  }
+
+  /**
+   * May one of this member's hands legally enter `system`? **The engine's rule, read live.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE CAST WAS ASKING A DIFFERENT QUESTION AND GETTING A REAL ANSWER WRONG.**
+   *
+   * `world/movement.ts:commonsBoundRejection` pins a principal's hands inside the Commons
+   * *only while its holding stands there*, and it never refuses a hand coming back **in** — the
+   * safe zone's outbound bind and its inbound floor are deliberately different rules, and that
+   * file says so.
+   *
+   * `levyMove` instead refused any hop whose tier differed from `tierOf(map, member.seat)`. The
+   * launch map's constellation 1 is **mixed**: `sys-01`..`04` are COMMONS and `sys-05`..`07`
+   * are MARCHES, and `levy/place.ts` puts the delivery place at *"the lowest-id COMMONS system
+   * in the constellation"* — `sys-01`. So a MARCHES-seated member in constellation 1 could
+   * never walk to the one place its Levy is payable at. Not because the engine refused it: the
+   * move is legal. The cast's own guard refused the only legal route, so the member was
+   * assessed in full every Reckoning and delivered nothing, forever.
+   *
+   * Measured on seed `gate-b`, 900 ticks, 8 members: `brannock`, a raider seated at `sys-05`,
+   * all three hands parked at `sys-07`, delivery place `sys-01`, `deliver` count zero, and its
+   * tribute line the only one in the world not quiet. Roughly one member in six is seated
+   * there, so this has been quietly inflating `levyShort` in every sweep the project has run.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private mayEnter(member: CastMember, system: SystemId): boolean {
+    const world = this.runtime.world;
+    if (world.holdingByPrincipal.get(member.principal) === undefined) return false;
+    if (!principalIsCommonsBound(world, member.principal)) return true;
+    return tierOf(world.map, system) === 'COMMONS';
   }
 
   /**
@@ -515,9 +563,17 @@ export class HeuristicCast {
       if (hand !== undefined) {
         const system = runtime.world.map.systems.get(hand.location);
         if (system !== undefined && system.lanes.length > 0) {
-          // Stay in the tier it was seated in: a Commons-bound principal may only
+          // Stay in the tier its BODY stands in: a Commons-bound principal may only
           // move between Commons systems (A15), and a refused move is a wasted bot.
-          const home = tierOf(runtime.world.map, member.seat);
+          //
+          // Off the holding, never `member.seat` — see {@link bodyOf}. Identical for every
+          // member that has not crossed, which is why this is not a behaviour change on its
+          // own; it is what keeps the aimless walk aimed at the right tier after one does.
+          // Kept as a tier filter rather than {@link mayEnter} on purpose: `mayEnter` is the
+          // engine's rule and would let a raider wander into the Commons, where every `RAID`
+          // it then created would be refused by the floor — one refusal per tick, which is
+          // exactly the AGT-S3 noise the whole file is arranged to avoid.
+          const home = tierOf(runtime.world.map, this.bodyOf(member));
           const legal = [...system.lanes]
             .filter((lane) => tierOf(runtime.world.map, lane) === home)
             .sort(compareIds);
@@ -953,11 +1009,15 @@ export class HeuristicCast {
     const path = route(runtime.world.map, hand.location, place);
     const next = path?.path[1];
     if (next === undefined) return null;
-    // Stay inside the tier this member was seated in: a Commons-bound principal may only
-    // move between Commons systems (A15), and the delivery place is chosen to be reachable
-    // (`levy/place.ts`) — so a route leaving the tier means the route is not this
-    // principal's to take, and the refusal would be a wasted bot every tick.
-    if (tierOf(runtime.world.map, next) !== tierOf(runtime.world.map, member.seat)) return null;
+    // ── THE ENGINE'S RULE, NOT A TIER COMPARISON AGAINST A STALE FIELD ────────
+    //
+    // This read `tierOf(map, next) !== tierOf(map, member.seat)` and refused on a mismatch,
+    // reasoning that the delivery place is always reachable so a route leaving the tier could
+    // not be this principal's to take. The reasoning was sound and the premise was false:
+    // constellation 1 is mixed, its delivery place is a COMMONS system, and a MARCHES-seated
+    // member's only legal route to it leaves the tier on the first hop. {@link mayEnter}
+    // carries the measurement — one member in six could never pay a Levy it was fully assessed.
+    if (!this.mayEnter(member, next)) return null;
     return { verb: 'move', params: { hand: hand.id, to: next } };
   }
 
