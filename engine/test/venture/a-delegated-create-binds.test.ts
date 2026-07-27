@@ -35,6 +35,7 @@ import { storesAccount } from '../../src/ledger/index.js';
 import {
   GRANT_IS_CONSENT,
   activate,
+  bindingNote,
   boundAtFormation,
   countersign,
   createVenture,
@@ -275,6 +276,38 @@ describe('a delegate binds its grantor through the real verb', () => {
     expect(v.countersigned.has(w.grantor)).toBe(true);
     // And the delegate is NOT a signatory — it acted, it is not a party.
     expect(v.countersigned.has(w.delegate)).toBe(false);
+
+    // ── AND IT IS ON THE PERMANENT RECORD, WHICH IS THE HALF THAT MATTERS ────
+    //
+    // A6's signature moment is *"a grant used against you through an entirely legitimate act"*, and
+    // the replay has to be able to point at the act. A state field with no receipt is a binding the
+    // record cannot explain, and §14's receipt reel is read back from these rows — not from state.
+    const formed = w.runtime.events
+      .transcript(`venture::${v.id}`, w.runtime.engine.tick, { kind: 'VIEWER' })
+      .filter((row) => row.event.kind === 'venture.formed');
+    expect(formed).toHaveLength(1);
+    expect(formed[0]?.event.payload['boundByGrant']).toBe(id);
+    expect(formed[0]?.event.payload['boundNote']).toBe(
+      bindingNote({ creator: w.grantor, delegate: w.delegate, grant: id }),
+    );
+    expect(formed[0]?.event.onBehalfOfPrincipalId).toBe(w.grantor);
+    expect(formed[0]?.event.actorPrincipalId).toBe(w.delegate);
+  });
+
+  it('and a SELF create writes no binding onto the record, so the receipt cannot over-claim', () => {
+    // The other direction of A5′: a row saying "bound under a grant" about a venture its creator
+    // signed itself is the record being wrong about who decided, which is the column other agents
+    // read to price a counterparty.
+    const w = world('bind-receipt-self');
+    expect(act(w.runtime, w.grantor, 'create', { stage: w.stage, kind: 'HAUL', value: 12_000 })).toBeNull();
+    const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
+    if (v === undefined) throw new Error('no venture');
+    const formed = w.runtime.events
+      .transcript(`venture::${v.id}`, w.runtime.engine.tick, { kind: 'VIEWER' })
+      .filter((row) => row.event.kind === 'venture.formed');
+    expect(formed).toHaveLength(1);
+    expect(formed[0]?.event.payload['boundByGrant']).toBeUndefined();
+    expect(formed[0]?.event.payload['boundNote']).toBeUndefined();
   });
 
   it('★ the venture goes LIVE while the grantor never sends a single request', () => {
