@@ -1,12 +1,19 @@
-# D19 — The board is thin because filling beats creating
+# D19 — The board is thin because most of the cast is idle
 
-*2026-07-26. The `AGT-E2` probe found one seller and an empty board 8 times in 14 polls. I wrote two
-candidate explanations into the brief and said one poll would separate them. It did, and the answer is
-the same mechanism as D17 one verb over.*
+*2026-07-26. The `AGT-E2` probe found one seller and an empty board 8 times in 14 polls. This file
+records two wrong answers and the right one, in the order I reached them, because the sequence is the
+useful part.*
+
+> ⚑ **READ §"THE MECHANISM ABOVE IS REFUTED" FIRST.** The filename and the first three sections say the
+> cause is branch ordering — `create` losing to `fill_role`. **That is wrong**, and it was killed by the
+> confirmation step the same document proposed. The cause is that five of eight cast members barely act
+> at all. The wrong reasoning is kept in place rather than deleted because it was a *plausible* wrong
+> answer that a measurement refuted in four minutes, and the next person to look at cast behaviour will
+> have the same instinct. The filename is left alone so the commit trail stays resolvable.
 
 ---
 
-## The two candidates, and which one it is
+## First wrong answer, and the one that was right to reject
 
 **(a) The newcomer's vantage.** A fresh principal is Commons-bound, so if the board is filtered toward
 what the reader could fill, a newcomer sees an empty board by construction and "one seller" is an
@@ -27,7 +34,7 @@ So filtering is not the cause — every seated member sees rows whenever venture
 of eight members ever created one**, and that is the thin supply the probe was reading. The empty
 boards correspond to moments with too few live FORMING ventures, not to rows being hidden.
 
-## The mechanism, and it is the one D17 named
+## Second wrong answer: the mechanism I thought I had found (refuted below)
 
 `heuristic.ts` decides in this order:
 
