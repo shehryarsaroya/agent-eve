@@ -248,7 +248,21 @@ export const CONTRACT_NOT_EXCERPTED: readonly {
   {
     heading: '## 11D. PREDATION — two kinds, and only one of them has a name',
     because: 'it does not fit; `obligations.raid` carries each demand with its deadline and the cost of every branch',
-    verbs: ['yield', 'fight', 'join', 'demand'],
+    // ── `engage` JOINS THE FOUR, AND IT HAS NO SECTION AT ALL YET ──────────────
+    //
+    // §9A's combat layer landed after this table did, and its rules text is **not in
+    // `agent.md`** — it was written and deliberately not committed there, because §11D is
+    // already over the excerpt bar and the `###`-granularity work that will make room for it
+    // owns that file. So `engage` is claimed here rather than in the catalog: the honest
+    // statement is that its rules live nowhere a member can read yet, and the guard exists
+    // precisely so that cannot be silent.
+    //
+    // What stands in for the section meanwhile is the affordance itself. `combat/view.ts`
+    // builds `what_it_forecloses` as a **paragraph**, naming the hull's EHP, its alpha, its
+    // role tags, its capacitor endurance, the hostile hull count, the withdrawal threshold and
+    // the fact that a committed hull can be destroyed permanently. That is more than §11D
+    // gives the four verbs above it, and it arrives on every wake where the act is legal.
+    verbs: ['yield', 'fight', 'join', 'demand', 'engage'],
   },
   {
     heading: '## 13. When something seems wrong',

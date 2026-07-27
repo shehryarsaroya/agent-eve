@@ -421,11 +421,23 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // than merely true: a verb missing from every `verbs` list would pass above (nothing to
     // check) and ship with no rules at all.
     //
-    // Nine live verbs' only home is a section the excerpt has NEVER carried — `post_bond`
-    // (§11B), `form`/`apply`/`admit`/`approve` (§11C), `yield`/`fight`/`join`/`demand` (§11D).
-    // That was silent until now and two test comments recorded it with a shrug. It is now
-    // counted here and named in every prompt. Read `CONTRACT_NOT_EXCERPTED` for why they do
-    // not fit and what closing it costs.
+    // TEN live verbs' only home is a section the excerpt has NEVER carried — `post_bond`
+    // (§11B), `form`/`apply`/`admit`/`approve` (§11C), `yield`/`fight`/`join`/`demand`/`engage`
+    // (§11D). That was silent until this guard landed, and two test comments recorded it with a
+    // shrug. It is now counted here and named in every prompt. Read `CONTRACT_NOT_EXCERPTED` for
+    // why they do not fit and what closing it costs.
+    //
+    // **It went from nine to ten on 2026-07-27, and this test is what said so.** §9A's combat
+    // layer added `engage`, and its rules text was written and deliberately NOT committed to
+    // `agent.md`: §11D is already 438 characters over the bar, and the `###`-granularity work
+    // that will make room for it owns that file. So the tenth entry is the honest statement of
+    // the hole rather than a hole that grew quietly — which is exactly what this assertion is
+    // for, and it fired on the first run.
+    //
+    // What stands in meanwhile: `combat/view.ts` builds `what_it_forecloses` as a paragraph
+    // naming the hull's EHP, alpha, role tags, capacitor endurance, the hostile hull count, the
+    // withdrawal threshold and the permanence of the loss. That is more than §11D gives the four
+    // verbs above `engage`, and it arrives on every wake the act is legal on.
     //
     // Verbs come off the ENGINE, never a list retyped here (scar #1).
     // ══════════════════════════════════════════════════════════════════════════
@@ -446,9 +458,21 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const unreadable = [...runtime.liveVerbs].filter((v) => !inCatalog.has(v));
     expect(
       unreadable.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-      'nine, and the same nine: a tenth means a new mechanic shipped with no rules the cast ' +
-        'can read, which is exactly the class of bug agent.md exists to prevent',
-    ).toEqual(['admit', 'apply', 'approve', 'demand', 'fight', 'form', 'join', 'post_bond', 'yield']);
+      'ten, and the same ten: an eleventh means a new mechanic shipped with no rules the cast ' +
+        'can read, which is exactly the class of bug agent.md exists to prevent. It went nine → ten ' +
+        'for §9A and the reason is written above; do not add to it without one.',
+    ).toEqual([
+      'admit',
+      'apply',
+      'approve',
+      'demand',
+      'engage',
+      'fight',
+      'form',
+      'join',
+      'post_bond',
+      'yield',
+    ]);
   });
 
   it('★ EVERY REACHABLE SELECTION FITS — the whole space, enumerated', () => {
@@ -633,10 +657,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     });
 
     // Pinned, so a section added to agent.md moves a number here and somebody has to look.
-    expect(newcomer.text.length, 'newcomer: Commons, no venture, no grant').toBe(25_062);
-    expect(midGame.text.length, 'mid-game: Commons, in ventures, no grant').toBe(32_664);
+    //
+    // 25,062 → 25,063 on 2026-07-27, and somebody looked: §9A's verb swap replaced `flee†` with
+    // `engage` in §7's verb table, which is one character longer and is FLOOR. That is the whole
+    // delta. `engage`'s own rules text is deliberately NOT in agent.md — §11D is already over the
+    // excerpt bar — so it is claimed in `CONTRACT_NOT_EXCERPTED` instead, and contributes nothing
+    // to any excerpt. If this number ever moves by more than a handful, a section landed.
+    expect(newcomer.text.length, 'newcomer: Commons, no venture, no grant').toBe(25_063);
+    expect(midGame.text.length, 'mid-game: Commons, in ventures, no grant').toBe(32_665);
     expect(claimHolder.text.length, 'claim-holder: out of the Commons, ventures, holds a grant').toBe(
-      33_830,
+      33_831,
     );
 
     for (const [name, excerpt] of [
