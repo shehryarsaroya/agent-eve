@@ -7137,12 +7137,31 @@ export class Runtime {
     return {
       system,
       tier,
-      good: WORKS_GOOD,
+      // ── THE GOOD A WORKS *YIELDS*, NOT THE ONE IT COSTS ─────────────────────
+      //
+      // This said `WORKS_GOOD` — the good the build CONSUMES — while a WORKS now yields
+      // `WORKS_YIELD_GOOD`. Two blind probes hit it independently: the affordance read "yields 80
+      // units of RATION a tick… returns about 23,040 units of RATION every Reckoning", so an agent
+      // plans its Levy off that figure and arrives at the Reckoning holding ORE, which settles nothing.
+      // One of them named it exactly: scar #1 reproduced — engine and agent-facing text disagreeing
+      // about one word, each individually coherent.
+      //
+      // `costQty`/`availableQty` below are the COST side and stay in `WORKS_GOOD`
+      // (`chargeGoodAt` measures that good). The two were only ever equal by accident.
+      good: WORKS_YIELD_GOOD,
       yieldPerTick: YIELD_PER_TICK[tier],
       occupants,
-      // Divided by the occupants THIS BUILD WOULD MAKE, not by today's count. Quoting the
-      // pre-arrival share overstates the return of every build into a crowded place.
-      sharePerTick: Math.trunc(YIELD_PER_TICK[tier] / (occupants + 1)),
+      // ── DIVIDED BY THE OCCUPANTS THIS BUILD WOULD MAKE — UNLESS YOU ALREADY HOLD ONE ──
+      //
+      // `occupants + 1` is right for a PROSPECTIVE build: quoting the pre-arrival share overstates the
+      // return of every build into a crowded place. It is wrong once you already hold one, and both
+      // probes caught it: sole occupant of a COMMONS system taking the full 80, quoted 40 (and with a
+      // second occupant, taking 40 and quoted 26). `agent.md` calls this "what YOURS would take,
+      // counting itself" and "the number that decides whether the build pays for itself", so an agent
+      // budgeting off it under-plans its income by a third.
+      sharePerTick: Math.trunc(
+        YIELD_PER_TICK[tier] / (this.worksBook.ofPrincipal(principal).length > 0 ? Math.max(1, occupants) : occupants + 1),
+      ),
       costMinor: WORKS_COST_MINOR,
       costQty: WORKS_BUILD_QTY,
       freeMinor: free,
