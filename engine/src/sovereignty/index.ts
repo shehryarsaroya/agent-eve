@@ -183,10 +183,12 @@ export {
   CHARGE_QUORUM_BPS,
   CHARGE_STATEMENT,
   CLAIM_BOND_MINOR,
+  CLAIM_RENT_BPS,
   MAX_CHARGE_BALLOTS,
   MAX_CLAIM_LINES,
   MAX_CLAIMS,
   SOVEREIGNTY_RETAINED_RECKONINGS,
+  RENT_STATEMENT,
   SOVEREIGNTY_STATEMENT,
   SovereigntyScheduleError,
   VULNERABILITY_WINDOW,
@@ -217,4 +219,5 @@ export {
   type ClaimDoNothing,
   type ClaimView,
   type ClaimViewPort,
+  type RentRead,
 } from './view.js';

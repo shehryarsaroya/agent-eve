@@ -35,7 +35,7 @@
 import type { CanonicalValue } from '../core/canonical.js';
 import { reckoningIndex } from '../core/time.js';
 import type { ClaimState, ConstellationId, PrincipalId, SystemId } from '../core/types.js';
-import { minor, qty, type Minor, type Qty } from '../core/units.js';
+import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
   readArray,
@@ -46,6 +46,7 @@ import {
   type StateTable,
 } from '../tick/snapshot.js';
 import {
+  CLAIM_RENT_BPS,
   MAX_CHARGE_BALLOTS,
   MAX_CLAIMS,
   SOVEREIGNTY_RETAINED_RECKONINGS,
@@ -109,6 +110,25 @@ export interface ClaimRecord {
   readonly takenAtTick: number;
   /** Units of {@link import('./params.js').CHARGE_GOOD} destroyed to raise the anchor. */
   readonly anchorQty: Qty;
+  /**
+   * The share of extraction at this system the claimant takes, in bps. **A term, not a knob.**
+   *
+   * Pinned on the record rather than read from {@link import('./params.js').CLAIM_RENT_BPS} at
+   * collection time, and the two reasons are different in kind:
+   *
+   *   - **A tenant read this rate before it spent 60,000 raising a WORKS here.** A rate that
+   *     could move under a standing structure — because the constant changed, or because the
+   *     claim changed hands — would make `worksQuote`'s published return a number the engine
+   *     later disagreed with, which is scar #1 with the agent's capital on the end of it. A
+   *     takeover therefore inherits the rate along with the arrears.
+   *   - **Replay.** The rate is an input to a value-moving event every tick. A constant read
+   *     live would make `(snapshot, action_log, seed) → snapshot` depend on the engine version
+   *     rather than on the log, and the divergence would appear at the first extraction after
+   *     any tuning pass.
+   *
+   * `readonly`, so nothing in the engine can raise it on a sitting tenant by accident.
+   */
+  readonly rentBps: Bps;
   /** The lock the claim's bond requirement is satisfied out of. Slashed on lapse. */
   bondEncumbranceId: string | null;
   state: ClaimState;
@@ -730,6 +750,7 @@ export class Book {
         epoch: c.epoch,
         takenAtTick: c.takenAtTick,
         anchorQty: c.anchorQty,
+        rentBps: c.rentBps,
         bondEncumbranceId: c.bondEncumbranceId,
         state: c.state,
         endedAtReckoning: c.endedAtReckoning,
@@ -843,6 +864,12 @@ export class Book {
         epoch: readInt(o, 'epoch', where),
         takenAtTick: readInt(o, 'takenAtTick', where),
         anchorQty: qty(readInt(o, 'anchorQty', where)),
+        // Tolerant on ONE field and for one reason: a snapshot written before the rent landed
+        // has no rate on its claims, and the only honest answer for a claim raised under the
+        // old rules is the published rate. Strictness here would refuse to restore the live
+        // world across the deploy that introduces the field, which is a worse failure than a
+        // documented default — and every claim raised after this lands writes the field.
+        rentBps: o['rentBps'] === undefined ? CLAIM_RENT_BPS : bps(readInt(o, 'rentBps', where)),
         bondEncumbranceId: readStringOrNull(o, 'bondEncumbranceId', where),
         state,
         endedAtReckoning: readIntOrNullAt(o, 'endedAtReckoning', where),

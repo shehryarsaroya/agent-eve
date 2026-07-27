@@ -6,7 +6,9 @@
  * claim about arithmetic that nothing checks is a comment. These are the checks.
  */
 
+import { phaseOfReckoning, reckoningIndex } from '../core/time.js';
 import type { InvariantViolation, SystemId } from '../core/types.js';
+import { BPS_ONE } from '../core/units.js';
 import { halt } from '../invariants/registry.js';
 import { tierOf, type WorldMap } from '../world/map.js';
 import type { Book } from './book.js';
@@ -16,6 +18,15 @@ export interface WorksInvariantInputs {
   readonly book: Book;
   readonly map: WorldMap;
   readonly tick: number;
+  /**
+   * The highest rent rate any live claim carries, in bps. Bounds INV-W5.
+   *
+   * Injected rather than read from `CLAIM_RENT_BPS`, because a claim raised before a tuning pass
+   * keeps its own pinned rate (`ClaimRecord.rentBps`) and an invariant that assumed today's
+   * constant would halt a world over a rate the rules themselves guaranteed. Absent means "no
+   * claim book here", and the bound degrades to the whole yield rather than vanishing.
+   */
+  readonly rentCeilingBps?: number;
 }
 
 /**
@@ -107,11 +118,88 @@ export function checkNoEarlyExtraction(input: WorksInvariantInputs): readonly In
   return out;
 }
 
+/**
+ * INV-W4 — a WORKS never pays more rent than the place ever handed it.
+ *
+ * The cheapest possible check on the one arithmetic that could mint goods. `rent.ts` splits a
+ * gross share into `rent + net` and returns both from one function precisely so the sum cannot
+ * drift; this asserts the consequence over the whole history rather than over one call, which is
+ * what catches a rent posted twice, a rent computed from the wrong quantity, or a counter
+ * credited on a path where the ledger posting failed.
+ *
+ * Walks the WHOLE book, razed rows included: a razed WORKS's history is still a public claim
+ * about how much of a resident's output a landlord took, and A5 has no opt-out.
+ */
+export function checkRentWithinGross(input: WorksInvariantInputs): readonly InvariantViolation[] {
+  const out: InvariantViolation[] = [];
+  for (const works of input.book.everInOrder()) {
+    if (works.rentPaid < 0) {
+      out.push(halt('INV-W4', input.tick, `${works.id} records negative rent (${String(works.rentPaid)})`));
+    }
+    if (works.rentPaid > works.extracted) {
+      out.push(
+        halt(
+          'INV-W4',
+          input.tick,
+          `${works.id} has paid ${String(works.rentPaid)} in rent out of ${String(works.extracted)} ever ` +
+            'extracted. Rent is a SPLIT of what a place hands over, so a rent above the gross is goods ' +
+            'minted out of arithmetic — the A15 hole the yield cap exists to close, arriving through the ' +
+            'landlord instead of through the tenant',
+        ),
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * INV-W5 — a claim's take this Reckoning is bounded by the MAP, never by its tenants.
+ *
+ * The A15 sentence made executable for the rent half. `params.ts` argues that world output is a
+ * property of the map so that enrolling changes nothing; the rent is a claim on that output, so
+ * the same has to be true of it or a landlord could be paid per tenant. The bound is the
+ * strongest one that cannot false-halt: the tier yield, times every tick of this Reckoning that
+ * could have run, times the highest rate any live claim carries.
+ *
+ * This is the check that catches double collection — two rent postings for one share sum to
+ * `2 × bps` of the yield and trip it, where INV-W4 alone would not.
+ */
+export function checkRentBoundedByMap(input: WorksInvariantInputs): readonly InvariantViolation[] {
+  const out: InvariantViolation[] = [];
+  const reckoning = reckoningIndex(input.tick);
+  // Every tick of this Reckoning up to and including the current one. An upper bound on purpose:
+  // a world that began mid-Reckoning has run fewer, and an invariant must never accuse a world of
+  // arithmetic it did not do.
+  const ticksSoFar = phaseOfReckoning(input.tick) + 1;
+  const ceiling = input.rentCeilingBps ?? BPS_ONE;
+  for (const system of input.book.workedSystems()) {
+    const taken = input.book.rentTakenAt(system, reckoning);
+    if (taken <= 0) continue;
+    const tier = tierOf(input.map, system);
+    const cap = Math.trunc((YIELD_PER_TICK[tier] * ticksSoFar * ceiling) / BPS_ONE);
+    if (taken > cap) {
+      out.push(
+        halt(
+          'INV-W5',
+          input.tick,
+          `the claim on ${system} (${tier}) has taken ${String(taken)} in rent this Reckoning against a ` +
+            `ceiling of ${String(cap)} — ${String(YIELD_PER_TICK[tier])} a tick over ${String(ticksSoFar)} ` +
+            `ticks at ${String(ceiling)} bps. A rent above what the place can yield is paid per TENANT ` +
+            'rather than per place, which makes territorial income scale with the number of identities (A15)',
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 export function checkWorks(input: WorksInvariantInputs): readonly InvariantViolation[] {
   return [
     ...checkYieldCap(input),
     ...checkWorksPerSystem(input),
     ...checkNoEarlyExtraction(input),
+    ...checkRentWithinGross(input),
+    ...checkRentBoundedByMap(input),
   ];
 }
 

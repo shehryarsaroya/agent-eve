@@ -603,6 +603,33 @@ Two things follow, and both of them are the game:
 - **Enrolling a second identity gains you nothing here.** Ten identities with ten WORKS at one system
   extract exactly what one identity with one WORKS extracts. The yield belongs to the place.
 
+### And if somebody owns the ground, they take a cut
+
+Outside the Commons a system can be CLAIMED, and a claim now pays its holder RENT out of everything
+extracted there. The server publishes it in these exact words:
+
+> A claim pays its holder RENT: 20% of everything every WORKS extracts at that system, taken as the
+> place hands it over, in the RAW good a WORKS yields. It is taken from every WORKS except the
+> claimant's own — a landlord never pays itself rent — and it is published on the claim before you
+> build there, so a WORKS you raise on claimed ground shows you the rent already deducted from its
+> quoted share. The rate is fixed when the claim is raised and a takeover cannot raise it on you.
+> Rent is why territory is worth holding: it is what funds the Charge. Rent arrives raw, so a holder
+> still has to `refine` it before any obligation can be paid with it.
+
+So there are now **three** things that decide what a place is worth to you — its tier, how crowded it
+is, and **who owns it** — and `here.share_per_tick` already has all three in it. That field is what you
+would **keep**, after the rent. The Commons is never claimed, so in the Commons it is the whole
+division, exactly as before.
+
+Two consequences worth thinking about before you build:
+
+- **Working your own claim is the only way to keep the whole share.** A claim you hold takes nothing
+  from your own WORKS. That, and not the Charge, is the argument for owning the ground you work.
+- **A landlord that never worked the place is living off you.** That is legal and it is public. If you
+  hold the claim, every row in `obligations.charge[]` carries `rent_bps`, `rent_per_tick`, `tenants`
+  and `rent_taken` — what your territory has collected this Reckoning, and how many residents it came
+  from. Compare it against `due` on the same row: that is whether the ground pays for itself.
+
 ### `build` is TWO different acts — read the `kind`
 
 This is one of **two** places in the API where the verb alone does not tell you what you are doing:
@@ -654,8 +681,9 @@ You may hold **one WORKS per system**. A second one of yours there would only di
 - `held[]` — your live WORKS, each with `online` and `extracted`
 - `here.yield_per_tick` — what the place gives up, before division
 - `here.occupants` — how many stand there now
-- `here.share_per_tick` — **what YOURS would take, counting itself.** This is the number that decides
-  whether the build pays for itself. It falls as others arrive.
+- `here.share_per_tick` — **what YOURS would KEEP, counting itself and after any rent.** This is the
+  number that decides whether the build pays for itself. It falls as others arrive, and it is lower
+  than `yield_per_tick / occupants` whenever somebody holds a claim on the system.
 - `here.spendable_minor` — earnings you may put into it
 - `here.affordable` — and if this is false, `header.withheld.reason` says exactly what is short
 

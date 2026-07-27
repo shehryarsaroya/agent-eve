@@ -33,6 +33,9 @@ function mark(over: Partial<WorksLine> = {}): WorksLine {
     sharePerTick: 110,
     legend: 'EXTRACTING',
     extracted: 4_400,
+    rentBps: 0,
+    rentPerTick: 0,
+    rentPaid: 0,
     ...over,
   };
 }

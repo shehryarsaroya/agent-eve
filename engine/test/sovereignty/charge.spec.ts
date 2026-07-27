@@ -29,6 +29,7 @@ import {
   CHARGE_BY_TIER,
   CHARGE_MISSES_TO_LAPSE,
   CLAIM_BOND_MINOR,
+  CLAIM_RENT_BPS,
   VULNERABILITY_WINDOW,
   allocateCharge,
   assertSovereigntySchedule,
@@ -66,6 +67,7 @@ function claim(system: string, claimant: PrincipalId, epoch = 1): ClaimRecord {
     epoch,
     takenAtTick: 0,
     anchorQty: ANCHOR_QTY,
+    rentBps: CLAIM_RENT_BPS,
     bondEncumbranceId: `enc:bond:${claimant}:0`,
     state: 'SUPPLIED',
     endedAtReckoning: null,
@@ -551,6 +553,10 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
       reckoning: 0,
       tick: 10,
       tierOf: () => MARCHES,
+      // No WORKS book in this unit test, so nothing is being extracted and nothing is collected.
+      // The three rent keys still have to be ON the row: A13 wants the territory layer's income
+      // drawn, and the key list below is what pins that.
+      rentAt: () => ({ taken: qty(0), tenants: 0, perTick: qty(0) }),
       bondRead: () => minor(CLAIM_BOND_MINOR),
     });
     expect(lines.length).toBe(1);
@@ -569,9 +575,12 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
       'forSale',
       'legend',
       'owed',
+      'rentBps',
+      'rentTaken',
       'slashed',
       'state',
       'system',
+      'tenants',
     ]);
     // `owed` is `due` less what was DESTROYED, so it can never exceed `due` — a fact about the
     // past, never about the warehouse.
@@ -613,6 +622,9 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
           bondAtRisk: minor(CLAIM_BOND_MINOR),
           slashed: minor(0),
           forSale: null,
+          rentBps: 0,
+          rentTaken: 0,
+          tenants: 0,
           contestable: false,
         },
       ],

@@ -162,6 +162,47 @@ export interface ClaimView {
   readonly cession: { readonly by: PrincipalId; readonly price: Minor } | null;
   /** How a `build` here would land right now, for a reader that does not hold the claim. */
   readonly route: ClaimRoute | null;
+  /**
+   * The rent this claim takes, in bps of everything extracted here by anybody else.
+   *
+   * Off the claim record, not off the constant: the rate a claim was raised under is the rate it
+   * keeps, so a reader deciding whether to build here is reading the rate it will actually pay.
+   */
+  readonly rent_bps: number;
+  /** Units of the raw good this claim has collected **this Reckoning**. A completed public act. */
+  readonly rent_taken: Qty;
+  /** Live WORKS here held by somebody other than the claimant — the set that pays rent. */
+  readonly tenants: number;
+  /** What the rent is worth to this claim per tick at today's tenancy. Arithmetic, published. */
+  readonly rent_per_tick: Qty;
+}
+
+/**
+ * What a claim is COLLECTING, read out of the WORKS book.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **INJECTED, BECAUSE SOVEREIGNTY MUST NOT IMPORT THE PRODUCTION BOOK.** The rent is a fact
+ * about extraction and the arithmetic lives in `works/rent.ts`; what belongs to sovereignty is
+ * the *term* (`ClaimRecord.rentBps`) and the fact that a landlord is owed something. A direct
+ * import here would make the claim view untestable without a works book and would put the
+ * dependency the wrong way round — `works/produce.ts` already takes the claim terms through a
+ * port for the mirror-image reason.
+ *
+ * Every field is on the public side of §11.2 and each was checked against the rejected fuel
+ * gauge: `taken` is goods the world has **already handed over**, one completed act per tick, the
+ * same argument `worksLines.extracted` and `claimLines.owed` are admitted on. `tenants` counts
+ * structures each raised by a `PUBLIC` event. `perTick` is a tier yield divided by a public
+ * occupancy and multiplied by a published rate — arithmetic any stranger can already do, which
+ * A2 requires be exact. **None of them is a function of what anybody still holds.**
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface RentRead {
+  /** Units collected at this system in the CURRENT Reckoning. Never a stock reading. */
+  readonly taken: Qty;
+  /** Live WORKS here held by somebody other than the claimant. The set that pays. */
+  readonly tenants: number;
+  /** What the claim takes per tick at today's tenancy and crowding. */
+  readonly perTick: Qty;
 }
 
 export interface ClaimViewPort {
@@ -172,6 +213,8 @@ export interface ClaimViewPort {
   readonly availableAt: (principal: PrincipalId, system: SystemId) => Qty;
   /** Is one of this principal's hands standing there? `claim.ts:handAt`, injected. */
   readonly handAt: (principal: PrincipalId, system: SystemId) => boolean;
+  /** What the claim on a system is collecting from the WORKS standing on it. */
+  readonly rentAt: (system: SystemId, claimant: PrincipalId) => RentRead;
   readonly bondRead: BondRead;
 }
 
@@ -210,6 +253,11 @@ function claimView(
   const doNothing = claimDoNothing(owing.owed, misses);
   const bondAtRisk = bondAtRiskFor(book, claim.claimant, port.bondRead);
   const offer = book.cessionAt(claim.system);
+  // Computed for the CLAIMANT, not for the reader: unlike `available_here`, the rent is a
+  // property of the claim rather than of whoever is looking at it. A rescuer needs to know what
+  // the territory earns its holder — that is exactly the number that says whether the claim is
+  // worth saving — and it is public either way.
+  const rent = port.rentAt(claim.system, claim.claimant);
 
   return {
     claim: claim.id,
@@ -240,6 +288,10 @@ function claimView(
     vulnerability: vulnerabilityViewAt(port.tick),
     cession: offer === null ? null : { by: offer.by, price: offer.price },
     route: claim.claimant === reader ? null : claimRouteFor(book, claim.system, port.tick),
+    rent_bps: claim.rentBps,
+    rent_taken: rent.taken,
+    tenants: rent.tenants,
+    rent_per_tick: rent.perTick,
   };
 }
 
@@ -314,6 +366,16 @@ export function claimLinesFor(args: {
   readonly reckoning: number;
   readonly tick: number;
   readonly tierOf: (system: SystemId) => ZoneTier;
+  /**
+   * What each claim is collecting. **Required, not optional, and that is deliberate.**
+   *
+   * A13: a territory layer with no income on it is invisible — the map would show the same tint
+   * for a claim earning nothing and a claim earning more than its Charge, which are the two
+   * opposite stories the field exists to tell apart. An optional port defaulting to zero would
+   * render "nothing collected" forever and the panel would look correct while reporting nothing,
+   * which is the failure `the-production-chain.spec.ts` caught on the `unrefined` meter.
+   */
+  readonly rentAt: (system: SystemId, claimant: PrincipalId) => RentRead;
   readonly bondRead: BondRead;
 }): readonly ClaimLine[] {
   const lines: ClaimLine[] = [];
@@ -321,6 +383,7 @@ export function claimLinesFor(args: {
     const misses = args.book.missesAt(claim.system);
     const owing = args.book.owingOf(args.reckoning, claim.system);
     const settled = args.book.shortfallOf(args.reckoning, claim.system);
+    const rent = args.rentAt(claim.system, claim.claimant);
     lines.push({
       claim: claim.id,
       system: claim.system,
@@ -336,6 +399,9 @@ export function claimLinesFor(args: {
       slashed: settled?.slashed ?? minor(0),
       forSale: args.book.cessionAt(claim.system)?.price ?? null,
       contestable: claimRouteFor(args.book, claim.system, args.tick) === 'TAKEOVER',
+      rentBps: claim.rentBps,
+      rentTaken: rent.taken,
+      tenants: rent.tenants,
     });
   }
   return lines

@@ -1,5 +1,5 @@
 /**
- * The PRODUCE phase: the world hands over what its places yield.
+ * The PRODUCE phase: the world hands over what its places yield — and the ground takes its cut.
  *
  * ## Why this posts EXTRACTION and not PRODUCTION
  *
@@ -16,22 +16,57 @@
  * or a principal could see this tick's clearing price and then decide what to make. The tick
  * loop already refuses to start a world whose phase order breaks that, which is why this
  * file only has to fill the slot.
+ *
+ * ## THE RENT, AND WHY IT IS ONE READ SITE AND NOT A NEW PHASE
+ *
+ * A claim-holder takes {@link RentTerms.bps} of everything extracted at its system by anyone
+ * else (`sovereignty/params.ts:CLAIM_RENT_BPS` carries the argument and the calibration). It is
+ * collected **here**, inside the same walk that hands the goods over, for three reasons that are
+ * all about the record rather than about tidiness:
+ *
+ *   - **Nothing can be extracted and then not taxed.** A separate phase reading a stock would
+ *     tax whatever survived until it ran, so a tenant could refine or sell between the two and
+ *     the landlord's income would depend on the tenant's reflexes — which is A4's forbidden
+ *     shape (throughput as power) wearing a rent.
+ *   - **The rent is a split, not a transfer.** `rent + net === gross` is checked against the
+ *     share the yield cap already fixed, so no rent can mint a unit (`rent.ts`, INV-W4). A
+ *     later transfer out of the tenant's stores could not make that guarantee: the stores may
+ *     hold goods from ten other sources.
+ *   - **It is located where it was dug.** Rent appears at the claimed system, in the landlord's
+ *     stores, in the RAW good — never at the landlord's seat. That keeps §10.2's rule intact and
+ *     it is what makes a blockade mean something: a landlord whose body has graduated away
+ *     collects goods it must come back for, or hire a hand to reach.
  */
 
-import type { EventId } from '../core/types.js';
+import type { EventId, PrincipalId, SystemId } from '../core/types.js';
 import { qty, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import { GOODS_FAUCET, storesAccount, type Ledger } from '../ledger/index.js';
 import { tierOf, type WorldMap } from '../world/map.js';
 import type { Book } from './book.js';
 import { WORKS_YIELD_GOOD } from './params.js';
+import { rentOn, type RentTerms } from './rent.js';
 
 export interface ExtractionRow {
   readonly works: string;
   readonly system: string;
   readonly holder: string;
+  /** GROSS — what the place handed over, before the ground took its share. */
   readonly qty: Qty;
+  /** What the claim-holder of this system took out of it. Zero on unclaimed ground. */
+  readonly rent: Qty;
+  /** Who took it, or null when nobody did. */
+  readonly rentTo: PrincipalId | null;
 }
+
+/**
+ * Everything the rent needs to know about a place, injected rather than imported.
+ *
+ * The `refine.ts` port pattern, and here it also keeps the layering honest: `works/` has no
+ * business importing the sovereignty book to learn who owns the ground, and a direct import
+ * would make the production phase untestable without a claim book.
+ */
+export type RentPort = (system: SystemId) => RentTerms | null;
 
 /**
  * Run one tick of extraction. Returns what was extracted, for the event rows and the frame.
@@ -44,33 +79,77 @@ export function produce(args: {
   readonly ledger: Ledger;
   readonly map: WorldMap;
   readonly tick: number;
+  readonly reckoning: number;
+  /** Who takes rent at a system, and at what rate. Absent means nowhere does (tests, and D22). */
+  readonly rentAt?: RentPort;
 }): readonly ExtractionRow[] {
-  const { book, ledger, map, tick } = args;
+  const { book, ledger, map, tick, reckoning } = args;
+  const rentAt = args.rentAt;
   const out: ExtractionRow[] = [];
 
   for (const system of [...book.workedSystems()].sort(compareIds)) {
     const shares = book.sharesAt(system, tierOf(map, system), tick);
+    // Read ONCE per system, not once per WORKS: the terms are a property of the ground, and
+    // asking twice inside a loop is how two tenants at one system could ever be quoted
+    // different rates by the same tick.
+    const terms = rentAt === undefined ? null : rentAt(system);
     for (const [id, amount] of [...shares.entries()].sort((a, b) => compareIds(a[0], b[0]))) {
       if (amount <= 0) continue;
       const works = book.at(id);
       if (works === null) continue;
-      ledger.sourceGoods({
-        eventId: `works.extract:${id}:${String(tick)}` as EventId,
-        tick,
-        // The place gave this up, and the audit can compare the total against the map.
-        faucet: GOODS_FAUCET.EXTRACTION,
-        to: storesAccount(works.holder),
-        // RAW. `refine` turns it into the consumable the Levy wants — §10's one build step.
-        good: WORKS_YIELD_GOOD,
-        qty: amount,
-        // Extracted where it stands, never at the holder's seat. §10.2: everything is
-        // located, and goods that appeared at a holding the hand had left would be a
-        // located fact that was false — the same error D8 corrected in the Levy.
-        location: system,
-        origin: works.holder,
-      });
+      const split = rentOn({ terms, extractor: works.holder, gross: amount });
+      // ── THE TENANT'S HALF FIRST, THEN THE LANDLORD'S ────────────────────────
+      //
+      // Both are EXTRACTION postings against the same share, so the faucet total is unchanged
+      // whether or not the ground is claimed — which is what makes "total output is a property
+      // of the map" still checkable with a rent in the world (A15, INV-W1).
+      if (split.net > 0) {
+        ledger.sourceGoods({
+          eventId: `works.extract:${id}:${String(tick)}` as EventId,
+          tick,
+          // The place gave this up, and the audit can compare the total against the map.
+          faucet: GOODS_FAUCET.EXTRACTION,
+          to: storesAccount(works.holder),
+          // RAW. `refine` turns it into the consumable the Levy wants — §10's one build step.
+          good: WORKS_YIELD_GOOD,
+          qty: split.net,
+          // Extracted where it stands, never at the holder's seat. §10.2: everything is
+          // located, and goods that appeared at a holding the hand had left would be a
+          // located fact that was false — the same error D8 corrected in the Levy.
+          location: system,
+          origin: works.holder,
+        });
+      }
+      if (split.rent > 0 && terms !== null) {
+        ledger.sourceGoods({
+          // A DISTINCT event id, because it is a distinct value movement to a distinct account.
+          // Reusing the extraction id would collide the moment both halves are positive, which
+          // is every tick on claimed ground.
+          eventId: `works.rent:${id}:${String(tick)}` as EventId,
+          tick,
+          faucet: GOODS_FAUCET.EXTRACTION,
+          to: storesAccount(terms.claimant),
+          good: WORKS_YIELD_GOOD,
+          qty: split.rent,
+          // At the CLAIMED SYSTEM, not at the landlord's seat. See the header.
+          location: system,
+          // The origin is the WORKS holder: the goods came out of a place this principal is
+          // working, and provenance follows the labour rather than the title.
+          origin: works.holder,
+        });
+        book.creditRent(id, split.rent, reckoning, terms.claimant);
+      }
+      // GROSS on the WORKS's own counter: the place handed this much over, which is what
+      // `extracted` means everywhere else it is read (`worksLines`, `places`, the audit).
       book.credit(id, amount);
-      out.push({ works: id, system, holder: works.holder, qty: qty(amount) });
+      out.push({
+        works: id,
+        system,
+        holder: works.holder,
+        qty: qty(amount),
+        rent: split.rent,
+        rentTo: split.rent > 0 && terms !== null ? terms.claimant : null,
+      });
     }
   }
   return out;

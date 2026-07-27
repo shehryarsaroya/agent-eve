@@ -379,12 +379,32 @@ export interface WorksLine {
   readonly yieldPerTick: number;
   /** Live WORKS standing there. The crowding, which is the economic story. */
   readonly occupants: number;
-  /** This one's share per tick at today's crowding. `yieldPerTick / occupants`, published. */
+  /**
+   * What this WORKS's holder **keeps** per tick at today's crowding: the share less the rent.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **NET, AND IT USED TO BE THE WHOLE DIVISION.** `yieldPerTick / occupants` was both the
+   * definition and the truth while no claim took anything; once a claim-holder takes a published
+   * share, a mark quoting the gross would tell a stranger a resident earns a fifth more than it
+   * does — and the same field feeds `worksQuote`, which `agent.md` calls *"the number that
+   * decides whether the build pays for itself"*. That is scar #1 exactly: two surfaces, each
+   * individually coherent, disagreeing about one number.
+   *
+   * So the identity a reader can check is `sharePerTick + rentPerTick === yieldPerTick /
+   * occupants`, and `assertFrameBudgets` refuses a line where it does not hold.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   readonly sharePerTick: number;
   /** `EXTRACTING` · `SPINNING UP 6 ticks` — the two words a viewer reads. */
   readonly legend: string;
-  /** Cumulative units the place has HANDED OVER to this WORKS. Never a stock reading. */
+  /** Cumulative units the place has HANDED OVER to this WORKS, GROSS. Never a stock reading. */
   readonly extracted: number;
+  /** The rate the claim on this system takes, in bps. Zero on unclaimed ground. */
+  readonly rentBps: number;
+  /** What the claim-holder takes out of this WORKS's share per tick. Zero if nobody does. */
+  readonly rentPerTick: number;
+  /** Cumulative units this WORKS has handed to a landlord. The grievance, as a number. */
+  readonly rentPaid: number;
 }
 
 export interface ClaimLine {
@@ -410,6 +430,27 @@ export interface ClaimLine {
   readonly forSale: Minor | null;
   /** True while the published vulnerability window is open on a CONTESTED claim. */
   readonly contestable: boolean;
+  /**
+   * What this claim takes from every other WORKS at its system, in bps. The RENT.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE THREE RENT FIELDS ARE THE TERRITORY LAYER'S ONLY INCOME, AND A13 REFUSES A MECHANIC
+   * WITH NO PIXEL SIGNATURE.** Before them a claim rendered as four ways of paying — the tint
+   * carried a due, an owed, a bond at risk and a slash, and nothing at all about why anybody
+   * would want the ground. A viewer could watch a claim fall and never learn what was lost.
+   *
+   * Each is on the public side of §11.2 for a reason already accepted elsewhere in this file:
+   * `rentBps` is a published term of the claim, fixed when it was raised and readable by any
+   * stranger; `rentTaken` is goods the world has **already handed over**, which is `extracted`'s
+   * own argument; `tenants` counts live structures each raised by a `PUBLIC` event. None is a
+   * function of what anybody still holds, so none of them is the rejected gauge.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly rentBps: number;
+  /** Units of the raw good this claim has collected **this Reckoning**. */
+  readonly rentTaken: number;
+  /** Live WORKS here held by somebody else — who is paying, and how many of them. */
+  readonly tenants: number;
 }
 
 /**
@@ -770,6 +811,34 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     if (line.occupants < 1) {
       problems.push(`${line.works} is drawn on ${line.system} with ${line.occupants} occupants`);
     }
+    // ── THE RENT SPLIT MUST ADD UP, ON SCREEN ────────────────────────────────
+    //
+    // `sharePerTick` is what the resident keeps and `rentPerTick` is what the landlord takes, so
+    // together they are the whole share the place hands over. A frame where they do not is a
+    // frame telling a stranger that goods appeared or vanished between the ground and the
+    // stores — the fuel-gauge check refuses a field that leaks; this one refuses a field that
+    // lies. Checked only while EXTRACTING, because a spinning-up WORKS pays and keeps nothing.
+    if (line.rentPerTick < 0 || line.rentPaid < 0 || line.rentBps < 0) {
+      problems.push(`${line.works} renders a negative rent`);
+    }
+    if (extracting && line.sharePerTick + line.rentPerTick > line.yieldPerTick) {
+      problems.push(
+        `${line.works} keeps ${line.sharePerTick} and pays ${line.rentPerTick} out of a place that yields ` +
+          `${line.yieldPerTick} — the split sums above the whole`,
+      );
+    }
+    if (!extracting && line.rentPerTick !== 0) {
+      problems.push(
+        `${line.works} reads "${line.legend}" but pays ${line.rentPerTick} in rent; a WORKS that is not ` +
+          'online extracts nothing, so there is nothing to take a share of',
+      );
+    }
+    if (line.rentBps === 0 && line.rentPerTick !== 0) {
+      problems.push(
+        `${line.works} pays ${line.rentPerTick} in rent on unclaimed ground (${line.rentBps} bps) — the rate ` +
+          'and the amount disagree, and the amount is what actually moved',
+      );
+    }
     // ── THE REJECTED FUEL GAUGE, REFUSED BY SHAPE RATHER THAN BY REVIEW ─────
     //
     // `extracted` — what the world has already HANDED OVER — is admissible: a sum of completed
@@ -818,6 +887,29 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     }
     if (line.due < 0 || line.owed < 0 || line.bondAtRisk < 0) {
       problems.push(`claim ${line.claim} renders a negative quantity`);
+    }
+    // ── THE RENT AND ITS TENANTS MUST AGREE ──────────────────────────────────
+    //
+    // Rent comes out of tenants' extraction and out of nothing else, so a claim collecting with
+    // nobody on the ground is the map asserting an income that has no source — the same class of
+    // published contradiction as EXTRACTING beside a dead share, and worse here because a viewer
+    // reading it would credit a landlord with earning what it seized from nobody. The converse is
+    // legal and common: tenants that arrived this Reckoning, or a claim whose anchor collects
+    // nothing yet, render tenants > 0 with `rentTaken: 0`.
+    if (line.rentTaken < 0 || line.tenants < 0 || line.rentBps < 0) {
+      problems.push(`claim ${line.claim} renders a negative rent`);
+    }
+    if (line.rentTaken > 0 && line.tenants < 1) {
+      problems.push(
+        `claim ${line.claim} renders ${line.rentTaken} of rent taken with ${line.tenants} tenants — rent comes ` +
+          'out of another principal\'s extraction, so there is nowhere for that number to have come from',
+      );
+    }
+    if (line.rentTaken > 0 && line.rentBps === 0) {
+      problems.push(
+        `claim ${line.claim} renders ${line.rentTaken} of rent taken at a rate of 0 bps; the rate and the ` +
+          'amount disagree, and the amount is what actually moved',
+      );
     }
     if (line.owed > line.due) {
       problems.push(

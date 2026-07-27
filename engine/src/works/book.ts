@@ -49,6 +49,26 @@ export interface WorksRecord {
   readonly razedAtTick: number | null;
   /** Cumulative units extracted. The audit trail, and what the frame draws. */
   extracted: Qty;
+  /**
+   * Cumulative units of that extraction handed to the claim-holder of this system as RENT.
+   *
+   * **Counted here rather than derived from `extracted × rentBps`**, and the difference is the
+   * whole reason this field exists: the rate can differ from today's for a claim raised earlier,
+   * a WORKS spends part of its life on unclaimed ground and part under a landlord, and a claim
+   * that lapses stops collecting. So the product of two present-tense numbers would be a
+   * confident, wrong history — and it is the number the frame prints beside the holder's name.
+   *
+   * `extracted` stays GROSS: the place handed that much over, which is what it means.
+   */
+  rentPaid: Qty;
+}
+
+/** Rent collected at one system during one Reckoning, and who is collecting it. */
+export interface RentTally {
+  readonly system: SystemId;
+  readonly reckoning: number;
+  readonly claimant: PrincipalId;
+  taken: Qty;
 }
 
 export class WorksError extends Error {}
@@ -72,6 +92,21 @@ function splitQty(total: Qty, parts: number): readonly Qty[] {
 
 export class Book {
   private readonly rows = new Map<WorksId, WorksRecord>();
+  /**
+   * Rent taken at each system **in the current Reckoning only**, keyed by system.
+   *
+   * ── WHY ONE RECKONING AND NOT A HISTORY ──────────────────────────────────────
+   *
+   * A13 asks the claim line for *"the rent taken this Reckoning"*, which is the number a viewer
+   * can compare against the Charge that settles tonight. A per-Reckoning history would be an
+   * unbounded map inside `state_hash` — scar #3's shape, and INV-26 requires a declared bound —
+   * and the ledger already holds every posting, so the history exists where history belongs.
+   *
+   * The whole map is dropped the first time rent is taken in a later Reckoning, so the bound is
+   * the number of systems on the map and the reset needs no scheduled hook: a hook would be a
+   * second place that had to agree about which Reckoning it is.
+   */
+  private readonly rent = new Map<SystemId, RentTally>();
 
   /** Live WORKS at a system, canonical order. The order the share split depends on. */
   liveAt(system: SystemId): readonly WorksRecord[] {
@@ -139,6 +174,7 @@ export class Book {
       razed: false,
       razedAtTick: null,
       extracted: qty(0),
+      rentPaid: qty(0),
     };
     this.rows.set(id, row);
     return row;
@@ -154,6 +190,53 @@ export class Book {
     const row = this.rows.get(id);
     if (row === undefined) throw new WorksError(`${id} does not exist`);
     row.extracted = qty(row.extracted + amount);
+  }
+
+  /**
+   * Record rent taken out of one WORKS's extraction, for the claimant of its system.
+   *
+   * Two counters move together and neither is derivable from the other: the WORKS's own
+   * lifetime rent (`rentPaid`, what a resident has handed over) and this Reckoning's take at the
+   * system (the claim line's number). Called once per WORKS per tick, after the goods have
+   * actually been posted — never before, because a counter that ran ahead of the ledger would
+   * publish rent that was not collected (A5′'s shape in a public quantity).
+   */
+  creditRent(id: WorksId, amount: Qty, reckoning: number, claimant: PrincipalId): void {
+    const row = this.rows.get(id);
+    if (row === undefined) throw new WorksError(`${id} does not exist`);
+    if (amount <= 0) return;
+    row.rentPaid = qty(row.rentPaid + amount);
+    const standing = this.rent.get(row.system);
+    // A new Reckoning drops the whole map, not just this system's row: the frame's question is
+    // "what did this claim take THIS Reckoning", and a stale row from two Reckonings ago would
+    // answer a different question with a bigger number.
+    if (standing === undefined || standing.reckoning !== reckoning) {
+      for (const [system, tally] of [...this.rent.entries()]) {
+        if (tally.reckoning !== reckoning) this.rent.delete(system);
+      }
+      this.rent.set(row.system, { system: row.system, reckoning, claimant, taken: qty(amount) });
+      return;
+    }
+    // The claimant on the row is whoever is collecting NOW. A takeover mid-Reckoning inherits
+    // the running total along with the arrears, which is the same rule the delinquency counter
+    // follows: the figure belongs to the system.
+    this.rent.set(row.system, { ...standing, claimant, taken: qty(standing.taken + amount) });
+  }
+
+  /** Rent taken at one system in `reckoning`. Zero for any other Reckoning, by construction. */
+  rentTakenAt(system: SystemId, reckoning: number): Qty {
+    const tally = this.rent.get(system);
+    return tally !== undefined && tally.reckoning === reckoning ? tally.taken : qty(0);
+  }
+
+  /**
+   * Live WORKS at a system whose holder is not `claimant`. The claim's TENANT COUNT.
+   *
+   * The set that actually pays rent, so the frame's `tenants` and the rent it prints beside it
+   * can never disagree about who is in it (A13: a mark that contradicts its own numbers).
+   */
+  tenantsAt(system: SystemId, claimant: PrincipalId): number {
+    return this.liveAt(system).filter((w) => w.holder !== claimant).length;
   }
 
   /**
@@ -192,12 +275,25 @@ export class Book {
           razed: w.razed,
           razedAtTick: w.razedAtTick,
           extracted: w.extracted,
+          rentPaid: w.rentPaid,
+        })),
+      // Inside the hash for the same reason the rest of the book is: two worlds that disagree
+      // about what a claim collected this Reckoning would hash the same, and an aborted tick
+      // would leave the counter advanced against a posting that was rolled back.
+      rent: [...this.rent.values()]
+        .sort((a, b) => compareIds(a.system, b.system))
+        .map((r) => ({
+          system: r.system,
+          reckoning: r.reckoning,
+          claimant: r.claimant,
+          taken: r.taken,
         })),
     };
   }
 
   restore(captured: CanonicalValue): void {
     this.rows.clear();
+    this.rent.clear();
     const root = readObject(captured, 'works');
     for (const [i, raw] of readArray(root['works'] ?? [], 'works.works').entries()) {
       const where = `works.works[${String(i)}]`;
@@ -212,9 +308,26 @@ export class Book {
         razed: readBool(o, 'razed', where),
         razedAtTick: razedAt === null || razedAt === undefined ? null : readInt(o, 'razedAtTick', where),
         extracted: qty(readInt(o, 'extracted', where)),
+        // Tolerant for exactly one deploy: a snapshot written before the rent landed has no
+        // counter on its WORKS, and zero is the true history for a world in which no rent was
+        // ever taken. Strictness would refuse to restore the live world across this deploy.
+        rentPaid: qty(o['rentPaid'] === undefined ? 0 : readInt(o, 'rentPaid', where)),
       };
       if (this.rows.has(row.id)) throw new SnapshotError(`${where}: duplicate WORKS ${row.id}`);
       this.rows.set(row.id, row);
+    }
+
+    for (const [i, raw] of readArray(root['rent'] ?? [], 'works.rent').entries()) {
+      const where = `works.rent[${String(i)}]`;
+      const o = readObject(raw, where);
+      const row: RentTally = {
+        system: readString(o, 'system', where) as SystemId,
+        reckoning: readInt(o, 'reckoning', where),
+        claimant: readString(o, 'claimant', where) as PrincipalId,
+        taken: qty(readInt(o, 'taken', where)),
+      };
+      if (this.rent.has(row.system)) throw new SnapshotError(`${where}: duplicate rent row for ${row.system}`);
+      this.rent.set(row.system, row);
     }
   }
 }

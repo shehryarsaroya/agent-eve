@@ -149,6 +149,81 @@ export const CLAIM_BOND_MINOR: Minor = minor(50_000);
 export const ANCHOR_QTY: Qty = qty(Math.trunc(LEVY_STARTER_ALLOTMENT / 10));
 
 /**
+ * **THE RENT: the share of a system's extraction its claim-holder takes.** *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS IS THE HALF OF SOVEREIGNTY THAT WAS MISSING, AND THE BUILD SHIPPED THE OTHER ONE
+ * FIRST.** `D23`'s audit is blunt about it: EVE's sovereignty shape was *"copied bill-first"*,
+ * and this build took its **upkeep** half with none of its **rent** half —
+ *
+ * > *"A claim that pays nothing is not EVE sovereignty simplified; it is EVE sovereignty with
+ * > the reason removed."*
+ *
+ * Measured, not inferred: all four read sites of a claim were the holder **paying** —
+ * {@link ANCHOR_QTY} destroyed, {@link CLAIM_BOND_MINOR} posted and slashable, a recurring
+ * Charge, and a bond requirement that rises with every claim. A probe worked out that the
+ * rational answer to *"should I take a claim?"* is **never**, and the cast agreed: the frame
+ * carried `claimLines: 0`.
+ *
+ * `PASS-TERRITORY-POLITICS.md` §16.2 #9 states the test this closes:
+ *
+ * > *"Territory matters politically only if ownership changes who may live, build, trade, and
+ * > receive protection. Residents then have leverage, grievances, and opportunities to
+ * > collaborate with an invader."*
+ *
+ * So the claim-holder takes a published fraction of **every WORKS's extraction at its system,
+ * except its own**. Three things that were previously true stop being true:
+ *
+ *   - `YIELD_PER_TICK` stops being a physics constant and becomes something **someone owns**;
+ *   - the Charge acquires a **funding source** that is not the claimant's starter stake;
+ *   - and a resident acquires a **grievance**, which is the raw material of politics and the
+ *     only thing on this list that the show is actually made of.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## Why 2,000 bps, written out so it can be argued with rather than trusted
+ *
+ * A fifth. Three arithmetic constraints pin it, at `TICKS_PER_RECKONING = 288` and the
+ * published `YIELD_PER_TICK` of 80 / 110 / 150:
+ *
+ * | tier | system yields / Reckoning | rent at 2,000 bps | its Charge | margin |
+ * |---|---|---|---|---|
+ * | `MARCHES` | 31,680 | 6,336 | 4,000 | **+2,336** |
+ * | `FRONTIER` | 43,200 | 8,640 | 7,000 | **+1,640** |
+ *
+ *   1. **A fully tenanted claim must cover its own Charge, at both tiers.** Below ~1,700 bps a
+ *      FRONTIER claim cannot, and the mechanic goes back to being a bill.
+ *   2. **A tenant at the MARCHES must still be better off than one in the Commons**, or the
+ *      rent makes `graduate` irrational and A8's quiet-equilibrium risk gets worse rather than
+ *      better. A sole tenant nets 31,680 − 6,336 = **25,344** against the Commons' 23,040. At
+ *      2,500 bps that margin collapses to 720 and the frontier stops being worth crossing to.
+ *   3. **It has to be arithmetic an agent does in its head** (A2). A fifth is; 1,750 bps is not.
+ *
+ * The rent is taken in the good the place yields — **raw**, not in the good the Charge is
+ * payable in — so a landlord still has to `refine` what it collects. That is deliberate: rent
+ * funds the Charge, it does not *pay* it, and the act in between is what keeps a rentier
+ * playing the game instead of collecting a coupon.
+ */
+export const CLAIM_RENT_BPS: Bps = bps(2_000);
+
+/**
+ * **A RULES SURFACE** (hard rule 4). What a claim now PAYS, and what it costs a resident.
+ *
+ * Carried verbatim in `agent.md` and pinned by `test/sovereignty/rent.spec.ts`. The rent
+ * changes the return on the single most-quoted number in the economy — `share_per_tick`,
+ * which `agent.md` calls *"the number that decides whether the build pays for itself"* — and
+ * scar #1 is exactly the engine and the agent-facing text disagreeing about one such number
+ * while each reads correctly on its own.
+ */
+export const RENT_STATEMENT =
+  `A claim pays its holder RENT: ${String(CLAIM_RENT_BPS / 100)}% of everything every WORKS extracts at ` +
+  'that system, taken as the place hands it over, in the RAW good a WORKS yields. It is taken from every ' +
+  "WORKS except the claimant's own — a landlord never pays itself rent — and it is published on the claim " +
+  'before you build there, so a WORKS you raise on claimed ground shows you the rent already deducted from ' +
+  'its quoted share. The rate is fixed when the claim is raised and a takeover cannot raise it on you. ' +
+  'Rent is why territory is worth holding: it is what funds the Charge. Rent arrives raw, so a holder ' +
+  'still has to `refine` it before any obligation can be paid with it.';
+
+/**
  * Bond returned to a claimant that cedes or abandons **before** it lapses, in bps.
  *
  * The critic's *"allow voluntary cession before freeze with partial bond/anchor salvage

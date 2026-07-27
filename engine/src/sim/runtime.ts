@@ -332,6 +332,7 @@ import {
   CHARGE_MISSES_TO_LAPSE,
   CHARGE_STATEMENT,
   CLAIM_BOND_MINOR,
+  CLAIM_RENT_BPS,
   SOVEREIGNTY_STATEMENT,
   abandonRejection,
   assertSovereigntySchedule,
@@ -362,6 +363,7 @@ import {
   type ChargeSettlement,
   type ClaimRecord,
   type ClaimView,
+  type RentRead,
   type SlashPort,
 } from '../sovereignty/index.js';
 import type { ConstellationId, Grant, GrantId, RoleTerms, VentureKind } from '../core/types.js';
@@ -537,6 +539,7 @@ import {
 import { Book as WorksBook, worksStateTable } from '../works/book.js';
 import { produce as produceNow } from '../works/produce.js';
 import { checkWorks } from '../works/invariants.js';
+import { rentApplies, rentOn, type RentTerms } from '../works/rent.js';
 import {
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
@@ -2190,8 +2193,73 @@ export class Runtime {
       tierOf: (system) => tierOf(this.world.map, system),
       availableAt: (principal, system) => this.chargeGoodAt(principal, system),
       handAt: (principal, system) => handAt(this.world, principal, system, tick) !== null,
+      rentAt: (system, claimant) => this.rentReadAt(system, claimant, tick),
       bondRead: this.bondRead(),
     };
+  }
+
+  // ── THE RENT: ONE HOME FOR "WHO TAKES A SHARE HERE, AND WHAT HAVE THEY TAKEN" ──
+  //
+  // Three readers — the PRODUCE phase (which moves the goods), the claim view an agent reads, and
+  // the claim line a viewer reads — and they must never disagree, because the first is the ledger
+  // and the other two are the promise about it (scar #1). So the terms and the tally each have
+  // exactly one accessor, and every reader goes through it.
+
+  /**
+   * The published terms of tenancy at a system, or null on unclaimed ground.
+   *
+   * Off the claim RECORD, so the rate is the one the claim was raised under. A terminal claim
+   * (`LAPSED` / `CEDED`) takes nothing: `liveAt` filters those, and that is the whole rule — a
+   * landlord that lost the ground stops being paid the same tick, with no scheduled hook.
+   */
+  rentTermsAt(system: SystemId): RentTerms | null {
+    const claim = this.sovereignty.liveAt(system);
+    return claim === null ? null : { claimant: claim.claimant, bps: claim.rentBps };
+  }
+
+  /**
+   * What a claim is collecting at a system: this Reckoning's take, its tenants, and the rate.
+   *
+   * `perTick` is recomputed from the live share split rather than stored, so it moves the moment a
+   * tenant arrives or leaves — the number an agent needs is *today's* rent, not an average.
+   */
+  rentReadAt(system: SystemId, claimant: PrincipalId, tick = this.engine.tick): RentRead {
+    const terms = this.rentTermsAt(system);
+    const shares = this.worksBook.sharesAt(system, tierOf(this.world.map, system), tick);
+    let perTick = 0;
+    for (const [id, amount] of shares.entries()) {
+      const works = this.worksBook.at(id);
+      if (works === null) continue;
+      perTick += rentOn({ terms, extractor: works.holder, gross: amount }).rent;
+    }
+    return {
+      taken: this.worksBook.rentTakenAt(system, reckoningOf(tick)),
+      tenants: this.worksBook.tenantsAt(system, claimant),
+      perTick: qty(perTick),
+    };
+  }
+
+  /**
+   * The highest rent rate any claim in the book carries. INV-W5's ceiling.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **EVERY CLAIM, TERMINAL ONES INCLUDED — AND THE LIVE-ONLY VERSION HALTED A WORLD.**
+   * Measured: a claim ceded at phase 36 after collecting 132 units left `liveClaims()` empty, so
+   * the ceiling fell to 0 while this Reckoning's tally was still 132, and INV-W5 stopped the tick.
+   * The rent was correct; the *bound* was wrong. That is the worst species of invariant — one that
+   * accuses a world of arithmetic the rules themselves produced (A5′ pointed at the engine) — and
+   * on the live world it would have fired the first time anybody abandoned territory.
+   *
+   * The tally is per SYSTEM and survives a claim ending, because what a place gave up this
+   * Reckoning is a completed public fact (A5, no opt-out). So the ceiling has to be the highest
+   * rate any claim could have collected at, not the highest rate anyone is collecting at now.
+   * Bounded by `MAX_CLAIMS`.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private rentCeilingBps(): number {
+    let top = 0;
+    for (const claim of this.sovereignty.claimsInOrder()) top = Math.max(top, claim.rentBps);
+    return top;
   }
 
   /** A principal's bond position: posted, required, and the headroom between them. */
@@ -2206,6 +2274,7 @@ export class Runtime {
       reckoning: reckoningOf(tick),
       tick,
       tierOf: (system) => tierOf(this.world.map, system),
+      rentAt: (system, claimant) => this.rentReadAt(system, claimant, tick),
       bondRead: this.bondRead(),
     });
   }
@@ -6455,22 +6524,33 @@ export class Runtime {
       const tier = tierOf(this.world.map, works.system);
       const occupants = this.worksBook.liveAt(works.system).length;
       const online = tick >= works.onlineAtTick;
+      const terms = this.rentTermsAt(works.system);
+      // Divided by the ONLINE count, which is what `sharesAt` actually divides by — a mark
+      // quoting a share the engine does not pay would be the frame contradicting the ledger.
+      const gross = online
+        ? Math.trunc(
+            YIELD_PER_TICK[tier] /
+              Math.max(1, this.worksBook.liveAt(works.system).filter((w) => tick >= w.onlineAtTick).length),
+          )
+        : 0;
+      // The SAME function the PRODUCE phase splits with, so the mark and the ledger cannot
+      // disagree about who keeps what. `sharePerTick` is the NET — see `WorksLine.sharePerTick`.
+      const split = rentOn({ terms, extractor: works.holder, gross: qty(gross) });
       out.push({
         works: works.id,
         system: works.system,
         holder: works.holder,
         yieldPerTick: YIELD_PER_TICK[tier],
         occupants,
-        // Divided by the ONLINE count, which is what `sharesAt` actually divides by — a mark
-        // quoting a share the engine does not pay would be the frame contradicting the ledger.
-        sharePerTick: online
-          ? Math.trunc(
-              YIELD_PER_TICK[tier] /
-                Math.max(1, this.worksBook.liveAt(works.system).filter((w) => tick >= w.onlineAtTick).length),
-            )
-          : 0,
+        sharePerTick: split.net,
         legend: online ? 'EXTRACTING' : `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`,
         extracted: works.extracted,
+        // The RATE, not "did anything move": at a small enough share the amount truncates to zero
+        // while the rate is still in force, and reading the rate off `rent > 0` would draw a WORKS
+        // on claimed ground as though it stood on nobody's land.
+        rentBps: rentApplies(terms, works.holder) ? (terms?.bps ?? 0) : 0,
+        rentPerTick: split.rent,
+        rentPaid: works.rentPaid,
       });
     }
     return out;
@@ -7336,8 +7416,28 @@ export class Runtime {
     readonly good: GoodId;
     readonly yieldPerTick: number;
     readonly occupants: number;
-    /** What this principal would get per tick once online, at today's crowding. */
+    /**
+     * What this principal would **keep** per tick once online, at today's crowding and rent.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * **NET OF RENT, AND THE GROSS IS PUBLISHED BESIDE IT.** `agent.md` calls this *"the number
+     * that decides whether the build pays for itself"* and `api/observe.ts` multiplies it by 288
+     * to state what a WORKS RETURNS. A claim-holder now takes a published share of everything
+     * extracted at its system, so the gross would overstate that return by the rent — and a probe
+     * had already lost a third of its expected income to this field being divided by the wrong
+     * occupancy. The lesson taken was that the field must answer the question it is documented as
+     * answering, not the one that is easiest to compute.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
     readonly sharePerTick: number;
+    /** Before the rent. `grossPerTick - rentPerTick === sharePerTick`, exactly. */
+    readonly grossPerTick: number;
+    /** What the claim-holder here would take, per tick. Zero on unclaimed ground. */
+    readonly rentPerTick: number;
+    /** The published rate that would apply to YOU here, in bps. Zero if none would. */
+    readonly rentBps: number;
+    /** Who would take it, or null. Named, because the rent is a relationship, not a tax. */
+    readonly rentTo: PrincipalId | null;
     readonly costMinor: Minor;
     readonly costQty: Qty;
     readonly freeMinor: Minor;
@@ -7375,6 +7475,20 @@ export class Runtime {
       ? minor(0)
       : this.ledger.freeBalance(storesAccount(principal));
     const available = this.chargeGoodAt(principal, system);
+    // ── DIVIDED BY THE OCCUPANTS THIS BUILD WOULD MAKE — UNLESS YOU ALREADY HOLD ONE ──
+    //
+    // `occupants + 1` is right for a PROSPECTIVE build: quoting the pre-arrival share overstates the
+    // return of every build into a crowded place. It is wrong once you already hold one, and both
+    // probes caught it: sole occupant of a COMMONS system taking the full 80, quoted 40 (and with a
+    // second occupant, taking 40 and quoted 26). `agent.md` calls this "what YOURS would take,
+    // counting itself" and "the number that decides whether the build pays for itself", so an agent
+    // budgeting off it under-plans its income by a third.
+    const quotedGross = Math.trunc(
+      YIELD_PER_TICK[tier] /
+        (this.worksBook.ofPrincipal(principal).length > 0 ? Math.max(1, occupants) : occupants + 1),
+    );
+    const quotedTerms = this.rentTermsAt(system);
+    const quotedSplit = rentOn({ terms: quotedTerms, extractor: principal, gross: qty(quotedGross) });
     return {
       system,
       tier,
@@ -7392,17 +7506,18 @@ export class Runtime {
       good: WORKS_YIELD_GOOD,
       yieldPerTick: YIELD_PER_TICK[tier],
       occupants,
-      // ── DIVIDED BY THE OCCUPANTS THIS BUILD WOULD MAKE — UNLESS YOU ALREADY HOLD ONE ──
+      // ── THE CROWDING DIVISION IS ABOVE; THE RENT COMES OFF IT HERE ──────────
       //
-      // `occupants + 1` is right for a PROSPECTIVE build: quoting the pre-arrival share overstates the
-      // return of every build into a crowded place. It is wrong once you already hold one, and both
-      // probes caught it: sole occupant of a COMMONS system taking the full 80, quoted 40 (and with a
-      // second occupant, taking 40 and quoted 26). `agent.md` calls this "what YOURS would take,
-      // counting itself" and "the number that decides whether the build pays for itself", so an agent
-      // budgeting off it under-plans its income by a third.
-      sharePerTick: Math.trunc(
-        YIELD_PER_TICK[tier] / (this.worksBook.ofPrincipal(principal).length > 0 ? Math.max(1, occupants) : occupants + 1),
-      ),
+      // Split with the SAME function the PRODUCE phase uses, so the quote and the ledger cannot
+      // disagree about what a build here actually earns. `rentTermsAt` answers null on unclaimed
+      // ground and `rentOn` answers zero when the reader IS the claim-holder, so a landlord
+      // building on its own claim is quoted the whole share — which is the truth, and it is also
+      // the strongest argument in the game for owning the ground you work.
+      sharePerTick: quotedSplit.net,
+      grossPerTick: quotedGross,
+      rentPerTick: quotedSplit.rent,
+      rentBps: rentApplies(quotedTerms, principal) ? (quotedTerms?.bps ?? 0) : 0,
+      rentTo: rentApplies(quotedTerms, principal) ? (quotedTerms?.claimant ?? null) : null,
       costMinor: WORKS_COST_MINOR,
       costQty: WORKS_BUILD_QTY,
       freeMinor: free,
@@ -7542,6 +7657,11 @@ export class Runtime {
       ledger: this.ledger,
       map: this.world.map,
       tick: ctx.tick,
+      reckoning: reckoningOf(ctx.tick),
+      // The rent, read off the claim record at the one place the goods actually move. See
+      // `rentTermsAt`: unclaimed ground and an ended claim both answer null, so a landlord that
+      // lost the system stops collecting on the same tick it lost it.
+      rentAt: (system) => this.rentTermsAt(system),
     });
     // ── EXTRACTION IS A ROUTINE TICK AND EMITS NO EVENT ───────────────────────
     //
@@ -7694,6 +7814,11 @@ export class Runtime {
           epoch,
           takenAtTick: ctx.tick,
           anchorQty: ANCHOR_QTY,
+          // Pinned at the published rate the moment the claim is raised, and never re-read. A
+          // takeover goes through `succeed`, which does not touch it: the rate a resident read
+          // before spending 60,000 on a WORKS survives the ground changing hands, which is what
+          // makes `worksQuote`'s published return something an agent can plan against.
+          rentBps: CLAIM_RENT_BPS,
           bondEncumbranceId: bondLock,
           state: 'SUPPLIED',
           endedAtReckoning: null,
@@ -8380,7 +8505,15 @@ export class Runtime {
       // question sovereignty's do — is a place's arithmetic still true — and the A15 claim
       // that world output cannot scale with the population is exactly the kind of assertion
       // that is a comment until something halts on it.
-      ...checkWorks({ book: this.worksBook, map: this.world.map, tick }),
+      ...checkWorks({
+        book: this.worksBook,
+        map: this.world.map,
+        tick,
+        // The highest rate any LIVE claim carries, not the constant: a claim keeps the rate it
+        // was raised under (`ClaimRecord.rentBps`), so a world holding a pre-tuning claim would
+        // halt on arithmetic its own rules guaranteed if this read today's number.
+        rentCeilingBps: this.rentCeilingBps(),
+      }),
     ];
   }
 
