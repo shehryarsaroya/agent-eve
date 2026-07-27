@@ -166,6 +166,7 @@ import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 import { hallOfFame, namesFor } from '../frames/memory.js';
 import { readInt, readString } from '../core/params.js';
+import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
 import { sign } from '../venture/sign.js';
 import { withdraw } from '../venture/withdraw.js';
@@ -4870,22 +4871,27 @@ export class Runtime {
     return { ok: true, value: null };
   }
 
+  /**
+   * `publish_offer` — an ADAPTER. The prose half lives in `say/offer.ts` (D21).
+   *
+   * The cession branch is dispatched here rather than moved: naming a claim publishes an offer with a
+   * subject the engine can transfer, which needs the sovereignty book. Keeping it out leaves the
+   * extracted port one member wide instead of dragging sovereignty in behind it.
+   */
   private vPublishOffer(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
-    // A claim for sale, if one is named. `publish_offer` publishes an offer; a cession is an
-    // offer with a subject the engine can actually transfer, which is why it carries a price
-    // and a system rather than only prose.
     const cede = readString(req.params, ['cede', 'claim', 'sell']) as SystemId | null;
     if (cede !== null) return this.offerCession(ctx, req, cede);
-    const text = readString(req.params, ['text', 'offer', 'reason']);
-    if (text === null || text.length > MAX_REASON_LENGTH) {
-      return reject(
-        'INV-26',
-        `publish_offer needs {"text": "..."} of at most ${String(MAX_REASON_LENGTH)} characters — a price ` +
-          'list, not an essay: HANDS FOR HIRE — 8% OF CARGO, NO DEEP RUNS.',
-      );
-    }
-    this.offers.push({ by: req.principal, text, tick: ctx.tick });
-    return { ok: true, value: null };
+    return publishOffer(
+      {
+        record: (entry) => {
+          this.offers.push(entry);
+        },
+        maxLength: MAX_REASON_LENGTH,
+      },
+      req.principal,
+      req.params,
+      ctx.tick,
+    );
   }
 
   private vMessage(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
