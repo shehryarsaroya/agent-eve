@@ -339,6 +339,14 @@ replayed ledger that lacks the account while the posting log remembers it. `p:va
 enrolled principal fits that shape exactly, and the house cast (re-seated deterministically from the
 master seed, never stored) does not.
 
+**Suspect 1 is now partly eliminated, by reading rather than guessing.** Seat recycling does NOT delete
+a principal or its accounts: `seats.ts` says the seat row is *"never deleted"* and a returning dormant
+principal *"keeps its identity, its holding and its standing; all it lost was the seat."* So recycling
+cannot by itself remove an account from the ledger. What it could still do is change whether a
+principal is RE-SEATED at boot — and `bootFromStore` deliberately does not re-seat enrolments inside an
+adopted prefix ("already in the snapshot's `world` capture, so they must NOT be re-seated"), which is
+the seam worth examining next.
+
 **The instrument to build next:** a durability fixture that ENROLS a principal over HTTP, journals, and
 adopts. `test/durability/` currently has none — every fixture there is cast-only, which is precisely why
 900 ticks of heuristic world adopts cleanly and production does not. That gap is the reason this bug
