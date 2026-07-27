@@ -300,7 +300,48 @@ export class Book {
 
   // ── payment ───────────────────────────────────────────────────────────────
 
+  /**
+   * What has been paid against one assessment. **A READ, and it used to be a write.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS INSERTED A ZERO ROW INTO A HASHED MAP, AND THE FRAME RENDERER READS IT.**
+   *
+   * `payments` is inside `capture()` and `levyStateTable` puts that capture into `state_hash`. This
+   * method lazily `set` the row it did not find, so a caller that merely *looked* changed the
+   * world's hash — and `tribute.ts:tributeLineState` looks, once per principal, every time a
+   * tribute line is drawn. **Rendering a picture of the world mutated the world.** A frame is a
+   * projection (§15's "three write artifacts, two projections"); a projection that writes is the
+   * event-sourcing cliff with the hash on the other side of it.
+   *
+   * It was found in `sovereignty/book.ts`'s identical copy, by
+   * `test/durability/checkpoint-adoption.test.ts`'s crossing case: a genesis replay and an adopted
+   * boot read different sets of pairs, so they hashed differently forever while each one's
+   * arithmetic stayed correct. That is DET-1 failing in the only way nothing else catches. The
+   * sovereignty copy had no subject until claims existed; this one has had one all along, and the
+   * reason it never diverged is that every road into it happens to have been re-run on both paths.
+   * "It has not bitten yet" is not a property.
+   *
+   * The read returns a **copy**, never the stored row, so no caller can write through it either.
+   * {@link Book.paymentRowFor} is the writer's road and the only thing that inserts.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   paymentOf(reckoning: number, principal: PrincipalId): PaymentRow {
+    const row = this.payments.get(principalKey(reckoning, principal));
+    if (row === undefined) {
+      return {
+        reckoning,
+        principal,
+        paidOwn: minor(0),
+        paidOther: minor(0),
+        swept: qty(0),
+        deliveries: 0,
+      };
+    }
+    return { ...row };
+  }
+
+  /** The stored row, inserted if absent. **Writers only** — see {@link Book.paymentOf}. */
+  private paymentRowFor(reckoning: number, principal: PrincipalId): PaymentRow {
     const key = principalKey(reckoning, principal);
     const row = this.payments.get(key);
     if (row !== undefined) return row;
@@ -336,7 +377,7 @@ export class Book {
    */
   credit(reckoning: number, principal: PrincipalId, amount: Minor, byOwnHand: boolean): void {
     if (amount <= 0) return;
-    const row = this.paymentOf(reckoning, principal);
+    const row = this.paymentRowFor(reckoning, principal);
     if (byOwnHand) row.paidOwn = minor(row.paidOwn + amount);
     else row.paidOther = minor(row.paidOther + amount);
     row.deliveries += 1;
@@ -345,7 +386,7 @@ export class Book {
   /** Record what the sweep took. Reported in the shortfall row, never as a payment. */
   recordSweep(reckoning: number, principal: PrincipalId, taken: Qty): void {
     if (taken <= 0) return;
-    const row = this.paymentOf(reckoning, principal);
+    const row = this.paymentRowFor(reckoning, principal);
     row.swept = qty(row.swept + taken);
   }
 

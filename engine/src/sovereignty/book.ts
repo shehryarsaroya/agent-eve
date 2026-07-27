@@ -490,7 +490,43 @@ export class Book {
 
   // ── payment ───────────────────────────────────────────────────────────────
 
+  /**
+   * What has been paid against one Charge. **A READ, and it used to be a write.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS INSERTED A ZERO ROW INTO A HASHED MAP, SO *ASKING* CHANGED `state_hash`.**
+   *
+   * `payments` is inside `capture()` — deliberately, and the note there is right about why. But
+   * this method lazily `set` the row it did not find, so any caller that merely *looked* at a
+   * (reckoning, system) pair with no delivery against it permanently altered the world's hash. The
+   * state then depended on **which reads had happened**, not on what the world had done, and that
+   * is DET-1 failing in the one direction nothing else can catch: both worlds are internally
+   * consistent and each one's arithmetic is correct.
+   *
+   * Found by `test/durability/checkpoint-adoption.test.ts`'s crossing case, which is exactly the
+   * shape that exposes it. `settle.ts` reads a payment for every shortfall row, so a claim that
+   * paid nothing in Reckoning 0 got `{"reckoning":0,"system":"sys-07","paid":0,"deliveries":0}`
+   * written into the book at that settlement. A genesis replay re-runs that settlement and writes
+   * it again; an adopted boot replays only the tail, never re-runs it, and diverges by one row for
+   * the rest of the world's life. The two hashes were `9be64f49…` and `ecb61c86…`.
+   *
+   * It had no subject until claims existed, which is why it has sat here undetected: with
+   * `claimLines: 0` there were no shortfall rows to read. `levy/book.ts` carried the identical
+   * defect and is fixed with it — that one is worse still, because the *frame renderer*
+   * (`tribute.ts`) reads it, so drawing a picture of the world mutated it.
+   *
+   * The read now returns a **copy**, never the stored row, so no caller can write through it
+   * either. {@link Book.paymentRowFor} is the writer's road and the only thing that inserts.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   paymentOf(reckoning: number, system: SystemId): ChargePayment {
+    const row = this.payments.get(pairKey(reckoning, system));
+    if (row === undefined) return { reckoning, system, paid: qty(0), deliveries: 0 };
+    return { ...row };
+  }
+
+  /** The stored row, inserted if absent. **Writers only** — see {@link Book.paymentOf}. */
+  private paymentRowFor(reckoning: number, system: SystemId): ChargePayment {
     const key = pairKey(reckoning, system);
     const row = this.payments.get(key);
     if (row !== undefined) return row;
@@ -521,7 +557,7 @@ export class Book {
    */
   credit(reckoning: number, system: SystemId, amount: Qty): void {
     if (amount <= 0) return;
-    const row = this.paymentOf(reckoning, system);
+    const row = this.paymentRowFor(reckoning, system);
     row.paid = qty(row.paid + amount);
     row.deliveries += 1;
   }
