@@ -114,10 +114,12 @@ import {
   LEVY_GOOD,
   LEVY_NOMINAL_MINOR,
   LEVY_STARTER_ALLOTMENT,
+  MAX_LEVY_CARRY_OFFERS,
   assessCycle,
   ballotFor,
   ballotWindow,
   carrierAt,
+  carryableOf,
   checkLevyAttribution,
   constellationOf,
   creditFor,
@@ -127,9 +129,11 @@ import {
   inv24InputsFor,
   isLevyRule,
   levyStateTable,
+  rollByConstellation,
   settleLevy,
   tributeLinesFor,
   voteFault,
+  type LevyCarryQuote,
   type LevySettlement,
   type LevySubject,
   type SweepPort,
@@ -10537,6 +10541,139 @@ export class Runtime {
       available,
       fault,
     };
+  }
+
+  /**
+   * ★ Whose escrowable share this principal could carry **right now**, and for how much.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE NINTH UNEXERCISED CAPABILITY, GIVEN A DOOR.** §5.2: a stated share of every
+   * assessment is non-escrowable *"and must be carried by a hand, not bought as a service"* —
+   * which means the other 70% **may** be, by another principal's hand. `vDeliver` has read
+   * `on_behalf_of`/`payer` since the Levy landed, `creditFor` has bounded a foreign delivery to
+   * the escrowable bucket since the same day, `settle.ts` publishes `paidOther` on every
+   * shortfall row, and the `levy.short` event carries `paidOtherMinor` to the viewer.
+   *
+   * **Nothing has ever offered it, and `paidOther` is 0 in every world this repo has run.** In
+   * every report, on every frame and to every reader, that is indistinguishable from the
+   * mechanism not existing — which is why the residue at nine Reckonings has been read as a §10
+   * production shortfall when it is first a **distribution** failure. `g01` R7: three members on
+   * one MARCHES system earning 10,368 a Reckoning against 23,900 each, while three others in the
+   * same constellation hold 360,000 units of the same good.
+   *
+   * ── LEGALITY IS THE VERB'S, NOT THIS METHOD'S ──────────────────────────────
+   *
+   * Each row's `fault` comes from the same {@link deliveryFault} `vDeliver` calls, with the same
+   * inputs and the deliverer in the deliverer slot — so a caller filtering on `fault === null`
+   * cannot be offered an act the engine then refuses, which costs an agent a real action (AGT-S2).
+   * The amount comes from {@link carryableOf}, which is the only arithmetic for "how much of
+   * theirs may I take on".
+   *
+   * ── SCOPE: THE PAYER'S OWN DELIVERY PLACE, WHICH IS WHY THIS IS CONSTELLATION-LOCAL ──
+   *
+   * `vDeliver` resolves the place from the **payer's** plan (`plan.deliverableTo`) and then
+   * demands a hand of the *deliverer* standing on it. A constellation has one delivery place, so
+   * in practice a carrier serves its own constellation — and that is the right shape rather than
+   * a limitation: goods cannot cross a constellation (`haul` is not live), so a carry that
+   * reached next door would be inventing transport the world does not have.
+   *
+   * Ordered by canonical payer id and capped, like {@link grantCandidates}: a deterministic
+   * prefix of one list, so the menu an agent reads and the bot that plays pick from the same rows
+   * in the same order (DET-1).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  levyCarryQuotes(
+    deliverer: PrincipalId,
+    tick = this.engine.tick,
+    max = MAX_LEVY_CARRY_OFFERS,
+  ): readonly LevyCarryQuote[] {
+    if (max <= 0) return [];
+    // ── THE CAP APPLIES TO OFFERS, NOT TO ROWS, AND THAT WAS A MEASURED BUG ───
+    //
+    // The first version of this method capped the whole traversal, so a co-member whose row
+    // carried a `fault` — already discharged, nothing left but its presence share, no hand of
+    // yours at the place — **spent one of the two slots** and the genuinely reachable payer
+    // further down the canonical order was never seen. Measured on `g01` at nine Reckonings: the
+    // branch fired, `carried` reached 50,411 and `levyShort` still sat at 57,696, because the two
+    // slots were routinely filled by rows nothing could be done about.
+    //
+    // A cap that counts unusable rows is a cap on the mechanism rather than on the payload, which
+    // is the `Book.prune` hazard wearing a different hat: the instrument was blind in the hiding
+    // direction. `carryFor` is subject to the same figure, so the bot inherited the same blindness.
+    return this.levyCarryRows(deliverer, tick)
+      .filter((row) => row.fault === null && row.payable > 0)
+      .slice(0, max);
+  }
+
+  /**
+   * The rows {@link levyCarryQuotes} could not offer, with the engine's reason for each.
+   *
+   * For `withheld`, which is where an omission belongs (PROP-O1: omissions must be *countable*).
+   * A co-member is short, the goods are in this principal's warehouse, and the reason nothing can
+   * move is a fact about the world — *"no hand of yours is standing at the delivery place"* — that
+   * an agent can act on next tick. Silently dropping the row would teach it that the mechanism does
+   * not apply to it, which is the same lie one layer down.
+   */
+  levyCarryObstacles(deliverer: PrincipalId, tick = this.engine.tick): readonly LevyCarryQuote[] {
+    return this.levyCarryRows(deliverer, tick).filter(
+      (row) => row.escrowableOwed > 0 && (row.fault !== null || row.payable <= 0),
+    );
+  }
+
+  /**
+   * Every co-member's carry position, uncapped, in canonical payer order.
+   *
+   * One home for the arithmetic, two views over it — the offer list and the obstacle list. A second
+   * traversal computing the same figures for the "why not" half is scar #5 on a rules surface, and
+   * the two halves must agree by construction or `withheld` starts explaining an omission that did
+   * not happen.
+   */
+  private levyCarryRows(deliverer: PrincipalId, tick: number): readonly LevyCarryQuote[] {
+    const reckoning = reckoningOf(tick);
+    const constellation = constellationOf(this.world, deliverer);
+    if (constellation === null) return [];
+    const available = this.levyGoodAvailable(deliverer);
+    const ownOwing = this.levy.owingOf(reckoning, deliverer);
+    const out: LevyCarryQuote[] = [];
+    // The roll rather than the plan's lines: `rollByConstellation` is the same reader the
+    // assessment and the ballot use, so a payer this method can see is a payer the docket has.
+    for (const payer of rollByConstellation(this.world).get(constellation) ?? []) {
+      if (payer === deliverer) continue;
+      const line = this.levy.lineFor(reckoning, payer);
+      if (line === null) continue;
+      const place = line.plan.deliverableTo;
+      const payerOwing = this.levy.owingOf(reckoning, payer);
+      // ── WHAT THE PAYER CAN DO FOR ITSELF, WHICH A CARRY MUST NOT RACE ────────
+      //
+      // §5.2's carry is for a principal that cannot reach the goods. A payer standing at the
+      // delivery place with stock in hand is not that principal: it will pay its own bill in the
+      // same tick, and because actions resolve from snapshot T neither side can see the other —
+      // whichever lands second is refused for want of room (`A14`, "nothing of that delivery can
+      // be credited"). That was measured as six repeated refusals in `heuristic.test.ts`, and
+      // AGT-S3 reads a repeated refusal as the affordance being wrong.
+      //
+      // **Presence gated, not just stock**: a payer holding a fortune with every hand elsewhere
+      // cannot deliver a unit this tick, and that is exactly the payer a carry should serve.
+      const payerReach =
+        carrierAt(this.world, payer, place, tick) === null
+          ? minor(0)
+          : minor(this.levyGoodAvailable(payer));
+      out.push({
+        payer,
+        place,
+        ...carryableOf({ payerOwing, ownOwing, available, payerReach }),
+        fault: deliveryFault({
+          world: this.world,
+          payer,
+          deliverer,
+          place,
+          tick,
+          owing: payerOwing,
+          available,
+        }),
+      });
+    }
+    return out;
   }
 
   /** Per-Reckoning Levy history, oldest first. Bounded; the record is in the ledger. */

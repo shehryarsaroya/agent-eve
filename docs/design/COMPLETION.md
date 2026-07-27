@@ -15,14 +15,22 @@ trusting — this file goes stale the moment someone commits.*
 **The machine is built and correct, the core loop closes without a human in it, and 12 of 13 show
 surfaces carry data. The gap is no longer mechanics — it is that the world has ONE GOOD.**
 
-Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **2,939
-tests** pass against them. Phase 2 and Phase 3 do not exist, by design — §16 marks Phase 2 "optional,
-possibly forever."
+Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,230
+tests** pass against them (2026-07-27). Phase 2 and Phase 3 do not exist as *complete* layers, by
+design — §16 marks Phase 2 "optional, possibly forever" and the owner has overridden that; combat is
+partly in.
 
 As of 2026-07-26 (late), a world nobody steers hands out authority *and draws on it* (~31 grants, ~27
 draws per 900 ticks), raises WORKS so goods have a source, founds syndicates, and carries all three of
 §16's world-memory projections. The four empty panels were a **cast** gap in every case: the mechanic
 built, the affordance offered, and no branch ever selecting it.
+
+**2026-07-27: the same gap, ninth instance, at the deepest level yet.** §5.2's escrowable share may be
+carried by another principal's hand, `deliver {payer}` had always implemented it, and `paidOther` was
+**0 in every world this repo had ever run** — no affordance, no cast branch, and no column in any
+instrument that would have shown the zero. Offering it took the nine-Reckoning `levyShort` from
+**202,540 to 8,051** and red tribute lines from **19/576 to 1/576** (`TRACKER.md` `D26`). Read that as
+the standing warning this file exists for: *the gap is rarely the mechanic.*
 
 What is left is depth, not machinery. `market` is 3,065 lines pricing a single fungible commodity, so
 there is no trade, no specialization and no supply chain to reason about — **that is the whole distance

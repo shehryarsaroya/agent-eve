@@ -295,3 +295,25 @@ export const LEVY_RETAINED_RECKONINGS = 3;
 export const MAX_LEVY_BALLOTS = MAX_PRINCIPALS * (LEVY_RETAINED_RECKONINGS + 1);
 /** Tribute lines a frame may carry. One per assessed principal, and the map is the show. */
 export const MAX_TRIBUTE_LINES = 512;
+
+/**
+ * How many `deliver {payer}` offers one observation carries. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A CAP, AND A DELIBERATELY SMALL ONE, FOR THE REASON `MAX_GRANT_OFFERS` IS SMALL.**
+ *
+ * A carry offer is one row per co-member with an escrowable remainder, so an unbounded list is
+ * `roll - 1` rows on a docket night — and every one of them competes inside `MAX_AFFORDANCES`
+ * (64) against the acts a principal takes for *itself*. The truncation notice in
+ * `api/observe.ts` promises the dropped acts are "the lowest-priority repeats"; a mechanic
+ * pushed off the end by another mechanic's variants would make that sentence false again, which
+ * is exactly the scar the notice was rewritten to close.
+ *
+ * Two, because two is what the mechanic needs to be *visible and chooseable*: one row would read
+ * as the engine nominating a beneficiary, and §5.2's whole point about who is relieved is that it
+ * is a choice the society makes rather than one the rules make. `levyCarryQuotes` orders by
+ * canonical payer id and returns a prefix, so which two is deterministic and reproducible rather
+ * than a scan order.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const MAX_LEVY_CARRY_OFFERS = 2;

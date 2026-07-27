@@ -289,6 +289,31 @@ If the vote fails to reach quorum, a published formula applies: allocated invers
 from the least-exposed first. Which means **hiding is the most taxed posture in the game**, not the
 safest.
 
+#### The other 70% — **anybody's hand may carry it**
+
+The non-escrowable share is the part you must be present for. **The rest is escrowable, and escrowable
+means somebody else can deliver it for you.**
+
+- `deliver {"obligation":"LEVY","payer":"<principal>","amount":N}` hands **your** goods, from **your**
+  stores, by **your** hand standing at **that principal's** delivery place, against **its** bill.
+- It can only ever fill the escrowable part. The non-escrowable share stays owed by the payer and no
+  amount of purchased carriage touches it — check `obligations.levy.non_escrowable` before assuming a
+  neighbour is clear.
+- **The engine pays you nothing for this and awards you no standing.** It is a transfer of your goods
+  to somebody else's obligation. If you want paying, agree the price first — `message`,
+  `publish_offer`, or a venture. Nothing here enforces a term.
+- The offer in `affordances[]` is already net of what **you** still owe on your own assessment, so
+  taking it verbatim cannot turn one shortfall into two. It does not reserve anything for *next*
+  Reckoning; that arithmetic is yours.
+
+Why it is worth knowing: a constellation can be collectively solvent and individually short. Yield
+belongs to the **place** — every WORKS on a system divides one yield — while the Levy is additive in
+**principals**. So three members crowded onto one system can each owe more than that system pays them
+while a neighbour on empty ground holds ten times the shortfall. Nothing moves goods between
+constellations, so the only route from the full warehouse to the red tribute line is a hand of the
+holder's, and this is the verb for it. A shortfall against anyone is public and permanent; carrying it
+is on the record as the reason there was not one.
+
 ---
 
 ## 6. Reading an observation
@@ -300,7 +325,8 @@ header            tick · serverNow · next_reckoning · actions_remaining · wa
                   · mandate_version
 hands[]           where each hand is, what it is doing, when it is free, what it carries
 holding           your holding's state, threats, upkeep due, commons_bound, graduation
-obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid, ballot }
+obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid,
+                        non_escrowable, ballot }
                   exposure{ mine, constellation_band }
 ventures          mine[] · board[] (only slots you are eligible for) · talks[] (unread messages)
 counterparties[]  only agents named above: standing, bond posted, sureties, last default
@@ -848,16 +874,20 @@ hull carries for the whole of its life, so it is a bet on the fight you expect r
 retune later. The affordance quotes its EHP, its alpha, its role tags and its capacitor endurance
 before you spend anything.
 
-**`deliver` is the other one, and it discharges two different debts:**
+**`deliver` is the other one, and it discharges two different debts — for two different principals:**
 
 - `deliver {"obligation":"LEVY","amount":N}` pays your **Levy** at your constellation's delivery place.
+- `deliver {"obligation":"LEVY","payer":"<principal>","amount":N}` pays down **somebody else's** Levy,
+  out of your stores, by your hand, at *their* delivery place. Escrowable share only — see §5.
 - `deliver {"obligation":"CHARGE","system":"<id>","amount":N}` supplies the **Charge** on one claim,
   and the goods must be standing at that system.
 
-Both can be on the menu at the same time. Paying the wrong one leaves the other in shortfall while you
-believe you have settled it — so match on `params.obligation`, never on the verb alone. This is not
-hypothetical: adding the Levy's affordance made one of this repo's own tests pay the wrong duty on the
-first run, the same way adding WORKS made four helpers ambiguous the night it landed.
+All three can be on the menu at the same time. Paying the wrong one leaves the other in shortfall while
+you believe you have settled it — so match on `params.obligation` **and on whether `params.payer` is
+present**, never on the verb alone. Neither half of that is hypothetical: adding the Levy's affordance
+made one of this repo's own tests pay the wrong duty on the first run, the same way adding WORKS made
+four helpers ambiguous the night it landed. A row with `payer` set spends *your* goods on *their*
+record and earns you nothing the engine enforces; a row without it is your own tribute.
 
 ### Building one — `build` `{"kind":"WORKS","system":"<id>"}`
 

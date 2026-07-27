@@ -569,14 +569,21 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
 
     // The ANALYTIC maximum, uncapped: what the catalog would emit if one member could somehow be
-    // every situation at once. **59,453, which at 72,000 now fits WHOLE** — it was 2,446 above the
+    // every situation at once. **61,693, which at 72,000 fits WHOLE** — it was 2,446 above the
     // 56,000 ceiling and got priced down to 55,996 by dropping CONTEXT. Either way it was tolerable,
     // precisely because nothing is ever it: `graduate` and a held claim cannot coexist, so this state
     // has no occupant, and what gave when it was priced was CONTEXT rather than a rule. Still pinned
     // rather than asserted under the ceiling, because that is what makes growth visible — and padding
     // the ceiling for a state that cannot exist is how a margin becomes decoration.
+    //
+    // **59,453 → 61,693: +2,240, and it is `deliver {payer}` being written down.** §5.2 escrows 70%
+    // of every assessment and permits another principal's hand to carry it; the verb had implemented
+    // that since the Levy landed and `agent.md` had never said so, which is why `paidOther` was 0 in
+    // every world this repo ran. A mechanism no agent is told about is one no agent uses. The
+    // prose went into `## 5`'s Levy block, which is FLOOR, so every position below grew by the same
+    // +2,200 — that is what the ceiling was raised for and it is spent on purpose.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(59_453);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(61_693);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -594,7 +601,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(51_867);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(54_107);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1302,25 +1309,41 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      32_705, // a newcomer on its first wake
-      36_629, // mid-game in the Commons
-      37_271, // about to take territory — and §11B is READABLE now, which it was not
-      51_867, // a claimant in trouble — the largest REACHABLE position
-      59_453, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
+      34_945, // a newcomer on its first wake
+      38_869, // mid-game in the Commons
+      39_511, // about to take territory — and §11B is READABLE now, which it was not
+      54_107, // a claimant in trouble — the largest REACHABLE position
+      61_693, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
     ]);
+    // ── ★ ALL FIVE ROWS +2,200, AND THAT IS `deliver {payer}` GETTING WRITTEN DOWN ────────────
+    //
+    // The whole table moved by the same +2,240 because the prose went into `## 5`'s Levy block,
+    // which is FLOOR: every member is shown it every wake, including one that will never carry
+    // anybody's tribute. That is the expensive placement and it was chosen deliberately — the
+    // block it belongs to is the one that already explains the non-escrowable share, and splitting
+    // "you must be present for 30%" from "anybody may carry the other 70%" across two units is how
+    // a rule gets read as half a rule.
+    //
+    // **The first feature since the raise to be able to just say the thing.** §5.2 escrowed 70% of
+    // every assessment from the start, `deliver {payer}` implemented it from the start, `agent.md`
+    // never mentioned it, and `paidOther` was **0 in every world this repo has ever run** — a
+    // capability that exists and is never exercised is indistinguishable from one that is missing.
+    // Under the old 56,000 ceiling this paragraph would have had to be rewritten to a sentence or
+    // pushed onto a verb condition, which is exactly the rent the note below says three features in
+    // a row paid. Nothing was trimmed to make room.
     // ── ⚑ THE CEILING WAS RAISED 56,000 → 72,000, AND THIS TABLE IS WHAT MOVED ────────────────
     //
     // **One row, and it is the unreachable one.** The four reachable positions are byte-identical
     // before and after the raise, because none of them was ever being squeezed — they were being
     // *threatened*, at 133 characters of margin. What moved is the analytic maximum: at 56,000 it
-    // was priced down to **55,996** by dropping CONTEXT, and at 72,000 it emits **59,453** whole.
+    // was priced down to **55,996** by dropping CONTEXT, and at 72,000 it emits **61,693** whole.
     // That is the raise doing the thing `MAX_CONTRACT_CHARS` says a non-binding ceiling does —
     // showing up as more rules delivered rather than as slack.
     //
     // **The margins now, which is the number the next author needs:**
     //
-    //   - largest REACHABLE position 51,867 of the 68,000 the margin allows → **16,133 characters**;
-    //   - analytic maximum 59,453 of `MAX_CONTRACT_CHARS` → **12,547 characters**.
+    //   - largest REACHABLE position 54,107 of the 68,000 the margin allows → **13,893 characters**;
+    //   - analytic maximum 61,693 of `MAX_CONTRACT_CHARS` → **10,307 characters**.
     //
     // So the answer to "can I add a sentence" is **yes**, for the first time in three features. What
     // has NOT changed is what to do when this runs out again: `MAX_CONTRACT_CHARS`'s note names the

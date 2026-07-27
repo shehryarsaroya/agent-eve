@@ -797,9 +797,9 @@ export const CONTRACT_POSITIONS: readonly {
  * **72,000, AND IT SITS ABOVE THE UNREACHABLE ANALYTIC MAXIMUM ON PURPOSE.**
  *
  * The whole catalog, every fact and every verb at once — a state no principal can occupy,
- * because a claim anchors the body and `observe` withholds the crossing — measures **59,453**
+ * because a claim anchors the body and `observe` withholds the crossing — measures **61,693**
  * characters uncapped, and the largest position a principal can actually be in measures
- * **51,867**. This number is deliberately above both. So `overBudget` now means *"something is
+ * **54,107**. This number is deliberately above both. So `overBudget` now means *"something is
  * larger than the rules can be"* and not *"a successful player exists"*.
  *
  * ── WHY THE OLD BAR WAS RIGHT WHEN IT WAS SET, WHICH IS THE POINT ────────────
@@ -906,7 +906,7 @@ export const CONTRACT_POSITIONS: readonly {
  * numbers happening to fit; this is the ceiling on discretionary `wanted` blocks. Same trade
  * `projectObservation` makes one field over. An overshoot sets `overBudget`, is printed in the
  * prompt, and fails `prompt.test.ts` naming the position — so it can never be the silent cliff
- * the bar used to exist to prevent, and above 59,453 it should now be genuinely anomalous.
+ * the bar used to exist to prevent, and above 61,693 it should now be genuinely anomalous.
  *
  * ## 56k → 72k, because the budget had reached ZERO and was pricing features again
  *
@@ -915,6 +915,8 @@ export const CONTRACT_POSITIONS: readonly {
  * At 56,000 the slack was gone, exactly, and the table in `prompt.test.ts` said so:
  *
  *   - largest **reachable** position **51,867** of the 52,000 the margin allows → **133 characters**;
+ *     (it is **54,107** now: `deliver {payer}`'s rules text added +2,240 to every position, spent out
+ *     of exactly the slack this raise created — see `prompt.test.ts`'s measured table.)
  *   - **analytic** ceiling **55,996** of 56,000 → **4 characters**.
  *
  * Three features in a row then paid for their own rules text by trimming. The currency door for a
@@ -937,7 +939,7 @@ export const CONTRACT_POSITIONS: readonly {
  *
  * Because 60,000 would buy one feature and then this paragraph would be written a fifth time.
  * 72,000 leaves **16,004** characters above the 55,996 the analytic ceiling costs at the old bar
- * (**12,547** above the 59,453 it costs uncapped, which is what it now emits), and **20,133** above
+ * (**10,307** above the 61,693 it costs uncapped, which is what it now emits), and **17,893** above
  * the largest reachable position. That is several features of headroom rather than one.
  *
  * And the principle the number serves is the one that has already had to be enforced once

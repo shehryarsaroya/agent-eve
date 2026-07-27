@@ -163,15 +163,30 @@ already extracted, and `works/refine.ts` is the worked example of the port-and-a
 ### The lesson this project keeps re-teaching
 
 **A capability that exists and is never exercised is indistinguishable from one that is missing** — in
-every report, on every frame, and to every reader including its author. It has now appeared at three
+every report, on every frame, and to every reader including its author. It has now appeared at **five**
 depths: verbs with no affordance (nine mechanics, including `grant`), affordances no cast ever selects
-(the four empty panels, including the core loop), and invariants whose subject cannot occur (INV-22
-green over an empty journal for the project's whole life; INV-23 the same before it).
+(the four empty panels, including the core loop), invariants whose subject cannot occur (INV-22 green
+over an empty journal for the project's whole life; INV-23 the same before it), a **solvency
+mechanism** nobody had ever used (2026-07-27 — §5.2's escrowable share is carryable by another
+principal's hand, `deliver {payer}` always implemented it, and `paidOther` was 0 in every world this
+repo had run; offering it took the 9-Reckoning `levyShort` from 202,540 to 8,051 and red tribute lines from 19/576 to 1/576), and a **rule that
+never discriminates** (the same day — EXPOSURE is identically zero, so `BY_EXPOSURE`, `EVEN` and the
+published default `INVERSE_EXPOSURE` are one flat weight on 18 of 18 dockets and three of the Levy's
+four allocation rules are decoration).
 
-The corollary, learned expensively on 2026-07-26: **a negative claim from one grep spelling is only as
-strong as the spelling.** "No verb accepts a mandate" was false, `TRACKER.md` already said so, and the
-method was `recordSpend` rather than the `spend` that was searched for. Read the log before asserting
-an absence.
+Two corollaries, both learned expensively.
+
+**A negative claim from one grep spelling is only as strong as the spelling** (2026-07-26). "No verb
+accepts a mandate" was false, `TRACKER.md` already said so, and the method was `recordSpend` rather
+than the `spend` that was searched for. Read the log before asserting an absence.
+
+**An unmeasured capability is the same defect one level up** (2026-07-27). `paidOther` sat at zero for
+the project's whole life with no column in any instrument that would have printed it, so nothing could
+tell "nobody uses this" from "this does not exist". When you land a mechanism, land the meter — and
+`balance-gate.ts`'s new `CARRIED` column is the worked example. The same reasoning applies to the
+instrument itself: a cap, a `Ring` or a `Book.prune` window that drops the row your claim rests on
+fails **in the direction that hides**, and this repo has now shipped that three times
+(`MAX_RECKONING_SUMMARIES`, `LEVY_RETAINED_RECKONINGS`, and an offer cap that counted unusable rows).
 
 ---
 

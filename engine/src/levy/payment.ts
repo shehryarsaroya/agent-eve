@@ -28,7 +28,7 @@
 
 import { inFreeze, isSettlementTick } from '../core/time.js';
 import type { PrincipalId, SystemId } from '../core/types.js';
-import { BPS_ONE, minor, type Minor } from '../core/units.js';
+import { BPS_ONE, minor, qty, type Minor, type Qty } from '../core/units.js';
 import { handsOf, isPresent, type HandRecord, type WorldState } from '../world/index.js';
 import { LEVY_NON_ESCROWABLE_BPS } from './params.js';
 
@@ -121,6 +121,155 @@ export function creditFor(owing: Owing, offered: Minor, byOwnHand: boolean): Min
   if (offered <= 0) return minor(0);
   const room = byOwnHand ? owing.owed : owing.purchasableOwed;
   return minor(Math.min(offered, Math.max(0, room)));
+}
+
+/**
+ * ★ What one principal may carry of **another's** assessment, and what carrying it costs.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **§5.2's OTHER HALF, WHICH NOTHING HAS EVER OFFERED.** The non-escrowable share is the
+ * famous half of the sentence — *"it must be carried by a hand, not bought as a
+ * service"* — and {@link creditFor} has enforced it since the Levy landed. The half
+ * nobody read is what that leaves: **70% of every assessment IS escrowable, and §5.2
+ * permits it to be carried by another principal's hand.** `deliver {payer}` implements
+ * that in full, `paidOther` is one of the columns a shortfall event publishes, and no
+ * affordance has ever offered it — so `paidOther` is **0 in every world this repo has
+ * ever run.** A capability that exists and is never exercised is indistinguishable from
+ * one that is missing.
+ *
+ * It matters because the residue this instrument was built to see is a **distribution**
+ * failure before it is a production one. Measured on `g01` at Reckoning 7: three members
+ * hold a WORKS on one MARCHES system, occupancy 3, each earning `floor(110/3) x 288 =
+ * 10,368` against a 23,900 assessment — defaulting forever. In the same constellation
+ * `orrin`, `sable` and `varrow` sit on **360,000 units of the same good.** The goods
+ * exist; they are in somebody else's warehouse. This function is the arithmetic of moving
+ * them, and `test/levy/aged-solvency.spec.ts` carries the measurement.
+ *
+ * ── WHY THE OFFER NETS THE DELIVERER'S **OWN** OUTSTANDING DUTY ─────────────
+ *
+ * Because that is the one mistake the engine can see coming, and A2 says known arithmetic
+ * is exact. Paying your own Levy can never be an error — {@link Owing.owed} caps it. Paying
+ * somebody *else's* out of the goods your own tribute needs converts one shortfall into two,
+ * and it would do so from an affordance the agent was told was the safest available plan.
+ *
+ * So {@link Carryable.payable} is the surplus above `owing(self).owed`, not the whole
+ * warehouse — an **exact published figure**, never a forecast. Anything forward-looking (next
+ * Reckoning's duty, a war chest, a hull) is a judgement and belongs to whoever is playing:
+ * the cast keeps `CAST_CARRY_RESERVE_RECKONINGS` for exactly that, and an agent gets every
+ * component below to do its own arithmetic with.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Units: `LEVY_UNIT_MINOR` is 1, so a unit of the levy good discharges one MINOR and the
+ * `Qty`/`Minor` mixing below is the identity rate the whole module already runs on
+ * (`params.ts` argues for it — it deletes rounding between assessment and delivery).
+ */
+export interface Carryable {
+  /**
+   * The payer's escrowable remainder **after everything the payer can hand over itself** —
+   * the only part another hand may ever usefully fill.
+   *
+   * ── WHY THE PAYER'S OWN REACH IS NETTED OUT, WHICH IS A MEASURED FIX ────────
+   *
+   * It was `owing(payer).purchasableOwed` flat, and that **raced the payer's own delivery.**
+   * Actions resolve from snapshot T (§15.2: *"within-tick actions never react to another
+   * within-tick action"*), so a payer paying its whole bill in the same tick a neighbour
+   * carried part of it left whichever resolved second with no room and an `A14` refusal —
+   * *"nothing of that delivery can be credited"*. `test/cast/heuristic.test.ts` caught it as
+   * **six repeated `deliver A14` refusals**, and AGT-S3's rule is that a bot hitting one
+   * refusal repeatedly means the affordance is wrong rather than the bot.
+   *
+   * It is also the better mechanic. §5.2's carry exists so goods can reach a principal that
+   * **cannot produce or reach them**, and a payer standing at the delivery place with a full
+   * warehouse is not that principal. Offering to carry for it wastes an action, spends goods
+   * nobody needed spent, and — because the relief is real — quietly funds a member that could
+   * have funded itself.
+   */
+  readonly escrowableOwed: Minor;
+  /**
+   * What the payer could hand over **right now**, and therefore what it is expected to.
+   *
+   * Zero when the payer has no hand standing at its delivery place, because then its stock is
+   * unreachable this tick however large it is — a payer rich in goods and absent in body is
+   * exactly the case a carry should still serve.
+   */
+  readonly payerReach: Minor;
+  /**
+   * The payer's non-escrowable remainder. **No other hand may fill it, at any price.**
+   * Published on the offer rather than omitted, because an offer that quietly clipped
+   * itself to 70% would read as the engine short-crediting the delivery.
+   */
+  readonly presenceOwed: Minor;
+  /** Unpledged, deliverable units of the levy good the DELIVERER holds. */
+  readonly available: Qty;
+  /** What the deliverer still owes on its **own** assessment this Reckoning. */
+  readonly ownOwed: Minor;
+  /** `available - ownOwed`, floored at zero. Stock the deliverer's own tribute does not need. */
+  readonly surplus: Qty;
+  /** `min(escrowableOwed, surplus)`. What a carry would actually hand over. */
+  readonly payable: Minor;
+}
+
+/**
+ * Resolve a carry offer. Pure; the only arithmetic for "how much of theirs can I take on".
+ *
+ * One home, three readers — the affordance in `api/observe.ts`, the heuristic cast's
+ * `carryFor`, and the tests. A menu that computed its own answer would be a second reply to
+ * *"how much may I carry"*, which is scar #1 with a Levy shortfall attached.
+ */
+export function carryableOf(args: {
+  /** The PAYER's outstanding position — whose duty is being discharged. */
+  readonly payerOwing: Owing;
+  /** The DELIVERER's outstanding position on its own assessment. */
+  readonly ownOwing: Owing;
+  /** The DELIVERER's unpledged levy good. */
+  readonly available: Qty;
+  /**
+   * What the PAYER could hand over itself right now — its unpledged levy good if one of its
+   * own hands is standing at the delivery place, and **zero if none is.**
+   *
+   * The caller owns that predicate because it is the world's ({@link carrierAt}); this file owns
+   * what to do with the number. See {@link Carryable.escrowableOwed} for why it is netted.
+   */
+  readonly payerReach: Minor;
+}): Carryable {
+  const payerReach = minor(Math.max(0, args.payerReach));
+  // What is left of the payer's ESCROWABLE bucket once everything it can reach is credited to it.
+  //
+  // The payer's own hand fills **presence first** ({@link owingOf}, and that order is itself a
+  // decision argued there), so of `payerReach` only the part above `presenceOwed` ever reaches the
+  // escrowable bucket. Stated as arithmetic over the two remainders already on `Owing` rather than
+  // by re-deriving a split: re-labelling the payer's existing `paidOther` as `paidOwn` would let a
+  // purchased credit fill presence, which is the one thing §5.2 forbids it to do.
+  const reachToEscrowable = Math.max(0, payerReach - args.payerOwing.presenceOwed);
+  const escrowableOwed = minor(Math.max(0, args.payerOwing.purchasableOwed - reachToEscrowable));
+  const ownOwed = minor(Math.max(0, args.ownOwing.owed));
+  const surplus = qty(Math.max(0, args.available - ownOwed));
+  return {
+    escrowableOwed,
+    payerReach,
+    presenceOwed: minor(Math.max(0, args.payerOwing.presenceOwed)),
+    available: args.available,
+    ownOwed,
+    surplus,
+    payable: minor(Math.min(escrowableOwed, surplus)),
+  };
+}
+
+/**
+ * One carry offer as `observe` and the cast both read it: a {@link Carryable} with the two
+ * facts that say *whose* and *where*, plus the engine's own refusal if there is one.
+ *
+ * `fault` is `null` **exactly** when `deliver {payer}` would be accepted, and it is
+ * {@link deliveryFault}'s sentence rather than a paraphrase — the same string the verb would
+ * return. Two spellings of one refusal is how an affordance list starts offering acts the
+ * engine declines.
+ */
+export interface LevyCarryQuote extends Carryable {
+  /** The principal whose assessment this would discharge. */
+  readonly payer: PrincipalId;
+  /** Where it is payable: the PAYER's plan's delivery place, never the deliverer's. */
+  readonly place: SystemId;
+  readonly fault: string | null;
 }
 
 /** A hand that could discharge a tribute right now: this principal's, present, at the place. */

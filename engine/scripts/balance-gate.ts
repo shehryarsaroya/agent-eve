@@ -34,7 +34,7 @@
  */
 
 import { HeuristicCast } from '../src/cast/index.js';
-import { isSettlementTick, setSpeed, TICKS_PER_RECKONING } from '../src/core/time.js';
+import { isSettlementTick, reckoningIndex, setSpeed, TICKS_PER_RECKONING } from '../src/core/time.js';
 import { holdingOf } from '../src/world/index.js';
 import { Runtime } from '../src/sim/runtime.js';
 import { ENDOWMENT_WINDOW_RECKONINGS } from '../src/levy/params.js';
@@ -55,6 +55,22 @@ interface GateRow {
   readonly works: number;
   /** Members holding no WORKS and rich enough in currency to buy one. The trap. */
   readonly trapped: number;
+  /**
+   * ★ MINOR of Levy discharged by **somebody else's hand** — `Σ paidOther` over every docket.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A METER FOR THE MECHANISM, BECAUSE THE ABSENCE OF ONE IS HOW IT STAYED INVISIBLE.**
+   * §5.2 escrows 70% of every assessment and lets another principal's hand carry it;
+   * `deliver {payer}` has implemented that since the Levy landed; `paidOther` was **0 in every
+   * world this repo had ever run** and no instrument printed the figure, so nothing could tell
+   * the difference between a mechanism nobody used and a mechanism that did not exist.
+   *
+   * This column is that difference. A `levyShort` of 0 with `carried` of 0 means the world never
+   * needed the mechanism; a `levyShort` of 0 with `carried` above it means the mechanism is what
+   * closed the gap — and those are different findings that the old table reported identically.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly carried: number;
   readonly finalStateHash: string;
 }
 
@@ -80,6 +96,12 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
   let levyShort = 0;
   let kept = 0;
   let broken = 0;
+  // Accumulated at the settlement tick for the SAME prune reason as `levyShort`, and one more:
+  // `Book.prune` keeps `LEVY_RETAINED_RECKONINGS` (3) of payment rows, so a read at the end of a
+  // nine-Reckoning run would see the last three dockets and report a third of the truth. The
+  // current Reckoning's rows survive `prune(current)` by construction (`reckoning >= current - 3`),
+  // so reading here is the whole run whatever its length.
+  let carried = 0;
   for (let i = 0; i < ticks; i += 1) {
     const next = runtime.engine.tick + 1;
     for (const action of cast.decide(next, seed)) runtime.engine.submit(action);
@@ -97,6 +119,12 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
     }
     if (isSettlementTick(report.tick)) {
       levyShort += runtime.levySettlement?.levyShort ?? 0;
+      const reckoning = reckoningIndex(report.tick);
+      for (const plan of runtime.levy.plansIn(reckoning)) {
+        for (const line of plan.lines) {
+          carried += runtime.levy.paymentOf(reckoning, line.principal).paidOther;
+        }
+      }
       const settled = runtime.reckonings().at(-1);
       if (settled !== undefined) {
         kept += settled.electiveHonoured;
@@ -133,6 +161,7 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
     battles: runtime.battles.all().length,
     works: runtime.works.liveInOrder().length,
     trapped,
+    carried,
     finalStateHash,
   };
 }
@@ -191,7 +220,7 @@ process.stdout.write(
     `(${String(Math.floor(args.ticks / TICKS_PER_RECKONING))} Reckonings) x ${String(args.members)} members\n\n`,
 );
 process.stdout.write(
-  'seed        levyShort  red/lines   kept broken  ventures claims     rent hulls battles works TRAPPED\n',
+  'seed        levyShort  red/lines   kept broken  ventures claims     rent hulls battles works TRAPPED   CARRIED\n',
 );
 const rows: GateRow[] = [];
 for (const seed of args.seeds) {
@@ -204,7 +233,8 @@ for (const seed of args.seeds) {
       `${String(row.ventures).padStart(9)} ${String(row.claims).padStart(6)} ` +
       `${String(row.rent).padStart(8)} ${String(row.hulls).padStart(5)} ` +
       `${String(row.battles).padStart(7)} ${String(row.works).padStart(5)} ` +
-      `${String(row.trapped).padStart(7)}${row.halted ? '  HALTED' : ''}\n`,
+      `${String(row.trapped).padStart(7)} ${String(row.carried).padStart(9)}` +
+      `${row.halted ? '  HALTED' : ''}\n`,
   );
 }
 const sum = (pick: (r: GateRow) => number): number => rows.reduce((n, r) => n + pick(r), 0);
@@ -225,6 +255,7 @@ const total = {
   battles: sum((r) => r.battles),
   works: sum((r) => r.works),
   trapped: sum((r) => r.trapped),
+  carried: sum((r) => r.carried),
 };
 /**
  * ── THE HORIZON IS PART OF THE RESULT, AND A SHORT SWEEP MAY NOT REPORT GREEN ──
@@ -250,7 +281,7 @@ process.stdout.write(
     `${String(total.ventures).padStart(9)} ${String(total.claims).padStart(6)} ` +
     `${String(total.rent).padStart(8)} ${String(total.hulls).padStart(5)} ` +
     `${String(total.battles).padStart(7)} ${String(total.works).padStart(5)} ` +
-    `${String(total.trapped).padStart(7)}\n`,
+    `${String(total.trapped).padStart(7)} ${String(total.carried).padStart(9)}\n`,
 );
 if (!seesTheEconomy) {
   process.stdout.write(

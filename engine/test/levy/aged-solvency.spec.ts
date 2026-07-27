@@ -30,8 +30,28 @@
  * warehouse. §5.2 already answers the second — 70% of every assessment is escrowable and may be
  * carried by *another* principal's hand — and `deliver {payer}` implements it, no affordance offers
  * it, and `paidOther` is 0 in every world this repo has ever run. So the residue may not be a
- * calibration question at all; it may be the ninth unexercised capability. Either way it is a
- * decision above this file's pay grade, and the tests say which is which.
+ * calibration question at all; it may be the ninth unexercised capability.
+ *
+ * ── ★ IT WAS. UPDATED AFTER THE MEASUREMENT ─────────────────────────────────
+ *
+ * `deliver {payer}` reached the affordance list and the cast's decision chain, and the eight-seed
+ * nine-Reckoning sweep moved `levyShort` **202,540 → 8,051**, red tribute lines **19/576 → 1/576**,
+ * `paidOther` **0 → 163,126**, and **seven of eight seeds spotless** (`D26` + `D27`; the carry alone is
+ * 4,639 and 2/576). So the third test below now asserts the *closure* rather than the
+ * question, and the second one — the income/duty mismatch — **still stands unchanged**: for a
+ * constellation whose own margin is negative (`g07`: 149,760 produced against 160,000 owed)
+ * distribution moves goods and cannot make them, which is why `g07` is the one seed still showing a
+ * residue. The §10 calibration decision is still open and still the owner's.
+ *
+ * Two more things the measurement settled, both recorded in `TRACKER.md`:
+ *
+ *   · **`BY_EXPOSURE` is not unpayable by construction.** On the same dockets, `amount > held` is 5
+ *     rows under `BY_EXPOSURE`, 5 under `BY_STORES` and 5 under `EVEN` — no allocation rule changes
+ *     payability there. What is true is stranger: **EXPOSURE is identically zero at every phase of
+ *     every Reckoning**, so `BY_EXPOSURE`, `EVEN` and the published default `INVERSE_EXPOSURE` hand
+ *     every principal the same weight on 18 of 18 dockets and only `BY_STORES` discriminates.
+ *   · Which means a goods-rich member "voting `BY_EXPOSURE`" is voting **flat**, not voting that the
+ *     exposed should pay. It is simply the first flat rule `ballotFor` reaches in `LEVY_RULES` order.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -263,57 +283,90 @@ describe('the Levy in an AGED world — six Reckonings, not three', () => {
     ]);
   }, 180_000);
 
-  it('★ THE HORIZON IS PART OF THE RESULT — a six-Reckoning sweep still cannot see this', () => {
+  it('★ THE RESIDUE WAS A DISTRIBUTION FAILURE, AND `deliver {payer}` CLOSED IT', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // **THE GATE MOVES OUT, IT DOES NOT STOP MOVING.** The `BY_STORES` fix cleared six Reckonings
-    // on all eight seeds — 67,043 and six red lines to 0 and 0 — and that is exactly why this test
-    // asserts against **nine** and not six. The endowment does not stop masking at Reckoning 4; it
-    // stops masking *the first principal*. The aggregate is masked for as long as the aggregate
-    // stock lasts, which is longer.
+    // **THIS TEST USED TO ASSERT THE OPPOSITE, AND ITS OWN MESSAGE SAID WHAT TO DO IF IT FLIPPED.**
+    // It read `expect(shortByReckoning.slice(6).some(n => n > 0)).toBe(true)` with the note *"if
+    // this is green the residue has been fixed — which would be a real result: check whether
+    // `deliver {payer}` reached the affordance list."* It reached it. This is that rewrite.
     //
-    // `g01` is the demonstration and it is a better one than `g07` because its docket is
-    // `BY_EXPOSURE`, so **no allocation rule is implicated at all**: three of its members hold a
-    // WORKS on `sys-05`, occupancy 3, which yields `floor(110/3) = 36` a tick — 10,368 a Reckoning
-    // against a 23,900 assessment. All three pay every unit they earn and are recorded ~13,000 short
-    // from Reckoning 6 onward, while `p:orrin`, `p:sable` and `p:varrow` sit on 360,000 units of the
-    // same good in the same constellation.
+    // What the old version had right: `g01`'s docket is `BY_EXPOSURE`, so **no allocation rule was
+    // implicated** — three of its members hold a WORKS on `sys-05` at occupancy 3, yielding
+    // `floor(110/3) = 36` a tick, 10,368 a Reckoning against a 23,900 assessment, and all three
+    // paid every unit they earned and were still recorded ~13,000 short from Reckoning 6 onward.
+    // Meanwhile `p:orrin`, `p:sable` and `p:varrow` sat on 360,000 units of the same good in the
+    // same constellation. **The goods existed and were in the wrong warehouse.**
     //
-    // So the residue is a **distribution** failure before it is a production one, and §5.2 already
-    // has the remedy: 70% of every assessment is escrowable and *may be delivered by another
-    // principal's hand*. `deliver {payer}` implements it, no affordance offers it, and `paidOther`
-    // is 0 in every world this repo has ever run. That is the finding, and it is the reason this
-    // test asserts a shape rather than a target.
+    // What was missing was the door. §5.2 escrows 70% of every assessment and permits that share to
+    // be carried by another principal's hand; `deliver {payer}` had implemented it since the Levy
+    // landed; no affordance offered it; `paidOther` was 0 in every world this repo had ever run.
+    // With the offer on the menu (`api/observe.ts` 5B-ter) and a cast branch that takes it
+    // (`heuristic.ts:carryFor`), the eight-seed sweep at nine Reckonings moves:
     //
-    // Read on `shortByReckoning`, captured per settlement — NOT on `runtime.levyReckonings()`,
-    // which is a `Ring` bounded at `MAX_RECKONING_SUMMARIES` = 8 and silently drops the oldest
-    // Reckonings past that. At nine Reckonings that ring is already lying, which is the
-    // `Book.prune` hazard living in the instrument instead of the engine; `balance-gate.ts`
-    // accumulates the same way now, for the same reason.
+    //   `levyShort` **202,540 → 8,051** · red tribute lines **19/576 → 1/576** · `carried` **0 →
+    //   163,126**, and `g01` itself from **87,714 to 0**. (`D27`, the `spare` pick, is in that figure
+    //   and is what clears `g01`'s last 1,275; the carry alone leaves it there.)
+    //
+    // ── WHAT THIS DOES **NOT** OVERTURN ────────────────────────────────────────
+    //
+    // The test above it. Income is still Σ over occupied *systems* and duty still Σ over
+    // *principals*, and for a constellation whose own margin is negative — `g07`: 149,760 produced
+    // against 160,000 owed — distribution cannot manufacture goods, it can only move them. So `g07`
+    // is the seed that still shows a residue (3,364 at nine Reckonings, from 80,475), and the §10
+    // calibration question the test above pins is **still open and still the owner's to make.** What
+    // has been settled is that it was not the *whole* cause, and that most of what was attributed to
+    // it was reachable stock.
+    //
+    // Read on `shortByReckoning`, captured per settlement — NOT on `runtime.levyReckonings()`, which
+    // is a `Ring` bounded at `MAX_RECKONING_SUMMARIES` = 8 and silently drops the oldest Reckonings
+    // past that. At nine Reckonings that ring is already lying, which is the `Book.prune` hazard
+    // living in the instrument instead of the engine; `balance-gate.ts` accumulates the same way
+    // now, for the same reason.
+    //
+    // MUTATION: remove `carryFor` from `decide`'s chain, or the 5B-ter block from `api/observe.ts`,
+    // and this goes red on Reckonings 6-8 with the master figures.
     // ══════════════════════════════════════════════════════════════════════════
     const nine = agedDockets('g01', 9);
     expect(nine.shortByReckoning.length, 'nine settlements, nine readings').toBe(9);
 
+    // The first six were spotless before the fix too — the endowment and then the stock were paying.
+    // Kept so a horizon change cannot be mistaken for the fix working.
     expect(
       nine.shortByReckoning.slice(0, 6),
-      'SIX Reckonings of g01 are spotless, which is why a six-Reckoning sweep is not enough either',
+      'SIX Reckonings of g01 were spotless on master as well, which is why a six-Reckoning sweep ' +
+        'could not see this and nine could',
     ).toEqual([0, 0, 0, 0, 0, 0]);
 
+    // ★ THE REGRESSION. Reckonings 6-8 were ~13,000 each on master and are zero now.
     expect(
-      nine.shortByReckoning.slice(6).some((n) => n > 0),
-      'g01 must go short in Reckonings 6-8. If this is green the residue has been fixed — which ' +
-        'would be a real result: check whether `deliver {payer}` reached the affordance list, or ' +
-        'whether YIELD_PER_TICK / LEVY_DUTY_PER_PRINCIPAL moved',
-    ).toBe(true);
+      nine.shortByReckoning.slice(6),
+      'g01 went short in Reckonings 6-8 on master (87,714 across the run) and the cause was that ' +
+        '360,000 units sat in three other members\' warehouses with no verb offered to move them. ' +
+        'If this is red, check that `deliver {payer}` is still offered (api/observe.ts 5B-ter), that ' +
+        '`carryFor` is still in the cast\'s decision chain, and that MAX_LEVY_CARRY_OFFERS still ' +
+        'caps OFFERS rather than rows — that last one is the bug that made the first version of ' +
+        'this fix look like it had barely worked',
+    ).toEqual([0, 0, 0]);
 
-    // The shape of the residue, so a fix cannot be mistaken for a horizon change: it is monotone
-    // in the sense that matters — once a member is dry it stays dry — and it is a MINORITY of the
-    // docket, never the whole constellation. A world where everybody defaulted would be a
-    // different (and worse) finding than a world where three members of six cannot reach the goods.
-    const worst = Math.max(...nine.shortByReckoning);
-    expect(worst, 'and it is a real number, not a rounding remainder').toBeGreaterThan(10_000);
+    // And the mechanism is the reason, not a coincidence: somebody's hand carried somebody else's
+    // share. A green `levyShort` with `paidOther` at zero would mean the horizon or a constant moved.
+    // A LAST-LOOK read, and deliberately a WEAK one: `Book.prune` keeps
+    // `LEVY_RETAINED_RECKONINGS` (3) Reckonings of payment rows, so this sees only the most recent
+    // few and undercounts the run. That is the safe direction for a `> 0` assertion and it is said
+    // here rather than discovered — `test/levy/carry.spec.ts` does the accumulate-per-settlement
+    // version, which is the one that can quote a total.
+    let carried = 0;
+    for (let r = 0; r < 9; r += 1) {
+      for (const plan of nine.runtime.levy.plansIn(r)) {
+        for (const line of plan.lines) {
+          carried += nine.runtime.levy.paymentOf(r, line.principal).paidOther;
+        }
+      }
+    }
     expect(
-      worst,
-      'but well under the whole 160,000 duty — most of the roll pays in full every Reckoning',
-    ).toBeLessThan(160_000);
+      carried,
+      'levyShort is clean and NOT ONE UNIT was carried by another principal\'s hand, so something ' +
+        'other than the distribution route closed it — read YIELD_PER_TICK and LEVY_DUTY_PER_PRINCIPAL',
+    ).toBeGreaterThan(0);
   }, 240_000);
 });

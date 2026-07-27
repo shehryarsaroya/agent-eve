@@ -6,6 +6,99 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **THE NINTH UNEXERCISED CAPABILITY IS EXERCISED. `deliver {payer}` IS OFFERED, AND 9 RECKONINGS GO 202,540 SHORT → 8,051 ON ONE SEED, WITH `paidOther` 0 → 163,126.** `RULES_VERSION` stays 15.
+>
+> §5.2 escrows **70% of every assessment and permits that share to be carried by another principal's
+> hand.** `deliver {payer}` has implemented that since the Levy landed, `creditFor` has bounded a
+> foreign delivery to the escrowable bucket for just as long, and `levy.short` publishes
+> `paidOtherMinor` to the viewer. **No affordance ever offered it, no cast ever selected it, and
+> `paidOther` was 0 in every world this repo had ever run.** In every report, on every frame and to
+> every reader that is indistinguishable from a mechanism that does not exist — the ninth appearance
+> of this project's defining defect, and the reason the 9-Reckoning residue was read as a §10
+> production shortfall.
+>
+> **It was a DISTRIBUTION failure first.** `g01` R7: three members hold a WORKS on one MARCHES system
+> at occupancy 3, earning `floor(110/3)×288 = 10,368` a Reckoning against a **23,900** assessment and
+> defaulting forever — while `orrin`, `sable` and `varrow` sit on **360,000 units of the same good in
+> the same constellation.** The goods existed. They were in the wrong warehouse, and no verb was
+> offered to move them.
+>
+> | 8 seeds | `levyShort` master → `D26` alone → `+D27` | red lines | seeds red | `CARRIED` |
+> |---|---|---|---|---|
+> | **3 Reckonings** | 0 → 0 → **0** | 0/192 → **0/192** | 0 → **0** | 0 → 31,206 |
+> | **6 Reckonings** | 0 → 0 → **0** | 0/384 → **0/384** | 0 → **0** | 0 → 124,116 |
+> | **9 Reckonings** | 202,540 → 4,639 → **8,051** | 19/576 → **1/576** | 5 → **1** | 0 → **163,126** |
+>
+> Read the 9R row carefully, because the two columns disagree about which is better and the red-line
+> one is right. `D26` alone leaves **two** seeds short (`g01` 1,275 + `g07` 3,364); adding `D27` clears
+> `g01` outright and moves the whole remainder onto **`g07` alone** — the one seed whose constellation
+> genuinely produces less than it owes. Slightly more MINOR, concentrated where the real cause is,
+> which is what a meter is for. **Seven of eight seeds are now spotless at nine Reckonings.**
+>
+> `CARRIED` fell 848,098 → 163,126 across the same change, and that is the `payerReach` guard working
+> rather than the mechanism weakening: the big number included carrying for payers who were standing at
+> the delivery place with the goods in hand. What is left is carriage somebody actually needed.
+>
+> **Five changes, one arithmetic home.** An affordance (`observe.ts` 5B-ter, capped at
+> `MAX_LEVY_CARRY_OFFERS` = 2) · the rows it cannot offer **counted in `withheld`** with the engine's
+> own reason · a cast branch that takes it (`carryFor`, reserve `CAST_CARRY_RESERVE_RECKONINGS` = 2)
+> · `agent.md` §5 and §7 saying the mechanism exists (**+2,200 chars of contract, spent out of exactly
+> the slack the 72,000 raise created** — the first feature since the raise that could just say the
+> thing) · and a **`CARRIED`** column on `balance-gate.ts`, because an unmeasured capability is the
+> same problem one level up. `levy/payment.ts:carryableOf` is the only arithmetic and the menu and the
+> bot both read it. See `D26`.
+>
+> **Three guards found by measurement, not by reasoning**, each with a named mutation-verified test:
+> the offer nets the **deliverer's** own outstanding duty (A2 — the one mistake the engine can see
+> coming); it nets what the **payer** can hand over itself (this surfaced as **six repeated
+> `deliver A14` refusals** and AGT-S3 caught it); and the cap counts **offers, not rows** — a faulted
+> row ate a slot, which read as `carried` 50,411 with `levyShort` still at **57,696** instead of 1,275.
+>
+> ⚑ **IT CLOSED THE DISTRIBUTION FAILURE AND DEFERRED THE PRODUCTION ONE, AND THAT IS STILL THE
+> OWNER'S CALL.** Measured to **15** Reckonings: `g07`'s constellation produces 149,760 against
+> 160,000 of duty — a real negative margin — and distribution moves goods rather than making them, so
+> it goes **9R 3,364 → 12R 99,392 → 15R 226,210**, with `g01` reappearing at 15R (2,375). The carry
+> buys about **three extra Reckonings** on a seed whose margin is negative and closes it outright on
+> the five whose margin is not. So `aged-solvency.spec.ts`'s income/duty diagnosis stands unchanged
+> and the three §10 levers are unchanged; what is settled is that it was not the whole cause.
+
+> ### ★★ **THREE MORE SITES OF ONE CONFUSION, SWEPT FOR AND FIXED — and `BY_EXPOSURE` turns out to be INERT rather than unpayable.**
+>
+> §3's canon `STORES` is *"assets, inventory, balances"* — **one canon word, two concepts** — and it
+> had now cost two bugs. A full sweep of the engine for *"a decision about a goods obligation made from
+> a figure in the wrong unit"* found **two more real ones and one non-instance:**
+>
+> - **`D27` · the `spare` pick.** The cast relieved by *cash* poverty, so on `g07` it spared
+>   `p:vex` **three Reckonings running** while it held 76,565 units of the levy good, the most in its
+>   constellation. The relief is funded by everyone else, so the constellation was taxing itself to
+>   protect its best-supplied member. On top of `D26` this takes `g01` at 9R from 1,275 to **0**.
+> - **`D28` · `if_you_do_nothing`, and it had a timer in it.** `orderOutcomes` ranked a goods
+>   obligation, three currency figures, a **count of roles** and an **absolute tick number** on one
+>   scale. Past tick ~20,000 every in-transit hand would outrank a full Levy assessment, permanently,
+>   in the payload `agent.md` §12 says to read **first every wake** — and the list caps at 12 with
+>   **no `withheld` field to be counted in**, so the comparator decided what an agent never sees.
+>   Live world was at ~5,274 of the ~20,000. Now ranked by gravity, with `amount` compared only within
+>   one kind.
+> - **`D29` · `claimFor`'s cover gate.** Compared an `ore` income against a `ration` Charge with no
+>   refine conversion — the twin of a fix `api/observe.ts` had *already* made, with the reason written
+>   down. Behaviour-identical at 1:1, breaks the day a second good lands, and **no behavioural test
+>   can distinguish the two versions today; the test says so at its assertion** and is a tripwire on
+>   the recipe naming both sites.
+>
+> ⚑ **`BY_EXPOSURE` IS NOT THE THIRD INSTANCE — IT IS THE TENTH APPEARANCE OF THE OTHER FAMILY.**
+> The section below asked whether it is *"unpayable by construction the way `BY_STORES` was."* It is
+> not, and the counterfactual settles it: on the same dockets `amount > held` is **5 rows under
+> `BY_EXPOSURE`, 5 under `BY_STORES`, 5 under `EVEN`** — identical, so no allocation rule changes
+> payability there. What is true is stranger. **EXPOSURE is identically zero for every principal at
+> every phase of every Reckoning**, in a world with 101 live ventures, because Σ open `max_direct_loss`
+> is created only by a venture role **stake**, a raid stake or a `join` stake — and the cast passes
+> **`stake: 0`** on every `fill_role` and opens no demands. So `BY_EXPOSURE`, `EVEN` and **the
+> published default `INVERSE_EXPOSURE`** hand everybody the same weight on **18 of 18 dockets** and
+> only `BY_STORES` discriminates. A goods-rich member "voting `BY_EXPOSURE`" is voting **flat**; it is
+> just the first flat rule `ballotFor` reaches in `LEVY_RULES` order. **§5.2's "the vote is the drama"
+> currently has one lever, and three of its four rules are decoration.** `D30`; not fixed, because
+> making it bind is an owner call.
+
 > ### ★★★ **THE BALANCE GATE HAD NEVER SEEN A WORKING ECONOMY. `BY_STORES` TAXED A GOODS OBLIGATION BY A CURRENCY BALANCE — `RULES_VERSION` 15, and 6 Reckonings go 67,043 short → 0.**
 >
 > Every balance table ever published in this file was drawn at **900 ticks ≈ 3 Reckonings**, and the
@@ -45,6 +138,16 @@
 > this repo has ever run** — the ninth instance of the capability-never-exercised failure. So the cheap
 > experiment is to offer the verb that exists, not to move `YIELD_PER_TICK`. Pinned in
 > `test/levy/aged-solvency.spec.ts`; **not taken here.**
+>
+> ★ **TAKEN, AND IT WAS RIGHT — see the two sections above.** The experiment ran: `202,540 → 8,051` at
+> nine Reckonings with `paidOther` `0 → 163,126`, and `g01` itself `87,714 → 0`. Two of the three
+> paragraphs above need correcting rather than deleting, and the corrections are the finding:
+> **`BY_EXPOSURE` does not "ignore ability to pay" in any way that matters — it is INERT** (EXPOSURE is
+> identically zero, so it is arithmetically `EVEN`; `D30`), so the two regressed seeds were the cast
+> choosing *flat*, not a constellation voting itself into trouble. And the income/duty mismatch is real
+> but was **not the whole cause**: it binds from about Reckoning 10 for a constellation whose own margin
+> is negative, and the carry buys roughly three Reckonings against it. The §10 lever is still the
+> owner's call, now with a horizon attached (`D26`'s second row).
 
 > ### ★★★ **THE ECONOMY HAS A WAY BACK IN. THE GOODS HALF OF A FIRST WORKS IS PAYABLE IN RETIRED CURRENCY — `RULES_VERSION` 14, and the A15 inversion below is closed.**
 >
@@ -1356,6 +1459,26 @@
 
 ## 🎯 NEXT ACTION
 
+> ### ⚑ **TWO OWNER CALLS LEFT ON THE LEVY, both measured and neither taken (2026-07-27).**
+>
+> 1. **The §10 income/duty mismatch, with a horizon.** Goods income is Σ over **occupied systems**,
+>    Levy duty is Σ over **principals**, both cite A15, and for a constellation whose own margin is
+>    negative no distribution closes it — `g07` produces 149,760 against 160,000 and goes
+>    **9R 3,364 → 12R 99,392 → 15R 226,210** *with* `deliver {payer}` working. `D26` bought about three
+>    Reckonings; it did not buy solvency. Three levers, all §10 and all calibration: raise
+>    `YIELD_PER_TICK`, lower `LEVY_DUTY_PER_PRINCIPAL`, or give the yield a **per-WORKS** term so a
+>    second occupant adds something. The third is the only one that also fixes the *crowding* the
+>    mismatch is really about. Pinned in `test/levy/aged-solvency.spec.ts`'s second test, which fails
+>    if either constant moves without the other being read.
+> 2. **Three of the four Levy allocation rules are decoration.** EXPOSURE is identically **zero** at
+>    every phase of every Reckoning, so `BY_EXPOSURE`, `EVEN` and the published default
+>    `INVERSE_EXPOSURE` are the same flat weight on 18 of 18 dockets and only `BY_STORES`
+>    discriminates (`D30`). §5.2 calls the vote *"the drama"* and it currently has one lever. Two ways
+>    to make it bind, and both are calls rather than fixes: have the cast **stake** on `fill_role`
+>    (EXPOSURE is Σ open `max_direct_loss` and a zero stake creates none), or widen what EXPOSURE
+>    counts — §3 reserves the word for Σ open `max_direct_loss`, so widening it is a **canon** edit
+>    and HARD RULE 4 applies.
+
 **Every system in the phase plan is built.** The block that stood here — *"the one build that unblocks
 the core loop: offices/grants (A6)"* — is done: grants have been live for some time and **offices**
 landed 2026-07-26, so A6 is now reachable over an organisation's pooled treasury and not just one
@@ -1449,6 +1572,12 @@ the Demand window), spectator polish, seals + the rundown, the LLM cast, and the
 | **D25 · `BY_STORES` weighs the GOODS** | The Levy's `BY_STORES` allocation rule now weights on the **levy good a principal holds** (`LevySubject.levyGoodHeld`, read from the same `levyGoodAvailable` the delivery quote and the sweep already call) instead of on its **currency balance**. `freeStores` stays currency and keeps its two real jobs — the newcomer capital floor and the `spare` nomination. `RULES_VERSION` 14 → 15. | **The balance gate had never been run past the endowment window, so `levyShort` had never been measured in a working economy.** At 6 Reckonings master goes 37,237 and 29,806 short on 2 of 8 seeds with 6 red tribute lines; at 9 it is 6 of 8. Diagnosed: `weightOf('BY_STORES')` read the MINOR currency balance while §5.2 makes the Levy payable *"only in located goods"*, so the duty was **anti-correlated with the ability to pay it** — `p:halcyon` held **0** units of `ration` and 207,764 in currency and was assessed **36,374** of its constellation's 120,000, the largest share on the docket, while `p:vex` sat on 76,565 units and was assessed 500. Worse, unspent currency accumulates monotonically, so its weight climbed 180,481 → 195,916 → 207,764 against a goods income fixed at 11,520 — **a duty that grows while the income that pays it does not.** `presenceOwed` was 0 on every red row: it had delivered its whole non-escrowable share by hand, 47 times. Also scar #1: the `vote` affordance said `BY_STORES` loads it *"onto whoever is holding most"* in the same block that says the Levy is payable only in goods, and §3's canon entry for STORES is *"assets, inventory, balances"* — one word, two concepts, and the engine silently picked the one you cannot pay with. Measured: **6 Reckonings 67,043 → 0 short and 6 → 0 red lines on all 8 seeds**, 900 ticks byte-identical, `kept` 729 → 730, `broken` 53 → 52. |
 | ↳ **What it did NOT fix, and the owner's call** | **Left open on purpose.** At 9 Reckonings the fix takes the sweep from **403,039 to 202,540** and red lines from **30 to 19**, but 5 of 8 seeds are still short — and two get *worse* (`g01` 43,670 → 87,714, `g03` 0 → 9,683) because the vote moves off `BY_STORES` onto `BY_EXPOSURE`, which ignores ability to pay at all. Cause is separate and no allocation rule reaches it: goods income is Σ over **occupied systems** (`YIELD_PER_TICK`, *"the yield belongs to the place"*) while the Levy duty is Σ over **principals** (`LEVY_DUTY_PER_PRINCIPAL`, *"additive in principals"*) — **both cite A15** and neither notices the other. `g01` R7 under `BY_EXPOSURE`: three members hold a WORKS on one MARCHES system, occupancy 3, so each earns `floor(110/3)×288 = 10,368` against a 23,900 assessment and all three default forever. | **But it is a DISTRIBUTION failure before it is a production one, and that changes which lever is right.** In that same constellation `orrin`, `sable` and `varrow` sit on **360,000 units of the same good** while three neighbours default. §5.2 already answers it: 70% of every assessment is escrowable and *may be carried by another principal's hand*. `deliver {payer}` implements it in full — and **no affordance offers it and `paidOther` is 0 in every world this repo has ever run**, which is the ninth instance of this project's signature failure. So the three §10 calibration levers (raise `YIELD_PER_TICK`, lower `LEVY_DUTY_PER_PRINCIPAL`, give the yield a per-WORKS term) may all be the wrong answer, and the cheap experiment is to offer the verb that exists. **Owner's call; not taken here.** Pinned in `test/levy/aged-solvency.spec.ts`. |
 | ↳ **The gate could not see the regime** | `balance-gate.ts` now (a) accumulates `levyShort`/`kept`/`broken` **at each settlement** instead of summing `levyReckonings()`, a `Ring` capped at `MAX_RECKONING_SUMMARIES` = 8 that silently drops the oldest Reckonings past that, and (b) **prints a HORIZON warning and `seesTheEconomy: false`** on any sweep at or under the 4-Reckoning endowment window. `ENDOWMENT_WINDOW_RECKONINGS` moved from `test/works/aged.ts` to `src/levy/params.ts` so a script can read it. | Two failures in one instrument, both in the hiding direction. The ring made a 9-Reckoning sweep report *less* than a 6-Reckoning one if its worst Reckoning was its first — the `Book.prune` hazard living in the gate rather than the engine. And every balance table ever published in this file was drawn at **900 ticks**, where the enrolment allotment is still paying the tribute: `g07` reads **0 at three Reckonings and 37,237 at six**, same seed, same code. A gate that cannot see the regime where things break is worse than no gate, because it is quoted. |
+| **D26 · `deliver {payer}` IS OFFERED, and the residue was DISTRIBUTION** | §5.2's escrowable 70% may be carried by another principal's hand and `deliver {payer}` has implemented that since the Levy landed. Now (a) an **affordance** offers it (`api/observe.ts` 5B-ter, capped at `MAX_LEVY_CARRY_OFFERS` = 2), (b) the rows it cannot offer are **counted in `withheld`** with the engine's own reason (`Runtime.levyCarryObstacles`), (c) the heuristic cast **takes it** (`carryFor`, gated by `CAST_CARRY_RESERVE_RECKONINGS` = 2 *(calibrate)*), (d) `agent.md` §5 and §7 **say it exists**, and (e) `balance-gate.ts` prints a **`CARRIED`** column. One arithmetic home: `levy/payment.ts:carryableOf`, read by the menu and the bot. **No `RULES_VERSION` bump — nothing on a validate/resolve path changed** (`payment.ts` and `runtime.ts` are additions only; `owingOf`, `creditFor`, `deliveryFault` and `vDeliver` are untouched). | **`paidOther` was 0 in every world this repo had ever run** — the ninth instance of *a capability that exists and is never exercised is indistinguishable from one that is missing*, and it was why the 9-Reckoning residue read as a §10 production shortfall. It was a **distribution** failure first: `g01` R7 has three members on one MARCHES system earning 10,368 a Reckoning against 23,900 each while `orrin`, `sable` and `varrow` sit on **360,000 units of the same good in the same constellation**. Measured, 8 seeds: **9R `levyShort` 202,540 → 4,639 · red tribute lines 19/576 → 2/576 · `carried` 0 → 848,098**, and `g01` itself 87,714 → 1,275. With `D27` on top the run is **8,051 short, 1/576 red, seven of eight seeds spotless** and `g01` 0. **No regression: 3R and 6R stay 0 short and 0 red.** Three guards were found by measurement rather than reasoning and each has a named mutation-verified test: the offer nets the **deliverer's** own outstanding duty (A2 — the one mistake the engine can see coming); it nets what the **payer** can hand over itself (six repeated `deliver A14` refusals, AGT-S3); and the cap counts **offers, not rows** (a faulted row ate a slot, which read as `carried` 50,411 with `levyShort` still 57,696). |
+| ↳ **It closed the distribution failure and DEFERRED the production one** | **Measured to 15 Reckonings, and this is the part the owner still has to decide.** `g07`'s constellation produces 149,760 against 160,000 of duty — a genuine negative margin — and distribution moves goods rather than making them. So it goes **9R 3,364 → 12R 99,392 → 15R 226,210**, and `g01` reappears at 15R (2,375). The carry buys roughly **three extra Reckonings** of stock drawdown on a seed whose margin is negative, and closes it outright on the five seeds whose margin is not. | So `test/levy/aged-solvency.spec.ts`'s second test — the income/duty mismatch, Σ over **occupied systems** against Σ over **principals**, both citing A15 — **stands unchanged and is still the owner's §10 call.** What is settled is that it was not the *whole* cause and most of what was attributed to it was reachable stock. The three levers are unchanged: raise `YIELD_PER_TICK`, lower `LEVY_DUTY_PER_PRINCIPAL`, or give the yield a per-WORKS term. **Not taken here.** |
+| **D27 · the `spare` pick relieves by the GOOD** | The cast's `spare` nomination (`heuristic.ts:ballotFor`) sorts by `levyGoodHeld` instead of `freeStores`. **Cast policy, not a rule** — §5.2 makes sparing a political choice and an LLM member may nominate its ally or itself. | `weightOf('BY_STORES')`'s bug one layer up, same root: §3's canon STORES is *"assets, inventory, balances"*, and **both call sites picked the unpayable one.** On `g07` the cast spared `p:vex` **three Reckonings running** while it held 76,565 units of the levy good — the most in its constellation — because it had spent its cash on a crossing. The relief is *funded* by everybody else (`relievedTotal`), so the constellation was taxing itself to protect its best-supplied member. Swept separately from D26: on top of the carry it takes `g01` at 9R from 1,275 to **0** and the eight-seed red-line count from 2/576 to **1/576**, moving the whole remaining residue onto `g07` — the one seed whose constellation genuinely cannot produce its tribute, which is where a meter should point. Total MINOR rises 4,639 → 8,051 because that one seed's shortfall is no longer partly relieved by sparing its richest member; that is the trade and the red-line count is the column to read. |
+| **D28 · `if_you_do_nothing` ranks GRAVITY, not five units** | `observe/briefing.ts:orderOutcomes` sorts by a per-kind `GRAVITY` order first and compares `amount` **only between two outcomes of the same kind**. | The **third** site of the same family, found by a sweep for it, and the one with a timer in it. `DoNothingOutcome.amount` is typed `Minor` and carries five units: goods (`LEVY_UNPAID`), currency (three kinds), a **count of roles** (`ROLE_OPEN`), and an **absolute tick number** (`HAND_LANDS`). The old comparator was `b.amount - a.amount`, so past tick ~20,000 every in-transit hand outranked a full `LEVY_DUTY_PER_PRINCIPAL` assessment — permanently, in the payload `agent.md` §12 tells players to read **first every wake** — and `ROLE_OPEN` at 1..4 could never outrank anything, so a venture about to resolve `PARTIAL_FILL` sat below a hand walking. The live world was at tick ~5,274 of the ~20,000 needed. The list caps at `LIST_CAPS.doNothing` = 12 and `observe/tokens.ts` states it *"has no `withheld` field to be counted in"*, so the comparator decided what an agent never sees, uncounted. Severity-first is what makes the missing count harmless. |
+| **D29 · the claim cover gate carries the refine ratio** | `heuristic.ts:claimFor` converts its `ore` income through `REFINE_OUT_QTY / REFINE_IN_QTY` before comparing it with a `ration` Charge. **Behaviour-identical at today's 1:1 recipe.** | The fourth site, and the twin of a fix `api/observe.ts` had *already made*, with the reason stated there: *"it happens to be right at today's 1:1 recipe and would go silently wrong the moment `refine` stopped being lossless."* That fix landed in the affordance and this copy kept the assumption. `sovereignty/params.ts` and `test/core/goods-are-independent.test.ts` are explicit that the two goods being equal *"is a decision (D17), not a fact about the engine"*, so this is the site that breaks on the day a second good lands — item 3 on the roadmap — and what it decides is whether the cast takes ground whose Charge it cannot fund, which lapses in three Reckonings and slashes `CLAIM_BOND_MINOR`. **No behavioural test can distinguish the fixed and broken versions at 1:1 and the test says so at its assertion**; it is a tripwire on the recipe naming both sites. |
+| **D30 · `BY_EXPOSURE` is not unpayable — it is INERT, and so are two others** | **Investigated, not fixed.** EXPOSURE is **identically zero for every principal at every phase of every Reckoning**, in a world with 101 live ventures. `weightOf` therefore returns the same weight for everyone under `BY_EXPOSURE`, `EVEN` **and the published default `INVERSE_EXPOSURE`** — flat on **18 of 18 dockets** — and only `BY_STORES` discriminates (17 of 18). | Asked because two seeds regressed under D25 and the named cause was *"`g01`'s con-1 lands on `BY_EXPOSURE`, and `BY_EXPOSURE` ignores ability to pay entirely."* The facts hold and the causal reading needs one correction: a goods-rich member "voting `BY_EXPOSURE`" is voting **flat**, and `BY_EXPOSURE` is simply the first flat rule `ballotFor` reaches in `LEVY_RULES` order. **It is not unpayable by construction the way `BY_STORES` was** — the counterfactual settles it: on the same dockets, `amount > held` is **5 rows under `BY_EXPOSURE`, 5 under `BY_STORES`, 5 under `EVEN`**, identical, so no allocation rule changes payability there. Root cause of the zero: EXPOSURE is Σ open `max_direct_loss` and only three call sites create any — a venture role **stake**, a raid stake, and a `join` stake. The heuristic cast passes **`stake: 0`** on every `fill_role` and opens no demands, so nothing ever creates any; escrow is locked with `safeLock` (`maxDirectLoss` 0) and correctly contributes none. **So this is the tenth appearance of the same family, one remove out: a rule that exists and never discriminates is indistinguishable from a rule that is not there — and one of the two inert ones is the default that applies on quorum failure.** Not fixed: making it bind means either the cast staking on roles or `EXPOSURE` counting something else, and both are owner calls. |
 
 ---
 

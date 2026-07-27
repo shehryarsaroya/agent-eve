@@ -1170,6 +1170,9 @@ function affordancesFor(
   /** Charge deliveries withheld because no hand of this principal is standing there. */
   let chargeNoHand = 0;
   const chargeNoHandAt: string[] = [];
+  /** Carries withheld: a co-member has an escrowable remainder this principal cannot reach. */
+  let carryBlocked = 0;
+  const carryBlockedWhy = new Set<string>();
   const world = runtime.world;
   const hands = handsOf(world, principal);
   const mine = runtime.ventures.forPrincipal(principal);
@@ -2304,8 +2307,15 @@ function affordancesFor(
       cost: 1,
       max_direct_loss: levyQuote.payable,
       max_contingent_liability: 0,
+      // `LEVY_GOOD`, not `CHARGE_GOOD`. Both are `ration` today and this sentence read
+      // `CHARGE_GOOD` — the sovereignty constant — inside the Levy's own affordance. Equal by
+      // coincidence rather than by rule: `levy/params.ts` and `sovereignty/params.ts` declare
+      // them independently *so that a second good is a local edit*, which is the whole point of
+      // the separate declarations. The first divergence would have this offer naming the wrong
+      // good in the one place an agent is told to copy verbatim, and naming the wrong good in an
+      // affordance has already cost this repo two bugs.
       what_it_forecloses:
-        `hands ${String(levyQuote.payable)} of ${CHARGE_GOOD} to the Levy at ${String(levyQuote.place)}, ` +
+        `hands ${String(levyQuote.payable)} of ${LEVY_GOOD} to the Levy at ${String(levyQuote.place)}, ` +
         `against ${String(levyQuote.owed)} owed this Reckoning. Goods delivered are GONE — this is upkeep, ` +
         `not an investment, and it buys you no standing. What it avoids is the other branch: an unpaid ` +
         `assessment is recorded as a public shortfall against you at settlement, and a shortfall is ` +
@@ -2371,13 +2381,75 @@ function affordancesFor(
         `sets a STANDING ORDER to pay the Levy, so it keeps being paid while you are away. Creating ` +
         `it costs one action and every tick it runs after that costs NONE — that is the whole point ` +
         `of an intent, and it is why going offline costs you opportunity rather than your record. It ` +
-        `hands over up to ${String(levyQuote.payable)} of ${CHARGE_GOOD} each Reckoning until tick ` +
+        `hands over up to ${String(levyQuote.payable)} of ${LEVY_GOOD} each Reckoning until tick ` +
         `${String(tick + TICKS_PER_RECKONING * 2)}, and it will keep doing so whether or not you are ` +
         `watching — including when you would rather have spent those goods on something else. Raise ` +
         `\`until_tick\` to cover a longer absence, or send it again later to replace this one.`,
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'set_delivery_intent', { obligation: 'LEVY' }),
     });
+  }
+
+  // 5B-ter. ★ **CARRY SOMEBODY ELSE'S SHARE — `deliver {payer}`, the ninth unexercised capability.**
+  //
+  //     §5.2 states the non-escrowable share as a *limit* — "it must be carried by a hand, not
+  //     bought as a service" — and everything in this repo read only that half. The half nobody
+  //     read is what the limit leaves: **70% of every assessment IS escrowable, and may be carried
+  //     by another principal's hand.** `vDeliver` has honoured `payer`/`on_behalf_of` since the
+  //     Levy landed, `creditFor` has bounded a foreign delivery to the escrowable bucket for just
+  //     as long, and `levy.short` publishes `paidOtherMinor` to the viewer. **No affordance has
+  //     ever offered it and `paidOther` is 0 in every world this repo has run.**
+  //
+  //     Which is the eighth instance of one lesson: a capability that exists and is never
+  //     exercised is indistinguishable from one that is missing — in every report, on every frame,
+  //     and to every reader including its author. It is also why the residue at nine Reckonings
+  //     read as a §10 production shortfall: `g01` R7 has three members on one MARCHES system
+  //     earning 10,368 a Reckoning against 23,900 each, while three others in the same
+  //     constellation sit on 360,000 units of the same good. That is a **distribution** failure
+  //     before it is a production one, and this is the door §5.2 already wrote for it.
+  //
+  //     Legality and arithmetic are both `Runtime.levyCarryQuotes`', which calls the same
+  //     `deliveryFault` the verb calls and the same `carryableOf` the cast reads — so this cannot
+  //     offer an act the engine refuses, and the bot cannot play a rule the menu does not show.
+  //     `levyCarryQuotes` returns only the rows the verb would accept, capped at
+  //     `MAX_LEVY_CARRY_OFFERS`; the rows it could not offer come back from
+  //     `levyCarryObstacles` and are counted in `withheld` below, because an omission an agent
+  //     could act on next tick is one it is entitled to know about (PROP-O1).
+  for (const carry of runtime.levyCarryQuotes(principal, tick)) {
+    eligible.push({
+      verb: 'deliver',
+      // `payer` rather than `on_behalf_of`: the verb takes either, and this is the spelling that
+      // says what it does at a Levy. `amount` is already net of this principal's OWN outstanding
+      // duty (see `carryableOf`), so copying this row verbatim cannot turn one shortfall into two.
+      params: { obligation: 'LEVY', payer: carry.payer, amount: carry.payable },
+      cost: 1,
+      max_direct_loss: carry.payable,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `hands ${String(carry.payable)} of ${LEVY_GOOD} — out of YOUR stores, at ${String(carry.place)}, ` +
+        `by one of YOUR hands standing there — against ${carry.payer}'s Levy, not your own. ` +
+        `${carry.payer} owes ${String(carry.escrowableOwed)} that any hand may carry and ` +
+        `${String(carry.presenceOwed)} that ONLY its own hand may: a stated share of every assessment is ` +
+        `non-escrowable and cannot be bought at any price, so paying this does not clear ${carry.payer}'s ` +
+        `whole bill and cannot. You hold ${String(carry.available)} of ${LEVY_GOOD} and still owe ` +
+        `${String(carry.ownOwed)} on your own assessment; this offer is the ${String(carry.surplus)} above ` +
+        `that, so it never spends the goods your own tribute needs. The goods are GONE — destroyed into ` +
+        `civic custody — and the engine pays you NOTHING for this and awards you no standing: it is a ` +
+        `transfer of your goods to somebody else's obligation. If you want paying, agree terms first ` +
+        `(\`message\`, \`publish_offer\`, or a venture) — nothing here enforces a price. What it buys is ` +
+        `political: a shortfall against ${carry.payer} is public and permanent, and this is on the record ` +
+        `as the reason there was not one.`,
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'deliver', { obligation: 'LEVY', payer: carry.payer }),
+    });
+  }
+  for (const blocked of runtime.levyCarryObstacles(principal, tick)) {
+    carryBlocked += 1;
+    carryBlockedWhy.add(
+      blocked.fault ??
+        `your own assessment still needs ${String(blocked.ownOwed)} of the ${String(blocked.available)} ` +
+          `units of ${LEVY_GOOD} you hold, so nothing is surplus yet`,
+    );
   }
 
   // 5C. **THE CORE LOOP (A6).** `grant` had no affordance at all. It is legal, it works, and it was
@@ -2745,6 +2817,26 @@ function affordancesFor(
         'readable; and any principal\'s hand may pay any claim\'s Charge, so hiring a carrier also works',
     );
   }
+  if (carryBlocked > 0) {
+    // ── COUNTED, BECAUSE THIS OMISSION IS THE ONE THAT WAS INVISIBLE FOR THE WHOLE BUILD ──
+    //
+    // §5.2 makes 70% of every assessment escrowable and carryable by another principal's hand,
+    // `deliver {payer}` has implemented it since the Levy landed, and until now nothing offered it
+    // — so `paidOther` was 0 in every world this repo ran. Left uncounted, a principal with the
+    // goods and no hand at the place would see no carry offer, conclude the mechanism does not
+    // apply to it, and the meter would keep reading as a production shortfall.
+    //
+    // The fix is usually one ordinary act, so the sentence says which: a hand at the delivery
+    // place. That is the same hand paying your own tribute puts there.
+    reasons.push(
+      `${String(carryBlocked)} deliver act(s) on ANOTHER principal's Levy are not offered — a stated share of ` +
+        'every assessment is escrowable (§5.2) and may be discharged by any principal\'s hand, so a ' +
+        'constellation-mate with goods can pay down a neighbour\'s bill. Reason(s): ' +
+        `${[...carryBlockedWhy].sort(cmp).join(' · ')}. The non-escrowable share is never carryable at any ` +
+        'price, and nothing here obliges you to carry anything — a carry hands YOUR goods to somebody ' +
+        'else\'s obligation for no payment the engine enforces',
+    );
+  }
   if (demandCapacitySpent) {
     // ── COUNTED, BECAUSE A MENU THAT SHRINKS WITHOUT SAYING WHY TEACHES THE WRONG RULE ──
     //
@@ -2788,6 +2880,7 @@ function affordancesFor(
         crossingAnchored +
         worksWithheld +
         chargeNoHand +
+        carryBlocked +
         commonsBoundLanes +
         (demandCapacitySpent ? 1 : 0),
       reason:

@@ -40,6 +40,7 @@ import { BPS_ONE, minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
 import {
   LEVY_BALLOT,
+  LEVY_DUTY_PER_PRINCIPAL,
   LEVY_RULES,
   ballotWindow,
   carrierAt,
@@ -52,7 +53,7 @@ import {
 import { IN_FULL, kindSpec, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
-import { REFINE_IN_QTY, YIELD_PER_TICK } from '../works/params.js';
+import { REFINE_IN_QTY, REFINE_OUT_QTY, YIELD_PER_TICK } from '../works/params.js';
 import {
   handsOf,
   holdingOccupancy,
@@ -335,6 +336,11 @@ export const DEFAULT_CLAIM_CHANCE_BPS = 100;
  *
  * The projection deliberately ignores the rent the claim would collect, so the gate is an
  * **understatement**: income can only be better than it reads here.
+ *
+ * The "per Reckoning" column is income **after `refine`** — the yield is `ore` and the Charge is
+ * payable in `ration`, so the comparison runs through `REFINE_OUT_QTY / REFINE_IN_QTY` at the call
+ * site. At today's 1:1 recipe the figures above are unchanged; the ratio is written into the
+ * arithmetic so they move with the recipe instead of silently ceasing to be true.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const CAST_CLAIM_COVER_MULTIPLE = 3;
@@ -459,6 +465,40 @@ export const CAST_DOCTRINE: readonly { readonly hull: string; readonly modules: 
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const CAST_ARMS_RESERVE_MULTIPLE = 2;
+
+/**
+ * How many Reckonings of its **own** tribute a member keeps back before it will carry
+ * somebody else's escrowable share. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE GATE THAT STOPS A CHARITY FROM BECOMING A SECOND SHORTFALL**, and it is the only
+ * calibrate number in {@link HeuristicCast.carryFor}.
+ *
+ * `Runtime.levyCarryQuotes` already nets the deliverer's **outstanding** duty — an exact
+ * published figure, and A2's job. What no engine figure can net is the duty that has not been
+ * minted yet: a member that pays its own tribute in full, then gives every remaining unit away,
+ * is solvent tonight and short at the next Reckoning. Turning one member's shortfall into
+ * another's is a worse outcome than the one this branch exists to fix, because `levyShort` is
+ * the same meter either way and the goods are consumed in both directions.
+ *
+ * So the reserve is forward-looking, which makes it a **judgement rather than arithmetic** — and
+ * that is exactly why it lives here as cast policy and not in `levy/params.ts` as a rule. An
+ * agent with a reason to give away its last unit may; §5.2's whole redistributive half is that
+ * who bears the burden is a choice somebody makes.
+ *
+ * Two Reckonings, and the per-Reckoning unit is `max(this Reckoning's assessment,
+ * LEVY_DUTY_PER_PRINCIPAL)`. The `max` is load-bearing: under `BY_STORES` a goods-rich member's
+ * assessment is a share of `Σ duty` and can far exceed its own duty, so the rule-fixed figure
+ * alone would under-reserve exactly the member this branch is aimed at — and the assessment
+ * alone would under-reserve a member the constellation happened to spare this once.
+ *
+ * Not one, because one leaves nothing for a bad vote next Reckoning. Not three, because at three
+ * the `g01` carriers — 360,000 units against a 23,900 assessment — still clear it easily while a
+ * mid-sized holder never does, and a gate that only the richest member in the world can pass is
+ * indistinguishable from a missing branch, which is the defect this change exists to close.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_CARRY_RESERVE_RECKONINGS = 2;
 
 /**
  * How much stronger than the other side the cast's committed hulls must be. *(calibrate)*
@@ -827,10 +867,34 @@ export class HeuristicCast {
    */
   decide(tick: number, seed: string): readonly SubmittedAction[] {
     const out: SubmittedAction[] = [];
+    // ── WHOSE TRIBUTE A CAST-MATE IS ALREADY CARRYING THIS TICK ───────────────
+    //
+    // §15.2: *"within-tick actions never react to another within-tick action."* So four members
+    // reading the same snapshot all see the same payer with the same escrowable remainder, all
+    // offer to carry it, and **the first one to resolve fills the bucket while the other three are
+    // refused** — measured on `cast-clean` at tick 13: `dunmore`, `ferren`, `orrin` and `vex` each
+    // offering 350 against `p:ashlin`, three `A14`s. `heuristic.test.ts`'s AGT-S3 assertion caught
+    // it, and its rule is the right one: *a bot hitting the same refusal repeatedly means an
+    // affordance or a hint is wrong, not that the bot is wrong.*
+    //
+    // **The engine surface is NOT what is wrong here.** The refusal names the exact remainder and
+    // why it cannot be bought, which is what an agent needs; two independent agents racing a
+    // neighbour's bill is real contention and being told you lost it is the honest answer. What is
+    // wrong is one cast generating a predictable refusal against **itself**, which it can see
+    // coming — the same reasoning `musteredAt` and `carriageNeeded` use to stop this cast fighting
+    // itself over one hand.
+    //
+    // Deterministic: `this.members` is a fixed order, so which member wins the payer is a property
+    // of the roster and not of arrival (A4, DET-1).
+    const claimed = new Set<PrincipalId>();
     for (const member of this.members) {
       const rng = Rng.fromSeed(`${seed}:cast:${member.principal}:${String(tick)}`);
-      const action = this.decideOne(member, tick, rng, out.length);
-      if (action !== null) out.push(action);
+      const action = this.decideOne(member, tick, rng, out.length, claimed);
+      if (action !== null) {
+        const payer = action.params['payer'];
+        if (action.verb === 'deliver' && typeof payer === 'string') claimed.add(payer as PrincipalId);
+        out.push(action);
+      }
     }
     return out;
   }
@@ -858,6 +922,8 @@ export class HeuristicCast {
     tick: number,
     rng: Rng,
     ordinal: number,
+    /** Payers a cast-mate is already carrying for this tick — see {@link HeuristicCast.decide}. */
+    carriedThisTick: ReadonlySet<PrincipalId>,
   ): SubmittedAction | null {
     const runtime = this.runtime;
     const base = {
@@ -1199,6 +1265,25 @@ export class HeuristicCast {
     // than waiting to be able to clear the whole bill.
     const supplying = this.chargeMove(member, tick);
     if (supplying !== null) return { ...base, ...supplying };
+
+    // ── ★ CARRY A NEIGHBOUR'S SHARE — §5.2's OTHER HALF, FIRST EXERCISED HERE ──
+    //
+    // **Third of three claims on a unit of `ration`, and last of them on purpose.** Your tribute,
+    // then your Charge, then somebody else's tribute — the ordering ethic is the one
+    // `delegatedElectionFor` states for a mandate: you settle your own promises before you spend
+    // goods on anyone else's. Both branches above return `null` the moment nothing is owed, so a
+    // member that has paid in full reaches this in the same tick rather than a Reckoning later.
+    //
+    // Above the fleet and walk branches below it because it spends **no hand's position at all** —
+    // it delivers from a hand already standing at the delivery place, which is where paying its own
+    // tribute put it. A move that uses a hand where it stands should not lose to one that relocates
+    // it for ticks.
+    //
+    // Why it exists: `deliver {payer}` is legal, works, credits `paidOther`, and **had never been
+    // called by anything** — `paidOther` 0 in every world this repo has run. `carryFor` carries the
+    // measurement and CAST_CARRY_RESERVE_RECKONINGS the one calibrate number.
+    const carrying = this.carryFor(member, tick, carriedThisTick);
+    if (carrying !== null) return { ...base, ...carrying };
 
     // ── BRING YOUR HANDS TO YOUR FLEET ────────────────────────────────────────
     //
@@ -1580,7 +1665,30 @@ export class HeuristicCast {
 
     const quote = runtime.worksQuote(member.principal, system);
     const bill = chargeOf({ tier, misses: 0 });
-    if (quote.sharePerTick * TICKS_PER_RECKONING < bill * CAST_CLAIM_COVER_MULTIPLE) return null;
+    // ── ★ THE COVER TEST CROSSES TWO GOODS, SO THE RATIO IS IN THE ARITHMETIC ──
+    //
+    // `worksQuote.sharePerTick` is `WORKS_YIELD_GOOD` (`ore`); `chargeOf` returns `CHARGE_GOOD`
+    // (`ration`). This compared them directly, which divides one good by another and reads the
+    // answer as cover — the **identical** mistake `api/observe.ts` already fixed in the WORKS
+    // payback sentence, with the reason stated there: *"it happens to be right at today's 1:1
+    // recipe and would go silently wrong the moment `refine` stopped being lossless — so the ratio
+    // is IN the arithmetic and named in the sentence, rather than assumed by both."* That fix
+    // landed in the affordance and this copy kept the assumption.
+    //
+    // `sovereignty/params.ts` and `test/core/goods-are-independent.test.ts` are explicit that the
+    // two goods being equal *"is a decision (D17), not a fact about the engine"*, so this is the
+    // site that breaks on the day a second good lands — and it decides whether the cast takes
+    // ground whose recurring bill would then be denominated in something it does not earn. A claim
+    // that cannot fund its Charge lapses in three Reckonings and slashes `CLAIM_BOND_MINOR`.
+    //
+    // Refined income, not raw: the Charge is payable in `ration` and `refine` is the only road from
+    // one to the other, so `ore x OUT / IN` is what a Reckoning of this place actually yields
+    // *toward the bill*. Integer, and it truncates — the gate understates income, which is the same
+    // direction {@link CAST_CLAIM_COVER_MULTIPLE} already errs in.
+    const refinedPerReckoning = Math.floor(
+      (quote.sharePerTick * TICKS_PER_RECKONING * REFINE_OUT_QTY) / REFINE_IN_QTY,
+    );
+    if (refinedPerReckoning < bill * CAST_CLAIM_COVER_MULTIPLE) return null;
 
     // ── THE TRIBUTE COMES FIRST, ALWAYS ──────────────────────────────────────
     //
@@ -2220,24 +2328,37 @@ export class HeuristicCast {
     }
     if (best === null) return null;
 
-    // ── `freeStores` HERE IS DELIBERATE, AND IT IS NOT THE BUG NEXT DOOR ──────
+    // ── ★ THE SPARE PICK RANKS BY THE GOOD THE LEVY IS PAYABLE IN ────────────
     //
-    // `weightOf('BY_STORES')` was just moved off `freeStores` onto the levy good, because a *rule*
-    // that sizes a goods bill by a cash balance can assess more than any route can supply. This is
-    // not that: **who to spare is an OPINION**, and §5.2 makes it one on purpose — "who is spared is
-    // a choice the society makes, on the clock, in public". A constellation is entitled to relieve
-    // whoever it likes, including badly, and a bot that spared by cash poverty is a bot with a
-    // defensible politics rather than an engine with a unit error.
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS IS `weightOf('BY_STORES')`'S BUG ONE LAYER UP, AND IT IS THE SAME ROOT.** §3's canon
+    // entry for STORES is *"assets, inventory, balances"* — one canon word, two concepts — and both
+    // call sites picked the unpayable one. The rule sized a goods bill by a cash balance; this
+    // *relieved* by a cash balance, so the cast protected from a goods obligation the one principal
+    // in its constellation who could most easily discharge it.
     //
-    // Worth knowing that it *does* currently spare oddly: measured on `g07`, `p:vex` was spared for
-    // three Reckonings running while holding **76,565** units of the levy good — the most in its
-    // constellation — because it had spent its cash on a crossing. Changing this to the goods
-    // reading is a live option and it is a **balance change, not a fix**: it moves who bears the
-    // relief on every docket, so it needs its own sweep at 3, 6 and 9 Reckonings. Left alone here
-    // so the `weightOf` measurement is not confounded by two changes at once.
+    // Measured on `g07`: `p:vex` was spared for **three Reckonings running** while holding 76,565
+    // units of the levy good — the most in its constellation — because it had spent its cash on a
+    // crossing. The relief is funded by everyone else (`relievedTotal`: "the relief is funded, which
+    // is what makes the vote a *redistribution* rather than a discount"), so the constellation was
+    // taxing itself to protect its own best-supplied member. Same anti-correlation, same cause.
+    //
+    // ── AND IT IS STILL AN OPINION, WHICH IS WHY IT STAYS IN THIS FILE ────────
+    //
+    // §5.2 makes sparing a political choice — *"who is spared is a choice the society makes, on the
+    // clock, in public"* — so a constellation is entitled to relieve whoever it likes, including
+    // badly. Nothing here is a rule and nothing in the engine enforces it: this is one populator
+    // cast's politics, an LLM member may nominate itself or its ally, and `test/levy/ballot.test.ts`
+    // asserts both the coalition and the no-coalition outcome because the mechanic has to survive
+    // either. What changed is only that the bot's *stated* policy — relieve whoever can least afford
+    // this bill — is now computed in the unit the bill is denominated in.
+    //
+    // A balance change rather than a defect fix, therefore, and it carries its own sweep at 3, 6 and
+    // 9 Reckonings rather than riding on the `deliver {payer}` one.
+    // ══════════════════════════════════════════════════════════════════════════
     const poorest = subjects
       .filter((s) => !isNewcomer(s) && s.principal !== member.principal)
-      .sort((a, b) => a.freeStores - b.freeStores || compareIds(a.principal, b.principal))[0];
+      .sort((a, b) => a.levyGoodHeld - b.levyGoodHeld || compareIds(a.principal, b.principal))[0];
 
     return {
       verb: 'vote',
@@ -2393,6 +2514,96 @@ export class HeuristicCast {
       if (next === undefined) continue;
       if (!this.mayEnter(member, next)) continue;
       return { verb: 'move', params: { hand: hand.id, to: next } };
+    }
+    return null;
+  }
+
+  /**
+   * ★ Carry a co-member's **escrowable** share with a hand you already have there, or null.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE BRANCH THAT MAKES `paidOther` NON-ZERO FOR THE FIRST TIME.** §5.2 escrows 70% of every
+   * assessment and permits that share to be carried by another principal's hand; `deliver {payer}`
+   * has implemented it since the Levy landed; **no cast has ever selected it and no affordance ever
+   * offered it**, so `paidOther` was 0 in every world this repo had run. An affordance no cast ever
+   * selects is the second of the three depths the lesson shows up at, and the four empty panels are
+   * the precedent — so offering the verb without a bot that uses it would only move the defect one
+   * layer along.
+   *
+   * What it is aimed at, with the numbers: at nine Reckonings `levyShort` is 202,540 across eight
+   * seeds, and on `g01` the cause is not production in aggregate. Three members hold a WORKS on one
+   * MARCHES system at occupancy 3, earning `floor(110/3) x 288 = 10,368` a Reckoning against a
+   * 23,900 assessment, and `orrin`, `sable` and `varrow` sit on **360,000 units of the same good in
+   * the same constellation.** The goods exist. They are in the wrong warehouse.
+   *
+   * ## Why it sits HERE — after `levyMove` and after `chargeMove`
+   *
+   * **Settle your own obligations before you spend goods on anyone else's**, which is the same
+   * ordering ethic `delegatedElectionFor` states for a mandate and the same one `chargeMove`'s
+   * position argues from. Three consequences, and each is why a different position would be wrong:
+   *
+   *   - **Below `levyMove`**: a member that carried a neighbour's tribute while its own line was
+   *     red would produce a shortfall on its own record and call it generosity. `levyMove` returns
+   *     `null` the moment nothing is owed, so a member that has paid gets here in the same tick.
+   *   - **Below `chargeMove`**: the Charge and the Levy want the *same good*, and three missed
+   *     Charges lapse a claim and slash `CLAIM_BOND_MINOR`. A carry is the least consequential of
+   *     the three claims on a unit of `ration`, so it goes last of the three.
+   *   - **Above the aimless walk and the fleet branches**: this is a delivery to a place a hand is
+   *     already standing on, so it costs one action and no repositioning at all — where the
+   *     branches below it spend a hand's position for ticks. A move that uses a hand where it
+   *     stands should never lose to one that relocates it.
+   *
+   * ## No walk branch, and that is a measurement rather than an omission
+   *
+   * `levyMove` and `chargeMove` both walk a hand toward the obligation when none is there. This
+   * does not, because **a member that has paid its own tribute already has a hand at the delivery
+   * place** — that is what paying it required — and the place is shared by the whole constellation
+   * (`levy/place.ts`: one named place per constellation). So the carrier's hand is where it needs
+   * to be as a *consequence* of its own compliance, and walking a hand across the map to fund
+   * somebody else's bill is a much larger claim on the cast's behaviour than the residue justifies.
+   * If a sweep shows carries failing for want of presence, that is the branch to add next, and it
+   * should be added on that evidence.
+   *
+   * The reserve is {@link CAST_CARRY_RESERVE_RECKONINGS} and the argument for the number is at its
+   * declaration. Everything else here is read off `Runtime.levyCarryQuotes` — the same rows the
+   * affordance offers, in the same order — so the bot cannot play a rule the menu does not show,
+   * and neither can compute an amount the other would not.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private carryFor(
+    member: CastMember,
+    tick: number,
+    carriedThisTick: ReadonlySet<PrincipalId>,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    // A delivery is refused inside the freeze (§5.1) and no amount of trying changes that until
+    // the next Reckoning opens — the same guard every other obligation branch takes, and for the
+    // same AGT-S3 reason: a predictable refusal per tick buries the unpredictable ones.
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+
+    // The forward-looking reserve, in the good the Levy is paid in. `max` of the two figures — see
+    // CAST_CARRY_RESERVE_RECKONINGS for why neither alone is enough.
+    const mine = runtime.levyBlockFor(member.principal, tick);
+    const perReckoning = Math.max(mine?.my_assessment ?? 0, LEVY_DUTY_PER_PRINCIPAL);
+    const reserve = perReckoning * CAST_CARRY_RESERVE_RECKONINGS;
+
+    // `levyCarryQuotes` has already dropped every row the verb would refuse and every row with
+    // nothing to carry — the presence gate included, since a hand not standing at the delivery
+    // place reads as a `fault`. No second copy of that rule here, which is what keeps the bot and
+    // the menu from disagreeing about what is possible.
+    for (const carry of runtime.levyCarryQuotes(member.principal, tick)) {
+      // A cast-mate is already carrying this one and the escrowable bucket only takes filling
+      // once — see {@link HeuristicCast.decide} for the measurement and why this belongs here
+      // rather than in the engine.
+      if (carriedThisTick.has(carry.payer)) continue;
+      // `surplus` is already net of this member's OUTSTANDING duty (`carryableOf`), so subtracting
+      // the reserve from it is the forward-looking half and nothing is counted twice.
+      const give = Math.min(carry.payable, carry.surplus - reserve);
+      if (give <= 0) continue;
+      return {
+        verb: 'deliver',
+        params: { obligation: 'LEVY', payer: carry.payer, amount: give },
+      };
     }
     return null;
   }

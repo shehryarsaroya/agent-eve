@@ -358,15 +358,80 @@ function roleIsWage(venture: VentureRecord, roleIndex: number): boolean {
 }
 
 /**
- * Ascending stakes is the frame's format (§14.3) and descending is the briefing's:
- * the largest consequence goes first, because an agent reads the first line.
+ * ★ How grave, then how large **within one kind** — never how large across kinds.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **`amount` IS FIVE DIFFERENT UNITS AND THIS USED TO SORT ALL OF THEM ON ONE SCALE.**
+ *
+ * `DoNothingOutcome.amount` is typed `Minor` and is populated from:
+ *
+ *   · `LEVY_UNPAID` — **goods**, discharged only in `ration` (§5.2)
+ *   · `ELECTIVE_LAPSES` · `ELECTIVE_AT_RISK` · `ESCROW_EXECUTES` — **currency** minor
+ *   · `ROLE_OPEN` — **a count of roles**, 1..4
+ *   · `HAND_LANDS` — **an absolute tick number**
+ *   · `SEAL_ABSENT` · `NOTHING_RESOLVES` — zero
+ *
+ * The old comparator was `b.amount - a.amount`, so it ranked a goods obligation against a cash
+ * figure, a cardinality and a clock reading. That is the same confusion as
+ * `weightOf('BY_STORES')` — §3's canon STORES is *"assets, inventory, balances"*, one word for
+ * two things — arriving through a *presentation* layer instead of through a rule, and it is the
+ * third site of the family. Two consequences, one already dangerous and one a timer:
+ *
+ *   1. **`ROLE_OPEN` could never rank above anything**, so a venture about to resolve
+ *      `PARTIAL_FILL` sat below a hand walking, permanently.
+ *   2. **`HAND_LANDS` carries the tick.** Past tick ~20,000 every in-transit hand outranks a
+ *      full `LEVY_DUTY_PER_PRINCIPAL` assessment; the live world was at ~5,274. So the briefing
+ *      was scheduled to start leading with "a hand arrives" while the Levy went unpaid, and
+ *      `agent.md` §12 tells players to read `if_you_do_nothing` **first every wake**.
+ *
+ * And the ordering decides what *disappears*: `LIST_CAPS.doNothing` is 12 and
+ * `observe/tokens.ts` states plainly that this list *"has no `withheld` field to be counted
+ * in"*. A comparator that cannot rank across units, deciding which predicted consequences an
+ * agent never sees, with no count of the omission, is PROP-O1's failure with A5′ downstream of
+ * it — the quiet direction, where the agent is told it is safe to do nothing.
+ *
+ * ── THE FIX IS TO RANK THE **KIND**, AND TO COMPARE AMOUNTS ONLY WITHIN ONE ──
+ *
+ * {@link GRAVITY} is a total order over kinds, so the first line is the gravest consequence
+ * rather than the biggest integer, and the cap can only ever drop something *less* grave than
+ * what it kept. `amount` is then compared only between two outcomes of the **same kind**, which
+ * is the one comparison that is unit-safe by construction — and it stays unit-safe if a future
+ * kind arrives in a new unit, because a new kind needs a `GRAVITY` entry and gets its own bucket.
+ *
+ * No `withheld` field is added: the schema is ten top-level keys and this is a presentation
+ * order, not a missing fact. Severity-first is what makes the absent count harmless.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-function orderOutcomes(outcomes: readonly DoNothingOutcome[]): DoNothingOutcome[] {
+const GRAVITY: Readonly<Record<DoNothingKind, number>> = Object.freeze({
+  // 0 — a permanent public mark on your record, or goods taken. A5 has no opt-out.
+  ELECTIVE_LAPSES: 0,
+  LEVY_UNPAID: 1,
+  SEAL_ABSENT: 2,
+  // 3 — an outcome you lose, with no mark against you.
+  ROLE_OPEN: 3,
+  // 4 — somebody else's choice, which you cannot fix by acting (A7, and deliberately hedged).
+  ELECTIVE_AT_RISK: 4,
+  // 5 — news rather than a dilemma: it happens whether you act or not.
+  ESCROW_EXECUTES: 5,
+  HAND_LANDS: 6,
+  // 7 — only ever alone.
+  NOTHING_RESOLVES: 7,
+});
+
+/**
+ * Exported for its regression test, which is the only way to reach the failure that matters.
+ *
+ * The tick-outranks-the-Levy case needs an absolute tick above `LEVY_DUTY_PER_PRINCIPAL`, i.e. a
+ * world 69 Reckonings old — unreachable in a test and inevitable in production. Fed synthetic
+ * outcomes, the comparator's behaviour at that horizon is one assertion.
+ */
+export function orderOutcomes(outcomes: readonly DoNothingOutcome[]): DoNothingOutcome[] {
   return [...outcomes]
     .sort(
       (a, b) =>
+        GRAVITY[a.kind] - GRAVITY[b.kind] ||
+        // Same kind, therefore same unit. This is the only place `amount` is compared.
         b.amount - a.amount ||
-        compareIds(a.kind, b.kind) ||
         compareIds(a.subject, b.subject),
     )
     .slice(0, LIST_CAPS.doNothing);

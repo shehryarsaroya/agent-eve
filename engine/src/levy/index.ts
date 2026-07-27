@@ -130,16 +130,20 @@ export {
   LEVY_UNIT_MINOR,
   MAX_LEVY_ASSESSMENTS,
   MAX_LEVY_BALLOTS,
+  MAX_LEVY_CARRY_OFFERS,
   MAX_TRIBUTE_LINES,
 } from './params.js';
 
 export {
   carriageUnderway,
   carrierAt,
+  carryableOf,
   creditFor,
   deliveryFault,
   nonEscrowableOf,
   owingOf,
+  type Carryable,
+  type LevyCarryQuote,
   type Owing,
   type PaymentSplit,
 } from './payment.js';
