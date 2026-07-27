@@ -221,6 +221,35 @@ Either way it is a **one-verb** problem, not a WORKS-mechanics problem and not a
 the fixture's stake coupling (fixed above) was a real but separate issue that happened to move the
 journalled hash and make the two effects look like one.
 
+### The filter is located: `extract.ts:79`
+
+The persisted action log is **not** every submitted action. `persist/extract.ts:74-80`:
+
+```ts
+const actions = runtime.engine.log
+  .forTick(tick)
+  // Submitted only. A null arrival ordinal marks an engine-produced intent run,
+  // which the snapshot's standing intents regenerate on replay — storing it would
+  // replay it twice (`replay.ts` skips exactly this).
+  .filter((a) => a.arrivalOrdinal !== null)
+```
+
+`arrivalOrdinal` is passed through from the submitted action (`tick/loop.ts:1020`) and set to `null`
+only for engine-produced intent runs (`:1055`). So **whether an in-process cast action survives this
+filter depends entirely on what the cast puts in that field** — and the heuristic's returned action
+shape (`{ ...base, verb, params }`) does not visibly set it.
+
+**The one-line check that closes this:** for the tick a build was submitted, print
+`runtime.engine.log.forTick(tick)` alongside the filtered `actions` array that `extractTick` produces.
+If the `build` is in the first and not the second, the filter is eating it and the fix is one predicate.
+If it is in both, the loss is downstream in `replay.ts` — which the comment above says "skips exactly
+this", so that skip is the next thing to read.
+
+Note the asymmetry that makes this worth checking rather than assuming: `undefined !== null` is `true`
+in JS, so an action that simply never sets the field **passes** the filter. It would take an explicit
+`null` to be dropped. That cuts against the hypothesis and is exactly why it needs the print rather than
+another round of reading.
+
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
 the fourth framing in a row where I found a plausible cause and stopped looking. The fixture fix is kept
