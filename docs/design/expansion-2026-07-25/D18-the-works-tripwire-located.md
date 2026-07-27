@@ -191,6 +191,36 @@ question is not "why does a build diverge" but "why does adding a build branch p
 slow path".** That is a much better-shaped question and it is where the next attempt should start:
 instrument `planCheckpoint`'s decision and print why adoption was refused with the branch present.
 
+### ⚑ THE DECISIVE OBSERVATION: the replay does not contain the build
+
+Stopped hypothesising and compared two runs. With the build branch present, before and after the stake
+fix:
+
+```
+replayed  state_hash   8198caa6…  →  8198caa6…      IDENTICAL
+journalled snapshot    b89e395b…  →  e38126c0…      MOVED
+```
+
+**The replayed hash is invariant while the journalled snapshot tracks the fixture change.** If the
+replay reflected the build, its hash would have moved too — the stake change alters balances, which
+alters what a build costs and when it is affordable. It did not move. So **the replay is producing a
+world as though no WORKS was built.**
+
+That reframes the blocker one final time, and this reading is grounded in measurement rather than
+inference: the question is not *"why does the build diverge on replay"* but **"why is the build missing
+from the replay at all."** Two candidates, and both are checkable without a hypothesis:
+
+1. **The `build` action never reaches the action log.** Print `TickRecord.actions` for the tick the
+   build was submitted. If `build` is absent while `create`/`fill_role` are present, that is a
+   journalling gap on one verb and a serious one — an action that cannot be replayed breaks
+   `(snapshot, action_log, seed) → snapshot` for any world containing it.
+2. **The action log has it and replay skips it.** Then the verb is missing from whatever table the
+   replay path dispatches through, which would be a registration gap rather than a determinism fault.
+
+Either way it is a **one-verb** problem, not a WORKS-mechanics problem and not a fixture problem — and
+the fixture's stake coupling (fixed above) was a real but separate issue that happened to move the
+journalled hash and make the two effects look like one.
+
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
 the fourth framing in a row where I found a plausible cause and stopped looking. The fixture fix is kept
