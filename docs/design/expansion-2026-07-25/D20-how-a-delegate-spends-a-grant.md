@@ -1,12 +1,24 @@
 # D20 — How a delegate actually spends a grant
 
-*2026-07-26. A6's missing two-thirds, specified. Written after tracing the whole path and stopping
-one step short of implementing it, deliberately — the reason is in the last section and it is not
-fatigue.*
+*2026-07-26. A6's delegation path, specified and then built.*
+
+> ⚑ **THE PREMISE OF §"What is missing" BELOW IS WRONG.** It says no verb accepts a mandate and that
+> `grantBook.spend()` is never called — both from a grep for `grantBook.spend` / `.spend(`. **The
+> method is `recordSpend`, and the grep missed it.** `create` has supported delegated action all
+> along: `on_behalf_of` names the principal, `liveGrantBetween` infers the mandate, both LIMITS are
+> checked, and the draw is ordered before the transfer with a note citing AGT-X9. A negative claim
+> resting on one grep spelling is only as strong as the spelling.
+>
+> **What was actually missing is narrower:** no *cast* has ever used a mandate it holds, so no world
+> has produced a single draw. That is a cast gap, not an engine gap.
+>
+> Kept rather than rewritten because the design reasoning below is sound and was confirmed by
+> building it — with one correction, marked at §"The param", where matching `create`'s existing
+> spelling beat the fresh one this file proposed.
 
 ---
 
-## What is missing, restated exactly
+## What is missing, restated exactly (⚑ see banner — this section's premise is wrong)
 
 `grant` works end to end: issued, bounded, warned, rendered (`authorityLines=12`), revocable,
 captured, VC-serialised, audited by INV-22/23. **Nothing can use one.**
@@ -46,7 +58,23 @@ beats every other candidate:
 3. It is one verb, and the verb budget is at its §17 ceiling (40/40), so this must be a **param**, not
    a new verb.
 
-## The param is `grant`, not `on_behalf_of`
+## The param — ⚑ CORRECTED: there is no param
+
+This file argued for a `grant: <id>` param, reasoning that a delegate holding authority from several
+principals should say which mandate it draws on. Sound in general, wrong here, for a reason this file
+could not see while its premise was wrong: **`create` already does this, and does it differently.**
+`on_behalf_of` names the PRINCIPAL and `liveGrantBetween` infers the grant.
+
+Two spellings for "I am acting under delegated authority" is one concept wearing two words in a rules
+surface — §3, and scar #1's shape — so `elect` matches `create` instead. And inference is
+*unambiguous* here in a way it is not for `create`: the elective half is paid by `venture.creator` and
+nobody else, so the grantor is a fact about the venture rather than a choice the actor makes. Nothing
+needs disambiguating, so `elect` takes **no extra field at all** — acting as a delegate is simply
+electing on a venture you did not create.
+
+The original argument, kept because it is the right instinct in the general case:
+
+## ~~The param is `grant`, not `on_behalf_of`~~
 
 `on_behalf_of` is **already taken** — `grant` uses it to name the *syndicate* an office is appointed
 for (`officeGrantorFor`). Reusing it for "the principal I am acting for" would be one canon word
@@ -60,9 +88,25 @@ so:
 Gates, in order: the grant exists · `delegate === req.principal` · `grantor === venture.creator` ·
 `isLive(id, tick)` · headroom sufficient.
 
-## The spend is recorded at SETTLEMENT, not at election
+## ~~The spend is recorded at SETTLEMENT, not at election~~ — ⚑ CORRECTED
 
-This is the finding that took the longest and it is the one that decides the shape.
+**It is recorded at ELECTION time.** This section's blocker was that `recordSpend` requires an
+`eventId` and `vElect` emits no event — true, and it turned out not to matter: **INV-22 reads `eventId`
+only for sort identity and for its own messages, and never dereferences it.** So `elect:<venture>:<role>`
+is honest provenance, and the whole settlement detour is unnecessary.
+
+Recording at election is also the *better* answer, not merely the cheaper one. `recordSpend`'s own
+contract is that the caller checks headroom "before it moves any value, so a refusal leaves the world
+untouched" — and a limit enforced only at settlement is not a limit, because by then the promise is
+public and breaking it is a default on somebody's record. `create`'s delegated path independently
+reached the same conclusion, with a comment explaining why the draw is ordered before the transfer.
+
+The `direct`/`contingent` mapping below stands and shipped: `IN_FULL` → contingent, a fixed amount →
+direct.
+
+Original reasoning:
+
+### ~~Why settlement looked like the home~~
 
 `recordSpend` requires an `eventId`. **`vElect` emits no event at all** — it sets
 `this.elections.set(key, raw)` and returns. So there is no id to record against at election time.
@@ -84,7 +128,22 @@ And the two LIMITS map onto the two election forms exactly as §8 intends:
 Which is what `max_direct_loss` and `max_contingent_liability` were always for. The affordance already
 shows both.
 
-## Why this cannot be split, and why it is therefore not half-done here
+## ~~Why this cannot be split~~ — ⚑ CORRECTED: it needed no split, and it is built
+
+Everything below follows from recording the spend at settlement, and that premise is wrong (above). At
+election time the mandate is in hand, so nothing needs to be carried forward: **no field on
+`electionsStateTable`, no captured-schema change, no `RULES_VERSION` bump, no discontinuity.** The
+spend journal is already inside `grantsStateTable`'s capture, so a draw is an ordinary state change.
+
+Built and shipped the same day: `test/grant/a-delegate-can-spend.test.ts`, four tests, every gate
+mutation-verified except the headroom branch. The one genuinely new rule is **one delegate election per
+role** — `elect` is restatable, and under a mandate each restatement would draw fresh headroom, so a
+delegate could charge the grantor's LIMIT repeatedly for one promise. That guard needs no state either.
+
+The warning below was still the right instinct and is worth keeping: an authorisation gate must never
+ship without its accounting.
+
+### ~~The original argument~~
 
 The election must carry which grant authorised it, so settlement knows whose limit to charge. That
 means **`electionsStateTable` gains a field — a captured state table.** Which means:

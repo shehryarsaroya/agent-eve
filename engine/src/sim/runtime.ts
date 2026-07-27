@@ -4169,7 +4169,7 @@ export class Runtime {
    * own arithmetic instead of with an agent's decision.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  private vElect(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+  private vElect(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     // The same reader the window notice uses, so a spelling this handler honours can
     // never be one the readback missed. See {@link electionFieldsOf}.
     const { venture: ventureId, roleIndex, raw } = electionFieldsOf(req.params);
@@ -4205,15 +4205,20 @@ export class Runtime {
       );
     }
 
-    // The payer, and nobody else. The elective half is paid out of the creator's own
-    // stores, so anyone else electing on it would be spending another agent's money.
-    if (venture.creator !== req.principal) {
-      return reject(
-        'PROP-V4',
-        `only ${venture.creator} elects on ${venture.id}: the elective half is paid out of the payer's own ` +
-          'stores, and you are not the payer here. Your own elective parts are on the ventures you created.',
-      );
-    }
+    // ── THE PAYER, OR SOMEONE THE PAYER PUT IN AN OFFICE (A6) ─────────────────
+    //
+    // The elective half is paid out of the creator's own stores, so anyone else electing on it is
+    // spending another agent's money — which is not a reason to refuse, it is the DEFINITION of the
+    // authority a `grant` hands over. This gate was A6's missing link: `grant` was issued, bounded,
+    // warned, rendered and revocable, and no verb anywhere let a delegate use one, so every grant was
+    // `UNUSED` forever and betrayal-via-authority was impossible by construction (`D20`).
+    //
+    // Naming the grant is mandatory rather than inferred. A delegate may hold authority from several
+    // principals, `liveGrantBetween` picks by headroom, and a draw against the wrong grantor's limit is
+    // a wrong row in a journal INV-22 halts the world over — A5′. So the delegate says which mandate it
+    // is acting under and the engine checks that exact one.
+    const mandate = this.electionMandate(ctx, req, venture, roleIndex);
+    if ('rejection' in mandate) return mandate.rejection;
     const role = venture.roles.find((r) => r.index === roleIndex);
     if (role === undefined) {
       return reject(
@@ -4252,8 +4257,109 @@ export class Runtime {
           'does not grow the book.',
       );
     }
+    // ── THE DRAW IS RECORDED HERE, NOT AT SETTLEMENT, AND THAT IS DELIBERATE ──
+    //
+    // An election is a statement and value moves at the Reckoning, so settlement looks like the
+    // natural home. It is not, for two reasons. `recordSpend`'s own contract is that the caller checks
+    // headroom "before it moves any value, so a refusal leaves the world untouched" — INV-22 is the
+    // backstop, not the gate — and a limit enforced only at settlement is not a limit, because by then
+    // the promise is public and breaking it is a default on somebody's record.
+    //
+    // And nothing forces it later: INV-22 reads `eventId` for sort identity and for its messages and
+    // never dereferences it, so provenance scoped to the election is honest. Which means this needs no
+    // new state table, no change to the `Election` union, and no RULES_VERSION bump — the spend journal
+    // is already inside `grantsStateTable`'s capture.
+    const grant = mandate.grant;
+    if (grant !== null) {
+      // IN_FULL is not knowable until the venture resolves, so it draws on the CONTINGENT limit at its
+      // p90 ceiling; a stated amount is knowable now and draws on the DIRECT one. That is exactly the
+      // split §8 defines and the `grant` affordance already shows as `max_direct_loss` and
+      // `max_contingent_liability`, so a grantor who read the warning has already priced this.
+      const direct = raw === IN_FULL ? minor(0) : minor(raw);
+      const contingent = raw === IN_FULL ? this.electiveCeilingOf(venture, roleIndex) : minor(0);
+      const room = this.grantBook.headroom(grant.id);
+      if (direct > room.direct || contingent > room.contingent) {
+        return reject(
+          'INV-22',
+          `grant ${grant.id} has ${String(room.direct)} of direct and ${String(room.contingent)} of ` +
+            `contingent headroom left, and this election needs ${String(direct)} and ` +
+            `${String(contingent)}. ${venture.creator} bounded what you may commit in their name and this ` +
+            `would exceed it. Elect a smaller amount, or ask for a wider grant — the limit is the whole ` +
+            `reason they were willing to sign one.`,
+        );
+      }
+      this.grantBook.recordSpend({
+        grant: grant.id,
+        delegate: req.principal,
+        tick: ctx.tick,
+        eventId: `elect:${venture.id}:${String(roleIndex)}` as unknown as EventId,
+        direct,
+        contingent,
+      });
+    }
     this.elections.set(key, raw);
     return { ok: true, value: null };
+  }
+
+  /**
+   * Who is paying, and under what mandate — or why this principal may not elect here at all.
+   *
+   * Returns `{grant: null}` for the ordinary case (the creator electing on its own venture), a live
+   * grant when a delegate is acting inside one, and a rejection otherwise.
+   *
+   * ── THE MANDATE IS INFERRED, NOT NAMED, AND THAT IS FOR CONSISTENCY ──────────
+   *
+   * The first version of this took a `grant: <id>` param, on the reasoning that a delegate holding
+   * authority from several principals should say which one it is drawing on. That reasoning is sound
+   * and it was still wrong here, because **`create` already does this and does it differently**:
+   * `on_behalf_of` names the PRINCIPAL and `liveGrantBetween` infers the grant. Two spellings for "I
+   * am acting under delegated authority" is one concept wearing two words in a rules surface — §3, and
+   * the same shape as scar #1 — and the inconsistency would land on an agent as two mechanics to learn
+   * where there is one.
+   *
+   * Inference is also unambiguous here in a way it is not for `create`. The elective half is paid by
+   * `venture.creator` and by nobody else, so the grantor is not a choice the actor makes — it is a
+   * fact about the venture. There is nothing for a param to disambiguate, so `elect` needs no extra
+   * field at all: acting as a delegate is simply electing on a venture you did not create.
+   */
+  private electionMandate(
+    ctx: PhaseContext,
+    req: ActionRequest,
+    venture: VentureRecord,
+    roleIndex: number,
+  ): { readonly grant: Grant | null } | { readonly rejection: WorldResult<null> } {
+    if (venture.creator === req.principal) return { grant: null };
+
+    const grant = this.grantBook.liveGrantBetween(venture.creator, req.principal, ctx.tick);
+    if (grant === null) {
+      return {
+        rejection: reject(
+          'PROP-V4',
+          `only ${venture.creator} elects on ${venture.id}: the elective half is paid out of the payer's ` +
+            'own stores, and you hold no live grant from them to act on their behalf. Ask them to grant you ' +
+            'scoped authority (verb: grant), or elect on the ventures you created. An expired or revoked ' +
+            'mandate reads the same way here — authority ends on a stated tick (scar #7).',
+        ),
+      };
+    }
+    // ── ONE DELEGATE ELECTION PER ROLE, AND IT FAILS CLOSED ───────────────────
+    //
+    // `elect` is restatable until the freeze, which is right for a principal spending its own stores.
+    // Under a mandate it is not: each restatement would draw fresh headroom against the grant, so a
+    // delegate could walk an amount up repeatedly and charge the grantor's limit every time. Netting
+    // restatements would need a per-election spend record — state this deliberately does not add — so
+    // the safe answer is one draw per role and a refusal that says who may still restate.
+    if (this.elections.has(electionKey(venture.id, roleIndex))) {
+      return {
+        rejection: reject(
+          'PROP-V4',
+          `an election already stands on that role of ${venture.id}, and a delegate states it once: ` +
+            'each restatement would draw fresh headroom against the grant. ' +
+            `${venture.creator} may restate its own election at any time before the freeze.`,
+        ),
+      };
+    }
+    return { grant };
   }
 
   private mintGrantId(tick: number, principal: PrincipalId): GrantId {

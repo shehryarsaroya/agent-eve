@@ -2,24 +2,33 @@
  * INV-22 REPORTS GREEN AND CHECKS NOTHING, BECAUSE NO VERB CAN SPEND A GRANT.
  *
  * A6 is the core loop: *an agent earns trust, is granted authority it could abuse, and abuses it at
- * the moment of maximum leverage.* As of 2026-07-26 the first third of that exists and the rest does
- * not, and this file is the tripwire that says so out loud.
+ * the moment of maximum leverage.* This file is the tripwire on the part that has never happened.
  *
  * What IS built: `grant` is a canon verb, the `GrantBook` is a restorable state table, grants
  * serialise as W3C Verifiable Credentials, INV-22 and INV-23 audit them, `revoke` works, the cast now
- * issues them (`grant=27` per 900 ticks) and they render (`authorityLines=12`).
+ * issues them (`grant=27` per 900 ticks) and they render (`authorityLines=12`). **And two verbs accept
+ * a mandate** — `create` (always did) and `elect` (added 2026-07-26).
  *
- * What is NOT built — and the greps are the evidence, not an opinion:
+ * ⚑ **AN EARLIER VERSION OF THIS HEADER WAS WRONG, AND THE ERROR IS WORTH KEEPING.** It said "no verb
+ * can spend a grant" and "`grantBook.spend()` is never called outside `src/grant/book.ts`" — both from
+ * a grep for `grantBook.spend` and `.spend(`. **The method is `recordSpend`, and the grep missed it.**
+ * `create` has supported delegated action all along: `on_behalf_of` names the principal,
+ * `liveGrantBetween` infers the mandate, both LIMITS are checked, and the draw is recorded with a
+ * careful note about ordering it before the transfer (AGT-X9). A negative claim resting on one grep
+ * spelling is exactly as strong as the spelling, and this one was a name away from the truth.
  *
- *   - `grantBook.spend()` is **never called from anywhere outside `src/grant/book.ts`.**
- *   - **No verb accepts a grant to act under.** The only verb taking a `grant` param is `revoke`.
- *   - `onBehalfOfPrincipalId` is written `null` at every venture/seal/audit site. The non-null uses in
- *     `runtime.ts` are sovereignty and claim attribution, not grant delegation.
+ * `elect` now takes a mandate too, on the same inferred pattern (`test/grant/a-delegate-can-spend`).
  *
- * So a delegate cannot use delegated authority. Every grant the world issues is `UNUSED`, `spent: 0`,
- * forever — which means **betrayal via legitimate authority is currently impossible**, and §16's
- * acceptance criterion ("≥1 authority-betrayal occurs unprompted, and its replay shows the grant, the
- * accepted warning, the seal, and the deed") cannot be met by construction rather than by chance.
+ * ── WHAT IS ACTUALLY TRUE, WHICH IS NARROWER AND STILL A GAP ─────────────────
+ *
+ * The capability exists on two verbs and **no cast ever uses it.** The heuristic cast passes
+ * `on_behalf_of` on nothing, the LLM prompt never mentions acting for another principal, so no world
+ * this project runs has ever produced a single draw. Which leaves the same practical consequence by a
+ * different route: every grant is `UNUSED`/`spent: 0`, INV-22 audits an always-empty journal, and the
+ * betrayal §16 asks for has never had a chance to happen.
+ *
+ * That is a cast gap rather than an engine gap, and it is cheaper to close — a branch that elects or
+ * creates under a held mandate, not an authorisation path.
  *
  * ── WHY THIS IS A TEST AND NOT A TODO ────────────────────────────────────────
  *
@@ -44,8 +53,8 @@ import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed } from '../../src/core/time.js';
 import { Runtime } from '../../src/sim/runtime.js';
 
-describe('INV-22 has nothing to check, and that is a gap in A6 rather than in the invariant', () => {
-  it('a world that ISSUES grants produces ZERO spends against them', () => {
+describe('INV-22 has nothing to check, because no cast ever uses a mandate it holds', () => {
+  it('a world that ISSUES grants produces ZERO draws against them', () => {
     setSpeed('instant');
     const seed = 'inv22-vacuous';
     const rt = new Runtime({ seed });
@@ -68,10 +77,10 @@ describe('INV-22 has nothing to check, and that is a gap in A6 rather than in th
     const spends = rt.grants.allSpends();
     expect(
       spends.length,
-      `${String(spends.length)} grant spend(s) exist — which means a delegate can now ACT on ` +
-        `delegated authority and A6's second link has landed. That is good news, and this test is ` +
-        `now backwards: invert it to assert spends occur, add a case where INV-22 rejects one that ` +
-        `exceeds its limit, and delete this file's premise.`,
+      `${String(spends.length)} grant draw(s) exist — which means a cast finally USES a mandate it ` +
+        `holds, and A6 can complete end to end. That is good news, and this test is now backwards: ` +
+        `invert it to assert draws occur, add a case where INV-22 rejects one that exceeds its ` +
+        `limit, and delete this file's premise.`,
     ).toBe(0);
   }, 180_000);
 

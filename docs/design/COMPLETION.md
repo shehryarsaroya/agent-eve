@@ -218,26 +218,31 @@ adoption is relied on for speed.
 
 ### ⚠ A6 IS ONE-THIRD BUILT, AND THE MISSING TWO-THIRDS IS NOT A CAST PROBLEM
 
-This was recorded on 2026-07-26 as "the cast never acts on delegated authority." That was wrong, and
-the correction matters because it changes what has to be built. **No delegate CAN act on delegated
-authority — the capability does not exist:**
+### ⚑ Two corrections, both mine, in one day
 
-- `grantBook.spend()` is **never called from anywhere outside `src/grant/book.ts`**;
-- **no verb accepts a grant to act under** — the only verb taking a `grant` param is `revoke`;
-- `onBehalfOfPrincipalId` is written `null` at every venture/seal/audit site (the non-null uses in
-  `runtime.ts` are sovereignty and claim attribution, not delegation).
+**First I recorded this as "the cast never acts on delegated authority."** Then I "corrected" it to
+"no delegate CAN — the capability does not exist," citing that `grantBook.spend()` is never called and
+no verb accepts a mandate. **That second claim was wrong**, and it came from grepping for
+`grantBook.spend` and `.spend(` when the method is `recordSpend`. `create` has supported delegated
+action all along — `on_behalf_of` names the principal, `liveGrantBetween` infers the mandate, both
+LIMITS are checked, and the draw is deliberately ordered before the transfer (AGT-X9).
 
-So every grant is `UNUSED`/`spent: 0` permanently, and **betrayal via legitimate authority is
-impossible by construction.** §16's acceptance criterion — "≥1 authority-betrayal occurs unprompted,
-and its replay shows the grant, the accepted warning, the seal, and the deed" — cannot be met, and
-`AGT-E1`'s measured 12% betrayal rate came through *ventures*, not authority.
+So the *first* framing was closer to right. **What is true: the capability exists on two verbs and no
+cast has ever used it.** The heuristic cast passes `on_behalf_of` on nothing and the LLM prompt never
+mentions acting for another principal, so no world this project has run has produced a single draw —
+every grant `UNUSED`, `spent: 0`, INV-22 auditing an empty journal, and the betrayal §16 asks for
+never given a chance. `AGT-E1`'s measured 12% came through *ventures*, not authority.
+
+That is a **cast gap, not an engine gap**, and much cheaper to close: a branch that acts under a held
+mandate, not an authorisation path.
 
 | A6 link | state |
 |---|---|
 | trust accrues from kept promises | ✅ standing, relations, `AGT-E1` answered |
 | authority is granted, bounded, warned, rendered, revocable | ✅ built and now exercised |
-| **a delegate ACTS under that authority** | ❌ **no code path exists** |
-| **that action is abused = betrayal** | ❌ impossible without the above |
+| a delegate CAN act under that authority | ✅ `create` (always) and `elect` (2026-07-26) |
+| **any cast actually does so** | ❌ **no branch passes a mandate** — so zero draws, ever |
+| **that action is abused = betrayal** | ❌ has never had the chance to happen |
 
 **INV-22 audits the spend journal and reports green over an always-empty list.** `aggregate.ts` skips
 the clause only when `grantSpends` is `undefined`, and `Runtime` always supplies

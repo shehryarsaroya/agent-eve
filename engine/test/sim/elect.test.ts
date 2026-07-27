@@ -316,7 +316,11 @@ describe('`elect` is a real verb, offered every tick until the freeze', () => {
     const id = haul(w);
     const refusal = act(w.runtime, w.hand, 'elect', { venture: id, role: 1, election: IN_FULL });
     expect(refusal?.invariant).toBe('PROP-V4');
-    expect(refusal?.hint).toContain('you are not the payer here');
+    // The wording moved when `elect` learned about mandates (A6): a non-creator is no longer simply
+    // "not the payer", it is someone who *holds no live grant* from the payer. The refusal still names
+    // the payer and now also names the way in, which is the A2 requirement for a dead end.
+    expect(refusal?.hint).toContain('you hold no live grant');
+    expect(refusal?.hint, 'and it must still say WHOSE money it is').toContain('elects on');
     expect(w.runtime.electionOn(id, 1)).toBeUndefined();
   });
 
