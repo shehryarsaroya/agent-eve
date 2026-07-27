@@ -285,6 +285,21 @@ export class HeuristicCast {
     const election = this.electionFor(member, tick);
     if (election !== null) return { ...base, ...election };
 
+    // ── A6, END TO END: ACT ON AUTHORITY SOMEBODY HANDED YOU ──────────────────
+    //
+    // Placed AFTER the member's own elections, and that ordering is the whole ethic of the branch: you
+    // settle your own promises before you spend anyone else's money. A bot that reached for a mandate
+    // while its own electives went unpaid would produce defaults on its own record and call it
+    // stewardship.
+    //
+    // Until this existed the loop had a hole nobody could see from the code: `create` and `elect` both
+    // ACCEPT a mandate, and no cast ever passed one, so every grant in every world this project has
+    // run was `UNUSED`/`spent: 0` and INV-22 audited an always-empty journal. The capability was there
+    // and unexercised — which reads, in every report and on the published frame, exactly like a
+    // capability that is missing.
+    const delegated = this.delegatedElectionFor(member, tick);
+    if (delegated !== null) return { ...base, ...delegated };
+
     // One home for "which roles can still be sealed and kept": the affordance, PROP-D4's
     // compliance gate and this bot all read `sealableRoles`, so a bot cannot be refused
     // for failing to seal something it was never offered, and cannot be told to seal
@@ -469,6 +484,69 @@ export class HeuristicCast {
    *      is allowed, and it is the whole reason this game has drama in it."
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * Elect on a venture belonging to a principal that granted this member authority, or null.
+   *
+   * The honest use of a mandate: the grantor owes an elective part, the grantor's stores pay it, and a
+   * delegate with treasury authority can state it while the grantor is offline — which is A3's whole
+   * promise (going offline costs opportunity, not your record) reached through A6's machinery.
+   *
+   * **It is also the exact seat betrayal happens from**, and deliberately so. Nothing here checks
+   * whether paying is in the grantor's interest, because §16 forbids scripting that: this bot honours
+   * what it can afford out of the grantor's purse, an LLM in the same seat may do something else, and
+   * the record shows the grant, the accepted warning and the deed either way. No `betray()` verb, no
+   * loyalty meter — the same branch produces stewardship and treachery, and only the outcome differs.
+   *
+   * Draws only on CONTINGENT headroom, because `IN_FULL` is what it states and an `IN_FULL` election is
+   * not knowable until the venture resolves. A mandate with no contingent room left is skipped rather
+   * than refused, so the bot never generates the per-tick refusal noise AGT-S3 warns about.
+   */
+  private delegatedElectionFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+
+    // Canonical order over the mandates held, so one seed walks grantors in one sequence.
+    const mandates = runtime.grants
+      .forDelegate(member.principal)
+      .filter((g) => runtime.grants.isLive(g.id, tick))
+      .sort((a, b) => compareIds(a.id, b.id));
+
+    for (const mandate of mandates) {
+      const room = runtime.grants.headroom(mandate.id);
+      if (room.contingent <= 0) continue;
+
+      const theirs = [...runtime.ventures.forPrincipal(mandate.grantor)]
+        .filter((v) => v.creator === mandate.grantor)
+        .sort((a, b) => compareIds(a.id, b.id));
+
+      for (const venture of theirs) {
+        if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) continue;
+        for (const role of venture.roles) {
+          if (role.filledByPrincipal === null) continue;
+          // A role the grantor holds itself is booked as paid in full (scar #9), and one this member
+          // holds would be electing to itself out of the grantor's purse — which `elect` refuses by
+          // name. Neither is a mandate's business.
+          if (role.filledByPrincipal === mandate.grantor) continue;
+          if (role.filledByPrincipal === member.principal) continue;
+          // A delegate states an election once per role, so an existing one is not restatable here.
+          if (runtime.electionOn(venture.id, role.index) !== undefined) continue;
+          const owed = runtime.electiveCeilingOf(venture, role.index);
+          if (owed <= 0 || owed > room.contingent) continue;
+          return {
+            verb: 'elect',
+            // No mandate field: the grantor is `venture.creator` and the engine infers the grant from
+            // (creator, actor). One spelling for delegation, shared with `create`.
+            params: { venture: venture.id, role: role.index, election: IN_FULL },
+          };
+        }
+      }
+    }
+    return null;
+  }
+
   private electionFor(
     member: CastMember,
     tick: number,

@@ -239,10 +239,22 @@ mandate, not an authorisation path.
 | A6 link | state |
 |---|---|
 | trust accrues from kept promises | ✅ standing, relations, `AGT-E1` answered |
-| authority is granted, bounded, warned, rendered, revocable | ✅ built and now exercised |
+| authority is granted, bounded, warned, rendered, revocable | ✅ built and exercised |
 | a delegate CAN act under that authority | ✅ `create` (always) and `elect` (2026-07-26) |
-| **any cast actually does so** | ❌ **no branch passes a mandate** — so zero draws, ever |
-| **that action is abused = betrayal** | ❌ has never had the chance to happen |
+| a cast actually does so | ✅ **31 grants, 23 draws** per 900-tick world |
+| that action *can* be abused = betrayal | ✅ **possible for the first time** — same branch, different outcome |
+| it *has* been abused, unprompted, on the record | ⏳ needs a live measurement, and must be allowed to come back "no" |
+
+**A6 closes end to end.** A world nobody steers now hands out authority and draws on it: `halcyon` —
+D19's 96%-hand-committed member — states elections out of another principal's treasury under a live
+mandate, 1,800 contingent at a time, and INV-22 audits every draw. Nothing in that branch checks
+whether paying is in the grantor's interest, deliberately (§16 forbids scripting the story): the same
+code produces stewardship and treachery, and only the outcome differs. The grant, the accepted
+warning and the deed are all on one record either way.
+
+What remains is not a build step but a **measurement**: does an LLM in that seat turn a mandate
+against its grantor? That is `AGT-E1`'s question for authority rather than ventures, and the design
+insists the answer be allowed to come back "no".
 
 **INV-22 audits the spend journal and reports green over an always-empty list.** `aggregate.ts` skips
 the clause only when `grantSpends` is `undefined`, and `Runtime` always supplies
