@@ -2220,6 +2220,21 @@ export class HeuristicCast {
     }
     if (best === null) return null;
 
+    // ── `freeStores` HERE IS DELIBERATE, AND IT IS NOT THE BUG NEXT DOOR ──────
+    //
+    // `weightOf('BY_STORES')` was just moved off `freeStores` onto the levy good, because a *rule*
+    // that sizes a goods bill by a cash balance can assess more than any route can supply. This is
+    // not that: **who to spare is an OPINION**, and §5.2 makes it one on purpose — "who is spared is
+    // a choice the society makes, on the clock, in public". A constellation is entitled to relieve
+    // whoever it likes, including badly, and a bot that spared by cash poverty is a bot with a
+    // defensible politics rather than an engine with a unit error.
+    //
+    // Worth knowing that it *does* currently spare oddly: measured on `g07`, `p:vex` was spared for
+    // three Reckonings running while holding **76,565** units of the levy good — the most in its
+    // constellation — because it had spent its cash on a crossing. Changing this to the goods
+    // reading is a live option and it is a **balance change, not a fix**: it moves who bears the
+    // relief on every docket, so it needs its own sweep at 3, 6 and 9 Reckonings. Left alone here
+    // so the `weightOf` measurement is not confounded by two changes at once.
     const poorest = subjects
       .filter((s) => !isNewcomer(s) && s.principal !== member.principal)
       .sort((a, b) => a.freeStores - b.freeStores || compareIds(a.principal, b.principal))[0];

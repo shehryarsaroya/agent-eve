@@ -26,7 +26,7 @@
  */
 
 import type { ConstellationId, PrincipalId } from '../core/types.js';
-import { minor, type Minor } from '../core/units.js';
+import { minor, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
   LEVY_DUTY_PER_PRINCIPAL,
@@ -74,8 +74,69 @@ export interface LevySubject {
   readonly principal: PrincipalId;
   /** Ticks since enrolment, at the assessment tick. */
   readonly tenureTicks: number;
-  /** Free STORES: balance less every open lock. */
+  /**
+   * Free STORES **in currency**: the MINOR balance, less every open lock.
+   *
+   * ── THIS IS THE CAPITAL HALF OF STORES, AND IT IS NOT WHAT `BY_STORES` WEIGHS ──
+   *
+   * §3's canon entry for STORES is *"assets, inventory, balances"* — one word covering two
+   * things — so a field called `freeStores` has to say which. This is the balance. What it is
+   * for is the **newcomer floor** (`LEVY_NEWCOMER_CAPITAL_MINOR`, "a principal below a
+   * tenure-and-capital threshold") and the `spare` nomination, both of which are questions
+   * about capital. It is deliberately **not** the `BY_STORES` weight; see
+   * {@link LevySubject.levyGoodHeld} for the unit bug that was.
+   */
   readonly freeStores: Minor;
+  /**
+   * ★ Units of the **levy good** this principal can actually hand over — the inventory half of
+   * STORES, and the weight `BY_STORES` is computed from.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE POOL THE PAYMENT DRAWS ON IS THE POOL THE WEIGHT IS MEASURED FROM.** This is the same
+   * figure `levyGoodAvailable` publishes and the same one `SweepPort.availableOf` reaches for:
+   * unpledged, AVAILABLE lots of {@link LEVY_GOOD} in STORES. Not a second reading of "what do
+   * you hold" — `owingOf`, `deliveryFault`, the sweep and now the weight all resolve to one.
+   *
+   * ── WHY IT IS NOT `freeStores`, WHICH IS WHAT IT USED TO BE ─────────────────
+   *
+   * `weightOf('BY_STORES')` read the **currency** balance while the obligation is payable
+   * *"only in located goods"* (§5.2). Two consequences, both measured on `balance-gate --seeds-from
+   * g --reckonings 6`, seeds `g07`/`g08`:
+   *
+   *   1. **The duty was anti-correlated with the ability to pay it.** `p:halcyon` held **0** units
+   *      of the levy good and 207,764 in currency, and was assessed **36,374** of its
+   *      constellation's 120,000 — the largest share on the docket. `p:vex`, holding **76,565**
+   *      units, was assessed 500. The member that could pay was spared; the member that could not
+   *      bore the most.
+   *   2. **The duty grew every Reckoning while the income that pays it did not.** Currency
+   *      accumulates monotonically for anyone who earns and does not spend, so halcyon's weight
+   *      climbed 180,481 → 195,916 → 207,764 across R3–R5 against a fixed goods income of 11,520
+   *      a Reckoning. `LEVY SHORT` went 0 · 0 · 0 · 0 · 8,615 · 28,622 · 40,729 and plateaued —
+   *      and every one of those minor units was recorded against a principal that had delivered
+   *      its whole non-escrowable share by hand every single Reckoning (`presenceOwed` 0 on every
+   *      red row, 47 `deliver` calls).
+   *
+   * It was also the rules surface lying, which is scar #1's class: the `vote` affordance says
+   * `BY_STORES` loads the total *"onto whoever is holding most"*, in the same observation that
+   * says the Levy is payable only in goods. An agent reading that sentence and looking at its
+   * warehouse read it correctly; the engine did not.
+   *
+   * Measured in the same unit as the payment, the rule is self-correcting instead: a principal
+   * with nothing to give is weighted 1 and a full warehouse is what gets taxed, so a constellation
+   * voting `BY_STORES` is voting to soak the goods-rich — which is what the words say, is politics
+   * §5.2 wants, and cannot assess anybody a quantity of a good it has no route to.
+   *
+   * ── WHAT THIS DOES **NOT** FIX, AND MUST NOT BE READ AS FIXING ──────────────
+   *
+   * A constellation whose members crowd onto few systems is short whatever the vote does: goods
+   * income is Σ over *occupied systems* (`YIELD_PER_TICK`, "the yield belongs to the place") while
+   * duty is Σ over *principals* (`LEVY_DUTY_PER_PRINCIPAL`, "additive in principals"). Both cite
+   * A15. In `g07` con-1 holds 6 principals on 3 systems: 86,400 income against 120,000 duty. That
+   * residue is a §10 calibration decision and is recorded in
+   * `test/levy/aged-solvency.spec.ts`, not here.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly levyGoodHeld: Qty;
   /** EXPOSURE — Σ open `max_direct_loss`, and nothing else (§3). */
   readonly exposure: Minor;
 }
@@ -131,7 +192,10 @@ export function weightOf(rule: LevyRule, subject: LevySubject): number {
     case 'BY_EXPOSURE':
       return 1 + Math.max(0, subject.exposure);
     case 'BY_STORES':
-      return 1 + Math.max(0, subject.freeStores);
+      // The INVENTORY half of STORES, never the balance. `levyGoodHeld` carries the whole
+      // argument and the measurement; the one-line version is that a goods obligation weighted
+      // by a currency balance can assess a principal more of a good than any route can get it.
+      return 1 + Math.max(0, subject.levyGoodHeld);
     case 'INVERSE_EXPOSURE': {
       const denominator = LEVY_EXPOSURE_UNIT + Math.max(0, subject.exposure);
       return Math.max(1, Math.trunc(LEVY_INVERSE_WEIGHT_NUM / denominator));

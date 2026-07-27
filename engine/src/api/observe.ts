@@ -2323,11 +2323,19 @@ function affordancesFor(
       cost: 0,
       max_direct_loss: 0,
       max_contingent_liability: 0,
+      // ── `BY_STORES` NAMES THE GOOD, BECAUSE "HOLDING MOST" NAMED NOTHING ──────
+      //
+      // This read "BY_STORES onto whoever is holding most" — in the same block that says the Levy
+      // is payable only in goods — while the engine weighted it by the CURRENCY balance. §3's canon
+      // entry for STORES is "assets, inventory, balances", so the word covers both and the sentence
+      // disambiguated neither. Both halves are fixed: `weightOf` now reads the levy good
+      // (`assessment.ts:levyGoodHeld` carries the measurement) and this says which good it is.
       what_it_forecloses:
         `decides how this Reckoning's Levy is SPLIT across your constellation. The total is fixed and ` +
         `cannot be voted away — only who bears which share. Swap \`rule\` for any of ` +
         `${LEVY_RULES.join(', ')}: BY_EXPOSURE loads it onto whoever has most at risk, BY_STORES onto ` +
-        `whoever is holding most, EVEN spreads it flat, INVERSE_EXPOSURE shields the exposed. You are ` +
+        `whoever holds most ${LEVY_GOOD} to hand — the good the Levy is paid in, not currency — EVEN ` +
+        `spreads it flat, INVERSE_EXPOSURE shields the exposed. You are ` +
         `voting on a bill you will pay, so the rule that suits you is rarely the one that suits the ` +
         `others. Quorum failure applies ${PUBLISHED_DEFAULT_RULE}. Free, and it costs no action.`,
       expires_tick: Number(levyBallot['closes_tick']),

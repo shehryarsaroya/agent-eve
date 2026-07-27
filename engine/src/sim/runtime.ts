@@ -884,7 +884,49 @@ import {
  * allotment is never short of goods and the door never opens. If a balance number moves, the door is
  * firing somewhere it was not designed to and this note is wrong.
  */
-export const RULES_VERSION = 14;
+/**
+ * Bumped 14 → **15**, because the Levy's `BY_STORES` allocation rule now weighs the **levy good a
+ * principal holds** instead of its **currency balance** (`levy/assessment.ts:levyGoodHeld`).
+ *
+ * ── WHAT CHANGES, AND IT IS ONE EXPRESSION ───────────────────────────────────
+ *
+ *   1. `weightOf('BY_STORES', s)` reads `1 + s.levyGoodHeld` where it read `1 + s.freeStores`.
+ *   2. `LevySubject` gains `levyGoodHeld`, populated by `levySubjectOf` from the same
+ *      `levyGoodAvailable` the delivery quote and `SweepPort.availableOf` already call.
+ *   3. The `vote` affordance's `what_it_forecloses` names the good. A read, not captured.
+ *
+ * **No new state table, no new event kind, no new field on any hashed structure.** `AllocationPlan`
+ * and `Allocation` are unchanged, so the levy `Book`'s `capture()` shape is byte-identical and an
+ * existing checkpoint restores without a migration. Nothing is added to or removed from the RNG: the
+ * assessment draws no rolls, and `HeuristicCast.ballotFor` reads `weightOf` for both its own choice
+ * and the comparison, so it gains no branch — it can now *prefer a different rule*, which is a
+ * different decision from the same number of draws.
+ *
+ * ── THE DIVERGENCE SIGNATURE ──────────────────────────────────────────────────
+ *
+ * Narrow and nameable: **the first Reckoning whose docket was allocated under `BY_STORES` with two
+ * or more unfloored principals whose currency ordering differs from their `ration` ordering.** A
+ * docket under `EVEN`, `BY_EXPOSURE` or `INVERSE_EXPOSURE` recomputes bit-identically — those three
+ * arms of `weightOf` are untouched — and so does a `BY_STORES` docket in a world where the two
+ * orderings happen to agree. Everything downstream of the assessment (delivery, sweep, strikes,
+ * INV-24, INV-25, the A5′ attribution guard) is the same code on a different input.
+ *
+ * So the preflight is expected to name a tick if and only if this world has ever settled a
+ * `BY_STORES` Reckoning; grep the journal for `levy.assessed` with `rule: "BY_STORES"` and take the
+ * first one. `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes that tick, as at 1 → 2, 4 → 5, 5 → 6, 6 → 7,
+ * 7 → 8, 8 → 9 and 13 → 14.
+ *
+ * ── AND IT IS A BALANCE CHANGE, WHICH IS THE POINT ───────────────────────────
+ *
+ * Unlike 14, this one is *expected* to move the meters, in one direction. Measured, 8 seeds:
+ * 900 ticks unchanged (`levyShort` 0, red 0/192, `kept` 351, `broken` 33); **6 Reckonings
+ * 67,043 → 0 and 6 red lines → 0**, with `kept` 729 → 730 and `broken` 53 → 52. The residue at 9
+ * Reckonings is a different finding and `test/levy/aged-solvency.spec.ts` owns it.
+ *
+ * The integer is a shared resource (see 11's note): this branch was told it owned 15 before it
+ * started, with 14 the latest taken.
+ */
+export const RULES_VERSION = 15;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -7127,6 +7169,15 @@ export class Runtime {
       // its own comment carries the full argument.
       tenureTicks: this.levy.tenureTicksOf(principal, tick),
       freeStores: position.free,
+      // ── THE SAME READER THE DELIVERY AND THE SWEEP USE, NOT `position.goods` ──
+      //
+      // `principalPosition` already hands back a `goods` figure and it is the WRONG one here twice
+      // over: it sums every good, so unrefined `ore` and Frontier `fuel` would weight a duty
+      // payable only in `ration`, and it does not subtract pledged or IN_TRANSIT lots. The Levy has
+      // exactly one answer to "what can this principal hand over" and it is `levyGoodAvailable`,
+      // which `SweepPort.availableOf` and `levyDeliveryQuote` both already call. Three roads to one
+      // fact would be scar #5 in the arithmetic that decides who is publicly recorded short.
+      levyGoodHeld: this.levyGoodAvailable(principal),
       exposure: position.exposure,
     };
   }

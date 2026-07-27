@@ -229,8 +229,53 @@ describe('the weights', () => {
 
   it('every rule gives every subject a positive weight', () => {
     for (const rule of LEVY_RULES) {
-      expect(weightOf(rule, subject('p:a', { exposure: 0, freeStores: 0 }))).toBeGreaterThan(0);
+      expect(
+        weightOf(rule, subject('p:a', { exposure: 0, freeStores: 0, levyGoodHeld: 0 })),
+      ).toBeGreaterThan(0);
     }
+  });
+
+  it('★ BY_STORES WEIGHS THE GOODS, NOT THE CURRENCY — the unit the Levy is payable in', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // `weightOf('BY_STORES')` read `freeStores` — the MINOR **currency** balance — while §5.2
+    // makes the Levy payable "only in located goods". Measured consequence on
+    // `balance-gate --seeds-from g --reckonings 6`: `p:halcyon` held 0 units of the levy good and
+    // 207,764 in currency, and was assessed 36,374 of its constellation's 120,000 — the largest
+    // share on the docket — while `p:vex`, holding 76,565 units, was assessed 500. It is also the
+    // duty GROWING with an unspent balance: halcyon's weight climbed 180,481 → 195,916 → 207,764
+    // across three Reckonings against a goods income fixed at 11,520.
+    //
+    // These two subjects are the shape of that bug in four lines. `subject()` defaults
+    // `levyGoodHeld` to `freeStores`, so they must be passed apart or this assertion cannot fire.
+    //
+    // MUTATION: put `subject.freeStores` back into the `BY_STORES` arm of `weightOf` and this
+    // goes red on the first assertion — the cash-rich pauper outweighs the goods-rich payer.
+    // ══════════════════════════════════════════════════════════════════════════
+    const cashRichPauper = subject('p:halcyon', { freeStores: 207_764, levyGoodHeld: 0 });
+    const goodsRichPayer = subject('p:vex', { freeStores: 71_217, levyGoodHeld: 76_565 });
+
+    expect(
+      weightOf('BY_STORES', goodsRichPayer),
+      'the member that can actually hand goods over must carry the heavier BY_STORES weight',
+    ).toBeGreaterThan(weightOf('BY_STORES', cashRichPauper));
+
+    // Never zero, for the reason every other rule is never zero: a zero weight is an exemption
+    // and the Levy has none. A principal with an empty warehouse is weighted 1, not 0.
+    expect(weightOf('BY_STORES', cashRichPauper)).toBe(1);
+
+    // And currency must not move it AT ALL. Two subjects with the same goods and a 200,000-minor
+    // spread in cash weigh exactly the same, which is what makes the rule's unit unambiguous.
+    expect(weightOf('BY_STORES', subject('p:rich', { freeStores: 200_000, levyGoodHeld: 9_000 }))).toBe(
+      weightOf('BY_STORES', subject('p:poor', { freeStores: 0, levyGoodHeld: 9_000 })),
+    );
+
+    // The allocation follows the weight: the pauper's share must be *below* an even split, and
+    // the payer's above it, or the rule has not changed hands.
+    const out = plan([cashRichPauper, goodsRichPayer], 'BY_STORES');
+    const pauper = out.lines.find((l) => l.principal === cashRichPauper.principal)?.amount ?? -1;
+    const payer = out.lines.find((l) => l.principal === goodsRichPayer.principal)?.amount ?? -1;
+    expect(pauper).toBeLessThan(payer);
+    expect(pauper + payer, 'INV-24 still holds exactly').toBe(out.total);
   });
 });
 

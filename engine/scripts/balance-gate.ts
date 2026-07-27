@@ -34,9 +34,10 @@
  */
 
 import { HeuristicCast } from '../src/cast/index.js';
-import { setSpeed, TICKS_PER_RECKONING } from '../src/core/time.js';
+import { isSettlementTick, setSpeed, TICKS_PER_RECKONING } from '../src/core/time.js';
 import { holdingOf } from '../src/world/index.js';
 import { Runtime } from '../src/sim/runtime.js';
+import { ENDOWMENT_WINDOW_RECKONINGS } from '../src/levy/params.js';
 
 interface GateRow {
   readonly seed: string;
@@ -67,6 +68,18 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
   let redTributeLines = 0;
   let tributeLines = 0;
   let finalStateHash = '';
+  // ── ACCUMULATED PER SETTLEMENT, NOT SUMMED OFF `levyReckonings()` AT THE END ──
+  //
+  // `Runtime.levyReckonings()` and `Runtime.reckonings()` both return a `Ring` bounded at
+  // `MAX_RECKONING_SUMMARIES` = 8, so a sweep longer than eight Reckonings silently DROPS the
+  // oldest ones from every total this file prints — `levyShort`, `kept`, `broken`. That is the
+  // `Book.prune` hazard living in the instrument rather than in the engine, and it fails in the
+  // direction that hides: a nine-Reckoning sweep whose worst Reckoning was its first would report
+  // a smaller number than a six-Reckoning one. Read at the settlement tick, these are the whole
+  // run whatever its length.
+  let levyShort = 0;
+  let kept = 0;
+  let broken = 0;
   for (let i = 0; i < ticks; i += 1) {
     const next = runtime.engine.tick + 1;
     for (const action of cast.decide(next, seed)) runtime.engine.submit(action);
@@ -82,16 +95,20 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
         if (line.state === 'RED') redTributeLines += 1;
       }
     }
+    if (isSettlementTick(report.tick)) {
+      levyShort += runtime.levySettlement?.levyShort ?? 0;
+      const settled = runtime.reckonings().at(-1);
+      if (settled !== undefined) {
+        kept += settled.electiveHonoured;
+        broken += settled.defaults;
+      }
+    }
     if (report.halted) {
       halted = true;
       break;
     }
   }
 
-  const summaries = runtime.reckonings();
-  const levyShort = runtime.levyReckonings().reduce((n, r) => n + r.shortMinor, 0);
-  const kept = summaries.reduce((n, r) => n + r.electiveHonoured, 0);
-  const broken = summaries.reduce((n, r) => n + r.defaults, 0);
   const rent = runtime.works.liveInOrder().reduce((n, w) => n + w.rentPaid, 0);
 
   let trapped = 0;
@@ -209,6 +226,23 @@ const total = {
   works: sum((r) => r.works),
   trapped: sum((r) => r.trapped),
 };
+/**
+ * ── THE HORIZON IS PART OF THE RESULT, AND A SHORT SWEEP MAY NOT REPORT GREEN ──
+ *
+ * `test/levy/aged-solvency.spec.ts` measures what this exists for: `g07` is `levyShort` **0** at
+ * three Reckonings and **37,237** at six, on one seed, with nothing changed but the length. The
+ * endowment window (`test/works/aged.ts`) is four Reckonings, so a three-Reckoning sweep is still
+ * watching the enrolment allotment pay the tribute — it cannot observe the economy the world runs
+ * on, and every balance table ever published in `TRACKER.md` was drawn there.
+ *
+ * So a sweep at or under the window prints its own limit next to its zeroes. Not a refusal to run
+ * — the default exists to reproduce the historical table and that is worth keeping — a refusal to
+ * be quoted as evidence. The inverse failure matters too and is why this is a line of text rather
+ * than a non-zero exit: a gate that cried wolf on the default horizon would be edited out.
+ */
+const reckoningsRun = Math.floor(args.ticks / TICKS_PER_RECKONING);
+const seesTheEconomy = reckoningsRun > ENDOWMENT_WINDOW_RECKONINGS;
+
 process.stdout.write(
   `${'TOTAL'.padEnd(11)} ${String(total.levyShort).padStart(9)}  ` +
     `${`${String(total.redTributeLines)}/${String(total.tributeLines)}`.padStart(9)} ` +
@@ -218,4 +252,17 @@ process.stdout.write(
     `${String(total.battles).padStart(7)} ${String(total.works).padStart(5)} ` +
     `${String(total.trapped).padStart(7)}\n`,
 );
-process.stdout.write(`\nRESULT ${JSON.stringify(total)}\n`);
+if (!seesTheEconomy) {
+  process.stdout.write(
+    `\n⚠ HORIZON ${String(reckoningsRun)} RECKONINGS — AT OR UNDER THE ${String(
+      ENDOWMENT_WINDOW_RECKONINGS,
+    )}-RECKONING ENDOWMENT WINDOW.\n` +
+      '  The enrolment allotment is still paying the tribute here, so a clean `levyShort` and a clean\n' +
+      '  red-line count say NOTHING about whether the produced economy covers its obligations. `g07`\n' +
+      '  reads 0 at three Reckonings and 37,237 at six. Re-run with `--reckonings 6` (and 9) before\n' +
+      '  quoting these zeroes as a balance result. See test/levy/aged-solvency.spec.ts.\n',
+  );
+}
+process.stdout.write(
+  `\nRESULT ${JSON.stringify({ ...total, reckonings: reckoningsRun, seesTheEconomy })}\n`,
+);

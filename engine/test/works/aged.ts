@@ -41,6 +41,7 @@ import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { PrincipalId } from '../../src/core/types.js';
 import type { CastMember } from '../../src/cast/heuristic.js';
+import { ENDOWMENT_WINDOW_RECKONINGS } from '../../src/levy/params.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { commonsSystems, holdingOf } from '../../src/world/index.js';
 
@@ -48,16 +49,15 @@ import { commonsSystems, holdingOf } from '../../src/world/index.js';
  * How many Reckonings of tribute the enrolment allotment covers, and therefore how long a
  * principal has to enter the goods economy before it is locked out of it forever.
  *
- * Measured rather than derived, and measured against **production**: the live world's
- * per-member `ration` at its four surviving snapshots was `49,500 · 49,000 · 29,000 · 9,000`
- * at ticks `287 · 575 · 863 · 1,151`, and a single-principal reproduction of the same span
- * matched **to the unit at every one of them**. Reckoning 5 reads zero in both.
- *
- * Not a constant of the design — it is `LEVY_STARTER_ALLOTMENT` divided by the nominal
- * tribute, and moving either moves this. That is why the test that owns it asserts the
- * *shape* (a window that closes) as well as the number, and says which is which.
+ * **Re-exported, not declared.** It moved to `src/levy/params.ts`, beside the allotment and the
+ * duty it is measured from, because `scripts/balance-gate.ts` needs it to decide whether a sweep
+ * was long enough to have seen the economy at all — and a script cannot import this file (`vitest`
+ * comes with it and throws outside a runner). Two homes for that particular figure would be scar #5
+ * in the number that decides whether a green balance table means anything. The measurement and the
+ * live-world evidence are in the doc comment there; the *shape* assertion — that a window closes,
+ * and where — stays in `the-window-closes.spec.ts`, which is what owns it.
  */
-export const ENDOWMENT_WINDOW_RECKONINGS = 4;
+export { ENDOWMENT_WINDOW_RECKONINGS };
 
 /** The tick after which no drained principal can ever pay a goods-priced entry price again. */
 export const WINDOW_CLOSES_AFTER_TICK = ENDOWMENT_WINDOW_RECKONINGS * TICKS_PER_RECKONING - 1;

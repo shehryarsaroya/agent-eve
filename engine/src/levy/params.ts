@@ -170,6 +170,29 @@ export const LEVY_MIN_COMMONS_CAPACITY = 1;
 export const LEVY_STARTER_ALLOTMENT: Qty = qty(50_000);
 
 /**
+ * How many Reckonings {@link LEVY_STARTER_ALLOTMENT} covers — and therefore **how long any
+ * measurement of this world is still measuring the endowment rather than the economy.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **MEASURED, NOT DERIVED, AND IT LIVES HERE SO A SCRIPT CAN READ IT.**
+ *
+ * It is not `LEVY_STARTER_ALLOTMENT / LEVY_DUTY_PER_PRINCIPAL` — that is 2.5. The newcomer floor
+ * charges 500 for the first two Reckonings and the full duty after, so the allotment reaches zero
+ * during the *fifth*, and the live world's own snapshots confirmed it to the unit:
+ * `49,500 · 49,000 · 29,000 · 9,000` at ticks `287 · 575 · 863 · 1,151`, zero at Reckoning 5.
+ *
+ * It was declared in `test/works/aged.ts`, which is the right place for the fixture built on it and
+ * the wrong place for the number: `scripts/balance-gate.ts` needs it to say whether a sweep is long
+ * enough to have seen anything, and `test/` cannot be imported from `scripts/` — `aged.ts` imports
+ * `vitest`, and doing so outside a runner throws. Restating it in the script would be scar #5 in the
+ * one figure that decides whether a green balance table means anything, so it moved here instead and
+ * `aged.ts` re-exports it. `test/works/the-window-closes.spec.ts` still owns the *shape* assertion —
+ * that a window closes at all, and where.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const ENDOWMENT_WINDOW_RECKONINGS = 4;
+
+/**
  * The phase of the Reckoning cycle at which the assessment is minted and the next
  * cycle's ballot opens. Zero: the assessment stands for the whole cycle.
  *

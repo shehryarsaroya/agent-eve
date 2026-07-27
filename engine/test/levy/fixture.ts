@@ -17,7 +17,7 @@
 import { expect } from 'vitest';
 import { TICKS_PER_RECKONING, setSpeed } from '../../src/core/time.js';
 import type { PrincipalId, SystemId } from '../../src/core/types.js';
-import { minor, type Minor } from '../../src/core/units.js';
+import { minor, qty, type Minor } from '../../src/core/units.js';
 import type { LevySubject } from '../../src/levy/index.js';
 import {
   LEVY_NEWCOMER_CAPITAL_MINOR,
@@ -29,15 +29,30 @@ import { commonsSystems } from '../../src/world/index.js';
 export const SETTLE_TICK = TICKS_PER_RECKONING - 1;
 export const FREEZE_TICK = SETTLE_TICK - 1;
 
-/** A veteran with the given EXPOSURE and stores. Past both newcomer thresholds. */
+/**
+ * A veteran with the given EXPOSURE and stores. Past both newcomer thresholds.
+ *
+ * `levyGoodHeld` defaults to **`freeStores`**, deliberately, so every arithmetic test written
+ * before the two halves of STORES were split keeps asserting the same numbers: the old
+ * `BY_STORES` weight was `1 + freeStores`, and with the two equal by default the new one is
+ * arithmetically identical. A test that cares about the difference passes `levyGoodHeld`
+ * explicitly — which is what `weightOf`'s own suite now does.
+ */
 export function subject(
   principal: string,
-  over: { readonly exposure?: number; readonly freeStores?: number; readonly tenureTicks?: number } = {},
+  over: {
+    readonly exposure?: number;
+    readonly freeStores?: number;
+    readonly levyGoodHeld?: number;
+    readonly tenureTicks?: number;
+  } = {},
 ): LevySubject {
+  const freeStores = over.freeStores ?? LEVY_NEWCOMER_CAPITAL_MINOR;
   return {
     principal: principal as PrincipalId,
     tenureTicks: over.tenureTicks ?? LEVY_NEWCOMER_TENURE_TICKS,
-    freeStores: minor(over.freeStores ?? LEVY_NEWCOMER_CAPITAL_MINOR),
+    freeStores: minor(freeStores),
+    levyGoodHeld: qty(over.levyGoodHeld ?? freeStores),
     exposure: minor(over.exposure ?? 0),
   };
 }
@@ -48,6 +63,7 @@ export function newcomer(principal: string, over: { readonly exposure?: number }
     principal: principal as PrincipalId,
     tenureTicks: 0,
     freeStores: minor(0),
+    levyGoodHeld: qty(0),
     exposure: minor(over.exposure ?? 0),
   };
 }

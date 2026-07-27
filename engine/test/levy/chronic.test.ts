@@ -138,7 +138,16 @@ describe('the shortfall sweep', () => {
     const book = new Book();
     const out0 = allocate({
       constellation: C,
-      subjects: [subject('p:vet'), { principal: 'p:new' as PrincipalId, tenureTicks: 0, freeStores: minor(0), exposure: minor(0) }],
+      subjects: [
+        subject('p:vet'),
+        {
+          principal: 'p:new' as PrincipalId,
+          tenureTicks: 0,
+          freeStores: minor(0),
+          levyGoodHeld: qty(0),
+          exposure: minor(0),
+        },
+      ],
       rule: 'EVEN',
       spared: null,
       byDefault: true,
