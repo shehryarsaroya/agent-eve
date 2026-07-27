@@ -44,8 +44,17 @@ import {
 import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
-import { REFINE_IN_QTY } from '../works/params.js';
-import { handsOf, holdingOf, principalIsCommonsBound, route, tierOf } from '../world/index.js';
+import { REFINE_IN_QTY, YIELD_PER_TICK } from '../works/params.js';
+import {
+  handsOf,
+  holdingOccupancy,
+  holdingOf,
+  principalIsCommonsBound,
+  route,
+  tierOf,
+} from '../world/index.js';
+import { CLAIM_BOND_MINOR } from '../sovereignty/index.js';
+import { WORKS_COST_MINOR } from '../works/params.js';
 import {
   DELIVERY_MEASURE,
   DELIVERY_VERB,
@@ -144,6 +153,8 @@ export interface CastOptions {
   readonly worksChanceBps?: number;
   /** Chance in 10 000 that a member founds its one syndicate on a tick it could afford to. */
   readonly syndicateChanceBps?: number;
+  /** Chance in 10 000 that a member leaves the Commons on a tick the crossing pays. */
+  readonly graduateChanceBps?: number;
 }
 
 /** Default appetite. *(calibrate)* — high enough that a day has ventures in it. */
@@ -185,6 +196,55 @@ export const DEFAULT_WORKS_CHANCE_BPS = 400;
 export const DEFAULT_SYNDICATE_CHANCE_BPS = 150;
 
 /**
+ * Default appetite for leaving the Commons. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS IS THE ONLY ROLL IN THIS FILE THAT COMPETES WITH ANOTHER ONE, AND THAT IS THE
+ * MECHANISM RATHER THAN A SIDE EFFECT.**
+ *
+ * The branch is gated on holding **no WORKS**, and it sits directly above the WORKS branch, so
+ * on every tick a member is effectively choosing between the two: at 1,200 against
+ * {@link DEFAULT_WORKS_CHANCE_BPS} of 400, roughly three in four cross before they build and
+ * one in four sinks its capital into the Commons and stays there for good. Both outcomes are
+ * meant to exist. A cast that all left would empty the safe zone A8 exists to guarantee; a cast
+ * that none left is the world this branch was written to end.
+ *
+ * The rate is high in absolute terms because these rolls are **per tick** and 288 of them fit
+ * in a Reckoning — {@link DEFAULT_WORKS_CHANCE_BPS} at 400 already means "within about 25
+ * ticks". So the number that matters is not 1,200, it is the RATIO, and the ratio is what was
+ * calibrated: the crossing has to win often enough that the frontier is populated and lose
+ * often enough that the Commons is not a ghost town.
+ *
+ * Note what the roll is NOT doing here. `build`'s roll exists for variance, because every member
+ * could afford a WORKS on tick 0 and a monoculture is a useless fixture. This one has a stronger
+ * job: `graduate` is the most one-way act in the game — it ends A8 for that principal and no
+ * verb brings a holding back in — so a deterministic "cross the moment it pays" would make the
+ * safe floor a formality that no cast member ever actually stood on.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const DEFAULT_GRADUATE_CHANCE_BPS = 1_200;
+
+/**
+ * Currency a crossing must leave behind: enough for the WORKS **and** the bond. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE FIRST HALF OF THE BALANCE GATE, AND IT IS ARITHMETIC RATHER THAN A ROLL.**
+ *
+ * A member that crosses and then cannot afford to work the ground it landed on is strictly
+ * poorer than one that stayed: it has paid 50,000 and 5,000 goods for a worse Levy position and
+ * no income. Worse, it can never claim — {@link CAST_CLAIM_CHANCE_BPS}'s gate requires a
+ * producing WORKS — so it is stranded outside the floor with nothing to show for it.
+ *
+ * So the crossing is refused unless the *whole road* is still affordable after it, and the road
+ * is priced off the engine's own constants rather than a remembered figure: `WORKS_COST_MINOR`
+ * (60,000) plus `CLAIM_BOND_MINOR` (50,000). At the §12.5 stake of 250,000 that permits exactly
+ * **two** crossings and then stops, which is what keeps a wanderer from spending its whole
+ * endowment on gates.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_GRADUATE_RESERVE_MINOR = WORKS_COST_MINOR + CLAIM_BOND_MINOR;
+
+/**
  * How much raw ore a cast member waits for before spending an action to refine. *(calibrate)*
  *
  * A CAST POLICY, not a rule — the engine refines any whole batch, and an agent with a reason to convert
@@ -197,6 +257,33 @@ export const DEFAULT_SYNDICATE_CHANCE_BPS = 150;
  * direction: a branch placed high with no gate does not add behaviour, it replaces it.
  */
 export const CAST_REFINE_MIN_QTY = 500;
+
+/**
+ * The other half of the same threshold: **roughly how many ticks of output are worth one action.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A FIXED FLOOR IS THE WRONG SHAPE FOR THIS, AND THE CROSSING PROVED IT.**
+ *
+ * {@link CAST_REFINE_MIN_QTY} was calibrated against the only world that existed: eight members,
+ * eight WORKS, four COMMONS systems, so every member took `80 / 2 = 40` a tick and crossed 500 every
+ * twelve or thirteen ticks. That produced ~690 refines in 900 ticks and left room for everything
+ * else — which is exactly what its own note says the threshold is for.
+ *
+ * Then members started leaving the Commons, and the same absolute floor met a world with **twice
+ * the output per member**: an uncrowded MARCHES system pays 110 a tick, a FRONTIER one 150. Measured:
+ * refine went from ~690 to ~1,020 and the venture count fell 21%, because refining is placed third
+ * and a branch that fires more often is a branch that displaces the ones below it. That is the
+ * *identical* failure the constant was introduced to fix (`refine fired 2,543 times and starved
+ * everything else`), reappearing not because the number changed but because the world did.
+ *
+ * So the floor scales with income: **wait about half a day's own output, or 500, whichever is more.**
+ * At the old 40 a tick, `12 × 40 = 480` is below 500 and the threshold is unchanged — the baseline is
+ * bit-identical, which is what makes this a fix rather than a re-tuning. At 110 it becomes 1,320 and
+ * at 150 it becomes 1,800, so a richer member spends the same number of actions converting and the
+ * rest on the game.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_REFINE_MIN_TICKS = 12;
 
 /**
  * How much of its **free** stores a cast payer will commit to elective parts across
@@ -280,6 +367,101 @@ export class HeuristicCast {
     if (world.holdingByPrincipal.get(member.principal) === undefined) return false;
     if (!principalIsCommonsBound(world, member.principal)) return true;
     return tierOf(world.map, system) === 'COMMONS';
+  }
+
+  /**
+   * Does this member owe the world goods at a place **no hand of its can currently reach**?
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **MEASURED, AND IT IS THE WORST THING IN THE FILE: A MEMBER SAT ON 109,052 UNITS OF
+   * `ration`, OWED 19,304, AND WAS RECORDED SHORT.**
+   *
+   * Traced tick by tick on seed `gate-a`, Reckoning 2, member `thessaly`: all three hands
+   * `COMMITTED` from tick 600 to tick 863 — filled into roles at `sys-07` and `sys-21` — while its
+   * delivery place was `sys-01` and its stores climbed from 87,000 to 109,000. `levyMove` could
+   * neither deliver (no hand *at* the place) nor walk (no hand IDLE), so it returned `null` on all
+   * 264 ticks and the settlement swept what it could reach. Its tribute line rendered REVERSING:
+   * a seizure against a member that could have paid twenty times over.
+   *
+   * This is `D19`'s finding — *"the members who work most therefore act least; halcyon held three
+   * hands committed for 96% of all hand-ticks"* — with the Levy on the end of it, and it is
+   * **older than the crossing**: `graduate` only made it visible, because a Commons member's hands
+   * wander among four systems one of which IS the delivery place, so a committed hand was often
+   * standing on it by luck. Take the body out to the Marches and the luck runs out.
+   *
+   * The policy: **never commit your last free hand while a world obligation is out of reach.**
+   * Narrow on purpose — it reserves exactly ONE hand, only while something is genuinely owed, only
+   * while there is stock to pay it with, and only until a hand is standing there or walking there.
+   * A member with two idle hands still fills roles, which is §15.6's whole reason for the cast.
+   *
+   * One hand is enough for both obligations because `levyMove` runs before {@link chargeMove}: the
+   * reserved hand serves the tribute first and the Charge afterwards, which is the order the two
+   * deserve (the Levy's subject is every principal; a Charge's is one claim).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  /**
+   * The elective total this member has already **stated** it will pay, across everything open.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A7's OTHER SIDE, AND THE SECOND HALF OF THE BALANCE GATE.** {@link CAST_ELECTIVE_APPETITE_BPS}
+   * lets a payer commit 700 bps of its **free** stores to unsecured promises. Every irreversible
+   * purchase therefore *shrinks the promises it can keep*, and `electionFor` restates the excess
+   * **down** — a permanent public default, correctly recorded, for a reason the payer chose.
+   *
+   * Measured: with the crossing ungated, `broken` went from 22 to 78 against 158 kept — 33% of
+   * settled elective promises broken by a cast whose LLM counterpart breaks 12% (GATE 3's
+   * `AGT-E1`). Those were not interesting betrayals. They were one bot paying a gate fee out of
+   * money it had already promised somebody else, eight times over.
+   *
+   * So the territorial branches ask this first: *after this purchase, does my appetite still cover
+   * what I have already said?* It is the arithmetic form of the sentence `agent.md` uses about
+   * resisting a temptation you could afford — a member that has promised nothing may cross freely,
+   * and one carrying commitments waits until they settle.
+   *
+   * Deliberately **not** applied to `worksFor` or `syndicateFor`: both predate this and both are
+   * measured into the corpus at their current rates, so retro-fitting the gate there would move
+   * numbers no finding asked to move. Stated rather than hidden — it is the one asymmetry in this
+   * file's economics, and the case for extending it is a calibration pass of its own.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private statedElectiveOf(member: CastMember): number {
+    const runtime = this.runtime;
+    let total = 0;
+    for (const venture of runtime.ventures.forPrincipal(member.principal)) {
+      if (venture.creator !== member.principal) continue;
+      if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) continue;
+      for (const role of venture.roles) {
+        if (role.filledByPrincipal === null) continue;
+        // Its own role is booked as paid in full and can never be a breach (scar #9).
+        if (role.filledByPrincipal === member.principal) continue;
+        const stated = runtime.electionOn(venture.id, role.index);
+        if (stated === undefined) continue;
+        const owed = runtime.electiveCeilingOf(venture, role.index);
+        total += stated === IN_FULL ? owed : Math.min(stated, owed);
+      }
+    }
+    return total;
+  }
+
+  /** Would this much currency leaving still leave the appetite covering what was promised? */
+  private canSpendWithoutBreakingAPromise(member: CastMember, spend: number): boolean {
+    const free = freeStores(this.runtime.ledger, member.principal);
+    const after = Math.max(0, free - spend);
+    return (
+      Math.trunc((after * CAST_ELECTIVE_APPETITE_BPS) / BPS_ONE) >= this.statedElectiveOf(member)
+    );
+  }
+
+  private carriageNeeded(member: CastMember, tick: number): boolean {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return false;
+    const block = runtime.levyBlockFor(member.principal, tick);
+    if (block === null || block.shortfall_if_unpaid <= 0) return false;
+    // Nothing to carry is not the same problem, and reserving a hand would not fix it.
+    if (runtime.levyGoodAvailable(member.principal) <= 0) return false;
+    const place = block.deliverable_to;
+    if (carrierAt(runtime.world, member.principal, place, tick) !== null) return false;
+    return !handsOf(runtime.world, member.principal).some((h) => h.destination === place);
   }
 
   /**
@@ -418,6 +600,29 @@ export class HeuristicCast {
     // Self-limiting without a roll: one WORKS per member. A member that already extracts has made the
     // investment, and `affordable` is the SAME predicate the affordance and the verb use, so the bot
     // cannot ask for something the menu would not have offered it.
+    // ── LEAVE THE COMMONS, AND LEAVE BEFORE YOU SINK CAPITAL INTO IT ──────────
+    //
+    // `claimLines: 0` had two causes and this is the first one: **no cast member had ever left
+    // the safe zone**, so a claim was not a bad decision, it was an unreachable one — a claim is
+    // anchored by a body and every body in the world was standing where A8 makes a claim INVALID
+    // rather than refused. Verified against live production at tick 5,274: five WORKS, all in the
+    // Commons, `rentBps: 0` on every one of them.
+    //
+    // **ABOVE `worksFor`, and the ordering is the whole design of the branch.** A WORKS does not
+    // move; its yield is posted at the system it stands on (`works/produce.ts`: *"extracted where
+    // it stands, never at the holder's seat"*); `refine` only converts what is standing where the
+    // body is; and `carryStoresTo` relocates the upkeep good only, so raw ore never follows a
+    // crossing. A member that builds first and crosses afterwards therefore abandons its own
+    // income into a pile it cannot reach — the branch would look like it was working and would be
+    // making its member poorer. So the gate is "no WORKS yet", and the position above `worksFor`
+    // is what makes that gate reachable at all.
+    //
+    // It is deliberately NOT above `refineFor`: a member with no WORKS has nothing to refine, so
+    // the two branches cannot contend, and putting an irreversible act above a housekeeping one
+    // would only obscure that.
+    const crossing = this.graduateFor(member, tick, rng);
+    if (crossing !== null) return { ...base, ...crossing };
+
     const build = this.worksFor(member, tick, rng);
     if (build !== null) return { ...base, ...build };
 
@@ -512,7 +717,20 @@ export class HeuristicCast {
       if (grant !== null) return { ...base, ...grant };
     }
 
-    if (idle.length > 0) {
+    // ── KEEP ONE HAND FOR THE WORLD'S OWN OBLIGATION ──────────────────────────
+    //
+    // {@link carriageNeeded} carries the measurement: a member holding 109,052 units of the good
+    // its tribute is payable in, owing 19,304, with all three hands committed to roles for 264
+    // consecutive ticks, and swept at the Reckoning. Rich and recorded short, for no reason it
+    // chose. So the two hand-spending branches below see one fewer hand while a world obligation
+    // is out of reach — and only then.
+    //
+    // A subtraction rather than a separate branch, because the *decision* is not "walk a hand"
+    // (that is `levyMove`'s, further down) — it is "do not spend this one". Those are different
+    // acts and only the first costs an action.
+    const spendable = idle.length - (this.carriageNeeded(member, tick) ? 1 : 0);
+
+    if (spendable > 0) {
       const slot = this.openSlotFor(member, tick);
       const hand = idle[0];
       if (slot !== null && hand !== undefined) {
@@ -524,6 +742,9 @@ export class HeuristicCast {
       }
     }
 
+    // Not `spendable`: `create` only READS a hand's location for the stage and commits nothing,
+    // so the reservation has no business narrowing it. The distinction matters — gating it here
+    // as well was the first version of this change and it cost creates for no benefit at all.
     const appetite = this.options.createChanceBps ?? DEFAULT_CREATE_CHANCE_BPS;
     if (idle.length > 0 && rng.chance(appetite, 10_000)) {
       const hand = idle[0];
@@ -558,8 +779,30 @@ export class HeuristicCast {
     const paying = this.levyMove(member, tick);
     if (paying !== null) return { ...base, ...paying };
 
-    if (idle.length > 0) {
-      const hand = idle[rng.int(idle.length)];
+    // ── A HAND STANDING WHERE YOUR TRIBUTE IS PAYABLE IS STATIONED, NOT IDLE ──
+    //
+    // The aimless walk was pulling hands off the one system they were needed on, every Reckoning,
+    // and then `levyMove` walked them back. Measured on a world where members leave the Commons:
+    // the tug-of-war kept `carriageNeeded` true for long stretches, which held `spendable` down,
+    // which cost the world a fifth of its ventures — a walk with no destination beating a walk
+    // with one, purely because it came last and therefore always had a hand to spend.
+    //
+    // So a hand on a place this member owes goods at is excluded from the walk. It is not a
+    // restriction on motion: §5.2 asks for "continuous off-peak motion from a source that cannot go
+    // quiet", and the tribute walk IS that source — the aimless one is what stands in for it. And a
+    // hand parked on the delivery berth renders as the tribute line's SOLID state, which says more
+    // to a viewer than a hand wandering between two systems.
+    const stationed = new Set<SystemId>();
+    const owedAt = runtime.levyBlockFor(member.principal, tick);
+    // Permanently, not only while something is outstanding. Measured both ways: releasing the hand
+    // the moment its tribute is discharged gives back the tug-of-war in full (venture count 691
+    // against 1,189, defaults 66 against 33) because the obligation returns every Reckoning and the
+    // walk has all of the ticks in between to carry the hand out of reach again.
+    if (owedAt !== null) stationed.add(owedAt.deliverable_to);
+    for (const claim of runtime.sovereignty.claimsOf(member.principal)) stationed.add(claim.system);
+    const roamers = idle.filter((h) => !stationed.has(h.location));
+    if (roamers.length > 0) {
+      const hand = roamers[rng.int(roamers.length)];
       if (hand !== undefined) {
         const system = runtime.world.map.systems.get(hand.location);
         if (system !== undefined && system.lanes.length > 0) {
@@ -644,10 +887,13 @@ export class HeuristicCast {
     const runtime = this.runtime;
     if (inFreeze(tick) || isSettlementTick(tick)) return null;
     const system = holdingOf(runtime.world, member.principal).system;
-    // A worthwhile batch, not merely a legal one — see {@link CAST_REFINE_MIN_QTY}.
-    if (runtime.refinableAt(member.principal, system) < Math.max(REFINE_IN_QTY, CAST_REFINE_MIN_QTY)) {
-      return null;
-    }
+    // A worthwhile batch, not merely a legal one — see {@link CAST_REFINE_MIN_QTY}, and
+    // {@link CAST_REFINE_MIN_TICKS} for why the floor has to scale with what the place pays. The
+    // rate comes off `worksQuote`, which already divides by the occupancy this member actually
+    // faces, so a crowded system lowers the threshold exactly as much as it lowers the income.
+    const perTick = runtime.worksQuote(member.principal, system).sharePerTick;
+    const want = Math.max(REFINE_IN_QTY, CAST_REFINE_MIN_QTY, perTick * CAST_REFINE_MIN_TICKS);
+    if (runtime.refinableAt(member.principal, system) < want) return null;
     // No `qty`: the verb refines every whole batch it can, which is what a member with nothing else to
     // do with the ore wants, and it costs one action either way.
     return { verb: 'refine', params: { system } };
@@ -684,6 +930,100 @@ export class HeuristicCast {
         treasury_offices: DEFAULT_CHARTER.treasuryOffices,
       },
     };
+  }
+
+  /**
+   * Cross out of the Commons, or null — **and where to, which is the interesting half.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE DESTINATION IS RANKED BY THE ENGINE'S OWN QUOTE, PLUS ONE FACT THE QUOTE CANNOT SEE.**
+   *
+   * `worksQuote(me, there).sharePerTick` is exactly the question — *what would I keep per tick if
+   * I worked that ground* — and it already accounts for the two things that make one system worth
+   * more than another: how many WORKS are dividing the yield, and what the claim-holder there
+   * would take of the rest. So the primary key is that number and no arithmetic of mine, which
+   * keeps the bot from playing a rule the affordance does not publish (scar #5).
+   *
+   * **The fact the quote cannot see is intent.** Occupancy counts WORKS, and a member that has
+   * crossed but not yet built is invisible to it. Rank on the quote alone and every graduate in
+   * the world reads the same tie and picks the same system: measured, six members piled onto one
+   * MARCHES system, each ending on a third of its yield — worse than the Commons they left. So
+   * `holdingOccupancy` — the same accessor newcomer seating uses, one home for "how many bodies
+   * stand here" — is the tie-break AND part of the gate.
+   *
+   * Two conditions, and a crossing needs both:
+   *
+   *   1. **The ground must quote better than where you stand.** Strictly, so a member cannot
+   *      churn 50,000 and 5,000 goods moving between two systems that pay the same.
+   *   2. **It must hold fewer bodies.** Every body standing there is a WORKS that has not been
+   *      built yet, and this is the condition that makes the cast spread out instead of
+   *      stampeding. It is also self-correcting in both directions: as members leave, the
+   *      Commons de-crowds and staying gets better; as they arrive, the destination crowds and
+   *      going gets worse.
+   *
+   * The result is an equilibrium rather than an exodus — the Commons keeps residents, the Marches
+   * fill, and a member seated next to the Frontier goes there because 150 a tick beats 110.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Affordability is the engine's `graduationQuote(...).affordable`, never a recomputation, plus
+   * {@link CAST_GRADUATE_RESERVE_MINOR} — the policy half, which is the balance gate.
+   */
+  private graduateFor(
+    member: CastMember,
+    tick: number,
+    rng: { chance(n: number, of: number): boolean },
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    if (!rng.chance(this.options.graduateChanceBps ?? DEFAULT_GRADUATE_CHANCE_BPS, 10_000)) return null;
+    // See the placement note in `decideOne`: a WORKS cannot follow a body, so crossing after
+    // building strands the member's own income where it can neither refine nor spend it.
+    if (runtime.works.ofPrincipal(member.principal).length > 0) return null;
+
+    const quote = runtime.graduationQuote(member.principal);
+    if (quote === null || !quote.affordable) return null;
+    // The engine refuses a crossing that would leave a claim with no body on it (INV-8), and it
+    // publishes the reason on the quote. Asking here as well keeps the bot out of AGT-S3's
+    // per-tick refusal noise; it cannot currently fire, because a claimant always holds a WORKS.
+    if (quote.anchoring.length > 0) return null;
+    if (quote.freeMinor - quote.upkeepMinor < CAST_GRADUATE_RESERVE_MINOR) return null;
+    // A gate fee may not be paid out of money already promised — see {@link statedElectiveOf}.
+    if (!this.canSpendWithoutBreakingAPromise(member, quote.upkeepMinor)) return null;
+
+    const here = this.bodyOf(member);
+    const bodies = holdingOccupancy(runtime.world);
+    const hereShare = runtime.worksQuote(member.principal, here).sharePerTick;
+    const hereBodies = bodies.get(here) ?? 1;
+    const hereTier = YIELD_PER_TICK[tierOf(runtime.world.map, here)];
+
+    let best: { readonly to: SystemId; readonly share: number; readonly bodies: number } | null = null;
+    // Canonical order over the destinations, so the third sort key is the id and two runs of one
+    // seed can never disagree about which of two equal systems was picked.
+    for (const to of [...quote.open].sort(compareIds)) {
+      // ── A CROSSING IS A TIER DECISION, NOT A LATERAL MOVE ──────────────────
+      //
+      // The tier's published yield is the ordering — `YIELD_PER_TICK`, the engine's own table, not
+      // an invented rank. A hop from one MARCHES system to another costs the same 50,000 and
+      // 5,000 goods as leaving the Commons and buys nothing the member could not already have had
+      // where it stood: it is outside A8 either way and can claim the ground under its feet.
+      //
+      // Measured, and it is the whole reason this line exists: with lateral hops allowed, `sable`
+      // crossed TWICE, spent 100,000 of a 250,000 stake on gates, and then **declined 13 elective
+      // promises** — because {@link CAST_ELECTIVE_APPETITE_BPS} is a share of free stores and a
+      // member that has spent its stores keeps fewer promises. All 25 of the extra defaults the
+      // crossing produced were `DECLINED` and every one of them was a member that had crossed. A
+      // wanderer is not a story; it is a bot buying gate fees with money it needed to keep its word.
+      if (YIELD_PER_TICK[tierOf(runtime.world.map, to)] <= hereTier) continue;
+      const share = runtime.worksQuote(member.principal, to).sharePerTick;
+      if (share <= hereShare) continue;
+      const there = bodies.get(to) ?? 0;
+      if (there >= hereBodies) continue;
+      if (best === null || share > best.share || (share === best.share && there < best.bodies)) {
+        best = { to, share, bodies: there };
+      }
+    }
+    if (best === null) return null;
+    return { verb: 'graduate', params: { to: best.to } };
   }
 
   /**
@@ -1004,7 +1344,10 @@ export class HeuristicCast {
     if (hands.some((h) => h.destination === place)) return null;
 
     const idle = hands.filter((h) => h.state === 'IDLE');
-    const hand = idle[0];
+    // The LAST idle hand, mirroring {@link carriageNeeded}: the branches above spend `idle[0]`
+    // on roles, so taking from the other end means the hand a member reserved for its tribute
+    // is the hand this walks, and the two ends of the list do not fight over one hand.
+    const hand = idle[idle.length - 1];
     if (hand === undefined) return null;
     const path = route(runtime.world.map, hand.location, place);
     const next = path?.path[1];
@@ -1039,6 +1382,17 @@ export class HeuristicCast {
       if (venture.creator === member.principal) continue;
       if (roleOfPrincipal(venture, member.principal) !== null) continue;
       // A hostile venture in the Commons can never be filled, so do not try.
+      //
+      // ── AND THIS ONE STAYS ON `member.seat`, WHICH IS THE OPPOSITE OF {@link bodyOf}'s RULE ──
+      //
+      // Every other reader of `member.seat` was answering a question about where the member IS and
+      // was wrong after a crossing. This one is not: `vFillRole` does **not** require a filler to be
+      // standing at the stage, so the tier here is a cast *policy* — "do not offer to work a
+      // venture the floor would refuse" — and not the engine's rule. Repointing it at the body was
+      // measured and cost a quarter of the world's ventures: Marches-staged ventures are scarce, so
+      // a graduated member stopped finding any work at all, while the Commons roles it had been
+      // filling perfectly legally went unfilled. §15.6's clause is that heuristics fill slots so
+      // ventures resolve, and that is worth more than a tidier field read.
       if (tierOf(this.runtime.world.map, venture.stage) !== tierOf(this.runtime.world.map, member.seat)) {
         continue;
       }
