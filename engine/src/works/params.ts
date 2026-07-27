@@ -4,7 +4,7 @@
  * ## Why this module exists: the economy had a faucet and two drains
  *
  * Measured, not inferred. `grep -rn "sourceGoods(" src` returns **exactly one call site**
- * in the whole engine — the enrolment grant in `runtime.ts`. Meanwhile:
+ * in the whole engine — the endowment in `runtime.ts`. Meanwhile:
  *
  *   - the **Levy** destroys goods every Reckoning (`sink:consumption`, §5.2), and
  *   - the **Charge** destroys `ANCHOR_QTY` to take a claim plus its tier amount every
@@ -64,7 +64,7 @@ import { minor } from '../core/units.js';
  * Equal to the other three goods constants TODAY, and **not an alias of them.**
  *
  * These four were `X = LEVY_GOOD`, so changing the Levy's good silently changed the WORKS yield, the
- * Charge, and the enrolment grant at once — one constant wearing four meanings, which is scar #5's
+ * Charge, and the endowment at once — one constant wearing four meanings, which is scar #5's
  * shape in the type system rather than in a table. It also forced `ledger/` and `works/` to import
  * from `levy/`, inverting the layering: the ledger has no business depending on the Levy for the name
  * of a good.
@@ -113,7 +113,7 @@ export const YIELD_PER_TICK: Readonly<Record<ZoneTier, Qty>> = Object.freeze({
  *
  * `freeCash`, not `freeBalance` — D7's rule generalised, and the sovereignty pass proved
  * the generalisation was needed by reopening D7 through a verb that postdated it. A WORKS
- * turns capital into a perpetual claim on a place, so buying one with the enrolment grant
+ * turns capital into a perpetual claim on a place, so buying one with the endowment
  * would convert a free identity into permanent income. That is the exploit this whole file
  * is arranged against, and the yield cap alone does not close it: a puppet's WORKS still
  * *dilutes* an honest neighbour's share, so admission has to cost something real.

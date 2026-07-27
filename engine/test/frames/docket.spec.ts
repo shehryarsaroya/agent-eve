@@ -63,7 +63,7 @@ describe("tomorrow's docket is built from what is actually riding", () => {
   });
 
   it('orders by stakes descending, because the biggest thing riding leads', () => {
-    const rt = world('docket-b');
+    const rt = world('docket-h');
     const frame = rt.reckoningFrame();
     const stakes = (frame?.docket ?? []).map((c) => c.atStake);
     expect(stakes.length, 'there must be cards to order').toBeGreaterThan(1);
@@ -76,6 +76,15 @@ describe("tomorrow's docket is built from what is actually riding", () => {
     // read "They have dealt before, and it held" about two agents who had never met — and the
     // other two seeds in this file cannot tell the difference, because their pairs really had all
     // dealt before. Mutation-proven here and nowhere else.
+    //
+    // **The seed moved from `docket-b` to `docket-h`, and the reason is worth keeping.** Giving the
+    // heuristic cast a `grant` branch changed which pairings share a resolved venture at
+    // `docket-b`, so its never-dealt count went to zero and this assertion became VACUOUS while
+    // still passing its neighbours. A seed-specific discriminating case is only as durable as the
+    // world that seed happens to grow; when the cast changes, re-scan for a seed that still
+    // discriminates rather than relaxing the assertion, because the relaxed version cannot catch
+    // the bug this one was written for. Scanned 12 seeds; `docket-f` (2) and `docket-k` (1) also
+    // qualify if this one stops.
     const tensions = (frame?.docket ?? []).map((c) => c.tension);
     expect(
       tensions.filter((t) => /never dealt/.test(t)).length,

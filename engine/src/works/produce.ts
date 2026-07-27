@@ -3,7 +3,7 @@
  *
  * ## Why this posts EXTRACTION and not PRODUCTION
  *
- * `ledger/accounts.ts` has carried two goods faucets since commit #1. The enrolment grant
+ * `ledger/accounts.ts` has carried two goods faucets since commit #1. The endowment
  * posts `PRODUCTION` — the world simply making goods appear because a newcomer needs a
  * floor. This posts `EXTRACTION`, because what happens here is a *place* giving up a bounded
  * amount, and the distinction is the one the audit needs: total EXTRACTION over a window is

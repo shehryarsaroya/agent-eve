@@ -112,7 +112,11 @@ import {
   ELECTABLE_VENTURE_STATES,
   type PendingCorrection,
   type Runtime,
+  MAX_GRANT_OFFERS,
 } from '../sim/runtime.js';
+
+/** Re-exported from its new home in `sim/runtime.ts`, where the eligibility rule lives. */
+export { MAX_GRANT_OFFERS };
 
 /** Ticks a `quote_id` pins its inputs for (§12.3: "1–3 ticks"). */
 export const QUOTE_PIN_TICKS = 3;
@@ -139,7 +143,7 @@ export const MAX_LIST_ROWS = 24;
  * candidates rather than everyone with a record, and an agent that wants a different delegate names
  * one itself. *(calibrate)*
  */
-export const MAX_GRANT_OFFERS = 2;
+
 
 /**
  * Kinds offered as a `create` affordance.
@@ -1789,36 +1793,38 @@ function affordancesFor(
   //     The caps are *(calibrate)* starting points, not claims of correctness: a tenth of the free
   //     balance, and an expiry one Reckoning out rather than the three the engine allows — a short
   //     life is what makes each renewal a decision (scar #7, the sticky vow).
-  for (const relation of runtime.relationsFor(principal, MAX_GRANT_OFFERS * 4)) {
-    if (eligible.filter((a) => a.verb === 'grant').length >= MAX_GRANT_OFFERS) break;
-    if (relation.kept <= 0) continue;
-    const cap = Math.trunc(free / 10);
-    if (cap <= 0) continue;
+  //
+  //     The eligibility rule itself lives in `Runtime.grantCandidates` rather than here, because the
+  //     heuristic cast now issues grants too and it picks from the same list. Two copies of "who may
+  //     I hand an office to" — one for the menu an agent reads, one for the bot that plays — is scar
+  //     #1's setup, and this is the worst verb in the game to have it on.
+  for (const candidate of runtime.grantCandidates(principal, tick, MAX_GRANT_OFFERS)) {
     eligible.push({
       verb: 'grant',
       params: {
-        to: relation.other,
+        to: candidate.to,
         template: 'treasury-hand',
-        max_direct_loss: cap,
-        max_contingent_liability: cap,
-        expires_tick: tick + TICKS_PER_RECKONING,
+        max_direct_loss: candidate.cap,
+        max_contingent_liability: candidate.cap,
+        expires_tick: candidate.expiresTick,
       },
       cost: 1,
-      max_direct_loss: cap,
-      max_contingent_liability: cap,
+      max_direct_loss: candidate.cap,
+      max_contingent_liability: candidate.cap,
       what_it_forecloses:
-        `puts ${relation.other} in an OFFICE over your treasury until tick ` +
-        `${String(tick + TICKS_PER_RECKONING)}. From the tick it lands they may act in your name up to ` +
-        `${String(cap)} of direct loss and ${String(cap)} of contingent liability, and you cannot undo an ` +
-        `act they have already taken — only \`revoke\` what is left. They have kept ${String(relation.kept)} ` +
-        `promise(s) to you and broken ${String(relation.broke)}. That record is why this is offered and it ` +
-        `is not a prediction: the grant, this warning, and whatever they do with it all land on the same ` +
-        `public record, and it is read back at settlement. This list is a SHORTLIST, not a ` +
-        `restriction — \`grant\` accepts any enrolled principal, including one you have never dealt ` +
-        `with, and the engine will not stop you. What is shown here is the ${String(MAX_GRANT_OFFERS)} ` +
-        `with the strongest record with you, because an office is the heaviest thing you can hand out.`,
+        `puts ${candidate.to} in an OFFICE over your treasury until tick ` +
+        `${String(candidate.expiresTick)}. From the tick it lands they may act in your name up to ` +
+        `${String(candidate.cap)} of direct loss and ${String(candidate.cap)} of contingent liability, and ` +
+        `you cannot undo an act they have already taken — only \`revoke\` what is left. They have kept ` +
+        `${String(candidate.kept)} promise(s) to you and broken ${String(candidate.broke)}. That record is ` +
+        `why this is offered and it is not a prediction: the grant, this warning, and whatever they do ` +
+        `with it all land on the same public record, and it is read back at settlement. This list is a ` +
+        `SHORTLIST, not a restriction — \`grant\` accepts any enrolled principal, including one you have ` +
+        `never dealt with, and the engine will not stop you. What is shown here is the ` +
+        `${String(MAX_GRANT_OFFERS)} with the strongest record with you, because an office is the ` +
+        `heaviest thing you can hand out.`,
       expires_tick: tick + 1,
-      quote_id: quoteId(principal, tick, 'grant', { to: relation.other }),
+      quote_id: quoteId(principal, tick, 'grant', { to: candidate.to }),
     });
   }
 

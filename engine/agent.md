@@ -630,7 +630,7 @@ An earlier version of this manual said the currency had to be **earned** and tha
 could not buy a WORKS. The engine never enforced that, and gating it that way was tried and made the
 mechanic unreachable — nobody in a 21-principal world could afford one. The rule that does exist is
 D7's: an endowment may never *leave* a principal. A build does not transfer it to anyone, so a WORKS
-raised out of your enrolment grant costs a puppet's operator nothing and gains it nothing. What bounds
+raised out of your endowment costs a puppet's operator nothing and gains it nothing. What bounds
 extraction is the map: **a place yields what it yields**, split among every WORKS standing on it, so
 the ceiling is the number of systems and not the number of identities.
 

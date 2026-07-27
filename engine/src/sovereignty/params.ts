@@ -53,7 +53,7 @@ import { LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
  * Equal to the other three goods constants TODAY, and **not an alias of them.**
  *
  * These four were `X = LEVY_GOOD`, so changing the Levy's good silently changed the WORKS yield, the
- * Charge, and the enrolment grant at once — one constant wearing four meanings, which is scar #5's
+ * Charge, and the endowment at once — one constant wearing four meanings, which is scar #5's
  * shape in the type system rather than in a table. It also forced `ledger/` and `works/` to import
  * from `levy/`, inverting the layering: the ledger has no business depending on the Levy for the name
  * of a good.

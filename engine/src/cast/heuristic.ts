@@ -132,10 +132,26 @@ export interface CastOptions {
    * anybody put the cast's state into a snapshot.
    */
   readonly createChanceBps?: number;
+  /**
+   * Chance in 10 000 that a member hands an eligible counterparty an OFFICE on a tick it could.
+   * Integers only, for the same reason as `createChanceBps`.
+   */
+  readonly grantChanceBps?: number;
 }
 
 /** Default appetite. *(calibrate)* — high enough that a day has ventures in it. */
 export const DEFAULT_CREATE_CHANCE_BPS = 2_000;
+
+/**
+ * Default appetite for handing out an office. *(calibrate)*
+ *
+ * Lower than `create` on purpose. `grantCandidates` already excludes anyone who holds a live grant
+ * from this grantor, so the branch is self-limiting by construction and does not need a low roll to
+ * avoid spamming. The roll is here for a different reason: a bot that delegates the instant it clears
+ * the eligibility bar makes every grant land at the same point in a relationship, and A6's arc is
+ * supposed to have a *decision* in it. Variance is what makes the timing legible as a choice.
+ */
+export const DEFAULT_GRANT_CHANCE_BPS = 1_200;
 
 /**
  * How much of its **free** stores a cast payer will commit to elective parts across
@@ -312,7 +328,39 @@ export class HeuristicCast {
     const ballot = this.ballotFor(member, tick);
     if (ballot !== null) return { ...base, ...ballot };
 
+    // ── A6: HAND SOMEONE AN OFFICE ────────────────────────────────────────────
+    //
+    // The heuristic cast emitted eight verbs and `grant` was not one of them, so the core loop the
+    // whole design is built around could not be exercised by ~83% of the world's decisions (measured
+    // in production: 296 HEURISTIC against 61 LIVE). The published frame said so plainly —
+    // `authorityLines: 0` — and it was read as "the cast chooses not to delegate" when the truth was
+    // that the branch did not exist.
+    //
+    // **Placed BEFORE the idle-hand gate, and that is the point rather than an ordering detail.** A
+    // grant is authority, not physical presence, so it needs no hand. D19 measured that filling roles
+    // commits a hand for a venture's life and that the members who work most therefore act least —
+    // halcyon held three hands committed for 96% of all hand-ticks and managed 62 acts in 900 ticks.
+    // Every branch below this one is fronted by `idle.length > 0`, so a fully-committed member could
+    // previously do nothing at all. Delegating is exactly what such a member SHOULD do: it is the
+    // move of someone who is out of hands but not out of assets, which is precisely A6's premise
+    // ("you cannot run an empire alone").
+    //
+    // Eligibility is NOT decided here — `Runtime.grantCandidates` owns it, and `observe` builds its
+    // affordance from the same call, so the bot cannot play a rule the menu does not show.
+    //
+    // **Only when there is no idle hand**, which is narrower than the first version of this branch
+    // and is what the paragraph above actually argues for. Placed ahead of the hand branches but
+    // gated on them coming up empty, it adds a move for the member that had none without taking one
+    // from the member that did. The unconditional version displaced ~1.4% of all actions — enough to
+    // make syndicates rarer in a sweep world, which cost `join` its affordance path and broke three
+    // fixtures that had nothing to do with authority. A populator cast should add behaviour at the
+    // margin, not re-prioritise the whole world.
     const idle = handsOf(runtime.world, member.principal).filter((h) => h.state === 'IDLE');
+    if (idle.length === 0) {
+      const grant = this.grantFor(member, tick, rng);
+      if (grant !== null) return { ...base, ...grant };
+    }
+
     if (idle.length > 0) {
       const slot = this.openSlotFor(member, tick);
       const hand = idle[0];
@@ -507,6 +555,36 @@ export class HeuristicCast {
    * No `Rng`, no floats. A random vote would be a dice roll where §5.2 wants a choice.
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * Hand an eligible counterparty an office, or null.
+   *
+   * Reads {@link Runtime.grantCandidates} and adds nothing to it, deliberately: the eligibility rule
+   * has one home and the menu an agent sees is built from the same call.
+   */
+  private grantFor(
+    member: CastMember,
+    tick: number,
+    rng: { chance(n: number, of: number): boolean },
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    // §5's freeze forbids grant SPEND, and a grant that lands inside it would be an action spent on
+    // authority nobody can use until the window reopens. Same guard the other branches take.
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    const appetite = this.options.grantChanceBps ?? DEFAULT_GRANT_CHANCE_BPS;
+    if (!rng.chance(appetite, 10_000)) return null;
+    const candidate = this.runtime.grantCandidates(member.principal, tick, 1)[0];
+    if (candidate === undefined) return null;
+    return {
+      verb: 'grant',
+      params: {
+        to: candidate.to,
+        template: 'treasury-hand',
+        max_direct_loss: candidate.cap,
+        max_contingent_liability: candidate.cap,
+        expires_tick: candidate.expiresTick,
+      },
+    };
+  }
+
   private ballotFor(
     member: CastMember,
     tick: number,

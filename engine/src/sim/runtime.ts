@@ -549,6 +549,15 @@ export const MAX_TALK_ENTRIES = 512;
  * ledger — and the prompt's existing problem is length, so an unbounded history would crowd out the
  * observation it is supposed to give context to.
  */
+/**
+ * How many `grant` offers a single observation shortlists.
+ *
+ * Lives here rather than in `api/observe.ts` because {@link Runtime.grantCandidates} is now the one
+ * home for the eligibility rule, and `sim/` importing from `api/` would invert the layering the way
+ * `ledger/` importing from `levy/` did.
+ */
+export const MAX_GRANT_OFFERS = 2;
+
 export const MAX_RELATIONS = 6;
 export const MAX_OFFER_ENTRIES = 256;
 export const MAX_CLAIM_ENTRIES = 512;
@@ -6072,6 +6081,65 @@ export class Runtime {
    * to reason about being distrusted.
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * Who this principal may hand an OFFICE to, and how much it would put at risk.
+   *
+   * **The single home for A6's eligibility rule.** `observe` builds the `grant` affordance from this
+   * and the heuristic cast picks from the same list, so the menu an agent is shown and the menu a bot
+   * plays from cannot disagree. They did not disagree before — the bot had no grant branch at all —
+   * but writing the rule twice is how scar #1 happens, and this is the highest-stakes verb in the
+   * game to get that wrong on.
+   *
+   * The gate is a KEPT PROMISE, and that is the mechanic rather than a list budget: A6 is an agent
+   * earning trust over months and then being handed authority it could abuse. A grant to a stranger
+   * is a handout; a grant to someone with a record is the end of an arc, and the receipt reads that
+   * way at settlement.
+   *
+   * Excludes a delegate who already holds a live grant from this grantor — `liveGrantBetween`'s own
+   * doc says at most one per pair is expected, so a second is noise on the menu and a wasted action
+   * for the bot.
+   *
+   * The caps are *(calibrate)*: a tenth of the free balance, and an expiry one Reckoning out rather
+   * than the three the engine allows, because a short life is what makes each renewal a decision
+   * (scar #7, the sticky vow).
+   */
+  grantCandidates(
+    principal: PrincipalId,
+    tick: number,
+    limit = MAX_GRANT_OFFERS,
+  ): readonly {
+    readonly to: PrincipalId;
+    readonly cap: number;
+    readonly kept: number;
+    readonly broke: number;
+    readonly expiresTick: number;
+  }[] {
+    const account = storesAccount(principal);
+    const free = this.ledger.account(account) === undefined ? 0 : this.ledger.freeBalance(account);
+    const cap = Math.trunc(free / 10);
+    if (cap <= 0) return [];
+    const out: {
+      to: PrincipalId;
+      cap: number;
+      kept: number;
+      broke: number;
+      expiresTick: number;
+    }[] = [];
+    for (const relation of this.relationsFor(principal, limit * 4)) {
+      if (out.length >= limit) break;
+      if (relation.kept <= 0) continue;
+      if (this.grantBook.liveGrantBetween(principal, relation.other, tick) !== null) continue;
+      out.push({
+        to: relation.other,
+        cap,
+        kept: relation.kept,
+        broke: relation.broke,
+        expiresTick: tick + TICKS_PER_RECKONING,
+      });
+    }
+    return out;
+  }
+
   relationsFor(
     principal: PrincipalId,
     limit = MAX_RELATIONS,

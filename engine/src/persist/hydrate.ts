@@ -325,28 +325,68 @@ export async function planCheckpoint(
   // been mutated and the refusal can only be a hard stop, which for a store that
   // simply does not carry events is the wrong answer: the right one is the slow boot.
   //
-  // So it is probed here, before anything moves, on the cheapest decisive page there
-  // is: the snapshot's OWN tick. A snapshot is written at a Reckoning and a Reckoning
-  // appends its receipts, so that tick has rows whenever the store keeps any. A store
-  // that keeps them and happens to have none there costs a genesis replay, which is
-  // the safe direction to be wrong in.
+  // So it is probed here, before anything moves. The snapshot's OWN tick is tried first
+  // because it is the cheapest page and it answers immediately in production: a snapshot
+  // is written at a Reckoning and a Reckoning appends its receipts.
+  //
+  // ── WHY IT DOES NOT STOP THERE, THOUGH IT USED TO ────────────────────────────
+  //
+  // "That tick has rows whenever the store keeps any" is an assumption, not a fact, and
+  // it is false whenever snapshots are NOT written on Reckoning boundaries — a store
+  // checkpointing every 10 ticks lands most of them on ordinary ticks that emit nothing.
+  // The old single-page probe then refused a store that persists the record perfectly
+  // well, and the refusal was indistinguishable from the real thing it looks for.
+  //
+  // That was found the hard way: it had been passing **vacuously** in the checkpoint
+  // audit for as long as it existed, because tick 300 there happened to carry one event.
+  // Giving the cast a `grant` branch moved which ticks carry what, tick 300 came up
+  // empty, and three tests failed with a diagnosis that named the wrong cause — the
+  // store was fine.
+  //
+  // A false refusal here is not cheap. It costs a full genesis replay, which is O(head)
+  // and unbounded — the precise cost this file's rules gate was just rewritten to stop
+  // paying for an already-adjudicated reason. "Safe direction to be wrong in" is true of
+  // correctness and false of availability, and a guard that cries wolf gets muted.
+  //
+  // So a miss on the snapshot's own tick escalates to a bounded backward window instead
+  // of concluding. Any event in the window proves the store persists the record, which is
+  // the only thing being asked.
   const want = eventCountOf(snapshot);
   if (want > 0) {
     const page = await store.ticksPage(snapshot.tick - 1, 1);
-    const carried = page[0]?.events.length ?? 0;
+    let carried = page[0]?.events.length ?? 0;
+    if (carried === 0) {
+      const from = Math.max(-1, snapshot.tick - 1 - EVENT_PROBE_WINDOW);
+      const window = await store.ticksPage(from, EVENT_PROBE_WINDOW);
+      for (const t of window) {
+        carried += t.events.length;
+        if (carried > 0) break;
+      }
+    }
     if (carried === 0) {
       return {
         snapshot: null,
         refusal:
           `checkpoint adoption refused: the snapshot at tick ${String(snapshot.tick)} was taken over ` +
-          `${String(want)} events and this store returns none for that tick. It does not persist the ` +
-          'append-only record, so an adopted world would come up with an empty public ledger. ' +
-          'Replaying from genesis, which rebuilds the record tick by tick.',
+          `${String(want)} events and this store returns none for that tick or the ` +
+          `${String(EVENT_PROBE_WINDOW)} before it. It does not persist the append-only record, so an ` +
+          'adopted world would come up with an empty public ledger. Replaying from genesis, which ' +
+          'rebuilds the record tick by tick.',
       };
     }
   }
   return { snapshot, refusal: null };
 }
+
+/**
+ * How far back the event-persistence probe looks when the snapshot's own tick is empty.
+ *
+ * Bounded on purpose: the question is "does this store keep events at all", which any single
+ * non-empty tick answers, so there is no reason to scan history. One Reckoning's worth is
+ * comfortably enough — a world that emitted nothing for 288 consecutive ticks has no record to
+ * lose.
+ */
+const EVENT_PROBE_WINDOW = 288;
 
 /** The event count in a snapshot's `event` capture, or 0 when it has none. */
 function eventCountOf(snapshot: SnapshotRecord): number {
