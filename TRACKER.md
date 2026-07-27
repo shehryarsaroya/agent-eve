@@ -6,6 +6,25 @@
 
 ## ⏱ STATUS
 
+> ### ⚑ **OWNER DECISION, 2026-07-27: PHASE 2 IS NOT OPTIONAL.**
+> `SPEC.md` §16 calls Phase 2 *"optional, possibly forever"* and `PASS-SHIPS-COMBAT` argues the layer
+> may never be needed. **That is overridden.** Combat depth is in scope and is to be built.
+>
+> This also resolves the standing question about `demand` (§9's agent-initiated standoff): it stops
+> being deferrable Phase-2-adjacent work and becomes required. It needs an initiator on `RaidRecord`,
+> which is a CAPTURED table — so a `RULES_VERSION` bump and a declared discontinuity through the
+> operator door, which is routine here (this world is at version 6 and the deploy script has
+> `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` for exactly this).
+>
+> The pieces already in place: the whole world-raid machinery (sides, `join`, force reading,
+> YIELD/FIGHT, resolution, scheduling, views, invariants), and §9's **aggression capacity** — the
+> anti-toll-cartel price — built and mutation-verified in `src/predation/aggression.ts`, currently
+> with no caller and a self-destructing test saying so. `demand` is what spends it.
+>
+> Everything else in `PASS-SHIPS-COMBAT-extended` (the six-phase operation model, fitting, tackle,
+> logistics, EWAR, capacitor, doctrines) is now roadmap rather than a maybe.
+
+
 > ### ➜ **`docs/design/COMPLETION.md` is the done/left ledger. Read it first, then update it.**
 > It exists because the percentage question got three different answers in three weeks — nobody had
 > written down the denominator. Every claim in it is checked by a command, and the ones that are not

@@ -36,7 +36,7 @@ Both numbers are defensible; they answer different questions, and quoting either
 |---|---|---|
 | Does the machine work, and did the premise survive falsification? | **~90%** | Phase 0+1 systems, invariants, determinism, durability, Gate 3 |
 | Is there enough strategic depth for months of interesting agent decisions? | **~40%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~30% on 2026-07-26: the cast now exercises authority, production and syndicates, which were built-but-idle. Capped well below 90% by the single good |
-| Phase 2 (combat depth) | **0%** | Optional by design — §16 says "possibly forever" |
+| Phase 2 (combat depth) | **0%** | ⚑ **NO LONGER OPTIONAL** — owner decision 2026-07-27 overrides §16's "possibly forever". In scope and to be built. `demand` is the first piece; §9's aggression capacity is already built and waiting for it |
 | Phase 3 (risk market) | **0%** | Deferred deliberately in the v2.0 reframe |
 
 ---
