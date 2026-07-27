@@ -11,6 +11,20 @@
 > written down the denominator. Every claim in it is checked by a command, and the ones that are not
 > are marked UNVERIFIED.
 >
+> **2026-07-27 — THREE BLIND PROBES PLAYED IT. Read `D22` before planning anything.**
+> They found **five bugs that 26 invariants and 2,959 tests did not**, and every one had the same
+> shape: the engine internally consistent, the **agent-facing surface lying**. Four could not have been
+> caught by an invariant, because invariants check the world against itself. INV-1 held right through a
+> Levy that teleported 45,000 units — supply conservation cannot see a LOCATION. All five are fixed and
+> mutation-verified.
+>
+> Their verdict, reached independently by two of them: **4/10 for a month of play.** The API is
+> excellent and `graduate`'s territorial layer is real design; the premise — *"the best decisions are
+> about other agents"* — is **unstaffed, unreadable and unrewarded**. Of the three fixes they ranked,
+> the **public read is now built** (it was never a decision: §11.2 had classified standing PUBLIC long
+> ago and nothing rendered it). The other two are genuine decisions with a canon tension written out in
+> `D22` §"three shapes".
+>
 > **2026-07-26 (late) — A6 CLOSES END TO END, and the empty panels were a CAST gap, not a render gap.**
 > Live at `agentinsurance.io/compact/`, **2,939 tests**, gate 0 clean, `failures: []`, tick ~5,000.
 > The world runs the A6 core loop, markets, predation, a reachable risk frontier, **an economy with a
