@@ -6,7 +6,57 @@
 
 ## ⏱ STATUS
 
-> ### ★★ **`claimLines: 0` IS CLOSED. `RULES_VERSION` 10 deployed, tick 5,386, `failures: []`.**
+> ### ★★★ **PHASE 2 IS IN. `RULES_VERSION` 11 live, tick 5,400, `failures: []`, 3,169 tests.**
+>
+> Four agents ran in parallel worktrees overnight (2026-07-27) and all four landed. Master `5a85bdb`,
+> deployed and verified: `dist/combat` present, `claimFor` present, `RULES_VERSION` 11,
+> `durableTick == headTick == 5400`, `backlog: 0`.
+>
+> 1. **Combat — `src/combat/`, 5,987 lines, `engage`, still 40/40 verbs** (`flee` out, which had no
+>    handler and `verbs.ts` already argued never should). A refused `demand` becomes an ENGAGEMENT:
+>    MUSTER 6 → CONTACT 1 → CONTEST 12 → BREAK 2 → AFTERMATH 1, inside the existing 24-tick window.
+>    Five hulls, 29 modules, CPU/grid/calibration/hardpoints, a published stacking curve, four damage
+>    types against three tank layers, and five roles **earned from what is fitted, never declared**.
+>    Couples into §9 *through hands only* — a wrecked hull routs its hand and `readForce` counts hands,
+>    so losing the battle loses the force reading for free. Pixel signature: **THE BATTLE LINE**.
+>    Sims (5 seeds × 900): 65 battles, **65 FIGHT answers**, 45 · 5 · 15. EWAR beats turrets 6·4·28 and
+>    **loses to missiles 0·25·5** because `MISSILE` has `cap: 0` — the counter-chain closed.
+> 2. **Territory — `claimLines: 0` is closed** (detail below, it was the hardest gate of the four).
+> 3. **The cast contract is selected per wake, at `###` granularity** — 44 units, 14 FLOOR, and **all
+>    31 live verbs have readable rules, 0 unreadable**, where nine had none. `post_bond` costs a member
+>    1,983 characters instead of ~8,500. Ceiling raised 38,000 → 56,000, permissible *only* because
+>    FLOOR and RULES now emit whatever the total (overshoot is loud, not silent) — one decision in two
+>    halves, and reverting either requires revisiting the other.
+> 4. **The checkpoint bug is closed and was never a ledger bug** (see the §CLOSED entry below).
+>
+> ⚑ **TWO PROCESS FAILURES, BOTH MINE, BOTH WORTH THE INK.**
+>
+> **`RULES_VERSION` collided.** Combat and territory each bumped 9 → 10 for their own new state
+> tables. Neither could see the other, each was individually correct, and **both reached production
+> minutes apart** — so the live record briefly carried snapshots stamped `10` written by two different
+> rule sets. A version stamp whose meaning depends on which deploy wrote it is not a version stamp. The
+> union is **11**. This is the checkpoint defect from a new direction: there, nine accepted divergences
+> shared two tables; here, two rule sets shared one integer. **`RULES_VERSION` is a shared resource
+> exactly like the working tree in HARD RULE 7 — two agents cannot each own the next integer.**
+>
+> **And I reverted a live deploy after warning three agents not to.** I sent all three the stale-worktree
+> warning, then deployed master over the territorial work myself, ~20 minutes after it went live:
+> `dist/combat` present, `claimFor` absent. Scar #4, committed by the person quoting it. Nothing was
+> lost — the branch held it — but the world ran without the territorial cast for the gap. The warning
+> was correct and **insufficient**: what makes concurrent deploys safe is *merging before deploying*,
+> not remembering to.
+>
+> **Still unverified in production:** `claimLines` cannot move until the next settlement (~tick 5,471);
+> the served frame is per-Reckoning. Whether the *live* cast can afford the crossing after 5,000 ticks
+> is the open question — it needs `freeMinor >= 160,000` plus 5,000 `ration` at seat.
+> `worksAffordableBy: 16` says the goods half is met; the currency half needs a signed `observe`.
+> **If `works` has not risen above 5 in a few hundred ticks, that gate is the thing to check.**
+> Combat is likewise complete and unexercised: `heuristic.ts` has no combat branch, so nothing builds
+> a hull yet. The hook is three calls, with `test/combat/reachable.spec.ts` as the worked example.
+
+---
+
+> ### ★★ **`claimLines: 0` IS CLOSED. Deployed at tick 5,386, `failures: []`.**
 >
 > `D23` #4 said territory was *anti*-load-bearing; the night before last built the RENT and the FUEL
 > and it all rendered and `claimLines` stayed **0** — verified inert in production at tick 5,274, five
