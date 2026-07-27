@@ -16,7 +16,7 @@ trusting — this file goes stale the moment someone commits.*
 surfaces carry data. The gap is no longer mechanics — it is that every obligation is priced in ONE
 GOOD, so there is nothing to trade.**
 
-Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,230
+Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,248
 tests** pass against them (2026-07-27). Phase 2 and Phase 3 do not exist as *complete* layers, by
 design — §16 marks Phase 2 "optional, possibly forever" and the owner has overridden that; combat is
 partly in.
@@ -59,7 +59,7 @@ Both numbers are defensible; they answer different questions, and quoting either
 |---|---|---|
 | Does the machine work, and did the premise survive falsification? | **~90%** | Phase 0+1 systems, invariants, determinism, durability, Gate 3 |
 | Is there enough strategic depth for months of interesting agent decisions? | **~40%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~30% on 2026-07-26: the cast now exercises authority, production and syndicates, which were built-but-idle. Capped well below 90% by the single good |
-| Phase 2 (combat depth) | **~70%** | ⚑ **NO LONGER OPTIONAL** — owner decision 2026-07-27 overrides §16's "possibly forever". **Built and live at `RULES_VERSION` 15**: `src/combat/` 6,407 loc, the `engage` verb, 5 hulls, 29 modules, four slot rows with CPU/grid/calibration/hardpoints, a published stacking curve, four damage types against three tank layers, five roles *earned from what is fitted*, the ENGAGEMENT phase clock, and THE BATTLE LINE on the frame. The cast flies it — 18 hulls, 25 battles, 16 world hulls killed across 32 seeds — and composition provably pays at coalition scale (a 1:5 support wing holds the field identically while turning 17 lost hulls into **zero**). What is missing is not the layer: **no cast branch uses `join`**, so no sim has ever reached even 8 of the 12 allowed parties, and the thing that makes composition matter is unexercised |
+| Phase 2 (combat depth) | **~70%** | ⚑ **NO LONGER OPTIONAL** — owner decision 2026-07-27 overrides §16's "possibly forever". **Built and live at `RULES_VERSION` 16**: `src/combat/` 6,407 loc, the `engage` verb, 5 hulls, 29 modules, four slot rows with CPU/grid/calibration/hardpoints, a published stacking curve, four damage types against three tank layers, five roles *earned from what is fitted*, the ENGAGEMENT phase clock, and THE BATTLE LINE on the frame. The cast flies it — 18 hulls, 25 battles, 16 world hulls killed across 32 seeds — and composition provably pays at coalition scale (a 1:5 support wing holds the field identically while turning 17 lost hulls into **zero**). What is missing is not the layer: **no cast branch uses `join`**, so no sim has ever reached even 8 of the 12 allowed parties, and the thing that makes composition matter is unexercised |
 | Phase 3 (risk market) | **0%** | Deferred deliberately in the v2.0 reframe |
 
 ---
