@@ -175,12 +175,14 @@ missing accessors are the real remaining work:
 
 | member | what I assumed | status |
 |---|---|---|
-| `markPriceOf` | `runtime.markPriceOf(good)` | **no such method.** The rule is the ledger's `valueGood` — find its real call shape. `noMarks` (`() => null`) exists as the honest pre-market default but a market exists now, so `null` everywhere would withhold every affordance priced in goods (PROP-O4) |
-| `handleOf` | `seats.handleOf(who)` | **no such method on `SeatBook`.** Handles are there; the accessor is not |
-| `market` | `runtime.bookRowsFor(principal, tick)` | **no such method.** `runtime.market` is a `MarketBook`; `BookRow` is an aggregate of best bid/ask plus two depth bands, so this is an aggregation to write, not a getter to call |
-| `sealedRoles` | `runtime.sealedRoleKeys(principal, tick)` | **no such method.** Keys must be built with the module's own exported `roleSealKey(venture, roleIndex)` — *"in one place, so the API layer and this module cannot disagree"* |
+| `markPriceOf` | `runtime.markPriceOf(good)` | **no such method** — but `runtime.referenceMark(good, tick): Valuation` is the wrapper, and its own comment is *"the market's job is to supply the prints; it must never form a second opinion."* So the adapter is `(good) => <the minor from referenceMark, or null when it declines to price>`. **The one field still to confirm** is which member of `Valuation` carries the amount and how a `THIN_BOOK` refusal presents — `valueGood` returns `THIN_BOOK` rather than pricing off a single visible trade, and that must map to `null`, because an affordance whose worst case depends on an unpriced good is WITHHELD rather than guessed (PROP-O4) |
+| `handleOf` | `seats.handleOf(who)` | **no such method, but the data is one hop away**: `SeatBook.seatOf(principal): Seat \| undefined` and `Seat.handle: string`. So `(who) => seats.seatOf(who)?.handle ?? null`, cast to `Handle`. Adding a `handleOf` to `SeatBook` would be tidier and would also give the frame renderer the accessor it lacks — `CastChip.handle` currently comes from holding names, which is why `handleOf` had no home |
+| `market` | `runtime.bookRowsFor(principal, tick)` | **no such method, and this is the one real piece of work.** `BookRow` is an aggregate — `{system, good, best_bid, best_ask, depth: [two bands]}` — and it is aggregate *by construction* for a reason worth reading before writing it: *"a book that resolved to individual holdings would let an ambusher read a manifest off the depth ladder without ever scouting"* (PROP-VI2). So build it from the order book's own ladder, never from orders |
+| `sealedRoles` | `runtime.sealedRoleKeys(principal, tick)` | **no such method, and it is derivable from the public one.** `SealBook.unsealedRoles(principal, reckoning, rolesHeld)` returns the complement, using the sealed set internally. So: build `rolesHeld` from `ventures.forPrincipal(p)` (roles whose `filledByPrincipal` is `p`), call `unsealedRoles`, subtract, and map the remainder through the module's own exported `roleSealKey(venture, roleIndex)` — *"in one place, so the API layer and this module cannot disagree"*. Deriving the complement uses only public API and cannot drift from what the book actually considers sealed |
 
-And one trivial fix: `RULES_VERSION` is not in `../core/rules.js`.
+And the trivial one: `RULES_VERSION` is exported from `../sim/runtime.js`, not `../core/rules.js`.
+
+**So one field remains genuinely unknown** (`Valuation`'s amount member and its `THIN_BOOK` presentation), one member needs real aggregation work (`market`), and the other three are one-liners. That is the state to start from.
 
 **Everything else compiled.** `tick` · `serverNowMs` · `stateVersion` · `status` · `world` ·
 `stores` (via the existing `storesReadOf`, itself unused in production) · `ventures` · `grants` ·
