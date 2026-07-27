@@ -77,10 +77,43 @@ Two reasons, both fixed today, and both worth recording because they are the sam
 So the falsification gate was readable in aggregate (`meters.broken`) long before it was readable
 per-relationship — and the aggregate is what answers `AGT-E1`.
 
-## The one thing to do next
+## The one thing to do next — and it has no instrument
 
 `AGT-E2`. Betrayal occurring is necessary but not sufficient: if a bonded counterparty is paid the
 same as an unbonded one, then the record everyone can read has no cash value and A6 is a story the
-engine tells rather than a market agents trade in. It is measurable from the same frames — compare
-`your_take_at_p50` across roles filled by principals with and without a posted bond and a default
-history — and now that `CastChip.line` publishes the vectors, it is legible to a viewer too.
+engine tells rather than a market agents trade in.
+
+**I tried to measure it and could not.** The gate needs what a principal *is paid* correlated against
+its *record*, and no public surface carries both:
+
+- the published frame has `glyphs` (elective share, roles filled, state) and `rundown` (the prose and
+  the cast), but **no per-role take by principal**. `SettledView.atStake` exists on the
+  `FrameSource` and does not survive into the frame per-role.
+- `your_take_at_p50` is published — on `ventures.board[]`, inside an **agent's own** observation. So
+  the quote exists exactly where only one principal can read it, and nowhere a measurement can.
+- `CastChip.line` now publishes the vectors, which is the other half. The frame I checked still had
+  them empty because it settled before that deploy; the next one will carry them.
+
+So the design's second falsification gate is **currently unfalsifiable**, which is the same class of
+defect this session kept turning up: a check with no instrument reads identically to a check that
+passes. Two ways to close it, cheapest first:
+
+1. **A probe agent that records its own quotes.** `your_take_at_p50` is already in its observation, so
+   a probe playing several Reckonings and logging what it was offered per role — against the
+   counterparty vectors it can also already read — measures the spread with no engine change. This is
+   an `AGT-E2` brief to write, not a feature.
+2. **A frame field.** Per-role take beside the filler's record would make the spread visible to a
+   *viewer*, which is stronger: it turns "is trust priced" from an audit into something the show
+   displays. Needs a §11.2 argument — a settled role's payment is `PUBLIC` (it is in the settled
+   ventures clause), so this looks admissible, but it must be argued in `projection.ts` and added to
+   `PUBLIC_FACT_KEYS` rather than slipped in. `assertInertPublicFacts` will refuse it otherwise, as it
+   correctly refused `standings` today.
+
+## One observation worth keeping
+
+Both `SNAPPED_BLACK` glyphs in the measured frame sit at **3436 bps elective** — the joint-highest
+elective share on the card, against kept promises spanning 0–3454 bps. Two data points is an anecdote,
+not a finding, but it is the anecdote A7 predicts: *"Collateral buys certainty; an unsecured promise
+creates drama."* The more of a promise is elective, the more there is to walk away from. Worth
+measuring properly once `AGT-E2` has an instrument, because if it holds it is the mechanism by which
+the elective floor is doing its job.
