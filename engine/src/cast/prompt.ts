@@ -794,13 +794,13 @@ export const CONTRACT_POSITIONS: readonly {
  * Ceiling on the contract excerpt, and what it disciplines. *(calibrate)*
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * **56,000, AND IT SITS ABOVE THE UNREACHABLE ANALYTIC MAXIMUM ON PURPOSE.**
+ * **72,000, AND IT SITS ABOVE THE UNREACHABLE ANALYTIC MAXIMUM ON PURPOSE.**
  *
  * The whole catalog, every fact and every verb at once — a state no principal can occupy,
- * because a claim anchors the body and `observe` withholds the crossing — measures **54,746**
- * characters, and the largest position a principal can actually be in measures **47,246**. This
- * number is deliberately above both. So `overBudget` now means *"something is larger than the
- * rules can be"* and not *"a successful player exists"*.
+ * because a claim anchors the body and `observe` withholds the crossing — measures **59,453**
+ * characters uncapped, and the largest position a principal can actually be in measures
+ * **51,867**. This number is deliberately above both. So `overBudget` now means *"something is
+ * larger than the rules can be"* and not *"a successful player exists"*.
  *
  * ── WHY THE OLD BAR WAS RIGHT WHEN IT WAS SET, WHICH IS THE POINT ────────────
  *
@@ -822,11 +822,22 @@ export const CONTRACT_POSITIONS: readonly {
  *   truncation point again and has to come back down below the smallest reachable position.
  *   The two are one decision. Reverting either requires revisiting the other.
  *
+ *   The coupling is executable rather than remembered, and **the 56,000 → 72,000 raise widened
+ *   the gap it has to cover, so it is worth naming where it is enforced**: `prompt.test.ts`'s
+ *   *"under an absurd cap through `loadContract`, CONTEXT goes and the RULES DO NOT"* and
+ *   *"★ THE OVERSHOOT PATH STILL WORKS, and still loses only CONTEXT"* both drive `excerptFor`
+ *   at a 4,000-character cap — two orders of magnitude below this ceiling — and assert that
+ *   nothing FLOOR or RULES is in `dropped`. Those two tests are the precondition. A change that
+ *   makes either of them go red has revoked the licence for this number, and the number must
+ *   come down in the same commit rather than the tests being relaxed.
+ *
  * ── WHY IT HAD TO MOVE AT ALL, WHICH IS NOT COST ─────────────────────────────
  *
- * Cost is a rounding error either way: 56,000 characters is ≈14k tokens ≈ $0.0014 a call
- * cached, against ~$0.25/hour of spend. That is an argument for not worrying about the number,
- * never an argument for a particular one.
+ * Cost is a rounding error at every value it has taken: the cached-input rate is $0.10/M
+ * (`budget.ts:cachedInputMicrosPerMillion`), so the whole 72,000-character prefix is ≈18k tokens
+ * ≈ $0.0018 a call cached, and **the 16,000 characters this raise added cost ≈$0.0004 a call** —
+ * against a cast budget that has spent $0.24 of its $5.00 cap. That is an argument for not
+ * worrying about the number, never an argument for a particular one.
  *
  * The argument that decides it is the one this project learned twice in a week from a different
  * alarm. `GET /health` returned 503 continuously on `deciding_share_bps` for a condition the
@@ -895,12 +906,51 @@ export const CONTRACT_POSITIONS: readonly {
  * numbers happening to fit; this is the ceiling on discretionary `wanted` blocks. Same trade
  * `projectObservation` makes one field over. An overshoot sets `overBudget`, is printed in the
  * prompt, and fails `prompt.test.ts` naming the position — so it can never be the silent cliff
- * the bar used to exist to prevent, and above 54,746 it should now be genuinely anomalous.
+ * the bar used to exist to prevent, and above 59,453 it should now be genuinely anomalous.
+ *
+ * ## 56k → 72k, because the budget had reached ZERO and was pricing features again
+ *
+ * ── THE MEASUREMENT THAT FORCED IT ───────────────────────────────────────────
+ *
+ * At 56,000 the slack was gone, exactly, and the table in `prompt.test.ts` said so:
+ *
+ *   - largest **reachable** position **51,867** of the 52,000 the margin allows → **133 characters**;
+ *   - **analytic** ceiling **55,996** of 56,000 → **4 characters**.
+ *
+ * Three features in a row then paid for their own rules text by trimming. The currency door for a
+ * first WORKS is the one written up above the table: three drafts, 2,346 → 800 → **304** characters,
+ * the field name `paying_goods_in_currency` dropped from the prose to make the sentence fit, and the
+ * author's own note that "the answer to *can I add a sentence* is now **no**". A ceiling that makes
+ * an author rewrite a rule three times for length is not disciplining the document any more — it is
+ * **charging new mechanics rent in rules text**, and the thing that gets cut is always prose a
+ * player can be refused for not having read.
+ *
+ * ── WHAT MAKES THE RAISE PERMISSIBLE, AND IT IS NOT THE INCONVENIENCE ────────
+ *
+ * The same precondition as the last one, unchanged and now spelled out where it is enforced: the
+ * bar existed to prevent **silent truncation**, and silent truncation can no longer happen. FLOOR
+ * and RULES are emitted whatever the total, an overshoot sets `overBudget`, `overBudget` prints in
+ * the prompt, and a named test fails. See the ⚠ above for the two tests that hold it up. **The
+ * raise is legitimate only while that holds**; it is one decision with this number, not two.
+ *
+ * ── WHY 72,000 AND NOT 60,000 ────────────────────────────────────────────────
+ *
+ * Because 60,000 would buy one feature and then this paragraph would be written a fifth time.
+ * 72,000 leaves **16,004** characters above the 55,996 the analytic ceiling costs at the old bar
+ * (**12,547** above the 59,453 it costs uncapped, which is what it now emits), and **20,133** above
+ * the largest reachable position. That is several features of headroom rather than one.
+ *
+ * And the principle the number serves is the one that has already had to be enforced once
+ * elsewhere in this repo: **`overBudget` must mean "something is larger than the rules can be",
+ * never "a successful player exists".** A signal that fires on a legitimate position is the
+ * `deciding_share_bps` failure — a `/health` 503 that was red for a structural condition until
+ * somebody had to silence it. At 133 characters of slack the most advanced member in the world was
+ * four sentences from setting the alarm on every wake, which is that failure arriving on schedule.
  *
  * `CONTRACT_POSITIONS` carries the measured table and is the thing to read before adding a
  * section, because it is executable and this comment is not.
  */
-export const MAX_CONTRACT_CHARS = 56_000;
+export const MAX_CONTRACT_CHARS = 72_000;
 
 /**
  * How far {@link MAX_CONTRACT_CHARS} must stay above the analytic maximum of the catalog.

@@ -569,11 +569,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
 
     // The ANALYTIC maximum, uncapped: what the catalog would emit if one member could somehow be
-    // every situation at once. 58,446 after §9A, which is 2,446 ABOVE the ceiling — and that is
-    // tolerable precisely because nothing is ever it. `graduate` and a held claim cannot coexist,
-    // so this state has no occupant, and what gives when it is priced is CONTEXT rather than a
-    // rule. Pinned so growth is visible, not asserted under the ceiling: padding the ceiling for
-    // a state that cannot exist is how a margin becomes decoration.
+    // every situation at once. **59,453, which at 72,000 now fits WHOLE** — it was 2,446 above the
+    // 56,000 ceiling and got priced down to 55,996 by dropping CONTEXT. Either way it was tolerable,
+    // precisely because nothing is ever it: `graduate` and a held claim cannot coexist, so this state
+    // has no occupant, and what gave when it was priced was CONTEXT rather than a rule. Still pinned
+    // rather than asserted under the ceiling, because that is what makes growth visible — and padding
+    // the ceiling for a state that cannot exist is how a margin becomes decoration.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
     expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(59_453);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
@@ -1305,9 +1306,31 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       36_629, // mid-game in the Commons
       37_271, // about to take territory — and §11B is READABLE now, which it was not
       51_867, // a claimant in trouble — the largest REACHABLE position
-      55_996, // the analytic maximum priced at the ceiling (59,453 uncapped)
+      59_453, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
     ]);
-    // ── ⚑ +304 EVERYWHERE, AND THE BUDGET IS NOW EFFECTIVELY GONE. READ THIS BEFORE ADDING PROSE ──
+    // ── ⚑ THE CEILING WAS RAISED 56,000 → 72,000, AND THIS TABLE IS WHAT MOVED ────────────────
+    //
+    // **One row, and it is the unreachable one.** The four reachable positions are byte-identical
+    // before and after the raise, because none of them was ever being squeezed — they were being
+    // *threatened*, at 133 characters of margin. What moved is the analytic maximum: at 56,000 it
+    // was priced down to **55,996** by dropping CONTEXT, and at 72,000 it emits **59,453** whole.
+    // That is the raise doing the thing `MAX_CONTRACT_CHARS` says a non-binding ceiling does —
+    // showing up as more rules delivered rather than as slack.
+    //
+    // **The margins now, which is the number the next author needs:**
+    //
+    //   - largest REACHABLE position 51,867 of the 68,000 the margin allows → **16,133 characters**;
+    //   - analytic maximum 59,453 of `MAX_CONTRACT_CHARS` → **12,547 characters**.
+    //
+    // So the answer to "can I add a sentence" is **yes**, for the first time in three features. What
+    // has NOT changed is what to do when this runs out again: `MAX_CONTRACT_CHARS`'s note names the
+    // two legitimate moves and the one precondition (RULES-never-drop) that makes a raise permissible
+    // at all. Trimming a rule to fit is not on that list, and the paragraph below is what it cost the
+    // last three times.
+    //
+    // ── WHAT IT COST WHEN THE BUDGET WAS GONE, KEPT AS THE EVIDENCE FOR THE RAISE ──
+    //
+    // At 56,000 the slack was 133 characters on the reachable maximum and 4 on the analytic one.
     //
     // The currency door for a first WORKS (`works/params.ts:WORKS_GOODS_IN_CURRENCY_MINOR`) had to be
     // stated in `agent.md`, because a principal drained by four Reckonings of tribute was locked out of
@@ -1322,19 +1345,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // out of the new sentence, three times, and the field name `paying_goods_in_currency` was dropped
     // from the prose (it survives in the observation's own field docs) rather than a rule being cut.
     //
-    // **The numbers the next author needs:**
-    //
-    //   - largest REACHABLE position **51,867** of the 52,000 the margin allows → **133 characters**;
-    //   - analytic ceiling **55,996** of `MAX_CONTRACT_CHARS` → **4 characters**.
-    //
-    // So the answer to "can I add a sentence" is now **no**, and `MAX_CONTRACT_CHARS`'s own note says
-    // what the two legitimate moves are: raise the ceiling on the cached-input cost argument it already
-    // makes, or make a block conditional. It also warns that raising it a third time would be avoiding
-    // the question — and the question (does a member need every section every wake?) has an answer now,
-    // `CONTRACT_CATALOG`, which is why the honest reading is that the ceiling is simply too low for a
-    // document that has grown a combat layer and an economy since it was set.
-    // ── WHAT §9A's COMBAT LAYER COST, WHICH IS THE POINT OF THE CEILING RAISE ─
-    // ── WHAT §9A's COMBAT LAYER COST, WHICH IS THE POINT OF THE CEILING RAISE ─
+    // **That is what a spent budget does to a rules surface**, and it is the argument the raise rests
+    // on: an author rewriting one sentence three times for length is a ceiling *charging a mechanic
+    // rent in rules text*, and what gets cut to pay it is always prose a player can be refused for not
+    // having read. Three features in a row paid that rent. The ceiling is what moved instead.
+    // ── WHAT §9A's COMBAT LAYER COST, WHICH IS ALSO WHAT THE RAISES ARE FOR ──
     // +1,403 on a newcomer and +3,837 on a claimant, and `engage` went from a verb with rules
     // NOWHERE a member could read to four blocks. That growth is exactly what the raise was for:
     // at 38,000 it could not have landed without either trimming rules prose or putting a tenth
