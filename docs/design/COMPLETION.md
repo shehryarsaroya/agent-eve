@@ -158,6 +158,43 @@ claiming a superlative the data cannot support — and a row nothing supports is
 as zero. `NEVER BROKEN A PROMISE` requires `defaults === 0` **and** `lastDefaultTick === null`, because
 crowning someone unbroken above a recorded default is A5′ on the loudest surface in the game.
 
+### 4b. ⚠ `src/sim/runtime.ts` is 9,664 lines — 12% of the codebase in one file
+
+Not a correctness problem and not on any critic's list, but it is the biggest structural liability in
+the tree and it was found by surveying rather than by recall. It holds **26 verb handlers, 141 private
+helpers and 9 books** in a single class:
+
+```
+vYield vFight vJoin vCreate vFillRole vSign vElect vGrant vRevoke vWithdraw vAbandon
+vPublishOffer vMessage vSay vSeal vTrade vPostBond vForm vApprove vApply vAdmit
+vBuildWorks vBuild vGraduate vDeliver vVote
+```
+
+Why it matters in practice rather than in principle: every edit to it during 2026-07-26 needed careful
+anchor-matching because the file cannot be held in view, and **one mutation test hit the wrong call
+site** as a direct result — there were two `recordSpend` calls 400 lines apart, the test appeared to
+pass, and the conclusion drawn was wrong until the tsc error gave it away. A file this size makes
+"verify by reading" impossible and pushes everything onto tests.
+
+The split is mechanical (verb handlers to per-domain files, the books they own alongside) and safe —
+`state_hash` covers the state tables, not the file layout — but it touches the most safety-critical
+surface in the engine and wants a session that starts with it. **Nothing else in this file is blocked
+on it**, which is exactly why it will keep being deferred.
+
+For scale: the next largest are `api/observe.ts` (2,866), `api/server.ts` (2,236), `tick/loop.ts`
+(1,464). Nothing else exceeds 1,300.
+
+### Not a gap, and worth stating so nobody re-audits it
+
+- **All 26 invariants (INV-1…26) are declared and wired**, with 17 `skip()` sites in `aggregate.ts` so
+  an invariant whose inputs are absent reports as SKIPPED rather than silently passing. That mechanism
+  is what surfaced INV-22's vacuity — and note it did *not* catch it, because the journal was supplied
+  and merely empty. Supplied is not non-empty.
+- **`UNBUILT_PHASES` is empty.** All 13 tick phases exist: FREEZE_QUEUE · EXPIRE · MOVE · PREDATE ·
+  MARKETS · PRODUCE · VENTURES · HAZARD · OBLIGE · DERIVE · ASSERT · COMMIT · WAKE.
+- **Zero `TODO`/`FIXME`/`HACK` markers in 78,466 lines.** Deferred work is argued in prose with a
+  reason, or it is not deferred.
+
 ### 5. The three-humans watchability gate has never been run
 
 It cannot be automated and §16 makes it the gate that decides whether anything downstream matters.
