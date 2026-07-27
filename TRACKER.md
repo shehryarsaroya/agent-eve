@@ -6,6 +6,113 @@
 
 ## ⏱ STATUS
 
+> ### ★★ **`claimLines: 0` IS CLOSED. `RULES_VERSION` 10 deployed, tick 5,386, `failures: []`.**
+>
+> `D23` #4 said territory was *anti*-load-bearing; the night before last built the RENT and the FUEL
+> and it all rendered and `claimLines` stayed **0** — verified inert in production at tick 5,274, five
+> WORKS all in the Commons, `rentBps: 0 · rentPaid: 0 · fuelExtracted: 0` on every one. Nothing in the
+> world ever *chose* the ground. The heuristic cast now does: **`graduate` → `build {WORKS}` →
+> `post_bond` → `build {ANCHOR}` → `deliver {CHARGE}`**, and across four seeds × 900 ticks × 8 members
+> it produces **11 live claims, 5 tenants on claimed ground, 31,350 units of rent collected, zero
+> lapses and zero arrears.** Fuel enters the world too: a raider seated one lane from the Frontier
+> crosses, claims and works it, holding 8,580 units standing AT its claim against the 1,200 its anchor
+> burns — so `fuel_share_per_tick` and `claim.fuel_here` are readable by an agent for the first time.
+>
+> ⚑ **THE BALANCE GATE WAS THE WORK.** The naive branch took `levyShort` from 0 to 14,792 and `broken`
+> from 17 to 78. Four defects had to be found and fixed before territory was safe to open, each traced
+> rather than guessed:
+>
+> 1. **A tier guard that refused a member's only legal route to its own tribute.** `levyMove` gated
+>    every hop on `tierOf(map, member.seat)`; constellation 1 is *mixed* and its delivery place is a
+>    COMMONS system, so a MARCHES-seated member there had the only legal route refused **by the cast,
+>    not the engine** — `commonsBoundRejection` binds hands going OUT and never refuses one coming
+>    back in. `brannock`, seat sys-05, three hands parked at sys-07, `deliver` count **zero for its
+>    whole life**. One member in six is seated there. `levyShort` across the gate seeds: 12,000 → 0.
+> 2. **Rich and recorded short.** No hand was reserved for a world obligation, so a member with all
+>    three hands filled into roles could neither deliver nor walk. Traced tick by tick: `thessaly`,
+>    **109,052 units of `ration`, owing 19,304, 264 consecutive ticks with no free hand**, swept at the
+>    Reckoning. `D19`'s "the members who work most act least" with the Levy on the end of it, and
+>    **older than the crossing** — a Commons member's hands wander four systems one of which IS the
+>    delivery place, so a committed hand was often standing on it by luck.
+> 3. **The aimless walk was fighting the tribute**, pulling hands off the one system they were needed
+>    on every Reckoning. A hand at a place you owe goods at is stationed, not idle: ventures 691 →
+>    1,189, defaults 66 → 33.
+> 4. **`CAST_REFINE_MIN_QTY` was calibrated for a poorer world.** A fixed 500 met twice the output per
+>    member and refine displaced the branches below it — the exact failure the constant was introduced
+>    to fix. `CAST_REFINE_MIN_TICKS` scales the floor with what the place pays.
+>
+> And one more the branch forced out: **`electionFor` does not decline quietly.** When its budget will
+> not stretch it *states* the part it can cover, and a stated part below the due is a `DECLINED`
+> default — so a payer that keeps opening ventures past its purse **generates public breaches on a
+> schedule**, and they are breaches *we* author. Attributed: every extra default was `DECLINED` and
+> every one belonged to a member that had spent 50,000 on a crossing (thessaly 12, vex 10, orrin 5);
+> the two raiders that only LOCKED a bond produced **none**. `canPromiseOneMore` + `create` appetite
+> 2,000 → 4,000, calibrated against each other:
+>
+> | create bps | A7 gate | ventures | kept | broken |
+> |---|---|---|---|---|
+> | 2,000 | no | 1,123 | 124 | **78** |
+> | 2,000 | yes | 689 | 156 | 30 |
+> | **4,000** | **yes** | **905** | **172** | **16** |
+>
+> **★ THE GATE, HEAD (`2f816d9`) → now**, 4 seeds × 900 ticks × 8 members:
+>
+> | metric | HEAD | now |
+> |---|---|---|
+> | `levyShort` | 12,000 | **0** |
+> | red tribute lines | 0 / 32 | 0 / 32 |
+> | `kept` | 167 | 172 |
+> | `broken` | 17 | 16 |
+> | ventures | 886 | 905 |
+> | live claims | **0** | **11** |
+> | tenants on claimed ground | 0 | 5 |
+> | rent collected | 0 | **31,350** |
+>
+> `levyShort` is 0 at 8, 12 and 20 members. At 20 the A7 gate binds harder — 582 ventures — but
+> `kept` rises 453 → 522 and `broken` falls 201 → 86, which is the trade worth taking.
+>
+> ⚑ **THREE ENGINE BUGS, all of the same family: something that existed and was never exercised.**
+>
+> - **`Book.paymentOf` was a READ THAT WROTE**, in the Levy book *and* the sovereignty book. Both maps
+>   are inside `capture()`, so **asking a question changed `state_hash`** — state that depends on which
+>   reads happened rather than on what the world did. Found by `checkpoint-adoption`'s crossing case the
+>   moment claims existed; hashes `9be64f49…` vs `ecb61c86…`, one zero row apart. The sovereignty copy
+>   had no subject until now; **the Levy copy has had one all along and is worse — `levy/tribute.ts`
+>   reads it once per principal every time a tribute line is drawn, so rendering a frame mutated the
+>   world.** A projection that writes is the event-sourcing cliff with the hash on the other side.
+> - **`assure` was nested inside the `seal` loop.** The `message {"act":"assure"}` block sat between
+>   `for (const ref of sealableRoles(...))` and that loop's body — indented as if top level,
+>   syntactically inside it. So a principal owing an elective half with **no sealable role** was offered
+>   nothing (the common case), and one with several was offered the same assurance once per role — two
+>   `seal` offers and **ten identical assure rows** in one observation. §14's receipt reel was still
+>   gated on an unrelated condition after the fix that was supposed to open it.
+> - **A mid-cycle constellation change forked the record.** `assessLevyNow`'s `levyAssessedReckoning`
+>   memo is not a state table and its own comment says *"never the authority"* — it was the authority,
+>   the only thing stopping a second `assessCycle` from minting a plan for a constellation that had
+>   gained a principal since phase 0. Nothing could gain one until a holding could move. Measured:
+>   `p:kestrel` crossed into con-4, the continuous world held ONE plan for Reckoning 0 and an adopted
+>   boot held **two** (`assessedAtTick: 101`), same action log, different hash, event counters 80 vs 81.
+>   The second plan is the wrong one — one principal on two dockets is a double assessment. Now a rule
+>   in `assessCycle` instead of a cache.
+>
+> **Deploy.** `RULES_VERSION` 9 → 10; the boundary note names the signature (*agreement up to the
+> first settlement, divergence from there*, because the first read over an absent payment pair happens
+> inside `settleLevy`/`settleCharge` at phase 287) and the preflight reported exactly that tick, where
+> the door was already armed. Full replay from genesis, 80 s, `compact-api active`, `world: RUNNING`,
+> `failures: []`, `deciding_share_bps 3333` over a 2500 floor. **The public frame will not carry a
+> claim line until the next settlement (~tick 5,471)** — the frame is per-Reckoning and the one served
+> now is tick 5,183, from before the deploy. That is the one claim in this entry not yet verified in
+> production.
+>
+> **Two things left for whoever picks this up.** (1) `post_bond` has **no readable rules for the LLM
+> cast** — its §11B section does not fit the excerpt bar, which is being split in parallel; the
+> heuristic half acts from code, the LLM half cannot follow the claim branch until that lands. And
+> `prompt.test.ts`'s headroom guard is at 0.98 rather than 0.95 for exactly that reason, with the
+> measurement (38,725, `sable`, §11B selected in a real wake **for the first time in this project's
+> life**) recorded at the assertion — restore 0.95 when §11B is split. (2) `move` fell from ~850 to
+> ~150 per run: the map's motion was ~80% aimless walk, and once hands have somewhere to be they stop
+> wandering. A real A13 finding for whoever restores the cargo object (`D23` #5).
+
 > ### ★★ **`RULES_VERSION` 9 IS DEPLOYED AND PLAYED (2026-07-27). Tick 5,262, `failures: []`.**
 >
 > The night's four features (`demand`, delegated binding, `elective_bps`, rent + `fuel`) are **live**,
