@@ -166,6 +166,7 @@ import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 import { hallOfFame, namesFor } from '../frames/memory.js';
 import { readInt, readString } from '../core/params.js';
+import { say } from '../say/say.js';
 import { sign } from '../venture/sign.js';
 import { withdraw } from '../venture/withdraw.js';
 import { refine } from '../works/refine.js';
@@ -4945,17 +4946,20 @@ export class Runtime {
     return isRecruiting(venture);
   }
 
+  /** `claim`/`deny` — an ADAPTER. The operation lives in `say/say.ts` (D21). */
   private vSay(ctx: PhaseContext, req: ActionRequest, denial: boolean): WorldResult<null> {
-    const text = readString(req.params, ['text', 'reason', 'claim']);
-    if (text === null || text.length > MAX_REASON_LENGTH) {
-      return reject(
-        'INV-26',
-        `${denial ? 'deny' : 'claim'} carries at most ${String(MAX_REASON_LENGTH)} characters. It is public ` +
-          'and permanent, and it is how anyone watching knows who you are.',
-      );
-    }
-    this.claims.push({ by: req.principal, text, denial, tick: ctx.tick });
-    return { ok: true, value: null };
+    return say(
+      {
+        record: (entry) => {
+          this.claims.push(entry);
+        },
+        maxLength: MAX_REASON_LENGTH,
+      },
+      req.principal,
+      req.params,
+      ctx.tick,
+      denial,
+    );
   }
 
   private vSeal(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
