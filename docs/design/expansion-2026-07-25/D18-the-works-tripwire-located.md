@@ -428,6 +428,24 @@ action log and cannot be genesis-replayed; adoption normally hides that because 
 cast branch exposes it by pushing the case onto a path the fixture was never able to survive. The
 remedies proposed above are the right ones.
 
+### The one question left, and the fact that frames it
+
+**Why does a cast branch push these cases onto the genesis path at all?** The failing test passes
+`requiredTables: registeredTables(adopted)`, which is satisfied, and the rules version is unchanged — so
+`planCheckpoint` should return a snapshot and boot should adopt with `ticksReplayed: 0`, never replaying.
+With the branch it replays anyway.
+
+**The framing fact,** from `boot.ts:360-372`: boot builds `snapByTick` from `store.snapshotHashes()` and
+then, while replaying, compares its replayed hash against **every snapshot hash it passes** — that is
+what `tripwiresChecked` counts. So the tick-300 tripwire is the snapshot at 300 being checked against a
+genesis replay that reached it. This confirms the failing case is on the genesis path rather than the
+adoption path, which is what makes "why was adoption refused" the whole remaining question.
+
+**The measurement:** call `planCheckpoint` on two stores — one built with a build in the world, one
+without — and print `refusal` and `snapshot.tick` for each. Mind the signature; my first attempt at this
+passed the wrong argument shape and threw inside `hydrate.ts`, which is why this is written as a note
+rather than an answer.
+
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
 the fourth framing in a row where I found a plausible cause and stopped looking. The fixture fix is kept
