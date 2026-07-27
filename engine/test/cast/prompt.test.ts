@@ -1095,6 +1095,27 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     ).toBe(false);
   });
 
+  it('the unit count in the prose matches the catalog — it has drifted twice already', () => {
+    // Two of these numbers have gone stale inside one night: 28 → 41 when the catalog was written,
+    // 41 → 44 when §9A landed. Prose counts in a rules-surface file are claims, and the lesson from
+    // `build` is TWO → THREE acts is that a claim which quietly stops being true is scar #1's
+    // shape. So the count is asserted rather than trusted. It churns when the catalog changes,
+    // which is the point: somebody looks.
+    const source = readFileSync(new URL('../../src/cast/prompt.ts', import.meta.url), 'utf8');
+    const spelled = { 28: 'twenty-eight', 41: 'forty-one', 44: 'forty-four', 45: 'forty-five' };
+    const n = CONTRACT_CATALOG.length;
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(44);
+    expect(source, `the prose says a different number than ${String(n)}`).toContain(
+      spelled[n as 44],
+    );
+    for (const [count, word] of Object.entries(spelled)) {
+      if (Number(count) === n || Number(count) === n + 1) continue;
+      expect(source, `prompt.ts still says "${word}" and there are ${String(n)} units`).not.toContain(
+        word,
+      );
+    }
+  });
+
   it('★ THE VERB→UNIT MAP IS PINNED, because an empty `verbs` list is invisible to the sweep', () => {
     // ══════════════════════════════════════════════════════════════════════════
     // **THREE MUTATIONS FOUND NOTHING AND THIS IS THE FIRST OF TWO FIXES.**

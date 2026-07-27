@@ -179,7 +179,7 @@ const S12 = '## 12. Getting good';
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of forty-one could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of forty-four could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -674,7 +674,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are forty-one: 2^41 is not enumerable, and it
+ * was free. At `###` granularity there are forty-four: 2^44 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -1135,8 +1135,8 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
  * per-unit predicate, and `RULES` is never dropped for any reason including length. That
  * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
- * never for one it was not. There are forty-one units; put the same rule inside each
- * predicate and the forty-second will forget it.
+ * never for one it was not. There are forty-four units; put the same rule inside each
+ * predicate and the forty-fifth will forget it.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 export function unitGrade(unit: ContractUnit, situation: ContractSituation): UnitGrade {
