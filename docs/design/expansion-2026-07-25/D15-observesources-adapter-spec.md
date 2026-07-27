@@ -154,6 +154,42 @@ which overstates is the most expensive kind of bug it produces.
 
 ---
 
+## What a first attempt established (compiler-verified)
+
+I wrote the adapter, ran `tsc`, and removed it — a non-compiling `.ts` file breaks the whole project's
+typecheck, so it could not stay. What it bought is five facts that were guesses before, and the four
+missing accessors are the real remaining work:
+
+**Two traps confirmed, both worth the attempt on their own:**
+
+1. **`standingOf` must NOT use `runtime.standing.row()`.** `row()` returns `zero(principal)` for a
+   principal it has never heard of — right for its own callers, and exactly what this port forbids:
+   *"a fabricated all-zero standing reads as 'clean record', which is a claim about a real agent that
+   nothing supports."* A hardcoded zero in this same position had every agent pricing every other
+   agent's posted bond at nothing until it was fixed today. Resolve membership from
+   `standing.rows()` **once per observation**, and only ask `row()` about principals it holds.
+2. **The adapter belongs in `src/api/`** — confirmed by `handleOf` needing the seat book, as predicted
+   above.
+
+**Four accessors do not exist and must be written or found:**
+
+| member | what I assumed | status |
+|---|---|---|
+| `markPriceOf` | `runtime.markPriceOf(good)` | **no such method.** The rule is the ledger's `valueGood` — find its real call shape. `noMarks` (`() => null`) exists as the honest pre-market default but a market exists now, so `null` everywhere would withhold every affordance priced in goods (PROP-O4) |
+| `handleOf` | `seats.handleOf(who)` | **no such method on `SeatBook`.** Handles are there; the accessor is not |
+| `market` | `runtime.bookRowsFor(principal, tick)` | **no such method.** `runtime.market` is a `MarketBook`; `BookRow` is an aggregate of best bid/ask plus two depth bands, so this is an aggregation to write, not a getter to call |
+| `sealedRoles` | `runtime.sealedRoleKeys(principal, tick)` | **no such method.** Keys must be built with the module's own exported `roleSealKey(venture, roleIndex)` — *"in one place, so the API layer and this module cannot disagree"* |
+
+And one trivial fix: `RULES_VERSION` is not in `../core/rules.js`.
+
+**Everything else compiled.** `tick` · `serverNowMs` · `stateVersion` · `status` · `world` ·
+`stores` (via the existing `storesReadOf`, itself unused in production) · `ventures` · `grants` ·
+`grantTemplates: []` · `actionsRemaining` · `wakesRemaining` · `isWake` · `mandate: null` · `levy`
+(`levyBlockFor` returns exactly `LevyBlock`) · `talks` (aggregated) · `ballots` · `sensing`
+(`sensingFromWorld` with an empty `purchased`).
+
+So the remaining work is four accessors and one import — bounded, and the compiler is the checklist.
+
 ## Caveat on this document
 
 Written with `Read` only. `Bash` was unavailable — the disk hit 100% and the tool harness could not
