@@ -13,7 +13,8 @@ trusting — this file goes stale the moment someone commits.*
 ## The one-paragraph answer
 
 **The machine is built and correct, the core loop closes without a human in it, and 12 of 13 show
-surfaces carry data. The gap is no longer mechanics — it is that the world has ONE GOOD.**
+surfaces carry data. The gap is no longer mechanics — it is that every obligation is priced in ONE
+GOOD, so there is nothing to trade.**
 
 Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,230
 tests** pass against them (2026-07-27). Phase 2 and Phase 3 do not exist as *complete* layers, by
@@ -44,7 +45,7 @@ Both numbers are defensible; they answer different questions, and quoting either
 |---|---|---|
 | Does the machine work, and did the premise survive falsification? | **~90%** | Phase 0+1 systems, invariants, determinism, durability, Gate 3 |
 | Is there enough strategic depth for months of interesting agent decisions? | **~40%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~30% on 2026-07-26: the cast now exercises authority, production and syndicates, which were built-but-idle. Capped well below 90% by the single good |
-| Phase 2 (combat depth) | **0%** | ⚑ **NO LONGER OPTIONAL** — owner decision 2026-07-27 overrides §16's "possibly forever". In scope and to be built. `demand` is the first piece; §9's aggression capacity is already built and waiting for it |
+| Phase 2 (combat depth) | **~70%** | ⚑ **NO LONGER OPTIONAL** — owner decision 2026-07-27 overrides §16's "possibly forever". **Built and live at `RULES_VERSION` 15**: `src/combat/` 6,407 loc, the `engage` verb, 5 hulls, 29 modules, four slot rows with CPU/grid/calibration/hardpoints, a published stacking curve, four damage types against three tank layers, five roles *earned from what is fitted*, the ENGAGEMENT phase clock, and THE BATTLE LINE on the frame. The cast flies it — 18 hulls, 25 battles, 16 world hulls killed across 32 seeds — and composition provably pays at coalition scale (a 1:5 support wing holds the field identically while turning 17 lost hulls into **zero**). What is missing is not the layer: **no cast branch uses `join`**, so no sim has ever reached even 8 of the 12 allowed parties, and the thing that makes composition matter is unexercised |
 | Phase 3 (risk market) | **0%** | Deferred deliberately in the v2.0 reframe |
 
 ---
@@ -104,16 +105,22 @@ code. **`works` is by far the thinnest module in the tree** and it is the one th
 
 ## What is actually left, in priority order
 
-### 1. The world has ONE good — this is the bottleneck
+### 1. The world has THREE goods and ONE tradeable one — still the bottleneck
 
-Every economic mechanic works and has nothing to chew on. `LEVY_GOOD`, `WORKS_GOOD`, `CHARGE_GOOD`
-and `ENDOWMENT_GOOD` were a single constant with four names until 2026-07-26; they are now four
-independent declarations with the same value (`'ration'`), which makes a second good a *local* edit
-instead of one that silently moves three mechanics. Nothing below `GoodId` assumes one good.
+**Updated 2026-07-27.** There are now three: `ore` (what a WORKS yields), `ration` (what `refine` makes)
+and `fuel` (FRONTIER-only, the economy's first comparative advantage). §10 specifies four.
 
-With one commodity there is no trade, no specialization, no comparative advantage and no supply
-chain — so `market` (3,065 loc, fully built) prices a single fungible thing. **This is the whole
-distance between the 40% and the 90%.**
+But the sentence that matters is unchanged, and it is narrower than "one good": **every obligation is
+still priced in `ration`.** `LEVY_GOOD`, `WORKS_GOOD`, `CHARGE_GOOD` and `ENDOWMENT_GOOD` are four
+independent declarations that all read `'ration'` — deliberately, so the Levy stays payable from
+domestic production, and `test/core/goods-are-independent.test.ts` asserts both the agreement *and*
+the independence so a fourth good is a one-line edit. `ore` exists only to be refined and `fuel` only
+to be burned by an anchor, so neither is something an agent *chooses between*.
+
+So there is still no substitution, no specialization worth the name, and no supply chain to reason
+about — `market` (3,065 loc, fully built) still prices a single fungible thing. **This remains the whole
+distance between the 40% and the 90%**, and it is now the largest item in the repo that is specified,
+unblocked, and untouched.
 
 ### 2. ~~Four of the show's thirteen surfaces are empty~~ → ONE, and it is not a cast gap
 
