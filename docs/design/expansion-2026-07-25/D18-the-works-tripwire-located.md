@@ -282,6 +282,46 @@ That is the one field provably present on the original tick and absent on its re
 tie-breaks on it, that is the divergence. If nothing does, the divergence is elsewhere and this thread
 has eliminated seven candidates — which is itself worth having, because the remaining surface is small.
 
+### `arrivalOrdinal` is exonerated too — seventh candidate out
+
+Ran the grep. Three facts settle it:
+
+- **`tick/queue.ts:270`** assigns `arrivalOrdinal: this.arrivals` at enqueue time. So boot's
+  resubmission does not produce a *missing* ordinal — the queue mints a fresh one. The field being
+  absent from the reconstruction is therefore invisible downstream.
+- **`tick/halt.ts:93`** states it directly: *"`arrivalMs` and `arrivalOrdinal` are kept in the triple
+  even though nothing reads"* them.
+- **`tick/actionLog.ts:155`** is the only real consumer — the **A4 audit**, counting
+  `arrivalOrdinal > resolutionOrdinal` disagreements so that arrival order never becomes power. And the
+  action log is **not** a registered state table (the 19 in the INV-26 map do not include it), so that
+  count never reaches `state_hash`.
+
+Dropping it on replay is harmless. **Seven candidates eliminated.**
+
+### What this thread actually achieved, and where it stops
+
+Seven framings, each closed by evidence rather than argument:
+
+| # | framing | eliminated by |
+|---|---|---|
+| 1–4 | the WORKS **book** doesn't survive adoption | 19/19 tables round-trip with identical `state_hash` |
+| 5 | the **build path** is non-deterministic | all three ordering candidates `compareIds`-sorted |
+| 6 | an early branch shifts the **RNG stream** | RNG derived per member per tick |
+| 7 | the **fixture stake** couples to balances | real, fixed — and insufficient |
+| 8 | the **action log isn't persisted** | false; caught before publishing |
+| 9 | the **extract filter** eats the build | print: 7 of 7 survive, `arrivalOrdinal=6` |
+| 10 | **`arrivalOrdinal`** dropped on replay | queue-assigned, unread, unhashed |
+
+And one measurement that outweighs all of them: **the replayed hash is invariant (`8198caa6`) while the
+journalled snapshot moves.** Whatever the cause is, it makes replay produce a world *as if no cast
+action after some point applied at all* — that hash not moving when the fixture changed is the strongest
+single clue in the file and it has not yet been explained by anything eliminated above.
+
+**So the next session should start from that invariance, not from a new candidate.** Concretely: print
+the replayed world's venture/works counts at tick 300 beside the journalled world's. If the replayed
+world is *sparse* rather than merely *different*, the loss is wholesale and early — which is a different
+search than a single verb going missing, and every candidate above assumed the latter.
+
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
 the fourth framing in a row where I found a plausible cause and stopped looking. The fixture fix is kept
