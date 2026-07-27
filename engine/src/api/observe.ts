@@ -2211,6 +2211,15 @@ interface BoardRow {
   readonly escrowed: number;
   readonly elective: number;
   /**
+   * Ticks this slot will hold a hand — the OPPORTUNITY COST of filling it.
+   *
+   * Distinct from `resolves_at_tick`, which is the same instant read as *when it pays*. Measured
+   * bimodal: median 11, p90 276, against a 288-tick Reckoning, because a venture resolves at a
+   * Reckoning boundary. Filling early costs a third of your capacity for a cycle; filling late costs
+   * almost nothing. See `D19-*.md`.
+   */
+  readonly hand_committed_ticks: number;
+  /**
    * What **this slot** pays whoever fills it, at p50 — and the number to echo on `sign`.
    *
    * It used to be `yourTakeAtP50(venture, reader)`, which returns zero when the reader
@@ -2271,6 +2280,26 @@ function boardFor(
         terms_hash: venture.termsHash,
         expires_tick: venture.windowClosesTick,
         resolves_at_tick: venture.resolvesAtTick,
+        /**
+         * How long filling this slot takes a hand out of play — **the cost, stated as a cost.**
+         *
+         * `resolves_at_tick` was already here and is the same instant, but it answers *when the
+         * venture pays*. That is a different decision from *how long my hand is gone*, and an agent
+         * optimising pay-per-action has no reason to compute the second from the first.
+         *
+         * Measured 2026-07-26 across 239 completed commitments: the distribution is **bimodal** —
+         * median 11 ticks, p90 **276**, against a 288-tick Reckoning. Because a venture resolves at
+         * `nextSettlementAtOrAfter(...)`, i.e. at a Reckoning boundary, a hand committed early in the
+         * cycle is held until the cycle ENDS and one committed late is free in a few ticks. Same act,
+         * same kind, same pay, a ~25x difference in what it costs you.
+         *
+         * The consequence was measurable all the way out: members who fill early go inert for a
+         * Reckoning, so the principals still acting are whoever filled late or not at all, so creation
+         * concentrates in those few (an 11x activity spread), so the board shows one or two sellers,
+         * so `AGT-E2` has no competing offers to price trust against. One underived number sat under
+         * the design's second falsification gate.
+         */
+        hand_committed_ticks: Math.max(0, venture.resolvesAtTick - tick),
       });
     }
   }
