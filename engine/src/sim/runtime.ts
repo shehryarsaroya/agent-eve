@@ -6049,6 +6049,23 @@ export class Runtime {
       if (left <= 0) break;
       const portion = Math.min(left, lot.qty);
       if (portion <= 0) continue;
+      // ── RELOCATE, DESTROY THE PORTION, SEND THE REMAINDER HOME ──────────────
+      //
+      // §10.2 makes the Levy payable "only in located goods physically delivered to a named place", so
+      // the lot genuinely moves to the delivery place before it is consumed — that part is the rule.
+      //
+      // What was missing is the last step. `relocate` moves the WHOLE lot and the ledger has no split,
+      // so paying a 500 assessment out of a 45,000 lot moved all 45,000 to the Levy's place, destroyed
+      // 500, and left 44,500 stranded there. A blind probe reported it as "a 500-unit Levy destroyed
+      // 45,000 units": its `available_qty` at its own system went 45,000 -> 0, because that field reads
+      // goods standing AT the reader, and every field it could see agreed the goods were gone. It was
+      // then soft-locked out of every goods-priced verb in the game — on a payment whose affordance
+      // said `max_direct_loss: 500`.
+      //
+      // Nothing was destroyed beyond the 500 and INV-1 always held, which is exactly why this survived:
+      // supply conservation cannot see a location, so the one invariant that would have caught a theft
+      // is silent about a teleport. The affordance's promise is the thing that was broken.
+      const origin = this.ledger.lot(lot.id)?.location;
       try {
         this.ledger.relocate(lot.id, { location: args.place });
         this.ledger.destroyGoods({
@@ -6058,6 +6075,12 @@ export class Runtime {
           lotId: lot.id,
           qty: qty(portion),
         });
+        // Whatever the delivery did not consume goes back where the agent left it. Checked against the
+        // live lot rather than `portion < lot.qty`, because `destroyGoods` mutates it.
+        const after = this.ledger.lot(lot.id);
+        if (after !== undefined && after.qty > 0 && origin !== undefined && origin !== args.place) {
+          this.ledger.relocate(lot.id, { location: origin });
+        }
       } catch (error: unknown) {
         this.faults.push(
           `${args.principal} could not hand over ${String(portion)} of ${LEVY_GOOD} at ${args.place} ` +

@@ -67,6 +67,16 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'RESPONSE-ONLY — needs a live grant you issued. `grant` itself is now offered (first office at ' +
     'tick 290 in test/api/legal-but-unoffered.test.ts), so this state is reachable once a cast acts ' +
     'on it.',
+  join:
+    'REACHABLE ELSEWHERE — needs a LIVE RAID the observer is not already a side of, at a stage where it ' +
+    'has a hand. That window is a handful of ticks and the conjunction is narrow enough that this sweep ' +
+    'cannot reliably enter it: widening to 1,800 ticks did not, and neither did sampling every tick ' +
+    'while a raid is DEMANDED (both tried, 2026-07-27). It is NOT unreachable in the game — the raid ' +
+    'affordance offers it whenever `your_side === null`, and that path is covered directly by ' +
+    'test/predation/observe.test.ts, wired.test.ts, presence.test.ts and a5prime.test.ts. Declared here ' +
+    'rather than left failing, because a sweep that cannot construct a state is a limit of the sweep, ' +
+    'and re-tuning it after every unrelated change (three times now: a grant branch, a build branch, a ' +
+    'Levy fix) is treating the fixture as the finding.',
   trade: 'REACHABLE ELSEWHERE — needs a resting order on the local book. Covered by test/market/verb.test.ts.',
   withdraw: 'RESPONSE-ONLY — needs a syndicate membership to give notice on.',
   // `set_delivery_intent` USED TO LIVE HERE as the one HONEST GAP, and its removal is this list
@@ -95,7 +105,10 @@ describe('AGT-R5 — every live verb is offered somewhere, or declared with a re
       for (const a of cast.decide(target, seed)) rt.engine.submit(a);
       const r = rt.runTick();
       expect(r.halted, `halted at ${String(r.tick)}`).toBe(false);
-      if (i % 5 !== 0) continue;
+      // Sample every fifth tick — EXCEPT while a raid is live, when sample every tick, because
+      // `join`'s window is a handful of ticks and a stride of 5 steps over it.
+      const raidLive = rt.raids.all().some((x) => x.state === 'DEMANDED');
+      if (!raidLive && i % 5 !== 0) continue;
       for (const m of cast.roster) {
         const o = buildObservation({
           runtime: rt,
