@@ -6,6 +6,71 @@
 
 ## ⏱ STATUS
 
+> ### ★★ **`RULES_VERSION` 9 IS DEPLOYED AND PLAYED (2026-07-27). Tick 5,262, `failures: []`.**
+>
+> The night's four features (`demand`, delegated binding, `elective_bps`, rent + `fuel`) are **live**,
+> and everything after this line came out of the two things that are only findable after a deploy:
+> wiring the accessors into `observe`, and then *playing* the result.
+>
+> **Four accessors existed and reached nobody** (`68000d7`). `worksQuote` grew a rent split and a fuel
+> yield; `worksBlock().here` enumerates its fields by hand and published neither. Now on
+> `holding.works.here`: `gross_per_tick` · `rent_per_tick` · `rent_bps` · `rent_to` (**named**, because
+> a deduction with nobody attached is a tax and this game has only counterparties) · `fuel_good` ·
+> `fuel_yield_per_tick` · `fuel_share_per_tick`. The `share_per_tick` doc comment still said *"what
+> yours would extract"* on a field that is now what yours would **keep, after rent** — the field
+> `agent.md` calls decisive. `FUEL_STATEMENT` is now the **fourth** sovereignty statement, served only
+> when a claim of yours is cold or short of the fuel it will need; it is the one statement whose failure
+> is otherwise invisible, because a cold anchor takes no arrears, lapses nothing and slashes no bond,
+> so **nothing else in the observation goes red while the income is zero.** And the `build WORKS`
+> affordance now names the landlord, the rate, and the fuel.
+>
+> **Then a probe played it and found two sentences that lie** (`4efe508`):
+>
+> 1. **The affordance said a WORKS costs ORE. It costs RATION.** One field (`worksHere.good` =
+>    `WORKS_YIELD_GOOD`) was used for the yield clause *and* the cost clause, whose quantity is in
+>    `WORKS_GOOD`. `available_qty` counts ration, so a newcomer reads `affordable: true` beside a price
+>    it appears not to hold — and `refine` runs the other way, so believing the sentence means hoarding
+>    exactly the wrong good to fund the only faucet in the game. Same sentence, same cause and one day
+>    after `worksQuote.good` was corrected for it. The payback clause divided ration by ore and printed
+>    ticks; the refine ratio is now in the arithmetic and named in the prose.
+> 2. **`briefing.corrections[]` was undocumented, so refusals were invisible.** Two out-of-band
+>    `create`s came back `200 accepted` and produced nothing; I reported a silent drop. `action_log`
+>    said `accepted=false, reject_reason=PROP-V5` for both and `briefing.corrections[]` was carrying two
+>    exemplary hints — the band, the reason, a copyable `nearest_legal`. **`agent.md` did not contain
+>    the word `corrections`.** `server.ts` already records a probe filing this same false report from
+>    the opposite cause. §13 now carries the rule; §6 carries a three-line pointer.
+>
+> ⚑ **The cast contract is FULL and I paid rather than raised it.** `prompt.test.ts` refuses an excerpt
+> over 38,000 of 40,000 and fired at **39,624**; its own comment says a third raise would be avoiding
+> the question. So 387 characters of §11A *provenance* — four sentences about a rule an earlier manual
+> got wrong — were traded for rules an agent acts on, keeping every phrase `works-provenance.test.ts`
+> pins. **37,902.** The next addition to §1–§12 has ~100 characters of room. `MAX_CONTRACT_CHARS`'s own
+> note names the real fix: select sections from the observation instead of shipping all of them.
+>
+> **Deploy notes, both of which will recur.** The preflight named tick **287** and the operator door was
+> **already armed there** from an earlier rules change, so no `/etc/compact/env` edit was needed — 287
+> is still the *first* divergence and later ones are tolerated once through the door (`rules_version
+> 1 -> 9, 17 further divergences tolerated`, in the public record). And **checkpoint adoption is refused
+> until a v9 checkpoint exists**, so both of tonight's deploys full-replayed from genesis (~80 s at
+> 5,262 ticks, 18 tripwires verified). The second deploy exited **56** — a transient `curl` receive
+> failure inside post-deploy verification, *after* the world was up; every check it skipped was re-run
+> by hand and passed.
+>
+> **What a real agent can now see, measured rather than assumed** (probe enrolled over HTTP from
+> `agent.md` alone, Ed25519 + RFC 9421 correct first try): `create {BUILD}` **is** on the menu, in the
+> Commons and outside it, and says it is un-escrowable · `elective_bps` is on every `ventures.board[]`
+> row with `escrow_ratio_bps`, `escrowed`, `elective` and `your_take_at_p50`, and a custom split is
+> **honoured** (asked 4000 and 6500, got 4000/6000 and 6500/3500) · the fuel and rent fields are all
+> present and read correctly.
+>
+> **What it CANNOT see, and neither can be fixed by more surface.** `demand` is offered to nobody,
+> because no principal stands anywhere another one can be reached — the manual refusal is excellent
+> (A8, *"nothing you do will make this one legal"*, plus a `nearest_legal`), but the verb has no target.
+> And **`claimLines: 0`: there is no live claim anywhere in the world**, and all five WORKS are in the
+> Commons — so `rent_to` is `null` and `fuel_share_per_tick` is `0` on every observation a real agent
+> can currently obtain. Tonight made the rent and the fuel *legible*; `D23` #4 is still open, and the
+> question it asks is why anybody would take the ground.
+
 > ### ★★ **OWNER DECISIONS 1 AND 4 ARE BUILT (2026-07-27). `RULES_VERSION` 7 → 8.**
 >
 > **1. A delegated `create` BINDS THE GRANTOR.** The creator is seeded into `countersigned` at
