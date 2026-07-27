@@ -165,6 +165,8 @@ import type { AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } f
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 import { hallOfFame, namesFor } from '../frames/memory.js';
+import { readInt, readString } from '../core/params.js';
+import { sign } from '../venture/sign.js';
 import { refine } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
@@ -217,7 +219,6 @@ import {
   activate,
   allRoleIndices,
   computeProceeds,
-  countersign,
   createVenture,
   drawResidual,
   electiveFloor,
@@ -240,7 +241,6 @@ import {
   vacateRole,
   VentureBook,
   VENTURE_KINDS,
-  yourTakeAtP50,
   type Election,
   type FillRequest,
   type SettlementAccounts,
@@ -4140,31 +4140,15 @@ export class Runtime {
     return index.get(req.params) ?? 0;
   }
 
+  /**
+   * `sign` — an ADAPTER. The operation lives in `venture/sign.ts`.
+   *
+   * Second extraction under `D21`'s coupling order, and the narrowest port in the file: this handler
+   * reached exactly one runtime member. Its helpers `countersign` and `yourTakeAtP50` were already in
+   * `venture/`, so this moved logic home rather than inventing a home for it.
+   */
   private vSign(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
-    const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
-    const hash = readString(req.params, ['terms_hash', 'termsHash']);
-    if (ventureId === null || hash === null) {
-      return reject(
-        'PROP-W1',
-        'sign needs {"venture": "<id>", "terms_hash": "<hash>"}. Nothing binds until both parties ' +
-          'countersign the same terms_hash.',
-      );
-    }
-    const venture = this.ventures.get(ventureId);
-    if (venture === undefined) return reject('PROP-V6', `there is no venture ${ventureId}.`);
-
-    const misplaced = electionOnSign(req);
-    if (misplaced !== null) return misplaced;
-
-    if (!venture.countersigned.has(req.principal)) {
-      const echoed = readInt(req.params, ['your_take_at_p50', 'take_at_p50']);
-      const server = yourTakeAtP50(venture, req.principal);
-      const signed = countersign(venture, req.principal, hash, minor(echoed ?? server), server);
-      if (!signed.ok) return signed;
-    }
-    // Signing twice is not an error and the signature does not move, so this is an
-    // accept rather than a refusal.
-    return { ok: true, value: null };
+    return sign({ ventureOf: (id) => this.ventures.get(id) }, req.principal, req.params);
   }
 
   /**
@@ -9483,18 +9467,6 @@ export function electionKey(venture: VentureId, roleIndex: number): string {
  *      one tick, inside a formation window of {@link FORMATION_WINDOW_TICKS}, against a
  *      permanent public lie. That is this.
  */
-function electionOnSign(req: ActionRequest): Rejection | null {
-  if (req.params['election'] === undefined && req.params['elect'] === undefined) return null;
-  return reject(
-    'PROP-V4',
-    'the election does not ride on sign any more — it has its own verb. `sign` binds the terms; `elect` ' +
-      'decides the payment, one role at a time, and you may restate it every tick until the freeze. Send ' +
-      'sign without the election, then {"verb": "elect", "params": {"venture": "<id>", "role": N, ' +
-      '"election": "IN_FULL"}}. Nothing was signed and nothing was elected: this is refused whole rather ' +
-      'than signed with the election dropped, because a payer that believes it elected and did not is a ' +
-      'payer the record will call a defaulter.',
-  );
-}
 
 /**
  * The election book as a rollback-able, hashed table.
@@ -9702,22 +9674,6 @@ function tradeRequestOf(
     timeInForce,
     order: readString(params, ['order', 'order_id']) as OrderId | null,
   };
-}
-
-function readString(params: Readonly<Record<string, unknown>>, keys: readonly string[]): string | null {
-  for (const key of keys) {
-    const value = params[key];
-    if (typeof value === 'string' && value.length > 0) return value;
-  }
-  return null;
-}
-
-function readInt(params: Readonly<Record<string, unknown>>, keys: readonly string[]): number | null {
-  for (const key of keys) {
-    const value = params[key];
-    if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
-  }
-  return null;
 }
 
 function readEnum<T extends string>(
