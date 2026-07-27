@@ -143,11 +143,37 @@ WORKS build spends 60,000, so with the branch in place a different set of princi
 different set of locks is injected, and the world the fixture constructs is not the world it journalled.
 Hence a hash mismatch with no determinism fault anywhere.
 
-**So the decoupling is:** make the injected stakes independent of anything the cast can move — a fixed
-amount against a principal chosen by index rather than by affordability, or seeded stores set before the
-cast runs at all. The test's *purpose* (a journalled snapshot with locks genuinely open at a tick
-boundary, which the heuristic never produces) is untouched by that change; only its dependence on
-incidental balances goes away.
+**So part of the decoupling is:** make the injected stake a fixed amount rather than
+`freeStores(ledger, p) / 4`. That fraction couples the fixture to a balance the cast can move — a
+`build {WORKS}` costs 60,000 — so the locked amount changes and the constructed world stops matching the
+journalled one. **Done** (with an assertion that the fixed stake is still lockable, so a future
+endowment change fails loudly here rather than silently locking nothing). The principal *selection* was
+already cast-independent: sorted `principalOrder`, first two.
+
+### ⚑ AND IT WAS NOT SUFFICIENT — I called this "mechanical" and it is not
+
+With the stake fixed, I re-added the build branch and **the same six tests still fail**. So the stake
+fraction was a real coupling and there is **at least one more** that I have not found.
+
+What that eliminates, and it is worth having: the divergence is not the *locked amount*. What remains
+unexamined:
+
+- **the adopt-plus-tail replay itself.** `bootFromStore` replays from the last snapshot forward. If the
+  tail replay re-runs the cast rather than the action log, and any phase ordering differs between the
+  live run and the tail, a build lands at a different point. This is the first thing to instrument —
+  print the action log for the divergent tick on both sides and diff it.
+- **whether the build's currency retirement interacts with the injected obligation.** The fixture opens
+  `raid:audit:<p>` obligations and locks against them; a build retires 60,000 from the same stores
+  account. INV-4 ties open locks to live obligations, and the two now touch the same balance.
+- **snapshot timing.** `SNAPSHOT_EVERY` and `LOCK_AT` are fixed ticks; a build shifts *when* other
+  actions become affordable, so a snapshot may be taken at a different world state even with the same
+  action set.
+
+**Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
+before testing whether it was the only one, which is the same mistake this file already records twice —
+the fourth framing in a row where I found a plausible cause and stopped looking. The fixture fix is kept
+because it is a genuine improvement (a fixture should not depend on incidental balances), but the blocker
+stands.
 
 And note what this vindicates: the test was **right** to force the case. Its header says the original
 claim was vacuous because the heuristic opens zero qualifying encumbrances, and it is. The fixture is

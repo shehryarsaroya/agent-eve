@@ -133,7 +133,30 @@ function lockedRun(): Promise<LockedRun> {
           .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
           .slice(0, 2);
         for (const p of lockedPrincipals) {
-          const amount = minor(Math.floor(freeStores(runtime.ledger, p) / 4));
+          // ── FIXED, NOT A FRACTION OF FREE STORES ──────────────────────────
+          //
+          // This was `freeStores(ledger, p) / 4`, which couples the fixture to a balance the CAST
+          // can move. Any new cast branch that spends money — a `build {WORKS}` costs 60,000 —
+          // changes the locked amount, so the world this fixture CONSTRUCTS stops being the world it
+          // JOURNALLED, and adoption fails the `boot.ts` tripwire with no determinism fault anywhere.
+          // Six tests failed that way on the first attempt to teach the cast to build, and the
+          // blocker was read as an engine bug for the whole project (see D18).
+          //
+          // A constant removes the coupling without touching the test's purpose: it exists to journal
+          // a snapshot with locks GENUINELY OPEN at a tick boundary, which the heuristic never
+          // produces on its own (its own header: zero qualifying encumbrances across 420 ticks and 60
+          // snapshots). What the stake is worth was never the point; that it is open across the
+          // boundary is.
+          //
+          // Safely lockable: the enrolment grant leaves far more than this free, and `freeStores` is
+          // asserted below so a future endowment change fails loudly here instead of silently locking
+          // nothing.
+          const AUDIT_STAKE = minor(10_000);
+          expect(
+            freeStores(runtime.ledger, p),
+            'the audit stake must be lockable, or this fixture proves nothing about open locks',
+          ).toBeGreaterThanOrEqual(AUDIT_STAKE);
+          const amount = AUDIT_STAKE;
           runtime.obligations.open(`raid:audit:${p}` as never, true);
           runtime.ledger.encumbrances.lock({
             eventId: `audit:stake:${p}`,
