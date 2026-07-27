@@ -300,7 +300,32 @@ fix needs a record of account closures that does not exist yet.
 **So boot is still O(history)** — 4,910 ticks, ~139 s, growing — and will be until that is fixed. What
 changed is that it can no longer take the world down.
 
-**Not reproduced locally, and the negative results narrow it sharply.** A 700-tick heuristic world
+**★ NARROWED 2026-07-26 (late), and the first theory was wrong.** The working explanation was "the
+escrow closed before the checkpoint and its account was removed, so the capture no longer lists it."
+**Both halves are false**, and checking beat reasoning:
+
+- `ledgerStateTable.capture()` includes **every** account — `allAccounts()`, sorted, no filter and no
+  cap — so nothing is omitted from a capture by policy;
+- and there is **no account deletion anywhere in `ledger.ts`**. Accounts are never removed.
+
+So the account genuinely was **not in the tick-4895 ledger at all**, while the durable posting log still
+holds postings against it from tick 2830. That is a much sharper statement than "it closed", and it
+points somewhere specific: **the two artifacts are rebuilt by different mechanisms.** The posting log is
+durable and append-only; the ledger is rebuilt by REPLAYING the action log, and enrolments are re-seated
+by a separate hook (`onEnrollment`) rather than by replayed actions.
+
+So the candidate is: an account whose creator is not faithfully reproduced by replay — an enrolment
+re-seated in a different order, or an action that once APPLIED and would now be refused — leaves a
+replayed ledger that lacks the account while the posting log remembers it. `p:vale` being an externally
+enrolled principal fits that shape exactly, and the house cast (re-seated deterministically from the
+master seed, never stored) does not.
+
+**The instrument to build next:** a durability fixture that ENROLS a principal over HTTP, journals, and
+adopts. `test/durability/` currently has none — every fixture there is cast-only, which is precisely why
+900 ticks of heuristic world adopts cleanly and production does not. That gap is the reason this bug
+survived.
+
+**Also still true, and still the negative results that narrow it.** A 700-tick heuristic world
 adopts correctly (hash-identical). Two fixture attempts failed instructively: dropping an account
 from the capture is refused two gates earlier, and recomputing the hash makes the genesis replay trip
 on that snapshot — because production's snapshot was **not wrong**, so any fixture that corrupts one
