@@ -108,11 +108,46 @@
 > arrangement of blocks makes that 38,000. Dropping §11B's CHARGE from a member about to be billed
 > under it is an A5′ violation; the overshoot costs ~$0.0003 a call.
 >
-> **★ A fact for the ceiling decision, since it changes the reasoning that rejected it:** the argument
-> against raising 40,000 was that it restores a silent cliff. With RULES-never-drop **there is no
-> cliff to restore** — the excerpt overshoots and says so instead of truncating. Raising the number is
-> now a pure cost question (~$0.001/call cached), independent of correctness. Not done, since the call
-> was explicit; recorded because the premise moved.
+> ### ★ THE CEILING IS 56,000 — and the argument is cry-wolf, not cost
+>
+> Raised **after** `###` granularity, not instead of it, and the order matters. The old bar was
+> *correct when it was set*: at `##` granularity going over budget meant the excerpt **silently
+> truncated**, whole sections falling off a rulebook the cast then played from. Against that, a hard
+> bar well under the cliff is the right instrument, and 26k → 32k → 40k each bought room away from a
+> cliff while restoring it further out. `CONTRACT_CATALOG` **removed** the cliff instead of moving
+> it — FLOOR and RULES ship at any total — and *that* is what earned the raise.
+>
+> ⚠ **The number may only be this high while RULES-never-drop holds.** If the budget is ever allowed
+> to touch a FLOOR or RULES unit, 56,000 becomes a silent truncation point and has to come back below
+> the smallest reachable position. One decision, two halves; reverting either requires revisiting the
+> other. Written into `MAX_CONTRACT_CHARS`'s own doc comment, not just here.
+>
+> **Why it had to move at all is not cost** (56,000 chars ≈ $0.0014/call cached — an argument for not
+> worrying about the number, never for a particular one). It is the lesson this project learned twice
+> in a week from `/health`: *"a signal that is red while nothing is broken stops being read, which is
+> how scar #14b wins twice — first by hiding a fallback, then by making the detector cry wolf until
+> somebody silences it."* A fully-developed claimant is a **legitimate, reachable, intended** position
+> needing **47,246** characters of rules it can be refused for not knowing. At 38,000 the best player
+> in the world would set `overBudget` on every wake for ever, and the detector would be noise before
+> it caught anything.
+>
+> **The raise moved the numbers, and how is the interesting part.** The CONTEXT the old budget squeezed
+> out — §11A's `### Who owns the ground` and `### What to read` — now fits, so the claimant went
+> 43,789 → **47,246** and the analytic maximum 51,289 → **54,746**. A ceiling that stops binding shows
+> up as *more rules delivered*, not as slack. Note also that the 51,289 I reported was the
+> post-squeeze figure; the true all-CONTEXT maximum is 54,746, which 56,000 clears by 1,254.
+>
+> **So the margin is measured against the REACHABLE maximum, not the analytic one** — 56,000 − 47,246
+> = **8,754** against a declared `CONTRACT_CEILING_MARGIN` of 4,000. Conflating the two is how a
+> margin becomes decoration: nothing is ever the analytic maximum (`graduate` and a held claim cannot
+> coexist), so slack there buys nothing, while the reachable maximum is where a false alarm would
+> actually fire. The analytic maximum only has to *fit*. Both asserted. And the `* 0.95` fudge came
+> out of the tests — it was a second, undeclared budget under the declared one.
+>
+> `CONTRACT_NOT_EXCERPTED` stays at **three**, asserted, with a test that fails if any reason is about
+> *fitting* rather than about a capability the member does not have. Room is not a licence to stop
+> asking whether a section is usable — that list held §11B/§11C/§11D for a size reason, and the cost
+> was the only rules for nine live verbs.
 >
 > **THIRTEEN MUTATIONS, AND TWO FOUND NOTHING FIRST TIME — including one in my own new test.**
 > `anchorCold` reading `claim['anchorHot']` broke nothing, because my path test compared
@@ -127,12 +162,48 @@
 > which is what caught `outsideCommons` written as `tier !== 'COMMONS'`: equivalent on every real
 > observation, and a false statement on a stub.
 >
-> **A SECOND FALSE STATEMENT IN `situationalFocus`, worse than the syndicates one.** The §11B line read
-> `holding.sovereignty !== null` and told the member **it held territory**. `sovereigntyStatementFor`'s
-> last branch returns *how to take one* to any principal outside the Commons holding nothing — so every
-> landless graduated member was told it had territory to maintain. An assertion about the reader's own
-> position that was not true, on a surface A5′ says must never be wrong. Both branches now read
-> `obligations.charge`, which is `myClaims`.
+> ### ★★★ THE MOST CONSEQUENTIAL BUG OF THE NIGHT: the engine told agents a FALSE FACT about their
+> ### own position
+>
+> `situationalFocus`'s §11B line read `holding.sovereignty !== null` and told the member **it held
+> territory that has to be MAINTAINED**. That is not what the field means.
+> `sovereigntyStatementFor`'s last branch returns `SOVEREIGNTY_STATEMENT` — *how to take a claim* — to
+> **any principal outside the Commons holding nothing at all**. So every landless graduated member was
+> told, on the one surface that points at the rules, that it had territory to maintain.
+>
+> **This is not a missing feature or a dropped section. It is the engine asserting something untrue
+> about the reader's own position** — the exact failure A2 exists to prevent (*"legibility is the
+> interface"*), and A5′'s rule one layer out from the record: a surface that lies is worse than one
+> that is silent, because the agent stops looking. Ranked above the other three findings for that
+> reason. Fixed: both branches read `obligations.charge`, which *is* `myClaims`, one row per claim
+> held — and a landless member now gets *"you hold NO territory; this is what taking some would cost"*.
+>
+> **THE METHOD, because it generalises far beyond `prompt.ts` and is the reusable part.**
+>
+> Both this and the `grants.syndicates` path bug had **tests that passed because the fixture agreed
+> with the code instead of with the engine.** That is the failure mode; here is the technique that
+> finds it, in three rules:
+>
+> 1. **Take the SHAPE from a real `observe`, never from a hand-written fixture.** A fixture encodes
+>    what the author believed the payload looks like, so it agrees with the reader by construction. Two
+>    bugs in one function, both invisible for the function's whole life, both found the moment a real
+>    observation was used.
+> 2. **Take the DISCRIMINATION from a flip.** Reading a real field is not enough:
+>    `expect(situation.anchorCold).toBe(rows.some(r => r['anchor_hot'] === false))` on a real
+>    observation still passed a mutation that read `claim['anchorHot']`, because a fresh claim has a
+>    hot anchor — **both sides were `false`**. Six other fields had the same hole. So mutate the exact
+>    path `observe` publishes and require the field to *move*. A predicate reading any other key cannot
+>    pass, because flipping the real key leaves it unmoved.
+> 3. **Assert the empty case, and assert that each flip is a real flip.** `readSituation({})` must read
+>    all-false — that is what caught `outsideCommons` written as `tier !== 'COMMONS'`, which is
+>    *equivalent on every real observation* and a false statement on a stub. And each flip case asserts
+>    the base value is the opposite first, so a case cannot go vacuous later.
+>
+> **The general lesson, for the next session, in one line:** *a test whose two sides are both false in
+> the only state it can reach proves nothing, and a fixture that matches the code proves less.* This is
+> CLAUDE.md's "an invariant whose subject cannot occur" applied to predicates — and it is worth running
+> against any new predicate over `observe`, of which the combat and territory work will add many.
+> Thirteen mutations; **two initially found nothing, including one in my own new test.**
 >
 > Enumeration kept at the right granularity: 2^28 over units is neither enumerable nor reachable — the
 > `##` version's worst "combination" paired §11 with all of §11B, which no principal can be in.

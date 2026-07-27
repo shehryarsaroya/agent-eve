@@ -60,10 +60,10 @@ export interface CastBudgetLimits {
    *
    * Named for the prompt and applied to the observation, which is worth stating plainly
    * because the difference is most of the bill: `llm.ts` passes this as
-   * `buildPrompt`'s `maxObservationChars`, and the `agent.md` contract excerpt (25k–38k
-   * depending on the wake — `prompt.ts:CONTRACT_CATALOG`) and the character brief sit
-   * outside it. Setting this to 2,000 measurably yields a ~26,400-character prompt, not a
-   * 2,000-character one.
+   * `buildPrompt`'s `maxObservationChars`, and the `agent.md` contract excerpt (31k for a
+   * newcomer up to 47k for a fully-developed claimant — `prompt.ts:CONTRACT_CATALOG`) and
+   * the character brief sit outside it. Setting this to 2,000 measurably yields a
+   * ~26,400-character prompt, not a 2,000-character one.
    *
    * That is deliberate rather than an oversight to fix: the contract is the rules
    * surface, and scar #1 is what happens when a player reasons from a partial copy of

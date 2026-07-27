@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPrompt,
   CONTRACT_CATALOG,
+  CONTRACT_CEILING_MARGIN,
   CONTRACT_NOT_EXCERPTED,
   CONTRACT_POSITIONS,
   CONTRACT_SECTIONS,
@@ -83,18 +84,11 @@ describe('the contract comes from agent.md, or the cast does not play', () => {
     );
     expect(contract?.notThisWake, 'the ceiling needs everything').toEqual([]);
     // `loadContract()` selects for EVERY_SITUATION — the analytic ceiling, 51,289 characters,
-    // which no principal can occupy. It OVERSHOOTS the budget rather than dropping a rule, and
-    // the only things it loses are the two discretionary §11A blocks. That is the trade stated
-    // in `MAX_CONTRACT_CHARS`, and it is asserted here rather than assumed.
-    expect(contract?.overBudget, 'the ceiling does not fit and must say so').toBe(true);
-    for (const omission of contract?.dropped ?? []) {
-      const unit = CONTRACT_CATALOG.find((u) => unitName(u) === omission.heading);
-      expect(unit?.floor, 'a FLOOR unit was dropped').not.toBe(true);
-      expect(
-        unitGrade(unit as never, EVERY_SITUATION),
-        `${omission.heading} was dropped and it is not CONTEXT`,
-      ).toBe('CONTEXT');
-    }
+    // which no principal can occupy. It used to OVERSHOOT a 38,000 bar and lose the two
+    // discretionary §11A blocks; the ceiling now sits above it, so the whole catalog fits and
+    // nothing at all is dropped. See MAX_CONTRACT_CHARS for why the number moved.
+    expect(contract?.overBudget, 'the ceiling must fit under 56,000').toBe(false);
+    expect(contract?.dropped, 'and nothing is squeezed out of it').toEqual([]);
     // It is the document, not a paraphrase of it: a distinctive sentence survives.
     expect(contract?.text).toContain('An illegal action is not an error.');
   });
@@ -118,7 +112,7 @@ describe('the contract comes from agent.md, or the cast does not play', () => {
     expect(loadContract('')).toBeNull();
   });
 
-  it('under an absurd cap, CONTEXT goes and the RULES DO NOT — and it says so', () => {
+  it('under an absurd cap through `loadContract`, CONTEXT goes and the RULES DO NOT', () => {
     // This used to assert that sections dropped off the end. They no longer can: FLOOR and RULES
     // are emitted whatever the total, so a cap of 4,000 squeezes out every discretionary block
     // and NOTHING ELSE. That is the change `MAX_CONTRACT_CHARS` documents, and asserting the old
@@ -392,12 +386,15 @@ describe('the cast can always read where goods come from', () => {
     // Headroom is measured on the positions a principal can actually occupy, not on the
     // analytic ceiling, which overshoots by design. `CONTRACT_POSITIONS` is the governor.
     const doc = document();
-    for (const position of CONTRACT_POSITIONS.filter((x) => x.budgeted)) {
+    for (const position of CONTRACT_POSITIONS.filter((x) => x.reachable)) {
       const excerpt = excerptFor(doc, position.situation);
       expect(excerpt.text, `${position.name} lost the yield table`).toContain('| FRONTIER |');
       const used = excerpt.text.length;
-      expect(used, `${position.name} is ${String(used)} of ${String(MAX_CONTRACT_CHARS * 0.95)} — too tight`)
-        .toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+      expect(
+        used,
+        `${position.name} is ${String(used)}, leaving less than the declared ` +
+          `${String(CONTRACT_CEILING_MARGIN)} of margin under ${String(MAX_CONTRACT_CHARS)}`,
+      ).toBeLessThanOrEqual(MAX_CONTRACT_CHARS - CONTRACT_CEILING_MARGIN);
     }
   });
 });
@@ -501,8 +498,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // the maximal positions is exact. The coverage half — that these positions really do
     // dominate what a live world produces — is the next test.
     // ══════════════════════════════════════════════════════════════════════════
+    // No `* 0.95` fudge here any more. That was a second, undeclared budget sitting under the
+    // declared one, and with the ceiling above the analytic maximum it started failing the
+    // maximum for a number nothing names. There is one ceiling and one margin, and the margin
+    // is asserted in the test below, against the position it actually protects.
     const doc = document();
-    const bar = MAX_CONTRACT_CHARS * 0.95;
     for (const position of CONTRACT_POSITIONS) {
       const excerpt = excerptFor(doc, position.situation);
 
@@ -520,22 +520,112 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         ).toBe('CONTEXT');
       }
 
-      if (position.budgeted) {
-        expect(
-          excerpt.text.length,
-          `${position.name} — ${String(excerpt.text.length)} of ${String(bar)}. Make the newest ` +
-            'block conditional on something this position does not have, or move it to `wanted`.',
-        ).toBeLessThan(bar);
-        expect(excerpt.overBudget, `${position.name} overran the ceiling`).toBe(false);
-      } else {
-        // ── AN OVERSHOOT IS ASSERTED TO BE HONEST, NOT ASSERTED AWAY ────────
-        // A fully-developed claimant needs 43,789 characters of rules it can be refused for not
-        // knowing, and no arrangement of blocks makes that 38,000. Asserting it fits would be
-        // the failure to fear here: a surface reporting something about itself that is not true.
-        // So instead — it overshoots, it SAYS it overshoots, and it carries everything needed.
-        expect(excerpt.overBudget, `${position.name} must declare its overshoot`).toBe(true);
-        expect(excerpt.text.length).toBeGreaterThan(MAX_CONTRACT_CHARS);
-      }
+      // ── NO EXCEPTIONS ANY MORE, AND THAT IS THE POINT OF THE RAISE ────────
+      // Two of these used to overshoot a 38,000 bar — the fully-developed claimant at 43,789 on
+      // every wake for ever. `overBudget` firing on the most advanced member in the world is a
+      // detector that gets silenced before it ever catches a defect, which is the same failure
+      // `/health` had when `deciding_share_bps` returned 503 for a structural condition. The
+      // ceiling now sits above the analytic maximum, so an overshoot is ANOMALOUS and every
+      // position — reachable or not — must come in under it.
+      expect(
+        excerpt.text.length,
+        `${position.name} — ${String(excerpt.text.length)} of ${String(MAX_CONTRACT_CHARS)}. Make ` +
+          'the newest block conditional on something this position does not have, or move it to ' +
+          '`wanted`.',
+      ).toBeLessThanOrEqual(MAX_CONTRACT_CHARS);
+      expect(excerpt.overBudget, `${position.name} overran the ceiling`).toBe(false);
+    }
+  });
+
+  it('★ THE CEILING CLEARS THE MAXIMUM, with the MARGIN measured where cry-wolf would bite', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The margin IS the mechanism. `overBudget` is only a useful signal while the largest
+    // excerpt a real member can be shown is comfortably under the ceiling — otherwise the alarm
+    // fires on legitimate play, and the lesson recorded on the `/health` 503 fix applies: "a
+    // signal that is red while nothing is broken stops being read, which is how scar #14b wins
+    // twice — first by hiding a fallback, then by making the detector cry wolf until somebody
+    // silences it."
+    //
+    // TWO DIFFERENT CHECKS, and conflating them is how a margin becomes decoration:
+    //
+    //   · the ANALYTIC maximum (every fact and verb at once) only has to FIT. Nothing is ever
+    //     it — `graduate` and a held claim cannot coexist — so slack there buys nothing.
+    //   · the REACHABLE maximum carries the margin, because that is the excerpt a real member
+    //     is really shown, and the one whose overshoot would be the false alarm.
+    //
+    // Both measured rather than trusted, so growing `agent.md` into the slack fails here and is
+    // then a decision somebody makes on purpose: raise the ceiling again (safe only while
+    // RULES-never-drop holds), or make the new block conditional on something the maximum lacks.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    const analytic = excerptFor(doc, EVERY_SITUATION);
+    expect(analytic.text.length, 'the analytic maximum, for the record').toBe(54_746);
+    expect(
+      analytic.overBudget,
+      `the analytic maximum is ${String(analytic.text.length)} and the ceiling is ` +
+        `${String(MAX_CONTRACT_CHARS)} — it must at least fit, or \`overBudget\` is reachable by ` +
+        'arithmetic rather than by a defect',
+    ).toBe(false);
+    // The raise is only legitimate while nothing needed can be dropped at any ceiling.
+    expect(analytic.dropped, 'the maximum drops nothing at this ceiling').toEqual([]);
+
+    const reachable = CONTRACT_POSITIONS.filter((p) => p.reachable).map((p) => ({
+      name: p.name,
+      chars: excerptFor(doc, p.situation).text.length,
+    }));
+    expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
+    const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(47_246);
+    expect(
+      MAX_CONTRACT_CHARS - worst.chars,
+      `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
+        `of ${String(MAX_CONTRACT_CHARS)} — only ${String(MAX_CONTRACT_CHARS - worst.chars)} of ` +
+        `slack, under the ${String(CONTRACT_CEILING_MARGIN)} needed to keep \`overBudget\` ` +
+        'anomalous rather than a thing the best player in the world sets every wake',
+    ).toBeGreaterThanOrEqual(CONTRACT_CEILING_MARGIN);
+  });
+
+  it('★ THE OVERSHOOT PATH STILL WORKS, and still loses only CONTEXT', () => {
+    // The ceiling is now above anything the rules can produce, so no position exercises the
+    // overshoot. That would leave the branch untested — a capability that exists and is never
+    // exercised, which is the lesson this project keeps re-teaching. So it is driven directly
+    // with an absurd cap, and what it must NOT do is lose a rule.
+    const doc = document();
+    const squeezed = excerptFor(doc, EVERY_SITUATION, 4_000);
+    expect(squeezed.overBudget, 'a 4,000 cap must be reported as overrun').toBe(true);
+    expect(squeezed.dropped.length, 'every discretionary block goes').toBeGreaterThan(0);
+    for (const omission of squeezed.dropped) {
+      const unit = CONTRACT_CATALOG.find((u) => unitName(u) === omission.heading);
+      expect(unit?.floor, `${omission.heading} is FLOOR and was dropped`).not.toBe(true);
+      if (unit === undefined) continue;
+      expect(unitGrade(unit, EVERY_SITUATION), omission.heading).toBe('CONTEXT');
+    }
+  });
+
+  it('★ CONTRACT_NOT_EXCERPTED STAYS AT THREE, and none of them is there because of size', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // A bigger budget must not quietly absorb these, and it must not tempt anyone to park a
+    // section here for room again. All three are CAPABILITY reasons — you cannot enrol, you are
+    // never offline, you cannot file a bug report from a plan — and a member that cannot act on
+    // a rule should still not be charged for reading it.
+    //
+    // This list held §11B, §11C and §11D for a size reason, with the only rules for nine live
+    // verbs in them. That is what "it does not fit" costs, and the test is here so the next
+    // person has to argue capability rather than characters.
+    // ══════════════════════════════════════════════════════════════════════════
+    expect(CONTRACT_NOT_EXCERPTED.map((s) => s.heading)).toEqual([
+      '## 2. Enrolling',
+      '## 9. Being offline',
+      '## 13. When something seems wrong',
+    ]);
+    for (const outside of CONTRACT_NOT_EXCERPTED) {
+      expect(outside.verbs, `${outside.heading} is a verb's only home`).toEqual([]);
+      expect(
+        outside.because,
+        `${outside.heading} is excluded for a SIZE reason — say why it cannot be used instead`,
+      ).not.toMatch(/does not fit|too (?:big|long)|no room|budget/i);
+      // And it really is outside: a section cannot be in both lists.
+      expect(CONTRACT_SECTIONS, `${outside.heading} is in both lists`).not.toContain(outside.heading);
     }
   });
 
@@ -597,7 +687,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       }
     }
     expect(worst, 'the sweep must actually have built excerpts').toBeGreaterThan(20_000);
-    expect(worst).toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+    expect(worst, 'a real wake must sit inside the declared margin').toBeLessThanOrEqual(
+      MAX_CONTRACT_CHARS - CONTRACT_CEILING_MARGIN,
+    );
   });
 
   it('★ THE TWO EXCLUSIONS THE NUMBERS REST ON ARE ENGINE-ENFORCED, not assumed', () => {
@@ -1021,9 +1113,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       30_998, // a newcomer on its first wake
       34_922, // mid-game in the Commons
       35_564, // about to take territory — and §11B is READABLE now, which it was not
-      43_789, // a claimant in trouble — overshoots, and says so
-      51_289, // the analytic ceiling, which no principal can occupy
+      47_246, // a claimant in trouble — the largest REACHABLE position
+      54_746, // the analytic maximum, which no principal can occupy
     ]);
+    // The last two are 3,457 larger than they were at a 38,000 ceiling, and the reason is worth
+    // reading: the CONTEXT the old budget squeezed out of them — §11A's `### Who owns the ground`
+    // and `### What to read` — now fits. **A ceiling that stops binding shows up as more rules
+    // delivered, not as slack.** That is the raise doing something rather than nothing.
+
     // ── WHAT `###` GRANULARITY ACTUALLY BOUGHT, IN CHARACTERS ────────────────
     //
     // **Not headroom. Reachability, at roughly its own cost**, and that is worth writing down
@@ -1036,8 +1133,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // one is 35,564 with it. So the freed space went into the nine verbs rather than into slack.
     // That is what it was asked to do, and the budgeted positions now sit at 82–94% of the bar.
     for (const [i, position] of CONTRACT_POSITIONS.entries()) {
-      if (!position.budgeted) continue;
-      expect(sizes[i] ?? 0, position.name).toBeLessThan(MAX_CONTRACT_CHARS * 0.95);
+      if (!position.reachable) continue;
+      expect(sizes[i] ?? 0, position.name).toBeLessThanOrEqual(
+        MAX_CONTRACT_CHARS - CONTRACT_CEILING_MARGIN,
+      );
     }
   });
 });

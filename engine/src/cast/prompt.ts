@@ -638,27 +638,28 @@ export const CONTRACT_POSITIONS: readonly {
   readonly name: string;
   readonly situation: ContractSituation;
   /**
-   * Must fit under the bar, with room for CONTEXT.
+   * Whether the position is one a principal can actually occupy.
    *
-   * **False is a finding, not an escape hatch.** Two positions carry `false`, and the number
-   * is what matters: a fully-developed claimant — arrears, a cold anchor, a grant, a syndicate,
-   * a raid standing against it — needs **41,286 characters of rules it can be refused for not
-   * knowing**, and the analytic ceiling is 51,289. Neither fits in 38,000 and no arrangement of
-   * `##` or `###` blocks makes them, because the content is genuinely all needed.
+   * ── THIS FIELD USED TO MEAN "FITS UNDER THE BAR", AND NOW NOTHING DOES ─────
    *
-   * So they overshoot, on purpose and out loud: `overBudget` is set, the prompt says so, and
-   * **nothing needed is dropped**. Dropping §11B's `### Paying for it — the CHARGE` from a
-   * claimant that is about to be billed under it is an A5′ violation — a bill from a rule
-   * nobody showed it — and the alternative costs about $0.0003 more per cached call.
+   * At a 38,000 bar two positions did not fit — the fully-developed claimant at **43,789** and
+   * the analytic ceiling at **51,289** — and this flag marked them so the tests could assert
+   * that they *overshot honestly* rather than that they fitted. Since `MAX_CONTRACT_CHARS` was
+   * raised above the analytic maximum, **every position fits**, and `prompt.test.ts` asserts
+   * `overBudget === false` for all of them without exception. That is the point of the raise:
+   * an overshoot should be anomalous, not the normal state of the most advanced member.
    *
-   * The sizes of these two are pinned in `prompt.test.ts`, which is the growth governor for
-   * them: a new block moves the number and somebody has to look.
+   * So the flag now records the thing that is still worth distinguishing and cannot be derived
+   * from a size — whether the position is *reachable*. The ceiling is not: a claim anchors the
+   * body, so `observe` withholds the crossing, and no principal is ever offered `graduate` and
+   * holding territory at once. A budget checked only against unreachable maxima would be
+   * checking the wrong thing, which is precisely the error the `##` version made.
    */
-  readonly budgeted: boolean;
+  readonly reachable: boolean;
 }[] = Object.freeze([
   {
     name: 'a newcomer on its first wake — Commons, no venture, no grant, nothing held',
-    budgeted: true,
+    reachable: true,
     situation: {
       ...NO_SITUATION,
       inCommons: true,
@@ -669,7 +670,7 @@ export const CONTRACT_POSITIONS: readonly {
   },
   {
     name: 'mid-game in the Commons — ventures, a WORKS, no grant, no claim',
-    budgeted: true,
+    reachable: true,
     situation: {
       ...NO_SITUATION,
       inCommons: true,
@@ -685,7 +686,7 @@ export const CONTRACT_POSITIONS: readonly {
   },
   {
     name: 'about to take territory — graduated, offered `post_bond`, holds no claim yet',
-    budgeted: true,
+    reachable: true,
     situation: {
       ...NO_SITUATION,
       outsideCommons: true,
@@ -700,9 +701,11 @@ export const CONTRACT_POSITIONS: readonly {
   },
   {
     name: 'a claimant in trouble — arrears, a cold anchor, a grant, a syndicate, a raid standing',
-    // 41,286 characters, and every one of them is a rule this member can be refused for not
-    // knowing. See `budgeted` above: it overshoots rather than dropping any of it.
-    budgeted: false,
+    // 47,246 characters, and every one of them is a rule this member can be refused for not
+    // knowing. It is the largest REACHABLE position, so it is the one the ceiling margin is
+    // measured against — it overshot a 38,000 bar on every wake for ever, which is the cry-wolf
+    // argument that raised the ceiling. See MAX_CONTRACT_CHARS.
+    reachable: true,
     situation: {
       ...EVERY_SITUATION,
       inCommons: false,
@@ -717,16 +720,74 @@ export const CONTRACT_POSITIONS: readonly {
   },
   {
     name: 'the analytic ceiling — every fact and every verb at once, which no principal can be',
-    budgeted: false,
+    // NOT reachable, and that is what the flag is for now: `graduate` and a held claim cannot
+    // coexist, so nothing in the world is ever this. It is here to give the maximum a number —
+    // 54,746, which MAX_CONTRACT_CHARS must clear, though the MARGIN is measured against the
+    // reachable maximum above, because that is where cry-wolf would bite.
+    reachable: false,
     situation: EVERY_SITUATION,
   },
 ]);
 
 /**
- * Hard ceiling on the contract excerpt. *(calibrate)*
+ * Ceiling on the contract excerpt, and what it disciplines. *(calibrate)*
  *
- * Overflow drops whole sections from the **end** of {@link CONTRACT_SECTIONS} and says which,
- * in the prompt, so the model is never quietly playing from a truncated rulebook.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **56,000, AND IT SITS ABOVE THE UNREACHABLE ANALYTIC MAXIMUM ON PURPOSE.**
+ *
+ * The whole catalog, every fact and every verb at once — a state no principal can occupy,
+ * because a claim anchors the body and `observe` withholds the crossing — measures **54,746**
+ * characters, and the largest position a principal can actually be in measures **47,246**. This
+ * number is deliberately above both. So `overBudget` now means *"something is larger than the
+ * rules can be"* and not *"a successful player exists"*.
+ *
+ * ── WHY THE OLD BAR WAS RIGHT WHEN IT WAS SET, WHICH IS THE POINT ────────────
+ *
+ * Read this before treating the raise as three arguments finally wearing a limit down. It is
+ * not. **The correctness property underneath the number changed.**
+ *
+ * At `##` granularity, going over budget meant the excerpt **silently truncated** — whole
+ * sections fell off the end of a rulebook the cast then played from, disclosed only in a field
+ * nothing was required to read. That is scar #1's class exactly, and against that failure mode
+ * a hard bar well under the cliff was the correct instrument. 26k → 32k → 40k were each raised
+ * to buy room *away from a cliff*, and each raise restored the cliff a bit further out.
+ *
+ * {@link CONTRACT_CATALOG} removed the cliff instead of moving it: FLOOR and RULES are emitted
+ * whatever the total, so a needed rule cannot be lost to length at any ceiling. **That** is
+ * what earned the raise, and it is the load-bearing precondition:
+ *
+ *   ⚠ **THIS NUMBER MAY ONLY BE THIS HIGH WHILE RULES-NEVER-DROP HOLDS.** If `excerptFor` is
+ *   ever changed to let the budget touch a FLOOR or RULES unit, this ceiling becomes a silent
+ *   truncation point again and has to come back down below the smallest reachable position.
+ *   The two are one decision. Reverting either requires revisiting the other.
+ *
+ * ── WHY IT HAD TO MOVE AT ALL, WHICH IS NOT COST ─────────────────────────────
+ *
+ * Cost is a rounding error either way: 56,000 characters is ≈14k tokens ≈ $0.0014 a call
+ * cached, against ~$0.25/hour of spend. That is an argument for not worrying about the number,
+ * never an argument for a particular one.
+ *
+ * The argument that decides it is the one this project learned twice in a week from a different
+ * alarm. `GET /health` returned 503 continuously on `deciding_share_bps` for a condition the
+ * code itself documented as structural, and the lesson recorded on that fix is: *"a signal that
+ * is red while nothing is broken stops being read, which is how scar #14b wins twice — first by
+ * hiding a fallback, then by making the detector cry wolf until somebody silences it."*
+ *
+ * `overBudget` was on exactly that path. A fully-developed claimant — arrears, a cold anchor, a
+ * grant, a syndicate, a raid standing — is a **legitimate, intended, reachable** position, and
+ * it needs **47,246** characters of rules it can be refused for not knowing. At a 38,000 bar the
+ * most advanced member in the world would report `overBudget` on every wake for ever, and the
+ * signal would be noise long before it caught a real defect. A detector that fires on success is
+ * worse than a number that is slightly wrong.
+ *
+ * ── WHAT A BIGGER BUDGET MUST NOT ABSORB ─────────────────────────────────────
+ *
+ * {@link CONTRACT_NOT_EXCERPTED} stays at **three**, and all three are there for a *capability*
+ * reason — you cannot enrol, you are never offline, you cannot file a bug report from a plan —
+ * never for a size reason. A member that cannot act on a rule should still not be charged for
+ * reading it, and room is not a licence to stop asking whether a section is usable.
+ * `prompt.test.ts` asserts the count and that no reason is about fitting.
+ * ══════════════════════════════════════════════════════════════════════════════
  *
  * ## Why it moved from 26k to 32k
  *
@@ -762,22 +823,49 @@ export const CONTRACT_POSITIONS: readonly {
  * claimant in arrears does not need the enrolment playbook. That is a projection, not a summary,
  * and it keeps scar #1's guarantee while bounding the prefix.
  *
- * ## 40k stays, and the question above is now ANSWERED — {@link CONTRACT_CATALOG}
+ * ## 40k held while the question above got ANSWERED — {@link CONTRACT_CATALOG}
  *
- * The ceiling did not move a third time. The excerpt did, twice: first by `##` section, and then
- * — because that freed too little and left nine verbs unreadable — by `###` block.
+ * The ceiling did not move a third time on cost grounds. The excerpt moved instead, twice: first
+ * by `##` section, and then — because that freed too little and left nine verbs unreadable — by
+ * `###` block. Only after that did the number change, and for the reason in the header note.
  *
- * **What this number now governs is CONTEXT, not the excerpt.** FLOOR and RULES ship whatever
- * the total, because "a needed rule is never dropped" has to be true by construction and not by
- * the numbers happening to fit; this is the ceiling on discretionary `wanted` blocks. Same trade
+ * **What this number governs is CONTEXT, not the excerpt.** FLOOR and RULES ship whatever the
+ * total, because "a needed rule is never dropped" has to be true by construction and not by the
+ * numbers happening to fit; this is the ceiling on discretionary `wanted` blocks. Same trade
  * `projectObservation` makes one field over. An overshoot sets `overBudget`, is printed in the
  * prompt, and fails `prompt.test.ts` naming the position — so it can never be the silent cliff
- * the bar exists to prevent.
+ * the bar used to exist to prevent, and above 54,746 it should now be genuinely anomalous.
  *
  * `CONTRACT_POSITIONS` carries the measured table and is the thing to read before adding a
  * section, because it is executable and this comment is not.
  */
-export const MAX_CONTRACT_CHARS = 40_000;
+export const MAX_CONTRACT_CHARS = 56_000;
+
+/**
+ * How far {@link MAX_CONTRACT_CHARS} must stay above the analytic maximum of the catalog.
+ *
+ * The margin is the whole mechanism, not padding: `overBudget` is only a useful signal while the
+ * largest excerpt a real member can be shown is comfortably under the ceiling. Let this close to
+ * zero and the alarm starts firing on legitimate play again, which is the failure the raise was
+ * for. `prompt.test.ts` measures it and fails if the gap shrinks past this — so growing
+ * `agent.md` by more than the slack is a decision somebody makes on purpose.
+ *
+ * ── MEASURED AGAINST THE REACHABLE MAXIMUM, NOT THE ANALYTIC ONE ─────────────
+ *
+ * A subtlety worth stating, because getting it wrong is how a margin becomes decoration. The
+ * *analytic* maximum — {@link EVERY_SITUATION}, every fact and verb at once — is **54,746**, and
+ * it clears 56,000 by only 1,254. But nothing in the world is ever that: `graduate` and a held
+ * claim cannot coexist. The largest position a principal can actually occupy is the
+ * fully-developed claimant at **47,246**, which clears by **8,754**.
+ *
+ * The cry-wolf failure is `overBudget` firing on legitimate play, so the margin that matters is
+ * the reachable one. The analytic maximum only has to *fit*, which it does. Both are asserted.
+ *
+ * (The two figures were 43,789 and 51,289 at a 38,000 ceiling and are 3,457 larger here, because
+ * the CONTEXT the old budget squeezed out — §11A's rent and `### What to read` — now fits. A
+ * ceiling that is not binding shows up as more rules delivered, not just as slack.)
+ */
+export const CONTRACT_CEILING_MARGIN = 4_000;
 
 /** Characters of observation JSON in one prompt, before keys start being dropped. */
 export const MAX_OBSERVATION_CHARS = 16_000;
