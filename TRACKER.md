@@ -153,6 +153,124 @@
 > The next block to land there has ~437 characters before somebody must raise the ceiling or make a
 > block conditional.
 
+> ### ★★★ **DIAGNOSED: THE LADDER IS UNREACHABLE IN PRODUCTION BECAUSE THE CAST HAS NO GOODS, AND HAS HAD NONE SINCE TICK ~1,200. `RULES_VERSION` unchanged at 12; no production code touched.**
+>
+> The territorial ladder passed its balance gate on **36 fresh seeds** and then did nothing live:
+> `works 5 · worksOnline 5 · claimLines 0 · battleLines 0`, frozen across a bounded watch from tick
+> **5,403 to 5,545** with `failures: []` on every sample. Four of the five WORKS belong to abandoned
+> playtest probes. **The cause is not the branches, not the roll, not the hands, not the seats, and
+> not the order-dependence that was the leading hypothesis.**
+>
+> ⚑ **THE FINDING: THE ENTRY PRICE OF THE ECONOMY'S ONLY FAUCET IS DENOMINATED IN THE GOOD IT IS THE
+> ONLY SOURCE OF.** Goods enter a principal at exactly two places — the enrolment allotment
+> (`LEVY_STARTER_ALLOTMENT` 50,000, **once per identity**) and a WORKS it already holds. The Levy
+> destroys goods every Reckoning and the Charge destroys more. So the allotment is a **window, not a
+> balance**, and every rung of the ladder is priced inside it: `WORKS_BUILD_QTY` 5,000 ·
+> `GRADUATION_UPKEEP_QTY` 5,000 · `ANCHOR_QTY` 5,000. Miss the window and the door to the goods
+> economy is bolted — with, in production's case, a quarter of a million in currency in hand.
+>
+> **The authoritative numbers, from the live `snapshot` JSONB at tick 5,471 (not from `posting`):**
+>
+> | | currency | goods |
+> |---|---|---|
+> | 12 cast members | **210,000 – 225,333** | **zero units of every good in the game** |
+> | 15 abandoned probes | 190,000 – 250,000 | 33,372 – 50,000 `ration` (untouched allotments) |
+>
+> So the currency half of the gate is **fully met** and the goods half is **zero**. `worksAffordableBy:
+> 15` is a count over *every seated principal* and the 15 are **exactly** the abandoned probes; not one
+> is a cast member. Every `build` and `graduate` in this world's entire history was submitted by a
+> probe with `decision_source: LIVE`. The cast has never built anything, ever.
+>
+> **The drain curve, reproduced to the unit.** A one-principal sim that does nothing but pay its
+> tribute matched the live world's cast at **every one of the four surviving snapshots**:
+>
+> | Reckoning | 1 | 2 | 3 | 4 | 5 | 6 |
+> |---|---|---|---|---|---|---|
+> | tick | 287 | 575 | 863 | 1,151 | 1,439 | 1,727 |
+> | `ration` @ seat — sim | 49,500 | 49,000 | 29,000 | 9,000 | **0** | **0** |
+> | `ration` @ seat — production | 49,500 | 49,000 | 29,000 | 9,000 | — | — |
+>
+> The drain is **structural** — the Levy's nominal rate against a finite grant — and nothing the cast
+> chose is in it. `runtime.ts`'s own faucet comment predicted it in 2026: *"a principal that only ever
+> delivers from stock runs dry after about two and a half Reckonings… stated here so nobody later reads
+> a rising short as a bug."* It was written when the Levy was the only drain and **its premise expired
+> when the WORKS landed**; nobody re-read the entry price afterwards.
+>
+> **THE LEADING HYPOTHESIS IS FALSE, by direct measurement.** `graduate`'s "hold no WORKS" gate blocks
+> **0 of 12** cast members, because no cast member holds a WORKS. `p:pellucid-thorn` is **not** in
+> `CAST_NAMES` — it is an enrolled agent — so **zero of five** WORKS belong to the cast, not one of
+> five. The ladder is not order-dependent; it is *priced* out.
+>
+> **The other four candidates, each killed:** *hands committed* — no, the ladder's rungs need no hand
+> and the cast emitted 737 `fill_role` + 721 `move` in 300 ticks. *`freeMinor` ≠ posting sum* — **true,
+> and it cut both ways**: a raw `posting` sum showed six cast members *negative*, which is an artifact
+> of the nine forked worlds sharing that table (see §CLOSED). The snapshot is authoritative. *Seats and
+> liveness* — no, all 12 acted within 3 ticks of head. *Branch-order starvation* — no, both branches
+> sit above the busy ones and return null at the affordability gate before any roll matters. *The
+> heuristic does not drive them* — no, `HEURISTIC` is 91 of 113 decisions.
+>
+> ⚑ **WHY 3,177 TESTS AND 26 INVARIANTS MISSED IT: EVERY SIM STARTS AT TICK 0 AND STOPS AT 900.**
+> `reachable.spec.ts` asserts *"a newcomer can raise its first WORKS"* at tick 1. At three Reckonings
+> the allotment still holds 9,000 against a 5,000 price, so **every gate is still open and every
+> assertion still passes**. The window closes on tick **1,439** — 539 ticks past the longest run
+> anybody was making. Measured: the same world with the same missing branches produces **0** locked-out
+> members at 3 Reckonings and **8 of 8** at 6.
+>
+> **★ SHIPPED: THE AGED-WORLD FIXTURE.** `test/works/aged.ts` + `test/works/the-window-closes.spec.ts`
+> — 7 tests, green, `tsc` 0, lint 0. `agedWorld({ reckonings, cast: 'full' | 'no-ladder' })` runs a
+> real cast through real ticks with real invariants; `'no-ladder'` is the cast production actually ran
+> for its first 5,400 ticks, so a test can reproduce a world a feature **arrives into** rather than one
+> it was present for. Mutation-verified: starve `DEFAULT_WORKS_CHANCE_BPS` 400 → 2 and the guard names
+> the five members that miss the window (`brannock · kestrel · thessaly · varrow · vex`).
+>
+> **Today's cast is NOT broken and was deliberately not changed.** Measured at 6 Reckonings × 3 seeds:
+> every member builds inside its **first 116 ticks**, `TRAPPED 0/8`. The live world is a casualty of
+> *arrival order alone* — it was seeded before `worksFor` existed (D17) and its members were dry ~4,000
+> ticks before the branch that would have spent the allotment was written. Editing `heuristic.ts` would
+> move calibrated numbers for no finding.
+>
+> ➜ **THE OPEN DECISION, AND IT IS THE OWNER'S.** Re-opening the door is a §10 price change on the
+> world's most load-bearing constants — a `RULES_VERSION` bump, a declared production divergence and a
+> calibration pass of its own — and the corpus does not specify the price. **The trap is live for real
+> agents, not just for the cast**: 11 of 16 probe accounts sit on untouched allotments, and an honest
+> agent that plays four Reckonings without building is locked out forever, whose only escape is a new
+> identity — which prices economic re-entry in identities, **A15 exactly inverted**. `works/params.ts`
+> already argues the case in its own header (*"a floor an agent starves on is not a floor"*, A8) and
+> `vBuildWorks`'s refusal text already promises what is false (*"your first WORKS is reachable before
+> you have earned anything"* — true of the currency half, false of the goods half: scar #1's class).
+> Three shapes, unpriced: (a) the goods half of a **first** WORKS payable in retired currency — D7-safe
+> because retirement is not transfer, and A15-safe because `works/params.ts` bounds output by the *map*,
+> not the population; (b) a market that actually clears, so idle allotments flow to the drained — but
+> **no living principal holds goods to sell**, so this world cannot use it; (c) accept that this world's
+> cast is economically dead and re-seed. **Production cannot be recovered by code: A5 forbids rewriting
+> a past row and there is no legal path from zero goods to a WORKS.**
+
+
+---
+
+> ### ⚑ **THREE DEFECTS DISPATCHED 2026-07-27, two of them found by the combat work below.**
+>
+> 1. **★ WINNING A BATTLE CANNOT WIN THE STANDOFF.** `predation/resolve.ts` reads
+>    `raiderForce = raid.force + joiners`; for a *world* raid that is a scalar drawn at spawn, and
+>    `applyLoss` returns early on a world hull. So the hand-coupling combat advertises — *"a wrecked hull
+>    routs its hand, `readForce` counts hands, so losing the battle loses the force reading for free"* —
+>    **runs one way only.** `engage` against the weather is all downside for a material agent, and A14's
+>    scheduled raids are precisely the occasion combat was built for. Under fix with its own §9 gate.
+> 2. **`forecastFor` leaks the enemy's real fit** (`combat/view.ts:288-295`): the comment says *"estimated
+>    from hull COUNT and CLASS only… using their real profile here would leak a fit"* and the code below
+>    it calls `profileOf(f.fit)`. §11.2 puts a fit in SENSED, not PUBLIC. Code contradicting its own
+>    comment — scar #1's class, and the fourth instance this week of the engine being right while an
+>    agent-facing surface lies. Under fix, together with `MAX_RAID_PARTIES = 8` refusing surplus joiners
+>    with *"you are not a party"* when the truth is the battle is full.
+> 3. ~~**Production does not cross because the ladder is order-dependent.**~~ **DISPROVEN BY
+>    MEASUREMENT — see the diagnosis above.** `graduate`'s "hold no WORKS" gate blocks **0 of 12** cast
+>    members, and `p:pellucid-thorn` is not in `CAST_NAMES` at all, so **zero** of the five live WORKS
+>    belong to the cast rather than the one I claimed. My supporting evidence was also wrong in a way
+>    worth recording: the 250,000 balances I read out of `posting` are **artifacts of the nine forked
+>    worlds sharing that table**, which is the very defect diagnosed two sections down. The authoritative
+>    source is the `snapshot` table's JSONB — the live process's own state. Reading the forked log to
+>    settle a question about the current world is now a named mistake, made twice in one night.
+>
 > ### ★★★ **COMBAT IS EXERCISED. `RULES_VERSION` 12, hulls built, a formation on a field, and a hull destroyed in a world nobody steers.**
 >
 > Phase 2 shipped complete and unentered: `heuristic.ts` had no combat branch, so **nothing in the
