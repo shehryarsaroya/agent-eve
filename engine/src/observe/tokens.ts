@@ -192,8 +192,43 @@ const WORST_ITEM_CHARS = Object.freeze({
   market: 200,
   grant: 300,
   whatResolves: 40,
-  withheldRow: 70,
-  doNothing: 110,
+  /**
+   * ★ 70 → **69**, and the one character is a payment. See {@link WORST_ITEM_CHARS.doNothing}: the
+   * `unit` field costs +14 per outcome and `FLOOR_CAPS.doNothing` is 12, which takes
+   * `floorWorstCaseChars()` 8 characters past `NORMAL_TOKEN_CAP * CHARS_PER_TOKEN`. This row has the
+   * cheapest slack in the table — measured maximum **61** on the maximal world, so 69 still carries 8
+   * characters of headroom — and it is multiplied by 32, so one character here buys fourteen there.
+   *
+   * The alternative was narrowing `FLOOR_CAPS.doNothing` to 11, which is a *predicted consequence an
+   * agent never sees* and is the one trade this file already argues against. A proof margin is the
+   * right thing to spend; a row of `if_you_do_nothing` is not.
+   */
+  withheldRow: 69,
+  /**
+   * 110 before `DoNothingOutcome.unit`, which adds `"unit":"MINOR",` — the longest member of
+   * {@link DoNothingUnit} plus its key.
+   *
+   * Paid for rather than shortened, and for a reason `board`'s note above states in the same shape:
+   * `amount` is typed `Minor` and carries **five different units** across the eight kinds — a goods
+   * obligation, three currency figures, a count of roles and an absolute tick. `D28` fixed the
+   * comparator that ranked all five on one scale and left the field itself ambiguous in the payload
+   * `agent.md` §12 tells an agent to read first every wake. A2 makes the denomination of a published
+   * figure part of the arithmetic being exact, so there is no cheaper honest version of this field
+   * either: the alternative is an agent inferring the unit from the kind, which is arithmetic we were
+   * supposed to do.
+   *
+   * **124, measured, and it is 8 characters more than the floor proof had spare.**
+   * `floorWorstCaseChars()` must stay inside `NORMAL_TOKEN_CAP * CHARS_PER_TOKEN` = 12,000, and at
+   * `FLOOR_CAPS.doNothing` = 12 the raise from 110 costs +168 against 160 of slack. The 8 are bought
+   * from {@link WORST_ITEM_CHARS.withheldRow}, 70 → 69, whose measured maximum is 61 and whose
+   * multiplier is 32 — the note there carries the trade. The alternative was narrowing the list to 11
+   * outcomes, which drops a *predicted consequence an agent never sees*, and `FLOOR_CAPS` argues
+   * against exactly that.
+   *
+   * The budget also chose the spelling: {@link DoNothingUnit}'s goods member is `QTY` rather than
+   * `GOODS_QTY`, which is both the repo's own word for a goods quantity and four characters cheaper.
+   */
+  doNothing: 124,
   /** Three hands, each with `MAX_CARGO_GOODS` distinct goods at nine-figure amounts. */
   hand: 440,
   /** header base + holding + obligations + briefing prose, together. */

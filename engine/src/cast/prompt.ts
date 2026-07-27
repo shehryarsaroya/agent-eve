@@ -179,7 +179,7 @@ const S12 = '## 12. Getting good';
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of forty-four could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of forty-five could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -268,6 +268,26 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     block: '### Negotiating',
     verbs: ['message', 'publish_offer'],
     because: 'neither `message` nor `publish_offer` is offered to you this wake',
+  },
+  /**
+   * ★ RULES for anybody offered `fill_role` **or** a `vote`, and the second key is the point.
+   *
+   * A stake is *escrowed at fill time* and *forfeit to the other parties on withdrawal* (§7.3), so a
+   * member offered the verb and not shown this block can lose slashable capital to a rule it was never
+   * told about — A5′'s shape, and the reason `verbs: ['fill_role']` grades it RULES rather than
+   * CONTEXT.
+   *
+   * `vote` is the second key because EXPOSURE is what two of §5.2's four allocation rules are computed
+   * from. A member deciding between `BY_EXPOSURE` and `INVERSE_EXPOSURE` without knowing that its own
+   * stakes are the number being weighed is voting on a figure it does not know it controls — and until
+   * `D31` there was no such figure, so nothing in the document had to say it.
+   */
+  {
+    section: S4,
+    block: '### The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
+    verbs: ['fill_role', 'vote'],
+    wanted: (s) => s.inVenture,
+    because: 'neither `fill_role` nor `vote` is offered to you this wake, so there is no bid to place',
   },
 
   // ── §5 · the clock. All floor: nobody sits the Levy out (A14).
@@ -674,7 +694,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are forty-four: 2^44 is not enumerable, and it
+ * was free. At `###` granularity there are forty-five: 2^45 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -797,9 +817,9 @@ export const CONTRACT_POSITIONS: readonly {
  * **72,000, AND IT SITS ABOVE THE UNREACHABLE ANALYTIC MAXIMUM ON PURPOSE.**
  *
  * The whole catalog, every fact and every verb at once — a state no principal can occupy,
- * because a claim anchors the body and `observe` withholds the crossing — measures **61,693**
+ * because a claim anchors the body and `observe` withholds the crossing — measures **64,233**
  * characters uncapped, and the largest position a principal can actually be in measures
- * **54,107**. This number is deliberately above both. So `overBudget` now means *"something is
+ * **56,647**. This number is deliberately above both. So `overBudget` now means *"something is
  * larger than the rules can be"* and not *"a successful player exists"*.
  *
  * ── WHY THE OLD BAR WAS RIGHT WHEN IT WAS SET, WHICH IS THE POINT ────────────
@@ -915,8 +935,9 @@ export const CONTRACT_POSITIONS: readonly {
  * At 56,000 the slack was gone, exactly, and the table in `prompt.test.ts` said so:
  *
  *   - largest **reachable** position **51,867** of the 52,000 the margin allows → **133 characters**;
- *     (it is **54,107** now: `deliver {payer}`'s rules text added +2,240 to every position, spent out
- *     of exactly the slack this raise created — see `prompt.test.ts`'s measured table.)
+ *     (it is **56,647** now: `deliver {payer}`'s rules text added +2,240 to every position and the role
+ *     `stake` block added +2,540 to every position that holds a role, both spent out of exactly the
+ *     slack this raise created — see `prompt.test.ts`'s measured table.)
  *   - **analytic** ceiling **55,996** of 56,000 → **4 characters**.
  *
  * Three features in a row then paid for their own rules text by trimming. The currency door for a
@@ -1187,7 +1208,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
  * per-unit predicate, and `RULES` is never dropped for any reason including length. That
  * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
- * never for one it was not. There are forty-four units; put the same rule inside each
+ * never for one it was not. There are forty-five units; put the same rule inside each
  * predicate and the forty-fifth will forget it.
  * ══════════════════════════════════════════════════════════════════════════════
  */

@@ -35,7 +35,7 @@ import {
 } from '../combat/index.js';
 import { Rng } from '../core/rng.js';
 import { inFreeze, isSettlementTick, TICKS_PER_RECKONING } from '../core/time.js';
-import type { PrincipalId, SystemId, VentureKind } from '../core/types.js';
+import type { PrincipalId, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
 import {
@@ -565,6 +565,64 @@ export const CAST_WITHDRAW_BELOW_BPS = 3_000;
  * it honours what it can afford and declines what it cannot — rather than this figure.
  */
 export const CAST_ELECTIVE_APPETITE_BPS = 700;
+
+/**
+ * ★ What share of a **role's own published value** a cast member bids as its stake. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS IS THE NUMBER THAT MAKES EXPOSURE EXIST AT ALL, AND THEREFORE THE NUMBER THAT MAKES THREE
+ * OF THE LEVY'S FOUR ALLOCATION RULES DISCRIMINATE.**
+ *
+ * §3 defines EXPOSURE as *"Σ of your open `max_direct_loss`, and nothing else"*, and `D30` measured
+ * it at **identically zero for every principal at every phase of every Reckoning** in a world with
+ * 101 live ventures. `weightOf` therefore returned one flat weight to everybody under `BY_EXPOSURE`,
+ * `EVEN` **and the published default `INVERSE_EXPOSURE`** on 18 of 18 dockets — §5.2's *"the vote is
+ * the drama"* with one working lever — and A7's *staked* half had no instance in any world this repo
+ * had ever run. The cast passing `stake: 0` was half the cause; `lockFillStake` having no caller was
+ * the other half (see `RULES_VERSION` 16).
+ *
+ * ── THE DENOMINATOR IS THE ROLE, AND THAT WAS MEASURED THE HARD WAY ─────────
+ *
+ * The first version was a share of **free STORES**, on the brief's own reasoning — *stake more when
+ * you can bear the loss.* It cost the world a quarter of its ventures, and the full argument for why
+ * is at {@link HeuristicCast.stakeFor}: §7.3 resolves a contested slot *pro-rata by stake*, so a
+ * wealth-priced bid turns every contest into a standing wealth ranking, and this file's own decision
+ * order then converts that into fewer ventures. Priced off the role, two bidders compute the same
+ * number and the tie falls through to `principal_id` exactly as it did at `stake: 0`.
+ *
+ * ── WHY 300 bps, AND THE TRADE IS SHARP ─────────────────────────────────────
+ *
+ * 3% of a role's `escrowed + elective`, which at this cast's role values is **~90–292 MINOR** — the
+ * same order as {@link RAID_JOIN_STAKE_MINOR} (500), the project's other slashable stake, and the
+ * scale that matters for the Levy is `LEVY_EXPOSURE_UNIT` (1,000): a 292 stake moves a
+ * `BY_EXPOSURE` weight by 29% and an `INVERSE_EXPOSURE` weight by 23%. Discriminating, not
+ * dominating.
+ *
+ * The trade against a bigger number is measured and it is not subtle. **8 seeds × 9 Reckonings:**
+ *
+ * | `CAST_STAKE_BPS` | `levyShort` 9R | red 9R | ventures 9R |
+ * |---|---|---|---|
+ * | master (no stake) | 8,051 | 1/576 | 5,295 |
+ * | **300** | **0** | **0/576** | **5,277** |
+ * | 1,000 | 11,884 | 2/576 | 4,943 |
+ *
+ * At 1,000 bps the peak stake is ~975, which is `LEVY_EXPOSURE_UNIT` itself, so the weights move by
+ * up to 2x — and on `g07`, the one seed whose constellation genuinely produces less than it owes,
+ * that is enough redistribution to open a shortfall the seed cannot absorb. §5.2 lets a constellation
+ * vote itself into trouble and that is the mechanic working; it is also a regression against a meter
+ * §14.2 headlines, so the smaller number wins. Not a claim of correctness (CLAUDE.md §7): it is where
+ * the gate was run, and the gate is `D31`.
+ *
+ * ⚑ **AND IT IS NOT THE BINDING CONSTRAINT ON WHETHER THE RULES BIND.** Measured at this figure, only
+ * **12 of 129 dockets** across the eight gate seeds see any EXPOSURE spread at all, and three seeds
+ * see none. The cause is not the size of the stake: `settleVenture` releases every stake at the
+ * settlement tick and `LEVY_ASSESS_PHASE` mints the docket on the **next** tick, so the assessment
+ * reads EXPOSURE at a **22x trough** — on `g01`, 4 open stake locks summed over six phase-0 ticks
+ * against 89 at phase 144. Raising this constant cannot fix that and the table above is what trying
+ * costs. `D31` records it as the open question, because the fix is a reading, not a price.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_STAKE_BPS = 300;
 
 /**
  * The cast, as a deterministic policy over the world.
@@ -1201,7 +1259,19 @@ export class HeuristicCast {
         return {
           ...base,
           verb: 'fill_role',
-          params: { venture: slot.venture, role: slot.role, hand: hand.id, stake: 0 },
+          // ── ★ AND IT NAMES A STAKE, WHICH IT DID NOT FOR THE PROJECT'S WHOLE LIFE ──
+          //
+          // `stake: 0` here was the *published* half of `D30`'s finding: EXPOSURE identically zero,
+          // so `BY_EXPOSURE`, `INVERSE_EXPOSURE` and `EVEN` were one flat weight and §5.2's vote had
+          // a single lever. {@link stakeFor} is the risk decision and every clause of it is a reason
+          // this member might still stake nothing — which is the point: a docket allocated by
+          // EXPOSURE needs the members to *differ*, not to all stake.
+          params: {
+            venture: slot.venture,
+            role: slot.role,
+            hand: hand.id,
+            stake: this.stakeFor(member, tick, slot),
+          },
         };
       }
     }
@@ -2673,6 +2743,106 @@ export class HeuristicCast {
       }
     }
     return null;
+  }
+
+  /**
+   * ★ What this member stakes on one open role, in MINOR. Zero is a legal and frequent answer.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A7's STAKED HALF, FIRST EXERCISED HERE.** §7.3 escrows a role stake at fill time so that
+   * *"filling a slot is not a free option"*, and its next sentence is what makes it a risk rather
+   * than a deposit: *"abandoning a filled slot forfeits the stake to the other parties, not to a
+   * sink."* Every principal in every world this repo had run passed `stake: 0`, so EXPOSURE — §3's
+   * *Σ open `max_direct_loss`* — was identically zero and three of the Levy's four allocation rules
+   * handed everybody one flat weight (`D30`). This branch is what makes them differ.
+   *
+   * ── ★ WHY THE STAKE IS PRICED OFF THE **ROLE**, NOT OFF THE MEMBER'S PURSE ──
+   *
+   * **This was measured, the wealth-priced version was written first, and it cost the world a
+   * quarter of its ventures.** §7.3 resolves a contested slot *"by the initiator's stated preference
+   * order or pro-rata by stake"* — so the stake is a **bid**, and `canonicalRequestOrder` ranks it
+   * above `principal_id`. Price the bid as a share of free STORES and the contest becomes a **wealth
+   * ranking**: the richest member in the world wins every contested slot, on every tick, forever.
+   *
+   * That is a systematic loss rather than a reshuffle, and the mechanism is this file's own decision
+   * order. `canPromiseOneMore` means only a member with a **large free balance** can open a venture at
+   * all (measured: `elective` per venture 5,251 against a mean appetite of 8,539, so the marginal
+   * member sits a few hundred MINOR from the gate). `fill_role` sits **above** `create` here and both
+   * need an idle hand. So a wealth-ranked contest moves slots from the members that *cannot* create
+   * onto the members that are the only ones that *can*, and each slot won costs a hand for a whole
+   * Reckoning — a create the world does not get. Measured on `g01`, 3 Reckonings, 8 members:
+   * **ventures 269 → 209** at 10 bps of free stores and **269 → 180** at 100 bps, with the stake
+   * *never locked at all* landing at **160** (so the lock is not the cause; the ordering is).
+   * Removing only the stake term from `canonicalRequestOrder` restored **269 exactly, and every
+   * counter with it** — which is what identifies the ordering as the whole of it.
+   *
+   * Priced off the role, two bidders for one slot compute the **same** number and the tie falls
+   * through to `principal_id` exactly as it did when every stake was zero. The bid discriminates only
+   * where a member genuinely cannot cover it, which is §7.3's rule doing what it is for — capital
+   * buys the slot from the party that has it — instead of a standing wealth order.
+   *
+   * ## The gate, in the order it is asked, and every clause is a *reason not to risk it*
+   *
+   *   1. **A role worth nothing is worth nothing to hold.** The value is
+   *      `escrowed + elective`, which is the same figure the `fill_role` affordance publishes as its
+   *      `weight`, so the bot bids off the number the menu shows (scar #5).
+   *   2. **★ THE BOOTSTRAP DOOR STAYS OPEN, AND THIS IS THE CLAUSE THE UNIT CONFUSION LIVES IN.**
+   *      A tribute is payable *"only in located goods"* (§5.2), so a **currency** lock cannot make a
+   *      goods bill short — comparing the two figures directly would be `weightOf('BY_STORES')`'s own
+   *      bug arriving through cast policy, and this file has now been caught by that family four
+   *      times. The real coupling runs the other way and it is exact:
+   *      `WORKS_GOODS_IN_CURRENCY_MINOR` makes **currency the only route back into the goods
+   *      economy** for a drained principal, which is the whole of `RULES_VERSION` 14 and the reason
+   *      A15 is not inverted today. So a member that cannot cover its own outstanding tribute **in
+   *      goods** keeps its currency free, because that currency is the door back in. Both sides of
+   *      the comparison are `ration`; what it decides is denominated in MINOR. Written out so the
+   *      next reader can see the units were checked rather than assumed.
+   *   3. **A member with no WORKS keeps the door's whole price free.** `worksQuote(...).totalMinor`
+   *      is the engine's own figure — 85,000 through the currency door — and it is the difference
+   *      between a member with an income and a member without one. Locking capital in front of it
+   *      would trade the tribute's only source for a tie-break on one slot.
+   *   4. **Never more than it can bear**, which is the clause that makes this a risk decision rather
+   *      than a price list: the bid is capped at what is left after the reserve, so a member with
+   *      nothing spare bids nothing and takes the slot at `stake: 0` — legal, and last in a contest.
+   *   5. **Never out of money already promised** — {@link canSpendWithoutBreakingAPromise},
+   *      `claimFor` clause 6 verbatim and for its reason: a stake is *locked*, not spent, but it
+   *      leaves the **free** balance and `CAST_ELECTIVE_APPETITE_BPS` is a share of exactly that. A
+   *      capital commitment funded out of an unsecured promise becomes a `DECLINED` default on the
+   *      public record, and a default this cast authored is worth less than nothing.
+   *
+   * Clauses 2–5 are why this is not a constant, and they are why EXPOSURE comes out **spread** rather
+   * than uniform: at any tick some members hold a WORKS and some do not, some are short of the good
+   * they owe and some are not, each holds a different number of roles of different value, and each has
+   * said a different amount out loud. A rule that allocates by EXPOSURE has something to allocate by
+   * only because those four facts differ.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private stakeFor(member: CastMember, tick: number, slot: { readonly venture: string; readonly role: number }): number {
+    const runtime = this.runtime;
+    const venture = runtime.ventures.get(slot.venture as VentureId);
+    if (venture === undefined) return 0;
+    const terms = venture.roles[slot.role]?.terms;
+    if (terms === undefined) return 0;
+    // 1. The bid: a share of what this slot is worth, which is what every bidder for it sees.
+    const bid = Math.trunc(((terms.escrowed + terms.elective) * CAST_STAKE_BPS) / BPS_ONE);
+    if (bid <= 0) return 0;
+
+    // 2. Short of the good the world is owed → the currency is the way back in, so it stays free.
+    //    Goods against goods; see the note above about why this is not the other comparison.
+    const owed = runtime.levyBlockFor(member.principal, tick)?.shortfall_if_unpaid ?? 0;
+    if (owed > 0 && Number(runtime.levyGoodAvailable(member.principal)) < owed) return 0;
+
+    // 3. No WORKS yet → hold the door's published price, whichever route it would take.
+    const reserve =
+      runtime.works.ofPrincipal(member.principal).length === 0
+        ? runtime.worksQuote(member.principal, this.bodyOf(member)).totalMinor
+        : 0;
+    // 4. And never more than is left over after it.
+    const stake = Math.min(bid, freeStores(runtime.ledger, member.principal) - reserve);
+    if (stake <= 0) return 0;
+    // 5. And never out of what it has already said it would pay.
+    if (!this.canSpendWithoutBreakingAPromise(member, stake)) return 0;
+    return stake;
   }
 
   /**

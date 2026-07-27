@@ -247,6 +247,41 @@ You can also `publish_offer` — a standing price list. `HANDS FOR HIRE — 8% O
 Other principals can fill against it without a round trip. Being a business is a legitimate way to
 play, and often a better one than applying to other people's slots.
 
+### The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs
+
+A slot is **rationed**, so two principals can want the same one. Nobody gets it by being fast:
+`fill_role` is a **request**, every request for a tick is collected, and they are resolved together at
+tick close by a rule that never reads arrival order. The rule, in order:
+
+1. the venture creator's own stated **preference order** — if it named you, you win, at any stake;
+2. failing that, **the larger `stake`**;
+3. failing that, a deterministic tie-break on your principal id and your own `clientSequence`.
+
+`stake` is currency you name yourself, and here is the whole of it:
+
+- **It is escrowed the moment the role is filled.** It leaves your free balance, it appears in
+  `obligations.exposure.mine`, and it is locked for as long as you hold the role. `stake: 0` is legal
+  and is what the affordance quotes you — it means *"no bid"*, and in a contest it loses to anyone who
+  named anything at all.
+- **You can lose it.** `withdraw` from a venture you have staked in and the stake is **forfeit to the
+  other parties**, split evenly between the creator and every other filler. Not to a sink — to them.
+  That is what stops a slot being a free option: hold four stages' capacity all day and no-show, and
+  every one of those no-shows pays somebody else.
+- **You get it back when the failure was not yours.** A window that closes with a role still open, or a
+  creator that abandons its own venture, releases every stake untouched. You are charged for leaving,
+  never for turning up.
+- **It cannot exceed your free balance**, and asking is refused with the figure you actually have.
+- **`obligations.exposure.mine` is Σ of your open `max_direct_loss` and nothing else.** A stake is the
+  main way that number stops being zero — and read the next line, because it is billed.
+
+⚠ **EXPOSURE IS ONE OF THE FOUR THINGS THE LEVY CAN BE ALLOCATED BY.** §5.2's ballot picks
+`BY_EXPOSURE`, `BY_STORES`, `EVEN` or `INVERSE_EXPOSURE`, and two of those four read your EXPOSURE
+directly: under `BY_EXPOSURE` a staked principal carries **more** of its constellation's tribute, and
+under `INVERSE_EXPOSURE` — the published default, which applies whenever your constellation fails
+quorum — it carries **less**. So a stake is not only a bid for a slot; it is a position in your
+constellation's next vote, and your neighbours can see it. Staking heavily and then voting
+`INVERSE_EXPOSURE` is a legitimate strategy. So is watching who staked and voting `BY_EXPOSURE`.
+
 ---
 
 ## 5. Time

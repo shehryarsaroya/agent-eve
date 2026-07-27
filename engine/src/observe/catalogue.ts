@@ -620,7 +620,21 @@ function fillCandidates(ctx: CatalogueContext, venture: VentureRecord, out: Cand
       maxContingentLiability: minor(0),
       forecloses: [
         phrase(`hand ${hand.ordinal} until tick ${String(venture.resolvesAtTick)}`),
-        phrase(`any other role in ${venture.id}`),
+        // ── ★ THE KNOB IS NAMED HERE, AND IT COST THE VENTURE ID TO DO IT ────
+        //
+        // `stake: 0` above is the quote's own worst case and stays 0 — quoting a stake the agent never
+        // chose would be a loss it never agreed to. What cannot stay silent is that the parameter
+        // *exists*: at `RULES_VERSION` 16 a stake is escrowed at fill time and forfeit to the other
+        // parties on `withdraw` (§7.3), and it is the second term in the contest order. A menu that
+        // offers the act and never mentions the knob is this project's defining defect one layer above
+        // the engine.
+        //
+        // Folded into the second entry rather than added as a third, and `MAX_FORECLOSE_ENTRIES` is
+        // why: it is **2**, `assertAffordance` throws above it, and `MAX_PHRASE_CHARS` is 64. So the
+        // venture id comes out of this string — it is in `params.venture` in the same object, which is
+        // where a machine reader takes it from anyway. The full sentence, with the return conditions
+        // and the Levy coupling, is on the live `api/observe.ts` offer and in `agent.md` §4.
+        phrase('one role per venture; a bigger stake outbids and is forfeit'),
       ],
       expiresTick: Math.min(venture.windowClosesTick, quoteHorizon(sources.tick)),
       weight: minor(role.terms.escrowed + role.terms.elective),

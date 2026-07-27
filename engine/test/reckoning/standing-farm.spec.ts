@@ -31,9 +31,23 @@ const STANDING = readFileSync(new URL('../../src/reckoning/standing.ts', import.
 describe('D12 — the mechanics that line up, each correct alone', () => {
   it('filling a role is FREE: the stake defaults to zero', () => {
     // The mechanic that makes a puppet usable at all. A principal with no capital can take a role,
-    // because naming no stake takes no stake — and `lockRoleStake` returns early on `stake <= 0`.
-    expect(RUNTIME, 'the fill request defaults the stake').toContain(
-      "stake: minor(readInt(req.params, ['stake', 'stake_minor']) ?? 0)",
+    // because naming no stake takes no stake — and `lockFillStake` returns early on `stake <= 0`.
+    //
+    // ── UPDATED AT `RULES_VERSION` 16, AND THE HOLE IS UNCHANGED ──────────────
+    //
+    // The read used to be one expression, `stake: minor(readInt(...) ?? 0)`. `D31` split it in two so
+    // that `vFillRole` can refuse a negative stake and one above free STORES *synchronously* — a stake
+    // is now genuinely escrowed at fill time (§7.3) and a lock that fails at tick close is silent. The
+    // **default is still 0** and that is the whole of D12's first mechanic, so the two assertions below
+    // pin the default and the early return rather than one line of syntax.
+    expect(RUNTIME, 'the fill request no longer defaults the stake to zero').toContain(
+      "const stake = readInt(req.params, ['stake', 'stake_minor']) ?? 0;",
+    );
+    expect(RUNTIME, 'the default no longer reaches the request').toContain('stake: minor(stake),');
+    // And the free path is still free: no lock is opened for a zero stake, so a capital-less puppet
+    // takes a role at no cost and D12's loop is untouched by the escrow landing.
+    expect(RUNTIME, 'a zero stake must open no lock, or filling a role stops being free').toContain(
+      'if (grant.request.stake <= 0) continue;',
     );
   });
 

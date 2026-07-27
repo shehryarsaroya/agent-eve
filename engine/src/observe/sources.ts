@@ -278,6 +278,28 @@ export interface ObserveSources {
    * while every gate stays green.
    */
   readonly sealedRoles: ReadonlySet<string>;
+  /**
+   * ★ §6.3's recurring upkeep — the CHARGE — in **the good it is payable in**, summed over every
+   * claim this principal holds.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ADDED BECAUSE `HoldingLine.upkeep_due` WAS A `Minor` HARDWIRED TO 0 FOR AN OBLIGATION THAT IS
+   * CURRENCY *PLUS* GOODS.** Its doc said the zero was *"a fact rather than a placeholder: a Commons
+   * holding is civic-leased and charges no upkeep"* — which was true when it was written and stopped
+   * being true when sovereignty shipped. `api/observe.ts` publishes the real bill as `upkeep_due_qty`
+   * with `upkeep_good` beside it and says why at the call site; **this builder had no way to see it**,
+   * so its `holding` block reported nothing owed to a claimant three misses from a lapsed claim and a
+   * slashed `CLAIM_BOND_MINOR`. A5′ in its quiet direction — the agent is told it is safe to do
+   * nothing.
+   *
+   * The read is here rather than derived inside `holdingLine` because this module must not learn what
+   * a claim is (§15.5): the sovereignty book owns that, and one more narrow read is the same shape as
+   * {@link StoresRead}. Zero is the honest answer for a principal holding no claim.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly upkeepOwed: (principal: PrincipalId) => Qty;
+  /** The good {@link upkeepOwed} is denominated in. One home, so no caller guesses `ration`. */
+  readonly upkeepGood: GoodId;
 }
 
 /** The seal key, in one place, so the API layer and this module cannot disagree. */

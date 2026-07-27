@@ -67,14 +67,69 @@ import { holdingOf, tierOf } from '../../src/world/index.js';
  *
  * **Two, and asserted per seed rather than in aggregate**, because one of them is what makes the
  * logistics branch detectable at all: with `crewMove` deleted `fz-13` still fights (its hands happen to
- * be home when the world arrives) and `g16` builds three hulls and flies **none** — `engage: 0`, zero
- * wrecks. An aggregate over both would pass with the branch removed, which is the vacuous shape this
- * project keeps finding and which the first version of this file had.
+ * be home when the world arrives) and the second seed builds three hulls and flies **none** —
+ * `engage: 0`, zero wrecks. An aggregate over both would pass with the branch removed, which is the
+ * vacuous shape this project keeps finding and which the first version of this file had.
+ *
+ * ── ★ `g16` → `g10` AT `RULES_VERSION` 16, AND THE HEADER'S OWN INSTRUCTION IS WHY ──
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The header says: *"If the map or the seating changes, re-pick a seed that seats a raider at `sys-09`
+ * or `sys-16` rather than deleting the assertion."* Neither changed — the **cast's trajectory** did.
+ * `D31` made `fill_role` carry a stake, and §7.3 resolves a contested slot *pro-rata by stake*, so which
+ * member wins which slot moves. On `g16` that is enough to cost `kestrel` its one engagement:
+ * `engage` **1 → 0**, wrecks **564 → 0**, battles 3 → 2, with the same three hulls built. `fz-13` is
+ * untouched (`engage` 1, wrecks 2,076).
+ *
+ * **This is trajectory sensitivity rather than a broken branch, and `D31` measured the size of it
+ * directly**: with *zero* stakes and nothing changed but the SIGN of `canonicalRequestOrder`'s
+ * `principal_id` tie-break — a semantically null edit — 8 seeds at 3 Reckonings lose 15% of their
+ * ventures and 83% of `CARRIED`. `g16` was chosen because it sits on a knife edge (that is what makes
+ * it detect `crewMove`), and a knife edge is exactly what a trajectory change tips.
+ *
+ * `g10` replaces it on the same two criteria, both re-measured under the new cast:
+ *
+ *   · it seats a raider (`brannock`) on a Frontier gate, graduates, builds the doctrine and fights —
+ *     `engage` 1, wrecks 780, 2 battles reaching AFTERMATH;
+ *   · and it **still detects the logistics branch**: with `crewMove` deleted, `g10` goes `engage` 1 → 0
+ *     and wrecks 780 → 0 while still building three hulls, which is precisely the property `g16` was
+ *     carrying. `g24` was the other candidate and was rejected for failing this second test — it
+ *     fights with `crewMove` gone, so the pair would have stopped covering it.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-export const WAR_SEEDS = ['fz-13', 'g16'] as const;
+export const WAR_SEEDS = ['fz-13', 'g10'] as const;
 
 /** Seeds the balance half is asserted over. The four the territorial gate was measured on. */
 const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
+
+/**
+ * ★ Seeds the **published frame** half is asserted over, and they are not {@link WAR_SEEDS}.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE FOUR CRITERIA DO NOT ALL FIT IN TWO SEEDS ANY MORE, AND SPLITTING IS THE HONEST ANSWER.**
+ * A seed has to do four separable things for this file: reach a two-sided CONTEST, destroy a hull,
+ * carry a two-sided line onto a frame *published at a settlement tick*, and go dark when `crewMove`
+ * is deleted. Measured under the `RULES_VERSION` 16 cast:
+ *
+ * | seed | CONTEST + wreck | two-sided line on a FRAME | detects `crewMove` deletion |
+ * |---|---|---|---|
+ * | `fz-13` | yes | yes | **no** (its hands are home anyway) |
+ * | `g10` | yes | **no** — 2 lines published, both RAIDER-only | **yes** (`engage` 1 → 0) |
+ * | `g24` | yes | yes | **no** (fights with the branch gone) |
+ *
+ * `g10`'s battle is real and its wrecks are real; what it does not do is have one of *ours* standing
+ * on the line at the tick the frame is drawn — `BATTLE_LINE_RETAIN_TICKS` is one Reckoning, so the
+ * frame carries the battle, and its formation had already gone. That is a fact about one seed's
+ * timing, not about A13, and forcing it into the frame assertion would mean deleting the assertion
+ * that catches a `crewMove` regression.
+ *
+ * So `WAR_SEEDS` keeps the pair that covers the branch and `LINE_SEEDS` covers the pixel signature.
+ * The alternative — one pair that passes everything — was `['fz-13', 'g24']`, and it fails the test
+ * this file cares most about: with `crewMove` deleted **the whole file would stay green**, which is
+ * the vacuity its own header calls out.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+const LINE_SEEDS = ['fz-13', 'g24'] as const;
 
 interface Wreck {
   readonly battle: string;
@@ -263,9 +318,13 @@ describe('★ the cast builds a fleet out of goods it produced, and flies it', (
    *
    * MUTATION: set {@link BATTLE_LINE_RETAIN_TICKS} back to 2 — RED on both seeds, which is the state
    * combat shipped in.
+   *
+   * Asserted over {@link LINE_SEEDS} rather than {@link WAR_SEEDS}, and the table at `LINE_SEEDS`
+   * says why: `g10` is in the war pair because it is the one seed that detects a `crewMove` deletion,
+   * and its own battle resolves before the frame that would carry both sides is drawn.
    */
   it('publishes THE BATTLE LINE with two sides on it', () => {
-    for (const seed of WAR_SEEDS) oneLine(seed);
+    for (const seed of LINE_SEEDS) oneLine(seed);
   }, 600_000);
 });
 
@@ -365,8 +424,11 @@ function oneLine(seed: string): void {
     );
     expect(
       both.length,
-      'every battle line on every frame has one side only — the world turned up and nobody contested ' +
-        'it, which renders identically to peace',
+      // The seed is in the message because it was not, and identifying which of two seeds had gone
+      // one-sided cost a separate run. Every assertion in a per-seed loop names its seed.
+      `${seed}: every battle line on every frame has one side only — the world turned up and nobody ` +
+        `contested it, which renders identically to peace (${String(war.lines.length)} line(s) seen, ` +
+        `sides ${[...new Set(war.lines.flatMap((l) => l.formations.map((f) => f.side)))].join('/') || 'none'})`,
     ).toBeGreaterThan(0);
     for (const line of both) {
       expect(line.gap, 'the gap is the motion, and it is inside the range table').toBeGreaterThanOrEqual(0);

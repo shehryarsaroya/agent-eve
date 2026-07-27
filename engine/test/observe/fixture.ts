@@ -26,7 +26,7 @@ import type {
   SystemId,
   WorldStatus,
 } from '../../src/core/types.js';
-import { minor, type Minor } from '../../src/core/units.js';
+import { minor, qty, type Minor, type Qty } from '../../src/core/units.js';
 import { storesAccount } from '../../src/ledger/index.js';
 import {
   noMarks,
@@ -43,6 +43,7 @@ import {
   type SensingIndex,
   type TalkRow,
 } from '../../src/observe/index.js';
+import { CHARGE_GOOD } from '../../src/sovereignty/params.js';
 import type { VentureRecord } from '../../src/venture/index.js';
 import { ALICE, RULES_VERSION, fixture, type Fixture } from '../venture/fixture.js';
 
@@ -108,6 +109,8 @@ export interface SourceOptions {
   readonly sealedRoles?: ReadonlySet<string>;
   readonly markPriceOf?: MarkPriceRead;
   readonly standingOf?: (principal: PrincipalId) => Standing | null;
+  /** §6.3's Charge, in goods. Defaults to nothing owed — the no-claim case. */
+  readonly upkeepOwed?: (principal: PrincipalId) => Qty;
 }
 
 /**
@@ -143,6 +146,10 @@ export function sourcesFor(f: Fixture, options: SourceOptions = {}): ObserveSour
     ballots: options.ballots ?? [],
     sensing: options.sensing ?? sensingFromWorld(f.world, tick),
     sealedRoles: options.sealedRoles ?? new Set<string>(),
+    // The default is the no-claim case, which is the honest zero. A test about a claimant's upkeep
+    // names its own, so a `0` here can never be mistaken for the assertion.
+    upkeepOwed: options.upkeepOwed ?? (() => qty(0)),
+    upkeepGood: CHARGE_GOOD,
   };
 }
 

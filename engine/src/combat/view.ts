@@ -812,11 +812,38 @@ export function hullOfferFor(args: {
     verb: 'build',
     params: { kind: 'HULL', system: args.system, hull: args.hull, modules: [...args.modules] },
     cost: 1,
-    // The goods, in full. They are destroyed into the build and there is no salvage.
-    max_direct_loss: args.frame + args.fuel,
-    max_contingent_liability: args.frame + args.fuel,
+    // ── ★ TWO GOODS, TWO FIELDS. `frame + fuel` WAS A QUANTITY OF NOTHING ─────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // Both fields read `args.frame + args.fuel`, which adds **1,500 units of `ration` to 90 units of
+    // `fuel`** and publishes 1,590 — a figure an agent cannot spend, hold or lose, in a field §3
+    // denominates in MINOR. It is the one-word-two-units family (`weightOf('BY_STORES')`, the `spare`
+    // pick, `orderOutcomes`, `claimFor`'s cover gate) arriving as a *sum across two goods* rather than
+    // as the wrong one of two, and it is the worst version of it: the wrong unit at least names
+    // something real.
+    //
+    // The scales are nothing like each other. `CAST_ARMS_RESERVE_MULTIPLE`'s note has the measurement:
+    // a WARDEN's 90 `fuel` is **nine ticks** of a sole-occupant FRONTIER yield where its 1,500
+    // `ration` is ten — comparable in *time to acquire*, and `fuel` is FRONTIER-only, so the two are
+    // not substitutable at any price the game publishes. Summing them told an agent the `fuel` half
+    // was a 6% rounding on the bill when it is half of it.
+    //
+    // Split the way `build {WORKS}` and `build {ANCHOR}` already split theirs — one field per unit,
+    // with `what_it_forecloses` naming which is which. `api/observe.ts` publishes
+    // `max_direct_loss: worksHere.totalMinor` (currency) against
+    // `max_contingent_liability: worksHere.costQty` (goods) and states the reason at the call site;
+    // the ANCHOR offer is `ANCHOR_QTY` against `CLAIM_BOND_MINOR`, the same shape mirrored. `ration`
+    // takes the first field because it is the good **every other obligation in the game is
+    // denominated in** — the Levy, a Charge, a WORKS build — so it is the one figure an agent can put
+    // beside the rest of its bills. There is no currency leg at all: `hullBuildRefusal` checks
+    // `goodsAt` twice and nothing else, which is also why `ShipyardPort` no longer carries a
+    // `freeStoresOf`.
+    // ══════════════════════════════════════════════════════════════════════════
+    max_direct_loss: args.frame,
+    max_contingent_liability: args.fuel,
     what_it_forecloses:
-      `destroys ${String(args.frame)} ration and ${String(args.fuel)} fuel standing at ${args.system} and ` +
+      `destroys ${String(args.frame)} ration (max_direct_loss) and ${String(args.fuel)} fuel ` +
+      `(max_contingent_liability — a second good, never added to the first) standing at ${args.system} and ` +
       `berths a ${args.hull} there, committable from tick ${String(args.readyAtTick)}. **The fit is frozen ` +
       `at build and can never be changed**, and the hull never travels: it fights only at ${args.system}, so ` +
       `to fight elsewhere you must build elsewhere. Fuel is produced only at FRONTIER systems, which is why ` +

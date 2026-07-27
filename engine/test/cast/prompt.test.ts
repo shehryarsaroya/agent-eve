@@ -583,7 +583,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // prose went into `## 5`'s Levy block, which is FLOOR, so every position below grew by the same
     // +2,200 — that is what the ceiling was raised for and it is spent on purpose.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(61_693);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(64_233);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -601,7 +601,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(54_107);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(56_647);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1128,9 +1128,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const source = readFileSync(new URL('../../src/cast/prompt.ts', import.meta.url), 'utf8');
     const spelled = { 28: 'twenty-eight', 41: 'forty-one', 44: 'forty-four', 45: 'forty-five' };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(44);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(45);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 44],
+      spelled[n as 45],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1196,7 +1196,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       engage:
         'A refused demand becomes a BATTLE — the five phases + Committing a hull — `engage` + `withdraw_below_bps` is a STOP CONDITION, not an act',
       fight: 'Answering either one — `yield` · `fight` · join, or say nothing',
-      fill_role: '(preamble)',
+      fill_role:
+        '(preamble) + The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
       form: 'Founding one — `form` `{"name":"...", ...}`',
       graduate: '`graduate` — leaving, and it is one-way',
       grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
@@ -1211,7 +1212,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       set_delivery_intent: 'The Levy — nobody sits this out',
       sign: '(preamble)',
       trade: '(preamble)',
-      vote: 'The Levy — nobody sits this out',
+      vote:
+        'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs + The Levy — nobody sits this out',
       withdraw: 'Leaving costs a Reckoning of notice',
       yield: 'Answering either one — `yield` · `fight` · join, or say nothing',
     });
@@ -1309,12 +1311,26 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      34_945, // a newcomer on its first wake
-      38_869, // mid-game in the Commons
-      39_511, // about to take territory — and §11B is READABLE now, which it was not
-      54_107, // a claimant in trouble — the largest REACHABLE position
-      61_693, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
+      34_940, // a newcomer on its first wake
+      41_409, // mid-game in the Commons
+      42_051, // about to take territory — and §11B is READABLE now, which it was not
+      56_647, // a claimant in trouble — the largest REACHABLE position
+      64_233, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
     ]);
+    // ── ★ FOUR ROWS +2,540, AND THAT IS THE ROLE `stake` GETTING WRITTEN DOWN ─────────────────
+    //
+    // `### The third half: \`stake\` on \`fill_role\`` is RULES for anybody offered `fill_role` or
+    // `vote`, so it lands on every position that holds a role and on none that does not — which is
+    // why the newcomer row is the only one that does not rise. It goes the other way by **5
+    // characters**, and that is `### Negotiating` losing the separator it used to run to now that a
+    // sibling block follows it; no prose was cut.
+    //
+    // Written at full length for `deliver {payer}`'s reason one feature earlier: a stake is
+    // **escrowed at fill time and forfeit to the other parties on withdrawal** (§7.3) and it is the
+    // figure two of §5.2's four allocation rules are computed from. Until `RULES_VERSION` 16
+    // `lockFillStake` had no caller, EXPOSURE was identically zero, and there was nothing to say —
+    // so this is the first version of `agent.md` that *can* say it, and the ceiling is what let it.
+    // The largest reachable position is 56,647 against 72,000.
     // ── ★ ALL FIVE ROWS +2,200, AND THAT IS `deliver {payer}` GETTING WRITTEN DOWN ────────────
     //
     // The whole table moved by the same +2,240 because the prose went into `## 5`'s Levy block,

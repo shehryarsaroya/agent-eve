@@ -190,7 +190,38 @@ export function weightOf(rule: LevyRule, subject: LevySubject): number {
     case 'EVEN':
       return 1;
     case 'BY_EXPOSURE':
-      return 1 + Math.max(0, subject.exposure);
+      // ── ★ `LEVY_EXPOSURE_UNIT`, NOT `1`, AND THE FIRST WORLD WITH REAL EXPOSURE FOUND OUT WHY ──
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // **THIS RULE HAD NEVER RUN AGAINST A NON-ZERO EXPOSURE, AND THE FIRST TIME IT DID IT BILLED
+      // ONE MEMBER 98.9% OF ITS CONSTELLATION'S TRIBUTE OVER 450 MINOR OF PERIL.**
+      //
+      // Measured, seed `g07`, Reckoning 5, `BY_EXPOSURE`, total 120,000 across six members: `p:sable`
+      // carried EXPOSURE **450** and everybody else 0. At `1 + exposure` the weights are `451` against
+      // five `1`s, so sable was assessed **118,449** while holding 38,932 units of the levy good — and
+      // `levyShort` went from 0 to 9,847 on that one row. Nobody voted for that. The five members that
+      // chose the rule were choosing a *flat* docket, because on every previous docket in this
+      // project's history EXPOSURE was identically zero (`D30`) and `1 + 0` is `1` for everyone.
+      //
+      // The bug is that the `1` is a **unit** standing against a MINOR quantity, so the rule had no
+      // scale: any exposure at all dwarfs the base and the single most exposed member pays nearly
+      // everything. `BY_STORES` gets away with `1 + levyGoodHeld` because every member holds tens of
+      // thousands of the good, so the `1` is noise and the rule is proportional. This one is not.
+      //
+      // {@link LEVY_EXPOSURE_UNIT} is the constant that already exists for exactly this and it is
+      // already in the *other* exposure rule: `INVERSE_EXPOSURE` is `NUM / (UNIT + exposure)`, and its
+      // declaration says the UNIT is there *"so that a zero-EXPOSURE principal has a finite weight"*.
+      // §5.2 presents the two as opposites, and opposites have to be on one scale — the engine had
+      // them on two. With the UNIT here the pair are exact mirrors: `UNIT + e` against
+      // `NUM / (UNIT + e)`. Monotone in EXPOSURE, never zero (the Levy has no exemptions), and now
+      // *proportional*: 450 of peril buys a 1.45x share rather than a 451x one.
+      //
+      // **It recomputes bit-identically for every docket ever settled.** `largestRemainder` over equal
+      // weights gives the same shares whether every weight is `1` or every weight is `1000`, and every
+      // docket in this world's history had EXPOSURE 0 for every member. So this is a real balance
+      // change that costs the live record nothing.
+      // ══════════════════════════════════════════════════════════════════════════
+      return LEVY_EXPOSURE_UNIT + Math.max(0, subject.exposure);
     case 'BY_STORES':
       // The INVENTORY half of STORES, never the balance. `levyGoodHeld` carries the whole
       // argument and the measurement; the one-line version is that a goods obligation weighted

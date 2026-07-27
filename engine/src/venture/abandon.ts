@@ -28,6 +28,16 @@ export interface AbandonPort {
   readonly freeHand: (hand: HandId) => void;
   /** Give the escrow back to whoever funded it. Never throws, never halts. */
   readonly refundEscrow: (venture: VentureRecord) => void;
+  /**
+   * ★ Release every role stake this venture holds, **back to the principal that staked it.**
+   *
+   * §7.3 forfeits a stake for *"abandoning a filled slot"* — the filler's own act, which is
+   * `withdraw`. This is the opposite end of the same deal: the **creator** walked away, and charging
+   * the fillers for that would price turning up. It is also INV-4: `resolveAbandoned` takes the
+   * venture terminal, and a stake still locked against a terminal venture is an orphan lock, which
+   * halts the tick.
+   */
+  readonly releaseStakes: (venture: VentureRecord) => void;
 }
 
 export function abandon(
@@ -51,6 +61,9 @@ export function abandon(
   if (venture.state !== 'FORMING') {
     return reject('PROP-V6', `${ventureId} is ${venture.state}; only a FORMING venture can be abandoned.`);
   }
+  // Before `resolveAbandoned`, which takes the venture terminal: a release after that point would be
+  // a release against a dead obligation, and the ASSERT phase runs between this tick and the next.
+  port.releaseStakes(venture);
   for (const hand of port.resolveAbandoned(ventureId)) port.freeHand(hand);
   port.refundEscrow(venture);
   return { ok: true, value: null };

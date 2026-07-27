@@ -237,8 +237,15 @@ describe('PROP-O2 — the static half: the floor rung is proved to fit', () => {
     check('market', built.market.books, 200);
     check('grant', [...built.grants.granted, ...built.grants.held], 300);
     check('whatResolves', built.header.next_reckoning.what_resolves, 40);
-    check('withheldRow', built.header.withheld, 70);
-    check('doNothing', built.briefing.if_you_do_nothing.outcomes, 110);
+    // 69, not 70: one character was moved from this bound to `doNothing`'s so that
+    // `DoNothingOutcome.unit` fits inside `floorWorstCaseChars()`. The arithmetic is at
+    // `WORST_ITEM_CHARS.withheldRow`; the measured maximum on this maximal world is 61.
+    check('withheldRow', built.header.withheld, 69);
+    // 124, not 110: `DoNothingOutcome.unit` publishes the denomination of `amount`, which carried
+    // **five different units** under one name. The literal is duplicated from `WORST_ITEM_CHARS` on
+    // purpose (see `board` above), and the +14 is paid for one line up rather than by narrowing the
+    // list — see both notes in `tokens.ts`. Measured maximum on this maximal world: 124 exactly.
+    check('doNothing', built.briefing.if_you_do_nothing.outcomes, 124);
     check('hand', built.hands, 440);
     // A loaded hand is the whole reason the bound moved, so the measurement is only
     // valid if the payload actually carries the cargo.

@@ -88,11 +88,79 @@ export type DoNothingKind =
   /** Nothing of yours resolves. Said explicitly, because silence reads as an error. */
   | 'NOTHING_RESOLVES';
 
+/**
+ * ★ What {@link DoNothingOutcome.amount} is **denominated in**, per kind.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **ONE FIELD, FIVE UNITS, AND NOTHING IN THE PAYLOAD SAID WHICH.** `amount` is typed `Minor` and is
+ * populated from a **goods** obligation (`LEVY_UNPAID`, discharged only in `ration`), three
+ * **currency** figures, a **count of roles** (`ROLE_OPEN`, 1..4) and an **absolute tick number**
+ * (`HAND_LANDS`). `D28` fixed the *comparator* that ranked all five on one scale; the **field** went
+ * on carrying five units under one name, in the payload `agent.md` §12 tells an agent to read first
+ * every wake. §3 is a rules surface and HARD RULE 4 says one word per concept: an agent shown
+ * `{kind: "LEVY_UNPAID", amount: 19304}` beside `{kind: "HAND_LANDS", amount: 5274}` was being asked
+ * to know, from nowhere, that the first is rations and the second is a clock.
+ *
+ * Two things this buys that a comment could not:
+ *
+ *   1. **The payload says it.** A2: *"known arithmetic is exact and machine-readable"* — the unit of a
+ *      published figure is part of the arithmetic being exact, and an agent that has to infer it from
+ *      the kind is doing the arithmetic we were supposed to do. Not a new observe key (`OBSERVE_KEYS`
+ *      is at its 10/10 ceiling); a field on a row inside `briefing`, which is never dropped.
+ *   2. **{@link orderOutcomes} compares units, not kinds.** The old guard was *"same kind, therefore
+ *      same unit"*, which is true and is the wrong invariant — it holds by accident of the current
+ *      kind list and stops holding the moment two kinds share a unit or one kind changes its own. The
+ *      comparator now falls back to `amount` only when both rows agree on `unit`, so a future kind
+ *      cannot reintroduce the bug by being added to `GRAVITY` and forgotten.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export type DoNothingUnit =
+  /** MINOR of currency, the unit EXPOSURE and every escrow figure is in. */
+  | 'MINOR'
+  /**
+   * Units of a good, and for `LEVY_UNPAID` that good is `ration` (§5.2: payable only in goods).
+   *
+   * `QTY` rather than `GOODS_QTY` for two reasons and both are rules. It is the repo's own word for a
+   * goods quantity — the `Qty` brand, `costQty`, `upkeep_due_qty` — so HARD RULE 4 wants one spelling;
+   * and it is **four characters shorter**, which `observe/tokens.ts:WORST_ITEM_CHARS.doNothing` needs:
+   * at `GOODS_QTY` the worst-case item is 124 characters and `floorWorstCaseChars()` breaks the
+   * `NORMAL_TOKEN_CAP` proof by 8. A shorter canon word is a cheaper payload for free.
+   */
+  | 'QTY'
+  /** A cardinality — how many of a thing. Never a value. */
+  | 'COUNT'
+  /** An absolute tick on the world clock. Never a duration and never an amount. */
+  | 'TICK'
+  /** There is no figure. The `amount` is 0 and means nothing at all. */
+  | 'NONE';
+
+/**
+ * The unit of every kind, declared once. **Total over {@link DoNothingKind}**, so a new kind will not
+ * compile until its unit is stated — which is the executable half of the note above.
+ */
+export const UNIT_OF: Readonly<Record<DoNothingKind, DoNothingUnit>> = Object.freeze({
+  ELECTIVE_LAPSES: 'MINOR',
+  ELECTIVE_AT_RISK: 'MINOR',
+  ESCROW_EXECUTES: 'MINOR',
+  LEVY_UNPAID: 'QTY',
+  ROLE_OPEN: 'COUNT',
+  HAND_LANDS: 'TICK',
+  SEAL_ABSENT: 'NONE',
+  NOTHING_RESOLVES: 'NONE',
+});
+
 export interface DoNothingOutcome {
   readonly kind: DoNothingKind;
   /** The venture, hand or place this is about. Empty when it is about nothing. */
   readonly subject: string;
+  /**
+   * The figure — **and read {@link unit} before doing anything with it.** Typed `Minor` because that
+   * is what most kinds carry and the branded type is what the rest of the observation is built from;
+   * the type is not the denomination and {@link UNIT_OF} is.
+   */
   readonly amount: Minor;
+  /** ★ What {@link amount} is denominated in. Always `UNIT_OF[kind]`; published, never inferred. */
+  readonly unit: DoNothingUnit;
   /**
    * `FACT` when the figure is arithmetic on pinned terms; `ESTIMATE` when it depends
    * on a residual not yet drawn. §11.3 requires the three-way separation everywhere.
@@ -199,6 +267,7 @@ export function buildBriefing(sources: ObserveSources, principal: PrincipalId): 
         kind: 'SEAL_ABSENT',
         subject: `${venture.id}#${String(role.index)}`,
         amount: minor(0),
+        unit: UNIT_OF.SEAL_ABSENT,
         provenance: 'FACT',
         band: null,
       });
@@ -207,7 +276,9 @@ export function buildBriefing(sources: ObserveSources, principal: PrincipalId): 
       outcomes.push({
         kind: 'ROLE_OPEN',
         subject: venture.id,
+        // A CARDINALITY, and the payload now says so. `UNIT_OF.ROLE_OPEN` is `COUNT`.
         amount: minor(openIndices(venture).length),
+        unit: UNIT_OF.ROLE_OPEN,
         provenance: 'FACT',
         band: null,
       });
@@ -220,7 +291,10 @@ export function buildBriefing(sources: ObserveSources, principal: PrincipalId): 
       outcomes.push({
         kind: 'LEVY_UNPAID',
         subject: sources.levy.deliverable_to,
+        // GOODS. §5.2: the Levy is payable "only in located goods", so this is units of `ration` and
+        // never MINOR — the one row in this list an agent is most likely to compare with the others.
         amount: owed,
+        unit: UNIT_OF.LEVY_UNPAID,
         provenance: 'FACT',
         band: null,
       });
@@ -233,7 +307,10 @@ export function buildBriefing(sources: ObserveSources, principal: PrincipalId): 
       outcomes.push({
         kind: 'HAND_LANDS',
         subject: hand.id,
+        // An ABSOLUTE TICK. This is the field that carried `D28`'s clock bomb, and the unit is now
+        // published rather than left for a comparator to get right.
         amount: minor(eta),
+        unit: UNIT_OF.HAND_LANDS,
         provenance: 'FACT',
         band: null,
       });
@@ -245,6 +322,7 @@ export function buildBriefing(sources: ObserveSources, principal: PrincipalId): 
       kind: 'NOTHING_RESOLVES',
       subject: '',
       amount: minor(0),
+      unit: UNIT_OF.NOTHING_RESOLVES,
       provenance: 'FACT',
       band: null,
     });
@@ -284,6 +362,7 @@ function payerOutcomes(venture: VentureRecord, principal: PrincipalId): DoNothin
       kind: 'ELECTIVE_LAPSES',
       subject: `${venture.id}#${String(claim.roleIndex)}`,
       amount: claim.electiveDue,
+      unit: UNIT_OF.ELECTIVE_LAPSES,
       provenance: isWage ? 'FACT' : 'ESTIMATE',
       band: isWage ? null : electiveBand(venture, claim.roleIndex),
     });
@@ -306,6 +385,7 @@ function payeeOutcomes(venture: VentureRecord, principal: PrincipalId): DoNothin
       kind: 'ESCROW_EXECUTES',
       subject: `${venture.id}#${String(role.index)}`,
       amount: mine.escrowedDue,
+      unit: UNIT_OF.ESCROW_EXECUTES,
       provenance: isWage ? 'FACT' : 'ESTIMATE',
       band: isWage ? null : escrowedBand(venture, role.index),
     });
@@ -315,6 +395,7 @@ function payeeOutcomes(venture: VentureRecord, principal: PrincipalId): DoNothin
       kind: 'ELECTIVE_AT_RISK',
       subject: `${venture.id}#${String(role.index)}`,
       amount: mine.electiveDue,
+      unit: UNIT_OF.ELECTIVE_AT_RISK,
       provenance: isWage ? 'FACT' : 'ESTIMATE',
       band: isWage ? null : electiveBand(venture, role.index),
     });
@@ -430,8 +511,14 @@ export function orderOutcomes(outcomes: readonly DoNothingOutcome[]): DoNothingO
     .sort(
       (a, b) =>
         GRAVITY[a.kind] - GRAVITY[b.kind] ||
-        // Same kind, therefore same unit. This is the only place `amount` is compared.
-        b.amount - a.amount ||
+        // ── ★ THE GUARD IS THE **UNIT**, NOT THE KIND ────────────────────────
+        //
+        // This read `b.amount - a.amount` behind the comment *"same kind, therefore same unit"*. That
+        // sentence is true today and is the wrong invariant: it holds by accident of the current kind
+        // list, and the next kind added to `GRAVITY` inherits an amount comparison nobody checked the
+        // denomination of. Compare the published unit instead and the guard survives its own kind
+        // list — two rows only rank by `amount` when they agree on what `amount` means.
+        (a.unit === b.unit ? b.amount - a.amount : 0) ||
         compareIds(a.subject, b.subject),
     )
     .slice(0, LIST_CAPS.doNothing);

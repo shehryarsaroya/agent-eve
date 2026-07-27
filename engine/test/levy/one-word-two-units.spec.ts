@@ -22,6 +22,29 @@
  *   4. **`claimFor`'s cover multiple** compared an `ore` income against a `ration` bill with no
  *      refine conversion — the same arithmetic `api/observe.ts` had already fixed in the WORKS
  *      payback sentence. Tripwired here, honestly (see that test's own non-vacuity note).
+ *   5. **`DoNothingOutcome.amount` itself.** #3 fixed the comparator and left the *field* carrying
+ *      five units under one name. `UNIT_OF` now publishes the denomination per kind and
+ *      `orderOutcomes` guards on the **unit** rather than on the kind, so a new kind cannot
+ *      reintroduce the bug by being added to `GRAVITY` and forgotten. Pinned here.
+ *   6. **`hullOfferFor` added two GOODS together** — 1,500 `ration` + 90 `fuel` published as one
+ *      `max_direct_loss` of 1,590, a quantity of nothing, in the field §3 denominates in MINOR. Split
+ *      one-field-per-unit the way `build {WORKS}` and `build {ANCHOR}` already are. Pinned here.
+ *   7. **`ShipyardPort.freeStoresOf`** — a **currency** reader on a verb priced entirely in goods,
+ *      with no caller. Deleted; `combat/engage.ts` carries the argument at the gap it left.
+ *   8. **`HoldingLine.upkeep_due`** — one `Minor` at 0 with a comment claiming *"a Commons holding is
+ *      civic-leased and charges no upkeep"*, for §6.3's Charge, which is real and payable **only in
+ *      goods**. Split into the currency zero plus `upkeep_due_qty`/`upkeep_good`, matching the live
+ *      builder key for key. Pinned here.
+ *
+ * ── ★ AND ONE THAT IS THE OTHER DIRECTION: A UNIT WITH NO SCALE ──────────────
+ *
+ *   9. **`weightOf('BY_EXPOSURE')` was `1 + exposure`.** Not the wrong unit — *no* unit: the `1` is a
+ *      cardinality standing against a MINOR quantity, so the rule had no scale and any EXPOSURE at all
+ *      dwarfed the base. It could not be seen until EXPOSURE stopped being identically zero, and the
+ *      first docket that had any billed one member **118,449 of 120,000 over 450 MINOR of peril**.
+ *      Now `LEVY_EXPOSURE_UNIT + exposure`, the mirror of `INVERSE_EXPOSURE`'s own denominator. Pinned
+ *      here, and it is the one site in this family whose fix is a *balance* change rather than a
+ *      correction.
  *
  * Every one of them was internally consistent and every one of them was a rules surface lying.
  * ══════════════════════════════════════════════════════════════════════════
@@ -30,18 +53,30 @@
 import { describe, expect, it } from 'vitest';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
-import type { PrincipalId } from '../../src/core/types.js';
-import { minor } from '../../src/core/units.js';
-import { orderOutcomes, type DoNothingOutcome } from '../../src/observe/briefing.js';
+import type { PrincipalId, SystemId } from '../../src/core/types.js';
+import { minor, qty } from '../../src/core/units.js';
+import { buildObservation } from '../../src/observe/observation.js';
+import { orderOutcomes, UNIT_OF, type DoNothingOutcome } from '../../src/observe/briefing.js';
 import {
   isNewcomer,
+  largestRemainder,
   LEVY_DUTY_PER_PRINCIPAL,
+  LEVY_EXPOSURE_UNIT,
+  LEVY_INVERSE_WEIGHT_NUM,
   rollByConstellation,
   constellationOf,
+  weightOf,
 } from '../../src/levy/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { REFINE_IN_QTY, REFINE_OUT_QTY } from '../../src/works/params.js';
-import { CAST_CLAIM_COVER_MULTIPLE } from '../../src/cast/heuristic.js';
+import { CAST_CLAIM_COVER_MULTIPLE, CAST_DOCTRINE } from '../../src/cast/heuristic.js';
+import { hullOfferFor } from '../../src/combat/view.js';
+import { simulateFit } from '../../src/combat/fit.js';
+import { CHARGE_GOOD } from '../../src/sovereignty/params.js';
+import { fixture } from '../venture/fixture.js';
+import { ALICE } from '../venture/fixture.js';
+import { sourcesFor } from '../observe/fixture.js';
+import { subject } from './fixture.js';
 
 /** One `spare` nomination, with the constellation's goods position at the tick it was cast. */
 interface Nomination {
@@ -150,7 +185,10 @@ describe('★ 2. the `spare` nomination relieves by the good the Levy is PAYABLE
 
 describe('★ 3. `if_you_do_nothing` ranks GRAVITY, never five units on one scale', () => {
   function outcome(kind: DoNothingOutcome['kind'], amount: number, subject = 's'): DoNothingOutcome {
-    return { kind, subject, amount: minor(amount), provenance: 'FACT', band: null };
+    // `unit` comes from the engine's own table, never from a literal here: a fixture that named its
+    // own unit could disagree with the payload and this whole describe block would be about a shape
+    // the observation never publishes.
+    return { kind, subject, amount: minor(amount), unit: UNIT_OF[kind], provenance: 'FACT', band: null };
   }
 
   it('puts an unpaid Levy above a hand landing, at a tick number larger than the duty', () => {
@@ -190,7 +228,7 @@ describe('★ 3. `if_you_do_nothing` ranks GRAVITY, never five units on one scal
     expect(ordered.map((o) => o.kind)).toEqual(['ROLE_OPEN', 'ESCROW_EXECUTES', 'HAND_LANDS']);
   });
 
-  it('still ranks by amount WITHIN one kind, which is the only unit-safe comparison', () => {
+  it('still ranks by amount WITHIN one UNIT, which is the only unit-safe comparison', () => {
     const ordered = orderOutcomes([
       outcome('ELECTIVE_LAPSES', 100, 'v:a'),
       outcome('ELECTIVE_LAPSES', 900, 'v:b'),
@@ -268,5 +306,160 @@ describe('★ 4. the claim cover gate crosses two goods, so the recipe is a trip
     // And the gate is a threefold cover, unchanged by the conversion at this recipe.
     expect(refined < 4_000 * CAST_CLAIM_COVER_MULTIPLE).toBe(true);
     expect(refined < 3_000 * CAST_CLAIM_COVER_MULTIPLE).toBe(false);
+  });
+});
+
+describe('★ 5. `if_you_do_nothing` PUBLISHES the unit, so `amount` is not five things', () => {
+  it('declares one unit per kind, and the three that are not currency are named', () => {
+    // The table is total over `DoNothingKind` by its type, so this is not "are the entries there" —
+    // it is the claim about WHICH unit each kind is in, which is the part a reader can get wrong.
+    expect(UNIT_OF.LEVY_UNPAID, 'the Levy is payable only in located goods (§5.2)').toBe('QTY');
+    expect(UNIT_OF.ROLE_OPEN, 'a count of open roles is a cardinality, never a value').toBe('COUNT');
+    expect(UNIT_OF.HAND_LANDS, "this is an absolute tick — D28's clock bomb").toBe('TICK');
+    expect(UNIT_OF.ELECTIVE_LAPSES).toBe('MINOR');
+    expect(UNIT_OF.ESCROW_EXECUTES).toBe('MINOR');
+    expect(UNIT_OF.ELECTIVE_AT_RISK).toBe('MINOR');
+    expect(
+      new Set(Object.values(UNIT_OF)).size,
+      'if every kind shares one unit there was nothing here to fix',
+    ).toBeGreaterThan(1);
+  });
+
+  it('★ never compares `amount` across two units, even inside one GRAVITY band', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE GUARD MOVED FROM THE KIND TO THE UNIT, AND THIS IS THE DIFFERENCE.** `D28`'s comparator
+    // fell back to `b.amount - a.amount` behind the comment *"same kind, therefore same unit"* — true
+    // by accident of the current kind list, and silently wrong for the next kind added to `GRAVITY`.
+    //
+    // Reached with a **deliberately mislabelled** row: a `ROLE_OPEN` (a COUNT) forced to carry the
+    // `MINOR` unit, so two rows share a `GRAVITY` band and disagree about denomination. Under the old
+    // rule they rank by raw integer; under the new one the mismatch drops the amount term and the
+    // canonical subject tie-break decides.
+    //
+    // MUTATION: put `b.amount - a.amount` back, unguarded, and this goes red — `zz` sorts first on
+    // its bigger integer instead of last on its id.
+    // ══════════════════════════════════════════════════════════════════════════
+    const mixed: readonly DoNothingOutcome[] = [
+      { kind: 'ROLE_OPEN', subject: 'zz', amount: minor(9_999), unit: 'MINOR', provenance: 'FACT', band: null },
+      { kind: 'ROLE_OPEN', subject: 'aa', amount: minor(2), unit: 'COUNT', provenance: 'FACT', band: null },
+    ];
+    expect(orderOutcomes(mixed).map((o) => o.subject)).toEqual(['aa', 'zz']);
+    // And with the units agreeing, the amount still decides — the fallback is narrowed, not removed.
+    const same: readonly DoNothingOutcome[] = [
+      { kind: 'ROLE_OPEN', subject: 'zz', amount: minor(2), unit: 'COUNT', provenance: 'FACT', band: null },
+      { kind: 'ROLE_OPEN', subject: 'aa', amount: minor(4), unit: 'COUNT', provenance: 'FACT', band: null },
+    ];
+    expect(orderOutcomes(same).map((o) => o.subject)).toEqual(['aa', 'zz']);
+  });
+});
+
+describe('★ 6. `build {HULL}` publishes two goods in two fields, never their sum', () => {
+  it('puts `ration` in `max_direct_loss` and `fuel` in `max_contingent_liability`, and names both', () => {
+    // NON-VACUITY: the two figures must DIFFER, or "did not add them" is indistinguishable from
+    // "added them and got lucky". Built from the real fit simulator rather than from literals, so the
+    // assertion is about the offer the observation actually publishes.
+    const doctrine = CAST_DOCTRINE[0];
+    expect(doctrine, 'the cast has no doctrine, so there is no real fit to price').toBeDefined();
+    if (doctrine === undefined) return;
+    const fit = simulateFit(doctrine.hull, doctrine.modules);
+    expect(fit.ok, 'the doctrine lead does not simulate, so its costs are not real').toBe(true);
+    if (!fit.ok) return;
+    const { costFrame, costFuel } = fit.value;
+    expect(costFrame, 'a hull with no frame cost cannot distinguish the two fields').toBeGreaterThan(0);
+    expect(costFuel, 'a hull with no fuel cost cannot distinguish the two fields').toBeGreaterThan(0);
+    expect(costFrame, 'the two goods are equal in this fit, so the sum would be invisible').not.toBe(costFuel);
+
+    const offer = hullOfferFor({
+      system: 'sys-26' as SystemId,
+      hull: doctrine.hull,
+      modules: doctrine.modules,
+      frame: costFrame,
+      fuel: costFuel,
+      readyAtTick: 100,
+      wrecks: 0,
+    });
+    expect(
+      offer.max_direct_loss,
+      'the published worst case is not the `ration` cost. If it equals frame + fuel it is a quantity ' +
+        'of nothing: `fuel` is FRONTIER-only and not substitutable for `ration` at any published price',
+    ).toBe(costFrame);
+    expect(offer.max_contingent_liability, 'the `fuel` cost is not published on its own field').toBe(costFuel);
+    expect(offer.max_direct_loss).not.toBe(costFrame + costFuel);
+    // A2: the prose has to name which field is which, or the split is legible only from the source.
+    expect(offer.what_it_forecloses).toContain(`${String(costFrame)} ration (max_direct_loss)`);
+    expect(offer.what_it_forecloses).toContain(`${String(costFuel)} fuel (max_contingent_liability`);
+  });
+});
+
+describe('★ 8. `holding.upkeep_due` is the CURRENCY half, and the goods half is published', () => {
+  it('reports the Charge in goods, with its good named, and 0 currency because there is none', () => {
+    // The failure being ruled out is the quiet one: a claimant reading `holding` and seeing `0`.
+    // `api/observe.ts` publishes `upkeep_due` / `upkeep_due_qty` / `upkeep_good`; this asserts the
+    // canonical builder now publishes the same three keys with the same meanings, because two
+    // observation builders disagreeing about one key is HARD RULE 4 inside one payload.
+    const f = fixture();
+    const owed = qty(4_000);
+    const built = buildObservation(sourcesFor(f, { upkeepOwed: () => owed }), ALICE);
+    const holding = built.observation.holding;
+    expect(holding.upkeep_due, 'the currency half must be 0: §6.3 upkeep has no currency leg').toBe(0);
+    expect(
+      holding.upkeep_due_qty,
+      'the goods half is not published, so a claimant three misses from a lapsed claim reads "nothing owed"',
+    ).toBe(owed);
+    expect(holding.upkeep_good, 'the good is not named, so the quantity is unitless').toBe(CHARGE_GOOD);
+    expect(holding.upkeep_due).not.toBe(holding.upkeep_due_qty);
+  });
+});
+
+describe('★ 9. `BY_EXPOSURE` has a SCALE, so 450 of peril is not a 451x share', () => {
+  it('weighs `LEVY_EXPOSURE_UNIT + exposure`, which is the mirror of the inverse rule', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS TEST FAILS ON MASTER**, and the number in it is the one measured on `g07` R5: `p:sable`
+    // carried EXPOSURE 450 against five members at 0, and `1 + exposure` assessed it **118,449 of
+    // 120,000** while it held 38,932 units of the levy good. `levyShort` went 0 → 9,847 on that row.
+    //
+    // The assertion is not "the exposed pay more" — that was already true and is the bug's own
+    // symptom. It is that the share is **proportional**: at `UNIT + e` a member with 450 of peril
+    // carries 1.45x an unexposed member's weight, not 451x. Written as a bound on the RATIO so it
+    // does not become a restatement of the formula.
+    //
+    // MUTATION: back to `1 + Math.max(0, subject.exposure)` and the ratio is 451 — red on the bound.
+    // ══════════════════════════════════════════════════════════════════════════
+    const safe = subject('p:safe', { exposure: 0 });
+    const exposed = subject('p:exposed', { exposure: 450 });
+    const ratio = weightOf('BY_EXPOSURE', exposed) / weightOf('BY_EXPOSURE', safe);
+    expect(ratio, 'the exposed member is not weighed above the safe one at all').toBeGreaterThan(1);
+    expect(
+      ratio,
+      '450 MINOR of peril buys a share this large, which is the `1 + exposure` bug: the base is a ' +
+        'CARDINALITY standing against a MINOR quantity, so the rule has no scale and the single most ' +
+        'exposed member pays nearly the whole tribute over a rounding error of risk',
+    ).toBeLessThan(2);
+
+    // And it is the exact mirror of the published default, which is the argument for the constant:
+    // `UNIT + e` against `NUM / (UNIT + e)` — one scale, two directions.
+    expect(weightOf('BY_EXPOSURE', safe)).toBe(LEVY_EXPOSURE_UNIT);
+    expect(weightOf('INVERSE_EXPOSURE', safe)).toBe(
+      Math.trunc(LEVY_INVERSE_WEIGHT_NUM / LEVY_EXPOSURE_UNIT),
+    );
+    expect(weightOf('BY_EXPOSURE', exposed)).toBe(LEVY_EXPOSURE_UNIT + 450);
+    expect(weightOf('INVERSE_EXPOSURE', exposed)).toBe(
+      Math.trunc(LEVY_INVERSE_WEIGHT_NUM / (LEVY_EXPOSURE_UNIT + 450)),
+    );
+    // Never zero, at any EXPOSURE: the Levy has no exemptions.
+    expect(weightOf('INVERSE_EXPOSURE', subject('p:huge', { exposure: 10 ** 12 }))).toBeGreaterThanOrEqual(1);
+  });
+
+  it('recomputes every historical docket IDENTICALLY, because EXPOSURE was zero for everyone', () => {
+    // The `RULES_VERSION` 16 divergence claim, executable. `largestRemainder` over equal weights gives
+    // the same shares whether every weight is 1 or every weight is 1,000 — so a world in which no
+    // principal ever staked recomputes bit-identically under the new scale, and the live record costs
+    // nothing. If this is red, the deploy needs a divergence tick for every `BY_EXPOSURE` docket ever
+    // settled rather than none.
+    const under = (weight: number): readonly number[] =>
+      largestRemainder(minor(20_002), [weight, weight, weight]);
+    expect(under(LEVY_EXPOSURE_UNIT)).toEqual(under(1));
+    // And not vacuous: the shares are not all equal, so the remainder rule was exercised.
+    expect(new Set(under(1)).size).toBeGreaterThan(1);
   });
 });

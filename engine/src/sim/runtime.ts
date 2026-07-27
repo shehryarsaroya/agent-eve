@@ -236,7 +236,9 @@ import {
   IN_FULL,
   isEscrowable,
   isFullyFilled,
+  isLive,
   kindSpec,
+  lockFillStake,
   minElectiveBps,
   NEUTRAL_STAGE_BPS,
   openIndices,
@@ -244,14 +246,17 @@ import {
   pinnedAt,
   proceedsBand,
   readElectiveBps,
+  releaseStakes,
   roleOfPrincipal,
   roleTerms,
   roleTermsFor,
+  vacateRole,
   ventureEscrowRatioBps,
   VentureBook,
   VENTURE_KINDS,
   type Election,
   type FillRequest,
+  type Refused,
   type SettlementAccounts,
   type VentureRecord,
 } from '../venture/index.js';
@@ -930,7 +935,56 @@ import {
  * The integer is a shared resource (see 11's note): this branch was told it owned 15 before it
  * started, with 14 the latest taken.
  */
-export const RULES_VERSION = 15;
+/**
+ * ★ Bumped 15 → **16**, because **`fill_role` now escrows the stake it names** — §7.3's *"filling a
+ * role escrows the stake at fill time"*, which `venture/settlement.ts:lockFillStake` has implemented
+ * since the venture layer shipped and which **nothing in `src/` ever called.**
+ *
+ * ── WHAT CHANGES, AND EVERY ITEM IS ON A VALIDATE OR RESOLVE PATH ────────────
+ *
+ *   1. `vFillRole` refuses a **negative** stake and a stake above the filler's free STORES, where
+ *      both were previously accepted and then silently discarded. Two new refusals (`A7`).
+ *   2. `resolveFills` calls `lockFillStake` for every granted fill with `stake > 0`, so the stake is
+ *      a real encumbrance with `maxDirectLoss = stake` — which is the only reason **EXPOSURE stops
+ *      being identically zero** (`D30`, `D31`).
+ *   3. INV-4's liveness question gains a **fourth** clause (`stakeableVenture`), because a role is
+ *      filled while a venture is FORMING and the obligation book does not hear about it until
+ *      `activate`.
+ *   4. `retireFormation` and `abandon` **release** those stakes; `withdraw` **forfeits** them to the
+ *      other parties (§7.3), which is a currency transfer and therefore new postings.
+ *   5. The heuristic cast names a non-zero stake (`stakeFor`), so a bots-only world diverges from
+ *      tick one of the first contested fill.
+ *
+ * **No new state table and no new field on any hashed structure.** `VentureRoleRecord.stakeEncumbranceId`
+ * already exists — `venture.ts` says it was added *"so INV-4 has a live obligation to point at"* — and
+ * has been `null` for the project's whole life; the encumbrance table already carries the row shape.
+ * Nothing is added to or removed from the RNG: `stakeFor` is arithmetic over published figures and
+ * draws no rolls.
+ *
+ * ── THE DIVERGENCE SIGNATURE ──────────────────────────────────────────────────
+ *
+ * **The first `fill_role` in the journal carrying a non-zero `stake`.** Before this version there is
+ * no such action from the cast, and an external agent that sent one had it accepted and ignored, so
+ * the recompute now locks value where it previously did not — which moves `freeStores`, and through it
+ * `isNewcomer`, the Levy docket, and every affordance priced off free currency. Grep the action log
+ * for `fill_role` with `params.stake > 0` and take the first tick.
+ *
+ * If this world has **never** seen one, the preflight is expected to exit 0: clauses 1–4 are all
+ * reached only through a non-zero stake, and clause 3 widens a liveness test that cannot fire without
+ * one. That is the likely case — the live cast is this repo's own and passed 0 — so the honest
+ * expectation is *no divergence*, with `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` held for the already-declared
+ * tick 287 and nothing new.
+ *
+ * ── AND IT IS A BALANCE CHANGE, WHICH IS THE POINT ───────────────────────────
+ *
+ * Staking is losing money sometimes, on top of a Levy the cast only just became able to pay, so the
+ * gate is the whole argument for the number in {@link CAST_STAKE_BPS}. Measured, 8 seeds, against 15:
+ * see `D31` in `TRACKER.md` for the 3/6/9-Reckoning table.
+ *
+ * The integer is a shared resource (see 11's note): this branch was told it owned 16 before it
+ * started, with 15 the latest taken and live.
+ */
+export const RULES_VERSION = 16;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -2951,7 +3005,6 @@ export class Runtime {
         if (holdingId === undefined) return false;
         return this.world.holdings.get(holdingId)?.system === system;
       },
-      freeStoresOf: (principal) => freeStores(this.ledger, principal),
     };
   }
 
@@ -5502,6 +5555,33 @@ export class Runtime {
     if (this.pendingFills.length >= MAX_TALK_ENTRIES) {
       return reject('INV-26', 'the fill queue for this tick is full; try the next tick.');
     }
+    // ── ★ THE STAKE IS PRICED HERE, BECAUSE A LOCK THAT FAILS AT TICK CLOSE IS SILENT ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // §7.3: *"Filling a role escrows the stake at fill time. Otherwise filling a slot is a free
+    // option and sybils can hold a stage's entire capacity all day and no-show."* The escrow is
+    // {@link lockFillStake} and it runs in {@link resolveFills} at tick close, where the only channel
+    // back to the agent is a correction on the *next* wake. So the two mistakes an agent can make
+    // with this parameter — a negative stake, and a stake it cannot fund — are refused **here**,
+    // synchronously, with the number it has (A2). What survives to tick close is the case this
+    // handler genuinely cannot see: value that left between VALIDATE and VENTURES, which MARKETS and
+    // the escrow transfer can both do inside one tick. That one is handled as a rollback.
+    // ══════════════════════════════════════════════════════════════════════════
+    const stake = readInt(req.params, ['stake', 'stake_minor']) ?? 0;
+    if (stake < 0) {
+      return reject('A7', `a stake cannot be negative; ${String(stake)} was asked for. Use 0 for no stake.`);
+    }
+    if (stake > 0) {
+      const free = freeStores(this.ledger, req.principal);
+      if (free < stake) {
+        return reject(
+          'A7',
+          `staking ${String(stake)} on this role escrows it at fill time and you have ${String(free)} ` +
+            'free. A stake is slashable capital: it is forfeit to the other parties if you withdraw ' +
+            '(§7.3), and it is what outbids a rival for a contested slot. Name a smaller stake, or 0.',
+        );
+      }
+    }
     // A request, not a grant (PROP-V8). Resolved once at VENTURES, from the set.
     this.pendingFills.push({
       venture: ventureId,
@@ -5518,7 +5598,7 @@ export class Runtime {
       // (A4). It is also the number the refusal above echoes back, and a correction
       // citing a sequence the agent never sent is one it cannot match to anything it did.
       clientSequence: this.sequenceOf(ctx, req),
-      stake: minor(readInt(req.params, ['stake', 'stake_minor']) ?? 0),
+      stake: minor(stake),
     });
     return { ok: true, value: null };
   }
@@ -6211,7 +6291,7 @@ export class Runtime {
   }
 
   /** `withdraw` — an ADAPTER. The operation lives in `venture/withdraw.ts` (D21). */
-  private vWithdraw(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+  private vWithdraw(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     return withdraw(
       {
         ventureOf: (id) => this.ventures.get(id),
@@ -6222,10 +6302,71 @@ export class Runtime {
           const h = this.world.hands.get(hand);
           if (h !== undefined && h.state === 'COMMITTED') h.state = 'IDLE';
         },
+        stakedOn: (venture, roleIndex) => this.stakedOnRole(venture, roleIndex),
+        forfeitStake: (venture, roleIndex, shares) => {
+          this.forfeitRoleStake(ctx.tick, venture, roleIndex, shares);
+        },
       },
       req.principal,
       req.params,
     );
+  }
+
+  /** What a role's open stake lock holds right now. Zero when the role never staked. */
+  private stakedOnRole(venture: VentureRecord, roleIndex: number): Minor {
+    const id = venture.roles[roleIndex]?.stakeEncumbranceId ?? null;
+    if (id === null) return minor(0);
+    if (!this.ledger.encumbrances.isOpen(id)) return minor(0);
+    // The lock's LIVE amount, never the stake as it was named: PROP-L3 lets a raid drain a locked
+    // account, and `EncumbranceBook.reduce` shrinks the row when it does. Forfeiting the original
+    // figure out of an account that no longer holds it would fail INV-3 for the whole transfer.
+    return this.ledger.encumbrances.get(id)?.amountMinor ?? minor(0);
+  }
+
+  /**
+   * §7.3's forfeit: release the role's stake lock, then pay it to the other parties.
+   *
+   * **Release first, then transfer**, because `Ledger.transferCurrency` refuses to move locked value
+   * in as many words (*"Locked value is unspendable"*) — the forfeit would otherwise fail INV-3 on
+   * every stake it was supposed to move, which is the quiet direction: the lock disappears at
+   * settlement and the leaver keeps its money while the affordance said it would not.
+   *
+   * Never throws. `withdraw` is R5's unconditional right, so a forfeit that could halt the tick would
+   * turn one agent's legal exit into everybody's outage (§15.4). A transfer that fails leaves the
+   * stake in the leaver's own stores, unlocked — visible, wrong in the *generous* direction, and
+   * strictly better than a halt.
+   */
+  private forfeitRoleStake(
+    tick: number,
+    venture: VentureRecord,
+    roleIndex: number,
+    shares: readonly (readonly [PrincipalId, Minor])[],
+  ): void {
+    const role = venture.roles[roleIndex];
+    if (role === undefined) return;
+    const lock = role.stakeEncumbranceId;
+    if (lock === null) return;
+    role.stakeEncumbranceId = null;
+    try {
+      if (this.ledger.encumbrances.isOpen(lock)) this.ledger.encumbrances.release(lock, tick);
+    } catch {
+      return;
+    }
+    const from = storesAccount(role.filledByPrincipal ?? venture.creator);
+    for (const [payee, amount] of shares) {
+      if (amount <= 0) continue;
+      try {
+        this.ledger.transferCurrency({
+          eventId: `stake.forfeit:${venture.id}:${String(roleIndex)}:${payee}:${String(tick)}` as EventId,
+          tick,
+          from,
+          to: storesAccount(payee),
+          amount,
+        });
+      } catch (error: unknown) {
+        this.faults.push(`stake forfeit on ${venture.id}#${String(roleIndex)} refused (${describeError(error)})`);
+      }
+    }
   }
 
   /**
@@ -6249,6 +6390,9 @@ export class Runtime {
         },
         refundEscrow: (venture) => {
           this.refundEscrow(ctx.tick, venture);
+        },
+        releaseStakes: (venture) => {
+          releaseStakes(this.ledger, venture, ctx.tick);
         },
       },
       req.principal,
@@ -6469,6 +6613,68 @@ export class Runtime {
         tick: ctx.tick,
         handOf: (id) => this.world.hands.get(id),
       });
+      // ── ★ THE STAKE IS ESCROWED AT FILL TIME, WHICH IS WHERE §7.3 SAYS IT IS ──
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // **`lockFillStake` HAD NO CALLER, AND THAT IS WHY EXPOSURE WAS ZERO.** `D30` found the
+      // Levy's `BY_EXPOSURE`, `INVERSE_EXPOSURE` and `EVEN` handing out one flat weight on 18 of 18
+      // dockets and named the cause as *"the heuristic cast passes `stake: 0` on every
+      // `fill_role`"*. That is true and it was not the whole cause: the venture role stake is one of
+      // the three sites §3 says creates EXPOSURE, `venture/settlement.ts:lockFillStake` implements it
+      // with §7.3 quoted above it, `test/venture/invariants.test.ts` exercises it — and **nothing in
+      // `src/` ever called it.** So a non-zero `stake` was only ever a tiebreak in
+      // `canonicalRequestOrder`: no lock, no `maxDirectLoss`, no EXPOSURE, and a `withdraw`
+      // affordance truthfully reporting *"no stake to forfeit"* because there never was one.
+      //
+      // The eleventh appearance of the same family, nested one level inside the tenth, and the
+      // corollary CLAUDE.md warns about: `D30`'s negative claim was as strong as its spelling. It
+      // grepped the cast and stopped.
+      //
+      // ── WHY IT IS HERE AND NOT IN `allocateFills` ──────────────────────────────
+      //
+      // `allocation.ts` says so itself: *"It does not lock the stake ... that is a value movement, so
+      // it goes through the `Ledger` ... this module decides *who*, and the ledger decides *what
+      // moves*. One value path (§15.1)."* This is that caller, in the phase that owns the grant.
+      //
+      // ── AND A FAILED LOCK ROLLS THE FILL BACK, RATHER THAN HALTING ─────────────
+      //
+      // `vFillRole` refuses an unaffordable stake synchronously, so the only way to arrive here
+      // short is value that left between VALIDATE and VENTURES — a market fill, or the creator's own
+      // escrow transfer. `EncumbranceBook.lock` throws on that, and a throw inside a phase is an
+      // agent-reachable halt (AGT-X9, §15.4). So it is caught and the fill is undone exactly the way
+      // a refused `commitHand` is undone: vacate, un-index, free the hand, hold a correction. One
+      // agent loses one slot instead of every agent losing the tick.
+      // ══════════════════════════════════════════════════════════════════════════
+      const stakeFailures: Refused[] = [];
+      for (const grant of allocated.granted) {
+        if (grant.request.stake <= 0) continue;
+        try {
+          lockFillStake(this.ledger, {
+            venture: this.ventures.get(grant.request.venture) as VentureRecord,
+            role: grant.role,
+            principal: grant.request.principal,
+            stores: storesAccount(grant.request.principal),
+            stake: grant.request.stake,
+            eventId: `${grant.request.venture}:stake:${grant.request.principal}` as EventId,
+            tick: ctx.tick,
+          });
+        } catch (error: unknown) {
+          const venture = this.ventures.get(grant.request.venture);
+          if (venture !== undefined) vacateRole(venture, grant.request.roleIndex);
+          this.ventures.indexRelease(grant.request.hand);
+          const hand = this.world.hands.get(grant.request.hand);
+          if (hand !== undefined) releaseHand(hand);
+          stakeFailures.push({
+            request: grant.request,
+            reason: 'ROLE_RULE',
+            invariant: 'A7',
+            hint:
+              `your stake of ${String(grant.request.stake)} could not be escrowed at fill time, so the ` +
+              `role was not taken: ${describeError(error)} §7.3 escrows the stake when the role is ` +
+              'filled, so a slot is never a free option. Re-send with a stake you still hold free.',
+          });
+        }
+      }
       // ── EVERY REFUSAL REACHES ITS AGENT, AND THE RETURN VALUE IS WHY ─────────
       //
       // This call's `{granted, refused}` was **discarded**, and each refusal it drops
@@ -6485,7 +6691,7 @@ export class Runtime {
       // reason that channel exists (see {@link PendingCorrection}): a contest is only
       // decided once the whole tick's set is in, so at `POST /act` time there is nothing
       // yet to say. It is a **hint and never an event** (scar #10).
-      for (const refused of allocated.refused) {
+      for (const refused of [...allocated.refused, ...stakeFailures]) {
         this.holdCorrection(refused.request.principal, {
           tick: ctx.tick,
           verb: 'fill_role',
@@ -6642,6 +6848,18 @@ export class Runtime {
       const record = this.world.hands.get(hand);
       if (record !== undefined) releaseHand(record);
     }
+    // ── ★ A VENTURE THAT FAILED TO FORM GIVES THE STAKE BACK, AND IS NOT A FORFEIT ──
+    //
+    // §7.3 forfeits a stake for **abandoning a filled slot** — the filler's own act. A window that
+    // closes with a role still open is not that: the filler did exactly what it promised, turned up,
+    // and nobody else did. Charging it for somebody else's no-show would make filling the *first*
+    // role of a four-role venture the worst bet on the board, which inverts the arithmetic §7.2
+    // calls "the reason this game is social".
+    //
+    // Also load-bearing for INV-4 rather than only fair: `obligations.close` on the next line ends
+    // the obligation, so a stake left open past it is an orphan lock and the tick halts — value
+    // nobody can spend and nobody can claim, on a path every unfilled venture in the world takes.
+    releaseStakes(this.ledger, venture, ctx.tick);
     this.obligations.close(venture.id);
     this.refundEscrow(ctx.tick, venture);
     this.releaseElections(venture.id);
@@ -6712,12 +6930,46 @@ export class Runtime {
         // (§3), so it is live for exactly as long as the claim book still lists it. Without
         // this clause every posted bond reads to INV-4 as an orphan lock and the tick halts
         // — the market's and predation's extension for the third time, same one line.
-        this.sovereignty.isLive(String(ref)),
+        this.sovereignty.isLive(String(ref)) ||
+        // ── ★ AND A **FORMING** VENTURE, WHICH IS THE FOURTH TIME, SAME ONE LINE ──
+        //
+        // §7.3 escrows a role stake **at fill time**, and a role is filled while the venture is
+        // FORMING — but `this.obligations.open(venture.id)` does not run until `activate`, at the
+        // moment the last role is taken. So the window between the first fill and the last one is a
+        // window in which a perfectly legal stake lock names an obligation the book has never heard
+        // of, and INV-4 halts the tick once per staked role. Nobody did anything wrong: filling the
+        // first of four roles is the most ordinary venture act there is, which is the resting-BID
+        // case verbatim (AGT-X9, §15.4).
+        //
+        // Asked of the venture book rather than fixed by opening the obligation earlier, for the
+        // reason stated above about market orders: the book **is** a state table, so an aborted
+        // tick unwinds it for free, where an early `obligations.open` would leak a registration for
+        // a venture that no longer exists. `isLive` here is the venture module's own predicate
+        // (`FORMING | LIVE`) widened by `DEFERRED`, which `settlementSet` includes and which still
+        // holds its stakes.
+        this.stakeableVenture(ref),
       securedObligations: () => this.obligations.securedObligations(),
       close: (ref) => {
         this.obligations.close(ref);
       },
     };
+  }
+
+  /**
+   * May a role stake still be locked against this reference? — the venture half of INV-4's
+   * liveness question.
+   *
+   * `FORMING | LIVE | DEFERRED`. Deliberately **not** `isLive` alone: `LIVE_STATES` is the
+   * *hand-occupancy* index and excludes `DEFERRED`, which `VentureBook.settlementSet` includes and
+   * which is precisely a venture whose stakes are still outstanding — §15.3's deferral "carries the
+   * obligation over". A terminal venture (`SETTLED | DEFAULTED | ABANDONED`) is excluded, and it has
+   * to be: `releaseStakes` runs on every one of those paths, so a stake still open against a
+   * terminal venture is a real orphan and INV-4 should say so.
+   */
+  private stakeableVenture(ref: ObligationRef): boolean {
+    const venture = this.ventures.get(ref as VentureId);
+    if (venture === undefined) return false;
+    return isLive(venture) || venture.state === 'DEFERRED';
   }
 
   // ── the market (SPEC §12.2 `trade`) ───────────────────────────────────────

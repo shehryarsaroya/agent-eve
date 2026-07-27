@@ -51,9 +51,11 @@ export {
   buildBriefing,
   nextSettlementTick,
   resolvesAt,
+  UNIT_OF,
   type Briefing,
   type DoNothingKind,
   type DoNothingOutcome,
+  type DoNothingUnit,
   type IfYouDoNothing,
 } from './briefing.js';
 

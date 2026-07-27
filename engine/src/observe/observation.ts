@@ -191,11 +191,28 @@ export interface HoldingLine {
   /** Empty in Phase 0 and truthfully so: siege belongs to Phase 1 (§4). */
   readonly threats: readonly string[];
   /**
-   * Exactly zero in Phase 0, and that is a fact rather than a placeholder: a Commons
-   * holding is civic-leased and charges no upkeep (§6.3). When Marches holdings ship
-   * they charge it, and this becomes non-zero without the field changing meaning.
+   * ★ The **CURRENCY** half of §6.3's recurring upkeep, and it is structurally zero.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS FIELD USED TO CARRY TWO UNITS UNDER ONE NAME AND A COMMENT THAT HAD GONE FALSE.** It said
+   * *"exactly zero in Phase 0, and that is a fact rather than a placeholder: a Commons holding is
+   * civic-leased and charges no upkeep"* — true when written, false since sovereignty shipped. §6.3's
+   * recurring upkeep is the **CHARGE**, it is real, and it is payable **only in goods standing at the
+   * claimed system**. So a single `Minor` reading 0 was not "no upkeep"; it was the goods bill missing
+   * from the payload entirely, in the block a claimant reads to find out what it owes — three misses
+   * from a lapsed claim and a slashed `CLAIM_BOND_MINOR`.
+   *
+   * The split is `api/observe.ts`'s and this now matches it word for word (HARD RULE 4 — the two
+   * builders may not disagree about a key): the currency figure is 0 **because there is no currency
+   * leg**, not because nothing is owed, and {@link upkeep_due_qty} carries the bill with
+   * {@link upkeep_good} naming what it is in.
+   * ══════════════════════════════════════════════════════════════════════════
    */
   readonly upkeep_due: Minor;
+  /** ★ The upkeep actually owed, in **goods** — Σ of every claim's outstanding Charge. */
+  readonly upkeep_due_qty: Qty;
+  /** ★ The good {@link upkeep_due_qty} is in. Published, so no agent has to assume `ration`. */
+  readonly upkeep_good: GoodId;
 }
 
 export interface Obligations {
@@ -867,7 +884,11 @@ function holdingLine(sources: ObserveSources, principal: PrincipalId): HoldingLi
     state: holding.state,
     fell_at_reckoning: holding.fellAtReckoning,
     threats: Object.freeze([]),
+    // Currency: structurally zero, because §6.3's upkeep has no currency leg. See the field's doc.
     upkeep_due: minor(0),
+    // Goods: the real bill, read from the source rather than assumed absent.
+    upkeep_due_qty: sources.upkeepOwed(principal),
+    upkeep_good: sources.upkeepGood,
   };
 }
 

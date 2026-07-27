@@ -1821,9 +1821,27 @@ function affordancesFor(
     //
     // The proportion, both amounts, and **who** is on the hook for the unsecured part. Since `create`
     // took `elective_bps`, two slots that pay the same total can be very different deals — and the
-    // filler is the party bearing that difference. `max_direct_loss` on a fill is 0 and always was,
-    // which a probe correctly read as *"filling costs nothing"*; what it costs is the elective part
-    // never arriving, and that is not a loss the engine can price, so it has to be a sentence.
+    // filler is the party bearing that difference. `max_direct_loss` on a fill is 0 **because the
+    // quoted `stake` is 0**, which a probe correctly read as *"filling costs nothing"*; what it costs
+    // is the elective part never arriving, and that is not a loss the engine can price, so it has to
+    // be a sentence.
+    //
+    // ── ★ AND THE STAKE, BECAUSE IT IS A PARAMETER WITH A PERMANENT LOSS IN IT ──
+    //
+    // `RULES_VERSION` 16 made `stake` real: §7.3 escrows it at fill time and forfeits it to the other
+    // parties on `withdraw`. The quote stays **0** — the published worst case has to be the worst case
+    // of the act as quoted, and a stake the agent never chose would be a loss it never agreed to — but
+    // an agent that is never told the knob exists cannot use it, which is this project's defining
+    // defect one layer up from the engine. So the sentence names the parameter, the contest rule it
+    // decides, and the one way it is lost.
+    const stakeNote =
+      'You may add "stake": <minor> to outbid a rival for this slot: a contest is resolved by the ' +
+      "creator's stated preference first and by the LARGER STAKE second, never by who asked first. A " +
+      'stake is escrowed the moment the role is filled, shows up in obligations.exposure.mine, and is ' +
+      'FORFEIT to the other parties if you withdraw (§7.3) — it is returned untouched if the window ' +
+      'closes unfilled or the creator abandons. It cannot exceed your free balance. Two of the four ' +
+      'Levy allocation rules are computed from your EXPOSURE, so a stake is also a position in your ' +
+      "constellation's next vote.";
     const offer =
       `Of the ${String(row.escrowed + row.elective)} on this slot, ${String(row.escrowed)} is escrowed ` +
       `(${String(row.escrow_ratio_bps)} bps — it executes automatically and nobody can stop it) and ` +
@@ -1841,10 +1859,10 @@ function affordancesFor(
       max_contingent_liability: 0,
       what_it_forecloses: first
         ? `hand ${idle.id} cannot fill another role while it is committed to this one, and you may hold at ` +
-          `most one role in ${row.venture}. ${offer} FILLING IS NOT CLOSING: the fill is allocated at tick ` +
-          `close and the venture stays FORMING until every party has countersigned the same terms_hash. ` +
-          `${close} Unsigned by tick ${String(row.expires_tick)} and the window closes, the venture retires ` +
-          'ABANDONED, and nothing you spent comes back.'
+          `most one role in ${row.venture}. ${offer} ${stakeNote} FILLING IS NOT CLOSING: the fill is ` +
+          `allocated at tick close and the venture stays FORMING until every party has countersigned the ` +
+          `same terms_hash. ${close} Unsigned by tick ${String(row.expires_tick)} and the window closes, ` +
+          'the venture retires ABANDONED, and nothing you spent comes back.'
         : `hand ${idle.id} is committed until this resolves, and you may hold at most one role in ` +
           `${row.venture}. ${offer} ${close} Unsigned by tick ${String(row.expires_tick)}: retired ABANDONED.`,
       expires_tick: row.expires_tick,

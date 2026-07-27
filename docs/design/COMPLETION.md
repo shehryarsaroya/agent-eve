@@ -32,6 +32,20 @@ instrument that would have shown the zero. Offering it took the nine-Reckoning `
 **202,540 to 8,051** and red tribute lines from **19/576 to 1/576** (`TRACKER.md` `D26`). Read that as
 the standing warning this file exists for: *the gap is rarely the mechanic.*
 
+**2026-07-27 (later): the tenth and eleventh instances, and the eleventh was hiding inside the tenth.**
+§3's EXPOSURE — *Σ open `max_direct_loss`* — was **identically zero for every principal at every phase
+of every Reckoning**, so three of the Levy's four allocation rules (`BY_EXPOSURE`, `EVEN`, and the
+published default `INVERSE_EXPOSURE`) handed everybody one flat weight on 18 of 18 dockets, and A7's
+*staked* half had no instance anywhere. `D30` blamed the cast passing `stake: 0`; that was half of it.
+**`venture/settlement.ts:lockFillStake` — the function that implements §7.3's escrow-at-fill-time, with
+the section quoted above it and its own unit test — had no caller in `src/`.** Fixing both took the
+nine-Reckoning `levyShort` from **8,051 to 0** and red tribute lines from **1/576 to 0/576**, eight of
+eight seeds spotless (`RULES_VERSION` 16, `D31`). Exercising it then surfaced a live defect within the
+hour: `weightOf('BY_EXPOSURE')` was `1 + exposure`, a cardinality against a MINOR quantity, and the
+first docket with any EXPOSURE at all billed one member **118,449 of 120,000 over 450 of peril**
+(`D32`). Two lessons compound here — *read the log before asserting an absence*, and **a capability's
+first real exercise is a bug-finding instrument in its own right.**
+
 What is left is depth, not machinery. `market` is 3,065 lines pricing a single fungible commodity, so
 there is no trade, no specialization and no supply chain to reason about — **that is the whole distance
 between the two numbers below.**

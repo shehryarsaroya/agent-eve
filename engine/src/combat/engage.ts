@@ -48,7 +48,7 @@
  */
 
 import type { HandId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
-import type { Minor, Qty } from '../core/units.js';
+import type { Qty } from '../core/units.js';
 import { reject, type Rejection, type WorldResult } from '../world/result.js';
 import type { RaidRecord, RaidSide } from '../predation/book.js';
 import { hullSpec } from './catalogue.js';
@@ -115,7 +115,19 @@ export interface ShipyardPort {
   }): Qty;
   /** Does this principal have a holding standing at `system`? A berth needs ground. */
   seatedAt(principal: PrincipalId, system: SystemId): boolean;
-  freeStoresOf(principal: PrincipalId): Minor;
+  // ── ★ NO `freeStoresOf`, AND ITS ABSENCE IS THE RULE ──────────────────────
+  //
+  // A `Minor` reader — the **currency** balance — sat here and **nothing in `shipyard.ts` ever
+  // called it.** `build {kind:"HULL"}` is priced entirely in goods: `costFrame` in `ration` and
+  // `costFuel` in `fuel`, both destroyed into the build, with no currency leg at all
+  // (`hullBuildRefusal` checks `goodsAt` twice and nothing else). So the port advertised a
+  // currency question to a verb that cannot ask one, and the next reader adding a price to
+  // `build` had a typed, plausible, wrong figure ready to hand — which is the same
+  // one-word-two-units family that produced `weightOf('BY_STORES')` and the `spare` pick.
+  //
+  // `predation/demand.ts` keeps its own `freeStoresOf` and should: a demand stakes
+  // `RAID_JOIN_STAKE_MINOR` of **currency**, so there the reader is the price. Two ports, two
+  // questions, and only one of them is about money.
 }
 
 /** What the caller has to name. Every field is the agent's own statement; none is derived. */
