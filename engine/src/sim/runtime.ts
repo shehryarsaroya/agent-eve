@@ -599,8 +599,40 @@ import {
  *
  * The live world needs the operator divergence door (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the
  * next deploy, as at 1 → 2, 4 → 5, 5 → 6, 6 → 7 and 7 → 8.
+ *
+ * ## 9 → 10 (2026-07-27)
+ *
+ * **Two reads stopped writing, and the assessment memo stopped being the authority.** This boundary
+ * has nothing to do with the cast branches that motivated it — the cast is never consulted during
+ * replay, its decisions enter the record as logged actions, so `graduate`, the claim, the Charge, the
+ * refine threshold and the create appetite are all invisible to a replay. Three engine edits move the
+ * hash and it is worth stating exactly where each one lands:
+ *
+ *   1. **`Book.paymentOf` no longer inserts a zero row** — in `levy/book.ts` *and*
+ *      `sovereignty/book.ts`. Both maps are inside `capture()` and both books are state tables, so a
+ *      lazily-inserted row was a state change caused by a **read**. The first read over an absent
+ *      pair happens inside `settleLevy` / `settleCharge`, which run at **phase 287** — so the
+ *      signature is: agreement everywhere up to the first settlement, divergence from that tick
+ *      onward. Tick **287** is exactly where this world's operator door is already armed, and this
+ *      boundary needs no new acceptance if that door is still open.
+ *   2. **`assessCycle` skips a constellation whose whole roll is already on a docket.** This one is
+ *      **not expected to diverge a genesis replay at all**: `assessLevyNow`'s memo already stops the
+ *      second call inside a Reckoning, and at phase 0 nobody holds a line, so the new guard is false
+ *      on every road a replay takes. It exists for the road a replay does *not* take — an adopted
+ *      boot, where the memo starts empty — and it is asserted there by
+ *      `test/durability/a-mid-cycle-mover-does-not-fork-the-record.spec.ts`.
+ *   3. **`api/observe.ts` moved the `assure` affordance out of the `seal` loop.** A read path with no
+ *      state in it; it cannot diverge anything and is named only so the diff is fully accounted for.
+ *
+ * **Nothing draws from the RNG and no phase gained a draw.** No event kind was added and no event
+ * row moved: the removed writes were map insertions with no posting and no ledger row behind them,
+ * which is precisely why nothing else noticed them for the life of the build.
+ *
+ * The live world needs the operator divergence door (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the
+ * next deploy, as at 1 → 2, 4 → 5, 5 → 6, 6 → 7, 7 → 8 and 8 → 9 — and the tick to expect is the
+ * **first settlement in the record**, not a later one.
  */
-export const RULES_VERSION = 9;
+export const RULES_VERSION = 10;
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
