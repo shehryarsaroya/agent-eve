@@ -74,9 +74,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildObservation } from '../../src/api/observe.js';
-import { TICKS_PER_RECKONING } from '../../src/core/time.js';
+import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
+import type { PrincipalId } from '../../src/core/types.js';
 import { LEVY_STARTER_ALLOTMENT, LEVY_UNIT_MINOR } from '../../src/levy/index.js';
+import { GOODS_FAUCET } from '../../src/ledger/index.js';
 import { STARTER_STAKE } from '../../src/ledger/endowment.js';
+import { Runtime } from '../../src/sim/runtime.js';
 import { GRADUATION_UPKEEP_QTY } from '../../src/world/graduation.js';
 import { ANCHOR_QTY } from '../../src/sovereignty/params.js';
 import {
@@ -84,9 +87,11 @@ import {
   WORKS_COST_MINOR,
   WORKS_GOOD,
   WORKS_GOODS_IN_CURRENCY_MINOR,
+  WORKS_SPINUP_TICKS,
   WORKS_YIELD_GOOD,
+  YIELD_PER_TICK,
 } from '../../src/works/params.js';
-import { holdingOf } from '../../src/world/index.js';
+import { commonsSystems, holdingOf } from '../../src/world/index.js';
 import {
   agedWorld,
   drainedThenBuilds,
@@ -263,6 +268,53 @@ describe('★ THE CURRENCY DOOR, and every clause of it that must not drift', ()
     );
   }, 2 * MINUTES);
 
+  it('★ the door is once per IDENTITY, not once per live WORKS — the raze trap, pre-empted', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS GUARDS A DEFECT THAT DOES NOT EXIST YET, AND THAT IS THE POINT.**
+    //
+    // `WorksRecord` carries `razed`/`razedAtTick`, both captured and restored, and `ofPrincipal`
+    // filters on them — so `ofPrincipal(p).length === 0` means *"holds none now"*, which is the same
+    // answer as *"never held one"* only while nothing razes a WORKS. Nothing does today (`grep -rn
+    // "razed" src` finds readers only). The day a raid, a siege or an `abandon` can end one, the live
+    // predicate reopens the bootstrap door once per razing at `WORKS_GOODS_IN_CURRENCY_MINOR` a turn.
+    //
+    // That is the `Book.prune` failure shape: a fix whose predicate could be undone by a mechanism
+    // its author had not checked, invisible in every test because the mechanism was not built. So the
+    // gate is `everHeldBy` and this test razes a row by hand to prove it.
+    //
+    // **If raze lands and this test is in the way, that is the test working.** Whether a principal
+    // that LOST its only WORKS deserves a fresh bootstrap is a real design question — it is trapped
+    // again by exactly the arithmetic this file documents — and it must be answered on purpose rather
+    // than inherited from which accessor somebody reached for.
+    // ══════════════════════════════════════════════════════════════════════════
+    const { runtime, who } = drainedThenBuilds('door-raze');
+    const seat = holdingOf(runtime.world, who).system;
+    const row = runtime.works.ofPrincipal(who)[0];
+    expect(row, 'it came through the door').toBeDefined();
+    if (row === undefined) return;
+
+    // Reaching into the book because there is no verb: the whole hazard is that a future verb will
+    // do this, and a test that waited for the verb would be written after the hole shipped.
+    const razed = runtime.works.at(row.id);
+    expect(razed).not.toBeNull();
+    if (razed === null) return;
+    (razed as { razed: boolean }).razed = true;
+    (razed as { razedAtTick: number | null }).razedAtTick = runtime.engine.tick;
+
+    expect(runtime.works.ofPrincipal(who).length, 'the LIVE set is empty again').toBe(0);
+    expect(runtime.works.everHeldBy(who), 'but the lifetime answer is unchanged').toBe(true);
+    const quote = runtime.worksQuote(who, seat);
+    expect(
+      quote.firstWorks,
+      'a razed WORKS must NOT restore the bootstrap. If this is `true`, the door is farmable at ' +
+        'one razing per 25,000 and the fix has become an A15 hole — `Book.everHeldBy` carries the ' +
+        'argument and `ofPrincipal` is the accessor that would have caused it.',
+    ).toBe(false);
+    expect(quote.goodsInCurrencyMinor).toBe(0);
+    expect(quote.payingGoodsInCurrency).toBe(false);
+    expect(quote.totalMinor).toBe(WORKS_COST_MINOR);
+  }, 2 * MINUTES);
+
   it('retires the WHOLE price, and takes no goods when it fires', () => {
     // ── RETIREMENT, NOT TRANSFER (D7) — AND ONE POSTING, NOT TWO ─────────────
     //
@@ -403,18 +455,29 @@ describe('★ A2 — the two surfaces an agent reads must NAME the door', () => 
     const seat = holdingOf(runtime.world, who).system;
     const total = WORKS_COST_MINOR + WORKS_GOODS_IN_CURRENCY_MINOR;
     const free = runtime.worksQuote(who, seat).freeMinor;
-    // Lock everything but a token amount, so the currency half alone is unaffordable too and the
-    // refusal has to explain the whole price rather than the part it is nearest to.
+    // ── THE BAND IS EXACTLY BETWEEN THE TWO PRICES, AND A MUTATION SAYS WHY ──
+    //
+    // Left free: `WORKS_COST_MINOR + 1,000` — enough for the currency half, short of the total. That
+    // is the one band that separates a gate on `totalMinor` from a gate on `costMinor`, and a
+    // mutation test proved it is the only band that does. With the gate on `costMinor` this build
+    // passes validation, reaches `retireCurrency(85,000)`, and the ledger throws — so the agent is
+    // refused either way and the RECORD is fine, but the sentence it reads becomes
+    // `INV-3 the WORKS cost could not be paid (LedgerError: …)` instead of a price. Engine right,
+    // agent-facing surface useless: this file's own subject, one layer down.
     runtime.engine.submit({
       principal: who,
       verb: 'post_bond',
-      params: { amount: free - 1_000 },
+      params: { amount: free - (WORKS_COST_MINOR + 1_000) },
       clientSequence: 0,
       arrivalMs: 0,
       decisionSource: 'LIVE',
     });
     runtime.runTick();
-    expect(runtime.worksQuote(who, seat).freeMinor, 'now short on both halves').toBeLessThan(total);
+    const left = runtime.worksQuote(who, seat).freeMinor;
+    expect(left, 'short of the TOTAL').toBeLessThan(total);
+    expect(left, 'but NOT of the currency half — that is the whole point of the band').toBeGreaterThanOrEqual(
+      WORKS_COST_MINOR,
+    );
 
     runtime.takeCorrections(who);
     runtime.engine.submit({
@@ -428,6 +491,11 @@ describe('★ A2 — the two surfaces an agent reads must NAME the door', () => 
     runtime.runTick();
     const refusal = runtime.takeCorrections(who).find((c) => c.hint.includes('WORKS'));
     const hint = refusal?.hint ?? '(no refusal for `build {WORKS}` on the correction channel)';
+    expect(
+      hint,
+      'it must be the PRICE refusal, not a ledger error surfaced as one — the gate has to catch this ' +
+        'before anything is charged, and `INV-3 … (LedgerError)` is what an agent reads if it does not',
+    ).toContain('locked stores do not count');
     expect(hint, 'the currency half').toContain(String(WORKS_COST_MINOR));
     expect(hint, 'the substitute, by amount').toContain(String(WORKS_GOODS_IN_CURRENCY_MINOR));
     expect(
@@ -443,6 +511,64 @@ describe('★ A2 — the two surfaces an agent reads must NAME the door', () => 
 });
 
 describe('the second door is a PRICE, not a new faucet', () => {
+  it('★ A15 — N identities at one system extract EXACTLY what one does, measured', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE CLAIM THE WHOLE DECISION RESTS ON, CHECKED RATHER THAN CITED.**
+    //
+    // `works/params.ts` says *"total world output is a property of the map, which no amount of
+    // enrolling changes"* and the currency door is only safe if that is true: a structure whose
+    // output scaled with identity count would give the door — and the WORKS itself — a Sybil price
+    // of zero. The header's own argument is arithmetic in `Book.sharesAt`, and this file's other
+    // subject is what happens when an argument is trusted instead of run.
+    //
+    // Measured through the front door: N principals seated at ONE Commons system, each raising a
+    // WORKS out of 100% endowment — which is the cheapest Sybil path that exists today and the
+    // one the currency door does *not* make cheaper, because a fresh identity holds the goods and
+    // never reaches the substitute. What is compared is the EXTRACTION faucet's own total.
+    // ══════════════════════════════════════════════════════════════════════════
+    const extractedBy = (puppets: number): { readonly total: number; readonly works: number } => {
+      setSpeed('instant');
+      const runtime = new Runtime({ seed: `a15-${String(puppets)}` });
+      const seat = commonsSystems(runtime.world.map)[0];
+      expect(seat, 'the launch map has a Commons system').toBeDefined();
+      if (seat === undefined) return { total: 0, works: 0 };
+      for (let i = 0; i < puppets; i += 1) {
+        const p = `p:puppet-${String(i).padStart(3, '0')}` as PrincipalId;
+        runtime.seat(p, `puppet-${String(i).padStart(3, '0')}`, seat);
+        runtime.standing.open(p);
+        runtime.engine.submit({
+          principal: p,
+          verb: 'build',
+          params: { kind: 'WORKS', system: seat },
+          clientSequence: 0,
+          arrivalMs: 0,
+          decisionSource: 'LIVE',
+        });
+      }
+      for (let i = 0; i < WORKS_SPINUP_TICKS + 100; i += 1) runtime.runTick();
+      const faucet = runtime.ledger.account(GOODS_FAUCET.EXTRACTION);
+      return {
+        total: faucet === undefined ? 0 : (faucet.movedQty.get(WORKS_YIELD_GOOD) ?? 0),
+        works: runtime.works.liveInOrder().length,
+      };
+    };
+
+    const one = extractedBy(1);
+    const eight = extractedBy(8);
+    expect(one.works, 'one WORKS stands').toBe(1);
+    expect(eight.works, 'eight WORKS stand at the same place').toBe(8);
+    expect(one.total, 'a sole occupant takes the whole tier yield for every tick it is online').toBe(
+      YIELD_PER_TICK.COMMONS * 100,
+    );
+    expect(
+      eight.total,
+      '★ EIGHT identities extract exactly what ONE extracts. If this is greater, world output scales ' +
+        'with the number of identities, enrolment is free, and every gate priced in produced goods — ' +
+        'including the WORKS itself and the currency substitute for its goods half — has a Sybil price ' +
+        'of ZERO. That would invalidate the design decision this file implements, not just this test.',
+    ).toBe(one.total);
+  }, 4 * MINUTES);
+
   it('goods still enter the world at exactly the same call sites', () => {
     // ── THE FIX MOVED A PRICE AND ADDED NO SOURCE, WHICH IS THE POINT ────────
     //

@@ -2092,7 +2092,7 @@ function affordancesFor(
           ? `YOU DO NOT HOLD THOSE GOODS, AND THIS BUILD DOES NOT NEED THEM: your FIRST WORKS may pay ` +
             `that half in currency instead — ${String(worksHere.goodsInCurrencyMinor)} more, retired to ` +
             `nobody, so ${String(worksHere.totalMinor)} in all and no ${WORKS_GOOD} at any point. That ` +
-            `exists because the Levy destroys ${WORKS_GOOD} every Reckoning and your enrolment grant is ` +
+            `exists because the Levy destroys ${WORKS_GOOD} every Reckoning and your endowment is ` +
             `never repeated, so without it a principal that paid its tribute honestly for four ` +
             `Reckonings could never enter the economy again. It costs more than the goods are worth on ` +
             `purpose, and it CLOSES the moment you hold a WORKS — after that this half is payable only ` +

@@ -575,7 +575,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // rule. Pinned so growth is visible, not asserted under the ceiling: padding the ceiling for
     // a state that cannot exist is how a margin becomes decoration.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(59_149);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(59_453);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -593,7 +593,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(51_563);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(51_867);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1301,23 +1301,39 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      32_401, // a newcomer on its first wake
-      36_325, // mid-game in the Commons
-      36_967, // about to take territory — and §11B is READABLE now, which it was not
-      51_563, // a claimant in trouble — the largest REACHABLE position
-      55_692, // the analytic maximum priced at the ceiling (59,149 uncapped)
+      32_705, // a newcomer on its first wake
+      36_629, // mid-game in the Commons
+      37_271, // about to take territory — and §11B is READABLE now, which it was not
+      51_867, // a claimant in trouble — the largest REACHABLE position
+      55_996, // the analytic maximum priced at the ceiling (59,453 uncapped)
     ]);
-    // ── +480 ON THE LAST TWO, AND THAT IS THE FIX FOR §9's WORST DEFECT PAYING ITS OWN RENT ──
+    // ── ⚑ +304 EVERYWHERE, AND THE BUDGET IS NOW EFFECTIVELY GONE. READ THIS BEFORE ADDING PROSE ──
     //
-    // A world raid's fleet IS its force now: `force.raid_force_left` falls one per world hull
-    // destroyed, so winning the battle wins the standoff — where before a defender could destroy
-    // every LANCE the weather brought, hold the field, and still lose the goods. **An agent that is
-    // not told so has a capability it cannot find**, which is this project's signature defect on the
-    // exact surface A2 calls the interface, so the `fight` block in `agent.md` carries the arithmetic
-    // and the prompt-ness pays for it. The margin assertion above is the check that matters: the
-    // largest REACHABLE position is 51,563 against a 56,000 ceiling, which leaves 4,437 — still over
-    // `CONTRACT_CEILING_MARGIN`, and 437 characters is now all the slack the next block has before
-    // somebody has to raise the ceiling or make a block conditional.
+    // The currency door for a first WORKS (`works/params.ts:WORKS_GOODS_IN_CURRENCY_MINOR`) had to be
+    // stated in `agent.md`, because a principal drained by four Reckonings of tribute was locked out of
+    // the economy permanently and the rule that lets it back in is useless if only the engine knows it
+    // — A2, and the same "a capability it cannot find" failure as the `fight` block below.
+    //
+    // **Where the 304 went, and what was NOT done to pay for it.** Three drafts were measured. The
+    // first put an urgency paragraph in §11A's FLOOR preamble and cost **2,346** — every position pays
+    // for FLOOR, including a member that will never be short. The second cost 800. This one is a single
+    // sentence inside `### Building one`, which is `verbs: ['build']` and therefore shipped *exactly*
+    // when the door is actionable. **No other block was trimmed to make room** — every character came
+    // out of the new sentence, three times, and the field name `paying_goods_in_currency` was dropped
+    // from the prose (it survives in the observation's own field docs) rather than a rule being cut.
+    //
+    // **The numbers the next author needs:**
+    //
+    //   - largest REACHABLE position **51,867** of the 52,000 the margin allows → **133 characters**;
+    //   - analytic ceiling **55,996** of `MAX_CONTRACT_CHARS` → **4 characters**.
+    //
+    // So the answer to "can I add a sentence" is now **no**, and `MAX_CONTRACT_CHARS`'s own note says
+    // what the two legitimate moves are: raise the ceiling on the cached-input cost argument it already
+    // makes, or make a block conditional. It also warns that raising it a third time would be avoiding
+    // the question — and the question (does a member need every section every wake?) has an answer now,
+    // `CONTRACT_CATALOG`, which is why the honest reading is that the ceiling is simply too low for a
+    // document that has grown a combat layer and an economy since it was set.
+    // ── WHAT §9A's COMBAT LAYER COST, WHICH IS THE POINT OF THE CEILING RAISE ─
     // ── WHAT §9A's COMBAT LAYER COST, WHICH IS THE POINT OF THE CEILING RAISE ─
     // +1,403 on a newcomer and +3,837 on a claimant, and `engage` went from a verb with rules
     // NOWHERE a member could read to four blocks. That growth is exactly what the raise was for:

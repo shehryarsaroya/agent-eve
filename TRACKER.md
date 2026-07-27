@@ -6,6 +6,120 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **THE ECONOMY HAS A WAY BACK IN. THE GOODS HALF OF A FIRST WORKS IS PAYABLE IN RETIRED CURRENCY — `RULES_VERSION` 14, and the A15 inversion below is closed.**
+>
+> The diagnosis two sections down measured a **permanent lockout**: goods enter a principal only
+> through the enrolment allotment (once per identity) or a WORKS it already holds, the Levy destroys
+> goods every Reckoning, and every rung of the ladder is priced in that same good. Pay tribute for four
+> Reckonings without building and you reach zero goods with **no legal path back** — the only escape a
+> second identity, which prices economic re-entry in identities. **A15 exactly inverted, live for real
+> enrolled agents and not only for the cast.**
+>
+> ⚑ **THE FIX IS SHAPE (a): `WORKS_GOODS_IN_CURRENCY_MINOR = 25,000`** *(calibrate)*. It exploits the
+> trap's own signature — a drained principal has **money and no goods**, and the Levy does not destroy
+> currency. Four clauses, each of them a rule:
+>
+> | clause | why |
+> |---|---|
+> | **goods short only** | a principal holding `WORKS_BUILD_QTY` pays in goods, always. A floor under the drained, never an alternative price for the solvent. |
+> | **`everHeldBy`, not `ofPrincipal`** | once per **identity**. See below — this is a defect that does not exist yet. |
+> | **retired, not transferred** | D7-safe: one atomic posting into `sink:upkeep`, nobody receives it. |
+> | **5× the goods' administered value** | `LEVY_UNIT_MINOR` is 1, so 5,000 units discharge 5,000 of duty. 25,000 keeps the door strictly worse than producing, and is a tenth of `STARTER_STAKE` exactly as `WORKS_BUILD_QTY` is a tenth of `LEVY_STARTER_ALLOTMENT`. |
+>
+> **THE MEASUREMENT THAT MATTERS: `TRAPPED 8 of 8 → 0 of 8`** at 6 Reckonings, in the same aged world,
+> same cast, same seed as when it read 8. And it is not a quote: switch the ladder rolls back on in a
+> world that already aged past the window and **all eight members build and extract** within two
+> Reckonings (`world.resume()`, the new half of `aged.ts`).
+>
+> ★ **A15 VERIFIED BY MEASUREMENT RATHER THAN CITED, because the whole decision rests on it.**
+> 1 puppet at a Commons system extracts **14,080** ore in 200 ticks; 16 puppets at the same system
+> extract **14,080**, identical to the unit, 880 each. Output is a property of the *place*
+> (`Book.sharesAt` + INV-W1's halt + INV-W2's per-system cap), so N identities cannot mint N yields and
+> the door has no Sybil price. It also never lowers the cheapest puppet path: a *fresh* identity already
+> builds out of its allotment, and the substitute costs strictly more than the goods it replaces.
+>
+> **THE BALANCE GATE IS BYTE-IDENTICAL, which is the correct result and was predicted in advance.**
+> 8 seeds × 900 ticks, master@13 → here@14: `levyShort 0 → 0`, red tribute lines `0/192 → 0/192`,
+> `kept 351 → 351`, `broken 33 → 33`, ventures `1,734 → 1,734`, claims `28 → 28`, rent
+> `63,140 → 63,140`, hulls `6 → 6`, battles `5 → 5`, works `64 → 64`. A member holding its allotment is
+> never short of goods, so the door never opens and nothing about a world seeded from genesis moves.
+> **The same sweep re-run at 6 Reckonings** — the state the fix exists for and one no previous sweep in
+> this project had ever covered — is likewise **identical on every one of the twelve columns**:
+> `levyShort 67,043` · `6/384` red · `kept 729` · `broken 53` · ventures `3,248` · claims `30` · rent
+> `154,220` · hulls `6` · battles `12` · works `64` · `TRAPPED 0`, both sides.
+>
+> ⚑ **AND THE 6-RECKONING SWEEP FOUND SOMETHING ELSE THAT NO 900-TICK SWEEP COULD.** On master, 2 of 8
+> seeds go `levyShort 37,237` and `29,806` with **6 red tribute lines of 384** at Reckoning 6 — with the
+> ladder working and every member holding a WORKS. That is not caused by this change (it is identical
+> here) and it is not the trap; it is a *second* consequence of the same coverage gap, and it is the
+> next thing to look at. `scripts/balance-gate.ts` now exists so it can be re-run rather than
+> re-derived: `--reckonings 6` is one flag.
+>
+> ★ **A LATENT DEFECT PRE-EMPTED, of the `Book.prune` family.** `ofPrincipal` filters `razed`, so
+> "first WORKS" spelled the obvious way means *"holds none **now**"*. Nothing razes a WORKS today
+> (`grep -rn "razed" src` finds readers only), so the two predicates agree — and the day a raid or siege
+> can end one, the obvious spelling **reopens the bootstrap door once per razing at 25,000 a turn**: an
+> A15 hole arriving with a feature that has nothing to do with it. The gate is `Book.everHeldBy`, which
+> counts razed rows, and `the door is once per IDENTITY` razes a row by hand to prove it. When raze
+> lands, whether a principal that *lost* its only WORKS gets a fresh bootstrap is a real design question
+> — that test is what forces somebody to answer it on purpose.
+>
+> **A2: both surfaces now name the door, and one of them was a lie.** `vBuildWorks` promised *"your
+> first WORKS is reachable before you have earned anything"* — true of the currency half, false of the
+> goods half, therefore false of the act. The refusal now quotes 60,000 **+ 25,000 = 85,000**, the
+> affordance names the substitute and that it closes, `max_direct_loss` carries the whole retirement
+> (§3: EXPOSURE is Σ of open `max_direct_loss`) and `max_contingent_liability` is **0** on the currency
+> route because no goods are destroyed. Four new published fields: `first_works`,
+> `goods_in_currency_minor`, `paying_goods_in_currency`, `total_minor`.
+>
+> **Two things deliberately NOT done, both by measurement.** `GRADUATION_UPKEEP_QTY` and `ANCHOR_QTY`
+> keep their goods prices: a principal that comes through the door holds **23,920 units one Reckoning
+> later** and both rungs are open, so widening the fix would have been a price change with no defect
+> behind it (`every rung above the door is reachable out of PRODUCTION`, at nine Reckonings). And
+> nothing was added to any **hashed** structure — the first draft put `goods_in_currency_minor` on the
+> `works.raised` payload and it was removed twice over: it would have made a *genesis* replay diverge at
+> the first build ever raised, and `works.raised` is `PUBLIC` while *which half a principal could not
+> cover* is a fact about its **stores**, which §11.2 puts at SENSED. The route is recoverable from
+> `posting` (60,000 or 85,000), which is where §15 already says value is authoritative.
+>
+> **Gates:** `tsc` 0 · lint 0 · `audit:scale` 0 · `audit:budgets` 0 · **10 mutations run, every one
+> caught by a NAMED test** — and mutation #8 found a real A2 gap that had shipped in my own first draft
+> (a currency gate on `costMinor` instead of `totalMinor` passes validation and then dies in the ledger,
+> so the agent reads `INV-3 … (LedgerError)` instead of a price; the test now pins the exact band
+> `costMinor ≤ free < totalMinor` that separates the two).
+>
+> ⚑ **THE CONTRACT EXCERPT BUDGET IS NOW EXHAUSTED AND THAT IS AN OWNER DECISION.** The A2 sentence had
+> to reach `agent.md`. It went through three drafts, measured each time: a FLOOR paragraph cost
+> **2,346** characters (every position pays for FLOOR), a shorter version 800, and the shipped one is a
+> single sentence inside `### Building one` — `verbs: ['build']`, so it is delivered exactly when the
+> door is actionable — at **+304**. **No other block was trimmed to pay for it**; every character came
+> out of my own sentence, three times, and `paying_goods_in_currency` was dropped from the prose rather
+> than a rule being cut. Where that leaves the next author: largest **reachable** position **51,867** of
+> the 52,000 the margin allows (**133 characters**), analytic ceiling **55,996** of `MAX_CONTRACT_CHARS`
+> (**4 characters**). So the answer to *"can I add a sentence"* is now **no**. `MAX_CONTRACT_CHARS`'s own
+> note says the two legitimate moves are a raise on the cached-input cost argument it already makes, or
+> another conditional block — and warns that a third raise would be avoiding the question. The question
+> has an answer now (`CONTRACT_CATALOG`), so the honest reading is that 56,000 is simply too low for a
+> document that has since grown a combat layer and an economy.
+>
+> **Production: the existing cast becomes playable, and no re-seeding is needed for the economy to
+> work.** The live twelve hold 210,000–225,333 currency; `brannock` and `kestrel` have 50,000 each
+> locked in claim bonds, leaving ~160,000–175,000 free against an 85,000 price. So **all twelve can
+> raise a first WORKS on the tick after deploy**, including the two the diagnosis called permanently
+> stuck, and `worksFor` gates on the same `affordable` predicate — which is now true — at
+> `DEFAULT_WORKS_CHANCE_BPS` 400, i.e. inside ~25 eligible ticks. What is *not* recovered is the past:
+> A5 forbids rewriting a row, so the Reckonings already recorded short stay short. Fresh enrolments are
+> **not required**; they would only add population.
+>
+> ➜ **DEPLOY:** `RULES_VERSION` 14 (13 is §9's, and the two branches were arbitrated *before* either
+> bump — the first time the rule written above 11 has been applied in advance rather than reconstructed
+> afterwards). The only way a past tick recomputes differently is a historical `build {kind:"WORKS"}`
+> **refused on the goods half** by a principal holding ≥85,000 free, which now succeeds; everything else
+> is identical arithmetic. So the preflight is expected to exit 0, and if it names a tick it will be the
+> first refused `build {WORKS}` in the journal — `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes that tick.
+
+---
+
 > ### ★★★ **WINNING A BATTLE NOW WINS THE STANDOFF. `RULES_VERSION` 13, and two §11.2 leaks closed on the way.**
 >
 > Three defects, all the same shape — the engine internally consistent while the agent-facing surface
@@ -229,7 +343,14 @@
 > ticks before the branch that would have spent the allotment was written. Editing `heuristic.ts` would
 > move calibrated numbers for no finding.
 >
-> ➜ **THE OPEN DECISION, AND IT IS THE OWNER'S.** Re-opening the door is a §10 price change on the
+> ➜ ~~**THE OPEN DECISION, AND IT IS THE OWNER'S.**~~ **DECIDED AND SHIPPED — shape (a), `D24`, see the
+> STATUS block at the top of this file.** Everything below stands as the diagnosis; only the last
+> sentence of it is now wrong, and in a way worth keeping visible: *"production cannot be recovered by
+> code"* is true of the **record** and false of the **cast**. A5 forbids rewriting the Reckonings that
+> were recorded short, and nothing did — but the twelve members' balances clear the new 85,000 price
+> with room, so the live cast is playable again without a single row being touched. The distinction
+> between *the past cannot be repaired* and *the future is closed* is the one that sentence lost.
+> Re-opening the door is a §10 price change on the
 > world's most load-bearing constants — a `RULES_VERSION` bump, a declared production divergence and a
 > calibration pass of its own — and the corpus does not specify the price. **The trap is live for real
 > agents, not just for the cast**: 11 of 16 probe accounts sit on untouched allotments, and an honest
@@ -1269,6 +1390,7 @@ the Demand window), spectator polish, seals + the rundown, the LLM cast, and the
 | A4 | Forbids advantage from throughput, uptime, and enrollment date — **not** model size | A4 and R2 cannot both hold otherwise: R2 explicitly rewards richer reasoning at 20k tokens. |
 | Name · theme · scope | THE COMPACT · frontier territory and trust · Phase 0 includes the client | `compact` is now the signed terms of every split, so the name is load-bearing in the schema. |
 | Dataset | A by-product, never a goal | If a data feature makes the game worse, cut it. |
+| **D24 · the bootstrap door** | The goods half of a principal's **FIRST** WORKS is payable in **retired currency** — `WORKS_GOODS_IN_CURRENCY_MINOR` 25,000 *(calibrate)*. Goods route wins whenever the goods are there; gate is `everHeldBy` (lifetime, razed rows counted); nothing above the first rung changes. | Goods entered a principal only through the once-per-identity allotment or a WORKS it held, and the Levy destroyed goods every Reckoning while every rung was priced in that same good. So a principal that paid tribute for four Reckonings without building was locked out **forever**, and its only escape was a second identity — **A15 exactly inverted**, live for real enrolled agents. The trap's own signature is the fix: the drained hold **money and no goods**, and currency is not what the Levy destroys. Chosen over a clearing market (needs a seller; measured, none exists) and re-seeding (fixes this world, leaves the trap for every future agent). Retirement not transfer, so D7 never engages. A15-safe **by measurement**: 16 identities at one system extract 14,080 ore, identical to what 1 extracts. Priced at 5× the goods' administered value so producing always beats the door, and at a tenth of `STARTER_STAKE` mirroring the goods half's tenth of the allotment. `TRAPPED 8/8 → 0/8` at six Reckonings; balance gate byte-identical on 8 seeds at both 900 ticks and six Reckonings. |
 
 ---
 

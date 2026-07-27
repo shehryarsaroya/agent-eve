@@ -360,10 +360,15 @@ export const WORKS_BUILD_QTY: Qty = qty(5_000);
  *
  * A principal holding a WORKS has a goods income; it does not need a door and should not be
  * offered one, because a currency-payable second rung would let a rich agent skip production
- * entirely and delete the reason the goods economy exists. `worksQuote` therefore opens this
- * only when `worksBook.ofPrincipal(principal)` is empty — and note that a WORKS is **never
- * removed from the book**, so "holds none" and "has never held one" are the same predicate.
- * There is no cycle to farm.
+ * entirely and delete the reason the goods economy exists.
+ *
+ * The gate is `WorksBook.everHeldBy`, which counts **razed** rows, and that choice is load-bearing
+ * rather than tidy. `ofPrincipal` filters `razed` and would have answered *"holds none now"* — the
+ * same answer today, since nothing in this build razes a WORKS, and a different one the day a raid or
+ * a siege can end one. At that point the shorter predicate reopens this door once per razing at
+ * 25,000 a turn: an A15 hole arriving with a feature that has nothing to do with it, and exactly the
+ * shape of the `Book.prune` defect that made a §9 fix evaporate in production only. **There is no
+ * cycle to farm and `everHeldBy` is what keeps it that way.**
  *
  * `GRADUATION_UPKEEP_QTY` and `ANCHOR_QTY` are deliberately **left alone**: measured at 6 and 9
  * Reckonings in `test/works/the-window-closes.spec.ts`, a principal that comes through this door

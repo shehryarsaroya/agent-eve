@@ -163,6 +163,36 @@ export class Book {
     return [...this.rows.values()].sort((a, b) => compareIds(a.id, b.id));
   }
 
+  /**
+   * ★ Has this principal **ever** raised a WORKS — razed ones included?
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE ONCE-PER-IDENTITY PREDICATE, AND IT IS DELIBERATELY NOT `ofPrincipal(h).length === 0`.**
+   *
+   * `works/params.ts:WORKS_GOODS_IN_CURRENCY_MINOR` lets a principal's **first** WORKS pay its goods
+   * half in retired currency, because the enrolment allotment is a once-per-identity window and a
+   * principal drained past it had no legal way back into the economy. That justification is about a
+   * *lifetime*, so the gate has to be too.
+   *
+   * `ofPrincipal` filters `razed`, so it answers "holds none **now**". Nothing in this build razes a
+   * WORKS — `grep -rn "razed" src` finds only readers — so the two predicates agree today, and that
+   * is exactly the reason this method exists rather than the shorter spelling: **the day a raid, a
+   * siege or an `abandon` can end a WORKS, the shorter one silently reopens the bootstrap door once
+   * per razing, at 25,000 a turn, which is an A15 hole that would arrive with a feature that has
+   * nothing to do with it.** The engagement book's `prune` shipped a fix that evaporated in
+   * production for the same reason: a predicate whose subject could be removed by a mechanism its
+   * author had not checked.
+   *
+   * When raze does land, whether a principal that LOST its only WORKS gets a fresh bootstrap is a
+   * real design decision — `the door is once per identity` in `test/works/the-window-closes.spec.ts`
+   * is the test that will force somebody to make it on purpose.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  everHeldBy(holder: PrincipalId): boolean {
+    for (const w of this.rows.values()) if (w.holder === holder) return true;
+    return false;
+  }
+
   /** Every live WORKS, canonical order. What PRODUCE walks. */
   liveInOrder(): readonly WorksRecord[] {
     return [...this.rows.values()].filter((w) => !w.razed).sort((a, b) => compareIds(a.id, b.id));

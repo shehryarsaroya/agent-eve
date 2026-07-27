@@ -28,6 +28,7 @@ import { TICKS_PER_RECKONING } from '../../src/core/time.js';
 import {
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
+  WORKS_GOODS_IN_CURRENCY_MINOR,
   WORKS_PER_PRINCIPAL_PER_SYSTEM,
   WORKS_SPINUP_TICKS,
   YIELD_PER_TICK,
@@ -498,6 +499,25 @@ describe('agent.md quotes the WORKS numbers the engine actually uses', () => {
   it('quotes the price, the spin-up and the per-system cap exactly', () => {
     expect(AGENT_MD, 'the currency half').toContain(`${String(WORKS_COST_MINOR)} currency`);
     expect(AGENT_MD, 'the goods half').toContain(`${String(WORKS_BUILD_QTY)} units of \`ration\``);
+    // ── AND THE CURRENCY SUBSTITUTE FOR THE GOODS HALF, BOTH FIGURES ─────────
+    //
+    // `WORKS_GOODS_IN_CURRENCY_MINOR` is what lets a principal drained past the endowment window back
+    // into the economy at all — without it the only escape was a second identity (A15 inverted) — so a
+    // manual that quoted the old price would be telling a locked-out agent it is still locked out.
+    // The TOTAL is pinned as well as the part, because `total_minor` is the field the agent budgets
+    // off and a manual naming only the increment leaves it doing the addition (A2).
+    //
+    // Matched as the bolded figure plus the parenthesised total rather than as `"25000 currency"`,
+    // because the phrase wraps across a line in the document and the contract excerpt has **4
+    // characters** of headroom left (`prompt.test.ts`) — so reflowing `agent.md` to suit a test's
+    // regex would push the analytic ceiling over `MAX_CONTRACT_CHARS`. Two figures pinned instead of
+    // one loose phrase, which is the stronger guard anyway: the part and the sum.
+    expect(AGENT_MD, 'the currency substitute for the goods half').toContain(
+      `**${String(WORKS_GOODS_IN_CURRENCY_MINOR)}`,
+    );
+    expect(AGENT_MD, 'and the total it comes to').toContain(
+      `(${String(WORKS_COST_MINOR + WORKS_GOODS_IN_CURRENCY_MINOR)})`,
+    );
     expect(AGENT_MD, 'the spin-up, which decides whether a build helps tonight').toContain(
       `nothing for ${String(WORKS_SPINUP_TICKS)} ticks`,
     );

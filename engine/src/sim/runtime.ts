@@ -8528,10 +8528,11 @@ export class Runtime {
     readonly spinupTicks: number;
     readonly alreadyHeld: boolean;
     /**
-     * This principal holds **no WORKS anywhere**, so the currency door below is open to it.
+     * This principal has **never** raised a WORKS, so the currency door below is open to it.
      *
-     * A WORKS is never removed from the book, so this is also "has never held one" — see
-     * {@link WORKS_GOODS_IN_CURRENCY_MINOR}, which is why there is no cycle to farm.
+     * `WorksBook.everHeldBy`, which counts razed rows on purpose: the door is a once-per-identity
+     * bootstrap, so a future raze mechanic must not reopen it. See
+     * {@link WORKS_GOODS_IN_CURRENCY_MINOR} — there is no cycle to farm and there must not become one.
      */
     readonly firstWorks: boolean;
     /**
@@ -8658,9 +8659,18 @@ export class Runtime {
     // belongs: `vBuildWorks` refuses on `freeMinor < totalMinor` **before** anything moves, so the
     // whole price is checked in one comparison and the build can never retire the currency half and
     // then find itself short of the substitute.
+    //
+    // ── AND THE GATE IS `everHeldBy`, NOT `held` ──────────────────────────────
+    //
+    // `held` is the LIVE set and is right for the crowding division above. It is wrong here:
+    // `ofPrincipal` filters `razed`, so it answers "holds none *now*", and the door's justification
+    // is a once-per-*identity* window. Nothing razes a WORKS today, so the two agree — which is
+    // precisely why the distinction has to be made now rather than discovered later. See
+    // `Book.everHeldBy`, which carries the argument and the `Book.prune` precedent.
+    const everHeld = this.worksBook.everHeldBy(principal);
     const goodsShort = available < WORKS_BUILD_QTY;
-    const goodsInCurrency = held ? minor(0) : WORKS_GOODS_IN_CURRENCY_MINOR;
-    const payingGoodsInCurrency = goodsShort && !held;
+    const goodsInCurrency = everHeld ? minor(0) : WORKS_GOODS_IN_CURRENCY_MINOR;
+    const payingGoodsInCurrency = goodsShort && !everHeld;
     const totalMinor = minor(WORKS_COST_MINOR + (payingGoodsInCurrency ? goodsInCurrency : 0));
     return {
       system,
@@ -8697,7 +8707,7 @@ export class Runtime {
       availableQty: available,
       spinupTicks: WORKS_SPINUP_TICKS,
       alreadyHeld: this.worksBook.atCapacity(principal, system),
-      firstWorks: !held,
+      firstWorks: !everHeld,
       goodsInCurrencyMinor: goodsInCurrency,
       payingGoodsInCurrency,
       totalMinor,
@@ -8776,25 +8786,34 @@ export class Runtime {
           'principal — that price leaves you and goes to them.',
       );
     }
-    // ── THE GOODS HALF, NOW REACHABLE ONLY BY A PRINCIPAL THAT ALREADY PRODUCES ──
+    // ── THE GOODS HALF, NOW REACHABLE ONLY BY A PRINCIPAL THAT HAS PRODUCED ──
     //
-    // `payingGoodsInCurrency` is `goodsShort && !held`, so `goodsShort && !paying` is exactly
-    // `held`: this refusal now belongs to a principal that owns a WORKS and is being asked to fund
-    // the next one out of it. A drained newcomer reaches the currency gate above instead, which is
-    // the whole fix — the old version of this sentence named the goods and stopped, so a principal
-    // read a price it could never pay again with no way to learn that the same act had another.
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE `!payingGoodsInCurrency` TERM IS THE WHOLE FIX AND DROPPING IT REFUSES EVERY DOOR.**
+    // Written down because it was written wrong once, on the reasoning that
+    // `payingGoodsInCurrency` is `goodsShort && !everHeld`, so `goodsShort && !paying` is *exactly*
+    // `everHeld` and the term is redundant. The algebra is right; deleting the term is not — without
+    // it the condition is plain `goodsShort`, which fires before the currency route is ever reached
+    // and refuses the drained principal this whole change exists for. Four named tests went red in
+    // one run, which is the only reason it is a paragraph rather than a production incident.
+    // ══════════════════════════════════════════════════════════════════════════
     //
-    // The sentence says WHY the door is shut rather than only that it is, and names the act that
-    // opens the way (`refine`), because a refusal that leaves an agent with no next move costs it a
-    // wake to discover one (AGT-S2).
-    if (quote.availableQty < quote.costQty) {
+    // So this refusal belongs to a principal that has raised a WORKS before and is being asked to
+    // fund the next one out of production. A drained newcomer reaches the currency gate above
+    // instead — the old version of this sentence named the goods and stopped, so a principal read a
+    // price it could never pay again with no way to learn that the same act had another.
+    //
+    // It says WHY the door is shut rather than only that it is, and names the act that opens the way
+    // (`refine`), because a refusal that leaves an agent with no next move costs it a wake to
+    // discover one (AGT-S2).
+    if (quote.availableQty < quote.costQty && !quote.payingGoodsInCurrency) {
       return reject(
         'A15',
         `a WORKS also consumes ${String(quote.costQty)} units of ${WORKS_GOOD} standing at ${system}, and you ` +
           `have ${String(quote.availableQty)} unpledged there. They are destroyed into the build, not stored. ` +
-          `The currency substitute for that half is for a FIRST WORKS only and you already hold one, so this ` +
-          `one is payable out of what yours produces: \`refine\` turns the ${WORKS_YIELD_GOOD} it extracts ` +
-          `into ${WORKS_GOOD}, at the system where the ${WORKS_YIELD_GOOD} stands.`,
+          `The currency substitute for that half is for a FIRST WORKS only and you have raised one before, ` +
+          `so this one is payable out of what a WORKS produces: \`refine\` turns the ${WORKS_YIELD_GOOD} it ` +
+          `extracts into ${WORKS_GOOD}, at the system where the ${WORKS_YIELD_GOOD} stands.`,
       );
     }
 
