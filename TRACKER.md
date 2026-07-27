@@ -6,6 +6,33 @@
 
 ## ⏱ STATUS
 
+> ### ⚑ **THREE DEFECTS DISPATCHED 2026-07-27, two of them found by the combat work below.**
+>
+> 1. **★ WINNING A BATTLE CANNOT WIN THE STANDOFF.** `predation/resolve.ts` reads
+>    `raiderForce = raid.force + joiners`; for a *world* raid that is a scalar drawn at spawn, and
+>    `applyLoss` returns early on a world hull. So the hand-coupling combat advertises — *"a wrecked hull
+>    routs its hand, `readForce` counts hands, so losing the battle loses the force reading for free"* —
+>    **runs one way only.** `engage` against the weather is all downside for a material agent, and A14's
+>    scheduled raids are precisely the occasion combat was built for. Under fix with its own §9 gate.
+> 2. **`forecastFor` leaks the enemy's real fit** (`combat/view.ts:288-295`): the comment says *"estimated
+>    from hull COUNT and CLASS only… using their real profile here would leak a fit"* and the code below
+>    it calls `profileOf(f.fit)`. §11.2 puts a fit in SENSED, not PUBLIC. Code contradicting its own
+>    comment — scar #1's class, and the fourth instance this week of the engine being right while an
+>    agent-facing surface lies. Under fix, together with `MAX_RAID_PARTIES = 8` refusing surplus joiners
+>    with *"you are not a party"* when the truth is the battle is full.
+> 3. **★ PRODUCTION DOES NOT CROSS, AND NO SIM CAN SEE IT.** 120 ticks after the territorial branches went
+>    live: `works` **5** (unchanged all night), `claimLines` **0**, `battleLines` **0** — while the gate is
+>    affordable (stores balances 250,000–262,988 against the 160,000 needed, `worksAffordableBy: 16`). And
+>    **four of the five live WORKS belong to abandoned one-off playtest probes**; only `p:pellucid-thorn`
+>    is a cast member, and all five sit in the COMMONS. Leading hypothesis under test: **the ladder is
+>    order-dependent and a mature world is stuck on the wrong rung** — `graduate` is gated on holding *no*
+>    WORKS, so whoever was going to build has built, in the Commons, and is now barred by the gate that
+>    protects them. If that holds, every feature behind the crossing is unreachable in production, and the
+>    coverage gap that hid it is that **every sim in this repo starts at tick 0.** An aged-world fixture is
+>    part of the fix regardless of the cause.
+>
+> ---
+>
 > ### ★★★ **COMBAT IS EXERCISED. `RULES_VERSION` 12, hulls built, a formation on a field, and a hull destroyed in a world nobody steers.**
 >
 > Phase 2 shipped complete and unentered: `heuristic.ts` had no combat branch, so **nothing in the
