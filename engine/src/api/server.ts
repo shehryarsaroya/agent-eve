@@ -551,7 +551,23 @@ export function createApp(options: ApiOptions): CreatedApp {
       }
 
       const fresh = spendWake(who);
-      const observation = observe(who, fresh);
+      // ── A CORRECTION IS ONLY DELIVERED INTO A WAKE ────────────────────────
+      //
+      // `takeCorrections` DRAINS. Draining on any observe means a verdict can be consumed by a poll
+      // the agent made for some other reason — and the one place that reliably happens is an agent
+      // out of wakes, whose observation comes back `fresh: false` and is reasonably discounted as
+      // stale. The correction is gone and the next real wake shows `corrections: []`.
+      //
+      // A probe hit exactly this: it burned 62% of a Reckoning's wakes calibrating the tick length,
+      // then reported that refused actions produced no correction at all. The channel was working —
+      // its verdicts had been drained into stale polls it had no reason to read closely. Its summary
+      // is the right one: *"a stuck agent retries; a confidently-wrong agent makes commitments"*, and
+      // this game's whole proposition is that its record of who kept their word is trustworthy.
+      //
+      // So the drain is tied to the wake. Corrections held back are bounded by
+      // `MAX_PENDING_CORRECTIONS` and a principal that never wakes simply accumulates to that cap,
+      // which is the behaviour the ring was built for.
+      const observation = observe(who, fresh, fresh);
       const body = JSON.stringify({ ok: true, observation });
       observationCache.set(who, { tick: runtime.engine.tick, body });
       res.status(200).type('application/json').send(body);
