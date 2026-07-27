@@ -42,6 +42,8 @@ import {
   type LevyRule,
 } from '../levy/index.js';
 import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
+import { DEFAULT_CHARTER } from '../syndicate/charter.js';
+import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
 import { handsOf, holdingOf, route, tierOf } from '../world/index.js';
 import {
   DELIVERY_MEASURE,
@@ -139,6 +141,8 @@ export interface CastOptions {
   readonly grantChanceBps?: number;
   /** Chance in 10 000 that a member raises its one WORKS on a tick it could afford to. */
   readonly worksChanceBps?: number;
+  /** Chance in 10 000 that a member founds its one syndicate on a tick it could afford to. */
+  readonly syndicateChanceBps?: number;
 }
 
 /** Default appetite. *(calibrate)* — high enough that a day has ventures in it. */
@@ -169,6 +173,15 @@ export const DEFAULT_GRANT_CHANCE_BPS = 1_200;
  * which is also what a real cohort would look like.
  */
 export const DEFAULT_WORKS_CHANCE_BPS = 400;
+
+/**
+ * Default appetite for founding a house. *(calibrate)*
+ *
+ * Lower than the WORKS, because a charter is permanent and there is no verb that amends one. A cast
+ * that founds eagerly fills the world with identical constitutions; a cast that founds rarely leaves
+ * the mechanic visible without pretending politics are settled.
+ */
+export const DEFAULT_SYNDICATE_CHANCE_BPS = 150;
 
 /**
  * How much of its **free** stores a cast payer will commit to elective parts across
@@ -301,6 +314,19 @@ export class HeuristicCast {
 
     const election = this.electionFor(member, tick);
     if (election !== null) return { ...base, ...election };
+
+    // ── FOUND A HOUSE, so `syndicateLines` is not permanently empty ────────────
+    //
+    // The third panel that rendered nothing because the cast never did the thing. `form` was made
+    // reachable earlier (it had no affordance at all, the fourth built-but-unreachable primitive found
+    // this session) and a menu entry nobody selects leaves the mechanic exactly as invisible.
+    //
+    // One per member and a low roll, for the same reason as the WORKS: the charter is PERMANENT — no
+    // verb in the game amends one — so a cast that founded a house the instant it could afford to
+    // would put every member in an identical constitution on the same tick, which is the opposite of
+    // the politics syndicates exist to produce.
+    const house = this.syndicateFor(member, tick, rng);
+    if (house !== null) return { ...base, ...house };
 
     // ── THE ONE DOOR GOODS ENTER THROUGH, AND NOBODY WAS OPENING IT ───────────
     //
@@ -521,6 +547,39 @@ export class HeuristicCast {
    *      is allowed, and it is the whole reason this game has drama in it."
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * Found a syndicate, or null.
+   *
+   * The name is the same deterministic suggestion the affordance publishes (`<handle>-house`), so the
+   * bot and the menu cannot disagree about what a copy-pasteable default looks like — and it involves
+   * no RNG, so nothing here can move `state_hash` by inventing a string.
+   *
+   * Takes the charter defaults, `treasury_offices` included. That default is the STRONGBOX, which
+   * means a founded house cannot be spent by any single holder — deliberately the conservative pick,
+   * because the charter is permanent and a bot should not be the thing that decides a pool is a
+   * business.
+   */
+  private syndicateFor(
+    member: CastMember,
+    tick: number,
+    rng: { chance(n: number, of: number): boolean },
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    if (!rng.chance(this.options.syndicateChanceBps ?? DEFAULT_SYNDICATE_CHANCE_BPS, 10_000)) return null;
+    if (runtime.syndicates.of(member.principal, tick).length > 0) return null;
+    if (freeStores(runtime.ledger, member.principal) < FOUNDING_COST_MINOR) return null;
+    return {
+      verb: 'form',
+      params: {
+        name: `${String(member.principal).replace(/^p:/, '')}-house`,
+        admission: DEFAULT_CHARTER.admission,
+        decision: DEFAULT_CHARTER.decision,
+        treasury_offices: DEFAULT_CHARTER.treasuryOffices,
+      },
+    };
+  }
+
   /**
    * Raise a WORKS, or null. The economy's only source of goods.
    *

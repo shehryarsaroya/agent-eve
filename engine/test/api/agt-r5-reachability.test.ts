@@ -84,7 +84,13 @@ describe('AGT-R5 — every live verb is offered somewhere, or declared with a re
     cast.seat(seed);
 
     const offered = new Set<string>();
-    for (let i = 0; i < 900; i += 1) {
+    // 1,800 ticks, not 900. `join` needs a LIVE RAID the observer is not already a side of — a real
+    // state with a narrow window, and whether the sweep lands inside one is incidental to what this
+    // test asserts. Two Reckonings of headroom rather than one, because the cast gained `grant`,
+    // `build` and `form` branches today and each shifted which ticks carry a raid; re-tuning the seed
+    // every time a branch lands is treating the symptom, and adding `join` to UNOFFERED would be
+    // recording a reachable verb as unreachable to keep the suite quiet.
+    for (let i = 0; i < 1_800; i += 1) {
       const target = rt.engine.tick + 1;
       for (const a of cast.decide(target, seed)) rt.engine.submit(a);
       const r = rt.runTick();

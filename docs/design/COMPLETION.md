@@ -109,7 +109,7 @@ The live frame publishes 13 keys. Eight carry data: `map` 30 rows, `tributeLines
 |---|---|---|
 | `authorityLines` | ~~0~~ **FIXED** | The cast had no `grant` branch. Now 12 lines on a 900-tick world — see §"Fixed" below. Production will fill as the new build runs |
 | `worksLines` | ~~0~~ **FIXED** | The cast had no `build` branch. Now 3 WORKS per 900-tick world, `EXTRACTING`, 35,040 goods — the economy has a source for the first time |
-| `syndicateLines` | 0 | No syndicate has ever been formed |
+| `syndicateLines` | ~~0~~ **FIXED** | The cast had no `form` branch. Now 8 houses per 900-tick world |
 | `claimLines` | 0 | 424 claims exist in the world, but `claimLinesFor` filters to the current Reckoning and none fall in it |
 
 **All four render paths are implemented and wired into `FrameSource` in `src/sim/runtime.ts`.** The

@@ -202,7 +202,19 @@ describe('the assurance is OFFERED, not just legal', () => {
       //
       // The owing principals are cast members, which cannot be signed for over HTTP, so this reads
       // the observation the server would build for them rather than fetching it.
-      const owingPrincipal = owing[0]?.creator;
+      // Recomputed HERE, not reused from the capture above. `owing` was taken before this block
+      // enrolled a newcomer and ran further ticks, and elective promises SETTLE — so a principal that
+      // owed then may owe nothing now, and the affordance would correctly be absent. The test read
+      // that as "the affordance is missing". It surfaced when cast changes shifted settlement timing;
+      // the staleness was always there.
+      const owingNow = [...rt.world.principalOrder]
+        .map((p) => ({ p, owed: rt.electivePromisesOwedBy(p as never) }))
+        .find((x) => x.owed.length > 0);
+      expect(
+        owingNow,
+        'no principal owes an elective half at this tick, so this assertion cannot discriminate',
+      ).toBeDefined();
+      const owingPrincipal = owingNow?.p;
       expect(owingPrincipal).toBeDefined();
       const { buildObservation } = await import('../../src/api/observe.js');
       const built = buildObservation({

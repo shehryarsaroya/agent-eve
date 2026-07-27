@@ -2026,8 +2026,34 @@ function affordancesFor(
   const offerable = eligible.filter((a) => live.has(a.verb));
   const notLive = eligible.length - offerable.length;
 
-  const list = offerable.slice(0, MAX_AFFORDANCES);
-  const dropped = offerable.length - list.length;
+  // ── EVERY DISTINCT VERB BEFORE ANY VERB'S REPEATS ─────────────────────────
+  //
+  // The truncation used to be `slice` over INSERTION order while the notice below told the agent the
+  // dropped acts were "the lowest-priority repeats (extra lanes for an already-listed hand)". Nothing
+  // made that true. It became false the moment the world got richer: a cast that holds WORKS,
+  // syndicates and grants generates more offers, and `assure` — pushed late — fell off the end while
+  // earlier repeats survived. So a principal that owed an elective half was not told it could assure,
+  // and the observation explained the omission with a sentence that did not describe it.
+  //
+  // A rules surface that misdescribes its own omission is scar #1's shape: every component correct,
+  // the agent taught the wrong thing. Cheapest way to make the sentence true is to make the ordering
+  // match it — one pass that takes the first offer of each verb, then the rest in their original
+  // order. Stable, no comparator on user data (DET-1), and it guarantees no mechanic is invisible
+  // merely because another mechanic has many variants.
+  const firstOfEachVerb: typeof offerable[number][] = [];
+  const repeats: typeof offerable[number][] = [];
+  const seenVerbs = new Set<string>();
+  for (const a of offerable) {
+    if (seenVerbs.has(a.verb)) repeats.push(a);
+    else {
+      seenVerbs.add(a.verb);
+      firstOfEachVerb.push(a);
+    }
+  }
+  const prioritised = [...firstOfEachVerb, ...repeats];
+
+  const list = prioritised.slice(0, MAX_AFFORDANCES);
+  const dropped = prioritised.length - list.length;
   const reasons: string[] = [];
   if (dropped > 0) {
     reasons.push(
