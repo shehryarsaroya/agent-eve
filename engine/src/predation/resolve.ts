@@ -8,7 +8,7 @@
  *                   + FORCE_PER_JOINER x (joiners on the DEFENDER side)
  *                   + FORCE_BY_TIER[tier of the stage]
  *
- *     raiderForce   = raid.force                    (drawn at spawn, band published)
+ *     raiderForce   = the raid's OWN force still on the field  (see below)
  *                   + FORCE_PER_JOINER x (joiners on the RAIDER side)
  *
  *     defenderForce >= raiderForce  ->  REPULSED       (ties go to the defender)
@@ -25,6 +25,42 @@
  * **Ties go to the defender**, deliberately: a defender that has done the arithmetic and
  * matched the raid should not lose to a rounding convention, and the direction is
  * published so it is a rule rather than an accident.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **AND THE RAID'S OWN FORCE IS MEASURED AT RESOLUTION TOO, WHICH IT WAS NOT.**
+ *
+ * `raid.force` used to be read straight off the record — a scalar drawn at spawn for a world
+ * raid, and never touched again. That made §9A's advertised coupling run **one direction only**.
+ * `combat/index.ts`, `combat/battle.ts` and SPEC §9A all say the same thing: *"a wrecked hull routs
+ * its hand, `readForce` counts hands at resolution, so losing the battle loses the force reading
+ * automatically."* True of the defender. False of the world, because `applyLoss` returns early on a
+ * world hull and the scalar on the record did not care how many LANCEs were left.
+ *
+ * Measured, seed `fz-13` tick 192: `brannock` answered FIGHT with one missile WARDEN, **destroyed
+ * all three world LANCEs**, held the field at 2,395 EHP of 4,400 — and the standoff resolved
+ * **PLUNDERED 2-3**. It won the battle and lost the standoff. So `engage` against the weather was
+ * all downside for a material agent: hulls are destroyed permanently and could not affect the
+ * outcome, which makes YIELD the only rational answer and makes A14's scheduled drama render
+ * identically to peace — A13's definition of a mechanic that does not exist.
+ *
+ * {@link ForceArgs.raidForceLeft} closes it, and it is deliberately **not** a second arithmetic.
+ * §9A's rule is *"composition beats headcount, through hands and nothing else"*; a world raid's
+ * fleet is crewed by one synthetic hand per hull, and this makes those hands count by the **same
+ * rule at the same moment** as every other hand in the sum. What changed is not the formula — it is
+ * that one side stopped being exempt from it.
+ *
+ * Three properties the shape guarantees, each load-bearing:
+ *
+ *   - **The world's force can only fall.** `Math.min` against `raid.force` means no battle can hand
+ *     a raid strength it was never given, whatever a book says.
+ *   - **No battle means no reduction.** `null` reads as *"nothing is counting"* and the drawn scalar
+ *     stands, so an unanswered raid and an unfought one are exactly as strong as they were. This is
+ *     also what makes an agent-initiated demand pass through untouched: `DEMAND_OWN_FORCE` is 0 and
+ *     all of its force is already hands.
+ *   - **A bookkeeping failure never hands out a free repulse.** A raid whose fleet was never
+ *     fielded reports `null`, not 0 — see {@link ForceArgs.raidForceLeft}. A5′ in the direction that
+ *     matters here: the record must not credit a victory nobody won.
  * ══════════════════════════════════════════════════════════════════════════
  *
  * ## What this file does *not* do
@@ -65,7 +101,16 @@ export interface ForceReading {
     readonly defenderHands: number;
     readonly defenderJoiners: number;
     readonly terrain: number;
+    /**
+     * The raid's own force **as it stands now** — what went into `raiderForce`.
+     *
+     * Equal to {@link raidForceAtSpawn} until a battle takes hulls off the raid's side of the
+     * field. Reported separately from the spawn figure rather than replacing it, because "the
+     * world came with 3 and has 1 left" is the whole story and a single number tells neither half.
+     */
     readonly raidForce: number;
+    /** What the raid was given at spawn, inside `RAID_FORCE`'s published band. Never moves. */
+    readonly raidForceAtSpawn: number;
     readonly raiderJoiners: number;
   };
 }
@@ -107,6 +152,30 @@ export interface ForceArgs {
    * are measured by one rule at one moment.
    */
   readonly handsAtStage: (principal: PrincipalId) => readonly HandId[];
+  /**
+   * How much of the raid's **own** force is still on the field, or `null` when nothing is
+   * counting it.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE OTHER HALF OF §9A's COUPLING, AND IT IS A PORT RATHER THAN A LOOKUP FOR A REASON.**
+   *
+   * The answer lives in the engagement book, which is `src/combat/`'s — and `combat` already
+   * imports `predation` (`battle.ts` takes a `RaidRecord`, `combat/params.ts` reads
+   * `DEMAND_WINDOW_TICKS`). Reaching the other way would be a module cycle, so the conversion from
+   * *surviving hulls* to *force* is `combat/battle.ts`'s
+   * {@link import('../combat/battle.js').worldForceLeft} — the same file that decided how many
+   * hulls a given force fields in the first place, which is what keeps the two directions of one
+   * constant in one place (scar #5).
+   *
+   * **`null` is not zero and the difference is a rule.** `null` means *"no battle is counting this
+   * raid's hulls"* — the standoff was never answered FIGHT, or the engagement book has no row for
+   * it, or the world's fleet was never fielded at all. In every one of those the drawn scalar
+   * stands. Returning 0 there would let a bookkeeping failure, a pruned row, or a full engagement
+   * book hand a defender a free repulse it never fought for — a win on the permanent public record
+   * that nobody earned, which is A5′ pointed at the other party.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly raidForceLeft: (raid: RaidRecord) => number | null;
 }
 
 export function readForce(args: ForceArgs): ForceReading {
@@ -116,9 +185,14 @@ export function readForce(args: ForceArgs): ForceReading {
   const raiderJoiners = args.raid.parties.filter((p) => p.side === 'RAIDER' && stillThere(p)).length;
   const terrain = FORCE_BY_TIER[args.tier] ?? 0;
 
+  // The raid's own force, re-measured — capped at what it was given, so a battle can only ever
+  // take strength off the board and never put any on it.
+  const left = args.raidForceLeft(args.raid);
+  const raidForce = left === null ? args.raid.force : Math.min(args.raid.force, Math.max(0, left));
+
   const defenderForce =
     FORCE_PER_HAND * Math.max(0, args.defenderHands) + FORCE_PER_JOINER * defenderJoiners + terrain;
-  const raiderForce = args.raid.force + FORCE_PER_JOINER * raiderJoiners;
+  const raiderForce = raidForce + FORCE_PER_JOINER * raiderJoiners;
 
   return {
     defenderForce,
@@ -129,7 +203,8 @@ export function readForce(args: ForceArgs): ForceReading {
       defenderHands: Math.max(0, args.defenderHands),
       defenderJoiners,
       terrain,
-      raidForce: args.raid.force,
+      raidForce,
+      raidForceAtSpawn: args.raid.force,
       raiderJoiners,
     },
   };

@@ -581,3 +581,73 @@ export function weaponProfile(name: string): WeaponProfile | undefined {
 export function damageTypesOf(): readonly DamageType[] {
   return ['KINETIC', 'THERMAL', 'EXPLOSIVE', 'EM'];
 }
+
+// ── What a hull CLASS is worth, when the class is all you may know ───────────
+
+/**
+ * How much stronger than its bare frame a fitted hull of a class is assumed to be, in bps.
+ * *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS EXISTS BECAUSE `forecastFor` WAS READING THE ENEMY'S REAL PROFILE UNDER A COMMENT SAYING IT
+ * DID NOT.** The comment said the estimate came from *"hull COUNT and CLASS only… using their real
+ * profile here would leak a fit"*, and the line immediately below it called `profileOf(f.fit)`. So
+ * `hold_field_bps.p50` was invertible against your own exact strength — §11.2 puts a fit at `SENSED`
+ * (*"a ship at sea is visible; its manifest is not"*) and the forecast handed it over as arithmetic.
+ *
+ * ## Why a multiple of the bare frame rather than a hand-written table
+ *
+ * A table of five numbers would drift from the catalogue the first time a module was retuned, which
+ * is scar #1's shape. This is a **published formula over published data**: `structure + shield +
+ * armor` are `HullSpec` fields, the catalogue is a rules surface an agent reads for free, and
+ * `simulateFit` is free and unlimited — so any agent can reproduce this number exactly, which is what
+ * makes it a shared estimate rather than a server-side opinion.
+ *
+ * ## The calibration, measured
+ *
+ * Strength in the forecast's units is `ehp + alpha × SLICES_PER_TICK`, and it is **EHP-dominated at
+ * roughly 8:1** on every fit in the repo — so a multiple of the tank total captures both terms
+ * honestly. Measured against the three fits this codebase actually flies:
+ *
+ * | hull | bare frame | a real fit | ratio |
+ * |---|---|---|---|
+ * | `PIKE` | 400 | 472 (the menu's tackle fit) | 1.18× |
+ * | `LANCE` | 700 | 884 (`WORLD_FLEET_FIT`) | 1.26× |
+ * | `WARDEN` | 1,600 | 4,984 (the cast's missile line, two extenders) | 3.11× |
+ *
+ * 2.5× sits above every untanked sample and just under the heavily-tanked one, so the estimate is
+ * **deliberately pessimistic about a stranger**: it over-states an enemy flying no tank and slightly
+ * under-states one flying a full buffer. That direction is the safe one — an optimistic forecast is
+ * how a fleet gets fed into a fight it cannot win, and the whole reason `forecast` is a band with
+ * named swing factors rather than a percentage (§7 CUT-1).
+ *
+ * It also lands `WARDEN` on **4,000**, which is exactly the constant the old code used as its
+ * "unknown class" fallback — the one number in the old implementation that was honest.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const NOMINAL_FIT_MULTIPLE_BPS = 25_000;
+
+/**
+ * The strength of an unknown hull class. Used when the class is not in the catalogue at all.
+ *
+ * Not zero, and that is the rule: a contact the observer cannot identify must not be forecast as
+ * harmless. A `CITADEL`-sized figure would be alarmist and a zero would be a trap, so it is the
+ * middle of the ladder — and the band's `swing_factors` say the class was unrecognised.
+ */
+export const UNKNOWN_CLASS_WEIGHT = 4_000;
+
+/**
+ * What one hull of a class is worth in the forecast's own units, from **published data only**.
+ *
+ * The only strength figure any observer is entitled to about a stranger's formation: §9A gives it
+ * *"hull class, hull count, echelon, and the effects that have landed on me"*, and this is the first
+ * of those turned into a number. `hullSpec` rather than a bare index, for `commons.ts`'s reason.
+ */
+export function hullClassWeight(hull: string): number {
+  const spec = hullSpec(hull);
+  if (spec === undefined) return UNKNOWN_CLASS_WEIGHT;
+  const bareFrame = spec.structure + spec.shield + spec.armor;
+  // Integer arithmetic: `trunc` after the multiply, never a float, because this figure reaches an
+  // agent-visible payload and DET-7 bans floats from anything that could be hashed downstream.
+  return Math.trunc((bareFrame * NOMINAL_FIT_MULTIPLE_BPS) / 10_000);
+}

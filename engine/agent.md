@@ -662,6 +662,11 @@ go to you.** There are no dice anywhere in this.
 - **`fight` `{"raid":"<id>","system":"<stage>"}`** — muster. Your IDLE hands at the stage count only
   if you answered; standing there asleep is not a defence. It commits nothing when you send it, so
   hands that march in during the window still count.
+  **A world raid's FLEET is part of its force.** `force.raid_force_left` starts at
+  `force.raid_force_at_spawn` and falls by 1 for every one of the world's hulls you destroy with
+  `engage`, so **winning the battle wins the standoff** — and its fit is published, so the arithmetic
+  is exact before you commit. Answer **early**: a battle runs 22 ticks inside a 24-tick window, so a
+  standoff answered more than two ticks after it spawns gets none and is decided on hands alone.
 - **`join` `{"raid":"<id>","side":"DEFENDER"}`** — stand with somebody else. Costs no capital and no
   aggression capacity; risks the hand you put in. This is the escort market.
 - **Say nothing** and it takes `costs.if_you_do_nothing`, which is strictly worse than paying.

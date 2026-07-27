@@ -323,6 +323,7 @@ import {
   isPosture,
   isTargetPredicate,
   runBattles,
+  worldForceLeft,
   type BattlePort,
   type EngagePort,
   type EngageRequest,
@@ -770,53 +771,118 @@ import {
  * so 12 is the union of one branch. If that stops being true, the note above 11 is the rule.
  */
 /**
- * Bumped to **14, skipping 13 on purpose**, because the goods half of a principal's FIRST WORKS is now
- * payable in retired currency (`works/params.ts:WORKS_GOODS_IN_CURRENCY_MINOR`).
+ * Bumped 12 → 13 because **§9's resolution arithmetic changed**. This is the first bump since 1 → 2
+ * that alters what a *past* tick would compute, so it is the first one whose divergence tick is a
+ * matter of the record rather than of the snapshot shape.
  *
- * ── WHY 14 AND NOT 13, WHICH IS THE RULE OF 11 APPLIED IN ADVANCE ─────────────
+ * ── WHAT MOVED, AND WHY EACH PIECE MOVES THE HASH ────────────────────────────
  *
- * This branch was built **concurrently with the §9 resolve-path fix**, in a separate worktree, and
- * neither could see the other. 11's note states the general rule that came out of that exact
- * situation: *"`RULES_VERSION` is a **shared resource**, exactly like the working tree in HARD RULE 7.
- * A bump is not a local edit, and two agents cannot each own the next integer."* Two agents each taking
- * 10 is what produced 11.
+ *   1. **`readForce` now measures the raid's OWN force at resolution.** `raiderForce` was
+ *      `raid.force + joiners` with `raid.force` a scalar drawn at spawn; it is now
+ *      `min(raid.force, worldForceLeft) + joiners`, where `worldForceLeft` counts the world fleet's
+ *      surviving synthetic hands. So a standoff whose battle destroyed world hulls resolves
+ *      **REPULSED** where it resolved **PLUNDERED**, and everything downstream of that verdict moves
+ *      with it: no `seize`, no goods destroyed, `forfeit` instead of nothing, `grantWorldProtections`
+ *      with the repulsed branch, and the target keeps stock it used to lose. `RaidRecord.raiderForce`
+ *      and `defenderForce` are written at close and are inside `capture()`, so the state hash differs
+ *      from that tick on.
+ *   2. **`Book.prune`'s retention for resolved engagements** went from `AFTERMATH + 1` (2 ticks) to
+ *      `ENGAGEMENT_RETAIN_TICKS` (288). The engagement book is a state table, so a row kept where one
+ *      used to be dropped changes `capture()` directly. It was **also a latent defect on its own** —
+ *      see `ENGAGEMENT_RETAIN_TICKS` — and it only ever bit once the book was over half full, which
+ *      is why no test found it.
+ *   3. **`MAX_RAID_PARTIES` 8 → 12.** An *acceptance* change, and the only one here: a ninth `join`
+ *      that was refused is now admitted. Nothing has ever submitted one in this world's record (see
+ *      the divergence note below), but the classification of an action shape did move, so it is named
+ *      rather than buried.
+ *   4. **Two read paths, which cannot diverge anything and are named for completeness:**
+ *      `forecastFor` stopped resolving the enemy's real fit (§11.2), and `battleLinesFor`'s `roleTags`
+ *      became trace-derived. Both are projections; neither is in `capture()`.
  *
- * So 13 is **left to the branch that was told it might take it**, and this one takes 14. A gap costs
- * nothing — `hydrate.ts` is the only reader and it compares for equality, so no code anywhere assumes
- * contiguity, and a version nobody ever claimed is indistinguishable from a version that was skipped.
- * A *duplicate* costs the stamp its whole meaning. When the two branches meet, master carries 13 and 14
- * as two rule sets rather than one integer with two meanings, which is the property that matters.
+ * **Nothing draws from the RNG and no phase gained a draw.** `worldForceLeft` is a count and a
+ * ceiling-divide; the prune window is a constant; the party cap is a comparison. The seeded
+ * sub-streams reach every existing draw in the same order. **No event kind was added**, and no new
+ * ledger row: a repulse emits the `raid.resolved` row the plunder would have, with different fields.
+ *
+ * ── THE DIVERGENCE SIGNATURE, AND WHY THE DOOR IS PROBABLY UNNECESSARY ───────
+ *
+ * `readForce` only reads differently when an engagement over the raid holds a **world** formation —
+ * that is, when a standoff was answered `FIGHT` **and** the world fielded hulls **and** some of them
+ * died. Combat landed at version 11 and `engage` has existed for one deploy; the live record's raid
+ * answers should be checked before assuming, but a world with no `engage` in its action log replays
+ * **identically**, because `worldForceLeft` returns `null` on every raid with no engagement row and
+ * `readForce` then uses the drawn scalar exactly as version 12 did. Same for the prune: a book that
+ * never held a resolved engagement has nothing to retain differently.
+ *
+ * So the preflight is expected to exit 0. **If it names a tick, it will be the first tick at which a
+ * raid resolved with a battle over it** — grep the journal for `engage` and take the first
+ * `raid.resolved` after it. `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes that tick, exactly as at
+ * 1 → 2, 4 → 5, 5 → 6, 6 → 7, 7 → 8 and 8 → 9.
+ *
+ * ── AND THIS INTEGER IS OWNED BY ONE BRANCH ──────────────────────────────────
+ *
+ * 11's note is the standing rule: `RULES_VERSION` is a **shared resource**, exactly like the working
+ * tree in HARD RULE 7, and two agents may not each claim the next integer. This branch was told it
+ * owned 12 → 13 before it started. If another branch also took 13, the union is 14 and neither number
+ * means anything until that is written down.
+ */
+/**
+ * Bumped 13 → **14**, because the goods half of a principal's FIRST WORKS is now payable in retired
+ * currency (`works/params.ts:WORKS_GOODS_IN_CURRENCY_MINOR`).
+ *
+ * ── 13 AND 14 ARE TWO RULE SETS, WHICH IS THE RULE OF 11 WORKING FOR ONCE ─────
+ *
+ * This branch and the §9 branch above ran **concurrently, in separate worktrees**, and neither could
+ * see the other — the exact situation that produced 11, where two agents each took 10 and the live
+ * record briefly carried snapshots stamped `10` by two different rule sets. This time the shared
+ * resource was arbitrated *before* either bump landed: §9 was told it owned 13, this one was told to
+ * take 14, and master now carries both notes with `= 14` beneath them. Two rule sets, two integers,
+ * no integer with two meanings. **That is what the note above 11 asks for, and it is cheaper to do in
+ * advance than to reconstruct afterwards.**
  *
  * ## What changes
  *
  *   1. **One new price**, `WORKS_GOODS_IN_CURRENCY_MINOR` (25,000), and it is only ever charged where
- *      the build would otherwise have been **refused**: the goods are short, the principal holds no
- *      WORKS, and the currency covers the whole total. `worksQuote.affordable` therefore flips from
- *      `false` to `true` for exactly that set of principals and for nobody else.
+ *      a build would otherwise have been **refused**: the goods are short and the principal holds no
+ *      WORKS. `worksQuote.affordable` therefore flips from `false` to `true` for exactly that set of
+ *      principals and for nobody else.
  *   2. **`vBuildWorks` retires `totalMinor` rather than `costMinor`** — one atomic posting into the
- *      same `sink:upkeep` it always used, equal to the old amount on the goods route.
- *   3. **`works.raised` carries `goods_in_currency_minor`.** A payload field, so the event ledger is
- *      hashed differently for every future build **including the ones that pay nothing extra**, which
- *      is where the divergence comes from rather than from any decision.
+ *      same `sink:upkeep` it always used, and **equal to the old amount on the goods route**. So a
+ *      build that pays in goods moves exactly the value it moved at 13.
+ *   3. **One refusal became narrower.** The goods-shortfall rejection is now reachable only by a
+ *      principal that already holds a WORKS; a drained newcomer meets the currency gate instead.
  *   4. **Four new published fields** (`first_works`, `goods_in_currency_minor`,
  *      `paying_goods_in_currency`, `total_minor`) and the affordance's `max_direct_loss` /
- *      `max_contingent_liability` now describe the route actually taken. Reads.
+ *      `max_contingent_liability` now describe the route actually taken. All reads, none captured.
+ *
+ * **No new state, no new event kind, and NOTHING ADDED TO ANY HASHED STRUCTURE.** The first draft of
+ * this change put `goods_in_currency_minor` on the `works.raised` payload and it was removed for two
+ * independent reasons, both worth recording. (a) The event ledger is hashed state, so a field on every
+ * future build would have made a *genesis* replay diverge at the first build ever raised — a
+ * self-inflicted discontinuity for an audit convenience. (b) `works.raised` is `PUBLIC`, and which
+ * half a principal could not cover is a fact about its **stores**, which §11.2 puts at SENSED. The
+ * route is recoverable from `posting` — the retirement is 60,000 or 85,000 — which is the surface the
+ * audit reads anyway, and where §15 already says value is authoritative.
  *
  * **Nothing draws from the RNG that did not before.** No roll is added, removed or reordered; the cast
- * gains no branch. `worksFor` gates on the same `affordable` predicate it always did, so the only
- * behavioural change in the cast is that the predicate is now true in a state where it used to be
- * false — and that state does not occur in a world seeded from genesis, which is the next paragraph.
+ * gains no branch. `worksFor` gates on the same `affordable` predicate it always did.
  *
- * ## The divergence signature, and this one is asymmetric on purpose
+ * ── THE DIVERGENCE SIGNATURE ──────────────────────────────────────────────────
  *
- * A **genesis** replay diverges at the first `works.raised` — the payload gained a field — so the
- * preflight is expected to name a tick and `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` **is** needed. What it
- * must *not* find is a changed **decision**: no historical action is classified differently, because
- * the new route is only ever reachable where the old rules refused. Measured, and this is the claim to
- * check rather than trust: the full-cast balance gate at 900 ticks and at 6 Reckonings is expected to
- * be **identical on every balance metric** across 8 seeds, because a member holding its allotment is
- * never short of goods and the door never opens. If a balance number moves, the door is firing
- * somewhere it was not designed to and this note is wrong.
+ * With the payload left alone, the **only** way a past tick recomputes differently is a historical
+ * `build {kind:"WORKS"}` that was **refused on the goods half** by a principal holding at least 85,000
+ * free — which now succeeds. Everything else is identical arithmetic: same postings, same amounts, same
+ * event rows, same state tables.
+ *
+ * So the preflight is expected to exit 0, and **if it names a tick it will be the first refused
+ * `build {WORKS}` in the journal.** `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes that tick. This world's
+ * five WORKS were all raised by probes with intact allotments, so a refusal of that shape is possible
+ * but not likely — a claim to check at deploy rather than trust here.
+ *
+ * The claim that *is* measured: the full-cast balance gate at 900 ticks and at 6 Reckonings is
+ * **identical on every balance metric** across 8 seeds against 13, because a member holding its
+ * allotment is never short of goods and the door never opens. If a balance number moves, the door is
+ * firing somewhere it was not designed to and this note is wrong.
  */
 export const RULES_VERSION = 14;
 
@@ -2315,7 +2381,11 @@ export class Runtime {
           // §9A couples into §9 through **hands and nothing else**: a wrecked hull sends its hand
           // to RECOVERING, and `readForce` counts hands *at resolution* — its own doc says "a
           // joiner counts only while its hand is still standing there". So a side that loses the
-          // battle loses the force reading automatically, with zero change to §9's arithmetic.
+          // battle loses the force reading automatically.
+          //
+          // And the raid's OWN side is measured here too, through `worldForceLeft`. It was not, and
+          // the consequence was that destroying every hull the world brought changed nothing: a
+          // defender could win the battle and lose the standoff (`fz-13` t192, PLUNDERED 2-3).
           //
           // That only holds if the battle's last tick runs BEFORE the raid resolves, which is why
           // this is a composition rather than a second phase. Adding a phase would change the set
@@ -3379,6 +3449,15 @@ export class Runtime {
       presentHandsAt: (principal, system) => idleHandsAt(principal, system).length,
       tierOf: safeTier,
       handsDefending: idleHandsAt,
+      // ── §9A's COUPLING, THE OTHER WAY ROUND ────────────────────────────
+      //
+      // The one line the whole "winning a battle cannot win the standoff" defect needed. The
+      // engagement book is the authority on how many of the world's hulls are left, and
+      // `worldForceLeft` converts that back to force with the same constant that turned force
+      // into hulls at `mustWorldFleet`. `null` on any raid nothing is fighting over — including
+      // every agent `demand`, which brings no fleet — and `readForce` then uses the drawn scalar
+      // exactly as it always did.
+      raidForceLeft: (raid) => worldForceLeft(this.battles, raid.id),
       isSeated: (principal) => {
         const holdingId = world.holdingByPrincipal.get(principal);
         if (holdingId === undefined) return false;
@@ -8792,16 +8871,24 @@ export class Runtime {
         holder: req.principal,
         tier: quote.tier,
         online_at_tick: row.onlineAtTick,
-        // ── WHICH DOOR IT CAME THROUGH, WHICH IS A FACT AND NOT A DERIVATION ────
+        // ── AND *NOT* WHICH DOOR IT CAME THROUGH, FOR TWO INDEPENDENT REASONS ───
         //
-        // Zero on the goods route and `WORKS_GOODS_IN_CURRENCY_MINOR` when the goods half was paid
-        // in retired currency instead. It belongs in the record for the same reason `online_at_tick`
-        // does — it is something that HAPPENED, not something recomputable later: the postings show
-        // one retirement of 85,000 into `sink:upkeep` and nothing in them says whether that was a
-        // rich builder or a drained one coming back. It is also the only way to answer *"how many
-        // principals used the bootstrap door, and when did that stop"*, which is the question this
-        // price will be calibrated against.
-        goods_in_currency_minor: quote.payingGoodsInCurrency ? quote.goodsInCurrencyMinor : 0,
+        // The first draft carried `goods_in_currency_minor` here, so an auditor could count how many
+        // principals used the bootstrap door of `WORKS_GOODS_IN_CURRENCY_MINOR`. Both halves of the
+        // note above kill it:
+        //
+        //   - **It is a derived quantity in hashed state.** A field on every future build makes a
+        //     *genesis* replay diverge at the first build ever raised — a self-inflicted
+        //     discontinuity bought for an audit convenience, which is exactly what the paragraph
+        //     above records `share_per_tick` and `occupants` being removed for.
+        //   - **This row is `PUBLIC` and the fact is not.** Which half a principal could not cover
+        //     is a statement about its **stores**, and §11.2 puts stores at SENSED. A `roleTags`
+        //     leak of precisely this shape — a private manifest rendered on a public frame — was
+        //     found the same night, and this would have been the fourth instance in one day.
+        //
+        // Nothing is lost. The **retirement is 60,000 or 85,000** and `posting` is authoritative for
+        // value (§15), so the route is recoverable to the minor unit on the surface the audit
+        // already reads and the viewer already cannot.
       },
     });
     return { ok: true, value: null };

@@ -1225,7 +1225,21 @@ function affordancesFor(
           `${losing ? 'LOSE' : 'HOLD'}. Losing costs ${String(view.costs.if_you_do_nothing)} of ${view.good} and ` +
           `sends every IDLE hand you have there to RECOVERING — never destroyed, and never your holding, your ` +
           `identity or your standing. Winning costs nothing and takes any raider's forfeited stake. Others may ` +
-          `still join either side before tick ${String(view.resolves_tick)}.`,
+          `still join either side before tick ${String(view.resolves_tick)}.` +
+          // ── THE HALF THAT MAKES A FLEET WORTH FLYING, AND IT WAS MISSING ────
+          //
+          // A world raid's own force USED to be a scalar nothing could touch, so an agent that read
+          // this line correctly would never `engage`: hulls are destroyed permanently and could not
+          // move the outcome. Now `force.raid_force_left` falls one per world hull destroyed, and an
+          // agent that is not told so has a capability it cannot find (this project's signature
+          // defect, on the exact surface A2 calls the interface).
+          (view.initiator === null
+            ? ` The raid's own force is ${String(view.force.raid_force_left)} of the ` +
+              `${String(view.force.raid_force_at_spawn)} it arrived with, and it is its FLEET: after you answer ` +
+              `FIGHT, \`engage\` commits hulls, and every one of the world's hulls you destroy takes 1 off ` +
+              `that number before this standoff resolves. Its fit is published, so the arithmetic is exact.`
+            : ` ${String(view.initiator)} brings no force of its own — all of it is hands, counted the same ` +
+              `way yours are.`),
         expires_tick: view.resolves_tick,
         quote_id: quoteId(principal, tick, 'fight', { raid: view.raid }),
       });

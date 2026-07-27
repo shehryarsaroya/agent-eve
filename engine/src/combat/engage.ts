@@ -71,6 +71,7 @@ import {
 import { engagementIdFor } from './book.js';
 import type { Fleet, HullId } from './fleet.js';
 import { simulateFit, type FitProfile } from './fit.js';
+import { MAX_RAID_PARTIES } from '../predation/params.js';
 import {
   ENGAGEMENT_PHASE_TICKS,
   ENGAGEMENT_RULE_STATEMENT,
@@ -186,10 +187,34 @@ export function engageRefusal(
   // 5.
   const side = port.sideIn(raid, req.principal);
   if (side === null) {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **"YOU ARE NOT A PARTY" WAS A LIE WHEN THE STANDOFF WAS FULL, AND IT REPEATED EVERY TICK.**
+    //
+    // `sideIn` returns null for two completely different reasons and this used to give one answer to
+    // both. Measured: a coalition of ten principals hit `MAX_RAID_PARTIES` = 8, the ninth and tenth
+    // `join` were refused INV-26 — correctly — and then every `engage` those two sent for the rest of
+    // the window came back *"you are not a party to raid:X. Take a side with `join` first"*. Which is
+    // advice to retry the one action that cannot succeed, once per tick, until the raid resolves.
+    //
+    // That is worse than an unhelpful message. AGT-S3 is about refusal noise burying real defects, and
+    // a refusal that names a **fixable** cause when the cause is **structural** does not just waste an
+    // agent's action: it tells it something false about the world, on the surface A2 calls the
+    // interface. A full battle is a fact about the standoff and the agent is entitled to read it.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (raid.parties.length >= MAX_RAID_PARTIES) {
+      return reject(
+        'INV-26',
+        `${raid.id} is FULL: all ${String(MAX_RAID_PARTIES)} party slots are taken, so no further principal ` +
+          `can take a side in it and \`join\` would be refused too. You are not a party and cannot become ` +
+          `one — this is the standoff's cap, not something you have failed to do. A coalition larger than ` +
+          `${String(MAX_RAID_PARTIES)} principals has to be split across separate standoffs.`,
+      );
+    }
     return reject(
       'A2',
       `you are not a party to ${raid.id}. Take a side with \`join\` first — §9's standoff is what an ` +
-        `engagement is fought inside, and only its parties bring hulls.`,
+        `engagement is fought inside, and only its parties bring hulls. ` +
+        `${String(raid.parties.length)} of ${String(MAX_RAID_PARTIES)} party slots are taken.`,
     );
   }
 

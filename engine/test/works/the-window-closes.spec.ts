@@ -363,7 +363,7 @@ describe('★ A2 — the two surfaces an agent reads must NAME the door', () => 
     ).toBe(WORKS_COST_MINOR + WORKS_GOODS_IN_CURRENCY_MINOR);
     expect(here['affordable']).toBe(true);
 
-    const affordances = obs['affordances'] as Record<string, unknown>[];
+    const affordances = obs['affordances'] as unknown as readonly Record<string, unknown>[];
     const build = affordances.find(
       (a) => a['verb'] === 'build' && (a['params'] as Record<string, unknown>)['kind'] === 'WORKS',
     );

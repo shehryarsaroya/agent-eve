@@ -575,7 +575,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // rule. Pinned so growth is visible, not asserted under the ceiling: padding the ceiling for
     // a state that cannot exist is how a margin becomes decoration.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(58_669);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(59_149);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -593,7 +593,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(51_083);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(51_563);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1304,9 +1304,20 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       32_401, // a newcomer on its first wake
       36_325, // mid-game in the Commons
       36_967, // about to take territory — and §11B is READABLE now, which it was not
-      51_083, // a claimant in trouble — the largest REACHABLE position
-      55_212, // the analytic maximum priced at the ceiling (58,669 uncapped)
+      51_563, // a claimant in trouble — the largest REACHABLE position
+      55_692, // the analytic maximum priced at the ceiling (59,149 uncapped)
     ]);
+    // ── +480 ON THE LAST TWO, AND THAT IS THE FIX FOR §9's WORST DEFECT PAYING ITS OWN RENT ──
+    //
+    // A world raid's fleet IS its force now: `force.raid_force_left` falls one per world hull
+    // destroyed, so winning the battle wins the standoff — where before a defender could destroy
+    // every LANCE the weather brought, hold the field, and still lose the goods. **An agent that is
+    // not told so has a capability it cannot find**, which is this project's signature defect on the
+    // exact surface A2 calls the interface, so the `fight` block in `agent.md` carries the arithmetic
+    // and the prompt-ness pays for it. The margin assertion above is the check that matters: the
+    // largest REACHABLE position is 51,563 against a 56,000 ceiling, which leaves 4,437 — still over
+    // `CONTRACT_CEILING_MARGIN`, and 437 characters is now all the slack the next block has before
+    // somebody has to raise the ceiling or make a block conditional.
     // ── WHAT §9A's COMBAT LAYER COST, WHICH IS THE POINT OF THE CEILING RAISE ─
     // +1,403 on a newcomer and +3,837 on a claimant, and `engage` went from a verb with rules
     // NOWHERE a member could read to four blocks. That growth is exactly what the raise was for:
