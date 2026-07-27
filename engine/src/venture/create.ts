@@ -220,6 +220,21 @@ const PROPORTION_KEYS: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * Name what arrived, without stringifying it.
+ *
+ * `String(value)` on an object gives `[object Object]`, which tells an agent nothing about what it
+ * sent — and a refusal that cannot describe the input is a refusal an agent cannot act on (A2). The
+ * value is never echoed back verbatim beyond a string or a number, so a hostile payload cannot ride
+ * out through a hint.
+ */
+function describeSent(raw: unknown): string {
+  if (typeof raw === 'string') return `the string "${raw}"`;
+  if (typeof raw === 'number') return `the non-integer number ${String(raw)}`;
+  if (raw === null) return 'null';
+  return `a ${typeof raw}`;
+}
+
+/**
  * A proportion that was *sent* and cannot be read as basis points.
  *
  * `40.5`, `"4000"`, `null` and `true` are all things an agent might send, and every one of them used
@@ -234,7 +249,7 @@ function malformedProportion(params: Readonly<Record<string, unknown>>): Rejecti
     return reject(
       'PROP-V5',
       `${key} must be an INTEGER number of basis points in 0..${String(BPS_ONE)} — you sent ` +
-        `${typeof raw === 'string' ? `the string "${raw}"` : String(raw)}. It is not coerced and it is not ` +
+        `${describeSent(raw)}. It is not coerced and it is not ` +
         'ignored: 4000 and "4000" would be the same act with only one of them on the record, and a create ' +
         'that quietly fell back to the default would bind you to a proportion you did not choose. Nothing ' +
         'was created.',
