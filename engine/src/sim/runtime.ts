@@ -167,6 +167,7 @@ import { renderFrame, type FrameSource, type SettledView } from '../frames/rende
 import { hallOfFame, namesFor } from '../frames/memory.js';
 import { readInt, readString } from '../core/params.js';
 import { sign } from '../venture/sign.js';
+import { withdraw } from '../venture/withdraw.js';
 import { refine } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
@@ -238,7 +239,6 @@ import {
   roleTerms,
   scaleByBps,
   shareTerms,
-  vacateRole,
   VentureBook,
   VENTURE_KINDS,
   type Election,
@@ -4779,27 +4779,22 @@ export class Runtime {
     return minor(Math.max(0, ceiling - role.settledElectiveMinor));
   }
 
+  /** `withdraw` — an ADAPTER. The operation lives in `venture/withdraw.ts` (D21). */
   private vWithdraw(_ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
-    const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
-    if (ventureId === null) return reject('A2', 'withdraw needs {"venture": "<id>"}.');
-    const venture = this.ventures.get(ventureId);
-    if (venture === undefined) return reject('PROP-V6', `there is no venture ${ventureId}.`);
-    if (venture.state !== 'FORMING') {
-      return reject(
-        'PROP-V6',
-        `${ventureId} is ${venture.state}. You may withdraw from a venture while it is FORMING; once it is ` +
-          'LIVE the way out is to decline the elective part at settlement, and that is a default on the record.',
-      );
-    }
-    const role = roleOfPrincipal(venture, req.principal);
-    if (role === null) return reject('PROP-V6', `you hold no role in ${ventureId}.`);
-    const freed = vacateRole(venture, role.index);
-    if (freed !== null) {
-      this.ventures.indexRelease(freed);
-      const hand = this.world.hands.get(freed);
-      if (hand !== undefined && hand.state === 'COMMITTED') hand.state = 'IDLE';
-    }
-    return { ok: true, value: null };
+    return withdraw(
+      {
+        ventureOf: (id) => this.ventures.get(id),
+        releaseIndex: (hand) => {
+          this.ventures.indexRelease(hand);
+        },
+        freeHand: (hand) => {
+          const h = this.world.hands.get(hand);
+          if (h !== undefined && h.state === 'COMMITTED') h.state = 'IDLE';
+        },
+      },
+      req.principal,
+      req.params,
+    );
   }
 
   private vAbandon(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
