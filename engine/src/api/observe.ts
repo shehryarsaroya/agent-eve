@@ -1519,7 +1519,33 @@ function affordancesFor(
         `${String(worksHere.costQty)} units of ${worksHere.good} standing here, destroyed into the build. ` +
         `It extracts nothing for ${String(worksHere.spinupTicks)} ticks, so a WORKS raised just before a ` +
         'Reckoning does not help you pay it, and one raised where a raid is coming may never pay for ' +
-        'itself. This is the only way goods enter the world: everything you owe consumes them.',
+        'itself. This is the only way goods enter the world: everything you owe consumes them. ' +
+        // ── THE PAYBACK, BECAUSE COST WITHOUT RETURN IS HALF A QUOTE ──────────
+        //
+        // This string stated the cost and the spin-up and never what it EARNS, so an agent could only
+        // choose it by doing the arithmetic itself. Measured on 2026-07-26: `build {WORKS}` is offered
+        // whenever it is affordable — 70 of 70 — and NEITHER CAST HAS EVER BUILT ONE. The heuristic
+        // has no branch for it; the LLM cast, which chooses freely, spent 900 ticks on ventures and
+        // never once on the faucet, and production ran eight Reckonings at `works: 0` while
+        // `levyShort` climbed past 345,000.
+        //
+        // The hypothesis (D17) is that a capital investment loses an action-budget contest against
+        // immediate income: a `create` pays at the next settlement, a WORKS pays nothing for 24 ticks.
+        // If that is right, the first fix is not a mechanic but the number — an agent cannot weigh a
+        // return it has to derive.
+        //
+        // Both figures are PHASE-FREE on purpose. "How much by this Reckoning's end" depends on where
+        // in the cycle you are, and a quote whose meaning shifts with the phase is a quote an agent
+        // has to re-derive every wake. Ticks-to-repay and per-Reckoning steady state are true whenever
+        // they are read.
+        (worksHere.sharePerTick <= 0
+          ? 'At this crowding it would extract nothing, so there is no payback to quote.'
+          : `WHAT IT RETURNS: about ${String(worksHere.sharePerTick * TICKS_PER_RECKONING)} units of ` +
+            `${worksHere.good} every Reckoning once online, which repays the ` +
+            `${String(worksHere.costQty)} units destroyed into the build in about ` +
+            `${String(Math.ceil(worksHere.costQty / worksHere.sharePerTick) + worksHere.spinupTicks)} ` +
+            `ticks. Compare that with what one venture pays you at the next settlement: the venture ` +
+            `pays sooner and the WORKS pays forever, and nothing else in this game makes goods at all.`),
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'build', { kind: 'WORKS', system: worksHere.system }),
     });
