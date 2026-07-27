@@ -56,12 +56,25 @@
  */
 
 import { qty, type Minor, type Qty } from '../core/units.js';
-import type { ZoneTier } from '../core/types.js';
+import type { GoodId, ZoneTier } from '../core/types.js';
 import { minor } from '../core/units.js';
-import { LEVY_GOOD } from '../levy/params.js';
 
 /** The good a WORKS extracts. One good in this build, and the Levy and Charge want it. */
-export const WORKS_GOOD = LEVY_GOOD;
+/**
+ * Equal to the other three goods constants TODAY, and **not an alias of them.**
+ *
+ * These four were `X = LEVY_GOOD`, so changing the Levy's good silently changed the WORKS yield, the
+ * Charge, and the enrolment grant at once — one constant wearing four meanings, which is scar #5's
+ * shape in the type system rather than in a table. It also forced `ledger/` and `works/` to import
+ * from `levy/`, inverting the layering: the ledger has no business depending on the Levy for the name
+ * of a good.
+ *
+ * They are equal because this build has ONE good, which is a decision (`D17`), not a fact about the
+ * engine — everything below `GoodId` is already good-agnostic. `test/core/goods-are-independent.test.ts`
+ * pins both halves: that all four agree today, and that each is declared on its own so the day a second
+ * good lands, changing one cannot move the others.
+ */
+export const WORKS_GOOD = 'ration' as GoodId;
 
 /**
  * What a system yields per tick, before it is divided among the WORKS standing there.

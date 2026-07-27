@@ -24,9 +24,9 @@
  */
 
 import { TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
-import type { ZoneTier } from '../core/types.js';
+import type { GoodId, ZoneTier } from '../core/types.js';
 import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
-import { LEVY_GOOD, LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
+import { LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
 
 /**
  * The good the Charge is denominated in.
@@ -49,7 +49,21 @@ import { LEVY_GOOD, LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
  * says so to the agent, and `notDone` in the build report says so to us.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const CHARGE_GOOD = LEVY_GOOD;
+/**
+ * Equal to the other three goods constants TODAY, and **not an alias of them.**
+ *
+ * These four were `X = LEVY_GOOD`, so changing the Levy's good silently changed the WORKS yield, the
+ * Charge, and the enrolment grant at once — one constant wearing four meanings, which is scar #5's
+ * shape in the type system rather than in a table. It also forced `ledger/` and `works/` to import
+ * from `levy/`, inverting the layering: the ledger has no business depending on the Levy for the name
+ * of a good.
+ *
+ * They are equal because this build has ONE good, which is a decision (`D17`), not a fact about the
+ * engine — everything below `GoodId` is already good-agnostic. `test/core/goods-are-independent.test.ts`
+ * pins both halves: that all four agree today, and that each is declared on its own so the day a second
+ * good lands, changing one cannot move the others.
+ */
+export const CHARGE_GOOD = 'ration' as GoodId;
 
 /**
  * The Charge one claim owes per Reckoning, by the tier it stands in *(calibrate)*.
