@@ -1,4 +1,4 @@
-# D18 — The WORKS tripwire: SOLVED (no engine bug; a fixture reaches past the API)
+# D18 — The WORKS tripwire: no engine bug, one seam left open
 
 *2026-07-26. The `state_hash` tripwire has blocked "teach the heuristic cast to build a WORKS" for the
 whole project, with four causes ruled out and no diagnosis. It now has a one-line reproduction and a
@@ -372,6 +372,34 @@ which never needed genesis replay to be meaningful.
 
 **Either way: no engine bug. The engine has been correct throughout.** Nine framings, eight wrong, and
 the one that held is a test whose setup reaches around the interface it is testing through.
+
+### ⚠ One caveat on this solution, stated rather than glossed
+
+**Two of the six failing tests deliberately force the genesis path** — *"a rules change forces the slow
+path, because adoption re-derives nothing"* — and they **pass today**. If the injected locks were simply
+unreproducible on genesis replay, those two would fail already, with or without a cast branch. They do
+not.
+
+So the locks are probably reconstructed on the genesis path after all — most likely from the
+**persisted postings**, which `store.ts` lists as the third write artifact and which
+`hydrateLedgerForSnapshot` exists to read. A `lock` moves value, so it leaves postings, and postings are
+durable.
+
+That means the account above is **incomplete, not wrong**: replay is sound (measured), the invariant
+hash is explained (measured), and the fixture's setup does bypass the action log (read). What is not yet
+established is *why* that bypass is harmless today and harmful with a cast branch. The likely shape:
+the locks are rebuilt from postings, but a build's own postings shift the batch sequence those locks are
+reconstructed from — so the reconstruction lands differently rather than not at all.
+
+**The check:** print the encumbrance rows in the genesis-replayed world with and without the branch. If
+both worlds have the locks but with different ids or batch indices, it is a reconstruction-ordering
+problem inside the ledger hydrate, not a missing-input problem — and that is a different fix from either
+of the two proposed above.
+
+I am recording this rather than pursuing it because the honest state of a nine-framing investigation is
+"measured what I measured, and here is the seam I did not close." Marking it SOLVED without this
+paragraph would be the tenth wrong framing, and the only one that would have been avoidable by writing
+carefully rather than by measuring.
 
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
