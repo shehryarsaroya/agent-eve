@@ -129,6 +129,30 @@ depending on what the cast happens to do.
 by six fixtures that need decoupling first. That is a much smaller and much more tractable statement than
 the one this file opened with.
 
+### The exact coupling, so the decoupling is mechanical
+
+The fixture **injects locks directly into the world**, before the cast acts and outside the action log:
+
+```
+encumbrances.lock({ tick, principal: p, account: storesAccount(p),
+                    amountMinor: amount, obligationRef: `raid:audit:${p}`, maxDirectLoss: amount })
+```
+
+and the injection is **conditional on the principal's state** — it needs free balance to lock against. A
+WORKS build spends 60,000, so with the branch in place a different set of principals qualifies, a
+different set of locks is injected, and the world the fixture constructs is not the world it journalled.
+Hence a hash mismatch with no determinism fault anywhere.
+
+**So the decoupling is:** make the injected stakes independent of anything the cast can move — a fixed
+amount against a principal chosen by index rather than by affordability, or seeded stores set before the
+cast runs at all. The test's *purpose* (a journalled snapshot with locks genuinely open at a tick
+boundary, which the heuristic never produces) is untouched by that change; only its dependence on
+incidental balances goes away.
+
+And note what this vindicates: the test was **right** to force the case. Its header says the original
+claim was vacuous because the heuristic opens zero qualifying encumbrances, and it is. The fixture is
+doing necessary work in a way that happens to be brittle.
+
 ## What this unblocks, and why it matters more than it looks
 
 The heuristic never building is why **`worksLines` has been empty on every frame ever published** —
