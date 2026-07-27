@@ -169,6 +169,28 @@ unexamined:
   actions become affordable, so a snapshot may be taken at a different world state even with the same
   action set.
 
+### The next attempt should start here (and one false claim I nearly published)
+
+I grepped `src/persist/` for `actionLog`, found nothing, and was one commit away from recording that
+**the action log is never persisted** — which would have been a false architectural claim about the
+design's third write artifact. It **is** persisted, as `TickRecord.actions`; `store.ts:18` calls it
+*"the action log — replay's second term"* and imports `LoggedAction`. My grep missed it on naming. Fifth
+wrong framing in this thread, and the first one caught before it reached a document.
+
+So replay **is** action-log-driven and cast-independent, which sharpens the real question:
+
+**The fixture's setup is not in the action log.** It calls `runtime.obligations.open(...)` and
+`runtime.ledger.encumbrances.lock(...)` **directly on the runtime** — those are mutations, not
+submitted actions, so no action-log replay can ever reproduce them. The journalled snapshot at tick 300
+therefore contains locks that a genesis replay of the same journal cannot recreate.
+
+Which means the test only passes today because **adoption normally succeeds** — it loads the snapshot
+rather than replaying from genesis, so the unreproducible locks are never re-derived. The failing tests
+include *"a rules change forces the slow path"*, and the slow path is exactly genesis replay. **So the
+question is not "why does a build diverge" but "why does adding a build branch push these tests onto the
+slow path".** That is a much better-shaped question and it is where the next attempt should start:
+instrument `planCheckpoint`'s decision and print why adoption was refused with the branch present.
+
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
 the fourth framing in a row where I found a plausible cause and stopped looking. The fixture fix is kept
