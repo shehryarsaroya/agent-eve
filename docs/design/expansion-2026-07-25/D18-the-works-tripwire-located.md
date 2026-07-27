@@ -250,6 +250,38 @@ in JS, so an action that simply never sets the field **passes** the filter. It w
 `null` to be dropped. That cuts against the hypothesis and is exactly why it needs the print rather than
 another round of reading.
 
+### The filter is EXONERATED, and the next link is located
+
+Ran the print. At the tick a build was submitted:
+
+```
+raw log entries for that tick    7
+surviving the extract.ts filter  7
+build in RAW log                 1   arrivalOrdinal=6
+build SURVIVES the filter        1
+```
+
+**The build is in the persisted action log.** The filter drops nothing — as the `undefined !== null`
+asymmetry predicted it would not. Sixth framing eliminated, and this one was eliminated by the check I
+wrote *because* I had noted the evidence cut against it.
+
+**The next link, located:** `boot.ts:509-524` reconstructs a `SubmittedAction` from each logged action
+to resubmit it. It copies `principal`, `verb`, `params`, `clientSequence`, `arrivalMs`,
+`decisionSource`, `priority`, `idempotencyKey`, `actedOnStateVersion` — and **not `arrivalOrdinal`**.
+That is the one field provably present on the original tick and absent on its replay.
+
+`CLAUDE.md` §6 says ordering is `(priority, principal_id, client_sequence)`, *"never arrival"*, so this
+*should* be harmless. Two reasons to check rather than accept that:
+
+1. Every "should" in this thread has been wrong six times.
+2. `arrivalOrdinal` is the field the extractor and the replay guard both key on, so it is load-bearing
+   for *something* — and a field that is load-bearing for one purpose and absent on replay is worth one
+   grep.
+
+**The check:** `grep -rn arrivalOrdinal src/` and read every consumer. If anything orders, dedupes, or
+tie-breaks on it, that is the divergence. If nothing does, the divergence is elsewhere and this thread
+has eliminated seven candidates — which is itself worth having, because the remaining surface is small.
+
 **Do not trust the word "mechanical" in the section above.** I wrote it after finding one coupling and
 before testing whether it was the only one, which is the same mistake this file already records twice —
 the fourth framing in a row where I found a plausible cause and stopped looking. The fixture fix is kept
