@@ -323,6 +323,79 @@ describe('the quote a builder reads does not lie about the rent (A2, scar #1)', 
   }, 60_000);
 });
 
+describe('a builder READS the rent in its own observation, not only in the runtime', () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`worksQuote` GREW FOUR RENT FIELDS AND `observe.ts` PUBLISHED NONE OF THEM.**
+   *
+   * `worksBlock().here` enumerates its fields by hand, so an accessor can be written, tested,
+   * mutation-verified and *invisible* — which is this project's single most repeated defect: nine
+   * mechanics were once legal and unreachable, and `BUILD` was off the affordance menu for the
+   * game's whole life. Both were found by agents playing blind rather than by tests.
+   *
+   * So these assert the **agent-facing** surface over HTTP, not the accessor: a builder standing on
+   * somebody else's claim must be able to read who takes a share of what it digs, and how much,
+   * before it spends 60,000 on the structure.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('holding.works.here publishes the gross, the rent, the rate and the landlord by NAME', async () => {
+    const { landlord, system } = await landlordAndTenant();
+    // A PROSPECTIVE builder: standing on the claim with nothing raised yet, which is the only reader
+    // for whom this quote is a decision rather than a report.
+    const prospect = await enrolFunded('prospect', 150_000);
+    await act(prospect, 'graduate', { to: system });
+    run(1);
+    const works = ((await observe(prospect))['holding'] as Row)['works'] as Row;
+    const here = works['here'] as Row;
+    expect(here, 'a principal standing somewhere always has a `here`').not.toBeNull();
+
+    const quote = h.runtime.worksQuote(prospect.principalId as PrincipalId, system);
+    // MUTATION: delete any one of these four lines from `worksBlock().here`. GREEN in every other
+    // test in this file, because every other test reads the runtime.
+    expect(here['rent_to'], 'the landlord, named — a cost with nobody attached is a tax').toBe(
+      landlord.principalId,
+    );
+    expect(here['rent_bps']).toBe(CLAIM_RENT_BPS);
+    expect(here['rent_per_tick']).toBe(quote.rentPerTick);
+    expect(here['gross_per_tick']).toBe(quote.grossPerTick);
+    // The identity, on the published numbers rather than on the accessor's: an agent that cannot
+    // reproduce the subtraction has to trust us, and A2 says it never has to.
+    expect(Number(here['gross_per_tick']) - Number(here['rent_per_tick'])).toBe(
+      Number(here['share_per_tick']),
+    );
+    expect(Number(here['share_per_tick']), 'and the net is genuinely lower here').toBeLessThan(
+      Number(here['gross_per_tick']),
+    );
+  }, 60_000);
+
+  it('and the build affordance names the landlord and the rate in words', async () => {
+    const { landlord, system } = await landlordAndTenant();
+    const prospect = await enrolFunded('prospect-2', 150_000);
+    await act(prospect, 'graduate', { to: system });
+    run(1);
+    const offer = (((await observe(prospect))['affordances'] as Row[]) ?? []).find(
+      (a) => a['verb'] === 'build' && (a['params'] as Row)['kind'] === 'WORKS',
+    );
+    expect(offer, 'the faucet must be on the menu on claimed ground too').toBeDefined();
+    const text = String(offer?.['what_it_forecloses']);
+    // The affordance is what the LLM cast is prompted from, so this string IS the rule for a
+    // deciding agent. It quoted the net correctly and named neither the landlord nor the rate,
+    // which left the deduction visible only as a figure that came out lower than expected.
+    expect(text, 'the landlord is named').toContain(String(landlord.principalId));
+    expect(text, 'and the rate is stated as a percentage').toContain(
+      `${String(CLAIM_RENT_BPS / 100)}%`,
+    );
+    // The RELATIONSHIP, in engine words rather than the test handle: `landlord.principalId` is
+    // `p:landlord` here, so an assertion on the word "landlord" alone is satisfied by the id and
+    // proves nothing. This phrase is the affordance's, and only the affordance's.
+    expect(text, 'and the sentence that says what the name means').toContain('HOLDS THE CLAIM HERE');
+    // Both figures either side of the subtraction, so an agent can reproduce it.
+    const quote = h.runtime.worksQuote(prospect.principalId as PrincipalId, system);
+    expect(text, 'the gross').toContain(String(quote.grossPerTick));
+    expect(text, 'and what the landlord takes of it').toContain(String(quote.rentPerTick));
+  }, 60_000);
+});
+
 describe('the territory layer renders its income (A13)', () => {
   it('the claim line carries what was taken this Reckoning and how many are paying', async () => {
     const { system } = await landlordAndTenant();

@@ -103,6 +103,7 @@ import {
   CHARGE_GOOD,
   CHARGE_STATEMENT,
   CLAIM_BOND_MINOR,
+  FUEL_STATEMENT,
   PUBLISHED_DEFAULT_CHARGE_RULE,
   SOVEREIGNTY_STATEMENT,
   chargeBallotWindow,
@@ -840,6 +841,16 @@ interface AffordanceSet {
  * `share_per_tick` is divided by `occupants + 1` — the share AFTER arriving, never the empty
  * rate. The whole economic question is whether a build pays for itself, and the pre-arrival
  * number answers a question nobody asked.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS BLOCK ENUMERATES ITS FIELDS, SO EVERY NEW ONE HAS TO BE ADDED HERE BY HAND.**
+ * `worksQuote` grew a rent split and a fuel yield and this block kept publishing the six fields
+ * it had always published — an accessor written and never surfaced, which is this project's most
+ * repeated defect and the one that hid nine mechanics and `BUILD`. The rule the omission broke:
+ * a builder could not see who takes a share of what it extracts, and could not see the frontier's
+ * fuel premium at all, so the only two facts that make WHERE you build a real decision were in
+ * the engine and in no observation.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<string, unknown>> {
   const seat = runtime.graduationQuote(principal);
@@ -857,8 +868,51 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
       yield_per_tick: quote.yieldPerTick,
       /** WORKS standing there now, yours or anyone's. Your share falls as this rises. */
       occupants: quote.occupants,
-      /** What yours would extract per tick once online, at today's crowding. */
+      /**
+       * What yours would **KEEP** per tick once online, at today's crowding **and after rent**.
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * **NET, AND THIS COMMENT USED TO SAY "EXTRACT".** `agent.md` calls this field *"the number
+       * that decides whether the build pays for itself"* and the affordance multiplies it by a
+       * Reckoning to state what a WORKS RETURNS — so when a claim started taking 20% of everything
+       * extracted at its system, "what yours would extract" became a description of `gross_per_tick`
+       * on a field that no longer carries it. A stale comment on the most-quoted number in the
+       * economy is scar #1's exact shape: engine and agent-facing text disagreeing about one word,
+       * each reading correctly alone.
+       *
+       * `gross_per_tick - rent_per_tick === share_per_tick`, exactly, and all three are published
+       * so an agent can see the deduction rather than infer it from a number that came out low.
+       * ══════════════════════════════════════════════════════════════════════
+       */
       share_per_tick: quote.sharePerTick,
+      /** Before the rent — what the place hands over to yours. Equal to the share on free ground. */
+      gross_per_tick: quote.grossPerTick,
+      /** What the claim-holder here would take of it, per tick. Zero on unclaimed ground. */
+      rent_per_tick: quote.rentPerTick,
+      /** The rate that would apply to YOU here, in bps. Off the claim, not off the constant. */
+      rent_bps: quote.rentBps,
+      /**
+       * WHO takes it, named, or `null`.
+       *
+       * Named because the rent is a relationship and not a tax: the landlord is a principal you can
+       * `message`, deal with, buy the ground from — or become, since a claimant never pays itself
+       * rent. A number with nobody attached is a cost; a number with a name attached is a decision.
+       */
+      rent_to: quote.rentTo,
+      /** The second good this place yields. Made ONLY at a FRONTIER system, by a WORKS. */
+      fuel_good: quote.fuelGood,
+      /** What the PLACE yields of it per tick, before division. Zero outside the Frontier. */
+      fuel_yield_per_tick: quote.fuelYieldPerTick,
+      /**
+       * What YOURS would take of it per tick, counting itself. **Zero outside the Frontier.**
+       *
+       * The whole of the frontier premium beyond the raw ore rate: `fuel` is the one good some
+       * agents need and cannot make — a FRONTIER claim's anchor burns it every Reckoning to keep
+       * collecting rent, and no verb in this build moves goods between systems — so this number is
+       * an agent's entire access to the only seller's side of that trade. A quote that named the ore
+       * and not the fuel understated frontier ground by everything that is new about it.
+       */
+      fuel_share_per_tick: quote.fuelSharePerTick,
       cost_minor: quote.costMinor,
       cost_qty: quote.costQty,
       /**
@@ -949,13 +1003,13 @@ function claimThreats(mine: readonly ClaimView[]): readonly Readonly<Record<stri
 /**
  * The one sovereignty statement that applies to this principal right now.
  *
- * Three rules surfaces, one slot, and the choice is by what the principal can legally do
+ * Four rules surfaces, one slot, and the choice is by what the principal can legally do
  * next — which is the same rule the affordance list follows. `null` for a Commons-bound
  * principal with no claim: a claim there is INVALID rather than refused (A8), so
  * sovereignty is not yet a thing that can happen to it, and 3 KB of prose about it on all
  * sixteen wakes a day is a cost with no decision attached. `graduation.statement` already
  * tells that principal what leaving the Commons commits it to, and `agent.md` §11 carries
- * all three strings in full.
+ * all four strings in full.
  */
 function sovereigntyStatementFor(
   world: Runtime['world'],
@@ -963,6 +1017,22 @@ function sovereigntyStatementFor(
   mine: readonly ClaimView[],
 ): string | null {
   if (mine.some((c) => c.state === 'STRAINED' || c.state === 'CONTESTED')) return ARREARS_STATEMENT;
+  // ── THE FUEL RULE, SERVED WHERE IT IS ABOUT TO COST SOMETHING ─────────────
+  //
+  // `FUEL_STATEMENT` was exported, pinned by a test, and **served nowhere** — so `agent.md` was the
+  // only carrier of the rule, and a claimant that never read the manual would watch its rent stop
+  // for no stated reason. That is the defect this project keeps re-teaching (an accessor written and
+  // never surfaced) landing on the one mechanic whose failure is invisible: a cold anchor takes no
+  // arrears, lapses nothing and slashes no bond, so **nothing else in the observation goes red.**
+  //
+  // Served only to a claimant the rule can actually bite, and preferred over `CHARGE_STATEMENT`
+  // only when the anchor is cold or the fuel on hand will not light it next Reckoning. A statement
+  // that were always on for every frontier claimant would displace the Charge — the larger loss,
+  // being bonded capital — and would be the always-on warning `claimThreats` deliberately refuses
+  // to be. Fuelled and stocked, the Charge is the rule that applies; short, this one is.
+  if (mine.some((c) => c.fuel_due > 0 && (!c.anchor_hot || c.fuel_here < c.fuel_due))) {
+    return FUEL_STATEMENT;
+  }
   if (mine.length > 0) return CHARGE_STATEMENT;
   if (world.holdingByPrincipal.get(principal) === undefined) return null;
   if (tierOf(world.map, holdingOf(world, principal).system) === 'COMMONS') return null;
@@ -1757,8 +1827,47 @@ function affordancesFor(
       what_it_forecloses:
         `A WORKS extracts what a PLACE yields, and ${worksHere.system} (${worksHere.tier}) yields ` +
         `${String(worksHere.yieldPerTick)} units of ${worksHere.good} a tick divided among every WORKS ` +
-        `standing on it. ${String(worksHere.occupants)} stand there now, so yours would take about ` +
-        `${String(worksHere.sharePerTick)} a tick — and that share FALLS as others arrive. It costs ` +
+        `standing on it. ${String(worksHere.occupants)} stand there now, so yours would KEEP about ` +
+        `${String(worksHere.sharePerTick)} a tick — and that share FALLS as others arrive. ` +
+        // ── WHO TAKES A CUT, BY NAME ──────────────────────────────────────────
+        //
+        // The number above is the NET and was corrected to be, but the string still named neither the
+        // landlord nor the rate — so the deduction was visible only as a figure that came out lower
+        // than `yield / occupants`, which is exactly the arithmetic `agent.md` tells an agent not to
+        // do. A2: known arithmetic is exact, and both figures either side of a subtraction are part
+        // of it. The landlord is NAMED because it is a principal an agent can `message`, buy the
+        // ground from, out-bid or displace — a deduction with nobody attached is a tax, and there are
+        // no taxes in this game, only counterparties.
+        (worksHere.rentTo === null
+          ? `No claim stands on ${worksHere.system} today, so nothing is deducted and that figure is ` +
+            `the whole of your share. A claim raised here later would take its published share of ` +
+            `everything you extract, and a sitting tenant cannot refuse it. `
+          : `${worksHere.rentTo} HOLDS THE CLAIM HERE and is your landlord: the place would hand ` +
+            `yours ${String(worksHere.grossPerTick)} a tick and ${String(worksHere.rentPerTick)} of ` +
+            `that — ${String(worksHere.rentBps / 100)}% — goes to ${worksHere.rentTo} in raw ` +
+            `${worksHere.good}, which is why the figure above is ${String(worksHere.sharePerTick)} ` +
+            `and not ${String(worksHere.grossPerTick)}. That rate was fixed when the claim was raised ` +
+            `and a takeover cannot raise it on you; the only way to keep the whole share is to hold ` +
+            `the ground yourself, because a claimant never pays itself rent. `) +
+        // ── THE FUEL, WHICH IS THE ONLY REASON TO PREFER THE FRONTIER ─────────
+        //
+        // `fuel` is yielded ONLY at a FRONTIER system and it is the one good some agents need and
+        // cannot make: a frontier landlord's anchor burns it every Reckoning or collects nothing, and
+        // no verb moves goods between systems. So a frontier WORKS is a seat on the only side of that
+        // trade — and the affordance that named the ore and not the fuel understated frontier ground
+        // by the whole of what is new about it. Zero elsewhere, and said so rather than omitted:
+        // "this place makes none" is the fact that sends an agent to `graduate`.
+        (worksHere.fuelSharePerTick > 0
+          ? `It would ALSO take about ${String(worksHere.fuelSharePerTick)} units of ` +
+            `${worksHere.fuelGood} a tick, of the ${String(worksHere.fuelYieldPerTick)} this place ` +
+            `yields. ${worksHere.fuelGood} is made ONLY by a WORKS at a FRONTIER system, it refines ` +
+            `into nothing and pays no obligation of yours — its one use is that every FRONTIER claim ` +
+            `burns it each Reckoning to keep collecting rent, and no verb in this build moves goods ` +
+            `between systems. So this makes you one of the few sellers of what every frontier ` +
+            `landlord must buy. `
+          : `It yields no ${worksHere.fuelGood} — only a FRONTIER system makes that, and it is the ` +
+            `one good some agents need and cannot make. `) +
+        `It costs ` +
         `${String(worksHere.costMinor)} of your unlocked balance (pledged stores do not count toward ` +
         `it; your starter stake does, because the money is destroyed rather than paid to anyone) plus ` +
         `${String(worksHere.costQty)} units of ${worksHere.good} standing here, destroyed into the build. ` +

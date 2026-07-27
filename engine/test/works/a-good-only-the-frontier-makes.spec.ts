@@ -28,19 +28,24 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { TICKS_PER_RECKONING } from '../../src/core/time.js';
-import type { PrincipalId, SystemId, ZoneTier } from '../../src/core/types.js';
+import { buildObservation } from '../../src/api/observe.js';
+import { HeuristicCast } from '../../src/cast/index.js';
+import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
+import type { ConstellationId, PrincipalId, SystemId, ZoneTier } from '../../src/core/types.js';
 import { qty } from '../../src/core/units.js';
 import { ENDOWMENT_GOOD } from '../../src/ledger/endowment.js';
 import { storesAccount } from '../../src/ledger/index.js';
 import { LEVY_GOOD } from '../../src/levy/params.js';
+import { Runtime } from '../../src/sim/runtime.js';
 import {
   ANCHOR_FUEL_BY_TIER,
   ANCHOR_QTY,
   CHARGE_BY_TIER,
   CHARGE_GOOD,
+  CHARGE_STATEMENT,
   CLAIM_RENT_BPS,
   FUEL_STATEMENT,
+  claimIdFor,
 } from '../../src/sovereignty/index.js';
 import { Book, worksId, type WorksId } from '../../src/works/book.js';
 import { checkFuelIsFrontierOnly } from '../../src/works/invariants.js';
@@ -126,13 +131,16 @@ describe('the good exists in one zone, and that is the whole mechanic', () => {
 
   it('agent.md carries every fuel rule, in the engine own numbers (hard rule 4)', () => {
     // ══════════════════════════════════════════════════════════════════════
-    // **THE LLM CAST IS PROMPTED FROM `agent.md`, AND THIS IS THE ONLY PLACE THE FUEL RULE APPEARS.**
-    // `sovereigntyStatementFor` serves ONE of the three sovereignty statements per observation and
-    // `FUEL_STATEMENT` is not among them yet, so a cast member's whole knowledge of the third good is
-    // this document. It is compressed rather than verbatim — the cast contract is at 37,361 of 40,000
+    // **THE LLM CAST IS PROMPTED FROM `agent.md`, AND §11A IS THE ONLY PART OF IT THE CAST READS.**
+    // `sovereigntyStatementFor` now serves `FUEL_STATEMENT` as the fourth statement (2026-07-27) —
+    // for a day it served three and the statement was exported to nobody — but the served slot is an
+    // *observation* field, and `CONTRACT_SECTIONS` excerpts §11 and §11A and not §11B, so §11A is
+    // still the whole of what a cast member reads about the third good before it is a claimant.
+    // The prose here is compressed rather than verbatim — the cast contract is at ~37,900 of 40,000
     // characters and a verbatim copy pushed it to 39,706, at which size the excerpt silently DROPS a
     // later section — so the numbers are pinned against the constants instead of the prose being
-    // pinned against the statement.
+    // pinned against the statement. §11B carries the statement itself verbatim, at no cost to the
+    // contract, and `test/rules-surface/agent-md.test.ts` pins that.
     //
     // MUTATION: change `ANCHOR_FUEL_BY_TIER.FRONTIER` or `FUEL_YIELD_PER_TICK.FRONTIER`. RED here,
     // which is the whole point: scar #1 is the engine and the agent-facing text disagreeing about one
@@ -172,6 +180,79 @@ describe('the good exists in one zone, and that is the whole mechanic', () => {
     expect(FUEL_STATEMENT).toContain('BUY fuel from the residents you are taxing');
     expect(FUEL_STATEMENT).toContain('MARCHES claim needs no fuel');
   });
+});
+
+describe('the fourth statement is SERVED, not merely exported', () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`FUEL_STATEMENT` WAS WRITTEN, TESTED, PINNED AND HANDED TO NOBODY.** `holding.sovereignty`
+   * served one of three, so `agent.md` was the whole of a claimant's access to the rule — and this
+   * is the one statement whose failure is invisible from every other field: a cold anchor takes no
+   * arrears, lapses nothing, is slashed nothing, and `holding.threats[]` stays empty while the
+   * income is zero. Nothing else in the observation turns red.
+   *
+   * The claim is inserted as a FIXTURE on purpose. Reaching a frontier claim through the front door
+   * costs a four-hop walk, a bond and 5,000 refined units, and the acceptance test already owns that
+   * road; what is under test here is the SELECTION, which is a pure function of the claim views.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  function worldWithClaimAt(tier: ZoneTier, seed: string): { readonly statement: string | null } {
+    setSpeed('instant');
+    const rt = new Runtime({ seed });
+    const cast = new HeuristicCast(rt, { size: 4 });
+    cast.seat(seed);
+    rt.runTick();
+    const who = cast.roster[0]?.principal;
+    if (who === undefined) throw new Error('no cast member seated');
+    const system = rt.world.map.systemOrder.find((id) => rt.world.map.systems.get(id)?.tier === tier);
+    if (system === undefined) throw new Error(`the seeded map has no ${tier} system`);
+    const epoch = rt.sovereignty.nextEpochFor(system);
+    rt.sovereignty.take({
+      id: claimIdFor(system, epoch),
+      system,
+      constellation: (rt.world.map.systems.get(system)?.constellation ?? '') as ConstellationId,
+      claimant: who,
+      epoch,
+      takenAtTick: rt.engine.tick,
+      anchorQty: ANCHOR_QTY,
+      rentBps: CLAIM_RENT_BPS,
+      bondEncumbranceId: `enc:bond:${who}:test`,
+      state: 'SUPPLIED',
+      endedAtReckoning: null,
+      succeededBy: null,
+    });
+    const observation = buildObservation({
+      runtime: rt,
+      principal: who,
+      serverNowMs: 0,
+      fresh: true,
+      wakesRemaining: 9,
+      stale: false,
+      corrections: [],
+      actionsRemaining: 4,
+    });
+    const holding = observation.holding as Record<string, unknown>;
+    const statement = holding['sovereignty'];
+    // Asserted rather than cast: `holding.sovereignty` is a string or null by contract, and a test
+    // that stringified an object here would report `[object Object]` as a passing statement.
+    expect(statement === null || typeof statement === 'string').toBe(true);
+    return { statement: typeof statement === 'string' ? statement : null };
+  }
+
+  it('a FRONTIER claimant with a cold anchor reads the FUEL rule on holding.sovereignty', () => {
+    // MUTATION: remove the fuel branch from `sovereigntyStatementFor`. RED here, and GREEN in every
+    // other test in this file — because every other test reads the constant, not the observation.
+    const { statement } = worldWithClaimAt('FRONTIER', 'fuel-statement-frontier');
+    expect(statement, 'the statement must reach the agent, not just the module').toBe(FUEL_STATEMENT);
+  }, 60_000);
+
+  it('a MARCHES claimant still reads the CHARGE, because no fuel is asked of it', () => {
+    // The guard's guard. An always-on fuel statement would displace the Charge — the larger loss,
+    // being bonded capital — and would be the always-on warning `claimThreats` deliberately refuses
+    // to be. `ANCHOR_FUEL_BY_TIER.MARCHES` is zero, so the branch must not fire at all.
+    const { statement } = worldWithClaimAt('MARCHES', 'fuel-statement-marches');
+    expect(statement).toBe(CHARGE_STATEMENT);
+  }, 60_000);
 });
 
 describe('the split of the second good is the split of the first', () => {
@@ -486,7 +567,7 @@ describe('a FRONTIER system actually hands fuel over, through the front door', (
     return h.runtime.graduationQuote(who.principalId as PrincipalId)?.from ?? ('' as SystemId);
   }
 
-  it('yields fuel to the WORKS standing there, and the quote says so before the build', async () => {
+  it('yields fuel to the WORKS standing there, and the OBSERVATION says so before the build', async () => {
     const who = agent('prospector');
     expect((await enrol(h, who)).status).toBe(201);
     tick(h, 1);
@@ -504,6 +585,39 @@ describe('a FRONTIER system actually hands fuel over, through the front door', (
     expect(quote.fuelYieldPerTick).toBe(FUEL_YIELD_PER_TICK.FRONTIER);
     expect(quote.fuelSharePerTick, 'and what YOURS would take of it').toBeGreaterThan(0);
     expect(quote.yieldPerTick).toBe(YIELD_PER_TICK.FRONTIER);
+
+    // ══════════════════════════════════════════════════════════════════════
+    // **AND THE AGENT CAN ACTUALLY READ IT.** The three assertions above passed for a day while
+    // `worksBlock().here` — which enumerates its fields by hand — published none of them, so the
+    // frontier premium existed in the engine and in no observation. That is the defect this project
+    // keeps re-teaching, and it has only ever been caught by reading the agent-facing surface.
+    // ══════════════════════════════════════════════════════════════════════
+    const seen = await signed(h, who, 'GET', PATHS.observe);
+    expect(seen.status).toBe(200);
+    const observation = seen.json['observation'] as Record<string, unknown>;
+    const worksBlock = (observation['holding'] as Record<string, unknown>)['works'] as Record<
+      string,
+      unknown
+    >;
+    const here = worksBlock['here'] as Record<string, unknown>;
+    expect(here['fuel_good']).toBe(FUEL_GOOD);
+    expect(here['fuel_yield_per_tick']).toBe(FUEL_YIELD_PER_TICK.FRONTIER);
+    expect(here['fuel_share_per_tick'], 'the whole of the frontier premium').toBe(
+      quote.fuelSharePerTick,
+    );
+    // And in the affordance, which is what the LLM cast decides from.
+    await topUp(who, Number(WORKS_COST_MINOR) + 10_000);
+    const offered = await signed(h, who, 'GET', PATHS.observe);
+    const offer = (
+      (offered.json['observation'] as Record<string, unknown>)['affordances'] as Record<
+        string,
+        unknown
+      >[]
+    ).find((a) => a['verb'] === 'build' && (a['params'] as Record<string, unknown>)['kind'] === 'WORKS');
+    expect(offer, 'the faucet must be on the menu at the place that makes the scarce good').toBeDefined();
+    const text = String(offer?.['what_it_forecloses']);
+    expect(text, 'the fuel is named in the offer, not only in a field').toContain(String(FUEL_GOOD));
+    expect(text).toContain(String(quote.fuelSharePerTick));
 
     await topUp(who, Number(WORKS_COST_MINOR) + 10_000);
     expect(await act(who, 'build', { kind: 'WORKS', system })).toBe(200);

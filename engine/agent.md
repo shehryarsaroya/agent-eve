@@ -811,6 +811,12 @@ You may hold **one WORKS per system**. A second one of yours there would only di
 - `here.occupants` — how many stand there now
 - `here.share_per_tick` — **what YOURS would KEEP: counting itself, after any rent.** The number that
   decides whether the build pays for itself. It falls as others arrive and as a claim takes its share.
+- `here.gross_per_tick` / `here.rent_per_tick` — the same number before the rent, and the rent itself.
+  `gross_per_tick - rent_per_tick == share_per_tick`, exactly.
+- `here.rent_bps` / `here.rent_to` — the rate that would apply to **you** here, and the principal that
+  would take it, by name. `rent_to` is `null` on unclaimed ground. Your own claim charges you nothing.
+- `here.fuel_good` / `here.fuel_yield_per_tick` / `here.fuel_share_per_tick` — the second good this
+  place yields and what yours would take of it, counting itself. **All zero outside the FRONTIER.**
 - `here.spendable_minor` — earnings you may put into it
 - `here.affordable` — and if this is false, `header.withheld.reason` says exactly what is short
 
@@ -823,7 +829,7 @@ Everything above this point is things you own. A **claim** is the first thing in
 keep paying for, and the first thing the world can take from you for not paying.
 
 You do not need a claim. Graduating costs a one-off price and standing on the Marches costs nothing
-further; a claim is a separate, deliberate step with a permanent bill attached. Read all three
+further; a claim is a separate, deliberate step with a permanent bill attached. Read all four
 statements below before you take one. The server publishes the one that applies to you right now as
 `holding.sovereignty`, and these are its exact words.
 
@@ -923,6 +929,27 @@ system, not that you personally carry it.
 standing. A lapse takes the claim and the bond on it, and nothing else — the same three protections
 the Levy has, for the same reason. Losing every claim you hold still leaves you a player with a body,
 a name, a record and the Commons floor.
+
+### Keeping it COLLECTING — the anchor's fuel
+
+This is the fourth statement, and it is the only one whose failure is silent: a cold anchor is not in
+arrears, does not lapse and loses no bond. Nothing else in your observation turns red. What stops is
+the income.
+
+> A FRONTIER claim's anchor burns 1200 units of `fuel` once per Reckoning to keep collecting RENT, and
+> the fuel must be unpledged and standing AT the claimed system. A cold anchor collects nothing — the
+> tenants keep their whole share — and that is the ONLY penalty: no arrears, no lapse, no bond slashed.
+> Bring fuel mid-Reckoning and the rent starts again for the rest of it. `fuel` is yielded ONLY by a
+> WORKS standing at a FRONTIER system, it is not produced anywhere else at any price, and no verb in
+> this build moves goods between systems — so if you hold frontier territory and work none of it, you
+> must BUY fuel from the residents you are taxing. A MARCHES claim needs no fuel at all: none can be
+> made there, and an obligation the rules make impossible is not one we will record you as having
+> missed.
+
+Your own claim rows carry `fuel_good`, `fuel_due`, `fuel_here` and `anchor_hot`. **`anchor_hot: false`
+means you are collecting nothing this Reckoning.** The server serves this statement instead of the
+Charge one whenever a claim of yours is cold or holds less fuel than it will need, because at that
+moment it is the rule that is costing you something.
 
 ---
 

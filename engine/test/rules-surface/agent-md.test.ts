@@ -41,6 +41,7 @@ import { GRADUATION_STATEMENT } from '../../src/world/index.js';
 import {
   ARREARS_STATEMENT,
   CHARGE_STATEMENT,
+  FUEL_STATEMENT,
   SOVEREIGNTY_STATEMENT,
 } from '../../src/sovereignty/index.js';
 
@@ -301,28 +302,36 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     expect(AGENT_MD).toContain('Commons-bound');
   });
 
-  it('carries the THREE sovereignty statements verbatim, because a lapse is irreversible', () => {
+  it('carries the FOUR sovereignty statements verbatim, because a lapse is irreversible', () => {
     // ══════════════════════════════════════════════════════════════════════
     // Same argument as the graduation statement above, with a larger loss on the end: a
     // misread Charge costs an agent its TERRITORY and 50,000 of slashable capital, and the
     // record of it is permanent. A5′ is explicit — never a lapse against a claimant that was
     // never shown what it owed — and the document is half of "was shown".
     //
-    // All three, and verbatim rather than "contains the numbers": a paraphrase that agreed on
+    // All four, and verbatim rather than "contains the numbers": a paraphrase that agreed on
     // the price and disagreed on how many misses lapse a claim would pass a looser check and is
     // the worse bug. The observation ships only the ONE statement that applies right now (§12.1
     // is a budget, and 3 KB of static prose on every wake measurably crowded out the cast's own
-    // affordances), so this document is the only place all three appear together.
+    // affordances), so this document is the only place all four appear together.
     //
-    // MUTATION: change `CHARGE_MISSES_TO_LAPSE` or `CESSION_SALVAGE_BPS` in
-    // `src/sovereignty/params.ts` and this goes red immediately, because both statements quote
-    // the constants and this compares the statements.
+    // `FUEL_STATEMENT` is the fourth, added 2026-07-27 when `sovereigntyStatementFor` began serving
+    // it. It was exported, pinned, and served NOWHERE for a day — this document was the whole of an
+    // agent's access to the rule — and it is the statement whose failure is silent: a cold anchor
+    // takes no arrears, lapses nothing and is slashed nothing, so no other field in the observation
+    // moves when the income stops. §11B carries it under its own heading, which costs the cast
+    // contract nothing because `CONTRACT_SECTIONS` excerpts §11 and §11A and not §11B.
+    //
+    // MUTATION: change `CHARGE_MISSES_TO_LAPSE`, `CESSION_SALVAGE_BPS` or
+    // `ANCHOR_FUEL_BY_TIER.FRONTIER` in `src/sovereignty/params.ts` and this goes red immediately,
+    // because the statements quote the constants and this compares the statements.
     // ══════════════════════════════════════════════════════════════════════
     const normalised = AGENT_MD.replace(/\n> ?/g, ' ').replace(/[ \t]+/g, ' ');
     for (const [name, statement] of [
       ['SOVEREIGNTY_STATEMENT', SOVEREIGNTY_STATEMENT],
       ['CHARGE_STATEMENT', CHARGE_STATEMENT],
       ['ARREARS_STATEMENT', ARREARS_STATEMENT],
+      ['FUEL_STATEMENT', FUEL_STATEMENT],
     ] as const) {
       expect(normalised, `${name} is not in agent.md verbatim`).toContain(
         statement.replace(/[ \t]+/g, ' '),
