@@ -720,12 +720,30 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       .messages.map((m) => m.content)
       .join('\n');
 
-    for (const omission of contract.notThisWake) {
-      expect(text, `${omission.heading} is absent and unnamed`).toContain(omission.heading);
-      expect(text).toContain(omission.because);
-    }
+    // The notice is grouped by section — shorter than the flat form, and it says the thing the
+    // flat form only implied: whether a section is absent entirely or PRESENT WITH BLOCKS GONE.
+    // That distinction is the whole hazard of `###` granularity, so it is asserted directly.
     expect(text).toContain('NOT IN THIS EXCERPT');
     expect(text).toContain('GET /compact/api/agent.md');
+    expect(text, '§11B ships partial here, and the member has to be told so').toMatch(
+      /## 11B\. Sovereignty[^\n]*is here WITHOUT 3 of its blocks/,
+    );
+    // Every absence is named, at the granularity that carries information: a section that is
+    // gone ENTIRELY is named once with its reason, and listing its five blocks under it would be
+    // noise; a section that ships PARTIAL names each missing block, because that is the case a
+    // reader cannot otherwise detect.
+    for (const omission of contract.notThisWake) {
+      const [section = omission.heading, block] = omission.heading.split(' › ');
+      expect(text, `${section} is absent and unnamed`).toContain(section);
+      if (block !== undefined && contract.sections.includes(section)) {
+        expect(text, `${section} is partial and ${block} is unnamed`).toContain(block);
+        expect(text, `${omission.heading} is absent with no reason`).toContain(omission.because);
+      }
+    }
+    // A partial section's own reason line must not claim the whole section is absent.
+    for (const section of contract.sections) {
+      expect(text).not.toContain(`${section} — you hold`);
+    }
   });
 
   it('the FLOOR is in every excerpt, and is the identical prefix two members share', () => {

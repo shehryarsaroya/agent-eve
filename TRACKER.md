@@ -74,7 +74,73 @@
 > selections** that fails naming the combination — verified by mutation: adding §11D as a conditional
 > reports *"## 4 + ## 10 is 38438 of 38000"*, 438 over.
 >
-> **Two things this turned up that were nothing to do with the budget.**
+> ### ★★ `###` GRANULARITY LANDED — the nine unreadable verbs have rules, and RULES cannot drop
+>
+> Owner call: select at `###` block granularity, do not raise the bar. **The estimate that justified
+> it was wrong in an instructive way.** It said `###` would free ~7,400 characters. It freed almost
+> none — what it bought was **reachability at roughly its own cost**, which is what was actually
+> needed.
+>
+> `CONTRACT_CATALOG` is now **28 units** (a `##` preamble or one `###` block each) instead of 11
+> sections, and §11B/§11C/§11D are in it. `CONTRACT_NOT_EXCERPTED` is down to §2, §9, §13 — each a
+> genuine *"you cannot use this"*, none of them a size excuse. **All 30 live verbs now have readable
+> rules**, asserted at zero exceptions.
+>
+> Why it works: the rules for a *verb* are one block, not a section. A member about to take territory
+> gets §11B's preamble and `### Taking one — post_bond then build` — **1,983 characters, not 8,491** —
+> and the Charge, arrears and fuel blocks arrive when it holds a claim.
+>
+> **The guarantee is now structural rather than arithmetic.** FLOOR and RULES are emitted whatever the
+> total; `MAX_CONTRACT_CHARS` governs `CONTEXT` only. Same trade `projectObservation` already makes
+> one field over, and the only arrangement in which "a needed rule is never dropped" is true *by
+> construction*. An overshoot sets `overBudget`, prints in the prompt, and fails a named test.
+>
+> | position | chars | of 38,000 |
+> |---|---|---|
+> | newcomer, first wake | **30,998** | 82% |
+> | mid-game in the Commons | **34,922** | 92% |
+> | about to take territory (§11B **readable**) | **35,564** | 94% |
+> | a real claimant, driven on a real world | **37,120** | 98% |
+> | declared claimant-in-trouble envelope | **43,789** | overshoots, says so |
+> | analytic ceiling (unreachable) | **51,289** | overshoots, says so |
+>
+> A fully-developed claimant needs 43,789 characters of rules it can be *refused for not knowing*. No
+> arrangement of blocks makes that 38,000. Dropping §11B's CHARGE from a member about to be billed
+> under it is an A5′ violation; the overshoot costs ~$0.0003 a call.
+>
+> **★ A fact for the ceiling decision, since it changes the reasoning that rejected it:** the argument
+> against raising 40,000 was that it restores a silent cliff. With RULES-never-drop **there is no
+> cliff to restore** — the excerpt overshoots and says so instead of truncating. Raising the number is
+> now a pure cost question (~$0.001/call cached), independent of correctness. Not done, since the call
+> was explicit; recorded because the premise moved.
+>
+> **THIRTEEN MUTATIONS, AND TWO FOUND NOTHING FIRST TIME — including one in my own new test.**
+> `anchorCold` reading `claim['anchorHot']` broke nothing, because my path test compared
+> `situation.anchorCold` against `rows.some(r => r['anchor_hot'] === false)` on a *real* observation
+> where a fresh claim has a hot anchor: **both sides were `false`.** Six other fields had it. An
+> equality between two expressions that are both false in the only state the test can reach proves
+> nothing — CLAUDE.md's "an invariant whose subject cannot occur", one level in, and the same shape as
+> the adopted boot naming a confidently wrong divergence tick with a test that agreed. Fixed by taking
+> the *shape* from the engine and the *discrimination* from a flip: mutate the exact path `observe`
+> publishes and require the field to move. Plus a test that drives a world to actually hold a claim
+> (`graduate` → `post_bond` → `build` ANCHOR), and one asserting an empty observation reads all-false —
+> which is what caught `outsideCommons` written as `tier !== 'COMMONS'`: equivalent on every real
+> observation, and a false statement on a stub.
+>
+> **A SECOND FALSE STATEMENT IN `situationalFocus`, worse than the syndicates one.** The §11B line read
+> `holding.sovereignty !== null` and told the member **it held territory**. `sovereigntyStatementFor`'s
+> last branch returns *how to take one* to any principal outside the Commons holding nothing — so every
+> landless graduated member was told it had territory to maintain. An assertion about the reader's own
+> position that was not true, on a surface A5′ says must never be wrong. Both branches now read
+> `obligations.charge`, which is `myClaims`.
+>
+> Enumeration kept at the right granularity: 2^28 over units is neither enumerable nor reachable — the
+> `##` version's worst "combination" paired §11 with all of §11B, which no principal can be in.
+> Selection is monotone, so `CONTRACT_POSITIONS` enumerates the maximal positions (exact, named) and a
+> real-world sweep asserts every observed situation is **dominated** by one, so a stale list fails by
+> name instead of quietly narrowing what the budget was checked against.
+>
+> **Two things the `##` pass turned up that were nothing to do with the budget.**
 >
 > 1. **`situationalFocus` read a top-level `syndicates` key and `observe` nests it under `grants`.** So
 >    the §11C line was `undefined.length > 0` on every real observation and had **never fired once in

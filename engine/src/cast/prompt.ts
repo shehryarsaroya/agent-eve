@@ -1286,15 +1286,41 @@ export function citedSection(focusLine: string): string | null {
  * are missing and why. So it does.
  */
 function absenceNotice(contract: ContractExcerpt): string {
-  const clauses = [
-    ...contract.notThisWake.map((o) => `${o.heading} — ${o.because}`),
-    ...contract.dropped.map((o) => `${o.heading} — ${o.because}`),
-    ...CONTRACT_NOT_EXCERPTED.map((o) => `${o.heading} — ${o.because}`),
-  ];
+  // ── GROUPED BY SECTION, WHICH IS SHORTER *AND* CLEARER ─────────────────────
+  //
+  // Flat, this line repeated `## 11B. Sovereignty — territory you have to MAINTAIN` five times
+  // and ran to ~2,300 characters for a newcomer — and this is the ONE per-member part of
+  // message 0, so it is the part that is never cached. Grouping halves it. It also says the
+  // thing the reader actually needs, which the flat form only implied: whether a section is
+  // absent entirely or **present with blocks missing**.
+  const present = new Set(contract.sections);
+  const bySection = new Map<string, { readonly heading: string; readonly because: string }[]>();
+  for (const omission of [...contract.notThisWake, ...contract.dropped]) {
+    const [section = omission.heading, block] = omission.heading.split(' › ');
+    const rows = bySection.get(section) ?? [];
+    rows.push({ heading: block ?? '(the whole section)', because: omission.because });
+    bySection.set(section, rows);
+  }
+
+  const clauses: string[] = [];
+  for (const [section, rows] of bySection) {
+    if (!present.has(section)) {
+      // Absent entirely: the preamble's own reason is the section's reason.
+      const whole = rows.find((r) => r.heading === '(the whole section)') ?? rows[0];
+      clauses.push(`${section} — ${whole?.because ?? 'your situation does not touch it'}`);
+      continue;
+    }
+    clauses.push(
+      `${section} is here WITHOUT ${String(rows.length)} of its blocks — ` +
+        rows.map((r) => `${r.heading} (${r.because})`).join('; '),
+    );
+  }
+  for (const outside of CONTRACT_NOT_EXCERPTED) clauses.push(`${outside.heading} — ${outside.because}`);
+
   if (clauses.length === 0) return '';
   return (
     '(NOT IN THIS EXCERPT, and why. Every rule for every verb offered to you in `affordances[]` ' +
-    `IS above; these are not: ${clauses.join('; ')}. Nothing above is paraphrased and nothing ` +
+    `IS above; these are not: ${clauses.join('. ')}. Nothing above is paraphrased and nothing ` +
     'is hidden — every block is verbatim, and the complete document is `agent.md`, served at ' +
     'GET /compact/api/agent.md.)'
   );
