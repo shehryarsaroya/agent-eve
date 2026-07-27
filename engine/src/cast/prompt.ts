@@ -84,6 +84,15 @@ export interface ContractSituation {
   readonly anchorCold: boolean;
   /** A demand or a world raid stands against it, with a deadline. */
   readonly underRaid: boolean;
+  /**
+   * A battle it is a party to is live — `obligations.battle`, §9A.
+   *
+   * Its own key rather than a fold into `underRaid`, because the two carry different deadlines
+   * and different acts: a raid is answered with `yield`/`fight`/`join` inside 24 ticks, and the
+   * battle a refused demand becomes takes hulls only inside its 6-tick MUSTER. A member in the
+   * second and told only about the first would miss the one window it can act in.
+   */
+  readonly inBattle: boolean;
   readonly holdsWorks: boolean;
   /** `holding.works.here.affordable` — it could raise one right now. */
   readonly canBuildWorks: boolean;
@@ -368,7 +377,19 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   },
   {
     section: S11A,
-    block: '### `build` is TWO different acts — read the `kind`',
+    // ── THE HULL RULES LIVE HERE, NOT IN §11D, AND THE MEASUREMENT DECIDED IT ──
+    //
+    // They were drafted as a §11D block claiming `build`. That looked right — a hull is a combat
+    // object — and it cost a Commons newcomer **2,188 characters**, because selecting any §11D
+    // unit structurally pulls in §11D's own preamble, which is about predation. So a member A8
+    // makes *immune* to predation was being handed the predation preamble for being able to raise
+    // a WORKS. Correct by the letter of the guarantee and wrong by the reader's situation.
+    //
+    // §11A already documents what `build`'s `kind` selects between, so the hull's two distinctive
+    // rules — it costs `fuel`, which only the FRONTIER makes, and its fit is FROZEN at build —
+    // belong in the same block as the ANCHOR's "needs a posted bond". Same verb, same trigger, no
+    // second preamble. §11D keeps the battle itself.
+    block: '### `build` is THREE different acts — read the `kind`',
     verbs: ['build'],
     because: '`build` is not offered to you this wake',
   },
@@ -489,6 +510,44 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     verbs: ['demand'],
     because: '`demand` is not offered to you this wake',
   },
+  // ── §9A's COMBAT LAYER, SPLIT ACROSS THE UNIT KINDS IT ACTUALLY SPANS ──────
+  //
+  // It arrived as one drafted passage claiming `engage`, and pasting it as one block would have
+  // been the `##`-granularity mistake at a smaller scale: the phase timetable is machinery a
+  // member needs whenever it is IN a battle, the JSON is verb rules, and `withdraw_below_bps` is
+  // the A3 stop condition that makes a battle survivable while offline. Three different triggers.
+  //
+  // The fourth part of that passage — a hull is destroyed permanently and the HAND is not — is
+  // not here at all. It went to §3 (FLOOR), by §11A's argument: a member that misunderstands
+  // whether losing a battle costs it a hand has the wrong model of its own CAPACITY, and that is
+  // a position error rather than a missed option.
+  {
+    section: S11D,
+    block: '### A refused demand becomes a BATTLE — the five phases',
+    verbs: ['engage'],
+    // MUSTER is 6 ticks of a 24-tick window and the only phase a hull may be committed in. A
+    // party to a live battle that has not been given the timetable cannot know that, and the
+    // window closes whether or not it was told.
+    required: (s) => s.inBattle,
+    because: 'no battle you are a party to is live, and `engage` is not offered to you',
+  },
+  {
+    section: S11D,
+    block: '### Committing a hull — `engage`',
+    verbs: ['engage'],
+    because: '`engage` is not offered to you this wake',
+  },
+  {
+    section: S11D,
+    block: '### `withdraw_below_bps` is a STOP CONDITION, not an act',
+    verbs: ['engage'],
+    // A3, and the reason it is `required` rather than `wanted`: this is the only field that lets
+    // a formation survive a fight the member sleeps through, and the rule that it CANNOT save a
+    // tackled formation is a loss it would otherwise not see coming.
+    required: (s) => s.inBattle,
+    because: 'you have no formation in a live battle to set a threshold on',
+  },
+
 
   // ── §12 ───────────────────────────────────────────────────────────────────
   { section: S12, block: null, floor: true, verbs: [], because: 'floor' },
@@ -561,6 +620,7 @@ export const EVERY_SITUATION: ContractSituation = Object.freeze({
   inArrears: true,
   anchorCold: true,
   underRaid: true,
+  inBattle: true,
   holdsWorks: true,
   canBuildWorks: true,
 });
@@ -602,6 +662,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
   inArrears: false,
   anchorCold: false,
   underRaid: false,
+  inBattle: false,
   holdsWorks: false,
   canBuildWorks: false,
 });
@@ -1057,6 +1118,9 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
     inArrears: claims.some((claim) => Number(claim['arrears'] ?? 0) > 0),
     anchorCold: claims.some((claim) => claim['anchor_hot'] === false),
     underRaid: list(obligations['raid']).length > 0,
+    // `obligations.battle`, adjacent to `raid` because a battle is what a raid row becomes when
+    // its target answers FIGHT. Same block, different deadline.
+    inBattle: list(obligations['battle']).length > 0,
     holdsWorks: list(works['held']).length > 0,
     canBuildWorks: obj(works['here'])['affordable'] === true,
   };

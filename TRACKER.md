@@ -108,6 +108,67 @@
 > arrangement of blocks makes that 38,000. Dropping §11B's CHARGE from a member about to be billed
 > under it is an A5′ violation; the overshoot costs ~$0.0003 a call.
 >
+> ### ★★ §9A COMBAT MERGED INTO THE `###` CATALOG — `engage` has readable rules
+>
+> Phase 2 landed on its own branch against the **`##`** catalog and added `engage` to
+> `CONTRACT_NOT_EXCERPTED`, taking it nine → ten. Correct for the world it branched from, obsolete
+> here. Resolved by giving `engage` **rules** instead of an exclusion entry, and
+> `CONTRACT_NOT_EXCERPTED` stays at **three**.
+>
+> The drafted passage was split across the unit kinds it actually spans, rather than pasted as one
+> block — which would have been the `##` mistake at a smaller scale:
+>
+> | where it went | trigger | why |
+> |---|---|---|
+> | **§3 (FLOOR)** — a HULL is destroyed permanently, the HAND is not | always | a member that misreads whether losing a battle costs it a hand has the wrong model of its own **capacity** — a position error, not a missed option (§11A's argument) |
+> | §11D `### …the five phases` | `engage`, or **in a battle** | MUSTER is 6 ticks of 24 and the only window a hull may be committed in; the window closes whether or not you were told |
+> | §11D `### Committing a hull — engage` | `engage` | verb rules |
+> | §11D `### withdraw_below_bps is a STOP CONDITION` | `engage`, or **in a battle** | A3 — the one field that survives being offline, and it cannot save a tackled formation |
+> | §11A `### build is THREE different acts` | `build` | the hull's `fuel`/FRONTIER cost and its frozen fit |
+>
+> New situation field `inBattle`, reading `obligations.battle` — its own key rather than folded into
+> `underRaid`, because the deadlines differ.
+>
+> **Measured, and this is what the ceiling raise was for:**
+>
+> | position | before §9A | after |
+> |---|---|---|
+> | newcomer | 30,998 | **32,401** |
+> | mid-game in the Commons | 34,922 | **36,325** |
+> | about to take territory | 35,564 | **36,967** |
+> | claimant in trouble (largest **reachable**) | 47,246 | **51,083** |
+> | analytic maximum, uncapped (unreachable) | 58,446 | **58,669** |
+>
+> Margin against the reachable maximum: **4,917** ≥ 4,000. At 38,000 this could not have landed
+> without trimming rules prose or adding a tenth exclusion — the two things this work exists to stop.
+>
+> ⚑ **The analytic maximum now exceeds the ceiling by 2,669 and that is tolerable, not a defect.**
+> Nothing is ever it (`graduate` and a held claim cannot coexist), and when it is priced what gives is
+> **CONTEXT** — two discretionary §11A blocks — never a rule. Asserted as CONTEXT-only. Padding the
+> ceiling for a state with no occupant is how a margin becomes decoration.
+>
+> ### Two defects the merge's own guards found, both on first run
+>
+> 1. **`build` is THREE acts now and `agent-md.test.ts` went red on the word "TWO".** A count in a
+>    rules surface is a claim, and the number is spelled out in the heading precisely so it cannot
+>    drift silently. Now pinned at THREE with HULL's two irreversible rules (`fuel` is FRONTIER-only;
+>    the fit is frozen for life) pinned beside it.
+> 2. **A new pinned verb→unit map found that `build {"kind":"ANCHOR"}` had no readable rules in one
+>    narrow state** — bond posted, `build` ANCHOR offered, no claim yet, `post_bond` off the menu.
+>    §11B's `### Taking one — post_bond then build` documents it and did not claim `build`. Claiming
+>    it costs a **Commons newcomer 1,987 characters** for a claim a Commons member cannot legally
+>    take, so instead the costed facts (5000 `ration` standing there, the 50000 slashable bond) moved
+>    into §11A's kind block for **~140 characters** in a block `build` already pulls. Both copies
+>    pinned, because a second copy of a rule is the scar-#1 risk.
+>
+> **And three more vacuous mutations, in the sweep built to prevent vacuity.** Deleting `engage` from
+> a block's `verbs` broke nothing: the exhaustive test iterates units × *their own* verbs, so a unit
+> whose list is emptied **is never visited** — the loop body does not run. Removing `required:
+> inBattle` from either §9A block broke nothing either, because no test said what a member *in* a
+> battle is owed, only what one offered `engage` is. Fixed by pinning the whole verb→unit map (an
+> assertion whose subject cannot be deleted along with the defect) and by asserting the in-battle
+> case directly. Six combat mutations, six caught.
+>
 > ### ★ THE CEILING IS 56,000 — and the argument is cry-wolf, not cost
 >
 > Raised **after** `###` granularity, not instead of it, and the order matters. The old bar was

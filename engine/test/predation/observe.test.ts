@@ -244,6 +244,16 @@ describe('the verb table and the canon agree about what is live', () => {
     // `flee` is the one that stays, and it is not a gap: §9's flee is "targeting misses if the
     // target moved", which `move` already expresses. A second spelling would be §3's forbidden
     // second concept, and `VERB_ARRIVES_AT` says exactly that rather than promising a step.
-    expect(notLive).toContain('flee');
+    // `flee` used to be asserted here, and its removal is what paid for `engage` (SPEC §9A).
+    // It was a canon verb with **no handler** and an argument in `verbs.ts` for never giving it one,
+    // which is this project's signature defect arriving on the verb budget itself: it read as one of
+    // the 40 in every summary and was unreachable. §17's ceiling is 40, so combat took its slot.
+    //
+    // The claim that replaces it is the stronger one: the word is gone from the canon entirely, so an
+    // agent can no longer read it in the verb list and wonder why it does nothing.
+    expect(notLive).not.toContain('flee');
+    expect(notLive, 'engage is live from the tick it landed and must never be in this table').not.toContain(
+      'engage',
+    );
   });
 });

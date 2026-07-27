@@ -290,6 +290,47 @@ import {
 // of ticks with no conflict in it, because nothing forced any. This is the wiring that
 // fills the slot: a state table, a phase handler, three verbs that already existed in
 // §12.2, and an assertions entry carrying PRD-1 (A8) and PRD-3 (A5′).
+// ── COMBAT (SPEC §9A, Phase 2) — THE ENGAGEMENT ─────────────────────────────
+//
+// The whole layer lives in `src/combat/`. What lands *here* is only the adapter: two state tables,
+// one composition into the existing PREDATE handler, one verb, one `build` kind, one assertions
+// entry, and one frame line set. `works/refine.ts`'s header states the reason this file gets no
+// logic — three mechanical edits landed in the wrong place in it in one day and all three passed
+// `tsc` — so every function below is a port constructor or a five-line dispatch.
+import {
+  Book as EngagementBook,
+  DEFAULT_PRIMARY,
+  ENGAGEMENT_TICKS,
+  Fleet,
+  HULL_COST_GOODS,
+  HULL_NAMES,
+  assertEngagementSchedule,
+  assertWorldFleet,
+  battleLinesFor,
+  battleTickerLine,
+  buildHull,
+  buildHullRefusal,
+  checkCombatInvariants,
+  combatCoverage,
+  engage,
+  engageRefusal,
+  engagementStateTable,
+  engagementViewsFor,
+  fieldControlOf,
+  fleetStateTable,
+  hullQuote,
+  isEchelon,
+  isPosture,
+  isTargetPredicate,
+  runBattles,
+  type BattlePort,
+  type EngagePort,
+  type EngageRequest,
+  type EngagementView,
+  type HullId,
+  type ShipyardPort,
+  type TargetPredicate,
+} from '../combat/index.js';
 import {
   Book as RaidBook,
   DEMAND_RULE_STATEMENT,
@@ -319,6 +360,7 @@ import {
   type RaidView,
 } from '../predation/index.js';
 import {
+  MAX_FRAME_BATTLE_LINES,
   MAX_FRAME_CLAIM_LINES,
   MAX_RAID_LINES,
   type ClaimLine,
@@ -600,7 +642,64 @@ import {
  * The live world needs the operator divergence door (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) on the
  * next deploy, as at 1 → 2, 4 → 5, 5 → 6, 6 → 7 and 7 → 8.
  */
-export const RULES_VERSION = 9;
+/**
+ * Bumped 9 → 10 by SPEC §9A (combat).
+ *
+ * **What forces the bump is the SNAPSHOT SHAPE, not a changed acceptance.** Two new state tables
+ * (`engagement` and `fleet`) enter `capture()`, so every `state_hash` from this tick differs from
+ * what the previous rules would have produced, and the operator door
+ * (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) has to be told once.
+ *
+ * **What this bump deliberately does NOT do is change whether any action shape that has ever been
+ * submitted is accepted.** That distinction matters because venture ids are
+ * `hash(tick, principal, ordinal)` over a world-global counter, so one action refused under changed
+ * rules shifts the ordinal and renames every venture minted afterwards, permanently. Combat is the
+ * largest rules change this project has made, and it is ordinal-neutral by construction:
+ *
+ *   - `engage` is a **new** verb. Nothing has ever submitted one, so nothing past changes.
+ *   - `build {kind:"HULL"}` is a **new** kind. It was refused before and is accepted now, but no
+ *     historical action carried it, so no historical acceptance moves.
+ *   - `flee` left the canon, and it had **no handler**: every `flee` was already refused, and it is
+ *     still refused. The rejection's wording changed; its outcome did not.
+ *
+ * So this adds a declared discontinuity of the *hash* kind and none of the *identity* kind.
+ */
+export const RULES_VERSION = 10;
+
+/**
+ * Read a formation's ordered target predicates, tolerating a list or a delimited string.
+ *
+ * Free-standing rather than a method for `refine.ts`'s reason: it is a function of its input and
+ * touches no world state, so a reviewer can see that it cannot do anything else. The default is
+ * §7 MUST-7's competent one (*"CUT timeout paralysis"*) — kill the force multipliers first — because
+ * an agent that omits this field must still fight sensibly.
+ */
+function readPredicates(params: Readonly<Record<string, unknown>>): readonly TargetPredicate[] {
+  const raw = params['primary'] ?? params['primary_policy'] ?? params['target_policy'];
+  const out: TargetPredicate[] = [];
+  const push = (value: string): void => {
+    const upper = value.toUpperCase();
+    if (isTargetPredicate(upper) && !out.includes(upper)) out.push(upper);
+  };
+  if (Array.isArray(raw)) {
+    for (const entry of raw) if (typeof entry === 'string') push(entry);
+  } else if (typeof raw === 'string') {
+    for (const entry of raw.split(/[,\s]+/)) if (entry !== '') push(entry);
+  }
+  return out.length > 0 ? out : DEFAULT_PRIMARY;
+}
+
+/** Read a fit's module list, tolerating a list or a delimited string. Order-independent downstream. */
+function readModules(params: Readonly<Record<string, unknown>>): readonly string[] {
+  const raw = params['modules'] ?? params['fit'] ?? params['loadout'];
+  const out: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const entry of raw) if (typeof entry === 'string') out.push(entry.toUpperCase());
+  } else if (typeof raw === 'string') {
+    for (const entry of raw.split(/[,\s]+/)) if (entry !== '') out.push(entry.toUpperCase());
+  }
+  return out;
+}
 
 /**
  * Rows served in any market list. Matches `api/observe.ts:MAX_LIST_ROWS` in value and
@@ -1664,6 +1763,16 @@ export class Runtime {
   private raidBookRef = new RaidBook();
 
   /**
+   * The engagement book (SPEC §9A). Replaced wholesale by the rollback — see {@link Runtime.battles}.
+   */
+  private engagementBookRef = new EngagementBook();
+
+  /**
+   * The fleet book (SPEC §9A): which HULLS exist and which are wrecks. Replaced by the rollback.
+   */
+  private fleetRef = new Fleet();
+
+  /**
    * The claim book (SPEC §6.3). Replaced wholesale by the rollback, so nothing may hold a
    * reference across a tick boundary — see {@link Runtime.sovereignty}.
    */
@@ -1680,6 +1789,15 @@ export class Runtime {
    * would make two identical worlds differ over what a viewer had scrolled past.
    */
   private readonly raidTicker = new Ring<string>(MAX_RAID_TICKER_LINES);
+
+  /**
+   * The battle ticker (§9A, §14.5). A **second ring, not a share of the raid one.**
+   *
+   * A standoff and the battle inside it are two objects with two pixel signatures, and one ring
+   * would let a busy Reckoning of raids push every battle line out of the export surface — or the
+   * reverse. Bounded by the same published cap for the same reason (INV-26).
+   */
+  private readonly battleTicker = new Ring<string>(MAX_RAID_TICKER_LINES);
 
   /**
    * Things that went wrong where a halt would have been worse. Bounded, and printed.
@@ -1717,6 +1835,15 @@ export class Runtime {
     // resolution, so such a raid could only be dropped or resolved illegally — and both
     // are a permanent public fact the rules made unavoidable (A5′).
     assertRaidSchedule();
+    // The engagement clock must fit inside the demand window it is fought in, or a raid resolves
+    // while its battle is still running and the force reading counts hands a wreck already took off
+    // the board. Asserted at construction rather than in a test, because a schedule only a test
+    // checks is a schedule that ships broken the first time a phase is tuned.
+    assertEngagementSchedule();
+    // And that the world can actually field its fleet. A separate call because `params.ts` holds the
+    // fit and `fit.ts` holds the simulator: an illegal WORLD_FLEET_FIT means every world raid answered
+    // FIGHT faces an empty field, which is A14 failing in the exact silent way this layer prevents.
+    assertWorldFleet();
     // And a third: a vulnerability window that opened inside §5.1's freeze could only be
     // honoured illegally or dropped, and a claim changing hands mid-settlement moves two
     // principals' currency after the Reckoning froze the figures it was computed from. A
@@ -1816,6 +1943,24 @@ export class Runtime {
           () => this.raidBookRef,
           (book) => {
             this.raidBookRef = book;
+          },
+        ),
+        // Combat. Both books decide which ASSETS get destroyed, so a hash blind to either would
+        // call two worlds identical while one of them was about to wreck a warship — and an aborted
+        // tick would leave a hull marked WRECKED against goods destruction that was rolled back,
+        // which is A5′ (the record must never be wrong) with somebody's fleet in it. Registered
+        // from this module's first commit for the reason `sovereignty` states: seven books were
+        // found outside the hash in one night. There is no eighth, and there is no ninth.
+        engagementStateTable(
+          () => this.engagementBookRef,
+          (book) => {
+            this.engagementBookRef = book;
+          },
+        ),
+        fleetStateTable(
+          () => this.fleetRef,
+          (fleet) => {
+            this.fleetRef = fleet;
           },
         ),
         // Sovereignty. An arrears counter decides whether the NEXT Reckoning takes a
@@ -2010,6 +2155,19 @@ export class Runtime {
         // filling it would shift no other phase's seeded sub-stream — cashed here, and
         // no other phase moved.
         PREDATE: (ctx) => {
+          // ── BATTLES BEFORE RAID RESOLUTION, AND THE ORDER IS THE WHOLE COUPLING ──
+          //
+          // §9A couples into §9 through **hands and nothing else**: a wrecked hull sends its hand
+          // to RECOVERING, and `readForce` counts hands *at resolution* — its own doc says "a
+          // joiner counts only while its hand is still standing there". So a side that loses the
+          // battle loses the force reading automatically, with zero change to §9's arithmetic.
+          //
+          // That only holds if the battle's last tick runs BEFORE the raid resolves, which is why
+          // this is a composition rather than a second phase. Adding a phase would change the set
+          // of `Rng.derive(phase)` labels and therefore every seeded draw in the world
+          // (`tick/phases.ts` says so at length); composing inside PREDATE changes none of them,
+          // because a phase's sub-stream is per-phase and this draws from PREDATE's own.
+          this.battlesNow(ctx);
           this.predateNow(ctx);
         },
         MARKETS: (ctx) => {
@@ -2096,6 +2254,12 @@ export class Runtime {
         // PRD-1 is A8 (a raid standing in the Commons halts the world) and PRD-3 is A5′
         // (a recorded loss must equal what the posting log actually moved).
         (tick) => this.predationViolations(tick),
+        // OPS-1..7. Not registry entries — see `combat/invariants.ts` on why the 26 stay 26 — but
+        // merged into the same ASSERT pass and halting on the same terms. OPS-1 is A5′ with a
+        // warship in it (one hull, one fight, or a second wreck destroys an asset that was already
+        // gone) and OPS-5 is §9's "nobody owns them, so nobody can be bribed" applied to the
+        // world's fleet as well as to its raids.
+        (tick) => this.combatViolations(tick),
         // SOV-1..7 plus the A5′ attribution guard. Not registry entries — see
         // `sovereignty/invariants.ts` on why the 26 stay 26 — but merged into the same ASSERT
         // pass and halting on the same terms. SOV-1 is A8 (a claim in the Commons halts the
@@ -2441,6 +2605,453 @@ export class Runtime {
       rentAt: (system, claimant) => this.rentReadAt(system, claimant, tick),
       bondRead: this.bondRead(),
     });
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // COMBAT (SPEC §9A, Phase 2) — THE ENGAGEMENT. Adapters only.
+  //
+  // Everything below is a port constructor or a dispatch. The logic is in `src/combat/`, and the
+  // reason is `works/refine.ts`'s: this file is ten thousand lines, three mechanical edits landed
+  // in the wrong place in it in one day, and all three passed `tsc`. A port whose signature
+  // ENUMERATES what the operation touches is what makes a reviewer able to check it by reading.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** The engagement book. Never held across a tick boundary: the rollback replaces it. */
+  get battles(): EngagementBook {
+    return this.engagementBookRef;
+  }
+
+  /** The fleet book. Never held across a tick boundary. */
+  get fleet(): Fleet {
+    return this.fleetRef;
+  }
+
+  /**
+   * Everything `engage` reads. The hand read is the SAME one the resolver and the raid view use,
+   * not a second copy — `DemandPort`'s stated reason, and it matters more here: the force an agent
+   * is shown before it commits a warship and the force the resolver computes must come from one
+   * implementation, or the affordance and the outcome can disagree with a hull at stake.
+   */
+  private engagePort(tick: number): EngagePort {
+    const predation = this.predationPort(tick);
+    return {
+      tierOf: (system) => predation.tierOf(system),
+      handsIdleAt: (principal, stage) => predation.handsDefending(principal, stage),
+      isSeated: (principal) => predation.isSeated(principal),
+      raid: (raidId) => this.raids.get(raidId as RaidId),
+      sideIn: (raid, principal) => {
+        // The target is always the DEFENDER and the initiator always the RAIDER, whether or not
+        // either has joined a side explicitly. Reading only `parties` would leave the two agents
+        // the standoff is *about* unable to bring a hull to their own battle.
+        if (raid.target === principal) return 'DEFENDER';
+        if (raid.initiator === principal) return 'RAIDER';
+        return raid.parties.find((party) => party.principal === principal)?.side ?? null;
+      },
+    };
+  }
+
+  /** Everything building a hull touches: goods at a place, a holding at that place, and the ledger. */
+  private shipyardPort(): ShipyardPort {
+    return {
+      tierOf: (system) => (this.world.map.systems.has(system) ? tierOf(this.world.map, system) : 'COMMONS'),
+      goodsAt: (principal, system, good) =>
+        qty(this.goodLotsAt(principal, system, good as GoodId).reduce((n, lot) => n + lot.qty, 0)),
+      consume: (args) => {
+        let taken = 0;
+        const want = Number(args.qty);
+        for (const lot of this.goodLotsAt(args.principal, args.system, args.good as GoodId)) {
+          if (taken >= want) break;
+          const portion = Math.min(want - taken, lot.qty);
+          if (portion <= 0) continue;
+          this.ledger.destroyGoods({
+            eventId: (args.eventId + '#' + String(taken)) as EventId,
+            tick: args.tick,
+            sink: GOODS_SINK.CONSUMPTION,
+            lotId: lot.id,
+            qty: qty(portion),
+          });
+          taken += portion;
+        }
+        return qty(taken);
+      },
+      seatedAt: (principal, system) => {
+        const holdingId = this.world.holdingByPrincipal.get(principal);
+        if (holdingId === undefined) return false;
+        return this.world.holdings.get(holdingId)?.system === system;
+      },
+      freeStoresOf: (principal) => freeStores(this.ledger, principal),
+    };
+  }
+
+  /**
+   * Everything a battle does outside its own book.
+   *
+   * ── WHY `burnHull` POSTS NOTHING, WHICH IS THE SUBTLE CALL HERE ────────
+   *
+   * A hull is **not a lot**. It was manufactured out of lots that INV-1 already saw destroyed at
+   * build time, so posting again at wreck time would double-count the destruction — too much
+   * removed, which reads as scarcity and is the direction that is hardest to notice. What a wreck
+   * removes is the *asset*, and the asset lives in the fleet book, which is inside `state_hash`
+   * and inside the rollback set precisely so that this is safe.
+   *
+   * So the value returned is the build cost, for the loss record, and the ledger action is none.
+   * There is deliberately **no salvage**: §1 NICE-2's salvage layer is a named deferral, so the whole
+   * build cost leaves the world, which is A5 with no discount.
+   */
+  private battlePort(ctx: PhaseContext): BattlePort {
+    return {
+      burnHull: (args) => {
+        const record = this.fleet.get(args.hullId);
+        if (record === undefined) return 0;
+        const spec = hullQuote(record.hull);
+        if (spec === null) return 0;
+        void args.eventId;
+        void args.tick;
+        void args.system;
+        void args.owner;
+        return Number(spec.frame) + Number(spec.fuel);
+      },
+      routHand: (hand, tick) => this.predationPort(tick).routHand(hand, tick),
+      wake: (principal, item) => {
+        ctx.offerWake(principal, 'THREAT', item);
+      },
+    };
+  }
+
+  /**
+   * Advance every live battle one tick. Composed into PREDATE, before raid resolution.
+   *
+   * `ctx.step` is charged per live battle, exactly as `predateNow` charges per live raid: DET-9
+   * aborts a tick whose work exceeded its budget, and a combat layer that did not declare its cost
+   * would either abort a legitimate tick or hide an unbounded one.
+   */
+  private battlesNow(ctx: PhaseContext): void {
+    ctx.step(this.battles.liveCount() * 2 + 1);
+
+    // ── THE DEADLINE, AND WHY A LATE `fight` GETS NO BATTLE ──────────────────
+    //
+    // `assertEngagementSchedule` proves 22 ≤ 24 at construction, but that is only the claim that a
+    // battle STARTED AT THE SPAWN TICK fits. A defender that answers FIGHT at spawn+5 would open a
+    // battle ending at spawn+28, three ticks after its own standoff resolved — and OPS-4 would halt
+    // the world over it.
+    //
+    // So the deadline is a gate rather than a repair: a standoff answered too late to hold a battle
+    // is decided on hands, exactly as it was before this layer existed. That is a real strategic
+    // consequence and a good one — answering FIGHT promptly is what buys you a fleet fight — and it
+    // is published in the engagement view rather than discovered.
+    const openable = this.raids
+      .live()
+      .filter((raid) => raid.answer === 'FIGHT')
+      .filter((raid) => ctx.tick + ENGAGEMENT_TICKS <= raid.resolvesAtTick);
+
+    const report = runBattles({
+      book: this.battles,
+      fleet: this.fleet,
+      port: this.battlePort(ctx),
+      rng: ctx.rng,
+      tick: ctx.tick,
+      raids: openable,
+      // A11: hash(seed) is published when the battle opens and the seed itself at AFTERMATH. This
+      // derives from the tick's own committed seed, so it is the same commitment the whole world is
+      // already published against rather than a second one nobody can check.
+      seedCommitFor: (raid) => canonicalHash({ v: 1, raid: raid.id, tick: ctx.tick }).slice(0, 16),
+      onFault: (message) => {
+        this.faults.push('combat: ' + message);
+      },
+    });
+
+    // ── THE SAFETY NET FOR A BATTLE WHOSE STANDOFF WENT AWAY ─────────────────
+    //
+    // The deadline gate above makes this unreachable in normal operation, and it is here anyway
+    // because the alternative is a halt in front of an audience. OPS-4 still catches the genuine
+    // bug — a live battle over a settled raid — and this closes the one cause it could have.
+    for (const record of this.battles.live()) {
+      if (this.raids.isLive(record.raid)) continue;
+      this.battles.close(record.id, fieldControlOf(record), ctx.tick);
+      this.faults.push(
+        'combat: battle ' + record.id + ' outlived its standoff ' + record.raid + ' and was closed at tick ' +
+          String(ctx.tick) + '. The deadline gate in battlesNow should have made this unreachable.',
+      );
+    }
+
+    for (const record of report.opened) {
+      this.emitRow({
+        tick: ctx.tick,
+        kind: 'battle.opened',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: record.initiator ?? record.target,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: 'battle::' + record.id,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        visibility: 'PUBLIC',
+        audience: [],
+        payload: {
+          engagement: record.id,
+          raid: record.raid,
+          stage: record.stage,
+          target: record.target,
+          initiator: record.initiator,
+          worldForce: record.worldForce,
+          seedCommit: record.seedCommit,
+        },
+      });
+      this.battleTicker.push(battleTickerLine(record));
+    }
+
+    for (const closed of report.closed) {
+      this.emitRow({
+        tick: ctx.tick,
+        kind: 'battle.closed',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: closed.engagement.initiator ?? closed.engagement.target,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: 'battle::' + closed.engagement.id,
+        parentEventId: null,
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        visibility: 'PUBLIC',
+        audience: [],
+        payload: {
+          engagement: closed.engagement.id,
+          raid: closed.engagement.raid,
+          stage: closed.engagement.stage,
+          fieldControl: closed.control,
+          wrecks: closed.engagement.wrecks.length,
+          seedCommit: closed.engagement.seedCommit,
+        },
+      });
+      this.battleTicker.push(battleTickerLine(closed.engagement));
+      for (const wreck of closed.engagement.wrecks) {
+        this.emitRow({
+          tick: ctx.tick,
+          kind: 'battle.wreck',
+          rulesVersion: RULES_VERSION,
+          actorPrincipalId: wreck.principal,
+          onBehalfOfPrincipalId: null,
+          grantId: null,
+          eventFamilyId: 'battle::' + closed.engagement.id,
+          parentEventId: null,
+          isPublic: true,
+          publicAt: ctx.tick,
+          declassifyAt: ctx.tick,
+          provenanceClass: 'FACT',
+          actedOnStateVersion: ctx.frozenStateVersion,
+          decisionSource: null,
+          visibility: 'PUBLIC',
+          audience: [],
+          payload: {
+            engagement: closed.engagement.id,
+            stage: closed.engagement.stage,
+            principal: wreck.principal,
+            hull: wreck.hull,
+            killedBy: wreck.killedBy,
+            tick: wreck.tick,
+            value: wreck.value,
+          },
+        });
+      }
+    }
+  }
+
+  /** OPS-1..7, merged into the same ASSERT pass as PRD and SOV. */
+  private combatViolations(tick: number): readonly InvariantViolation[] {
+    const recovering = new Set<string>();
+    for (const hand of this.world.hands.values()) {
+      if (hand.state === 'RECOVERING') recovering.add(hand.id);
+    }
+    return checkCombatInvariants({
+      book: this.battles,
+      fleet: this.fleet,
+      tick,
+      raidIsLive: (raid) => this.raids.isLive(raid),
+      recoveringHands: recovering,
+    });
+  }
+
+  /** How much of each combat invariant's subject the world has produced. Non-vacuity, as a number. */
+  combatCoverageNow(): ReturnType<typeof combatCoverage> {
+    return combatCoverage(this.battles, this.fleet);
+  }
+
+  /** Battles this principal is in, for `observe`. Bounded (INV-26). */
+  engagementsFor(principal: PrincipalId, tick: number, limit: number): readonly EngagementView[] {
+    return engagementViewsFor({ book: this.battles, fleet: this.fleet, principal, tick, limit });
+  }
+
+  /** The gate `engage` itself runs, exposed so the affordance cannot hold a second copy of it. */
+  engageRefusalFor(req: EngageRequest): Rejection | null {
+    return engageRefusal(this.engagePort(req.tick), this.battles, this.fleet, req);
+  }
+
+  /** The gate `build {"kind":"HULL"}` itself runs. Same argument. */
+  hullRefusalFor(args: {
+    readonly principal: PrincipalId;
+    readonly system: SystemId;
+    readonly hull: string;
+    readonly modules: readonly string[];
+    readonly tick: number;
+  }): Rejection | null {
+    return buildHullRefusal(this.shipyardPort(), this.fleet, args);
+  }
+
+  /** Hulls this principal could commit at a place right now. What the affordance offers. */
+  committableHulls(
+    principal: PrincipalId,
+    system: SystemId,
+  ): readonly { readonly id: HullId; readonly hull: string }[] {
+    return this.fleet.readyAt(principal, system).map((row) => ({ id: row.id, hull: row.hull }));
+  }
+
+  /** `engage` — SPEC §9A's one live-combat verb, paid for by removing `flee`. */
+  private vEngage(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const raid = readString(req.params, ['raid', 'raid_id', 'engagement', 'standoff']);
+    if (raid === null) {
+      return reject(
+        'A2',
+        'engage needs {"raid":"<raid_id>"}. A battle is fought inside a standoff, never at a bare place — ' +
+          'see raids[] in your observation for the ids you are a party to.',
+      );
+    }
+    const hull = readString(req.params, ['hull', 'hull_id', 'ship']);
+    const echelonRaw = (readString(req.params, ['echelon', 'line', 'row']) ?? 'MAIN').toUpperCase();
+    const postureRaw = (readString(req.params, ['posture', 'stance']) ?? 'HOLD').toUpperCase();
+    if (!isEchelon(echelonRaw)) {
+      return reject('A2', '"' + echelonRaw + '" is not an echelon. The four are SCREEN · MAIN · SUPPORT · RESERVE.');
+    }
+    if (!isPosture(postureRaw)) {
+      return reject('A2', '"' + postureRaw + '" is not a posture. The three are CLOSE · HOLD · KITE.');
+    }
+
+    const result = engage(this.engagePort(ctx.tick), this.battles, this.fleet, {
+      principal: req.principal,
+      raid,
+      tick: ctx.tick,
+      hull: hull === null ? null : (hull as HullId),
+      echelon: echelonRaw,
+      posture: postureRaw,
+      // §7 MUST-7 requires competent defaults ("CUT timeout paralysis"), and the default is the one
+      // a human fleet commander uses: kill the force multipliers, then the tackle holding you.
+      primary: readPredicates(req.params),
+      withdrawWhen: {
+        ehpBelowBps:
+          readInt(req.params, ['withdraw_below_bps', 'withdraw_if_ehp_below_bps', 'ehp_below_bps']) ?? 0,
+        hullsLost:
+          readInt(req.params, ['withdraw_after_losses', 'withdraw_if_hulls_lost', 'hulls_lost']) ?? 0,
+        now: req.params['withdraw_now'] === true || req.params['retreat'] === true,
+      },
+      handId: (readString(req.params, ['hand', 'hand_id']) ?? null) as HandId | null,
+    });
+    if (!result.ok) return result;
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: result.value.committed ? 'battle.committed' : 'battle.ordered',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: 'battle::' + result.value.engagement.id,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        engagement: result.value.engagement.id,
+        formation: result.value.formation.id,
+        principal: req.principal,
+        side: result.value.formation.side,
+        hull: result.value.formation.hull,
+        hulls: result.value.formation.hands.length,
+        echelon: result.value.formation.echelon,
+        posture: result.value.formation.posture,
+        primary: [...result.value.formation.primary],
+        withdrawBelowBps: result.value.formation.withdrawWhen.ehpBelowBps,
+        withdrawAfterLosses: result.value.formation.withdrawWhen.hullsLost,
+      },
+    });
+    return { ok: true, value: null };
+  }
+
+  /** `build {"kind":"HULL"}` — the third build kind. No verb spent; `kind` is the existing pattern. */
+  private vBuildHull(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const hull = (readString(req.params, ['hull', 'class', 'ship']) ?? '').toUpperCase();
+    if (hull === '') {
+      return reject(
+        'A2',
+        'build {"kind":"HULL"} needs a hull: ' + HULL_NAMES.join(' · ') + '. A hull costs ' +
+          HULL_COST_GOODS.frame + ' plus ' + HULL_COST_GOODS.fuel + ', and ' + HULL_COST_GOODS.fuel +
+          ' is produced only at FRONTIER systems — so a fleet is something somebody hauled.',
+      );
+    }
+    const modules = readModules(req.params);
+
+    const named = readString(req.params, ['system', 'at', 'where']) as SystemId | null;
+    const holdingId = this.world.holdingByPrincipal.get(req.principal);
+    const system =
+      named ?? (holdingId === undefined ? null : (this.world.holdings.get(holdingId)?.system ?? null));
+    if (system === null) {
+      return reject('A2', 'build {"kind":"HULL"} needs a system, and you have no holding to default to.');
+    }
+
+    const result = buildHull(this.shipyardPort(), this.fleet, {
+      principal: req.principal,
+      system,
+      hull,
+      modules,
+      tick: ctx.tick,
+    });
+    if (!result.ok) return result;
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'hull.built',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: 'hull::' + result.value.record.id,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        hull: result.value.record.id,
+        hullClass: result.value.record.hull,
+        // The FIT HASH is published and the MODULE LIST is not, and that split is §11.2 exactly. A
+        // hash identifies a fit for coalescing and for a later loss report; the list is a manifest,
+        // and "a ship at sea is visible; its manifest is not". A rival that has seen this row knows a
+        // WARDEN exists; it does not know whether it repairs or shoots.
+        fit: result.value.record.fit,
+        system,
+        readyAtTick: result.value.record.readyAtTick,
+        frameSpent: Number(result.value.frameSpent),
+        fuelSpent: Number(result.value.fuelSpent),
+      },
+    });
+    return { ok: true, value: null };
   }
 
   // ── PREDATION (SPEC §9, §16 step 12) ──────────────────────────────────────
@@ -3886,6 +4497,10 @@ export class Runtime {
       // raids structurally cannot — conflict somebody CHOSE, with a name on it — and it is the
       // only caller of the aggression capacity that prices a standing toll out of existence.
       demand: (ctx, req) => this.vDemand(ctx, req),
+      // `engage` (SPEC §9A). Guarded by `committing` for the reason every material verb is:
+      // §5.1's freeze forbids a new commitment inside the settlement window, and committing a
+      // warship is the most commitment-shaped act in the game.
+      engage: (ctx, req) => this.committing(ctx) ?? this.vEngage(ctx, req),
       // ── A6: the two grant verbs. Issuing is a COMMITMENT, so it is refused in the
       // freeze like any other (§8.1: no grant spend in the settlement window). Revoking
       // is NOT behind `committing`: SPEC §8.1 #6 makes revocation always accepted, and
@@ -7943,6 +8558,7 @@ export class Runtime {
   private vBuild(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const kind = (readString(req.params, ['kind', 'what', 'structure']) ?? 'ANCHOR').toUpperCase();
     if (kind === 'WORKS') return this.vBuildWorks(ctx, req);
+    if (kind === 'HULL') return this.vBuildHull(ctx, req);
     if (kind !== 'ANCHOR') {
       return reject(
         'PHASE-0',
@@ -9896,6 +10512,9 @@ export class Runtime {
       // this frame could tell. The §11.2 clause that admits the key is argued in
       // `frames/projection.ts`.
       raidLines: raidLinesFor(this.raids, outcome.tick, MAX_RAID_LINES),
+      // Combat's battle lines (§9A, A13). Supplied by the combat layer for the reason every other
+      // line set is: a renderer that computed its own bar heights would be inventing damage.
+      battleLines: battleLinesFor(this.battles, this.fleet, outcome.tick, MAX_FRAME_BATTLE_LINES),
       // Sovereignty's pixel signature (A13, §6.3): the claim tint and its legend. Built by the
       // sovereignty layer for the same reason the raid lines are — a renderer that computed
       // what a claim owed would be inventing an obligation. The §11.2 clause that admits the

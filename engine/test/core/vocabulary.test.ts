@@ -31,6 +31,7 @@ import type {
   InvariantViolation,
   RaidState,
   ClaimState,
+  EngagementState,
 } from '../../src/core/types.js';
 
 /**
@@ -86,6 +87,18 @@ const RAID_STATE = ['DEMANDED', 'PAID', 'REPULSED', 'PLUNDERED', 'MISSED'] as co
  * verdict about how many Charges a claim has already missed.
  */
 const CLAIM_STATE = ['SUPPLIED', 'STRAINED', 'CONTESTED', 'LAPSED', 'CEDED'] as const;
+/**
+ * Combat's five (SPEC §9A). Listed here for `RaidState`'s reason: `EngagementState` lives in
+ * `core/types.ts` because the engagement book AND the frame's battle line both need the same five
+ * words, and one pixel signature may not have two homes.
+ *
+ * They are **states** and not *phases*, deliberately: `PhaseName` is the tick pipeline's word and
+ * hard rule 4 forbids a second concept on it. Five rather than one resolution step because
+ * commitment, target calling, counter-escalation and the decision to break off are separate
+ * dramatic moments — each boundary is a beat a viewer can be shown and a decision an agent can
+ * still change.
+ */
+const ENGAGEMENT_STATE = ['MUSTER', 'CONTACT', 'CONTEST', 'BREAK', 'AFTERMATH'] as const;
 const WORLD_STATUS = ['RUNNING', 'PAUSED'] as const;
 const SEVERITY = ['HALT', 'WARN'] as const;
 
@@ -101,6 +114,7 @@ const _worldStatusComplete: Covers<WorldStatus, typeof WORLD_STATUS> = true;
 const _severityComplete: Covers<Severity, typeof SEVERITY> = true;
 const _raidStateComplete: Covers<RaidState, typeof RAID_STATE> = true;
 const _claimStateComplete: Covers<ClaimState, typeof CLAIM_STATE> = true;
+const _engagementStateComplete: Covers<EngagementState, typeof ENGAGEMENT_STATE> = true;
 
 /**
  * Every string-literal union in core/types.ts, with the name an error message
@@ -120,6 +134,7 @@ const ALL_ENUMS: readonly (readonly [string, readonly string[]])[] = [
   ['InvariantViolation.severity', SEVERITY],
   ['RaidState', RAID_STATE],
   ['ClaimState', CLAIM_STATE],
+  ['EngagementState', ENGAGEMENT_STATE],
 ];
 
 /** The §3 vocabulary table's Term column, parsed from the canon. */
@@ -151,7 +166,8 @@ describe('the compile-time coverage proofs are live', () => {
       _severityComplete,
       _raidStateComplete,
       _claimStateComplete,
-    ]).toEqual(new Array<boolean>(12).fill(true));
+      _engagementStateComplete,
+    ]).toEqual(new Array<boolean>(13).fill(true));
   });
 
   it('the enum list covers every string-literal union that core/types.ts declares', () => {
@@ -194,7 +210,7 @@ describe('PROP-O3 — the §17 budgets, counted', () => {
   });
 
   it('the union sizes are all pinned, so a quiet addition shows up as a diff', () => {
-    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5, 5]);
+    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5, 5, 5]);
   });
 });
 

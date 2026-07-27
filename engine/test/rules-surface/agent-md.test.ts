@@ -550,10 +550,16 @@ describe('agent.md quotes the WORKS numbers the engine actually uses', () => {
 
 describe('agent.md warns about the one verb whose meaning depends on a parameter', () => {
   /**
-   * `build` is two acts: ANCHOR takes territory with a permanent Charge attached, WORKS raises a
-   * production structure and is legal in the Commons. An agent that searches `affordances[]` for
-   * `verb == "build"` and takes the first match gets whichever the ranking happened to put first
-   * — and the two commit it to completely different futures.
+   * `build` is **three** acts as of §9A: ANCHOR takes territory with a permanent Charge attached,
+   * WORKS raises a production structure and is legal in the Commons, and HULL makes a warship out
+   * of `ration` and `fuel` with its fit frozen for life. An agent that searches `affordances[]`
+   * for `verb == "build"` and takes the first match gets whichever the ranking happened to put
+   * first — and the three commit it to completely different futures.
+   *
+   * **It went two → three on 2026-07-27 and this assertion is what said so**, by going red on the
+   * word "TWO" the moment `engage` landed. That is the check working: a count in a rules surface
+   * is a claim, and a claim that quietly stops being true is scar #1's shape. The number is
+   * spelled out in the heading precisely so it cannot drift silently.
    *
    * This is not hypothetical. Adding WORKS turned FOUR of this repo's own test helpers ambiguous
    * in one commit, including two written the same night, and broke an A8 assertion that read "no
@@ -565,7 +571,7 @@ describe('agent.md warns about the one verb whose meaning depends on a parameter
    * defence is to say so where the agent is reading.
    */
   it('says to match on params.kind and not on the verb alone', () => {
-    expect(AGENT_MD).toContain('`build` is TWO different acts');
+    expect(AGENT_MD).toContain('`build` is THREE different acts');
     expect(AGENT_MD).toContain('Match');
     expect(AGENT_MD).toContain('params.kind');
   });
@@ -573,6 +579,26 @@ describe('agent.md warns about the one verb whose meaning depends on a parameter
   it('names what each kind commits you to, so the choice is not a coin flip', () => {
     expect(AGENT_MD).toContain('Legal in the Commons');
     expect(AGENT_MD).toContain('Invalid in the Commons');
+    // HULL's two, both irreversible and neither inferable from the verb: it is the only kind that
+    // costs `fuel` (which only the FRONTIER makes), and its fit can never be changed.
+    expect(AGENT_MD, 'a hull costs fuel and the Commons cannot make any').toContain(
+      'fuel exists only at FRONTIER systems',
+    );
+    expect(AGENT_MD, 'and the fit is a permanent commitment').toContain(
+      'the fit is frozen at build; there is no refit',
+    );
+    // ── ANCHOR's PRICE, IN THE BLOCK `build` PULLS ────────────────────────────
+    // §11B is the full rules, but a member holding a posted bond and offered `build` ANCHOR does
+    // not always get §11B in its excerpt (`cast/prompt.ts` records why: claiming `build` there
+    // costs a Commons newcomer 1,987 characters for a claim it cannot legally take). So the two
+    // costed facts live HERE as well, and that duplication is deliberate — pinned so it cannot
+    // drift from §11B, which is the scar-#1 risk a second copy always carries.
+    expect(AGENT_MD, 'the goods a claim destroys, where `build` is documented').toContain(
+      'It destroys 5000 units of `ration` **already standing at that system**',
+    );
+    expect(AGENT_MD, 'and the bond, which is slashable and does not come back').toContain(
+      'requires a posted BOND of 50000 per claim',
+    );
   });
 });
 

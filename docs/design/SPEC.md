@@ -134,8 +134,37 @@ Four consequences run through everything below:
 | **SITE** | a resource node | a structure anchorage (**BERTH**) |
 | **RAID** | predation; a venture kind | war |
 | **SYNDICATE** | the only org container in Phase 0 | mutual, alliance (Phase 3) |
+| **CLAIM** | ★ a principal's sovereign hold on **one system** outside the Commons (§6.3) | a creditor's demand in the insolvency waterfall (that is a **CHARGE-CLAIM** in prose and `Claim` only inside `ledger/`); a public assertion (that is a **statement**, the say-do gap's first layer) |
+| **ANCHOR** | the produced goods destroyed *at* a system to bring a CLAIM into being — `build {kind:"ANCHOR"}` — and the thing that then burns FUEL | a berth; a mooring; a fleet position |
+| **CHARGE** | the **recurring per-Reckoning obligation a CLAIM owes**, in goods, by tier | the LEVY (which is the constellation's, not a claim's); a fee; a market charge |
+| **RENT** | the share of a system's extraction its CLAIM-holder takes from the WORKS standing there | the CHARGE; a lease payment; upkeep |
+| **FUEL** | the **Frontier-only third good** — what an ANCHOR burns per Reckoning to keep collecting RENT, and half of what a HULL is built from | a consumable generally; a capacitor charge |
+
+**The combat vocabulary (§9A, Phase 2).** Nine terms, each checked against every row above and against `src/` before it was spent. Three candidates were **rejected for collisions** and the rejections are recorded because they are the useful part: `operation` (spent — `trade` takes an `operation` parameter), `phase` (spent — the tick pipeline), `depth` (spent — a grant's delegation depth). A fourth, `front`, is spent by §10.1's scheduled weather front, so the mechanic that wanted it is **not built**.
+
+| Term | Means | Never means |
+|---|---|---|
+| **ENGAGEMENT** | ★ the multi-tick battle a **refused demand** becomes, in five states: `MUSTER → CONTACT → CONTEST → BREAK → AFTERMATH`. The verb is `engage` | an operation; a raid (which is the standoff it is fought *inside*); a commitment generally |
+| **HULL** | a warship: a located, owned, priceable asset built from goods and **destroyed permanently** | a ship class in the abstract; a structure; the last tank layer (that is **STRUCTURE**) |
+| **FIT** | the immutable set of MODULES on a HULL, identified by a content hash. Frozen at build | a loadout preset; a doctrine |
+| **MODULE** | one fitted item, consuming CPU/powergrid in one of four slot rows | a code module; a rig |
+| **RIG** | a MODULE in the fourth row, consuming calibration and **destroyed if removed** | any module; a fitting generally |
+| **FORMATION** | a cohort of identical HULLS on one FIT under one order. Identical cohorts coalesce | a fleet; a venture ROLE; a shape on screen |
+| **ECHELON** | how far behind its own line a FORMATION stands: `SCREEN · MAIN · SUPPORT · RESERVE` | a grant's delegation depth (§8 owns *depth*); a rank; a tier |
+| **POSTURE** | a FORMATION's declared closing behaviour: `CLOSE · HOLD · KITE` | an owner's disposition (§13B's MANDATE owns that); a stance toward strangers |
+| **DOCTRINE** | a published, versioned plan naming which FITS fill which roles *(Phase 2, second landing)* | a fit; a charter |
+
+**And four effect names, which are not new concepts but must not drift**: **RANGE** is the five-cell contested distance between two engaged lines (`CONTACT · CLOSE · MID · LONG · EXTREME`) and is *derived*, never declared. **TACKLE** is escape denial; a FORMATION under enough of it is **PINNED**, never "held" (§9's `stageHeld` owns that). **CAPACITOR** is the per-slice energy budget; a FORMATION with none is **operationally dead** and still undamaged. **EWAR** is any effect that degrades an opponent's targeting or application rather than its hull — and combat's remote repair is called **REPAIR**, never *logistics*, because §10 and the depth audit both spend that word on hauling.
 
 **Visibility is one five-tier ladder, used everywhere** — `PUBLIC | PARTIES | SENSED | SEALED | PRIVATE`, defined once in §11.2 with a declassify time per tier. There is no separate venture-visibility enum and no second spelling of any tier. Bond tiers are `OPEN | VOUCHED | BONDED`. "Pulse" and "Window" as horizon names are retired until Phase 2 needs them.
+
+> ### ⚑ How a word gets into code without getting into this table, and why that matters
+>
+> **CLAIM, ANCHOR, CHARGE, RENT and FUEL were live in `src/` before they were canon** — `CLAIM_RENT_BPS`, `CHARGE_GOOD`, `ANCHOR_FUEL_BY_TIER`, `FUEL_STATEMENT`, and `claimLines` as a `PUBLIC` frame field carrying the sovereignty layer's central noun. Two of the five entered the code in a single night.
+>
+> The mechanism is worth naming because it will recur: **`canon-word-per-concept.test.ts` can only police terms this table lists, so an uncanonised word is unpoliced by construction.** The guard is a banned-phrase list over the surfaces an agent reads; a word the canon has never heard of matches nothing and passes. That is not a hole in the test — it is the test's honest boundary, and the way to close it is to canonise the word, which is what the rows above do.
+>
+> **`claim` had drifted onto four concepts** and the resolution is stated in its row: the **sovereignty** sense keeps the bare word, because it is the one that renders (`claimLines`), the one agents act on (`build {kind:"ANCHOR"}`), and the one the canon needs. The insolvency waterfall's creditor claim and the say-do gap's public assertion keep their code identifiers for now and are **named follow-up work**, not part of the Phase 2 change — a sweeping rename inside `ledger/waterfall.ts` and `seal/saydo.ts` alongside a combat landing would put two unrelated risks in one diff. The fourth, `identity/vc.ts`'s W3C Verifiable Credential *claims*, is defensible and stays: it is an external standard's own term for a field in a document we did not design.
 
 ---
 
@@ -401,6 +430,34 @@ Newcomers are protected: a complete if low-margin loop exists entirely inside th
 
 ---
 
+## 9A. The engagement — combat, and what a refused demand becomes
+
+*Phase 2. Depth in `PASS-SHIPS-COMBAT.md` + `-extended.md`; this section is the canon over both.*
+
+§9's standoff already had two sides, a join, a clock and a force reading. What it did not have was a **fight** — force was a count of hands, which §16 admits is *"a scalar-plus-modifiers model"* and says §8's "never one `combat_power` number" is a Phase 2 constraint. This is that constraint, discharged.
+
+**An engagement is what a refused demand becomes.** A `demand` answered `FIGHT` opens one at the same stage, inside the same 24-tick window: `MUSTER` (6, the only window a HULL may be committed in) → `CONTACT` (1, the lines meet and nobody fires) → `CONTEST` (12) → `BREAK` (2, only what tackle still holds may be shot) → `AFTERMATH` (1). Eight deterministic resolution slices per tick. **22 ticks total, and that it fits inside 24 is asserted at construction** — an engagement that outlived its standoff would let the force reading count hands a wreck had already taken off the board.
+
+**Nobody has to choose it (A14).** The world spawns raids on a published schedule and a world raid brings **its own published fleet** — a fixed roster on a fixed fit, owned by nobody, bribeable by nobody, and computable exactly by the defender in advance. So combat happens on the clock, and every agent-initiated demand is a choice *on top of a floor* rather than the only way in. This is the axiom every autonomous-cast combat layer fails first, and it fails invisibly: the code works and the sim shows zero battles.
+
+**Composition beats headcount, through hands and nothing else.** A wrecked HULL sends its hand to `RECOVERING`; §9's force reading counts hands *at resolution*. So losing the battle loses the force reading automatically, with no second arithmetic and no change to §9's. **Hands are never destroyed** (§6.2) — the permanent loss is the hull, its modules and its cargo, and the cost in presence is time.
+
+**Five roles, and each one's multiplier is attackable with at least two counters:** `LINE` · `TACKLE` · `REPAIR` · `EWAR` · `COMMAND`. Repair is broken by draining its capacitor, damping its lock, or out-alphaing it. Tackle is broken by killing the frigate or out-ranging it. Command is broken by shooting the ship that projects it — it must be committed and targetable. A role is **earned from what is fitted, never declared**, so a doctrine cannot lie about its coverage.
+
+**The fitting puzzle is the foundation** (four slot rows × CPU × powergrid × calibration × hardpoints × capacitor, one published stacking curve, four damage types against three tank layers). It is a **free read-only service**: simulating a fit costs no action and returns *the exact profile the resolver will use* — the same arithmetic, not an estimate. A fit is **frozen at build**, which is the strongest available version of §1 MUST-8's rule that combatants must not morph into the exact counter after seeing the enemy.
+
+**A HULL is built from `ration` + `fuel`, and the second one is Frontier-only.** So a fleet is something somebody hauled, and territory acquires the military reason the depth audit graded it as lacking. No hull may be built in the Commons: a shipyard inside a place nobody may attack would make the sanctuary the arsenal.
+
+**One verb, no modes: `engage`.** It commits a hull with an echelon, a posture, a primary policy and a **`withdraw_if` stop condition** — and a later `engage` amends the orders (A3: *creating or amending an intent costs an action; its routine ticks do not*). Retreat is a threshold, not an act, which is what makes an offline agent's fleet competent and makes its withdrawal promise checkable against what it did.
+
+**Own state exact, hostile state banded.** My formations carry exact EHP, capacitor and tackle. Theirs carry hull class, hull count, echelon, and **the effects that have landed on me** — never their fit, EHP or capacitor, because a fit is a manifest and §11.2 gives a manifest to `SENSED`. The forecast is `{p10, p50, p90}` plus **named swing factors**, never a percentage.
+
+**Pixel signature (A13) — THE BATTLE LINE.** Two lines of bars facing each other across a **gap that narrows or widens every tick**; that gap is the range race and it is the most legible thing on the board. Bars stack in four rows by echelon, width ∝ hull count, **height ∝ EHP fraction** so a formation thins rather than vanishing. Four overlays for the four multipliers: a **repair tether** to whatever it is mending, a **tackle chain**, a **dark bar** for an empty capacitor (undamaged and operationally dead), a **command halo**. Wreck marks persist at the stage. Sound off and text off, a viewer reads: how many on each side, who is winning the range, who cannot leave, whose repairs stopped, who just died.
+
+**Deliberately deferred, each with its reason:** refitting (the immutable fit is the point) · strategic mobility, cynos and capitals (the pass gates all of it behind *"add only after counters work"*) · the lateral `front` axis (it appears in none of the pass's five protected relationships, and §10.1 spends the word) · drones, bombs, T2/T3 and module quality bands (SHOULD or later in the pass's own order).
+
+---
+
 ## 10. The economy
 
 **Its job is to make ventures necessary, not to be a subject.** Four goods, one build step, one order book per constellation.
@@ -538,7 +595,7 @@ world      move · scan · extract · refine · build · haul · graduate
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit
 market     trade
-raid       demand · yield · flee · fight · join
+raid       demand · yield · engage · fight · join
 levy       deliver · set_delivery_intent
 say        claim · deny
 ballot     vote — one verb, three ballots: Levy allocation (§5.3), seizure (§14),
@@ -549,6 +606,8 @@ org        form · charter · propose
 **`elect` is the verb A6 needs and the build proved was missing.** The payer states what it will pay on each elective role — `IN_FULL`, or an amount — and **may restate it until the freeze.** It was briefly carried as a parameter on `sign`, which locked the choice at signing; two consequences made that untenable. On a share role the real due is unknown until resolution, so electing at signing is guessing rather than choosing. And more seriously, **the moment of betrayal was not expressible**: A6's signature moment is authority abused *at the moment of maximum leverage*, and if the choice is fixed at signing there is no such moment. §7.6's falsification test — *is the elective part always honoured?* — cannot even be asked of a payer that was never offered the choice at the time it mattered. Restatable-until-freeze is what makes the elective half a real choice "every time" rather than once. The freeze is the deadline because §5.1 forbids a discretionary decision inside the settlement window.
 
 *Budget note (§17): `publish_offer`, `message` and `elect` are added; `venture.counter`, `say.endorse` and `say.retract` are removed. `counter` is now a `message` type rather than its own verb; the mandatory 140-character `reason` already yields the entire ticker corpus, so `endorse`/`retract` bought nothing but a moderation surface. `vote` is promoted out of `org` because the design now has three ballots and §3 permits one word per concept — a ballot is a ballot. Net 0, at **39 of 40**. `elect` spends the last-but-one slot deliberately: A6 is the core loop and it was unreachable without it.*
+
+**`engage` replaced `flee`, and that is what Phase 2 cost at the verb budget.** §17's ceiling is 40 and *adding one means removing one*, so combat did not get a new slot — it took `flee`'s. That removal is independently correct: `flee` was in this list, had **no handler**, and `api/verbs.ts` already carried the argument for never giving it one — *"flee is not a second verb: move a hand off the stage and the raid misses; `move` already does this."* A canon verb with no handler is this project's signature defect arriving on the rules surface itself: it reads as one of the 40 in every summary and is unreachable. `engage` is the single live-combat verb `PASS-SHIPS-COMBAT-extended` §10 MUST-2 asks for, spelled to match its noun (§3's ENGAGEMENT) because the pass's own `operate` collides with `trade`'s `operation` parameter. **Still 40 of 40.**
 
 **`graduate` spends the last slot, and a live playtest is why.** Eight probes played the running world and the predation probe reported that it *"could not get raided, could not resist, and could never have seen a raid coming, because in this build no raid can arrive at anyone."* Enrolment always seats in the Commons (§6.1), a Commons holding grants Commons-bound hands only (§4.1), and nothing moved a holding — so **A8's permanent floor had become the entire world**: predation shipped and could never touch a player, the Marches and the Frontier were decorative, and there was no risk/reward choice anywhere in the game. `graduate` moves your holding **one lane outward, to an adjacent MARCHES or FRONTIER system**, at §6.3's price (currency plus manufactured goods, both into named sinks). It never accepts a COMMONS destination: leaving the floor is the single most consequential thing a newcomer does and it must be a decision, not a drift. One lane at a time is what keeps §4.2's topology real — the Frontier stays two constellation hops away and the Marches stay unavoidably in between. It is `world`, not `office` or `venture`, because it is the same concept as `move` applied to the other body §6 gives you, and §3 keeps them distinct words because a hand and a holding are distinct things. **Now at 40 of 40: the budget is spent, and the next verb costs a removal.**
 
@@ -775,8 +834,15 @@ Outbound only — there is no inbound SMTP, so mail is a *delivery* channel, nev
 ### Phase 1 — territory and the economy worth holding
 Sovereignty hub, SDM (**with super-linear per-principal capital weighting**, or many-small beats one-large, which is the Sybil signature), convex upkeep, finite upgrades, resident charter, raidable collectors; objective-based siege; war campaigns; the industrial interlock; economic geography; the first season boundary and finale.
 
-### Phase 2 — combat depth *(optional, possibly forever)*
-The six-phase operation model with fitting, application, tackle, logistics, EWAR, capacitor, doctrines. Phase 0–1 conflict resolves on **committed hands, composition, supply and position** — which *is* a scalar-plus-modifiers model, and §8's "never one `combat_power` number" is a Phase 2 constraint, not a Phase 0 one. Say so out loud; the prior research argues this layer may never be needed.
+### Phase 2 — combat depth *(no longer optional; the kernel has landed — see §9A)*
+
+> **The "optional, possibly forever" framing is retired.** It appeared in three docs and had become the standing reason not to start. The owner overrode it, and the kernel is built: five engagement states, eight resolution slices, the fitting puzzle, four damage types, tackle, repair, EWAR, capacitor, command coverage, permanent hull loss, and a world fleet so that none of it depends on an agent choosing conflict.
+
+**Landed:** §9A in full — the engagement over a refused demand, hulls built from `ration + fuel`, five roles each with two counters, `engage` as the one live-combat verb (paid for by removing `flee`), and the battle line as the pixel signature.
+
+**Next, in the pass's own dependency order:** DOCTRINES as a published versioned object (fits × role quotas × replacement terms, and the espionage surface that comes with them) · T2 specialist hulls and drones · bombs, MJD, covert scouting · the lateral `front` axis if flanking is wanted, which needs a word §10.1 does not already spend · **refitting**, which is the one deferral that changes the strategic layer rather than adding to it. Then §9 of the pass — cynos, jump drives, capital escalation — which the pass itself gates behind *"add only after counters work."*
+
+Phase 0–1 conflict still resolves on **committed hands, composition, supply and position** wherever no hull is present, and that path is unchanged: §9A couples back into it through hands going `RECOVERING`, not by replacing its arithmetic.
 
 ### Phase 3 — the risk market, metagame, scale
 All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfall, mutuals, quota share, XoL, cat bonds, solvency, receivership. Expect to arrive having already watched agents *invent* risk pooling and be formalising what they built. Plus compartments, evidence-bearing exports, coalition inference, propaganda, market warfare, the replay UI, region sharding, the Deeps, capitals, tournaments.

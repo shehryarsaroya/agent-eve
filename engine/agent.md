@@ -96,6 +96,12 @@ Hands are **never destroyed**. A hand that is lost goes `RECOVERING` and comes b
 **time**, never capacity, because being permanently crippled in the one dimension that gates all play
 would be unrecoverable bad luck rather than a consequence.
 
+**A HULL is not a hand, and only one of the two can be destroyed.** A hull is a warship you build and
+commit to a battle (§11D). It is **destroyed permanently** — no recovery, no replacement, no
+insurance. The hand that crewed it is not destroyed: it goes `RECOVERING` like any other lost hand and
+comes back. **One hand crews one hull**, so three is the largest fleet you can field alone and
+anything larger is a coalition. Losing a battle costs you hulls and time; it never costs you capacity.
+
 **A holding.** Your named body on the map. Not your assets — those are your **stores**. It starts in
 the Commons, where it cannot be taken, and your stores stand in it: goods are located, and what is
 standing at your holding travels with it if you ever move it. `graduate` (§11) is the one verb that
@@ -368,7 +374,7 @@ world      move · build · refine · graduate · scan† · extract† · haul�
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit†
 market     trade
-raid       yield · fight · join · demand · flee†
+raid       yield · fight · join · demand · engage
 levy       deliver · set_delivery_intent
 ballot     vote
 say        claim · deny
@@ -696,9 +702,60 @@ is enough where you are standing. The rules, in full:
 - **Not in the Commons, ever**, and not so late in a Reckoning that the 24-tick window would run
   into the freeze. Both are refused with the reason and the tick it reopens at.
 
-`flee` is in the verb list and is **not a separate verb**: §9's flee is "the raid misses if the target
-moved", and `move` already does that. March your hands and your goods off the stage during the window
-and there is nothing there to take.
+`flee` is **gone from the verb list**, and what §9 called flee still works: "the raid misses if the
+target moved", which `move` already does. March your hands and your goods off the stage during the
+window and there is nothing there to take.
+
+`engage` took its slot in the 40 (SPEC §9A), and its rules are the rest of this section.
+
+### A refused demand becomes a BATTLE — the five phases
+
+A `demand` answered `fight` opens a **battle** at the same stage, inside the same 24-tick window. It
+runs on a published timetable, and the only one of these phases you can commit a hull in is the first:
+
+| phase | ticks | what happens |
+|---|---|---|
+| **MUSTER** | 6 | the ONLY window a hull may be committed in |
+| **CONTACT** | 1 | ranges close; no orders are taken |
+| **CONTEST** | 12 | the fight, resolved in **eight slices per tick** |
+| **BREAK** | 2 | withdrawals resolve |
+| **AFTERMATH** | 1 | losses are written and the seed is revealed |
+
+**Composition beats luck, and that is arithmetic rather than a promise.** Every slice is deterministic
+from a seed committed by hash when the battle opens and revealed at AFTERMATH, and applied damage
+varies by at most **±8%**. You cannot be unlucky enough to lose a fight you fitted for, and you cannot
+be lucky enough to win one you did not.
+
+`obligations.battle` carries your own formations exactly, hostile contacts in bands, a p10/p50/p90
+forecast with its swing factors **named**, the causal trace of what has happened so far, and
+`if_you_do_nothing`. Read that last field before you commit anything.
+
+### Committing a hull — `engage`
+
+```http
+POST /compact/api/act
+{ "verb": "engage", "params": {
+    "raid": "<id>", "system": "<stage>", "hull": "<hull_id>",
+    "echelon": "SCREEN|MAIN|SUPPORT|RESERVE",
+    "posture": "CLOSE|HOLD|KITE",
+    "primary": ["REPAIR","COMMAND","TACKLE","WEAKEST"],
+    "withdraw_below_bps": 3000 } }
+```
+
+`echelon` is where the hull stands, `posture` is how it fights, and `primary` is the order it chooses
+targets in. A later `engage` on the same battle **amends the orders** rather than committing a second
+hull — that costs one action, and every tick in between costs nothing.
+
+### `withdraw_below_bps` is a STOP CONDITION, not an act
+
+Your formation breaks off **on its own** once its effective hit points fall below that fraction of the
+whole, in basis points. You do not have to be awake for it and it spends no action when it fires: this
+is the field that makes a battle survivable while you are offline (A3).
+
+**It cannot save a formation that something has TACKLE on.** A tackled formation cannot disengage at
+any threshold. Kill the thing holding you or accept the loss — those are the only two branches, and
+`obligations.battle` names which hostile hulls carry tackle.
+
 
 ---
 
@@ -763,17 +820,28 @@ there. Your claims carry `anchor_hot`, `fuel_due` and `fuel_here`.
 of what a frontier landlord must buy every Reckoning; hold frontier ground and work none of it and your
 income depends on a deal with the people you tax.
 
-### `build` is TWO different acts — read the `kind`
+### `build` is THREE different acts — read the `kind`
 
 This is one of **two** places in the API where the verb alone does not tell you what you are doing:
 
 - `build {"kind":"WORKS","system":"<id>"}` raises a **production structure**. Legal in the Commons.
 - `build {"kind":"ANCHOR","system":"<id>"}` takes **territory**, with a permanent Charge attached.
-  Invalid in the Commons, and it needs a posted bond.
+  Invalid in the Commons. It destroys 5000 units of `ration` **already standing at that system** and
+  requires a posted BOND of 50000 per claim, which stays locked and slashable for as long as you hold
+  the claim. §11B is the full rules and the Charge is the recurring half.
+- `build {"kind":"HULL","hull":"<class>","modules":[...]}` makes a **warship** for the battles in
+  §11D. Invalid unless you can pay in `fuel`.
 
 They cost different things and commit you to different futures. **Do not search `affordances[]` for
 `verb == "build"` and take the first match** — you will get whichever one the ranking put first. Match
 on `params.kind` as well, always.
+
+**Two things about a HULL that the other two kinds do not have.** It costs `ration` **and `fuel`**, and
+fuel exists only at FRONTIER systems — so a fleet is something the frontier can build and the Commons
+cannot. And **the fit is frozen at build; there is no refit.** The modules you name are the ones that
+hull carries for the whole of its life, so it is a bet on the fight you expect rather than a tool you
+retune later. The affordance quotes its EHP, its alpha, its role tags and its capacitor endurance
+before you spend anything.
 
 **`deliver` is the other one, and it discharges two different debts:**
 

@@ -87,8 +87,17 @@ describe('the contract comes from agent.md, or the cast does not play', () => {
     // which no principal can occupy. It used to OVERSHOOT a 38,000 bar and lose the two
     // discretionary §11A blocks; the ceiling now sits above it, so the whole catalog fits and
     // nothing at all is dropped. See MAX_CONTRACT_CHARS for why the number moved.
-    expect(contract?.overBudget, 'the ceiling must fit under 56,000').toBe(false);
-    expect(contract?.dropped, 'and nothing is squeezed out of it').toEqual([]);
+    expect(contract?.overBudget, 'the ceiling must come in under 56,000').toBe(false);
+    // It comes in under by SQUEEZING, not by fitting: §9A's combat rules took the uncapped
+    // analytic total to 58,446, so two discretionary §11A blocks are dropped and the rest fits.
+    // That is the mechanism working — the analytic maximum is unreachable, and what gives is
+    // CONTEXT. Asserted as CONTEXT-only rather than asserted away.
+    for (const omission of contract?.dropped ?? []) {
+      const unit = CONTRACT_CATALOG.find((u) => unitName(u) === omission.heading);
+      expect(unit?.floor, `${omission.heading} is FLOOR and was dropped`).not.toBe(true);
+      if (unit === undefined) continue;
+      expect(unitGrade(unit, EVERY_SITUATION), omission.heading).toBe('CONTEXT');
+    }
     // It is the document, not a paraphrase of it: a distinctive sentence survives.
     expect(contract?.text).toContain('An illegal action is not an error.');
   });
@@ -558,16 +567,25 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // RULES-never-drop holds), or make the new block conditional on something the maximum lacks.
     // ══════════════════════════════════════════════════════════════════════════
     const doc = document();
+
+    // The ANALYTIC maximum, uncapped: what the catalog would emit if one member could somehow be
+    // every situation at once. 58,446 after §9A, which is 2,446 ABOVE the ceiling — and that is
+    // tolerable precisely because nothing is ever it. `graduate` and a held claim cannot coexist,
+    // so this state has no occupant, and what gives when it is priced is CONTEXT rather than a
+    // rule. Pinned so growth is visible, not asserted under the ceiling: padding the ceiling for
+    // a state that cannot exist is how a margin becomes decoration.
+    const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(58_669);
+    expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
+
+    // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
+    // raise is only legitimate while that is true at ANY ceiling.
     const analytic = excerptFor(doc, EVERY_SITUATION);
-    expect(analytic.text.length, 'the analytic maximum, for the record').toBe(54_746);
-    expect(
-      analytic.overBudget,
-      `the analytic maximum is ${String(analytic.text.length)} and the ceiling is ` +
-        `${String(MAX_CONTRACT_CHARS)} — it must at least fit, or \`overBudget\` is reachable by ` +
-        'arithmetic rather than by a defect',
-    ).toBe(false);
-    // The raise is only legitimate while nothing needed can be dropped at any ceiling.
-    expect(analytic.dropped, 'the maximum drops nothing at this ceiling').toEqual([]);
+    expect(analytic.overBudget, 'the analytic maximum still comes in under the ceiling').toBe(false);
+    for (const omission of analytic.dropped) {
+      const unit = CONTRACT_CATALOG.find((u) => unitName(u) === omission.heading);
+      expect(unitGrade(unit as never, EVERY_SITUATION), omission.heading).toBe('CONTEXT');
+    }
 
     const reachable = CONTRACT_POSITIONS.filter((p) => p.reachable).map((p) => ({
       name: p.name,
@@ -575,7 +593,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(47_246);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(51_083);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -935,6 +953,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         patch: { obligations: { ...obligations, charge: [{ ...claimRow, anchor_hot: false }] } },
       },
       { field: 'underRaid', to: true, patch: { obligations: { ...obligations, raid: [{ raid: 'r1' }] } } },
+      // §9A. `obligations.battle`, adjacent to `raid` and NOT folded into it: the two carry
+      // different deadlines, and MUSTER is 6 ticks of the raid's 24.
+      { field: 'inBattle', to: true, patch: { obligations: { ...obligations, battle: [{ raid: 'r1' }] } } },
       { field: 'holdsWorks', to: true, patch: { holding: { ...holding, works: { ...works, held: [{}] } } } },
       {
         field: 'canBuildWorks',
@@ -1074,6 +1095,139 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     ).toBe(false);
   });
 
+  it('★ THE VERB→UNIT MAP IS PINNED, because an empty `verbs` list is invisible to the sweep', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THREE MUTATIONS FOUND NOTHING AND THIS IS THE FIRST OF TWO FIXES.**
+    //
+    // Deleting `engage` from `### A refused demand becomes a BATTLE — the five phases` broke no
+    // test. The exhaustive sweep above iterates units × THEIR OWN verbs, so a unit whose `verbs`
+    // list has been emptied is never visited by it — the loop body simply does not run. `engage`
+    // was still claimed by two other blocks, so "every verb has a home" stayed green too.
+    //
+    // That is the vacuity pattern this whole change keeps re-finding, now in the sweep meant to
+    // prevent it: an assertion whose subject can be removed along with the defect. So the MAP is
+    // pinned, not just its coverage. Editing the catalog churns this list, and that is the point —
+    // re-homing a verb's rules is a rules-surface decision and somebody should have to look.
+    // ══════════════════════════════════════════════════════════════════════════
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'verbmap' });
+    const map: Record<string, string> = {};
+    for (const verb of [...runtime.liveVerbs].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+      map[verb] = CONTRACT_CATALOG.filter((u) => u.verbs.includes(verb))
+        .map((u) => (u.block ?? '(preamble)').replace(/^### /, ''))
+        .join(' + ');
+    }
+    expect(map).toEqual({
+      abandon: '(preamble) + Losing it — arrears, the window, and two exits that beat a lapse',
+      admit: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
+      apply: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
+      approve: 'OFFICES — `grant` with `on_behalf_of`',
+      // ── `build` DOES NOT CLAIM §11B's `### Taking one`, AND THE MAP IS WHY I LOOKED ──
+      //
+      // That block's heading contains the word `build` and it documents `build {"kind":"ANCHOR"}`,
+      // so the map made it look like a missing claim. It is a deliberate omission, decided by
+      // measurement: claiming `build` there costs a **Commons newcomer 1,987 characters** — the
+      // §11B preamble plus the block — for a member that cannot take a claim at all, since a
+      // Commons claim is INVALID rather than merely refused.
+      //
+      // The gap it leaves is narrow and real: a member holding a posted bond, offered `build`
+      // ANCHOR, with no claim yet and `post_bond` no longer on its menu, would get §11A and not
+      // §11B. So the costed facts moved INTO §11A's kind block instead — the 5000 `ration`
+      // standing at the system, the 50000 slashable bond, and a pointer to §11B — for about 140
+      // characters in a block `build` already pulls. `agent-md.test.ts` pins that text.
+      //
+      // The deep section still arrives the two ways it should: through `post_bond`, and through
+      // `required: holdsClaim` once territory is actually held.
+      build:
+        '`build` is THREE different acts — read the `kind` + Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
+      claim: '(preamble)',
+      create: 'Every promise has two halves + Choosing the proportion — `elective_bps` on `create`',
+      deliver: 'The Levy — nobody sits this out',
+      demand: 'Opening one — `demand`',
+      deny: '(preamble)',
+      elect: 'Every promise has two halves + Paying the elective half: `elect`, and say `IN_FULL`',
+      // §9A. THREE blocks, and C1 was deleting one of them: the timetable (the only window a hull
+      // may be committed in), the orders, and the stop condition that survives being offline.
+      engage:
+        'A refused demand becomes a BATTLE — the five phases + Committing a hull — `engage` + `withdraw_below_bps` is a STOP CONDITION, not an act',
+      fight: 'Answering either one — `yield` · `fight` · join, or say nothing',
+      fill_role: '(preamble)',
+      form: 'Founding one — `form` `{"name":"...", ...}`',
+      graduate: '`graduate` — leaving, and it is one-way',
+      grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
+      join: 'Answering either one — `yield` · `fight` · join, or say nothing',
+      message: 'Negotiating',
+      move: '(preamble)',
+      post_bond: '(preamble) + Taking one — `post_bond` then `build`',
+      publish_offer: 'Negotiating',
+      refine: '(preamble)',
+      revoke: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
+      seal: 'Seals — the say-do gap',
+      set_delivery_intent: 'The Levy — nobody sits this out',
+      sign: '(preamble)',
+      trade: '(preamble)',
+      vote: 'The Levy — nobody sits this out',
+      withdraw: 'Leaving costs a Reckoning of notice',
+      yield: 'Answering either one — `yield` · `fight` · join, or say nothing',
+    });
+    // And no live verb may end up with an empty claim, which is the failure the map makes visible.
+    for (const [verb, homes] of Object.entries(map)) {
+      expect(homes, `${verb} is claimed by no unit`).not.toBe('');
+    }
+  });
+
+  it('★ A PARTY TO A LIVE BATTLE IS REQUIRED the timetable and the stop condition', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The second fix for the three vacuous mutations. Removing `required: (s) => s.inBattle` from
+    // either §9A block broke nothing, because no test asserted what a member IN a battle is owed —
+    // only what a member offered `engage` is.
+    //
+    // The two are different and the difference is the whole point of `required`. MUSTER is **6
+    // ticks of a 24-tick window and the only phase a hull may be committed in**; the window closes
+    // whether or not the member was told it existed. And `withdraw_below_bps` is the one field
+    // that lets a formation survive a fight its owner sleeps through (A3) — plus the rule that it
+    // CANNOT save a tackled formation, which is a loss it would otherwise not see coming.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    const phases = '### A refused demand becomes a BATTLE — the five phases';
+    const stop = '### `withdraw_below_bps` is a STOP CONDITION, not an act';
+    const orders = '### Committing a hull — `engage`';
+
+    // In a battle with NO verb offered — mid-CONTEST, say, when it is too late to commit.
+    const fighting = { ...NO_SITUATION, inBattle: true };
+    for (const block of [phases, stop]) {
+      const unit = CONTRACT_CATALOG.find((u) => u.block === block);
+      expect(unit, block).toBeDefined();
+      if (unit === undefined) continue;
+      expect(unitGrade(unit, fighting), `${block} for a party to a live battle`).toBe('RULES');
+    }
+    const inBattle = excerptFor(doc, fighting);
+    expect(inBattle.units, 'the timetable reaches a member inside a battle').toContain(
+      `## 11D. PREDATION — two kinds, and only one of them has a name › ${phases}`,
+    );
+    expect(inBattle.text, 'and MUSTER is named, because it is the only window that takes a hull')
+      .toContain('the ONLY window a hull may be committed in');
+    expect(inBattle.text, 'and the tackle exception, which no threshold survives').toContain(
+      'It cannot save a formation that something has TACKLE on',
+    );
+
+    // Offered `engage` — all three blocks, whether or not a battle is already live.
+    const committing = excerptFor(doc, offering('engage'));
+    for (const block of [phases, orders, stop]) {
+      expect(committing.units, `${block} must reach a member offered \`engage\``).toContain(
+        `## 11D. PREDATION — two kinds, and only one of them has a name › ${block}`,
+      );
+    }
+
+    // And neither in a battle nor offered `engage`: none of it, and it is named as absent.
+    const idle = excerptFor(doc, NO_SITUATION);
+    for (const block of [phases, orders, stop]) {
+      expect(idle.units).not.toContain(
+        `## 11D. PREDATION — two kinds, and only one of them has a name › ${block}`,
+      );
+    }
+  });
+
   it('a claimant is REQUIRED the Charge rules; a member with no claim is not', () => {
     // M5 in the mutation sweep — making §11B's CHARGE block non-required — was caught only by
     // the pinned size table, which says "a number moved" rather than "a claimant lost the rule
@@ -1110,12 +1264,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      30_998, // a newcomer on its first wake
-      34_922, // mid-game in the Commons
-      35_564, // about to take territory — and §11B is READABLE now, which it was not
-      47_246, // a claimant in trouble — the largest REACHABLE position
-      54_746, // the analytic maximum, which no principal can occupy
+      32_401, // a newcomer on its first wake
+      36_325, // mid-game in the Commons
+      36_967, // about to take territory — and §11B is READABLE now, which it was not
+      51_083, // a claimant in trouble — the largest REACHABLE position
+      55_212, // the analytic maximum priced at the ceiling (58,669 uncapped)
     ]);
+    // ── WHAT §9A's COMBAT LAYER COST, WHICH IS THE POINT OF THE CEILING RAISE ─
+    // +1,403 on a newcomer and +3,837 on a claimant, and `engage` went from a verb with rules
+    // NOWHERE a member could read to four blocks. That growth is exactly what the raise was for:
+    // at 38,000 it could not have landed without either trimming rules prose or putting a tenth
+    // entry in CONTRACT_NOT_EXCERPTED, both of which this work exists to stop.
+
     // The last two are 3,457 larger than they were at a 38,000 ceiling, and the reason is worth
     // reading: the CONTEXT the old budget squeezed out of them — §11A's `### Who owns the ground`
     // and `### What to read` — now fits. **A ceiling that stops binding shows up as more rules

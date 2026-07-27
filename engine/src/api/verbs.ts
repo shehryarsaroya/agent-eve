@@ -77,7 +77,7 @@ export const CANON_VERBS: readonly string[] = Object.freeze([
   // raid
   'demand',
   'yield',
-  'flee',
+  'engage',
   'fight',
   'join',
   // levy
@@ -139,13 +139,16 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   // that prices sit-and-collect out — landed with the raid initiator; `test/api/verbs.test.ts`
   // fails by name if a live verb keeps an arrival note, which is what removes the guesswork.
   //
-  // `flee` stays, and it is the one entry here that is not a gap. §9's flee is "targeting
-  // misses if the target moved", which `move` already expresses, so a second spelling of one
-  // action would be §3's forbidden second concept. It cites step 12 because that is where the
-  // mechanic actually arrived — predation — and the rest of the sentence says plainly that no
-  // further step is coming, which is more useful to an agent than a date it should stop waiting
-  // for.
-  flee: 'step 12 (predation, live) — and flee is not a second verb: move a hand off the stage and the raid misses; `move` already does this',
+  // ── `flee` USED TO SIT HERE, AND ITS REMOVAL IS WHAT PAID FOR `engage` ────
+  //
+  // The note it carried said, correctly: *"flee is not a second verb: move a hand off the stage and
+  // the raid misses; `move` already does this."* So it was a canon verb with no handler and an
+  // argument for never getting one — which is this project's signature defect arriving on the verb
+  // budget itself: it read as one of the 40 in every summary and was unreachable.
+  //
+  // §17's ceiling is 40 and *"adding one means removing one"*. Phase 2 needed a live-combat verb, so
+  // `flee` came out and `engage` went in. Net 40/40, one hole closed, one layer opened. There is no
+  // not-live note for `engage`: it is live from the tick it landed.
   charter: 'step 9 (syndicates)',
   propose: 'step 9 (syndicates)',
 });
