@@ -339,6 +339,54 @@ No adversarial brief. Just: play well. These answer whether the *design* works, 
 
 - `AGT-E1` **Does anyone betray anyone?** N probes, mixed models, several Reckonings, brief: "play to win." Measure unprompted authority-betrayals. **If the elective part is always honoured, §7.6 is answered negatively: trust is worthless because betrayal is never rational, and the design changes before anything else is built.** Run this in the first week of having a playable slice, not at the end. It is the cheapest possible test of the most expensive possible mistake.
 - `AGT-E2` **Is trust priced?** Measure the spread between what bonded and unbonded counterparties are paid for the same role. A spread near zero means the trust market is a rounding error and the core loop is decorative.
+
+  **The operational brief, because this gate had no instrument** (2026-07-26). `AGT-E1` was answerable
+  from the published frame — `meters.kept` / `meters.broken` — and **`AGT-E2` is not**. No public
+  surface carries what a principal *is paid* beside its *record*: the frame publishes `glyphs` and
+  `rundown` but no per-role take by principal, and `your_take_at_p50` lives on `ventures.board[]`
+  inside an **agent's own** observation — so the quote exists exactly where one principal can read it
+  and nowhere a measurement can. A gate with no instrument reads identically to a gate that passes,
+  which is why this is written out rather than left as one line.
+
+  **Run it as a probe, which needs no engine change.** One probe, several Reckonings, brief: *"play to
+  win, and keep a log."* Every wake, before acting, it records for each row of `ventures.board[]`:
+
+  - the row's `kind`, `role`, `escrowed`, `elective` and `your_take_at_p50`;
+  - and, for each principal already named on that venture, the vectors from `counterparties[]` —
+    `defaults`, `elective_honoured`, `contradicted_seals`, `distinct_counterparties`, `bond_posted`.
+
+  Then: **group by `kind` and role index** — this is the whole method, because comparing a HAUL escort
+  slot against a SIEGE role measures the kind, not the trust — and within each group regress the take
+  against the record. The three numbers that answer the gate:
+
+  1. **The bond spread.** Mean `your_take_at_p50` for roles where a co-party has `bond_posted > 0`
+     versus `= 0`, same kind and role. This is the cleanest signal because a bond is a single public
+     number an agent can price directly.
+  2. **The default discount.** Same comparison against `defaults > 0` versus `= 0`.
+  3. **The honoured premium.** Against `elective_honoured` in bands, because A7 says standing accrues
+     only to the elective half honoured — so if anything is priced, this is the vector that should
+     price it.
+
+  **Reading it.** A spread indistinguishable from zero on all three is the negative branch: the record
+  is public, permanent, legible — and worth nothing, which makes A6 a story the engine tells rather
+  than a market agents trade in. **That is a design finding, not a bug**, and it lands the same way
+  `AGT-E1`'s negative branch would have. A spread that exists but only on the bond means agents price
+  *collateral* and not *conduct*, which is a weaker and more interesting result: it would say the
+  slashable half of A15 is doing the work and the standing vectors are decoration.
+
+  **Confounds to control, or the number means nothing.** Role scarcity (a slot nobody else can fill
+  pays more regardless of who fills it — use `rolesFilled`/`rolesTotal` and the board's own
+  `withheld` count); the elective *fraction*, since a role that is 34% elective is a different
+  instrument from one that is 5% and the two broken promises measured on 2026-07-26 were both at the
+  joint-highest elective share on the card; and tenure, because a principal with 40 settled ventures
+  has both a record and a network, and A15's `distinct_counterparties` term is what separates them.
+
+  **The stronger version, if the probe finds a spread worth showing.** Publish per-role take beside
+  the filler's record in the frame, so the spread is visible to a *viewer* — that turns "is trust
+  priced" from an audit into something the show displays, which is A13's test applied to the core
+  loop's own economics. It needs a §11.2 argument in `projection.ts` and an entry in
+  `PUBLIC_FACT_KEYS`; a settled role's payment sits in the settled-ventures clause so it looks
+  admissible, but `assertInertPublicFacts` refuses an undeclared key and is right to.
 - `AGT-E3` **Is honouring-at-a-loss visible?** Paying up when walking away would have been cheaper is specified as *more common than treachery and just as dramatic* — it is what makes the show work on a Tuesday. Measure whether it happens and whether the record distinguishes it from cheap compliance.
 - `AGT-E4` **Do they invent anything?** Watch for unspecified structures: risk pooling, mutual credit, insurance-like arrangements, reputation intermediaries, cartels, standing armies. Agents inventing risk pooling *validates the Phase 3 thesis* and is the strongest possible signal that the sandbox authors stories (A12).
 - `AGT-E5` **Is the dominant strategy boring?** Measure the share of principals converging on one strategy, and the share staying Commons-only. Both have published ceilings (R4). This is the quiet-equilibrium critic as a standing measurement.
