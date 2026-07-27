@@ -90,6 +90,19 @@ export class Book {
       .sort((a, b) => compareIds(a.id, b.id));
   }
 
+  /**
+   * Every WORKS this world has ever raised, razed ones included, canonical order.
+   *
+   * The only accessor that does not filter `razed`, and it exists for the world-memory projections
+   * (`frames/memory.ts`). Every other reader wants the live set because it is asking a question about
+   * the present — what extracts, what divides a yield, what a principal holds. A place is named for
+   * whoever first opened it whether or not that WORKS still stands, so history needs the whole book,
+   * and the book keeps ended rows precisely so it can be asked (A5 has no opt-out).
+   */
+  everInOrder(): readonly WorksRecord[] {
+    return [...this.rows.values()].sort((a, b) => compareIds(a.id, b.id));
+  }
+
   /** Every live WORKS, canonical order. What PRODUCE walks. */
   liveInOrder(): readonly WorksRecord[] {
     return [...this.rows.values()].filter((w) => !w.razed).sort((a, b) => compareIds(a.id, b.id));

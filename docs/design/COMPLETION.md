@@ -74,8 +74,8 @@ surface is full rather than partial. Adding a mechanic now means spending a verb
 | Replay determinism — identical `state_hash` | ✅ tested |
 | **Watchable (2):** ≥1 authority-betrayal occurs unprompted, replay shows grant + warning + seal + deed | ⚠️ **betrayal yes, grant no** — `AGT-E1` measured `kept 22 · broken 3` (12%), but via ventures; no *grant* has ever been issued in the live world, so the A6 replay artifact does not exist yet |
 | **Remembered:** permanent ruin at a fallen holding | ✅ implemented |
-| **Remembered:** Hall of Fame projection | ❌ **not built** |
-| **Remembered:** places named after the principal that first developed them | ❌ **not built** |
+| **Remembered:** Hall of Fame projection | ✅ built — 4 rows on the frame, honesty mutation-tested |
+| **Remembered:** places named after the principal that first developed them | ✅ built — razed WORKS included, so a place keeps its founder's name |
 | **Watchable (the gate):** three humans watch one Reckoning and each name a character, say who they rooted for, and what was at stake — *without reading the rules* | ❌ **never run.** Needs humans; cannot be automated. §16 calls this "the gate" and says if it fails, nothing downstream is worth building |
 
 ---
@@ -129,11 +129,21 @@ world right now: **4 live ventures out of 1,019 total.**
 timing has not been measured** — that is the open question, and the balance lever behind it (release
 a hand at delivery rather than at settlement) is a design decision, not a bug fix.
 
-### 4. Two "Remembered" projections, both read-only over an existing ledger
+### 4. ~~Two "Remembered" projections~~ — DONE 2026-07-26
 
-Hall of Fame and places-named-after-first-developer. §16 calls these three projections "the
-difference between a world that has a history and one that only has a state." Ruins exist; these two
-do not. Both are projections over `event`, so neither needs new state.
+All three of §16's world-memory projections now exist. Ruins already did (`holding.fellAtReckoning`);
+`hallOfFame` and `places` were added as read-only projections in `src/frames/memory.ts` — no new state,
+no `state_hash` movement, both on the frame.
+
+`places` reads **razed** WORKS as well as standing ones, deliberately: a principal that opened a place
+and lost it still named it, which is the asymmetry between history and state. A projection that dropped
+razed rows would rename places as they change hands.
+
+The Hall of Fame titles say what they MEASURED. §16 asks for "largest promise kept" and the standing
+book holds cumulative value, not per-promise maxima, so the row reads `MOST KEPT, BY VALUE` rather than
+claiming a superlative the data cannot support — and a row nothing supports is omitted rather than shown
+as zero. `NEVER BROKEN A PROMISE` requires `defaults === 0` **and** `lastDefaultTick === null`, because
+crowning someone unbroken above a recorded default is A5′ on the loudest surface in the game.
 
 ### 5. The three-humans watchability gate has never been run
 

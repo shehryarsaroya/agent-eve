@@ -164,6 +164,7 @@ import { slotClaimAt } from '../observe/forecast.js';
 import type { AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } from '../frames/contract.js';
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
+import { hallOfFame, namesFor } from '../frames/memory.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
@@ -9166,6 +9167,10 @@ export class Runtime {
       // rejected "fuel gauge" was exactly that, and this is what replaced it.
       claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
       worksLines: this.worksLines(outcome.tick),
+      // §16 world memory. Razed WORKS are included on purpose: a place keeps the name of whoever first
+      // opened it, whether or not they still hold it — see `frames/memory.ts`.
+      places: namesFor(this.worksBook.everInOrder(), handles),
+      hallOfFame: hallOfFame(this.standing.rows(), handles),
       syndicateLines: this.syndicateLines(outcome.tick),
       // ── THE MAP, WHICH THE FRAME HAS NEVER CARRIED ──────────────────────────
       //

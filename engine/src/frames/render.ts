@@ -1,3 +1,4 @@
+import type { HallOfFameRow, PlaceName } from './memory.js';
 /**
  * Settled Reckoning → `ReckoningFrame`. The last mile from world to screen.
  *
@@ -113,6 +114,9 @@ export interface FrameSource {
    */
   readonly claimLines?: readonly ClaimLine[];
   readonly worksLines?: readonly WorksLine[];
+  /** §16 world memory. Optional so an `emptyFrame` and older fixtures stay valid. */
+  readonly places?: readonly PlaceName[];
+  readonly hallOfFame?: readonly HallOfFameRow[];
   readonly syndicateLines?: readonly SyndicateLine[];
   readonly map?: readonly MapSystem[];
 }
@@ -571,6 +575,11 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // Ordered by CROWDING first, because the story a viewer should find is the contested
     // seam, not the biggest total. A sort by `extracted` would rank the oldest WORKS top
     // forever and make the map a leaderboard of tenure.
+    // Read-only projections: passed through in the order the source computed them, which is already
+    // canonical (system order / principal order). No re-sorting here — a second ordering rule would be
+    // a second home for it.
+    places: src.places ?? [],
+    hallOfFame: src.hallOfFame ?? [],
     worksLines: (src.worksLines ?? [])
       .slice()
       .sort(
@@ -614,6 +623,8 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     raidLines: [],
     claimLines: [],
     worksLines: [],
+    places: [],
+    hallOfFame: [],
     syndicateLines: [],
     map: [],
     glyphs: [],

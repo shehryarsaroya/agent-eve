@@ -178,6 +178,24 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'claimLines',
   'worksLines',
   'syndicateLines',
+  // ── §16'S WORLD MEMORY, AND WHY BOTH ARE ALREADY PUBLIC ────────────────────
+  //
+  // Neither adds a disclosure. `places` is derived from the WORKS book, whose rows are `PUBLIC` — a
+  // works is a visible structure standing on a system, and `worksLines` already publishes the live
+  // ones with holder and yield. `hallOfFame` is derived from `standings`, admitted three entries up
+  // for exactly this reason: §11.2 puts the standing vectors at `PUBLIC` and `observe` already serves
+  // them about principals other than the reader.
+  //
+  // So A9's parity holds by construction on both: there is no fact here an agent's own `observe`
+  // could not already answer, only an ordering of facts it would have to collect itself.
+  //
+  // The one thing to watch if these grow: `places` reads RAZED works as well as standing ones. That is
+  // still `PUBLIC` — a structure that existed and fell is exactly what a ruin is, and §16 wants the
+  // fallen labelled — but it means this key can name a principal who currently holds nothing at all.
+  // Intended. A world where losing everything also erases that you built the place is a world with no
+  // history in it.
+  'places',
+  'hallOfFame',
   'map',
 ]);
 

@@ -1,3 +1,4 @@
+import type { HallOfFameRow, PlaceName } from './memory.js';
 /**
  * The frame contract — the interface between the world and the show.
  *
@@ -502,6 +503,13 @@ export interface ReckoningFrame {
   /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
   readonly claimLines: readonly ClaimLine[];
   readonly worksLines: readonly WorksLine[];
+  /**
+   * §16's world-memory projections. Read-only over books that already exist, so neither can move
+   * `state_hash` — and both are what tell a spectator arriving at Reckoning 40 that the map was earned
+   * rather than configured.
+   */
+  readonly places: readonly PlaceName[];
+  readonly hallOfFame: readonly HallOfFameRow[];
   readonly syndicateLines: readonly SyndicateLine[];
   /** The topology, so the map can be drawn at all (A13). Fixed per world. */
   readonly map: readonly MapSystem[];
