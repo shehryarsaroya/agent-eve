@@ -240,6 +240,25 @@ Known super-linear costs that will bend this curve upward eventually, both recor
 INV-7 sums the whole posting log every tick, and `checkStandingJournal` replays **and sorts** its
 journal every tick. Neither binds at 20.
 
+### 4d. ★ THREE BLIND PROBES PLAYED IT, AND THE VERDICT IS 4/10
+
+See `docs/design/expansion-2026-07-25/D22-what-three-blind-probes-found.md`. Five bugs, all fixed and
+mutation-verified — including a Levy that stranded 45,000 units, `graduate` irreversibly graduating the
+wrong principal from a dropped param, and the WORKS quote naming the wrong good.
+
+**The pattern in all five: the engine was internally consistent and the agent-facing surface lied.**
+Four could not have been caught by any invariant, because invariants check the world against itself and
+these were failures of what the world *told an agent*.
+
+The design verdict, reached independently by two probes: the API is excellent and the territorial layer
+around `graduate` is genuinely good, but the premise — *"the best decisions are about other agents"* —
+is **unstaffed, unreadable and unrewarded**. Nothing reads standing as a gate, so the dominant strategy
+is a 40-line rentier; a mandate has zero expected value because a delegated `create` cannot bind
+without the grantor; and there is no public read, so a reputation cannot be priced before it matters.
+
+Those three are the highest-value remaining work in the project, and they are **design decisions**
+rather than defects.
+
 ### 5. The three-humans watchability gate has never been run
 
 It cannot be automated and §16 makes it the gate that decides whether anything downstream matters.
