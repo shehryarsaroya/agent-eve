@@ -68,6 +68,18 @@ export const SEGMENT_SECONDS = { min: 30, max: 45 } as const;
  * identically whether a promise was kept or broken, conflated escrow with the
  * elective tail, and could be topped by self-dealing at zero risk.
  */
+/** One principal's public factual vectors, for the directory. */
+export interface StandingRow {
+  readonly principal: PrincipalId;
+  readonly handle: string;
+  readonly electiveHonoured: number;
+  readonly electiveHonouredValue: Minor;
+  readonly defaults: number;
+  readonly contradictedSeals: number;
+  readonly distinctCounterparties: number;
+  readonly lastDefaultTick: number | null;
+}
+
 export interface Meters {
   /**
    * The headline, because it is the one number **no single agent can lower**,
@@ -524,6 +536,26 @@ export interface ReckoningFrame {
    * `state_hash` — and both are what tell a spectator arriving at Reckoning 40 that the map was earned
    * rather than configured.
    */
+  /**
+   * **THE PUBLIC READ: every principal's standing vectors, in one place.**
+   *
+   * Three blind probes independently reported the same gap: you cannot look up a counterparty's record
+   * *before* dealing with them, which is the only moment it matters. `counterparties[]` in `observe`
+   * carries only agents already named in your own observation, so a reputation exists and cannot be
+   * consulted — and a game whose premise is "the best decisions are about other agents" then has
+   * nothing to decide on.
+   *
+   * **This publishes no new fact.** §11.2 already places standing at `PUBLIC`, `PUBLIC_FACT_KEYS`
+   * already admits `standings` with the argument written out — *"`standingRow` already serves exactly
+   * this row to every agent through `observe`, including in `counterparties[]` about principals other
+   * than the reader, so publishing it to a viewer adds no disclosure and A9's parity holds by
+   * construction"* — and the frame was already reading these vectors to build one character line. It
+   * simply never emitted the set.
+   *
+   * NOT a score (§3). The frame carries the vectors; what they are worth is the reader's judgement,
+   * which is exactly where the design wants that judgement to sit.
+   */
+  readonly standings: readonly StandingRow[];
   readonly places: readonly PlaceName[];
   readonly hallOfFame: readonly HallOfFameRow[];
   readonly syndicateLines: readonly SyndicateLine[];

@@ -580,6 +580,20 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // Read-only projections: passed through in the order the source computed them, which is already
     // canonical (system order / principal order). No re-sorting here — a second ordering rule would be
     // a second home for it.
+    // The public read. Sorted by principal so the directory is stable between frames rather than
+    // reordering on Map iteration — a viewer diffing two frames should see records change, not rows move.
+    standings: [...(src.standings?.entries() ?? [])]
+      .sort((a, b) => compareIds(a[0], b[0]))
+      .map(([principal, row]) => ({
+        principal,
+        handle: String(src.handles.get(principal) ?? principal),
+        electiveHonoured: row.electiveHonoured,
+        electiveHonouredValue: row.electiveHonouredValue,
+        defaults: row.defaults,
+        contradictedSeals: row.contradictedSeals,
+        distinctCounterparties: row.distinctCounterparties,
+        lastDefaultTick: row.lastDefaultTick,
+      })),
     places: src.places ?? [],
     hallOfFame: src.hallOfFame ?? [],
     worksLines: (src.worksLines ?? [])
@@ -625,6 +639,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     raidLines: [],
     claimLines: [],
     worksLines: [],
+    standings: [],
     places: [],
     hallOfFame: [],
     syndicateLines: [],
