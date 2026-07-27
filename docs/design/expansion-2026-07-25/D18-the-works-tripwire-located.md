@@ -95,6 +95,40 @@ pattern `world/map.ts` already uses so that adding a consumer cannot re-wire exi
 tests were written. That is a much more important finding than a faucet fix, because it means the cast
 cannot be extended safely today.
 
+## RESOLVED: it is not a bug. The tests are fixtures whose premise a cast change moves.
+
+Third framing, and this one holds up. Two reads settled it:
+
+**1. The cast's RNG is derived per member per tick.** `heuristic.ts:214`:
+`Rng.fromSeed(\`${seed}:cast:${member.principal}:${String(tick)}\`)`. So a member returning early cannot
+shift any other member's stream, and stream position is a pure function of `(seed, principal, tick)` —
+identical in apply and in replay. **The RNG-stream hypothesis is dead**, and the derivation is the DET
+discipline done correctly.
+
+**2. The failing tests build a SPECIFIC world on purpose, and say so.** From
+`checkpoint-adoption-audit.test.ts`'s own header:
+
+> *"measured on that very run it proves nothing: the heuristic cast opens **zero** encumbrances that are
+> still open at a tick boundary (0 across 420 ticks and 60 snapshots), so every snapshot it adopts has an
+> empty lock book and an empty book restores correctly whether or not the capture works. … So this file
+> **forces the case**: raid-shaped stakes, a live obligation behind them, a journalled snapshot taken
+> while they are open."*
+
+The test exists *because* the heuristic's natural behaviour made the original claim vacuous. It
+constructs a precise world, journals it, and adopts it. **A new cast branch changes what the cast does at
+those ticks, so the constructed world is no longer the one the fixture was built around** — and the
+tripwire fires because the premise moved, not because replay is non-deterministic.
+
+**So there is no determinism bug, and there never was.** What exists is a set of adoption fixtures
+coupled to exact heuristic behaviour. That is a real fragility and it deserves fixing — a fixture that
+breaks whenever the cast is extended is a brake on extending the cast — but it is a *test-design*
+problem, not an engine one, and the fix is to make those fixtures construct their world without
+depending on what the cast happens to do.
+
+**Which means "teach the cast to build a WORKS" is not blocked by anything in the engine.** It is blocked
+by six fixtures that need decoupling first. That is a much smaller and much more tractable statement than
+the one this file opened with.
+
 ## What this unblocks, and why it matters more than it looks
 
 The heuristic never building is why **`worksLines` has been empty on every frame ever published** —
