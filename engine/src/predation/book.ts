@@ -34,9 +34,11 @@
  */
 
 import type { CanonicalValue } from '../core/canonical.js';
+import { reckoningIndex } from '../core/time.js';
 import type { GoodId, HandId, PrincipalId, RaidState, SystemId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
+import type { AggressionSpend } from './aggression.js';
 import {
   readArray,
   readInt,
@@ -52,6 +54,30 @@ export type RaidId = string & { readonly __brand: 'RaidId' };
 
 export function raidIdFor(spawnTick: number, indexAtTick: number): RaidId {
   return `raid:${String(spawnTick)}:${String(indexAtTick)}` as RaidId;
+}
+
+/**
+ * An **agent-initiated** raid's id, in a namespace the world's own spawn can never reach.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE `d` IS NOT DECORATION — IT IS AN AGENT-REACHABLE WORLD HALT, CLOSED.**
+ *
+ * A `demand` runs in `VALIDATE+LOCK`; the world spawns in `PREDATE`, later in the same tick.
+ * With one numeric index both would want `raid:<tick>:0`, and `spawnOne` calls `book.spawn`
+ * outside a try — so an agent that demanded on a spawn tick would abort the tick for everybody.
+ * `predate.ts` says in as many words that nothing there may throw on an agent's input, and three
+ * agent-triggerable halts have already shipped in this repo.
+ *
+ * Separate namespaces make the collision unrepresentable rather than merely unlikely, and the id
+ * then also *says* which kind of raid it is in every log line that carries it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function demandIdFor(spawnTick: number, indexAtTick: number): RaidId {
+  return `${demandIdPrefix(spawnTick)}${String(indexAtTick)}` as RaidId;
+}
+
+function demandIdPrefix(spawnTick: number): string {
+  return `raid:${String(spawnTick)}:d`;
 }
 
 /**
@@ -84,6 +110,35 @@ export interface RaidParty {
 
 export interface RaidRecord {
   readonly id: RaidId;
+  /**
+   * **Who chose this. `null` means nobody did.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * §9 has two forms of predation and this one field is the whole difference between them.
+   * A **world raid** is weather: *"nobody owns them, so nobody can be bribed to call them
+   * off"*, which is the entire argument for their existence and the reason A12 permits
+   * them (a target-*selection* rule is physics). A **demand** is somebody's decision, made
+   * with a name on it, out of a capacity that expires unspent.
+   *
+   * So this is not a provenance annotation. Six rules read it:
+   *
+   *   - **aggression capacity** is derived by counting the rows where it is set
+   *     (`aggression.ts` keeps no counter, deliberately — scar #5);
+   *   - a **repulsed** demand writes no stage hold and no victim cooldown, because those
+   *     are the *world raid's* price for losing and an agent's choice must never be able
+   *     to mint immunity from the world for a friend (see `predate.ts`);
+   *   - the same for a **plundered** or **paid** demand;
+   *   - the **frame** draws a demand differently, because "somebody attacked somebody"
+   *     and "a raid arrived" are two different things to watch (A13);
+   *   - the **ticker** names the raider;
+   *   - and `PRD-7` refuses a demand aimed at its own initiator (§9's related-party rule).
+   *
+   * `null` for a world raid rather than a sentinel principal: a sentinel would be a
+   * principal id naming nobody, and every reader that forgot the sentinel would attribute
+   * the weather to an agent — which is a permanent public accusation (A5′).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly initiator: PrincipalId | null;
   readonly target: PrincipalId;
   readonly stage: SystemId;
   readonly good: GoodId;
@@ -270,6 +325,38 @@ export class Book {
   }
 
   /**
+   * Every agent-initiated demand in the book, as an aggression spend (§9).
+   *
+   * The capacity has **no state table of its own** and that is deliberate (`aggression.ts`):
+   * the spends are already here, one row each, so a counter would be a second home for a
+   * quantity the record already determines — scar #5 — and it would need its own capture, its
+   * own restore, and a reset hook at the Reckoning boundary that could drift from the boundary.
+   * Derived also means it is right across a restart for free, and A4 forbids uptime being power.
+   */
+  aggressionSpends(): readonly AggressionSpend[] {
+    const out: AggressionSpend[] = [];
+    for (const raid of this.all()) {
+      if (raid.initiator === null) continue;
+      out.push({ initiator: raid.initiator, tick: raid.spawnedAtTick });
+    }
+    return out;
+  }
+
+  /**
+   * The next free demand index at `tick`. Deterministic, because {@link all} is ordered and
+   * every raid opened at this tick is still in the book (a live row is never pruned, and no
+   * later tick can add one to this tick).
+   */
+  nextDemandIndexAt(tick: number): number {
+    const prefix = demandIdPrefix(tick);
+    let n = 0;
+    for (const raid of this.raids.keys()) {
+      if (raid.startsWith(prefix)) n += 1;
+    }
+    return n;
+  }
+
+  /**
    * Drop resolved rows past the retention cap, oldest first.
    *
    * Runs **inside** the hash — called from PREDATE, which is before DERIVE — for the
@@ -277,12 +364,25 @@ export class Book {
    * makes `snapshot_T` describe a book the engine no longer holds, and the replay of
    * `T+1` from that snapshot diverges (DET-3). A live raid is never pruned; a season is
    * 8,064 ticks and an unbounded row set is scar #3.
+   *
+   * ── AND A PRUNED DEMAND MUST NOT REFUND AGGRESSION CAPACITY ────────────────
+   *
+   * {@link aggressionSpends} derives §9's capacity by counting rows, so deleting a row of
+   * **this** Reckoning would hand the raider its allowance back — an exploit whose only
+   * requirement is filling the book, which is exactly the shape A4 forbids (throughput
+   * buying power). So this Reckoning's rows are dropped **last**, not never: refusing to
+   * drop them at all would let a busy Reckoning push the book past `MAX_RAID_ROWS`, and
+   * `PRD-2` halts the world on that. A refunded demand is a calibration failure; a halted
+   * world is an outage, and the ordering picks the cheaper one when both cannot be had.
    */
-  prune(): number {
+  prune(tick: number): number {
     if (this.raids.size <= MAX_RAID_ROWS) return 0;
+    const here = reckoningIndex(tick);
     const resolved = this.all().filter((r) => r.state !== 'DEMANDED');
+    const older = resolved.filter((r) => reckoningIndex(r.spawnedAtTick) !== here);
+    const thisCycle = resolved.filter((r) => reckoningIndex(r.spawnedAtTick) === here);
     let dropped = 0;
-    for (const raid of resolved) {
+    for (const raid of [...older, ...thisCycle]) {
       if (this.raids.size <= MAX_RAID_ROWS) break;
       this.raids.delete(raid.id);
       dropped += 1;
@@ -296,6 +396,11 @@ export class Book {
     return {
       raids: this.all().map((r) => ({
         id: r.id,
+        // A CAPTURED FIELD, so a demand survives a restart as a demand. Left out, an adopted
+        // checkpoint would restore every agent-initiated raid as weather: the raider's spent
+        // aggression capacity would come back, and a repulse would start writing the world's
+        // stage hold. `RULES_VERSION` 6 -> 7 is this line.
+        initiator: r.initiator,
         target: r.target,
         stage: r.stage,
         good: r.good,
@@ -360,6 +465,10 @@ export class Book {
       });
       const record: RaidRecord = {
         id: readString(o, 'id', where) as RaidId,
+        // Absent reads as `null` — a world raid — because that is what every row written
+        // before RULES_VERSION 7 actually was. A default that guessed a principal would
+        // attribute the weather to a named agent, permanently (A5′).
+        initiator: readStringOrNullAt(o, 'initiator', where) as PrincipalId | null,
         target: readString(o, 'target', where) as PrincipalId,
         stage: readString(o, 'stage', where) as SystemId,
         good: readString(o, 'good', where) as GoodId,

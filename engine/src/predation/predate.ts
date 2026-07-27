@@ -181,7 +181,7 @@ export function runPredate(args: {
     else spawned.push(record);
   }
 
-  return { spawned, resolved, pruned: args.book.prune(), noTarget };
+  return { spawned, resolved, pruned: args.book.prune(args.tick), noTarget };
 }
 
 /**
@@ -212,6 +212,9 @@ function spawnOne(book: Book, port: PredationPort, rng: Rng, tick: number): Raid
       // unique forever. Content-derived, never a counter: a counter would have to be
       // snapshotted or replay diverges (DET-3/DET-5).
       id: raidIdFor(tick, 0),
+      // Nobody. That is the whole argument for world raids (§9): a rule with no owner cannot
+      // be negotiated with, so nobody can be bribed to call one off.
+      initiator: null,
       target: candidate.principal,
       stage: candidate.stage,
       good: candidate.good,
@@ -303,8 +306,7 @@ function resolveOne(
       if (port.routHand(party.handId, tick)) routed.push(party.handId);
     }
     // The raid itself pays in future access: this place is held for a Reckoning.
-    book.holdStage(raid.stage, tick + RAID_STAGE_HELD_TICKS);
-    book.coolVictim(raid.target, tick + RAID_VICTIM_COOLDOWN_TICKS);
+    grantWorldProtections(book, raid, tick, true);
     return close(book, raid, tick, onFault, {
       state: 'REPULSED',
       lostQty: qty(0),
@@ -371,7 +373,7 @@ function resolveOne(
     if (port.routHand(handId, tick)) routed.push(handId);
   }
 
-  book.coolVictim(raid.target, tick + RAID_VICTIM_COOLDOWN_TICKS);
+  grantWorldProtections(book, raid, tick, false);
   return close(book, raid, tick, onFault, {
     state: lost > 0 ? 'PLUNDERED' : 'MISSED',
     lostQty: qty(lost),
@@ -380,6 +382,34 @@ function resolveOne(
     routed,
     relocatedTo,
   });
+}
+
+/**
+ * The two protections a **world** raid leaves behind when it closes — and never a demand.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **AN AGENT'S CHOICE MUST NOT BE ABLE TO MINT IMMUNITY FROM THE WORLD.**
+ *
+ * `RAID_STAGE_HELD_TICKS` and `RAID_VICTIM_COOLDOWN_TICKS` exist because a world raid holds no
+ * capital that could be slashed: *"what it can lose is future access"* (`params.ts`), and the
+ * victim cooldown is scar #14's newcomer protection against the *world's* target rule picking
+ * the same most-exposed principal twice.
+ *
+ * An agent-initiated demand is different in exactly the way that matters. It already pays in
+ * capital — the stake, forfeited to the defender — and in aggression capacity, so it needs no
+ * access currency. And if it *spent* that currency, two cooperating principals could mint a
+ * Reckoning of world-raid immunity for a few hundred minor by arranging to be demanded from:
+ * the Coase-collapse §9 opens with, run backwards. It needs no declared related-party edge, so
+ * a graph lookup could not catch it and A15 forbids inferring one from behaviour.
+ *
+ * A demand therefore **honours** both protections when it opens (`demandRefusal`) and **writes**
+ * neither when it closes. Granted by the world, consumed by everyone, minted by nobody.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function grantWorldProtections(book: Book, raid: RaidRecord, tick: number, repulsed: boolean): void {
+  if (raid.initiator !== null) return;
+  if (repulsed) book.holdStage(raid.stage, tick + RAID_STAGE_HELD_TICKS);
+  book.coolVictim(raid.target, tick + RAID_VICTIM_COOLDOWN_TICKS);
 }
 
 function close(
@@ -459,7 +489,9 @@ export function payDemand(args: {
   for (const party of [...args.raid.parties].sort((a, b) => compareIds(a.principal, b.principal))) {
     args.port.releaseStake(party.encumbranceId, args.tick);
   }
-  args.book.coolVictim(args.raid.target, args.tick + RAID_VICTIM_COOLDOWN_TICKS);
+  // A raider whose demand is PAID keeps its stake, which is released above with everyone
+  // else's. What it does not get is the world's cooldown written on its behalf.
+  grantWorldProtections(args.book, args.raid, args.tick, false);
   return close(args.book, args.raid, args.tick, args.onFault, {
     state: 'PAID',
     lostQty: moved,

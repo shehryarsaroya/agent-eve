@@ -57,6 +57,7 @@ export function checkPredationInvariants(
     ...checkPrd4(input),
     ...checkPrd5(input),
     ...checkPrd6(input),
+    ...checkPrd7(input),
   ];
 }
 

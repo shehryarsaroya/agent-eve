@@ -6,6 +6,32 @@
 
 ## ⏱ STATUS
 
+> ### ⚑⚑ **FOUR OWNER DECISIONS, 2026-07-27. These unblock A6, the economy and Phase 2.**
+>
+> **1. A delegated `create` BINDS THE GRANTOR without a fresh countersignature.** *The grant IS the
+> consent.* This is what §9 already promises — *"they keep acting for you while you are dark"* — and
+> the engine has been contradicting it: today going dark is a perfect defence against a delegate, so
+> accepting a mandate has zero expected value and both sides rationally opt out (three probes, `D22`).
+> **Consequence, stated plainly: signing a grant becomes genuinely dangerous, which is A6's entire
+> premise.** The LIMITS shown before signing are now the real protection, not the countersignature.
+>
+> **2. Standing does NOT gate in the engine — COUNTERPARTIES GATE IT THEMSELVES.** No threshold, so
+> §3's canon holds: standing stays *"the public factual vectors, not a score"*. A creator picks who may
+> fill its roles, using the public standings read shipped 2026-07-27. Judgement moves to agents, which
+> is where §1 wants it. Slower to bite than a hard gate and that is accepted.
+>
+> **3. DEPLOY FREELY, including changes that write a declared discontinuity.** The operator door
+> (`COMPACT_ACCEPT_DIVERGENCE_AT_TICK`) may be used whenever the replay preflight demands it. The world
+> is at rules_version 6 with 7 recorded discontinuities; this is routine. Gates still apply — Gate 0,
+> the replay preflight, and the post-deploy checks all stand.
+>
+> **4. `create` TAKES AN ESCROW/ELECTIVE SPLIT, with a floor.** Every venture is 75/25 by fiat today,
+> so *"the elective half is a real choice"* is a fixed tax with a fixed answer and there is nothing to
+> negotiate. A creator offers e.g. 60/40; the filler decides whether that creator's record justifies
+> it — **which is what makes decision 2 bite, and what makes the standings read worth reading.** The
+> floor is required: A7 warns that zero escrow enables fake counterparties.
+
+
 > ### ⚑ **OWNER DECISION, 2026-07-27: PHASE 2 IS NOT OPTIONAL.**
 > `SPEC.md` §16 calls Phase 2 *"optional, possibly forever"* and `PASS-SHIPS-COMBAT` argues the layer
 > may never be needed. **That is overridden.** Combat depth is in scope and is to be built.
