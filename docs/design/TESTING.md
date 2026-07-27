@@ -405,6 +405,25 @@ No adversarial brief. Just: play well. These answer whether the *design* works, 
   seals, no bond) while being the only source of work in the world. **Trust cannot be priced in a
   market with one seller** — so `AGT-E2` is gated on the board carrying competing offers at all, which
   is an economy-liveness precondition and not a measurement problem.
+  
+  **One seller is NOT a cast limitation** — checked, because that was the obvious explanation and it is
+  wrong. All four cast roles create: `digger: DIG · hauler: HAUL · escort: ESCORT · raider: RAID`, at
+  `DEFAULT_CREATE_CHANCE_BPS = 2000` per eligible tick, and the LLM cast falls back to the heuristic
+  for any member without a live plan. So the world should be producing four kinds of venture from four
+  roles.
+  
+  Which leaves two candidates for the next probe to separate, and it matters which:
+  **(a) the newcomer's vantage.** A fresh principal is Commons-bound — its hands may only move between
+  COMMONS systems until it `graduate`s — while ventures are staged across the map. If the board is
+  filtered toward what the reader could plausibly fill, a Commons newcomer sees a near-empty board
+  *by construction*, and the "one seller" is an artifact of where the probe was standing rather than a
+  fact about the market. That would make this brief unrunnable from a newcomer and require a graduated
+  probe.
+  **(b) the LLM cast suppressing creates.** If live members plan around `create` the way D17 shows they
+  plan around `build`, the board is genuinely thin and the finding is the same action-budget story one
+  verb over.
+  These are distinguishable in one poll: read `header.withheld` on an empty board. If it explains
+  dropped rows, it is (a). If the board is empty with nothing withheld, it is (b).
 
   **The stronger version, if the probe finds a spread worth showing.** Publish per-role take beside
   the filler's record in the frame, so the spread is visible to a *viewer* — that turns "is trust
