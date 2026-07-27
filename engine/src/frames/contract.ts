@@ -34,7 +34,7 @@ import type {
   VentureId,
   ZoneTier,
 } from '../core/types.js';
-import type { Minor } from '../core/units.js';
+import type { Minor, Qty } from '../core/units.js';
 
 /** §17: labels rendered per frame. The legible maximum. */
 export const MAX_LABELS_PER_FRAME = 7;
@@ -83,6 +83,22 @@ export interface Meters {
   /** The scoreboard. Moves only on the event the whole game is about. */
   readonly kept: number;
   readonly broken: number;
+  /**
+   * **Raw yield nobody has converted yet** — the production chain's tension, in one number.
+   *
+   * §10's chain is: a WORKS yields `ore`, `refine` turns it into the good every obligation is payable
+   * in, and ore itself settles nothing. So this is *wealth that cannot pay a debt* — and it rises
+   * exactly when the world is extracting hard and converting slowly, which is the moment before a
+   * Reckoning where somebody is about to default while visibly rich.
+   *
+   * On screen it is the counterweight to `levyShort`: shortfall climbing while this climbs too is a
+   * world that has the goods and has not made them payable, which is a different story from a world
+   * that is simply poor — and the two look identical without this number.
+   *
+   * A13: every mechanic needs a named pixel signature, and a conversion step is invisible unless the
+   * un-converted stock is published.
+   */
+  readonly unrefined: Qty;
 }
 
 /** A named character on screen. Never more than MAX_LABELS_PER_FRAME of these. */

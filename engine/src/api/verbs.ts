@@ -131,7 +131,6 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   offer_surety: 'step 9 (grants and offline semantics)',
   scan: 'step 12 (predation and the sensed layer)',
   extract: 'step 11 (markets and the production graph)',
-  refine: 'step 11 (markets and the production graph)',
   haul: 'step 11 (markets and the production graph)',
   audit: 'step 9 (offices and grants)',
   // `yield`, `fight` and `join` were here and all three are now live, so their entries

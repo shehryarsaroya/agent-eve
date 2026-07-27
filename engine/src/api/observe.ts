@@ -93,6 +93,7 @@ import { LEVY_BALLOT, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.j
 import { syndicateAsPrincipal } from '../syndicate/book.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR, MAX_SYNDICATES_PER_PRINCIPAL } from '../syndicate/params.js';
+import { REFINE_IN_QTY, REFINE_OUT_QTY, WORKS_GOOD, WORKS_YIELD_GOOD } from '../works/params.js';
 import type { SealRoleRef } from '../seal/index.js';
 import {
   commonsBoundRejection,
@@ -1502,6 +1503,40 @@ function affordancesFor(
   //         return of every build into a crowded place, which is the one number that
   //         decides whether the build pays for itself (A2).
   //         ══════════════════════════════════════════════════════════════════════
+  // 5E. **THE PRODUCTION CHAIN'S SECOND HALF.** A WORKS yields raw `ore` and every obligation in the
+  //     game is payable in `ration`, so a principal sitting on ore has income it cannot spend. `refine`
+  //     was a canon verb with no implementation and no menu entry; shipping the verb without the entry
+  //     would repeat the defect that hid nine mechanics including the core loop.
+  //
+  //     Gated on `refinableAt`, the SAME accessor the verb and the cast read, so the menu can never
+  //     offer a batch the engine refuses (AGT-S2: an affordance the engine declines costs an agent a
+  //     real action every wake).
+  const refinable = runtime.refinableAt(principal, holdingOf(world, principal).system);
+  if (refinable >= REFINE_IN_QTY) {
+    const batches = Math.trunc(refinable / REFINE_IN_QTY);
+    const out = batches * REFINE_OUT_QTY;
+    eligible.push({
+      verb: 'refine',
+      params: { system: holdingOf(world, principal).system },
+      cost: 1,
+      // Nothing is at risk: goods of one kind become goods of another in your own stores. The only
+      // loss available here is the action itself.
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `turns ${String(refinable)} ${WORKS_YIELD_GOOD} standing at ` +
+        `${holdingOf(world, principal).system} into ${String(out)} ${WORKS_GOOD}, in one action, all ` +
+        `whole batches at once. **This is the only way raw yield becomes payable**: a WORKS extracts ` +
+        `${WORKS_YIELD_GOOD}, and the Levy, a sovereignty Charge and a WORKS build are every one of ` +
+        `them payable in ${WORKS_GOOD}. Ore in your stores settles nothing. The recipe is ` +
+        `${String(REFINE_IN_QTY)}:${String(REFINE_OUT_QTY)} and the output appears where the ore ` +
+        `stood, not at your seat — so refine where you extract, or haul first. Encumbered lots are ` +
+        `skipped rather than refused.`,
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'refine', { system: holdingOf(world, principal).system }),
+    });
+  }
+
   const worksSeat = runtime.graduationQuote(principal);
   const worksHere = worksSeat === null ? null : runtime.worksQuote(principal, worksSeat.from);
   if (worksHere !== null && worksHere.affordable && !worksHere.alreadyHeld) {

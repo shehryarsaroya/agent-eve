@@ -74,7 +74,53 @@ import { minor } from '../core/units.js';
  * pins both halves: that all four agree today, and that each is declared on its own so the day a second
  * good lands, changing one cannot move the others.
  */
+/**
+ * What a WORKS **YIELDS** — the raw good a place gives up. §10's production graph starts here.
+ *
+ * ── WHY THIS IS NOT WHAT A WORKS COSTS, AND THE DEADLOCK THAT FORCES IT ──────
+ *
+ * One constant was both, and splitting them is what makes §10's *"four goods, one build step"*
+ * possible at all. The newcomer path is *"`extract` a bounded batch → `refine`"*, and `refine` was a
+ * canon verb with no implementation — `verbs.ts` declared it not-live: "step 11, markets and the
+ * production graph".
+ *
+ * **The trap:** building a WORKS consumes goods. If it consumed the good a WORKS *yields*, a principal
+ * would need `ore` to build the thing that makes `ore` — a bootstrap deadlock with no first move and no
+ * error message, because every individual rule reads correctly. So the COST stays in the good a
+ * newcomer is endowed with, and only the YIELD becomes raw.
+ *
+ * The chain: endowment gives `ration` → build a WORKS with it → the WORKS yields `ore` → `refine` turns
+ * `ore` into `ration` → the Levy is payable in `ration`. Which is what makes the Levy a *supply chain*
+ * rather than a faucet with a tax on it: paying it now takes two acts, and one of them can be done for
+ * you by somebody else's hand — which is §10's entire reason for existing ("nothing consumed the four
+ * goods… with no hiring there is no delegation and no betrayal").
+ */
+export const WORKS_YIELD_GOOD = 'ore' as GoodId;
+
+/**
+ * What building a WORKS **COSTS** in goods, destroyed into the build.
+ *
+ * The endowment good, not the yield — see {@link WORKS_YIELD_GOOD} for the deadlock. Equal to
+ * `LEVY_GOOD` and `CHARGE_GOOD` today and independently declared so it can stop being.
+ */
 export const WORKS_GOOD = 'ration' as GoodId;
+
+/**
+ * The recipe: how much {@link WORKS_YIELD_GOOD} `refine` consumes, and how much {@link WORKS_GOOD} it
+ * produces. *(calibrate)*
+ *
+ * **1:1 on purpose for the first landing.** A ratio above 1 would make this change a balance change as
+ * well as a mechanic change, and the failure mode is severe: if refining cannot keep up, the Levy
+ * becomes unpayable from domestic production, every principal defaults, and the record fills with
+ * breaches nobody could have avoided. `test/core/goods-are-independent.test.ts` names that exact hazard
+ * as the reason the goods must agree.
+ *
+ * At 1:1 the world's goods throughput is **unchanged** — what changes is that goods now arrive raw and
+ * an agent must act to make them payable. The scarcity is the ACTION, not the ratio, and the ratio is
+ * left as the obvious first tuning knob once the chain has run for a season.
+ */
+export const REFINE_IN_QTY = 1;
+export const REFINE_OUT_QTY = 1;
 
 /**
  * What a system yields per tick, before it is divided among the WORKS standing there.

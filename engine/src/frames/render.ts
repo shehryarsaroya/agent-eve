@@ -27,7 +27,7 @@ import type { HallOfFameRow, PlaceName } from './memory.js';
 import type { Handle, PrincipalId, VentureId,
   Standing,
 } from '../core/types.js';
-import { addMinor, minor, type Minor } from '../core/units.js';
+import { addMinor, minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
   MAX_AUTHORITY_LINES,
@@ -65,6 +65,8 @@ export interface FrameSource {
     readonly onAPromise: Minor;
     readonly kept: number;
     readonly broken: number;
+    /** Raw yield nobody has converted. Optional so older fixtures stay valid; defaults to 0. */
+    readonly unrefined?: Qty;
   };
   /** Handle per principal, for labels. A frame never shows a raw id. */
   readonly handles: ReadonlyMap<PrincipalId, Handle>;
@@ -513,7 +515,7 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     reckoningIndex: src.reckoning,
     tick: src.tick,
     stateHash: src.stateHash,
-    meters: src.meters,
+    meters: { ...src.meters, unrefined: src.meters.unrefined ?? qty(0) },
     docket,
     rundown,
     // Tribute lines come from the Levy layer, glyphs from the venture layer. Neither is
@@ -615,7 +617,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     reckoningIndex: reckoning,
     tick,
     stateHash,
-    meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0 },
+    meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0, unrefined: qty(0) },
     docket: [],
     rundown: [],
     tributeLines: [],

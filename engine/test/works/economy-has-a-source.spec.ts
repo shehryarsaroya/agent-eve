@@ -75,18 +75,27 @@ describe('the world has a goods source, and it is a place (§10.2)', () => {
     const raised = h.runtime.works.liveAt(system);
     expect(raised.length, 'the WORKS stands').toBe(1);
 
-    const before = h.runtime.chargeGoodAt(p, system);
+    // ── MEASURED IN THE RAW YIELD, NOT THE PAYABLE GOOD ──────────────────────
+    //
+    // This read `chargeGoodAt` — rations — and it was right until §10's production graph landed. A
+    // WORKS now yields `ore`, and nothing about extraction produces rations any more, so the old
+    // assertion compared 45,000 against 45,000 and failed. It was detecting the change correctly.
+    //
+    // Measured through `refinableAt`, which is the same accessor the verb, the affordance and the cast
+    // all read — so this test cannot pass on a quantity the engine would refuse to refine.
+    const before = h.runtime.refinableAt(p, system);
     // Spin-up: nothing yet.
     run(2);
     expect(
-      h.runtime.chargeGoodAt(p, system),
+      h.runtime.refinableAt(p, system),
       'a WORKS spinning up extracts nothing — that is what makes it a commitment',
     ).toBe(before);
 
     const onlineAt = raised[0]?.onlineAtTick ?? 0;
     run(WORKS_SPINUP_TICKS);
-    const after = h.runtime.chargeGoodAt(p, system);
+    const after = h.runtime.refinableAt(p, system);
     expect(after, 'once online it extracts every tick').toBeGreaterThan(before);
+
     // Derived from the record rather than hardcoded, so the assertion stays true if the
     // spin-up or the tier yield is recalibrated — the numbers in params.ts are marked
     // *(calibrate)* and a test that pins them would make tuning them look like a regression.
@@ -101,6 +110,26 @@ describe('the world has a goods source, and it is a place (§10.2)', () => {
     expect(after - before, 'the tier rate, once per online tick, at the place').toBe(
       YIELD_PER_TICK.COMMONS * ticksOnline,
     );
+
+    // ── AND THE CHAIN'S SECOND HALF, BECAUSE ORE PAYS NOTHING ─────────────────
+    //
+    // The economy having "a source" is only true if the source produces something an obligation can be
+    // settled with. Ore settles nothing — not the Levy, not a Charge, not a WORKS build — so a test
+    // that stopped at extraction would be asserting a faucet into a dead end.
+    const rationsBefore = h.runtime.chargeGoodAt(p, system);
+    const refined = await signed(h, who, 'POST', PATHS.act, {
+      actions: [{ verb: 'refine', params: { system }, clientSequence: 2 }],
+    });
+    expect(refined.status).toBe(200);
+    run(1);
+    expect(
+      h.runtime.chargeGoodAt(p, system),
+      'refine must turn extracted ore into the good every obligation is payable in',
+    ).toBeGreaterThan(rationsBefore);
+    expect(
+      h.runtime.refinableAt(p, system),
+      'and the ore it consumed must be gone — goods are transformed, not duplicated (INV-1)',
+    ).toBeLessThan(after);
   });
 
   it('posts against the EXTRACTION faucet, so the audit can check output against the map', () => {

@@ -329,7 +329,7 @@ you the SPEC build step it is waiting on rather than a vague refusal. Everything
 
 ```
 identity   post_bond · seal · attest† · verify_owner† · offer_surety†
-world      move · build · graduate · scan† · extract† · refine† · haul†
+world      move · build · refine · graduate · scan† · extract† · haul†
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit†
 market     trade
@@ -340,7 +340,15 @@ say        claim · deny
 org        form · charter† · propose†
 ```
 
-Two of these are worth knowing about specifically. **`build` is two acts** — see §11A. And there is
+**THE PRODUCTION CHAIN, because goods arrive in a form that pays nothing.** A WORKS yields **ore**.
+Every obligation in this game — the Levy, a sovereignty Charge, the goods half of a WORKS build — is
+payable in **rations**, and ore settles none of them. `refine` is the only conversion: it turns every
+whole batch of ore standing at a place into rations, in one action, and the output appears **where the
+ore stood** rather than at your seat. So the loop is: build a WORKS out of your endowment → it extracts
+ore where it stands → refine there → pay from that. A principal with a full store of ore and no rations
+is a principal about to default with income it never converted.
+
+Two more are worth knowing about specifically. **`build` is two acts** — see §11A. And there is
 no `haul` yet, so goods travel with a hand rather than as a separately-tracked consignment: a convoy's
 cargo cannot be intercepted in transit, because the hand is what is in transit.
 

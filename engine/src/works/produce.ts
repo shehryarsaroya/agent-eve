@@ -24,7 +24,7 @@ import { compareIds } from '../ledger/order.js';
 import { GOODS_FAUCET, storesAccount, type Ledger } from '../ledger/index.js';
 import { tierOf, type WorldMap } from '../world/map.js';
 import type { Book } from './book.js';
-import { WORKS_GOOD } from './params.js';
+import { WORKS_YIELD_GOOD } from './params.js';
 
 export interface ExtractionRow {
   readonly works: string;
@@ -60,7 +60,8 @@ export function produce(args: {
         // The place gave this up, and the audit can compare the total against the map.
         faucet: GOODS_FAUCET.EXTRACTION,
         to: storesAccount(works.holder),
-        good: WORKS_GOOD,
+        // RAW. `refine` turns it into the consumable the Levy wants — §10's one build step.
+        good: WORKS_YIELD_GOOD,
         qty: amount,
         // Extracted where it stands, never at the holder's seat. §10.2: everything is
         // located, and goods that appeared at a holding the hand had left would be a

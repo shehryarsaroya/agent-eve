@@ -529,7 +529,10 @@ import { checkWorks } from '../works/invariants.js';
 import {
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
+  REFINE_IN_QTY,
+  REFINE_OUT_QTY,
   WORKS_GOOD,
+  WORKS_YIELD_GOOD,
   WORKS_SPINUP_TICKS,
   YIELD_PER_TICK,
 } from '../works/params.js';
@@ -2115,9 +2118,17 @@ export class Runtime {
     return qty(total);
   }
 
-  private chargeGoodLotsAt(
+  /**
+   * Unpledged lots of one good this principal holds AT a system, canonical order.
+   *
+   * Generalised from `chargeGoodLotsAt` when `refine` needed the same query for a different good.
+   * Parameterised rather than copied: "which lots may I spend here" is one rule, and a second copy is
+   * the shape that lets two callers disagree about `encumbranceId` or `AVAILABLE` (scar #5).
+   */
+  private goodLotsAt(
     principal: PrincipalId,
     system: SystemId,
+    good: GoodId,
   ): readonly { readonly id: LotId; readonly qty: number }[] {
     const account = storesAccount(principal);
     if (this.ledger.account(account) === undefined) return [];
@@ -2125,7 +2136,7 @@ export class Runtime {
       .lotsInAccount(account)
       .filter(
         (lot) =>
-          lot.good === CHARGE_GOOD &&
+          lot.good === good &&
           lot.qty > 0 &&
           lot.state === 'AVAILABLE' &&
           lot.encumbranceId === null &&
@@ -2133,6 +2144,14 @@ export class Runtime {
       )
       .sort((a, b) => compareIds(a.id, b.id))
       .map((lot) => ({ id: lot.id, qty: lot.qty }));
+  }
+
+  /** The sovereignty Charge's view of the same query. One home, one caller each. */
+  private chargeGoodLotsAt(
+    principal: PrincipalId,
+    system: SystemId,
+  ): readonly { readonly id: LotId; readonly qty: number }[] {
+    return this.goodLotsAt(principal, system, CHARGE_GOOD);
   }
 
   /** Live claims this principal holds, priced, with deadline and consequence. */
@@ -3363,6 +3382,7 @@ export class Runtime {
 
   private verbTable(): Readonly<Record<string, VerbHandler>> {
     return {
+      refine: (ctx, req) => this.committing(ctx) ?? this.vRefine(ctx, req),
       create: (ctx, req) =>
         this.committing(ctx) ??
         this.sealCompliance(ctx, req) ??
@@ -4361,6 +4381,98 @@ export class Runtime {
       };
     }
     return { grant };
+  }
+
+  /**
+   * How much raw {@link WORKS_YIELD_GOOD} this principal could refine at a system right now.
+   *
+   * The one home for "is there anything to refine here", read by the cast branch, the affordance and —
+   * through {@link vRefine}'s own check — the verb. A separate copy in the menu is how an affordance
+   * comes to offer an act the engine refuses, which costs an agent a real action every wake (AGT-S2).
+   */
+  refinableAt(principal: PrincipalId, system: SystemId): number {
+    return this.goodLotsAt(principal, system, WORKS_YIELD_GOOD).reduce((n, l) => n + l.qty, 0);
+  }
+
+  /**
+   * `refine` — turn raw {@link WORKS_YIELD_GOOD} into the consumable everything else wants.
+   *
+   * §10's *"one build step"*, and the verb the newcomer path has always named (*"`extract` a bounded
+   * batch → `refine`"*) while `verbs.ts` declared it not-live. Without it a WORKS yields something no
+   * mechanic consumes, so goods enter the world unpayable and `levyShort` climbs regardless of how much
+   * anyone extracts.
+   *
+   * **PRODUCTION, not EXTRACTION**, and the distinction is the audit's not mine: `produce.ts` posts
+   * EXTRACTION because "a *place* is giving up a bounded amount", checkable against the map. Refining
+   * makes goods out of other goods, which is what the PRODUCTION faucet is for and is checkable against
+   * recipes. Merged into one faucet, neither claim could be tested.
+   *
+   * Located, like everything else (§10.2): ore is refined WHERE IT STANDS and the output appears there,
+   * never at the actor's seat. Goods that appeared at a holding the hand had left would be a located
+   * fact that was false — the error D8 corrected in the Levy.
+   */
+  private vRefine(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const system = readString(req.params, ['system', 'at', 'place']) as SystemId | null;
+    const where = system ?? holdingOf(this.world, req.principal).system;
+    const wanted = readInt(req.params, ['qty', 'quantity', 'amount']);
+
+    const lots = this.goodLotsAt(req.principal, where, WORKS_YIELD_GOOD);
+    const have = lots.reduce((n, l) => n + l.qty, 0);
+    if (have < REFINE_IN_QTY) {
+      return reject(
+        'A2',
+        `refine turns ${WORKS_YIELD_GOOD} into ${WORKS_GOOD}, and you have ${String(have)} unpledged ` +
+          `${WORKS_YIELD_GOOD} at ${where} — the recipe needs ${String(REFINE_IN_QTY)}. A WORKS yields ` +
+          `${WORKS_YIELD_GOOD} where it stands; ${WORKS_GOOD} is what the Levy, a Charge and a WORKS ` +
+          `build are payable in. Encumbered lots do not count.`,
+      );
+    }
+    // Whole batches only. A partial batch would either round in the actor's favour or silently destroy
+    // the remainder, and §10.2's rounding must be published rather than chosen here.
+    const batches = wanted === null ? Math.trunc(have / REFINE_IN_QTY) : Math.trunc(wanted / REFINE_OUT_QTY);
+    if (batches <= 0) {
+      return reject('A2', `refine needs a positive quantity; ${String(wanted)} rounds to no whole batch.`);
+    }
+    const takeQty = batches * REFINE_IN_QTY;
+    if (takeQty > have) {
+      return reject(
+        'A2',
+        `${String(batches)} batch(es) would consume ${String(takeQty)} ${WORKS_YIELD_GOOD} and you have ` +
+          `${String(have)} at ${where}.`,
+      );
+    }
+
+    // ── DESTROY FIRST, THEN SOURCE ────────────────────────────────────────────
+    //
+    // Same ordering rule the delegated `create` documents (AGT-X9): if the second half failed after the
+    // first, a destroy-then-fail leaves the actor poorer, which is safe and visible, where
+    // source-then-fail mints goods from nothing and breaks supply conservation — the one thing INV-1
+    // exists to catch and the worst residue to leave.
+    let taken = 0;
+    for (const lot of lots) {
+      if (taken >= takeQty) break;
+      const portion = Math.min(takeQty - taken, lot.qty);
+      if (portion <= 0) continue;
+      this.ledger.destroyGoods({
+        eventId: `refine.in:${req.principal}:${String(ctx.tick)}:${lot.id}` as EventId,
+        tick: ctx.tick,
+        sink: GOODS_SINK.CONSUMPTION,
+        lotId: lot.id,
+        qty: qty(portion),
+      });
+      taken += portion;
+    }
+    this.ledger.sourceGoods({
+      eventId: `refine.out:${req.principal}:${String(ctx.tick)}:${where}` as EventId,
+      tick: ctx.tick,
+      faucet: GOODS_FAUCET.PRODUCTION,
+      to: storesAccount(req.principal),
+      good: WORKS_GOOD,
+      qty: qty(batches * REFINE_OUT_QTY),
+      location: where,
+      origin: req.principal,
+    });
+    return { ok: true, value: null };
   }
 
   private mintGrantId(tick: number, principal: PrincipalId): GrantId {
@@ -9101,6 +9213,15 @@ export class Runtime {
         onAPromise,
         kept,
         broken,
+        // Raw yield nobody has converted. Summed over every principal's lots rather than tracked as a
+        // counter, because a second home for a quantity the ledger already holds is scar #5 — and the
+        // ledger is the only thing that knows about encumbrance and location.
+        unrefined: qty(
+          [...this.world.holdingByPrincipal.keys()].reduce(
+            (n, p) => n + this.refinableAt(p, holdingOf(this.world, p).system),
+            0,
+          ),
+        ),
       },
       handles,
       standings,

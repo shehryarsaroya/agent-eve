@@ -44,6 +44,7 @@ import {
 import { IN_FULL, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
+import { REFINE_IN_QTY } from '../works/params.js';
 import { handsOf, holdingOf, route, tierOf } from '../world/index.js';
 import {
   DELIVERY_MEASURE,
@@ -184,6 +185,20 @@ export const DEFAULT_WORKS_CHANCE_BPS = 400;
 export const DEFAULT_SYNDICATE_CHANCE_BPS = 150;
 
 /**
+ * How much raw ore a cast member waits for before spending an action to refine. *(calibrate)*
+ *
+ * A CAST POLICY, not a rule — the engine refines any whole batch, and an agent with a reason to convert
+ * a single unit may. This is the bot answering "is this worth one of my four actions this tick", and the
+ * first version got it wrong by not asking: with no threshold, a WORKS yielding every tick meant there
+ * was always ~1 ore available, so **refine fired 2,543 times in 900 ticks** and starved everything else
+ * — `move` fell from 1,000 to 710, `elect` from 325 to 118, `build` from 8 to 3.
+ *
+ * That is the same monoculture failure as the WORKS branch building on tick 0, in the opposite
+ * direction: a branch placed high with no gate does not add behaviour, it replaces it.
+ */
+export const CAST_REFINE_MIN_QTY = 500;
+
+/**
  * How much of its **free** stores a cast payer will commit to elective parts across
  * everything settling in one Reckoning. *(calibrate)*
  *
@@ -314,6 +329,16 @@ export class HeuristicCast {
 
     const election = this.electionFor(member, tick);
     if (election !== null) return { ...base, ...election };
+
+    // ── REFINE FIRST: RAW ORE PAYS NOTHING ────────────────────────────────────
+    //
+    // A WORKS yields `ore` and every obligation in the game is payable in `ration` — the Levy, a
+    // Charge, a WORKS build. So a member sitting on ore is a member with income it cannot spend, and
+    // this branch is placed above the rest because refining is the cheapest act that changes what a
+    // principal can actually do. Ahead of `build` too: no point raising a second source of a good you
+    // are not converting.
+    const refine = this.refineFor(member, tick);
+    if (refine !== null) return { ...base, ...refine };
 
     // ── FOUND A HOUSE, so `syndicateLines` is not permanently empty ────────────
     //
@@ -547,6 +572,31 @@ export class HeuristicCast {
    *      is allowed, and it is the whole reason this game has drama in it."
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * Convert raw yield into the payable good, or null.
+   *
+   * No roll and no cap: unlike `build` and `form`, this is not a commitment with a permanent
+   * consequence — it is the second half of an extraction the member already paid for, and a bot that
+   * refined *sometimes* would just accumulate unusable ore. The engine's own refusal is the only gate
+   * that matters, so the branch asks the same question the verb does (are there unpledged lots here)
+   * and otherwise stays quiet, which keeps it out of AGT-S3's per-tick refusal noise.
+   */
+  private refineFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    const system = holdingOf(runtime.world, member.principal).system;
+    // A worthwhile batch, not merely a legal one — see {@link CAST_REFINE_MIN_QTY}.
+    if (runtime.refinableAt(member.principal, system) < Math.max(REFINE_IN_QTY, CAST_REFINE_MIN_QTY)) {
+      return null;
+    }
+    // No `qty`: the verb refines every whole batch it can, which is what a member with nothing else to
+    // do with the ore wants, and it costs one action either way.
+    return { verb: 'refine', params: { system } };
+  }
+
   /**
    * Found a syndicate, or null.
    *
