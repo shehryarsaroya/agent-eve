@@ -550,6 +550,9 @@ function inertPort(): PredationPort {
     tierOf: () => 'MARCHES',
     handsDefending: () => [],
     standingOf: () => qty(0),
+    // No battle book at all, so nothing is counting any raid's hulls and every drawn force
+    // stands. `null` rather than 0 for `readForce`'s stated reason: 0 would be a free repulse.
+    raidForceLeft: () => null,
     isSeated: () => true,
     seize: () => qty(0),
     releaseStake: () => undefined,

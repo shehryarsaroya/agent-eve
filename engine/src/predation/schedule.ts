@@ -92,7 +92,9 @@ export const RAID_TARGET_STATEMENT =
   'list for one Reckoning. The demand is drawn from a published band of units and does NOT depend on what ' +
   'you hold, so a raid can demand more than is there and leave with ballast. You have the whole window to ' +
   'pay it (yield), resist it (fight) or ignore it; ignoring costs the multiple, resisting risks your hands, ' +
-  'and nothing a raid does is ever a default or moves your standing.';
+  'and nothing a raid does is ever a default or moves your standing. A world raid brings a published FLEET, ' +
+  'and that fleet IS its force: once you have answered fight, every one of its hulls you destroy takes 1 off ' +
+  'the raid force the standoff resolves against, so winning the battle wins the standoff.';
 
 export function scheduleAt(tick: number): RaidSchedule {
   const next = nextSpawnTick(tick);

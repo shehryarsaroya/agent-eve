@@ -213,7 +213,16 @@ export class Book {
       throw new RaidBookError(`raid ${id} has already resolved as ${raid.state}`);
     }
     if (raid.parties.length >= MAX_RAID_PARTIES) {
-      throw new RaidBookError(`raid ${id} already has ${String(MAX_RAID_PARTIES)} parties, which is the cap`);
+      // The sentence says what to DO, because this is the one refusal in the mechanic that no later
+      // action can clear: a full standoff stays full until it resolves. The old wording ("already has
+      // 8 parties, which is the cap") was true and left an agent with nothing to try, and its downstream
+      // `engage` then told it *"you are not a party — take a side with `join` first"*, which is advice
+      // to retry the action that just failed structurally. See `combat/engage.ts` gate 5.
+      throw new RaidBookError(
+        `raid ${id} is FULL: all ${String(MAX_RAID_PARTIES)} party slots are taken and a standoff never gains ` +
+          `more, so no later join can succeed either. A coalition larger than ${String(MAX_RAID_PARTIES)} ` +
+          `principals has to be split across separate standoffs.`,
+      );
     }
     if (raid.parties.some((p) => p.principal === party.principal)) {
       throw new RaidBookError(`${party.principal} has already joined raid ${id}`);

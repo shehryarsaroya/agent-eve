@@ -177,6 +177,22 @@ interface Result {
   readonly yields: number;
   readonly goodsLost: number;
   readonly maxFielded: number;
+  /**
+   * ── WHAT THE STANDOFF DID, WHICH IS THE ONLY THING THAT ACTUALLY PAYS ──────
+   *
+   * `won`/`lost` above is **field control**, and for most of this layer's life those were the only
+   * columns — which is exactly how the defect they now sit beside survived. A defender could hold the
+   * field, destroy every hull the world brought, and still lose the goods, because `readForce` read
+   * `raid.force` off the record and `applyLoss` returns early on a world hull. The field-control
+   * columns said `won`; the ledger said plundered.
+   *
+   * So these two are the gate. `repulsed` climbing while `plundered` stays non-zero is *"committing a
+   * competent fleet can win"*; `plundered` reaching zero on a script that fights **every** standoff
+   * with **every** doctrine — including three PIKEs, which lose — would be the over-correction A14
+   * forbids, because a mechanic with no losing branch has no drama.
+   */
+  readonly repulsed: number;
+  readonly plundered: number;
 }
 
 /** Build a fleet and answer everything that comes, for `ticks`. */
@@ -287,6 +303,16 @@ function play(seed: string, mine: string, theirs: string | null, ticks: number):
     .reduce((n, l) => n + l.qty, 0);
   const spent = (DOCTRINES[mine]?.ships ?? []).reduce((n, s) => n + Number(hullQuote(s.hull)?.frame ?? 0), 0);
 
+  // Read at the end rather than accumulated: `MAX_RAID_ROWS` is 96 and a 900-tick run spawns ~9, so
+  // the book has not pruned. (The wreck tally above is a different story — see the war spec's header.)
+  let repulsed = 0;
+  let plundered = 0;
+  for (const raid of runtime.raids.all()) {
+    if (!doctrineOf.has(raid.target)) continue;
+    if (raid.state === 'REPULSED') repulsed += 1;
+    if (raid.state === 'PLUNDERED') plundered += 1;
+  }
+
   return {
     battles: closed.size,
     won,
@@ -298,6 +324,8 @@ function play(seed: string, mine: string, theirs: string | null, ticks: number):
     yields,
     goodsLost: START_GOODS - spent - goods,
     maxFielded,
+    repulsed,
+    plundered,
   };
 }
 
@@ -334,8 +362,21 @@ for (const [name, d] of Object.entries(DOCTRINES)) {
 // ── PHASE A ─────────────────────────────────────────────────────────────────
 
 console.log('\n──── A. the world comes for you (A14) ────');
-console.log('doctrine   seed        battles  won lost cont   my hulls  world hulls  FIGHT YIELD  fielded');
-const totals = { battles: 0, won: 0, lost: 0, contested: 0, mine: 0, theirs: 0, fights: 0, yields: 0 };
+console.log(
+  'doctrine   seed        battles  won lost cont   my hulls  world hulls  FIGHT YIELD  fielded    REP  PLU',
+);
+const totals = {
+  battles: 0,
+  won: 0,
+  lost: 0,
+  contested: 0,
+  mine: 0,
+  theirs: 0,
+  fights: 0,
+  yields: 0,
+  repulsed: 0,
+  plundered: 0,
+};
 const seenRefusals = new Set<string>();
 for (const name of Object.keys(DOCTRINES)) {
   for (const seed of SEEDS) {
@@ -349,11 +390,13 @@ for (const name of Object.keys(DOCTRINES)) {
     totals.theirs += r.theirWrecks;
     totals.fights += r.fights;
     totals.yields += r.yields;
+    totals.repulsed += r.repulsed;
+    totals.plundered += r.plundered;
     console.log(
       `${name.padEnd(10)} ${seed.padEnd(11)} ${String(r.battles).padStart(7)} ${String(r.won).padStart(4)}` +
         ` ${String(r.lost).padStart(4)} ${String(r.contested).padStart(4)}   ${String(r.myWrecks).padStart(8)}` +
         ` ${String(r.theirWrecks).padStart(12)}  ${String(r.fights).padStart(5)} ${String(r.yields).padStart(5)}` +
-        `  ${String(r.maxFielded).padStart(7)}`,
+        `  ${String(r.maxFielded).padStart(7)}   ${String(r.repulsed).padStart(4)} ${String(r.plundered).padStart(4)}`,
     );
     for (const line of refusals) seenRefusals.add(line);
   }
@@ -361,7 +404,8 @@ for (const name of Object.keys(DOCTRINES)) {
 console.log(
   `TOTAL                     ${String(totals.battles).padStart(7)} ${String(totals.won).padStart(4)}` +
     ` ${String(totals.lost).padStart(4)} ${String(totals.contested).padStart(4)}   ${String(totals.mine).padStart(8)}` +
-    ` ${String(totals.theirs).padStart(12)}  ${String(totals.fights).padStart(5)} ${String(totals.yields).padStart(5)}`,
+    ` ${String(totals.theirs).padStart(12)}  ${String(totals.fights).padStart(5)} ${String(totals.yields).padStart(5)}` +
+    `          ${String(totals.repulsed).padStart(4)} ${String(totals.plundered).padStart(4)}`,
 );
 if (seenRefusals.size > 0) {
   console.log('\nrefusals seen (deduped):');

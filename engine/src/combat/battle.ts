@@ -23,12 +23,18 @@
  *
  * ── THE COUPLING BACK INTO THE RAID IS THROUGH HANDS, AND NOTHING ELSE ──────
  *
- * This layer does **not** edit `predation/resolve.ts`, and that restraint is deliberate. A wrecked
- * hull routs its hand, `readForce` counts `handsAtStage` *at resolution* — its own doc says
+ * A wrecked hull routs its hand, `readForce` counts `handsAtStage` *at resolution* — its own doc says
  * *"a joiner counts only while its hand is still standing there"* — so a side that loses the battle
  * loses hands and therefore loses the force reading, automatically. Composition beats headcount
- * through a causal chain that already existed, with zero change to the most-tested arithmetic in the
- * engine.
+ * through a causal chain that already existed.
+ *
+ * **AND IT RUNS BOTH WAYS NOW, WHICH IT DID NOT.** The first version of this file said it *"does not
+ * edit `predation/resolve.ts`"* and called that restraint. It was a defect: `applyLoss` returns early
+ * on a world hull, so destroying the weather's entire fleet changed nothing on the raider's side of
+ * the sum and a defender that won the battle still lost the standoff (`fz-13` t192 — three LANCEs
+ * dead, **PLUNDERED 2-3**). {@link worldForceLeft} is the other direction, and it is the *same*
+ * arithmetic rather than a second one: the world's hulls are crewed by synthetic hands, and those
+ * hands are now counted at resolution by the rule every other hand in the sum is counted by.
  *
  * ── PIXEL SIGNATURE: **THE BATTLE LINE** (see `book.ts` for the full frame) ──
  *
@@ -40,7 +46,7 @@
 import type { Rng } from '../core/rng.js';
 import type { HandId, PrincipalId, SystemId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
-import type { RaidRecord } from '../predation/book.js';
+import type { RaidId, RaidRecord } from '../predation/book.js';
 import { engagementIdFor, type Book, type EngagementRecord, type FieldControl, type Formation } from './book.js';
 import { openEngagement } from './engage.js';
 import type { Fleet, HullId } from './fleet.js';
@@ -163,6 +169,7 @@ export function isWorldHull(hull: HullId): boolean {
   return hull.startsWith('world:');
 }
 
+
 /**
  * Give a world raid its fleet. Called immediately after {@link openEngagement} on a world standoff.
  *
@@ -218,6 +225,49 @@ export function mustWorldFleet(args: {
     }
   }
   return brought;
+}
+
+/**
+ * **How much of a raid's own force is still on the field.** The other direction of §9A's coupling.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The header above used to say this layer *"does not edit `predation/resolve.ts`"*, and that
+ * restraint was right about the mechanism and wrong about the direction. A wrecked hull routing its
+ * hand made **losing** a battle lose the force reading; nothing made **winning** one win it.
+ * `applyLoss` returns early on a world hull — *"the world loses nothing it owned"* — and `raid.force`
+ * was read straight off the record, so a defender that destroyed every LANCE faced the same number at
+ * the window's end. Measured: seed `fz-13` tick 192, one missile WARDEN, all three world LANCEs
+ * destroyed, field held at 2,395 EHP of 4,400, standoff **PLUNDERED 2-3**.
+ *
+ * So `readForce` now asks and this answers, and it is still *hands and nothing else*: the world's
+ * fleet is crewed one synthetic hand per hull ({@link worldHand}), `resolve.ts` pops a hand off the
+ * formation for every hull it destroys, and this counts what is left. The conversion back from hulls
+ * to **force** is here rather than in predation because {@link WORLD_FLEET}`.hullsPerForce` is what
+ * turned force into hulls on the way in — one constant, one home, both directions (scar #5).
+ *
+ * **`null` rather than 0 when there is nothing to count**, and that distinction is the whole safety
+ * argument. Three roads reach it: no engagement row over this standoff (never answered FIGHT, or the
+ * book pruned it), or a row with no world formation in it ({@link mustWorldFleet} faulted, or the
+ * raid is an agent's `demand` and brings no fleet at all — `DEMAND_OWN_FORCE` is 0 and all of its
+ * force is already hands). A 0 there would read as *"the raid has been wiped out"*, which is a
+ * repulse nobody fought for written permanently against a real agent's name. `null` says *"nothing
+ * is counting"* and the drawn scalar stands.
+ *
+ * Ceiling division for the same reason: at `hullsPerForce > 1` a raid with one hull left has *some*
+ * force left, and rounding a survivor down to zero would be the free repulse arriving through
+ * arithmetic instead of through a missing row.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function worldForceLeft(book: Book, raid: RaidId): number | null {
+  const record = book.forRaid(raid);
+  if (record === undefined) return null;
+  const worldFormations = record.formations.filter((f) => f.principal === WORLD_PRINCIPAL);
+  if (worldFormations.length === 0) return null;
+  // `!withdrawn` is `fieldControlOf`'s own predicate — a formation that has left the field is not
+  // holding it. The world's `withdrawWhen` is all zeros so it never leaves of its own accord, and
+  // asking anyway costs nothing and stops that from being load-bearing.
+  const hulls = worldFormations.filter((f) => !f.withdrawn).reduce((n, f) => n + f.hands.length, 0);
+  return Math.ceil(hulls / Math.max(1, WORLD_FLEET.hullsPerForce));
 }
 
 /**

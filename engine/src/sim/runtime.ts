@@ -323,6 +323,7 @@ import {
   isPosture,
   isTargetPredicate,
   runBattles,
+  worldForceLeft,
   type BattlePort,
   type EngagePort,
   type EngageRequest,
@@ -769,7 +770,63 @@ import {
  * 11 exists because two agents each took 10. Nothing in this change ran in parallel with anything else,
  * so 12 is the union of one branch. If that stops being true, the note above 11 is the rule.
  */
-export const RULES_VERSION = 12;
+/**
+ * Bumped 12 → 13 because **§9's resolution arithmetic changed**. This is the first bump since 1 → 2
+ * that alters what a *past* tick would compute, so it is the first one whose divergence tick is a
+ * matter of the record rather than of the snapshot shape.
+ *
+ * ── WHAT MOVED, AND WHY EACH PIECE MOVES THE HASH ────────────────────────────
+ *
+ *   1. **`readForce` now measures the raid's OWN force at resolution.** `raiderForce` was
+ *      `raid.force + joiners` with `raid.force` a scalar drawn at spawn; it is now
+ *      `min(raid.force, worldForceLeft) + joiners`, where `worldForceLeft` counts the world fleet's
+ *      surviving synthetic hands. So a standoff whose battle destroyed world hulls resolves
+ *      **REPULSED** where it resolved **PLUNDERED**, and everything downstream of that verdict moves
+ *      with it: no `seize`, no goods destroyed, `forfeit` instead of nothing, `grantWorldProtections`
+ *      with the repulsed branch, and the target keeps stock it used to lose. `RaidRecord.raiderForce`
+ *      and `defenderForce` are written at close and are inside `capture()`, so the state hash differs
+ *      from that tick on.
+ *   2. **`Book.prune`'s retention for resolved engagements** went from `AFTERMATH + 1` (2 ticks) to
+ *      `ENGAGEMENT_RETAIN_TICKS` (288). The engagement book is a state table, so a row kept where one
+ *      used to be dropped changes `capture()` directly. It was **also a latent defect on its own** —
+ *      see `ENGAGEMENT_RETAIN_TICKS` — and it only ever bit once the book was over half full, which
+ *      is why no test found it.
+ *   3. **`MAX_RAID_PARTIES` 8 → 12.** An *acceptance* change, and the only one here: a ninth `join`
+ *      that was refused is now admitted. Nothing has ever submitted one in this world's record (see
+ *      the divergence note below), but the classification of an action shape did move, so it is named
+ *      rather than buried.
+ *   4. **Two read paths, which cannot diverge anything and are named for completeness:**
+ *      `forecastFor` stopped resolving the enemy's real fit (§11.2), and `battleLinesFor`'s `roleTags`
+ *      became trace-derived. Both are projections; neither is in `capture()`.
+ *
+ * **Nothing draws from the RNG and no phase gained a draw.** `worldForceLeft` is a count and a
+ * ceiling-divide; the prune window is a constant; the party cap is a comparison. The seeded
+ * sub-streams reach every existing draw in the same order. **No event kind was added**, and no new
+ * ledger row: a repulse emits the `raid.resolved` row the plunder would have, with different fields.
+ *
+ * ── THE DIVERGENCE SIGNATURE, AND WHY THE DOOR IS PROBABLY UNNECESSARY ───────
+ *
+ * `readForce` only reads differently when an engagement over the raid holds a **world** formation —
+ * that is, when a standoff was answered `FIGHT` **and** the world fielded hulls **and** some of them
+ * died. Combat landed at version 11 and `engage` has existed for one deploy; the live record's raid
+ * answers should be checked before assuming, but a world with no `engage` in its action log replays
+ * **identically**, because `worldForceLeft` returns `null` on every raid with no engagement row and
+ * `readForce` then uses the drawn scalar exactly as version 12 did. Same for the prune: a book that
+ * never held a resolved engagement has nothing to retain differently.
+ *
+ * So the preflight is expected to exit 0. **If it names a tick, it will be the first tick at which a
+ * raid resolved with a battle over it** — grep the journal for `engage` and take the first
+ * `raid.resolved` after it. `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes that tick, exactly as at
+ * 1 → 2, 4 → 5, 5 → 6, 6 → 7, 7 → 8 and 8 → 9.
+ *
+ * ── AND THIS INTEGER IS OWNED BY ONE BRANCH ──────────────────────────────────
+ *
+ * 11's note is the standing rule: `RULES_VERSION` is a **shared resource**, exactly like the working
+ * tree in HARD RULE 7, and two agents may not each claim the next integer. This branch was told it
+ * owned 12 → 13 before it started. If another branch also took 13, the union is 14 and neither number
+ * means anything until that is written down.
+ */
+export const RULES_VERSION = 13;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -2265,7 +2322,11 @@ export class Runtime {
           // §9A couples into §9 through **hands and nothing else**: a wrecked hull sends its hand
           // to RECOVERING, and `readForce` counts hands *at resolution* — its own doc says "a
           // joiner counts only while its hand is still standing there". So a side that loses the
-          // battle loses the force reading automatically, with zero change to §9's arithmetic.
+          // battle loses the force reading automatically.
+          //
+          // And the raid's OWN side is measured here too, through `worldForceLeft`. It was not, and
+          // the consequence was that destroying every hull the world brought changed nothing: a
+          // defender could win the battle and lose the standoff (`fz-13` t192, PLUNDERED 2-3).
           //
           // That only holds if the battle's last tick runs BEFORE the raid resolves, which is why
           // this is a composition rather than a second phase. Adding a phase would change the set
@@ -3329,6 +3390,15 @@ export class Runtime {
       presentHandsAt: (principal, system) => idleHandsAt(principal, system).length,
       tierOf: safeTier,
       handsDefending: idleHandsAt,
+      // ── §9A's COUPLING, THE OTHER WAY ROUND ────────────────────────────
+      //
+      // The one line the whole "winning a battle cannot win the standoff" defect needed. The
+      // engagement book is the authority on how many of the world's hulls are left, and
+      // `worldForceLeft` converts that back to force with the same constant that turned force
+      // into hulls at `mustWorldFleet`. `null` on any raid nothing is fighting over — including
+      // every agent `demand`, which brings no fleet — and `readForce` then uses the drawn scalar
+      // exactly as it always did.
+      raidForceLeft: (raid) => worldForceLeft(this.battles, raid.id),
       isSeated: (principal) => {
         const holdingId = world.holdingByPrincipal.get(principal);
         if (holdingId === undefined) return false;

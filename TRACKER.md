@@ -6,6 +6,153 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **WINNING A BATTLE NOW WINS THE STANDOFF. `RULES_VERSION` 13, and two §11.2 leaks closed on the way.**
+>
+> Three defects, all the same shape — the engine internally consistent while the agent-facing surface
+> said something else. **Not deployed:** see the deploy note at the end.
+>
+> ⚑ **1. `engage` AGAINST A WORLD RAID WAS ALL DOWNSIDE, AND THE PREVIOUS AGENT'S DIAGNOSIS WAS RIGHT.**
+> `readForce` computed `raiderForce = raid.force + joiners` off a scalar drawn at spawn, and `applyLoss`
+> returns early on a world hull, so destroying the weather's entire fleet changed **nothing** on the
+> raider's side of the sum. `fz-13` t192: one missile WARDEN, all three world LANCEs destroyed, field
+> held at 2,395 EHP of 4,400, standoff **PLUNDERED 2-3**. So YIELD was the only rational answer on
+> exactly the occasion A14 built the mechanic for, and it rendered identically to peace (A13).
+>
+> The fix is **the same arithmetic applied to a side that was exempt from it**, not a second one. §9A's
+> rule is *"composition beats headcount, through hands and nothing else"*; a world raid's fleet is
+> crewed one synthetic hand per hull, and `combat/battle.ts:worldForceLeft` counts the ones still
+> standing. `raiderForce = min(raid.force, worldForceLeft) + joiners`. Three properties are load-bearing
+> and each is mutation-tested: the world's force can only **fall** (`Math.min`); **`null` is not zero**,
+> so no battle means the drawn scalar stands and a missing/pruned row can never hand out a repulse
+> nobody fought for (A5′ pointed at the other party); and an agent's `demand` passes through untouched
+> because `DEMAND_OWN_FORCE` is 0 and all of its force was already hands.
+>
+> **THE BALANCE GATE.** Two instruments, and the second is the one that answers the question.
+>
+> `scripts/raid-balance.ts` (**new, committed** — the TRACKER's balance table was previously produced by
+> an uncommitted harness, so the baseline could be read and not reproduced). 900 ticks × 8 members,
+> master (`d677161`) → here, over 14 seeds:
+>
+> | metric | master | here |
+> |---|---|---|
+> | `levyShort` | 0 | **0** |
+> | red tribute lines | 0/112 | **0/112** |
+> | `kept` · `broken` | 608 · 66 | **607 · 65** |
+> | ventures | 3,046 | **3,066** |
+> | live claims · rent | 47 · 111,254 | **47 · 111,254** |
+> | hulls · battles · world hulls killed | 12 · 12 · 12 | **12 · 12 · 12** |
+> | raid outcomes REP/PLU/PAID | 8 · 4 · 114 | **12 · 0 · 114** |
+> | `fight` → REPULSED / PLUNDERED | 8 / 4 | **12 / 0** |
+>
+> **The two meters that decide safety are exactly equal: `levyShort` 0 and zero red tribute lines.** So
+> are rent, claims, hulls, battles and world hulls killed — combat does not read the raid force, so the
+> *battles* are byte-identical and only the *standoffs* moved. `kept` −1, `broken` −1, ventures +0.7%:
+> the same second-order drift the last two gates saw, and the mechanism is the same one — a cast that
+> stops donating `RAID_TAKE_MULTIPLE` is richer and opens more ventures. A **20-member control with no
+> fleet in it is byte-identical on every column**, which is the check that says nothing moved except
+> what the fix touches.
+>
+> ★ **AND THE LOSING BRANCH SURVIVES, WHICH THE CAST SIM CANNOT SHOW.** `f→plu` reaching 0 above is a
+> property of the *cast*, not the mechanic: `raidAnswerFor` only fights what `CAST_ENGAGE_FAVOUR_BPS`
+> says it will win. `combat-sim.ts` fights **every** standoff with **every** doctrine, and it now
+> reports raid outcomes beside field control — because for this layer's whole life the only columns
+> were field control, which is precisely how a defect that let you *hold the field and lose the goods*
+> survived. 3 seeds × 900, identical script, one line different:
+>
+> | | master-equivalent | here |
+> |---|---|---|
+> | battles · field won/lost/**contested** | 39 · 27/3/**9** | 39 · 27/3/**9** |
+> | my hulls · world hulls killed | 16 · 108 | 16 · 108 |
+> | standoffs REPULSED · PLUNDERED | 31 · **8** | 38 · **1** |
+>
+> **7 of 8 plunders became repulses and CONTESTED is unchanged at 9 of 39.** The one surviving plunder
+> is `SWARM` — three PIKEs, which kill **zero** world hulls and lose all three of their own — and it is
+> *unaffected* by the change in both directions. That is the answer to "can a competent fleet win
+> without always winning" as an isolated measurement rather than an argument: a doctrine that destroys
+> the world's hulls now wins the standoff, and a doctrine that cannot still loses it and still loses its
+> fleet.
+>
+> ⚑ **2. `forecastFor` LEAKED THE ENEMY'S REAL FIT UNDER A COMMENT SAYING IT DID NOT** — *"estimated from
+> hull COUNT and CLASS only… using their real profile here would leak a fit"*, with `profileOf(f.fit)` on
+> the next line. `hold_field_bps.p50` is published against my own exact strength, so it was **invertible
+> for theirs**, inside a deliberately narrow band (`800 + 300×hulls`): fake precision over hidden data,
+> the worst arrangement available. Now a stranger is priced at `hullClassWeight` — `2.5 ×` the hull's
+> published bare frame, one formula over the catalogue, reproducible by any agent for free — and the band
+> is honestly wide (floor 1,800 bps, +400/unknown hull) **and sourced**: a swing factor names the
+> formula. Calibrated pessimistic on purpose: 2.5× sits above every untanked fit in the repo (PIKE 1.18×,
+> LANCE 1.26×) and just under the tanked one (WARDEN 3.11×), and an optimistic forecast is how a fleet
+> gets fed into a fight it cannot win. **The world's fleet keeps its real profile**, deliberately — its
+> fit is published, and that is what makes a world raid the one fight an agent can do exact arithmetic
+> about. Caught by a test that cannot be passed by a comment: two worlds identical but for the enemy's
+> fit (4,984 vs 1,792 in the forecast's units) must produce the **same** p50.
+>
+> ⚑ **3. AND THE AUDIT FOR #2 FOUND A SECOND ONE — `roleTags` ON THE PUBLIC FRAME.** `battleLinesFor`
+> published `roleTags` read straight off **every** formation's fit, and `frames/projection.ts` argued it
+> was admissible in these words: *"the four flags — `pinned`, `capOut`, `repairing`, `roleTags` — are
+> effects that have already landed."* **Three of the four were.** A `REMOTE_REPAIR` that had never fired
+> announced `REPAIR` to every viewer, while the agent actually fighting it saw nothing — an agent's
+> `observed_effects` requires the effect to have landed *on it*. So the spectator feed carried a live
+> fact no combatant's `observe` contained (**A9 inverted**) and named part of a `SENSED` manifest (§9A:
+> *a role is earned from what is fitted*). `witnessedTagsOf` derives it from the trace now. **Named
+> loss, not glossed:** `TACKLE` and `COMMAND` cannot be witnessed — the `PINNED` entry names the
+> formation that *is* pinned, not the one holding it — so they no longer appear. `pinned` still carries
+> tackle's consequence, which is the legible half, and attributing a tackler needs a source on a hashed
+> trace entry: a separate change with its own version boundary. *One instance of "the comment and the
+> code disagree" is a reason to search for the second.*
+>
+> ⚑ **4. A LATENT DEFECT THAT WOULD HAVE SILENTLY UNDONE #1 IN PRODUCTION ONLY.** `Book.prune` dropped a
+> resolved engagement after `AFTERMATH + 1` = **two ticks**, and *two* readers outlive one. A standoff
+> answered FIGHT on its spawn tick closes its battle at spawn+22 and resolves at spawn+24, so the row is
+> exactly **two** ticks old when `readForce` asks — landing on the old cutoff precisely. A dropped row
+> reads as `null`, the drawn scalar stands, and the defender that destroyed the whole world fleet loses
+> the standoff again. Only once the book was over half full, so on a world at tick 5,400 and in **no**
+> test. The same cutoff also made `BATTLE_LINE_RETAIN_TICKS = 288` a decoration — `battleLinesFor`
+> filtered rows the book had deleted, which is the A13 failure that constant was raised to fix, arriving
+> from underneath. `ENGAGEMENT_RETAIN_TICKS = max(BATTLE_LINE_RETAIN_TICKS, DEMAND_WINDOW_TICKS)`, and
+> `assertEngagementSchedule` refuses a build where it is shorter than either reader needs.
+>
+> ⚑ **5. `MAX_RAID_PARTIES` 8 → 12, and the refusal stopped lying about why.** `sideIn` returns null for
+> two unrelated reasons and `engage` gave one answer to both: a principal locked out of a full standoff
+> was told *"you are not a party — take a side with `join` first"*, once per tick, until the raid
+> resolved. That is advice to retry the one action that cannot succeed, and a refusal that names a
+> **fixable** cause when the cause is **structural** is worse than AGT-S3 noise — it is false about the
+> world, on the surface A2 calls the interface. It now says FULL, in both `engage` and the `join` throw.
+> The cap moved because at 8 a **formation slot the combat layer offers could not be reached**:
+> `MAX_FORMATIONS_PER_SIDE` is 6 and formations coalesce per principal, so filling both sides takes 11
+> parties. 12 gives one slot of headroom for a force-only escort (§9's escort market), and
+> `assertEngagementSchedule` now refuses a build where the two caps disagree. **What it costs, stated:**
+> `readForce` walks the party list twice with a `handsAtStage` call each, so 36 hand checks instead of 24
+> per reading — noise against a 7.7 ms tick; up to four more `forfeit` postings per raid; four more party
+> rows per retained raid row. **Balance-neutral in every measured world, and that is a limitation:**
+> `heuristic.ts` has **no `join` branch at all**, so no cast sim reaches even 8. The exercised evidence
+> is `combat-sim.ts` phase D.
+>
+> **Six mutations, six named failures.** `readForce` back to `args.raid.force` → 4 named tests red
+> including the wired one · `worldForceLeft` returning `0` instead of `null` → the free-repulse test red
+> · the forecast's `published()` guard removed → the same-p50 test red · `roleTags` back to
+> `tagsOf` → the witnessed-tags test red · the FULL branch removed from `engage` gate 5 → the honest-
+> refusal test red · `ENGAGEMENT_RETAIN_TICKS` back to 2 → `assertEngagementSchedule` throws and the
+> whole combat suite fails closed at construction, which is where that one belongs.
+>
+> **`RULES_VERSION` 12 → 13**, owned by this branch alone (11's note is the standing rule). This is the
+> first bump since 1 → 2 that changes what a *past* tick would compute: the resolution arithmetic, the
+> prune window (both hashed state), and one acceptance (`join` at the 9th party). Nothing draws from the
+> RNG, no phase gained a draw, no event kind was added. **The divergence signature is narrow:**
+> `worldForceLeft` only reads differently where an engagement over the raid holds a world formation and
+> some of it died, so a world with no `engage` in its action log replays identically. The preflight is
+> expected to exit 0; if it names a tick it is the first `raid.resolved` after the first `engage`.
+>
+> **NOT DEPLOYED, deliberately.** `deploy.sh` rsyncs the whole tree, six other worktrees are live, and a
+> `RULES_VERSION` bump is a shared resource — deploying this unilaterally is exactly the hazard that
+> produced 11. Merge master, run the replay preflight, and arm `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` with
+> whatever tick it names before `./deploy/deploy.sh api` from the repo root.
+>
+> **Also worth carrying:** the contract excerpt's largest **reachable** position is now 51,563 of a
+> 56,000 ceiling — 4,437 of slack against a `CONTRACT_CEILING_MARGIN` of 4,000. The `fight` block had to
+> grow, because an agent not told that its hulls move the raid force has a capability it cannot find.
+> The next block to land there has ~437 characters before somebody must raise the ceiling or make a
+> block conditional.
+
 > ### ★★★ **COMBAT IS EXERCISED. `RULES_VERSION` 12, hulls built, a formation on a field, and a hull destroyed in a world nobody steers.**
 >
 > Phase 2 shipped complete and unentered: `heuristic.ts` had no combat branch, so **nothing in the

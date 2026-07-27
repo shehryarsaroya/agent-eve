@@ -190,6 +190,8 @@ describe('a joiner counts only while its hand is standing at the stage', () => {
       tier: 'FRONTIER',
       defenderHands: 0,
       handsAtStage: (p) => (p === here ? (['h:here'] as HandId[]) : []),
+      // No battle over this standoff, so the raid's own force is the drawn scalar.
+      raidForceLeft: () => null,
     });
     expect(reading.terms.defenderJoiners).toBe(1);
     expect(reading.terms.raiderJoiners).toBe(0);
@@ -212,6 +214,7 @@ describe('a joiner counts only while its hand is standing at the stage', () => {
       defenderHands: 0,
       // The principal has a hand here — but not the one it put in.
       handsAtStage: () => ['h:2'] as HandId[],
+      raidForceLeft: () => null,
     });
     expect(reading.terms.raiderJoiners).toBe(0);
   });

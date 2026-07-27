@@ -25,7 +25,7 @@
 import { qty, type Bps, type Minor, type Qty } from '../core/units.js';
 import type { GoodId } from '../core/types.js';
 import { TICKS_PER_RECKONING } from '../core/time.js';
-import { DEMAND_WINDOW_TICKS } from '../predation/params.js';
+import { DEMAND_WINDOW_TICKS, MAX_RAID_PARTIES } from '../predation/params.js';
 import { FUEL_GOOD, WORKS_GOOD } from '../works/params.js';
 
 // ── The clock ───────────────────────────────────────────────────────────────
@@ -322,6 +322,33 @@ export const MAX_TRACE_ENTRIES = 48;
  */
 export const BATTLE_LINE_RETAIN_TICKS = TICKS_PER_RECKONING;
 
+/**
+ * How long `Book.prune` must keep a **resolved** engagement row before dropping it.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE LONGER OF THE TWO READERS THAT OUTLIVE A BATTLE, BECAUSE IT WAS SHORTER THAN BOTH.**
+ *
+ * `prune`'s cutoff was `AFTERMATH + 1` = **two ticks**, and two readers need more:
+ *
+ *   - {@link BATTLE_LINE_RETAIN_TICKS} = 288, the Reckoning window the frame draws over. At two
+ *     ticks that constant was a decoration: `battleLinesFor` filtered rows the book had deleted.
+ *   - `readForce`'s {@link import('./battle.js').worldForceLeft}, asked at the **raid's** resolution.
+ *     A standoff answered FIGHT on its spawn tick closes its battle at spawn + {@link
+ *     ENGAGEMENT_TICKS} and resolves at spawn + `DEMAND_WINDOW_TICKS` — so the row is exactly
+ *     `DEMAND_WINDOW_TICKS - ENGAGEMENT_TICKS` ticks old when the number is read, which at the
+ *     shipped clock is **2** and lands on the old cutoff exactly. A dropped row reads as *"nothing
+ *     is counting"*, the drawn scalar stands, and the defender that destroyed the world's whole
+ *     fleet loses the standoff — the very defect `worldForceLeft` exists to fix, reintroduced by a
+ *     retention policy, on production worlds only, once the book is half full.
+ *
+ * A `max` rather than a hand-picked number so that tuning either reader cannot silently outrun it,
+ * and {@link assertEngagementSchedule} refuses a build where it does. It costs nothing: at
+ * `MAX_LIVE_ENGAGEMENTS` = 4 and three raids a Reckoning, the rows inside this window are single
+ * digits against a {@link MAX_ENGAGEMENT_ROWS} of 64.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const ENGAGEMENT_RETAIN_TICKS = Math.max(BATTLE_LINE_RETAIN_TICKS, DEMAND_WINDOW_TICKS);
+
 // ── The world's fleet ───────────────────────────────────────────────────────
 
 /**
@@ -454,6 +481,44 @@ export function assertEngagementSchedule(): void {
         problems.push(`LAYER_RESIST.${layer}.${type} is ${String(value)}; a resist must be in [0, 10000).`);
       }
     }
+  }
+  // ── THE TWO READERS THAT OUTLIVE A RESOLVED BATTLE ─────────────────────────
+  //
+  // Both were silently broken by a two-tick prune (see ENGAGEMENT_RETAIN_TICKS). Asserted here
+  // rather than left to `book.ts`, because a retention window is exactly the kind of constant a
+  // later tuning pass lowers for a good reason without knowing what reads through it.
+  if (ENGAGEMENT_RETAIN_TICKS < BATTLE_LINE_RETAIN_TICKS) {
+    problems.push(
+      `resolved engagements are kept for ${String(ENGAGEMENT_RETAIN_TICKS)} ticks and THE BATTLE LINE is ` +
+        `drawn over ${String(BATTLE_LINE_RETAIN_TICKS)}. The frame would filter rows the book had already ` +
+        `deleted, which is A13 false for combat with a retention policy in front of it.`,
+    );
+  }
+  if (ENGAGEMENT_RETAIN_TICKS < DEMAND_WINDOW_TICKS) {
+    problems.push(
+      `resolved engagements are kept for ${String(ENGAGEMENT_RETAIN_TICKS)} ticks and a standoff lives for ` +
+        `${String(DEMAND_WINDOW_TICKS)}. readForce asks worldForceLeft at the RAID's resolution, so a row ` +
+        `dropped first reads as "nothing is counting" and the raid's spawn scalar stands — the defender that ` +
+        `destroyed the world's whole fleet loses the standoff anyway, which is the defect worldForceLeft exists ` +
+        `to fix arriving through the prune.`,
+    );
+  }
+  // ── THE TWO CAPS MUST NOT DISAGREE ABOUT HOW BIG A BATTLE CAN BE ───────────
+  //
+  // Formations coalesce per principal, so filling both sides' formation slots takes the initiator +
+  // (n-1) raider joiners and (n-1) defender joiners — the target is a party by *being* the target.
+  // If `MAX_RAID_PARTIES` is below that, the standoff fills before the field does and formation slots
+  // `engage` offers cannot be reached at all: a capability that exists and cannot be exercised, which
+  // is indistinguishable from a missing one. Measured at the old 8 against 6 formations a side.
+  const partiesToFillBothSides = 2 * MAX_FORMATIONS_PER_SIDE - 1;
+  if (MAX_RAID_PARTIES < partiesToFillBothSides) {
+    problems.push(
+      `MAX_RAID_PARTIES is ${String(MAX_RAID_PARTIES)} and filling ${String(MAX_FORMATIONS_PER_SIDE)} formations ` +
+        `on both sides takes ${String(partiesToFillBothSides)} parties. The standoff would fill before the field ` +
+        `does, so ${String(partiesToFillBothSides - MAX_RAID_PARTIES)} formation slot(s) engage offers could ` +
+        `never be reached — and the surplus joiner gets refused INV-26 by join and then "you are not a party" ` +
+        `by engage for the rest of the window.`,
+    );
   }
   if (WORLD_FLEET_FIT.length === 0) {
     problems.push('the world must fly something, or a world raid that is answered FIGHT has no opponent.');

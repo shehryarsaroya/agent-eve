@@ -30,12 +30,14 @@ import type { PrincipalId, SystemId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 import type { BattleLine, BattleFormationLine } from '../frames/contract.js';
 import { nextStateNote, profileLookup, ticksLeftOf, WORLD_PRINCIPAL } from './battle.js';
+import { hullClassWeight, NOMINAL_FIT_MULTIPLE_BPS } from './catalogue.js';
 import {
   BATTLE_LINE_RETAIN_TICKS,
   ECHELON_DEPTH,
   ENGAGEMENT_RULE_STATEMENT,
   PIN_THRESHOLD,
   RANGE_CELLS,
+  SLICES_PER_TICK,
 } from './params.js';
 import type { Book, EngagementRecord, Formation } from './book.js';
 import type { Fleet } from './fleet.js';
@@ -50,6 +52,33 @@ export const MAX_VIEW_CONTACTS = 6;
 
 /** How many trace lines a view carries. The recent causal history, not the whole battle. */
 export const MAX_VIEW_TRACE = 6;
+
+// ── The forecast's honesty, as four constants ────────────────────────────────
+//
+// ══════════════════════════════════════════════════════════════════════════
+// **THE BAND WAS `800 + 300 × hulls` OVER A p50 COMPUTED FROM THE ENEMY'S REAL FIT.** Narrow
+// uncertainty around an exact hidden number is the worst arrangement available: it leaks the fit
+// (§11.2 puts one at `SENSED`) *and* tells the reader the leak is reliable. See {@link forecastFor}.
+//
+// Now the p50 is an estimate off the published hull class, so the band has to be honest about being
+// an estimate. A2: *known arithmetic is exact and machine-readable; genuine uncertainty stays
+// uncertain **and sourced***. The one case that stays tight is the world's own fleet, whose fit is
+// published on purpose — that is what makes a world raid the fight an agent can do exact arithmetic
+// about, and it is the reason `SPREAD_PUBLISHED_BPS` is separate rather than a floor of the other.
+// *(calibrate)*
+// ══════════════════════════════════════════════════════════════════════════
+
+/** The band when every hostile hull's fit is published (the world's). Tight, and earned. */
+export const SPREAD_PUBLISHED_BPS = 800;
+
+/** The floor when any hostile fit is unknown. A class-only estimate is not an 8% question. */
+export const SPREAD_UNKNOWN_BASE_BPS = 1_800;
+
+/** Added per hostile hull whose fit is unknown. What makes a scout worth paying for. */
+export const SPREAD_PER_UNKNOWN_HULL_BPS = 400;
+
+/** The widest the band goes. Past this it says "no idea", which is a sentence not a number. */
+export const SPREAD_MAX_BPS = 4_500;
 
 /** My own formation, exactly. snake_case: the wire matches the document, character for character. */
 export interface OwnFormationView {
@@ -267,12 +296,42 @@ function observedEffects(
 }
 
 /**
- * The band. Wider the less the observer knows, and never a truth.
+ * The band. Wider the less the observer knows, and **never a truth about a stranger**.
  *
- * The p50 is a ratio of *observable* strength: my exact EHP-and-alpha against their hull count times
- * a published per-class weight. The p10/p90 spread widens with the number of hostile hulls whose
- * class the observer has *not* seen an effect from, which is what makes a scout worth paying for
- * rather than a flavour purchase.
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS FUNCTION USED TO LEAK THE ENEMY'S REAL FIT UNDER A COMMENT SAYING IT DID NOT.**
+ *
+ * The comment read: *"Their strength is estimated from hull COUNT and CLASS only. That is
+ * deliberately less than the engine knows: using their real profile here would leak a fit through the
+ * forecast."* The line immediately below it was `const p = profileOf(f.fit)` and it resolved the
+ * enemy's **true** profile — so `hold_field_bps.p50`, published against `my_formations`' exact EHP and
+ * alpha, was **invertible for the enemy's exact strength**. §11.2 puts a fit at `SENSED` (*"a ship at
+ * sea is visible; its manifest is not"*) and §9A says in as many words *"never their fit, EHP or
+ * capacitor"*. The band around the leak was `800 + 300 × hulls`, so the fake uncertainty was narrow
+ * and the number under it was exact: the worst of both.
+ *
+ * This is scar #1's exact shape — an individually-correct comment above individually-correct code,
+ * disagreeing — and the same shape as `roleTags` on THE BATTLE LINE below, which the audit for this
+ * one turned up.
+ *
+ * ## What it computes now
+ *
+ * - **Mine, exact.** A2: known arithmetic is exact and machine-readable. My own fits are mine.
+ * - **Theirs, from `hullClassWeight` × hull count** — a published formula over the published
+ *   catalogue, reproducible by any agent, and pessimistic by calibration.
+ * - **Except the world's**, whose fit is `WORLD_FLEET_FIT` and public **by design**: `battle.ts` says
+ *   *"you do not get to be surprised by the weather's composition; you get to be caught out of
+ *   position by it"*, and A2 requires a defender be able to compute exactly what a storm is made of.
+ *   Using the real profile there is not a leak, it is the promise.
+ *
+ * ## And the band is genuinely wide now, because the p50 is genuinely an estimate
+ *
+ * A2's second half: *genuine uncertainty stays uncertain **and sourced***. A narrow band over hidden
+ * data is fake precision; a narrow band over a class estimate would be a lie about the estimate. So
+ * the floor for an unknown formation is {@link SPREAD_UNKNOWN_BASE_BPS} rather than 800, it grows per
+ * unidentified hull, and `swing_factors` names the method it was built from — a forecast that is
+ * honestly wide is correct.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 function forecastFor(
   record: EngagementRecord,
@@ -280,34 +339,47 @@ function forecastFor(
   theirs: readonly Formation[],
   profileOf: (fit: string) => { readonly ehp: number; readonly alpha: number } | undefined,
 ): ForecastView {
+  const strengthOf = (ehp: number, alpha: number): number => ehp + alpha * SLICES_PER_TICK;
   const myStrength = mine.reduce((n, f) => {
     const p = profileOf(f.fit);
-    return n + (p === undefined ? 0 : (p.ehp + p.alpha * 8) * f.hands.length);
+    return n + (p === undefined ? 0 : strengthOf(p.ehp, p.alpha) * f.hands.length);
   }, 0);
-  const theirHulls = theirs.reduce((n, f) => n + f.hands.length, 0);
-  // Their strength is estimated from hull COUNT and CLASS only. That is deliberately less than the
-  // engine knows: using their real profile here would leak a fit through the forecast, which is the
-  // "Charge fuel gauge" leak with a battle in it.
+  // The world's fleet is the ONE formation whose real profile this may read. Everything else is
+  // priced off its hull class, which is all §9A publishes about a stranger.
+  const published = (f: Formation): boolean => f.principal === WORLD_PRINCIPAL;
   const theirStrength = theirs.reduce((n, f) => {
-    const p = profileOf(f.fit);
-    const classWeight = p === undefined ? 4_000 : p.ehp + p.alpha * 8;
-    return n + classWeight * f.hands.length;
+    const p = published(f) ? profileOf(f.fit) : undefined;
+    const weight = p === undefined ? hullClassWeight(f.hull) : strengthOf(p.ehp, p.alpha);
+    return n + weight * f.hands.length;
   }, 0);
 
   const total = myStrength + theirStrength;
   const p50 = total === 0 ? 5_000 : Math.trunc((myStrength * 10_000) / total);
-  const unknown = theirs.filter((f) => f.principal === WORLD_PRINCIPAL).length === 0 ? theirHulls : 0;
-  const spread = Math.min(3_500, 800 + unknown * 300);
+  // Hulls whose strength this band GUESSED. Zero for the world's, whose fit is published — which is
+  // what makes a world raid the one fight an agent can do exact arithmetic about before committing.
+  const unidentified = theirs.filter((f) => !published(f)).reduce((n, f) => n + f.hands.length, 0);
+  const spread =
+    unidentified === 0
+      ? SPREAD_PUBLISHED_BPS
+      : Math.min(SPREAD_MAX_BPS, SPREAD_UNKNOWN_BASE_BPS + unidentified * SPREAD_PER_UNKNOWN_HULL_BPS);
 
   const swing: string[] = [];
   if (mine.some((f) => f.capOut)) swing.push('one of my formations is out of capacitor');
   if (mine.some((f) => f.tackledBy >= PIN_THRESHOLD)) swing.push('one of my formations is pinned and cannot leave');
   if (!mine.some((f) => tagsHas(profileOf, f, 'REPAIR'))) swing.push('no repair coverage on my side');
   if (!mine.some((f) => tagsHas(profileOf, f, 'TACKLE'))) swing.push('no tackle: nothing of theirs is held');
-  if (theirs.some((f) => f.principal === WORLD_PRINCIPAL)) {
+  if (theirs.some(published)) {
     swing.push("the world's fleet is public: its fit is published and it never withdraws");
-  } else {
-    swing.push('hostile fits are unknown; this band assumes hull class only');
+  }
+  if (unidentified > 0) {
+    // **The source, named.** A2 requires genuine uncertainty to stay uncertain *and sourced*, and a
+    // band an agent cannot account for is one it has to either trust or discard. This says exactly
+    // what the estimate is made of, so an agent can reproduce it and decide how much to believe.
+    swing.push(
+      `${String(unidentified)} hostile hull(s) have unknown fits: their strength is estimated at ` +
+        `${String(NOMINAL_FIT_MULTIPLE_BPS / 100)}% of the hull class's bare frame from the published ` +
+        `catalogue, never from their real fit (a fit is SENSED, §11.2)`,
+    );
   }
   if (record.state === 'MUSTER') swing.push('more hulls may still be committed on either side');
 
@@ -329,6 +401,51 @@ function tagsHas(
 ): boolean {
   const p = profileOf(formation.fit) as { readonly roleTags?: readonly string[] } | undefined;
   return p?.roleTags?.includes(tag) ?? false;
+}
+
+/**
+ * The role tags a formation has been **witnessed exercising**, from the trace.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SECOND INSTANCE OF `forecastFor`'s DEFECT, FOUND BY AUDITING FOR IT.**
+ *
+ * `battleLinesFor` published `roleTags: [...tagsOf(f, profileOf)]` for **every** formation on a
+ * **public** frame, and `tagsOf` is `profileOf(formation.fit).roleTags` — read straight off the fit.
+ * `frames/projection.ts` argued it was admissible in exactly these words: *"the four flags —
+ * `pinned`, `capOut`, `repairing`, `roleTags` — are **effects that have already landed**, which is the
+ * tier the combat observation already publishes to every agent in the fight as `observed_effects`. So
+ * A9's parity holds by construction."*
+ *
+ * **Three of the four were effects. `roleTags` was not.** A formation carrying a `REMOTE_REPAIR` that
+ * has never repaired anything published `REPAIR` on the night's frame, while the agent actually
+ * *fighting* it saw nothing of the kind — `observedEffects` is built from the trace and requires the
+ * effect to have landed **on the reader**. So the spectator feed carried a live fact no combatant's
+ * own `observe` contained, which is A9 inverted, and it named part of a `SENSED` manifest (§9A: *"a
+ * role is earned from what is fitted"* — so the tag *is* the fitting).
+ *
+ * ## What this gives up, stated rather than glossed
+ *
+ * Only what the trace can witness. Today that is `LINE` (it fired), `REPAIR` (it repaired, or tried
+ * and was dry or jammed) and `EWAR` (it broke a capacitor). **`TACKLE` and `COMMAND` cannot appear**:
+ * the `PINNED` entry names the formation that *is* pinned and not the one holding it, and nothing
+ * traces a command burst. Tackle's consequence is on the line regardless — `pinned` is the "cannot
+ * leave" mark, which is the legible half of §9A's tackle chain — so the pixel signature survives the
+ * fix. Attributing a tackler would need a source on the `PINNED` entry, which is hashed state and
+ * therefore a separate change with its own version boundary.
+ *
+ * The world's own fleet keeps its full published set, for the reason its profile is public at all:
+ * it is not a principal, so §11.2 protects no strategy of its.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function witnessedTagsOf(record: EngagementRecord, formation: Formation): readonly string[] {
+  const seen = new Set<string>();
+  for (const line of record.trace) {
+    if (line.actor !== formation.id) continue;
+    if (line.kind === 'VOLLEY' || line.kind === 'MISSED') seen.add('LINE');
+    if (line.kind === 'REPAIRED' || line.kind === 'REPAIR_DRY' || line.kind === 'REPAIR_JAMMED') seen.add('REPAIR');
+    if (line.kind === 'CAP_BROKEN') seen.add('EWAR');
+  }
+  return [...seen].sort(compareIds);
 }
 
 /**
@@ -459,7 +576,15 @@ export function battleLinesFor(book: Book, fleet: Fleet, tick: number, limit: nu
             capOut: f.capOut,
             withdrawn: f.withdrawn,
             repairing: repairers.has(f.id),
-            roleTags: [...tagsOf(f, profileOf)],
+            // ── WITNESSED, NOT READ OFF THE FIT ─────────────────────────────
+            //
+            // The frame is PUBLIC and a fit is SENSED. `tagsOf` resolves the profile, so publishing
+            // it here handed a scraper part of every formation's manifest — under a projection
+            // comment claiming all four flags were "effects that have already landed". Three were.
+            // The world's is published in full because it is not a principal. See
+            // {@link witnessedTagsOf}.
+            roleTags:
+              f.principal === WORLD_PRINCIPAL ? [...tagsOf(f, profileOf)] : [...witnessedTagsOf(record, f)],
           })),
         wrecks: record.wrecks.map((w) => ({
           principal: w.principal,

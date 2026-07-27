@@ -59,6 +59,7 @@ import type { FitHash } from './fit.js';
 import type { HullId } from './fleet.js';
 import {
   ENGAGEMENT_PHASE_TICKS,
+  ENGAGEMENT_RETAIN_TICKS,
   GAP_AT_CONTACT,
   MAX_ENGAGEMENT_ROWS,
   MAX_FORMATIONS_PER_SIDE,
@@ -448,9 +449,37 @@ export class Book {
    * Settled-this-Reckoning rows are kept, exactly as `predation/book.ts` keeps them: the frame at
    * the Reckoning renders them, and a prune that ran first would publish a battle that left no
    * trace of having happened.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE CUTOFF WAS `AFTERMATH + 1` = TWO TICKS, AND THAT MADE TWO PUBLISHED CLAIMS FALSE ON ANY
+   * WORLD OLD ENOUGH TO FILL THIS BOOK.**
+   *
+   * Two readers outlive a resolved engagement by design, and both of them are downstream of a row
+   * this loop was entitled to delete:
+   *
+   *   1. **{@link BATTLE_LINE_RETAIN_TICKS}** is `TICKS_PER_RECKONING` = 288, because the published
+   *      frame is the *Reckoning* frame and a battle is 22 ticks of 288 (`params.ts` carries the
+   *      measurement: at two ticks a battle that destroyed three hulls appeared on **no** frame).
+   *      A two-tick prune made that constant a decoration — `battleLinesFor` would filter over rows
+   *      that had already been deleted.
+   *   2. **{@link import('./battle.js').worldForceLeft}**, which `readForce` asks at the *raid's*
+   *      resolution. A standoff answered FIGHT on the tick it spawned closes its battle at
+   *      spawn + `ENGAGEMENT_TICKS` (22) and resolves at spawn + `DEMAND_WINDOW_TICKS` (24) — so
+   *      the row is exactly **two** ticks old when the number is read, landing precisely on the old
+   *      cutoff. A pruned row reports `null`, the drawn scalar stands, and the defender that
+   *      destroyed the world's whole fleet loses the standoff again. Silently, and only once the
+   *      book is over half full — a defect that appears after a few thousand ticks of production and
+   *      in no test.
+   *
+   * So the window is the longer of the two, stated as {@link ENGAGEMENT_RETAIN_TICKS} rather than
+   * spelled here, and `assertEngagementSchedule` refuses a build where it is shorter than either
+   * reader needs. The bound INV-26 wants is unaffected: {@link MAX_ENGAGEMENT_ROWS}` / 2` still
+   * stops the walk, so the book cannot be forced to grow by keeping rows longer — it can only be
+   * forced to keep *older* rows, and `MAX_LIVE_ENGAGEMENTS` = 4 caps how fast they arrive.
+   * ══════════════════════════════════════════════════════════════════════════
    */
   prune(tick: number): number {
-    const cutoff = tick - ENGAGEMENT_PHASE_TICKS.AFTERMATH - 1;
+    const cutoff = tick - ENGAGEMENT_RETAIN_TICKS - 1;
     let dropped = 0;
     for (const id of [...this.rows.keys()].sort(compareIds)) {
       const row = this.rows.get(id);

@@ -160,6 +160,17 @@ import type { FrameSource } from './render.js';
  * own `observe` would not contain. And the world's own fleet is public in full, deliberately: the
  * world is not a principal, so §11.2 protects no strategy of its.
  *
+ * ⚑ **THREE OF THOSE FOUR WERE EFFECTS AND `roleTags` WAS NOT, FOR THE LAYER'S WHOLE LIFE.** The
+ * paragraph above was the argument; the code was `roleTags: [...tagsOf(f, profileOf)]`, which resolves
+ * the formation's **fit**. A `REMOTE_REPAIR` that had never fired published `REPAIR` on the night's
+ * frame while the agent fighting it saw nothing — `observedEffects` requires the effect to have landed
+ * *on the reader*. So the feed carried a live fact no combatant's `observe` contained (A9 inverted) and
+ * named part of a `SENSED` manifest (§9A: *"a role is earned from what is fitted"* — the tag **is** the
+ * fitting). `combat/view.ts`'s `witnessedTagsOf` now derives it from the trace, and the claim above is
+ * true rather than intended. It was found by auditing for the identical defect in `forecastFor`, which
+ * computed `hold_field_bps` from the enemy's real profile under a comment saying it did not: **one
+ * instance of "the comment and the code disagree" is a reason to search for the second.**
+ *
  * **Not admissible, and the reason each was considered:** cargo contents and hold values
  * (`SENSED` — "a ship at sea is visible; its manifest is not"); exact hand disposition
  * off public lanes (`SENSED`); seal *content* (`SEALED`, and it releases in the season

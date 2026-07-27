@@ -466,12 +466,19 @@ export const CAST_ARMS_RESERVE_MULTIPLE = 2;
  * ══════════════════════════════════════════════════════════════════════════
  * **THIS IS THE COMBAT BALANCE GATE, AND WHAT IT PROTECTS IS THE STANDOFF RATHER THAN THE HULL.**
  *
- * A hull adds **no force to the raid** — `readForce` counts hands, and a hand crewing a hull is
- * still IDLE at the stage, so committing one changes the standoff's arithmetic not at all. What
+ * A hull adds **no force to the defender's side** — `readForce` counts hands, and a hand crewing a
+ * hull is still IDLE at the stage, so committing one adds nothing to `defender_if_you_fight`. What
  * committing does is put that hand at risk: `applyLoss` routs the hand of every wrecked hull, and a
  * routed hand is gone from `handsAtStage` **at resolution**. So a member that answers FIGHT on a
  * force reading of 3-2 and then loses a hull reads 2-2 at the window's end — still a repulse — and
  * one that loses two reads 1-2 and is plundered for twice the demand.
+ *
+ * **What it buys is on the OTHER side of the sum**, and that is what this constant now guards. A
+ * world raid's own force is its fleet, and `worldForceLeft` re-measures it at resolution too, so
+ * every LANCE these hulls destroy takes 1 off `force.raid_force_left`. A commit is therefore a trade:
+ * one hand of the defender's own margin, against however much of the raid's force the fit can remove
+ * before the window closes. This gate is what stops that trade being taken at a loss — the reason it
+ * exists did not change, but the thing it is trading *for* went from nothing to the standoff itself.
  *
  * That is the coupling `combat/index.ts` calls *"composition beats headcount, through hands"*, seen
  * from the defender's side, and it means the honest gate is not *"can I afford the hull"* but
@@ -1628,31 +1635,31 @@ export class HeuristicCast {
    *   2. **A favoured fleet at the stage → `fight`, and it costs one demand to do it.**
    *
    *      ══════════════════════════════════════════════════════════════════════
-   *      **WINNING A BATTLE AGAINST THE WORLD CANNOT WIN THE STANDOFF, AND THAT IS WHY THIS CLAUSE
-   *      HAS TO BE WRITTEN DOWN RATHER THAN DERIVED.**
+   *      **WINNING A BATTLE AGAINST THE WORLD NOW WINS THE STANDOFF — AND THIS CLAUSE IS WHAT MADE
+   *      THAT DEFECT VISIBLE, SO THE HISTORY STAYS.**
    *
-   *      The coupling `combat/index.ts` advertises — *"a wrecked hull routs its hand and `readForce`
-   *      counts hands, so losing the battle loses the force reading for free"* — runs in **one
-   *      direction only**. `predation/resolve.ts` computes `raiderForce = args.raid.force + joiners`,
-   *      and for a world raid `raid.force` is a scalar drawn at spawn. `mustWorldFleet` gives that
-   *      raid exactly `force` LANCEs, and `applyLoss` returns early on a world hull — *"the world
-   *      loses nothing it owned"* — so a defender that destroys **all** of them faces the same number
-   *      at the window's end. Destroying the weather's fleet accomplishes, materially, nothing.
+   *      It used not to. `predation/resolve.ts` computed `raiderForce = args.raid.force + joiners`,
+   *      and for a world raid `raid.force` was a scalar drawn at spawn; `mustWorldFleet` gives the
+   *      raid exactly `force` LANCEs and `applyLoss` returns early on a world hull, so a defender
+   *      that destroyed **all** of them faced the same number at the window's end. Measured:
+   *      `fz-13` tick 192, `brannock` answers FIGHT with one missile WARDEN, kills all three world
+   *      LANCEs, holds the field at 2,395 EHP of 4,400 — and the standoff resolves **PLUNDERED
+   *      2-3**. Destroying the weather's fleet accomplished, materially, nothing, and this branch
+   *      existed to buy the battle anyway so the layer would not stay dark for want of a caller.
    *
-   *      Measured: `fz-13`, tick 192. `brannock` answers FIGHT with one missile WARDEN, kills all
-   *      three world LANCEs, holds the field at 2,395 EHP of 4,400 — and the standoff resolves
-   *      **PLUNDERED 2-3**, because it had two hands at the stage and the raid had a 3 written on it.
+   *      {@link import('../combat/battle.js').worldForceLeft} closes it: the world's hulls are
+   *      crewed by synthetic hands and `readForce` now counts the ones still standing, so
+   *      `force.raid_force_left` falls one per hull destroyed. **The branch stays, and its price
+   *      stays** — for two reasons that are both about not over-correcting. The reading is taken at
+   *      the window's *end*, so at the moment of the answer a fleet is a bet rather than a
+   *      certainty: hulls can die first. And a fleet that is favoured on paper can still lose
+   *      (`CAST_ENGAGE_FAVOUR_BPS` is a margin, not a proof), which is exactly the losing branch
+   *      A14 requires — a mechanic with no way to lose has no drama.
    *
-   *      So a purely material heuristic never flies, and the layer would stay dark for a *reason*
-   *      rather than for want of a branch. This clause is the cast's answer and it is priced rather
-   *      than free: resisting instead of paying costs the difference between two published figures
-   *      (`if_you_do_nothing - pay`, one demand at `RAID_TAKE_MULTIPLE = 2`), and it is only taken
-   *      when the tribute is still covered afterwards. A member that owns a fleet and refuses every
-   *      fight owns a monument.
-   *
-   *      **The fix, if the owner wants one, is in `readForce`'s caller**: count the world's
-   *      *surviving* hulls rather than `raid.force`. That is a §9 balance change with a gate of its
-   *      own, so it is reported and not taken here.
+   *      So resisting instead of paying still costs the difference between two published figures
+   *      (`if_you_do_nothing - pay`, one demand at `RAID_TAKE_MULTIPLE = 2`) in the worst case, and
+   *      it is only taken when the tribute is still covered afterwards. What changed is that the
+   *      spend now buys an outcome instead of a monument.
    *      ══════════════════════════════════════════════════════════════════════
    *
    *   3. **Otherwise `yield` when paying is cheaper than silence.** `yield` pays exactly the demand
@@ -1815,17 +1822,22 @@ export class HeuristicCast {
       // hand costs the standoff nothing it had not already lost. A hopeless standoff is the cheapest
       // place to bring a fleet, which is a strange sentence and a true one.
       //
-      // ⚑ **MEASURED NOT TO BIND YET, AND KEPT ANYWAY — WRITTEN DOWN RATHER THAN DISCOVERED.**
-      // Mutation-tested: defanging this clause (`> margin + 99`) leaves every test in
-      // `the-cast-goes-to-war.spec.ts` green, because its subject has not occurred in any measured
-      // seed. The two roads to it are still disjoint: on the gate seeds a member answers FIGHT on a
-      // REPULSED reading and owns **no hull**, and on the war seeds the only member with hulls stands
-      // on the Frontier where `FORCE_BY_TIER` is 0, so with two hands home its reading is PLUNDERED
-      // and this branch is skipped. The subject appears the moment `crewMove` gets a third hand to a
-      // Frontier berth and the world draws `RAID_FORCE` 2 — a reading of 3-2, one hand of margin, and
-      // a fleet that wants to fly three hulls into it. `claimFor`'s tribute clause carries the same
-      // note for the same reason: **an unexercised guard reads exactly like a missing one**, so the
-      // absence is stated rather than left for the next reader to rediscover.
+      // ⚑ **ITS SUBJECT NOW OCCURS, AND `worldForceLeft` IS WHAT GAVE IT ONE.**
+      //
+      // The note that used to stand here said this clause was measured not to bind and kept anyway:
+      // defanging it (`> margin + 99`) left every test in `the-cast-goes-to-war.spec.ts` green,
+      // because on the gate seeds a member answering FIGHT owned no hull and on the war seeds the
+      // one armed member stands on the Frontier where `FORCE_BY_TIER` is 0, so with two hands home
+      // its reading was PLUNDERED and the branch was skipped.
+      //
+      // Both roads now meet, and by the front door rather than by a new seed. A world raid's own
+      // force falls one per hull destroyed, so a standoff that read PLUNDERED at the answer **flips
+      // to REPULSED mid-window** the moment the guns land — and from that tick this clause is what
+      // decides whether the next hull reinforces or stays berthed. It is deliberately the
+      // conservative side of a trade that is now genuinely two-sided: a committed hull can win
+      // margin by killing a LANCE as well as lose it by becoming a wreck. Kept conservative because
+      // the reading is taken at the window's *end*, and the margin is the only thing standing
+      // between a lost hull and a lost standoff.
       // ══════════════════════════════════════════════════════════════════════
       const view = runtime.raidsFor(member.principal, tick, MAX_CAST).find((row) => row.raid === record.raid);
       if (view !== undefined && view.force.verdict_if_resolved_now === 'REPULSED') {

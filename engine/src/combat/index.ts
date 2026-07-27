@@ -20,11 +20,19 @@
  * the claim every autonomous-cast combat system fails, silently, and it is why the world's fleet is
  * a *constant* (`WORLD_FLEET_FIT`) rather than a hope.
  *
- * **2. Composition beats headcount, through hands.** This layer does **not** edit
- * `predation/resolve.ts`. A wrecked hull routs its hand; `readForce` counts hands *at resolution* —
- * its own doc says *"a joiner counts only while its hand is still standing there"* — so losing the
- * battle loses the force reading automatically. Zero change to the most-tested arithmetic in the
- * engine, and the causal chain already existed.
+ * **2. Composition beats headcount, through hands — IN BOTH DIRECTIONS.** A wrecked hull routs its
+ * hand; `readForce` counts hands *at resolution* — its own doc says *"a joiner counts only while its
+ * hand is still standing there"* — so losing the battle loses the force reading automatically.
+ *
+ * The first version of this file added *"this layer does **not** edit `predation/resolve.ts`"* and
+ * called that restraint. It was a defect, and the measurement is on the record: `applyLoss` returns
+ * early on a world hull, `raid.force` was a scalar drawn at spawn, and seed `fz-13` at tick 192 shows
+ * a defender destroying **all three** world LANCEs, holding the field, and resolving **PLUNDERED
+ * 2-3**. Winning the battle could not win the standoff, so `engage` against the weather was all
+ * downside and YIELD was the only rational answer — A14's scheduled drama rendering identically to
+ * peace, which A13 calls not existing. {@link worldForceLeft} is the other direction, and it is
+ * *hands and nothing else* too: the world's hulls are crewed by synthetic hands, and those hands are
+ * now counted at resolution by the rule every other hand in the sum is counted by.
  *
  * **3. Every force multiplier is attackable and has two counters** (§12 relationship #4). REPAIR is
  * broken by DRAIN (no capacitor) or DAMP (no lock) or alpha (outrun it). TACKLE is broken by killing
@@ -127,6 +135,7 @@ export {
   WORLD_PRINCIPAL,
   worldFleetHash,
   worldFleetProfile,
+  worldForceLeft,
   WorldFleetError,
   type BattlePort,
   type BattleReport,
@@ -163,8 +172,11 @@ export {
   damageTypesOf,
   HULLS,
   HULL_NAMES,
+  hullClassWeight,
   hullSpec,
   MODULES,
+  NOMINAL_FIT_MULTIPLE_BPS,
+  UNKNOWN_CLASS_WEIGHT,
   MODULE_FAMILIES,
   MODULE_NAMES,
   moduleSpec,

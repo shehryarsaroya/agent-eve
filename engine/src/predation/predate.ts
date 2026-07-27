@@ -281,6 +281,14 @@ function resolveOne(
     // A joiner counts only while its hand is still standing at the stage — measured
     // here, at resolution, by the same call the target's own muster is measured with.
     handsAtStage: (principal) => port.handsDefending(principal, raid.stage),
+    // ── AND THE RAID'S OWN SIDE, MEASURED THE SAME WAY AT THE SAME MOMENT ──
+    //
+    // §9A's coupling, the direction it did not run. A world raid's force was a scalar drawn at
+    // spawn, so destroying every hull it brought changed nothing here and a defender that won the
+    // battle lost the standoff (`fz-13` t192: three world LANCEs dead, PLUNDERED 2-3). The world's
+    // hulls are crewed by synthetic hands and this counts the ones still there — the same rule as
+    // the line above, applied to the side that used to be exempt from it.
+    raidForceLeft: (row) => port.raidForceLeft(row),
   });
 
   if (force.verdict === 'REPULSED') {

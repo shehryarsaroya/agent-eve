@@ -59,7 +59,27 @@ export interface RaidView {
   readonly answer: string | null;
   /** The force arithmetic as it stands **right now** — recomputed, never cached. */
   readonly force: {
+    /** The whole raider sum: `raid_force_left` + one per joiner still standing on that side. */
     readonly raider: number;
+    /**
+     * The raid's **own** force still on the field, and the reason `engage` is worth an action.
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     * **A WORLD RAID'S FLEET IS PART OF ITS FORCE, AND KILLING IT LOWERS THIS NUMBER.** It used
+     * to be a scalar drawn at spawn that nothing could touch, so a defender that destroyed every
+     * hull the world brought faced the identical reading and lost the standoff anyway. That made
+     * fighting the weather all downside and YIELD the only rational answer.
+     *
+     * Published as its own field rather than folded into {@link raider} because an agent pricing
+     * `engage` needs to see the *component its hulls can move*. It falls one point per world hull
+     * destroyed (`WORLD_FLEET.hullsPerForce` = 1) and never rises above
+     * {@link raid_force_at_spawn}. On an agent's `demand` it is 0 and stays 0: a demand brings no
+     * force of its own — all of it is hands, counted the same way.
+     * ══════════════════════════════════════════════════════════════════════
+     */
+    readonly raid_force_left: number;
+    /** What the raid was given at spawn, from `RAID_FORCE`'s published band. Never moves. */
+    readonly raid_force_at_spawn: number;
     readonly defender_if_you_fight: number;
     readonly terrain: number;
     readonly verdict_if_resolved_now: 'REPULSED' | 'PLUNDERED';
@@ -89,6 +109,15 @@ export interface RaidViewPort {
   handsDefending(principal: PrincipalId, stage: SystemId): readonly HandId[];
   /** What the reader still has at the stage in the raided good. Its OWN stock only. */
   standingOf(principal: PrincipalId, stage: SystemId, good: string): Qty;
+  /**
+   * How much of the raid's own force is still on the field, or `null` when nothing counts it.
+   *
+   * On the **view** port and not only on `PredationPort`, deliberately: this is the number that
+   * decides whether committing a fleet is worth anything, and an observation that showed the
+   * spawn scalar while the resolver used the survivors would be scar #1 with a hold at stake.
+   * {@link import('./resolve.js').ForceArgs.raidForceLeft} carries the full argument.
+   */
+  raidForceLeft(raid: RaidRecord): number | null;
 }
 
 /**
@@ -160,6 +189,8 @@ function viewOf(
     // force for a hand that has already marched away would be reading a promise the
     // engine will not keep — scar #1 with a hold at stake.
     handsAtStage: (principal) => port.handsDefending(principal, raid.stage),
+    // And the same for the raid's own side. One call, one number, both readers.
+    raidForceLeft: (row) => port.raidForceLeft(row),
   });
 
   return {
@@ -177,6 +208,8 @@ function viewOf(
     answer: raid.answer,
     force: {
       raider: reading.raiderForce,
+      raid_force_left: reading.terms.raidForce,
+      raid_force_at_spawn: reading.terms.raidForceAtSpawn,
       defender_if_you_fight: reading.defenderForce,
       terrain: reading.terms.terrain,
       verdict_if_resolved_now: reading.verdict,

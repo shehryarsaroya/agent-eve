@@ -177,8 +177,40 @@ export const MAX_LIVE_RAIDS = 6;
 /** INV-26: raid rows retained in the book. Older rows are pruned inside the hash. */
 export const MAX_RAID_ROWS = 96;
 
-/** INV-26: parties (both sides) admitted to one raid. */
-export const MAX_RAID_PARTIES = 8;
+/**
+ * INV-26: parties (both sides) admitted to one raid.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **8 → 12, BECAUSE AT 8 A FORMATION SLOT THE COMBAT LAYER OFFERS COULD NOT BE REACHED.**
+ *
+ * `MAX_FORMATIONS_PER_SIDE` is 6 and formations coalesce per principal, so six principals a side can
+ * field hulls. Reaching that on an agent's `demand` needs the initiator + 5 raider joiners on one side
+ * and 5 defender joiners on the other (the target is a party by *being* the target, not by joining) —
+ * **11 parties**. At 8 the standoff filled first, so two of the twelve formation slots `engage` offers
+ * were unreachable by construction: this project's signature defect, with two caps disagreeing instead
+ * of a missing caller. `assertEngagementSchedule` now refuses a build where that is true again, which
+ * is the executable version of this paragraph.
+ *
+ * **12 rather than 11** for one slot of headroom, so a 6-a-side battle can still admit one
+ * force-only helper — a defender joiner brings `FORCE_PER_JOINER` with a hand and no hull, and §9
+ * says world raids exist partly to give escorts a guaranteed market. A cap that let the hull-bringers
+ * in and locked out the last escort would price the market it was built for.
+ *
+ * ## What the number costs, stated because a bound is a budget
+ *
+ * `readForce` walks the party list twice and asks `handsAtStage` per party (≤3 hands each), so the
+ * per-reading cost is linear: 8 → 12 is 36 hand checks instead of 24, at `MAX_LIVE_RAIDS` = 6 raids ×
+ * up to 20 readers. Against a measured 7.7 ms tick that is noise. Resolution gains up to four more
+ * `forfeit` transfers per raid, each a real ledger posting. The snapshot gains four party rows per
+ * retained raid row. Nothing here is unbounded and INV-26 still asserts the cap.
+ *
+ * **Balance-neutral in every world measured, and that is a limitation rather than a result:**
+ * `heuristic.ts` has **no `join` branch at all**, so no cast sim reaches even 8. The exercised
+ * evidence is `combat-sim.ts` phase D, which drives `join` through the verb table at five principals a
+ * side. A world whose agents actually rally will be the first to test this number.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const MAX_RAID_PARTIES = 12;
 
 /**
  * INV-26: lots one seizure will walk before it stops, per raid.
