@@ -107,7 +107,7 @@ The live frame publishes 13 keys. Eight carry data: `map` 30 rows, `tributeLines
 
 | Surface | Rows | Why — verified, not guessed |
 |---|---|---|
-| `authorityLines` | 0 | **No grant has ever been issued in the live world.** A6 is the core loop and has no pixel signature live. The verb, the book, the invariants (INV-22/23), the VC serialisation and the renderer all exist and are wired |
+| `authorityLines` | ~~0~~ **FIXED** | The cast had no `grant` branch. Now 12 lines on a 900-tick world — see §"Fixed" below. Production will fill as the new build runs |
 | `worksLines` | 0 | Nobody has built a WORKS (D17). The affordance is offered in 70/70 observations and states its payback; the cast still never chooses it |
 | `syndicateLines` | 0 | No syndicate has ever been formed |
 | `claimLines` | 0 | 424 claims exist in the world, but `claimLinesFor` filters to the current Reckoning and none fall in it |
@@ -148,15 +148,63 @@ but it means the doc set cannot be handed to anyone without a warning.
 
 ---
 
+## 7. ⚠ CHECKPOINT ADOPTION IS BROKEN AND DISABLED IN PRODUCTION
+
+The boot-cost problem below is **back on purpose**, and this is the most important open item.
+
+`planCheckpoint` gated adoption on `journal_meta.rules_version`, which is write-once and records what
+the world was *born* under — so the first rules change made the mismatch permanent and every boot
+replayed from genesis forever. That gate was fixed (snapshots now carry the `RULES_VERSION` that
+produced them, so it is one replay per rules change, self-healing).
+
+**Which revealed that the adopt path had never once executed in production, and does not work:**
+
+```
+CHECKPOINT_UNUSABLE at tick 4895
+posting (tick 2830, batch 0, index 1) moves value in account
+escrow:v:2830:117e86ad:p:vale, which the snapshot's ledger capture does not contain.
+The posting log and the snapshot describe different worlds.
+```
+
+The world **HELD** — the correct fail-closed answer, refusing to serve a record it could not
+reproduce — but it was down ~4 minutes and the only lever was `UPDATE snapshot SET rules_version =
+NULL` over SSH. `COMPACT_CHECKPOINT_ADOPTION=off` now exists and **is set on the box**, so every boot
+replays from genesis (4,901 ticks, ~139 s, growing).
+
+**Not reproduced locally, and the negative result narrows it.** A 700-tick heuristic world adopts
+correctly — tick 576, 123 ticks replayed, head hash identical — so "long world" is not the trigger.
+`p:vale` is an externally **enrolled** principal, not a house-cast member, and no local fixture
+enrols agents. Idle-seat recycling is the first mechanism to check for an account leaving the capture
+while its historical postings remain.
+
+Three things to do, in order:
+
+1. **Adoption must never be able to HELD the world.** A checkpoint problem should degrade to a genesis
+   replay, never to an outage. `hydrate.ts`'s own header already identifies the pattern — it
+   pre-probes events precisely because "by then the runtime has been mutated and the refusal can only
+   be a hard stop." The account-set check needs the same pre-flight treatment. This is fixable
+   *without* knowing the root cause and is the highest-value item.
+2. **Reproduce with enrolled principals**, then fix the root cause.
+3. **The deploy preflight cannot catch this and could not have.** `replayCheck` replays from genesis,
+   which works. Nothing exercises the adopt path against the real journal. Close that before
+   re-enabling.
+
 ## Fixed on 2026-07-26, worth not re-finding
 
-- **Boot replayed from genesis on every restart** — 4,809 ticks, 2m12s, growing without bound.
-  `planCheckpoint` gated adoption on `journal_meta.rules_version`, which is **write-once** and
-  records what the world was *born* under, so the first rules change made the mismatch permanent.
-  Snapshots now carry the `RULES_VERSION` that produced them and adoption gates on that: one genesis
-  replay per rules change, self-healing, same safety. **UNVERIFIED in production** — the first
-  stamped snapshot writes at tick 4896; the restart after that is the proof.
 - **The four goods constants were aliases** of one another (scar #5 in the import graph).
+- **A6 could not happen.** The heuristic cast emitted eight verbs and `grant` was not one of them, so
+  ~83% of production decisions structurally could not exercise the core loop. `authorityLines: 0` was
+  read for eight Reckonings as "the cast chooses not to delegate"; it was a missing branch. Now
+  `grant=27` of 2,881 actions over 900 ticks and `authorityLines=12` on the frame — **A13 for the core
+  loop, true for the first time.** The branch fires only when no hand is idle, so it adds a move for
+  the hand-starved member (D19's halcyon, 96% committed) without displacing the busy one.
+  **Still one of three links:** every grant is `UNUSED`, `spent: 0`. No cast path ever *acts* on
+  delegated authority, so betrayal remains impossible and §16's acceptance is unmet.
+- **"enrolment grant" violated HARD RULE 4** — `grant` is canon for delegated authority (§8, A6) and
+  the engine calls enrolment goods an ENDOWMENT. The agent-facing text disagreed with the engine
+  about the design's most load-bearing noun. Guarded by a banned-phrase test.
+- **The event-persistence probe was a cry-wolf** that had been passing vacuously, and false refusals
+  there cost an unbounded genesis replay. Now escalates to a bounded 288-tick window.
 
 ---
 
