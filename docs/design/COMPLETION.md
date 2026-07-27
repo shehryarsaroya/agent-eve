@@ -247,10 +247,27 @@ tell that apart from an invariant that is genuinely holding. Pinned by
 message. Same unfalsifiable-witness shape as INV-23 before `hasDelegationParentage`.
 
 This is the **largest single piece of unbuilt design in the repo** and it is the thing the whole
-project is named for. It needs: a grant param on material verbs, an authorisation check (live, in
-scope, headroom), spend accounting, event attribution via `onBehalfOfPrincipalId`, and a cast branch.
-It touches the action pipeline, which is the most safety-critical surface in the engine — so it wants
-its own session, not the tail of one.
+project is named for. **It is now fully specified** — see
+`docs/design/expansion-2026-07-25/D20-how-a-delegate-spends-a-grant.md`, which resolves the parts that
+are easy to get wrong:
+
+- the insertion point is `vElect`'s PROP-V4 creator gate, whose own comment ("anyone else electing on
+  it would be spending another agent's money") is the definition of delegated treasury authority;
+- **no ledger change is needed** — the elective half already pays from the *creator's* stores;
+- the param is `grant` (as `revoke` spells it) and **not** `on_behalf_of`, which `grant` already uses
+  for the syndicate an office is appointed for — reusing it is scar #1;
+- the spend is recorded at **settlement**, not at election, because `vElect` emits no event and so has
+  no `eventId`, while settlement has both the id and the real amount;
+- `IN_FULL` → `contingent`, a fixed amount → `direct`, which is what §8's two LIMITS were for.
+
+**It cannot be split, and that is why it is not half-built.** The election must record which grant
+authorised it, so `electionsStateTable` — a captured table — gains a field, which means a
+`RULES_VERSION` bump and a declared discontinuity. And the authorisation gate must not ship without
+the accounting: opening the gate with an empty spend journal would let a delegate elect *unbounded*
+amounts of the grantor's money with nothing enforcing the limit, which is strictly worse than being
+unable to act at all. INV-22 is the backstop, not the gate.
+
+Implementation from D20 is mechanical and bounded by one schema field.
 - **"enrolment grant" violated HARD RULE 4** — `grant` is canon for delegated authority (§8, A6) and
   the engine calls enrolment goods an ENDOWMENT. The agent-facing text disagreed with the engine
   about the design's most load-bearing noun. Guarded by a banned-phrase test.
