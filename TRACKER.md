@@ -6,6 +6,76 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **WARS AND LAYERED BETRAYAL BOTH EXIST. `RULES_VERSION` 23 on master; production is at 19 pending one deploy.**
+>
+> One wave, four agents on pre-assigned versions and disjoint lanes. Master: **271 files, 3,480 tests**,
+> tsc 0, lint 0, `audit:budgets` verbs **40/40** — no wave item spent a verb.
+>
+> - **CAMPAIGNS** (v22, `src/campaign/`, 8 files). §16.6's MUST-2/3/5/8/13. A bond of 2× the claim
+>   bond, a machine objective, a depot derived from the attacker's own lane-adjacent holding, pulses
+>   once a Reckoning, 3 breaches take a SUPPLIED claim and 2 take a STRAINED one. Pixel signature
+>   **THE SAP** — a notched band whose advance *is* the score, dashed while MASSING, **hollow when the
+>   depot cannot fund the next pulse**, so a starving war looks starved a Reckoning before it dies.
+>   *Zero budget spent:* no verb, no tick phase, and it filled **§12.1's reserved siege-clock slot**,
+>   which had been published and empty for the project's life.
+>   **A14 without a world-owned war:** a claimant that pays its Charge currently cannot be dislodged at
+>   any price, and rent on a neighbour is the largest recurring income in the game — so the motive
+>   already existed. The clock half is free because *nobody controls the Charge clock*: a claim goes
+>   STRAINED on the world's schedule and a STRAINED claim falls in two breaches instead of three.
+> - **COMPARTMENTED AUTHORITY** (v23, `src/grant/compartment.ts`, `dossier.ts`). A grant was one dial;
+>   it now has three axes — money, **which acts** (`Grant.verbs`), **what may be seen**
+>   (`Grant.clearance`). `OFFICE_SHAPES` makes the six office templates real fences; before this they
+>   delegated identical power and `agent.md` admitted *"it is a label on the receipt"*.
+>   **THE DOSSIER is A6 done properly:** `message {to, dossier}` cuts a signed, dated extract of the
+>   server's own figures. *To your grantor it is a report; to its rival a leak; it is the same call* —
+>   no `betray()` verb, and the engine records custody, never intent. **★ REVOKE IS NOT A CURE:** a
+>   holder re-hands it by id *after* revocation, so revoking stops the next read and reclaims nothing,
+>   which is what makes granting sight the consequential decision. Signatures: **CLEARANCE PIPS** and
+>   **DOSSIER THREADS** (dashed arcs that never fade — a revocation snaps the line, the threads stay).
+>   `audit` landed too: **a canon verb with no handler for twenty rules versions.**
+> - **THE CONTRACT SELECTOR** (no version — selection over an observation is not a replay input).
+>   `CONTRACT_UNIT.acts` gates on **kind-qualified tokens** for the seven verbs that grew a second
+>   meaning, leaving the ~30 single-meaning verbs alone. A newcomer's first wake **43,106 → 39,746**,
+>   and *the unchanged rows are the proof*: a graduated holding keeps paying because it really can
+>   stage a campaign, and the analytic ceiling is byte-identical with **all 54 units still emitted** —
+>   no rule left the catalog, it lost a reader.
+> - **`MAX_CONTRACT_CHARS` 72,000 → 120,000**, owner-set, with per-feature quotas. The old note
+>   promised "several features of headroom" and bought three; the one before promised the same at
+>   56,000 and bought two. The method was the fault: each author measures against their own feature and
+>   cannot see the two landing beside it.
+>
+> ⚑ **THREE PROCESS LESSONS, ALL PAID FOR.**
+>
+> 1. **Disjoint source is not disjoint scope.** Four agents in separate directories still collided in
+>    twelve places — `agent.md`, §3's canon, the pinned position table, `RULES_VERSION`. Pre-assign
+>    canon terms and catalog slots the way integers are already pre-assigned.
+> 2. **Only `levyShort` and the red-line count are stable meters**, and with two cast changes in flight
+>    neither author can attribute anything. One writer per round may claim sweep results; the rest run
+>    it as a *"did I break it"* check. Both non-cast agents were told this and both complied.
+> 3. **Never run the suite while agents hold the machine.** Two agents and I each lost a run to
+>    reporter starvation or SIGTERM. One agent found 17–32 vitest processes belonging to another's
+>    worktree and correctly refused to `pkill`.
+>
+> ⚑ **OPEN, FROM THIS WAVE:**
+> - **`join {campaign, side}` has no tier gate** — a Commons-seated principal is offered both sides of
+>   a war two tiers away, and its hands are Commons-bound so it can never reach the objective. An
+>   offer it cannot fulfil, costing a real action (AGT-S2).
+> - **Supply does not bind.** §12.5 seats every principal with 50,000 `ration` *at its own system*,
+>   which is where a depot goes, and a whole campaign costs 15,000 — **the endowment funds three
+>   wars.** Both candidate fixes have real costs and it is an A15-adjacent call about the floor, like
+>   the goods-floor decision at v20. Recorded at `PULSE_MATERIEL_QTY`.
+> - **`SyndicateBook.giveNotice` has no caller**, so every `withdraw` shipped syndicate-notice rules
+>   for an act that could never select them.
+> - **Two observation builders**, now three independent sightings: `api/observe.ts` serves production,
+>   `observe/observation.ts` is reached only by tests, and `WORST_ITEM_CHARS.fixed` bounds the wrong one.
+>
+> **The recurring defect is at ~15 instances and gained a FOURTH DEPTH:** not a verb with no handler,
+> not an affordance nothing selects, not an invariant whose subject cannot occur, but **a reserved slot
+> in a published contract that nothing fills** (§12.1's siege clock). Each reads as complete in every
+> summary.
+>
+> ---
+>
 > ### ★★★ **THE OPERATOR DOOR WAS WEDGED OPEN FOR NINETEEN CONSECUTIVE RULES CHANGES. IT NOW REFUSES A BARE TICK. `RULES_VERSION` STAYS 19 — none of this is world state.**
 >
 > ```
