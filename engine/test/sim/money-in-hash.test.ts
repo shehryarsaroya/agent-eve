@@ -139,6 +139,7 @@ describe('state_hash covers money', () => {
         accounts: [],
         lots: [],
         encumbrances: { rows: [], exposure: [], perEvent: [] },
+        endowments: [],
         postingCount: rt.ledger.allPostings().length + 1,
         batchCount: rt.ledger.allBatches().length,
       }),

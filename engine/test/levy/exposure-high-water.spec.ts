@@ -226,6 +226,109 @@ function agedToBallotWindow(seed: string, reckonings: number, members = 8): Runt
   return runtime;
 }
 
+/**
+ * ★ **THE DURABLE FIX FOR THE RE-SEEDING TREADMILL — scan, do not pick.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The affordance test below needs a world where at least one principal is inside the ballot
+ * window holding a **non-zero** EXPOSURE mark on both figures — otherwise its golden clause
+ * degrades to `toContain('0')`, which matches any sentence with a digit in it.
+ *
+ * Measured across the eight gate seeds at Reckonings 3, 4 and 5 — 24 pairs — the count of
+ * such principals is **0, 1, 2 or 3 out of 8**, and it is 0 in roughly a third of them. So
+ * the test has always been one principal from vacuous, and a hardcoded seed is a lottery
+ * ticket re-drawn by every unrelated cast edit: **five picks in one session**
+ * (`g07` → `g08` → `g01` → `g06` → `g01`), none of the triggering edits touching EXPOSURE,
+ * staking or the mark.
+ *
+ * So it does not pick. It scans, exactly the way `test/frames/docket.spec.ts:CANDIDATE_SEEDS`
+ * scans for a discriminating docket, and **fails only when NONE of the 24 discriminates** —
+ * which is a real finding about the cast rather than a re-roll. `g01`/4 leads the list
+ * because it is the widest known pair, so the common case still builds exactly one world.
+ *
+ * Written on the branch that moved the endowment floor, because that change alters what the
+ * cast spends and would otherwise have re-rolled this for the sixth time.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+const BALLOT_WINDOW_CANDIDATES: readonly (readonly [string, number])[] = [
+  ['g01', 4],
+  ['g01', 3], ['g01', 5],
+  ['g02', 3], ['g02', 4], ['g02', 5],
+  ['g03', 3], ['g03', 4], ['g03', 5],
+  ['g04', 3], ['g04', 4], ['g04', 5],
+  ['g05', 3], ['g05', 4], ['g05', 5],
+  ['g06', 3], ['g06', 4], ['g06', 5],
+  ['g07', 3], ['g07', 4], ['g07', 5],
+  ['g08', 3], ['g08', 4], ['g08', 5],
+];
+
+/** One principal's readings inside the ballot window: the block, and the `vote` it was offered. */
+interface BallotReading {
+  readonly principal: PrincipalId;
+  readonly block: NonNullable<ReturnType<Runtime['levyBlockFor']>>;
+  readonly vote: { readonly what_it_forecloses: string } | undefined;
+}
+
+function ballotWindowReadings(runtime: Runtime): readonly BallotReading[] {
+  const tick = runtime.engine.tick;
+  const out: BallotReading[] = [];
+  for (const principal of runtime.world.principalOrder) {
+    const block = runtime.levyBlockFor(principal, tick);
+    if (block === null) continue;
+    const observation = buildObservation({
+      runtime,
+      principal,
+      serverNowMs: 0,
+      fresh: true,
+      wakesRemaining: 4,
+      stale: false,
+      corrections: [],
+      actionsRemaining: 4,
+    });
+    // `verb === 'vote'` alone is not enough: §12.2 is "one verb, three ballots" and the CHARGE
+    // ballot is also a `vote`. See the note in the test below — selecting on the verb matched
+    // sovereignty's upkeep allocation and asserted the Levy's figures against another mechanic.
+    const vote = observation.affordances.find(
+      (a) => a.verb === 'vote' && a.params['ballot'] === LEVY_BALLOT,
+    );
+    out.push({ principal, block, vote });
+  }
+  return out;
+}
+
+/** A reading that can actually falsify the golden clause: offered a vote, and both marks non-zero. */
+function discriminates(r: BallotReading): boolean {
+  return (
+    r.vote !== undefined &&
+    r.block.exposure_peak_this_cycle > 0 &&
+    r.block.assessed_on_exposure_peak > 0
+  );
+}
+
+/** The first candidate world whose ballot window can falsify the clause. Never a hardcoded seed. */
+function discriminatingBallotWindow(): {
+  readonly runtime: Runtime;
+  readonly readings: readonly BallotReading[];
+  readonly seed: string;
+  readonly reckonings: number;
+} {
+  const tried: string[] = [];
+  for (const [seed, reckonings] of BALLOT_WINDOW_CANDIDATES) {
+    const runtime = agedToBallotWindow(seed, reckonings);
+    const readings = ballotWindowReadings(runtime);
+    const n = readings.filter(discriminates).length;
+    tried.push(`${seed}/R${String(reckonings)}:${String(n)}`);
+    if (n > 0) return { runtime, readings, seed, reckonings };
+  }
+  throw new Error(
+    `none of ${String(BALLOT_WINDOW_CANDIDATES.length)} candidate worlds put a principal inside the ` +
+      `ballot window holding a NON-ZERO exposure mark on both figures, so the golden clause below ` +
+      `cannot discriminate and would pass vacuously on toContain('0'). Either the cast stopped ` +
+      `staking before the freeze, or the ballot window moved — do not delete the assertion. ` +
+      `Counts per candidate: ${tried.join(' ')}`,
+  );
+}
+
 /** The members a weight can discriminate between: not floored, not spared. */
 function pool(d: Docket): readonly LevySubject[] {
   return d.subjects.filter((s) => !isNewcomer(s) && s.principal !== d.spared);
@@ -545,18 +648,20 @@ describe('★ the EXPOSURE high-water mark', () => {
     // unrelated cast edits, which is what identifies the fragility as structural rather than as bad
     // luck.
     //
-    // `g01` at Reckoning 4 carries **3**, the widest any of the 24 pairs offers, so it is the pick.
-    // **It is the fourth pick in one session** — `g07` → `g08` → `g01` → `g06` → `g01` — re-rolled by
-    // four unrelated cast edits, none of which touched EXPOSURE, staking, or the mark. Two re-rolls is
-    // bad luck; five picks is a property of the fixture, and it is why the note below is longer than
-    // the fix. **The durable version of this test does not pick a seed at all**: it scans the gate
-    // seeds for the first world whose ballot window carries a non-zero mark, the way
-    // `test/frames/docket.spec.ts:CANDIDATE_SEEDS` scans for a discriminating docket, and fails only
-    // when NONE of them does. That is the change to make the next time this goes red — it is a real
-    // improvement to the instrument rather than another roll of the dice, and it was left undone here
-    // only because re-seeding was the smaller diff inside a feature branch.
+    // `g01` at Reckoning 4 carried **3**, the widest any of the 24 pairs offered, and it was the
+    // fourth pick in one session — `g07` → `g08` → `g01` → `g06` → `g01` — re-rolled by four
+    // unrelated cast edits, none of which touched EXPOSURE, staking, or the mark. Two re-rolls is bad
+    // luck; five picks is a property of the fixture.
     //
-    // Re-seeding rather than weakening the guard, because the guard is the point:
+    // ── ★ SO IT NO LONGER PICKS. IT SCANS. ──────────────────────────────────
+    //
+    // {@link discriminatingBallotWindow} walks the 24 candidate pairs and takes the first whose
+    // ballot window can actually falsify the golden clause, failing only when NONE of them can —
+    // which is the durable fix this comment used to describe as future work, done here because the
+    // branch that moved the endowment floor changes what the cast spends and would have re-rolled
+    // this for the sixth time. The seed is now an OUTPUT of the test, reported in its own message.
+    //
+    // Scanning rather than weakening the guard, because the guard is the point:
     //
     // **EXPOSURE is Σ open `max_direct_loss`; a role stake is held only from fill to settlement; and
     // the ballot closes 40 ticks before a settlement that has just released most of them.** So the
@@ -565,9 +670,9 @@ describe('★ the EXPOSURE high-water mark', () => {
     // ASSESSMENT onto the high-water mark and left the BALLOT reading the instantaneous set. Making
     // this test robust and making the vote well-informed are the same fix, and it is a cast or a
     // schedule question rather than a test one.
-    const runtime = agedToBallotWindow('g01', 4);
-    const tick = runtime.engine.tick;
-    const reckoning = reckoningIndex(tick);
+    const { runtime, readings, seed, reckonings } = discriminatingBallotWindow();
+    const where = `${seed}/R${String(reckonings)}`;
+    const reckoning = reckoningIndex(runtime.engine.tick);
     let checked = 0;
     let quoted = 0;
     // ── THE VACUITY TRAP THIS TEST NEARLY SHIPPED ─────────────────────────────
@@ -577,31 +682,19 @@ describe('★ the EXPOSURE high-water mark', () => {
     // marks were all zero would pass this test while proving nothing at all. Counted separately and
     // asserted at the end: at least one principal must have been quoted a **non-zero** mark.
     let quotedNonZero = 0;
-    for (const principal of runtime.world.principalOrder) {
-      const block = runtime.levyBlockFor(principal, tick);
-      if (block === null) continue;
+    for (const { principal, block, vote } of readings) {
       checked += 1;
       expect(
         block.assessed_on_exposure_peak,
-        `${principal}: levy.assessed_on_exposure_peak must be the mark the CURRENT docket was ` +
-          'weighted from, which is the previous Reckoning\'s',
+        `${where}/${principal}: levy.assessed_on_exposure_peak must be the mark the CURRENT docket ` +
+          'was weighted from, which is the previous Reckoning\'s',
       ).toBe(runtime.levy.exposurePeakOf(reckoning - 1, principal));
       expect(
         block.exposure_peak_this_cycle,
-        `${principal}: levy.exposure_peak_this_cycle must be the mark of the cycle IN PROGRESS, ` +
-          'which is what the next docket will read',
+        `${where}/${principal}: levy.exposure_peak_this_cycle must be the mark of the cycle IN ` +
+          'PROGRESS, which is what the next docket will read',
       ).toBe(runtime.levy.exposurePeakOf(reckoning, principal));
 
-      const observation = buildObservation({
-        runtime,
-        principal,
-        serverNowMs: 0,
-        fresh: true,
-        wakesRemaining: 4,
-        stale: false,
-        corrections: [],
-        actionsRemaining: 4,
-      });
       // ── `verb === 'vote'` IS NOT ENOUGH, AND THE FIRST VERSION OF THIS TEST FOUND OUT ──
       //
       // §12.2 is "one verb, three ballots" and the CHARGE ballot is also a `vote`. Selecting on the
@@ -610,11 +703,9 @@ describe('★ the EXPOSURE high-water mark', () => {
       // a sentence from a different mechanic. It went red only because the quoted figure was not a
       // substring of it; with a mark of 0 it would have passed on `toContain('0')`. Two vacuity traps
       // in one assertion, and this is the one the canon warns about: a term shared between mechanics.
-      const vote = observation.affordances.find(
-        (a) =>
-          a.verb === 'vote' &&
-          a.params["ballot"] === LEVY_BALLOT,
-      );
+      // The `vote` affordance was resolved by {@link ballotWindowReadings}, which is also what the
+      // scan's predicate reads — so the world this test runs on is chosen BY this assertion rather
+      // than in spite of it.
       if (vote === undefined) continue;
       quoted += 1;
       if (block.exposure_peak_this_cycle > 0 && block.assessed_on_exposure_peak > 0) quotedNonZero += 1;
@@ -643,9 +734,10 @@ describe('★ the EXPOSURE high-water mark', () => {
     ).toBeGreaterThan(0);
     expect(
       quotedNonZero,
-      'every `vote` affordance read here quoted a mark of ZERO for at least one of the two figures, ' +
-        "so `toContain('0')` matched any sentence with a digit in it and the golden clause above " +
-        'proved nothing. The assertion needs a world whose members have actually staked.',
+      `${where}: every \`vote\` affordance read here quoted a mark of ZERO for at least one of the ` +
+        "two figures, so `toContain('0')` matched any sentence with a digit in it and the golden " +
+        'clause above proved nothing. `discriminatingBallotWindow` is supposed to make this ' +
+        'unreachable — if it is red, the scan and this guard disagree about what discriminates.',
     ).toBeGreaterThan(0);
   }, 600_000);
 

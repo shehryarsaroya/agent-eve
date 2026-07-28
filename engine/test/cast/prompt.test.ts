@@ -599,7 +599,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // `MAX_CONTRACT_CHARS`'s note before the next block, not after it. Two consecutive features have
     // now each spent about a quarter of the raise.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(70_592);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_162);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -622,7 +622,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // block). Both features landed concurrently, so this row carries the sum of two independent
     // raises and neither author saw the other's — which is why the number is measured rather than
     // predicted, and why the margin below is the one to read.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(63_006);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(64_576);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1157,11 +1157,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       44: 'forty-four',
       45: 'forty-five',
       46: 'forty-six',
+      47: 'forty-seven',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(46);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(47);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 46],
+      spelled[n as 47],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1246,7 +1247,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       seal: 'Seals — the say-do gap',
       set_delivery_intent: 'The Levy — nobody sits this out',
       sign: '(preamble)',
-      trade: '(preamble)',
+      trade:
+        '(preamble) + ★ What you may spend, and the one rule that decides it — `market.transferable_minor`',
       vote:
         'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs + The Levy — nobody sits this out',
       withdraw: 'Leaving costs a Reckoning of notice',
@@ -1346,11 +1348,27 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      39_136, // a newcomer on its first wake
-      47_524, // mid-game in the Commons
-      48_397, // about to take territory — and §11B is READABLE now, which it was not
-      63_006, // a claimant in trouble — the largest REACHABLE position
-      70_592, // the analytic maximum, which at 72,000 still fits WHOLE — by 1,408 characters
+      39_449, // a newcomer on its first wake
+      47_837, // mid-game in the Commons
+      48_710, // about to take territory — and §11B is READABLE now, which it was not
+      64_576, // a claimant in trouble — the largest REACHABLE position
+      // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
+      //
+      // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
+      // so the sentence in `MAX_CONTRACT_CHARS`'s note that says *"the analytic maximum only has
+      // to fit, which it does"* is now false by 162 characters — the first time that has happened.
+      //
+      // **This row is 70,591, one character BELOW what it was before the feature**, and that is the
+      // budget mechanism working rather than a coincidence: priced at the real ceiling the selector
+      // dropped CONTEXT to make room for a rule, which is exactly the trade it is for. The
+      // assertion two tests above proves only CONTEXT gave. And no principal can occupy this
+      // position anyway — `graduate` and a held claim cannot coexist.
+      //
+      // The margin that governs is the REACHABLE one, and it is healthy: 72,000 − 64,576 = **7,424**
+      // against a required 4,000. Spent on `RULES_VERSION` 19's §11A block — the rule that decides
+      // what a member may commit to a BID, which had no home in the contract at all until now,
+      // because until 19 the answer was *nothing, for everyone, always*.
+      70_591,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 1,408 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

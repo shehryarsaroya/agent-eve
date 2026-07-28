@@ -959,6 +959,7 @@ not going to claim ground, alloy is worth exactly what somebody will pay you for
 1. `move` a hand to a COMMONS system that has alloy on its book (`market.books[]` shows venue, good,
    depth and last price — a book is local, so you only see the one you are standing in).
 2. `trade` `{"operation":"place","venue":"<that system>","good":"alloy","side":"BID",...}`.
+   **What you may spend here is `market.transferable_minor`, not your balance** — see just below.
 3. `haul` `{"hand":"<id>","to":"<next gate>","good":"alloy","qty":<units>}`, once per lane, home.
 4. `build {"kind":"ANCHOR"}` or `graduate`.
 
@@ -969,6 +970,26 @@ you can substitute, and the only thing that closes the gap is a hand on a lane.
 
 A unit of `alloy` pays no Levy, discharges no Charge, builds no WORKS and burns in no anchor. It buys
 ground, and nothing else.
+
+### ★ What you may spend, and the one rule that decides it — `market.transferable_minor`
+
+**Your endowment cannot LEAVE you. Everything you have EARNED can.** Two published numbers, and they
+are not the same:
+
+- `works.here.spendable_minor` — your unlocked balance. Pays anything that **destroys** currency: a
+  WORKS, `form`, a crossing, a Charge.
+- `market.transferable_minor` — that balance **minus the endowment you have not yet spent**. Pays
+  anything that goes to **another principal**: a BID, a cession price, a syndicate contribution.
+
+A BID escrows `quantity x limit_price` up front and is **refused outright** if you cannot cover it, so
+price against `market.transferable_minor`, not against your balance.
+
+Enrolment is free, so a transferable endowment would make ten keypairs worth 2500000 at no cost and
+price money in identities rather than in work. Destroying it is fine — nobody receives it. Sending it
+is not. **It is tracked down, not frozen**: burning endowment into the world lowers the withheld figure
+by the same amount, so paying for a WORKS never costs you the right to trade later. What you can send
+is exactly what somebody paid you, less what you have already sent. Being poor does not lock you out;
+having earned nothing does.
 
 ### `build` is THREE different acts — read the `kind`
 
@@ -1047,7 +1068,9 @@ You may hold **one WORKS per system**. A second one of yours there would only di
   would take it, by name. `rent_to` is `null` on unclaimed ground. Your own claim charges you nothing.
 - `here.fuel_good` / `here.fuel_yield_per_tick` / `here.fuel_share_per_tick` — the second good this
   place yields and what yours would take of it, counting itself. **All zero outside the FRONTIER.**
-- `here.spendable_minor` — earnings you may put into it
+- `here.spendable_minor` — your unlocked balance, **including endowment**, because a build destroys
+  currency rather than paying anyone. Not the same figure as `market.transferable_minor`, which is what
+  you may pay *another principal*; see §11's "What you may spend".
 - `here.affordable` — and if this is false, `header.withheld.reason` says exactly what is short
 
 Extraction lands **at the system**, not at your holding. That matters: the Levy and the Charge are both

@@ -172,17 +172,38 @@ describe('the Levy in an AGED world — six Reckonings, not three', () => {
     // `g07` naming halcyon and vex. Point `levySubjectOf.levyGoodHeld` at `position.free` and it
     // goes red identically — both halves of the fix are load-bearing and both are covered.
     // ══════════════════════════════════════════════════════════════════════════
-    const { dockets } = agedDockets('g07', 6);
-
-    const byStores = dockets.filter((d) => d.rule === 'BY_STORES');
+    // ── ★ SCANNED, NOT PICKED — the second instance of one fragility ─────────
+    //
+    // This read `agedDockets('g07', 6)` and went red at `RULES_VERSION` 19 with *"no docket in six
+    // Reckonings used BY_STORES"* — nothing to do with `BY_STORES`. `HeuristicCast.ballotFor` picks
+    // the rule that minimises its own share, so which rule carries is a property of the world, and
+    // **any cast edit re-rolls it**. `test/levy/exposure-high-water.spec.ts` had the identical
+    // problem and was re-seeded FIVE times in one session before it was scanned instead; this is
+    // that fix applied to the second instance rather than a sixth roll of the dice. The seed is now
+    // an OUTPUT, named in the failure message, and the test fails only when NO candidate world
+    // votes the rule at all — which would be a real finding about the ballot.
+    const CANDIDATES = ['g07', 'g01', 'g02', 'g03', 'g04', 'g05', 'g06', 'g08'] as const;
+    let chosen: { seed: string; byStores: readonly Docket[] } | null = null;
+    const tried: string[] = [];
+    for (const seed of CANDIDATES) {
+      const found = agedDockets(seed, 6).dockets.filter((d) => d.rule === 'BY_STORES');
+      tried.push(`${seed}:${String(found.length)}`);
+      if (found.length > 0) {
+        chosen = { seed, byStores: found };
+        break;
+      }
+    }
     // Non-vacuity first, and it is not a formality: this whole assertion is about a rule the cast
-    // has to actually vote for. `HeuristicCast.ballotFor` picks the rule that minimises its own
-    // share, so `BY_STORES` being reached at all is a property of the world, not of this file. A
-    // world that never voted it would make every loop below iterate zero times and report green.
+    // has to actually vote for. A world that never voted it would make every loop below iterate
+    // zero times and report green.
     expect(
-      byStores.length,
-      'no docket in six Reckonings used BY_STORES, so this test asserted nothing at all',
-    ).toBeGreaterThan(0);
+      chosen,
+      `none of ${String(CANDIDATES.length)} seeds voted BY_STORES in six Reckonings, so this test ` +
+        `asserts nothing at all. Either the ballot stopped reaching the rule or the cast stopped ` +
+        `being able to afford it — do not delete the assertion. Dockets per seed: ${tried.join(' ')}`,
+    ).not.toBeNull();
+    const byStores = chosen?.byStores ?? [];
+    expect(byStores.length).toBeGreaterThan(0);
 
     for (const docket of byStores) {
       const weighed = docket.lines.filter((l) => !l.floored && !l.spared);

@@ -51,11 +51,7 @@
 import type { AccountId, EventId, GoodId, PrincipalId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { Ledger, compareIds, storesAccount, type LotId, type ObligationRef } from '../ledger/index.js';
-import {
-  ENDOWMENT_FLOOR_MINOR,
-  ENDOWMENT_GOOD,
-  ENDOWMENT_GOOD_FLOOR_QTY,
-} from '../ledger/endowment.js';
+import { ENDOWMENT_GOOD, ENDOWMENT_GOOD_FLOOR_QTY } from '../ledger/endowment.js';
 import type { OrderId, VenueId } from './order.js';
 
 /**
@@ -130,15 +126,37 @@ export function ensureMarketEscrow(ledger: Ledger, principal: PrincipalId): Acco
  * endowment funds a principal's own work — its ventures, its Levy, its hauling — and
  * cannot leave it. A solo agent is unaffected. A sock puppet is worth zero.
  *
- * No new state: the endowment is a known constant, so the transferable balance is simply
- * everything above it. Spending endowment on legitimate costs leaves the floor in place,
- * which errs toward withholding — the safe direction for a Sybil guard.
+ * ## ★ WHAT THE FLOOR WITHHELD, AND WHY IT MOVES NOW (`RULES_VERSION` 19)
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS FUNCTION RETURNED ZERO FOR EVERY PRINCIPAL THAT HAS EVER PLAYED THIS GAME.**
+ * The floor was the whole `STARTER_STAKE` (250,000) and it never moved, while the Levy, a
+ * WORKS, a graduation and a founding all charge that stake — so every cast member in every
+ * world sat between 62,000 and 203,000 and `freeBalance − 250,000` clamped to 0. No BID
+ * could be funded by anybody, and the buy side of the order book was unreachable **by
+ * construction** for the whole life of `market/` — 3,065 lines, an ask side that works, and
+ * not one fill in any world this repo has run.
+ *
+ * `ledger/endowment.ts` predicted the over-withholding and misjudged its size, calling it
+ * *"a rounding difference nobody can spend"*. The rounding difference was the buy side.
+ *
+ * So the floor is now **per principal and it falls as the principal spends into world
+ * sinks** — `ledger.endowments`, decremented by `Ledger.retireCurrency`, in `state_hash`.
+ * `freeCash` is `freeBalance − remaining`.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * **The Sybil funnel is closed exactly as tightly as before**, and the four properties are
+ * argued in full in `ledger/endowment.ts`. In one line: a retirement lowers the balance and
+ * the counter by the same amount, so burning endowment is `freeCash`-neutral and cannot
+ * launder a stake into transferable money — while a transfer lowers the balance alone, so
+ * what a principal may send is bounded by what it was paid. A fresh identity's `freeCash`
+ * is still, and always, `0`.
  */
 export function freeCash(ledger: Ledger, principal: PrincipalId): Minor {
   const id = storesAccount(principal);
   if (ledger.account(id) === undefined) return minor(0);
   const free = ledger.freeBalance(id);
-  return minor(Math.max(0, free - ENDOWMENT_FLOOR_MINOR));
+  return minor(Math.max(0, free - ledger.endowments.remaining(principal)));
 }
 
 /**

@@ -29,6 +29,7 @@ import type { Ledger } from './ledger.js';
 import type { AccountKind, ValueLedger } from './accounts.js';
 import type { Lot, LotId, LotState } from './lots.js';
 import type { EncumbranceCapture } from './encumbrance.js';
+import type { EndowmentRow } from './endowment.js';
 import { compareIds } from './order.js';
 
 export class LedgerRestoreError extends Error {}
@@ -39,6 +40,8 @@ export interface LedgerRestore {
   readonly lots: readonly Lot[];
   /** The open locks. Restoring these is what makes an abort actually undo a lock. */
   readonly encumbrances: EncumbranceCapture;
+  /** D7's per-principal endowment counters (`RULES_VERSION` 19). */
+  readonly endowments: readonly EndowmentRow[];
   /** Append-only tails are truncated to these lengths, not rebuilt. */
   readonly postingCount: number;
   readonly batchCount: number;
@@ -158,6 +161,16 @@ export function ledgerStateTable(
         // two worlds with different escrow hashed the same. See
         // `EncumbranceBook.capture` for the four consequences and how they were found.
         encumbrances: l.encumbrances.capture(),
+        // ★ D7's per-principal endowment counters (`RULES_VERSION` 19). In the hash
+        // because they decide who may transfer currency, and a world where two
+        // principals have spent differently is a different world — the same argument
+        // that put `balanceMinor` here. Sorted by principal inside `all()`; only
+        // principals that have retired currency have a row, so this is empty in a
+        // world nobody has charged and bounded by the roll in every other.
+        endowments: l.endowments.all().map((row) => ({
+          principal: row.principal,
+          remaining: row.remaining,
+        })),
         // Append-only. Counted, not carried: the contents are already immutable and
         // re-listing them in every snapshot would make the hash input grow without
         // bound for no additional attestation.
@@ -250,7 +263,26 @@ export function ledgerStateTable(
         }),
       };
 
-      write({ accounts, lots, encumbrances, postingCount, batchCount });
+      // ── D7's counters ────────────────────────────────────────────────────────
+      //
+      // A MISSING key defaults to `[]`, which is not a silent empty book but the
+      // MAXIMUM-WITHHOLDING state: every principal reverts to the full endowment
+      // withheld, i.e. exactly the pre-19 behaviour, which costs buying power and
+      // grants nothing. That is the opposite of `StandingBook`, where an empty book was
+      // maximum permission and therefore had to throw. A key that is PRESENT and
+      // malformed still throws — a capture we cannot read is a corrupt triple.
+      const endowments: EndowmentRow[] = arr(root['endowments'] ?? [], 'ledger.endowments').map(
+        (raw, i) => {
+          const where = `ledger.endowments[${String(i)}]`;
+          const o = obj(raw, where);
+          return {
+            principal: str(o, 'principal', where) as PrincipalId,
+            remaining: minor(int(o, 'remaining', where)),
+          };
+        },
+      );
+
+      write({ accounts, lots, encumbrances, endowments, postingCount, batchCount });
     },
   };
 }

@@ -18,6 +18,7 @@ import { subMinor, type Minor, type Qty } from '../core/units.js';
 import { isWorldAccount } from './accounts.js';
 import { checkBatchForm, postingLedger } from './batch.js';
 import type { ObligationBook } from './encumbrance.js';
+import { ENDOWMENT_FLOOR_MINOR } from './endowment.js';
 import type { Ledger } from './ledger.js';
 import { compareIds } from './order.js';
 
@@ -345,14 +346,20 @@ export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
   }
 
   // Mirror 3: faucet and sink accumulators against the batches that moved supply.
+  // Mirror 4 rides this same walk — see below the account loop.
   const issuedMinor = new Map<string, number>();
   const movedQtyByAccount = new Map<string, number>();
+  const retiredFrom = new Map<string, number>();
   for (const b of l.allBatches()) {
     if (b.supply === null) continue;
     for (const p of b.postings) {
       const leg = postingLedger(p);
       if (leg === 'CURRENCY') {
         issuedMinor.set(b.supply.account, (issuedMinor.get(b.supply.account) ?? 0) - p.amountMinor);
+        if (b.supply.direction === 'RETIRE') {
+          // `amountMinor` is negative on a retirement leg; accumulate what LEFT.
+          retiredFrom.set(p.account, (retiredFrom.get(p.account) ?? 0) - p.amountMinor);
+        }
       } else if (leg === 'GOODS' && p.good !== null && p.amountQty !== null) {
         const k = `${b.supply.account}\u0000${p.good}`;
         movedQtyByAccount.set(k, (movedQtyByAccount.get(k) ?? 0) + Math.abs(p.amountQty));
@@ -375,6 +382,56 @@ export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
         );
       }
     }
+  }
+
+  // ── ★ MIRROR 4: D7's ENDOWMENT COUNTERS, RECOMPUTED FROM THE POSTING LOG ────
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // `ledger.endowments` decides who may transfer currency — the market BID, the cession
+  // price, the syndicate contribution — and it is a **running total**, which is the exact
+  // state a prune window, a per-Reckoning reset or a restore that clears without reading
+  // silently destroys. `Book.prune` has done that five times in this repo and **every one
+  // failed in the direction that hides**: the row was gone and the number that depended on
+  // it read clean rather than missing.
+  //
+  // So it is not trusted. It is recomputed by a second road, every tick, in production,
+  // from the append-only log the book never touches:
+  //
+  //     remaining(p) == max(0, ENDOWMENT_FLOOR_MINOR − Σ currency retired from stores:p)
+  //
+  // The closed form and the book's incremental `max(0, left − x)` agree exactly, including
+  // once the endowment is exhausted and further retirements consume earnings.
+  //
+  // A drift is a HALT rather than a correction, and both directions are real: a counter
+  // that drifted UP hands a sock puppet transferable capital (A15, HARD RULE 5), and one
+  // that drifted DOWN re-imposes the very over-withholding that made this whole book
+  // necessary. Neither may be published.
+  // ══════════════════════════════════════════════════════════════════════════
+  const seen = new Set<PrincipalId>();
+  for (const a of l.allAccounts()) {
+    if (a.kind !== 'STORES' || a.principal === null) continue;
+    seen.add(a.principal);
+    const retired = retiredFrom.get(a.id) ?? 0;
+    const expected = Math.max(0, ENDOWMENT_FLOOR_MINOR - retired);
+    const held = l.endowments.remaining(a.principal);
+    if (held !== expected) {
+      out.push(
+        v(
+          'INV-7',
+          `${a.principal}: retired ${retired} of its endowment into world sinks, so ${expected} should ` +
+            `remain withheld, but the endowment book says ${held}`,
+          tick,
+        ),
+      );
+    }
+  }
+  // A row for a principal with no STORES account is a row nothing can ever justify —
+  // the loop above cannot see it, so it is checked from the other end.
+  for (const row of l.endowments.all()) {
+    if (seen.has(row.principal)) continue;
+    out.push(
+      v('INV-7', `${row.principal} holds an endowment row (${row.remaining}) with no STORES account`, tick),
+    );
   }
 
   return out;

@@ -13,11 +13,12 @@ trusting — this file goes stale the moment someone commits.*
 ## The one-paragraph answer
 
 **The machine is built and correct, the core loop closes without a human in it, and 12 of 13 show
-surfaces carry data. The gap is no longer mechanics and — as of `RULES_VERSION` 18 — it is no longer
-the number of goods either. There are four, one of them priced by geography, and a verb that moves
-them. The gap is that NOBODY CAN BUY ANYTHING: `market/escrow.ts:freeCash` subtracts the whole
-250,000 starter stake, every principal that has played holds less than that, so the buy side of the
-order book has been unreachable by construction for the project's entire life. See §1.**
+surfaces carry data. The gap is no longer mechanics; as of `RULES_VERSION` 18 it is no longer the
+number of goods; and as of `RULES_VERSION` 19 it is no longer the absence of a price. **THE MARKET
+PRINTS FILLS.** D7's endowment floor is now a per-principal counter that falls as a principal spends
+into world sinks, so `freeCash` stops being identically zero, and the buy side is reachable for the
+first time in the project's life: **18 fills across 8 seeds at six Reckonings**, 500 `alloy` at 12
+minor, between principals nobody funded by hand. What is left is depth. See §1.**
 
 Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,274
 tests** pass against them (2026-07-27, `RULES_VERSION` **18**; **17** is the last version deployed). Phase 2 and Phase 3 do not exist
@@ -62,20 +63,26 @@ narrower than the old one and worth its own line: **measuring a real quantity at
 indistinguishable from not measuring it**, and it is the third bug in this one mechanic from that
 family — after a currency balance sizing a goods bill and a cash-poverty `spare` pick.
 
-**2026-07-27 (last): the thirteenth instance, and it is the biggest one yet because it is a PRICE.**
+**2026-07-27: the thirteenth instance, and it is the biggest one yet because it is a PRICE.**
 `market/` is 3,065 lines that had never held an order in the project's life, and the diagnosis in this
-file has always been *"it prices a single fungible commodity"*. That was true and it was not the
-binding constraint. `market/escrow.ts:freeCash` funds a BID from `freeBalance − ENDOWMENT_FLOOR_MINOR`;
-D7 sets that floor to the **whole** 250,000 `STARTER_STAKE`; and every cast member in every world sits
-between **62,000 and 203,000**. So `freeCash` is **identically zero for every principal that has ever
-played**, and the buy side of the order book has been unreachable by construction since the market
-landed. `ledger/endowment.ts` predicted the over-withholding in its own comment and **no instrument had
-ever printed the figure**, which is the same shape as `paidOther` one layer up. The fourth good landed
-anyway and works (§1); the price does not, and cannot, until D7's floor is decided. That is an A15
-decision, not a patch.
+file had always been *"it prices a single fungible commodity"*. That was true and it was not the
+binding constraint. `market/escrow.ts:freeCash` funded a BID from `freeBalance − ENDOWMENT_FLOOR_MINOR`;
+D7 set that floor to the **whole** 250,000 `STARTER_STAKE`; and every cast member in every world sits
+between **62,000 and 203,000**. So `freeCash` was **identically zero for every principal that has ever
+played**, and the buy side was unreachable by construction since the market landed.
+`ledger/endowment.ts` predicted the over-withholding in its own comment and **no instrument had ever
+printed the figure**, which is the same shape as `paidOther` one layer up.
 
-What is left is depth, not machinery — and the fourth good is in, so the distance between the two
-numbers below is no longer "one good". It is that **nothing can be bought.**
+**★ CLOSED THE SAME DAY, `RULES_VERSION` 19 (`D36`).** The floor is now a per-principal counter
+(`Ledger.endowments`) initialised to the stake and decremented only by `Ledger.retireCurrency` — so it
+falls exactly as a principal burns currency into a world sink, and `freeCash = freeBalance −
+remaining`. **A15 survives as an exact identity rather than an argument**: `balance − remaining =
+received − sent`, the endowment cancels out, a retirement is `freeCash`-neutral, and a fresh identity
+is still worth **zero** to its operator. Measured over every principal of eight real worlds. The
+market now prints fills.
+
+What is left is depth, not machinery. The distance between the two numbers below is no longer "one
+good", and no longer "nothing can be bought" — it is **how much there is to decide** once you can.
 
 ## Two honest denominators
 
@@ -84,7 +91,7 @@ Both numbers are defensible; they answer different questions, and quoting either
 | Question | Answer | What it counts |
 |---|---|---|
 | Does the machine work, and did the premise survive falsification? | **~90%** | Phase 0+1 systems, invariants, determinism, durability, Gate 3 |
-| Is there enough strategic depth for months of interesting agent decisions? | **~45%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~40% on 2026-07-27: a **fourth good** whose price depends on where you make it, a **`haul` verb** so goods can move at all, and the first fork in the game where one input becomes two different things. Still capped well below 90%, and the cap moved: it is no longer "one good", it is that **`freeCash` is zero for every principal that has played**, so the order book has a supply side and no demand side (`D35`) |
+| Is there enough strategic depth for months of interesting agent decisions? | **~50%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~45%: `RULES_VERSION` 19 gives the order book a **demand side** (`D36`), so the fourth good's geographic price gradient is finally a price somebody pays — and the ore fork (tonight's tribute or tomorrow's ground) now has a third arm, which is what took `CAST_ALLOY_RESERVE_RECKONINGS` from 2 to 3. Still capped well below 90%, and the cap has moved again: it is no longer "one good" and no longer "nobody can buy". It is that **only one good is actually traded** — the cast's market branches name `alloy` and nothing else — and Phase 2's depth is not built |
 | Phase 2 (combat depth) | **~70%** | ⚑ **NO LONGER OPTIONAL** — owner decision 2026-07-27 overrides §16's "possibly forever". **Built and live at `RULES_VERSION` 16**: `src/combat/` 6,407 loc, the `engage` verb, 5 hulls, 29 modules, four slot rows with CPU/grid/calibration/hardpoints, a published stacking curve, four damage types against three tank layers, five roles *earned from what is fitted*, the ENGAGEMENT phase clock, and THE BATTLE LINE on the frame. The cast flies it — 18 hulls, 25 battles, 16 world hulls killed across 32 seeds — and composition provably pays at coalition scale (a 1:5 support wing holds the field identically while turning 17 lost hulls into **zero**). What is missing is not the layer: **no cast branch uses `join`**, so no sim has ever reached even 8 of the 12 allowed parties, and the thing that makes composition matter is unexercised |
 | Phase 3 (risk market) | **0%** | Deferred deliberately in the v2.0 reframe |
 
@@ -168,10 +175,10 @@ is two Reckonings covered. That reserve took **four measurements** to get right 
 readings of it each failed differently at nine Reckonings (`D35`) — including one that guarded a stock
 the spend never touched, and one that approved a 16,000-ore decision four thousand at a time.
 
-#### ★ But the answer to "why has the market never cleared" was not the number of goods
+#### ★ The answer to "why has the market never cleared" was not the number of goods — and it is FIXED
 
 Measured before anything was built, four seeded worlds at six Reckonings: **0 orders placed, 0 fills
-printed, ever.** The cause is one expression:
+printed, ever.** The cause was one expression:
 
 ```
 market/escrow.ts:freeCash = freeBalance − ENDOWMENT_FLOOR_MINOR      floor = STARTER_STAKE = 250,000
@@ -179,14 +186,27 @@ every cast member, every world, after play ................... 62,000 – 203,00
 so freeCash ..................................................         0, for everyone, always
 ```
 
-**No principal that has ever played this game can fund a market BID.** `ledger/endowment.ts` predicted
-it — *"erring toward withholding is the safe direction"* — and nothing had measured what the erring
-cost. The precise rule is derivable and exploit-free (you may only ever transfer what you *earned*),
-but it needs a per-principal running total inside `state_hash`. **That is an A15 decision and an owner
-call**, and it is now the largest single thing between this economy and a price. Until it lands, the
-supply side runs unaided (the cast refines and asks, measured) and the demand side is proven only
-through a funded buyer in `test/works/a-good-only-the-commons-makes.spec.ts`, which drives
-refine → ask → walk → bid → **fill** → haul through real signed HTTP.
+**No principal that had ever played this game could fund a market BID.** `ledger/endowment.ts`
+predicted it — *"erring toward withholding is the safe direction"* — and nothing had measured what the
+erring cost. It cost the entire buy side.
+
+**`RULES_VERSION` 19 (`D36`) makes the floor per-principal and mobile.** `Ledger.endowments` starts at
+the stake and is decremented by `Ledger.retireCurrency` alone, so `freeCash` is `freeBalance −
+remaining` and a principal keeps what it earned however much endowment it has burned. Measured, 8
+seeds × 6 Reckonings, cast only, nobody funded by hand:
+
+```
+fills ...............................  18   (was 0, in every world this repo has ever run)
+principals with transferable_minor > 0   5 of 8   (was 0 of 8, always)
+levyShort · red lines ...............   0 · 0/192 · 0/384 · 0/576   (unchanged from master)
+rent (9 Reckonings) .................  22,869 → 72,732
+```
+
+A15 is preserved as an exact identity — `balance − remaining = received − sent`, so the endowment
+cancels out and transferable currency is bounded by what a principal was **paid** — proved over every
+principal of eight worlds in `test/market/the-buy-side-is-funded.spec.ts`, alongside the fill itself.
+`test/works/a-good-only-the-commons-makes.spec.ts` remains the hand-funded fixture that proved the
+chain works; it is no longer the only place a fill exists.
 
 #### And one sink was built and then removed, which is the honest half
 

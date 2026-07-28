@@ -57,6 +57,7 @@ import {
 } from './batch.js';
 import { applyQtyDelta, qtyDelta } from './delta.js';
 import { EncumbranceBook, type EncumbranceCapture } from './encumbrance.js';
+import { EndowmentBook, type EndowmentRow } from './endowment.js';
 import { lotId, type Lot, type LotId, type LotState } from './lots.js';
 import { compareIds } from './order.js';
 
@@ -135,6 +136,17 @@ export class Ledger {
    * committed half).
    */
   readonly encumbrances = new EncumbranceBook((id) => this.accounts.get(id));
+  /**
+   * D7's per-principal endowment counter (`RULES_VERSION` 19).
+   *
+   * Lives here, and is written by exactly one method — {@link retireCurrency} — because
+   * that is the single door through which currency is destroyed. Five call sites retire
+   * today (a WORKS build, a syndicate founding, a graduation, a cession salvage, a bond
+   * slash) and the sixth has not been written yet; hooking the door instead of the callers
+   * is what makes the sixth correct for free. See `ledger/endowment.ts` for why this state
+   * exists at all, given that the same file used to argue at length that it should not.
+   */
+  readonly endowments = new EndowmentBook();
   /** Set by {@link hydrateAppendOnly}. Boot-only, and only ever once. */
   private hydrated = false;
 
@@ -206,6 +218,13 @@ export class Ledger {
      * inflated for a commitment the world had just rolled back.
      */
     readonly encumbrances: EncumbranceCapture;
+    /**
+     * D7's per-principal endowment counters. Restored for exactly the reason the
+     * encumbrances are: an aborted tick that retired currency would otherwise keep the
+     * decrement while the balance rolled back, and the two would disagree by the amount
+     * of the rolled-back charge — which INV-7's fourth mirror halts on, correctly.
+     */
+    readonly endowments: readonly EndowmentRow[];
     readonly postingCount: number;
     readonly batchCount: number;
   }): void {
@@ -243,6 +262,7 @@ export class Ledger {
     // pointer, so restoring lots without the book leaves those pointers dangling at a
     // row that no longer exists — which reads as unencumbered cargo.
     this.encumbrances.restore(state.encumbrances);
+    this.endowments.restore(state.endowments);
 
     this.postings.length = state.postingCount;
     this.batches.length = state.batchCount;
@@ -645,6 +665,20 @@ export class Ledger {
       opens: [],
       deltas: [],
     });
+
+    // ── D7 (`RULES_VERSION` 19): THE ENDOWMENT FALLS WITH THE MONEY IT PAID ────
+    //
+    // Currency that has been destroyed cannot be transferred, so the stake that paid for
+    // it is spent and the counter must say so. Scoped to a principal's own STORES: an
+    // ESCROW retiring into a sink is a venture's committed half, not a principal's purse,
+    // and a faucet-to-sink flow has no principal at all. `endowments.retire` is
+    // `freeCash`-neutral while any endowment is left, so this line never *creates*
+    // transferable currency — it stops the floor from over-withholding money the
+    // principal no longer has.
+    const from = this.accounts.get(args.from);
+    if (from !== undefined && from.kind === 'STORES' && from.principal !== null) {
+      this.endowments.retire(from.principal, args.amount);
+    }
   }
 
   /** Move currency between world accounts. Supply unchanged (INV-1 form A). */

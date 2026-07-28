@@ -460,9 +460,43 @@ export const CAST_ALLOY_ASK_QTY = 500;
  * published 1:1 ration recipe, so the member must hold its tribute **plus** what the batch is about to
  * cost it in forgone income. **Raising this multiple would not have fixed that** — it would have
  * bought a wider margin against the wrong quantity.
+ *
+ * ── ★ 2 → 3 AT `RULES_VERSION` 19, AND WHY THE TABLE ABOVE WAS MEASURED BLIND ─
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **EVERY READING ABOVE WAS TAKEN IN A WORLD WHERE THE ASK NEVER FILLED**, and that quietly
+ * changed what was being measured. `alloyPlanFor` opens with
+ * `if (alloyAt(member, system) >= target) return null` — so a Commons member refined ONE
+ * batch, put it on the book, and because `freeCash` was identically zero for every principal
+ * that has ever played, **nobody could ever buy it**. Its stock stayed at `target` forever and
+ * the branch returned `null` for the rest of the run. The reserve was therefore only ever
+ * tested against a **single 4,000-ore decision per member for a whole nine-Reckoning world.**
+ *
+ * D7's per-principal endowment counter funds the buy side, the asks start clearing, and stock
+ * falling back to zero is exactly what makes a producer produce again. Measured on the branch
+ * at nine Reckonings, `g07`: `p:halcyon` sold **six** batches, ended the run holding
+ * `ration = 0`, `alloy = 500` and **251,286 in currency**, and defaulted 7,219 of a 29,353
+ * assessment. `p:varrow` the same, 2,221 short. Both were solvent and both were short of the
+ * one good tribute is payable in.
+ *
+ * ```
+ *                                 levyShort   red     claims   rent    fills(6R,8 seeds)
+ *   master (no buy side) ......           0   0/576       23   22,869          0
+ *   19 + reserve 2 ............       8,920   2/576       30  150,326         15
+ *   19 + reserve 3 ............           0   0/576       24   72,732         18   ← this
+ * ```
+ *
+ * **Three, not four**: four also reads 0/0 on `g07` but costs `kept` and `ventures` with no
+ * meter to show for it. And the guard is not switched off — 18 fills across eight seeds at six
+ * Reckonings, with 5 of 8 members holding non-zero `market.transferable_minor`, against 15 at
+ * reserve 2. **Territory got dearer and the market stayed open**, which is the trade this
+ * constant exists to strike.
+ *
+ * The general lesson, which is this repo's oldest: **a guard whose subject cannot occur reads
+ * green.** The reserve was correct; the world simply never asked it the question twice.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const CAST_ALLOY_RESERVE_RECKONINGS = 2;
+export const CAST_ALLOY_RESERVE_RECKONINGS = 3;
 
 /**
  * The seller's markup over its own input cost, as an integer fraction. *(calibrate)*

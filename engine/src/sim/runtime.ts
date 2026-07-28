@@ -1146,7 +1146,74 @@ import {
  * fork between rations and alloy is taking ore the tribute needed, and the ratio in `ALLOY_IN_QTY` is
  * wrong.
  */
-export const RULES_VERSION = 18;
+/**
+ * ── 18 → 19 · ★ D7'S FLOOR STARTS MOVING, AND THE MARKET GETS A BUY SIDE ─────
+ *
+ * `RULES_VERSION` is a **shared resource** (see 11's note above): two agents each taking the
+ * next integer once left the live record carrying snapshots stamped `10` from two different
+ * rule sets, and *a version stamp whose meaning depends on which deploy wrote it is not a
+ * version stamp.* **19 was allocated to this branch in advance**, with 18 the latest live.
+ *
+ * ── WHAT CHANGES: ONE NUMBER, AND IT WAS ALWAYS ZERO ─────────────────────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * `market/escrow.ts:freeCash` was `freeBalance − ENDOWMENT_FLOOR_MINOR`, the floor was the
+ * whole `STARTER_STAKE` (250,000), and **every cast member in every world this repo has
+ * ever run sits between 62,000 and 203,000** — because the Levy, a WORKS, a graduation and
+ * a founding all charge that stake. So `freeCash` was **identically zero for every
+ * principal that has ever played this game**, no market BID could be funded by anybody, and
+ * the buy side of the order book was unreachable **by construction** for the whole life of
+ * `market/`: 3,065 lines, a working ask side, and not one fill in any world.
+ *
+ * `ledger/endowment.ts` predicted the over-withholding in its own words and misjudged its
+ * size — *"a rounding difference nobody can spend"*. The rounding difference was the buy
+ * side. The reasoning was sound; the cost was never measured.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ *   1. **`EndowmentBook`** — a new per-principal counter (`ledger.endowments`), initialised
+ *      to `STARTER_STAKE` and decremented **only** by `Ledger.retireCurrency`, i.e. only as
+ *      a principal spends into a world sink. `freeCash` is now `freeBalance − remaining`.
+ *      This is the state `endowment.ts` explicitly declined to add; that argument is
+ *      rewritten in place rather than deleted, because it was right given what was known.
+ *   2. **It is hashed.** Captured inside the existing `ledger` state table, so it inherits
+ *      `state_hash`, `CHECKPOINT_REQUIRED_TABLES` and `Ledger.restoreTo` rather than needing
+ *      three new wirings. **The `ledger` capture gains an `endowments` key, so every tick's
+ *      hash moves from tick 0** — this is the wide half of the discontinuity and it is
+ *      unavoidable for any change to a hashed capture.
+ *   3. **INV-7 gains a fourth mirror**, recomputing every counter from the posting log by a
+ *      second road on every tick. No new invariant number: INV-7 already *is* "a cached
+ *      aggregate must equal an independent recompute", and `remaining` is one.
+ *   4. **No new verb, no new phase, no new RNG draw.** Nothing is added to or removed from
+ *      the seeded stream. Every changed decision is arithmetic over published figures.
+ *
+ * ── THE DIVERGENCE SIGNATURE ─────────────────────────────────────────────────
+ *
+ * Two shapes, both nameable, and the second is the point of the change:
+ *
+ *   - **Every snapshot from tick 0**, because the `ledger` capture has one more key. Wide,
+ *     structural, and carrying no behavioural claim on its own.
+ *   - **★ THE FIRST MARKET FILL IN THE HISTORY OF THIS GAME.** The cast's BID branch has
+ *     existed since 18 and has never once passed its own gate (`heuristic.ts` records the
+ *     8,575 bids it submitted against the wrong accessor, and then the silence after it was
+ *     corrected). Measured on this branch, `g01`–`g04` at six Reckonings: **15 fills**,
+ *     500 alloy at 12 minor apiece, between eight different pairs of principals — the first
+ *     time goods and currency have crossed in opposite directions on this engine.
+ *
+ * So the preflight is expected to name **tick 0** (the capture shape), and
+ * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes it — as at 1 → 2, 4 → 5, 5 → 6, 6 → 7, 7 → 8,
+ * 8 → 9, 13 → 14, 14 → 15 and 17 → 18.
+ *
+ * ── AND IT IS A15, WHICH IS WHY IT IS A RULES CHANGE AND NOT A PATCH ─────────
+ *
+ * HARD RULE 5: *any gate priced in identities is unpriced.* The floor exists so that N free
+ * identities cannot become N × 250,000 of capital, and it still does. The four properties
+ * are argued in `ledger/endowment.ts` and **measured** in
+ * `test/market/the-buy-side-is-funded.spec.ts`, which proves the exact identity
+ * `freeCash(p) = max(0, received(p) − sent(p))` over every principal of eight real worlds:
+ * transferable currency is bounded by what a principal was PAID, and an endowment is
+ * therefore worth zero to an operator no matter how many it holds.
+ */
+export const RULES_VERSION = 19;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -7629,6 +7696,26 @@ export class Runtime {
     const books = booksFor(this.marketBook, principal, venues, tick);
     return {
       at: [...venues].sort(compareIds),
+      /**
+       * ★ **WHAT YOU MAY ACTUALLY COMMIT TO A BID** — `RULES_VERSION` 19, and the field
+       * this mechanic ran without for its whole life.
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * A2: *legibility is the interface.* Until 19 this quantity was **identically zero
+       * for every principal that has ever played**, so an agent could not tell an empty
+       * wallet from an unreachable mechanic, and neither could the cast — the heuristic
+       * bid branch submitted 8,575 orders against the wrong accessor before anyone
+       * noticed. Now that the number moves, publishing it is the difference between an
+       * agent that can plan a purchase and one that learns its budget by being refused.
+       *
+       * **Deliberately NOT called `spendable_minor`**, which the WORKS block already uses
+       * for `freeBalance`. Two different quantities under one name is scar #5 and HARD
+       * RULE 4 — a WORKS build may be paid out of the endowment because it *destroys*
+       * currency, and a BID may not because it *transfers* it. The names have to differ
+       * because the rules do.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      transferable_minor: freeCash(this.ledger, principal),
       // Each book carries the **reference mark** beside its executable prices, and
       // they are deliberately two different numbers (M3: "separate execution and
       // valuation marks"). `best_ask` is what you can buy at right now; the mark is

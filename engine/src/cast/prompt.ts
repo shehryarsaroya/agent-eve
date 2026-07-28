@@ -179,7 +179,7 @@ const S12 = '## 12. Getting good';
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of forty-six could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of forty-seven could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -438,6 +438,29 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     required: (s) => s.holdsClaim,
     wanted: (s) => s.holdsWorks || s.canBuildWorks || s.holdsClaim,
     because: 'you neither work ground that makes ore nor hold ground that spends alloy',
+  },
+  {
+    section: S11A,
+    // ── ★ THE FUNDING RULE FOR A BID (`RULES_VERSION` 19) ────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **KEYED ON `trade`, WHICH IS THE WHOLE DESIGN OF THIS ENTRY.** Two quantities are
+    // published side by side and they are NOT the same: `works.here.spendable_minor` is the
+    // free balance (a build DESTROYS currency, so the endowment may pay for it) and
+    // `market.transferable_minor` is that balance minus the endowment still unspent (a BID
+    // TRANSFERS it, so the endowment may not). A member that mistakes one for the other prices
+    // an order it cannot escrow and is refused — which is exactly what the heuristic cast did
+    // 8,575 times in one world before it was corrected to read the right accessor.
+    //
+    // It is `wanted` rather than FLOOR because a member with no `trade` offered cannot act on
+    // it, and this section already spends more of the excerpt than any other. It is not
+    // `required`: unlike §11B's anchor price, being refused here costs an action and a hint
+    // rather than a permanent default on the record, so A5′ does not force it.
+    // ══════════════════════════════════════════════════════════════════════════
+    block: '### ★ What you may spend, and the one rule that decides it — `market.transferable_minor`',
+    verbs: ['trade'],
+    wanted: (s) => s.verbs.has('trade'),
+    because: 'no `trade` is offered to you this wake, so nothing you hold can be committed to an order',
   },
   {
     section: S11A,
@@ -714,7 +737,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are forty-six: 2^46 is not enumerable, and it
+ * was free. At `###` granularity there are forty-seven: 2^47 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -1228,7 +1251,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
  * per-unit predicate, and `RULES` is never dropped for any reason including length. That
  * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
- * never for one it was not. There are forty-six units; put the same rule inside each
+ * never for one it was not. There are forty-seven units; put the same rule inside each
  * predicate and the forty-fifth will forget it.
  * ══════════════════════════════════════════════════════════════════════════════
  */

@@ -116,6 +116,10 @@ describe('Ledger.hydrateAppendOnly', () => {
       // Empty is fine here: INV-7's mirrors read balances, lots and the supply legs,
       // never the lock table, so the locks are not what this proof turns on.
       encumbrances: { rows: [], exposure: [], perEvent: [] },
+      // The endowment counters ARE what INV-7's fourth mirror turns on, so they come
+      // across for real rather than empty — an empty set here would make the dying
+      // ledger claim nobody had ever spent, which the mirror halts on.
+      endowments: live.endowments.all(),
       postingCount: shortPostings,
       batchCount: short.length,
     });
@@ -263,6 +267,7 @@ describe('Ledger.hydrateAppendOnly', () => {
         accounts: [],
         lots: [],
         encumbrances: { rows: [], exposure: [], perEvent: [] },
+        endowments: [],
         // One more posting than the ledger holds: a snapshot from a future it never
         // reached. This is the case the hydrate does NOT cover and must not.
         postingCount: l.allPostings().length + 1,
