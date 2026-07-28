@@ -43,3 +43,47 @@ export function readInt(
   }
   return null;
 }
+
+/**
+ * The first key present as a list of non-empty strings, or `null` when no key is present.
+ *
+ * **`null` and `[]` are different answers and the distinction is load-bearing.** A grant's
+ * fence reads *"no key at all"* as "use the template's default" and *"an explicit empty
+ * list"* as "delegate nothing" — a caller that collapsed the two would silently widen an
+ * agent's stated intent to whatever the default happened to be, which on a grant is the
+ * difference between an office and a blank cheque.
+ *
+ * Forgiving about SHAPE in the one way an LLM actually gets wrong: a single string is read
+ * as a one-element list, and a comma- or space-delimited string is split. Strict about
+ * TYPE — a non-string member is a refusal at the door, never a coerced `"[object Object]"`
+ * quietly entering a captured row.
+ *
+ * Bounded at {@link MAX_PARAM_LIST}: every list in this engine is (INV-26, scar #3), and a
+ * params array is the cheapest unbounded buffer an agent has.
+ */
+export const MAX_PARAM_LIST = 32;
+
+export function readList(
+  params: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): readonly string[] | null {
+  for (const key of keys) {
+    const value = params[key];
+    if (typeof value === 'string') {
+      if (value.length === 0) return [];
+      return value
+        .split(/[,\s]+/)
+        .filter((part) => part.length > 0)
+        .slice(0, MAX_PARAM_LIST);
+    }
+    if (Array.isArray(value)) {
+      const out: string[] = [];
+      for (const member of value.slice(0, MAX_PARAM_LIST)) {
+        if (typeof member !== 'string' || member.length === 0) continue;
+        out.push(member);
+      }
+      return out;
+    }
+  }
+  return null;
+}

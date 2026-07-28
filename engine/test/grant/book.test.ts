@@ -17,7 +17,16 @@ import { minor } from '../../src/core/units.js';
 
 let spendSeq = 0;
 /** A spend row against a grant — the journal INV-22 audits. */
-function sp(grant: GrantId, direct: number, contingent: number, delegate = 'p:bob'): GrantSpend {
+function sp(
+  grant: GrantId,
+  direct: number,
+  contingent: number,
+  delegate = 'p:bob',
+  // The default matches {@link grant}'s default fence, so an existing case that says nothing
+  // about verbs keeps testing what it always tested. A case about the FENCE passes one
+  // explicitly — see `the fence is enforced at the book, not only at the door`.
+  verb = 'create',
+): GrantSpend {
   spendSeq += 1;
   return {
     grant,
@@ -26,6 +35,7 @@ function sp(grant: GrantId, direct: number, contingent: number, delegate = 'p:bo
     eventId: `ev:spend:${String(spendSeq)}` as EventId,
     direct: minor(direct),
     contingent: minor(contingent),
+    verb,
   };
 }
 
@@ -36,6 +46,11 @@ function grant(over: Partial<Grant> & Pick<Grant, 'id' | 'grantor' | 'delegate'>
     maxContingentLiability: minor(500),
     spentDirect: minor(0),
     spentContingent: minor(0),
+    // Both delegable verbs by default: these cases are about the LIMITS, and a helper whose
+    // default fence excluded the verb its default spend uses would fail every one of them for
+    // a reason none of them is about.
+    verbs: ['create', 'elect'],
+    clearance: [],
     expiresTick: 300,
     revokedAtTick: null,
     ...over,

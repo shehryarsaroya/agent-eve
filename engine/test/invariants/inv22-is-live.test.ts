@@ -86,6 +86,8 @@ describe('a world nobody steers now draws on the authority it hands out', () => 
       maxContingentLiability: minor(1_000),
       spentDirect: minor(spentDirect),
       spentContingent: minor(spentContingent),
+      verbs: ['create', 'elect'],
+      clearance: [],
       expiresTick: 500,
       revokedAtTick: null,
     };
@@ -99,6 +101,7 @@ describe('a world nobody steers now draws on the authority it hands out', () => 
       eventId: 'test:draw' as unknown as EventId,
       direct: minor(direct),
       contingent: minor(contingent),
+      verb: 'create',
     };
   }
 

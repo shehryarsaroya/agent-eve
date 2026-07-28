@@ -76,6 +76,13 @@ const SANCTIONED = new Map<string, string>([
   // it against — an uncanonised word is unpoliced by construction. Canonising it is what made the
   // collision visible, and it was visible within one test run.
   ['VentureKind.HAUL', "one concept bought two ways — you carry it, or you hire a CARRIER to; §3's row sanctions both, exactly as RAID's does"],
+  // ★ Added with the CLEARANCE (`RULES_VERSION` 23). §3 defines STORES as "assets, inventory,
+  // balances"; `AccountKind.STORES` is the account that HOLDS them and `Compartment.STORES` is the
+  // SIGHT of that same thing — one concept, two facets, and the compartment is named after the thing
+  // it reveals precisely so an agent reading `clearance: ["STORES"]` knows exactly which figures it
+  // is being handed. Inventing a second word for "your stores, but seen" would be the §3 error run
+  // backwards: two words for one concept, teaching a distinction that does not exist.
+  ['Compartment.STORES', "§3's STORES is 'assets, inventory, balances'; this compartment is the SIGHT of exactly that, and AccountKind.STORES is the account that holds it — one concept, two facets"],
 ]);
 
 /**
@@ -104,6 +111,8 @@ const SHARED_MEMBERS = new Map<string, string>([
     'value leaving the economy against a named sink; the mirror of ISSUE and the same argument'],
   ['RaidSide+RoleLabel.RAIDER',
     'one who raids, whether it is a slot inside a RAID venture or the side a joiner takes in a standoff — the identical shape the ESCORT entry above sanctions, and §3 names RAID once for both'],
+  ['AccountKind+Compartment.STORES',
+    "the same pair SANCTIONED records one entry up, arriving through the other check: the account that HOLDS a principal's assets, inventory and balances, and the compartment that reveals them. §3's STORES row covers both, and a delegate cleared for STORES reads the STORES account — the words agree because the things do"],
   ['ChargeRule+LevyRule.EVEN',
     'ONE allocation rule — "every subject on the roll bears the same share" — offered on two ballots, the Levy\'s over principals and the Charge\'s over claims. Renaming either would be the mirror of the §3 error: two words for one concept, so an agent reading EVEN on one ballot and FLAT on the other would learn a distinction that does not exist. The two are also computed by the same weight of 1, in the same largest-remainder pass'],
 ]);

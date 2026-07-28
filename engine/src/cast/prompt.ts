@@ -192,7 +192,7 @@ const S12 = '## 12. Getting good';
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of forty-seven could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of forty-eight could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -370,6 +370,29 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     verbs: ['grant', 'revoke', 'audit'],
     wanted: (s) => s.holdsGrant,
     because: 'no grant verb is offered to you this wake',
+  },
+  // ── ★ THE CLEARANCE (`RULES_VERSION` 23), AND WHY IT IS `required` RATHER THAN `wanted` ──
+  //
+  // Every other §10 block is `wanted`: knowing what a grant IS matters and is not an A5′ rule.
+  // This one is different, and the difference is the whole reason the mechanic needs a section.
+  //
+  // A loss LIMIT is recoverable — it expires, it is bounded, and the number was on the affordance.
+  // A CLEARANCE is not: a cleared delegate can cut a DOSSIER, the copy is permanent, it travels to
+  // any principal, and **revoking the grant takes back nothing already taken.** A grantor that
+  // signs a clearance without knowing that has accepted an unbounded, irreversible exposure on the
+  // strength of a preview it did not understand — which is A7 failing at the one axis with no
+  // upper bound in currency. And a DELEGATE holding a clearance is holding somebody else's secret
+  // with no rule telling it what the act costs.
+  //
+  // So it is `required` for anyone on either side of a grant, and it is claimed by the same three
+  // verbs: a member offered `grant` needs it before it signs, and a member offered `audit` cannot
+  // price the action without it.
+  {
+    section: S10,
+    block: '### CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
+    verbs: ['grant', 'revoke', 'audit'],
+    required: (s) => s.holdsGrant,
+    because: 'you are neither party to a grant nor offered one, so no clearance can exist',
   },
 
   // ── §11 · the Commons. The preamble carries the Commons-bound `move` REFUSAL, which is
@@ -764,7 +787,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are forty-seven: 2^47 is not enumerable, and it
+ * was free. At `###` granularity there are forty-eight: 2^48 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -1313,7 +1336,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
  * per-unit predicate, and `RULES` is never dropped for any reason including length. That
  * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
- * never for one it was not. There are forty-seven units; put the same rule inside each
+ * never for one it was not. There are forty-eight units; put the same rule inside each
  * predicate and the forty-fifth will forget it.
  * ══════════════════════════════════════════════════════════════════════════════
  */

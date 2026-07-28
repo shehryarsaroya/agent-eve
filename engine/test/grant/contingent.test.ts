@@ -109,7 +109,11 @@ function grant(
 ): GrantId {
   const refusal = act(w.runtime, w.grantor, 'grant', {
     delegate: w.delegate,
-    template: 'treasury-hand',
+    // `steward`, not `treasury-hand`: this fixture's delegate does a delegated `create`, and since
+    // `RULES_VERSION` 23 a template is an enforced FENCE rather than a label — a treasury-hand
+    // carries `elect` only. The office named here now has to be one that carries the verb the
+    // case exercises, which is the whole point of the change.
+    template: 'steward',
     max_direct_loss: limits.direct,
     max_contingent_liability: limits.contingent,
     expires_tick: limits.expiresTick ?? SETTLE_TICK + 10,
@@ -317,6 +321,7 @@ describe('a refusal is a refusal, never a tick abort (the recordSpend guard)', (
         eventId: `ev:pad:${String(i)}` as EventId,
         direct: minor(0),
         contingent: minor(0),
+        verb: 'create',
       });
     }
 
@@ -351,6 +356,8 @@ describe('INV-22 recomputes with checked arithmetic (its own sums cannot drift)'
       maxContingentLiability: minor(Number.MAX_SAFE_INTEGER),
       spentDirect: minor(Number.MAX_SAFE_INTEGER),
       spentContingent: minor(0),
+      verbs: ['create', 'elect'],
+      clearance: [],
       expiresTick: 1_000,
       revokedAtTick: null,
     };
@@ -362,6 +369,7 @@ describe('INV-22 recomputes with checked arithmetic (its own sums cannot drift)'
         eventId: 'ev:1' as EventId,
         direct: minor(Number.MAX_SAFE_INTEGER),
         contingent: minor(0),
+        verb: 'create',
       },
       {
         grant: grantRow.id,
@@ -370,6 +378,7 @@ describe('INV-22 recomputes with checked arithmetic (its own sums cannot drift)'
         eventId: 'ev:2' as EventId,
         direct: minor(2),
         contingent: minor(0),
+        verb: 'create',
       },
     ];
     expect(() => checkInv22([grantRow], spends, 3)).toThrow(UnitError);
@@ -385,6 +394,8 @@ describe('INV-22 recomputes with checked arithmetic (its own sums cannot drift)'
       maxContingentLiability: minor(1_000),
       spentDirect: minor(300),
       spentContingent: minor(700),
+      verbs: ['create', 'elect'],
+      clearance: [],
       expiresTick: 1_000,
       revokedAtTick: null,
     };
@@ -396,6 +407,7 @@ describe('INV-22 recomputes with checked arithmetic (its own sums cannot drift)'
         eventId: 'ev:1' as EventId,
         direct: minor(100),
         contingent: minor(400),
+        verb: 'create',
       },
       {
         grant: grantRow.id,
@@ -404,6 +416,7 @@ describe('INV-22 recomputes with checked arithmetic (its own sums cannot drift)'
         eventId: 'ev:2' as EventId,
         direct: minor(200),
         contingent: minor(300),
+        verb: 'create',
       },
     ];
     expect(checkInv22([grantRow], spends, 3)).toEqual([]);

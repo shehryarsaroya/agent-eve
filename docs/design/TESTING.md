@@ -137,7 +137,7 @@ Asserted in the `ASSERT` phase of every tick, before `COMMIT`. **On failure: abo
 - `INV-21` Standing changed only via an elective-honoured settlement, a default, a contradicted seal, or scheduled decay — never as a side effect of anything else.
 
 ### Authority
-- `INV-22` No grant's headroom is negative; the sum of all delegate spends against a grant never exceeds its limits, even with concurrent delegates.
+- `INV-22` **No delegate ever exceeds the scope its grantor signed.** No grant's headroom is negative; the sum of all delegate spends against a grant never exceeds its limits, even with concurrent delegates; **no draw is on a verb the grant does not carry**; and **no DOSSIER was cut without the CLEARANCE to read it**, with every custody chain rooted in a grant that held that clearance at the tick of the cut. *(All four are one property. LIMITS gained axes at `RULES_VERSION` 23 — money, acts, sight — and an overrun on any of them is the same guarantee failing, so it is the same id rather than an INV-27.)*
 - `INV-23` No grant chain contains a cycle; no principal is transitively its own delegate; no delegate is counterparty to a deal it signs on another's behalf.
 
 ### The clock and the crowd

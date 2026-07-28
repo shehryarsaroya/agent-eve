@@ -299,12 +299,16 @@ export const INVARIANTS: readonly InvariantEntry[] = [
     'INV-22',
     'AUTHORITY',
     50,
-    "no grant's headroom is negative; delegate spends never exceed its limits, even concurrently",
+    'no delegate exceeds the scope its grantor signed: headroom never negative, spends never over the LIMITS ' +
+      'even concurrently, no draw on an undelegated verb, no DOSSIER cut without the CLEARANCE',
     'src/invariants/authority.ts:checkInv22',
-    null,
+    'src/grant/book.ts + src/grant/dossier.ts',
     'PARTIAL',
-    'complete over a supplied grant list and spend journal, including recomputation from the journal (the only ' +
-      'way the concurrency clause is checkable). No office/grant module writes these yet',
+    'complete over a supplied grant list, spend journal and dossier table, including recomputation from the ' +
+      'journal (the only way the concurrency clause is checkable). LIMITS now bound money, acts and sight, and ' +
+      'all three axes are checked here — the fence and the custody chain are also enforced at their doors, so ' +
+      'this is the net rather than the gate. Coverage is per-call: a caller that omits the dossier table gets ' +
+      'a named skip rather than a silent green',
   ),
   entry(
     'INV-23',

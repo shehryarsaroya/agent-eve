@@ -256,7 +256,12 @@ describe('state_hash can see each book', () => {
       });
     },
     mint: (r) => {
-      tableOf(r, 'mint').restore?.({ venture: 999, grant: 999 });
+      // All three minters, because `mint`'s restore reads all three and `snapInt` refuses an
+      // absent key. `dossier` joined at `RULES_VERSION` 23: a re-minted dossier id renames a
+      // custody chain, and a chain whose parent no longer resolves is INV-22's *"an attribution
+      // we assert rather than prove"* — the same failure the venture half of this table exists to
+      // prevent, one book over.
+      tableOf(r, 'mint').restore?.({ venture: 999, grant: 999, dossier: 999 });
     },
     delivery: (r) => {
       tableOf(r, 'delivery').restore?.([

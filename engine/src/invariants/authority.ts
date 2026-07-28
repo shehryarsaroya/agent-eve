@@ -35,22 +35,68 @@ export interface GrantSpend {
   readonly eventId: EventId;
   readonly direct: Minor;
   readonly contingent: Minor;
+  /**
+   * ★ **Which verb drew.** LIMITS are three-dimensional now — money, verbs, sight — and this
+   * is the second dimension arriving in the journal so the invariant can check it.
+   *
+   * Without it, the fence would be enforced only at the door. `Grant.verbs` is inside
+   * `state_hash` and a door check is a line of code; the journal is the thing that survives a
+   * restore, a replay and an operator reading it six months later, and INV-22's whole design
+   * argument is that a per-row counter can be raced where a journal cannot. A fence checked
+   * only at the door is a fence with INV-22's own reasoning applied to one of its three
+   * dimensions and not the other two.
+   */
+  readonly verb: string;
 }
 
 /**
- * INV-22 — no grant's headroom is negative; the sum of all delegate spends against
- * a grant never exceeds its LIMITS, even with concurrent delegates.
+ * One dossier row, for INV-22's custody clause — the shape `grant/dossier.ts` writes,
+ * narrowed to what the invariant reads.
+ *
+ * Declared here rather than imported so `invariants/` stays a leaf: an invariant that
+ * imports the book it audits can be made to agree with it by editing one file.
+ */
+export interface CustodyRow {
+  readonly id: string;
+  readonly subject: PrincipalId;
+  readonly compartment: string;
+  readonly cutBy: PrincipalId;
+  readonly grant: GrantId | null;
+  readonly parent: string | null;
+  readonly cutAtTick: number;
+  readonly revealsAtTick: number;
+  /** The lag the book applies. Passed in so the invariant checks the rule, not a copy of it. */
+  readonly lagTicks: number;
+}
+
+/**
+ * INV-22 — no delegate ever exceeds the scope its grantor signed: no grant's headroom is
+ * negative, the sum of all spends against a grant never exceeds its LIMITS even with
+ * concurrent delegates, **no draw is on a verb the grant does not carry, and no DOSSIER
+ * was cut without the CLEARANCE to read it.**
  *
  * "Even with concurrent delegates" is the clause that forces the recomputation. A
  * per-row counter incremented by two writers is exactly the read-modify-write race
  * that produces a spend over the limit with a counter that looks fine, so the
  * journal is summed and the counter is treated as a cache to be checked — the same
  * shape as INV-5 for EXPOSURE.
+ *
+ * ── WHY THE TWO NEW CLAUSES ARE HERE AND NOT IN AN INV-27 ────────────────────
+ *
+ * LIMITS gained dimensions; they did not gain a second property. INV-22's subject has
+ * always been *"a delegate never exceeds what its grantor signed"* — that is the sentence
+ * the register carries — and until now a grant only had one axis to exceed. A grant now
+ * bounds money (the two LIMITS), acts (`Grant.verbs`) and sight (`Grant.clearance`), so an
+ * overrun on any axis is the same violation reported against the same guarantee. Splitting
+ * the sight axis into its own id would mean an operator reading a halt has to know which of
+ * two invariants owns "the delegate did more than it was allowed", which is exactly the kind
+ * of two-homes-one-rule split scar #5 names.
  */
 export function checkInv22(
   grants: readonly Grant[],
   spends: readonly GrantSpend[],
   tick: number,
+  custody: readonly CustodyRow[] = [],
 ): readonly InvariantViolation[] {
   const out: InvariantViolation[] = [];
   const summed = new Map<GrantId, { readonly direct: Minor; readonly contingent: Minor }>();
@@ -108,6 +154,24 @@ export function checkInv22(
           tick,
           `spend ${spend.eventId} on grant ${spend.grant} is at tick ${spend.tick}, after it was revoked at ` +
             `${grant.revokedAtTick}`,
+        ),
+      );
+    }
+    // ── ★ THE FENCE (SPEC §8: a grant specifies VERBS × … × limits) ───────────
+    //
+    // A draw on a verb the grant does not carry is a delegate acting outside the scope its
+    // grantor signed, and it is the same class of failure as an overrun limit: the worst case
+    // shown before signing was not the worst case enforced. Checked here as well as at the
+    // door because a fence enforced only at the door survives neither a restore nor a replay,
+    // and because a wrong row in this journal is a permanent public accusation (A5′).
+    if (!grant.verbs.includes(spend.verb)) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `spend ${spend.eventId} on grant ${spend.grant} drew on verb "${spend.verb}", which the grant does ` +
+            `not carry (it carries ${grant.verbs.length === 0 ? 'nothing' : grant.verbs.join(', ')}). The ` +
+            'grantor delegated a scope, not a budget',
         ),
       );
     }
@@ -188,6 +252,125 @@ export function checkInv22(
     }
   }
 
+  out.push(...checkCustody(known, custody, tick));
+  return out;
+}
+
+/**
+ * ★ **The custody clause — the third dimension of LIMITS, audited.**
+ *
+ * A DOSSIER is private figures that travelled, and the record of who has whose secrets is
+ * the one thing in this feature that a wrong row libels somebody over (A5′): "Vex handed
+ * Halcyon's balance sheet to Corvid" is permanent and public. So every row must be
+ * *provable*, and this is where that is asserted:
+ *
+ *   1. **Provenance is exclusive.** Exactly one of `grant` (a first cut) or `parent` (a
+ *      re-hand of something already held) — never both, never neither. A row with neither is
+ *      a leak the engine cannot attribute and must not publish.
+ *   2. **A first cut had the clearance.** The named grant must exist, must have named the
+ *      compartment in its CLEARANCE, must have named the cutter as its delegate, and must
+ *      have been live at `cutAtTick`. **Revocation after the cut is not a violation** — that
+ *      is §16.7 MUST-5's rule that revocation stops future reads and never erases what was
+ *      already observed, and it is the reason `revoke` is not a cure.
+ *   3. **The clock is the rule, not a per-row field.** `revealsAtTick` is exactly
+ *      `cutAtTick + lagTicks`. A row with its own offset is a second copy of the delay,
+ *      free to disagree with the number the affordance quoted the grantor.
+ *   4. **A re-hand names a row that exists.** A dangling parent means a chain the replay
+ *      cannot walk, which is an attribution we would be asserting rather than proving.
+ *
+ * Note what is deliberately **not** checked: whether the re-hander *should* have had the
+ * dossier, and whether the recipient was a rival. The first is settled by rule 2 at the root
+ * of the chain; the second is a judgement, and §16.7 MUST-9 forbids the engine making one.
+ */
+function checkCustody(
+  known: ReadonlyMap<GrantId, Grant>,
+  custody: readonly CustodyRow[],
+  tick: number,
+): readonly InvariantViolation[] {
+  const out: InvariantViolation[] = [];
+  const ids = new Set(custody.map((d) => d.id));
+  for (const row of [...custody].sort((a, b) => cmp(a.id, b.id))) {
+    if ((row.grant === null) === (row.parent === null)) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `dossier ${row.id} names ${row.grant === null ? 'neither' : 'both'} a grant and a parent; a cut is ` +
+            'authorised by a clearance or it is a copy of one that was, and never both or neither',
+        ),
+      );
+    }
+    if (row.revealsAtTick !== row.cutAtTick + row.lagTicks) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `dossier ${row.id} was cut at ${row.cutAtTick} and reveals at ${row.revealsAtTick}, but the audit ` +
+            `lag is ${row.lagTicks} ticks. A per-row reveal time is a second copy of the delay the grantor ` +
+            'was quoted',
+        ),
+      );
+    }
+    if (row.parent !== null && !ids.has(row.parent)) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `dossier ${row.id} is a re-hand of ${row.parent}, which is not in the dossier table; a chain the ` +
+            'replay cannot walk is an attribution we assert rather than prove',
+        ),
+      );
+    }
+    if (row.grant === null) continue;
+    const grant = known.get(row.grant);
+    if (grant === undefined) {
+      out.push(
+        halt('INV-22', tick, `dossier ${row.id} was cut under grant ${row.grant}, which is not in the grant table`),
+      );
+      continue;
+    }
+    if (grant.delegate !== row.cutBy) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `dossier ${row.id} was cut by ${row.cutBy} under grant ${row.grant}, which names ${grant.delegate}`,
+        ),
+      );
+    }
+    if (grant.grantor !== row.subject) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `dossier ${row.id} is about ${row.subject} but grant ${row.grant} is over ${grant.grantor}'s ` +
+            'compartments; a clearance opens its own grantor and nobody else',
+        ),
+      );
+    }
+    if (!grant.clearance.includes(row.compartment)) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `dossier ${row.id} reads ${row.subject}'s ${row.compartment} under grant ${row.grant}, whose ` +
+            `CLEARANCE is ${grant.clearance.length === 0 ? 'empty' : grant.clearance.join(', ')}. The grantor ` +
+            'gave authority to act, not to see',
+        ),
+      );
+    }
+    // Expiry is checked; revocation deliberately is not — see rule 2 in the header.
+    if (row.cutAtTick > grant.expiresTick) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `dossier ${row.id} was cut at ${row.cutAtTick} under grant ${row.grant}, which expired at ` +
+            `${grant.expiresTick}`,
+        ),
+      );
+    }
+  }
   return out;
 }
 

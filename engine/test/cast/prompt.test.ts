@@ -619,6 +619,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // The remaining +40 on every position is the inline correction to the false sentence, which is a
     // rules surface contradicting the engine and not optional.
     //
+    // ⚑ **THE TWO ⚑ BLOCKS ABOVE ARE HISTORY AND THEIR NUMBERS ARE STALE — READ THE ASSERTIONS.**
+    // Every figure in them is measured against `MAX_CONTRACT_CHARS` = **72,000**, which was raised
+    // to 120,000 one commit before `RULES_VERSION` 23. So *"662 is not enough for a paragraph"* and
+    // *"the reachable margin is 6,677"* were both true when written and are both wrong now: the live
+    // figures are 44,566 analytic and 52,152 reachable, and they are on the `expect` lines below
+    // rather than in prose. Kept rather than rewritten because the REASONING is the valuable part —
+    // it is the record of two features that each had to be costed before they were written, and the
+    // second draft that was 340 characters shorter for the same four facts. Do not quote the
+    // numbers; do copy the method.
+    //
     // ⚑ For the next author: 662 is not enough for a paragraph. The reachable margin is 6,677 and
     // quoting THAT number is the mistake this comment block already warns about two screens up.
     //
@@ -645,7 +655,19 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ⚑ 678 is still not enough for a paragraph, and it is now not enough for a SENTENCE on every
     // position. The next block needs the ceiling looked at.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_909);
+    // ── ★ 72,909 → 75,434 AT `RULES_VERSION` 23, AND THE MARGIN IS NOT THE FINDING ──
+    //
+    // +74 on every position (§12.1's DOSSIER log line) and +2,525 on the two that are party to a
+    // grant (§10's `### CLEARANCE and the DOSSIER`, the only `required` unit in that section).
+    // Against 120,000 the ANALYTIC margin is **44,566** and the REACHABLE margin is **52,152** —
+    // the first feature in this file's history to land without the margin being the headline, which
+    // is exactly what the 120,000 raise was for.
+    //
+    // The split is worth reading as the selector working rather than as a number: a newcomer pays
+    // 74 characters for an observation key it can read, and nothing at all for a mechanic it has no
+    // grant to reach. The 2,525 is charged only to members who are on one side of a grant, which is
+    // the population that can be hurt by not knowing it.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(75_434);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -675,7 +697,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // +116 at 20: the same paragraph, corrected. The floor now falls and is charged per principal,
     // so the two clauses that said otherwise had to go — a rules surface describing the old
     // behaviour is scar #1, and this one is published to every agent in the world.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(65_323);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(67_848);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1231,11 +1253,17 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       45: 'forty-five',
       46: 'forty-six',
       47: 'forty-seven',
+      // ★ 48 at `RULES_VERSION` 23: §10's `### CLEARANCE and the DOSSIER` block. It is the only
+      // `required` unit in §10, and the reason is in its catalog entry — a loss LIMIT is bounded
+      // and expires, while a clearance is permanent and survives revocation, so a grantor that
+      // signs one without this section has accepted an irreversible exposure it was never told
+      // about.
+      48: 'forty-eight',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(47);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(48);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 47],
+      spelled[n as 48],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1272,6 +1300,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       admit: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
       apply: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
       approve: 'OFFICES — `grant` with `on_behalf_of`',
+      // ★ `audit` — a canon verb that went LIVE at `RULES_VERSION` 23 after twenty versions with no
+      // handler. It is claimed by the same block as `grant` and `revoke` and that is deliberate:
+      // an access log is only worth reading because a CLEARANCE was granted, so a member offered
+      // `audit` needs the paragraph that explains what a clearance is, not a separate one.
+      audit:
+        'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
       // ── `build` DOES NOT CLAIM §11B's `### Taking one`, AND THE MAP IS WHY I LOOKED ──
       //
       // That block's heading contains the word `build` and it documents `build {"kind":"ANCHOR"}`,
@@ -1305,7 +1339,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         '(preamble) + The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
       form: 'Founding one — `form` `{"name":"...", ...}`',
       graduate: '`graduate` — leaving, and it is one-way',
-      grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
+      grant:
+        'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
       join: 'Answering either one — `yield` · `fight` · join, or say nothing',
       message: 'Negotiating',
       // ★ `haul` — the canon verb whose step arrived with the fourth good. It is claimed by ONE
@@ -1316,7 +1351,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       post_bond: '(preamble) + Taking one — `post_bond` then `build`',
       publish_offer: 'Negotiating',
       refine: '(preamble) + The fourth good — the one only the COMMONS makes, and the one that flows the other way',
-      revoke: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
+      revoke:
+        'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
       seal: 'Seals — the say-do gap',
       set_delivery_intent: 'The Levy — nobody sits this out',
       sign: '(preamble)',
@@ -1421,10 +1457,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      39_489, // a newcomer on its first wake            (+40: the corrected "you sell … rations")
-      47_877, // mid-game in the Commons                 (+40: same)
-      48_750, // about to take territory                 (+40: same)
-      65_323, // a claimant in trouble — the largest REACHABLE position (+631 at 19, +116 at 20)
+      // ── ★ +74 ON EVERY ROW, AND +2,525 ON THE TWO THAT HOLD A GRANT (`RULES_VERSION` 23) ──
+      //
+      // The +74 is one line of the §12.1 observe block — `about_me[] · i_hold[] · window{}`, the
+      // DOSSIER log — which every position pulls because every position reads the observation.
+      // The +2,525 is §10's new `### CLEARANCE and the DOSSIER` block, and it lands only on the
+      // two positions that are party to a grant. That split is the selector working: the newcomer
+      // and the mid-game Commons member pay 74 characters for a key they can read, and nothing for
+      // a mechanic they cannot yet reach.
+      39_563, // a newcomer on its first wake            (+74: the DOSSIER log line in §12.1)
+      47_951, // mid-game in the Commons                 (+74: same)
+      48_824, // about to take territory                 (+74: same)
+      67_848, // a claimant in trouble — the largest REACHABLE position (+74 + 2,525 at 23)
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
@@ -1451,7 +1495,13 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only, and no REACHABLE position was ever being squeezed.** Had a reachable row moved here,
       // the raise would have been silently restoring rules an agent had been denied, which is a
       // different and much worse finding.
-      72_909,
+      // ── ★ 72,909 → 75,434 AT `RULES_VERSION` 23 ─────────────────────────────
+      //
+      // +74 shared and +2,525 for the clearance block. Against `MAX_CONTRACT_CHARS` = 120,000 the
+      // analytic margin is **44,566** and the REACHABLE margin is **52,152** — the first time in
+      // this file's history that a feature has landed without the margin being the finding. The
+      // 120,000 raise is what bought that, and this is the measurement that spends some of it.
+      75_434,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
