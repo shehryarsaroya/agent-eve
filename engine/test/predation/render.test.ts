@@ -154,6 +154,14 @@ describe('§11.2 — the frame projection admits the key, and admits nothing mor
     expect(line).toBeDefined();
     expect(Object.keys(line ?? {}).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([
       'defenderForce',
+      // ★ `defenders` and `raiders` are the coalition (A13), and they argue from `initiator`'s own
+      // clause taken one step on: **every party** to a standoff is `PUBLIC`, not merely the first.
+      // `raid.joined` publishes the joiner, its side and its stake at `publicAt: tick`. Like
+      // `initiator` these are IDENTITIES rather than quantities, so there is nothing in either list
+      // to invert into a hold value — which is the property this test exists to pin. They are here
+      // because `raiderForce`/`defenderForce` are written at RESOLUTION, so for the whole window a
+      // four-ally arc drew byte-identically to a lone defender.
+      'defenders',
       'demand',
       // `initiator` is admissible and had to argue for itself like every other field here.
       // Taking a side in a standoff is already `PUBLIC` — `raid.joined` publishes the joiner
@@ -164,6 +172,7 @@ describe('§11.2 — the frame projection admits the key, and admits nothing mor
       'lost',
       'raid',
       'raiderForce',
+      'raiders',
       'stage',
       'state',
       'target',

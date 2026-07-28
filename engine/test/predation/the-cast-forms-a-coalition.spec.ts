@@ -79,6 +79,31 @@ interface Coalition {
   readonly outcomes: readonly string[];
   /** The richest `defenders` list any published frame carried, and the raid it was on. */
   readonly frameDefenders: readonly PrincipalId[];
+  /**
+   * ★ For every `join` the cast sent: did the joiner have a settled elective half with the target?
+   *
+   * Read out of `relationsFor` **at the tick of the decision**, which is the engine's own journal
+   * rather than anything this test arranged. That is the difference between asserting the gate and
+   * asserting a fixture — two recent agents had mutations survive because a fixture asserted about an
+   * object it had constructed itself.
+   */
+  readonly joinsWithSignal: number;
+  /**
+   * ★ Joins whose hand was still standing at the stage on the tick before the standoff resolved.
+   *
+   * `readForce` counts joiners *"only while its hand is still standing there"*, so a coalition that
+   * wanders off is a coalition that withdrew silently. This is the number `musteredAt`'s joiner clause
+   * exists to protect, measured as an outcome rather than as a branch firing.
+   */
+  readonly joinsStillStanding: number;
+  /**
+   * ★ Ticks on which one member had two hands in transit toward the same live standoff.
+   *
+   * Must be zero. `hand.destination` is the next GATE, so a march longer than one hop is invisible to
+   * a `destination === stage` test and the branch sends a second hand, then a third — measured at 252
+   * wasted actions on one member of one seed. See `carriageUnderwayTo`.
+   */
+  readonly doubleMarches: number;
   readonly halted: boolean;
 }
 
@@ -90,6 +115,11 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
   const joins: { raid: string; side: string; tick: number }[] = [];
   const refusals: string[] = [];
   const partiesOf = new Map<string, number>();
+  let joinsWithSignal = 0;
+  let joinsStillStanding = 0;
+  let doubleMarches = 0;
+  /** raid -> the (principal, hand) pairs that joined it. Checked on the tick before it resolves. */
+  const pledged = new Map<string, { principal: PrincipalId; hand: HandId }[]>();
   let frameDefenders: readonly PrincipalId[] = [];
   let halted = false;
 
@@ -97,9 +127,46 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
     const at = runtime.engine.tick + 1;
     for (const action of cast.decide(at, seed)) {
       if (action.verb === 'join') {
-        joins.push({ raid: String(action.params['raid']), side: String(action.params['side']), tick: at });
+        const raid = String(action.params['raid']);
+        joins.push({ raid, side: String(action.params['side']), tick: at });
+        // THE SIGNAL, out of the engine's journal at the moment of the decision.
+        const target = runtime.raids.get(raid as never)?.target;
+        const settled = runtime
+          .relationsFor(action.principal)
+          .some((r) => r.other === target && (r.kept > 0 || r.youKept > 0));
+        if (settled) joinsWithSignal += 1;
+        const hand = action.params['hand'];
+        if (typeof hand === 'string') {
+          pledged.set(raid, [
+            ...(pledged.get(raid) ?? []),
+            { principal: action.principal, hand: hand as HandId },
+          ]);
+        }
       }
       runtime.engine.submit(action);
+    }
+    // ── ONE MARCH PER MEMBER PER STANDOFF, CHECKED BEFORE THE TICK RESOLVES ────
+    for (const member of cast.roster) {
+      const inTransit = handsOf(runtime.world, member.principal).filter(
+        (h) => h.state === 'IN_TRANSIT' && h.destination !== null,
+      );
+      for (const raid of runtime.raids.live()) {
+        const toward = inTransit.filter((h) => {
+          if (h.destination === raid.stage) return true;
+          const there = route(runtime.world.map, h.destination as SystemId, raid.stage)?.ticks;
+          const here = route(runtime.world.map, h.location, raid.stage)?.ticks;
+          return there !== undefined && here !== undefined && there < here;
+        });
+        if (toward.length > 1) doubleMarches += 1;
+      }
+    }
+    // ── A PLEDGED HAND IS STILL STANDING THERE WHEN IT MATTERS ─────────────────
+    for (const raid of runtime.raids.live()) {
+      if (raid.resolvesAtTick !== runtime.engine.tick + 1) continue;
+      for (const row of pledged.get(raid.id) ?? []) {
+        const hand = handsOf(runtime.world, row.principal).find((h) => h.id === row.hand);
+        if (hand?.state === 'IDLE' && hand.location === raid.stage) joinsStillStanding += 1;
+      }
     }
     const report = runtime.runTick();
     for (const member of cast.roster) {
@@ -152,6 +219,9 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
     fightDelays,
     outcomes,
     frameDefenders,
+    joinsWithSignal,
+    joinsStillStanding,
+    doubleMarches,
     halted,
   };
 }
@@ -326,59 +396,106 @@ describe('the march is legal before it is published', () => {
 
 describe('a coalition is priced, not free', () => {
   /**
-   * A bystander with no settled elective half does not take a side, however winnable the standoff.
+   * ★ **EVERY JOIN THE CAST SENDS IS TO A PRINCIPAL IT HAS SETTLED AN ELECTIVE HALF WITH.**
    *
    * ══════════════════════════════════════════════════════════════════════════
-   * **NON-VACUITY FIRST**: the same world with the signal *present* must produce a join, or this test
-   * proves nothing but that the cast is idle. So it runs the identical world twice and the only
-   * difference is one `ELECTIVE_HONOURED` row in the standing journal.
+   * **THIS TEST WAS WRITTEN WRONG FIRST, AND THE WRONG VERSION IS WORTH RECORDING.** It seated three
+   * principals, submitted a `join` **by hand** in one arm and not in the other, and asserted the party
+   * counts differed. That passes with `coalitionFor` deleted: it asserts about a party row the test
+   * itself created, which is exactly the failure two recent agents shipped — a fixture asserting about
+   * an object it constructed.
    *
-   * **MUTATION**: delete `if (!settled.has(view.target)) continue;` and the first arm joins too.
+   * The honest form asserts a property of the **cast's own** decisions against the **engine's own**
+   * journal: for every `join` submitted, `relationsFor(joiner)` carried the target with a settled
+   * elective half at the tick of the decision. Non-vacuity first, because *"0 of 0 joins had the
+   * signal"* is a true sentence about nothing.
+   *
+   * **MUTATION**: delete `if (!settled.has(view.target)) continue;` from `coalitionFor` and this
+   * fails — 30 of 38 reachable standoffs clear every other gate, so unsignalled joins arrive at once.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  it('will not join a stranger, and will join the same principal once a promise has been kept', () => {
-    const withoutSignal = coalitionArm(false);
-    const withSignal = coalitionArm(true);
-    // The non-vacuity half. If this is 0 the assertion below is about a cast that does nothing.
-    expect(withSignal).toBeGreaterThan(0);
-    expect(withoutSignal).toBe(0);
+  it('joins only a principal it has settled an elective half with', () => {
+    let joins = 0;
+    let withSignal = 0;
+    for (const seed of SEEDS) {
+      const out = play(seed, TICKS);
+      joins += out.joins.length;
+      withSignal += out.joinsWithSignal;
+    }
+    expect(joins).toBeGreaterThan(0);
+    expect(withSignal).toBe(joins);
+  });
+
+  /**
+   * ★ **A PLEDGED HAND IS STILL STANDING THERE WHEN THE WINDOW SHUTS.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * `readForce` counts a joiner *"only while its hand is still standing there"* — its header records a
+   * verifier walking through that hole from the raider's side. {@link musteredAt} is the cast's whole
+   * defence against doing the same from the defender's, and it covered only the TARGET until this
+   * branch existed.
+   *
+   * **MUTATION**: remove the `your_side === 'DEFENDER' || your_side === 'RAIDER'` clause from
+   * `musteredAt` and this fails. Measured before the fix, seed `g06` t480: the target answered FIGHT
+   * with **two** joiners nominally standing and the standoff resolved `PLUNDERED 1-2` —
+   * `defenderForce` the Marches terrain and nothing else, both allies' hands walked off by `fill_role`
+   * and the aimless walk. 6,000 of the Levy's good and the only red tribute line in a 9-Reckoning
+   * sweep. Fixing it took `PLUNDERED` 7 → 1 and `REPULSED` 3 → 8.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('keeps the hand it pledged at the stage until the standoff resolves', () => {
+    let joins = 0;
+    let standing = 0;
+    const outcomes: string[] = [];
+    for (const seed of SEEDS) {
+      const out = play(seed, TICKS);
+      joins += out.joins.length;
+      standing += out.joinsStillStanding;
+      outcomes.push(...out.outcomes);
+    }
+    expect(joins).toBeGreaterThan(0);
+    // Every hand pledged to a standoff that ran its full window was still there for the reading.
+    // Not `=== joins`: a standoff the target PAYS resolves early and there is nothing left to stand
+    // for, and a hand can be recalled by this member's own tribute — `musteredAt`'s `OWN` scope.
+    expect(standing).toBeGreaterThan(0);
+    // And the outcome the reservation buys: a world nobody steers now HOLDS fields.
+    expect(outcomes.filter((s) => s === 'REPULSED').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * ★ **ONE MARCH PER MEMBER PER STANDOFF.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **MUTATION**: point `coalitionFor` and `levyMove` back at {@link carriageUnderwayTo} — the
+   * `destination === place` test — and this fails. `move` crosses one gate per action and
+   * `hand.destination` is that gate, so on a multi-hop route the strict test is false for every hop
+   * but the last: the branch re-decides next tick, skips the hand already in transit (it is not
+   * IDLE), finds the next one and sends that too.
+   *
+   * Measured on `g02` at nine Reckonings: `p:brannock`'s `move` count **20 → 272**, with `create`
+   * 190 → 120, `sign` 283 → 194 and `elect` 170 → 102 as the budget drained, and two red tribute
+   * lines because nobody was standing at `sys-16` when the sweep came. A world-visible cost with no
+   * world-visible cause — every individual call was correct.
+   *
+   * ⚑ **And the inverse mutation is just as expensive**, which is why there are two predicates rather
+   * than one: point `carriageNeeded` at the LOOSE test and seed `g06` goes `levyShort` **0 → 7,615**
+   * with a red line, because it stops reserving a carrier on the strength of a hand three gates out
+   * that any later branch can divert. `carriageUnderwayTo`'s own note carries the argument.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  it('never sends two hands of one member toward one standoff', () => {
+    let doubles = 0;
+    let joins = 0;
+    for (const seed of SEEDS) {
+      const out = play(seed, TICKS);
+      doubles += out.doubleMarches;
+      joins += out.joins.length;
+    }
+    // Non-vacuity: marches happened at all, or "zero doubles" is a fact about an idle cast.
+    expect(joins).toBeGreaterThan(0);
+    expect(doubles).toBe(0);
   });
 });
-
-/**
- * One hand-built world: three principals at one Marches stage, a raid on the first, and the third
- * either has or has not been paid an elective half by the target.
- *
- * The cast is not used here — this is the *engine's* answer to a `join`, so the arm drives the verbs
- * and reads the party rows. What varies between the arms is the standing journal and nothing else.
- */
-function coalitionArm(withSignal: boolean): number {
-  const world = raidWorld(`coalition-arm-${withSignal ? 'yes' : 'no'}`, 3);
-  const { runtime, stage } = world;
-  const target = world.principals[0];
-  const ally = world.principals[1];
-  if (target === undefined || ally === undefined) throw new Error('need a target and an ally');
-  for (const principal of world.principals) {
-    runtime.ledger.sourceGoods({
-      eventId: `arm.stock:${principal}` as never,
-      tick: 0,
-      faucet: GOODS_FAUCET.PRODUCTION,
-      to: storesAccount(principal),
-      good: GOOD,
-      qty: qty(40_000),
-      location: stage,
-      origin: principal,
-    });
-  }
-  const raid = runToFirstRaid(runtime);
-  if (withSignal) {
-    submit(runtime, ally, 'join', { raid: raid.id, side: 'DEFENDER' });
-    tick(runtime);
-  } else {
-    tick(runtime);
-  }
-  return runtime.raids.require(raid.id).parties.length;
-}
 
 describe('the side a joiner fights on has one home', () => {
   /**

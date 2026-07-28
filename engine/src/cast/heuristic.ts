@@ -1111,7 +1111,33 @@ export class HeuristicCast {
    * the tug-of-war that cost it a fifth of its ventures once already.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  private musteredAt(member: CastMember, tick: number): ReadonlyMap<SystemId, number> {
+  private musteredAt(
+    member: CastMember,
+    tick: number,
+    /**
+     * ★ `ALL` counts a hand pledged to somebody else's standoff; `OWN` counts only this member's
+     * own answered FIGHT.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * **THE WORLD'S BILL OUTRANKS A FAVOUR, AND THAT HAD TO BE SAID SOMEWHERE.** Once a joiner's
+     * hand is reserved here, `levyMove` and `chargeMove` will not walk it — so a member that
+     * pledged a hand and *then* found its tribute short had no carrier, and the reservation put a
+     * red line on the public record to keep a promise nobody made it.
+     *
+     * `OWN` is what those two branches ask, and the asymmetry is the design: defaulting on the
+     * world in order to defend **yourself** is a trade a principal chose and can be held to;
+     * defaulting in order to defend **a neighbour** is a cost the Levy never agreed to. So a
+     * pledged hand can be recalled by a tribute and never by an errand — `fill_role` and the
+     * aimless walk still ask `ALL`, because those are optional work and a promise is not.
+     *
+     * The coalition can therefore still silently withdraw, which is exactly what `readForce`
+     * measures at the window's end and what {@link coalitionFor}'s gate 3 tries to make rare
+     * rather than impossible. A14 wants a losing branch; this is one, and it is an ally called
+     * home by its own tribute rather than an ally that wandered off.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    scope: 'ALL' | 'OWN' = 'ALL',
+  ): ReadonlyMap<SystemId, number> {
     const out = new Map<SystemId, number>();
     for (const view of this.runtime.raidsFor(member.principal, tick, MAX_CAST)) {
       if (view.state !== 'DEMANDED') continue;
@@ -1140,7 +1166,7 @@ export class HeuristicCast {
       // and `Book.addParty` refuses a second row for one principal).
       // ══════════════════════════════════════════════════════════════════════
       if (view.your_side === 'DEFENDER' || view.your_side === 'RAIDER') {
-        out.set(view.stage, Math.max(out.get(view.stage) ?? 0, 1));
+        if (scope === 'ALL') out.set(view.stage, Math.max(out.get(view.stage) ?? 0, 1));
         continue;
       }
       if (view.your_side !== 'TARGET' || view.answer !== 'FIGHT') continue;
@@ -1161,7 +1187,68 @@ export class HeuristicCast {
     return out;
   }
 
-  /** Is a hand of this member standing at, or walking to, `place`? */
+  /**
+   * ★ Is a hand of this member standing at, or **on its way to**, `place` — however many gates out?
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE DIFFERENCE BETWEEN THIS AND {@link carriageUnderwayTo} COST 252 WASTED ACTIONS ON ONE
+   * MEMBER, AND IT IS ONE FIELD.**
+   *
+   * `move` crosses one gate per action, so `hand.destination` is the **next gate** and there is no
+   * field anywhere on a `HandRecord` naming the place a multi-hop journey is *for*.
+   * `carriageUnderwayTo` therefore answers "is somebody walking to this stage" correctly for a
+   * one-hop march and **falsely for every longer one** — and {@link coalitionFor} re-decides every
+   * tick. The consequence, measured on seed `g02` at nine Reckonings: `p:brannock`'s `move` count
+   * went **20 → 272**. Each tick `marchTo` skipped the hand already in transit (it is not IDLE),
+   * found the *next* idle hand, and sent that one too. Three hands walking to one standoff, then
+   * walking home, then walking out again — with `create` 190 → 120, `sign` 283 → 194 and
+   * `elect` 170 → 102 as the budget drained, and two red tribute lines because nobody was standing
+   * at `sys-16` when the sweep came.
+   *
+   * A world-visible cost with no world-visible cause, which is the shape this repo keeps producing:
+   * every individual call was correct.
+   *
+   * **The fix needs no new state, because the map already knows.** A hand in transit keeps its
+   * ORIGIN in `location` until `resolveArrival`, so *"is it walking toward the stage"* is a
+   * comparison of two published route lengths: the distance from where it is going against the
+   * distance from where it left. Strictly less means toward. `route` is Dijkstra over 30 systems and
+   * is the same call `marchTo` uses, so the two cannot disagree about what "closer" means.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private marchUnderwayTo(member: CastMember, place: SystemId, tick: number): boolean {
+    const world = this.runtime.world;
+    if (carrierAt(world, member.principal, place, tick) !== null) return true;
+    const ticksTo = (from: SystemId): number =>
+      from === place ? 0 : (route(world.map, from, place)?.ticks ?? Number.MAX_SAFE_INTEGER);
+    for (const hand of handsOf(world, member.principal)) {
+      if (hand.state !== 'IN_TRANSIT' || hand.destination === null) continue;
+      if (hand.destination === place) return true;
+      if (ticksTo(hand.destination) < ticksTo(hand.location)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Is a hand of this member standing at, or **one gate from**, `place`? The STRICT reading.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE TWO READINGS ANSWER DIFFERENT QUESTIONS AND MERGING THEM COST A TRIBUTE.** This one and
+   * {@link marchUnderwayTo} were briefly one function, on the reasonable-sounding rule that a fact
+   * has one home. They are not one fact:
+   *
+   *   - {@link carriageNeeded} asks *"may I stop reserving a hand?"*, and may only answer yes if a
+   *     carrier will **definitely** arrive. `destination === place` is that: the hand is on the last
+   *     lane and nothing else can be asked of it mid-lane (`INV-9` refuses a redirect).
+   *   - `levyMove` and {@link coalitionFor} ask *"should I send ANOTHER hand?"*, and must answer no
+   *     as soon as one is heading that way at all — otherwise a multi-hop journey draws a second
+   *     hand next tick and a third after that.
+   *
+   * Merged on the loose reading, `carriageNeeded` stopped reserving on the strength of a hand three
+   * gates out that any later branch could divert, and seed `g06` went `levyShort` **0 → 7,615** with
+   * a red tribute line at nine Reckonings. The reservation *is* the safety net; the loose test is a
+   * politeness about not duplicating work. One home per **question**, not per phrase.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   private carriageUnderwayTo(member: CastMember, place: SystemId, tick: number): boolean {
     const world = this.runtime.world;
     if (carrierAt(world, member.principal, place, tick) !== null) return true;
@@ -3064,6 +3151,21 @@ export class HeuristicCast {
       // and a raid it has already joined is `engageFor`'s.
       if (view.your_side !== null || view.target === member.principal) continue;
       if (reinforcedThisTick.has(view.raid)) continue;
+      // ── ★ AND NOT INSIDE THE GRACE, BECAUSE THE DECISION HAS ALREADY BEEN TAKEN ──
+      //
+      // {@link CAST_ANSWER_GRACE_TICKS} is the window in which the target stops waiting and pays. A
+      // join decided at T lands at T+1 (§15.2) while the target decides at T from the *same*
+      // snapshot, so a hand arriving inside the grace arrives after the answer it was meant to
+      // change — and if the payment goes in first the join is refused outright:
+      //
+      //     A2  raid raid:696:0 already resolved as PAID at tick 716. Nothing you send now can
+      //         change it — the record is append-only (A5).
+      //
+      // Measured once in 72 standoffs before this line, and it is exactly AGT-S3's case: *a bot
+      // hitting a refusal means an affordance or a hint is wrong, not that the bot is wrong.* The
+      // refusal text is correct and the cast could see it coming, which makes it the cast's to avoid.
+      // `+ 1` for the landing tick, so the last useful join is one the target has not yet answered.
+      if (view.ticks_left <= CAST_ANSWER_GRACE_TICKS + 1) continue;
       // 1. The signal.
       if (!settled.has(view.target)) continue;
       // 2. A gap that exists and is reachable. Read off the published view, never recomputed — the
@@ -3071,8 +3173,28 @@ export class HeuristicCast {
       const deficit = view.force.raider - view.force.defender_if_you_fight;
       if (deficit <= 0 || deficit > CAST_COALITION_MAX_DEFICIT) continue;
       // 3. A hand the member's own obligations and its own defence do not need.
+      //
+      // ── ★ AND THE TRIBUTE IS RESERVED WHETHER OR NOT IT IS PAYABLE **YET** ────
+      //
+      // ══════════════════════════════════════════════════════════════════════
+      // {@link carriageNeeded} counts a hand for the Levy only while a shortfall is outstanding
+      // **and there is stock to carry** — its own comment says so, and it is right for its purpose:
+      // *"nothing to carry is not the same problem, and reserving a hand would not fix it."*
+      //
+      // It is the wrong reading for a **pledge**, and the difference is time. A hand lent to a
+      // neighbour is gone for the whole window and for `HAND_RECOVERY_TICKS` (12–48) after a loss,
+      // while the goods to pay a tribute arrive continuously from a WORKS. So a member with an
+      // undischarged assessment and no stock *this tick* passes `carriageNeeded`, lends its last
+      // hand, refines an hour later and has nobody to carry with. Measured as `levyShort` 7,615 and
+      // a red tribute line at nine Reckonings — the two meters the balance gate exists for.
+      //
+      // So the pledge reserves against `shortfall_if_unpaid` alone: **owing anything at all is
+      // enough to keep a hand home.** A favour is optional and a tribute is not, and that ordering
+      // is the whole of why this branch cannot make `levyShort` worse.
+      // ══════════════════════════════════════════════════════════════════════
+      const owing = (runtime.levyBlockFor(member.principal, tick)?.shortfall_if_unpaid ?? 0) > 0 ? 1 : 0;
       const reserved =
-        this.carriageNeeded(member, tick) +
+        Math.max(this.carriageNeeded(member, tick), owing) +
         (mustered.get(view.stage) ?? 0) +
         CAST_COALITION_SPARE_HANDS;
       const here = idle.filter((hand) => hand.location === view.stage);
@@ -3091,12 +3213,14 @@ export class HeuristicCast {
       const march = view.march;
       if (march === null || !march.in_time) continue;
       // Already on the road to this stage → nothing to send. {@link carriageUnderwayTo} is the same
-      // predicate `carriageNeeded` uses for an obligation's carrier, and it is deliberately about
-      // *this place*: the first version asked whether **any** hand of this member was IN_TRANSIT for
-      // any reason at all, which with `alloyErrandFor`, `crewMove`, `levyMove` and `chargeMove` all
-      // moving hands is true most of the time. That is a gate on the cast's own busyness rather than
-      // on the decision, and it silently refused most of the coalitions this branch is for.
-      if (this.carriageUnderwayTo(member, view.stage, tick)) continue;
+      // predicate `carriageNeeded` uses for an obligation's carrier, and its block comment carries
+      // the 252 wasted actions that made it route-aware rather than destination-aware.
+      //
+      // The first version of this gate asked whether **any** hand was IN_TRANSIT for any reason,
+      // which with `alloyErrandFor`, `crewMove`, `levyMove` and `chargeMove` all moving hands is true
+      // most of the time — a gate on the cast's own busyness rather than on the decision, and it
+      // refused most of the coalitions this branch exists for.
+      if (this.marchUnderwayTo(member, view.stage, tick)) continue;
       if (!this.mayEnter(member, march.next)) continue;
       reinforcedThisTick.add(view.raid);
       return { verb: 'move', params: { hand: march.hand, to: march.next } };
@@ -3532,12 +3656,23 @@ export class HeuristicCast {
     }
 
     const hands = handsOf(runtime.world, member.principal);
-    if (hands.some((h) => h.destination === place)) return null;
+    // ── ★ ROUTE-AWARE, BECAUSE `destination` IS THE NEXT GATE AND NOT THE GOAL ──
+    //
+    // This read `hands.some((h) => h.destination === place)`, which is true only on the LAST hop of a
+    // journey. On a three-gate route it was false for the first two, so this branch sent a second hand
+    // on the next tick and a third on the one after — a whole convoy walking to carry one tribute,
+    // and every action of it drawn from a budget of one per tick. {@link carriageUnderwayTo} compares
+    // published route lengths instead and its block comment carries the measurement.
+    if (this.marchUnderwayTo(member, place, tick)) return null;
 
     // A hand mustered at a stage this member has answered FIGHT at is not available to walk: the
     // reading is re-taken at resolution, so walking it out un-answers the raid. Same rule the
     // `fill_role` branch applies, same measurement behind it (`gate-c`, `FIGHT/PLUNDERED`).
-    const mustered = this.musteredAt(member, tick);
+    //
+    // `OWN`, not `ALL`: a hand pledged to somebody ELSE's standoff is recallable by a tribute. See
+    // the parameter's own note — the world's bill outranks a favour, and the alternative is a red
+    // line on the public record to keep a promise nobody made this member.
+    const mustered = this.musteredAt(member, tick, 'OWN');
     const idle = hands.filter((h) => h.state === 'IDLE' && (mustered.get(h.location) ?? 0) === 0);
     // The LAST idle hand, mirroring {@link carriageNeeded}: the branches above spend `idle[0]`
     // on roles, so taking from the other end means the hand a member reserved for its tribute
@@ -3608,8 +3743,10 @@ export class HeuristicCast {
       }
       const hands = handsOf(runtime.world, member.principal);
       if (hands.some((h) => h.destination === claim.system)) continue;
-      // Mustered hands are not available to walk — see {@link musteredAt}.
-      const mustered = this.musteredAt(member, tick);
+      // Mustered hands are not available to walk — see {@link musteredAt}. `OWN`, so a Charge can
+      // recall a hand pledged to a neighbour's standoff: a lapse slashes a bond and is permanent, and
+      // no favour is worth that. Same argument as `levyMove`, one obligation over.
+      const mustered = this.musteredAt(member, tick, 'OWN');
       const idle = hands.filter((h) => h.state === 'IDLE' && (mustered.get(h.location) ?? 0) === 0);
       // The last idle hand, as `levyMove` takes: the role branches spend `idle[0]`.
       const hand = idle[idle.length - 1];
