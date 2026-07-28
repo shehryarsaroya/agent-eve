@@ -1397,6 +1397,42 @@ function affordancesFor(
         expires_tick: view.resolves_tick,
         quote_id: quoteId(principal, tick, 'fight', { raid: view.raid }),
       });
+    } else if (view.your_side === null && view.march !== null) {
+      // ── ★ THE MARCH: THE ONE ACT THAT MAKES `join` REACHABLE, AND IT HAD NO AFFORDANCE ──
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // **`join` IS OFFERED ONLY TO A PRINCIPAL ALREADY STANDING AT THE STAGE, AND THAT CONDITION
+      // WAS MET 0 TIMES IN 72 WORLD RAIDS.** The `join` branch below is correct and was empty:
+      // 70% of a principal's hand-ticks are `COMMITTED` and its hands are mostly not even at its own
+      // body, so the escort market §9 argues for had a demand side nobody could see and a supply side
+      // two lanes away.
+      //
+      // A `join` affordance for a hand that is not there would be a move the handler refuses
+      // (AGT-S2), which costs an agent an action and its trust in the menu. So the affordance is the
+      // **walk**, with the whole arithmetic of it: which hand, the next gate, how many actions the
+      // trip costs, the tick it arrives, and the tick the window shuts. `max_direct_loss` is 0
+      // because walking loses nothing — what it spends is presence, and the sentence says so.
+      // ══════════════════════════════════════════════════════════════════════════
+      const march = view.march;
+      eligible.push({
+        verb: 'move',
+        params: { hand: march.hand, to: march.next },
+        cost: 1,
+        max_direct_loss: 0,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `${view.target} is under a demand at ${view.stage} and you are not in it. Your hand ${march.hand} ` +
+          `stands at ${march.from}, ${String(march.hops)} gate(s) away: one \`move\` per gate, arriving tick ` +
+          `${String(march.arrives_tick)} against a window that shuts at ${String(view.resolves_tick)} — ` +
+          `${march.in_time ? 'in time' : 'TOO LATE, and this walk would arrive at a resolved standoff'}. ` +
+          `Standing there lets you \`join\` for 1 action, which adds 1 to their force (currently ` +
+          `${String(view.force.defender_if_you_fight)} against ${String(view.force.raider)}, of which ` +
+          `${String(view.force.defender_joiners)} is already somebody else's hands) and stakes no capital. ` +
+          `What it costs is the hand: it is not filling a role or carrying tribute while it stands there, ` +
+          `and if the defence loses it goes RECOVERING.`,
+        expires_tick: view.resolves_tick,
+        quote_id: quoteId(principal, tick, 'move', { raid: view.raid, hand: march.hand, to: march.next }),
+      });
     } else if (view.your_side === null) {
       eligible.push({
         verb: 'join',

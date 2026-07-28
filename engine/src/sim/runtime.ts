@@ -363,6 +363,7 @@ import {
   raidViewsFor,
   runPredate,
   scheduleAt,
+  sideInRaid,
   type AggressionCapacity,
   type AssailablePile,
   type DemandPort,
@@ -371,7 +372,9 @@ import {
   type RaidId,
   type RaidOutcome,
   type RaidRecord,
+  type MarchRoute,
   type RaidSchedule,
+  type RaidSide,
   type RaidView,
 } from '../predation/index.js';
 import {
@@ -434,6 +437,7 @@ import {
   GRADUATION_STATEMENT,
   GRADUATION_UPKEEP_MINOR,
   GRADUATION_UPKEEP_QTY,
+  commonsBoundRejection,
   createWorld,
   enroll,
   graduateHolding,
@@ -452,6 +456,7 @@ import {
   principalIsCommonsBound,
   reject,
   releaseHand,
+  route,
   tierOf,
   type Enrolment,
   type HaulPort,
@@ -1314,7 +1319,49 @@ import {
  * keypair can.** A puppet that never produces sells zero at every N, which the sock-puppet case
  * measures separately.
  */
-export const RULES_VERSION = 20;
+/**
+ * ── 20 → 21 · ★ COALITIONS. THE CAST TAKES SOMEBODY ELSE'S SIDE ──────────────
+ *
+ * `RULES_VERSION` is a **shared resource** (see 11's, 19's and 20's notes above): two agents each
+ * taking the next integer once left the live record carrying snapshots stamped `10` from two
+ * different rule sets, and *a version stamp whose meaning depends on which deploy wrote it is not a
+ * version stamp.* **21 was allocated to this branch in advance**, with 20 the latest live.
+ *
+ * ── NO CAPTURED TABLE CHANGES SHAPE, AND THE BUMP IS STILL CORRECT ───────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * Nothing here adds, removes or re-types a field inside `capture()`. What changes is **what the
+ * cast decides**, which moves the world's trajectory from the first tick a raid spawns — so a
+ * journal written under 20 and replayed under this build diverges, and the honest place to say so
+ * is the stamp rather than the deploy log. Every field added is a projection (`RaidView.march`,
+ * `RaidView.force.defender_joiners`, `RaidLine.defenders`/`raiders`), read fresh from books that
+ * already exist and never hashed.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ── WHAT CHANGES, AND ALL FIVE ARE THE SAME DEFECT AT DIFFERENT DEPTHS ───────
+ *
+ *   1. **`raidViewsFor` widens to a standoff a hand could still WALK to.** Its previous radius was
+ *      *"a live raid where you have an IDLE hand at the stage"*, and that condition was satisfied
+ *      **0 times in 72 world raids** across 8 seeds × 3 Reckonings, while **49 of those 72** had a
+ *      bystander with an IDLE hand within two lanes. `join` had a handler, an affordance and a
+ *      paragraph in `agent.md`, and no standoff in this project's history had ever carried one party.
+ *   2. **`raidAnswerFor` stops paying on the spawn tick** ({@link CAST_ANSWER_GRACE_TICKS}). Paying
+ *      early costs exactly what paying late costs, and paying early closed the escort market's
+ *      demand side before its supply side could walk 2–6 ticks.
+ *   3. **`coalitionFor` is the new branch**: march, then `join`, priced on standing.
+ *   4. **`musteredAt` now reserves a JOINER's hand**, not only the target's. Without it four other
+ *      branches walked away the hand this member had publicly promised, and `readForce` re-counts
+ *      at resolution — measured `PLUNDERED 1-2` with two allies nominally standing, 6,000 of the
+ *      Levy's good lost and the only red tribute line in a 9-Reckoning sweep.
+ *   5. **`sideInRaid` gets one home.** `cast/heuristic.ts` carried
+ *      `target === me ? 'DEFENDER' : 'RAIDER'`, which is correct until a coalition exists and then
+ *      puts a defender joiner on the raider's side.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` for the declared
+ * discontinuity (`D37`) — a bare tick is refused, and the fingerprint is bound to this change and
+ * inert against the next.
+ */
+export const RULES_VERSION = 21;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -3344,15 +3391,23 @@ export class Runtime {
       handsIdleAt: (principal, stage) => predation.handsDefending(principal, stage),
       isSeated: (principal) => predation.isSeated(principal),
       raid: (raidId) => this.raids.get(raidId as RaidId),
-      sideIn: (raid, principal) => {
-        // The target is always the DEFENDER and the initiator always the RAIDER, whether or not
-        // either has joined a side explicitly. Reading only `parties` would leave the two agents
-        // the standoff is *about* unable to bring a hull to their own battle.
-        if (raid.target === principal) return 'DEFENDER';
-        if (raid.initiator === principal) return 'RAIDER';
-        return raid.parties.find((party) => party.principal === principal)?.side ?? null;
-      },
+      // The target is always the DEFENDER and the initiator always the RAIDER, whether or not
+      // either has joined a side explicitly; everybody else is where its party row says. That rule
+      // is `sideInRaid` and it lives in the raid book, because the cast reads it too — see the
+      // block comment there for the coalition-scale bug the second copy contained.
+      sideIn: (raid, principal) => sideInRaid(raid, principal),
     };
+  }
+
+  /**
+   * Which side of a standoff a principal stands on. {@link sideInRaid}, exposed.
+   *
+   * A method rather than a re-implementation, and public rather than folded into
+   * {@link engageRefusalFor}, because the cast has to ask it **before** it has a hull to name: a
+   * DEFENDER joiner sizing up the hostile formations needs the side first and the hull second.
+   */
+  sideInRaid(raid: RaidRecord, principal: PrincipalId): RaidSide | null {
+    return sideInRaid(raid, principal);
   }
 
   /** Everything building a hull touches: goods at a place, a holding at that place, and the ledger. */
@@ -3946,6 +4001,62 @@ export class Runtime {
       // every agent `demand`, which brings no fleet — and `readForce` then uses the drawn scalar
       // exactly as it always did.
       raidForceLeft: (raid) => worldForceLeft(this.battles, raid.id),
+      // ── ★ THE ROUTE TO SOMEBODY ELSE'S STANDOFF (`RaidView.march`) ──────
+      //
+      // The nearest IDLE hand by ETA, and the ETA is over the WHOLE route rather than the first
+      // lane: `move` crosses one gate per action, so a two-lane march is two actions and a reader
+      // told only the next hop would budget for a third of the journey. Ties by hand id (DET-2).
+      //
+      // The legality test is `commonsBoundRejection` — the engine's own rule, asked live — and not
+      // a tier comparison. `mayEnter`'s block comment in `cast/heuristic.ts` records what a local
+      // copy of that rule cost once already: the launch map's first constellation is MIXED, so a
+      // Marches-seated principal in it is not Commons-bound and a tier test says it is.
+      //
+      // ── ★ AND IT IS ASKED ABOUT THE **STAGE**, NOT ONLY ABOUT THE NEXT GATE ────
+      //
+      // ══════════════════════════════════════════════════════════════════════
+      // Asked only about the first hop, this published **a route that cannot be completed.** A
+      // Commons-bound principal may walk freely *inside* the Commons, so a hand at `sys-04` heading
+      // for a Marches standoff got a legal first step to `sys-02` and an illegal second one — and
+      // `arrives_tick` was computed over the whole path, so `in_time` said yes about a journey the
+      // engine would refuse halfway through.
+      //
+      // Measured before the fix: of the 8 (standoff, member) pairs that cleared every other gate,
+      // **7 were Commons-bound members setting out for a Marches stage they could never reach.** The
+      // cast would have spent an action a tick walking hands in circles and joined nothing; an LLM
+      // reading the same row would have done the same thing and been right to. A2 says known
+      // arithmetic is exact, and an ETA for an impossible trip is the worst kind of exact.
+      //
+      // A8 read literally is why the rule is on the destination: the Commons floor binds a
+      // principal's hands *inside* it while its holding stands there, which is a fact about where
+      // the hand may END UP and only incidentally about the next gate.
+      // ══════════════════════════════════════════════════════════════════════
+      marchTo: (principal, stage, at) => {
+        let best: MarchRoute | null = null;
+        // Canonical hand order, so the tie-break is the roster's and not the map iteration's
+        // (DET-2). `handsOf` is already sorted by hand id.
+        for (const hand of handsOf(world, principal)) {
+          if (hand.state !== 'IDLE' || !isPresent(hand, at)) continue;
+          if (hand.location === stage) continue;
+          const path = route(world.map, hand.location, stage);
+          if (path === null) continue;
+          const next = path.path[1];
+          if (next === undefined) continue;
+          // Both ends: this step must be legal AND the stage must be somewhere this hand may stand.
+          if (commonsBoundRejection(world, hand, next) !== null) continue;
+          if (commonsBoundRejection(world, hand, stage) !== null) continue;
+          const candidate: MarchRoute = {
+            hand: hand.id,
+            from: hand.location,
+            next,
+            hops: path.path.length - 1,
+            arrives_tick: at + path.ticks,
+          };
+          // Strictly sooner wins; equal ETAs keep the first, which is the lowest hand id.
+          if (best === null || candidate.arrives_tick < best.arrives_tick) best = candidate;
+        }
+        return best;
+      },
       isSeated: (principal) => {
         const holdingId = world.holdingByPrincipal.get(principal);
         if (holdingId === undefined) return false;

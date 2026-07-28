@@ -678,6 +678,121 @@ export const CAST_ENGAGE_FAVOUR_BPS = 13_000;
 export const CAST_WITHDRAW_BELOW_BPS = 3_000;
 
 /**
+ * ★ How far behind a neighbour's defence may be before this cast stops trying to close it.
+ * *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE CONSTANT THAT DECIDES WHETHER A COALITION CAN EXIST AT ALL, AND ONE IS THE WRONG
+ * ANSWER.**
+ *
+ * `FORCE_PER_JOINER` is 1, so one `join` moves the reading by exactly 1. A branch that only joins
+ * where its own hand flips the verdict therefore joins **only** standoffs that are short by one —
+ * which means no standoff is ever short by two, which means a coalition of two never forms. That is
+ * a coordination failure produced entirely by the gate, and it is the shape §15.2 makes unavoidable
+ * for a heuristic: *"within-tick actions never react to another within-tick action"*, so members
+ * cannot agree to go together. They can only each decide, from the same snapshot, that the gap is
+ * worth walking toward.
+ *
+ * So the gate is a **reachable** deficit rather than a decisive one: join while the DEFENDER side is
+ * short by at most this many hands, and the coalition assembles **one member per tick** as each
+ * party row lands and the next member re-reads a smaller gap. Three, because `RAID_FORCE`'s band and
+ * `FORCE_BY_TIER` put a Marches standoff two or three short of a lone defender with its own hands
+ * home — the size of gap the world actually produces — and because a member that would walk toward a
+ * gap of six is spending a hand on a reading no cast this size can turn.
+ *
+ * **It is not a promise that the gap closes.** Marching takes `GATE_TRANSIT` ticks, the reading is
+ * taken at the window's *end*, and a hand can arrive to find the coalition one short. That is A14's
+ * losing branch and it is why this is the honest form of the gate: it prices a hand against a
+ * *chance* of the outcome, which is what taking a side is.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_COALITION_MAX_DEFICIT = 3;
+
+/**
+ * ★ How close to the window's end the cast lets a standoff run before it pays. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE CONSTANT THAT GIVES AN ALLY TIME TO WALK.** `DEMAND_WINDOW_TICKS` is 24 and
+ * {@link HeuristicCast.raidAnswerFor} used to `yield` on the first tick it saw a standoff it could
+ * not win alone, which closed the demand side of §9's escort market before anybody could reach the
+ * supply side — the full deadlock is written out at the clause itself.
+ *
+ * Four, and every one of the four is spent on a known hazard rather than on caution:
+ *
+ *   - **one** because an action decided at T lands at T+1 (§15.2), so a decision taken at
+ *     `ticks_left = 1` resolves in the same tick as the raid and races it;
+ *   - **one** because `payDemand` can fail and return null (`PRD-6`), and a second attempt needs a
+ *     tick to be made in;
+ *   - **one** because `raidsFor` is capped at `MAX_CAST` rows and a member with a full list could
+ *     read this standoff a tick late;
+ *   - **and one** because the cost of being wrong is asymmetric and public: a missed window pays
+ *     `RAID_TAKE_MULTIPLE` in the good the Levy is assessed in, and a red tribute line is the meter
+ *     §14.2 headlines. Waiting buys a coalition; overrunning buys a shortfall.
+ *
+ * It is deliberately **not** derived from `GATE_TRANSIT`, which is the thing it is making room for:
+ * the room is `DEMAND_WINDOW_TICKS - this`, which is 20 ticks against an intra-constellation lane of
+ * 2–6 and an inter-constellation lane of 8–20. So a neighbour always has time and a stranger two
+ * constellations away sometimes does, which is the logistics answer rather than a tuned one.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_ANSWER_GRACE_TICKS = 4;
+
+/**
+ * ★ Hands a member keeps for its own work before it will lend one to somebody else's standoff.
+ * *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **§9 PRICES *STARTING* A FIGHT AND NEVER TAKING A SIDE IN ONE, SO THE PRICE OF `join` HAS TO BE
+ * BUILT OUT OF WHAT THE HAND WOULD OTHERWISE HAVE DONE.** `aggression.ts` says it in as many words:
+ * *"answering somebody else's standoff with `join` costs NONE of this"*. There is no capacity to
+ * spend, no stake on the defender's side, and no roll. If nothing else stood in the way, `join`
+ * would be free — and a free `join` is a cast that reinforces every standoff it can see, which is
+ * not a decision anybody made.
+ *
+ * What it actually costs is **presence**, which is the scarcity every other mechanic in this game is
+ * priced against (§3: *"one hand is one unit of simultaneous presence"*). A hand standing in a
+ * neighbour's standoff is:
+ *
+ *   - not filling a venture role — the thing `openSlotFor` spends hands on, and the thing §15.6 asks
+ *     this cast to do so that ventures resolve at all;
+ *   - not carrying tribute — {@link carriageNeeded} is subtracted **before** this floor, so the Levy
+ *     and the Charge are never what pays for a coalition;
+ *   - not crewing this member's own hulls — {@link crewMove} walks hands *to* a berth and this branch
+ *     walks one *away*, so the two must not be able to fight over the same hand;
+ *   - and away for longer than the window: a defeated defence sends the hand `RECOVERING` for
+ *     `HAND_RECOVERY_TICKS` (12–48), which is up to a sixth of a Reckoning of that member's whole
+ *     capacity to be anywhere.
+ *
+ * ── ★ AND IT IS **ZERO**, WHICH WAS WRITTEN AS ONE AND MEASURED TO BE UNSATISFIABLE ──
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The first version was 1 — *"lend your third hand, never your second"* — which is a sentence about
+ * a cast that has three free hands. **This one does not have two.** Measured over 8 seeds ×
+ * 3 Reckonings: **70% of every member's hand-ticks are `COMMITTED`** to a venture role and only 27%
+ * are IDLE, so of the 8 (standoff, member) pairs that cleared the signal and the gap, **all 8 had
+ * exactly one free hand** and a floor of 1 refused every one of them. A gate that cannot be
+ * satisfied is not a price — it is this project's signature defect wearing a calibration's clothes,
+ * and it would have shipped a coalition branch that never fires next to a constant explaining how
+ * carefully it had been priced.
+ *
+ * Zero is also the *honest* reading of the price, and the argument is that the two reservations
+ * subtracted **before** this floor are the whole of what a member has already committed to:
+ * {@link carriageNeeded} holds a hand for a tribute or a Charge that is genuinely owed and payable,
+ * and {@link musteredAt} holds the hands a FIGHT this member has already answered depends on. What a
+ * floor on top of those protects is not a commitment — it is the *option* to fill a role, and
+ * choosing between a role and a neighbour's standoff **is the decision this branch exists to make**.
+ * Gating it away would be answering the question instead of asking it.
+ *
+ * So the price of a `join` is exactly: a hand for the length of the window, a hand for
+ * `HAND_RECOVERY_TICKS` (12–48) more if the defence loses, and whatever that hand would have earned
+ * filling a role. Named and kept as a constant rather than deleted, because it is the dial that
+ * decides whether this cast can help at all, and the next reader is entitled to see that it was set
+ * against a measurement rather than a feeling.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_COALITION_SPARE_HANDS = 0;
+
+/**
  * How much of its **free** stores a cast payer will commit to elective parts across
  * everything settling in one Reckoning. *(calibrate)*
  *
@@ -999,12 +1114,49 @@ export class HeuristicCast {
   private musteredAt(member: CastMember, tick: number): ReadonlyMap<SystemId, number> {
     const out = new Map<SystemId, number>();
     for (const view of this.runtime.raidsFor(member.principal, tick, MAX_CAST)) {
-      if (view.your_side !== 'TARGET' || view.state !== 'DEMANDED' || view.answer !== 'FIGHT') continue;
-      // Hands at the stage = the reading minus the terms that are not hands. The view publishes both
-      // sides, so this is arithmetic over published figures rather than a second count of the world.
-      const mine = view.force.defender_if_you_fight - view.force.terrain;
-      const needed = Math.max(0, view.force.raider - view.force.terrain);
-      out.set(view.stage, Math.max(out.get(view.stage) ?? 0, Math.min(mine, needed)));
+      if (view.state !== 'DEMANDED') continue;
+      // ── ★ A JOINER'S HAND IS MUSTERED TOO, AND LEAVING IT OUT COST A REPULSE ──
+      //
+      // ══════════════════════════════════════════════════════════════════════
+      // **THE HOLE `readForce` DESCRIBES, WALKED INTO FROM THE OTHER SIDE.** That function's own
+      // header records a verifier finding it for a *raider* joiner — *"join at tick 49, `move` the
+      // hand out at tick 71, resolve at tick 72"* — and closed it by re-counting hands at
+      // resolution. Correct, and it means a joiner that wanders off **silently withdraws its
+      // force**.
+      //
+      // This map was the whole of the cast's defence against that and it only covered
+      // `your_side === 'TARGET'`. So the moment {@link coalitionFor} existed, four other branches
+      // — `fill_role`, the aimless walk, `levyMove`, `chargeMove` — were free to walk away the very
+      // hand this member had just publicly promised to a neighbour, and the promise was in the
+      // event log either way.
+      //
+      // Measured on the branch before the fix, seed `g06` tick 480: the target answered FIGHT with
+      // **two** joiners standing, and the standoff resolved `PLUNDERED 1-2` — `defenderForce` 1,
+      // which is the Marches terrain and *nothing else*. Both allies' hands and the target's own
+      // had left during the window. It cost the world 6,000 of the good the Levy is assessed in and
+      // put the only red tribute line in a 9-Reckoning sweep on the board.
+      //
+      // One hand per joined standoff, because a party row holds exactly one (`RaidParty.handId`,
+      // and `Book.addParty` refuses a second row for one principal).
+      // ══════════════════════════════════════════════════════════════════════
+      if (view.your_side === 'DEFENDER' || view.your_side === 'RAIDER') {
+        out.set(view.stage, Math.max(out.get(view.stage) ?? 0, 1));
+        continue;
+      }
+      if (view.your_side !== 'TARGET' || view.answer !== 'FIGHT') continue;
+      // Hands at the stage = the reading minus every term that is not one of THIS member's hands.
+      // The view publishes all three, so this is arithmetic over published figures rather than a
+      // second count of the world.
+      //
+      // ⚑ **`defender_joiners` is subtracted, and it is new.** The reading includes
+      // `FORCE_PER_JOINER` per ally, so before the field existed a target with two allies standing
+      // reserved three hands and owns one — over-reserving, which is the safe direction and also a
+      // lie about whose presence the defence rests on. Subtracting it means a coalition's arrival
+      // *reduces* what the target must keep home, which is the honest answer and the one that lets a
+      // defended member get back to work.
+      const own = view.force.defender_if_you_fight - view.force.terrain - view.force.defender_joiners;
+      const needed = Math.max(0, view.force.raider - view.force.terrain - view.force.defender_joiners);
+      out.set(view.stage, Math.max(out.get(view.stage) ?? 0, Math.max(0, Math.min(own, needed))));
     }
     return out;
   }
@@ -1073,9 +1225,30 @@ export class HeuristicCast {
     // Deterministic: `this.members` is a fixed order, so which member wins the payer is a property
     // of the roster and not of arrival (A4, DET-1).
     const claimed = new Set<PrincipalId>();
+    // ── ★ AND THE SAME RULE ONE MECHANIC OVER: STANDOFFS A CAST-MATE IS ALREADY REINFORCING ──
+    //
+    // {@link coalitionFor} joins a standoff whose defence is short by up to
+    // {@link CAST_COALITION_MAX_DEFICIT}, so six members reading one snapshot of a gap of two would
+    // all decide to close it and **four hands would be spent on a reading that needed two.** That is
+    // not a refusal — every one of those joins is legal and lands — which makes it worse than the
+    // `deliver {payer}` race above: nothing in the logs would say anything went wrong, and the cost
+    // is four hands not filling roles for a Reckoning.
+    //
+    // One member per tick, per standoff. The gap is re-read next tick against the party rows that
+    // have actually landed, so the coalition assembles at one hand a tick and stops the moment the
+    // reading flips — which is also the only coordination §15.2 permits a heuristic, since
+    // *"within-tick actions never react to another within-tick action"*.
+    //
+    // The set is written by {@link coalitionFor} rather than inferred from the returned action here,
+    // and the reason is that **a march does not name the raid it is walking toward.** `move` takes a
+    // hand and a gate; there is no field on it for the standoff, and inventing one would put a
+    // cast-only key into a rules surface the engine does not read. The claim has to be staked where
+    // the decision is made or it binds several ticks late — long after every member has already
+    // sent a hand.
+    const reinforced = new Set<string>();
     for (const member of this.members) {
       const rng = Rng.fromSeed(`${seed}:cast:${member.principal}:${String(tick)}`);
-      const action = this.decideOne(member, tick, rng, out.length, claimed);
+      const action = this.decideOne(member, tick, rng, out.length, claimed, reinforced);
       if (action !== null) {
         const payer = action.params['payer'];
         if (action.verb === 'deliver' && typeof payer === 'string') claimed.add(payer as PrincipalId);
@@ -1110,6 +1283,12 @@ export class HeuristicCast {
     ordinal: number,
     /** Payers a cast-mate is already carrying for this tick — see {@link HeuristicCast.decide}. */
     carriedThisTick: ReadonlySet<PrincipalId>,
+    /**
+     * Standoffs a cast-mate is already reinforcing this tick. **Mutable, and written by
+     * {@link coalitionFor}** — see {@link HeuristicCast.decide} for why the claim cannot be inferred
+     * from the returned action.
+     */
+    reinforcedThisTick: Set<string>,
   ): SubmittedAction | null {
     const runtime = this.runtime;
     const base = {
@@ -1153,6 +1332,24 @@ export class HeuristicCast {
     // defect this file's combat branches exist to close — an asset that exists and is never used.
     const committing = this.engageFor(member, tick);
     if (committing !== null) return { ...base, ...committing };
+
+    // ── ★ TAKE SOMEBODY ELSE'S SIDE, OR START WALKING TOWARD IT ───────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIRD, AND BELOW `engageFor` ON A CLOCK ARGUMENT RATHER THAN A PREFERENCE.** MUSTER is 6
+    // ticks and is the only window a hull may be committed in; a `join` has the whole 24-tick
+    // window. So when a member can do both in one tick, the hull is the perishable one — and the two
+    // are never in competition for the *same* standoff anyway, because a member that can `engage` is
+    // already a party and a member that must `join` is not.
+    //
+    // Above everything below it for the mirror of that reason: {@link coalitionFor}'s first move is
+    // usually a **march**, `GATE_TRANSIT` is 2–6 ticks intra-constellation, and a hand that starts
+    // walking after signing a venture arrives to find the standoff resolved. A branch placed under
+    // `sign` would inherit somebody else's deadline as a coin flip over whether a venture happened
+    // to be waiting.
+    // ══════════════════════════════════════════════════════════════════════════
+    const coalition = this.coalitionFor(member, tick, reinforcedThisTick);
+    if (coalition !== null) return { ...base, ...coalition };
 
     for (const venture of runtime.ventures.forPrincipal(member.principal)) {
       if (venture.state !== 'FORMING') continue;
@@ -2467,6 +2664,36 @@ export class HeuristicCast {
       const affordable =
         Number(runtime.levyGoodAvailable(member.principal)) - view.costs.if_you_do_nothing >= owed;
       if (affordable && this.fleetIsFavouredAt(member, view.stage, tick, view.force.raider)) return fight;
+      // ── ★ 3. AND IT WAITS, BECAUSE PAYING EARLY COSTS EXACTLY WHAT PAYING LATE COSTS ──
+      //
+      // ══════════════════════════════════════════════════════════════════════
+      // **THIS CLAUSE FIRING ON THE SPAWN TICK IS WHAT MADE §9's ESCORT MARKET IMPOSSIBLE, AND THE
+      // DEADLOCK IS WORTH WRITING OUT BECAUSE EVERY LINK IN IT IS CORRECT ON ITS OWN.**
+      //
+      //   · an ally can only usefully take a side in a standoff the target CONTESTS;
+      //   · the target only contests one it can win (clause 1 — and it is right to: a lost FIGHT
+      //     costs `RAID_TAKE_MULTIPLE` where paying costs the demand);
+      //   · it can only win once allies have joined, because `readForce` counts joiners;
+      //   · and an ally is 2–6 ticks away (`GATE_TRANSIT`, intra-constellation) while this branch
+      //     answered on the **first** tick it saw the row.
+      //
+      // So every standoff the cast could not win alone was `PAID` within two ticks of spawning, and
+      // `MAX_RAID_PARTIES` = 12 sat over a mechanic whose demand side shut before its supply side
+      // could walk. Measured: of 72 world raids over 8 seeds, the ones that resolved `PAID` did so a
+      // median of **1 tick** after the answer became available.
+      //
+      // **Waiting is free, and that is arithmetic rather than a hope.** `demandQty` is pinned at spawn
+      // and never recomputed (`RaidRecord.demandQty` says why), `payFor` is `min(demand, standing
+      // now)`, and `yield` is accepted at any point while the state is DEMANDED — §9's own words are
+      // *"you have the whole window to pay it"*. So a yield sent at `ticks_left = 4` costs at most
+      // what the same yield cost at `ticks_left = 23`, and strictly less if the stage emptied
+      // meanwhile. What waiting buys is every tick in which clause 1 might become true instead.
+      //
+      // {@link CAST_ANSWER_GRACE_TICKS} is the margin, and it is a margin rather than zero because
+      // an action decided at T lands at T+1 (§15.2) and a missed window costs the multiple in the
+      // good the Levy is denominated in — the one meter §14.2 headlines.
+      // ══════════════════════════════════════════════════════════════════════
+      if (view.ticks_left > CAST_ANSWER_GRACE_TICKS) continue;
       if (view.costs.pay > 0 && view.costs.pay < view.costs.if_you_do_nothing) {
         return { verb: 'yield', params: { raid: view.raid, system: view.stage } };
       }
@@ -2566,7 +2793,21 @@ export class HeuristicCast {
 
     for (const record of runtime.battles.forPrincipal(member.principal)) {
       if (record.resolvedAtTick !== null || record.state !== 'MUSTER') continue;
-      const side = record.target === member.principal ? 'DEFENDER' : 'RAIDER';
+      // ── THE SIDE IS THE ENGINE'S ANSWER, NOT A LOCAL RESTATEMENT OF IT ──────
+      //
+      // This read `record.target === member.principal ? 'DEFENDER' : 'RAIDER'`, which is
+      // `sideInRaid` with the `parties` clause deleted. Correct for as long as nothing ever joined;
+      // **wrong the first time a coalition exists**, because it puts a DEFENDER joiner on the RAIDER
+      // side and every gate below then reads its own allies as the hostile formations it is sizing
+      // itself against. Gate 2 would see a non-world formation and decline forever; if it did not,
+      // gate 3 would compare this member's strength against its friends'.
+      //
+      // Nothing would have failed: `engageRefusal` computes the side itself and files the formation
+      // correctly, so the engine would have been right and only the bot's arithmetic wrong. Scar #5's
+      // rule (one home per fact) applied to a predicate, on a surface no invariant covers.
+      const raid = runtime.raids.get(record.raid);
+      const side = raid === undefined ? null : runtime.sideInRaid(raid, member.principal);
+      if (side === null) continue;
       const hostile = record.formations.filter((f) => f.side !== side && f.hands.length > 0);
       if (hostile.length === 0) continue;
       // Gate 2. One non-world formation and the whole reading becomes a guess.
@@ -2659,6 +2900,206 @@ export class HeuristicCast {
         continue;
       }
       return { verb: 'engage', params };
+    }
+    return null;
+  }
+
+  /**
+   * ★ Stand with a neighbour whose standoff this member's hand could still turn — or start walking.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE MECHANISM WAS COMPLETE AND UNENTERED. `MAX_RAID_PARTIES` IS 12 AND NO STANDOFF IN THIS
+   * PROJECT'S HISTORY HAD EVER HAD ONE PARTY.**
+   *
+   * Everything `join` needs has existed for as long as predation has: party rows, side arithmetic
+   * (`FORCE_PER_JOINER`), a stake on the raider's side and none on the defender's, `sideInRaid` so a
+   * joiner can bring a hull, `MAX_FORMATIONS_PER_SIDE` = 6 so six principals a side can each field a
+   * cohort, an affordance in `observe`, and a paragraph in `agent.md`. **No branch in this file
+   * called it**, and `combat-sim.ts` phase D — the only thing that ever fielded two principals on one
+   * side — drives the verbs by hand.
+   *
+   * That matters more here than anywhere else this pattern has appeared, because phase D also
+   * *measured what is behind the door*: at matched hull count, 15 hulls and a 1:5 support wing lose
+   * **0** of their own where 15 all-line hulls lose **17**, with identical field control. A support
+   * wing is worth nothing at three hulls (a third of the fleet) and everything at fifteen, and
+   * **one principal has three hands, so three hulls is the most it can field alone.** Every force
+   * multiplier in `catalogue.ts` is priced below breakeven until somebody else brings hulls. The
+   * whole of §12's relationship #4 is on the far side of this branch.
+   *
+   * ## Why a principal helps, and it is one signal rather than four
+   *
+   * **STANDING: an elective half has been settled between this member and the target.**
+   * `relationsFor` walks the standing journal and counts `ELECTIVE_HONOURED` changes both ways —
+   * `kept` where *they* paid *you*, `youKept` where *you* paid *them*. Four properties make it the
+   * right signal and no other candidate has all four:
+   *
+   *   - **It is a deed, not a status.** A7 puts standing on the *elective* half specifically because
+   *     that is the half that could have been broken for free. So a settled elective half is the only
+   *     machine-readable fact in this game that means *"one of us did something for the other that
+   *     nothing compelled"*. A coalition that forms for no reason is decoration; this one forms
+   *     between two principals who have already paid each other something they did not have to, and
+   *     the receipt is on the permanent public record.
+   *   - **It is already the single home for exactly this question.** `grantCandidates` gates A6's
+   *     highest-stakes verb on `relation.kept <= 0` and the `grant` affordance is built from it, so
+   *     the rule an agent reads about *who you would hand authority to* and the rule this cast plays
+   *     about *whose side you would take* are one journal read twice. A second eligibility notion
+   *     would be hard rule 4 violated in a policy rather than in a word.
+   *   - **A15: it is priced in produced goods, never in identities.** A second enrolment has an empty
+   *     journal against every principal alive and cannot buy a defender at any price — it has to
+   *     produce something, promise an elective half over it, and *pay*. Sybil-proof by construction
+   *     rather than by detection.
+   *   - **And it closes §7.6's loop in the direction the design wants.** GATE 3 measured 12% of
+   *     settled elective promises broken. Until now the only thing keeping one bought was standing's
+   *     effect on future *deals*. This makes it buy **hands in a fight**, which is the first
+   *     consequence of a kept promise that the map draws.
+   *
+   * ### ★ WHY BOTH DIRECTIONS, AND WHY `kept` ALONE WAS A WEALTH RANKING
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * The first version read `kept > 0` only — *they* honoured a promise to *me* — on the reading that
+   * gratitude is the reason. **In this cast that predicate selects for the counterparty's bank
+   * balance and almost nothing else.** The creator owes the elective half of every filled role
+   * (`electivePromisesOwedBy`) and {@link canPromiseOneMore} means only a member with a large free
+   * balance can create at all, so `kept > 0` reads *"principals rich enough to have opened a venture
+   * I happened to work"*. That is the identical defect {@link stakeFor} was caught by one mechanic
+   * over — a wealth order wearing a relationship's clothes — and here it decides who gets defended.
+   *
+   * Measured, 8 seeds × 3 Reckonings × 20 members, over the standoffs that clear every *other* gate:
+   *
+   * | signal | eligible (standoff, ally) pairs | standoffs with ≥2 allies available | with ≥3 |
+   * |---|---|---|---|
+   * | `kept > 0` | 14 | **2** | 1 |
+   * | `kept > 0 \|\| youKept > 0` | 30 | **6** | 3 |
+   *
+   * A coalition needs two allies at one standoff, so the second column *is* the deliverable, and the
+   * symmetric read triples it by deleting a bias nobody chose. The reason it is not merely a looser
+   * gate: **a coalition is made of counterparties**, and a settled elective half in either direction
+   * is exactly what identifies one. Which of the two paid the other is a fact about who was creating
+   * that week.
+   *
+   * **And `broke` is deliberately not a veto.** `(kept || youKept) && broke === 0` costs a third of
+   * the pairs and half the coalitions (23 pairs, 3 standoffs with ≥2), and it would be a *second*
+   * price for one deed: a default is already public, permanent (A5) and already excludes that
+   * principal from `grantCandidates`. Making it also a standing bar on ever being defended hands the
+   * world a way to render an agent permanently unhelpable, against A10's promise that relationships
+   * never reset. Whether to stand beside somebody who once wronged you is A12's business — a story
+   * for the LLM cast to author — not a constant's.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * ### The three candidates that were rejected, and why each fails at the call site
+   *
+   *   - **A shared syndicate.** Cheapest to read and wrong twice over. It is a *membership* rather
+   *     than a deed, so A15 refuses it — `apply`/`admit` cost no produced goods, and a coalition
+   *     gated on it is a coalition gated on enrolment. And the cast has no branch that applies to
+   *     anybody else's house, so the signal is **structurally empty**: an eligibility rule whose
+   *     subject cannot occur, which is this project's signature defect wearing a policy's clothes.
+   *   - **A claim this member holds at the contested system.** A real stake, and geometrically
+   *     unreachable. `claimFor` takes ground under the member's *own* WORKS, one per member, and
+   *     `RAID_TARGET_STATEMENT` aims the stage at where the **target's** goods stand. The two
+   *     coincide only when the claimant is the target — i.e. never for a bystander. Measured: 0 of
+   *     72 raid stages, 8 seeds.
+   *   - **Rent it would lose if the raid succeeded.** Indirect and, on inspection, false: a raid
+   *     takes located goods and touches neither the claim nor the WORKS, so a repulse protects no
+   *     rent at all. Acting on it would be the cast reasoning from a consequence the engine does not
+   *     produce.
+   *
+   * ## And what stops it being free, given that §9 charges nothing for it
+   *
+   * `aggression.ts` is explicit — *"answering somebody else's standoff with `join` costs NONE of
+   * this: the capacity prices STARTING a fight, never taking a side in one"* — and a defender joiner
+   * stakes no capital either. So the price is built entirely out of what the hand would otherwise
+   * have done, and it is four gates deep:
+   *
+   *   1. **The signal.** No kept promise, no coalition.
+   *   2. **{@link CAST_COALITION_MAX_DEFICIT}** — the gap must be one a cast this size can close,
+   *      and it must be a gap at all: a standoff already reading REPULSED gets nothing from another
+   *      hand, and spending one there is the purest form of a hand risked for no outcome.
+   *   3. **{@link CAST_COALITION_SPARE_HANDS}, after {@link carriageNeeded} and
+   *      {@link musteredAt}.** The Levy's carrier, the Charge's carrier and the hands a FIGHT this
+   *      member has *already answered* depend on are subtracted first, so a coalition is never paid
+   *      for out of a tribute or out of this member's own defence. That ordering is the one
+   *      `crewMove` and `carryFor` already obey and it is why this branch cannot make `levyShort`
+   *      worse.
+   *   4. **One member per tick per standoff**, through `reinforcedThisTick` — see
+   *      {@link HeuristicCast.decide}.
+   *
+   * ## The RAIDER side is deliberately not here, and the reason is a missing caller rather than a rule
+   *
+   * The same journal read the other way (`broke > 0`: *they* defaulted on *you*) is a legible reason
+   * to take the other side, it is A6's own shape, and `RAID_JOIN_STAKE_MINOR` already prices it. What
+   * is missing is a standoff worth joining: this file has no `demand` branch, so every live raid is
+   * the **world's**, and joining the weather against a neighbour splits a take with nobody while
+   * `predate.ts` deliberately writes a world raid's stage hold and victim cooldown either way. The
+   * raider half is one branch behind `demand`, not behind this.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private coalitionFor(
+    member: CastMember,
+    tick: number,
+    reinforcedThisTick: Set<string>,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    // No freeze guard for `raidAnswerFor`'s reason — `assertRaidSchedule` proves no world raid can
+    // still be live in the freeze — and `move` is a built-in that the freeze does not gate either.
+
+    // The signal, read once. `relationsFor` is bounded and the same call `grantCandidates` makes.
+    // Both directions — see the block above for the measurement that forced the symmetry.
+    const settled = new Set<PrincipalId>();
+    for (const relation of runtime.relationsFor(member.principal)) {
+      if (relation.kept > 0 || relation.youKept > 0) settled.add(relation.other);
+    }
+    if (settled.size === 0) return null;
+
+    // Gate 3's denominator: hands this member may lend at all, before any particular standoff.
+    // `musteredAt` is keyed by stage and is asked per row below; everything else is global.
+    const crewed = runtime.battles.committedHands(member.principal);
+    const idle = handsOf(runtime.world, member.principal).filter(
+      (hand) => hand.state === 'IDLE' && isPresent(hand, tick) && !crewed.has(hand.id),
+    );
+    const mustered = this.musteredAt(member, tick);
+
+    for (const view of runtime.raidsFor(member.principal, tick, MAX_CAST)) {
+      if (view.state !== 'DEMANDED') continue;
+      // Somebody else's standoff, and not one this member is already in. Its own is `raidAnswerFor`'s
+      // and a raid it has already joined is `engageFor`'s.
+      if (view.your_side !== null || view.target === member.principal) continue;
+      if (reinforcedThisTick.has(view.raid)) continue;
+      // 1. The signal.
+      if (!settled.has(view.target)) continue;
+      // 2. A gap that exists and is reachable. Read off the published view, never recomputed — the
+      //    same figures `raidAnswerFor` answers from and the resolver resolves on (scar #1).
+      const deficit = view.force.raider - view.force.defender_if_you_fight;
+      if (deficit <= 0 || deficit > CAST_COALITION_MAX_DEFICIT) continue;
+      // 3. A hand the member's own obligations and its own defence do not need.
+      const reserved =
+        this.carriageNeeded(member, tick) +
+        (mustered.get(view.stage) ?? 0) +
+        CAST_COALITION_SPARE_HANDS;
+      const here = idle.filter((hand) => hand.location === view.stage);
+      if (idle.length - reserved < 1) continue;
+
+      if (here.length > 0) {
+        // Standing there already: take the side. No `system` param — `DEFENDER` is not a hostile act
+        // and `vJoin` locates the raid from its id, so naming a place would be a field the handler
+        // does not read.
+        reinforcedThisTick.add(view.raid);
+        return { verb: 'join', params: { raid: view.raid, side: 'DEFENDER', hand: here[0]?.id } };
+      }
+      // Otherwise walk. The route is the observation's own (`RaidView.march`), so the tick the bot
+      // budgets against is the tick an agent reading the same row is shown, and a march that would
+      // arrive late is refused by the view rather than by a second clock here.
+      const march = view.march;
+      if (march === null || !march.in_time) continue;
+      // Already on the road to this stage → nothing to send. {@link carriageUnderwayTo} is the same
+      // predicate `carriageNeeded` uses for an obligation's carrier, and it is deliberately about
+      // *this place*: the first version asked whether **any** hand of this member was IN_TRANSIT for
+      // any reason at all, which with `alloyErrandFor`, `crewMove`, `levyMove` and `chargeMove` all
+      // moving hands is true most of the time. That is a gate on the cast's own busyness rather than
+      // on the decision, and it silently refused most of the coalitions this branch is for.
+      if (this.carriageUnderwayTo(member, view.stage, tick)) continue;
+      if (!this.mayEnter(member, march.next)) continue;
+      reinforcedThisTick.add(view.raid);
+      return { verb: 'move', params: { hand: march.hand, to: march.next } };
     }
     return null;
   }

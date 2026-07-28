@@ -6,6 +6,69 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **COALITIONS EXIST. `MAX_RAID_PARTIES` IS 12 AND NO STANDOFF IN THIS PROJECT'S HISTORY HAD EVER CARRIED ONE PARTY. `RULES_VERSION` 21.**
+>
+> `join` had a handler, an affordance, a party row, a stake asymmetry, a force term
+> (`FORCE_PER_JOINER`), `MAX_FORMATIONS_PER_SIDE` = 6 and a paragraph in `agent.md`. **Nothing in
+> `src/` ever called it**, and `combat-sim.ts` phase D — the only thing that had ever put two
+> principals on one side — drives the verbs by hand. Fourteenth instance of the defining defect, and
+> the most expensive still open: phase D measures a 1:5 support wing losing **0** own hulls where 15
+> all-line hulls lose **17** at identical field control, and **one principal has three hands**, so
+> every multiplier in `catalogue.ts` is under breakeven until somebody else brings hulls.
+>
+> **It was not one missing branch. It was four gates that could not be satisfied, and each was
+> invisible from the one above it.** Measured, 8 seeds × 3 Reckonings, `scripts/coalition-probe.ts`:
+>
+> | what was measured | before | after |
+> |---|---|---|
+> | raids a non-target could **see** (0 of 72 had an IDLE hand *at* a stage; 49 had one 2 lanes off) | **0/72** | 54/72 |
+> | `join`s sent by a world nobody steers (20 members) | **0** | **25** |
+> | most parties on one standoff | **0** | **2** |
+> | `PAID · PLUNDERED · REPULSED` | — | 54 · 1 · **8** |
+>
+>   1. **`raidViewsFor` was the wrong radius.** Its own comment says an escort market whose demand
+>      side is invisible is not one — and it had widened only to *"a hand already at the stage"*,
+>      which occurred **zero times**. It now shows a standoff a hand could still **walk** to, with
+>      `RaidView.march` (`hand · next · hops · arrives_tick · in_time`). A live raid is `PUBLIC` and
+>      `raidLinesFor` has always published every one to the frame, so A9 already permitted this.
+>   2. **The target paid on the spawn tick, which closed the demand side before the supply side could
+>      walk.** `CAST_ANSWER_GRACE_TICKS` = 4: `demandQty` is pinned at spawn and `yield` is accepted
+>      any time while DEMANDED, so paying at `ticks_left = 4` costs *exactly* what paying at 23 cost —
+>      and every tick waited is a tick an ally can turn the verdict in. Contested standoffs are now
+>      answered at delay 7–18 instead of 1.
+>   3. **`musteredAt` reserved only the TARGET's hands.** So the moment a joiner existed, `fill_role`,
+>      the aimless walk, `levyMove` and `chargeMove` were free to walk away the hand it had publicly
+>      promised — and `readForce` re-counts at resolution. Measured on the branch before the fix:
+>      `g06` t480 answered FIGHT with **two** joiners standing and resolved **`PLUNDERED 1-2`**,
+>      `defenderForce` = the Marches terrain and nothing else. 6,000 of the Levy's good gone and the
+>      only red tribute line in a 9-Reckoning sweep. Fixing it took `PLUNDERED` 7 → 1 and `REPULSED`
+>      3 → 8.
+>   4. **`sideInRaid` had two homes**, and the cast's copy was `target === me ? DEFENDER : RAIDER` —
+>      correct until a coalition exists, then it puts a defender joiner on the raider's side and every
+>      gate below reads its own allies as the enemy. Nothing would have failed: `engageRefusal`
+>      computes the side itself.
+>
+> **The signal is standing, and it was chosen on a measurement rather than on taste.** A settled
+> elective half between the pair, either direction (`relationsFor().kept || youKept`) — the same
+> journal `grantCandidates` gates A6 on. `kept > 0` alone is **directional**: the creator owes the
+> elective half and only a member with a large free balance can create, so it selects for the
+> counterparty's bank balance — `stakeFor`'s defect one mechanic over. 20 members × 3 Reckonings, over
+> standoffs clearing every other gate: `kept` → 14 eligible pairs, **2** standoffs with ≥2 allies;
+> symmetric → 30 pairs, **6**. Rejected with reasons at the call site: a shared syndicate (a
+> membership, not a deed — A15 — and the cast has no branch that applies to one, so the signal is
+> structurally empty); a claim at the stage (0 of 72 — the stage is the *target's* ground by rule);
+> rent (a raid touches neither claim nor WORKS, so a repulse protects none).
+>
+> **A13:** `RaidLine` gained `defenders[]`/`raiders[]`. `raiderForce`/`defenderForce` are written at
+> *resolution*, so for the whole window — the only interval an audience watches — a four-ally arc drew
+> byte-identically to a lone defender. The client draws spurs, and its `PLUNDERED` caption
+> *"nobody stood in the way"* is now conditional: it had gone false the moment a coalition could lose.
+>
+> **The ceiling, stated:** `maxPrincipalsOneSide` is still **1**. A hull is berthed where it was
+> built, building needs `fuel`, `FUEL_YIELD_PER_TICK` is 0 outside the FRONTIER and the launch map has
+> two lanes in — so two principals with hulls at one system does not occur in a world nobody steers.
+> **The hand coalition is live; the hull coalition is population- and fuel-gated, not cast-gated.**
+>
 > ### ★★★ **THE OPERATOR DOOR WAS WEDGED OPEN FOR NINETEEN CONSECUTIVE RULES CHANGES. IT NOW REFUSES A BARE TICK. `RULES_VERSION` STAYS 19 — none of this is world state.**
 >
 > ```

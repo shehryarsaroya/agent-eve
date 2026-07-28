@@ -81,6 +81,26 @@ export interface RaidView {
     /** What the raid was given at spawn, from `RAID_FORCE`'s published band. Never moves. */
     readonly raid_force_at_spawn: number;
     readonly defender_if_you_fight: number;
+    /**
+     * ★ How much of {@link defender_if_you_fight} is somebody **else's** hands.
+     *
+     * Published because without it the sum cannot be decomposed, and a target that cannot decompose
+     * it cannot answer the one question a coalition creates: *how many of my own hands must stay
+     * standing here?* `defender_if_you_fight` is `FORCE_PER_HAND × your hands + FORCE_PER_JOINER ×
+     * joiners + terrain`, and with `terrain` alone published a reader must treat every ally's hand as
+     * one of its own — which reserves hands it does not have and, read the other way, hides the fact
+     * that help arrived.
+     *
+     * `PUBLIC` on the tier it already had: `raid.joined` publishes the joiner, its side and its
+     * stake at `publicAt: tick`, and `RaidLine.defenders` draws the same names on the frame.
+     *
+     * Counted the way the resolver counts it — **joiners whose hand is still standing at the stage**,
+     * from the one `readForce` call — so an ally that marched away is already gone from this number
+     * rather than gone at resolution and a surprise.
+     */
+    readonly defender_joiners: number;
+    /** ★ The same for the other end of the arc. Its stake is public; so is its presence. */
+    readonly raider_joiners: number;
     readonly terrain: number;
     readonly verdict_if_resolved_now: 'REPULSED' | 'PLUNDERED';
   };
@@ -92,6 +112,73 @@ export interface RaidView {
   };
   readonly lost: Qty;
   readonly forfeited: Minor;
+  /**
+   * ★ How this reader would **get there**, or `null` when it is already standing at the stage.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`join` HAD AN AFFORDANCE AND AN UNREACHABLE PRECONDITION, WHICH IS THIS PROJECT'S SIGNATURE
+   * DEFECT ONE STEP OUT: THE MENU WAS RIGHT AND THE MENU WAS EMPTY.**
+   *
+   * The rule below this interface widened once already, from *"raids you are a party to"* to
+   * *"…plus live ones where you have an IDLE hand at the stage"*, and the comment on it states
+   * exactly why: *"§9's argument for world-spawned predation is that it gives escorts a guaranteed
+   * market, and a market nobody can see the demand side of is not one."* True, and the radius was
+   * still wrong. Measured on 8 seeds × 3 Reckonings of a world nobody steers: **72 raids, and 0 of
+   * them ever had a non-target principal with an IDLE hand at the stage.** 70% of every cast
+   * member's hand-ticks are `COMMITTED` to a venture role and its hands are mostly not even at its
+   * own body, so the one condition that made a `join` affordance appear was satisfied zero times in
+   * the project's whole history. `MAX_RAID_PARTIES` is 12 and no standoff had ever had one party.
+   *
+   * The same measurement says where the material actually is: **49 of those 72 windows had a
+   * bystander holding an IDLE hand within two lanes of the stage**, and `GATE_TRANSIT` intra-
+   * constellation is 2–6 ticks against a 24-tick window. So the escort market's demand side was
+   * visible to nobody and its supply side was two ticks away.
+   *
+   * `march` is the fix, and it is deliberately **not** a `join` affordance for a hand that is not
+   * there — that would be a move the handler refuses (AGT-S2), which costs an agent an action and
+   * its trust in the menu. It is the arithmetic of *getting* there: which hand, the next gate, and
+   * the tick it would arrive, against `resolves_tick`. High Water's `projectedDrown` pattern applied
+   * to a standoff — the consequence of *not* deciding is already on `costs.if_you_do_nothing`, and
+   * this is the cost of the only decision that was previously invisible.
+   *
+   * **The tier is honest and unchanged.** A live raid is `PUBLIC` — it is the map's motion — and
+   * `raidLinesFor` has always published every one of them to the spectator frame, so by A9 an
+   * agent's own `observe` was already entitled to it. What was narrow was convenience, and what
+   * convenience cost was the whole mechanic.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly march: RaidMarch | null;
+}
+
+/**
+ * The route one IDLE hand would take to a standoff it is not standing in.
+ *
+ * Every field is a fact the reader owns or the map publishes; nothing here is derived from anything
+ * `SENSED`. `arrives_tick` is the ETA at the **stage**, not at the next gate: a two-lane march is
+ * two actions and an agent that budgeted for one would arrive to find the window shut.
+ */
+export interface MarchRoute {
+  readonly hand: HandId;
+  readonly from: SystemId;
+  /** The next gate — the `to` of a `move` that starts the march. One lane per action. */
+  readonly next: SystemId;
+  /** Lanes still to cross, including this one. */
+  readonly hops: number;
+  /** The tick that hand would be standing at the stage, if it left now and never stopped. */
+  readonly arrives_tick: number;
+}
+
+/**
+ * A route, plus the one comparison the route alone cannot make.
+ *
+ * `in_time` is on the **view** and not on {@link MarchRoute} because it is a fact about a
+ * particular standoff's clock, and the port that finds the route does not know which raid is
+ * asking. Two homes for that comparison would let a filter and an affordance disagree about whether
+ * a march is worth starting.
+ */
+export interface RaidMarch extends MarchRoute {
+  /** `arrives_tick <= resolves_tick`. The whole of whether the hand would matter. */
+  readonly in_time: boolean;
 }
 
 /**
@@ -118,6 +205,25 @@ export interface RaidViewPort {
    * {@link import('./resolve.js').ForceArgs.raidForceLeft} carries the full argument.
    */
   raidForceLeft(raid: RaidRecord): number | null;
+  /**
+   * ★ The nearest IDLE hand this principal could walk to `stage`, and when it would arrive.
+   *
+   * `null` when there is none that may legally get there — no IDLE hand, no route, or a hand the
+   * Commons bind holds where it is (`world/movement.ts`). The **engine's** movement rule, asked
+   * live, rather than a tier comparison this module could get wrong: the launch map's first
+   * constellation is mixed, and a copy of that rule has already cost this repo a member that could
+   * never reach the one place its Levy was payable at.
+   *
+   * On the view port for {@link RaidView.march}'s reason, and it is a port rather than a lookup
+   * because routing lives in `world/` and predation may not import it without a cycle.
+   */
+  marchTo(principal: PrincipalId, stage: SystemId, tick: number): MarchRoute | null;
+}
+
+/** One home for "would that hand get there before the window shuts". */
+function marchFor(route: MarchRoute | null, resolvesAtTick: number): RaidMarch | null {
+  if (route === null) return null;
+  return { ...route, in_time: route.arrives_tick <= resolvesAtTick };
 }
 
 /**
@@ -151,14 +257,32 @@ export function raidViewsFor(args: {
   readonly limit: number;
 }): readonly RaidView[] {
   const mine = new Set(args.book.forPrincipal(args.principal).map((r) => r.id));
-  return args.book
-    .all()
-    .filter(
-      (raid) =>
-        mine.has(raid.id) ||
-        (raid.state === 'DEMANDED' && args.port.handsDefending(args.principal, raid.stage).length > 0),
-    )
-    .slice(-args.limit)
+  const own: RaidRecord[] = [];
+  const reachable: RaidRecord[] = [];
+  for (const raid of args.book.all()) {
+    if (mine.has(raid.id)) {
+      own.push(raid);
+      continue;
+    }
+    if (raid.state !== 'DEMANDED') continue;
+    if (args.port.handsDefending(args.principal, raid.stage).length > 0) {
+      reachable.push(raid);
+      continue;
+    }
+    // ── ★ THE THIRD CLAUSE: A STANDOFF A HAND COULD STILL WALK TO IN TIME ──────
+    //
+    // {@link RaidView.march} carries the measurement that forced it into existence. Gated on
+    // `in_time` and not merely on reachability, because a row for a standoff that will have
+    // resolved before the hand arrives is a briefing an agent has to filter, which is the exact
+    // objection this function's own comment raises against returning every raid in the world.
+    const march = marchFor(args.port.marchTo(args.principal, raid.stage, args.tick), raid.resolvesAtTick);
+    if (march !== null && march.in_time) reachable.push(raid);
+  }
+  // Own rows first and never truncated: the reader's own deadline outranks somebody else's,
+  // and a widened radius that pushed a target's own standoff off the end of the list would be
+  // a regression dressed as a feature.
+  return [...own, ...reachable]
+    .slice(0, Math.max(0, args.limit))
     .map((raid) => viewOf(raid, args.port, args.principal, args.tick));
 }
 
@@ -211,6 +335,8 @@ function viewOf(
       raid_force_left: reading.terms.raidForce,
       raid_force_at_spawn: reading.terms.raidForceAtSpawn,
       defender_if_you_fight: reading.defenderForce,
+      defender_joiners: reading.terms.defenderJoiners,
+      raider_joiners: reading.terms.raiderJoiners,
       terrain: reading.terms.terrain,
       verdict_if_resolved_now: reading.verdict,
     },
@@ -223,6 +349,12 @@ function viewOf(
     },
     lost: raid.lostQty,
     forfeited: raid.forfeited,
+    // Null once a hand of the reader's is already standing there — there is nothing left to walk,
+    // and publishing a route to where you are would read as an instruction to leave.
+    march:
+      port.handsDefending(reader, raid.stage).length > 0
+        ? null
+        : marchFor(port.marchTo(reader, raid.stage, tick), raid.resolvesAtTick),
   };
 }
 
@@ -260,6 +392,13 @@ export function raidLinesFor(book: Book, tick: number, limit: number): readonly 
       raiderForce: raid.raiderForce,
       defenderForce: raid.defenderForce,
       ticksLeft: Math.max(0, raid.resolvesAtTick - tick),
+      // ── ★ THE COALITION, AS THE MAP DRAWS IT ────────────────────────────────
+      //
+      // `raid.parties` is already sorted by principal id (`Book.addParty`), so the spurs are drawn
+      // in one order on every host and a frame hash cannot depend on join order. The target itself is
+      // NOT listed here — it is `target`, and repeating it would draw the defender twice.
+      defenders: raid.parties.filter((p) => p.side === 'DEFENDER').map((p) => p.principal),
+      raiders: raid.parties.filter((p) => p.side === 'RAIDER').map((p) => p.principal),
     }))
     .sort(
       (a, b) =>

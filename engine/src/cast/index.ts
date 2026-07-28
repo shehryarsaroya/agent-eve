@@ -137,6 +137,9 @@ export function createCast(runtime: Runtime, options: CreateCastOptions): Cast {
 
 export {
   CAST_ARMS_RESERVE_MULTIPLE,
+  CAST_ANSWER_GRACE_TICKS,
+  CAST_COALITION_MAX_DEFICIT,
+  CAST_COALITION_SPARE_HANDS,
   CAST_DOCTRINE,
   CAST_ENGAGE_FAVOUR_BPS,
   CAST_NAMES,

@@ -553,6 +553,8 @@ function inertPort(): PredationPort {
     // No battle book at all, so nothing is counting any raid's hulls and every drawn force
     // stands. `null` rather than 0 for `readForce`'s stated reason: 0 would be a free repulse.
     raidForceLeft: () => null,
+    // Nowhere to march from and nowhere to march to. A port that owns no hands cannot route one.
+    marchTo: () => null,
     isSeated: () => true,
     seize: () => qty(0),
     releaseStake: () => undefined,

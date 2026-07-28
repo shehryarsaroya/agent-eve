@@ -92,6 +92,31 @@ export type RaidSide = 'RAIDER' | 'DEFENDER';
 /** What the target said. Silence is not an answer and is stored as `null`. */
 export type RaidAnswer = 'YIELD' | 'FIGHT';
 
+/**
+ * Which side of a standoff a principal stands on, or `null` for "not in it".
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **ONE HOME, AND IT HAD TWO.** `runtime.engagePort().sideIn` said this correctly — *"the target
+ * is always the DEFENDER and the initiator always the RAIDER, whether or not either has joined a
+ * side explicitly"* — and `cast/heuristic.ts:engageFor` said it as
+ * `record.target === member.principal ? 'DEFENDER' : 'RAIDER'`, which is the same rule with the
+ * `parties` clause deleted. Correct while nothing ever joined; **wrong the moment a coalition
+ * exists**, because it puts a DEFENDER joiner on the RAIDER side and makes it read its own allies
+ * as the hostile formations it is sizing itself up against.
+ *
+ * Scar #5's rule (one home per fact) applied to a predicate rather than to a quantity, and it is
+ * the same shape as scar #1: nothing would have failed. `engageRefusal` would have accepted the
+ * hull, `book.addFormation` would have filed it on the side the *engine* computed, and only the
+ * cast's own gate arithmetic would have been reading the wrong set — a bot deciding against
+ * phantom enemies, passing every test, on a surface no invariant covers.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function sideInRaid(raid: RaidRecord, principal: PrincipalId): RaidSide | null {
+  if (raid.target === principal) return 'DEFENDER';
+  if (raid.initiator === principal) return 'RAIDER';
+  return raid.parties.find((party) => party.principal === principal)?.side ?? null;
+}
+
 export interface RaidParty {
   readonly principal: PrincipalId;
   readonly side: RaidSide;

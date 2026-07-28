@@ -282,6 +282,38 @@ export interface RaidLine {
   readonly defenderForce: number;
   /** The countdown on the arc. Zero once it has resolved. */
   readonly ticksLeft: number;
+  /**
+   * ★ **WHO IS STANDING WITH THE TARGET** — the coalition, as names rather than as a number.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **WITHOUT THIS A COALITION RENDERS IDENTICALLY TO A LONE DEFENDER, WHICH BY A13 MEANS IT DOES
+   * NOT EXIST.**
+   *
+   * `raiderForce` and `defenderForce` are *"the two sides as resolution computed them"* — written by
+   * `Book.close` and therefore **0 for the whole window**, which is exactly the interval an audience
+   * is watching. So four principals marching to a neighbour's standoff and one principal standing
+   * alone produced byte-identical frames until the arc had already resolved, and the only thing that
+   * ever distinguished them was a number that arrived after the drama.
+   *
+   * `BattleFormationLine.principal` does distinguish two principals on one side — but only once
+   * hulls are committed, and a hull is berthed where it was built, so the *hand* coalition §9 is
+   * actually made of has no battle at all unless somebody local owns a warship. The coalition is a
+   * fact about the **standoff**, so it belongs on the standoff's line.
+   *
+   * Names and not counts, for `initiator`'s reason one step on: *"a raid demanded 4,000"* is weather,
+   * *"p:kestrel demanded 4,000 of p:wren"* is a story, and *"and p:orrin and p:vale rode out to meet
+   * it"* is the reason anybody watches the third one. The client draws each as a spur into the arc,
+   * so a defended standoff visibly thickens on the defender's end as the window runs.
+   *
+   * **It publishes nothing new.** `raid.joined` is emitted `PUBLIC` at `publicAt: tick` carrying the
+   * joiner, its side and its stake, and §11.2 gives `PUBLIC` to the map's motion. Bounded by
+   * `MAX_RAID_PARTIES` (12) by construction — the book refuses a thirteenth party — so this needs no
+   * cap of its own and cannot grow with the population.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly defenders: readonly PrincipalId[];
+  /** ★ Who is standing with the raid. Same tier, same bound, drawn on the other end of the arc. */
+  readonly raiders: readonly PrincipalId[];
 }
 
 /**

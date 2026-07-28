@@ -71,6 +71,8 @@ describe('the raid line is a named pixel signature (A13)', () => {
       raiderForce: 3,
       defenderForce: 0,
       ticksLeft: 5,
+      defenders: [],
+      raiders: [],
     }));
     const frame = renderFrame(source({ raidLines: many }));
     expect(frame.raidLines).toHaveLength(MAX_RAID_LINES);
@@ -91,6 +93,8 @@ describe('the raid line is a named pixel signature (A13)', () => {
       raiderForce: 2,
       defenderForce: 5,
       ticksLeft: 0,
+      defenders: [],
+      raiders: [],
     };
     expect(() => {
       assertFrameBudgets({ ...emptyFrame(1, 287, 'h'), raidLines: [contradiction] });

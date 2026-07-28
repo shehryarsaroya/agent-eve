@@ -479,6 +479,23 @@ function renderRaids(lines, m) {
   // The consequence line differs too, and that is not cosmetic: only an ownerless raid's
   // repulse closes the stage. A demand's repulse gives the defender the raider's stake and
   // nothing else, so the old sentence would have published a peace that does not exist.
+  // ── ★ THE COALITION (§9, A13) ────────────────────────────────────────────────
+  //
+  // A standoff with somebody standing on it has to LOOK different from one without, or by A13 the
+  // coalition does not exist — and `raiderForce`/`defenderForce` are written at resolution, so for
+  // the whole window (the only interval an audience is watching) they are both 0 and four allies
+  // drew the identical card to none. `defenders[]`/`raiders[]` are the party rows: `raid.joined` is
+  // PUBLIC, so this publishes nothing new and names names, because "and these two rode out to meet
+  // it" is the reason anybody watches the third act.
+  const stood = (l) => (l.defenders || []).length + (l.raiders || []).length;
+  const spurs = (l) => {
+    const d = l.defenders || [];
+    const r = l.raiders || [];
+    if (d.length === 0 && r.length === 0) return '';
+    const side = (who, verb) =>
+      who.length === 0 ? '' : `<p class="tn">${verb} ${who.map((p) => named(p, m)).join(', ')}</p>`;
+    return side(d, '&uarr; stood with the target:') + side(r, '&darr; rode with the raid:');
+  };
   const verdict = (l) => {
     const own = !!l.initiator;
     switch (l.state) {
@@ -486,7 +503,16 @@ function renderRaids(lines, m) {
       case 'REPULSED': return own
         ? ['repulsed', 'the defender held and took the raider’s stake; the stage stays open']
         : ['repulsed', 'the defenders held, and the stage is closed to raiders for a Reckoning'];
-      case 'PLUNDERED': return ['plundered', 'nobody stood in the way'];
+      // ── ★ "NOBODY STOOD IN THE WAY" IS A CLAIM, AND IT WENT FALSE ─────────
+      //
+      // That sentence was true for as long as no standoff had ever carried a party, and `join` was
+      // reachable the whole time. The moment a coalition loses one, this card would have published
+      // "nobody stood in the way" over an arc with two names on it — the record being WRONG about
+      // what agents did, which is exactly what A5′ forbids and what the `priorDealings` fix (a
+      // frame stating a defaulted deal "held") was the last instance of.
+      case 'PLUNDERED': return stood(l) === 0
+        ? ['plundered', 'nobody stood in the way']
+        : ['plundered', 'the defence was raised and it was not enough'];
       case 'MISSED': return ['missed', own ? 'the raider guessed wrong and hit ballast' : 'the raid found nothing worth taking'];
       case 'DEMANDED': return ['demanded', 'the window is still open'];
       default: return [String(l.state || '').toLowerCase(), ''];
@@ -502,6 +528,7 @@ function renderRaids(lines, m) {
       <p class="hl">${esc(l.stage || '')} &mdash; ${word}${l.initiator ? '' : ' <span class="tn">(no owner)</span>'}</p>
       <p class="tn">${who} ${money(l.demand)} from ${named(l.target, m)}${l.lost ? ' &middot; <strong>' + money(l.lost) + ' lost</strong>' : ''}</p>
       <p class="tn">force ${l.raiderForce ?? 0} against ${l.defenderForce ?? 0}${l.ticksLeft ? ' &middot; ' + l.ticksLeft + ' ticks left' : ''}</p>
+      ${spurs(l)}
       ${why ? `<p class="tn">${why}</p>` : ''}
     </div>`;
   }).join('');

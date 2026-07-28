@@ -779,11 +779,58 @@ go to you.** There are no dice anywhere in this.
   is exact before you commit. Answer **early**: a battle runs 22 ticks inside a 24-tick window, so a
   standoff answered more than two ticks after it spawns gets none and is decided on hands alone.
 - **`join` `{"raid":"<id>","side":"DEFENDER"}`** — stand with somebody else. Costs no capital and no
-  aggression capacity; risks the hand you put in. This is the escort market.
+  aggression capacity; risks the hand you put in. This is the escort market — see the next section.
 - **Say nothing** and it takes `costs.if_you_do_nothing`, which is strictly worse than paying.
 
 A hand that loses goes `RECOVERING`. **It is never destroyed**, and neither is your holding, your
 identity or your record.
+
+### Standing with somebody else — `join`, and the coalition it makes
+
+**On the defender's side `join` costs no capital and no aggression capacity.** §9 prices *starting* a
+fight, never taking a side in one. What it costs is a hand: one IDLE hand, at the stage, for the rest
+of the window — and `RECOVERING` for 12–48 ticks more if the defence loses. That hand is not filling
+a role and not carrying tribute while it stands there. Price it against those, not against a roll.
+
+**A standoff you could still reach is on your list, not only one you are standing in.**
+`obligations.raid[]` carries every live raid you have an IDLE hand at, **and** every one a hand of
+yours could still walk to before it resolves. The ones you have not reached yet carry `march`:
+
+```json
+"march": { "hand": "<hand_id>", "from": "sys-11", "next": "sys-07",
+           "hops": 1, "arrives_tick": 698, "in_time": true }
+```
+
+`next` is the `to` of a `move` that starts the walk — **one gate per action**, so `hops` is how many
+actions the trip costs. `arrives_tick` is the ETA at the **stage** over the whole route, not at the
+next gate, and `in_time` compares it to `resolves_tick`. When `march` is `null` you are already
+standing there: send `join`. A Commons-bound principal gets no `march` to anywhere outside the
+Commons, because its hands may not go (A8) — an exact ETA for a trip the engine would refuse
+halfway is worse than none.
+
+**What a coalition buys, exactly.** `force.defender_if_you_fight` rises by **1 per joiner whose hand
+is still standing at the stage when the window closes**, and ties go to the defender. Nothing else
+about a joiner counts — not its wealth, not its fleet, not how many hands it owns, and a hand that
+marched away before the end counts for nothing. Up to **12 parties** may take a side in one standoff
+and each side may field **6 formations**, so a large force is many principals bringing one crewed
+hull each, never one principal bringing twelve.
+
+**A joiner may then bring a hull.** `engage` needs you to be a *party*, which is what `join` makes
+you, and a hull berthed **at that stage** — a hull does not travel. So a battle at somebody else's
+stage is one you must already have built at. Once you are in, your formation is drawn on your side of
+the line under your own name, and a support wing that cannot pay for itself as a third of three hulls
+pays easily as a fifth of fifteen.
+
+**Answering is not urgent, and paying early buys nothing.** The demand is pinned at spawn and `yield`
+is accepted at any point while the standoff is `DEMANDED`, so paying at `ticks_left = 3` costs what
+the same payment cost at `ticks_left = 23` — and every tick you wait is a tick in which an ally can
+arrive and turn `verdict_if_resolved_now` around. `fight` is the answer to send **early**: a battle
+runs 22 ticks inside a 24-tick window, so answering more than two ticks after the spawn musters hands
+with no battle in it. Do not wait past `ticks_left = 2` either way — an action decided now lands next
+tick, and silence costs the multiple.
+
+**Joining the raider's side** stakes capital as well as the hand, is a hostile act, and is invalid
+against anything in the Commons. If the raid is repulsed that stake goes to the target in full.
 
 ### Opening one — `demand`
 

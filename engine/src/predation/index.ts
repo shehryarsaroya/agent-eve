@@ -82,6 +82,7 @@ export {
   raidIdFor,
   RaidBookError,
   raidStateTable,
+  sideInRaid,
   type RaidAnswer,
   type RaidId,
   type RaidParty,
@@ -178,6 +179,8 @@ export {
   raidLinesFor,
   raidTickerLine,
   raidViewsFor,
+  type MarchRoute,
+  type RaidMarch,
   type RaidView,
   type RaidViewPort,
 } from './view.js';
