@@ -603,6 +603,7 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
     const frame = (state: 'SUPPLIED' | 'CONTESTED', legend: string): ReckoningFrame => ({
       reckoningIndex: 0,
       tick: 0,
+      saps: [],
       worksLines: [],
       marketLines: [],
       standings: [],

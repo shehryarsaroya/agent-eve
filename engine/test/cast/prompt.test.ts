@@ -645,7 +645,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ⚑ 678 is still not enough for a paragraph, and it is now not enough for a SENTENCE on every
     // position. The next block needs the ceiling looked at.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_909);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(76_894);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -675,7 +675,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // +116 at 20: the same paragraph, corrected. The floor now falls and is charged per principal,
     // so the two clauses that said otherwise had to go — a rules surface describing the old
     // behaviour is scar #1, and this one is published to every agent in the world.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(65_323);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(68_866);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1231,11 +1231,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       45: 'forty-five',
       46: 'forty-six',
       47: 'forty-seven',
+      53: 'fifty-three',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(47);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(53);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 47],
+      spelled[n as 53],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1288,8 +1289,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //
       // The deep section still arrives the two ways it should: through `post_bond`, and through
       // `required: holdsClaim` once territory is actually held.
+      // ── §11E's SIX UNITS ARRIVE HERE, AND THREE OF THEM ARRIVE ON `build` ──
+      //
+      // That is the campaign section's whole cost, made visible in exactly the place this map exists to
+      // make it visible: `build` also raises a WORKS, so a Commons newcomer pays for war rules it can
+      // never use. The measured table below carries the number (+3,543 on every position) and the
+      // argument for reporting it rather than trimming it.
       build:
-        '`build` is THREE different acts — read the `kind` + Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
+        '`build` is FOUR different acts — read the `kind` + Building one — `build` `{"kind":"WORKS","system":"<id>"}` + (preamble) + Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}` + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one',
       claim: '(preamble)',
       create: 'Every promise has two halves + Choosing the proportion — `elective_bps` on `create`',
       deliver: 'The Levy — nobody sits this out',
@@ -1306,7 +1313,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       form: 'Founding one — `form` `{"name":"...", ...}`',
       graduate: '`graduate` — leaving, and it is one-way',
       grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
-      join: 'Answering either one — `yield` · `fight` · join, or say nothing',
+      join:
+        'The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}` + Answering either one — `yield` · `fight` · join, or say nothing',
       message: 'Negotiating',
       // ★ `haul` — the canon verb whose step arrived with the fourth good. It is claimed by ONE
       // block on purpose: the block states a rule about geography (the good is refined at one tier
@@ -1324,7 +1332,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         '(preamble) + ★ What you may spend, and the one rule that decides it — `market.transferable_minor`',
       vote:
         'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs + The Levy — nobody sits this out',
-      withdraw: 'Leaving costs a Reckoning of notice',
+      withdraw:
+        'Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one + Leaving costs a Reckoning of notice',
       yield: 'Answering either one — `yield` · `fight` · join, or say nothing',
     });
     // And no live verb may end up with an empty claim, which is the failure the map makes visible.
@@ -1421,10 +1430,22 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      39_489, // a newcomer on its first wake            (+40: the corrected "you sell … rations")
-      47_877, // mid-game in the Commons                 (+40: same)
-      48_750, // about to take territory                 (+40: same)
-      65_323, // a claimant in trouble — the largest REACHABLE position (+631 at 19, +116 at 20)
+      // ── ★ EVERY POSITION GREW BY ~3,543 AND THE REASON IS THE GATE, NOT THE PROSE ──
+      //
+      // §11E's six units are `verbs`-gated RULES, and three of them are gated on **`build`** — which
+      // every one of these positions is offered, including a newcomer's, because `build` also raises a
+      // WORKS. So the campaign section is paid for by a Commons newcomer that can never declare one.
+      //
+      // Reported rather than trimmed, per `MAX_CONTRACT_CHARS`'s own governance note: *"an author who
+      // cannot fit inside a quota reports the measurement instead of trimming a rule or moving the
+      // bar."* The margin on the reachable maximum is 120,000 − 68,866 = **51,134** against a required
+      // 4,000, so nothing is at risk today. What would fix it properly is a `ContractSituation` field
+      // ("could declare a campaign") rather than the `build` verb, which is a change to the catalog's
+      // own shape and belongs to whoever owns that budget.
+      43_032, // a newcomer on its first wake            (+3,543: §11E, gated on `build`)
+      51_420, // mid-game in the Commons                 (+3,543: same)
+      52_293, // about to take territory                 (+3,543: same)
+      68_866, // a claimant in trouble — the largest REACHABLE position (+3,543: same)
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
@@ -1451,7 +1472,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only, and no REACHABLE position was ever being squeezed.** Had a reachable row moved here,
       // the raise would have been silently restoring rules an agent had been denied, which is a
       // different and much worse finding.
-      72_909,
+      76_894,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

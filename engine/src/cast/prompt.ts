@@ -159,6 +159,7 @@ const S11A = '## 11A. WORKS — the only reason goods exist';
 const S11B = '## 11B. Sovereignty — territory you have to MAINTAIN';
 const S11C = '## 11C. SYNDICATES — pooling, and the authority that comes with it';
 const S11D = '## 11D. PREDATION — two kinds, and only one of them has a name';
+const S11E = '## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for';
 const S12 = '## 12. Getting good';
 
 /**
@@ -192,7 +193,7 @@ const S12 = '## 12. Getting good';
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of forty-seven could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of fifty-three could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -422,7 +423,7 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     // rules — it costs `fuel`, which only the FRONTIER makes, and its fit is FROZEN at build —
     // belong in the same block as the ANCHOR's "needs a posted bond". Same verb, same trigger, no
     // second preamble. §11D keeps the battle itself.
-    block: '### `build` is THREE different acts — read the `kind`',
+    block: '### `build` is FOUR different acts — read the `kind`',
     verbs: ['build'],
     because: '`build` is not offered to you this wake',
   },
@@ -499,6 +500,59 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   //    whole, which is why it was in CONTRACT_NOT_EXCERPTED — but a member about to take
   //    territory needs 1,983 of it, and a claimant needs the rest for A5′ reasons: never a
   //    lapse against a claimant that was never shown what it owed.
+  // ══════════════════════════════════════════════════════════════════════════
+  // §11E — CAMPAIGNS. All four blocks are `verbs`-gated RULES, never FLOOR.
+  //
+  // FLOOR is the expensive placement — every position pays for it — and a campaign is reachable only
+  // by a principal whose holding stands one lane from somebody else's claim, which is a narrow state.
+  // So the whole section ships only to a wake that was actually offered one of its three verbs, and a
+  // Commons newcomer pays nothing for it. `prompt.test.ts` pins the measured cost of every position,
+  // so the arithmetic here is checkable rather than asserted.
+  //
+  // `build` is shared with §11A and §11B and that is correct: the `kind` block explains the fourth
+  // kind, and this section is what the fourth kind DOES. Same verb, same trigger, no second preamble.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    section: S11E,
+    block: null,
+    verbs: ['build'],
+    because: 'no campaign is offered to you this wake',
+  },
+  {
+    section: S11E,
+    block: '### Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}`',
+    verbs: ['build'],
+    because: 'no campaign is offered to you this wake',
+  },
+  {
+    section: S11E,
+    // The PULSE block goes to anyone offered `join` too, and that is the load-bearing pairing: an ally
+    // that does not know force is counted AT THE PULSE will sign up and march away, contributing
+    // nothing it was told it would. A5′ in the agent-facing text rather than in the engine.
+    block: '### The PULSE — once a Reckoning, on a published clock, whether you are awake or not',
+    verbs: ['build', 'join'],
+    because: 'no campaign is offered to you this wake',
+  },
+  {
+    section: S11E,
+    block: '### Reading it — `holding.campaigns[]`',
+    verbs: ['build', 'join', 'withdraw'],
+    because: 'no campaign is offered to you this wake',
+  },
+  {
+    section: S11E,
+    block: '### Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}`',
+    verbs: ['join'],
+    because: '`join` is not offered to you this wake',
+  },
+  {
+    section: S11E,
+    // `withdraw` is on this block because the LIFT is one of the four endings, and an attacker that
+    // cannot see the cheaper way to lose will hold a losing war to its bond-forfeiting end.
+    block: '### Getting out — and there are four ways, not one',
+    verbs: ['build', 'withdraw'],
+    because: 'no campaign is offered to you this wake',
+  },
   {
     section: S11B,
     block: null,
@@ -764,7 +818,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are forty-seven: 2^47 is not enumerable, and it
+ * was free. At `###` granularity there are fifty-three: 2^53 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -1313,7 +1367,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
  * per-unit predicate, and `RULES` is never dropped for any reason including length. That
  * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
- * never for one it was not. There are forty-seven units; put the same rule inside each
+ * never for one it was not. There are fifty-three units; put the same rule inside each
  * predicate and the forty-fifth will forget it.
  * ══════════════════════════════════════════════════════════════════════════════
  */

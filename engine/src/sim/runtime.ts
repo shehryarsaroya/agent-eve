@@ -262,6 +262,50 @@ import {
   type VentureRecord,
 } from '../venture/index.js';
 import { MAX_GRANT_SPENDS, GrantBook, grantsStateTable } from '../grant/index.js';
+// ── CAMPAIGNS (§16.6) ───────────────────────────────────────────────────────
+//
+// The whole layer through one barrel, in the shape `predation` and `sovereignty` already use: the
+// gates, the resolver and the views are functions of their inputs in their own module, and what
+// lives here is the adapter that gathers them. `works/refine.ts`'s rule, and the reason is this
+// file: three mechanical edits landed in the wrong place in it in one day and all three passed tsc.
+import {
+  assertCampaignSchedule,
+  Book as CampaignBook,
+  campaignClockAt,
+  campaignStateTable,
+  campaignTickerLine,
+  campaignViewsFor,
+  CAMPAIGN_BOND_MINOR,
+  CAMPAIGN_ENDINGS_STATEMENT,
+  CAMPAIGN_JOIN_STAKE_MINOR,
+  CAMPAIGN_ROSTER_STATEMENT,
+  CAMPAIGN_STATEMENT,
+  checkCampaignInvariants,
+  declareRefusal,
+  duePulses,
+  firstPulseTickFor,
+  isCampaignSide,
+  isLiveCampaign,
+  joinRefusal,
+  joinStakeFor,
+  liftEnding,
+  liftRefusal,
+  MATERIEL_GOOD,
+  MAX_LIVE_CAMPAIGNS,
+  openCampaign,
+  PULSE_MATERIEL_QTY,
+  resolvePulse,
+  sapLinesFor,
+  type CampaignEnding,
+  type CampaignId,
+  type CampaignRecord,
+  type CampaignSide,
+  type CampaignView,
+  type DeclarePort,
+  type CampaignViewPort,
+  type PulsePort,
+  type RosterPort,
+} from '../campaign/index.js';
 // ── THE MARKET (SPEC §12.2 `trade`, PASS-ECONOMY-RISK-extended §4/M1) ────────
 //
 // Wired here for the same reason the Levy is: a book that exists in `src/market/`
@@ -1314,7 +1358,32 @@ import {
  * keypair can.** A puppet that never produces sells zero at every N, which the sock-puppet case
  * measures separately.
  */
-export const RULES_VERSION = 20;
+/**
+ * ── 22 · CAMPAIGNS (§16.6): A NEW CAPTURED TABLE, SO THE HASH MOVES FROM TICK 0 ──
+ *
+ * **21 was not allocated to this branch.** `RULES_VERSION` is a shared resource with an arbiter
+ * (HARD RULE 7's shape applied to an integer — two worktrees each bumped 9 → 10 once and the live
+ * record briefly held two rule sets stamped `10`). The owner pre-assigned **22** here; whatever
+ * holds 21 is somebody else's, and this file must not renumber it.
+ *
+ * **What changes.** A `campaign` state table joins `state_hash`. Every existing table is byte-
+ * identical, but the snapshot's table set is hashed as sorted `(name, value)` pairs, so **every
+ * tick's hash moves from tick 0** — unavoidable for any change to the captured set, and the same
+ * shape version 20's `EndowmentBook.goods` had.
+ *
+ * **Expected divergence signature.** The first snapshot tripwire after the deploy:
+ * `SNAPSHOT_HASH_MISMATCH` at the first tick a snapshot is taken, with the running world's tables
+ * carrying a `campaign` entry the journalled one does not. `hydrate.ts` refuses the checkpoint on
+ * `RULES_VERSION_MISMATCH` first, which is the cheaper door: one genesis replay, then adoption
+ * resumes.
+ *
+ * **What the balance gate can and cannot see.** Nothing changes for a world in which no campaign is
+ * ever declared: no new faucet, no new sink, no change to any existing figure, and the pulse handler
+ * returns immediately on an empty book. So `levyShort` and the red-line count are expected
+ * unmoved, and that is a **safety check rather than evidence about the feature** — a cast that never
+ * calls `build {kind:"CAMPAIGN"}` produces a gate table identical to master's by construction.
+ */
+export const RULES_VERSION = 22;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -2445,6 +2514,20 @@ export class Runtime {
    * reference across a tick boundary — see {@link Runtime.sovereignty}.
    */
   private sovereigntyBookRef = new SovereigntyBook();
+
+  /**
+   * The campaign book (§16.6). Replaced wholesale by the rollback — see {@link Runtime.campaigns}.
+   */
+  private campaignBookRef = new CampaignBook();
+
+  /**
+   * One 140-character line per campaign beat, for the frame's ticker (§14.5).
+   *
+   * A Ring, outside `state_hash`, for `raidTicker`'s reason exactly: it is a display buffer derived
+   * from the book, and hashing one would make two identical worlds differ over what a viewer had
+   * scrolled past.
+   */
+  private readonly campaignTicker = new Ring<string>(MAX_RAID_TICKER_LINES);
   /** The Reckoning whose Charge has been minted. Assessing twice is refused, not silent. */
   private chargeAssessedReckoning = -1;
   private chargeOutcome: ChargeSettlement | null = null;
@@ -2517,6 +2600,13 @@ export class Runtime {
     // principals' currency after the Reckoning froze the figures it was computed from. A
     // clock that makes the published window unplayable must not start a world (A5′).
     assertSovereigntySchedule();
+    // And a fourth. A campaign's numbers can be calibrated into a war that never ends: if the
+    // breaches to take and the rebuffs to stand both fit inside the pulse clock, a campaign could
+    // exhaust its sunset with neither side at its number, and the only two things the engine could
+    // then do are leave the row live forever with a bond locked inside it (the endless aggression
+    // §16.6 MUST-20 cuts, arriving through a calibration) or invent a verdict (A12). Refused here,
+    // at construction, rather than discovered on the fifth Reckoning of somebody's war.
+    assertCampaignSchedule();
     this.world = createWorld(launchMap());
     this.ledger = new Ledger();
     this.hazards = options.hazards ?? false;
@@ -2663,6 +2753,20 @@ export class Runtime {
           () => this.sovereigntyBookRef,
           (book) => {
             this.sovereigntyBookRef = book;
+          },
+        ),
+        // Campaigns. A campaign row holds a live bond lock and decides whether a future tick takes
+        // a principal's territory and slashes 50,000 of its capital — so a hash blind to it would
+        // call two worlds identical while one was about to do that, and an aborted tick would leave
+        // a recorded BREACH standing against materiel destruction that was rolled back. Registered
+        // from this module's first commit, with its `CHECKPOINT_REQUIRED_TABLES` entry in the same
+        // change: seven books were once found outside the hash in one night, and two more
+        // (`mint`, `delivery`) were found *in* the hash and missing from the manifest, which an
+        // adoption drops silently while the gate reports nothing missing.
+        campaignStateTable(
+          () => this.campaignBookRef,
+          (book) => {
+            this.campaignBookRef = book;
           },
         ),
         // ══════════════════════════════════════════════════════════════════════
@@ -2855,6 +2959,16 @@ export class Runtime {
           // because a phase's sub-stream is per-phase and this draws from PREDATE's own.
           this.battlesNow(ctx);
           this.predateNow(ctx);
+          // Campaign pulses resolve LAST of the three, and the order is a rule rather than a
+          // preference. Battles first, so a hull wrecked tonight has already sent its hand to
+          // RECOVERING; then raids, so a hand routed by a repulse is off the board; then pulses,
+          // which count hands. A pulse that ran first would count presence the same tick's weather
+          // was about to remove, and the force reading would credit a defender that no longer had
+          // anybody standing there.
+          //
+          // It takes no phase of its own: adding one would change the set of `Rng.derive(phase)`
+          // labels and therefore every seeded draw in the world.
+          this.pulseCampaignsNow(ctx);
         },
         MARKETS: (ctx) => {
           this.clearMarketsNow(ctx);
@@ -2971,6 +3085,7 @@ export class Runtime {
         // in taken territory and a slashed bond, so it is held to INV-17's standard —
         // reproducible from the delivery journal by a second road, or the tick halts.
         (tick) => this.sovereigntyViolations(tick),
+        (tick) => this.campaignViolations(tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     },
@@ -4462,6 +4577,16 @@ export class Runtime {
    * ══════════════════════════════════════════════════════════════════════════
    */
   private vJoin(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // ── A CAMPAIGN'S ROSTER COMES FIRST, AND ONLY ON AN EXPLICIT `campaign` PARAM ──
+    //
+    // §16.6 MUST-9's ally market on the verb that already means "take a side in somebody's fight".
+    // Keyed on the parameter being **present**, never on a raid lookup failing: a mistyped raid id
+    // must keep producing the raid layer's own refusal, or an agent aiming at a standoff would be
+    // told about a mechanic it never asked for (scar #1's shape in a hint).
+    const namedCampaign = readString(req.params, ['campaign']);
+    if (namedCampaign !== null) {
+      return this.vJoinCampaign(ctx, req, namedCampaign as CampaignId);
+    }
     const found = this.raidNamedBy(req, 'join');
     if ('ok' in found) return found;
     const raid = found.raid;
@@ -6887,6 +7012,13 @@ export class Runtime {
 
   /** `withdraw` — an ADAPTER. The operation lives in `venture/withdraw.ts` (D21). */
   private vWithdraw(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // §16.6 MUST-13's voluntary exit, on the verb that already means "take yourself out of a
+    // commitment". Keyed on an explicit `campaign` param for `vJoin`'s reason: a venture withdrawal
+    // must keep producing the venture layer's refusals.
+    const namedCampaign = readString(req.params, ['campaign']);
+    if (namedCampaign !== null) {
+      return this.vLiftCampaign(ctx, req, namedCampaign as CampaignId);
+    }
     return withdraw(
       {
         ventureOf: (id) => this.ventures.get(id),
@@ -7526,6 +7658,14 @@ export class Runtime {
         // this clause every posted bond reads to INV-4 as an orphan lock and the tick halts
         // — the market's and predation's extension for the third time, same one line.
         this.sovereignty.isLive(String(ref)) ||
+        // ── AND A CAMPAIGN'S BOND, WHICH IS THE FIFTH TIME AND THE SAME ONE LINE ──
+        //
+        // A campaign's bond and every ATTACKER ally's stake name the campaign as the obligation they
+        // secure, and the obligation book has never heard of it — so without this clause the most
+        // ordinary act in the mechanic (declaring a war) makes INV-4 read a legal lock as an orphan
+        // and halts the tick. Agent-reachable, on a healthy world; §15.4 puts a false halt in the
+        // same class as a false default.
+        this.campaigns.isLive(String(ref)) ||
         // ── ★ AND A **FORMING** VENTURE, WHICH IS THE FOURTH TIME, SAME ONE LINE ──
         //
         // §7.3 escrows a role stake **at fill time**, and a role is filled while the venture is
@@ -9993,11 +10133,20 @@ export class Runtime {
     const kind = (readString(req.params, ['kind', 'what', 'structure']) ?? 'ANCHOR').toUpperCase();
     if (kind === 'WORKS') return this.vBuildWorks(ctx, req);
     if (kind === 'HULL') return this.vBuildHull(ctx, req);
+    // ── THE FOURTH KIND, AND IT IS THE ONLY ONE THAT UN-BUILDS SOMETHING ──────
+    //
+    // `build {kind:"CAMPAIGN"}` is §16.6's declaration. It fits `build`'s shape exactly — a durable
+    // thing brought into being at a place, out of committed capital, with the actor's own body
+    // deciding where — and it takes no slot from §17's spent 40-verb budget, which `refine
+    // {kind:"ALLOY"}` established as the way to add a mechanic without adding a word.
+    if (kind === 'CAMPAIGN') return this.vDeclareCampaign(ctx, req);
     if (kind !== 'ANCHOR') {
       return reject(
         'PHASE-0',
-        `\`build\` raises an ANCHOR or a WORKS. An ANCHOR takes territory; a WORKS extracts what a place ` +
-          `yields. Send {"kind":"ANCHOR","system":"<id>"} or {"kind":"WORKS","system":"<id>"}. ` +
+        `\`build\` raises an ANCHOR, a WORKS, a HULL or a CAMPAIGN. An ANCHOR takes unheld territory; a WORKS ` +
+          `extracts what a place yields; a HULL is a warship; a CAMPAIGN is the only way to take a claim from a ` +
+          `holder that is PAYING for it. Send {"kind":"ANCHOR","system":"<id>"}, {"kind":"WORKS","system":"<id>"} ` +
+          `or {"kind":"CAMPAIGN","system":"<the claimed system next door>"}. ` +
           SOVEREIGNTY_STATEMENT,
       );
     }
@@ -10855,6 +11004,699 @@ export class Runtime {
         }
       },
     };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // CAMPAIGNS (§16.6) — the adapter, and nothing but the adapter
+  //
+  // Every decision in this layer is a function of its inputs in `src/campaign/`. What lives here
+  // gathers those inputs and performs the ledger motion the resolver described. `works/refine.ts`
+  // states the reason and this file is the evidence for it: three mechanical edits landed in the
+  // wrong place in these 12,700 lines in one day and all three passed `tsc`.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /** The campaign book. Never held across a tick boundary: the rollback replaces it. */
+  get campaigns(): CampaignBook {
+    return this.campaignBookRef;
+  }
+
+  /** The published campaign clock, for `header`. Present at zero campaigns and at four alike. */
+  campaignClock(tick: number): ReturnType<typeof campaignClockAt> {
+    return campaignClockAt(this.campaigns, tick, MAX_LIVE_CAMPAIGNS);
+  }
+
+  /** Ticker lines from campaign beats, newest last. Read by the frame (§14.5). */
+  campaignTickerLines(): readonly string[] {
+    return this.campaignTicker.all;
+  }
+
+  /**
+   * THE SAPs, for the frame (A13).
+   *
+   * Built here rather than in `render.ts` for the reason every line set is: a renderer that computed
+   * its own notches would be inventing a war's score.
+   */
+  sapLines(tick: number): ReturnType<typeof sapLinesFor> {
+    return sapLinesFor({
+      book: this.campaigns,
+      tick,
+      materielAt: (principal, system) => this.materielAt(principal, system),
+    });
+  }
+
+  /** Every campaign this principal can see, for `holding.campaigns[]`. */
+  campaignsFor(principal: PrincipalId, tick: number, limit: number): readonly CampaignView[] {
+    return campaignViewsFor({
+      book: this.campaigns,
+      port: this.campaignViewPort(tick),
+      principal,
+      tick,
+      limit,
+    });
+  }
+
+  /**
+   * Unpledged MATERIEL standing at one place, in one principal's stores.
+   *
+   * Through `goodLotsAt`, which is the one home for "unencumbered lots of a good, here" — a second
+   * summation would be able to disagree with the resolver about whether a pulse is funded, and the
+   * failure mode is a SAP drawn solid over a campaign that is about to starve (scar #5).
+   */
+  private materielAt(principal: PrincipalId, system: SystemId): Qty {
+    return qty(
+      this.goodLotsAt(principal, system, MATERIEL_GOOD).reduce((n, lot) => n + lot.qty, 0),
+    );
+  }
+
+  /**
+   * Everything a PULSE reads. Four methods, and two of them are shared with §9 on purpose.
+   *
+   * `handsAt` is `predationPort`'s `handsDefending` — the same predicate, not a second copy, because
+   * "an IDLE hand of yours standing here" must mean one thing in a standoff and in a war or the two
+   * mechanics disagree about who is present. `claimAt` is the sovereignty book's own read.
+   */
+  private campaignPulsePort(tick: number): PulsePort {
+    const port = this.predationPort(tick);
+    return {
+      tierOf: (system) => tierOf(this.world.map, system),
+      claimAt: (system) => {
+        const claim = this.sovereignty.liveAt(system);
+        return claim === null ? null : { claimant: claim.claimant, state: claim.state };
+      },
+      handsAt: (principal, system) => port.handsDefending(principal, system),
+      materielLotsAt: (principal, system) => this.goodLotsAt(principal, system, MATERIEL_GOOD),
+    };
+  }
+
+  private campaignViewPort(tick: number): CampaignViewPort {
+    return {
+      ...this.campaignPulsePort(tick),
+      materielAt: (principal, system) => this.materielAt(principal, system),
+    };
+  }
+
+  /**
+   * Everything a declaration touches. Narrow on purpose: the signature enumerates its reach.
+   */
+  private campaignDeclarePort(): DeclarePort {
+    return {
+      tierOf: (system) => this.world.map.systems.get(system)?.tier ?? null,
+      neighboursOf: (system) => neighboursOf(this.world.map, system),
+      holdingSystemOf: (principal) =>
+        this.world.holdingByPrincipal.get(principal) === undefined
+          ? null
+          : holdingOf(this.world, principal).system,
+      holdingIsRuin: (principal) =>
+        this.world.holdingByPrincipal.get(principal) !== undefined &&
+        holdingOf(this.world, principal).state === 'FALLEN',
+      claimAt: (system) => {
+        const claim = this.sovereignty.liveAt(system);
+        return claim === null ? null : { claimant: claim.claimant, state: claim.state };
+      },
+      materielAt: (principal, system) => this.materielAt(principal, system),
+      freeStoresOf: (principal) => freeStores(this.ledger, principal),
+      lockBond: (args) => this.lockCampaignCapital(args.campaign, args.principal, args.amount, args.tick, 'bond'),
+    };
+  }
+
+  /**
+   * Lock a campaign's bond or an ally's stake. One implementation, two callers, one `try`.
+   *
+   * `maxDirectLoss` is the amount exactly, because it **is** the worst case: it is what the attacker
+   * loses if the campaign fails, and EXPOSURE is Σ open `max_direct_loss` and nothing else (§3). A
+   * throw is turned into `null` and the caller into a sentence, so a lock that cannot be taken costs
+   * an agent a refusal rather than a 500 (scar #11).
+   */
+  private lockCampaignCapital(
+    campaign: CampaignId,
+    principal: PrincipalId,
+    amount: Minor,
+    tick: number,
+    kind: 'bond' | 'stake',
+  ): string | null {
+    if (amount <= 0) return null;
+    try {
+      return this.ledger.encumbrances.lock({
+        eventId: `${campaign}:${kind}:${principal}`,
+        tick,
+        principal,
+        account: storesAccount(principal),
+        amountMinor: amount,
+        obligationRef: campaign as unknown as VentureId,
+        maxDirectLoss: amount,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * `build {kind:"CAMPAIGN"}` — declare a war.
+   *
+   * The order is the honesty, exactly as `vBuild`'s anchor branch is: refuse on the merits with
+   * nothing moved, then lock, then write, then publish. Nothing is destroyed at declaration — the
+   * MATERIEL is spent at the first PULSE, and the gate has already checked it is standing there.
+   */
+  private vDeclareCampaign(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const objective = readString(req.params, ['system', 'system_id', 'at', 'objective', 'target']) as SystemId | null;
+    if (objective === null) {
+      return reject(
+        'A2',
+        'name the system you are campaigning against: `build` {"kind":"CAMPAIGN","system":"<id>"}. It must be a ' +
+          `CLAIMED system one lane from where your holding stands. ${CAMPAIGN_STATEMENT}`,
+      );
+    }
+    const opened = openCampaign(this.campaignDeclarePort(), this.campaigns, {
+      attacker: req.principal,
+      objective,
+      tick: ctx.tick,
+    });
+    if (!opened.ok) return opened;
+    const campaign = opened.value;
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'campaign.declared',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `campaign::${campaign.id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        campaign: campaign.id,
+        attacker: campaign.attacker,
+        defender: campaign.defender,
+        objective: campaign.objective,
+        depot: campaign.depot,
+        bond: campaign.bond,
+        breaches_needed: campaign.breachesNeeded,
+        rebuffs_needed: campaign.rebuffsNeeded,
+        first_pulse_tick: campaign.firstPulseTick,
+        materiel_good: MATERIEL_GOOD,
+        materiel_per_pulse: PULSE_MATERIEL_QTY,
+      },
+    });
+    this.campaignTicker.push(campaignTickerLine(campaign));
+    // The defender is offered a wake on the declaration, not on the first pulse. That is the whole
+    // of §16.6 MUST-8's notice: a full cycle to move hands, on the same information, before anything
+    // is pressed. A wake offered at the pulse would be a warning that arrives after the shot.
+    ctx.offerWake(campaign.defender, 'THREAT', campaign.id);
+    return { ok: true, value: null };
+  }
+
+  /** `join {campaign, side}` — §16.6 MUST-9's roster, on a verb that already means this. */
+  private vJoinCampaign(ctx: PhaseContext, req: ActionRequest, id: CampaignId): WorldResult<null> {
+    const named = readString(req.params, ['side']);
+    const side: CampaignSide | null =
+      named === null ? null : isCampaignSide(named.toUpperCase()) ? (named.toUpperCase() as CampaignSide) : null;
+    if (side === null) {
+      // Refused by name rather than defaulted. A default here would put a principal on a side it did
+      // not choose, with capital at risk on one of the two branches (`refineKindOf`'s rule, and D22's
+      // recorded cost of a dropped param: it irreversibly graduated the wrong principal).
+      return reject(
+        'A2',
+        `name your side: join {"campaign":"${id}","side":"ATTACKER"} or {"side":"DEFENDER"}. ` +
+          CAMPAIGN_ROSTER_STATEMENT,
+      );
+    }
+    const port: RosterPort = {
+      isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
+      freeStoresOf: (principal) => freeStores(this.ledger, principal),
+      lockStake: (args) =>
+        this.lockCampaignCapital(args.campaign, args.principal, args.amount, args.tick, 'stake'),
+    };
+    const refusal = joinRefusal(port, this.campaigns, {
+      principal: req.principal,
+      campaign: id,
+      side,
+      tick: ctx.tick,
+    });
+    if (refusal !== null) return refusal;
+
+    const stake = joinStakeFor(side);
+    let encumbranceId: string | null = null;
+    if (stake > 0) {
+      encumbranceId = port.lockStake({ campaign: id, principal: req.principal, amount: stake, tick: ctx.tick });
+      if (encumbranceId === null) {
+        return reject(
+          'INV-4',
+          `your stake of ${String(stake)} could not be locked, so you were not added to the roster and nothing ` +
+            'of yours is committed.',
+        );
+      }
+    }
+    this.campaigns.addParty(id, {
+      principal: req.principal,
+      side,
+      stake,
+      encumbranceId,
+      joinedAtTick: ctx.tick,
+    });
+    const campaign = this.campaigns.require(id);
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'campaign.joined',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `campaign::${id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: { campaign: id, side, stake, objective: campaign.objective },
+    });
+    return { ok: true, value: null };
+  }
+
+  /** `withdraw {campaign}` — §16.6 MUST-13's voluntary exit, at `abandon`'s own salvage rate. */
+  private vLiftCampaign(ctx: PhaseContext, req: ActionRequest, id: CampaignId): WorldResult<null> {
+    const refusal = liftRefusal(this.campaigns, { principal: req.principal, campaign: id, tick: ctx.tick });
+    if (refusal !== null) return refusal;
+    const campaign = this.campaigns.require(id);
+    this.settleCampaign(ctx.tick, campaign, liftEnding(campaign, ctx.tick), ctx.frozenStateVersion);
+    return { ok: true, value: null };
+  }
+
+  /**
+   * Resolve every campaign whose PULSE is due. The `PREDATE` handler's campaign half.
+   *
+   * Returns immediately on an empty book, which is what makes the `RULES_VERSION` 22 divergence
+   * claim checkable: a world in which nobody ever declares a campaign runs exactly as it did.
+   */
+  private pulseCampaignsNow(ctx: PhaseContext): void {
+    const due = duePulses(this.campaigns, ctx.tick);
+    if (due.length === 0) return;
+    // One step per pulse, so a busy book is paid for out of the tick's step budget rather than
+    // silently exceeding it (DET-9).
+    ctx.step(due.length);
+    const port = this.campaignPulsePort(ctx.tick);
+    for (const campaign of due) {
+      const plan = resolvePulse(port, campaign, ctx.tick);
+
+      // ── DESTROY THE MATERIEL FIRST, THEN RECORD ─────────────────────────────
+      //
+      // `refine`'s ordering rule (AGT-X9), and here it decides what a failure leaves behind:
+      // destroy-then-record leaves the attacker poorer with no breach, which is visible and
+      // recoverable; record-then-destroy would credit an assault the world was never paid for, and
+      // `CMP-3` halts on exactly that mismatch. A5′ costs a Reckoning of supply, never a lie.
+      let spent = 0;
+      for (const [i, lot] of plan.destroy.entries()) {
+        try {
+          this.ledger.destroyGoods({
+            eventId: `${campaign.id}:materiel:${String(ctx.tick)}:${String(i)}` as EventId,
+            tick: ctx.tick,
+            sink: GOODS_SINK.CONSUMPTION,
+            lotId: lot.lotId as LotId,
+            qty: lot.qty,
+          });
+          spent += lot.qty;
+        } catch (error: unknown) {
+          this.faults.push(
+            `campaign ${campaign.id} could not spend its materiel at ${campaign.depot} (${describeError(error)})`,
+          );
+        }
+      }
+
+      if (plan.row !== null) {
+        // Recorded from what the ledger ACTUALLY destroyed, never from the plan's intent. The same
+        // rule `book.close` enforces for a raid by making the intended figure unreachable — and
+        // `CMP-3` reproduces this number from the posting log by a second road.
+        this.campaigns.recordPulse(campaign.id, { ...plan.row, materielSpent: qty(spent) });
+        const row = campaign.pulses[campaign.pulses.length - 1];
+        this.emitRow({
+          tick: ctx.tick,
+          kind: 'campaign.pulsed',
+          rulesVersion: RULES_VERSION,
+          // Nobody acted. A pulse is a scheduled resolution on a published clock, which is what
+          // makes it A14-compliant and why it has no actor — exactly as `raid.resolved` has none.
+          actorPrincipalId: null,
+          onBehalfOfPrincipalId: null,
+          grantId: null,
+          eventFamilyId: `campaign::${campaign.id}`,
+          parentEventId: null,
+          isPublic: true,
+          publicAt: ctx.tick,
+          declassifyAt: ctx.tick,
+          provenanceClass: 'FACT',
+          actedOnStateVersion: ctx.frozenStateVersion,
+          decisionSource: null,
+          visibility: 'PUBLIC',
+          audience: [],
+          payload: {
+            campaign: campaign.id,
+            objective: campaign.objective,
+            outcome: row?.outcome ?? plan.row.outcome,
+            attacker_force: plan.row.attackerForce,
+            defender_force: plan.row.defenderForce,
+            terrain: plan.row.terrain,
+            materiel_spent: spent,
+            breaches: campaign.breaches,
+            rebuffs: campaign.rebuffs,
+            breaches_needed: campaign.breachesNeeded,
+          },
+        });
+        this.campaignTicker.push(campaignTickerLine(campaign));
+        ctx.offerWake(campaign.attacker, 'THREAT', campaign.id);
+        ctx.offerWake(campaign.defender, 'THREAT', campaign.id);
+      }
+
+      if (plan.endsWith !== null) {
+        this.settleCampaign(ctx.tick, campaign, plan.endsWith, ctx.frozenStateVersion);
+      }
+    }
+  }
+
+  /**
+   * End a campaign: release the locks, move the bond, lapse the objective if it was TAKEN.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE LAPSE IS SOVEREIGNTY'S, PERFORMED THROUGH SOVEREIGNTY'S OWN METHODS.** `settle.ts`'s
+   * header records what a second lapse path costs: two versions of "settle a claim" disagreed about
+   * whether a retaken system inherits its arrears, and one of them published the worst outcome the
+   * mechanic has against a claimant that had been shown the best. So this calls `end`, `recordLapse`
+   * and the same `slash` the Charge settlement uses, and writes **no shortfall row and no miss**.
+   *
+   * That last clause is A5′ and it is the most important line in this method. A campaign-caused
+   * lapse is not an arrears: the claimant may have paid every ration it owed. Recording a miss to
+   * reach the lapse would make `claimLegend` publish `ARREARS 2 of 2` about a claimant that was
+   * never short, which is the permanent public accusation A5′ exists to forbid. The record says what
+   * happened — **conquered** — and `claim.lapsed` carries the campaign that did it.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private settleCampaign(
+    tick: number,
+    campaign: CampaignRecord,
+    ending: CampaignEnding,
+    stateVersion: number | null,
+  ): void {
+    // Release every lock first. A forfeit out of a locked balance would be refused by the ledger,
+    // and a lock left open on an ended campaign is that capital destroyed with no posting (INV-4,
+    // and `CMP-6` halts on it).
+    for (const id of [
+      campaign.bondEncumbranceId,
+      ...campaign.parties.map((p) => p.encumbranceId),
+    ]) {
+      if (id === null) continue;
+      try {
+        this.ledger.encumbrances.release(id, tick);
+      } catch (error: unknown) {
+        this.faults.push(`campaign ${campaign.id} could not release lock ${id} (${describeError(error)})`);
+      }
+    }
+
+    let forfeited = 0;
+    if (ending.forfeited > 0) {
+      // Forfeited to the DEFENDER, never to a sink. `predate.ts`'s rule: forfeiture to the
+      // counterparty rather than to a sink is what stops a failed attack being a griefer's bargain.
+      // And `seizeCurrency` moves at most what is there and returns the figure, so an attacker that
+      // spent down between declaring and losing forfeits what it has and the record says so.
+      try {
+        forfeited += this.ledger.seizeCurrency({
+          eventId: `${campaign.id}:forfeit:${campaign.attacker}` as EventId,
+          tick,
+          from: storesAccount(campaign.attacker),
+          to: storesAccount(campaign.defender),
+          amount: minor(ending.forfeited),
+        }).seized;
+      } catch (error: unknown) {
+        this.faults.push(`campaign ${campaign.id} bond could not be forfeited (${describeError(error)})`);
+      }
+      // An ATTACKER ally's stake follows the campaign it backed. §16.6 MUST-9: a co-belligerent
+      // risks its own stake or it is not one. A DEFENDER's stake is zero, so there is nothing here.
+      for (const party of campaign.parties) {
+        if (party.side !== 'ATTACKER' || party.stake <= 0) continue;
+        try {
+          forfeited += this.ledger.seizeCurrency({
+            eventId: `${campaign.id}:forfeit:${party.principal}` as EventId,
+            tick,
+            from: storesAccount(party.principal),
+            to: storesAccount(campaign.defender),
+            amount: party.stake,
+          }).seized;
+        } catch (error: unknown) {
+          this.faults.push(
+            `campaign ${campaign.id} ally stake could not be forfeited from ${party.principal} ` +
+              `(${describeError(error)})`,
+          );
+        }
+      }
+    }
+
+    // ── THE OBJECTIVE FALLS ────────────────────────────────────────────────────
+    let slashed = 0;
+    if (ending.lapseObjective) {
+      const claim = this.sovereignty.liveAt(campaign.objective);
+      if (claim !== null && claim.claimant === campaign.defender) {
+        slashed = this.slashClaimBond(claim.claimant, campaign.objective, tick);
+        this.sovereignty.end(campaign.objective, 'LAPSED', reckoningOf(tick), null);
+        this.sovereignty.recordLapse(campaign.objective);
+      }
+    }
+
+    // `CMP-5` asserts `forfeited + returned === bond`, so the row records what the ledger MOVED for
+    // the bond and the ending's own `returned` for the rest. A bond whose holder had already spent
+    // it down forfeits less than the ending named, and the row must say so rather than the plan.
+    this.campaigns.end(campaign.id, {
+      state: ending.state,
+      tick,
+      forfeited: minor(ending.forfeited),
+      returned: ending.returned,
+    });
+    const ended = this.campaigns.require(campaign.id);
+
+    this.emitRow({
+      tick,
+      kind: ending.state === 'TAKEN' ? 'campaign.taken' : 'campaign.ended',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: ending.state === 'LIFTED' ? campaign.attacker : null,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `campaign::${campaign.id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: tick,
+      declassifyAt: tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: stateVersion,
+      decisionSource: null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        campaign: campaign.id,
+        state: ending.state,
+        attacker: campaign.attacker,
+        defender: campaign.defender,
+        objective: campaign.objective,
+        breaches: campaign.breaches,
+        rebuffs: campaign.rebuffs,
+        bond: campaign.bond,
+        forfeited_moved: forfeited,
+        returned: ending.returned,
+        claim_lapsed: ending.lapseObjective,
+        claim_bond_slashed: slashed,
+        why: ending.why,
+      },
+    });
+    this.campaignTicker.push(campaignTickerLine(ended));
+  }
+
+  /**
+   * Slash one claim's bond, through the same arithmetic the Charge settlement uses.
+   *
+   * `bondAtRiskFor` caps it at ONE claim's requirement (`bond.ts`: 4 claims × 200,000 posted loses
+   * 50,000 on one lapse, not the lot), so a conquered claimant's other territory does not cascade —
+   * and `SOV-3` halts if anything above that ceiling was ever taken.
+   */
+  private slashClaimBond(principal: PrincipalId, system: SystemId, tick: number): number {
+    const want = bondAtRiskFor(this.sovereignty, principal, this.bondRead());
+    if (want <= 0) return 0;
+    for (const id of this.sovereignty.bondLocksOf(principal)) {
+      try {
+        this.ledger.encumbrances.release(id, tick);
+      } catch {
+        // Reported nowhere and swallowed deliberately: a lock that will not release is already
+        // covered by INV-4 on the next tick, and a throw here would abort a Reckoning.
+      }
+      this.sovereignty.dropBondLock(principal, id);
+      break;
+    }
+    try {
+      const free = freeStores(this.ledger, principal);
+      const take = minor(Math.min(want, free));
+      if (take <= 0) return 0;
+      this.ledger.retireCurrency({
+        eventId: `campaign.slash:${system}:${String(tick)}` as EventId,
+        tick,
+        from: storesAccount(principal),
+        sink: CURRENCY_SINK.UPKEEP,
+        amount: take,
+      });
+      return take;
+    } catch (error: unknown) {
+      this.faults.push(`campaign lapse could not slash ${principal}'s bond (${describeError(error)})`);
+      return 0;
+    }
+  }
+
+  /**
+   * **THE ONE PREDICATE.** The affordance layer and `vDeclareCampaign` both refuse through this.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * This project's signature defect runs in both directions and one function closes both. Nine
+   * mechanics were once legal and unreachable because an affordance was never written — `grant`, the
+   * A6 core loop, among them; and an affordance with its own copy of a gate offers moves the handler
+   * then refuses, which costs an agent an action and its trust in the menu (AGT-S2). `api/observe.ts`
+   * calls this before offering a campaign, and `openCampaign` calls it again. They cannot disagree,
+   * because there is only one of them.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  campaignDeclareRefusalFor(attacker: PrincipalId, objective: SystemId, tick: number): Rejection | null {
+    return declareRefusal(this.campaignDeclarePort(), this.campaigns, { attacker, objective, tick });
+  }
+
+  /**
+   * Every objective this principal could declare against right now, canonical order.
+   *
+   * The **claimed neighbours of its own holding**, and nothing wider. A campaign is aimed one lane,
+   * so a candidate list computed any other way would offer places the gate then refuses — and the
+   * refusal would be about geography, which no amount of the agent's effort can fix this wake.
+   */
+  campaignObjectivesFor(principal: PrincipalId, tick: number): readonly SystemId[] {
+    if (this.world.holdingByPrincipal.get(principal) === undefined) return [];
+    const depot = holdingOf(this.world, principal).system;
+    return neighboursOf(this.world.map, depot).filter(
+      (system) => this.campaignDeclareRefusalFor(principal, system, tick) === null,
+    );
+  }
+
+  /** Campaigns this principal may still lift or join, for the affordance layer. */
+  liveCampaignsTouching(principal: PrincipalId): readonly CampaignRecord[] {
+    return this.campaigns.live().filter(
+      (c) => c.attacker === principal || c.defender === principal || isLiveCampaign(c.state),
+    );
+  }
+
+  /**
+   * The one campaign statement that applies to this principal right now, or `null`.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ONE, NEVER THREE, AND THE REASON IS MEASURED.** `sovereigntyStatementFor` records it: three
+   * statements at once was ~3 KB of static prose per wake, `cast/prompt.ts` truncated `affordances[]`
+   * past 16,000 chars, and a 12-member cast fell from 192 to 172 LIVE decisions — below the health
+   * floor. So the surface picks the statement the principal's situation actually needs.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  campaignStatementFor(principal: PrincipalId, tick: number): string | null {
+    const mine = this.campaigns.forPrincipal(principal).filter((c) => isLiveCampaign(c.state));
+    // In a war, and it can still end: the endings are what a losing side needs and the only thing
+    // that makes a fire sale or a lift discoverable.
+    if (mine.length > 0) return CAMPAIGN_ENDINGS_STATEMENT;
+    // Not in one, but somebody else's is live and joinable: the roster rules, which carry the
+    // asymmetry (defending is free, attacking is not) that decides whether joining is worth it.
+    if (this.campaigns.liveCount() > 0) return CAMPAIGN_ROSTER_STATEMENT;
+    // Could declare one: what it is, what it costs, and the sentence that says why it exists at all.
+    if (this.campaignObjectivesFor(principal, tick).length > 0) return CAMPAIGN_STATEMENT;
+    return null;
+  }
+
+  /** The roster gate, for the affordance. The same predicate `vJoinCampaign` runs (AGT-S2). */
+  campaignJoinRefusalFor(
+    principal: PrincipalId,
+    campaign: string,
+    side: CampaignSide,
+    tick: number,
+  ): Rejection | null {
+    return joinRefusal(
+      {
+        isSeated: (who) => this.world.holdingByPrincipal.get(who) !== undefined,
+        freeStoresOf: (who) => freeStores(this.ledger, who),
+        // Never called from the affordance path — `joinRefusal` only reads — and supplied rather than
+        // stubbed so the port is the same object the verb builds. A port with a different shape here
+        // would be a second implementation of the gate's inputs, which is the drift this closes.
+        lockStake: (args) =>
+          this.lockCampaignCapital(args.campaign, args.principal, args.amount, args.tick, 'stake'),
+      },
+      this.campaigns,
+      { principal, campaign: campaign as CampaignId, side, tick },
+    );
+  }
+
+  /** The lift gate, for the affordance. The same predicate `vLiftCampaign` runs. */
+  campaignLiftRefusalFor(principal: PrincipalId, campaign: string, tick: number): Rejection | null {
+    return liftRefusal(this.campaigns, { principal, campaign: campaign as CampaignId, tick });
+  }
+
+  /** What declaring costs, published in the affordance. One home, so the menu cannot understate it. */
+  get campaignBond(): Minor {
+    return CAMPAIGN_BOND_MINOR;
+  }
+
+  /** What an ATTACKER ally risks. Published beside the offer, never implied. */
+  get campaignAllyStake(): Minor {
+    return CAMPAIGN_JOIN_STAKE_MINOR;
+  }
+
+  /** When a campaign declared now would first press. The affordance's `expires_tick` is not this. */
+  campaignFirstPulse(tick: number): number {
+    return firstPulseTickFor(tick);
+  }
+
+  /** CMP-1..7, for the tick's ASSERT hook. */
+  private campaignViolations(tick: number): readonly InvariantViolation[] {
+    return checkCampaignInvariants({
+      book: this.campaigns,
+      tick,
+      tierOf: (system) => tierOf(this.world.map, system),
+      materielDestroyedFor: (campaign) => this.materielDestroyedFor(campaign, tick),
+      lockIsOpen: (encumbranceId) => this.ledger.encumbrances.isOpen(encumbranceId),
+    });
+  }
+
+  /**
+   * CMP-3's second road: what the **posting log** says this campaign destroyed.
+   *
+   * Recomputed from the postings rather than read off the row, which is the whole point — a row
+   * checked against itself is a detector agreeing with itself. Scoped to the tick a pulse resolved
+   * on, for `goodsMovedForRaid`'s reason: the postings are append-only, so a pulse verified three
+   * Reckonings ago cannot become wrong, and re-walking them every tick would cost O(season) per tick
+   * and prove nothing new. `null` skips the clause, which is what a fixture with no ledger needs.
+   */
+  private materielDestroyedFor(campaign: CampaignRecord, tick: number): Qty | null {
+    const pulse = campaign.pulses.find((p) => p.tick === tick);
+    if (pulse === undefined) return null;
+    const account = storesAccount(campaign.attacker);
+    let moved = 0;
+    for (const p of campaign.pulses) {
+      for (let i = 0; i < MAX_SEIZE_LOTS; i += 1) {
+        const postings = this.ledger.postingsFor(
+          `${campaign.id}:materiel:${String(p.tick)}:${String(i)}` as EventId,
+        );
+        if (postings.length === 0) continue;
+        for (const posting of postings) {
+          if (posting.account !== account) continue;
+          if (posting.good !== MATERIEL_GOOD) continue;
+          const delta: number = posting.amountQty ?? 0;
+          if (delta < 0) moved += 0 - delta;
+        }
+      }
+    }
+    return qty(moved);
   }
 
   /** SOV-1..7 plus the A5′ attribution guard, for the tick's ASSERT hook. */
@@ -12223,6 +13065,10 @@ export class Runtime {
       // that no field on this line is a function of anything a claimant STILL holds: the
       // rejected "fuel gauge" was exactly that, and this is what replaced it.
       claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
+      // ★ Campaigns' pixel signature (A13, §16.6): THE SAP. Already selected and ordered by
+      // `sapLinesFor`, so this is a pass-through — the module that owns the score is the one that
+      // knows which of two 1-1 campaigns is closer to deciding something.
+      saps: this.sapLines(outcome.tick),
       worksLines: this.worksLines(outcome.tick),
       // ★ The market's pixel signature (A13, §10): THE PRINT. Built by the market layer for the
       // reason every other line set is — a renderer that computed its own prices would be

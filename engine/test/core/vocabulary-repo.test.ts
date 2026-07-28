@@ -76,6 +76,8 @@ const SANCTIONED = new Map<string, string>([
   // it against — an uncanonised word is unpoliced by construction. Canonising it is what made the
   // collision visible, and it was visible within one test run.
   ['VentureKind.HAUL', "one concept bought two ways — you carry it, or you hire a CARRIER to; §3's row sanctions both, exactly as RAID's does"],
+  ['PulseOutcome.BREACH', "§3 canonises BREACH as a PULSE the attacker won, and this union IS that concept — the row's 'never means' column forecloses a broken COMPACT (a default) and §9A's hull breach"],
+  ['outcome_if_pulsed_now.BREACH', 'the same PulseOutcome value published to an agent before it commits hands; a second word for it would be scar #1 with territory at stake'],
 ]);
 
 /**
@@ -84,6 +86,12 @@ const SANCTIONED = new Map<string, string>([
  * concept — not merely that both spellings look reasonable.
  */
 const SHARED_MEMBERS = new Map<string, string>([
+  ['CampaignSide+CampaignStanding.ATTACKER',
+    'one side of one war, named once as the side and once as "which side the reader is on"; CampaignStanding is CampaignSide plus null plus the two ALLY_ prefixes'],
+  ['CampaignSide+CampaignStanding+RaidSide.DEFENDER',
+    'all three mean "the party being attacked" — one role in three horizons (a 24-tick standoff, a multi-Reckoning campaign, and a reader\'s own place in one), never three concepts'],
+  ['CampaignState+PulseOutcome.STARVED',
+    'a pulse that found no MATERIEL and a campaign that ran out of it are cause and consequence of one fact; naming the ending anything else would make the record say the war ended for a different reason than the pulse did'],
   ['DecisionSource+IntentState+VentureState.LIVE',
     'all three mean "currently active" — one adjective applied to three subjects, not three concepts'],
   ['HandState+LotState.IN_TRANSIT',

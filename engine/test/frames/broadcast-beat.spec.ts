@@ -96,6 +96,7 @@ function source(over: Partial<FrameSource> = {}): FrameSource {
     authorityLines: [],
     raidLines: [],
     claimLines: [],
+    saps: [],
     worksLines: [],
     syndicateLines: [],
     map: [] as readonly MapSystem[],

@@ -591,7 +591,7 @@ describe('agent.md warns about the one verb whose meaning depends on a parameter
    * defence is to say so where the agent is reading.
    */
   it('says to match on params.kind and not on the verb alone', () => {
-    expect(AGENT_MD).toContain('`build` is THREE different acts');
+    expect(AGENT_MD).toContain('`build` is FOUR different acts');
     expect(AGENT_MD).toContain('Match');
     expect(AGENT_MD).toContain('params.kind');
   });

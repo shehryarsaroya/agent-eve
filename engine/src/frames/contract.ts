@@ -23,6 +23,7 @@ import type { HallOfFameRow, PlaceName } from './memory.js';
  */
 
 import type {
+  CampaignState,
   ClaimState,
   GoodId,
   Handle,
@@ -49,6 +50,16 @@ export const MAX_AUTHORITY_LINES = 12;
 export const MAX_RAID_LINES = 6;
 /** §17: claim tints drawn per frame. A map of who owes what, not a heatmap. */
 export const MAX_FRAME_CLAIM_LINES = 12;
+
+/**
+ * ★ THE SAP's cap (A13). Six, and it is a **floor under the live wars** rather than a truncation.
+ *
+ * Every other line budget here picks the important members of a set larger than a viewer can read.
+ * This one is deliberately above `MAX_LIVE_CAMPAIGNS` (4), because a campaign is the largest object
+ * on the map and a dropped one would be a war in progress the map does not show — while the two
+ * spare slots let a just-ended campaign's obituary stay on screen for a Reckoning.
+ */
+export const MAX_FRAME_SAP_LINES = 6;
 
 /**
  * Works marks a frame may draw. *(calibrate)*
@@ -656,6 +667,56 @@ export interface WorksLine {
   readonly fuelExtracted: number;
 }
 
+/**
+ * ★ **THE SAP** — a campaign's pixel signature (§16.6, A13).
+ *
+ * A notched band drawn from a campaign's DEPOT toward its OBJECTIVE. `notches` of `notchesToReach`
+ * is how far the trench has come; it advances on a BREACH and retreats on a REBUFF, so the band
+ * **is** the score and a viewer reads it without a legend. `dashed` is the published notice window
+ * before the first pulse — the defender sees the war coming. `hollow` is the campaign having no
+ * MATERIEL for its next pulse, so a starving war looks starved a whole Reckoning before it dies.
+ * `reached` is the only state in which the objective's own claim tint goes out and a ruin persists at
+ * the fallen anchor.
+ *
+ * The full argument, including the one §11.2 decision (`hollow` is one bit about a published
+ * obligation falling due at a published tick, never a stock reading — `anchorHot`'s exact
+ * precedent), is in `campaign/view.ts`.
+ *
+ * Strictly fewer fields than `CampaignView`, which is what makes A9 a theorem here rather than a
+ * review item: there is no fact on this line an agent's own `observe` would not answer.
+ */
+export interface SapLine {
+  readonly campaign: string;
+  /** Where the band starts: the attacker's forward system. */
+  readonly depot: SystemId;
+  /** Where it is aimed: the claimed system. */
+  readonly objective: SystemId;
+  readonly attacker: PrincipalId;
+  readonly defender: PrincipalId;
+  readonly state: CampaignState;
+  /** `2-1 of 3` · `MASSING · first pulse tick 504` · `REBUFFED 1-3`. One home, three readers. */
+  readonly legend: string;
+  /** How far the trench has advanced. Zero on any ending but TAKEN: nothing was taken. */
+  readonly notches: number;
+  /** Its full length — the breaches this campaign's scope requires. */
+  readonly notchesToReach: number;
+  readonly rebuffs: number;
+  readonly rebuffsToStand: number;
+  /** Drawn dashed: declared, not yet pressing. The published notice (§16.6 MUST-8). */
+  readonly dashed: boolean;
+  /** Drawn hollow: no MATERIEL at the depot for the next pulse. Supply, made visible. */
+  readonly hollow: boolean;
+  /** The band touches the objective. Only on TAKEN. */
+  readonly reached: boolean;
+  /** Posted, slashable, `PUBLIC` by §6.4 exactly as a claim bond is. */
+  readonly bond: Minor;
+  /** What the ending actually moved to the defender. Zero while live; A5 makes a loss public. */
+  readonly forfeited: Minor;
+  readonly nextPulseTick: number | null;
+  /** Roster size, both sides. §16.6 MUST-9's visible treaty edges, as a count. */
+  readonly allies: number;
+}
+
 export interface ClaimLine {
   readonly claim: string;
   /** The system the tint sits on. */
@@ -863,6 +924,8 @@ export interface ReckoningFrame {
   readonly battleLines: readonly BattleLine[];
   /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
   readonly claimLines: readonly ClaimLine[];
+  /** ★ Campaigns' signature (§16.6, A13): THE SAP — a trench from a depot toward a claim. */
+  readonly saps: readonly SapLine[];
   readonly worksLines: readonly WorksLine[];
   /** ★ The market's signature (§10, A13): THE PRINT — a price on a place, and the gap to everywhere else. */
   readonly marketLines: readonly MarketLine[];
@@ -1193,6 +1256,29 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     problems.push(
       `${frame.claimLines.length} claim lines, budget is ${MAX_FRAME_CLAIM_LINES} — a legend a viewer reads, not a heatmap`,
     );
+  }
+
+  if (frame.saps.length > MAX_FRAME_SAP_LINES) {
+    problems.push(
+      `${frame.saps.length} saps, budget is ${MAX_FRAME_SAP_LINES} — a campaign is the largest object on the map, ` +
+        'so a truncated set means a war in progress is not drawn at all',
+    );
+  }
+  for (const sap of frame.saps) {
+    // The band cannot be longer than itself: `notches > notchesToReach` draws a trench past the wall,
+    // which says on screen that the claim has fallen when the score says it has not (A5-PRIME).
+    if (sap.notches > sap.notchesToReach) {
+      problems.push(
+        `sap ${sap.campaign} has advanced ${sap.notches} notches of ${sap.notchesToReach}, which draws a band ` +
+          'past its objective while the score says it has not been taken',
+      );
+    }
+    if (sap.reached !== (sap.state === 'TAKEN')) {
+      problems.push(
+        `sap ${sap.campaign} is ${sap.state} and draws reached=${String(sap.reached)}. Only a TAKEN campaign ` +
+          'touches its objective; every other ending recoils to the depot, because nothing was taken',
+      );
+    }
   }
   for (const line of frame.claimLines) {
     // ── THE LEGEND AND THE STATE MUST AGREE, AND THE PIXEL IS WHAT IS BELIEVED ──

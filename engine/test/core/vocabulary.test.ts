@@ -29,6 +29,8 @@ import type {
   SealVerdict,
   WorldStatus,
   InvariantViolation,
+  CampaignState,
+  PulseOutcome,
   RaidState,
   ClaimState,
   EngagementState,
@@ -61,7 +63,11 @@ const VISIBILITY = ['PUBLIC', 'PARTIES', 'SENSED', 'SEALED', 'PRIVATE'] as const
  * meanings are ONE concept. Every entry needs that justification; "it seemed
  * fine" is how scar #1 shipped.
  */
-const SANCTIONED_DUAL_USE = new Set(['RAID', 'LEVY', 'STORES', 'TICK', 'SEALED', 'HAUL']);
+// `BREACH` joins the list for the same reason `RAID` and `HAUL` are on it: §3 canonises the word for a
+// won PULSE and `PulseOutcome.BREACH` is that exact concept, not a second one. The row's own "never
+// means" column forecloses the two readings that would have been collisions — a broken COMPACT (which
+// is a *default*) and §9A's hull breach (whose last tank layer is STRUCTURE).
+const SANCTIONED_DUAL_USE = new Set(['RAID', 'LEVY', 'STORES', 'TICK', 'SEALED', 'HAUL', 'BREACH']);
 
 const DECISION_SOURCE = ['LIVE', 'INTENT', 'DELEGATE', 'HEURISTIC', 'FALLBACK'] as const;
 const PROVENANCE = ['FACT', 'ASSERTION', 'ESTIMATE'] as const;
@@ -76,6 +82,8 @@ const SEAL_VERDICT = ['HONOURED', 'CONTRADICTED'] as const;
  * concept may not have two homes — which puts it inside this file's remit.
  */
 const RAID_STATE = ['DEMANDED', 'PAID', 'REPULSED', 'PLUNDERED', 'MISSED'] as const;
+const CAMPAIGN_STATE = ['MASSING', 'PRESSING', 'TAKEN', 'REBUFFED', 'STARVED', 'LIFTED', 'MOOT'] as const;
+const PULSE_OUTCOME = ['BREACH', 'REBUFF', 'STARVED'] as const;
 /**
  * Sovereignty's five (SPEC §6.3). Listed here for `RaidState`'s reason: `ClaimState` lives in
  * `core/types.ts` because the claim book AND the frame's claim line both need the same five
@@ -113,6 +121,8 @@ const _sealVerdictComplete: Covers<SealVerdict, typeof SEAL_VERDICT> = true;
 const _worldStatusComplete: Covers<WorldStatus, typeof WORLD_STATUS> = true;
 const _severityComplete: Covers<Severity, typeof SEVERITY> = true;
 const _raidStateComplete: Covers<RaidState, typeof RAID_STATE> = true;
+const _campaignStateComplete: Covers<CampaignState, typeof CAMPAIGN_STATE> = true;
+const _pulseOutcomeComplete: Covers<PulseOutcome, typeof PULSE_OUTCOME> = true;
 const _claimStateComplete: Covers<ClaimState, typeof CLAIM_STATE> = true;
 const _engagementStateComplete: Covers<EngagementState, typeof ENGAGEMENT_STATE> = true;
 
@@ -135,6 +145,8 @@ const ALL_ENUMS: readonly (readonly [string, readonly string[]])[] = [
   ['RaidState', RAID_STATE],
   ['ClaimState', CLAIM_STATE],
   ['EngagementState', ENGAGEMENT_STATE],
+  ['CampaignState', CAMPAIGN_STATE],
+  ['PulseOutcome', PULSE_OUTCOME],
 ];
 
 /** The §3 vocabulary table's Term column, parsed from the canon. */
@@ -210,7 +222,7 @@ describe('PROP-O3 — the §17 budgets, counted', () => {
   });
 
   it('the union sizes are all pinned, so a quiet addition shows up as a diff', () => {
-    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5, 5, 5]);
+    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5, 5, 5, 7, 3]);
   });
 });
 
@@ -308,9 +320,17 @@ describe('DEFECT reports against src/core/types.ts — §3 collisions', () => {
         else owners.set(m, enumName);
       }
     }
-    // Exactly one today. If a second appears, this assertion fails and someone
-    // has to decide which word to give up.
-    expect(collisions).toEqual(['LIVE: DecisionSource + VentureState']);
+    // Two today, and the second is sanctioned rather than a defect. `LIVE` is the standing DEFECT the
+    // `it.fails` above pins: two unions genuinely disagree about what the word names. `STARVED` is one
+    // concept in two shapes — a PULSE that found no MATERIEL, and the CAMPAIGN that ran out of it —
+    // which is cause and consequence of a single fact. `vocabulary-repo.test.ts`'s `SHARED_MEMBERS`
+    // carries the argument in full and is where a reviewer should look; this list is the census.
+    //
+    // If a THIRD appears, this assertion fails and someone has to decide which word to give up.
+    expect(collisions).toEqual([
+      'LIVE: DecisionSource + VentureState',
+      'STARVED: CampaignState + PulseOutcome',
+    ]);
   });
 
   it('FIXED: no engine enum reuses a §3 canon term for a second concept', () => {

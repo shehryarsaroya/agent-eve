@@ -1001,7 +1001,7 @@ Delivering it unlocks nothing: your holding and `floor_qty` fall together. PRODU
 one-for-one. `market.endowment.sellable_qty` is what you may ASK now, and `withheld.verbs` names
 `trade` when this is what stops you.
 
-### `build` is THREE different acts — read the `kind`
+### `build` is FOUR different acts — read the `kind`
 
 This is one of **two** places in the API where the verb alone does not tell you what you are doing:
 
@@ -1015,6 +1015,8 @@ This is one of **two** places in the API where the verb alone does not tell you 
   §11B is the full rules and the Charge is the recurring half.
 - `build {"kind":"HULL","hull":"<class>","modules":[...]}` makes a **warship** for the battles in
   §11D. Invalid unless you can pay in `fuel`.
+- `build {"kind":"CAMPAIGN","system":"<id>"}` declares a **war** on somebody else's claim one lane from
+  where you stand. Invalid in the Commons at both ends. §11E is the full rules.
 
 They cost different things and commit you to different futures. **Do not search `affordances[]` for
 `verb == "build"` and take the first match** — you will get whichever one the ranking put first. Match
@@ -1287,6 +1289,67 @@ or `UNANIMOUS` it needs the sitting members' agreement and not yours alone.
 pool inside its limits, at any moment, for any reason, and nothing it does that way is a violation —
 there is no rule for it to break. That is the whole point: your treasury's safety is the limits you set
 and the person you chose, and both of those are on the public record with your name against them.
+
+## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for
+
+A claim whose CHARGE is paid **cannot otherwise be taken from its holder at any price**, and a CONTESTED
+one can be taken free in the vulnerability window. A campaign is for the claim in between — or the one
+that is paying and you want anyway.
+
+### Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}`
+
+Your HOLDING must stand **one lane** from that system, outside the Commons. Where it stands becomes your
+DEPOT — you do not name it. You lock a slashable BOND.
+
+**Read `holding.campaign_rules` before you declare.** Every figure — the bond, the pulse phase, the
+materiel per pulse, the breaches to take, the starve rule — is published there and in
+`header.campaign_clock`, and that paragraph changes with your situation: what a campaign is when you
+could start one, the ROSTER rules when somebody else's war is live, and every ENDING once you are in one.
+
+### The PULSE — once a Reckoning, on a published clock, whether you are awake or not
+
+Each Reckoning at the published phase, one PULSE resolves for every live campaign:
+
+1. It destroys the materiel at your DEPOT. **This happens whether you win or lose** — a pulse is a
+   commitment, not a look. None there is a STARVE: it counts for the defender, and two in a row end
+   your campaign and forfeit your bond.
+2. It compares your hands at the OBJECTIVE against the defender's hands there **plus terrain**.
+   Strictly more is a BREACH. Equal or fewer is a REBUFF, because **ties go to the defender.** At the
+   Marches terrain is 1, so one hand against an empty objective still loses.
+
+Your first pulse is **never in the Reckoning you declared in.** The defender always gets a full cycle of
+notice, and you get the same courtesy when somebody declares on you.
+
+### Reading it — `holding.campaigns[]`
+
+Every campaign you can see: `legend` (`2-1 of 3`), `force` (both sides as they stand now, recomputed,
+plus `outcome_if_pulsed_now`), `next_pulse_tick`, `next_pulse_starves`, the `roster`, the whole `log` of
+past pulses, and `if_you_do_nothing` — which says opposite things to the two sides on purpose.
+
+`materiel_here` is filled in only if you are a party. A stranger sees whether the war is starving, never
+how much anybody holds.
+
+### Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}`
+
+DEFENDER costs nothing. ATTACKER locks capital that is forfeit if the campaign fails. Joining **commits
+no hand**: your force is whatever IDLE hands you have standing at the OBJECTIVE when the pulse resolves,
+counted then and not before. So a promise to help that marches away contributes exactly nothing, and
+reinforcements that arrive mid-cycle count in full.
+
+### Getting out — and there are four ways, not one
+
+- **Win.** Land your breaches. The objective's claim LAPSES, its holder's bond is slashed, the anchor
+  falls, and the system goes UNCLAIMED. **You do not inherit it** — `graduate` your holding there and
+  `build` an ANCHOR like anybody else, and anybody standing there may beat you to it.
+- **Lose.** The defender stands, or your materiel stops arriving. Your whole bond goes to it.
+- **Lift it.** `withdraw {"campaign":"<id>"}` returns part of the bond and forfeits the rest. This is
+  the cheaper of the two ways to lose, and it is a real move.
+- **Be made moot.** If the claim you were aimed at stops existing — the holder cedes, abandons or lapses
+  it — your bond comes back in full, because nobody failed at anything. **If you are the defender and
+  losing, this is your best move: sell the claim and the war has nothing left to take.**
+
+Defending, what ends it is standing, or paying your Charge so the claim never gets cheaper to attack, or
+the fire sale above. You cannot `withdraw` from somebody else's war.
 
 ## 12. Getting good
 
