@@ -81,7 +81,12 @@ import { phaseOfReckoning, reckoningIndex, TICKS_PER_RECKONING, WINDOW_FIRST_PHA
 import type { GoodId, HandId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { reject, type Rejection, type WorldResult } from '../world/result.js';
-import { aggressionNote, aggressionRemaining, AGGRESSION_PER_RECKONING } from './aggression.js';
+import {
+  aggressionNote,
+  aggressionRemaining,
+  AGGRESSION_PER_RECKONING,
+  type AggressionCapacity,
+} from './aggression.js';
 import { Book, demandIdFor, type RaidId, type RaidRecord } from './book.js';
 import {
   DEMAND_WINDOW_TICKS,
@@ -357,6 +362,39 @@ export function demandsRemaining(book: Book, principal: PrincipalId, tick: numbe
 /** The sentence that goes with {@link demandsRemaining}. Published in the affordance. */
 export function demandsRemainingNote(book: Book, principal: PrincipalId, tick: number): string {
   return aggressionNote(demandsRemaining(book, principal, tick), AGGRESSION_PER_RECKONING);
+}
+
+/**
+ * §9's capacity as the standing `header.aggression` block — the count **before** it is spent.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE MECHANIC WAS INVISIBLE UNTIL IT WAS GONE, WHICH IS THE WRONG WAY ROUND.**
+ * Until this existed, the only mention of the capacity in an observation was the `withheld` reason
+ * that fires when it hits zero — so an agent learned the resource existed by *exhausting* it, and
+ * an agent holding all of it with no reachable target saw no `demand` and no explanation. §9's
+ * whole design is that the cost of a demand is *the other demand you gave up this cycle*, and that
+ * is not a decision anybody can make from a number they cannot read.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Assembled here rather than in `aggression.ts` because two of the five figures are the *schedule's*
+ * — {@link LAST_DEMAND_PHASE} is `WINDOW_FIRST_PHASE - DEMAND_WINDOW_TICKS - 1` and belongs to this
+ * module. Recomputing it one file over would be a second home for a published rule (scar #5), and
+ * `aggression.ts` deliberately owns no schedule at all.
+ */
+export function aggressionCapacityFor(book: Book, principal: PrincipalId, tick: number): AggressionCapacity {
+  const remaining = demandsRemaining(book, principal, tick);
+  const phase = phaseOfReckoning(tick);
+  const cycleStart = tick - phase;
+  return {
+    demands_remaining: remaining,
+    demands_per_reckoning: AGGRESSION_PER_RECKONING,
+    // Not a rule that could change without this line changing with it: `join` never calls
+    // `aggressionRemaining` and never writes an initiator, so there is nothing for it to spend.
+    join_costs_demands: 0,
+    open_until_tick: cycleStart + LAST_DEMAND_PHASE,
+    refreshes_at_tick: cycleStart + TICKS_PER_RECKONING,
+    rule: aggressionNote(remaining, AGGRESSION_PER_RECKONING),
+  };
 }
 
 /**

@@ -129,6 +129,16 @@ const STARTER_FIT: readonly string[] = ['SMALL_GUN', 'POINT', 'WEB', 'AFTERBURNE
  * the affordance list into a directory of everybody standing nearby.
  */
 const MAX_DEMAND_AFFORDANCES = 3;
+
+/**
+ * Distinct refusal sentences carried into `withheld` when every candidate target was refused.
+ *
+ * Two, not one: the interesting case is a *mixed* answer — one neighbour under a live raid and
+ * another behind a stage hold are different problems with different fixes, and collapsing them
+ * would tell an agent to wait out a clock that is not the one blocking it. Beyond two the row
+ * stops being a reason and becomes a log (INV-26 wants a bound either way).
+ */
+const MAX_DEMAND_REFUSAL_REASONS = 2;
 import {
   ANCHOR_QTY,
   ARREARS_STATEMENT,
@@ -435,6 +445,38 @@ export function buildObservation(input: ObserveInput): Observation {
        * is a clock.
        */
       raid_schedule: runtime.raidSchedule(tick),
+      /**
+       * **§9'S AGGRESSION CAPACITY — THE PRICE, PUBLISHED BEFORE IT IS CHARGED (A2).**
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * For the project's whole life the strings `aggression` and `capacity` were **absent from
+       * the entire observation** of a real enrolled principal. The only mention anywhere was the
+       * `withheld` reason below, which fires **exactly when the agent has spent all of it** — so
+       * the learning path ran backwards: you discovered the resource existed by exhausting a
+       * resource you were never told you had. A blind probe hit the other half of it and reported,
+       * correctly, that with `demand` simply absent from the menu it could not tell zero capacity
+       * from silence.
+       *
+       * §9 prices predation so it cannot Coase-collapse into a toll cartel, and the price only
+       * works as a *decision*: the cost of a demand is the other demand you gave up this cycle.
+       * That decision is unavailable to an agent that cannot read the count before it spends it —
+       * which makes this exactly `raid_schedule`'s argument one field up. A raid an agent could
+       * not see coming is a dice roll; a budget an agent cannot see is a trap.
+       * ══════════════════════════════════════════════════════════════════════
+       *
+       * On `header` for `raid_schedule`'s reason, and it is the same reason: §17's observe budget
+       * is *at* its ceiling at ten top-level keys (`OBSERVE_KEYS` is counted, not trusted), and
+       * `header` is where the payload keeps the facts about the reader that hold regardless of
+       * what it is doing this tick — its clock, its budgets, its record. A per-Reckoning allowance
+       * is a budget.
+       *
+       * **A9 is satisfied by construction, not by exception.** This is the reader's *own* state,
+       * derived from the raid book, whose rows are `PUBLIC` — every agent-initiated demand names
+       * its initiator on the feed the moment it opens (`demands_left_this_reckoning` is already in
+       * that event's payload). So nothing here is a fact the spectator frame could not carry, and
+       * nothing here is a fact a stranger could not already count for itself.
+       */
+      aggression: runtime.aggressionFor(principal, tick),
       /**
        * §13B: the owner mandate is stable text, not per-tick state, so it is a free
        * read with a version announced here rather than a key of its own.
@@ -1382,11 +1424,17 @@ function affordancesFor(
   //     no fact a stranger could not already read — deliberately *not* "principals with goods
   //     here", which would answer a `SENSED` question through the menu.
   const demandsLeft = runtime.demandsRemainingFor(principal, tick);
+  /**
+   * The same block `header.aggression` publishes, read here so the count in the menu's prose and
+   * the count in the header are one number rather than two that agree today (scar #5).
+   */
+  const demandOpenUntilTick = runtime.aggressionFor(principal, tick).open_until_tick;
   const myStages = new Set(
     hands
       .filter((hand) => hand.state === 'IDLE' && tierOf(world.map, hand.location) !== 'COMMONS')
       .map((hand) => hand.location),
   );
+  const demandStages = [...myStages].sort(cmp);
   /**
    * Reported below and **counted**, because capacity spent is a PRICE and a price nobody is told
    * about is not one.
@@ -1398,26 +1446,47 @@ function affordancesFor(
    */
   const demandCapacitySpent = demandsLeft <= 0 && myStages.size > 0;
   let demandsOffered = 0;
+  /**
+   * Candidate targets considered, and the distinct reasons the gate gave for the ones it refused.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE SILENT HALF OF THE SAME DEFECT.** `demandCapacitySpent` speaks only when the capacity is
+   * gone. An agent holding all of it and offered no `demand` was told *nothing* — and a probe
+   * reported, correctly, that it could not distinguish "you have none" from "we withheld it".
+   * `header.withheld` closes with *"Nothing you were eligible for has been dropped without this
+   * count"*, and for this case that sentence was false.
+   *
+   * The engine already knows the answer: `demandRefusalFor` is the same predicate `vDemand` runs
+   * and it returns a full sentence. Carrying the sentence costs nothing an agent has to guess at;
+   * carrying only a code would be handing it a wiki, which is the thing A2 forbids by name.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  let demandCandidates = 0;
+  const demandRefusedWhy = new Set<string>();
   if (demandsLeft > 0) {
-    for (const stage of [...myStages].sort(cmp)) {
+    for (const stage of demandStages) {
       if (demandsOffered >= MAX_DEMAND_AFFORDANCES) break;
       for (const other of world.principalOrder) {
         if (demandsOffered >= MAX_DEMAND_AFFORDANCES) break;
         if (other === principal) continue;
         const holdingId = world.holdingByPrincipal.get(other);
         if (holdingId === undefined || world.holdings.get(holdingId)?.system !== stage) continue;
+        demandCandidates += 1;
         const ask = RAID_DEMAND_QTY.min;
-        if (
-          runtime.demandRefusalFor({
-            initiator: principal,
-            target: other,
-            stage,
-            good: LEVY_GOOD,
-            demand: ask,
-            tick,
-            handId: null,
-          }) !== null
-        ) {
+        const refusal = runtime.demandRefusalFor({
+          initiator: principal,
+          target: other,
+          stage,
+          good: LEVY_GOOD,
+          demand: ask,
+          tick,
+          handId: null,
+        });
+        if (refusal !== null) {
+          // Bounded (INV-26) and deduplicated: the common shape is one global reason repeated
+          // once per neighbour, and two distinct sentences is already more than a reader needs
+          // to know what to change.
+          if (demandRefusedWhy.size < MAX_DEMAND_REFUSAL_REASONS) demandRefusedWhy.add(refusal.hint);
           continue;
         }
         demandsOffered += 1;
@@ -1459,6 +1528,19 @@ function affordancesFor(
       }
     }
   }
+
+  /**
+   * **You hold capacity and the menu is still empty — the case that said nothing at all.**
+   *
+   * Gated on `!commonsBound` on purpose, and the gate is the `withheld` contract rather than
+   * tidiness: the promise is *"nothing you were ELIGIBLE for has been dropped without this
+   * count"*, and a Commons-bound principal is not eligible for a hostile act at any price (A8
+   * makes it **invalid**, not refused). Counting it would put a row on every newcomer's every
+   * wake for a decision it cannot make — while `header.aggression` publishes the count to that
+   * newcomer regardless, which is the half that was actually missing.
+   */
+  const demandSilent =
+    demandsLeft > 0 && demandsOffered === 0 && !principalIsCommonsBound(world, principal);
 
   // 0b. **Supply a claim of yours.** Second only to a raid, and for the same reason: the
   //     deadline is the Reckoning, nobody can be talked out of it, and the consequence is
@@ -1844,11 +1926,39 @@ function affordancesFor(
       "constellation's next vote — and it is the HIGHEST EXPOSURE you reach in a Reckoning that is " +
       'billed, not the figure at settlement, so releasing the stake later does not undo the position. ' +
       'Read levy.exposure_peak_this_cycle.';
+    // ── ★ AND WHETHER THIS SLOT CAN MOVE YOUR STANDING AT ALL ─────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **SELF-DEALING IS GUARDED THREE DEEP AND ANNOUNCED NOWHERE.** A probe noticed it could fill
+    // roles in a venture it had created and reasonably asked whether that farms standing. It
+    // cannot: `payElectiveParts` refuses to emit the credit, `checkSettlementExact` flags one that
+    // reaches it, and `reckoning/standing.ts` **halts the Reckoning** rather than write the row
+    // (§6.4, scar #9 — ~17 duplicate pacts once took a reputation from 50 to 100).
+    //
+    // The guard is right. The silence is the defect: an agent either burns actions discovering it,
+    // or — far worse — believes the exploit works and plans around it. A2 says known arithmetic is
+    // exact and machine-readable, and "this act scores zero" is arithmetic.
+    //
+    // It says what the fill IS worth too, because the honest answer is not "don't": a filled role
+    // raises the venture's own output (`computeOutputBps` counts the index, not the holder), so
+    // self-filling is a real way to stop a slot going empty. What it never does is buy trust.
+    // ══════════════════════════════════════════════════════════════════════════
+    const selfDealt =
+      row.creator === principal
+        ? ` YOU CREATED ${row.venture}, so filling this role earns you ZERO STANDING and can record no ` +
+          'default against you either — §6.4 accrues standing only to the elective part honoured across ' +
+          'DISTINCT, independently-capitalised counterparties, and paying yourself is not a promise ' +
+          '(scar #9). The elective figure above never moves: it is booked as paid because the money is ' +
+          'already in the account it is owed to. The fill is still worth making if you want the slot ' +
+          'filled — a filled role raises the venture\'s output whoever holds it — but standing is not ' +
+          'what you are buying, and no number of these will make you VOUCHED.'
+        : '';
     const offer =
       `Of the ${String(row.escrowed + row.elective)} on this slot, ${String(row.escrowed)} is escrowed ` +
       `(${String(row.escrow_ratio_bps)} bps — it executes automatically and nobody can stop it) and ` +
       `${String(row.elective)} is elective (${String(row.elective_bps)} bps — ${row.creator} chooses at ` +
       `the Reckoning whether to pay it, and silence is a default on ITS record, not yours).` +
+      selfDealt +
       (row.creator_bound_by_grant === null
         ? ''
         : ` ${row.creator} was bound to this by a delegate under grant ${row.creator_bound_by_grant}, ` +
@@ -1889,11 +1999,16 @@ function affordancesFor(
   //    `elective_bps` moves value from the direct column to the contingent one — so a single pair of
   //    numbers covering the whole band would be wrong at every point in it except one.
   //    ══════════════════════════════════════════════════════════════════════
+  let firstCreate = true;
   for (const kind of OFFERED_KINDS) {
     const seat = hands[0]?.location;
     if (seat === undefined) continue;
     const probe = probeEscrow(kind);
     if (probe > free) continue;
+    const roleRule = firstCreate
+      ? ` ${CREATE_ROLE_RULE}`
+      : ' The rule about that count is on the first create affordance.';
+    firstCreate = false;
     const low = minElectiveBps(kind);
     const high = maxElectiveBps(kind);
     const band =
@@ -1914,7 +2029,7 @@ function affordancesFor(
       what_it_forecloses:
         `${String(probe)} of your stores is locked in escrow until this settles or is abandoned, and ` +
         `${String(probeElective(kind))} stays elective — you are asked for it at the Reckoning and ` +
-        `staying silent is a permanent public default. ${band}`,
+        `staying silent is a permanent public default. ${probeRoles(kind)}${roleRule} ${band}`,
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'create', { kind, stage: seat }),
     });
@@ -2895,6 +3010,33 @@ function affordancesFor(
         'none of it',
     );
   }
+  if (demandSilent) {
+    // ── COUNTED, BECAUSE THE OTHER BRANCH IS THE ONLY ONE THAT EVER SPOKE ─────
+    //
+    // `demandCapacitySpent` above fires when the capacity is GONE. Holding all of it and being
+    // offered no `demand` was the silent case, and it is the far more common one: a probe with
+    // full capacity reported that it could not tell whether it had zero or whether the act was
+    // being withheld for some other reason. `header.withheld` closes with "Nothing you were
+    // eligible for has been dropped without this count", and that promise was false here.
+    //
+    // The count is 1 rather than one-per-neighbour for the same reason the branch above gives:
+    // the thing withheld is the ACT, and there is exactly one of it.
+    reasons.push(
+      `no demand is offered even though you hold ${String(demandsLeft)} of ` +
+        `${String(AGGRESSION_PER_RECKONING)} aggression capacity — the capacity is NOT what is stopping you ` +
+        `(header.aggression carries the count, the expiry and tick ${String(demandOpenUntilTick)}, the last ` +
+        'tick one may be opened this Reckoning). ' +
+        (demandStages.length === 0
+          ? 'You have no IDLE hand standing outside the Commons, and a demand is made of hands: `move` one ' +
+            'to a Marches or Frontier system first — capacity buys nothing without presence (A4)'
+          : demandCandidates === 0
+            ? `No other principal's holding stands at ${demandStages.join(', ')}, where your IDLE hands are, ` +
+              'and a demand names a principal at a place. Holdings are PUBLIC, so the map already tells you ' +
+              'where somebody is standing; move a hand to one of those systems'
+            : `${String(demandCandidates)} neighbour(s) were considered and every one was refused. ` +
+              `Reason(s): ${[...demandRefusedWhy].sort(cmp).join(' · ')}`),
+    );
+  }
   if (boardDropped > 0) {
     // The list this sentence is about is `ventures.board[]` itself, one level above the
     // affordances. It slices at `MAX_LIST_ROWS`, and until this branch existed the payload
@@ -2924,7 +3066,8 @@ function affordancesFor(
         chargeNoHand +
         carryBlocked +
         commonsBoundLanes +
-        (demandCapacitySpent ? 1 : 0),
+        (demandCapacitySpent ? 1 : 0) +
+        (demandSilent ? 1 : 0),
       reason:
         reasons.length === 0
           ? 'nothing was withheld: this is every legal act, with its full cost.'
@@ -2952,6 +3095,65 @@ function probeElective(kind: VentureKind): Minor {
   for (const t of defaultTerms(kind, kindSpec(kind).baseYieldMinor)) total += t.elective;
   return minor(total);
 }
+
+/**
+ * **The roles a `create` will mint, on the affordance that mints them.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * A blind probe created a `DIG` expecting one role and got **two** — DIGGER and TALLYMAN, at
+ * different shares, with separate escrowed/elective splits. The affordance said nothing about
+ * either, so the probe committed to obligations it was never shown, and the escrowed halves lock
+ * on the create rather than on the fill.
+ *
+ * The engine knows the rule and already states it — **in a refusal somewhere else**:
+ * `unhonouredCreateParam` tells an agent that sent `roles` that *"how many roles a venture has is
+ * fixed by its kind: DIG, HAUL, ESCORT, SURVEY, RAID and LEVY carry 2, and BUILD and SIEGE carry
+ * 4"*. A rule an agent can only learn by getting something wrong is a wiki with extra steps (A2),
+ * and this is the consequence-preview pattern `worksQuote` and High Water's `projectedDrown`
+ * already set: publish the shape of the thing **at the decision**, not after it.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Read from `kindSpec` and `defaultTerms` — the same two calls {@link probeEscrow} and
+ * {@link probeElective} use, so the manifest and the two `max_*` figures on the same affordance
+ * are one arithmetic. A second table here would be the engine and the agent-facing surface
+ * disagreeing about a deal, which is scar #1 with roles attached.
+ */
+function probeRoles(kind: VentureKind): string {
+  const spec = kindSpec(kind);
+  const terms = defaultTerms(kind, spec.baseYieldMinor);
+  const lines = spec.roles.map((role, i) => {
+    const t = terms[i];
+    if (t === undefined) return role.label;
+    // The legend below denominates a `share` role. `wage` and `share` are mutually exclusive
+    // (§7.1) and denominated differently — MINOR against bps — so a wage role names its own unit
+    // inline rather than borrowing the legend's. `defaultTerms` produces only share roles today,
+    // and this branch is what stops the legend from starting to lie on the day one does not.
+    const claim = t.wage === null ? String(role.marginalOutputBps) : `wage ${String(t.wage)}`;
+    return `${role.label} ${claim} → ${String(t.escrowed)} + ${String(t.elective)}`;
+  });
+  // The legend rides on EVERY row rather than moving to `CREATE_ROLE_RULE`, and the ~40 characters
+  // are the cheapest in this change: numbers with the unit one row away is the shape
+  // `one-word-two-units.spec.ts` catalogues nine times, and `share` (bps) sitting beside `escrowed`
+  // (MINOR) on the same line is the exact adjacency that keeps producing it.
+  return (
+    `Roles minted: ${String(spec.roles.length)} (one principal each, never the same twice), as ` +
+    `LABEL share-bps → escrowed + elective MINOR: ${lines.join(' · ')}.`
+  );
+}
+
+/**
+ * The half of {@link probeRoles} that is identical on every kind, carried by the FIRST offer only.
+ *
+ * The same trade `fill_role`'s worked example makes twenty lines up, for the same reason: five
+ * `create` rows repeating one 200-character rule is a kilobyte of identical prose in a payload the
+ * owner pays for (A4, §17), and the prioritiser keeps *the first offer of each verb* ahead of every
+ * repeat — so the row that carries it is the one guaranteed to survive truncation. Nothing is
+ * withheld by this: the per-kind figures, which are the part that differs, are on every row.
+ */
+const CREATE_ROLE_RULE =
+  'The count is FIXED BY THE KIND and create refuses a `roles` parameter rather than dropping it, so ' +
+  'every escrowed figure there is locked by THIS act and every elective figure there is one YOU are ' +
+  'asked for at the Reckoning — one venture, several promises.';
 
 // ── Rows ────────────────────────────────────────────────────────────────────
 

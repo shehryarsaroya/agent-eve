@@ -34,6 +34,29 @@
  * Derived means it is also correct across a restart for free, which is the property that matters most:
  * a raider whose capacity reset because the process bounced would be an exploit with an uptime
  * requirement, and A4 says uptime is never power.
+ *
+ * ── ★ AND IT IS PUBLISHED STANDING, NOT ONLY ON THE WAY OUT ──────────────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A PRICE THAT IS INVISIBLE UNTIL IT IS SPENT IS NOT A PRICE, IT IS A SURPRISE.**
+ *
+ * For this module's whole life the only place an observation mentioned the capacity was a
+ * `withheld` reason that fires **exactly when the agent has none left**. So the learning path ran
+ * backwards: an agent discovered the resource existed by exhausting a resource it had never been
+ * told it had, and with full capacity and no reachable target `demand` was simply absent from the
+ * menu with nothing to explain it. A blind probe hit that and reported, correctly, that it could
+ * not tell zero capacity from silence.
+ *
+ * {@link aggressionNote} was written for that agent and reached no observation — its own test
+ * asserts that it says the capacity does not carry, and nothing outside the refusal path ever read
+ * it. That is the project's signature defect (*a capability that exists and is never exercised is
+ * indistinguishable from one that is missing*) applied to a sentence.
+ *
+ * {@link AggressionCapacity} is the fix: a standing block on `header`, present in every
+ * observation the way `raid_schedule` is, at zero and at full alike. §9's design — *the cost of a
+ * demand is the other demand you gave up this cycle* — is a decision an agent can only make if it
+ * knows the count **before** it spends it.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 
 import type { PrincipalId } from '../core/types.js';
@@ -89,8 +112,53 @@ export function aggressionNote(remaining: number, allowance: number = AGGRESSION
   return remaining > 0
     ? `You may open ${String(remaining)} more demand(s) this Reckoning, of ${String(allowance)}. ` +
         `Unspent capacity DOES NOT CARRY — what you do not use this cycle is gone, so the cost of a ` +
-        `demand is the other demand you could have made instead.`
+        `demand is the other demand you could have made instead. ${JOIN_IS_FREE}`
     : `You have spent all ${String(allowance)} of this Reckoning's aggression capacity. It refreshes at ` +
         `the next Reckoning and does not accumulate: a standing toll is not fundable by design (§9), ` +
-        `because a raider who could threaten everyone every day would be a tariff rather than a threat.`;
+        `because a raider who could threaten everyone every day would be a tariff rather than a threat. ` +
+        JOIN_IS_FREE;
+}
+
+/**
+ * The one thing an agent reading a *count* will otherwise get wrong.
+ *
+ * A principal that believes answering somebody else's standoff draws on this budget will decline
+ * to reinforce an ally in order to keep its own powder dry — which is the escort market §9 wants
+ * *open* closing for a reason the rules do not contain. Said in both branches, because the belief
+ * is equally wrong at zero.
+ */
+const JOIN_IS_FREE =
+  'Answering somebody else\'s standoff with `join` costs NONE of this — the capacity prices ' +
+  'STARTING a fight, never taking a side in one.';
+
+/**
+ * §9's capacity as a standing block on `header`, present at zero and at full alike.
+ *
+ * ── EVERY NUMERIC KEY CARRIES ITS UNIT IN ITS NAME, DELIBERATELY ─────────────
+ *
+ * `test/levy/one-word-two-units.spec.ts` catalogues nine sites where a figure in the wrong unit
+ * decided something, and its fifth entry is a field whose *name* carried five different units.
+ * Three counts here are denominated in **demands** and two in **ticks**, so each key says which:
+ * a bare `remaining: 2` next to a bare `refreshes_at: 6336` is the same trap one payload later.
+ */
+export interface AggressionCapacity {
+  /** Demands this principal may still OPEN in the Reckoning containing the observed tick. */
+  readonly demands_remaining: number;
+  /** The whole allowance, so `remaining` has a denominator. {@link AGGRESSION_PER_RECKONING}. */
+  readonly demands_per_reckoning: number;
+  /** Always 0, and published rather than implied: `join` is free of this budget. */
+  readonly join_costs_demands: number;
+  /**
+   * The last tick at which a demand may be **opened** this Reckoning.
+   *
+   * Absolute, not a phase, so it compares directly against `header.tick` and needs no arithmetic
+   * about cycle boundaries. Past it the window would run into the freeze, where §5.1 admits no
+   * raid resolution — and the refusal an agent would otherwise have to spend an action to read
+   * says exactly that.
+   */
+  readonly open_until_tick: number;
+  /** When the allowance resets — the same tick demands reopen if this one is closed. */
+  readonly refreshes_at_tick: number;
+  /** {@link aggressionNote}, verbatim. The expiry rule, in the payload that carries the count. */
+  readonly rule: string;
 }

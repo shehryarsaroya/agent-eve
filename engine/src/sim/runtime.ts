@@ -347,6 +347,7 @@ import {
   MAX_SEIZE_LOTS,
   RAID_DEMAND_QTY,
   RAID_JOIN_STAKE_MINOR,
+  aggressionCapacityFor,
   assertRaidSchedule,
   checkPredationInvariants,
   demandRefusal,
@@ -359,6 +360,7 @@ import {
   raidViewsFor,
   runPredate,
   scheduleAt,
+  type AggressionCapacity,
   type AssailablePile,
   type DemandPort,
   type DemandRequest,
@@ -3513,6 +3515,16 @@ export class Runtime {
    */
   demandsRemainingFor(principal: PrincipalId, tick: number): number {
     return demandsRemaining(this.raids, principal, tick);
+  }
+
+  /**
+   * The same capacity as a published block, for `header.aggression`.
+   *
+   * One home with {@link demandsRemainingFor} — it calls it — so the count the menu prices a
+   * demand against and the count the header publishes cannot drift (scar #5).
+   */
+  aggressionFor(principal: PrincipalId, tick: number): AggressionCapacity {
+    return aggressionCapacityFor(this.raids, principal, tick);
   }
 
   /**

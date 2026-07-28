@@ -69,6 +69,7 @@ export {
   AGGRESSION_PER_RECKONING,
   aggressionNote,
   aggressionRemaining,
+  type AggressionCapacity,
   type AggressionSpend,
 } from './aggression.js';
 
@@ -90,6 +91,7 @@ export {
 } from './book.js';
 
 export {
+  aggressionCapacityFor,
   DEMAND_OWN_FORCE,
   DEMAND_RULE_STATEMENT,
   demandRefusal,
