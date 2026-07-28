@@ -145,9 +145,30 @@ async function request(
   return { status: res.status, json, text };
 }
 
+/**
+ * Truncated by default so a probe's context is not eaten by one observation, and **untruncated under
+ * `PROBE_FULL=1`** so it can be piped into a parser.
+ *
+ * The default nearly cost a real finding: a probe reported that no `deliver` affordance was offered
+ * while its hand stood at the delivery place — a serious claim, since an unoffered obligation is this
+ * project's signature defect — and the check needed `header.withheld`, which explains every omission
+ * and sat past the 24,000-character cut. A truncation that hides the field explaining an absence is
+ * the worst possible place to put one.
+ */
 function show(label: string, r: { status: number; json: unknown; text: string }): void {
+  const full = process.env['PROBE_FULL'] === '1';
   console.log(`\n── ${label} — HTTP ${String(r.status)} ──`);
-  console.log(r.json === null ? r.text.slice(0, 4000) : JSON.stringify(r.json, null, 2).slice(0, 24000));
+  const body = r.json === null ? r.text : JSON.stringify(r.json, null, 2);
+  if (full || body.length <= 24_000) {
+    console.log(body);
+    return;
+  }
+  console.log(body.slice(0, 24_000));
+  console.log(
+    `\n… truncated at 24,000 of ${String(body.length)} characters. ` +
+      'Re-run with PROBE_FULL=1 for all of it — header.withheld explains what was NOT offered and ' +
+      'is usually past this cut.',
+  );
 }
 
 async function main(): Promise<void> {
