@@ -37,6 +37,15 @@
  * unfloored, unspared members whose EXPOSURE actually **differs**. Under equal exposures all three
  * exposure-shaped rules are flat *correctly*, so a world without spread would make the pairwise
  * assertion a coin toss rather than a test.
+ *
+ * ── ★ AND THE THIRD TEST HAS BEEN INVERTED (`RULES_VERSION` 17) ───────────────
+ *
+ * It used to **pin the trough**: `12 of 129 dockets` saw spread and it asserted that not every docket
+ * did, on purpose, so that an improvement would go red instead of passing silently. The improvement
+ * arrived. §5.2's two exposure rules now read a **per-Reckoning EXPOSURE high-water mark** rather than
+ * the instantaneous figure at `LEVY_ASSESS_PHASE`, and that test is now a **paired control** on one
+ * world: the mark must discriminate on strictly more dockets than the instant, with a two-thirds
+ * floor. Read it for the measurement and for what to check when it goes red.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -44,6 +53,8 @@ import { describe, expect, it } from 'vitest';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { phaseOfReckoning, reckoningIndex, setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { ConstellationId, PrincipalId } from '../../src/core/types.js';
+import type { Minor } from '../../src/core/units.js';
+import { principalPosition, storesAccount } from '../../src/ledger/index.js';
 import {
   allocate,
   isNewcomer,
@@ -63,6 +74,16 @@ interface Docket {
   readonly spared: PrincipalId | null;
   /** The engine's own subjects, read at the tick the assessment was minted. */
   readonly subjects: readonly LevySubject[];
+  /**
+   * ★ The **instantaneous** EXPOSURE of every subject at that same tick — the reading the rule used
+   * before `RULES_VERSION` 17, captured here so the third test can compare the two readings **on one
+   * world**.
+   *
+   * This is what makes the inverted tripwire a control rather than an assertion about a remembered
+   * number: a change that pointed `weightOf` back at the instant, or that quietly stopped the
+   * sampler, goes red on the *same* dockets rather than on some later sweep's totals.
+   */
+  readonly instantExposure: readonly Minor[];
 }
 
 /**
@@ -70,8 +91,14 @@ interface Docket {
  *
  * Phase 0 and not settlement, for `aged-solvency.spec.ts`'s reason: that is when the allocation is
  * decided, so it is the only tick at which "what did the rule see" is a question with one answer.
- * EXPOSURE moves all cycle — a role fills, a venture settles and the lock is released — so a
- * settlement-time reading would describe a different world from the one that was billed.
+ *
+ * ── AND THE THIRD ARGUMENT TO `levySubjectOf` IS THE WHOLE OF `RULES_VERSION` 17 ──
+ *
+ * `reckoning - 1`, matching `assessLevyNow` exactly. The docket bills the cycle that just **ended**,
+ * because phase 0 is one tick after `settleVenture` releases every stake in the world and
+ * `reckoning`'s own high-water mark is therefore a tick old here. Passing `reckoning` instead — the
+ * default, which is what the ballot and the observation take — would read near-zero for everybody and
+ * this fixture would be describing a docket the engine did not cut.
  */
 function agedDockets(seed: string, reckonings: number): readonly Docket[] {
   setSpeed('instant');
@@ -99,7 +126,11 @@ function agedDockets(seed: string, reckonings: number): readonly Docket[] {
         rule: plan.rule,
         total: plan.total,
         spared: plan.spared,
-        subjects: plan.lines.map((line) => runtime.levySubjectOf(line.principal, report.tick)),
+        subjects: plan.lines.map((line) => runtime.levySubjectOf(line.principal, report.tick, reckoning - 1)),
+        instantExposure: plan.lines.map(
+          (line) =>
+            principalPosition(runtime.ledger, line.principal, storesAccount(line.principal)).exposure,
+        ),
       });
     }
   }
@@ -123,9 +154,14 @@ function pool(docket: Docket): readonly LevySubject[] {
 }
 
 describe('★ the vote has four levers, not one', () => {
-  // Two seeds pooled, because the subject of this file is **rare** and one seed is a coin toss about
-  // whether it occurs — see the trough measurement in the third test. `g07` and `g08` are the two
-  // gate seeds measured to carry the most EXPOSURE spread at phase 0 (4 and 3 dockets of 12).
+  // Two seeds pooled, and the reason has **changed** with `RULES_VERSION` 17 — kept because the old
+  // reason is the finding. It used to read: *"the subject of this file is rare and one seed is a coin
+  // toss about whether it occurs"*, and `g07`/`g08` were picked as the two gate seeds carrying the
+  // most spread at phase 0 (4 and 3 dockets of 12). With the high-water mark the subject is no longer
+  // rare — 37 of 40 weighable dockets across all eight seeds — so one seed would now do. Two are kept
+  // because the third test's paired comparison wants a population rather than a handful, and because
+  // a seed pair that was chosen for being *favourable to the old reading* is the least flattering
+  // sample this change could be measured on.
   const dockets = [...agedDockets('g07', 6), ...agedDockets('g08', 6)];
 
   it('mints dockets whose EXPOSURE actually DIFFERS between members — non-vacuity, first', () => {
@@ -141,7 +177,7 @@ describe('★ the vote has four levers, not one', () => {
     // ══════════════════════════════════════════════════════════════════════════
     expect(dockets.length, 'no Levy docket was minted in six Reckonings').toBeGreaterThan(0);
 
-    const spread = dockets.filter((d) => new Set(pool(d).map((s) => s.exposure)).size >= 2);
+    const spread = dockets.filter((d) => new Set(pool(d).map((s) => s.exposurePeak)).size >= 2);
     expect(
       spread.length,
       `EXPOSURE is equal for every unfloored member on all ${String(dockets.length)} dockets, so ` +
@@ -170,7 +206,7 @@ describe('★ the vote has four levers, not one', () => {
     // ══════════════════════════════════════════════════════════════════════════
     const candidates = dockets.filter((d) => {
       const p = pool(d);
-      return p.length >= 2 && new Set(p.map((s) => s.exposure)).size >= 2;
+      return p.length >= 2 && new Set(p.map((s) => s.exposurePeak)).size >= 2;
     });
     expect(candidates.length, 'no docket had two unfloored members with differing EXPOSURE').toBeGreaterThan(0);
 
@@ -189,7 +225,7 @@ describe('★ the vote has four levers, not one', () => {
             allDiffer = false;
             collapses.push(
               `R${String(docket.reckoning)} ${docket.constellation}: ${a} and ${b} both assess ` +
-                `[${left.join(', ')}] — exposures [${pool(docket).map((s) => s.exposure).join(', ')}]`,
+                `[${left.join(', ')}] — exposures [${pool(docket).map((s) => s.exposurePeak).join(', ')}]`,
             );
           }
         }
@@ -205,45 +241,84 @@ describe('★ the vote has four levers, not one', () => {
     ).toBeGreaterThan(0);
   }, 240_000);
 
-  it('★ RECORDS THE TROUGH: the docket reads EXPOSURE at the one phase it is lowest', () => {
+  it('★ THE TROUGH IS CLOSED: the mark discriminates where the instant did not — INVERTED', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // **READ THIS BEFORE CONCLUDING THAT THE RULES NOW BIND IN GENERAL.** The test above proves they
-    // *can* differ, on a real docket, which is what `D30` said was impossible. It does not prove they
-    // usually do, and they do not: measured across the eight gate seeds at six Reckonings, **12 of
-    // 129 dockets** see any EXPOSURE spread and **three seeds see none at all.**
+    // **THIS TEST USED TO ASSERT THE DEFECT, AND ITS OWN MESSAGE SAID WHAT TO DO WHEN IT FLIPPED.**
     //
-    // The cause is a *schedule*, not a price, and raising `CAST_STAKE_BPS` cannot reach it:
+    // It read `expect(spread.length).toBeLessThan(dockets.length)` with the note: *"every docket now
+    // sees EXPOSURE spread. That is BETTER than what this test records ... delete this expectation
+    // with the reason."* This is that rewrite, and it is the same inversion `aggression.spec.ts` and
+    // `inv22-is-vacuous` got when their subjects arrived — the tripwire is turned around rather than
+    // deleted, so the trough coming back is a named failure instead of a silence.
     //
-    //   · `settleVenture` calls `releaseStakes` at the **settlement tick** (§7.4's own order,
-    //     "encumbrances released last"), so every stake in the world is released at phase 287.
-    //   · `LEVY_ASSESS_PHASE` is **0**, and `params.ts` gives three reasons it must be — the tribute
-    //     line has to be on screen all day, a standing intent needs ticks to fire in, and INV-24 must
-    //     have something to check every tick.
-    //   · Every venture `create` mints resolves at a settlement tick, so the book empties every
-    //     Reckoning and refills over the following ~24 ticks.
+    // ── WHAT THE OLD VERSION RECORDED, KEPT BECAUSE IT IS THE MEASUREMENT ───────
     //
-    // Measured, `g01`, six Reckonings, open stake locks summed per phase: **phase 0 → 4**, phase 24 →
-    // 69, phase 144 → **89**, phase 286 → 92, phase 287 → 6. So the assessment reads EXPOSURE at
-    // roughly a **22x trough**, and the ballot — which closes at `WINDOW_FIRST_PHASE`, mid-cycle — is
-    // cast against a reading that has evaporated by the time the docket it decides is cut.
+    // The cause was a *schedule*, not a price. `settleVenture` calls `releaseStakes` at the
+    // **settlement tick** (§7.4's "encumbrances released last") and `LEVY_ASSESS_PHASE` is **0**, the
+    // tick after — and `params.ts` gives three reasons phase 0 must stay where it is. So the docket
+    // sampled the one moment every stake in the world had just been handed back. Measured, `g01`, six
+    // Reckonings, open stake locks per phase: **phase 0 → 4**, phase 24 → 69, phase 144 → **89**,
+    // phase 286 → 92, phase 287 → 6. A **22x trough**, and across the eight gate seeds only **12 of
+    // 129 dockets** saw any spread, with three seeds seeing none.
     //
-    // This test asserts the trough rather than hiding it, so the next reader finds the measurement
-    // instead of re-deriving it, and so the number moves loudly if the schedule ever changes. It is
-    // the same admission `claimFor`'s cover-gate tripwire makes: an unexercised path reads exactly
-    // like a missing one, and saying so at the assertion is worth more than a green tick.
+    // ── WHAT IT ASSERTS NOW, AND WHY IT IS A CONTROL RATHER THAN A NUMBER ───────
+    //
+    // `RULES_VERSION` 17 made `weightOf` read a **per-Reckoning EXPOSURE high-water mark**
+    // (`levy/book.ts:exposurePeaks`). The assertion is a **paired comparison on one world**: for the
+    // same dockets, at the same ticks, the mark must discriminate on strictly more of them than the
+    // instantaneous reading does. That is a claim about the *reading* and nothing else — it cannot be
+    // satisfied by a busier cast, a bigger stake or a longer sweep, and it does not depend on any
+    // remembered total.
+    //
+    // The denominator is dockets with **two or more weighable members**, and that is not a
+    // convenience: with a pool of one, `largestRemainder(remainder, [w])` is `[remainder]` for every
+    // `w`, so all four rules agree by arithmetic and no reading of any quantity can change it.
+    // Measured over the eight gate seeds at six Reckonings, 40 of 119 dockets are weighable at all —
+    // 19 sit at Reckoning 0, which has no previous cycle to have been exposed in, and the rest hold a
+    // singleton constellation or a roll still inside the two-Reckoning newcomer floor. On those 40:
+    // **high-water mark 37 (93%), instantaneous 12 (30%)**, and all four rules differ on the same 37.
+    //
+    // MUTATION: point `weightOf`'s two exposure arms back at an instantaneous reading, or delete the
+    // `observeExposurePeaks` call from the OBLIGE handler, and this goes red naming both counts.
     // ══════════════════════════════════════════════════════════════════════════
-    const spread = dockets.filter((d) => new Set(pool(d).map((s) => s.exposure)).size >= 2);
+    const weighable = dockets.filter((d) => pool(d).length >= 2);
     expect(
-      spread.length,
-      'no docket had EXPOSURE spread, which the test above already covers',
+      weighable.length,
+      'no docket in this sweep had two weighable members, so neither reading could discriminate and ' +
+        'the comparison below is vacuous',
     ).toBeGreaterThan(0);
+
+    const distinct = (xs: readonly number[]): number => new Set(xs).size;
+    const byMark = weighable.filter((d) => distinct(pool(d).map((s) => s.exposurePeak)) >= 2);
+    const byInstant = weighable.filter((d) => {
+      const weighed = new Set(pool(d).map((s) => s.principal));
+      const instant = d.subjects
+        .map((s, i) => (weighed.has(s.principal) ? d.instantExposure[i] : undefined))
+        .filter((x): x is Minor => x !== undefined);
+      return distinct(instant) >= 2;
+    });
+
+    // ★ THE INVERSION. The trough returning makes this red, and so does a sampler that stopped.
     expect(
-      spread.length,
-      `every docket now sees EXPOSURE spread (${String(spread.length)} of ${String(dockets.length)}). ` +
-        'That is BETTER than what this test records, and the note above it is stale: either the stake ' +
-        'release moved off the settlement tick, or the assessment moved off phase 0, or ventures stopped ' +
-        'all resolving on one tick. Re-read `D31` and delete this expectation with the reason.',
-    ).toBeLessThan(dockets.length);
+      byMark.length,
+      `the EXPOSURE HIGH-WATER MARK discriminates on ${String(byMark.length)} of ` +
+        `${String(weighable.length)} weighable dockets and the INSTANTANEOUS reading on ` +
+        `${String(byInstant.length)}. The mark must beat the instant, or the docket is back to ` +
+        'sampling the one tick in the cycle when every stake has just been released (`RULES_VERSION` ' +
+        '17, `levy/book.ts:exposurePeaks`). Check that `Runtime.observeExposurePeaks` is still called ' +
+        'from OBLIGE, that `assessLevyNow` still passes `reckoning - 1`, and that both exposure arms ' +
+        'of `weightOf` still read `exposurePeak`.',
+    ).toBeGreaterThan(byInstant.length);
+
+    // And a floor on the share, so a world in which the mark won by one docket cannot pass as a fix.
+    // Two thirds rather than the measured 93%: the claim is that the reading works, and pinning a
+    // percentage from one sweep would make an unrelated cast change look like this regressing.
+    expect(
+      byMark.length * 3,
+      `the mark discriminates on only ${String(byMark.length)} of ${String(weighable.length)} ` +
+        'weighable dockets. Under two thirds is the trough half-returned — a schedule change, a ' +
+        'shorter retention window, or a cast that stopped staking.',
+    ).toBeGreaterThanOrEqual(weighable.length * 2);
   }, 600_000);
 
   it('ranks the exposed BELOW the safe under `INVERSE_EXPOSURE` and above them under `BY_EXPOSURE`', () => {
@@ -253,12 +328,12 @@ describe('★ the vote has four levers, not one', () => {
     // one most agents will be billed under without ever voting.
     const docket = dockets.find((d) => {
       const p = pool(d);
-      return p.length >= 2 && new Set(p.map((s) => s.exposure)).size >= 2;
+      return p.length >= 2 && new Set(p.map((s) => s.exposurePeak)).size >= 2;
     });
     expect(docket, 'no docket with differing EXPOSURE, so nothing about direction can be asserted').toBeDefined();
     if (docket === undefined) return;
 
-    const p = [...pool(docket)].sort((a, b) => a.exposure - b.exposure);
+    const p = [...pool(docket)].sort((a, b) => a.exposurePeak - b.exposurePeak);
     const least = p[0];
     const most = p[p.length - 1];
     expect(least).toBeDefined();

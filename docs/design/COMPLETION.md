@@ -13,13 +13,16 @@ trusting — this file goes stale the moment someone commits.*
 ## The one-paragraph answer
 
 **The machine is built and correct, the core loop closes without a human in it, and 12 of 13 show
-surfaces carry data. The gap is no longer mechanics — it is that every obligation is priced in ONE
-GOOD, so there is nothing to trade.**
+surfaces carry data. The gap is no longer mechanics and — as of `RULES_VERSION` 18 — it is no longer
+the number of goods either. There are four, one of them priced by geography, and a verb that moves
+them. The gap is that NOBODY CAN BUY ANYTHING: `market/escrow.ts:freeCash` subtracts the whole
+250,000 starter stake, every principal that has played holds less than that, so the buy side of the
+order book has been unreachable by construction for the project's entire life. See §1.**
 
-Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,248
-tests** pass against them (2026-07-27). Phase 2 and Phase 3 do not exist as *complete* layers, by
-design — §16 marks Phase 2 "optional, possibly forever" and the owner has overridden that; combat is
-partly in.
+Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,257
+tests** pass against them (2026-07-27, `RULES_VERSION` **17** live). Phase 2 and Phase 3 do not exist
+as *complete* layers, by design — §16 marks Phase 2 "optional, possibly forever" and the owner has
+overridden that; combat is partly in.
 
 As of 2026-07-26 (late), a world nobody steers hands out authority *and draws on it* (~31 grants, ~27
 draws per 900 ticks), raises WORKS so goods have a source, founds syndicates, and carries all three of
@@ -47,6 +50,18 @@ first docket with any EXPOSURE at all billed one member **118,449 of 120,000 ove
 (`D32`). Two lessons compound here — *read the log before asserting an absence*, and **a capability's
 first real exercise is a bug-finding instrument in its own right.**
 
+**2026-07-27 (later still): the twelfth instance, and it was a CLOCK rather than a caller.** Making the
+cast stake was necessary and not sufficient: the two exposure-shaped rules still agreed on **117 of 129
+dockets**, because `settleVenture` releases every stake at the settlement tick and `LEVY_ASSESS_PHASE`
+mints the docket on the **next** one, so the assessment sampled a **22x trough**. A capability can be
+built, called, and exercised, and *still* be measured at the one moment it reads zero. The fix is a
+**per-Reckoning EXPOSURE high-water mark** — a new hashed field, `RULES_VERSION` **17** — and on the 40
+dockets in eight seeds that can discriminate at all, spread goes from **12 (30%) to 37 (93%)** with the
+gate held at `levyShort` 0 and 0 red lines at three, six and nine Reckonings (`D34`). The new lesson is
+narrower than the old one and worth its own line: **measuring a real quantity at the wrong moment is
+indistinguishable from not measuring it**, and it is the third bug in this one mechanic from that
+family — after a currency balance sizing a goods bill and a cash-poverty `spare` pick.
+
 What is left is depth, not machinery. `market` is 3,065 lines pricing a single fungible commodity, so
 there is no trade, no specialization and no supply chain to reason about — **that is the whole distance
 between the two numbers below.**
@@ -58,7 +73,7 @@ Both numbers are defensible; they answer different questions, and quoting either
 | Question | Answer | What it counts |
 |---|---|---|
 | Does the machine work, and did the premise survive falsification? | **~90%** | Phase 0+1 systems, invariants, determinism, durability, Gate 3 |
-| Is there enough strategic depth for months of interesting agent decisions? | **~40%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~30% on 2026-07-26: the cast now exercises authority, production and syndicates, which were built-but-idle. Capped well below 90% by the single good |
+| Is there enough strategic depth for months of interesting agent decisions? | **~45%** | Distinct goods, real tradeoffs, mechanics the cast actually uses. Up from ~40% on 2026-07-27: a **fourth good** whose price depends on where you make it, a **`haul` verb** so goods can move at all, and the first fork in the game where one input becomes two different things. Still capped well below 90%, and the cap moved: it is no longer "one good", it is that **`freeCash` is zero for every principal that has played**, so the order book has a supply side and no demand side (`D35`) |
 | Phase 2 (combat depth) | **~70%** | ⚑ **NO LONGER OPTIONAL** — owner decision 2026-07-27 overrides §16's "possibly forever". **Built and live at `RULES_VERSION` 16**: `src/combat/` 6,407 loc, the `engage` verb, 5 hulls, 29 modules, four slot rows with CPU/grid/calibration/hardpoints, a published stacking curve, four damage types against three tank layers, five roles *earned from what is fitted*, the ENGAGEMENT phase clock, and THE BATTLE LINE on the frame. The cast flies it — 18 hulls, 25 battles, 16 world hulls killed across 32 seeds — and composition provably pays at coalition scale (a 1:5 support wing holds the field identically while turning 17 lost hulls into **zero**). What is missing is not the layer: **no cast branch uses `join`**, so no sim has ever reached even 8 of the 12 allowed parties, and the thing that makes composition matter is unexercised |
 | Phase 3 (risk market) | **0%** | Deferred deliberately in the v2.0 reframe |
 
@@ -119,7 +134,49 @@ code. **`works` is by far the thinnest module in the tree** and it is the one th
 
 ## What is actually left, in priority order
 
-### 1. The world has THREE goods and ONE tradeable one — still the bottleneck
+### 1. ~~The world has THREE goods and ONE tradeable one~~ → FOUR, and the bottleneck moved somewhere nobody had looked
+
+**Updated 2026-07-27 (`RULES_VERSION` 18, `D35`).** `alloy` lands as §10's fourth good — refined from
+`ore` by `refine {kind:"ALLOY"}` at a rate set by the **tier** (`COMMONS 8:1 · MARCHES 32:1 ·
+FRONTIER 64:1`), a gradient that runs **opposite** to the ore yield (80 · 110 · 150). The tier with the
+least ore converts it best, so ore flows inward and alloy flows outward and neither side can
+substitute. It buys territory and nothing else, and it is payable against **no obligation**, so nobody
+can be recorded short of it. `haul` — a canon verb filed under *"step 11"* since the canon was written
+— goes live with it, so goods can move for the first time. `audit:budgets` reads 40/40 before and
+after.
+
+**The Levy is untouched and the gate is spotless.** All four obligation constants still read `ration`,
+`goods-are-independent.test.ts` is green, and 8 seeds give `levyShort` **0** and red tribute lines
+**0/192 · 0/384** at 3 and 6 Reckonings — the only two meters the null control leaves standing.
+
+#### ★ But the answer to "why has the market never cleared" was not the number of goods
+
+Measured before anything was built, four seeded worlds at six Reckonings: **0 orders placed, 0 fills
+printed, ever.** The cause is one expression:
+
+```
+market/escrow.ts:freeCash = freeBalance − ENDOWMENT_FLOOR_MINOR      floor = STARTER_STAKE = 250,000
+every cast member, every world, after play ................... 62,000 – 203,000
+so freeCash ..................................................         0, for everyone, always
+```
+
+**No principal that has ever played this game can fund a market BID.** `ledger/endowment.ts` predicted
+it — *"erring toward withholding is the safe direction"* — and nothing had measured what the erring
+cost. The precise rule is derivable and exploit-free (you may only ever transfer what you *earned*),
+but it needs a per-principal running total inside `state_hash`. **That is an A15 decision and an owner
+call**, and it is now the largest single thing between this economy and a price. Until it lands, the
+supply side runs unaided (the cast refines and asks, measured) and the demand side is proven only
+through a funded buyer in `test/works/a-good-only-the-commons-makes.spec.ts`, which drives
+refine → ask → walk → bid → **fill** → haul through real signed HTTP.
+
+#### And one sink was built and then removed, which is the honest half
+
+A surcharge on any crossing beyond the Commons (§10.1's *"convex in footprint"*) **closed the
+Frontier** — the seat a crossing departs from holds no WORKS and therefore no ore — and
+`HULL_COST_GOODS` needs FRONTIER-only fuel, so it closed the combat layer with it. The constant is
+deleted rather than zeroed, and the diagnosis sits where it used to be.
+
+### 1b. The old entry, kept because its diagnosis was right and its denominator was not
 
 **Updated 2026-07-27.** There are now three: `ore` (what a WORKS yields), `ration` (what `refine` makes)
 and `fuel` (FRONTIER-only, the economy's first comparative advantage). §10 specifies four.

@@ -936,6 +936,8 @@ function copyLevy(levy: LevyBlock): LevyBlock {
             target: levy.ballot.target,
           }),
     non_escrowable: levy.non_escrowable,
+    assessed_on_exposure_peak: levy.assessed_on_exposure_peak,
+    exposure_peak_this_cycle: levy.exposure_peak_this_cycle,
   });
 }
 

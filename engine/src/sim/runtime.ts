@@ -993,6 +993,82 @@ import {
  * started, with 15 the latest taken and live.
  */
 /**
+ * ⚑ **17 AND 18 ARE TWO RULE SETS THAT LANDED CONCURRENTLY, AND BOTH NOTES SURVIVE.**
+ *
+ * 11's note is the standing rule: `RULES_VERSION` is a **shared resource**, exactly like the working
+ * tree in HARD RULE 7, and two agents may not each claim the next integer. This is the third time it
+ * has been arbitrated in advance rather than reconstructed afterwards (13/14 was the second), and it
+ * worked again: the EXPOSURE branch was told it owned 17 and the fourth-good branch was told it owned
+ * 18, both before either started. The merge therefore carries both notes beneath a single integer
+ * that only one of them claims. **Neither doc comment is deleted** — 17 is what a world stamped 17
+ * was computed under, and a version whose meaning cannot be looked up is not a version.
+ * ★ Bumped 16 → **17**, because §5.2's two exposure-shaped allocation rules now read a
+ * **per-Reckoning EXPOSURE high-water mark** instead of the instantaneous EXPOSURE at the tick the
+ * docket was minted. **This is the first bump in this sequence that adds a HASHED FIELD.**
+ *
+ * ── WHY, AND THE NUMBER IS THE ARGUMENT ──────────────────────────────────────
+ *
+ * 16 made the cast stake, so EXPOSURE stopped being identically zero and all four rules could produce
+ * different dockets. They did — on **12 of 129**, with three of eight seeds seeing none. The cause was
+ * a *schedule*: `settleVenture` releases every stake at the settlement tick and `LEVY_ASSESS_PHASE` is
+ * **0**, the tick after, so the assessment sampled a **22x trough** (`g01`: 4 open stake locks at phase
+ * 0 against 92 at phase 286). The ballot closes mid-cycle against a reading that has evaporated before
+ * the docket it decides is cut. Raising `CAST_STAKE_BPS` cannot reach it and the attempt is priced —
+ * see that constant's own table (1,000 bps: `levyShort` 0 → 11,884) and the free-STORES variant, which
+ * cost **25% of the world's ventures**.
+ *
+ * ## What changes
+ *
+ *   1. **One new state map**, `Book.exposurePeaks`, keyed `reckoning::principal`, written once per
+ *      tick from OBLIGE by `Runtime.observeExposurePeaks` and keeping only the maximum. Pruned on the
+ *      existing `LEVY_RETAINED_RECKONINGS` window, which leaves **three Reckonings of margin against a
+ *      read distance of one**.
+ *   2. **`LevySubject.exposure` becomes `LevySubject.exposurePeak`**, and both `weightOf('BY_EXPOSURE')`
+ *      and `weightOf('INVERSE_EXPOSURE')` read it. `EVEN` and `BY_STORES` are untouched.
+ *   3. **The assessment reads `reckoning - 1`** — the cycle that just ended — while the ballot, the
+ *      observation and the affordance read the cycle in progress. One reader, one parameter, one named
+ *      exception at the call site.
+ *   4. **The sweep queue orders by the same mark** (§5.2's "least-exposed first", which at settlement
+ *      was ordering by ~0 for everybody and therefore alphabetically). **Order only, no amount** — each
+ *      sweep draws on its own principal's stores, so there is no pot a queue position can exhaust.
+ *   5. **Two new published fields**, `levy.assessed_on_exposure_peak` and
+ *      `levy.exposure_peak_this_cycle`, plus the `vote` affordance and `agent.md` naming the reading.
+ *      Reads, none captured — but they are A2 load-bearing: without them a member votes on a figure it
+ *      cannot see, and `obligations.exposure.mine` is the *wrong* figure at exactly the phase an agent
+ *      is most likely to read it.
+ *
+ * **Nothing draws from the RNG that did not before.** The sampler is a map read per principal per
+ * tick; `weightOf` is arithmetic. `HeuristicCast.ballotFor` reads `weightOf` for both its own choice
+ * and the comparison, so it gains no branch — it can now *prefer a different rule*, which is a
+ * different decision from the same number of draws.
+ *
+ * ── THE DIVERGENCE SIGNATURE, AND IT IS A NEW SHAPE FOR THIS SEQUENCE ────────
+ *
+ * `capture()` gains the `exposurePeaks` key **unconditionally**, empty array and all. That was a
+ * choice: emitting the key only when the map has rows would narrow the signature to "the first tick
+ * any principal was exposed", but it would make `capture()`'s *shape* a function of state — a new
+ * class of thing in this engine and a trap for the next reader — to narrow a discontinuity that has to
+ * be declared anyway.
+ *
+ * So the shape changes from tick 0. What matters is **where that is visible**: `JournalWriter`
+ * snapshots on settlement ticks only (`snapshotOnReckoning`, `snapshotEveryTicks` is 0 and nobody sets
+ * it), and `boot.ts` compares `state_hash` at **snapshot ticks only**. The first of those is tick
+ * **287**, which is already on this world's record as an accepted divergence. So the preflight is
+ * expected to name **287 and nothing later**, and `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` needs no change.
+ * If it names any other tick, something in this note is wrong and the deploy stops.
+ *
+ * ── AND IT IS A BALANCE CHANGE, WHICH IS THE POINT ───────────────────────────
+ *
+ * The two exposure rules go from flat-on-seven-dockets-in-eight to genuinely discriminating, so the
+ * redistribution they perform is real for the first time. `TRACKER.md` `D34` carries the 8-seed sweep
+ * at 3, 6 and 9 Reckonings, and the meter caveat that goes with it: a null control moved `ventures`
+ * −15% and `CARRIED` −83% on nothing but the sign of a tie-break, so only `levyShort` and the red-line
+ * count are load-bearing here.
+ *
+ * The integer is a shared resource (see 11's note): this branch was told it owned **17** before it
+ * started, with 16 the latest taken and live, and another branch holding 18.
+ */
+/**
  * ★ Bumped 16 → **18**, because **the world has a fourth good, a way to carry it, and two gates
  * priced in it** — `works/params.ts:ALLOY_GOOD`, the `haul` verb, and the manufactured half of an
  * ANCHOR and of a crossing beyond the Commons.
@@ -2629,6 +2705,24 @@ export class Runtime {
           this.resolveFills(ctx);
         },
         OBLIGE: (ctx) => {
+          // ── ★ THE EXPOSURE HIGH-WATER MARK, FIRST OF EVERYTHING IN THIS PHASE ──
+          //
+          // ══════════════════════════════════════════════════════════════════════════
+          // **`RULES_VERSION` 17. THE LEVY'S TWO EXPOSURE RULES USED TO SAMPLE THE ONE TICK IN THE
+          // CYCLE WHEN EVERY STAKE HAD JUST BEEN RELEASED.** `levy/book.ts:exposurePeaks` carries the
+          // 22x measurement; this is the line that makes the mark exist.
+          //
+          // **Before `freezeNow` and `settleNow`, deliberately.** Those two are the Levy's own
+          // Reckoning work and `settleNow` is what releases the stakes — sampling after it would
+          // read the trough on the one tick the trough is deepest. Reading here means the figure is
+          // EXPOSURE as it stood when the Levy looked, after VALIDATE+LOCK, MOVE and VENTURES have
+          // all run, so a stake locked this tick is already in it.
+          //
+          // Cheap and unconditional: one map read per principal per tick, no allocation, no RNG.
+          // Unconditional matters — a sampler that skipped quiet ticks would be a sampler whose
+          // coverage depended on the thing it is measuring.
+          // ══════════════════════════════════════════════════════════════════════════
+          this.observeExposurePeaks(ctx);
           // The freeze is computed here, at the END of the freeze tick: every figure it
           // reads has to be the one the settlement will pay from, and VALIDATE+LOCK,
           // MOVE and VENTURES all ran before it. The settlement runs from the cascade
@@ -7725,15 +7819,62 @@ export class Runtime {
   // ── The Levy (SPEC §5.2) ──────────────────────────────────────────────────
 
   /**
+   * ★ Record every principal's EXPOSURE against its Reckoning's high-water mark. Once per tick.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE WHOLE SAMPLER, AND IT IS FOUR LINES BECAUSE THE MAX LIVES IN THE BOOK.**
+   * `Book.observeExposure` keeps the larger of what it holds and what it is handed, so this method
+   * is order-independent, idempotent within a tick, and cannot lower a mark. `levy/book.ts`
+   * carries the argument for the quantity; this carries the argument for the *reader*.
+   *
+   * `cachedExposure` and not `principalPosition(...).exposure`: they are the same number by
+   * construction (`ledger/invariants.ts` builds the position from the cache) and the cache is the
+   * one INV-5 checks, so this is the shortest road to the figure rather than a second one.
+   *
+   * `principalOrder` and not the holding table, so a principal whose holding the map has lost is
+   * still observed — the roll is lifetime enrolments (A10) and the Levy assesses all of it.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private observeExposurePeaks(ctx: PhaseContext): void {
+    const reckoning = reckoningOf(ctx.tick);
+    for (const principal of this.world.principalOrder) {
+      this.levy.observeExposure(reckoning, principal, this.ledger.encumbrances.cachedExposure(principal));
+    }
+  }
+
+  /**
    * What the allocation rule is allowed to know about a principal. **Facts only.**
    *
-   * `freeStores` and `exposure` come from `principalPosition`, which is the same function
-   * every affordance's `max_direct_loss` is computed from — so the number that decides an
-   * assessment is the number an agent was shown, and there is no second EXPOSURE in the
-   * engine for the Levy to disagree with (§3: EXPOSURE is Σ open `max_direct_loss`, and
-   * nothing else).
+   * `freeStores` comes from `principalPosition`, which is the same function every affordance's
+   * `max_direct_loss` is computed from — so the number that decides an assessment is the number an
+   * agent was shown, and there is no second reading in the engine for the Levy to disagree with.
+   *
+   * ── ★ `peakReckoning` IS A PARAMETER, AND THE DEFAULT IS THE CYCLE IN PROGRESS ──
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ONE SUBJECT READER, ONE FORMULA, ONE NAMED EXCEPTION.** `RULES_VERSION` 17 made the two
+   * exposure-shaped rules read a *cycle's* high-water mark rather than the instant at
+   * `LEVY_ASSESS_PHASE` (`levy/book.ts:exposurePeaks` carries the 22x measurement). Two callers
+   * want two different cycles and the difference is real rather than cosmetic:
+   *
+   *   - **The assessment** at phase 0 of Reckoning R passes `R - 1`. The docket bills you for the
+   *     cycle that just ended, and R's own mark at phase 0 is one tick old — which is the trough
+   *     this change exists to stop reading.
+   *   - **Everything else** — `ballotFor`, `levyBlockFor`, the observation — takes the default and
+   *     reads the cycle in progress, because that is the figure the *next* docket will read and the
+   *     only one a voter can still move. It is monotone within the cycle, so it is a lower bound on
+   *     the final number and never revises downward under a voter mid-window.
+   *
+   * A second reader would be a second arithmetic for the number a principal is billed on, which is
+   * the shape of this mechanic's last three bugs. So it is a parameter, the default is the reading
+   * an agent can act on, and `assessLevyNow` states its exception at the call site.
+   * ══════════════════════════════════════════════════════════════════════════
    */
-  levySubjectOf(principal: PrincipalId, tick = this.engine.tick): LevySubject {
+  levySubjectOf(
+    principal: PrincipalId,
+    tick = this.engine.tick,
+    peakReckoning = reckoningOf(tick),
+  ): LevySubject {
     const position = principalPosition(this.ledger, principal, storesAccount(principal));
     return {
       principal,
@@ -7755,7 +7896,13 @@ export class Runtime {
       // which `SweepPort.availableOf` and `levyDeliveryQuote` both already call. Three roads to one
       // fact would be scar #5 in the arithmetic that decides who is publicly recorded short.
       levyGoodHeld: this.levyGoodAvailable(principal),
-      exposure: position.exposure,
+      // ── THE CYCLE'S HIGH-WATER MARK, NOT `position.exposure` ─────────────────
+      //
+      // `position.exposure` is the instantaneous figure and it is still the right answer for the
+      // affordance that quotes a `max_direct_loss` — it is the wrong one for a rule that asks *how
+      // exposed were you this cycle*, and reading it at `LEVY_ASSESS_PHASE` left `BY_EXPOSURE`,
+      // `EVEN` and the published default `INVERSE_EXPOSURE` agreeing on 117 of 129 dockets.
+      exposurePeak: this.levy.exposurePeakOf(peakReckoning, principal),
     };
   }
 
@@ -7784,7 +7931,21 @@ export class Runtime {
         book: this.levy,
         world: this.world,
         tick: ctx.tick,
-        subjectOf: (principal) => this.levySubjectOf(principal, ctx.tick),
+        // ── ★ THE ASSESSMENT READS THE CYCLE THAT JUST ENDED (`RULES_VERSION` 17) ──
+        //
+        // `reckoning - 1`, and it is the one exception to `levySubjectOf`'s default. This runs at
+        // `LEVY_ASSESS_PHASE` — phase **0** — which is the tick after `settleVenture` released every
+        // stake in the world, so `reckoning`'s own high-water mark is at most one tick old here and
+        // is the 22x trough this change exists to stop reading (`levy/book.ts:exposurePeaks`).
+        //
+        // The docket therefore bills you for **the cycle you were exposed in**, which is the
+        // question §5.2's two exposure rules ask. It is also the figure your constellation could see
+        // while its ballot was open: the mark is monotone within a cycle, so what a voter read at
+        // phase 263 of `reckoning - 1` is a lower bound on what is billed here, never a revision.
+        //
+        // At Reckoning 0 there is no previous cycle, every mark reads 0, and the three
+        // exposure-shaped rules are flat — correctly, because nobody has been exposed yet.
+        subjectOf: (principal) => this.levySubjectOf(principal, ctx.tick, reckoning - 1),
       });
     } catch (error: unknown) {
       // An assessment that cannot be computed must not take the tick down: the Levy is
@@ -7888,7 +8049,16 @@ export class Runtime {
       book: this.levy,
       reckoning,
       tick: ctx.tick,
-      exposureOf: (principal) => principalPosition(this.ledger, principal, storesAccount(principal)).exposure,
+      // ── ★ THE SWEEP ORDERS BY THE CYCLE'S MARK TOO (`RULES_VERSION` 17) ──────
+      //
+      // `reckoning`, not `reckoning - 1`: this is the settlement tick of the cycle being settled, so
+      // that cycle's mark is **complete** and there is no off-by-one to make. §5.2's *"swept from the
+      // least-exposed first"* was previously ordered by instantaneous EXPOSURE read on the one tick
+      // `settleVenture` releases every stake — ~0 for everybody, so the order collapsed to
+      // `compareIds` and the published queue was alphabetical. `levy/settle.ts:ExposurePeakRead`
+      // records that it changes the ORDER and no amount: each sweep draws only on its own
+      // principal's stores, so there is no pot for a position in the queue to exhaust.
+      exposurePeakOf: (principal) => this.levy.exposurePeakOf(reckoning, principal),
       sweep: this.levySweepPort(),
     });
     this.levyOutcome = settlement;
@@ -11141,6 +11311,19 @@ export class Runtime {
       deliverable_to: found.plan.deliverableTo,
       shortfall_if_unpaid: owing.owed,
       non_escrowable: owing.nonEscrowable,
+      // ── ★ THE TWO HIGH-WATER MARKS: THE ONE THAT BILLED YOU AND THE ONE STILL MOVING ──
+      //
+      // A2. `assessLevyNow` weights this docket from `reckoning - 1`'s completed mark and the ballot
+      // now open decides the NEXT docket, which will be weighted from `reckoning`'s. Publishing one
+      // and not the other would make either the bill or the vote unexplainable — and publishing
+      // neither is what shipped until `RULES_VERSION` 17, when the figure was the instantaneous
+      // EXPOSURE already in `obligations.exposure.mine` and therefore looked like it was covered.
+      //
+      // Both read `Book.exposurePeakOf`, which is the same call `levySubjectOf` makes, so the number
+      // an agent is shown is the number it is weighted by. A second road to it would be scar #5 in
+      // the arithmetic that decides a public shortfall.
+      assessed_on_exposure_peak: this.levy.exposurePeakOf(reckoning - 1, principal),
+      exposure_peak_this_cycle: this.levy.exposurePeakOf(reckoning, principal),
       ballot: window.open
         ? {
             id: `${LEVY_BALLOT}::${String(window.forReckoning)}::${constellation}`,

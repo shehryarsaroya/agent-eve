@@ -584,8 +584,22 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // every world this repo ran. A mechanism no agent is told about is one no agent uses. The
     // prose went into `## 5`'s Levy block, which is FLOOR, so every position below grew by the same
     // +2,200 — that is what the ceiling was raised for and it is spent on purpose.
+    //
+    // **64,233 → 66,724: +2,491, and it is the EXPOSURE HIGH-WATER MARK being written down.**
+    // `RULES_VERSION` 17 made two of §5.2's four allocation rules read the largest EXPOSURE a
+    // principal carried at any tick of a Reckoning, instead of the instantaneous figure at
+    // `LEVY_ASSESS_PHASE` — which is the tick after every stake in the world is released, a 22x
+    // trough that left the three exposure-shaped rules flat on seven dockets in eight. +1,919 of it
+    // is §4's `stake` block (RULES, so only members holding a role pay for it) and +572 is §5's Levy
+    // block (FLOOR, so everybody does). The split is deliberate: the FLOOR half is one paragraph,
+    // because the published default's *"allocated inversely to Exposure"* had to name **which**
+    // Exposure or it names a quantity the engine no longer reads.
+    //
+    // ⚑ **THE ANALYTIC MARGIN IS NOW 5,276 OF 72,000, DOWN FROM 10,307 IN ONE FEATURE.** Read
+    // `MAX_CONTRACT_CHARS`'s note before the next block, not after it. Two consecutive features have
+    // now each spent about a quarter of the raise.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(68_101);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(70_592);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -603,7 +617,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(60_515);
+    // 56,647 → 59,138 at `RULES_VERSION` 17 (the EXPOSURE high-water mark, in §4's `stake` block and
+    // §5's Levy block) and again at 18 (the fourth good, in §7's production chain and §11A's own
+    // block). Both features landed concurrently, so this row carries the sum of two independent
+    // raises and neither author saw the other's — which is why the number is measured rather than
+    // predicted, and why the margin below is the one to read.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(63_006);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1327,12 +1346,40 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      38_564, // a newcomer on its first wake
-      45_033, // mid-game in the Commons
-      45_906, // about to take territory — and §11B is READABLE now, which it was not
-      60_515, // a claimant in trouble — the largest REACHABLE position
-      68_101, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
+      39_136, // a newcomer on its first wake
+      47_524, // mid-game in the Commons
+      48_397, // about to take territory — and §11B is READABLE now, which it was not
+      63_006, // a claimant in trouble — the largest REACHABLE position
+      70_592, // the analytic maximum, which at 72,000 still fits WHOLE — by 1,408 characters
     ]);
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 1,408 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
+    //
+    // This row is the SUM of two features that landed concurrently in separate worktrees, neither of
+    // whose authors could see the other's spend:
+    //
+    //   10,307 → 5,276  `RULES_VERSION` 17, the EXPOSURE high-water mark
+    //    5,276 → 1,408  `RULES_VERSION` 18, the fourth good
+    //
+    // **Three quarters of the raise, gone in two features, and the second author measured 3,899 of
+    // margin on their own branch and 1,408 after the merge.** That gap is the whole lesson: a
+    // character budget is a shared resource in exactly the way `RULES_VERSION` is (HARD RULE 7), and
+    // unlike `RULES_VERSION` nobody arbitrates it in advance, so two correct local decisions compose
+    // into one that nobody made. This is the third shared resource this project has been bitten by
+    // and the first that has no owner.
+    //
+    // The next author cannot write their way past this. `MAX_CONTRACT_CHARS`'s note names the moves in
+    // order — make the unit CONDITIONAL (the catalogue already selects per wake, and the fourth good's
+    // `### The fourth good` block is `required` only for a claimant, which is what kept it this cheap);
+    // FOLD it into a field whose unit is already unambiguous (read `one-word-two-units.spec.ts` first —
+    // nine numbered sites are exactly that fold going wrong); or RAISE the ceiling with the cost
+    // measured. **What is not available any more is "add a paragraph and re-measure".**
+    //
+    // Worth stating what is NOT alarming: the analytic maximum has no occupant — `graduate` and a held
+    // claim cannot coexist — and the largest REACHABLE position is 63,006, which leaves 8,994. A
+    // reader who quotes only the reachable number will conclude there is room, and will be wrong about
+    // the direction of travel.
+    // ══════════════════════════════════════════════════════════════════════════
     // ── ★ FIVE ROWS +3,637, AND IT IS THE FOURTH GOOD BEING WRITTEN DOWN ────────────────────
     //
     // Every row, including the newcomer's, and that is the honest signature of this change rather
@@ -1351,6 +1398,36 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // no principal can occupy, and 11,485 on the largest reachable one. The margin is thinner than it
     // was and that is worth saying out loud: the next section of this size needs the ceiling looked
     // at rather than raised reflexively.
+    // ── ★ ALL FIVE ROWS +572 TO +2,491, AND THAT IS THE HIGH-WATER MARK GETTING WRITTEN DOWN ──
+    //
+    // `RULES_VERSION` 17 made §5.2's two exposure rules read a **per-Reckoning EXPOSURE high-water
+    // mark** instead of the instantaneous figure at `LEVY_ASSESS_PHASE`, and the prose landed in two
+    // places, which is why the rows move by different amounts:
+    //
+    //   · **§4's `### The third half: \`stake\`\` block, +1,919** — RULES for anybody offered
+    //     `fill_role` or `vote`. The three consequences and the two-field table live here, because
+    //     this is the block that already explains what a stake costs and the mark is the *other*
+    //     thing it costs. The newcomer, who holds no role, does not pay for it.
+    //   · **§5's Levy block, +572** — FLOOR, so every member is shown it every wake. Only a
+    //     paragraph: the published default's "inversely to Exposure" had to say *which* Exposure, or
+    //     the one sentence a turtling member reads about why hiding is taxed names a quantity the
+    //     engine no longer reads. That is the expensive placement and it was kept to the minimum.
+    //
+    // **Written at full length rather than compressed, for `DoNothingOutcome.unit`'s reason.** The
+    // detail is not decoration: the mark only ever RISES inside a cycle, so releasing a stake before
+    // the freeze does not undo the position, and `obligations.exposure.mine` reads ~0 at exactly the
+    // phase an agent is most likely to check it. A member that knows about EXPOSURE but not about
+    // *which reading* will size its stakes from the wrong number and read its own bill as arbitrary —
+    // which is scar #1's class, not a nicety.
+    //
+    // The margins now, which is the number the next author needs:
+    //
+    //   - largest REACHABLE position 59,138 of the 68,000 the margin allows → **8,862 characters**;
+    //   - analytic maximum 66,724 of `MAX_CONTRACT_CHARS` → **5,276 characters**.
+    //
+    // Still yes to "can I add a sentence", and no longer comfortably: the analytic margin has gone
+    // from 10,307 to 5,276 in one feature. `MAX_CONTRACT_CHARS`'s note names what to do when it runs
+    // out, and the next author should read it before the next block rather than after.
     // ── ★ FOUR ROWS +2,540, AND THAT IS THE ROLE `stake` GETTING WRITTEN DOWN ─────────────────
     //
     // `### The third half: \`stake\` on \`fill_role\`` is RULES for anybody offered `fill_role` or

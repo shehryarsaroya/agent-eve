@@ -103,6 +103,20 @@ export interface ChronicRow {
   demotions: number;
 }
 
+/**
+ * One principal's EXPOSURE high-water mark for one Reckoning.
+ *
+ * A row rather than a bare `Minor`, for `PaymentRow`'s reason: {@link Book.prune} has to be able to
+ * ask a row which cycle it belongs to without parsing it back out of the map key, and a key parse
+ * is a silent-failure road in the one place a wrong answer deletes state.
+ */
+export interface ExposurePeakRow {
+  readonly reckoning: number;
+  readonly principal: PrincipalId;
+  /** Σ open `max_direct_loss` at its largest, over the ticks of {@link reckoning}. */
+  peak: Minor;
+}
+
 /** A shortfall as the record carries it: the arithmetic, not just the answer. */
 export interface ShortfallRow {
   readonly reckoning: number;
@@ -146,6 +160,72 @@ export class Book {
    * ══════════════════════════════════════════════════════════════════════════
    */
   private readonly seatedAt = new Map<PrincipalId, number>();
+  /**
+   * ★ The **EXPOSURE high-water mark**: the largest EXPOSURE one principal carried at any
+   * tick of one Reckoning. Keyed `reckoning::principal`. The figure §5.2's two
+   * exposure-shaped rules are computed from.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE INSTANTANEOUS READING MEASURED NOTHING, AND THE MEASUREMENT IS EXACT.**
+   *
+   * `weightOf('BY_EXPOSURE')` and `weightOf('INVERSE_EXPOSURE')` used to read EXPOSURE as it stood
+   * at the tick the docket was minted. That tick is `LEVY_ASSESS_PHASE`, which is **0**, and
+   * `settleVenture` releases every stake at the settlement tick — phase 287, the tick *before*.
+   * So the assessment sampled the one moment in the cycle when every stake in the world had just
+   * been handed back.
+   *
+   * Measured, `g01`, six Reckonings, open stake locks counted per phase: **phase 0 → 4**, phase 24
+   * → 69, phase 144 → 89, phase 286 → 92, phase 287 → 6. A **22x trough**. Across the eight gate
+   * seeds only **12 of 129 dockets** saw any EXPOSURE spread at all and three seeds saw none, so
+   * `BY_EXPOSURE`, `EVEN` and the published default `INVERSE_EXPOSURE` were one flat weight on
+   * seven dockets in eight — and the ballot, which closes at `WINDOW_FIRST_PHASE` in mid-cycle, was
+   * cast against a reading that had evaporated before the docket it decided was cut.
+   *
+   * **Raising the stake cannot reach it and that attempt is already priced.** `CAST_STAKE_BPS`
+   * carries the table: at 1,000 bps `levyShort` at nine Reckonings goes 0 → 11,884, and pricing the
+   * bid off free STORES instead cost the world **25% of its ventures** (§7.3 resolves a contested
+   * slot pro-rata by stake, so a wealth-priced bid becomes a standing wealth ranking). The defect
+   * is a **schedule**, not a price, and the fix is a reading.
+   *
+   * ── WHY A HIGH-WATER MARK IS THE HONEST ANSWER, NOT A CONVENIENT ONE ────────
+   *
+   * The rule asks *"how exposed were you this cycle"*. A max over the cycle answers that question;
+   * the value at one arbitrary instant answers a different one. It is the same error family as
+   * `weightOf('BY_STORES')` reading a **currency** balance for a **goods** obligation and the cast's
+   * `spare` pick ranking by cash — **measuring the wrong quantity at the wrong moment** — which has
+   * now produced three separate bugs in this one mechanic.
+   *
+   * It is also monotone, which is what makes it votable: within a cycle this figure never falls, so
+   * a member reading it mid-window is reading a **lower bound on the final number** rather than a
+   * quantity that can move under it. Releasing a stake does not buy relief from a bill that has
+   * already been earned, which is the correct incentive — otherwise the optimal play is to stake all
+   * cycle and unwind an hour before the freeze.
+   *
+   * ── SAMPLED AT TICK BOUNDARIES, ON PURPOSE (A9) ─────────────────────────────
+   *
+   * {@link Book.observeExposure} is called once per tick from OBLIGE, not from inside
+   * `EncumbranceBook.lock`. An intra-tick maximum would be a number no `observe` ever published and
+   * no affordance ever quoted, and A9 forbids the assessment reading a fact an agent's own
+   * observation could not — every other reading of EXPOSURE in this engine (the affordance's
+   * `max_direct_loss`, `principalPosition`, the sweep order) is a tick-boundary reading too.
+   *
+   * ── WHAT DESTROYS IT, AND WHY NOTHING DOES ──────────────────────────────────
+   *
+   * {@link Book.prune} drops rows below `currentReckoning - LEVY_RETAINED_RECKONINGS`, and it runs at
+   * the **settlement tick of Reckoning R** — so it keeps `R-3 .. R`. The deepest read is the
+   * assessment at phase 0 of `R+1` asking for **row `R`**, the newest row there is. So the margin is
+   * three Reckonings against a distance of one, and `test/levy/exposure-high-water.spec.ts` asserts
+   * that relation **from the constants** rather than trusting it. A `Book.prune` window has now
+   * silently eaten a load-bearing row four times in this repo; this is the fifth candidate and it is
+   * the one that was checked in advance.
+   *
+   * Bounded by `roll x (LEVY_RETAINED_RECKONINGS + 1)`, and **no cap is declared** for
+   * {@link Book.assess}'s reason: the roll is lifetime enrolments and a fixed cap on it is a cliff,
+   * not a bound. A refusal here would lose the mark and bias the reading back toward the trough —
+   * failing in exactly the direction that hides.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private readonly exposurePeaks = new Map<string, ExposurePeakRow>();
   /** Reckonings whose Levy has already settled. Idempotence, and INV-20's shape. */
   private readonly settled = new Set<number>();
 
@@ -191,6 +271,44 @@ export class Book {
 
   seatedAtOf(principal: PrincipalId): number | null {
     return this.seatedAt.get(principal) ?? null;
+  }
+
+  // ── the EXPOSURE high-water mark ───────────────────────────────────────────
+
+  /**
+   * Record one tick's EXPOSURE against this Reckoning's high-water mark.
+   *
+   * **Only a RISE writes**, so the row is monotone within its cycle and calling this twice in one
+   * tick is identical to calling it once. Zero never inserts: a principal that was never exposed
+   * has no row, {@link Book.exposurePeakOf} answers 0 for it, and `capture()` stays as small as the
+   * world is quiet.
+   *
+   * Refuses a negative reading rather than storing it. EXPOSURE is Σ of non-negative
+   * `max_direct_loss` (`EncumbranceBook.lock` rejects a negative one), so a negative here would mean
+   * the cache had gone wrong upstream — and a *negative* high-water mark would flow into
+   * `weightOf` as a weight below the unit, which is an exemption the Levy does not have.
+   */
+  observeExposure(reckoning: number, principal: PrincipalId, exposure: Minor): void {
+    if (!Number.isSafeInteger(exposure) || exposure <= 0) return;
+    const key = principalKey(reckoning, principal);
+    const row = this.exposurePeaks.get(key);
+    if (row === undefined) {
+      this.exposurePeaks.set(key, { reckoning, principal, peak: minor(exposure) });
+      return;
+    }
+    if (exposure > row.peak) row.peak = minor(exposure);
+  }
+
+  /**
+   * The EXPOSURE high-water mark of one Reckoning. **The one home of the figure.**
+   *
+   * Zero for a Reckoning nobody was exposed in, for a principal that was never exposed, and for a
+   * Reckoning older than the retention window — the three cases are deliberately one answer,
+   * because all three mean *"the record shows no peril here"* and a caller that had to tell them
+   * apart would be re-deriving the rule.
+   */
+  exposurePeakOf(reckoning: number, principal: PrincipalId): Minor {
+    return this.exposurePeaks.get(principalKey(reckoning, principal))?.peak ?? minor(0);
   }
 
   // ── assessment ────────────────────────────────────────────────────────────
@@ -542,6 +660,21 @@ export class Book {
       this.settled.delete(reckoning);
       dropped += 1;
     }
+    // ── AND THE HIGH-WATER MARKS, ON THE SAME WINDOW AND WITH THREE RECKONINGS TO SPARE ──
+    //
+    // This is the fifth `Book.prune` candidate in this repo and the first one checked before it bit.
+    // `prune(R)` runs at the settlement tick of Reckoning R and keeps `R-3 .. R`; the deepest read
+    // is the assessment at phase 0 of `R+1` asking for **row R**, which is the newest row here. So
+    // the window would have to be *negative* to lose it, and
+    // `test/levy/exposure-high-water.spec.ts` asserts that from `LEVY_RETAINED_RECKONINGS` rather
+    // than from this comment. Keyed by the cycle it was MEASURED in, never rolled over into a
+    // "previous"/"current" pair — a rollover is a one-tick race against `assessCycle` and is exactly
+    // how a retention window destroys a row one tick before it is read.
+    for (const [key, row] of [...this.exposurePeaks]) {
+      if (row.reckoning >= keepFrom) continue;
+      this.exposurePeaks.delete(key);
+      dropped += 1;
+    }
     return dropped;
   }
 
@@ -553,6 +686,7 @@ export class Book {
       levyShortfalls: this.shortfalls.size,
       levyChronic: this.chronic.size,
       levyTenure: this.seatedAt.size,
+      levyExposurePeaks: this.exposurePeaks.size,
     };
   }
 
@@ -636,6 +770,24 @@ export class Book {
       seatedAt: [...this.seatedAt.entries()]
         .sort((a, b) => compareIds(a[0], b[0]))
         .map(([principal, tick]) => ({ principal, tick })),
+      // ── ★ THE HIGH-WATER MARKS ARE INSIDE `state_hash`, AND THAT IS THE POINT ──
+      //
+      // This is the new hashed field `RULES_VERSION` 17 exists for. It has to be here for the reason
+      // the tenure register does: it **decides a future tick's arithmetic**, so a `state_hash` that
+      // could not see it would call two worlds identical while one of them was about to bill its most
+      // exposed member three times what the other did. Being inside the hash also puts it inside the
+      // abort path — an aborted tick must not leave a mark recorded, because `resume()` re-runs that
+      // tick and would record it twice (harmless for a max, but the two worlds would have different
+      // captures until the next rise, which is DET-1 failing in the only way nothing else catches).
+      //
+      // Emitted UNCONDITIONALLY, empty array and all. A key that appeared only when the map had rows
+      // would make `capture()`'s *shape* a function of state — a new class of thing in this engine
+      // and a trap for the next reader — in exchange for narrowing a discontinuity that is declared
+      // anyway. The live journal snapshots only at settlement ticks, so the first tripwire this moves
+      // is tick 287, which is already on the record.
+      exposurePeaks: [...this.exposurePeaks.values()]
+        .sort((a, b) => a.reckoning - b.reckoning || compareIds(a.principal, b.principal))
+        .map((row) => ({ reckoning: row.reckoning, principal: row.principal, peak: row.peak })),
       settled: [...this.settled].sort((a, b) => a - b),
     };
   }
@@ -648,6 +800,7 @@ export class Book {
     this.chronic.clear();
     this.shortfalls.clear();
     this.seatedAt.clear();
+    this.exposurePeaks.clear();
     this.settled.clear();
 
     for (const [i, raw] of readArray(root['plans'] ?? [], 'levy.plans').entries()) {
@@ -749,6 +902,23 @@ export class Book {
       const where = `levy.seatedAt[${String(i)}]`;
       const o = readObject(raw, where);
       this.seatedAt.set(readString(o, 'principal', where) as PrincipalId, readInt(o, 'tick', where));
+    }
+
+    // `?? []`, so a checkpoint written before `RULES_VERSION` 17 restores without a migration: it
+    // holds no marks, every peak reads 0, and the two exposure rules are flat until the world has
+    // been observed for a cycle. That is the same answer a genesis world gives on its first
+    // Reckoning, and it is the safe direction — a *fabricated* peak would bill a real principal for
+    // peril the record cannot show (A5′).
+    for (const [i, raw] of readArray(root['exposurePeaks'] ?? [], 'levy.exposurePeaks').entries()) {
+      const where = `levy.exposurePeaks[${String(i)}]`;
+      const o = readObject(raw, where);
+      const row: ExposurePeakRow = {
+        reckoning: readInt(o, 'reckoning', where),
+        principal: readString(o, 'principal', where) as PrincipalId,
+        peak: minor(readInt(o, 'peak', where)),
+      };
+      if (row.peak < 0) throw new SnapshotError(`${where}.peak is negative (${String(row.peak)})`);
+      this.exposurePeaks.set(principalKey(row.reckoning, row.principal), row);
     }
 
     for (const raw of readArray(root['settled'] ?? [], 'levy.settled')) {

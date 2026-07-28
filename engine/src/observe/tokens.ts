@@ -231,8 +231,39 @@ const WORST_ITEM_CHARS = Object.freeze({
   doNothing: 124,
   /** Three hands, each with `MAX_CARGO_GOODS` distinct goods at nine-figure amounts. */
   hand: 440,
-  /** header base + holding + obligations + briefing prose, together. */
-  fixed: 1_300,
+  /**
+   * header base + holding + obligations + briefing prose, together.
+   *
+   * ── ★ 1,300 → 1,310, AND IT SPENDS 10 OF THE 24 CHARACTERS THE FLOOR PROOF HAD LEFT ──
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE `obligations.levy` BLOCK GAINED TWO FIELDS AT `RULES_VERSION` 17** —
+   * `assessed_on_exposure_peak` and `exposure_peak_this_cycle`, the EXPOSURE high-water mark the
+   * current docket was weighted from and the one the next docket will read. Measured on the maximal
+   * world the fixed block is **1,304**, so the declared bound goes to 1,310 and keeps 6.
+   *
+   * **Paid for rather than shortened**, which is the trade {@link WORST_ITEM_CHARS.doNothing} argues
+   * in the same words one field up. Two of §5.2's four allocation rules are computed from this
+   * figure and *nothing published it at all* before 17 — the nearest field was
+   * `obligations.exposure.mine`, the **instantaneous** reading, which is near zero at exactly the
+   * phase an agent reads it because `settleVenture` releases every stake one tick before the docket
+   * is cut. A2 makes the input to a published arithmetic part of the arithmetic being exact, and the
+   * cheap alternative here is not a shorter field but an ambiguous one: `exposure_peak_now` saves
+   * seven characters and reintroduces the precise confusion — instant against mark — that the change
+   * exists to remove. Two fields and not one, because "what you were billed on" and "what you can
+   * still move" are different facts and a member that cannot tell them apart cannot vote.
+   *
+   * ⚑ **THE PROOF IS NOW NEARLY BINDING AND THE NEXT AUTHOR NEEDS THIS NUMBER.**
+   * `floorWorstCaseChars()` must stay inside `NORMAL_TOKEN_CAP * CHARS_PER_TOKEN` = 12,000. It was
+   * 11,976 with 24 to spare; at 1,310 it is **11,986, with 14.** This row has multiplier 1, which is
+   * why it was affordable at all — the same 10 characters on `withheldRow` would have cost 320. The
+   * next field that lands in the fixed block will not fit, and the choices at that point are the ones
+   * {@link WORST_ITEM_CHARS.withheldRow} took: find a row whose measured maximum is well under its
+   * bound and buy from it, or narrow a list, and the file already argues that narrowing a list is the
+   * worse trade.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  fixed: 1_310,
 });
 
 /** The arithmetic the floor rung rests on. Integer, and asserted in CI. */

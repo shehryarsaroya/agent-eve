@@ -50,13 +50,13 @@ describe('INV-24 — Σ assessments equals the total, exactly', () => {
     // Deliberately awkward: a prime-ish count, wildly different EXPOSURE and stores, so
     // the largest-remainder pass has real remainders to hand out.
     const subjects = [
-      subject('p:a', { exposure: 0, freeStores: 900_000 }),
-      subject('p:b', { exposure: 7, freeStores: 1 }),
-      subject('p:c', { exposure: 1_234_567, freeStores: 12_345 }),
-      subject('p:d', { exposure: 999, freeStores: 500_000 }),
-      subject('p:e', { exposure: 3, freeStores: 7 }),
-      subject('p:f', { exposure: 88_888, freeStores: 333_333 }),
-      subject('p:g', { exposure: 1, freeStores: 300_001 }),
+      subject('p:a', { exposurePeak: 0, freeStores: 900_000 }),
+      subject('p:b', { exposurePeak: 7, freeStores: 1 }),
+      subject('p:c', { exposurePeak: 1_234_567, freeStores: 12_345 }),
+      subject('p:d', { exposurePeak: 999, freeStores: 500_000 }),
+      subject('p:e', { exposurePeak: 3, freeStores: 7 }),
+      subject('p:f', { exposurePeak: 88_888, freeStores: 333_333 }),
+      subject('p:g', { exposurePeak: 1, freeStores: 300_001 }),
     ];
     const total = totalFor(subjects);
     for (const rule of LEVY_RULES) {
@@ -80,8 +80,8 @@ describe('INV-24 — Σ assessments equals the total, exactly', () => {
       const count = 1 + next(9);
       const subjects = Array.from({ length: count }, (_, i) =>
         next(4) === 0
-          ? newcomer(`p:${String(i)}`, { exposure: next(50_000) })
-          : subject(`p:${String(i)}`, { exposure: next(2_000_000), freeStores: next(4_000_000) }),
+          ? newcomer(`p:${String(i)}`, { exposurePeak: next(50_000) })
+          : subject(`p:${String(i)}`, { exposurePeak: next(2_000_000), freeStores: next(4_000_000) }),
       );
       const rule = LEVY_RULES[next(LEVY_RULES.length)];
       if (rule === undefined) continue;
@@ -153,8 +153,8 @@ describe('the total is fixed by rule, and cannot be dodged', () => {
   });
 
   it('does not fall when a principal empties its stores or drops its EXPOSURE', () => {
-    const rich = [subject('p:a', { freeStores: 5_000_000, exposure: 900_000 }), subject('p:b')];
-    const poor = [subject('p:a', { freeStores: 0, exposure: 0 }), subject('p:b')];
+    const rich = [subject('p:a', { freeStores: 5_000_000, exposurePeak: 900_000 }), subject('p:b')];
+    const poor = [subject('p:a', { freeStores: 0, exposurePeak: 0 }), subject('p:b')];
     // Same roll, same tenure, everything else changed: the total is identical, because it
     // is a function of the roll and the floor and of nothing an agent decides.
     expect(totalFor(poor)).toBe(totalFor(rich));
@@ -206,9 +206,9 @@ describe('the newcomer floor', () => {
 
 describe('the weights', () => {
   it('INVERSE_EXPOSURE falls as EXPOSURE rises, and never reaches zero', () => {
-    const low = weightOf('INVERSE_EXPOSURE', subject('p:a', { exposure: 0 }));
-    const mid = weightOf('INVERSE_EXPOSURE', subject('p:b', { exposure: 100_000 }));
-    const high = weightOf('INVERSE_EXPOSURE', subject('p:c', { exposure: 10_000_000_000 }));
+    const low = weightOf('INVERSE_EXPOSURE', subject('p:a', { exposurePeak: 0 }));
+    const mid = weightOf('INVERSE_EXPOSURE', subject('p:b', { exposurePeak: 100_000 }));
+    const high = weightOf('INVERSE_EXPOSURE', subject('p:c', { exposurePeak: 10_000_000_000 }));
     expect(low).toBeGreaterThan(mid);
     expect(mid).toBeGreaterThan(high);
     // Never zero: a zero weight would assess the most exposed principal at nothing, which
@@ -217,8 +217,8 @@ describe('the weights', () => {
   });
 
   it('makes the turtle the most taxed posture under the published default', () => {
-    const turtle = subject('p:turtle', { exposure: 0 });
-    const exposed = subject('p:exposed', { exposure: 2_000_000 });
+    const turtle = subject('p:turtle', { exposurePeak: 0 });
+    const exposed = subject('p:exposed', { exposurePeak: 2_000_000 });
     const out = plan([turtle, exposed]);
     const turtleShare = out.lines.find((l) => l.principal === turtle.principal)?.amount ?? 0;
     const exposedShare = out.lines.find((l) => l.principal === exposed.principal)?.amount ?? 0;
@@ -230,7 +230,7 @@ describe('the weights', () => {
   it('every rule gives every subject a positive weight', () => {
     for (const rule of LEVY_RULES) {
       expect(
-        weightOf(rule, subject('p:a', { exposure: 0, freeStores: 0, levyGoodHeld: 0 })),
+        weightOf(rule, subject('p:a', { exposurePeak: 0, freeStores: 0, levyGoodHeld: 0 })),
       ).toBeGreaterThan(0);
     }
   });

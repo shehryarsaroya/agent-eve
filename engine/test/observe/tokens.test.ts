@@ -261,7 +261,12 @@ describe('PROP-O2 — the static half: the floor rung is proved to fit', () => {
       size(built.holding) +
       size(built.obligations) +
       size({ ...built.briefing, if_you_do_nothing: { ...built.briefing.if_you_do_nothing, outcomes: [] } });
-    expect(fixed, 'the fixed block exceeds its declared 1300-char bound').toBeLessThanOrEqual(1_300);
+    // 1,310, not 1,300: `obligations.levy` gained the two EXPOSURE high-water-mark fields at
+    // `RULES_VERSION` 17. The literal is duplicated from `WORST_ITEM_CHARS.fixed` on purpose (see
+    // `board` above) so that widening the fixed block has to be stated in two places, one of which
+    // re-measures it. Measured maximum on this maximal world: **1,304**, so 6 of headroom — and the
+    // floor proof itself is down to 14 characters of slack, which `WORST_ITEM_CHARS.fixed` records.
+    expect(fixed, 'the fixed block exceeds its declared 1310-char bound').toBeLessThanOrEqual(1_310);
   });
 
   it('the floor rung applies its declared cap to EVERY list it declares one for', () => {
