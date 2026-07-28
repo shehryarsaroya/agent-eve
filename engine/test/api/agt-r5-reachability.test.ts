@@ -75,18 +75,28 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'help: the missing step is a decision no code makes. It is NOT unreachable in the game — ' +
     'test/combat/reachable.spec.ts drives build{kind:HULL} → demand → fight → engage through the real ' +
     'verb table and asserts both that the menu offers it AND that the verb accepts what the menu said.',
-  join:
-    'REACHABLE ELSEWHERE — needs a LIVE RAID the observer is not already a side of, at a stage where it ' +
-    'has a hand. That window is a handful of ticks and the conjunction is narrow enough that this sweep ' +
-    'cannot reliably enter it: widening to 1,800 ticks did not, and neither did sampling every tick ' +
-    'while a raid is DEMANDED (both tried, 2026-07-27). It is NOT unreachable in the game — the raid ' +
-    'affordance offers it whenever `your_side === null`, and that path is covered directly by ' +
-    'test/predation/observe.test.ts, wired.test.ts, presence.test.ts and a5prime.test.ts. Declared here ' +
-    'rather than left failing, because a sweep that cannot construct a state is a limit of the sweep, ' +
-    'and re-tuning it after every unrelated change (three times now: a grant branch, a build branch, a ' +
-    'Levy fix) is treating the fixture as the finding. NOTE 2026-07-27: once the cast could leave the ' +
-    'Commons, a 900-tick world DID offer it while the 1,800-tick sweep still did not — which is what ' +
-    'forced both directions onto one shared sweep, because the pair was otherwise unsatisfiable.',
+  // ── ★ `join` CAME OFF THIS LIST, AND THAT IS THE ESCORT MARKET OPENING ────
+  //
+  // Its entry read *"REACHABLE ELSEWHERE — needs a LIVE RAID the observer is not already a side of, at
+  // a stage where it has a hand. That window is a handful of ticks and the conjunction is narrow
+  // enough that this sweep cannot reliably enter it: widening to 1,800 ticks did not, and neither did
+  // sampling every tick while a raid is DEMANDED (both tried, 2026-07-27)."* Every sentence of that
+  // was true, it had been re-tuned three times, and **the conjunction was not narrow — it was
+  // impossible.** Measured after the entry was written: `handsDefending(bystander, stage).length > 0`
+  // held in **0 of 72 world raids** across 8 seeds × 3 Reckonings, because 70% of a cast member's
+  // hand-ticks are `COMMITTED` and its hands are mostly not even at its own body. No sweep length
+  // could have found it, and 49 of those 72 windows had an idle hand two lanes away.
+  //
+  // This entry is therefore the clearest single record of the defect it was concealing: *a sweep that
+  // cannot construct a state is a limit of the sweep* is exactly right as a rule and was the wrong
+  // diagnosis here, and the note reading "re-tuning the fixture after every unrelated change is
+  // treating the fixture as the finding" was **doing the same thing one level up** — treating a
+  // structurally empty precondition as a fixture problem for three revisions.
+  //
+  // `raidViewsFor` now shows a standoff a hand could still WALK to and the affordance offers the
+  // march; `coalitionFor` takes it. The entry is deleted rather than reworded, and — like `trade` and
+  // `set_delivery_intent` before it — **the rot check below failed by name before anybody thought to
+  // come and delete it.** Third time that direction has paid for itself.
   // ── ★ `trade` CAME OFF THIS LIST, AND THAT IS THE ECONOMY STARTING ────────
   //
   // Its entry read *"REACHABLE ELSEWHERE — needs a resting order on the local book"*, which was true

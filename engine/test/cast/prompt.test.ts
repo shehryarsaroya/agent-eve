@@ -644,8 +644,20 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // ⚑ 678 is still not enough for a paragraph, and it is now not enough for a SENTENCE on every
     // position. The next block needs the ceiling looked at.
+    //
+    // ── ★ +23 AT `RULES_VERSION` 21, AND IT IS NOT PROSE ─────────────────────
+    //
+    // 72,909 → **72,932**. The coalition wave added 3,263 characters to `agent.md` §11D and this
+    // number moved by **23**, because the whole of that section is graded on a situation the analytic
+    // maximum already carried — the excerpt selector is doing exactly what it is for. The 23 is one
+    // new observation *field name* reaching a rules surface (`RaidView.force.defender_joiners`,
+    // published so a target with allies can decompose its own force reading) and nothing else.
+    //
+    // `MAX_CONTRACT_CHARS` is 120,000, so the analytic margin is 47,068 and the reachable one is
+    // larger still. Recorded rather than waved through: a block added to `agent.md` moves a number
+    // here and somebody has to look, which is the whole point of the pin.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_909);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_932);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -675,7 +687,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // +116 at 20: the same paragraph, corrected. The floor now falls and is charged per principal,
     // so the two clauses that said otherwise had to go — a rules surface describing the old
     // behaviour is scar #1, and this one is published to every agent in the world.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(65_323);
+    // ★ +23 at 21: the coalition wave, and the size of it is the finding. §11D gained **3,263
+    // characters** of new documentation — `join`'s price, the `march` block, the party and formation
+    // caps, why paying early buys nothing — and this row moved by 23, because all of it is graded on
+    // a situation this position already carried. The 23 is one new observation field name
+    // (`RaidView.force.defender_joiners`). A section is not a cost here; a rules SURFACE is.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(65_346);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1424,7 +1441,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       39_489, // a newcomer on its first wake            (+40: the corrected "you sell … rations")
       47_877, // mid-game in the Commons                 (+40: same)
       48_750, // about to take territory                 (+40: same)
-      65_323, // a claimant in trouble — the largest REACHABLE position (+631 at 19, +116 at 20)
+      // ★ +23 at 21 on both of the last two rows, and only there: §11D's new coalition section is
+      // graded on a situation these two already carried, so the *selection* absorbed 3,263 characters
+      // of new documentation and what actually moved is one field name on a rules surface. See the
+      // uncapped assertion above.
+      65_346, // a claimant in trouble — the largest REACHABLE position (+631 at 19, +116 at 20, +23 at 21)
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
@@ -1451,7 +1472,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only, and no REACHABLE position was ever being squeezed.** Had a reachable row moved here,
       // the raise would have been silently restoring rules an agent had been denied, which is a
       // different and much worse finding.
-      72_909,
+      72_932,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

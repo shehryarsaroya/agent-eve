@@ -3163,14 +3163,17 @@ export class HeuristicCast {
     // for up to `HAND_RECOVERY_TICKS.max` (48), so a hand lent inside the last 72 ticks of a
     // Reckoning can be unavailable for a quarter of the next one, against a bill it could not read.
     //
-    // Measured: with `coalitionFor` disabled, 8 seeds × 9 Reckonings is `levyShort` **0, 0/576**;
-    // with it enabled and this guard absent, one seed of eight tips — `p:brannock` and `p:sable` on
-    // `g02`, 11,650 short across two red lines. Neither of them had joined anything: the cost is a
-    // hand missing from a *later* Reckoning, which is exactly the shape a gate reading only the
-    // current one cannot price.
+    // ⚑ **AND IT IS MEASURED NOT TO BIND YET, WHICH IS SAID HERE RATHER THAN DISCOVERED LATER.**
+    // Adding it changed the 8-seed × 9-Reckoning sweep by **nothing at all** — byte-identical totals
+    // — because at eight members this branch fires too rarely to land near a boundary. The red
+    // tribute lines it was written to chase turned out to be the **action queue** instead (see this
+    // branch's placement in `decideOne`), and that is the honest attribution.
     //
-    // A quarter of the Reckoning is a real cost and it is the honest one: it is the difference
-    // between lending a hand and lending a hand you can account for.
+    // It stays for the reason the project keeps re-learning in the other direction: this is the only
+    // clause covering a bill the branch **cannot read**, so its subject is rare rather than absent,
+    // and a twenty-member world or a longer window makes it bind. A quarter of a Reckoning is a real
+    // cost and it is the honest one — the difference between lending a hand and lending a hand you
+    // can account for.
     // ══════════════════════════════════════════════════════════════════════════
     if (
       phaseOfReckoning(tick) + DEMAND_WINDOW_TICKS + HAND_RECOVERY_TICKS.max >
