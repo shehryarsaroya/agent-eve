@@ -16,10 +16,10 @@ trusting — this file goes stale the moment someone commits.*
 surfaces carry data. The gap is no longer mechanics — it is that every obligation is priced in ONE
 GOOD, so there is nothing to trade.**
 
-Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,248
-tests** pass against them (2026-07-27). Phase 2 and Phase 3 do not exist as *complete* layers, by
-design — §16 marks Phase 2 "optional, possibly forever" and the owner has overridden that; combat is
-partly in.
+Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,257
+tests** pass against them (2026-07-27, `RULES_VERSION` **17** live). Phase 2 and Phase 3 do not exist
+as *complete* layers, by design — §16 marks Phase 2 "optional, possibly forever" and the owner has
+overridden that; combat is partly in.
 
 As of 2026-07-26 (late), a world nobody steers hands out authority *and draws on it* (~31 grants, ~27
 draws per 900 ticks), raises WORKS so goods have a source, founds syndicates, and carries all three of
@@ -46,6 +46,18 @@ hour: `weightOf('BY_EXPOSURE')` was `1 + exposure`, a cardinality against a MINO
 first docket with any EXPOSURE at all billed one member **118,449 of 120,000 over 450 of peril**
 (`D32`). Two lessons compound here — *read the log before asserting an absence*, and **a capability's
 first real exercise is a bug-finding instrument in its own right.**
+
+**2026-07-27 (later still): the twelfth instance, and it was a CLOCK rather than a caller.** Making the
+cast stake was necessary and not sufficient: the two exposure-shaped rules still agreed on **117 of 129
+dockets**, because `settleVenture` releases every stake at the settlement tick and `LEVY_ASSESS_PHASE`
+mints the docket on the **next** one, so the assessment sampled a **22x trough**. A capability can be
+built, called, and exercised, and *still* be measured at the one moment it reads zero. The fix is a
+**per-Reckoning EXPOSURE high-water mark** — a new hashed field, `RULES_VERSION` **17** — and on the 40
+dockets in eight seeds that can discriminate at all, spread goes from **12 (30%) to 37 (93%)** with the
+gate held at `levyShort` 0 and 0 red lines at three, six and nine Reckonings (`D34`). The new lesson is
+narrower than the old one and worth its own line: **measuring a real quantity at the wrong moment is
+indistinguishable from not measuring it**, and it is the third bug in this one mechanic from that
+family — after a currency balance sizing a goods bill and a cash-poverty `spare` pick.
 
 What is left is depth, not machinery. `market` is 3,065 lines pricing a single fungible commodity, so
 there is no trade, no specialization and no supply chain to reason about — **that is the whole distance
