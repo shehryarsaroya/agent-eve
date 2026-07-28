@@ -132,7 +132,7 @@ describe('A5-PRIME — a principal that delivered is never recorded short', () =
       book,
       reckoning: 0,
       tick: 287,
-      exposureOf: () => minor(0),
+      exposurePeakOf: () => minor(0),
       sweep: { availableOf: () => qty(0), consume: () => qty(0) },
     });
     expect(checkLevyAttribution(book, 0, 287)).toEqual([]);

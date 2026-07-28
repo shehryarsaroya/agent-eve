@@ -1841,7 +1841,9 @@ function affordancesFor(
       'FORFEIT to the other parties if you withdraw (§7.3) — it is returned untouched if the window ' +
       'closes unfilled or the creator abandons. It cannot exceed your free balance. Two of the four ' +
       'Levy allocation rules are computed from your EXPOSURE, so a stake is also a position in your ' +
-      "constellation's next vote.";
+      "constellation's next vote — and it is the HIGHEST EXPOSURE you reach in a Reckoning that is " +
+      'billed, not the figure at settlement, so releasing the stake later does not undo the position. ' +
+      'Read levy.exposure_peak_this_cycle.';
     const offer =
       `Of the ${String(row.escrowed + row.elective)} on this slot, ${String(row.escrowed)} is escrowed ` +
       `(${String(row.escrow_ratio_bps)} bps — it executes automatically and nobody can stop it) and ` +
@@ -2344,6 +2346,13 @@ function affordancesFor(
   }
   const levyBallotBlock = runtime.levyBlockFor(principal, tick);
   const levyBallot = (levyBallotBlock?.ballot ?? null) as Readonly<Record<string, unknown>> | null;
+  // Read off the block, never recomputed here. `levyBlockFor` reads `Book.exposurePeakOf`, which is
+  // the same call `levySubjectOf` makes for the weight — so the figure this sentence quotes is the
+  // figure the rule uses, and a golden clause built from this string is a golden clause about the
+  // engine. A second reading here would be the affordance and the arithmetic disagreeing about a
+  // number, which is scar #1's exact shape.
+  const levyPeakBilled = levyBallotBlock?.assessed_on_exposure_peak ?? 0;
+  const levyPeakThisCycle = levyBallotBlock?.exposure_peak_this_cycle ?? 0;
   if (levyBallot !== null && levyBallot['voted'] === false) {
     eligible.push({
       verb: 'vote',
@@ -2358,14 +2367,29 @@ function affordancesFor(
       // entry for STORES is "assets, inventory, balances", so the word covers both and the sentence
       // disambiguated neither. Both halves are fixed: `weightOf` now reads the levy good
       // (`assessment.ts:levyGoodHeld` carries the measurement) and this says which good it is.
+      //
+      // ── ★ AND THE TWO EXPOSURE RULES NAME **WHICH READING** (`RULES_VERSION` 17) ──
+      //
+      // Same defect class, in the same sentence, one rule over. "Whoever has most at risk" is true of
+      // a dozen readings and the engine's is exactly one: the **largest** EXPOSURE you carried at any
+      // tick of the previous Reckoning. Until 17 it was the value at the tick the docket was minted —
+      // one tick after `settleVenture` releases every stake, a 22x trough — and an agent reading
+      // `obligations.exposure.mine` at phase 0 and reasoning from it was reasoning correctly from the
+      // wrong number. Both figures are quoted from the block, so the sentence and the arithmetic
+      // cannot come apart (`levy/book.ts:exposurePeaks`).
       what_it_forecloses:
-        `decides how this Reckoning's Levy is SPLIT across your constellation. The total is fixed and ` +
+        `decides how NEXT Reckoning's Levy is SPLIT across your constellation. The total is fixed and ` +
         `cannot be voted away — only who bears which share. Swap \`rule\` for any of ` +
         `${LEVY_RULES.join(', ')}: BY_EXPOSURE loads it onto whoever has most at risk, BY_STORES onto ` +
         `whoever holds most ${LEVY_GOOD} to hand — the good the Levy is paid in, not currency — EVEN ` +
-        `spreads it flat, INVERSE_EXPOSURE shields the exposed. You are ` +
-        `voting on a bill you will pay, so the rule that suits you is rarely the one that suits the ` +
-        `others. Quorum failure applies ${PUBLISHED_DEFAULT_RULE}. Free, and it costs no action.`,
+        `spreads it flat, INVERSE_EXPOSURE shields the exposed. "At risk" is one exact figure: the ` +
+        `HIGHEST EXPOSURE you carried at any tick of a Reckoning, not the figure right now. Yours for ` +
+        `the cycle in progress is ${String(levyPeakThisCycle)} and it is what the docket this ballot ` +
+        `decides will read; the docket you are already holding was weighted from ` +
+        `${String(levyPeakBilled)}. It only ever RISES inside a cycle, so a stake released before the ` +
+        `freeze still counts — read levy.exposure_peak_this_cycle and levy.assessed_on_exposure_peak. ` +
+        `You are voting on a bill you will pay, so the rule that suits you is rarely the one that ` +
+        `suits the others. Quorum failure applies ${PUBLISHED_DEFAULT_RULE}. Free, and it costs no action.`,
       expires_tick: Number(levyBallot['closes_tick']),
       quote_id: quoteId(principal, tick, 'vote', { ballot: LEVY_BALLOT }),
     });

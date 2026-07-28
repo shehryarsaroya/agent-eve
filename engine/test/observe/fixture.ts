@@ -158,7 +158,15 @@ export function blindSources(f: Fixture, options: SourceOptions = {}): ObserveSo
   return sourcesFor(f, { ...options, sensing: sensesNothing() });
 }
 
-/** A Levy block owing `amount`, deliverable where the fixture seats everyone. */
+/**
+ * A Levy block owing `amount`, deliverable where the fixture seats everyone.
+ *
+ * The two high-water marks default to **non-zero and unequal**, deliberately. A fixture that left
+ * them 0 would pass through every read-surface assertion in this suite while the field was never
+ * populated at all, which is exactly the blind spot `RULES_VERSION` 17 exists to close: the figure
+ * §5.2's two exposure rules are computed from was invisible to an agent for the project's whole
+ * life. Unequal so a copy that swapped the two is caught rather than absorbed.
+ */
 export function levyOwing(f: Fixture, amount = 5_000): LevyBlock {
   return {
     my_assessment: minor(amount),
@@ -167,6 +175,8 @@ export function levyOwing(f: Fixture, amount = 5_000): LevyBlock {
     shortfall_if_unpaid: minor(amount),
     ballot: null,
     non_escrowable: minor(Math.trunc(amount / 2)),
+    assessed_on_exposure_peak: minor(1_700),
+    exposure_peak_this_cycle: minor(2_300),
   };
 }
 

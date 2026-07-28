@@ -41,9 +41,9 @@ const C = 'c:one' as ConstellationId;
 const PLACE = 's:place' as SystemId;
 
 /** A book with one constellation assessed, and nobody having paid anything. */
-function assessed(reckoning: number, principals: readonly string[], exposure: Record<string, number> = {}): Book {
+function assessed(reckoning: number, principals: readonly string[], exposurePeak: Record<string, number> = {}): Book {
   const book = new Book();
-  const subjects = principals.map((p) => subject(p, { exposure: exposure[p] ?? 0 }));
+  const subjects = principals.map((p) => subject(p, { exposurePeak: exposurePeak[p] ?? 0 }));
   const out = allocate({ constellation: C, subjects, rule: 'EVEN', spared: null, byDefault: true });
   book.assess({
     reckoning,
@@ -84,7 +84,7 @@ describe('the shortfall sweep', () => {
       book,
       reckoning: 0,
       tick: 287,
-      exposureOf: (p) => minor(({ 'p:a': 900_000, 'p:b': 10, 'p:c': 5_000 } as Record<string, number>)[p] ?? 0),
+      exposurePeakOf: (p) => minor(({ 'p:a': 900_000, 'p:b': 10, 'p:c': 5_000 } as Record<string, number>)[p] ?? 0),
       sweep: stock,
     });
     // b (10) then c (5 000) then a (900 000). The order is the sweep's whole published rule.
@@ -105,7 +105,7 @@ describe('the shortfall sweep', () => {
       // Returns FAR more than asked — the exact defect codex constructed.
       consume: () => qty(owed + 1_000_000),
     };
-    const out = settleLevy({ book, reckoning: 0, tick: 287, exposureOf: () => minor(0), sweep: greedy });
+    const out = settleLevy({ book, reckoning: 0, tick: 287, exposurePeakOf: () => minor(0), sweep: greedy });
     const row = out.shortfalls.find((r) => r.principal === ('p:a' as PrincipalId));
     expect(row).toBeDefined();
     // Never more than the purchasable debt.
@@ -122,7 +122,7 @@ describe('the shortfall sweep', () => {
       book,
       reckoning: 0,
       tick: 287,
-      exposureOf: () => minor(0),
+      exposurePeakOf: () => minor(0),
       sweep: stock,
     });
     expect(stock.taken.get('p:a')).toBe(assessment - nonEscrowable);
@@ -145,7 +145,7 @@ describe('the shortfall sweep', () => {
           tenureTicks: 0,
           freeStores: minor(0),
           levyGoodHeld: qty(0),
-          exposure: minor(0),
+          exposurePeak: minor(0),
         },
       ],
       rule: 'EVEN',
@@ -164,7 +164,7 @@ describe('the shortfall sweep', () => {
       assessedAtTick: 0,
     });
     const stock = port({ 'p:vet': 50_000, 'p:new': 50_000 });
-    const out = settleLevy({ book, reckoning: 0, tick: 287, exposureOf: () => minor(0), sweep: stock });
+    const out = settleLevy({ book, reckoning: 0, tick: 287, exposurePeakOf: () => minor(0), sweep: stock });
     expect(out.sweepQueue).toEqual(['p:vet']);
     expect(stock.taken.get('p:new')).toBeUndefined();
     // And the newcomer is still assessed — no Commons exemption, only a nominal rate.
@@ -174,9 +174,9 @@ describe('the shortfall sweep', () => {
   it('is idempotent: a second settlement does not take a second lot of goods', () => {
     const book = assessed(0, ['p:a']);
     const stock = port({ 'p:a': 1_000_000 });
-    const first = settleLevy({ book, reckoning: 0, tick: 287, exposureOf: () => minor(0), sweep: stock });
+    const first = settleLevy({ book, reckoning: 0, tick: 287, exposurePeakOf: () => minor(0), sweep: stock });
     const took = stock.taken.get('p:a') ?? 0;
-    const second = settleLevy({ book, reckoning: 0, tick: 287, exposureOf: () => minor(0), sweep: stock });
+    const second = settleLevy({ book, reckoning: 0, tick: 287, exposurePeakOf: () => minor(0), sweep: stock });
     expect(stock.taken.get('p:a')).toBe(took);
     expect(second.levyShort).toBe(first.levyShort);
   });

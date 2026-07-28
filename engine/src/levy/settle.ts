@@ -70,14 +70,34 @@ export interface SweepPort {
   }): Qty;
 }
 
-/** EXPOSURE per principal, for the sweep order. Read once, at settlement. */
-export type ExposureRead = (principal: PrincipalId) => Minor;
+/**
+ * The **EXPOSURE high-water mark** per principal, for the sweep order (§5.2: *"shortfall swept from
+ * the least-exposed first"*). Read once, at settlement.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS USED TO READ INSTANTANEOUS EXPOSURE, WHICH AT SETTLEMENT IS THE SAME TROUGH.** The
+ * settlement tick is the tick `settleVenture` releases every stake on, so `exposureOf` answered ~0
+ * for everybody and §5.2's ordering rule collapsed into `compareIds` — the queue a viewer reads was
+ * an alphabetical list wearing the words "least-exposed first". Same defect as the allocation's, in
+ * the same section, one function away (`levy/book.ts:exposurePeaks`).
+ *
+ * **It changes the published order and no amount.** Each principal's sweep draws only on its *own*
+ * stores, up to its *own* purchasable shortfall (`SweepPort.availableOf(principal)`), so the order
+ * decides who appears first in `sweepQueue` and nothing else. There is no pot to run out of, which
+ * is why fixing this is free — and why it had to be argued rather than assumed before being fixed
+ * inside a seizure path (A5′).
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export type ExposurePeakRead = (principal: PrincipalId) => Minor;
 
 export interface LevySettlement {
   readonly reckoning: number;
   readonly tick: number;
   readonly shortfalls: readonly ShortfallRow[];
-  /** Ascending EXPOSURE — §5.2's "swept from the least-exposed first". Never a newcomer. */
+  /**
+   * Ascending **EXPOSURE high-water mark** — §5.2's "swept from the least-exposed first". Never a
+   * newcomer. See {@link ExposurePeakRead} for why it is the cycle's mark and not the instant.
+   */
   readonly sweepQueue: readonly PrincipalId[];
   readonly sweptQty: Qty;
   /** Principals whose Commons capacity fell this Reckoning. The only cost of chronic default. */
@@ -101,7 +121,7 @@ export function settleLevy(args: {
   readonly book: Book;
   readonly reckoning: number;
   readonly tick: number;
-  readonly exposureOf: ExposureRead;
+  readonly exposurePeakOf: ExposurePeakRead;
   readonly sweep: SweepPort;
 }): LevySettlement {
   const { book, reckoning, tick } = args;
@@ -131,7 +151,7 @@ export function settleLevy(args: {
     })
     .sort(
       (a, b) =>
-        args.exposureOf(a.principal) - args.exposureOf(b.principal) ||
+        args.exposurePeakOf(a.principal) - args.exposurePeakOf(b.principal) ||
         compareIds(a.principal, b.principal),
     )
     .map((entry) => entry.principal);

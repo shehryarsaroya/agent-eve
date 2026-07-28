@@ -51,9 +51,9 @@ function ballot(principal: string, rule: LevyRule, spare: string | null = null, 
 describe('PROP-LV1 — any vote outcome sums to the total', () => {
   it('holds for every rule the ballot can name, with and without a spared principal', () => {
     const subjects = [
-      subject('p:a', { exposure: 0, freeStores: 700_000 }),
-      subject('p:b', { exposure: 5_000, freeStores: 3 }),
-      subject('p:c', { exposure: 900_000, freeStores: 400_000 }),
+      subject('p:a', { exposurePeak: 0, freeStores: 700_000 }),
+      subject('p:b', { exposurePeak: 5_000, freeStores: 3 }),
+      subject('p:c', { exposurePeak: 900_000, freeStores: 400_000 }),
       newcomer('p:new'),
     ];
     const total = totalFor(subjects);
@@ -110,9 +110,9 @@ describe('the quorum, and the published default (PROP-LV1, E2E-8)', () => {
 
   it('E2E-8: the fallback is identical to the published formula computed independently', () => {
     const subjects = [
-      subject('p:a', { exposure: 0, freeStores: 250_000 }),
-      subject('p:b', { exposure: 40_000, freeStores: 250_000 }),
-      subject('p:c', { exposure: 1_500_000, freeStores: 250_000 }),
+      subject('p:a', { exposurePeak: 0, freeStores: 250_000 }),
+      subject('p:b', { exposurePeak: 40_000, freeStores: 250_000 }),
+      subject('p:c', { exposurePeak: 1_500_000, freeStores: 250_000 }),
       newcomer('p:new'),
     ];
     const counted = tally({ constellation: C, forReckoning: 1, ballots: [], eligible: 4 });

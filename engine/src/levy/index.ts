@@ -160,7 +160,7 @@ export {
   docketRowsFor,
   inv24InputsFor,
   settleLevy,
-  type ExposureRead,
+  type ExposurePeakRead,
   type LevySettlement,
   type SweepPort,
 } from './settle.js';

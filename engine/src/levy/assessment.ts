@@ -137,8 +137,36 @@ export interface LevySubject {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly levyGoodHeld: Qty;
-  /** EXPOSURE — Σ open `max_direct_loss`, and nothing else (§3). */
-  readonly exposure: Minor;
+  /**
+   * ★ The **EXPOSURE high-water mark of one Reckoning** — the largest Σ open `max_direct_loss`
+   * this principal carried at any tick of the cycle the allocation is measuring.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **NOT EXPOSURE ITSELF, AND THE DIFFERENCE IS THE WHOLE OF `RULES_VERSION` 17.** §3 defines
+   * EXPOSURE as *"Σ of your open `max_direct_loss`, and nothing else"* and this field is not a
+   * second meaning of that word: it is a **statistic over** it, named for the statistic, and
+   * `Book.exposurePeaks` is its one home.
+   *
+   * The instantaneous reading this replaced sampled `LEVY_ASSESS_PHASE` — phase **0** — one tick
+   * after `settleVenture` released every stake in the world. A **22x trough** (`g01`: 4 open stake
+   * locks at phase 0 against 92 at phase 286), which left `BY_EXPOSURE`, `EVEN` and the published
+   * default `INVERSE_EXPOSURE` agreeing on **117 of 129 dockets** — three of eight seeds saw no
+   * spread at all. The rule asks *how exposed were you this cycle*; the value at the one tick when
+   * every stake has just been handed back answers nothing.
+   *
+   * Which cycle is **the caller's** to state, and the two callers state different ones on purpose:
+   *
+   *   - the **assessment** at phase 0 of Reckoning R reads R−1's *completed* mark, because the
+   *     docket bills you for the cycle that just ended;
+   *   - the **ballot** and the **observation** read the cycle in progress, because that is the
+   *     figure the *next* docket will read and the one a voter can still change.
+   *
+   * `Runtime.levySubjectOf` takes the Reckoning as a parameter so there is one formula and one
+   * named exception rather than two subject readers, which would be two arithmetics for the number
+   * a principal is billed on.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly exposurePeak: Minor;
 }
 
 /**
@@ -220,15 +248,26 @@ export function weightOf(rule: LevyRule, subject: LevySubject): number {
       // weights gives the same shares whether every weight is `1` or every weight is `1000`, and every
       // docket in this world's history had EXPOSURE 0 for every member. So this is a real balance
       // change that costs the live record nothing.
+      //
+      // ── ★ AND IT READS THE CYCLE'S HIGH-WATER MARK, NOT THE INSTANT (`RULES_VERSION` 17) ──
+      //
+      // With `subject.exposure` — the value at the tick the docket was minted — this arm and
+      // `INVERSE_EXPOSURE` below were flat on 117 of 129 dockets, because `LEVY_ASSESS_PHASE` is the
+      // tick after `settleVenture` releases every stake. `LevySubject.exposurePeak` carries the
+      // measurement and the argument.
       // ══════════════════════════════════════════════════════════════════════════
-      return LEVY_EXPOSURE_UNIT + Math.max(0, subject.exposure);
+      return LEVY_EXPOSURE_UNIT + Math.max(0, subject.exposurePeak);
     case 'BY_STORES':
       // The INVENTORY half of STORES, never the balance. `levyGoodHeld` carries the whole
       // argument and the measurement; the one-line version is that a goods obligation weighted
       // by a currency balance can assess a principal more of a good than any route can get it.
       return 1 + Math.max(0, subject.levyGoodHeld);
     case 'INVERSE_EXPOSURE': {
-      const denominator = LEVY_EXPOSURE_UNIT + Math.max(0, subject.exposure);
+      // The exact mirror of `BY_EXPOSURE` above, on the same reading (`RULES_VERSION` 17): §5.2
+      // presents the two as opposites, and opposites have to be the same quantity measured the same
+      // way. This is also the **published default**, so it is the arm most principals are billed
+      // under without ever voting — and the arm whose flatness was hardest to notice.
+      const denominator = LEVY_EXPOSURE_UNIT + Math.max(0, subject.exposurePeak);
       return Math.max(1, Math.trunc(LEVY_INVERSE_WEIGHT_NUM / denominator));
     }
   }

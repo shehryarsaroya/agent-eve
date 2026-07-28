@@ -140,6 +140,34 @@ export interface LevyBlock {
    * so an agent can see that presence, not money, is what discharges it.
    */
   readonly non_escrowable: Minor;
+  /**
+   * ★ The **EXPOSURE high-water mark this docket was weighted from** — the largest Σ open
+   * `max_direct_loss` this principal carried at any tick of the **previous** Reckoning.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A2, AND WITHOUT IT THE VOTE IS A GUESS.** Two of §5.2's four allocation rules are computed
+   * from this number and `RULES_VERSION` 17 changed which reading it is. An agent that could see
+   * only `obligations.exposure.mine` — the *instantaneous* figure, which at phase 0 is near zero
+   * because `settleVenture` released every stake one tick earlier — would read its own bill as
+   * unexplainable and its own ballot as arbitrary. *Known arithmetic is exact and
+   * machine-readable* (A2), and this is the input half of the arithmetic.
+   *
+   * Zero on a world's first Reckoning and for a principal that has never staked: both mean *"the
+   * record shows no peril"*, and both make the three exposure-shaped rules flat — correctly.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly assessed_on_exposure_peak: Minor;
+  /**
+   * ★ The same mark for the cycle **in progress** — what the NEXT docket will be weighted from.
+   *
+   * The pair is deliberate and it is the difference between a fact and a lever. `assessed_on_exposure_peak`
+   * is settled and cannot be changed; this one is still moving, and every `fill_role` stake a
+   * principal takes this cycle raises it. It is **monotone within the cycle**, so it is a lower
+   * bound on the final figure rather than a number that can fall — releasing a stake does not buy
+   * relief from a bill already earned, which is what stops "stake all cycle, unwind before the
+   * freeze" from being the dominant line.
+   */
+  readonly exposure_peak_this_cycle: Minor;
 }
 
 export interface BallotRef {

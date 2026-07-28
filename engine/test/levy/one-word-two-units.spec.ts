@@ -425,8 +425,8 @@ describe('★ 9. `BY_EXPOSURE` has a SCALE, so 450 of peril is not a 451x share'
     //
     // MUTATION: back to `1 + Math.max(0, subject.exposure)` and the ratio is 451 — red on the bound.
     // ══════════════════════════════════════════════════════════════════════════
-    const safe = subject('p:safe', { exposure: 0 });
-    const exposed = subject('p:exposed', { exposure: 450 });
+    const safe = subject('p:safe', { exposurePeak: 0 });
+    const exposed = subject('p:exposed', { exposurePeak: 450 });
     const ratio = weightOf('BY_EXPOSURE', exposed) / weightOf('BY_EXPOSURE', safe);
     expect(ratio, 'the exposed member is not weighed above the safe one at all').toBeGreaterThan(1);
     expect(
@@ -447,7 +447,7 @@ describe('★ 9. `BY_EXPOSURE` has a SCALE, so 450 of peril is not a 451x share'
       Math.trunc(LEVY_INVERSE_WEIGHT_NUM / (LEVY_EXPOSURE_UNIT + 450)),
     );
     // Never zero, at any EXPOSURE: the Levy has no exemptions.
-    expect(weightOf('INVERSE_EXPOSURE', subject('p:huge', { exposure: 10 ** 12 }))).toBeGreaterThanOrEqual(1);
+    expect(weightOf('INVERSE_EXPOSURE', subject('p:huge', { exposurePeak: 10 ** 12 }))).toBeGreaterThanOrEqual(1);
   });
 
   it('recomputes every historical docket IDENTICALLY, because EXPOSURE was zero for everyone', () => {

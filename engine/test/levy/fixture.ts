@@ -30,7 +30,13 @@ export const SETTLE_TICK = TICKS_PER_RECKONING - 1;
 export const FREEZE_TICK = SETTLE_TICK - 1;
 
 /**
- * A veteran with the given EXPOSURE and stores. Past both newcomer thresholds.
+ * A veteran with the given EXPOSURE HIGH-WATER MARK and stores. Past both newcomer thresholds.
+ *
+ * `exposurePeak` and not `exposure`, since `RULES_VERSION` 17: §5.2's two exposure rules read the
+ * largest EXPOSURE a principal carried at any tick of a Reckoning, not the value at the tick the
+ * docket was minted. `levy/book.ts:exposurePeaks` carries the 22x measurement. The arithmetic in
+ * this suite is unchanged — one non-negative integer into `weightOf` — and the rename is the point:
+ * a test that passed `exposure` was asserting about a quantity the engine no longer reads.
  *
  * `levyGoodHeld` defaults to **`freeStores`**, deliberately, so every arithmetic test written
  * before the two halves of STORES were split keeps asserting the same numbers: the old
@@ -41,7 +47,7 @@ export const FREEZE_TICK = SETTLE_TICK - 1;
 export function subject(
   principal: string,
   over: {
-    readonly exposure?: number;
+    readonly exposurePeak?: number;
     readonly freeStores?: number;
     readonly levyGoodHeld?: number;
     readonly tenureTicks?: number;
@@ -53,18 +59,18 @@ export function subject(
     tenureTicks: over.tenureTicks ?? LEVY_NEWCOMER_TENURE_TICKS,
     freeStores: minor(freeStores),
     levyGoodHeld: qty(over.levyGoodHeld ?? freeStores),
-    exposure: minor(over.exposure ?? 0),
+    exposurePeak: minor(over.exposurePeak ?? 0),
   };
 }
 
 /** A principal inside the newcomer floor: short tenure **and** thin capital. */
-export function newcomer(principal: string, over: { readonly exposure?: number } = {}): LevySubject {
+export function newcomer(principal: string, over: { readonly exposurePeak?: number } = {}): LevySubject {
   return {
     principal: principal as PrincipalId,
     tenureTicks: 0,
     freeStores: minor(0),
     levyGoodHeld: qty(0),
-    exposure: minor(over.exposure ?? 0),
+    exposurePeak: minor(over.exposurePeak ?? 0),
   };
 }
 

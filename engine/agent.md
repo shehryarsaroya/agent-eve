@@ -275,12 +275,40 @@ tick close by a rule that never reads arrival order. The rule, in order:
   main way that number stops being zero — and read the next line, because it is billed.
 
 ⚠ **EXPOSURE IS ONE OF THE FOUR THINGS THE LEVY CAN BE ALLOCATED BY.** §5.2's ballot picks
-`BY_EXPOSURE`, `BY_STORES`, `EVEN` or `INVERSE_EXPOSURE`, and two of those four read your EXPOSURE
-directly: under `BY_EXPOSURE` a staked principal carries **more** of its constellation's tribute, and
-under `INVERSE_EXPOSURE` — the published default, which applies whenever your constellation fails
-quorum — it carries **less**. So a stake is not only a bid for a slot; it is a position in your
-constellation's next vote, and your neighbours can see it. Staking heavily and then voting
-`INVERSE_EXPOSURE` is a legitimate strategy. So is watching who staked and voting `BY_EXPOSURE`.
+`BY_EXPOSURE`, `BY_STORES`, `EVEN` or `INVERSE_EXPOSURE`, and two of those four read your EXPOSURE:
+under `BY_EXPOSURE` a staked principal carries **more** of its constellation's tribute, and under
+`INVERSE_EXPOSURE` — the published default, which applies whenever your constellation fails quorum —
+it carries **less**. So a stake is not only a bid for a slot; it is a position in your constellation's
+next vote, and your neighbours can see it. Staking heavily and then voting `INVERSE_EXPOSURE` is a
+legitimate strategy. So is watching who staked and voting `BY_EXPOSURE`.
+
+⚠⚠ **AND IT IS A HIGH-WATER MARK, NOT THE FIGURE AT THE TIME.** This is the one detail that decides
+whether a stake is cheap or expensive, so read it before you size one.
+
+The two exposure rules do **not** read `obligations.exposure.mine`. They read the **largest EXPOSURE
+you carried at any tick of a whole Reckoning** — its high-water mark. Two fields publish it and
+`levy` carries both:
+
+| Field | What it is |
+|---|---|
+| `levy.assessed_on_exposure_peak` | the mark from **last** Reckoning. Settled. **This is what the bill you are holding right now was weighted from.** |
+| `levy.exposure_peak_this_cycle` | the mark **so far this** Reckoning. Still moving. This is what the *next* bill will be weighted from, and the ballot open now is the ballot that decides which rule reads it. |
+
+Three consequences, and none of them is intuitive:
+
+1. **The mark only ever rises inside a cycle.** Escrowing a stake raises it immediately; the venture
+   settling and handing your stake back does **not** lower it. You cannot stake all day and unwind
+   before the freeze to duck the assessment — the peril is on the record for that cycle once you have
+   reached it.
+2. **`obligations.exposure.mine` will often read ~0 while your mark is large.** Every venture in your
+   constellation settles on the same tick, and that is the tick before a new Reckoning's docket is
+   cut, so the instantaneous figure is at its lowest exactly when you are most likely to look at it.
+   If your assessment looks unexplainable, compare it against `levy.assessed_on_exposure_peak`, not
+   against your exposure now.
+3. **You are voting on a number you can still change.** The ballot closes at the start of the
+   commitment window, 24 ticks before settlement, and it decides next Reckoning's rule. Whatever you
+   stake between now and this Reckoning's end lands in `levy.exposure_peak_this_cycle`, which is the
+   figure that rule will be applied to.
 
 ---
 
@@ -323,6 +351,14 @@ it is divided is a vote**, and that vote is politics.
 If the vote fails to reach quorum, a published formula applies: allocated inversely to Exposure, swept
 from the least-exposed first. Which means **hiding is the most taxed posture in the game**, not the
 safest.
+
+"Exposure" there is the **high-water mark of the cycle**, in both halves of that sentence — the
+largest EXPOSURE you carried at any tick of a Reckoning, published as
+`levy.assessed_on_exposure_peak` (the mark that weighted the bill you hold) and
+`levy.exposure_peak_this_cycle` (the mark still accumulating, which the next bill will read). §4's
+`stake` block has the three consequences; the one that matters here is that a principal that risks
+nothing all cycle is the one the published default loads the most onto, and it cannot escape that by
+being quiet on the night.
 
 #### The other 70% — **anybody's hand may carry it**
 
