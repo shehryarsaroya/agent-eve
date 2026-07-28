@@ -595,11 +595,34 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // because the published default's *"allocated inversely to Exposure"* had to name **which**
     // Exposure or it names a quantity the engine no longer reads.
     //
-    // ⚑ **THE ANALYTIC MARGIN IS NOW 5,276 OF 72,000, DOWN FROM 10,307 IN ONE FEATURE.** Read
-    // `MAX_CONTRACT_CHARS`'s note before the next block, not after it. Two consecutive features have
-    // now each spent about a quarter of the raise.
+    // ⚑ **THE ANALYTIC MARGIN IS NOW 778 OF 72,000, DOWN FROM 1,408.** Read
+    // `MAX_CONTRACT_CHARS`'s note before the next block, not after it. Two consecutive features each
+    // spent about a quarter of the raise; this one spent 631 characters of what was left.
+    //
+    // ── ★ +631, AND IT IS D7's GOODS FLOOR BEING WRITTEN DOWN FOR THE FIRST TIME ──
+    //
+    // §11A's funding block explained the CURRENCY half of D7 and had never mentioned the goods half:
+    // `ENDOWMENT_GOOD_FLOOR_QTY` withholds 50,000 `ration` **per venue** from sale, `agent.md` said
+    // nothing about it, and forty lines up it actively told an agent *"you sell ore and rations"* —
+    // which is false for the only rations a newcomer has. Measured on a swept world: **74% of
+    // observations hold `ration` and can sell none of it.**
+    //
+    // The budget was checked before the words were written, not after, and it changed them twice:
+    //
+    //   · the first draft was 930 characters and would have left 479 of analytic margin. Rewritten to
+    //     590 for the same four facts (the floor, the figure to read, per-venue, it never falls).
+    //   · the §11A `because` string was widened to describe the new selector and put **+65 on all
+    //     five positions** — including a newcomer's first wake, where the budget is tightest — for a
+    //     clause that changes no decision. Reverted; the original sentence is still true under the
+    //     wider predicate.
+    //
+    // The remaining +40 on every position is the inline correction to the false sentence, which is a
+    // rules surface contradicting the engine and not optional.
+    //
+    // ⚑ For the next author: 778 is not enough for a paragraph. The reachable margin is 6,793 and
+    // quoting THAT number is the mistake this comment block already warns about two screens up.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_162);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_793);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -622,7 +645,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // block). Both features landed concurrently, so this row carries the sum of two independent
     // raises and neither author saw the other's — which is why the number is measured rather than
     // predicted, and why the margin below is the one to read.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(64_576);
+    // +631 at this change: §11A's goods-floor paragraph, which is `wanted` on `trade` OR on a
+    // withheld endowment, so a claimant in trouble reads it. The reachable margin is where cry-wolf
+    // would bite and it is still healthy — 6,793 against a required 4,000 — which is the number to
+    // quote about SAFETY and never the number to quote about ROOM.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(65_207);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -958,6 +985,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const obligations = observation.obligations as Record<string, unknown>;
     const ventures = observation.ventures as Record<string, unknown>;
     const works = holding['works'] as Record<string, unknown>;
+    const market = observation.market as Record<string, unknown>;
 
     expect(base.verbs.size, 'a seated member is offered something').toBeGreaterThan(0);
     for (const affordance of observation.affordances) expect(base.verbs).toContain(affordance.verb);
@@ -1006,6 +1034,25 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         field: 'canBuildWorks',
         to: false,
         patch: { holding: { ...holding, works: { ...works, here: { affordable: false } } } },
+      },
+      // ── ★ `endowmentWithheld`, AND IT NEEDS TWO CASES BECAUSE IT READS TWO PATHS ──
+      //
+      // The state a probe read on the live shard as `market.transferable_minor: 0` beside 200,000
+      // currency. It is a conjunction, so ONE flip case would leave half the predicate unverified
+      // — a version reading `market.balance_minor` (which does not exist) instead of
+      // `market.endowment.balance_minor` would pass the transferable case and be false for every
+      // member for ever, which is exactly the `anchorCold`/`claim['anchorHot']` failure this whole
+      // block was rewritten for.
+      { field: 'endowmentWithheld', to: false, patch: { market: { ...market, transferable_minor: 5_000 } } },
+      {
+        field: 'endowmentWithheld',
+        to: false,
+        patch: {
+          market: {
+            ...market,
+            endowment: { ...(market['endowment'] as Record<string, unknown>), balance_minor: 0 },
+          },
+        },
       },
     ];
 
@@ -1348,10 +1395,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      39_449, // a newcomer on its first wake
-      47_837, // mid-game in the Commons
-      48_710, // about to take territory — and §11B is READABLE now, which it was not
-      64_576, // a claimant in trouble — the largest REACHABLE position
+      39_489, // a newcomer on its first wake            (+40: the corrected "you sell … rations")
+      47_877, // mid-game in the Commons                 (+40: same)
+      48_750, // about to take territory                 (+40: same)
+      65_207, // a claimant in trouble — the largest REACHABLE position (+631: +40 and the goods floor)
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
@@ -1368,10 +1415,15 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // against a required 4,000. Spent on `RULES_VERSION` 19's §11A block — the rule that decides
       // what a member may commit to a BID, which had no home in the contract at all until now,
       // because until 19 the answer was *nothing, for everyone, always*.
-      70_591,
+      71_222,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
-    // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 1,408 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
+    // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 778 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
+    //
+    // 1,408 → 778 at this change, and the 631 bought the one half of D7 the contract had never
+    // stated: the GOODS floor. Measured before the prose was written rather than after, which is
+    // what the paragraph below asks for and had not previously been done — see the note on the
+    // `uncapped` assertion above for the two drafts the measurement rejected.
     //
     // This row is the SUM of two features that landed concurrently in separate worktrees, neither of
     // whose authors could see the other's spend:

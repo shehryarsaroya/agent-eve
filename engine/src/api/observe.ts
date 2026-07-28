@@ -55,12 +55,21 @@ import {
 import type { GoodId, Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor, type Minor } from '../core/units.js';
 import { storesAccount } from '../ledger/index.js';
-import { MAX_ORDER_QTY, freeCash, sellableGoods, type PublicBook } from '../market/index.js';
+import {
+  MAX_ORDER_QTY,
+  freeCash,
+  sellableGoods,
+  tradeCheck,
+  tradeObstacles,
+  type PublicBook,
+  type VenueId,
+} from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
   escrowRatioBps,
   escrowRequired,
   IN_FULL,
+  isLive,
   kindSpec,
   maxElectiveBps,
   minElectiveBps,
@@ -310,7 +319,43 @@ export interface Affordance {
 
 export interface Withheld {
   readonly count: number;
+  /**
+   * ★ **WHICH VERBS THE COUNT IS ABOUT, MACHINE-READABLE.** Sorted, deduped, possibly empty.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * `withheld` closed with *"Nothing you were eligible for has been dropped without this
+   * count"* and had **no mechanism connecting that promise to the verb set**. Every row was
+   * hand-written per mechanic, so a mechanic could ship with no row at all — and one did:
+   * `trade` was silent in **86% of observations** across a swept world (497 of 576), with a
+   * reachable venue in every one of them.
+   *
+   * `test/api/agt-r5-reachability.test.ts` did not catch it and could not: it asks *"is every
+   * live verb offered SOMEWHERE"*, a global property, and it passes. The property that broke is
+   * per-observation — *"when this verb is absent for THIS principal on THIS wake, is the absence
+   * accounted for"* — and nothing checked it because nothing could: the accounting existed only
+   * as prose, and prose is not reconcilable against `header.live_verbs`.
+   *
+   * So each row is now **tagged with the verb it explains**, and this field is that tagging
+   * published. It costs about thirty bytes, it saves an agent parsing a paragraph to learn
+   * whether the thing it wanted is missing or merely withheld, and it makes
+   * `test/api/withheld-is-accountable.spec.ts` possible at all.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly verbs: readonly string[];
   readonly reason: string;
+}
+
+/**
+ * One withheld row: the sentence, and **the verb whose absence it accounts for**.
+ *
+ * `verb: null` is for the rows that are about a *list* rather than a verb — the affordance
+ * truncation, `ventures.board[]`'s own cap, a mechanic that has not landed. Those are real
+ * omissions and stay counted; they simply do not exonerate any particular verb, and pretending
+ * they did would make {@link Withheld.verbs} lie in the one direction that matters.
+ */
+interface WithheldRow {
+  readonly verb: string | null;
+  readonly text: string;
 }
 
 export interface Observation {
@@ -408,11 +453,13 @@ export function buildObservation(input: ObserveInput): Observation {
   // money attached.
   const market = runtime.marketView(principal, tick);
   const books = (market['books'] ?? []) as readonly PublicBook[];
+  /** `market.at`, read off the block rather than re-derived. See {@link affordancesFor}. */
+  const marketVenues = (market['at'] ?? []) as readonly VenueId[];
   // The **same rows** the payload publishes are the rows the affordances are built from.
   // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
   // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick, board, solved.dropped, books)
+    ? affordancesFor(runtime, principal, tick, board, solved.dropped, books, marketVenues)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
   const exposure = runtime.ledger.encumbrances.cachedExposure(principal);
@@ -896,9 +943,13 @@ export function buildObservation(input: ObserveInput): Observation {
  * budget must not buy a bigger information set.
  */
 function notAWake(input: ObserveInput): Withheld {
+  // `verbs: []` in every branch, and it is exact rather than convenient for the same reason
+  // `count: 0` is: no affordance list was solved, so no verb's absence has been accounted for
+  // OR left unaccounted. A non-empty list here would claim an accounting that never happened.
   if (input.runtime.engine.status === 'PAUSED') {
     return {
       count: 0,
+      verbs: [],
       reason:
         'this observation is the cached tick snapshot: the world is PAUSED, so there is nothing you can ' +
         'legally do until it resumes. Nothing was withheld — no affordance list was solved.',
@@ -907,6 +958,7 @@ function notAWake(input: ObserveInput): Withheld {
   if (input.wakesRemaining > 0) {
     return {
       count: 0,
+      verbs: [],
       reason:
         `the world is RUNNING and you still hold ${String(input.wakesRemaining)} of ` +
         `${String(WAKES_PER_RECKONING)} wakes this Reckoning — this particular payload simply was not fetched ` +
@@ -917,6 +969,7 @@ function notAWake(input: ObserveInput): Withheld {
   }
   return {
     count: 0,
+    verbs: [],
     reason:
       `you have spent all ${String(WAKES_PER_RECKONING)} wakes this Reckoning. This snapshot is legal, ` +
       'free, and carries no fresh affordance and no quote_id. Wakes reset at the next Reckoning. Nothing ' +
@@ -1237,6 +1290,14 @@ function affordancesFor(
   boardDropped: number,
   /** The same books the payload publishes, so a quote cannot disagree with the ladder. */
   books: readonly PublicBook[],
+  /**
+   * `market.at` — the venues a `trade` could reach, straight off the published block.
+   *
+   * Passed rather than recomputed from `hands`, for the reason `books` is passed: the withheld
+   * row's claim *"market.at[] is empty"* has to be true of the array the agent is holding, and a
+   * second derivation of "where am I present" is a second answer to the question that decides it.
+   */
+  venues: readonly VenueId[],
 ): AffordanceSet {
   const eligible: Affordance[] = [];
   /** Charge deliveries withheld because no hand of this principal is standing there. */
@@ -1251,6 +1312,24 @@ function affordancesFor(
   const free = runtime.ledger.account(storesAccount(principal)) === undefined
     ? minor(0)
     : runtime.ledger.freeBalance(storesAccount(principal));
+  /**
+   * ★ **WHAT A BID MAY ACTUALLY COMMIT — `freeCash`, not `free`.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * `free` above is the raw unlocked balance and it is the right figure for everything that
+   * **destroys** currency — a WORKS, a crossing, a Charge — which is why it exists. It was
+   * also the figure the `trade` BID affordance sized itself against, while `planOrder` gates
+   * the same order on `freeCash` (`market/place.ts:188`). Those differ by the whole
+   * endowment, so on the live shard's own numbers — 200,000 free, 0 transferable — the menu
+   * would have offered a BID for up to 200,000 and the verb would have refused every one of
+   * them: the server telling an agent to do something and then declining, which is AGT-S2's
+   * failure and costs the agent a real action every time.
+   *
+   * It never fired only because the probe's venue had no resting ask to price against. It
+   * would have fired on the first order anybody rested there.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  const transferable = freeCash(runtime.ledger, principal);
 
   // 0. **Answer the demand.** A raid is a decision under a published clock and it is
   //    the only thing on this list with a deadline nobody can be talked out of, so it
@@ -2890,16 +2969,50 @@ function affordancesFor(
   //     act*: an agent that copies this gets the fill that is on the book now or gets
   //     nothing, never an unintended resting order it has to remember to cancel.
   //
-  //     Eligibility is affordability, exactly as it is for `create`. A bid is offered
-  //     only for a quantity the free stores can escrow in full, and an ask only for
-  //     goods the principal actually holds at that venue, unpledged and not in
-  //     transit — the same two doors `place.ts` refuses at. Offering more would be the
-  //     server telling an agent to do something and then declining (AGT-S2).
+  //     ── ★ ELIGIBILITY IS THE VERB'S OWN ANSWER NOW, NOT A SECOND COPY OF IT ──
+  //
+  //     It used to be this layer's own affordability arithmetic — `Math.floor(free / price)` —
+  //     and `planOrder` decided the real one, three ways apart:
+  //
+  //       · it read the RAW BALANCE where `planOrder` reads `freeCash`, so on the live shard's
+  //         own numbers (200,000 free, 0 transferable) the menu offered up to 200,000 of BIDs
+  //         the verb refuses. It escaped notice only because the probe's venue had nothing
+  //         resting to price against;
+  //       · it never checked SELF-CROSS, so a principal whose own ask was the only level on the
+  //         book was offered a BID against itself, which `planOrder` refuses on A15;
+  //       · it never checked the open-order CAPS.
+  //
+  //     All three are AGT-S2 — the server telling an agent to do something and then declining —
+  //     and all three are one bug: two homes for one rule (HARD RULE 4). `tradeCheck` asks the
+  //     same `planOrder` the verb runs, moves nothing, and cannot drift from it.
+  const tradePorts = {
+    ledger: runtime.ledger,
+    world,
+    book: runtime.market,
+    principal,
+    tick,
+  };
   for (const book of books) {
     const askLevel = book.levels.ask[0];
     if (askLevel !== undefined && askLevel.price > 0) {
-      const affordable = Math.min(askLevel.qty, Math.floor(free / askLevel.price), MAX_ORDER_QTY);
-      if (affordable > 0) {
+      // `transferable`, never `free`: `planOrder` gates the BID on `freeCash` and the two
+      // differ by the whole endowment. See {@link transferable} for what that cost. Kept as a
+      // pre-filter as well as a gate because it also sizes the order.
+      const affordable = Math.min(askLevel.qty, Math.floor(transferable / askLevel.price), MAX_ORDER_QTY);
+      if (
+        affordable > 0 &&
+        tradeCheck(tradePorts, {
+          operation: 'place',
+          venue: book.venue,
+          good: book.good,
+          side: 'BID',
+          quantity: affordable,
+          limitPrice: askLevel.price,
+          durationTicks: null,
+          timeInForce: 'IOC',
+          order: null,
+        }) === null
+      ) {
         const spend = minor(affordable * askLevel.price);
         eligible.push({
           verb: 'trade',
@@ -2931,8 +3044,22 @@ function affordancesFor(
     }
     const bidLevel = book.levels.bid[0];
     const holding = sellableGoods(runtime.ledger, principal, book.good, book.venue);
-    if (bidLevel !== undefined && holding > 0) {
-      const amount = Math.min(bidLevel.qty, holding, MAX_ORDER_QTY);
+    const amount = bidLevel === undefined ? 0 : Math.min(bidLevel.qty, holding, MAX_ORDER_QTY);
+    if (
+      bidLevel !== undefined &&
+      amount > 0 &&
+      tradeCheck(tradePorts, {
+        operation: 'place',
+        venue: book.venue,
+        good: book.good,
+        side: 'ASK',
+        quantity: amount,
+        limitPrice: bidLevel.price,
+        durationTicks: null,
+        timeInForce: 'IOC',
+        order: null,
+      }) === null
+    ) {
       eligible.push({
         verb: 'trade',
         params: {
@@ -3024,66 +3151,88 @@ function affordancesFor(
 
   const list = prioritised.slice(0, MAX_AFFORDANCES);
   const dropped = prioritised.length - list.length;
-  const reasons: string[] = [];
+  // ── EVERY ROW CARRIES THE VERB IT ACCOUNTS FOR (see {@link Withheld.verbs}) ──
+  //
+  // The tag is not decoration and it is not for the reader alone: it is the only thing that makes
+  // `header.withheld`'s closing promise *reconcilable* against `header.live_verbs`. Untagged, the
+  // accounting existed only as prose and a whole mechanic could ship with no row — which is exactly
+  // what `trade` did, in 86% of a swept world's observations.
+  const reasons: WithheldRow[] = [];
   if (dropped > 0) {
-    reasons.push(
+    reasons.push({
+      verb: null,
+      text:
       `${String(dropped)} further legal acts exist and were not sent, because one observation carries at most ` +
         `${String(MAX_AFFORDANCES)}. They are the lowest-priority repeats (extra lanes for an already-listed hand)`,
-    );
+    });
   }
   if (notLive > 0) {
     // Counted, not silent. PROP-O1 is about omissions being *countable*, and "the
     // mechanic has not landed" is an omission the agent is entitled to know about.
-    reasons.push(
+    reasons.push({
+      verb: null,
+      text:
       `${String(notLive)} act(s) you are otherwise eligible for name a verb whose mechanic has not landed yet; ` +
         'header.live_verbs is the current list',
-    );
+    });
   }
   if (alternateHands > 0) {
-    reasons.push(
+    reasons.push({
+      verb: 'fill_role',
+      text:
       `${String(alternateHands)} further legal fill_role act(s) exist and are not listed: each open slot on ` +
         'ventures.board[] can be filled by ANY of your idle hands standing at that venture’s stage, and only ' +
         'one is offered per slot. hands[] lists them all, and which hand you send changes nothing about what ' +
         'the role pays',
-    );
+    });
   }
   if (rowsOutOfReach > 0) {
-    reasons.push(
+    reasons.push({
+      verb: 'fill_role',
+      text:
       `${String(rowsOutOfReach)} slot(s) on ventures.board[] have no fill_role offered because you have no ` +
         `idle hand standing at their stage (${[...unreachedStages].sort(cmp).join(', ')}) — a hand fills a ` +
         'role where the venture happens, so `move` one there first and check the trip fits inside the window ' +
         'each row publishes in expires_tick',
-    );
+    });
   }
   if (rowsWithNoHand > 0) {
-    reasons.push(
+    reasons.push({
+      verb: 'fill_role',
+      text:
       `${String(rowsWithNoHand)} slot(s) on ventures.board[] have no fill_role offered because none of your ` +
         'hands is both IDLE and present this tick — a hand that arrived this tick is not present until the ' +
         'next one. They are still on the board and still yours to take once a hand frees up',
-    );
+    });
   }
   if (commonsBoundLanes > 0) {
-    reasons.push(
+    reasons.push({
+      verb: 'move',
+      text:
       `${String(commonsBoundLanes)} move(s) onto lanes leaving the Commons are not offered because your ` +
         'holding is civic-leased in the Commons, so your hands are Commons-bound and may only move between ' +
         'COMMONS systems (A15). That is not a bug and it is not permanent: `graduate` moves your HOLDING one ' +
         'lane outward for a price, and from the tick it lands your hands are free to go anywhere. ' +
         'holding.graduation carries the price and the destinations',
-    );
+    });
   }
   if (crossingWithheld > 0 && crossing !== null) {
     // Counted, never silent: this is the one omission that, left uncounted, would look
     // exactly like the defect a playtest already found — an exit that does not exist.
-    reasons.push(
+    reasons.push({
+      verb: 'graduate',
+      text:
       `${String(crossingWithheld)} graduate act(s) exist and are not offered because the crossing is not ` +
         `affordable yet: it costs ${String(crossing.upkeepMinor)} currency (you have free ` +
         `${String(crossing.freeMinor)}) plus ${String(crossing.upkeepQty)} units of ${crossing.good} standing ` +
         `at ${crossing.from} (you have ${String(crossing.availableQty)} unpledged there). ` +
         'holding.graduation carries the same figures and the destinations, so the choice is still readable',
-    );
+    });
   }
   if (worksWithheld > 0 && worksHere !== null) {
-    reasons.push(
+    reasons.push({
+      verb: 'build',
+      text:
       `a WORKS at ${worksHere.system} is not offered because you cannot pay for it yet: it costs ` +
         `${String(worksHere.costMinor)} of your unlocked balance (you can spend ` +
         `${String(worksHere.freeMinor)} — pledged stores are withheld from that figure, your starter ` +
@@ -3091,27 +3240,31 @@ function affordancesFor(
         `${String(worksHere.costQty)} units of ${worksHere.good} standing here (you have ` +
         `${String(worksHere.availableQty)} unpledged). holding.works carries the same figures and the ` +
         'share you would get, so the decision is readable before you can afford it',
-    );
+    });
   }
   if (crossingAnchored > 0 && crossing !== null) {
-    reasons.push(
+    reasons.push({
+      verb: 'graduate',
+      text:
       `${String(crossingAnchored)} graduate act(s) exist and are not offered because you hold live claim(s) on ` +
         `${crossing.anchoring.join(', ')} — a claim is anchored by a body, so your holding cannot leave ` +
         'territory that would then have nobody standing on it. `abandon` returns part of the bond and ' +
         '`publish_offer` {"cede":…} sells the claim; either one opens the crossing again',
-    );
+    });
   }
   if (chargeNoHand > 0) {
     // Counted with the sentence that fixes it, because the fix is one ordinary act. Left
     // uncounted this would read as "your Charge is unpayable", which is the shape of the
     // refusal loop that buries real rules-surface defects (AGT-S3).
-    reasons.push(
+    reasons.push({
+      verb: 'deliver',
+      text:
       `${String(chargeNoHand)} Charge delivery(ies) exist and are not offered because none of YOUR hands is ` +
         `standing at ${[...new Set(chargeNoHandAt)].sort(cmp).join(', ')}. A Charge is goods physically handed ` +
         'over, so `move` a hand there first — `graduate` moved your holding and your stores, never your hands. ' +
         'obligations.charge[] carries `hand_here: false` and the full bill regardless, so the deadline stays ' +
         'readable; and any principal\'s hand may pay any claim\'s Charge, so hiring a carrier also works',
-    );
+    });
   }
   if (carryBlocked > 0) {
     // ── COUNTED, BECAUSE THIS OMISSION IS THE ONE THAT WAS INVISIBLE FOR THE WHOLE BUILD ──
@@ -3124,14 +3277,16 @@ function affordancesFor(
     //
     // The fix is usually one ordinary act, so the sentence says which: a hand at the delivery
     // place. That is the same hand paying your own tribute puts there.
-    reasons.push(
+    reasons.push({
+      verb: 'deliver',
+      text:
       `${String(carryBlocked)} deliver act(s) on ANOTHER principal's Levy are not offered — a stated share of ` +
         'every assessment is escrowable (§5.2) and may be discharged by any principal\'s hand, so a ' +
         'constellation-mate with goods can pay down a neighbour\'s bill. Reason(s): ' +
         `${[...carryBlockedWhy].sort(cmp).join(' · ')}. The non-escrowable share is never carryable at any ` +
         'price, and nothing here obliges you to carry anything — a carry hands YOUR goods to somebody ' +
         'else\'s obligation for no payment the engine enforces',
-    );
+    });
   }
   if (demandCapacitySpent) {
     // ── COUNTED, BECAUSE A MENU THAT SHRINKS WITHOUT SAYING WHY TEACHES THE WRONG RULE ──
@@ -3141,13 +3296,15 @@ function affordancesFor(
     // sentence, will conclude that predation is unreliable rather than that it is rationed —
     // and will not plan the one decision the mechanic exists to force: WHICH target, given that
     // you get two.
-    reasons.push(
+    reasons.push({
+      verb: 'demand',
+      text:
       `every demand you could open is withheld because you have spent all ${String(AGGRESSION_PER_RECKONING)} ` +
         'of this Reckoning\'s aggression capacity (§9). It refreshes at the next Reckoning and does NOT ' +
         'accumulate: unspent capacity is gone, so a standing toll is unfundable by design, and the real cost ' +
         'of a demand is the other demand you gave up. Answering somebody else\'s standoff with `join` costs ' +
         'none of it',
-    );
+    });
   }
   if (demandSilent) {
     // ── COUNTED, BECAUSE THE OTHER BRANCH IS THE ONLY ONE THAT EVER SPOKE ─────
@@ -3160,7 +3317,9 @@ function affordancesFor(
     //
     // The count is 1 rather than one-per-neighbour for the same reason the branch above gives:
     // the thing withheld is the ACT, and there is exactly one of it.
-    reasons.push(
+    reasons.push({
+      verb: 'demand',
+      text:
       `no demand is offered even though you hold ${String(demandsLeft)} of ` +
         `${String(AGGRESSION_PER_RECKONING)} aggression capacity — the capacity is NOT what is stopping you ` +
         `(header.aggression carries the count, the expiry and tick ${String(demandOpenUntilTick)}, the last ` +
@@ -3174,7 +3333,7 @@ function affordancesFor(
               'where somebody is standing; move a hand to one of those systems'
             : `${String(demandCandidates)} neighbour(s) were considered and every one was refused. ` +
               `Reason(s): ${[...demandRefusedWhy].sort(cmp).join(' · ')}`),
-    );
+    });
   }
   if (boardDropped > 0) {
     // The list this sentence is about is `ventures.board[]` itself, one level above the
@@ -3182,12 +3341,46 @@ function affordancesFor(
     // closed with "nothing you were eligible for has been dropped without this count" while
     // holding back eligible slots — the engine contradicting `agent.md` §6 in the same
     // breath as the count that exists to prevent exactly that.
-    reasons.push(
+    reasons.push({
+      verb: null,
+      text:
       `${String(boardDropped)} further slot(s) you are eligible for are not on ventures.board[] at all, ` +
         `because one observation carries at most ${String(MAX_LIST_ROWS)} rows. The rows you did get are the ` +
         'ones a hand of yours can reach, sorted first for that reason; the rest come into view as these ' +
         'resolve, or sooner if you move a hand to a stage you are not standing at',
-    );
+    });
+  }
+  // ── ★ `trade`, WHICH HAD NO ROW AT ALL AND WAS THE DEFECT THIS TAGGING FOUND ──
+  //
+  // A probe holding 200,000 currency and 40,116 `ration` in the MARCHES was offered no `trade`,
+  // shown `market.transferable_minor: 0`, and given `withheld.count: 2` naming a venture slot
+  // and `demand`. So the payload's closing promise was false, and the one field that could have
+  // explained it was a bare zero beside a six-figure balance.
+  //
+  // Solved in `market/standing.ts` for the reason `boardFor` is solved once: the affordance
+  // layer, the payload block and this row must agree about why a trade is impossible, and three
+  // copies of that reasoning is what let this affordance gate a BID on `freeBalance` while
+  // `planOrder` gated it on `freeCash`.
+  //
+  // Counted as one, like `demand`: the thing withheld is the ACT.
+  const tradeSilent = !offerable.some((a) => a.verb === 'trade') && live.has('trade');
+  const tradeWhy = tradeSilent
+    ? tradeObstacles({
+        ledger: runtime.ledger,
+        world,
+        book: runtime.market,
+        principal,
+        tick,
+        books,
+        venues,
+        // The holding, because `move` needs a destination and "somewhere" is not one. Every
+        // principal has exactly one (`holdingOf` throws otherwise), and it is the system the
+        // agent's own stores stand at — so the sentence names a place it has a reason to be.
+        homeVenue: holdingOf(world, principal).system,
+      })
+    : [];
+  if (tradeWhy.length > 0) {
+    reasons.push({ verb: 'trade', text: tradeWhy.join('; also ') });
   }
   return {
     list,
@@ -3206,11 +3399,14 @@ function affordancesFor(
         carryBlocked +
         commonsBoundLanes +
         (demandCapacitySpent ? 1 : 0) +
-        (demandSilent ? 1 : 0),
+        (demandSilent ? 1 : 0) +
+        (tradeWhy.length > 0 ? 1 : 0),
+      verbs: [...new Set(reasons.map((r) => r.verb).filter((v): v is string => v !== null))].sort(cmp),
       reason:
         reasons.length === 0
           ? 'nothing was withheld: this is every legal act, with its full cost.'
-          : `${reasons.join('; ')}. Nothing you were eligible for has been dropped without this count.`,
+          : `${reasons.map((r) => r.text).join('; ')}. Nothing you were eligible for has been dropped ` +
+            'without this count, and withheld.verbs names which verbs it is about.',
     },
   };
 }
@@ -3490,6 +3686,24 @@ function boardFor(
   };
 }
 
+/**
+ * The one home of *"when does this venture pay"*, in the three states it can be asked in.
+ *
+ * A branch rather than a stored field, because the answer for a `DEFERRED` venture is a
+ * function of the clock and would go stale the moment it was written down. Derived from
+ * `nextSettlement`, which is the same call the header's `next_reckoning` uses, so the row and
+ * the clock cannot disagree about the tick a settlement lands on.
+ */
+function ventureResolvesAt(venture: VentureRecord, tick: number): number | null {
+  // `tick + 1`, not `tick`. `nextSettlement` is at-or-after, and a venture is deferred *during*
+  // a settlement tick's own processing — so on that tick `nextSettlement(tick)` returns the tick
+  // that just failed to settle it, which is the same class of false forward-looking fact this
+  // function exists to remove, in a one-tick window.
+  if (venture.state === 'DEFERRED') return nextSettlement(tick + 1);
+  if (isLive(venture)) return venture.resolvesAtTick;
+  return null;
+}
+
 function ventureRow(
   runtime: Runtime,
   venture: VentureRecord,
@@ -3503,8 +3717,46 @@ function ventureRow(
     stage: venture.stage,
     creator: venture.creator,
     terms_hash: venture.termsHash,
-    resolves_at_tick: venture.resolvesAtTick,
-    window_closes_tick: venture.windowClosesTick,
+    /**
+     * ★ **WHEN THIS PAYS — `null` WHEN THE ANSWER IS "NEVER".**
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * This was `venture.resolvesAtTick` unconditionally, on every state, and it produced the
+     * first false forward-looking fact a probe has ever caught on this surface. The probe that
+     * reached a settlement — the first one that ever has — read:
+     *
+     *     "state": "ABANDONED", "resolves_at_tick": 287,
+     *     "countersigned": [...], "i_have_signed": true
+     *
+     * planned around that settlement, waited for it, and nothing happened. **Every field there
+     * is individually accurate** — `resolvesAtTick` is a stored value and the signatures are a
+     * true record of who signed while it was live — and together they state a false fact about
+     * the future. Same shape as `market.transferable_minor: 0` beside a six-figure balance: a
+     * number true in isolation and misleading in place.
+     *
+     * Three branches, because there are three honest answers and the old field gave one:
+     *
+     *   - **terminal** (`SETTLED`/`DEFAULTED`/`ABANDONED`) → `null`. Nothing is coming.
+     *     {@link resolved_at_tick} carries when it happened, and `state` says what happened.
+     *   - **`DEFERRED`** → the **next** settlement tick, not the stored one. §15.3's cascade
+     *     re-enters a deferred venture at the next Reckoning (`venture/book.ts` selects
+     *     `LIVE || DEFERRED` with `resolvesAtTick <= tick`), so the stored tick is in the past
+     *     and the true answer is a tick nobody was publishing.
+     *   - **`FORMING`/`LIVE`** → unchanged.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    resolves_at_tick: ventureResolvesAt(venture, runtime.engine.tick),
+    /** The tick it actually resolved at, or `null` while it has not. The other half. */
+    resolved_at_tick: venture.resolvedAtTick,
+    /**
+     * The signing window, `null` once it can no longer be signed.
+     *
+     * The same defect one field over, and it is worse than its neighbour rather than better:
+     * `countersign` refuses outright once the venture is not LIVE (`PROP-V6`), so a closed
+     * record publishing a signing deadline invites an agent to spend an action on a refusal —
+     * AGT-S2, from a field rather than from an affordance.
+     */
+    window_closes_tick: isLive(venture) ? venture.windowClosesTick : null,
     pinned_value: pinnedValue(venture),
     roles: venture.roles.map((r) => ({
       index: r.index,

@@ -251,6 +251,25 @@ export function checkReplacement(
 }
 
 /**
+ * **Would this order be refused, and in what words?** Nothing moves.
+ *
+ * The observation layer's read-only door onto {@link planOrder} — the analogue of
+ * `Runtime.demandRefusalFor`, and it exists for the same reason. `header.withheld`
+ * has to say why no `trade` is offered, and the only honest source for that sentence
+ * is the gate itself: a paraphrase in the affordance layer is a second home for a
+ * rule (HARD RULE 4), and scar #1 is a whole game shipped on two homes for one rule
+ * that read correctly apart.
+ *
+ * `null` means the order would be accepted. Every non-null answer carries the same
+ * `hint` an agent would have been handed had it spent an action finding out —
+ * which is the difference between a legible menu and a wiki with extra steps (A2).
+ */
+export function tradeRefusalFor(ctx: PlaceContext, req: TradeRequest): Rejection | null {
+  const planned = planOrder(ctx, req, null);
+  return planned.ok ? null : planned;
+}
+
+/**
  * Place an order, fully escrowed, or refuse.
  *
  * The returned order is already on the book and already escrowed. It is **not yet

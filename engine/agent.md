@@ -965,8 +965,9 @@ not going to claim ground, alloy is worth exactly what somebody will pay you for
 
 **And what the seller gets.** A COMMONS system yields 80 ore a tick — the poorest ground on the map,
 against the Frontier's 150 — so a Commons manufacturer is short of exactly what a frontier producer has
-too much of. It sells alloy and buys ore and rations; you sell ore and rations and buy alloy. Neither of
-you can substitute, and the only thing that closes the gap is a hand on a lane.
+too much of. It sells alloy and buys ore and rations; you sell ore and rations you produced (not the
+allotment, below) and buy alloy. Neither of you can substitute, and the only thing that closes the gap
+is a hand on a lane.
 
 A unit of `alloy` pays no Levy, discharges no Charge, builds no WORKS and burns in no anchor. It buys
 ground, and nothing else.
@@ -990,6 +991,13 @@ is not. **It is tracked down, not frozen**: burning endowment into the world low
 by the same amount, so paying for a WORKS never costs you the right to trade later. What you can send
 is exactly what somebody paid you, less what you have already sent. Being poor does not lock you out;
 having earned nothing does.
+
+**The goods side has the same floor, and two differences.** The first `market.endowment.floor_qty` units
+of `market.endowment.endowment_good` **at one venue** cannot be SOLD — the allotment is there to meet a
+Levy payable only in located goods. `market.endowment.sellable_qty` is what you may ASK now; production
+above the floor sells freely. Unlike the currency floor it is **per venue**, so split goods are withheld
+at each, and it **never falls** — pay your whole allotment to the Levy and you are still treated as
+holding it. `withheld.verbs` names `trade` when this is what stops you.
 
 ### `build` is THREE different acts — read the `kind`
 

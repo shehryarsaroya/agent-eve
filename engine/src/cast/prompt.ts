@@ -96,6 +96,19 @@ export interface ContractSituation {
   readonly holdsWorks: boolean;
   /** `holding.works.here.affordable` — it could raise one right now. */
   readonly canBuildWorks: boolean;
+  /**
+   * ★ **Its money is all endowment: it holds a balance and can transfer none of it.**
+   *
+   * The state a blind probe read on the live shard as `market.transferable_minor: 0` beside
+   * **200,000 currency**, with no `trade` offered and the strings `endowment` and `earned` absent
+   * from the entire observation. §11A's funding block was keyed on `verbs.has('trade')`, so the
+   * rules text existed, was correct, and **was selected exactly when it was least needed** — when
+   * a trade was already possible. The confusing case got nothing.
+   *
+   * Keyed on the payload's own figures rather than on the verb, because the thing that needs
+   * explaining is the NUMBER, not the menu.
+   */
+  readonly endowmentWithheld: boolean;
 }
 
 /**
@@ -459,7 +472,19 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     // ══════════════════════════════════════════════════════════════════════════
     block: '### ★ What you may spend, and the one rule that decides it — `market.transferable_minor`',
     verbs: ['trade'],
-    wanted: (s) => s.verbs.has('trade'),
+    // ── ★ AND ON THE CONFUSING NUMBER, WHICH IS THE CASE IT WAS BUILT FOR AND MISSED ──
+    //
+    // `verbs.has('trade')` alone selected this block only when a trade was already possible. The
+    // member that needs it is the one holding a balance it cannot spend and being offered nothing
+    // — which is what a probe read on the live shard and could not explain. Still `wanted` rather
+    // than `required`: being refused here costs an action and a hint, never a permanent default,
+    // so A5′ does not force it, and a dropped CONTEXT unit is NAMED by `because` below.
+    wanted: (s) => s.verbs.has('trade') || s.endowmentWithheld,
+    // `because` is UNCHANGED, deliberately. It is emitted on every wake this unit is dropped from
+    // — including a newcomer's first, the position the character budget is tightest on — and the
+    // original sentence stays true under the wider predicate: no `trade` offered does imply
+    // nothing can be committed to an order. Restating the new disjunct here measured **+65
+    // characters on all five positions** for a clause that changes no decision.
     because: 'no `trade` is offered to you this wake, so nothing you hold can be committed to an order',
   },
   {
@@ -686,6 +711,7 @@ export const EVERY_SITUATION: ContractSituation = Object.freeze({
   inBattle: true,
   holdsWorks: true,
   canBuildWorks: true,
+  endowmentWithheld: true,
 });
 
 /**
@@ -728,6 +754,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
   inBattle: false,
   holdsWorks: false,
   canBuildWorks: false,
+  endowmentWithheld: false,
 });
 
 /**
@@ -1239,6 +1266,11 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
     inBattle: list(obligations['battle']).length > 0,
     holdsWorks: list(works['held']).length > 0,
     canBuildWorks: obj(works['here'])['affordable'] === true,
+    // Both halves, or this fires on every genuinely broke member and spends the excerpt on a
+    // rule it cannot act on: a balance it holds, and none of it transferable.
+    endowmentWithheld:
+      Number(obj(obj(observation['market'])['endowment'])['balance_minor'] ?? 0) > 0 &&
+      Number(obj(observation['market'])['transferable_minor'] ?? 0) <= 0,
   };
 }
 

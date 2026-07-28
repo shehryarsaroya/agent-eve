@@ -90,6 +90,7 @@ export {
   placeOrder,
   releaseEscrow,
   selfCrossing,
+  tradeRefusalFor,
   MAX_DURATION_TICKS,
   MAX_ORDER_QTY,
   MAX_UNIT_PRICE,
@@ -97,6 +98,19 @@ export {
   type PlaceContext,
   type TradeRequest,
 } from './place.js';
+
+export {
+  ENDOWMENT_GOODS_RULE,
+  ENDOWMENT_RULE,
+  MAKER_NOTE,
+  PROBE_SEQUENCE,
+  endowmentStanding,
+  tradeCheck,
+  tradeObstacles,
+  type EndowmentStanding,
+  type TradeCheckPorts,
+  type TradeObstacleInput,
+} from './standing.js';
 
 export { marketStateTable, MarketRestoreError } from './stateTable.js';
 

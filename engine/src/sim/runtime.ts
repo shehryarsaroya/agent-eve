@@ -277,6 +277,7 @@ import {
   checkMarketInvariants,
   checkReplacement,
   clearMarkets,
+  endowmentStanding,
   freeCash,
   marketStateTable,
   MARKET_FEES,
@@ -7716,6 +7717,30 @@ export class Runtime {
        * ══════════════════════════════════════════════════════════════════════
        */
       transferable_minor: freeCash(this.ledger, principal),
+      /**
+       * ★ **THE FIELD ABOVE, EXPLAINING ITSELF.** Present at zero and at non-zero.
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * A blind probe holding **200,000 currency and 40,116 `ration`** in the MARCHES read
+       * `transferable_minor: 0`, was offered no `trade`, and found the strings `endowment`
+       * and `earned` **absent from its entire observation** — while `header.withheld`
+       * closed with *"Nothing you were eligible for has been dropped without this count"*.
+       * The rule was right and nothing said it, which is `header.aggression`'s defect one
+       * day later and one field over.
+       *
+       * Shaped like `header.aggression` on purpose: the number, the rule in plain words,
+       * and **what would change it** — the clause that matters, because the intuitive
+       * answer is wrong. Burning endowment into a world sink unlocks *nothing*
+       * (`retireCurrency` lowers the balance and the counter together), and only being
+       * paid does.
+       *
+       * **A9 by construction.** Every figure is the reader's own state and
+       * `marketView` has exactly one caller — `api/observe.ts` — so nothing here is
+       * reachable from a spectator frame. §11.2 puts a hold value at `SENSED` at best,
+       * and `sellable_qty` is one.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      endowment: endowmentStanding(this.ledger, principal, [...venues].sort(compareIds)),
       // Each book carries the **reference mark** beside its executable prices, and
       // they are deliberately two different numbers (M3: "separate execution and
       // valuation marks"). `best_ask` is what you can buy at right now; the mark is

@@ -35,7 +35,8 @@ import { engineReport, engineViolation, tickInputsFor } from '../../src/tick/hal
 import { storesAccount } from '../../src/ledger/index.js';
 import { slotClaimAt } from '../../src/observe/forecast.js';
 import { yourTakeAtP50 } from '../../src/venture/index.js';
-import { commonsBoundRejection, handsOf } from '../../src/world/index.js';
+import { tradeObstacles } from '../../src/market/index.js';
+import { commonsBoundRejection, handsOf, holdingOf } from '../../src/world/index.js';
 import { FORMATION_WINDOW_TICKS } from '../../src/sim/runtime.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from './harness.js';
 
@@ -795,9 +796,41 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
       h.runtime.graduationQuote(filler.principalId as never)?.from ?? ('sys-01' as never),
     );
     const worksWithheld = !worksQuote.affordable && !worksQuote.alreadyHeld ? 1 : 0;
+    // ── AND A FOURTH TERM: `trade`, WHICH HAD NO TERM AT ALL AND WAS THE BUG ─────
+    //
+    // A blind probe holding 200,000 currency and 40,116 `ration` in the MARCHES was offered no
+    // `trade`, and `withheld` counted a venture slot and `demand` and said nothing about it —
+    // so the payload's closing promise was false. Measured on a swept world before the fix:
+    // silent in 497 of 576 observations, every one with a reachable venue.
+    //
+    // Recomputed from `tradeObstacles`, the SAME function the observation calls, exactly as the
+    // three terms above are recomputed from `commonsBoundRejection` and `worksQuote`. A literal
+    // `1` here would be a second answer to the question the payload already answered, which is
+    // the two-homes shape this whole file's exactness discipline exists to prevent.
+    const marketAt = ((direct(filler)['market'] as Row)['at'] ?? []) as never[];
+    const tradeWithheld =
+      affordances(only).some((a) => a['verb'] === 'trade') ||
+      tradeObstacles({
+        ledger: h.runtime.ledger,
+        world: h.runtime.world,
+        book: h.runtime.market,
+        principal: filler.principalId as never,
+        tick: h.runtime.engine.tick,
+        books: ((direct(filler)['market'] as Row)['books'] ?? []) as never[],
+        venues: marketAt,
+        homeVenue: holdingOf(h.runtime.world, filler.principalId as never).system,
+      }).length === 0
+        ? 0
+        : 1;
+    // Non-vacuity: this fixture really is in the state the probe was in, or the term is a zero
+    // that proves nothing about the branch it is here to pin.
+    expect(marketAt.length, 'the filler must be standing in a market').toBeGreaterThan(0);
+    expect(tradeWithheld, 'and its trade must really be withheld').toBe(1);
     expect(Number(withheld['count'])).toBe(
-      rows.length * (idle.length - 1) + boundLanes + worksWithheld,
+      rows.length * (idle.length - 1) + boundLanes + worksWithheld + tradeWithheld,
     );
+    expect(String(withheld['reason']), 'and the row says which thing is missing').toContain('no trade is offered');
+    expect((withheld['verbs'] ?? []) as string[], 'and names the verb, machine-readably').toContain('trade');
     expect(String(withheld['reason'])).toContain('further legal fill_role act(s) exist');
     expect(String(withheld['reason'])).toContain('lanes leaving the Commons');
     if (worksWithheld > 0) {
