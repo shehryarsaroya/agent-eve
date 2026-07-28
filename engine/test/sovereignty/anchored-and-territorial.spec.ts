@@ -48,6 +48,7 @@ import type { PrincipalId, SystemId } from '../../src/core/types.js';
 import { storesAccount } from '../../src/ledger/index.js';
 import { captureSnapshot } from '../../src/tick/snapshot.js';
 import { CLAIM_BOND_MINOR } from '../../src/sovereignty/index.js';
+import { giveAlloy } from '../works/alloy-fixture.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from '../api/harness.js';
 
 let h: Harness;
@@ -110,7 +111,28 @@ async function enrolAndClaim(handle: string): Promise<{ who: Agent; system: Syst
     { verb: 'post_bond' as const, kind: null },
     { verb: 'build' as const, kind: 'ANCHOR' },
   ]) {
-    const offered = (((await observe(who))['affordances'] as Row[]) ?? []).find(
+    // ── THE ALLOY GOES IN BEFORE THE MENU IS READ, AND THE ORDER IS THE ASSERTION ──
+    //
+    // It used to be supplied AFTER `expect(offered).toBeDefined()`, which passed only while the
+    // ANCHOR affordance was offered to principals that could not pay its manufactured half — an
+    // affordance the engine then refuses, costing a real action every wake (AGT-S2). Closing that
+    // gate turned this into a failing test, correctly: a menu that no longer lies has to be fed
+    // before it is read.
+    //
+    // This file is about INV-8's anchoring rule and the Charge preview, not about who made the
+    // anchor. The manufactured half is supplied because a claimable system refines it four times
+    // dearer than the Commons, so earning it here would mean a Commons franchise and a haul in every
+    // one of these tests. A tick after, because `observe` is memoised per (principal, tick).
+    if (step.kind === 'ANCHOR') {
+      giveAlloy(
+        h.runtime,
+        who.principalId as PrincipalId,
+        String(((await observe(who))['holding'] as Row)['system']) as SystemId,
+      );
+      run(1);
+    }
+    const now = await observe(who);
+    const offered = ((now['affordances'] as Row[]) ?? []).find(
       (a) => a['verb'] === step.verb && (step.kind === null || (a['params'] as Row)['kind'] === step.kind),
     );
     expect(offered, `${step.verb}${step.kind === null ? '' : ` ${step.kind}`} must be offered`).toBeDefined();
@@ -130,6 +152,14 @@ function chargeRow(o: Row): Row | undefined {
 describe('a claim anchors the body that holds it (INV-8)', () => {
   it('withholds graduate while a claim is live, says why, and does not halt when taken anyway', async () => {
     const { who, system } = await enrolAndClaim('wanderer');
+    // ⚑ A `giveAlloy` stood here while a crossing beyond the Commons carried a manufactured
+    // surcharge: the claimant had spent its alloy on the anchor, so `graduate` would have been
+    // unaffordable for a reason unrelated to the claim, and assertion 3 below would have passed by
+    // accident. The surcharge is gone (`works/params.ts` carries why), so the claim is once again the
+    // only thing standing between this body and a crossing — which is precisely what INV-8 says.
+    // A tick, because `observe` is memoised per (principal, tick) — correct by construction, since
+    // snapshot T is frozen — so reading in the tick a lot was written in serves the earlier bytes.
+    run(1);
     const o = await observe(who);
 
     // 1. Not offered — an agent plays from affordances[], so this is the half that matters.
@@ -196,6 +226,10 @@ describe('the Charge is a duty on territory, and the preview cannot disagree wit
     run(1);
     await act(who, 'post_bond', { amount: CLAIM_BOND_MINOR });
     run(1);
+    // A retake is a SECOND anchor, so it is a second 500 units — the first lot was destroyed into
+    // the claim that was just abandoned. Supplied for the same reason as the first: what is under
+    // test is that the arrears follow the SYSTEM through the retake, not the price of retaking.
+    giveAlloy(h.runtime, p, system);
     await act(who, 'build', { kind: 'ANCHOR', system });
     run(1);
 

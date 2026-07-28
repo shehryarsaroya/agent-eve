@@ -43,6 +43,8 @@ import { charactersFor, HeuristicCast } from '../../src/cast/index.js';
 import { FREE_VERBS } from '../../src/tick/budget.js';
 import { setSpeed } from '../../src/core/time.js';
 import { Runtime } from '../../src/sim/runtime.js';
+import { holdingOf } from '../../src/world/index.js';
+import { giveAlloy } from '../works/alloy-fixture.js';
 
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
 
@@ -597,7 +599,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // `MAX_CONTRACT_CHARS`'s note before the next block, not after it. Two consecutive features have
     // now each spent about a quarter of the raise.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(66_724);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(70_592);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -615,10 +617,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    // 56,647 → 59,138 at `RULES_VERSION` 17: +1,919 in §4's `stake` block and +572 in §5's Levy
-    // block, both naming the EXPOSURE HIGH-WATER MARK the two exposure rules now read. The margin
-    // asserted below is the one that matters (cry-wolf on legitimate play) and it is 12,862.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(59_138);
+    // 56,647 → 59,138 at `RULES_VERSION` 17 (the EXPOSURE high-water mark, in §4's `stake` block and
+    // §5's Levy block) and again at 18 (the fourth good, in §7's production chain and §11A's own
+    // block). Both features landed concurrently, so this row carries the sum of two independent
+    // raises and neither author saw the other's — which is why the number is measured rather than
+    // predicted, and why the margin below is the one to read.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(63_006);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1095,6 +1099,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
 
     expect(take('graduate'), '`graduate` must be offered to a funded newcomer').toBe(true);
     expect(take('post_bond'), '`post_bond` must be offered once out of the Commons').toBe(true);
+    // An anchor's manufactured half, supplied rather than hauled: this test is about which RULES a
+    // real claimant can read, not about the supply chain that gets it there. See `alloy-fixture.ts`
+    // for why that is honest and where the road itself is actually walked.
+    giveAlloy(runtime, me.principal, holdingOf(runtime.world, me.principal).system);
     expect(take('build', 'ANCHOR'), '`build` ANCHOR must be offered with a bond posted').toBe(true);
 
     const observation = observeMe();
@@ -1143,11 +1151,17 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // shape. So the count is asserted rather than trusted. It churns when the catalog changes,
     // which is the point: somebody looks.
     const source = readFileSync(new URL('../../src/cast/prompt.ts', import.meta.url), 'utf8');
-    const spelled = { 28: 'twenty-eight', 41: 'forty-one', 44: 'forty-four', 45: 'forty-five' };
+    const spelled = {
+      28: 'twenty-eight',
+      41: 'forty-one',
+      44: 'forty-four',
+      45: 'forty-five',
+      46: 'forty-six',
+    };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(45);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(46);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 45],
+      spelled[n as 46],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1220,10 +1234,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
       join: 'Answering either one — `yield` · `fight` · join, or say nothing',
       message: 'Negotiating',
+      // ★ `haul` — the canon verb whose step arrived with the fourth good. It is claimed by ONE
+      // block on purpose: the block states a rule about geography (the good is refined at one tier
+      // and spent at another) and neither `refine {kind:"ALLOY"}` nor `haul` is usable without it.
+      haul: 'The fourth good — the one only the COMMONS makes, and the one that flows the other way',
       move: '(preamble)',
       post_bond: '(preamble) + Taking one — `post_bond` then `build`',
       publish_offer: 'Negotiating',
-      refine: '(preamble)',
+      refine: '(preamble) + The fourth good — the one only the COMMONS makes, and the one that flows the other way',
       revoke: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
       seal: 'Seals — the say-do gap',
       set_delivery_intent: 'The Levy — nobody sits this out',
@@ -1328,12 +1346,58 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      35_512, // a newcomer on its first wake
-      43_900, // mid-game in the Commons
-      44_542, // about to take territory — and §11B is READABLE now, which it was not
-      59_138, // a claimant in trouble — the largest REACHABLE position
-      66_724, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
+      39_136, // a newcomer on its first wake
+      47_524, // mid-game in the Commons
+      48_397, // about to take territory — and §11B is READABLE now, which it was not
+      63_006, // a claimant in trouble — the largest REACHABLE position
+      70_592, // the analytic maximum, which at 72,000 still fits WHOLE — by 1,408 characters
     ]);
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 1,408 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
+    //
+    // This row is the SUM of two features that landed concurrently in separate worktrees, neither of
+    // whose authors could see the other's spend:
+    //
+    //   10,307 → 5,276  `RULES_VERSION` 17, the EXPOSURE high-water mark
+    //    5,276 → 1,408  `RULES_VERSION` 18, the fourth good
+    //
+    // **Three quarters of the raise, gone in two features, and the second author measured 3,899 of
+    // margin on their own branch and 1,408 after the merge.** That gap is the whole lesson: a
+    // character budget is a shared resource in exactly the way `RULES_VERSION` is (HARD RULE 7), and
+    // unlike `RULES_VERSION` nobody arbitrates it in advance, so two correct local decisions compose
+    // into one that nobody made. This is the third shared resource this project has been bitten by
+    // and the first that has no owner.
+    //
+    // The next author cannot write their way past this. `MAX_CONTRACT_CHARS`'s note names the moves in
+    // order — make the unit CONDITIONAL (the catalogue already selects per wake, and the fourth good's
+    // `### The fourth good` block is `required` only for a claimant, which is what kept it this cheap);
+    // FOLD it into a field whose unit is already unambiguous (read `one-word-two-units.spec.ts` first —
+    // nine numbered sites are exactly that fold going wrong); or RAISE the ceiling with the cost
+    // measured. **What is not available any more is "add a paragraph and re-measure".**
+    //
+    // Worth stating what is NOT alarming: the analytic maximum has no occupant — `graduate` and a held
+    // claim cannot coexist — and the largest REACHABLE position is 63,006, which leaves 8,994. A
+    // reader who quotes only the reachable number will conclude there is room, and will be wrong about
+    // the direction of travel.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── ★ FIVE ROWS +3,637, AND IT IS THE FOURTH GOOD BEING WRITTEN DOWN ────────────────────
+    //
+    // Every row, including the newcomer's, and that is the honest signature of this change rather
+    // than a regression. §7's production-chain paragraph is FLOOR — it is where an agent learns that
+    // ore pays nothing — and the fork between `refine {kind:"RATION"}` and `refine {kind:"ALLOY"}`
+    // belongs in exactly that paragraph, along with the sentence that goods are located and `haul` is
+    // the only verb that moves them. A newcomer that did not read those two would refine its whole
+    // store into the wrong good and then find it in the wrong place.
+    //
+    // The remaining +2,000 or so is `### The fourth good`, which is RULES for anybody working ground
+    // or holding a claim and is **required** for a claimant: the anchor's manufactured half is a
+    // price no MARCHES seat can pay out of local production, and a claimant refused for a shortfall
+    // in a good it was never told it cannot make has been billed by a rule nobody showed it (A5′).
+    //
+    // 68,319 against `MAX_CONTRACT_CHARS` = 72,000 leaves **3,899 characters of margin** on a state
+    // no principal can occupy, and 11,485 on the largest reachable one. The margin is thinner than it
+    // was and that is worth saying out loud: the next section of this size needs the ceiling looked
+    // at rather than raised reflexively.
     // ── ★ ALL FIVE ROWS +572 TO +2,491, AND THAT IS THE HIGH-WATER MARK GETTING WRITTEN DOWN ──
     //
     // `RULES_VERSION` 17 made §5.2's two exposure rules read a **per-Reckoning EXPOSURE high-water

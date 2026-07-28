@@ -42,6 +42,7 @@ import {
   LEVY_BALLOT,
   LEVY_DUTY_PER_PRINCIPAL,
   LEVY_RULES,
+  LEVY_UNIT_MINOR,
   ballotWindow,
   carrierAt,
   constellationOf,
@@ -53,12 +54,22 @@ import {
 import { IN_FULL, kindSpec, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
-import { REFINE_IN_QTY, REFINE_OUT_QTY, YIELD_PER_TICK } from '../works/params.js';
+import {
+  ALLOY_ANCHOR_QTY,
+  ALLOY_GOOD,
+  ALLOY_IN_BY_TIER,
+  ALLOY_TIER,
+  REFINE_IN_QTY,
+  REFINE_OUT_QTY,
+  YIELD_PER_TICK,
+} from '../works/params.js';
+import { freeCash } from '../market/index.js';
 import {
   handsOf,
   holdingOccupancy,
   holdingOf,
   isPresent,
+  MAX_HAUL_QTY,
   principalIsCommonsBound,
   route,
   tierOf,
@@ -385,6 +396,89 @@ export const CAST_REFINE_MIN_QTY = 500;
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const CAST_REFINE_MIN_TICKS = 12;
+
+/**
+ * ★ Units of `ALLOY_GOOD` a Commons member refines in one batch, and offers in one ask. *(calibrate)*
+ *
+ * **Exactly `ALLOY_ANCHOR_QTY` (500), and that equality is the point rather than a coincidence.** One
+ * batch is one anchor's worth, so a single fill completes a single buyer's errand and the errand branch
+ * can stop. Smaller and a claim needs two purchases, two walks and two hauls before the anchor is
+ * payable — a chain long enough that a break anywhere leaves the good inert, which is the failure this
+ * whole change exists to avoid. Larger and one member's ask is more than the world's demand, so the
+ * book clears once and never again.
+ *
+ * At `ALLOY_IN_QTY` = 8 the batch consumes **4,000 ore** — about a sixth of what a sole Commons
+ * occupant's system yields in a Reckoning (`YIELD_PER_TICK.COMMONS` × `TICKS_PER_RECKONING` = 23,040),
+ * so a supplier can make roughly one a Reckoning out of ore its tribute does not need.
+ */
+export const CAST_ALLOY_ASK_QTY = 500;
+
+/**
+ * Reckonings of tribute a Commons member keeps in `ration` before it will refine any alloy.
+ * *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE ONE GUARD THAT PROTECTS THE ONLY TWO STABLE METERS IN THE INSTRUMENT.** `balance-gate.ts`'s
+ * null control moved `ventures` −15% and `CARRIED` −83% on nothing but the *sign* of a tie-break, so
+ * those columns are not meters. `levyShort` and the red tribute line count are, and they are exactly
+ * what a second use for ore could break: the alloy recipe and the ration recipe compete for the same
+ * lot, and a bot that refined alloy while short of tribute would manufacture a shortfall out of a
+ * feature.
+ *
+ * **Two** rather than one, for `CAST_CARRY_RESERVE_RECKONINGS`'s reason: an assessment is levied on
+ * the docket at the *end* of a cycle, so a member holding exactly this Reckoning's duty is one
+ * unfavourable allocation rule away from short — so **two** was the first pick, for the direction a
+ * guard on a permanent public record should err in (A5′).
+ *
+ * ── ⚑ TWO IS EXPENSIVE AND ONE IS UNPAYABLE, MEASURED IN BOTH DIRECTIONS ─────
+ *
+ * Nine Reckonings, 8 seeds, three readings of the same guard, changing nothing but this number and
+ * what it counts:
+ *
+ * ```
+ *   2 × duty + the batch's ore ...........  levyShort      0 · red 0/576   claims 23
+ *   2 × duty + the batch's ore, batch 4k .  levyShort 27,726 · red 5/576   claims 31
+ *   1 × duty + the whole commitment ......  levyShort 55,091 · red 5/576   claims 31
+ *   2 × duty + the whole commitment, 4k ..  levyShort    288 · red 1/576   claims 25
+ *   2 × duty + the whole commitment ......  levyShort      0 · red 0/576   claims 23   ← this
+ * ```
+ *
+ * Rows two and three are the same mistake from two sides: **the bar has to price the whole 16,000-ore
+ * decision, and it has to be two Reckonings deep.** Cheapening either lets eight more members buy a
+ * claim out of ore the tribute needed, and `levyShort` is one of only two meters in `balance-gate.ts`
+ * that survives a null control. The cost is that territory is genuinely dearer than it was — `claims`
+ * 28 → 26 at three Reckonings — and that is the gate doing its job rather than a regression to tune
+ * away.
+ *
+ * ── ⚑ AND THE MULTIPLE IS THE SMALLER HALF OF THE GUARD ──────────────────────
+ *
+ * This number alone was **not enough and could not have been**, which is worth stating here as well as
+ * at the call site because a future tuner will reach for this constant first. Refining alloy spends
+ * **ore**; the reserve is measured in **rations**; so the check passed on a balance the spend never
+ * touched. Measured at nine Reckonings: `levyShort` 1,429 and one red tribute line, against a master
+ * that is eight-of-eight spotless. `alloyPlanFor` now adds the batch's ore to the reserve at the
+ * published 1:1 ration recipe, so the member must hold its tribute **plus** what the batch is about to
+ * cost it in forgone income. **Raising this multiple would not have fixed that** — it would have
+ * bought a wider margin against the wrong quantity.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_ALLOY_RESERVE_RECKONINGS = 2;
+
+/**
+ * The seller's markup over its own input cost, as an integer fraction. *(calibrate)*
+ *
+ * The floor is `ALLOY_IN_QTY × LEVY_UNIT_MINOR` = 8 minor: below it, a Commons member is better off
+ * paying tribute with the ore. **3/2 of that is 12**, which leaves the seller 4 minor a unit — 2,000
+ * on a 500-unit ask — for an action, a Reckoning of ore, and the risk of a book that does not clear.
+ *
+ * A fraction rather than a bps rate because both halves must be integers all the way through: a float
+ * in a value path is banned and this figure becomes a `limitPrice` that reaches a hash. Deliberately
+ * *not* a percentage of anything the buyer holds — that would make the price a wealth ranking, which is
+ * the measured failure `stakeFor` documents at length and which cost the world a quarter of its
+ * ventures the first time it was written that way.
+ */
+export const CAST_ALLOY_MARKUP_NUM = 3;
+export const CAST_ALLOY_MARKUP_DEN = 2;
 
 /**
  * The fleet a cast member will build, **in build order**, and why it is these three ships.
@@ -1050,6 +1144,37 @@ export class HeuristicCast {
     // this branch is placed above the rest because refining is the cheapest act that changes what a
     // principal can actually do. Ahead of `build` too: no point raising a second source of a good you
     // are not converting.
+    // ── ★ ALLOY BEFORE RATIONS, AND THE ORDER IS THE WHOLE FORK ───────────────
+    //
+    // The two recipes compete for the same ore and `refineFor` deliberately takes **every whole batch
+    // it can** ("a member with nothing else to do with the ore"), so a manufacturing branch placed
+    // *below* it would find the ore already gone on every tick it ever ran — offered, legal, and
+    // structurally incapable of firing. That is precisely how `authorityLines`, `worksLines`,
+    // `syndicateLines` and `claimLines` all read zero for eight Reckonings.
+    //
+    // Safe above it because `alloyRefineFor` is the strictly narrower branch: COMMONS only, and only
+    // out of ore this member does not need for tribute (`CAST_ALLOY_RESERVE_RECKONINGS`). A member
+    // short of `ration` declines here and refines rations on the next line, in the same tick.
+    const manufacture = this.alloyRefineFor(member, tick);
+    if (manufacture !== null) return { ...base, ...manufacture };
+
+    // ── AND PUT IT ON THE BOOK, OR THE PRODUCTION IS A PILE ───────────────────
+    //
+    // Directly under the branch that makes the good, because the two are one behaviour: 3,065 lines of
+    // `market/` had never held an order in any world this repo ran, and a fourth good with no seller is
+    // the twelfth instance of a capability that exists and is never exercised. Costs one action and
+    // only when there is a whole ask to post and none already resting.
+    const offer = this.alloyAskFor(member, tick);
+    if (offer !== null) return { ...base, ...offer };
+
+    // ── THE DEMAND SIDE: WALK, BUY, CARRY ─────────────────────────────────────
+    //
+    // Above `claimFor`, because it is the errand that makes the claim payable — a member that reaches
+    // the claim branch without alloy standing under its body is refused by a gate no MARCHES seat can
+    // ever satisfy locally. Above `graduateFor` for the same reason on the second rung out.
+    const errand = this.alloyErrandFor(member, tick);
+    if (errand !== null) return { ...base, ...errand };
+
     const refine = this.refineFor(member, tick);
     if (refine !== null) return { ...base, ...refine };
 
@@ -1502,7 +1627,42 @@ export class HeuristicCast {
     // faces, so a crowded system lowers the threshold exactly as much as it lowers the income.
     const perTick = runtime.worksQuote(member.principal, system).sharePerTick;
     const want = Math.max(REFINE_IN_QTY, CAST_REFINE_MIN_QTY, perTick * CAST_REFINE_MIN_TICKS);
-    if (runtime.refinableAt(member.principal, system) < want) return null;
+    const have = runtime.refinableAt(member.principal, system);
+    if (have < want) return null;
+    // ── ★ A COMMONS MANUFACTURER HOLDS ITS ORE BACK, AND WITHOUT THIS THE FOURTH GOOD IS INERT ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **MEASURED, AND THE FIRST BUILD OF THIS CHANGE PRODUCED EXACTLY ZERO.** Four seeds, six
+    // Reckonings: `refine:ALLOY=0 · trade:ASK=0 · trade:BID=0 · haul=0 · fills=0`, with ~620,000
+    // rations in stores and ~4,000 ore in the whole world. `alloyRefineFor` sits ABOVE this branch and
+    // still never fired, because **placement is not a reserve.** This branch takes *every whole batch
+    // it can* the moment ore crosses `want` (500–1,320), the alloy recipe needs
+    // `CAST_ALLOY_ASK_QTY × ALLOY_IN_QTY` = 4,000 in one place, and ore therefore never survived long
+    // enough to reach a batch. The branch above declined on every tick of every world.
+    //
+    // That is the twelfth instance of this repo's defining defect and it was one ordering away from
+    // shipping: a mechanic built, an affordance offered, rules written, a cast branch present — and
+    // structurally incapable of firing. *Ordering a branch higher does not reserve its input.*
+    //
+    // So the reserve is explicit. A Commons member whose tribute is already covered **stops making
+    // rations it does not need and accumulates ore toward a batch it can sell.** That is not a bot
+    // trick, it is the decision §10.1 asked the economy to produce, and it is the only form in which
+    // this cast can express it.
+    //
+    // Three clauses, and every one of them is a reason NOT to hold back:
+    //
+    //   - **Only in the Commons.** Nowhere else can turn the ore into alloy, so holding it anywhere
+    //     else is a member starving itself for a recipe it cannot run.
+    //   - **Only with the tribute covered**, by the same reader and the same multiple
+    //     `alloyRefineFor` uses. A member short of `ration` refines rations, always. `levyShort` and
+    //     the red tribute line count are the only two meters in `balance-gate.ts` that survive a null
+    //     control, and this is the clause that keeps them where they were.
+    //   - **Only below the batch.** Once the batch is reachable the branch above takes it, and this
+    //     one resumes on the remainder — so the hold-back is bounded by 4,000 units and cannot
+    //     become a permanent refusal to convert.
+    // ══════════════════════════════════════════════════════════════════════════
+    const alloy = this.alloyPlanFor(member, tick);
+    if (alloy !== null && alloy.system === system && have < alloy.batchOre) return null;
     // No `qty`: the verb refines every whole batch it can, which is what a member with nothing else to
     // do with the ore wants, and it costs one action either way.
     return { verb: 'refine', params: { system } };
@@ -1790,7 +1950,406 @@ export class HeuristicCast {
     }
     // The anchor's own price, asked with the SAME accessor the verb and the affordance use.
     if (runtime.chargeGoodAt(member.principal, system) < ANCHOR_QTY) return null;
+    // ── AND THE MANUFACTURED HALF, WHICH THIS MEMBER CANNOT HAVE MADE ─────────
+    //
+    // The same accessor `claimRejection` and the affordance read, for the reason the comment above
+    // this method already gives about crossing two goods: the bot must not ask for something the menu
+    // would refuse. `alloyAt` is location-bound because an anchor is produced material put into a
+    // *place*, and `ALLOY_TIER` is COMMONS — so a member standing here can never refine this and the
+    // units are always somebody else's work, hauled in. `alloyErrandFor` is the branch that gets them,
+    // and it is placed above this one so the errand runs before the claim it is for.
+    if (runtime.alloyAt(member.principal, system) < ALLOY_ANCHOR_QTY) return null;
     return { verb: 'build', params: { kind: 'ANCHOR', system } };
+  }
+
+  /**
+   * ★ Refine the fourth good, and sell it. The **supply** side of the first two-way trade this world
+   * has ever had.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE MEASUREMENT THIS BRANCH EXISTS FOR: 0 ORDERS AND 0 FILLS, EVER.** `market/` is 3,065 built
+   * lines and across four seeded worlds at six Reckonings it had never held a single order — because
+   * no cast branch placed one, and because until `haul` there was nothing worth buying anywhere but
+   * where you already stood. Meanwhile 530,000–589,000 units of `ration` sat in stores with nothing
+   * to spend them on.
+   *
+   * This is the twelfth instance of the defect this repo keeps re-teaching, and the eleventh was
+   * `lockFillStake` — a function implementing §7.3's escrow, with the section quoted above it and its
+   * own unit test, and **no caller.** So the rule applied here is the one that cost the most to learn:
+   * *when you land a mechanism, land the branch that uses it and the meter that shows it.*
+   *
+   * ── WHY THE COMMONS AND NOT EVERYONE ─────────────────────────────────────────
+   *
+   * `ALLOY_TIER` is COMMONS, so this branch is the only place in the cast that a COMMONS member does
+   * something a MARCHES member cannot. Measured, the Commons holds **2–3 of 8 members** in every seed
+   * — a real supply side on the first day, which is exactly what a FRONTIER-gated recipe would not
+   * have had (0 of 8 in three seeds of four).
+   *
+   * ── THE TRIBUTE COMES FIRST, AND THAT IS THE LOAD-BEARING GUARD ──────────────
+   *
+   * The alloy recipe and the ration recipe **compete for the same ore**, which is the decision §10.1
+   * asked for and also the one way this change could break the Levy. `levyShort` and the red tribute
+   * line count are the only two meters in `balance-gate.ts` that survive a null control, so the gate
+   * is: refine alloy only out of ore this member does **not** need for tribute, measured with the same
+   * location-blind reader the settlement uses. A member short of `ration` makes rations.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private alloyRefineFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    const plan = this.alloyPlanFor(member, tick);
+    if (plan === null) return null;
+    if (this.runtime.refinableAt(member.principal, plan.system) < plan.batchOre) return null;
+    return { verb: 'refine', params: { kind: 'ALLOY', system: plan.system, qty: plan.step } };
+  }
+
+  /**
+   * ★ Why this member wants alloy, how much, and what a batch of it costs in ore here — or null.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ONE HOME, BECAUSE TWO BRANCHES HAVE TO AGREE OR THE GOOD IS INERT.** `alloyRefineFor` decides
+   * whether to make a batch; `refineFor` decides whether to hold ore back so a batch is ever
+   * reachable. **If those two disagree by a single unit the fourth good never gets made**, and that is
+   * not a hypothetical — it is what the first two builds of this change measured. Build one had no
+   * hold-back at all (`refine:ALLOY = 0`, because rations drained the ore at 500 while a batch needed
+   * 4,000). Build two held back only in the COMMONS, so `claims` stayed at **0** while every Marches
+   * member sat on 1,300 ore needing 16,000. Both times the branch existed, was reachable, was ordered
+   * first, and could not fire.
+   *
+   * So the question is asked once and both callers read the answer.
+   *
+   * ── WHY A MEMBER WANTS IT AT ALL, AND THE TWO ANSWERS ARE DIFFERENT ──────────
+   *
+   * **In the Commons it is a business.** `ALLOY_IN_BY_TIER` makes this the cheapest ground in the
+   * galaxy for the recipe (8:1 against 32 and 64) and every claim in the game is somewhere that pays
+   * more, so a Commons member makes it to *sell*. It stops at one whole ask.
+   *
+   * **Outside it is a cost.** A claim needs `ALLOY_ANCHOR_QTY` and the local rate is four to eight
+   * times worse, so a member only makes its own when it actually wants ground. It stops at the gate.
+   * Without that clause the whole cast would manufacture a good most of them have no use for, which is
+   * hoarding rather than an economy — and it would do it out of ore the Levy needs.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private alloyPlanFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly system: SystemId; readonly step: number; readonly batchOre: number } | null {
+    const runtime = this.runtime;
+    const system = this.bodyOf(member);
+    const tier = tierOf(runtime.world.map, system);
+
+    const wantsGround =
+      runtime.sovereignty.claimsOf(member.principal).length === 0 &&
+      tier !== 'COMMONS' &&
+      runtime.sovereignty.liveAt(system) === null &&
+      runtime.works.liveAt(system).some((w) => w.holder === member.principal && tick >= w.onlineAtTick);
+    if (tier !== ALLOY_TIER && !wantsGround) return null;
+
+    const target = tier === ALLOY_TIER ? CAST_ALLOY_ASK_QTY : Number(ALLOY_ANCHOR_QTY);
+    if (runtime.alloyAt(member.principal, system) >= target) return null;
+
+    // ── THE TRIBUTE RESERVE, IN THE GOOD THE TRIBUTE IS PAYABLE IN ────────────
+    //
+    // `max` of this Reckoning's own assessment and the published duty, exactly as `carryFor` does and
+    // for the same reason: an assessment can be below the duty under a favourable allocation rule, and
+    // reserving the smaller of the two would leave the member short the moment the ballot changed.
+    // **This is the clause that keeps `levyShort` and the red tribute line count where they were** —
+    // the only two meters in `balance-gate.ts` that survive a null control — and it is checked here
+    // rather than in either caller so that neither can forget it.
+    const mine = runtime.levyBlockFor(member.principal, tick);
+    const perReckoning = Math.max(mine?.my_assessment ?? 0, LEVY_DUTY_PER_PRINCIPAL);
+
+    // One action per batch rather than per unit: a member that refined 1 alloy at a time would spend
+    // an action a tick forever and displace every branch below it. Bounded by
+    // ── AND IT IS NOT CAPPED, WHICH COST TWO MEASUREMENTS TO ESTABLISH ────────
+    //
+    // `CAST_ALLOY_BATCH_ORE` capped this at 4,000 ore so a claim-seeker could pay in instalments. It
+    // reads like pure pacing and it is not: with the reserve pricing the whole remaining commitment,
+    // a smaller batch lets a member **begin** on 4,000 ore in hand rather than 16,000, so more members
+    // complete the diversion and the tribute pays for it. `levyShort` 0 → **288 with 1 red line** on
+    // nothing else. One red line is a regression (the nine-Reckoning gate is eight-of-eight spotless
+    // on master), so the cap is gone and a batch is the whole remaining commitment again.
+    const rate = ALLOY_IN_BY_TIER[tier];
+    const step = Math.min(target, CAST_ALLOY_ASK_QTY);
+    const batchOre = step * rate;
+
+    // ── ★ THE RESERVE COUNTS THE ORE TOO, AND LEAVING IT OUT COST A RED LINE ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **MEASURED AT NINE RECKONINGS: `levyShort` 1,429 and 1 red tribute line on `g07`, against a
+    // master that is eight-of-eight spotless.** The reserve used to be `levyGoodAvailable >=
+    // perReckoning × CAST_ALLOY_RESERVE_RECKONINGS` and nothing else, which reads correctly and
+    // **guards the wrong quantity**: refining alloy consumes ORE, not rations, so the check passed on
+    // a ration balance the refine was never going to touch — while quietly deleting the *future*
+    // rations that ore was going to become. At the MARCHES rate a single claim batch is
+    // `500 × 32 = 16,000` ore, which is 16,000 rations the tribute will not see, or about eighty
+    // percent of a whole `LEVY_DUTY_PER_PRINCIPAL`.
+    //
+    // Three Reckonings of a clean gate hid it, because the endowment window covers the early cycles
+    // and the harm only compounds once a member is living on production. **A guard that measures the
+    // stock a spend does not touch is not a guard**, and it fails in the direction that hides.
+    //
+    // So the ore is priced INTO the reserve at 1:1 — the published `refine {kind:"RATION"}` recipe,
+    // which is what those units would otherwise have become — and the member must hold its tribute
+    // reserve **on top of** what the batch is about to cost it. `levyGoodAvailable` is location-blind
+    // exactly as the settlement's own reader is, so this asks the question the Levy will ask.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── AND IT PRICES THE WHOLE COMMITMENT, NOT THE INSTALMENT ────────────────
+    //
+    // **Measured twice, in opposite directions, and this is the reading that satisfies both.** Pricing
+    // the BATCH took the nine-Reckoning gate to 0 short and then `CAST_ALLOY_BATCH_ORE` — which exists
+    // to keep the bar reachable — quietly undid it: a claimant needs `500 × 32 = 16,000` ore and passes
+    // a 4,000-ore check **four times** to spend it, so the guard approved a sixteen-thousand-unit
+    // decision four thousand at a time. `levyShort` 0 → **27,726** with **5 red lines**, on nothing but
+    // the batch getting smaller.
+    //
+    // A member is not deciding to convert one batch; it is deciding to buy an anchor's worth. So the
+    // reserve prices what is **left to reach the target**, and the batch is action pacing underneath a
+    // decision that was already affordable. A member part-way through keeps going as its ore accrues,
+    // because the remaining cost shrinks as it does.
+    const remaining = Math.max(0, target - Number(runtime.alloyAt(member.principal, system)));
+    const forgone = Math.trunc((remaining * rate * REFINE_OUT_QTY) / REFINE_IN_QTY);
+    if (
+      runtime.levyGoodAvailable(member.principal) <
+      perReckoning * CAST_ALLOY_RESERVE_RECKONINGS + forgone
+    ) {
+      return null;
+    }
+
+    return { system, step, batchOre };
+  }
+
+  /**
+   * Put the alloy on the book at the venue that made it, or null.
+   *
+   * ── PRICED OFF THE ONE ADMINISTERED PRICE, NOT OFF A GUESS ───────────────────
+   *
+   * `LEVY_UNIT_MINOR` is 1 — *"the one administered price this game publishes"* (`works/params.ts`
+   * says so where it prices the currency door) — so a unit of `ration` discharges 1 minor of duty and
+   * a unit of ore is worth 1 by the 1:1 recipe. The alloy recipe consumes {@link ALLOY_IN_QTY} ore, so
+   * **8 minor is the seller's floor: below it, refining alloy is worse than paying tribute with the
+   * same ore.** The ask is that floor times {@link CAST_ALLOY_MARKUP_NUM}/{@link CAST_ALLOY_MARKUP_DEN},
+   * which is a margin the seller is *entitled* to ask because no buyer outside the Commons has an
+   * alternative — and integer arithmetic throughout, because a float in a value path is banned.
+   *
+   * One resting ask at a time. `MAX_OPEN_ORDERS_PER_PRINCIPAL` is 24 and a bot that re-posted every
+   * tick would fill the book with its own stale rows, which is `Book.prune`'s hazard arriving from the
+   * cast side.
+   */
+  private alloyAskFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    if (!runtime.liveVerbs.has('trade')) return null;
+    const system = this.bodyOf(member);
+    if (tierOf(runtime.world.map, system) !== ALLOY_TIER) return null;
+    // A book is local and `trade` refuses an agent with no hand standing at the venue — the engine's
+    // own rule, asked here so the bot does not generate a refusal it could have predicted (AGT-S3).
+    const present = handsOf(runtime.world, member.principal).some(
+      (hand) => isPresent(hand, tick) && hand.location === system,
+    );
+    if (!present) return null;
+    if (runtime.market.openForIn(member.principal, system, ALLOY_GOOD).length > 0) {
+      return null;
+    }
+    const have = runtime.alloyAt(member.principal, system);
+    if (have < CAST_ALLOY_ASK_QTY) return null;
+    // The seller's own input cost at the tier it is standing in — never a fixed number, because the
+    // rate IS the geography and a Commons seller quoting a Marches cost would price itself out of the
+    // only advantage it has. `LEVY_UNIT_MINOR` is 1, the one administered price this game publishes,
+    // so a unit of ore is worth 1 and this floor is "what the ore would have discharged as tribute".
+    const floor = ALLOY_IN_BY_TIER[ALLOY_TIER] * Number(LEVY_UNIT_MINOR);
+    const price = Math.trunc((floor * CAST_ALLOY_MARKUP_NUM) / CAST_ALLOY_MARKUP_DEN);
+    return {
+      verb: 'trade',
+      params: {
+        operation: 'place',
+        venue: system,
+        good: ALLOY_GOOD,
+        side: 'ASK',
+        quantity: have,
+        limit_price: price,
+        duration_ticks: TICKS_PER_RECKONING,
+      },
+    };
+  }
+
+  /**
+   * ★ The **demand** side, as a three-step errand: walk to a Commons book, buy, carry it home.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS IS THE BRANCH THAT MAKES THE FOURTH GOOD A GOOD RATHER THAN A RESOURCE.** A good produced
+   * in one place and consumed in another with no reciprocal need is a second `fuel`: it flows one way
+   * and prices at nothing. What makes alloy two-way is that the *manufacturer* is on the poorest ore
+   * ground on the map (`YIELD_PER_TICK` pays the Commons 80 against the Frontier's 150) while the
+   * *buyer* is on the richest and cannot refine a unit. So ore and currency move inward, alloy moves
+   * outward, and neither side can substitute.
+   *
+   * Three steps, in the order the errand actually runs, each one action:
+   *
+   *   1. **`move`** an idle hand one gate toward the nearest COMMONS system with alloy on its book.
+   *   2. **`trade`** a BID at that venue once a hand is standing there. The fill settles the cargo
+   *      *at the venue* (`market/book.ts`: exact-venue settlement), which is why step 3 exists.
+   *   3. **`haul`** it one gate at a time back to the body, because §10.2 locates everything and an
+   *      anchor is produced material put into a *place*.
+   *
+   * ── WHY IT IS ONE BRANCH AND NOT THREE ───────────────────────────────────────
+   *
+   * The three steps are mutually exclusive by construction — a hand is either walking, standing at the
+   * book, or carrying — so splitting them into three `decideOne` entries would spread one errand's
+   * preconditions across three call sites that must agree about the destination, the quantity and the
+   * reserve. The four empty panels were all *"the mechanic built, the affordance offered, and no cast
+   * branch selecting it"*; three branches that each individually decline is how that happens on
+   * purpose.
+   *
+   * ── AND WHY IT RUNS ONLY WHEN THERE IS SOMETHING TO SPEND IT ON ───────────────
+   *
+   * Gated on actually wanting alloy — a claimable seat, or a crossing beyond the Commons — so the cast
+   * does not hoard a good it has no sink for. `runtime.alloyAt` at the body is the stop condition, and
+   * it is the same accessor the claim gate and the crossing quote read.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private alloyErrandFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const runtime = this.runtime;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    if (!runtime.liveVerbs.has('trade') || !runtime.liveVerbs.has('haul')) return null;
+
+    const body = this.bodyOf(member);
+    // A Commons seat refines its own; it never runs an errand for what it can make where it stands.
+    if (tierOf(runtime.world.map, body) === ALLOY_TIER) return null;
+    const want = ALLOY_ANCHOR_QTY;
+    if (runtime.alloyAt(member.principal, body) >= want) return null;
+
+    const hands = handsOf(runtime.world, member.principal);
+
+    // ── STEP 3 FIRST: A CARRY ALREADY UNDER WAY BEATS STARTING ANOTHER ─────────
+    //
+    // Ordered before the buy so a member cannot open a second purchase while the first is still on the
+    // road — which would spend two Reckonings of ore on one anchor's worth of alloy.
+    for (const hand of hands) {
+      if (hand.state !== 'IDLE' || !isPresent(hand, tick)) continue;
+      if (hand.location === body) continue;
+      const here = runtime.alloyAt(member.principal, hand.location);
+      if (here <= 0) continue;
+      const next = route(runtime.world.map, hand.location, body)?.path[1];
+      if (next === undefined) continue;
+      if (!this.mayEnter(member, next)) continue;
+      return {
+        verb: 'haul',
+        params: { hand: hand.id, to: next, good: ALLOY_GOOD, qty: Math.min(here, MAX_HAUL_QTY) },
+      };
+    }
+
+    // ── AND IF IT CANNOT PAY, IT DOES NOT SET OUT ──────────────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **A WALK IS AN ACTION AND A HAND'S POSITION FOR TICKS, SO A SHOPPING TRIP THAT ENDS IN A REFUSAL
+    // IS WORSE THAN NO TRIP.** Measured: with the walk ungated on cash, `move` went from ~35 a world to
+    // **739**, hands wandered between Commons venues they could never buy at, and every branch below
+    // this one was displaced. That is the monoculture failure `CAST_REFINE_MIN_QTY` records — *"a
+    // branch placed high with no gate does not add behaviour, it replaces it"* — arriving through
+    // logistics instead of through refining.
+    //
+    // The gate is the market's own accessor, which is the same correction the BID itself needed: with
+    // D7's floor at the whole `STARTER_STAKE`, `freeCash` is zero for every principal that has played,
+    // so today this returns here and the errand collapses to its haul step. **That is the honest
+    // answer, not a workaround** — the world genuinely has no funded buyer — and the day a principal
+    // earns past the floor the errand starts working with no further change.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (Number(freeCash(runtime.ledger, member.principal)) <= 0) return null;
+
+    // ── STEP 2: A HAND IS STANDING AT A BOOK WITH ALLOY ON IT ──────────────────
+    //
+    // The bid is the ask it can see plus a tick of patience: `crossPrice` is the engine's, and a bid
+    // below every resting ask rests forever. Priced off the book rather than off a formula, so the bot
+    // pays what the market says instead of what this file guesses.
+    for (const hand of hands) {
+      if (hand.state !== 'IDLE' || !isPresent(hand, tick)) continue;
+      const venue = hand.location;
+      const asks = runtime.market
+        .openIn(venue, ALLOY_GOOD)
+        .filter((o) => o.side === 'ASK' && o.principal !== member.principal);
+      if (asks.length === 0) continue;
+      if (runtime.market.openForIn(member.principal, venue, ALLOY_GOOD).length > 0) continue;
+      const best = Math.min(...asks.map((o) => Number(o.limitPrice)));
+      const need = want - runtime.alloyAt(member.principal, hand.location);
+      if (need <= 0) continue;
+      const cost = best * need;
+      // ── ★ `freeCash`, NOT `freeStores`, AND THE DIFFERENCE IS THE WHOLE MARKET ──
+      //
+      // ══════════════════════════════════════════════════════════════════════
+      // **MEASURED: THIS BRANCH SUBMITTED 8,575 BIDS IN ONE 1,728-TICK WORLD AND NOT ONE WAS
+      // ACCEPTED.** It checked `freeStores` — the raw free balance — while `market/place.ts` escrows
+      // against `market/escrow.ts:freeCash`, which is `freeBalance − ENDOWMENT_FLOOR_MINOR`. D7 puts
+      // that floor at the whole `STARTER_STAKE` (250,000), and **every cast member in every world sits
+      // between 62,000 and 203,000**, so `freeCash` is identically ZERO for every principal that has
+      // ever played. A bot asking the wrong question re-asked it every tick forever.
+      //
+      // That is the bot and the menu disagreeing about what is possible — the failure this file guards
+      // against everywhere else by reading the engine's own accessor — and it produced the worst kind
+      // of noise: a predictable refusal per tick, per member, burying the unpredictable ones (AGT-S3).
+      //
+      // Asking the right question makes the branch **honest and, today, silent**: it declines instead
+      // of spamming, and the reason it declines is a real property of the world rather than a bug in
+      // here. That silence is a finding and it is reported as one — the market's buy side is
+      // unreachable for anyone who has played the game, which is why `market/` has never printed a
+      // fill in 3,065 lines. Fixing it means deciding what D7's floor should measure, and that is an
+      // A15 decision rather than a patch.
+      // ══════════════════════════════════════════════════════════════════════
+      if (Number(freeCash(runtime.ledger, member.principal)) < cost) continue;
+      if (!this.canSpendWithoutBreakingAPromise(member, cost)) continue;
+      return {
+        verb: 'trade',
+        params: {
+          operation: 'place',
+          venue: hand.location,
+          good: ALLOY_GOOD,
+          side: 'BID',
+          quantity: need,
+          limit_price: best,
+          duration_ticks: TICKS_PER_RECKONING,
+        },
+      };
+    }
+
+    // ── STEP 1: WALK TOWARD THE NEAREST BOOK THAT HAS ANY ─────────────────────
+    //
+    // Canonical order over the venues so one seed walks one sequence, and never a hand a world
+    // obligation is standing on — `crewMove` states that rule and this one obeys the same list, for
+    // the same reason: pulling a hand off the Levy's delivery place to go shopping reopens the
+    // tug-of-war that cost the world a fifth of its ventures.
+    const owing = new Set<SystemId>();
+    const owedAt = runtime.levyBlockFor(member.principal, tick);
+    if (owedAt !== null) owing.add(owedAt.deliverable_to);
+    for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
+
+    const venues = [
+      ...new Set(
+        runtime.market
+          .open()
+          .filter((o) => o.good === ALLOY_GOOD && o.side === 'ASK' && o.principal !== member.principal)
+          .map((o) => o.venue),
+      ),
+    ].sort(compareIds);
+    for (const venue of venues) {
+      if (hands.some((hand) => hand.destination === venue || hand.location === venue)) continue;
+      for (const hand of hands) {
+        if (hand.state !== 'IDLE' || !isPresent(hand, tick)) continue;
+        if (owing.has(hand.location)) continue;
+        const next = route(runtime.world.map, hand.location, venue)?.path[1];
+        if (next === undefined) continue;
+        if (!this.mayEnter(member, next)) continue;
+        return { verb: 'move', params: { hand: hand.id, to: next } };
+      }
+    }
+    return null;
   }
 
   /**

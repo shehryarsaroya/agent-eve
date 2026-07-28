@@ -131,7 +131,17 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   offer_surety: 'step 9 (grants and offline semantics)',
   scan: 'step 12 (predation and the sensed layer)',
   extract: 'step 11 (markets and the production graph)',
-  haul: 'step 11 (markets and the production graph)',
+  // ── `haul` LEFT THIS TABLE, AND ITS DEPARTURE IS THE POINT OF THE WHOLE STEP ──
+  //
+  // It was filed here as "step 11 (markets and the production graph)" and that step has now landed:
+  // `world/haul.ts` is the handler. `test/api/verbs.test.ts` fails by name if a live verb keeps an
+  // arrival note, which is what removes the guesswork — the seven stale entries this comment block
+  // already records were found by an audit rather than by the convention holding.
+  //
+  // Worth stating what did **not** happen: no slot was spent. `haul` has been one of §12.2's forty
+  // since the canon was written, so `audit:budgets` read 40/40 before and reads 40/40 after. What
+  // changed is that an agent told *"its mechanic lands at step 11"* now gets the mechanic instead of
+  // a promise — which is the same gap `flee` had, resolved the other way.
   audit: 'step 9 (offices and grants)',
   // `yield`, `fight`, `join` and now `demand` were all here and all four are live, so their
   // entries are gone rather than left to read as a promise about a verb that already works.

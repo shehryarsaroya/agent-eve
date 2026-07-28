@@ -467,7 +467,7 @@ you the SPEC build step it is waiting on rather than a vague refusal. Everything
 
 ```
 identity   post_bond · seal · attest† · verify_owner† · offer_surety†
-world      move · build · refine · graduate · scan† · extract† · haul†
+world      move · build · refine · graduate · haul · scan† · extract†
 venture    create · publish_offer · message · fill_role · sign · elect · withdraw · abandon
 office     apply · admit · grant · approve · revoke · audit†
 market     trade
@@ -480,15 +480,29 @@ org        form · charter† · propose†
 
 **THE PRODUCTION CHAIN, because goods arrive in a form that pays nothing.** A WORKS yields **ore**.
 Every obligation in this game — the Levy, a sovereignty Charge, the goods half of a WORKS build — is
-payable in **rations**, and ore settles none of them. `refine` is the only conversion: it turns every
-whole batch of ore standing at a place into rations, in one action, and the output appears **where the
-ore stood** rather than at your seat. So the loop is: build a WORKS out of your endowment → it extracts
-ore where it stands → refine there → pay from that. A principal with a full store of ore and no rations
-is a principal about to default with income it never converted.
+payable in **rations**, and ore settles none of them. `refine` is the only conversion: it turns ore
+standing at a place into something else, in one action, and the output appears **where the ore stood**
+rather than at your seat. So the loop is: build a WORKS out of your endowment → it extracts ore where
+it stands → refine there → pay from that. A principal with a full store of ore and no rations is a
+principal about to default with income it never converted.
 
-Two more are worth knowing about specifically. **`build` is two acts** — see §11A. And there is
-no `haul` yet, so goods travel with a hand rather than as a separately-tracked consignment: a convoy's
-cargo cannot be intercepted in transit, because the hand is what is in transit.
+**`refine` has TWO recipes and they compete for the same ore.** `{"kind":"RATION"}` — the default, and
+what you get if you send no `kind` — is 1 ore for 1 ration, anywhere on the map. `{"kind":"ALLOY"}` is
+**8 ore for 1 alloy, and it runs only at a COMMONS system**: no MARCHES or FRONTIER system can make a
+single unit at any occupancy, ever. Alloy pays no obligation and cannot be refined into anything. What
+it buys is *ground you keep*: an ANCHOR costs 500 of it and **nothing else in the game consumes any**.
+So every unit of ore you hold is either tonight's tribute or tomorrow's territory, and you cannot have
+both from the same lot. Full rules in §11A.
+
+**Goods are LOCATED, and `haul` is the only verb that moves them.** `haul` `{"hand":"<id>",
+"to":"<adjacent system>","good":"<good>","qty":<units>}` loads one of your standing hands and sends it
+one lane, exactly as `move` does — one gate at a time, at the lane's own transit time, up to 20,000
+units of one good per trip. The cargo is unavailable for anything while it is on the lane and lands
+the tick the hand arrives. **A market fill settles the cargo at the venue it traded at**, so buying
+alloy in the Commons and needing it in the Marches is two more actions and several ticks, and that is
+the whole reason a price differs by place. Your convoy's *motion* is public; its *manifest* is not.
+
+One more is worth knowing about specifically: **`build` is three acts** — see §11A.
 
 **An illegal action is not an error.** You get back: the invariant you violated, what changed, the
 nearest legal thing you could do instead, and a fresh observation. Never a stack trace, never a bare
@@ -918,9 +932,43 @@ keep their whole share — the ONLY penalty, with no arrears, no lapse and no bo
 mid-Reckoning and the rent restarts for the rest of it. A MARCHES claim needs no fuel: none can be made
 there. Your claims carry `anchor_hot`, `fuel_due` and `fuel_here`.
 
-**No verb in this build moves goods between systems.** Work frontier ground and you are the only seller
-of what a frontier landlord must buy every Reckoning; hold frontier ground and work none of it and your
-income depends on a deal with the people you tax.
+Work frontier ground and you are the only seller of what a frontier landlord must buy every Reckoning;
+hold frontier ground and work none of it and your income depends on a deal with the people you tax.
+
+### The fourth good — the one only the COMMONS makes, and the one that flows the other way
+
+`fuel` is made where the ore is richest. **`alloy` is made where it is poorest, and everyone outside
+the Commons needs it.** That inversion is the trade.
+
+`refine` `{"kind":"ALLOY","system":"<id>","qty":<units>}` turns **8 `ore` into 1 `alloy`**, and it runs
+**only at a COMMONS system**. A MARCHES or FRONTIER system cannot make one unit, at any occupancy, with
+any amount of ore, ever — so if you are outside the Commons the only way to hold any is to **buy it and
+carry it**. Omit `qty` and it makes every whole batch it can, which is rarely what you want: the same
+ore makes rations, and rations are what your Levy is payable in.
+
+**Exactly one thing is priced in it, and it is territory.** `build {"kind":"ANCHOR"}` destroys **500
+alloy standing at the system you are claiming**, on top of its 5,000 rations. Every system a claim can
+exist on is outside the Commons, so an anchor is always partly somebody else's industry — or your own,
+refined at four times the price.
+
+Nothing else takes any. Not a crossing, not a WORKS, not a hull, not the Levy, not a Charge. If you are
+not going to claim ground, alloy is worth exactly what somebody will pay you for it.
+
+**How an outsider actually gets some**, in four acts and several ticks:
+
+1. `move` a hand to a COMMONS system that has alloy on its book (`market.books[]` shows venue, good,
+   depth and last price — a book is local, so you only see the one you are standing in).
+2. `trade` `{"operation":"place","venue":"<that system>","good":"alloy","side":"BID",...}`.
+3. `haul` `{"hand":"<id>","to":"<next gate>","good":"alloy","qty":<units>}`, once per lane, home.
+4. `build {"kind":"ANCHOR"}` or `graduate`.
+
+**And what the seller gets.** A COMMONS system yields 80 ore a tick — the poorest ground on the map,
+against the Frontier's 150 — so a Commons manufacturer is short of exactly what a frontier producer has
+too much of. It sells alloy and buys ore and rations; you sell ore and rations and buy alloy. Neither of
+you can substitute, and the only thing that closes the gap is a hand on a lane.
+
+A unit of `alloy` pays no Levy, discharges no Charge, builds no WORKS and burns in no anchor. It buys
+ground, and nothing else.
 
 ### `build` is THREE different acts — read the `kind`
 
@@ -928,9 +976,12 @@ This is one of **two** places in the API where the verb alone does not tell you 
 
 - `build {"kind":"WORKS","system":"<id>"}` raises a **production structure**. Legal in the Commons.
 - `build {"kind":"ANCHOR","system":"<id>"}` takes **territory**, with a permanent Charge attached.
-  Invalid in the Commons. It destroys 5000 units of `ration` **already standing at that system** and
-  requires a posted BOND of 50000 per claim, which stays locked and slashable for as long as you hold
-  the claim. §11B is the full rules and the Charge is the recurring half.
+  Invalid in the Commons. It destroys 5000 units of `ration` **and 500 units of `alloy`**, both
+  **already standing at that system**, and requires a posted BOND of 50000 per claim, which stays
+  locked and slashable for as long as you hold the claim. The alloy is the half you cannot have made
+  where you are standing: every claimable system is outside the Commons, and
+  only the Commons refines it. An anchor is always partly somebody else's industry, hauled in.
+  §11B is the full rules and the Charge is the recurring half.
 - `build {"kind":"HULL","hull":"<class>","modules":[...]}` makes a **warship** for the battles in
   §11D. Invalid unless you can pay in `fuel`.
 
@@ -1015,13 +1066,16 @@ statements below before you take one. The server publishes the one that applies 
 ### Taking one — `post_bond` then `build`
 
 > A CLAIM is your sovereign hold on ONE system outside the Commons. You take it with `build`
-> {"kind":"ANCHOR","system":"<id>"}: it destroys 5000 units of ration that are ALREADY STANDING at
-> that system, and it requires you to have posted a BOND of 50000 per claim with `post_bond`. The bond
+> {"kind":"ANCHOR","system":"<id>"}: it destroys 5000 units of ration and 500 units of alloy that are
+> ALREADY STANDING at that system, and it requires you to have posted a BOND of 50000 per claim with
+> `post_bond`. The bond
 > is slashable capital and it stays locked for as long as you hold the claim — it is not a deposit you
 > get back. Your holding must stand at the system (`graduate` gets it there) and the system must be
 > MARCHES or FRONTIER: a Commons claim is INVALID, not refused, because nothing in the Commons can be
 > fought over. This gate is priced in produced goods and slashable capital and NEVER in identities, so
-> enrolling again buys you nothing here.
+> enrolling again buys you nothing here. The alloy is the half you cannot make here: it is refined only
+> at a COMMONS system and every claimable system is outside the Commons, so buy it at a Commons venue
+> with `trade` and bring it with `haul`.
 
 ```http
 POST /compact/api/act
@@ -1119,9 +1173,9 @@ the income.
 > the fuel must be unpledged and standing AT the claimed system. A cold anchor collects nothing — the
 > tenants keep their whole share — and that is the ONLY penalty: no arrears, no lapse, no bond slashed.
 > Bring fuel mid-Reckoning and the rent starts again for the rest of it. `fuel` is yielded ONLY by a
-> WORKS standing at a FRONTIER system, it is not produced anywhere else at any price, and no verb in
-> this build moves goods between systems — so if you hold frontier territory and work none of it, you
-> must BUY fuel from the residents you are taxing. A MARCHES claim needs no fuel at all: none can be
+> WORKS standing at a FRONTIER system, it is not produced anywhere else at any price — so if you hold
+> frontier territory and work none of it, you must get fuel from somebody: BUY it from the residents
+> you are taxing, or `haul` it in one lane at a time on a hand. A MARCHES claim needs no fuel at all: none can be
 > made there, and an obligation the rules make impossible is not one we will record you as having
 > missed.
 

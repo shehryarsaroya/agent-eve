@@ -351,11 +351,38 @@ function oneWar(seed: string): void {
       // afford a line ship has a tackle hull and nothing to tackle for.
       const order = war.built.get(String(member.principal)) ?? [];
       expect(order.length, `${member.handle} owns hulls it never built`).toBeGreaterThan(0);
+      // ── ★ THE PREFIX IS THE DOCTRINE; ANYTHING BEYOND IT IS A REPLACEMENT ──
+      //
+      // This compared the build LOG index-for-index against the doctrine, which is only right in a
+      // world where nothing dies. `hullFor` picks `CAST_DOCTRINE[held]` off the count of hulls a
+      // member currently HOLDS, so a member that loses a ship rebuilds at the index that fell vacant
+      // — and the log then carries more entries than the doctrine has, with an earlier hull repeated.
+      // A5 makes that loss permanent and public, and the fourth good made this world rich enough to
+      // reach it: `brannock` built four ships on a three-ship doctrine and the fourth was `PIKE`
+      // again, which is the doctrine working rather than being violated.
+      //
+      // So the assertion splits in two. The prefix must be the doctrine IN ORDER — that is the claim
+      // worth making, because the order is load-bearing (the buffer is bought before the tackle) —
+      // and every later entry must still be a doctrine hull, which is what catches a branch that
+      // started buying whatever it could afford.
+      const doctrine = new Set(CAST_DOCTRINE.map((d) => d.hull));
       for (const [index, hull] of order.entries()) {
-        expect(hull, `${member.handle}'s ship ${String(index)} is off-doctrine`).toBe(
-          CAST_DOCTRINE[index]?.hull,
-        );
+        if (index < CAST_DOCTRINE.length) {
+          expect(hull, `${member.handle}'s ship ${String(index)} is off-doctrine`).toBe(
+            CAST_DOCTRINE[index]?.hull,
+          );
+          continue;
+        }
+        expect(
+          doctrine.has(hull),
+          `${member.handle}'s ship ${String(index)} replaced a loss with ${hull}, which is not in the doctrine at all`,
+        ).toBe(true);
       }
+      // And the doctrine's own cap still binds on what is HELD, whatever the log says.
+      expect(
+        war.runtime.fleet.readyOrBusyOf(member.principal).length,
+        `${member.handle} holds more hulls than the doctrine allows`,
+      ).toBeLessThanOrEqual(CAST_DOCTRINE.length);
       // And the goods went into it. A hull is `ration` the Levy will never see again.
       expect(
         war.runtime.fleet.of(member.principal).every((h) => h.location === berth),

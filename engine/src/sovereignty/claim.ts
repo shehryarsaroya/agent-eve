@@ -43,6 +43,10 @@ import { handsOf, isPresent, type HandRecord, type WorldState } from '../world/i
 import { holdingOf } from '../world/state.js';
 import { tierOf, type WorldMap } from '../world/map.js';
 import { reject, type Rejection } from '../world/result.js';
+// The manufactured half of an anchor. Imported from `works/` rather than re-declared here: the
+// alloy constants have one home and `test/core/goods-are-independent.test.ts` polices the discipline
+// that says a goods constant is never defined in terms of another.
+import { ALLOY_ANCHOR_QTY, ALLOY_GOOD, ALLOY_TIER } from '../works/params.js';
 import { bondCoversOneMore, bondNeededForOneMore, postedBondOf, type BondRead } from './bond.js';
 import type { Book, ClaimRecord } from './book.js';
 import { inVulnerabilityWindow, vulnerabilityViewAt } from './cycle.js';
@@ -107,6 +111,15 @@ export function claimRejection(args: {
   readonly tick: number;
   /** Unpledged units of {@link CHARGE_GOOD} standing at `system` in the actor's stores. */
   readonly anchorAvailable: Qty;
+  /**
+   * Unpledged units of `ALLOY_GOOD` standing at `system` — the manufactured half of the anchor.
+   *
+   * A separate field and not folded into {@link anchorAvailable}, for hard rule 4's reason: they are
+   * different goods with different geography, and one number summing both would make the refusal
+   * name a quantity of nothing in particular. It is also the field whose absence is the whole
+   * mechanic: a MARCHES claimant can never make this, so the number is always somebody else's work.
+   */
+  readonly alloyAvailable: Qty;
   readonly bondRead: BondRead;
   /**
    * Currency this principal may spend on a cession price.
@@ -183,6 +196,32 @@ export function claimRejection(args: {
         `${system}. You have ${String(args.anchorAvailable)} unpledged there. Goods somewhere else do not ` +
         'count: an anchor is produced material put into a place, which is why this gate cannot be paid in ' +
         'currency and cannot be paid by enrolling a second identity (A15).',
+    );
+  }
+  // ── THE MANUFACTURED HALF OF THE ANCHOR (§10.1 #2, PASS-TERRITORY §16.2 #5) ──
+  //
+  // `PASS-TERRITORY-POLITICS` §16.2 #5 names it verbatim: *"Each claim owes a transparent mix of
+  // currency, **manufactured administration goods**, and hub fuel."* Currency is the bond and the
+  // cession price; hub fuel is `ANCHOR_FUEL_BY_TIER`; this is the third, and it was the missing one.
+  //
+  // **The whole point is that no claimable system can make it.** `ALLOY_TIER` is COMMONS and every
+  // claim is outside the Commons (the tier gate above refuses a Commons claim as INVALID), so this
+  // line is what makes a territorial ambition depend on somebody else's industry and on a convoy that
+  // actually arrived. It is checked here, on the merits, before anything is destroyed — the ordering
+  // `vBuild`'s header calls "the honesty".
+  //
+  // A15: priced in produced goods and in *place*, never in identities. Ten puppets at one Commons
+  // system refine exactly what one refines, because `Book.sharesAt` divides a tier yield that is a
+  // property of the map.
+  if (args.alloyAvailable < ALLOY_ANCHOR_QTY) {
+    return reject(
+      'A15',
+      `raising an anchor also destroys ${String(ALLOY_ANCHOR_QTY)} units of ${ALLOY_GOOD} standing at ` +
+        `${system}, and you have ${String(args.alloyAvailable)} unpledged there. ${ALLOY_GOOD} is the ` +
+        `manufactured good and it can only be refined at a ${ALLOY_TIER} system — ${system} is ${tier}, ` +
+        `so no amount of ore here becomes any. Buy it at a ${ALLOY_TIER} venue with \`trade\` and carry ` +
+        'it here with `haul`, or refine your own in the Commons and haul it out. This is the half of a ' +
+        'claim that somebody else has to have made for you.',
     );
   }
   if (!bondCoversOneMore(book, principal, args.bondRead)) {

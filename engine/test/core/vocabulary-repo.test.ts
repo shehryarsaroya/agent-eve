@@ -66,6 +66,16 @@ const SANCTIONED = new Map<string, string>([
   ['AssertScope.TICK', 'the tick horizon and an assertion scoped to tick close are the same tick'],
   ['AssertScope.RECKONING', 'the Reckoning horizon; a Reckoning-scoped assertion names that same horizon'],
   ['Visibility.SEALED', "the visibility tier that holds seals — §3's SEAL row now says so explicitly"],
+  // ★ Added when `haul` went live and the word entered §3, and it is RAID's entry with a different
+  // noun: carrying goods yourself and hiring a CARRIER to carry them are ONE concept bought two ways,
+  // which is what `venture/kinds.ts` means by calling `CARRIER` + `ESCORT` "the vertical slice's exact
+  // shape". The canon row says it in the same place RAID's does.
+  //
+  // Worth recording WHY it needed adding at all: `VentureKind.HAUL` has been in `core/types.ts` since
+  // the venture layer shipped and the word was **never in §3**, so this guard had nothing to compare
+  // it against — an uncanonised word is unpoliced by construction. Canonising it is what made the
+  // collision visible, and it was visible within one test run.
+  ['VentureKind.HAUL', "one concept bought two ways — you carry it, or you hire a CARRIER to; §3's row sanctions both, exactly as RAID's does"],
 ]);
 
 /**

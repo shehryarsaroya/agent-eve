@@ -85,8 +85,10 @@ describe('the good exists in one zone, and that is the whole mechanic', () => {
     expect(FUEL_YIELD_PER_TICK.MARCHES).toBe(0);
     expect(FUEL_YIELD_PER_TICK.FRONTIER).toBeGreaterThan(0);
     // And the sink is asked for only where the good can be made. A MARCHES claim asked for fuel
-    // could never supply it — no local yield, and no verb in this build moves goods between
-    // systems — which is an obligation the rules make impossible to meet (A5′).
+    // could never supply it — no local yield, and (before `haul`) no way to bring any in — which
+    // would be an obligation the rules make impossible to meet (A5′). Still zero now that goods can
+    // move: a claim tier that yields none should not owe any, because the alternative is billing a
+    // Marches claimant for a permanent import.
     expect(ANCHOR_FUEL_BY_TIER.MARCHES).toBe(0);
     expect(ANCHOR_FUEL_BY_TIER.COMMONS).toBe(0);
     expect(ANCHOR_FUEL_BY_TIER.FRONTIER).toBeGreaterThan(0);
@@ -162,7 +164,16 @@ describe('the good exists in one zone, and that is the whole mechanic', () => {
       'cold anchor collects nothing',
       'no arrears, no lapse and no bond slashed',
       'MARCHES claim needs no fuel',
-      'No verb in this build moves goods between systems',
+      // ── THIS LINE PINNED A SENTENCE THAT IS NOW FALSE, AND THE PIN FOLLOWED IT ──
+      //
+      // It read `'No verb in this build moves goods between systems'` — true, and the reason a
+      // frontier rentier had to buy from its own tenants. `haul` is live, so agent.md dropped that
+      // sentence rather than keep a **false statement about the rules on the most-read surface in
+      // the game**, which is the failure a rules-surface pin exists to catch, not to cause. What an
+      // agent still cannot infer is the half that did not change: goods are LOCATED, and exactly one
+      // verb moves them. `test/rules-surface/agent-md.test.ts` re-pointed the identical assertion
+      // for the identical reason; this copy was missed. The intent has not moved.
+      'Goods are LOCATED, and `haul` is the only verb that moves them',
       'Never from the claimant\'s own WORKS',
       'a takeover cannot raise it on a sitting tenant',
       // And the field whose MEANING changed, which is the highest-risk surface of the lot.
@@ -181,7 +192,19 @@ describe('the good exists in one zone, and that is the whole mechanic', () => {
     expect(FUEL_STATEMENT).toContain(String(ANCHOR_FUEL_BY_TIER.FRONTIER));
     expect(FUEL_STATEMENT).toContain('cold anchor collects nothing');
     expect(FUEL_STATEMENT).toContain('no arrears, no lapse, no bond slashed');
-    expect(FUEL_STATEMENT).toContain('BUY fuel from the residents you are taxing');
+    // ── THIS PIN MOVED WHEN `haul` LANDED, AND THE OLD ONE WOULD HAVE STAYED GREEN ──
+    //
+    // The statement used to say *"no verb in this build moves goods between systems — so ... you must
+    // BUY fuel from the residents you are taxing."* True when written, **false the day `haul` shipped**,
+    // and a false rule on the surface a claimant is billed from is scar #1 where A5′ cares most: a
+    // rentier told its only option is its own tenants will overpay a monopolist it could bypass.
+    // Asserting the OPTION rather than the obligation is what makes this pin survive the rule changing
+    // and fail when the rule is wrong.
+    expect(FUEL_STATEMENT, 'buying from a tenant is one road').toContain('BUY it from the residents');
+    expect(FUEL_STATEMENT, 'and carrying it in is the other').toContain('`haul` it in one lane at a time');
+    expect(FUEL_STATEMENT, 'and the statement must not promise goods cannot move').not.toContain(
+      'no verb in this build moves goods',
+    );
     expect(FUEL_STATEMENT).toContain('MARCHES claim needs no fuel');
   });
 });
@@ -565,6 +588,14 @@ describe('a FRONTIER system actually hands fuel over, through the front door', (
       const next = [...quote.open].sort(closer)[0];
       if (next === undefined) break;
       await topUp(who, 60_000);
+      // ── NO FARE ON THIS WALK, AND THAT IS A DELETED FEATURE RATHER THAN AN OMISSION ──
+      //
+      // A crossing beyond the Commons was briefly priced in `alloy` — §10.1's "convex in footprint" —
+      // and it was removed on the measurement that walking this very road produced: every seat after
+      // the first holds no WORKS, therefore no ore, therefore no way to refine any, and the market's
+      // buy side is unfundable. It closed the Frontier, and `HULL_COST_GOODS` needs FRONTIER-only
+      // fuel, so it closed the combat layer with it. `works/params.ts` carries the full diagnosis
+      // where the constant used to be.
       expect(await act(who, 'graduate', { to: next }), `hop ${String(hop)} to ${next}`).toBe(200);
       run(1);
     }

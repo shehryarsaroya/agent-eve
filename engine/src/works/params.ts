@@ -152,6 +152,295 @@ export const WORKS_GOOD = 'ration' as GoodId;
 export const FUEL_GOOD = 'fuel' as GoodId;
 
 /**
+ * ★ **THE FOURTH GOOD — §10's *manufactured* good, and the first one that flows INWARD.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **WHY A FOURTH GOOD AT ALL, WHEN THE THIRD ONE ALREADY GAVE US A GRADIENT.**
+ *
+ * Measured before it was designed, 4 seeds x 6 Reckonings of the heuristic world:
+ *
+ * ```
+ *   market orders ever placed .......... 0        (in every world this repo has run)
+ *   market fills ever printed .......... 0
+ *   WORKS on FRONTIER ground ........... 0, 0, 0, 1   (of 8 members)
+ *   `ration` standing at the end ....... 529,889 – 589,000
+ *   `ore` standing at the end .......... 4,078 – 5,162
+ * ```
+ *
+ * Two findings, and the second is the one that decided this design. **First:** `market/` is 3,065
+ * built lines that have never held an order, so "the market prices one commodity" was generous —
+ * it priced none. **Second:** `fuel` is FRONTIER-only and *the Frontier is empty*, so the third
+ * good exists in one world of four. A gradient nobody stands on prices nothing.
+ *
+ * And half a million units of `ration` sat in stores with nothing to buy. The world's problem was
+ * never supply. It was that **every good flowed one way and stopped.**
+ *
+ * ── WHAT MAKES THIS ONE DIFFERENT: IT IS MADE WHERE THE ORE IS WORST ─────────
+ *
+ * `alloy` is refined from {@link WORKS_YIELD_GOOD} — the same input as {@link WORKS_GOOD} — and it
+ * can be refined **only at a `COMMONS` system** ({@link ALLOY_TIER}). Read that against
+ * {@link YIELD_PER_TICK}, which pays the Commons 80 a tick against the Frontier's 150: the tier
+ * that can manufacture is the tier with the least to manufacture *from*, and the tier with the ore
+ * cannot manufacture at all.
+ *
+ * That is a **two-way** dependency rather than another `fuel`:
+ *
+ *   - an interior manufacturer wants **ore**, because its own ground is the poorest on the map;
+ *   - everyone outside the Commons wants **alloy**, because the two gates that take them further
+ *     out are priced in it and *no MARCHES or FRONTIER system can make a single unit*.
+ *
+ * Ore and rations move outward-to-inward; alloy moves inward-to-outward. Both parties need both,
+ * neither can substitute, and the thing that carries them is `haul` — which is the map's motion,
+ * which is the show (A13).
+ *
+ * ── AND THE FORK IS AT THE SAME INPUT, WHICH IS THE WHOLE DECISION ───────────
+ *
+ * One unit of ore becomes **either** a ration (which pays your Levy tonight) **or** a fraction of
+ * an alloy (which buys you ground you keep). §10.1 asked for a demand side; this is one, and it is
+ * a decision an agent can get *wrong* rather than a second faucet. `refine {kind:"RATION"}` and
+ * `refine {kind:"ALLOY"}` compete for the same lot.
+ *
+ * ── WHY IT IS NOT ONE OF THE FOUR OBLIGATION GOODS, AND MUST NEVER BE ────────
+ *
+ * `LEVY_GOOD`, {@link WORKS_GOOD}, `CHARGE_GOOD` and `ENDOWMENT_GOOD` all name `ration` so that
+ * **the Levy stays payable from domestic production** — `test/core/goods-are-independent.test.ts`
+ * pins that and explains why an unpayable Levy is worse than a crash. Alloy is deliberately
+ * outside that set: a Levy priced in a good three of the four zones cannot make would accuse every
+ * principal outside the Commons of a default our own geography caused, which is A5′ with the map as
+ * the culprit. `test/works/a-good-only-the-commons-makes.spec.ts` asserts the inequality directly.
+ *
+ * ── THE SINK, AND WHY IT IS A ONE-TIME GATE RATHER THAN AN OBLIGATION ───────
+ *
+ * `fuel` set the precedent that matters: a cold anchor **loses income and nothing else** — no
+ * arrears, no lapse, no bond slashed — because a new way to be recorded short is A5′ arriving with
+ * a feature. Alloy follows it and goes one better: both of its sinks are **gates you choose to walk
+ * through**, so there is no state in which an agent *owes* alloy and cannot get it.
+ *
+ *   1. **{@link ALLOY_ANCHOR_QTY}** — every CLAIM, and after a measurement it is the ONLY one.
+ *      `PASS-TERRITORY-POLITICS` §16.2 #5 names it verbatim:
+ *      *"Each claim owes a transparent mix of currency, **manufactured administration goods**, and
+ *      hub fuel."* A claim is always outside the Commons, so **every anchor in the game is built
+ *      out of goods somebody carried in.**
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A sixth goods constant, independently declared like the other five, and deliberately equal to
+ * none of them.
+ */
+export const ALLOY_GOOD = 'alloy' as GoodId;
+
+/**
+ * The ONE tier that can refine {@link ALLOY_GOOD}. **The single zero-sum-free asymmetry.**
+ *
+ * ── WHY THE COMMONS AND NOT THE FRONTIER, WHICH WAS THE FIRST DESIGN ─────────
+ *
+ * The obvious recipe was `ore + fuel -> alloy`, which puts manufacturing at the Frontier because
+ * that is the only place fuel exists. It was rejected on a measurement: **the Frontier holds 0 WORKS
+ * in three of four seeded worlds.** A good producible only where nobody stands is a good that does
+ * not exist, and this repo has now shipped eleven capabilities with that shape. The Commons holds
+ * 2–3 of 8 members in every world, so a Commons franchise has a supply side on the first day.
+ *
+ * ── AND WHY THIS CANNOT DEADLOCK, WHICH IS THE CHECK THAT HAD TO PASS ────────
+ *
+ * `WORKS_YIELD_GOOD`'s header states the trap in full: *if a build consumed the good it yields, a
+ * principal would need `ore` to build the thing that makes `ore` — a bootstrap deadlock with no
+ * first move and no error message.* Fuel then made it worse by adding geography. Alloy is the first
+ * good whose geography **points the other way**, and that is why it is safe:
+ *
+ *   - **Everyone starts in the Commons.** Enrolment seats you there, so the manufacturing tier is
+ *     the tier every principal begins in — nobody has to travel to reach the franchise.
+ *   - **Nothing on the road INTO the Commons is priced in alloy**, because there is no road in.
+ *   - **The first crossing out is not priced in alloy either**, so the ladder's first rung is
+ *     reachable from the endowment exactly as it was before this good existed.
+ *
+ * So the only things alloy gates are the second rung and beyond — and a principal standing on the
+ * second rung can always send a hand back to a Commons venue and buy some. A cage would need both
+ * *no local production* and *no way in*; the Commons is adjacent to the Marches by construction
+ * (`world/map.ts` keeps the Commons connected), so the second condition never holds.
+ */
+export const ALLOY_TIER: ZoneTier = 'COMMONS';
+
+/**
+ * ★ **THE ALLOY RECIPE, BY TIER — A PRICE GRADIENT AND NOT A WALL.** *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE FIRST DESIGN WAS A WALL, AND A MEASUREMENT KILLED IT.** Alloy was COMMONS-only, full stop,
+ * exactly as `fuel` is FRONTIER-only. Four seeds, six Reckonings, measured through the cast:
+ *
+ * ```
+ *   refine:ALLOY  32–40      alloy made        15,500–20,000
+ *   trade:ASK      4–16      market fills           0
+ *   trade:BID  1,980–9,151   claims taken           0   (was 4 per seed)
+ * ```
+ *
+ * Supply worked. Demand did not, and **the reason had nothing to do with this good.**
+ * `market/escrow.ts:freeCash` is `freeBalance − ENDOWMENT_FLOOR_MINOR`, the floor is the whole
+ * `STARTER_STAKE` (250,000), and **every cast member in every world sits between 62,000 and 203,000**
+ * — so `freeCash` is **identically zero for every principal that has ever played**, and no BID can be
+ * funded by anyone, ever. `ledger/endowment.ts` predicted this in its own words — *"a principal that
+ * spends endowment on legitimate costs keeps the floor, so its transferable balance stays smaller
+ * than a perfectly-accounted version would allow... erring toward withholding is the safe direction"*
+ * — and nothing had ever measured what the erring cost. It costs the entire buy side of the market,
+ * which is why 3,065 lines of `market/` have never printed a fill.
+ *
+ * A wall plus an unfundable market is a **deadlock**: a Marches claimant could neither make alloy nor
+ * buy it, so `claims` went to zero and the sovereignty layer went with it. That is a worse world than
+ * the one with three goods, and no amount of cast tuning fixes it — the buyer has no money.
+ *
+ * ── SO THE GEOGRAPHY BECAME A RATIO, WHICH IS WHAT THE PROBLEM ASKED FOR ─────
+ *
+ * *"A good that is cheap in one tier and dear in another is where price and hauling come from."*
+ * Every tier can refine alloy; the Commons does it **four times cheaper than the Marches and eight
+ * times cheaper than the Frontier.** Read against {@link YIELD_PER_TICK}, which pays the Commons 80 a
+ * tick against the Frontier's 150, that is comparative advantage in its textbook form: the tier with
+ * the least ore converts it best, the tier with the most converts it worst, and both are better off
+ * trading than either is alone.
+ *
+ * | tier | ore per alloy | ore a sole occupant yields per Reckoning | alloy it could make | one ANCHOR costs |
+ * |---|---|---|---|---|
+ * | `COMMONS` | **8** | 23,040 | 2,880 | 4,000 ore |
+ * | `MARCHES` | **32** | 31,680 | 990 | 16,000 ore |
+ * | `FRONTIER` | **64** | 43,200 | 675 | 32,000 ore |
+ *
+ * Three properties, and each is a thing the wall did not have:
+ *
+ *   - **Nothing can deadlock.** A claimant can always self-supply at its own tier's price, so no
+ *     gate in the game is unreachable and no amount of anybody else's behaviour can lock it out.
+ *     A15 and A5′ both rest on that: a gate the rules make impossible to pass is an obligation the
+ *     rules make impossible to meet.
+ *   - **There is a PRICE, and it is discoverable without a wiki (A2).** A Marches buyer's own cost is
+ *     32 ore a unit and a Commons seller's is 8, so **the trading range is 8–32** and every agent can
+ *     compute both ends from published constants. A wall has no price, only an availability.
+ *   - **The gain from trade is 24 ore a unit and it has to be hauled.** That is the reason a convoy
+ *     crosses the map, and the convoy is the show (A13).
+ *
+ * ── AND WHY THE FRONTIER IS WORST RATHER THAN FORBIDDEN ──────────────────────
+ *
+ * Forbidding it reads cleaner and is the same deadlock one tier out: `HULL_COST_GOODS` needs `fuel`,
+ * fuel is FRONTIER-only, and a frontier claim that could not be anchored would make the combat layer
+ * unreachable through the front door. 64 makes a frontier claim *expensive* — three quarters of a
+ * Reckoning's ore — which is a reason to buy from the interior, not a reason to give up.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const ALLOY_IN_BY_TIER: Readonly<Record<ZoneTier, number>> = Object.freeze({
+  COMMONS: 8,
+  MARCHES: 32,
+  FRONTIER: 64,
+});
+
+/**
+ * The alloy recipe: {@link WORKS_YIELD_GOOD} in, {@link ALLOY_GOOD} out. *(calibrate)*
+ *
+ * **8:1, and the ratio is the price of the fork.** {@link REFINE_IN_QTY} is 1:1 deliberately, so
+ * ore and rations are interchangeable and the only scarcity is the action. Alloy must not be: if it
+ * converted 1:1 it would be a second name for a ration and the whole design would collapse into
+ * the two-good world with a fourth label on it.
+ *
+ * Worked, because the interesting property is a consequence of the ratio rather than of the number:
+ * a sole occupant of a COMMONS system takes `YIELD_PER_TICK.COMMONS` x `TICKS_PER_RECKONING` =
+ * **23,040 ore a Reckoning**, against a Levy the calibration puts at ≈20,000. So it can spare
+ * roughly 3,000 ore — **375 alloy** — without going short. That is inside one
+ * {@link ALLOY_ANCHOR_QTY} and nowhere near two, which is the scarcity the sinks were sized
+ * against: a Commons manufacturer supplies about one claim per Reckoning, and a second buyer has to
+ * outbid the first.
+ *
+ * Above 8 the good is unbuyable and both gates jam; below 8 a manufacturer covers the whole map's
+ * demand out of its spare ore and the book never has to clear. `test/works/a-good-only-the-commons-makes.spec.ts`
+ * pins both edges as arithmetic rather than as a claim.
+ */
+export const ALLOY_IN_QTY = ALLOY_IN_BY_TIER[ALLOY_TIER];
+export const ALLOY_OUT_QTY = 1;
+
+/**
+ * Units of {@link ALLOY_GOOD} destroyed to raise an ANCHOR, on top of `ANCHOR_QTY`. *(calibrate)*
+ *
+ * A tenth of `ANCHOR_QTY` (5,000), which at {@link ALLOY_IN_QTY} is 4,000 ore of input — so the
+ * anchor's real goods price roughly doubles, and **the added half is payable in nothing a claimant
+ * can produce on claimable ground.** Every claim is outside the Commons, so this is the line that
+ * makes a territorial ambition depend on somebody else's industry.
+ *
+ * Sized *below* what one Commons manufacturer can spare in a Reckoning (see {@link ALLOY_IN_QTY}),
+ * because a gate priced above the whole world's supply is not a gate, it is a wall — and a wall
+ * here would take `claims` to zero and with it the entire sovereignty layer.
+ */
+export const ALLOY_ANCHOR_QTY: Qty = qty(500);
+
+/**
+ * ⚑ **THE SECOND SINK, DESIGNED, BUILT, MEASURED AND THEN REMOVED — AND THE MEASUREMENT IS THE
+ * REASON THIS COMMENT SURVIVES THE CODE.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * §10.1 asks holding upkeep to be *"currency plus a manufactured good, **convex in footprint**"*, and
+ * `world/movement.ts:commonsBoundRejection` has told agents since commit #1 that leaving requires *"a
+ * holding that pays upkeep in currency **and manufactured goods**"*. The obvious way to cash both was
+ * a surcharge on any `graduate` whose origin is **not** the Commons: the first rung stays free
+ * (A8's floor, and `GRADUATION_STATEMENT`'s promise that "no seat is a cage"), every rung after it
+ * costs a good the departing seat refines four to eight times dearer. It was built end to end —
+ * quote field, refusal, burn, observation field, agent.md table.
+ *
+ * **It closes the Frontier, and with it the whole combat layer, and the cause is structural rather
+ * than a tuning error.** Measured on `fz-13` over 900 ticks: zero FRONTIER claims, where master
+ * reaches one. The two populations that would need to meet are **disjoint by construction**:
+ *
+ *   - the cast crosses **before** it builds (`heuristic.ts:graduateFor` refuses a member holding a
+ *     WORKS, because *"a WORKS cannot follow a body, so crossing after building strands the member's
+ *     own income where it can neither refine nor spend it"* — a measured harm, not a preference);
+ *   - so every principal standing on a rung it might cross from **holds no WORKS, and therefore no
+ *     ore**, and alloy is refined from ore and nothing else;
+ *   - and it cannot buy any, because `market/escrow.ts:freeCash` is `freeBalance −
+ *     ENDOWMENT_FLOOR_MINOR` and that is **identically zero for every principal that has ever played
+ *     this game** (see {@link ALLOY_IN_BY_TIER}).
+ *
+ * Three independent walls, and no cast tuning gets past any of them. `HULL_COST_GOODS` needs `fuel`,
+ * fuel is FRONTIER-only, so a Frontier nobody can reach is a combat layer nobody can enter through
+ * the front door — a much larger loss than the convexity was a gain.
+ *
+ * ── WHY THE CONSTANT IS DELETED RATHER THAN SET TO ZERO ─────────────────────
+ *
+ * A constant at 0 behind live code is a mechanism that is built, tested, reported and used by
+ * nothing — this repo's defining defect, eleven instances and counting, and the whole reason the
+ * fourth good was worth building. It would also read in every future audit as a sink that exists.
+ *
+ * ── WHAT WOULD MAKE IT SHIPPABLE, SO THE NEXT ATTEMPT DOES NOT RE-DERIVE THIS ─
+ *
+ * Any **one** of these removes a wall: a funded market buy side (the D7 floor decision — the largest
+ * of the three and wanted anyway); a `carryStoresTo` that moves every good rather than only the
+ * upkeep good, **plus** a cast that can hold a WORKS and still cross; or a currency substitute on the
+ * model of {@link WORKS_GOODS_IN_CURRENCY_MINOR}, which is this codebase's own precedent for exactly
+ * this shape — *"a door out of a trap, not a shortcut into the economy."*
+ *
+ * The ANCHOR half of the sink is **kept and works** ({@link ALLOY_ANCHOR_QTY}): claims measured 3–4 a
+ * seed with it, matching master, because a claimant does hold a WORKS and can refine at its own
+ * tier's rate.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * **A RULES SURFACE** (hard rule 4). Everything about the fourth good an agent cannot infer, in
+ * the engine's own numbers.
+ *
+ * Served on `holding.works.alloy` and carried verbatim by `agent.md`; the numbers are interpolated
+ * from the constants rather than typed again, so scar #1 — the engine and the agent-facing text
+ * disagreeing about one number while each reads correctly alone — cannot happen here without a
+ * test going red. `FUEL_STATEMENT` is the pattern.
+ */
+export const ALLOY_STATEMENT =
+  `${ALLOY_GOOD} is the manufactured good, and the ONE thing in this game whose price depends on ` +
+  `where you make it. \`refine {kind:"ALLOY"}\` turns ${WORKS_YIELD_GOOD} into ${ALLOY_GOOD} at a ` +
+  `rate set by the TIER you are standing in: ` +
+  `COMMONS ${String(ALLOY_IN_BY_TIER.COMMONS)}:1 · MARCHES ${String(ALLOY_IN_BY_TIER.MARCHES)}:1 · ` +
+  `FRONTIER ${String(ALLOY_IN_BY_TIER.FRONTIER)}:1. The Commons has the poorest ore on the map and ` +
+  `refines it best; the Frontier has the richest and refines it worst. You can always make your own ` +
+  `and you will usually rather buy it from somebody who makes it cheaper — that difference is the ` +
+  `only reason a convoy crosses the map. The same ore becomes either ${WORKS_GOOD} (which pays your ` +
+  `Levy tonight) or ${ALLOY_GOOD} (which buys ground you keep), and you cannot have both from one ` +
+  `lot. ONE thing is priced in it and it is territory: an ANCHOR costs ${String(ALLOY_ANCHOR_QTY)} ` +
+  `${ALLOY_GOOD} on top of its rations, and every system a claim can exist on is outside the Commons ` +
+  `— so a claim is always partly somebody else's industry. Nothing ELSE consumes it: no crossing, no ` +
+  `WORKS, no hull. It cannot be refined into anything, and it pays no obligation — ` +
+  `a Levy, a Charge and a WORKS are all payable in ${WORKS_GOOD} and nothing else. Goods are ` +
+  `LOCATED: use \`haul\` to carry them one lane on one of your hands.`;
+
+/**
  * The recipe: how much {@link WORKS_YIELD_GOOD} `refine` consumes, and how much {@link WORKS_GOOD} it
  * produces. *(calibrate)*
  *

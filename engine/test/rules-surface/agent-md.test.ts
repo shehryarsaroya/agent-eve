@@ -614,7 +614,14 @@ describe('agent.md warns about the one verb whose meaning depends on a parameter
     // costed facts live HERE as well, and that duplication is deliberate — pinned so it cannot
     // drift from §11B, which is the scar-#1 risk a second copy always carries.
     expect(AGENT_MD, 'the goods a claim destroys, where `build` is documented').toContain(
-      'It destroys 5000 units of `ration` **already standing at that system**',
+      'It destroys 5000 units of `ration` **and 500 units of `alloy`**',
+    );
+    // ★ And the reason the alloy half is different in kind from every other price in the game: it is
+    // the only one an agent CANNOT pay out of its own production, because the tier that makes it and
+    // the tier a claim lives in are disjoint by construction. An agent that read "500 alloy" as just
+    // another number would spend Reckonings refining ore into a good its ground cannot produce.
+    expect(AGENT_MD, 'and that the alloy half must be hauled in').toContain(
+      'only the Commons refines it',
     );
     expect(AGENT_MD, 'and the bond, which is slashable and does not come back').toContain(
       'requires a posted BOND of 50000 per claim',
@@ -703,9 +710,25 @@ describe("agent.md's verb table says which verbs actually exist", () => {
   });
 
   it('names the two consequences an agent would otherwise discover by losing something', () => {
-    expect(AGENT_MD, '`build` being two acts').toContain('`build` is two acts');
-    // No `haul` means cargo cannot be intercepted, which changes how predation is priced.
-    expect(AGENT_MD.replace(/\s+/g, ' ')).toContain('cannot be intercepted in transit');
+    // Three kinds since the HULL landed; the sentence has to count them correctly or it is scar #1
+    // in the sentence that exists to prevent scar #1.
+    expect(AGENT_MD, '`build` being three acts').toContain('`build` is three acts');
+    // ── THIS ASSERTION USED TO SAY THE OPPOSITE, AND THE INVERSION IS THE FIX ──
+    //
+    // It pinned *"cargo cannot be intercepted in transit, because the hand is what is in transit"* —
+    // true, and a consequence of `haul` not existing. `haul` is live now, so the same sentence would
+    // be a **false statement about the rules on the most-read surface in the game**, which is exactly
+    // the failure this whole file exists to catch. What an agent must know instead is that goods are
+    // located and one verb moves them, because everything about a market fill's usefulness depends on
+    // it.
+    const flat = AGENT_MD.replace(/\s+/g, ' ');
+    expect(flat, 'goods do not teleport').toContain('Goods are LOCATED, and `haul` is the only verb');
+    expect(flat, 'and a fill lands where it traded').toContain(
+      'A market fill settles the cargo at the venue it traded at',
+    );
+    expect(flat, 'a stale promise that cargo is safe would misprice every raid').not.toContain(
+      'cannot be intercepted in transit',
+    );
   });
 });
 

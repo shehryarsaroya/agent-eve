@@ -256,10 +256,12 @@ describe('AGT-S1 / §16 step 7 — the blind-play gate', () => {
     expect(Array.isArray(enrolled.json['liveVerbs'])).toBe(true);
     expect(Array.isArray(enrolled.json['notYetLive'])).toBe(true);
     expect(enrolled.json['liveVerbs']).toContain('create');
-    // `trade` used to be the example here and is live as of the market build, so the
-    // assertion names one that is still unbuilt. The property under test is the gap
-    // being *reported*, not which verb happens to be in it.
-    expect(enrolled.json['notYetLive']).toContain('haul');
+    // `trade` used to be the example here, then `haul`; both went live, so the assertion names one
+    // that is still unbuilt. The property under test is the gap being *reported*, not which verb
+    // happens to be in it — and the churn is the list working: every eviction is a canon verb that
+    // stopped being a promise. `extract` is what is left in step 11.
+    expect(enrolled.json['notYetLive']).toContain('extract');
+    expect(enrolled.json['notYetLive'], '`haul` landed with the fourth good').not.toContain('haul');
     // And it says how to sign, so §2 is actionable without a second document.
     const signing = enrolled.json['signing'] as Record<string, unknown>;
     expect(signing['algorithm']).toBe('ed25519');

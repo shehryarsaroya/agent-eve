@@ -39,6 +39,7 @@ import { storesAccount } from '../../src/ledger/index.js';
 import { STARTER_STAKE } from '../../src/ledger/endowment.js';
 import { freeCash } from '../../src/market/escrow.js';
 import { CLAIM_BOND_MINOR } from '../../src/sovereignty/index.js';
+import { giveAlloy } from '../works/alloy-fixture.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from '../api/harness.js';
 
 type Row = Record<string, unknown>;
@@ -108,8 +109,12 @@ describe('the endowment cannot leave a principal through a cession price (D7 · 
     expect((await enrol(h, boss)).status).toBe(201);
     tick(h, 1);
     for (const verb of ['graduate', 'post_bond'] as const) await takeOffered(boss, verb);
-    await takeOffered(boss, 'build', 'ANCHOR');
     const system = String(((await observe(boss))['holding'] as Row)['system']) as SystemId;
+    // The operator's own anchor is scaffolding: what is under test is what the PUPPET may pay for
+    // the cession, so the seller's manufactured half is supplied rather than refined and hauled.
+    giveAlloy(h.runtime, boss.principalId as PrincipalId, system);
+    tick(h, 1);
+    await takeOffered(boss, 'build', 'ANCHOR');
 
     // The puppet enrols — free, as A15 requires it stay — and crosses to the same system.
     const puppet = agent('puppet');
@@ -133,6 +138,10 @@ describe('the endowment cannot leave a principal through a cession price (D7 · 
     const bossBefore = balance(boss);
     await act(boss, 'publish_offer', { cede: system, price: free });
     run(1);
+    // The puppet gets the anchor's alloy too, and that is load-bearing: `claimRejection` checks the
+    // manufactured half BEFORE the cession price, so a puppet short of alloy would be refused for
+    // the wrong reason and D7 would go untested behind a green assertion.
+    giveAlloy(h.runtime, p, system);
     await act(puppet, 'build', { kind: 'ANCHOR', system });
     run(1);
 
@@ -157,8 +166,12 @@ describe('the endowment cannot leave a principal through a cession price (D7 · 
     expect((await enrol(h, boss)).status).toBe(201);
     tick(h, 1);
     for (const verb of ['graduate', 'post_bond'] as const) await takeOffered(boss, verb);
-    await takeOffered(boss, 'build', 'ANCHOR');
     const system = String(((await observe(boss))['holding'] as Row)['system']) as SystemId;
+    // Same reason as above, one test along: the seller's anchor only has to exist for there to be a
+    // claim to cede. The distinction under test is EARNED currency versus the stake, not industry.
+    giveAlloy(h.runtime, boss.principalId as PrincipalId, system);
+    tick(h, 1);
+    await takeOffered(boss, 'build', 'ANCHOR');
 
     const buyer = agent('earner');
     expect((await enrol(h, buyer)).status).toBe(201);
@@ -206,6 +219,10 @@ describe('the endowment cannot leave a principal through a cession price (D7 · 
     const price = transferable;
     await act(boss, 'publish_offer', { cede: system, price });
     run(1);
+    // And the buyer's, so that the cession completes on the strength of its EARNINGS alone. A buyer
+    // short of alloy would be refused before the price was ever looked at, which would make the
+    // "earned money buys territory normally" half of D7's distinction unassertable.
+    giveAlloy(h.runtime, b, system);
     await act(buyer, 'build', { kind: 'ANCHOR', system });
     run(1);
 

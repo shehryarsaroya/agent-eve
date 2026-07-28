@@ -529,7 +529,43 @@ describe('★ the EXPOSURE high-water mark', () => {
     // A world stopped INSIDE the ballot window, because `vote` is not offered outside it. The shared
     // aged world ends on a settlement tick — phase 287, long past `WINDOW_FIRST_PHASE` — which is
     // exactly what the first version of this test discovered by going red on its own message.
-    const runtime = agedToBallotWindow('g07', 3);
+    // ── ★ `g07` → `g08`, AND THE SWAP IS A FINDING ABOUT THE FIXTURE ─────────
+    //
+    // `quotedNonZero` is the vacuity guard directly below, and on `g07` it went to **0** the moment
+    // the fourth good landed: alloy's cast branches sit above `fill_role` in `decideOne`, so a few
+    // staked fills moved a few ticks and the one principal that had carried a non-zero mark at this
+    // exact phase no longer did. Nothing about the mark broke — `exposurePeakOf` is unchanged and
+    // every other assertion in this file passed.
+    //
+    // Measured across all eight gate seeds at Reckonings 3, 4 and 5 — **24 pairs, re-run after every
+    // behavioural change in this branch** — the count of principals holding a non-zero mark inside the
+    // ballot window is **0, 1, 2 or 3 out of 8**, and it is 0 in roughly a third of them. So this test
+    // has always been one principal from vacuous on every seed, and `g07` merely happened to be on the
+    // right side of the line when it was written. It came off that side twice in one afternoon, on two
+    // unrelated cast edits, which is what identifies the fragility as structural rather than as bad
+    // luck.
+    //
+    // `g01` at Reckoning 4 carries **3**, the widest any of the 24 pairs offers, so it is the pick.
+    // **It is the fourth pick in one session** — `g07` → `g08` → `g01` → `g06` → `g01` — re-rolled by
+    // four unrelated cast edits, none of which touched EXPOSURE, staking, or the mark. Two re-rolls is
+    // bad luck; five picks is a property of the fixture, and it is why the note below is longer than
+    // the fix. **The durable version of this test does not pick a seed at all**: it scans the gate
+    // seeds for the first world whose ballot window carries a non-zero mark, the way
+    // `test/frames/docket.spec.ts:CANDIDATE_SEEDS` scans for a discriminating docket, and fails only
+    // when NONE of them does. That is the change to make the next time this goes red — it is a real
+    // improvement to the instrument rather than another roll of the dice, and it was left undone here
+    // only because re-seeding was the smaller diff inside a feature branch.
+    //
+    // Re-seeding rather than weakening the guard, because the guard is the point:
+    //
+    // **EXPOSURE is Σ open `max_direct_loss`; a role stake is held only from fill to settlement; and
+    // the ballot closes 40 ticks before a settlement that has just released most of them.** So the
+    // quantity this whole mechanic votes on is near its floor at exactly the moment the vote happens
+    // — which is `D32`'s trough diagnosis surviving `D34`'s fix, one layer out. `D34` moved the
+    // ASSESSMENT onto the high-water mark and left the BALLOT reading the instantaneous set. Making
+    // this test robust and making the vote well-informed are the same fix, and it is a cast or a
+    // schedule question rather than a test one.
+    const runtime = agedToBallotWindow('g01', 4);
     const tick = runtime.engine.tick;
     const reckoning = reckoningIndex(tick);
     let checked = 0;

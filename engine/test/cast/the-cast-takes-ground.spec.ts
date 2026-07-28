@@ -32,11 +32,44 @@ import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { PrincipalId, SystemId } from '../../src/core/types.js';
 import { ANCHOR_FUEL_BY_TIER, CHARGE_BY_TIER, CLAIM_BOND_MINOR } from '../../src/sovereignty/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
-import { FUEL_YIELD_PER_TICK } from '../../src/works/params.js';
+import { ALLOY_ANCHOR_QTY, FUEL_YIELD_PER_TICK } from '../../src/works/params.js';
 import { holdingOf, tierOf } from '../../src/world/index.js';
+import { giveAlloy } from '../works/alloy-fixture.js';
 
 /** The four seeds the balance gate was run on. Fixed, so the numbers below are reproducible. */
 export const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
+
+/**
+ * ★ Ticks the CLAIM-dependent gates run for, and why it is no longer 900.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **TERRITORY GOT SLOWER, ON PURPOSE, AND `gate-b` IS WHERE IT SHOWS.** `RULES_VERSION` 18 prices an
+ * ANCHOR in `ALLOY_ANCHOR_QTY` (500) of the manufactured good on top of its rations, and a MARCHES
+ * claimant refines that at 32:1 — **16,000 ore**, about half a Reckoning of a sole occupant's yield,
+ * held back from the ration recipe while its tribute reserve stays covered. So a claim that used to
+ * land inside three Reckonings now lands inside four, and four of these gates went red on `gate-b`
+ * with the message *"the territory layer is still inert"* — which was true of the window, not of the
+ * layer.
+ *
+ * **2,400 rather than 900, and the size of that widen is the honest measure of the change.** 8.3
+ * Reckonings. `gate-b` produces its first claim somewhere between 1,200 (measured: 0) and 2,400
+ * (measured: 1), because its bonded members hold 36,000–51,000 rations against a reserve that will not
+ * let them divert 16,000 ore until they hold 56,000 — so they claim only after several Reckonings of
+ * accumulation.
+ *
+ * **The alternative was to cheapen the anchor or the reserve, and both were measured and refused.**
+ * Cheapening the reserve takes the nine-Reckoning gate from `levyShort` 0 to 27,726 with five red
+ * tribute lines (`heuristic.ts:CAST_ALLOY_RESERVE_RECKONINGS` carries the four-row table), and
+ * `levyShort` is one of only two meters that survive a null control. So territory is genuinely dearer
+ * than it was — the gate-wide `claims` count goes 28 → 17 at three Reckonings — and that is this
+ * feature working rather than a regression to tune away. A reader comparing claim counts across
+ * `RULES_VERSION` 17 and 18 should expect the drop and read the Levy columns instead.
+ *
+ * The gates that do NOT depend on a claim keep their 640 and 900, so this widens exactly the window
+ * that had to widen and leaves every other measurement on its original footing.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+const CLAIM_TICKS = 2_400;
 
 interface Run {
   readonly runtime: Runtime;
@@ -56,7 +89,7 @@ interface Run {
  * returning an action proves only that it asked: `ActionLog` retention is bounded, so the tally
  * has to happen inside the loop.
  */
-export function play(seed: string, ticks: number, size = 8): Run {
+export function play(seed: string, ticks: number, size = 8, supplyAlloy = false): Run {
   setSpeed('instant');
   const runtime = new Runtime({ seed });
   const cast = new HeuristicCast(runtime, { size });
@@ -65,6 +98,7 @@ export function play(seed: string, ticks: number, size = 8): Run {
   const byMember = new Map<string, number>();
   const refusals = new Map<string, number>();
   for (let n = 0; n < ticks; n += 1) {
+    if (supplyAlloy) standAlloyAtEverySeat(runtime, cast);
     for (const action of cast.decide(runtime.engine.tick + 1, seed)) runtime.engine.submit(action);
     const report = runtime.runTick();
     for (const entry of runtime.engine.log.forTick(report.tick)) {
@@ -83,6 +117,42 @@ export function play(seed: string, ticks: number, size = 8): Run {
     ).toBe(false);
   }
   return { runtime, cast, verbs, byMember, refusals };
+}
+
+/**
+ * Stand one anchor's worth of alloy at every member's seat. **Off by default, on for one test.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **WHY A CAST TEST NEEDS A FIXTURE AT ALL, WHICH IS ITSELF THE FINDING.** With the fourth good
+ * live and nothing supplied, `fz-13` over 900 ticks produces **no FRONTIER claim at all** — measured:
+ * `brannock` walks to `sys-09`, which is the MARCHES gate to `sys-26`, and stops there, claiming the
+ * Marches instead. Two gates now stand between a cast member and the Frontier and it can pay neither:
+ *
+ *   - the second rung of `graduate` costs `ALLOY_GRADUATION_QTY` at the seat it leaves, and
+ *   - a frontier anchor costs `ALLOY_ANCHOR_QTY` standing at the system.
+ *
+ * Neither is reachable for a member that has already left the Commons. `refine {kind:"ALLOY"}` is
+ * four to eight times dearer outside it, and `heuristic.ts:alloyErrandFor`'s buy step is gated on
+ * `freeCash`, which is **identically zero for every principal in every world this repo has run**
+ * (D7's floor is the whole `STARTER_STAKE`) — a fact that file records against itself. So the errand
+ * collapses to its haul step, there is nothing to haul, and the Frontier is closed to the cast.
+ *
+ * That is a real property of today's world and it is reported rather than hidden here. What it is
+ * NOT is this test's subject: the assertions below are about **fuel** — that a FRONTIER system
+ * yields the third good, that the claimant's own quote publishes its share, and that the fuel stands
+ * where an anchor could burn it. Letting the alloy supply decide them would make a fuel test go red
+ * for a reason in `market/`.
+ *
+ * The other nine tests in this file pass `supplyAlloy: false` and their worlds are byte-identical to
+ * what they were before this parameter existed.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function standAlloyAtEverySeat(runtime: Runtime, cast: HeuristicCast): void {
+  for (const member of cast.roster) {
+    const seat = holdingOf(runtime.world, member.principal).system;
+    if (runtime.alloyAt(member.principal, seat) >= ALLOY_ANCHOR_QTY) continue;
+    giveAlloy(runtime, member.principal, seat);
+  }
 }
 
 /** Where a member's body stands now — the same thing the cast's own `bodyOf` reads. */
@@ -166,7 +236,7 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
     // expectation (measured: 3 of 11 claims LAPSED with the branch removed).
     // ══════════════════════════════════════════════════════════════════════
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const lines = run.runtime.reckoningFrame()?.claimLines ?? [];
       expect(lines.length, `${seed}: no claim line — the territory layer is still inert`).toBeGreaterThan(0);
       for (const line of lines) {
@@ -201,7 +271,7 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
     // income. MUTATION: `if (mine.length === 0 && false)` in `claimFor`. RED here.
     // ══════════════════════════════════════════════════════════════════════
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const claims = run.runtime.sovereignty.liveClaims();
       expect(claims.length, `${seed}: no claim to check`).toBeGreaterThan(0);
       for (const claim of claims) {
@@ -244,7 +314,7 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
     let seedsWithATenant = 0;
     let rentMoved = 0;
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       for (const claim of run.runtime.sovereignty.liveClaims()) {
         const tenants = run.runtime.works.liveAt(claim.system).filter((w) => w.holder !== claim.claimant);
         if (tenants.length === 0) continue;
@@ -329,7 +399,7 @@ describe('★ THE BALANCE GATE — territory must not make the Levy harder', () 
    */
   it('levyShort stays ZERO and no tribute line goes red, with claims live and Charges paid', () => {
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const frame = run.runtime.reckoningFrame();
       expect(frame, `${seed}: no frame`).not.toBeNull();
       // Non-vacuity FIRST: a world with no claim in it satisfies the rest of this test trivially,
@@ -356,7 +426,7 @@ describe('★ THE BALANCE GATE — territory must not make the Levy harder', () 
     let broken = 0;
     let ventures = 0;
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const frame = run.runtime.reckoningFrame();
       kept += frame?.meters.kept ?? 0;
       broken += frame?.meters.broken ?? 0;
@@ -398,7 +468,11 @@ describe('fuel — the good only the Frontier makes — enters the world', () =>
    * ══════════════════════════════════════════════════════════════════════════
    */
   it('a cast member reaches the Frontier, works it, and holds the fuel its anchor will need', () => {
-    const run = play('fz-13', 900);
+    // ALLOY SUPPLIED — the only run in this file that gets any. The two gates between a cast member
+    // and the Frontier are both priced in a good it cannot make or buy once it has left the Commons,
+    // so without this there is no FRONTIER claim on any seed and the fuel assertions below would be
+    // vacuous. `standAlloyAtEverySeat` carries the measurement and the argument.
+    const run = play('fz-13', 900, 8, true);
     const frontier = run.runtime.sovereignty
       .liveClaims()
       .filter((c) => tierOf(run.runtime.world.map, c.system) === 'FRONTIER');

@@ -434,6 +434,14 @@ describe('the crossing is priced in produced goods and capital, never in identit
     );
     expect(hop2, 'the launch map must offer an onward gate, or this proves nothing').toBeDefined();
 
+    // ── THE SECOND RUNG IS PRICED IN ALLOY, AND THIS TEST IS NOT ABOUT THAT ───
+    //
+    // ⚑ A `giveAlloy` at `hop1` used to stand here, for a manufactured surcharge on the SECOND
+    // crossing — §10.1's "convex in footprint". That surcharge is gone: it closed the Frontier for
+    // every principal that had not already got alloy, because a seat you cross FROM holds no WORKS
+    // and therefore no ore. `works/params.ts` carries the measurement where the constant used to be.
+    // Both crossings are priced exactly as they were before the fourth good existed.
+
     const res = await signed(h, who, 'POST', PATHS.act, {
       actions: [
         { verb: 'graduate', params: { to: hop1 }, clientSequence: 1 },

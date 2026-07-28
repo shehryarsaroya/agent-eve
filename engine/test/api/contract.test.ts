@@ -368,15 +368,23 @@ describe('PROP-O7 — an illegal action is a correction, not an error', () => {
     // The alternative is the tick loop's `unknownVerb` — "there is no such verb" —
     // which contradicts agent.md §7, the document the agent learned the game from.
     //
-    // The verb was `trade` until the market landed and made it live. `haul` replaces it
-    // because the mechanism — a canon-but-unbuilt verb refused at the HTTP boundary,
-    // charging nothing — needs a verb that is genuinely still unbuilt to exercise it,
-    // and `haul` names the same build step so the assertion below is unchanged.
+    // ── THE THIRD VERB TO HOLD THIS SLOT, AND THAT IS THE MECHANISM WORKING ──
+    //
+    // It was `trade` until the market landed, then `haul` — *"because the mechanism needs a verb that
+    // is genuinely still unbuilt to exercise it, and `haul` names the same build step so the assertion
+    // below is unchanged"*. `haul` went live with the fourth good, so the slot moves again to
+    // `extract`, which is the last unbuilt verb still filed under step 11.
+    //
+    // Worth writing down rather than just editing: this test is **designed to be evicted**, and each
+    // eviction is a canon verb ceasing to be a promise. When step 11 has no unbuilt verbs left, pick
+    // one from another step and change the `step 11` assertion with it — do not delete the test, which
+    // is the only thing standing between an unbuilt canon verb and `unknownVerb`'s *"there is no such
+    // verb"* contradicting the document the agent learned the game from (scar #1).
     const a = agent('ashlin');
     await enrol(h, a);
     const before = h.runtime.engine.budget.remaining(a.principalId as never);
     const res = await signed(h, a, 'POST', PATHS.act, {
-      actions: [{ verb: 'haul', params: {}, clientSequence: 1 }],
+      actions: [{ verb: 'extract', params: {}, clientSequence: 1 }],
     });
     expect(res.status).toBe(200);
     const outcome = res.json['outcome'] as Record<string, unknown>;
@@ -726,7 +734,7 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     const budgetBefore = h.runtime.engine.budget.remaining(a.principalId as never);
     for (let n = 0; n < 5; n += 1) {
       const res = await signed(h, a, 'POST', PATHS.act, {
-        actions: [{ verb: 'haul', params: {}, clientSequence: n }],
+        actions: [{ verb: 'extract', params: {}, clientSequence: n }],
       });
       const corrections = (res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<
         string,
@@ -761,7 +769,7 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     let served = 0;
     for (let n = 0; n < 3; n += 1) {
       const res = await signed(h, a, 'POST', PATHS.act, {
-        actions: [{ verb: 'haul', params: {}, clientSequence: n }],
+        actions: [{ verb: 'extract', params: {}, clientSequence: n }],
       });
       const c = ((res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<string, unknown>[])[0];
       if (c?.['nearest_legal'] !== null && c?.['nearest_legal'] !== undefined) served += 1;
@@ -779,7 +787,7 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     const a = agent('awake');
     await enrol(h, a);
     const res = await signed(h, a, 'POST', PATHS.act, {
-      actions: [{ verb: 'haul', params: {}, clientSequence: 1 }],
+      actions: [{ verb: 'extract', params: {}, clientSequence: 1 }],
     });
     const corrections = (res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<
       string,

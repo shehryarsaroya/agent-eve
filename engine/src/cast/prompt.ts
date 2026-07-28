@@ -179,7 +179,7 @@ const S12 = '## 12. Getting good';
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of forty-five could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of forty-six could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -418,6 +418,26 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     block: '### Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
     verbs: ['build'],
     because: '`build` is not offered to you this wake',
+  },
+  {
+    section: S11A,
+    // ── ★ THE FOURTH GOOD, AND IT CLAIMS `haul` AS WELL AS `refine` ───────────
+    //
+    // Two verbs on one block, which is unusual here and is the honest shape: the block states a rule
+    // about *geography* — the good is refined at one tier and spent at another — and neither half of
+    // that is usable without the other. A member offered `refine` and given only the recipe would make
+    // a good it could not move; a member offered `haul` and given only the mechanics would move goods
+    // with no reason to.
+    //
+    // `required` for a claimant rather than `wanted`, for §11B's A5′ reason one section down: the
+    // anchor's manufactured half is a price no MARCHES or FRONTIER seat can pay out of local
+    // production, and a claimant refused for a shortfall in a good it was never told it cannot make
+    // has been billed by a rule nobody showed it.
+    block: '### The fourth good — the one only the COMMONS makes, and the one that flows the other way',
+    verbs: ['refine', 'haul'],
+    required: (s) => s.holdsClaim,
+    wanted: (s) => s.holdsWorks || s.canBuildWorks || s.holdsClaim,
+    because: 'you neither work ground that makes ore nor hold ground that spends alloy',
   },
   {
     section: S11A,
@@ -694,7 +714,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are forty-five: 2^45 is not enumerable, and it
+ * was free. At `###` granularity there are forty-six: 2^46 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -1208,7 +1228,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
  * per-unit predicate, and `RULES` is never dropped for any reason including length. That
  * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
- * never for one it was not. There are forty-five units; put the same rule inside each
+ * never for one it was not. There are forty-six units; put the same rule inside each
  * predicate and the forty-fifth will forget it.
  * ══════════════════════════════════════════════════════════════════════════════
  */
