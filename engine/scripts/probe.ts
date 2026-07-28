@@ -39,7 +39,29 @@
  *   npx tsx scripts/probe.ts list                every identity and its last-known handle
  *
  * `COMPACT_BASE` overrides the target (default: the live shard). Point it at a local server to probe a
- * branch before deploying it.
+ * branch before deploying it. `PROBE_FULL=1` disables output truncation.
+ *
+ * ── ★ THE RECKONING IS UNREACHABLE ON THE LIVE SHARD, AND THAT IS THE PROBLEM ─
+ *
+ * The first three probes all ended the same way: *"the interesting decision is coming."* None reached
+ * it. At `prod` speed a Reckoning is 288 ticks × 300 s ≈ **24 hours**, a probe enrols mid-cycle, and a
+ * wake budget of ~15 runs out long before settlement. So every probe so far has tested the *build-up*
+ * and none has tested the moment the whole game is about — whether a promise is kept or broken, which
+ * is the one thing `SPEC` §7.6 and Gate 3 actually care about.
+ *
+ * The fix is a local world:
+ *
+ *   COMPACT_SPEED=turbo npm run api          # 2 s a tick -> a Reckoning in ~10 minutes
+ *   COMPACT_BASE=http://127.0.0.1:8787 npx tsx scripts/probe.ts new probe-settle-01
+ *
+ * **But read `SPEEDS`' own warning before drawing conclusions from it.** A4 is a wall-clock property:
+ * below `rehearsal` an affordance window is shorter than one inference, so latency starts deciding
+ * outcomes. A turbo world is therefore the right instrument for *what happens at settlement* — does a
+ * default land on the right principal, does standing move, does the elective half stay elective — and
+ * the wrong instrument for *is this fair to a slow agent*. Never measure A4 anywhere but `prod`.
+ *
+ * Two instruments, two questions. Use the live shard for the surface an agent reads, and a turbo world
+ * for the consequences it cannot stay awake long enough to see.
  */
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
