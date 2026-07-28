@@ -1,4 +1,11 @@
-import { citedSection, situationalFocus } from '../../src/cast/prompt.js';
+import {
+  actTokensOf,
+  citedSection,
+  CONTRACT_ACTS,
+  CONTRACT_MULTI_MEANING_VERBS,
+  discriminatorsOf,
+  situationalFocus,
+} from '../../src/cast/prompt.js';
 /**
  * SCAR-1, again, at the cast's own boundary.
  *
@@ -422,6 +429,21 @@ function offering(...verbs: readonly string[]): ContractSituation {
   return { ...NO_SITUATION, verbs: new Set(verbs) };
 }
 
+/**
+ * Turn one ACT on and nothing else — and the verb with it, because the engine cannot do otherwise.
+ *
+ * `readSituation` reads both off the same affordance row, so `build{CAMPAIGN}` without `build` is a
+ * state no observation can produce, and a fixture asserting against it would be checking a shape
+ * the engine does not have. That is the failure the `##` version's arithmetic made.
+ */
+function offeringAct(...acts: readonly string[]): ContractSituation {
+  return {
+    ...NO_SITUATION,
+    verbs: new Set(acts.map((act) => act.slice(0, act.indexOf('{')))),
+    acts: new Set(acts),
+  };
+}
+
 describe('the excerpt is SELECTED from the observation, and a needed rule is never dropped', () => {
   /**
    * ══════════════════════════════════════════════════════════════════════════════
@@ -438,20 +460,27 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
    * ══════════════════════════════════════════════════════════════════════════════
    */
 
-  it('★ A UNIT WHOSE VERB IS OFFERED IS ALWAYS INCLUDED — every verb, exhaustively', () => {
+  it('★ A UNIT WHOSE VERB *OR ACT* IS OFFERED IS ALWAYS INCLUDED — exhaustively, both lists', () => {
     // ══════════════════════════════════════════════════════════════════════════
     // THE ONE THAT MATTERS. Omitting a rule a member is about to act on is worse than the
     // ceiling ever was: it is refused for something it was never told, and a refusal costs it
-    // one of four material actions (AGT-S2). So this does not sample — it walks every verb in
-    // the catalog and asserts that offering that verb ALONE, to a member holding nothing,
-    // pulls its unit in, at grade RULES, with its section's preamble for company.
+    // one of four material actions (AGT-S2). So this does not sample — it walks every verb AND
+    // every act in the catalog and asserts that offering that one thing ALONE, to a member
+    // holding nothing, pulls its unit in, at grade RULES, with its section's preamble for company.
     //
-    // MUTATION: delete a verb from any unit's `verbs`, or make `unitGrade` consult `required`
-    // or `wanted` before the verb list, and this goes red naming the verb and the unit.
+    // The `acts` half is new and it is why the property did not weaken when §11E stopped being
+    // gated on `build`: an act gate is checked at the SAME precedence as a verb gate — both above
+    // `required` and `wanted` — so "whatever is offered, its rules ship" is unchanged in strength.
+    //
+    // MUTATION: delete a verb or an act from any unit, or make `unitGrade` consult `required` or
+    // `wanted` before either list, and this goes red naming the thing and the unit.
     // ══════════════════════════════════════════════════════════════════════════
     const doc = document();
+    let verbPairs = 0;
+    let actPairs = 0;
     for (const unit of CONTRACT_CATALOG) {
       for (const verb of unit.verbs) {
+        verbPairs += 1;
         const situation = offering(verb);
         expect(unitGrade(unit, situation), `${verb} → ${unitName(unit)}`).toBe(
           unit.floor === true ? 'FLOOR' : 'RULES',
@@ -465,6 +494,53 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         // And never in `dropped`: RULES does not consult the budget.
         expect(excerpt.dropped.map((o) => o.heading)).not.toContain(unitName(unit));
       }
+      for (const act of unit.acts ?? []) {
+        actPairs += 1;
+        const situation = offeringAct(act);
+        expect(unitGrade(unit, situation), `${act} → ${unitName(unit)}`).toBe(
+          unit.floor === true ? 'FLOOR' : 'RULES',
+        );
+        const excerpt = excerptFor(doc, situation);
+        expect(
+          excerpt.units,
+          `'${act}' is offered and ${unitName(unit)} is its rules — the whole point of the act gate ` +
+            'is a sharper aim, never a weaker guarantee',
+        ).toContain(unitName(unit));
+        expect(excerpt.dropped.map((o) => o.heading)).not.toContain(unitName(unit));
+      }
+    }
+    // ── NON-VACUITY, ASSERTED BEFORE THE WALK IS TRUSTED ──────────────────────
+    //
+    // A loop over `unit.verbs` never runs for a unit whose list is empty, so an exhaustive sweep
+    // shaped like this one CANNOT catch a deleted gate — that is exactly how deleting `engage`
+    // from a §9A block broke nothing. Both counts are pinned, so emptying any list fails HERE as
+    // well as in the pinned maps below.
+    expect(verbPairs, 'verb gates in the catalog').toBe(38);
+    expect(actPairs, 'act gates in the catalog').toBe(22);
+  });
+
+  it('★ EVERY UNIT IS REACHABLE BY SOMETHING — no unit is gated on nothing at all', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The other half of the non-vacuity guard, and the one that survives a renumbering. A unit
+    // with `floor` unset, both lists empty and neither predicate present is **dead prose**: it can
+    // never be selected, and every test above passes because their loop bodies do not run. Moving
+    // §11E off `build` emptied six `verbs` lists at once, so this is the shape the change itself
+    // could most easily have left behind.
+    //
+    // Checked positively — each unit must reach at least CONTEXT for SOME situation — rather than
+    // by inspecting the fields, so a unit gated on a predicate that can never be true fails too.
+    // ══════════════════════════════════════════════════════════════════════════
+    for (const unit of CONTRACT_CATALOG) {
+      const reachable =
+        unit.floor === true ||
+        unit.verbs.some((verb) => unitGrade(unit, offering(verb)) === 'RULES') ||
+        (unit.acts ?? []).some((act) => unitGrade(unit, offeringAct(act)) === 'RULES') ||
+        CONTRACT_POSITIONS.some((p) => unitGrade(unit, p.situation) !== 'NO');
+      expect(
+        reachable,
+        `${unitName(unit)} can never be selected by anything: no \`floor\`, no verb, no act, and no ` +
+          'declared position satisfies its predicates. It is prose the cast can never be shown.',
+      ).toBe(true);
     }
   });
 
@@ -485,7 +561,17 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ══════════════════════════════════════════════════════════════════════════
     setSpeed('instant');
     const runtime = new Runtime({ seed: 'homes' });
-    const claimed = new Set(CONTRACT_CATALOG.flatMap((u) => [...u.verbs]));
+    // ── A VERB MAY NOW BE CLAIMED THROUGH ITS ACTS, AND SEVEN ARE ─────────────
+    //
+    // `abandon` and `withdraw` are claimed by NO unit's `verbs` any more — both mean two things and
+    // both are gated per act. So "has a home" is the union: the verb itself, or any act of it. What
+    // this must NOT become is satisfied by one act of a two-act verb, and the ledger test below is
+    // the half that checks that: `CONTRACT_MULTI_MEANING_VERBS` names every act the engine can
+    // offer, and each has to resolve somewhere.
+    const claimed = new Set([
+      ...CONTRACT_CATALOG.flatMap((u) => [...u.verbs]),
+      ...CONTRACT_CATALOG.flatMap((u) => [...(u.acts ?? [])].map((a) => a.slice(0, a.indexOf('{')))),
+    ]);
     const unreadable = [...runtime.liveVerbs].filter((v) => !claimed.has(v));
     expect(
       unreadable,
@@ -675,7 +761,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // +116 at 20: the same paragraph, corrected. The floor now falls and is charged per principal,
     // so the two clauses that said otherwise had to go — a rules surface describing the old
     // behaviour is scar #1, and this one is published to every agent in the world.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(68_866);
+    // ── ★ 68,866 → 70,375, AND THE ROW CHANGED IDENTITY ─────────────────────
+    //
+    // The largest reachable position is no longer the claimant in trouble. It is `outside the Commons
+    // and landless, at its fullest`, one of two rows added because the coverage test was a tautology:
+    // it dominates everything the analytic ceiling does except a held claim, and it keeps `graduate`
+    // and `form`, which the claimant cannot hold. So it is 1,509 characters larger than the claimant
+    // — the crossing block, less §11B's required blocks.
+    //
+    // The `acts` gate did not move this number in either direction: both of these rows are offered
+    // every campaign act, so §11E was and remains theirs. The reachable margin is
+    // 120,000 − 70,375 = **49,625** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(70_375);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -729,14 +826,30 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }
   });
 
-  it('★ THE POSITIONS DOMINATE A REAL WORLD — swept, not assumed', () => {
+  it('★ A *REACHABLE* POSITION DOMINATES A REAL WORLD — swept, and no longer vacuous', () => {
     // ══════════════════════════════════════════════════════════════════════════
     // The budget above is only as good as the position list. A list that has gone stale would
     // narrow what was checked and read green — the same shape as a predicate on a path
     // `observe` does not use. So a real world is driven and every observed situation must be
-    // dominated by some declared position: its offered verbs a subset, its standing facts no
-    // stronger. A situation that escapes fails HERE, naming the member and the fact, and the
-    // fix is to widen the position and re-check the budget.
+    // dominated by some declared position: its offered verbs a subset, its offered acts a subset,
+    // its standing facts no stronger. A situation that escapes fails HERE, naming the member and
+    // the fact, and the fix is to widen the position and re-check the budget.
+    //
+    // ── ★ THIS TEST WAS A TAUTOLOGY, AND THE ONE-WORD FIX IS `reachable` ──────
+    //
+    // It read `CONTRACT_POSITIONS.some(...)`, and `CONTRACT_POSITIONS` ends with the **analytic
+    // ceiling** — every fact true, every verb offered. That row dominates *anything* by
+    // construction, so the assertion could not fail for any world, any cast, any tick. It is the
+    // shape CLAUDE.md calls out by name: an invariant whose subject cannot occur, sitting inside
+    // the guard written to keep the position list honest.
+    //
+    // And the list HAD gone stale. Filtered to reachable rows, **42 of 120 swept observations
+    // escaped** — every single one of them carrying `endowmentWithheld`, which is true of nearly
+    // every member of every world this repo has run (D7) and which no reachable row declared;
+    // plus a Commons member inside a syndicate, and a graduated landless member under raid.
+    //
+    // Two positions were added rather than the five named rows widened, so the numbers those rows
+    // are quoted by stay comparable. See `CONTRACT_POSITIONS`.
     // ══════════════════════════════════════════════════════════════════════════
     setSpeed('instant');
     const seed = 'dominates';
@@ -747,13 +860,28 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
 
     const dominates = (big: ContractSituation, small: ContractSituation): boolean => {
       for (const verb of small.verbs) if (!big.verbs.has(verb)) return false;
+      // The act half. A position that carries `build` but not `build{CAMPAIGN}` no longer dominates
+      // a member that was offered the campaign — which is the whole point of the gate, and it has
+      // to be true of the coverage check too or the budget is measured against the wrong ceiling.
+      for (const act of small.acts) if (!big.acts.has(act)) return false;
       const bits = [
-        'inCommons', 'commonsBound', 'outsideCommons', 'inVenture', 'holdsGrant',
-        'inSyndicate', 'holdsClaim', 'inArrears', 'anchorCold', 'underRaid',
-        'holdsWorks', 'canBuildWorks',
+        'inCommons', 'commonsBound', 'outsideCommons', 'inVenture', 'inCampaign', 'holdsGrant',
+        'inSyndicate', 'holdsClaim', 'inArrears', 'anchorCold', 'underRaid', 'inBattle',
+        'holdsWorks', 'canBuildWorks', 'endowmentWithheld',
       ] as const;
       return bits.every((bit) => !small[bit] || big[bit]);
     };
+    // Every bit of the situation is compared, so a new field cannot slip past the coverage check
+    // the way `inBattle` and `endowmentWithheld` both did.
+    const compared = new Set([
+      'inCommons', 'commonsBound', 'outsideCommons', 'inVenture', 'inCampaign', 'holdsGrant',
+      'inSyndicate', 'holdsClaim', 'inArrears', 'anchorCold', 'underRaid', 'inBattle',
+      'holdsWorks', 'canBuildWorks', 'endowmentWithheld',
+    ]);
+    for (const field of Object.keys(NO_SITUATION)) {
+      if (field === 'verbs' || field === 'acts') continue;
+      expect(compared, `${field} is not compared by \`dominates\`, so coverage ignores it`).toContain(field);
+    }
 
     let worst = 0;
     for (let i = 0; i < 240; i += 1) {
@@ -773,12 +901,15 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
           actionsRemaining: 4,
         });
         const situation = readSituation(observation as unknown as Record<string, unknown>);
-        const covered = CONTRACT_POSITIONS.some((p) => dominates(p.situation, situation));
+        const covered = CONTRACT_POSITIONS.filter((p) => p.reachable).some((p) =>
+          dominates(p.situation, situation),
+        );
         expect(
           covered,
-          `no declared position dominates ${String(member.handle)} at tick ${String(runtime.engine.tick)}: ` +
-            `verbs=[${[...situation.verbs].join(',')}] claim=${String(situation.holdsClaim)} ` +
-            `raid=${String(situation.underRaid)} syndicate=${String(situation.inSyndicate)}`,
+          `no REACHABLE position dominates ${String(member.handle)} at tick ${String(runtime.engine.tick)}: ` +
+            `verbs=[${[...situation.verbs].join(',')}] acts=[${[...situation.acts].join(',')}] ` +
+            `claim=${String(situation.holdsClaim)} raid=${String(situation.underRaid)} ` +
+            `syndicate=${String(situation.inSyndicate)} endowment=${String(situation.endowmentWithheld)}`,
         ).toBe(true);
         const excerpt = excerptFor(doc, situation);
         expect(excerpt.overBudget).toBe(false);
@@ -1037,6 +1168,13 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       { field: 'outsideCommons', to: true, patch: { holding: { ...holding, tier: 'MARCHES' } } },
       { field: 'commonsBound', to: false, patch: { holding: { ...holding, commons_bound: false } } },
       { field: 'inVenture', to: true, patch: { ventures: { ...ventures, mine: [{ venture: 'v1' }] } } },
+      // `inCampaign` is `your_side`, never the row's existence — see the assertion below the loop,
+      // which is the half a flip cannot express.
+      {
+        field: 'inCampaign',
+        to: true,
+        patch: { holding: { ...holding, campaigns: [{ campaign: 'campaign:5:0', your_side: 'DEFENDER' }] } },
+      },
       { field: 'holdsGrant', to: true, patch: { grants: { ...grants, granted: [{ id: 'g1' }] } } },
       { field: 'holdsGrant', to: true, patch: { grants: { ...grants, held: [{ id: 'g2' }] } } },
       { field: 'inSyndicate', to: true, patch: { grants: { ...grants, syndicates: [{ id: 'syn:a:1' }] } } },
@@ -1092,12 +1230,46 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       ).toBe(to);
     }
 
+    // ── ★ `inCampaign` READS `your_side`, NOT THE ROW'S EXISTENCE ─────────────
+    //
+    // `holding.campaigns[]` is §12.1's siege-clock slot and it carries **every LIVE campaign in the
+    // galaxy**, not just this principal's — `campaignViewsFor` filters on `isLiveCampaign(…) ||
+    // attacker === me || defender === me`. So `length > 0` would make every principal a party to
+    // every war, which is the `holding.sovereignty !== null` mistake `situationalFocus` was caught
+    // making one function down: a condition that reads plausibly and asserts something FALSE about
+    // the reader's own position, on a surface A5′ says must never be wrong.
+    //
+    // A flip case cannot express this (both readings of an empty list are `false`), so it is asserted
+    // directly — a row present, a side of `null`, and the field must stay down.
+    expect(
+      readSituation({
+        ...(observation as unknown as Record<string, unknown>),
+        holding: { ...holding, campaigns: [{ campaign: 'campaign:5:0', your_side: null }] },
+      }).inCampaign,
+      'a campaign this principal can SEE but is not party to must not make it a party',
+    ).toBe(false);
+
     // Every field is covered. A new field with no case is a new unchecked path.
     const covered = new Set(cases.map((c) => String(c.field)));
     for (const field of Object.keys(base)) {
-      if (field === 'verbs') continue;
+      if (field === 'verbs' || field === 'acts') continue;
       expect(covered, `${field} has no flip case, so its path is unverified`).toContain(field);
     }
+
+    // ── AND `acts`, WHICH IS A SET AND SO NEEDS ITS OWN CASE ──────────────────
+    //
+    // The one path `readSituation` gained. It comes off `affordances[]` — the same rows `verbs`
+    // does, in one pass — so a member cannot hold an act without its verb, and the assertion is
+    // that a real affordance's `kind` reaches the set.
+    expect(base.verbs.has('build'), 'the seated member is offered a build').toBe(true);
+    expect(
+      base.acts.has('build{WORKS}'),
+      '`build {kind:"WORKS"}` is in `affordances[]` and must be readable as an ACT, or §11A’s WORKS ' +
+        'block is gated on something no observation produces',
+    ).toBe(true);
+    expect(
+      flipped({ affordances: [{ verb: 'build', params: { kind: 'CAMPAIGN', system: 'sys-09' } }] }).acts,
+    ).toEqual(new Set(['build{CAMPAIGN}']));
 
     // ── AN ABSENT KEY IS "NO", NEVER AN ASSERTION ─────────────────────────────
     // `readSituation` is handed partial observations (`relations.spec.ts` builds a two-key stub),
@@ -1108,10 +1280,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Caught only here, by mutation.
     const nothing = readSituation({});
     for (const [field, value] of Object.entries(nothing)) {
-      if (field === 'verbs') continue;
+      if (field === 'verbs' || field === 'acts') continue;
       expect(value, `${field} read something out of an empty observation`).toBe(false);
     }
     expect(nothing.verbs.size).toBe(0);
+    expect(nothing.acts.size, 'no affordances means no acts, never a guessed one').toBe(0);
   });
 
   it('★ THE CLAIM FIELDS ARE READ OFF A REAL CLAIM ROW, not off a world that has none', () => {
@@ -1262,14 +1435,24 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ══════════════════════════════════════════════════════════════════════════
     setSpeed('instant');
     const runtime = new Runtime({ seed: 'verbmap' });
-    const map: Record<string, string> = {};
-    for (const verb of [...runtime.liveVerbs].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
-      map[verb] = CONTRACT_CATALOG.filter((u) => u.verbs.includes(verb))
+    const homesOf = (claims: (u: (typeof CONTRACT_CATALOG)[number]) => boolean): string =>
+      CONTRACT_CATALOG.filter(claims)
         .map((u) => (u.block ?? '(preamble)').replace(/^### /, ''))
         .join(' + ');
+    const map: Record<string, string> = {};
+    for (const verb of [...runtime.liveVerbs].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+      map[verb] = homesOf((u) => u.verbs.includes(verb));
     }
     expect(map).toEqual({
-      abandon: '(preamble) + Losing it — arrears, the window, and two exits that beat a lapse',
+      // ── ★ FOUR ROWS WENT EMPTY OR SHRANK, AND THAT IS THE `acts` GATE LANDING ──
+      //
+      // `abandon` and `join` and `withdraw` are claimed by no unit's `verbs` at all now: every one
+      // of them means two things, and each meaning is claimed per act in the map below. `build` and
+      // `refine` and `vote` keep exactly the one claim that really is verb-wide.
+      //
+      // An empty string here is legal ONLY because the act map covers it, and the two assertions at
+      // the bottom of this test are what tie the halves together.
+      abandon: '',
       admit: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
       apply: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
       approve: 'OFFICES — `grant` with `on_behalf_of`',
@@ -1289,14 +1472,15 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //
       // The deep section still arrives the two ways it should: through `post_bond`, and through
       // `required: holdsClaim` once territory is actually held.
-      // ── §11E's SIX UNITS ARRIVE HERE, AND THREE OF THEM ARRIVE ON `build` ──
+      // ── ★ §11E's SIX UNITS USED TO ARRIVE HERE, AND FIVE OF THEM ON `build` ──
       //
-      // That is the campaign section's whole cost, made visible in exactly the place this map exists to
-      // make it visible: `build` also raises a WORKS, so a Commons newcomer pays for war rules it can
-      // never use. The measured table below carries the number (+3,543 on every position) and the
-      // argument for reporting it rather than trimming it.
-      build:
-        '`build` is FOUR different acts — read the `kind` + Building one — `build` `{"kind":"WORKS","system":"<id>"}` + (preamble) + Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}` + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one',
+      // This row was the whole defect, visible in exactly the place this map exists to make it
+      // visible, and it read as *correct*: `build` documents four acts, so of course the fourth
+      // one's section is claimed by `build`. But `build` also raises a WORKS, so **every position
+      // in the game** — a Commons newcomer included — paid 3,360 characters for a war it cannot
+      // declare. `build` now claims ONE unit: the kind block, which really is verb-wide because it
+      // is the block that tells an agent to read the `kind` at all.
+      build: '`build` is FOUR different acts — read the `kind`',
       claim: '(preamble)',
       create: 'Every promise has two halves + Choosing the proportion — `elective_bps` on `create`',
       deliver: 'The Levy — nobody sits this out',
@@ -1313,8 +1497,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       form: 'Founding one — `form` `{"name":"...", ...}`',
       graduate: '`graduate` — leaving, and it is one-way',
       grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
-      join:
-        'The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}` + Answering either one — `yield` · `fight` · join, or say nothing',
+      // `join {raid, side}` and `join {campaign, side, system}` are two sections of the document and
+      // the verb gate shipped both to whoever was offered either. `side` is on BOTH, so it is not
+      // the discriminator; which subject the affordance names is.
+      join: '',
       message: 'Negotiating',
       // ★ `haul` — the canon verb whose step arrived with the fourth good. It is claimed by ONE
       // block on purpose: the block states a rule about geography (the good is refined at one tier
@@ -1323,23 +1509,432 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       move: '(preamble)',
       post_bond: '(preamble) + Taking one — `post_bond` then `build`',
       publish_offer: 'Negotiating',
-      refine: '(preamble) + The fourth good — the one only the COMMONS makes, and the one that flows the other way',
+      // §7's production chain, which is FLOOR. The ALLOY fork is `refine{ALLOY}` below.
+      refine: '(preamble)',
       revoke: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
       seal: 'Seals — the say-do gap',
       set_delivery_intent: 'The Levy — nobody sits this out',
       sign: '(preamble)',
       trade:
         '(preamble) + ★ What you may spend, and the one rule that decides it — `market.transferable_minor`',
-      vote:
-        'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs + The Levy — nobody sits this out',
-      withdraw:
-        'Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one + Leaving costs a Reckoning of notice',
+      // The Levy block is FLOOR, so `vote` keeps it and it costs nothing. The 4,462-character
+      // EXPOSURE block is now `vote{LEVY}`, because the Charge ballot reads no EXPOSURE.
+      vote: 'The Levy — nobody sits this out',
+      // ★ Empty, and this is the row that was actively WRONG rather than merely expensive: it
+      // pointed a venture exit and a campaign lift at §11C's syndicate notice — an act the engine
+      // cannot perform (`SyndicateBook.giveNotice` has no caller).
+      withdraw: '',
       yield: 'Answering either one — `yield` · `fight` · join, or say nothing',
     });
-    // And no live verb may end up with an empty claim, which is the failure the map makes visible.
-    for (const [verb, homes] of Object.entries(map)) {
-      expect(homes, `${verb} is claimed by no unit`).not.toBe('');
+
+    // ── ★ AND THE ACT→UNIT MAP, WHICH IS THE OTHER HALF OF THE SAME PIN ───────
+    //
+    // Same argument one level down: a unit whose `acts` list is emptied is invisible to any loop
+    // over `unit.acts`, so emptying one has to churn a pinned literal or the mutation is free.
+    // Twelve tokens, and the vocabulary is asserted closed against this map below.
+    const actMap: Record<string, string> = {};
+    for (const act of [...CONTRACT_ACTS].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+      actMap[act] = homesOf((u) => (u.acts ?? []).includes(act));
     }
+    expect(actMap).toEqual({
+      'abandon{CLAIM}': 'Losing it — arrears, the window, and two exits that beat a lapse',
+      'abandon{VENTURE}': '(preamble)',
+      // ★ Five of §11E's six units, and this row is where the +3,360 went: onto the act that is
+      // only ever offered to a principal whose holding can actually stage a war.
+      'build{CAMPAIGN}':
+        '(preamble) + Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}` + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one',
+      'build{WORKS}': 'Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
+      'deliver{CHARGE}': 'Paying for it — the CHARGE',
+      // A campaign ally gets the pulse clock, how to read the row and how to take the side — and
+      // NOT how to declare one or how to lift one, neither of which is available to it.
+      'join{CAMPAIGN}':
+        '(preamble) + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}`',
+      'join{RAID}': 'Answering either one — `yield` · `fight` · join, or say nothing',
+      'refine{ALLOY}': 'The fourth good — the one only the COMMONS makes, and the one that flows the other way',
+      'vote{CHARGE}': 'Paying for it — the CHARGE',
+      'vote{LEVY}': 'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
+      'withdraw{CAMPAIGN}':
+        '(preamble) + Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one',
+      // ★ The correction: a venture exit now selects the block that states what it FORFEITS.
+      'withdraw{VENTURE}':
+        '(preamble) + The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
+    });
+
+    // ── THE TWO HALVES, TIED TOGETHER ────────────────────────────────────────
+    //
+    // An empty row in the verb map is legal only when the act map covers that verb, and no row in
+    // either map may be empty. Without this pair, moving a verb to `acts` and then deleting the
+    // `acts` entry would leave a mechanic with no readable rules and both maps still pinned.
+    for (const [act, homes] of Object.entries(actMap)) {
+      expect(homes, `${act} is in CONTRACT_ACTS and claimed by no unit`).not.toBe('');
+    }
+    for (const [verb, homes] of Object.entries(map)) {
+      if (homes !== '') continue;
+      const byAct = Object.entries(actMap).filter(([act]) => act.startsWith(`${verb}{`));
+      expect(
+        byAct.length,
+        `${verb} is claimed by no unit's \`verbs\` AND by no act — it is a mechanic whose rules no ` +
+          'player can read',
+      ).toBeGreaterThan(0);
+      for (const [act, actHomes] of byAct) {
+        expect(actHomes, `${verb} is act-gated and ${act} has no home`).not.toBe('');
+      }
+    }
+  });
+
+  it('★ THE ACT VOCABULARY IS CLOSED, BOTH WAYS — no typo matches, no token is decoration', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The two failure directions of an act gate, and they are not symmetrical:
+    //
+    //   · **A typo in a unit's `acts`** (`build{CAMPAIGNS}`) would never match anything, and the
+    //     unit would silently stop being selected for the act it documents. That is a DROPPED RULE
+    //     — the one thing this catalog exists to make impossible — and nothing else would notice,
+    //     because `readSituation` filters to the vocabulary and a token outside it never appears.
+    //   · **A token in the vocabulary that no unit gates on** is decoration: a capability that
+    //     exists and is never exercised, which this project has now shipped at five depths.
+    //
+    // So the set and the catalog are pinned against each other in both directions. `EVERY_SITUATION`
+    // derives its acts from the catalog, so this also proves the analytic ceiling is the whole
+    // catalog and not a stale hand-typed copy of it.
+    // ══════════════════════════════════════════════════════════════════════════
+    const gated = new Set(CONTRACT_CATALOG.flatMap((u) => [...(u.acts ?? [])]));
+    for (const act of gated) {
+      expect(
+        CONTRACT_ACTS.has(act),
+        `${act} is gated on by a unit and is NOT in CONTRACT_ACTS, so \`readSituation\` will never ` +
+          'produce it and the unit is unreachable by its own act',
+      ).toBe(true);
+    }
+    for (const act of CONTRACT_ACTS) {
+      expect(gated, `${act} is in the vocabulary and no unit gates on it — decoration`).toContain(act);
+    }
+    const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+    expect([...EVERY_SITUATION.acts].sort(byName)).toEqual([...CONTRACT_ACTS].sort(byName));
+    // Every token is `verb{DISCRIMINATOR}` and its verb half is a real verb of the catalog.
+    setSpeed('instant');
+    const live = new Set(new Runtime({ seed: 'vocab' }).liveVerbs);
+    for (const act of CONTRACT_ACTS) {
+      expect(act, `${act} is not spelled verb{...}`).toMatch(/^[a-z_]+\{[A-Z_]+\}$/);
+      expect(live, `${act} names a verb the engine does not implement`).toContain(
+        act.slice(0, act.indexOf('{')),
+      );
+    }
+  });
+
+  it('★ `actTokensOf` READS THE SHAPES THE ENGINE ACTUALLY PUBLISHES — value keys and subject keys', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // `situationalFocus` read a top-level `syndicates` key for its whole life and never fired once,
+    // and its test passed because the fixture matched the code instead of the engine. A params
+    // reader is the same trap with more keys, so these are the literal param objects from
+    // `api/observe.ts` and `observe/catalogue.ts`, copied from the call sites.
+    // ══════════════════════════════════════════════════════════════════════════
+    expect(actTokensOf('build', { kind: 'WORKS', system: 'sys-01' })).toEqual(['build{WORKS}']);
+    expect(actTokensOf('build', { kind: 'CAMPAIGN', system: 'sys-09' })).toEqual(['build{CAMPAIGN}']);
+    // ANCHOR and HULL carry no token: their rules are in the verb-wide kind block.
+    expect(actTokensOf('build', { kind: 'ANCHOR', system: 'sys-09' })).toEqual([]);
+    expect(actTokensOf('build', { kind: 'HULL', system: 'sys-09', hull: 'WARDEN', modules: [] })).toEqual([]);
+    // The ration recipe names no discriminator, so nothing is invented for it.
+    expect(actTokensOf('refine', { system: 'sys-01' })).toEqual([]);
+    expect(actTokensOf('refine', { kind: 'ALLOY', system: 'sys-01', qty: 40 })).toEqual(['refine{ALLOY}']);
+    // Subject keys. `side` is on BOTH kinds of `join`, so it is never the discriminator.
+    expect(actTokensOf('join', { raid: 'raid:1', side: 'DEFENDER' })).toEqual(['join{RAID}']);
+    expect(actTokensOf('join', { raid: 'raid:1', side: 'RAIDER', principal: 'p:x' })).toEqual(['join{RAID}']);
+    expect(actTokensOf('join', { campaign: 'campaign:5:0', side: 'ATTACKER', system: 'sys-09' })).toEqual([
+      'join{CAMPAIGN}',
+    ]);
+    expect(actTokensOf('withdraw', { campaign: 'campaign:5:0' })).toEqual(['withdraw{CAMPAIGN}']);
+    expect(actTokensOf('withdraw', { venture: 'v:1', role_index: 0 })).toEqual(['withdraw{VENTURE}']);
+    expect(actTokensOf('abandon', { claim: 'sys-09' })).toEqual(['abandon{CLAIM}']);
+    expect(actTokensOf('abandon', { venture: 'v:1', role_index: 0 })).toEqual(['abandon{VENTURE}']);
+    expect(actTokensOf('deliver', { obligation: 'CHARGE', system: 'sys-09', amount: 4_000 })).toEqual([
+      'deliver{CHARGE}',
+    ]);
+    // The Levy and its `payer` carry no token: §5's block is FLOOR, so a finer gate changes nothing.
+    expect(actTokensOf('deliver', { obligation: 'LEVY', amount: 4_000 })).toEqual([]);
+    expect(actTokensOf('deliver', { obligation: 'LEVY', payer: 'p:x', amount: 4_000 })).toEqual([]);
+    expect(actTokensOf('vote', { ballot: 'LEVY', rule: 'INVERSE_EXPOSURE' })).toEqual(['vote{LEVY}']);
+    expect(actTokensOf('vote', { ballot: 'CHARGE', rule: 'EVEN' })).toEqual(['vote{CHARGE}']);
+    // Discriminated verbs whose rules are genuinely verb-wide produce nothing at all.
+    expect(actTokensOf('create', { kind: 'HAUL' })).toEqual([]);
+    expect(actTokensOf('trade', { operation: 'place', side: 'BID', quantity: 4 })).toEqual([]);
+    expect(actTokensOf('message', { venture: 'v:1' })).toEqual([]);
+    // Total on rubbish, because a partial observation must read as "no act" and never throw.
+    expect(actTokensOf('build', undefined)).toEqual([]);
+    expect(actTokensOf('build', null)).toEqual([]);
+    expect(actTokensOf('build', { kind: 7 })).toEqual([]);
+    expect(actTokensOf('build', { kind: '' })).toEqual([]);
+  });
+
+  it('★ NO VERB HAS GROWN A SECOND MEANING BEHIND THE AUDIT — swept against a real world', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The tripwire for the FOURTH instance. `build` grew from two kinds to four across three
+    // features and no test noticed, because a new `kind` is a new *param value*, not a new verb,
+    // and nothing was watching params.
+    //
+    // What it flags: a verb whose offers **disagree about their discriminator** inside one swept
+    // world — two values, or one offer with and one without. `elect {venture}` is always
+    // `elect{VENTURE}` and is not flagged; `refine` appears both bare and as `refine{ALLOY}` and is.
+    //
+    // A flagged verb is not automatically a bug: `create`'s five kinds share one set of promise
+    // rules, and the ledger records that as `VERB_GATED` with the reason. What it is, is a decision
+    // somebody has to write down. This is a tripwire and not a proof — it only sees what the swept
+    // world produces, which is why the ledger's `gate` consistency is checked separately below.
+    // ══════════════════════════════════════════════════════════════════════════
+    setSpeed('instant');
+    const seed = 'meanings';
+    const runtime = new Runtime({ seed });
+    const cast = new HeuristicCast(runtime, { size: 6 });
+    const members = cast.seat(seed);
+    const signatures = new Map<string, Set<string>>();
+    for (let i = 0; i < 120; i += 1) {
+      for (const action of cast.decide(runtime.engine.tick + 1, seed)) runtime.engine.submit(action);
+      expect(runtime.runTick().halted).toBe(false);
+      if (i % 8 !== 0) continue;
+      for (const member of members) {
+        const observation = buildObservation({
+          runtime,
+          principal: member.principal,
+          serverNowMs: 0,
+          fresh: true,
+          wakesRemaining: 16,
+          stale: false,
+          corrections: [],
+          actionsRemaining: 4,
+        });
+        for (const affordance of observation.affordances) {
+          const seen = signatures.get(affordance.verb) ?? new Set<string>();
+          // The empty signature counts: a verb offered both with and without a `kind` means two
+          // things exactly as much as one offered with two kinds does. `refine` is that case.
+          seen.add(discriminatorsOf(affordance.verb, affordance.params).join('|'));
+          signatures.set(affordance.verb, seen);
+        }
+      }
+    }
+    const audited = new Set(CONTRACT_MULTI_MEANING_VERBS.map((row) => row.verb));
+    const grown = [...signatures.entries()].filter(([, seen]) => seen.size > 1).map(([verb]) => verb);
+    for (const verb of grown) {
+      expect(
+        audited,
+        `\`${verb}\` is offered with ${String(signatures.get(verb)?.size ?? 0)} different discriminators ` +
+          `(${[...(signatures.get(verb) ?? [])].join(' / ')}) and is not in CONTRACT_MULTI_MEANING_VERBS. ` +
+          'Decide whether its rules are verb-wide or per-act, and record it — that decision going ' +
+          "unrecorded is how §11E ended up in a newcomer's first wake.",
+      ).toContain(verb);
+    }
+    // Non-vacuous: the sweep must actually have found verbs that mean more than one thing, or it is
+    // asserting over an empty list — the failure this whole change keeps re-finding.
+    //
+    // `create` (five venture kinds) and `refine` (bare and `{kind:"ALLOY"}`) are the two this world
+    // always produces, so they are named rather than counted. `build` is NOT: whether one member is
+    // offered two different kinds inside 120 ticks depends on what it can afford, which is exactly
+    // why a swept tripwire is a tripwire and the ledger's `gate` consistency below is the proof.
+    expect(grown, 'the sweep found no verb with two meanings at all').toEqual(
+      expect.arrayContaining(['create', 'refine']),
+    );
+  });
+
+  it('★ THE AUDIT LEDGER CANNOT GO STALE — every row’s `gate` matches the catalog', () => {
+    // A row saying `ACT_GATED` while no unit gates one of that verb's acts is a comment claiming a
+    // fix that was reverted; a row saying `VERB_GATED` while some unit gates an act of it is the
+    // reverse. Both read fine in review, which is why they are checked.
+    const gated = new Set(CONTRACT_CATALOG.flatMap((u) => [...(u.acts ?? [])]));
+    for (const row of CONTRACT_MULTI_MEANING_VERBS) {
+      const anyGated = [...gated].some((act) => act.startsWith(`${row.verb}{`));
+      expect(anyGated, `${row.verb} is marked ${row.gate} and the catalog disagrees`).toBe(
+        row.gate === 'ACT_GATED',
+      );
+      // An act-gated verb with one meaning is a contradiction; a verb-gated row with one is the
+      // honest state of `set_delivery_intent`, which has one obligation today.
+      if (row.gate === 'ACT_GATED') {
+        expect(row.acts.length, `${row.verb} is ACT_GATED with one meaning`).toBeGreaterThan(1);
+      }
+      expect(row.because.length, `${row.verb} has no recorded reason`).toBeGreaterThan(40);
+    }
+    // And every verb the catalog act-gates has a row, so the ledger is the complete list.
+    for (const act of gated) {
+      const verb = act.slice(0, act.indexOf('{'));
+      expect(
+        CONTRACT_MULTI_MEANING_VERBS.map((r) => r.verb),
+        `${verb} is act-gated in the catalog and unrecorded in the audit ledger`,
+      ).toContain(verb);
+    }
+  });
+
+  it('★ `build` ALONE DOES NOT SHIP §11E — the third instance, and the one this change is for', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE MUTATION THAT MATTERS. Put `build` back on any §11E unit and this goes red.**
+    //
+    // Measured before: a Commons newcomer offered `build {kind:"WORKS"}` was shipped the whole
+    // campaign section — 3,360 characters, 8% of its excerpt — for a mechanic that needs a
+    // lane-adjacent CLAIMED system, twice a claim bond, and a depot §16.6 MUST-1 forbids in the
+    // Commons. The verb gate could not express the difference, because `build` means four things
+    // and is offered to essentially everybody.
+    //
+    // Asserted as a PAIR, because either half alone is passable by an accident: the verb must not
+    // pull it, and the act must.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    const campaignSection = '## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for';
+    const declaring =
+      '### Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}`';
+
+    // A WORKS builder — the newcomer's actual position — gets §11A and NOT §11E.
+    const works = excerptFor(doc, offeringAct('build{WORKS}'));
+    expect(works.units, 'the WORKS block is what a WORKS builder needs').toContain(
+      '## 11A. WORKS — the only reason goods exist › ### Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
+    );
+    expect(
+      works.sections,
+      'a member that can raise a WORKS must not be shipped the rules of a war it cannot declare',
+    ).not.toContain(campaignSection);
+    expect(works.text).not.toContain(declaring);
+    // And the absence is NAMED, not silent — the whole discipline of this file.
+    expect(works.notThisWake.map((o) => o.heading)).toContain(`${campaignSection} › ${declaring}`);
+
+    // The act itself — everything §11E has for a declarer, including its preamble.
+    const campaign = excerptFor(doc, offeringAct('build{CAMPAIGN}'));
+    expect(campaign.sections, 'the act is offered, so the section ships').toContain(campaignSection);
+    expect(campaign.units).toContain(`${campaignSection} › ${declaring}`);
+    expect(campaign.dropped.map((o) => o.heading)).not.toContain(`${campaignSection} › ${declaring}`);
+    // A declarer needs the exits too: doing nothing forfeits the whole bond.
+    expect(campaign.units).toContain(`${campaignSection} › ### Getting out — and there are four ways, not one`);
+
+    // ── AND THE MEASUREMENT, WHICH IS THE ARGUMENT ──────────────────────────
+    const newcomer = CONTRACT_POSITIONS[0];
+    expect(newcomer?.name).toMatch(/^a newcomer on its first wake/);
+    const asIs = excerptFor(doc, newcomer?.situation ?? NO_SITUATION);
+    expect(asIs.sections, 'a first wake pays nothing for §11E').not.toContain(campaignSection);
+    const asIfVerbGated = excerptFor(doc, {
+      ...(newcomer?.situation ?? NO_SITUATION),
+      acts: new Set([...(newcomer?.situation.acts ?? []), 'build{CAMPAIGN}']),
+    });
+    expect(
+      asIfVerbGated.text.length - asIs.text.length,
+      'what the verb gate cost a newcomer, pinned so the saving cannot quietly come back',
+    ).toBe(3_360);
+  });
+
+  it('★ A PARTY TO A LIVE CAMPAIGN IS REQUIRED THE PULSE — no verb announces the clock', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The situation half of the §11E fix, and §9A's `inBattle` argument one clock out. A campaign
+    // pulses **once a Reckoning on a published clock whether or not you are awake**; force is
+    // counted at that instant and a starved pulse walks toward forfeiting the whole bond. A defender
+    // is offered no campaign verb at all — it cannot declare, and only the attacker may lift — so
+    // without `inCampaign` the party with the most to lose would be the one shown nothing.
+    //
+    // MUTATION: delete `required: (s) => s.inCampaign` from the PULSE block and this goes red.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    const pulse = '### The PULSE — once a Reckoning, on a published clock, whether you are awake or not';
+    const unit = CONTRACT_CATALOG.find((u) => u.block === pulse);
+    expect(unit).toBeDefined();
+    if (unit === undefined) return;
+    expect(unitGrade(unit, { ...NO_SITUATION, inCampaign: true }), 'a party to a live campaign').toBe('RULES');
+    expect(unitGrade(unit, NO_SITUATION), 'and nobody else is charged for it').toBe('NO');
+
+    const besieged = excerptFor(doc, { ...NO_SITUATION, inCampaign: true });
+    expect(besieged.units, 'the timetable reaches a defender that is offered no verb').toContain(
+      `## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for › ${pulse}`,
+    );
+    expect(besieged.dropped.map((o) => o.heading), 'RULES never consults the budget').not.toContain(
+      `## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for › ${pulse}`,
+    );
+    // It is `required`, so it survives an absurd cap — the property the whole ceiling rests on.
+    const squeezed = excerptFor(doc, { ...NO_SITUATION, inCampaign: true }, 4_000);
+    expect(squeezed.units).toContain(
+      `## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for › ${pulse}`,
+    );
+  });
+
+  it('★ `withdraw` NO LONGER SHIPS SYNDICATE NOTICE — it ships what the exit actually COSTS', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The instance that was WRONG rather than merely expensive. The engine's `withdraw` takes
+    // `{campaign}` or `{venture, role_index}` and nothing else — `SyndicateBook.giveNotice` has no
+    // caller — so §11C's `### Leaving costs a Reckoning of notice` was selected by every venture
+    // exit and every campaign lift, and never once by the act it documents.
+    //
+    // What a staked role-holder needed instead is in §4: *"`withdraw` from a venture you have staked
+    // in and the stake is forfeit to the other parties"*. That is slashable capital lost to a rule,
+    // which is A5′'s shape — and it was the one sentence the verb gate did NOT reach.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    const notice = '## 11C. SYNDICATES — pooling, and the authority that comes with it › ### Leaving costs a Reckoning of notice';
+    const stake =
+      '## 4. Work happens in ventures › ### The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs';
+
+    const quitting = excerptFor(doc, offeringAct('withdraw{VENTURE}'));
+    expect(quitting.units, 'the forfeit is what a venture exit costs, so it is what it is shown').toContain(stake);
+    expect(quitting.text).toContain('the stake is **forfeit to the');
+    expect(quitting.units, 'and NOT the syndicate notice rules, which are a different act').not.toContain(notice);
+    expect(quitting.sections, 'nor §11C at all, which quitting a role has nothing to do with').not.toContain(
+      '## 11C. SYNDICATES — pooling, and the authority that comes with it',
+    );
+
+    // A campaign lift gets §11E's exits and, again, not §11C.
+    const lifting = excerptFor(doc, offeringAct('withdraw{CAMPAIGN}'));
+    expect(lifting.units).toContain(
+      '## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for › ### Getting out — and there are four ways, not one',
+    );
+    expect(lifting.units).not.toContain(notice);
+
+    // And a member that sits in a house still reads the notice rule, because it is a true fact about
+    // the house whether or not the exit has a verb.
+    expect(unitGrade(CONTRACT_CATALOG.find((u) => unitName(u) === notice) as never, {
+      ...NO_SITUATION,
+      inSyndicate: true,
+    })).toBe('CONTEXT');
+  });
+
+  it('★ THE OTHER THREE MULTI-MEANING VERBS AIM AT THE RIGHT SECTION — `abandon` · `join` · `vote`', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // One test, three defects of the same shape, each asserted in both directions — because a gate
+    // that is too wide and a gate that is too narrow read identically in review.
+    //
+    //   `abandon` — `{venture, role_index}` quits a role, `{claim}` cedes territory. The verb gate
+    //               cost a landless member §11B's preamble plus `### Losing it`: 2,962 characters.
+    //   `join`    — `{raid, side}` and `{campaign, side, system}`. Wrong in BOTH directions: a raid
+    //               bystander got §11E, a campaign ally got §11D — a section A8 makes unreachable
+    //               for half the world.
+    //   `vote`    — the Levy ballot is allocated by EXPOSURE and the Charge ballot is not, so a
+    //               claimant voting on the Charge was charged 4,462 characters of stake rules.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    const sovereignty = '## 11B. Sovereignty — territory you have to MAINTAIN';
+    const predation = '## 11D. PREDATION — two kinds, and only one of them has a name';
+    const campaigns = '## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for';
+    const stakeBlock = '### The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs';
+    const chargeBlock = '### Paying for it — the CHARGE';
+
+    expect(excerptFor(doc, offeringAct('abandon{VENTURE}')).sections).not.toContain(sovereignty);
+    expect(excerptFor(doc, offeringAct('abandon{CLAIM}')).units).toContain(
+      `${sovereignty} › ### Losing it — arrears, the window, and two exits that beat a lapse`,
+    );
+
+    expect(excerptFor(doc, offeringAct('join{RAID}')).sections, 'a raid is not a campaign').not.toContain(
+      campaigns,
+    );
+    expect(excerptFor(doc, offeringAct('join{RAID}')).units).toContain(
+      `${predation} › ### Answering either one — \`yield\` · \`fight\` · join, or say nothing`,
+    );
+    expect(
+      excerptFor(doc, offeringAct('join{CAMPAIGN}')).sections,
+      'a campaign ally is not under a raid, and inside the Commons a raid is INVALID',
+    ).not.toContain(predation);
+    expect(excerptFor(doc, offeringAct('join{CAMPAIGN}')).units).toContain(
+      `${campaigns} › ### Taking a side — \`join\` \`{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}\``,
+    );
+
+    expect(
+      excerptFor(doc, offeringAct('vote{CHARGE}')).units,
+      'the Charge ballot reads no EXPOSURE, so the stake block is not its rules',
+    ).not.toContain(`## 4. Work happens in ventures › ${stakeBlock}`);
+    expect(
+      excerptFor(doc, offeringAct('vote{CHARGE}')).units,
+      'and the block that DOES document `vote {"ballot":"CHARGE"}` ships instead',
+    ).toContain(`${sovereignty} › ${chargeBlock}`);
+    expect(excerptFor(doc, offeringAct('vote{LEVY}')).units).toContain(
+      `## 4. Work happens in ventures › ${stakeBlock}`,
+    );
   });
 
   it('★ A PARTY TO A LIVE BATTLE IS REQUIRED the timetable and the stop condition', () => {
@@ -1430,22 +2025,42 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      // ── ★ EVERY POSITION GREW BY ~3,543 AND THE REASON IS THE GATE, NOT THE PROSE ──
+      // ══════════════════════════════════════════════════════════════════════════
+      // ★ **THE `acts` GATE, MEASURED. TWO ROWS FELL BY 3,360 AND NOTHING ELSE MOVED.**
       //
-      // §11E's six units are `verbs`-gated RULES, and three of them are gated on **`build`** — which
-      // every one of these positions is offered, including a newcomer's, because `build` also raises a
-      // WORKS. So the campaign section is paid for by a Commons newcomer that can never declare one.
+      // The note that used to sit here said §11E's cost was *"reported rather than trimmed"* and
+      // named the fix: *"a `ContractSituation` field rather than the `build` verb, which is a change
+      // to the catalog's own shape."* That is this change, and the shape is
+      // {@link ContractUnit.acts} plus `inCampaign`.
       //
-      // Reported rather than trimmed, per `MAX_CONTRACT_CHARS`'s own governance note: *"an author who
-      // cannot fit inside a quota reports the measurement instead of trimming a rule or moving the
-      // bar."* The margin on the reachable maximum is 120,000 − 68,866 = **51,134** against a required
-      // 4,000, so nothing is at risk today. What would fix it properly is a `ContractSituation` field
-      // ("could declare a campaign") rather than the `build` verb, which is a change to the catalog's
-      // own shape and belongs to whoever owns that budget.
-      43_032, // a newcomer on its first wake            (+3,543: §11E, gated on `build`)
-      51_420, // mid-game in the Commons                 (+3,543: same)
-      52_293, // about to take territory                 (+3,543: same)
-      68_866, // a claimant in trouble — the largest REACHABLE position (+3,543: same)
+      //   before  after   Δ       position
+      //   43,032  39,672  −3,360  a newcomer on its first wake
+      //   51,420  48,060  −3,360  mid-game in the Commons
+      //   52,293  52,293       0  about to take territory
+      //   68,866  68,866       0  a claimant in trouble
+      //   76,894  76,894       0  the analytic ceiling
+      //
+      // **−3,360 is exactly §11E's five `build`-gated units** (315 + 636 + 858 + 471 + 1,070 = 3,350,
+      // plus five 2-character separators). Nothing was rewritten and no rule was cut: the same prose
+      // now reaches the principals whose affordance list offers the act.
+      //
+      // **The two zero rows are the measurement that proves the mechanism rather than the number.**
+      // "About to take territory" is a graduated holding, and a graduated holding CAN stage a
+      // campaign — the depot rule (§16.6 MUST-1) is what excludes the Commons, not the lack of a
+      // claim — so it keeps `build{CAMPAIGN}` and keeps paying. The claimant likewise. Had those
+      // rows fallen too, the gate would be dropping rules from readers who can act on them, which is
+      // a different and much worse finding.
+      //
+      // Three rows are NEW. `at war` is where §11E's bill belongs and had no row before. The last two
+      // exist because the coverage test was a tautology — see `CONTRACT_POSITIONS`.
+      // ══════════════════════════════════════════════════════════════════════════
+      39_672, // a newcomer on its first wake            (−3,360: §11E, now gated on `build{CAMPAIGN}`)
+      48_060, // mid-game in the Commons                 (−3,360: same)
+      52_293, // about to take territory                 (unchanged: it can really declare one)
+      52_735, // ★ NEW — at war: party to a live campaign, offered every campaign act
+      68_866, // a claimant in trouble                   (unchanged)
+      59_911, // ★ NEW — the Commons at its fullest
+      70_375, // ★ NEW — outside the Commons and landless, at its fullest: the largest REACHABLE
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
