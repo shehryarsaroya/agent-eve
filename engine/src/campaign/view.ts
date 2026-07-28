@@ -65,6 +65,7 @@ import {
   MATERIEL_GOOD,
   MAX_SAP_LINES,
   PULSE_MATERIEL_QTY,
+  STARVES_TO_END,
 } from './params.js';
 import { readCampaignForce, type PulsePort } from './pulse.js';
 
@@ -209,7 +210,14 @@ function viewOf(
     materiel_here: visibleStock,
     next_pulse_starves: starves,
     consecutive_starves: campaign.starves,
-    starves_to_end: campaign.pulses.length === 0 ? 0 : campaign.starves,
+    // ── THE THRESHOLD, NOT A SECOND COPY OF THE COUNT ─────────────────────────
+    //
+    // This field read `campaign.pulses.length === 0 ? 0 : campaign.starves` on its first draft, which
+    // is a rules surface lying in the most ordinary case: a campaign that had never starved published
+    // `consecutive_starves: 0 · starves_to_end: 0`, and an agent reading a count of 0 out of 0 has been
+    // told its war is already over. Every `*_needed` / `*_to_*` field in this view is the PUBLISHED
+    // CONSTANT the engine compares against, so `x of y` reads as a fraction everywhere (A2).
+    starves_to_end: STARVES_TO_END,
     force: {
       attacker: reading.attackerForce,
       defender: reading.defenderForce,
