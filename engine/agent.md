@@ -992,12 +992,14 @@ by the same amount, so paying for a WORKS never costs you the right to trade lat
 is exactly what somebody paid you, less what you have already sent. Being poor does not lock you out;
 having earned nothing does.
 
-**The goods side has the same floor, and two differences.** The first `market.endowment.floor_qty` units
-of `market.endowment.endowment_good` **at one venue** cannot be SOLD — the allotment is there to meet a
-Levy payable only in located goods. `market.endowment.sellable_qty` is what you may ASK now; production
-above the floor sells freely. Unlike the currency floor it is **per venue**, so split goods are withheld
-at each, and it **never falls** — pay your whole allotment to the Levy and you are still treated as
-holding it. `withheld.verbs` names `trade` when this is what stops you.
+**The goods side works the same way.** `market.endowment.floor_qty` units of
+`market.endowment.endowment_good` cannot be SOLD — the allotment is there to meet a Levy payable only in
+located goods. It is what is **left** of that allotment, so it **falls as you spend it** (a Levy
+delivery, a WORKS, a Charge, a crossing), and once the allotment is gone nothing is withheld. It is
+**per PRINCIPAL, not per venue** — goods split across two systems are withheld once, not twice.
+Delivering it unlocks nothing: your holding and `floor_qty` fall together. PRODUCING unlocks it,
+one-for-one. `market.endowment.sellable_qty` is what you may ASK now, and `withheld.verbs` names
+`trade` when this is what stops you.
 
 ### `build` is THREE different acts — read the `kind`
 

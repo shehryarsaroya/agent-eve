@@ -1217,7 +1217,104 @@ import {
  * transferable currency is bounded by what a principal was PAID, and an endowment is
  * therefore worth zero to an operator no matter how many it holds.
  */
-export const RULES_VERSION = 19;
+/**
+ * ── 19 → 20 · ★ D7'S **GOODS** FLOOR STARTS MOVING TOO ───────────────────────
+ *
+ * `RULES_VERSION` is a **shared resource** (see 11's and 19's notes above): two agents each
+ * taking the next integer once left the live record carrying snapshots stamped `10` from two
+ * different rule sets, and *a version stamp whose meaning depends on which deploy wrote it is
+ * not a version stamp.* **20 was allocated to this branch in advance**, with 19 the latest live.
+ *
+ * ── WHAT CHANGES: THE SAME NUMBER AS 19, ON THE OTHER LEDGER ─────────────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * 19 fixed the currency half of D7 and left the goods half exactly as it was:
+ * `ENDOWMENT_GOOD_FLOOR_QTY` = `LEVY_STARTER_ALLOTMENT` = 50,000, **static**, subtracted from
+ * whatever the principal held *at that venue*. Measured over eight seeded worlds at nine
+ * Reckonings, 576 observations at the settlement tick (`scripts/d7-sellable-probe.ts`):
+ * **123 of 576 hold `ration` and can sell none of it**, median holding 66,791 against the
+ * 50,000 floor. On the live shard `p:probe-scout-01` holds 40,116 with no production, so its
+ * sellable quantity is 0 **permanently** — a static floor above a static holding never opens.
+ *
+ * And `LEVY_STARTER_ALLOTMENT` is a *window*, not a balance: `ENDOWMENT_WINDOW_RECKONINGS` = 4
+ * is the measurement that it reaches zero during the fifth Reckoning (49,500 · 49,000 · 29,000
+ * · 9,000 at ticks 287/575/863/1151). Past that the floor withheld 50,000 units of goods that
+ * were provably not endowment. `ration` is the good every obligation in this game is priced in.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ *   1. **`EndowmentBook` gains a second per-principal counter**, `goods`, initialised to
+ *      `LEVY_STARTER_ALLOTMENT` and decremented **only** by `Ledger.destroyGoods` — the single
+ *      door through which goods are destroyed, chosen for the reason `retireCurrency` was.
+ *      `sellableGoods` is now `held − remainingGoods`.
+ *   2. **It is PER PRINCIPAL, which closes a latent branch.** The old floor was charged per
+ *      `(principal, venue)`, so 60,000 split 30,000/30,000 across two systems was unsellable at
+ *      **both**. Never observed (`splitVenues = 0` in every swept world), so an unexercised
+ *      branch rather than a measured bug, and a single counter deletes it.
+ *   3. **It is hashed**, inside the existing `ledger` capture's `endowments` rows — so it
+ *      inherits `state_hash`, `CHECKPOINT_REQUIRED_TABLES` and `Ledger.restoreTo` rather than
+ *      needing three new wirings. **Every row gains a `goods` key, so every tick's hash moves
+ *      from tick 0** — the wide half of the discontinuity, unavoidable for any change to a
+ *      hashed capture.
+ *   4. **INV-7's fourth mirror recomputes it from the posting log** by a second road, every
+ *      tick, in production: `max(0, ENDOWMENT_GOOD_FLOOR_QTY − Σ ration destroyed from stores:p)`.
+ *      No new invariant number; the mirror already existed for the currency counter.
+ *   5. **`market.endowment.goods_rule` said the goods floor "NEVER FALLS", and that is now
+ *      false.** Rewritten in the same commit — a rules surface describing the old behaviour is
+ *      scar #1, and this one is published to every agent in the world. `agent.md`'s paragraph
+ *      moves with it.
+ *   6. **No new verb, no new phase, no new RNG draw.** Nothing is added to or removed from the
+ *      seeded stream; every changed decision is arithmetic over published figures.
+ *
+ * ── THE DIVERGENCE SIGNATURE ─────────────────────────────────────────────────
+ *
+ * **One shape, and it is structural: every snapshot from tick 0**, because each `endowments` row
+ * has one more key. Measured on `g01`: master's tick 0 hash is `ff46b85c…` and this branch's is
+ * `d8bba797…`. So the preflight is expected to name **tick 0**, and
+ * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes `<tick>:<fingerprint>` as at 17 → 18 and 18 → 19.
+ *
+ * ── ★ AND NO BEHAVIOURAL DIVERGENCE AT ALL, WHICH IS ITS OWN FINDING ─────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * `scripts/balance-gate.ts` is **byte-identical to master on every column at 3, 6 and 9
+ * Reckonings over eight seeds** — `levyShort` 0, red lines 0/192 · 0/384 · 0/576, and the same
+ * `ventures`, `claims`, `rent`, `hulls`, `battles`, `works` and `carried` to the unit. That is
+ * not the change being safe; **it is the change being invisible to the only cast that plays these
+ * worlds.** `cast/heuristic.ts` places an ASK for `alloy` and for nothing else
+ * (`CAST_ALLOY_ASK_QTY`), so it never reads `sellableGoods` for `ration` and cannot tell the two
+ * floors apart.
+ *
+ * This is the lesson this project keeps re-teaching, arriving inside a fix: **a capability that
+ * exists and is never exercised is indistinguishable from one that is missing.** The corollary
+ * that matters operationally is that the balance gate CANNOT detect a regression in this
+ * mechanic, and the instrument that can is `scripts/d7-sellable-probe.ts` — which reads
+ * 123 of 576 observations held-and-unsellable on master and **0 of 576** here. Anyone tuning
+ * this floor should re-run that, not the gate.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ── AND IT IS A15, MEASURED RATHER THAN ARGUED ───────────────────────────────
+ *
+ * HARD RULE 5: *any gate priced in identities is unpriced.* `market/escrow.ts`'s own comment
+ * names the exposure — *"selling it is the other half of the sock-puppet extraction"* — so the
+ * question is whether N free identities can put more sellable `ration` on a book than one can.
+ * `test/market/the-sell-side-is-funded.spec.ts` proves the goods twin of 19's identity —
+ * `held − remainingGoods = produced + received − sent − max(0, destroyed − allotment)` — over
+ * every principal of eight real worlds. **The allotment cancels out**, so what a principal may
+ * sell is exactly what it produced or was paid.
+ *
+ * Then the measurement, N identities each raising a WORKS at **one** system:
+ *
+ *     N     Σ ore     Σ held ration     Σ SELLABLE ration
+ *      1    46,080           91,000                46,000
+ *      4    46,080          226,000                46,000
+ *     16    46,080          766,000                46,000
+ *
+ * Σ ore is constant because `Book.sharesAt` DIVIDES the tier yield and
+ * `WORKS_PER_PRINCIPAL_PER_SYSTEM` is 1 — output is a property of the map, not of the
+ * population. **Sixteen keypairs hold 766,000 units and can sell the same 46,000 that one
+ * keypair can.** A puppet that never produces sells zero at every N, which the sock-puppet case
+ * measures separately.
+ */
+export const RULES_VERSION = 20;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.

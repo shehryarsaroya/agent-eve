@@ -198,6 +198,25 @@ function planOrder(ctx: PlaceContext, req: TradeRequest, replacing: Order | null
     // Only an ASK on the SAME book gives goods back where this one needs them:
     // `sellableGoods` is per `(good, venue)`, and a reprice that also moves venue
     // returns its units to the old one.
+    //
+    // ── A PRE-EXISTING OVERSTATEMENT, NAMED BECAUSE 20 MAKES IT REACHABLE ─────
+    //
+    // `sellable + credit` is the post-cancel answer only while the holding is at or above the
+    // withheld floor. `sellableGoods` is `max(0, availableHeld − remainingGoods)`, and
+    // `max(0, h + c − r) = max(0, h − r) + c` fails by `min(c, r − h)` when `h < r` — which a
+    // resting ASK cannot create (escrow requires `h ≥ r`) but a later PLEDGE, `haul` or seizure
+    // can, since those remove units from `availableHeld` without charging the allotment. The
+    // consequence is bounded: `checkReplacement` says yes, the cancel lands, and `placeOrder`
+    // then refuses with `escrowGoods` having moved nothing — so the agent loses a resting order
+    // rather than getting a half-placed one.
+    //
+    // **Pre-existing and strictly NARROWED by `RULES_VERSION` 20**, which is why it is recorded
+    // here rather than fixed here: under the old static floor `h < 50,000` was the common case
+    // (123 of 576 measured observations), so the same arithmetic overstated far more often. What
+    // 20 changes is that a resting `ration` ASK is possible at all, which is what makes the
+    // reprice path reachable for this good for the first time. The honest fix is for the credit
+    // to be `min(credit, ...)` against a recomputed post-cancel floor, and it belongs in a change
+    // that can measure the reprice path rather than in one that measures the floor.
     const credit =
       replacing !== null && replacing.side === 'ASK' && replacing.good === good && replacing.venue === venue
         ? remainingOf(replacing)

@@ -62,6 +62,40 @@ import type { GoodId } from '../core/types.js';
  * `remaining`, and `freeCash` is `freeBalance − remaining` rather than
  * `freeBalance − STARTER_STAKE`.
  *
+ * ## ★ AND AT `RULES_VERSION` 20, THE GOODS HALF — THE SAME DEFECT, ONE FIELD OVER
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * `ENDOWMENT_GOOD_FLOOR_QTY` was `LEVY_STARTER_ALLOTMENT` (50,000) and **static**, so the
+ * goods half of D7 was the currency half before 19 with the same shape and the same size of
+ * error. Measured over eight seeded worlds at nine Reckonings, 576 observations at the
+ * settlement tick (`scripts/d7-sellable-probe.ts`): **123 of 576 hold `ration` and can sell
+ * none of it**, and the median holding is 66,791 against a floor of 50,000 — so what was
+ * withheld was not "the allotment" but a flat 50,000 off every holding forever. On the live
+ * shard `p:probe-scout-01` holds 40,116 at Reckoning ~22 with no production, and its sellable
+ * quantity is 0 **permanently**, because a static floor above a static holding never opens.
+ *
+ * And the repo's own {@link import('../levy/params.js').ENDOWMENT_WINDOW_RECKONINGS} is the
+ * measurement that says the allotment is *gone* during the fifth Reckoning — 49,500 · 49,000 ·
+ * 29,000 · 9,000 at ticks 287/575/863/1151. Past that the static floor withheld 50,000 units
+ * of goods that were provably not endowment: a claim against a balance the principal earned,
+ * for a stake it no longer had. `ration` is the good every obligation in the game is priced
+ * in, which makes this the most important good in the world being untradeable.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * So {@link EndowmentBook} carries a **second** per-principal counter, `goods`, initialised to
+ * `LEVY_STARTER_ALLOTMENT` and decremented only by `Ledger.destroyGoods` — the single door
+ * through which goods are destroyed, chosen for exactly the reason `retireCurrency` was: nine
+ * call sites destroy goods today (a Levy delivery, a WORKS build, an anchor's fuel, a refine, a
+ * hull, a graduation crossing, a Charge, a cargo loss, a seizure) and the tenth is unwritten.
+ * `sellableGoods` is `held − goods` rather than `held − LEVY_STARTER_ALLOTMENT`.
+ *
+ * **The four properties transfer without amendment**, with "retire" reading "destroy" and
+ * "transfer" reading "escrow or hand to a buyer": a fresh identity's allotment is withheld in
+ * full so it can sell nothing; a destruction is `sellable`-NEUTRAL while any allotment is left
+ * and consumes production afterwards; a *sale* never decrements, so what a principal may sell
+ * is bounded by what it produced or was paid; and therefore
+ * `sellable ≤ produced + received − sent`, always.
+ *
  * ## Why tracking it down is still A15-safe — the four properties
  *
  *   1. **A fresh identity still cannot transfer a penny.** `remaining` is the whole
@@ -102,10 +136,20 @@ import type { GoodId } from '../core/types.js';
  * It also puts the counter in the only module that can decrement it: `retireCurrency` is
  * the single door through which currency is destroyed, so the hook cannot be forgotten by
  * a future sink the way five separate call-site edits could be.
+ *
+ * **The goods counter shares the row rather than opening a table**, for the same three
+ * wirings and one more: `all()` is already walked by `ledgerStateTable.capture`, by INV-7's
+ * fourth mirror and by `restoreTo`, so a second map inside this class is seen by every road
+ * that already looks, while a sibling book would be three more places to remember. One
+ * consequence is stated so it is chosen rather than discovered: a row now exists as soon as
+ * **either** counter has moved, so a principal that has destroyed goods and never retired
+ * currency carries a row whose `remaining` is the untouched `ENDOWMENT_FLOOR_MINOR`. That is
+ * the value the absent row would have answered anyway, and INV-7's mirror computes the same
+ * number from the log, so the two roads still agree.
  */
 
 import type { PrincipalId } from '../core/types.js';
-import { minor, type Minor, type Qty } from '../core/units.js';
+import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
 import { compareIds } from './order.js';
 
@@ -150,20 +194,56 @@ export const ENDOWMENT_FLOOR_MINOR: Minor = STARTER_STAKE;
  */
 export const ENDOWMENT_GOOD = 'ration' as GoodId;
 
-/** Units of {@link ENDOWMENT_GOOD} below which a principal may not sell. */
+/**
+ * A principal's withheld allotment of {@link ENDOWMENT_GOOD} **on the day it enrols** — the
+ * starting value of {@link EndowmentBook}'s per-principal goods counter, not a constant every
+ * principal carries forever.
+ *
+ * It was the latter until `RULES_VERSION` 20, and the header records what that cost: a floor
+ * that never moved while the holding did meant 123 of 576 measured observations held the good
+ * every obligation is priced in and could sell none of it, and a principal past the four-
+ * Reckoning endowment window was having 50,000 units withheld against a stake it had already
+ * delivered. The number is unchanged; what changed is that it is now a starting point.
+ *
+ * Still declared as an alias of {@link LEVY_STARTER_ALLOTMENT} rather than as its own literal,
+ * for {@link ENDOWMENT_FLOOR_MINOR}'s reason: the allotment granted and the allotment withheld
+ * must be the same quantity, and two homes for one number is scar #5.
+ */
 export const ENDOWMENT_GOOD_FLOOR_QTY: Qty = LEVY_STARTER_ALLOTMENT;
 
-/** One principal's row. Monotone non-increasing; `remaining` is never re-credited. */
+/**
+ * One principal's row. Both counters are monotone non-increasing and neither is ever
+ * re-credited.
+ *
+ * `remaining` is currency in MINOR and `goods` is a count of {@link ENDOWMENT_GOOD} in QTY.
+ * Two units one field apart is the adjacency `test/levy/one-word-two-units.spec.ts` catalogues
+ * nine real bugs from, so the names carry their units the way the published fields do
+ * (`remaining_minor` beside `floor_qty`).
+ */
 export interface EndowmentRow {
   readonly principal: PrincipalId;
   readonly remaining: Minor;
+  /** Units of {@link ENDOWMENT_GOOD} still withheld from sale. */
+  readonly goods: Qty;
 }
 
 /**
- * ★ **THE PER-PRINCIPAL ENDOWMENT COUNTER.** How much of a principal's balance is still
- * the stake it was given rather than money it earned.
+ * What {@link EndowmentBook.restore} accepts, and the one place `goods` is optional.
  *
- * ── WHEN IT RESETS: **NEVER.** ───────────────────────────────────────────────
+ * A `RULES_VERSION` 19 capture has rows with no `goods` key at all, and **absent means
+ * {@link ENDOWMENT_GOOD_FLOOR_QTY} — maximum withholding**, so such a row reverts its principal
+ * to exactly the pre-20 behaviour: a visible loss of selling power, never a silent gain. The
+ * asymmetry is deliberate — {@link EndowmentBook.all} always emits the field, so nothing this
+ * engine writes can be read back through the lenient branch.
+ */
+export type EndowmentRowIn = Omit<EndowmentRow, 'goods'> & { readonly goods?: Qty };
+
+/**
+ * ★ **THE TWO PER-PRINCIPAL ENDOWMENT COUNTERS.** How much of a principal's balance is still
+ * the stake it was given rather than money it earned, and how much of its {@link ENDOWMENT_GOOD}
+ * is still the allotment it was given rather than goods it produced.
+ *
+ * ── WHEN THEY RESET: **NEVER.** ──────────────────────────────────────────────
  *
  * Stated first and loudly, because `Book.prune` has silently destroyed a load-bearing row
  * five times in this repo — in the engine (`MAX_RECKONING_SUMMARIES`), in a fix
@@ -180,32 +260,69 @@ export interface EndowmentRow {
  *   - **No `prune`, no `clear()` outside {@link restore}, no `Ring`, no cap.** Bounded by
  *     the principal roll, which is the bound `levy/book.ts:222` argues for over a hard cap:
  *     *"a refusal here would lose the mark... failing in exactly the direction that hides."*
- *   - **Absent ⇒ {@link ENDOWMENT_FLOOR_MINOR}, which is MAXIMUM withholding.** This is the
- *     property that makes the whole structure safe against its own bugs. A row that a prune
- *     ate, a restore dropped or an enrolment forgot reverts the principal to *exactly the
- *     pre-19 behaviour* — the endowment fully withheld — which is a visible loss of buying
- *     power, not a silent gain. Contrast `standing.ts:334`, where an empty book was maximum
- *     *permission* and therefore had to throw. Here empty is the safe direction, so rows are
- *     created lazily on the first retirement and the common case stores nothing at all.
+ *   - **Absent ⇒ {@link ENDOWMENT_FLOOR_MINOR} and {@link ENDOWMENT_GOOD_FLOOR_QTY}, which is
+ *     MAXIMUM withholding on both counters.** This is the property that makes the whole
+ *     structure safe against its own bugs. A row that a prune ate, a restore dropped or an
+ *     enrolment forgot reverts the principal to *exactly the pre-19 (currency) or pre-20
+ *     (goods) behaviour* — the endowment fully withheld — which is a visible loss of buying and
+ *     selling power, not a silent gain. Contrast `standing.ts:334`, where an empty book was
+ *     maximum *permission* and therefore had to throw. Here empty is the safe direction, so
+ *     rows are created lazily on the first charge and the common case stores nothing at all.
  *
- * **Who reads it:** {@link import('../market/escrow.js').freeCash}, which is the single
- * gate on the market BID, the sovereignty cession price and the syndicate contribution.
- * Nothing else. **Who writes it:** `Ledger.retireCurrency`, and nothing else.
+ * **Who reads them:** {@link import('../market/escrow.js').freeCash}, the single gate on the
+ * market BID, the sovereignty cession price and the syndicate contribution; and
+ * {@link import('../market/escrow.js').sellableGoods}, the single gate on a market ASK. Nothing
+ * else. **Who writes them:** `Ledger.retireCurrency` and `Ledger.destroyGoods`, and nothing
+ * else — the two doors through which value is destroyed.
  *
- * **Would a test notice it clearing?** Yes, three of them, deliberately:
- * `test/ledger/endowment-book.test.ts` mutation-drops the row and asserts the buyer stops
- * being able to bid; `test/durability/books-in-the-hash.test.ts`'s per-book pair proves the
- * hash stops seeing the book when the capture is neutered; and INV-7's fourth mirror
- * recomputes every row from the posting log on **every tick in production**, so a cleared
+ * **Would a test notice either clearing?** Yes, deliberately, and by two roads:
+ * `test/ledger/endowment-book.test.ts`'s *"INV-7's fourth mirror"* block mutation-drops the row
+ * and asserts a halt on each counter independently, and its *"genuinely IN the hash input"* block
+ * proves the capture stops seeing each counter when its key is deleted; and INV-7's fourth mirror
+ * recomputes **both** counters from the posting log on **every tick in production**, so a cleared
  * row halts the world rather than quietly re-withholding.
+ *
+ * ⚑ **This paragraph used to cite `test/durability/books-in-the-hash.test.ts`'s per-book pair, and
+ * that citation was wrong.** That file's `BOOKS` list is the seven tables that were in no state
+ * table at all — `standing · seal · obligation · event · attribution · mint · delivery` — and
+ * `ledger` is not one of them, so nothing there has ever looked at this book. Corrected rather
+ * than deleted, because `levy/params.ts` names this exact failure: *a doc pointing at a file
+ * nobody can open reads exactly like a test that was never written.*
  */
 export class EndowmentBook {
-  /** Only principals that have retired currency. Absent means "untouched stake". */
-  private readonly rows = new Map<PrincipalId, Minor>();
+  /**
+   * Only principals that have destroyed currency or goods. Absent means "untouched stake and
+   * untouched allotment".
+   *
+   * One map with a two-field value rather than two maps, so the two counters cannot get
+   * different lifetimes: a second map would be a second thing for `restore` to clear, for
+   * `capture` to emit and for a future prune to miss, and the whole hazard this class is
+   * written around is a counter that goes missing in the direction that hides.
+   */
+  private readonly rows = new Map<PrincipalId, { remaining: Minor; goods: Qty }>();
 
   /** How much of this principal's balance is still endowment. Never negative. */
   remaining(principal: PrincipalId): Minor {
-    return this.rows.get(principal) ?? ENDOWMENT_FLOOR_MINOR;
+    return this.rows.get(principal)?.remaining ?? ENDOWMENT_FLOOR_MINOR;
+  }
+
+  /**
+   * How many units of {@link ENDOWMENT_GOOD} are still the enrolment allotment. Never negative.
+   *
+   * The goods twin of {@link remaining}, and named for the same reason its published field is:
+   * this is a QTY and that one is a MINOR, one method apart.
+   */
+  remainingGoods(principal: PrincipalId): Qty {
+    return this.rows.get(principal)?.goods ?? ENDOWMENT_GOOD_FLOOR_QTY;
+  }
+
+  /** The row as it will be captured, materialising the defaults. Internal to the two charges. */
+  private row(principal: PrincipalId): { remaining: Minor; goods: Qty } {
+    const hit = this.rows.get(principal);
+    if (hit !== undefined) return hit;
+    const fresh = { remaining: ENDOWMENT_FLOOR_MINOR, goods: ENDOWMENT_GOOD_FLOOR_QTY };
+    this.rows.set(principal, fresh);
+    return fresh;
   }
 
   /**
@@ -226,20 +343,43 @@ export class EndowmentBook {
    */
   retire(principal: PrincipalId, amount: Minor): void {
     if (amount <= 0) return;
-    const left = this.remaining(principal);
-    if (left <= 0) {
-      // Pin the row at zero rather than leaving it absent: absent means the full stake.
-      this.rows.set(principal, minor(0));
-      return;
-    }
-    this.rows.set(principal, minor(Math.max(0, left - amount)));
+    // Pin the row even at zero rather than leaving it absent: absent means the full stake.
+    const row = this.row(principal);
+    row.remaining = minor(Math.max(0, row.remaining - amount));
+  }
+
+  /**
+   * Charge a destruction of {@link ENDOWMENT_GOOD} against the allotment, allotment-first.
+   *
+   * The exact twin of {@link retire}, and the argument transfers verbatim with "burn" for
+   * "retire": charging production first would keep `goods` high and destroy produced units on
+   * paper while the allotment sat untouched, which is the pre-20 behaviour wearing a counter.
+   * Allotment-first makes a destruction `sellable`-neutral while any allotment is left (the
+   * holding and the counter fall by the same amount), and once the allotment is exhausted the
+   * excess correctly consumes production: at `goods = 0` a further burn lowers the holding
+   * alone, which is `sellable` falling by what was destroyed.
+   *
+   * A15 survives it because `sellable = held − goods` can only ever be raised by goods
+   * ARRIVING — production, a purchase, a delivery — never by goods leaving under any accounting.
+   *
+   * **Called for every good, filtered to one.** The caller (`Ledger.destroyGoods`) passes only
+   * {@link ENDOWMENT_GOOD}, because that is the only good an allotment is minted in; burning
+   * `ore` or `alloy` must not open the ration floor, which would be a cross-good laundering
+   * route with no enrolment cost. `test/core/goods-are-independent.test.ts` is the file that
+   * keeps the four goods constants from collapsing into one, and this is the same rule stated
+   * as behaviour.
+   */
+  retireGoods(principal: PrincipalId, amount: Qty): void {
+    if (amount <= 0) return;
+    const row = this.row(principal);
+    row.goods = qty(Math.max(0, row.goods - amount));
   }
 
   /** Every row that exists, in canonical principal order. The capture and the audit. */
   all(): readonly EndowmentRow[] {
     return [...this.rows.entries()]
       .sort((a, b) => compareIds(a[0], b[0]))
-      .map(([principal, remaining]) => ({ principal, remaining }));
+      .map(([principal, row]) => ({ principal, remaining: row.remaining, goods: row.goods }));
   }
 
   /**
@@ -251,7 +391,7 @@ export class EndowmentBook {
    * tick zero it while the hash never notices. INV-7's fourth mirror is the second road
    * that catches it anyway.
    */
-  restore(rows: readonly EndowmentRow[]): void {
+  restore(rows: readonly EndowmentRowIn[]): void {
     this.rows.clear();
     for (const row of rows) {
       if (!Number.isSafeInteger(row.remaining) || row.remaining < 0) {
@@ -267,7 +407,25 @@ export class EndowmentBook {
             `${String(ENDOWMENT_FLOOR_MINOR)} it started with; an endowment never grows`,
         );
       }
-      this.rows.set(row.principal, row.remaining);
+      // ── The goods counter, on exactly the same two rules ──────────────────────
+      //
+      // ABSENT is lenient and means maximum withholding (see `EndowmentRowIn`), because a 19
+      // capture cannot carry a field 20 invented. PRESENT and malformed is a refusal, for the
+      // reason the currency side gives: a capture we cannot read is a corrupt triple, and
+      // clamping it would publish a number nobody wrote.
+      const goods = row.goods ?? ENDOWMENT_GOOD_FLOOR_QTY;
+      if (!Number.isSafeInteger(goods) || goods < 0) {
+        throw new EndowmentError(
+          `endowment: ${row.principal} has goods ${String(goods)}, which is not a count`,
+        );
+      }
+      if (goods > ENDOWMENT_GOOD_FLOOR_QTY) {
+        throw new EndowmentError(
+          `endowment: ${row.principal} has goods ${String(goods)} above the ` +
+            `${String(ENDOWMENT_GOOD_FLOOR_QTY)} it started with; an allotment never grows`,
+        );
+      }
+      this.rows.set(row.principal, { remaining: row.remaining, goods: qty(goods) });
     }
   }
 }

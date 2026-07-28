@@ -18,7 +18,7 @@ import { subMinor, type Minor, type Qty } from '../core/units.js';
 import { isWorldAccount } from './accounts.js';
 import { checkBatchForm, postingLedger } from './batch.js';
 import type { ObligationBook } from './encumbrance.js';
-import { ENDOWMENT_FLOOR_MINOR } from './endowment.js';
+import { ENDOWMENT_FLOOR_MINOR, ENDOWMENT_GOOD, ENDOWMENT_GOOD_FLOOR_QTY } from './endowment.js';
 import type { Ledger } from './ledger.js';
 import { compareIds } from './order.js';
 
@@ -350,6 +350,8 @@ export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
   const issuedMinor = new Map<string, number>();
   const movedQtyByAccount = new Map<string, number>();
   const retiredFrom = new Map<string, number>();
+  /** Units of `ENDOWMENT_GOOD` destroyed out of each account. Mirror 4's goods half. */
+  const burnedFrom = new Map<string, number>();
   for (const b of l.allBatches()) {
     if (b.supply === null) continue;
     for (const p of b.postings) {
@@ -363,6 +365,10 @@ export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
       } else if (leg === 'GOODS' && p.good !== null && p.amountQty !== null) {
         const k = `${b.supply.account}\u0000${p.good}`;
         movedQtyByAccount.set(k, (movedQtyByAccount.get(k) ?? 0) + Math.abs(p.amountQty));
+        if (b.supply.direction === 'RETIRE' && p.good === ENDOWMENT_GOOD) {
+          // `amountQty` is negative on a destruction leg; accumulate what LEFT.
+          burnedFrom.set(p.account, (burnedFrom.get(p.account) ?? 0) - p.amountQty);
+        }
       }
     }
   }
@@ -388,24 +394,26 @@ export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
   //
   // ══════════════════════════════════════════════════════════════════════════
   // `ledger.endowments` decides who may transfer currency — the market BID, the cession
-  // price, the syndicate contribution — and it is a **running total**, which is the exact
-  // state a prune window, a per-Reckoning reset or a restore that clears without reading
-  // silently destroys. `Book.prune` has done that five times in this repo and **every one
-  // failed in the direction that hides**: the row was gone and the number that depended on
-  // it read clean rather than missing.
+  // price, the syndicate contribution — and who may SELL the good every obligation in the
+  // game is priced in. Both counters are **running totals**, which is the exact state a
+  // prune window, a per-Reckoning reset or a restore that clears without reading silently
+  // destroys. `Book.prune` has done that five times in this repo and **every one failed in
+  // the direction that hides**: the row was gone and the number that depended on it read
+  // clean rather than missing.
   //
-  // So it is not trusted. It is recomputed by a second road, every tick, in production,
+  // So neither is trusted. Both are recomputed by a second road, every tick, in production,
   // from the append-only log the book never touches:
   //
-  //     remaining(p) == max(0, ENDOWMENT_FLOOR_MINOR − Σ currency retired from stores:p)
+  //     remaining(p)     == max(0, ENDOWMENT_FLOOR_MINOR    − Σ currency retired from stores:p)
+  //     remainingGoods(p)== max(0, ENDOWMENT_GOOD_FLOOR_QTY − Σ ENDOWMENT_GOOD destroyed from stores:p)
   //
-  // The closed form and the book's incremental `max(0, left − x)` agree exactly, including
-  // once the endowment is exhausted and further retirements consume earnings.
+  // The closed forms and the book's incremental `max(0, left − x)` agree exactly, including
+  // once the endowment is exhausted and further charges consume earnings or production.
   //
   // A drift is a HALT rather than a correction, and both directions are real: a counter
-  // that drifted UP hands a sock puppet transferable capital (A15, HARD RULE 5), and one
-  // that drifted DOWN re-imposes the very over-withholding that made this whole book
-  // necessary. Neither may be published.
+  // that drifted UP hands a sock puppet transferable capital or sellable goods (A15, HARD
+  // RULE 5), and one that drifted DOWN re-imposes the very over-withholding that made this
+  // whole book necessary. Neither may be published.
   // ══════════════════════════════════════════════════════════════════════════
   const seen = new Set<PrincipalId>();
   for (const a of l.allAccounts()) {
@@ -424,13 +432,32 @@ export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
         ),
       );
     }
+    const burned = burnedFrom.get(a.id) ?? 0;
+    const expectedGoods = Math.max(0, ENDOWMENT_GOOD_FLOOR_QTY - burned);
+    const heldGoods = l.endowments.remainingGoods(a.principal);
+    if (heldGoods !== expectedGoods) {
+      out.push(
+        v(
+          'INV-7',
+          `${a.principal}: destroyed ${burned} units of ${ENDOWMENT_GOOD} into world sinks, so ` +
+            `${expectedGoods} of its allotment should remain withheld, but the endowment book says ` +
+            `${heldGoods}`,
+          tick,
+        ),
+      );
+    }
   }
   // A row for a principal with no STORES account is a row nothing can ever justify —
   // the loop above cannot see it, so it is checked from the other end.
   for (const row of l.endowments.all()) {
     if (seen.has(row.principal)) continue;
     out.push(
-      v('INV-7', `${row.principal} holds an endowment row (${row.remaining}) with no STORES account`, tick),
+      v(
+        'INV-7',
+        `${row.principal} holds an endowment row (${row.remaining} minor, ${row.goods} ` +
+          `${ENDOWMENT_GOOD}) with no STORES account`,
+        tick,
+      ),
     );
   }
 

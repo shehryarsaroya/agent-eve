@@ -51,7 +51,7 @@
 import type { AccountId, EventId, GoodId, PrincipalId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { Ledger, compareIds, storesAccount, type LotId, type ObligationRef } from '../ledger/index.js';
-import { ENDOWMENT_GOOD, ENDOWMENT_GOOD_FLOOR_QTY } from '../ledger/endowment.js';
+import { ENDOWMENT_GOOD } from '../ledger/endowment.js';
 import type { OrderId, VenueId } from './order.js';
 
 /**
@@ -167,6 +167,38 @@ export function freeCash(ledger: Ledger, principal: PrincipalId): Minor {
  * trade could settle). Both exclusions mirror `runtime.levyGoodLots`, deliberately:
  * two different answers to "what can this principal actually hand over" is the
  * disagreement §3 exists to prevent.
+ *
+ * ## ★ THE ALLOTMENT IS WITHHELD ONCE, PER PRINCIPAL (`RULES_VERSION` 20)
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * This used to subtract a **static** `ENDOWMENT_GOOD_FLOOR_QTY` from the lots at
+ * `venue`, and both halves of that were wrong in the same direction.
+ *
+ *   - **Static.** The allotment is a window, not a balance: the Levy destroys it over
+ *     four Reckonings (`ENDOWMENT_WINDOW_RECKONINGS`), and past that the floor withheld
+ *     50,000 units of goods that were provably not endowment. Measured over eight worlds
+ *     at nine Reckonings, **123 of 576 settlement observations held `ration` and could
+ *     sell none of it**, median holding 66,791 against a floor of 50,000. Live:
+ *     `p:probe-scout-01` holds 40,116 with no production, so its sellable quantity was 0
+ *     *permanently* — a floor above a static holding never opens.
+ *   - **Per `(principal, venue)`.** A principal holding 60,000 split 30,000/30,000 across
+ *     two systems could sell at NEITHER, because each venue was charged the whole floor.
+ *     Never observed (every principal in every swept world keeps its `ration` at one
+ *     venue, `splitVenues = 0`), so it was an unexercised branch rather than a measured
+ *     bug — and a single per-principal counter makes it disappear.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * So the withholding walks the principal's **whole** unpledged, in-place holding of the
+ * good in canonical lot order and spends `ledger.endowments.remainingGoods` against it,
+ * then answers with what is left at `venue`. Two properties follow, and both are asserted
+ * in `test/market/the-sell-side-is-funded.spec.ts`:
+ *
+ *   - Σ over venues is exactly `max(0, availableHeld − remainingGoods)` — the allotment is
+ *     charged once however the goods are spread;
+ *   - **canonical lot order, never pro-rata.** A share-out would need a division, and a
+ *     float in a value path cannot be reconciled (`core/units.ts`). Which venue bears the
+ *     withholding is therefore decided by lot id, which is deterministic, replayable and
+ *     identical on every node.
  */
 export function sellableGoods(ledger: Ledger, principal: PrincipalId, good: GoodId, venue: VenueId): Qty {
   let total = 0;
@@ -182,36 +214,35 @@ function sellableLots(
 ): readonly { readonly id: LotId; readonly qty: number }[] {
   const account = storesAccount(principal);
   if (ledger.account(account) === undefined) return [];
-  const lots = ledger
+  const held = ledger
     .lotsInAccount(account)
-    .filter(
-      (lot) =>
-        lot.good === good &&
-        lot.location === venue &&
-        lot.encumbranceId === null &&
-        lot.state === 'AVAILABLE',
-    )
+    .filter((lot) => lot.good === good && lot.encumbranceId === null && lot.state === 'AVAILABLE')
     .sort((a, b) => compareIds(a.id, b.id))
-    .map((lot) => ({ id: lot.id, qty: lot.qty }));
+    .map((lot) => ({ id: lot.id, qty: lot.qty, location: lot.location }));
 
   // D7, the goods half. The starter allotment exists so a newcomer can meet a Levy that
   // is payable only in located goods — an obligation the rules would otherwise make
   // impossible to meet on arrival, which is A5′ with our own economy as the cause. It is
   // not trading stock, and selling it is the other half of the sock-puppet extraction.
-  // Withheld the same way as the cash: everything above the allotment is sellable.
-  if (good !== ENDOWMENT_GOOD) return lots;
-  let floor: number = ENDOWMENT_GOOD_FLOOR_QTY;
-  const sellable: { readonly id: LotId; readonly qty: number }[] = [];
-  for (const lot of lots) {
+  // Withheld the same way as the cash: everything above what is LEFT of the allotment is
+  // sellable, and the allotment falls only as the goods are destroyed into a world sink.
+  const here = (
+    rows: readonly { readonly id: LotId; readonly qty: number; readonly location: VenueId }[],
+  ): readonly { readonly id: LotId; readonly qty: number }[] =>
+    rows.filter((lot) => lot.location === venue).map((lot) => ({ id: lot.id, qty: lot.qty }));
+  if (good !== ENDOWMENT_GOOD) return here(held);
+  let floor: number = ledger.endowments.remainingGoods(principal);
+  const sellable: { id: LotId; qty: number; location: VenueId }[] = [];
+  for (const lot of held) {
     if (floor <= 0) {
       sellable.push(lot);
       continue;
     }
     const withheld = Math.min(floor, lot.qty);
     floor -= withheld;
-    if (lot.qty > withheld) sellable.push({ id: lot.id, qty: lot.qty - withheld });
+    if (lot.qty > withheld) sellable.push({ ...lot, qty: lot.qty - withheld });
   }
-  return sellable;
+  return here(sellable);
 }
 
 /** Goods this principal currently has escrowed for one book. The matcher's ceiling. */

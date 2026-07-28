@@ -46,7 +46,7 @@
 
 import type { GoodId, PrincipalId } from '../core/types.js';
 import { qty, type Minor, type Qty } from '../core/units.js';
-import { ENDOWMENT_GOOD, ENDOWMENT_GOOD_FLOOR_QTY } from '../ledger/endowment.js';
+import { ENDOWMENT_GOOD } from '../ledger/endowment.js';
 import { Ledger, compareIds, storesAccount } from '../ledger/index.js';
 import type { WorldState } from '../world/state.js';
 import type { MarketBook } from './book.js';
@@ -77,12 +77,38 @@ export const ENDOWMENT_RULE =
   'same amount, so transferable does not move. Only being PAID does, one-for-one. Being poor does ' +
   'not lock you out; having earned nothing does.';
 
-/** The goods half of the same rule, and the half `agent.md` never stated. */
+/**
+ * The goods half of the same rule.
+ *
+ * ── ★ IT USED TO SAY "NEVER FALLS", AND THAT IS NOW FALSE (`RULES_VERSION` 20) ──
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The old text was *"Unlike the currency floor this one NEVER FALLS, so a principal that paid
+ * its whole allotment to the Levy is still treated as holding it"*, and it was an accurate
+ * description of a defect: the floor was a static `LEVY_STARTER_ALLOTMENT` while the allotment
+ * itself is destroyed over four Reckonings, so past the window it withheld 50,000 units of
+ * goods that were provably not endowment.
+ *
+ * The engine now behaves like the currency half — `floor_qty` is what is LEFT of the allotment
+ * and falls as the allotment is destroyed — so this sentence had to move in the same commit.
+ * A rules surface that describes the old behaviour is scar #1, and this one is published to
+ * every agent in the world: an agent reading "never falls" plans on never selling `ration`,
+ * which is the good every obligation in the game is priced in.
+ *
+ * Two claims are deliberately kept, because both are still true and both are the ones an agent
+ * gets wrong: **delivering it unlocks nothing** (the holding and the floor fall together, so a
+ * Levy payment is sellable-neutral — the goods twin of "burning it UNLOCKS NOTHING"), and
+ * **production is what unlocks it**.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
 export const ENDOWMENT_GOODS_RULE =
-  'The goods half: the first floor_qty units of endowment_good standing AT ONE VENUE are withheld ' +
-  'from SALE for the same reason, so sellable = what you hold there minus floor_qty. Unlike the ' +
-  'currency floor this one NEVER FALLS, so a principal that paid its whole allotment to the Levy is ' +
-  'still treated as holding it. Everything you produce above the floor sells freely.';
+  'The goods half: SELLABLE = what you hold of endowment_good minus floor_qty, which is what is ' +
+  'LEFT of your enrolment allotment. It is withheld for the same reason the currency is — the ' +
+  'allotment exists to meet a Levy payable only in located goods, not to be sold on (A15). It ' +
+  'FALLS as the allotment is destroyed (a Levy delivery, a WORKS, a Charge, a crossing) and it is ' +
+  'PER PRINCIPAL, not per venue, so goods split across systems are withheld once. Delivering it ' +
+  'unlocks nothing — your holding and floor_qty fall by the same amount. PRODUCING does, ' +
+  'one-for-one. Once the allotment is gone, everything you hold is sellable.';
 
 export interface EndowmentStanding {
   /** Your unlocked currency. Pledged stores are out of it; the endowment is IN it. */
@@ -98,7 +124,20 @@ export interface EndowmentStanding {
    */
   readonly transferable_minor: Minor;
   readonly endowment_good: GoodId;
-  /** Units of {@link endowment_good} withheld from sale, per venue. Static: it never falls. */
+  /**
+   * Units of {@link endowment_good} withheld from sale: **what is left of the allotment**, per
+   * principal, falling as the allotment is destroyed (`RULES_VERSION` 20).
+   *
+   * **Kept as `floor_qty` rather than renamed to `remaining_qty`, and the asymmetry with
+   * `remaining_minor` one row up is a wart that was weighed rather than missed.** The two halves
+   * of one block now name one concept two ways, which is the shape HARD RULE 4 exists to stop.
+   * Against renaming: `floor_qty` is a *published* key that `agent.md`, `makerAdvice` and the
+   * withheld rows all quote by name, and a rename is a second breaking change riding on a rules
+   * change — while the name is not FALSE, because this is still exactly the floor below which a
+   * sale is refused. What was false was the sentence claiming it never moves, and that is fixed
+   * in {@link ENDOWMENT_GOODS_RULE}. The rename is the right next change and it is a change on
+   * its own.
+   */
   readonly floor_qty: Qty;
   /** What you could actually ASK right now, summed over the venues you stand at. */
   readonly sellable_qty: Qty;
@@ -130,7 +169,9 @@ export function endowmentStanding(
     remaining_minor: ledger.endowments.remaining(principal),
     transferable_minor: freeCash(ledger, principal),
     endowment_good: ENDOWMENT_GOOD,
-    floor_qty: ENDOWMENT_GOOD_FLOOR_QTY,
+    // The SAME call `sellableGoods` gates on, never a second arithmetic beside it — the
+    // property `remaining_minor` two rows up was given for the same reason.
+    floor_qty: ledger.endowments.remainingGoods(principal),
     sellable_qty: qty(sellable),
     rule: ENDOWMENT_RULE,
     goods_rule: ENDOWMENT_GOODS_RULE,

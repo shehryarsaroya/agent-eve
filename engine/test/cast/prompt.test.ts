@@ -595,7 +595,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // because the published default's *"allocated inversely to Exposure"* had to name **which**
     // Exposure or it names a quantity the engine no longer reads.
     //
-    // ⚑ **THE ANALYTIC MARGIN IS NOW 778 OF 72,000, DOWN FROM 1,408.** Read
+    // ⚑ **THE ANALYTIC MARGIN IS NOW 662 OF 72,000, DOWN FROM 1,408 (778 at 19).** Read
     // `MAX_CONTRACT_CHARS`'s note before the next block, not after it. Two consecutive features each
     // spent about a quarter of the raise; this one spent 631 characters of what was left.
     //
@@ -619,10 +619,33 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // The remaining +40 on every position is the inline correction to the false sentence, which is a
     // rules surface contradicting the engine and not optional.
     //
-    // ⚑ For the next author: 778 is not enough for a paragraph. The reachable margin is 6,793 and
+    // ⚑ For the next author: 662 is not enough for a paragraph. The reachable margin is 6,677 and
     // quoting THAT number is the mistake this comment block already warns about two screens up.
+    //
+    // ── ★ +100 AT `RULES_VERSION` 20, AND IT IS THE SAME PARAGRAPH BEING CORRECTED ──
+    //
+    // 778 → **662 of analytic margin**, and the honest framing is that this is a *correction paying
+    // for itself rather than a feature buying space*. The paragraph 19 bought for 631 characters
+    // described the floor as **per venue** and as one that **NEVER FALLS**, and 20 makes both
+    // clauses false: the floor is now what is LEFT of the allotment and it is charged once per
+    // principal. The replacement states four facts where the old one stated four, and costs +116.
+    //
+    // Measured before the prose was written, as `MAX_CONTRACT_CHARS`'s note asks. Two things were
+    // NOT done to pay for it, and both would have been cheaper:
+    //
+    //   · **Deleting the "delivering it unlocks nothing" clause** would have come in at −40, i.e.
+    //     free. It is the expensive wrong belief on this side of D7 — the goods twin of "burn some
+    //     to free the rest", which `ENDOWMENT_RULE` spends a whole clause on — and an agent acting
+    //     on it pays a Levy it did not owe to unlock a sale that does not unlock.
+    //   · **Leaving the per-venue sentence out entirely** was +0 and is what the first draft did.
+    //     Rejected: the split-venue case was refused at BOTH venues under the old rule with nothing
+    //     anywhere saying why, and a rule that has just stopped applying is exactly the one an agent
+    //     needs told, because its prior is the old behaviour.
+    //
+    // ⚑ 678 is still not enough for a paragraph, and it is now not enough for a SENTENCE on every
+    // position. The next block needs the ceiling looked at.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_793);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(72_909);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -645,11 +668,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // block). Both features landed concurrently, so this row carries the sum of two independent
     // raises and neither author saw the other's — which is why the number is measured rather than
     // predicted, and why the margin below is the one to read.
-    // +631 at this change: §11A's goods-floor paragraph, which is `wanted` on `trade` OR on a
+    // +631 at 19: §11A's goods-floor paragraph, which is `wanted` on `trade` OR on a
     // withheld endowment, so a claimant in trouble reads it. The reachable margin is where cry-wolf
-    // would bite and it is still healthy — 6,793 against a required 4,000 — which is the number to
+    // would bite and it is still healthy — 6,677 against a required 4,000 — which is the number to
     // quote about SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(65_207);
+    // +116 at 20: the same paragraph, corrected. The floor now falls and is charged per principal,
+    // so the two clauses that said otherwise had to go — a rules surface describing the old
+    // behaviour is scar #1, and this one is published to every agent in the world.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(65_323);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1398,7 +1424,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       39_489, // a newcomer on its first wake            (+40: the corrected "you sell … rations")
       47_877, // mid-game in the Commons                 (+40: same)
       48_750, // about to take territory                 (+40: same)
-      65_207, // a claimant in trouble — the largest REACHABLE position (+631: +40 and the goods floor)
+      65_323, // a claimant in trouble — the largest REACHABLE position (+631 at 19, +116 at 20)
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
@@ -1415,12 +1441,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // against a required 4,000. Spent on `RULES_VERSION` 19's §11A block — the rule that decides
       // what a member may commit to a BID, which had no home in the contract at all until now,
       // because until 19 the answer was *nothing, for everyone, always*.
-      71_222,
+      71_338,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
-    // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 778 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
+    // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
     //
-    // 1,408 → 778 at this change, and the 631 bought the one half of D7 the contract had never
+    // 778 → 662 at `RULES_VERSION` 20, and the 116 did not buy a rule — it CORRECTED one. The
+    // paragraph 19 bought for 631 characters said the goods floor was **per venue** and **never
+    // falls**, and 20 makes both false. That is the one spend that is never optional: an agent
+    // planning against a rules surface that describes the old engine is scar #1, and this surface
+    // is published to every agent in the world.
+    //
+    // 1,408 → 778 at 19, and the 631 bought the one half of D7 the contract had never
     // stated: the GOODS floor. Measured before the prose was written rather than after, which is
     // what the paragraph below asks for and had not previously been done — see the note on the
     // `uncapped` assertion above for the two drafts the measurement rejected.

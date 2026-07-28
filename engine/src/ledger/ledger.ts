@@ -57,7 +57,7 @@ import {
 } from './batch.js';
 import { applyQtyDelta, qtyDelta } from './delta.js';
 import { EncumbranceBook, type EncumbranceCapture } from './encumbrance.js';
-import { EndowmentBook, type EndowmentRow } from './endowment.js';
+import { ENDOWMENT_GOOD, EndowmentBook, type EndowmentRowIn } from './endowment.js';
 import { lotId, type Lot, type LotId, type LotState } from './lots.js';
 import { compareIds } from './order.js';
 
@@ -137,14 +137,16 @@ export class Ledger {
    */
   readonly encumbrances = new EncumbranceBook((id) => this.accounts.get(id));
   /**
-   * D7's per-principal endowment counter (`RULES_VERSION` 19).
+   * D7's per-principal endowment counters — currency (`RULES_VERSION` 19) and goods
+   * (`RULES_VERSION` 20).
    *
-   * Lives here, and is written by exactly one method — {@link retireCurrency} — because
-   * that is the single door through which currency is destroyed. Five call sites retire
-   * today (a WORKS build, a syndicate founding, a graduation, a cession salvage, a bond
-   * slash) and the sixth has not been written yet; hooking the door instead of the callers
-   * is what makes the sixth correct for free. See `ledger/endowment.ts` for why this state
-   * exists at all, given that the same file used to argue at length that it should not.
+   * Lives here, and is written by exactly two methods — {@link retireCurrency} and
+   * {@link destroyGoods} — because those are the two doors through which value is destroyed.
+   * Five call sites retire currency today (a WORKS build, a syndicate founding, a graduation, a
+   * cession salvage, a bond slash) and nine destroy goods; the next one of each has not been
+   * written yet, and hooking the door instead of the callers is what makes it correct for free.
+   * See `ledger/endowment.ts` for why this state exists at all, given that the same file used to
+   * argue at length that it should not.
    */
   readonly endowments = new EndowmentBook();
   /** Set by {@link hydrateAppendOnly}. Boot-only, and only ever once. */
@@ -219,12 +221,13 @@ export class Ledger {
      */
     readonly encumbrances: EncumbranceCapture;
     /**
-     * D7's per-principal endowment counters. Restored for exactly the reason the
-     * encumbrances are: an aborted tick that retired currency would otherwise keep the
-     * decrement while the balance rolled back, and the two would disagree by the amount
-     * of the rolled-back charge — which INV-7's fourth mirror halts on, correctly.
+     * D7's per-principal endowment counters, currency **and** goods. Restored for exactly the
+     * reason the encumbrances are: an aborted tick that retired currency or destroyed goods
+     * would otherwise keep the decrement while the balance or the lot rolled back, and the two
+     * would disagree by the amount of the rolled-back charge — which INV-7's fourth mirror
+     * halts on, correctly.
      */
-    readonly endowments: readonly EndowmentRow[];
+    readonly endowments: readonly EndowmentRowIn[];
     readonly postingCount: number;
     readonly batchCount: number;
   }): void {
@@ -824,6 +827,9 @@ export class Ledger {
     if (args.qty > lot.qty) {
       throw new LedgerError(`INV-3: cannot destroy ${args.qty} of ${lot.good}; lot holds ${lot.qty}`);
     }
+    // Read before `apply`, which mutates the lot and DELETES it when it goes empty.
+    const from = lot.account;
+    const good = lot.good;
     const goesEmpty = args.qty === lot.qty;
     if (goesEmpty) lot.encumbranceId = null;
     this.apply({
@@ -832,8 +838,8 @@ export class Ledger {
       kind: 'RETIRE',
       postings: [
         {
-          account: lot.account,
-          good: lot.good,
+          account: from,
+          good,
           amountMinor: minor(0),
           amountQty: qtyDelta(0 - args.qty),
         },
@@ -842,6 +848,26 @@ export class Ledger {
       opens: [],
       deltas: [{ lotId: args.lotId, deltaQty: qtyDelta(0 - args.qty) }],
     });
+
+    // ── D7 (`RULES_VERSION` 20): THE ALLOTMENT FALLS WITH THE GOODS IT PAID ────
+    //
+    // The exact twin of the four lines at the foot of {@link retireCurrency}, and the same
+    // three conditions. Goods that have been destroyed cannot be sold, so the allotment that
+    // supplied them is spent and the counter must say so. Scoped to a principal's own STORES
+    // (an ESCROW burning is a committed half, not the principal's store) and to
+    // `ENDOWMENT_GOOD` (an allotment is minted in one good, and burning `ore` must not open
+    // the ration floor). `endowments.retireGoods` is `sellable`-neutral while any allotment is
+    // left, so this line never *creates* sellable goods — it stops the floor from withholding
+    // units the principal no longer has.
+    //
+    // On the DOOR rather than on the nine callers that reach it today (a Levy delivery, a
+    // WORKS build, an anchor's fuel, a refine, a hull, a graduation crossing, a Charge, a cargo
+    // loss, a seizure that destroys). The tenth is unwritten, and a hook here is correct for it
+    // for free where nine call-site edits would silently miss it.
+    const account = this.accounts.get(from);
+    if (account !== undefined && account.kind === 'STORES' && account.principal !== null) {
+      if (good === ENDOWMENT_GOOD) this.endowments.retireGoods(account.principal, args.qty);
+    }
   }
 
   /**
