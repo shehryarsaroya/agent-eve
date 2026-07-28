@@ -14,6 +14,12 @@ const CLOCK_ALLOWLIST = [
   // The single sanctioned reader of wall-clock time: the tick scheduler needs
   // to know when to run. Never used inside tick resolution.
   'src/core/time.ts',
+  // The blind-probe harness is a CLIENT, not the engine. RFC 9421 signatures carry a real `created`
+  // timestamp because the server checks it against a real skew window, and the nonce must be
+  // unpredictable rather than seeded. Nothing in this file enters world state, the action log, or the
+  // state hash — so DET-7's subject does not exist here. It is allowlisted rather than exempted by an
+  // inline disable so the exception stays visible next to the two that came before it.
+  'scripts/probe.ts',
 ];
 
 const BANNED = [

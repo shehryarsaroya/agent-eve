@@ -16,8 +16,8 @@ trusting — this file goes stale the moment someone commits.*
 surfaces carry data. The gap is no longer mechanics — it is that every obligation is priced in ONE
 GOOD, so there is nothing to trade.**
 
-Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,257
-tests** pass against them (2026-07-27, `RULES_VERSION` **17** live). Phase 2 and Phase 3 do not exist
+Phase 0's sixteen build steps all have real implementations, Phase 1's five areas do too, and **3,274
+tests** pass against them (2026-07-27, `RULES_VERSION` **18**; **17** is the last version deployed). Phase 2 and Phase 3 do not exist
 as *complete* layers, by design — §16 marks Phase 2 "optional, possibly forever" and the owner has
 overridden that; combat is partly in.
 
@@ -59,9 +59,20 @@ narrower than the old one and worth its own line: **measuring a real quantity at
 indistinguishable from not measuring it**, and it is the third bug in this one mechanic from that
 family — after a currency balance sizing a goods bill and a cash-poverty `spare` pick.
 
-What is left is depth, not machinery. `market` is 3,065 lines pricing a single fungible commodity, so
-there is no trade, no specialization and no supply chain to reason about — **that is the whole distance
-between the two numbers below.**
+**2026-07-27 (last): the thirteenth instance, and it is the biggest one yet because it is a PRICE.**
+`market/` is 3,065 lines that had never held an order in the project's life, and the diagnosis in this
+file has always been *"it prices a single fungible commodity"*. That was true and it was not the
+binding constraint. `market/escrow.ts:freeCash` funds a BID from `freeBalance − ENDOWMENT_FLOOR_MINOR`;
+D7 sets that floor to the **whole** 250,000 `STARTER_STAKE`; and every cast member in every world sits
+between **62,000 and 203,000**. So `freeCash` is **identically zero for every principal that has ever
+played**, and the buy side of the order book has been unreachable by construction since the market
+landed. `ledger/endowment.ts` predicted the over-withholding in its own comment and **no instrument had
+ever printed the figure**, which is the same shape as `paidOther` one layer up. The fourth good landed
+anyway and works (§1); the price does not, and cannot, until D7's floor is decided. That is an A15
+decision, not a patch.
+
+What is left is depth, not machinery — and the fourth good is in, so the distance between the two
+numbers below is no longer "one good". It is that **nothing can be bought.**
 
 ## Two honest denominators
 
