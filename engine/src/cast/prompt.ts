@@ -1477,6 +1477,17 @@ export const CONTRACT_POSITIONS: readonly {
     // from anywhere, which is why the Commons rows above would legitimately grow §11E's
     // `join`-gated half the day a campaign exists — and why the two blocks they no longer carry
     // are the two that are gated on the acts a Commons holding provably cannot be offered.
+    // ⚑ **THIS ROW IS ARGUED, NOT SWEPT, AND THE NEXT AUTHOR SHOULD KNOW WHICH.**
+    //
+    // The coverage test drives a heuristic world, and that world has never declared a campaign — a
+    // 900-tick 8-member sweep offered `build {kind:"HULL"}` 133 times and `build {kind:"CAMPAIGN"}`
+    // **zero**. So every other row here is checked against observations the engine really produced,
+    // and the campaign acts on this one are checked against `campaign/roster.ts` and the campaign
+    // fixture instead. Removing an act from a row that some *other* reachable row still dominates
+    // is therefore invisible to the sweep — mutation-verified, and it changes no character, because
+    // the units it would drop are `wanted` for the same population anyway.
+    //
+    // The day the cast declares a campaign unaided, re-run the sweep and this row earns its numbers.
     name: 'at war — party to a live campaign, offered every campaign act',
     reachable: true,
     situation: {

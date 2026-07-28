@@ -564,6 +564,73 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     expect(sections.size, 'no sections were walked at all').toBeGreaterThan(10);
   });
 
+  it('★ AN OFFERED VERB OR ACT BEATS ITS OWN `wanted` — the PRECEDENCE, not just the presence', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS TEST EXISTS BECAUSE A MUTATION SURVIVED THE OTHER TEN.**
+    //
+    // Moving `unitGrade`'s act loop BELOW `required`/`wanted` broke nothing. Everything above walks
+    // `offering(verb)` / `offeringAct(act)` — a situation with every standing fact false — so no
+    // predicate can fire and the loop runs either way. The exhaustive sweep proved the gate is
+    // CONSULTED; nothing proved it is consulted FIRST.
+    //
+    // And first is the whole guarantee. Eighteen units carry a gate *and* a predicate — 41 (gate,
+    // unit) pairs between them — and for those
+    // the ordering decides between `RULES` (emitted whatever the total) and `CONTEXT` (dropped when
+    // the budget binds). A member offered `refine {kind:"ALLOY"}` while working ground would have
+    // been graded CONTEXT — droppable — for the recipe it is about to act on. That is *"refused for
+    // a rule it was never given"* arriving through the budget instead of through the predicate, and
+    // it is the failure `MAX_CONTRACT_CHARS` is only allowed to be 120,000 because of.
+    //
+    // So this builds, for every gated unit, the situation where BOTH its gate and its predicate hold
+    // — and asserts `RULES`, and asserts it survives a cap two orders of magnitude below the real
+    // ceiling. MUTATION: swap the loops below `required`/`wanted` and this goes red naming the unit.
+    // ══════════════════════════════════════════════════════════════════════════
+    const doc = document();
+    // Every standing fact on at once. Not a reachable position — it is the analytic ceiling's facts
+    // — and that is right here: the question is the ORDER of two checks, and the strongest predicate
+    // state is the one that can shadow a gate.
+    const everyFact: ContractSituation = { ...EVERY_SITUATION, verbs: new Set(), acts: new Set() };
+    let checked = 0;
+    for (const unit of CONTRACT_CATALOG) {
+      if (unit.floor === true) continue;
+      if (unit.wanted === undefined && unit.required === undefined) continue;
+      for (const verb of unit.verbs) {
+        checked += 1;
+        const both: ContractSituation = { ...everyFact, verbs: new Set([verb]) };
+        expect(
+          unitGrade(unit, both),
+          `${unitName(unit)} grades ${unitGrade(unit, both)} when '${verb}' is OFFERED and its own ` +
+            'predicate also holds. An offered verb must outrank `wanted`, or the budget may drop a ' +
+            'rule the member is about to act on',
+        ).toBe('RULES');
+        expect(
+          excerptFor(doc, both, 4_000).dropped.map((o) => o.heading),
+          `${unitName(unit)} was dropped under a 4,000 cap while '${verb}' was offered`,
+        ).not.toContain(unitName(unit));
+      }
+      for (const act of unit.acts ?? []) {
+        checked += 1;
+        const both: ContractSituation = {
+          ...everyFact,
+          verbs: new Set([act.slice(0, act.indexOf('{'))]),
+          acts: new Set([act]),
+        };
+        expect(
+          unitGrade(unit, both),
+          `${unitName(unit)} grades ${unitGrade(unit, both)} when '${act}' is OFFERED and its own ` +
+            'predicate also holds. The act gate sits at the SAME precedence as the verb gate — above ' +
+            'both predicates — or `acts` is a weaker guarantee than the thing it replaced',
+        ).toBe('RULES');
+        expect(
+          excerptFor(doc, both, 4_000).dropped.map((o) => o.heading),
+          `${unitName(unit)} was dropped under a 4,000 cap while '${act}' was offered`,
+        ).not.toContain(unitName(unit));
+      }
+    }
+    // Non-vacuous: there must really be units where a gate and a predicate compete.
+    expect(checked, 'no unit carries both a gate and a predicate, so this proves nothing').toBe(41);
+  });
+
   it('★ EVERY UNIT IS REACHABLE BY SOMETHING — no unit is gated on nothing at all', () => {
     // ══════════════════════════════════════════════════════════════════════════
     // The other half of the non-vacuity guard, and the one that survives a renumbering. A unit
