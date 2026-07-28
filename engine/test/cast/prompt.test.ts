@@ -956,10 +956,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // shape CLAUDE.md calls out by name: an invariant whose subject cannot occur, sitting inside
     // the guard written to keep the position list honest.
     //
-    // And the list HAD gone stale. Filtered to reachable rows, **42 of 120 swept observations
-    // escaped** — every single one of them carrying `endowmentWithheld`, which is true of nearly
-    // every member of every world this repo has run (D7) and which no reachable row declared;
-    // plus a Commons member inside a syndicate, and a graduated landless member under raid.
+    // And the list HAD gone stale, completely. Filtered to reachable rows, **120 of 120 swept
+    // observations escaped** — so the unreachable ceiling row was carrying 100% of the coverage, and
+    // the four rows the budget is quoted by covered nothing the world actually produces. The fact
+    // every escape carried is `endowmentWithheld`, true of nearly every member of every world this
+    // repo has run (D7) and declared by no reachable row; also missing were a Commons member inside
+    // a syndicate and a graduated landless member under raid.
+    //
+    // With the two rows added: **0 of 120**.
     //
     // Two positions were added rather than the five named rows widened, so the numbers those rows
     // are quoted by stay comparable. See `CONTRACT_POSITIONS`.

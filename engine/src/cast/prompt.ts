@@ -312,19 +312,28 @@ export const CONTRACT_ACTS: ReadonlySet<string> = Object.freeze(
  *
  *   1. every verb listed as `ACT_GATED` really has a unit gating one of its acts, and every verb
  *      listed as `VERB_GATED` really has none (so a row cannot go stale in either direction);
- *   2. a **real world is swept** and any affordance carrying a discriminator key for a verb that
- *      is not in this table fails, naming the verb — which is how the fourth instance gets caught
- *      before it costs a newcomer 3,543 characters.
+ *   2. a **real world is swept** and a verb whose offers DISAGREE about their discriminator while
+ *      this table has no row for it fails, naming the verb and the values — which is how the
+ *      fourth instance gets caught before it costs a newcomer 3,360 characters.
  *
- * `VERB_GATED` is a real answer, not a to-do list. Two of these rows are the interesting ones:
- * `deliver`'s only home is FLOOR, so gating it more finely would change nothing at all; and
- * `create`'s five venture kinds share one set of promise rules, which is the case the whole
- * mechanism must NOT be applied to.
+ * `VERB_GATED` is a real answer, not a to-do list, and five rows carry it. The interesting ones:
+ * `deliver`'s Levy half lives in a FLOOR block, so gating it more finely would change nothing at
+ * all; `create`'s five venture kinds share one set of promise rules, which is the case the whole
+ * mechanism must NOT be applied to; and `grant` is the control case that decided the shape of this
+ * change — one meaning, one gate, 74 characters.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 export const CONTRACT_MULTI_MEANING_VERBS: readonly {
   readonly verb: string;
-  /** The acts the engine can offer, in the spelling {@link actTokensOf} produces. */
+  /**
+   * The distinct meanings the engine can offer — in {@link discriminatorsOf}'s spelling where the
+   * affordance carries a discriminator this file reads, and in words where it does not.
+   *
+   * `publish_offer {cede}` and `grant {on_behalf_of}` are the second kind: real second meanings
+   * that turn on a key nothing here discriminates on. They are in the ledger because the ledger is
+   * the AUDIT — *which verbs mean more than one thing* — and it would be a worse document if it
+   * only listed the ones that happen to be machine-detectable.
+   */
   readonly acts: readonly string[];
   readonly gate: 'ACT_GATED' | 'VERB_GATED';
   readonly because: string;
@@ -1513,12 +1522,14 @@ export const CONTRACT_POSITIONS: readonly {
   // signature defect (an invariant whose subject cannot occur) inside the guard written to stop the
   // position list going stale.
   //
-  // It had gone stale. Requiring a **reachable** position to dominate, and sweeping the same
-  // 6-member 240-tick world the test already drives, **42 of 120 observations escaped** — and the
-  // fact every single escape carried was `endowmentWithheld`, which is true of essentially every
-  // member of every world this repo has run (D7) and which **no reachable row declared**. Also
-  // missing: a Commons member inside a syndicate, and a graduated landless member with a raid
-  // standing against it.
+  // It had gone stale, and not slightly. Requiring a **reachable** position to dominate, and
+  // sweeping the same 6-member 240-tick world the test already drives, **120 of 120 observations
+  // escaped** — every single one. So the unreachable ceiling row was doing 100% of the coverage and
+  // the four rows the budget is quoted by covered *nothing the world actually produces*.
+  //
+  // The fact every escape carried is `endowmentWithheld`, which is true of essentially every member
+  // of every world this repo has run (D7) and which no reachable row declared. Also missing: a
+  // Commons member inside a syndicate, and a graduated landless member with a raid standing.
   //
   // The five named rows above are deliberately NOT widened to fix that — they are quoted in
   // reports and changing what they mean would make every historical number incomparable. These two
