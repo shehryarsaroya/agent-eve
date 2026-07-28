@@ -44,6 +44,7 @@ import {
   type BattleLine,
   MAX_FRAME_CLAIM_LINES,
   type ClaimLine,
+  type SapLine,
   MAX_FRAME_WORKS_LINES,
   MAX_FRAME_MARKET_LINES,
   MAX_FRAME_SYNDICATE_LINES,
@@ -128,6 +129,15 @@ export interface FrameSource {
    * second source for. This file cannot know what is owed and must not guess.
    */
   readonly claimLines?: readonly ClaimLine[];
+  /**
+   * ★ THE SAPs (§16.6, A13), supplied by the campaign layer.
+   *
+   * Passed in for the reason every other line set is: a renderer that computed its own notches would
+   * be inventing a war's score, and a band drawn at the wall over a campaign that has not taken
+   * anything is a claim about a real agent's territory that a stranger has no second source for.
+   * This file cannot know how many breaches landed and must not guess.
+   */
+  readonly saps?: readonly SapLine[];
   readonly worksLines?: readonly WorksLine[];
   /**
    * ★ The market's prints (§10, A13), supplied by the market layer.
@@ -721,6 +731,11 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
           compareIds(a.good, b.good),
       )
       .slice(0, MAX_FRAME_MARKET_LINES),
+    // Already selected and ordered by `sapLinesFor` (significance first, then the cap), so this is a
+    // pass-through rather than a second sort. Two orderings of one line set is scar #5 with a war in
+    // it — and the module that owns the score is the one that knows which of two 1-1 campaigns is
+    // closer to deciding something.
+    saps: src.saps ?? [],
     claimLines: (src.claimLines ?? [])
       .slice()
       .sort(
@@ -754,6 +769,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     raidLines: [],
     battleLines: [],
     claimLines: [],
+    saps: [],
     worksLines: [],
     // Present and empty, not absent. To a client the two are the same, and "nothing has traded
     // yet" is a fact this artifact has to be able to state.

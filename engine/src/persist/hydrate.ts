@@ -217,6 +217,13 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // holding no claims, no arrears counters and no bond locks — every posted bond an orphan lock
   // INV-4 halts on, and every claim silently un-owned.
   'sovereignty',
+  // ── CAMPAIGNS (§16.6), AND THE MANIFEST ENTRY IS PART OF ADDING THE BOOK ──
+  //
+  // Not a follow-up. A restorable table missing from this list is a book an adoption silently drops
+  // while the gate reports nothing missing — which is exactly how `mint` and `delivery` were found,
+  // by an equivalence test, after adopt-plus-tail reproduced a checkpoint and then diverged on the
+  // first tick after it. A dropped campaign row is a live war with a bond locked inside it.
+  'campaign',
   // WORKS. Named in the same change that registered the table, for the reason the two
   // entries above learned the hard way. This book decides how many goods enter the world every
   // tick, so an adopted world that dropped it would come up with every place unworked — and the

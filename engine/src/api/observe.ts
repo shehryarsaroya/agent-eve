@@ -163,6 +163,15 @@ import {
   chargeConstituencyOf,
   type ClaimView,
 } from '../sovereignty/index.js';
+// Campaigns (§16.6). The constants the affordance publishes; the gates themselves live in
+// `src/campaign/` and the verbs run the same predicates this file probes through.
+import {
+  type CampaignView,
+  CAMPAIGN_SALVAGE_BPS,
+  LAST_DECLARE_PHASE,
+  MATERIEL_GOOD,
+  PULSE_MATERIEL_QTY,
+} from '../campaign/index.js';
 import { LEVY_BALLOT, LEVY_GOOD, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.js';
 import { syndicateAsPrincipal } from '../syndicate/book.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
@@ -215,6 +224,7 @@ import {
   MAX_HAUL_QTY,
   occupiesSystem,
   principalIsCommonsBound,
+  neighboursOf,
   tierOf,
   transitTicks,
 } from '../world/index.js';
@@ -450,6 +460,10 @@ export function buildObservation(input: ObserveInput): Observation {
   // two-homes shape of scar #1 with territory attached — and it is also four walks of the
   // claim book per observation.
   const myClaims = runtime.claimsFor(principal, tick);
+  // Read once and passed to both the `holding` block and the affordance layer. Two calls would be two
+  // force readings of the same war in one observation, and `readCampaignForce` is recomputed rather
+  // than cached — so they could disagree inside a single payload (scar #5's shape in a projection).
+  const myCampaigns = runtime.campaignsFor(principal, tick, MAX_LIST_ROWS);
   const mine = runtime.ventures.forPrincipal(principal);
 
   const solved = boardFor(runtime, principal, tick);
@@ -467,7 +481,8 @@ export function buildObservation(input: ObserveInput): Observation {
   // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
   // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick, board, solved.dropped, books, marketVenues)
+    ? affordancesFor(runtime, principal, tick, board, solved.dropped, myCampaigns,
+    books, marketVenues)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
   const exposure = runtime.ledger.encumbrances.cachedExposure(principal);
@@ -562,6 +577,15 @@ export function buildObservation(input: ObserveInput): Observation {
        * nothing here is a fact a stranger could not already count for itself.
        */
       aggression: runtime.aggressionFor(principal, tick),
+      // ── THE CAMPAIGN CLOCK (§16.6 MUST-8), PRESENT AT ZERO CAMPAIGNS AND AT FOUR ──
+      //
+      // On `header` for `raid_schedule`'s and `aggression`'s reason, and it is the same one:
+      // §17's observe budget is at ten of ten, `header` is where a world-wide published clock
+      // belongs, and a clock nobody can read is not a published clock. `aggressionFor`'s docblock
+      // records what the alternative cost — until §9's capacity became a standing block, the only
+      // mention of it in an observation was the `withheld` line that fires when it hits zero, so an
+      // agent learned the resource existed by exhausting it.
+      campaign_clock: runtime.campaignClock(tick),
       /**
        * §13B: the owner mandate is stable text, not per-tick state, so it is a free
        * read with a version announced here rather than a key of its own.
@@ -623,6 +647,14 @@ export function buildObservation(input: ObserveInput): Observation {
        * demand is a real row in `obligations.raid` instead, with its own deadline.
        */
       threats: claimThreats(myClaims),
+      // ── §12.1's RESERVED *"siege clock"* SLOT, FILLED ──────────────────────
+      //
+      // §12.1 lists `holding` as `state · threats · siege clock · upkeep_due`. The third of those
+      // had never been built, and campaigns are exactly it: a multi-Reckoning clock running against
+      // (or from) a principal's territory. So this spends **no** top-level key — the budget is at ten
+      // of ten and *"adding one means removing one"* — and it lands where the canon already put it.
+      campaigns: myCampaigns,
+      campaign_rules: runtime.campaignStatementFor(principal, tick),
       /**
        * §6.3's recurring upkeep, in **goods** — the Charge, summed over every claim.
        *
@@ -1355,6 +1387,14 @@ function affordancesFor(
   board: readonly BoardRow[],
   /** Eligible slots the board's own cap dropped. See {@link boardFor}. */
   boardDropped: number,
+  /**
+   * The campaign views the payload publishes, passed rather than recomputed.
+   *
+   * `books`'s reason exactly: `readCampaignForce` is recomputed on every read and never cached, so
+   * two calls in one observation could publish two force readings of the same war — the affordance
+   * offering a join on one number while `holding.campaigns[]` shows another, inside a single payload.
+   */
+  campaignViews: readonly CampaignView[],
   /** The same books the payload publishes, so a quote cannot disagree with the ladder. */
   books: readonly PublicBook[],
   /**
@@ -2586,6 +2626,8 @@ function affordancesFor(
   //     affordance order is a rules surface for exactly this reason: it is what an agent
   //     playing from the list actually does.
   //     ══════════════════════════════════════════════════════════════════════
+  // Campaign inputs, read once. Both go through the same predicates the verbs run — see 5e.
+  const campaignObjectives = runtime.campaignObjectivesFor(principal, tick);
   for (const claim of runtime.claimsOpenTo(principal, tick)) {
     if (claim.route === null) continue;
     if (claim.available_here < ANCHOR_QTY) continue;
@@ -2624,6 +2666,103 @@ function affordancesFor(
       expires_tick: claim.vulnerability.open ? claim.vulnerability.closes_tick : claim.deadline_tick,
       quote_id: quoteId(principal, tick, 'build', { kind: 'ANCHOR', system: claim.system }),
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 5e. CAMPAIGNS (§16.6) — declare one, take a side in one, or lift your own.
+  //
+  //     Ranked here, immediately after the anchor and before `post_bond`, and the position is a
+  //     decision rather than an accident. Above it are the acts with a clock somebody else set;
+  //     below it are the ones with none. A campaign has a clock — its next PULSE — but the clock is
+  //     a whole Reckoning away, so it must never outrank answering a standoff that resolves in 24
+  //     ticks. And it must never be FIRST for the reason `OFFERED_KINDS` records about `BUILD`: an
+  //     agent that copies its highest affordance verbatim would declare a war as its opening move.
+  //
+  //     **Every offer here is gated through `runtime.campaignDeclareRefusalFor` / the roster's own
+  //     `joinRefusal`** — the same functions the verbs run. AGT-S2 is the reason: an affordance the
+  //     engine then refuses costs an agent a real action every wake and, from the agent's side, is
+  //     indistinguishable from a counterparty having taken the slot.
+  // ══════════════════════════════════════════════════════════════════════════
+  for (const objective of campaignObjectives) {
+    const claimThere = runtime.sovereignty.liveAt(objective);
+    if (claimThere === null) continue;
+    eligible.push({
+      verb: 'build',
+      params: { kind: 'CAMPAIGN', system: objective },
+      cost: 1,
+      // The bond IS the worst case, exactly: it is what you lose if the campaign fails, and
+      // EXPOSURE is Σ open max_direct_loss and nothing else (§3). The materiel is a separate,
+      // recurring cost and is named in `what_it_forecloses` rather than folded in here — one number
+      // summing capital and goods would name a quantity of nothing in particular.
+      max_direct_loss: runtime.campaignBond,
+      max_contingent_liability: runtime.campaignBond,
+      what_it_forecloses:
+        `locks ${String(runtime.campaignBond)} of slashable capital and commits you to spending ` +
+        `${String(PULSE_MATERIEL_QTY)} of ${MATERIEL_GOOD} standing at YOUR OWN system, once per ` +
+        `Reckoning, against ${claimThere.claimant}'s claim on ${objective} (${claimThere.state}). It is the ` +
+        'ONLY way to take a claim from a holder that is paying its Charge. First pulse tick ' +
+        `${String(runtime.campaignFirstPulse(tick))} — never this Reckoning, so the defender gets a full ` +
+        'cycle of notice. Fail and the whole bond goes to it.',
+      // Not the pulse tick: the OFFER expires when the declaration window does, because a
+      // declaration made later this cycle still first pulses at the same tick. An `expires_tick` on
+      // the pulse would tell an agent it had a Reckoning to decide in when it has until the freeze.
+      expires_tick: tick - (tick % TICKS_PER_RECKONING) + LAST_DECLARE_PHASE,
+      quote_id: quoteId(principal, tick, 'build', { kind: 'CAMPAIGN', system: objective }),
+    });
+  }
+  for (const campaign of campaignViews) {
+    if (campaign.your_side === null) {
+      for (const side of ['DEFENDER', 'ATTACKER'] as const) {
+        // DEFENDER first, deliberately: the first offer of a verb is what survives truncation and
+        // what a blind copier takes, and the free side is the one that cannot cost an agent capital
+        // it did not understand it was risking.
+        if (runtime.campaignJoinRefusalFor(principal, campaign.campaign, side, tick) !== null) continue;
+        const stake = side === 'ATTACKER' ? runtime.campaignAllyStake : 0;
+        eligible.push({
+          verb: 'join',
+          // `system` is REQUIRED even though `vJoinCampaign` never reads it: `join` is classified
+          // HOSTILE, and the Commons floor refuses a hostile act that names no locatable place at all
+          // (A8 is checked at the door, before any handler). The `fight` affordance carries the same
+          // field for the same reason and says so. Found by the reachability test: without it the menu
+          // published a join the FLOOR refused, which is AGT-S2 with the refusal coming from a
+          // different door than the one the offer was gated on.
+          params: { campaign: campaign.campaign, side, system: campaign.objective },
+          cost: 1,
+          max_direct_loss: stake,
+          max_contingent_liability: stake,
+          what_it_forecloses:
+            side === 'ATTACKER'
+              ? `puts ${String(stake)} of slashable capital behind ${campaign.attacker}'s war on ` +
+                `${campaign.objective}, forfeit to ${campaign.defender} if the campaign fails. A ` +
+                'co-belligerent risks its own stake. Your IDLE hands standing at the objective count for ' +
+                'the attacker from the next pulse on — joining commits no hand by itself.'
+              : `puts you on ${campaign.defender}'s side at ${campaign.objective} at NO capital cost. Your ` +
+                'IDLE hands standing there count for the defence from the next pulse on, and ties go to the ' +
+                'defender. It also tags you to that side on the record for this campaign.',
+          expires_tick: campaign.next_pulse_tick ?? tick,
+          quote_id: quoteId(principal, tick, 'join', { campaign: campaign.campaign, side }),
+        });
+      }
+    }
+    if (campaign.your_side === 'ATTACKER' && runtime.campaignLiftRefusalFor(principal, campaign.campaign, tick) === null) {
+      eligible.push({
+        verb: 'withdraw',
+        params: { campaign: campaign.campaign },
+        // No `system`: `withdraw` is classified peaceful, and adding a target to a peaceful act would
+        // be a field with no meaning on the wire — an agent copying it would learn a rule that is not
+        // one.
+        cost: 1,
+        max_direct_loss: campaign.bond - Math.floor((campaign.bond * CAMPAIGN_SALVAGE_BPS) / 10_000),
+        max_contingent_liability: campaign.bond - Math.floor((campaign.bond * CAMPAIGN_SALVAGE_BPS) / 10_000),
+        what_it_forecloses:
+          `ends your campaign on ${campaign.objective} at ${campaign.legend}. ` +
+          `${String(CAMPAIGN_SALVAGE_BPS / 100)}% of the ${String(campaign.bond)} bond returns and the rest ` +
+          `goes to ${campaign.defender}. The claim is untouched and nothing you have spent on materiel comes ` +
+          'back. This is the cheaper of the two ways to lose.',
+        expires_tick: campaign.next_pulse_tick ?? tick,
+        quote_id: quoteId(principal, tick, 'withdraw', { campaign: campaign.campaign }),
+      });
+    }
   }
 
   // 5d. **Take a claim where you already stand**, and post the bond that backs it. No
@@ -3545,6 +3684,37 @@ function affordancesFor(
               `Reason(s): ${[...demandRefusedWhy].sort(cmp).join(' · ')}`),
     });
   }
+  // ── CAMPAIGNS, AND THIS BRANCH EXISTS BECAUSE `trade` DID NOT HAVE ONE ─────
+  //
+  // `withheld` closes with *"Nothing you were eligible for has been dropped without this count"*, and
+  // that promise was measured false once: `trade` was silent in 497 of 576 observations across a
+  // swept world, with a reachable venue in every one of them, and `agt-r5-reachability.test.ts` could
+  // not catch it because it asks a GLOBAL question ("is every live verb offered somewhere") that
+  // passes. The property that broke is per-observation. So a campaign that is not offered says which
+  // of the three walls it hit, every time.
+  if (campaignObjectives.length === 0 && campaignViews.every((c) => c.your_side === null)) {
+    const holdingNow = world.holdingByPrincipal.get(principal) === undefined ? null : holdingOf(world, principal);
+    reasons.push({
+      verb: 'build',
+      text:
+        'no CAMPAIGN is offered. A campaign is the only way to take a claim from a holder that is PAYING its ' +
+        'Charge, and it needs three things at once: your HOLDING standing outside the Commons, a CLAIMED ' +
+        `system ONE LANE from it, and ${String(PULSE_MATERIEL_QTY)} of ${MATERIEL_GOOD} already standing where ` +
+        'your holding is. ' +
+        (holdingNow === null
+          ? 'You have no holding at all'
+          : tierOf(world.map, holdingNow.system) === 'COMMONS'
+            ? `Your holding stands at ${holdingNow.system}, in the COMMONS, and a campaign's DEPOT may never be ` +
+              'there (§16.6 MUST-1): the one place nobody may attack cannot also be the staging ground for ' +
+              'attacking everywhere else. `graduate` moves it one lane outward'
+            : `Your holding stands at ${holdingNow.system}. Its lane-neighbours are ` +
+              `${neighboursOf(world.map, holdingNow.system).join(' · ')} — a campaign can only be aimed at one ` +
+              'of those, and only while somebody holds a SUPPLIED or STRAINED claim on it. A CONTESTED claim is ' +
+              'takeable free in the vulnerability window, so a campaign against one is refused rather than ' +
+              'offered'),
+    });
+  }
+
   if (boardDropped > 0) {
     // The list this sentence is about is `ventures.board[]` itself, one level above the
     // affordances. It slices at `MAX_LIST_ROWS`, and until this branch existed the payload

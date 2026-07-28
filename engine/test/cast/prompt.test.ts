@@ -655,19 +655,39 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ⚑ 678 is still not enough for a paragraph, and it is now not enough for a SENTENCE on every
     // position. The next block needs the ceiling looked at.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    // ── ★ 72,909 → 75,434 AT `RULES_VERSION` 23, AND THE MARGIN IS NOT THE FINDING ──
+    // ── ★ TWO FEATURES LANDED ON THIS NUMBER AND BOTH NOTES SURVIVE THE MERGE ──
     //
-    // +74 on every position (§12.1's DOSSIER log line) and +2,525 on the two that are party to a
-    // grant (§10's `### CLEARANCE and the DOSSIER`, the only `required` unit in that section).
-    // Against 120,000 the ANALYTIC margin is **44,566** and the REACHABLE margin is **52,152** —
-    // the first feature in this file's history to land without the margin being the headline, which
-    // is exactly what the 120,000 raise was for.
+    // **22 · campaigns** added ~3,543 to EVERY position, because §11E's rules are gated on `build`
+    // and `build` also raises a WORKS — so a Commons newcomer pays for a mechanic it cannot reach.
+    // That is master's finding, it is recorded in the measured table below in campaigns' own words,
+    // and it is being fixed properly with a kind-aware selector rather than by trimming a rule.
     //
-    // The split is worth reading as the selector working rather than as a number: a newcomer pays
-    // 74 characters for an observation key it can read, and nothing at all for a mechanic it has no
-    // grant to reach. The 2,525 is charged only to members who are on one side of a grant, which is
-    // the population that can be hurt by not knowing it.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(75_434);
+    // **23 · the clearance** added 74 to every position (§12.1's DOSSIER log line) and 2,525 to the
+    // two that are party to a grant (§10's `### CLEARANCE and the DOSSIER`). It is deliberately NOT
+    // an instance of campaigns' defect and the contrast is the useful part: the unit is gated on
+    // `grant`/`revoke`/`audit` plus `holdsGrant`, so a newcomer pays 74 characters for an
+    // observation key it can read and **nothing** for the mechanic. The gate is doing exactly what
+    // campaigns' `build` gate cannot.
+    //
+    // ── ★ RE-MEASURED, AND THE TWO DELTAS ADD EXACTLY — WHICH IS THE EVIDENCE ──
+    //
+    // Every number here was taken from the engine after the merge rather than summed, because the
+    // selector trades CONTEXT for rules and two independent measurements need not compose. They do,
+    // to the character, on all five positions:
+    //
+    //     baseline (f2bd06c)   39,489 · 47,877 · 48,750 · 65,323 · 72,909
+    //     + campaigns (22)     +3,543  +3,543  +3,543  +3,543  +3,985
+    //     + clearance (23)        +74     +74     +74  +2,525  +2,525
+    //     = merged             43,106 · 51,494 · 52,367 · 71,391 · 79,419   ← measured, not added
+    //
+    // **That the sums hold is a fact about the budget, not a coincidence.** Exact composition means
+    // the selector dropped no CONTEXT for either feature — i.e. nothing is being squeezed at
+    // 120,000, so `overBudget` is still a signal rather than the normal state. The day these stop
+    // adding is the day the bar is binding again, and that is the thing to watch for.
+    //
+    // Analytic margin 120,000 − 79,419 = **40,581**. Reachable margin 120,000 − 71,391 = **48,609**,
+    // against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(79_419);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -697,7 +717,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // +116 at 20: the same paragraph, corrected. The floor now falls and is charged per principal,
     // so the two clauses that said otherwise had to go — a rules surface describing the old
     // behaviour is scar #1, and this one is published to every agent in the world.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(67_848);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(71_391);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1253,17 +1273,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       45: 'forty-five',
       46: 'forty-six',
       47: 'forty-seven',
-      // ★ 48 at `RULES_VERSION` 23: §10's `### CLEARANCE and the DOSSIER` block. It is the only
-      // `required` unit in §10, and the reason is in its catalog entry — a loss LIMIT is bounded
-      // and expires, while a clearance is permanent and survives revocation, so a grantor that
-      // signs one without this section has accepted an irreversible exposure it was never told
-      // about.
-      48: 'forty-eight',
+      53: 'fifty-three',
+      // ★ 54 after the merge: campaigns' six §11E units and the clearance's one §10 unit both
+      // landed. `CONTRACT_CATALOG.length` is the only authority here — this map exists so the
+      // PROSE in prompt.ts cannot drift from it, and both features moved the prose.
+      54: 'fifty-four',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(48);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(54);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 48],
+      spelled[n as 54],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1322,8 +1341,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //
       // The deep section still arrives the two ways it should: through `post_bond`, and through
       // `required: holdsClaim` once territory is actually held.
+      // ── §11E's SIX UNITS ARRIVE HERE, AND THREE OF THEM ARRIVE ON `build` ──
+      //
+      // That is the campaign section's whole cost, made visible in exactly the place this map exists to
+      // make it visible: `build` also raises a WORKS, so a Commons newcomer pays for war rules it can
+      // never use. The measured table below carries the number (+3,543 on every position) and the
+      // argument for reporting it rather than trimming it.
       build:
-        '`build` is THREE different acts — read the `kind` + Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
+        '`build` is FOUR different acts — read the `kind` + Building one — `build` `{"kind":"WORKS","system":"<id>"}` + (preamble) + Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}` + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one',
       claim: '(preamble)',
       create: 'Every promise has two halves + Choosing the proportion — `elective_bps` on `create`',
       deliver: 'The Levy — nobody sits this out',
@@ -1341,7 +1366,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       graduate: '`graduate` — leaving, and it is one-way',
       grant:
         'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
-      join: 'Answering either one — `yield` · `fight` · join, or say nothing',
+      join:
+        'The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}` + Answering either one — `yield` · `fight` · join, or say nothing',
       message: 'Negotiating',
       // ★ `haul` — the canon verb whose step arrived with the fourth good. It is claimed by ONE
       // block on purpose: the block states a rule about geography (the good is refined at one tier
@@ -1360,7 +1386,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         '(preamble) + ★ What you may spend, and the one rule that decides it — `market.transferable_minor`',
       vote:
         'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs + The Levy — nobody sits this out',
-      withdraw: 'Leaving costs a Reckoning of notice',
+      withdraw:
+        'Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one + Leaving costs a Reckoning of notice',
       yield: 'Answering either one — `yield` · `fight` · join, or say nothing',
     });
     // And no live verb may end up with an empty claim, which is the failure the map makes visible.
@@ -1457,18 +1484,34 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      // ── ★ +74 ON EVERY ROW, AND +2,525 ON THE TWO THAT HOLD A GRANT (`RULES_VERSION` 23) ──
+      // ── ★ CAMPAIGNS' NOTE, KEPT VERBATIM, BECAUSE THE DEFECT IT NAMES IS STILL OPEN ──
       //
-      // The +74 is one line of the §12.1 observe block — `about_me[] · i_hold[] · window{}`, the
-      // DOSSIER log — which every position pulls because every position reads the observation.
-      // The +2,525 is §10's new `### CLEARANCE and the DOSSIER` block, and it lands only on the
-      // two positions that are party to a grant. That split is the selector working: the newcomer
-      // and the mid-game Commons member pay 74 characters for a key they can read, and nothing for
-      // a mechanic they cannot yet reach.
-      39_563, // a newcomer on its first wake            (+74: the DOSSIER log line in §12.1)
-      47_951, // mid-game in the Commons                 (+74: same)
-      48_824, // about to take territory                 (+74: same)
-      67_848, // a claimant in trouble — the largest REACHABLE position (+74 + 2,525 at 23)
+      // §11E's six units are `verbs`-gated RULES, and three of them are gated on **`build`** — which
+      // every one of these positions is offered, including a newcomer's, because `build` also raises a
+      // WORKS. So the campaign section is paid for by a Commons newcomer that can never declare one.
+      //
+      // Reported rather than trimmed, per `MAX_CONTRACT_CHARS`'s own governance note: *"an author who
+      // cannot fit inside a quota reports the measurement instead of trimming a rule or moving the
+      // bar."* What would fix it properly is a `ContractSituation` field ("could declare a campaign")
+      // rather than the `build` verb, which is a change to the catalog's own shape and belongs to
+      // whoever owns that budget. **That fix is in progress as of the merge.**
+      //
+      // ── ★ AND THE CLEARANCE IS THE CONTROL CASE FOR IT ──────────────────────
+      //
+      // `RULES_VERSION` 23 added +74 to every row and +2,525 to the two that hold a grant. The 74 is
+      // one line of the §12.1 observe block, which every position pulls because every position reads
+      // the observation. The 2,525 is §10's `### CLEARANCE and the DOSSIER`, gated on
+      // `grant`/`revoke`/`audit` plus `holdsGrant` — so it lands on the two positions that are party
+      // to a grant and on neither of the first two. That is the same catalog, the same gating
+      // mechanism, and the opposite outcome: the difference is that `grant` means one thing and
+      // `build` means four. Read the two deltas side by side before touching either gate.
+      //
+      // Measured after the merge, not summed — though they happen to sum exactly, which is the
+      // proof that neither feature cost the other any CONTEXT. See the ceiling test for the table.
+      43_106, // a newcomer on its first wake            (+3,543 at 22, +74 at 23)
+      51_494, // mid-game in the Commons                 (same)
+      52_367, // about to take territory                 (same)
+      71_391, // a claimant in trouble — the largest REACHABLE position (+3,543 at 22, +74+2,525 at 23)
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
@@ -1495,13 +1538,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only, and no REACHABLE position was ever being squeezed.** Had a reachable row moved here,
       // the raise would have been silently restoring rules an agent had been denied, which is a
       // different and much worse finding.
-      // ── ★ 72,909 → 75,434 AT `RULES_VERSION` 23 ─────────────────────────────
+      // ── ★ 72,909 → 76,894 at 22 → 79,419 at 23 ─────────────────────────────
       //
-      // +74 shared and +2,525 for the clearance block. Against `MAX_CONTRACT_CHARS` = 120,000 the
-      // analytic margin is **44,566** and the REACHABLE margin is **52,152** — the first time in
-      // this file's history that a feature has landed without the margin being the finding. The
-      // 120,000 raise is what bought that, and this is the measurement that spends some of it.
-      75_434,
+      // Both features spent here and neither had to trim a rule. Against 120,000 the analytic margin
+      // is 40,581, and for the first time in this file's history two consecutive features landed
+      // without the margin being the headline — which is exactly what the raise bought.
+      79_419,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

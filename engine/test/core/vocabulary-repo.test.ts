@@ -76,12 +76,20 @@ const SANCTIONED = new Map<string, string>([
   // it against — an uncanonised word is unpoliced by construction. Canonising it is what made the
   // collision visible, and it was visible within one test run.
   ['VentureKind.HAUL', "one concept bought two ways — you carry it, or you hire a CARRIER to; §3's row sanctions both, exactly as RAID's does"],
-  // ★ Added with the CLEARANCE (`RULES_VERSION` 23). §3 defines STORES as "assets, inventory,
-  // balances"; `AccountKind.STORES` is the account that HOLDS them and `Compartment.STORES` is the
-  // SIGHT of that same thing — one concept, two facets, and the compartment is named after the thing
-  // it reveals precisely so an agent reading `clearance: ["STORES"]` knows exactly which figures it
-  // is being handed. Inventing a second word for "your stores, but seen" would be the §3 error run
-  // backwards: two words for one concept, teaching a distinction that does not exist.
+  // ★ Added with CAMPAIGNS (`RULES_VERSION` 22). Master's two, kept verbatim.
+  ['PulseOutcome.BREACH', "§3 canonises BREACH as a PULSE the attacker won, and this union IS that concept — the row's 'never means' column forecloses a broken COMPACT (a default) and §9A's hull breach"],
+  ['outcome_if_pulsed_now.BREACH', 'the same PulseOutcome value published to an agent before it commits hands; a second word for it would be scar #1 with territory at stake'],
+  // ★ Added with the CLEARANCE (`RULES_VERSION` 23), beneath campaigns' because it landed after them.
+  // §3 defines STORES as "assets, inventory, balances"; `AccountKind.STORES` is the account that
+  // HOLDS them and `Compartment.STORES` is the SIGHT of that same thing — one concept, two facets,
+  // and the compartment is named after the thing it reveals precisely so an agent reading
+  // `clearance: ["STORES"]` knows exactly which figures it is being handed. Inventing a second word
+  // for "your stores, but seen" would be the §3 error run backwards: two words for one concept,
+  // teaching a distinction that does not exist.
+  //
+  // The two sets do not interact — `BREACH` is a pulse outcome and `STORES` is a compartment — and
+  // that is exactly why BOTH had to survive the merge. An uncanonised word is unpoliced by
+  // construction, so dropping either set would silently un-police it.
   ['Compartment.STORES', "§3's STORES is 'assets, inventory, balances'; this compartment is the SIGHT of exactly that, and AccountKind.STORES is the account that holds it — one concept, two facets"],
 ]);
 
@@ -91,6 +99,12 @@ const SANCTIONED = new Map<string, string>([
  * concept — not merely that both spellings look reasonable.
  */
 const SHARED_MEMBERS = new Map<string, string>([
+  ['CampaignSide+CampaignStanding.ATTACKER',
+    'one side of one war, named once as the side and once as "which side the reader is on"; CampaignStanding is CampaignSide plus null plus the two ALLY_ prefixes'],
+  ['CampaignSide+CampaignStanding+RaidSide.DEFENDER',
+    'all three mean "the party being attacked" — one role in three horizons (a 24-tick standoff, a multi-Reckoning campaign, and a reader\'s own place in one), never three concepts'],
+  ['CampaignState+PulseOutcome.STARVED',
+    'a pulse that found no MATERIEL and a campaign that ran out of it are cause and consequence of one fact; naming the ending anything else would make the record say the war ended for a different reason than the pulse did'],
   ['DecisionSource+IntentState+VentureState.LIVE',
     'all three mean "currently active" — one adjective applied to three subjects, not three concepts'],
   ['HandState+LotState.IN_TRANSIT',
