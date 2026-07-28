@@ -179,7 +179,13 @@ describe('the compile-time coverage proofs are live', () => {
       _raidStateComplete,
       _claimStateComplete,
       _engagementStateComplete,
-    ]).toEqual(new Array<boolean>(13).fill(true));
+      // Campaigns' two unions. Listed here as well as declared above, because the declaration alone is
+      // a compile-time proof that lint correctly calls dead — and a `Covers<>` nobody consumes is a
+      // proof that can be deleted without any test going red, which is this repo's signature defect
+      // wearing a type's clothes.
+      _campaignStateComplete,
+      _pulseOutcomeComplete,
+    ]).toEqual(new Array<boolean>(15).fill(true));
   });
 
   it('the enum list covers every string-literal union that core/types.ts declares', () => {
