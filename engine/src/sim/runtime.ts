@@ -142,6 +142,7 @@ import {
   DefaultRegister,
   HaltController,
   attributionStateTable,
+  halt,
   type InvariantInputs,
 } from '../invariants/index.js';
 import {
@@ -175,7 +176,7 @@ import { say } from '../say/say.js';
 import { sign } from '../venture/sign.js';
 import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
-import { refine } from '../works/refine.js';
+import { refine, refineKindOf, REFINE_KINDS } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
@@ -431,17 +432,24 @@ import {
   enroll,
   graduateHolding,
   graduationDestinations,
+  checkCargoMirror,
   graduationRejection,
   handsOf,
+  haul,
+  haulQuotes,
   holdingOf,
   isPresent,
+  landArrivedCargo,
   launchMap,
   loseHand,
+  neighboursOf,
   principalIsCommonsBound,
   reject,
   releaseHand,
   tierOf,
   type Enrolment,
+  type HaulPort,
+  type HaulQuote,
   type Rejection,
   type WorldResult,
   type WorldState,
@@ -984,7 +992,83 @@ import {
  * The integer is a shared resource (see 11's note): this branch was told it owned 16 before it
  * started, with 15 the latest taken and live.
  */
-export const RULES_VERSION = 16;
+/**
+ * ★ Bumped 16 → **18**, because **the world has a fourth good, a way to carry it, and two gates
+ * priced in it** — `works/params.ts:ALLOY_GOOD`, the `haul` verb, and the manufactured half of an
+ * ANCHOR and of a crossing beyond the Commons.
+ *
+ * ── WHY 18 AND NOT 17, WHICH IS 11'S RULE WORKING FOR THE THIRD TIME ─────────
+ *
+ * `RULES_VERSION` is a **shared resource**, exactly like the working tree in HARD RULE 7, and 11's
+ * note records what happens when two agents each take the next integer: the live record briefly
+ * carried snapshots stamped `10` produced by two different rule sets, and *a version stamp whose
+ * meaning depends on which deploy wrote it is not a version stamp.* This branch ran concurrently with
+ * one landing 17 and was told to take 18 before it started, with 16 the latest live. Two rule sets,
+ * two integers, no integer with two meanings — arbitrated in advance, which is cheaper than
+ * reconstructing it afterwards.
+ *
+ * ## What changes
+ *
+ *   1. **A fourth good**, `alloy`, refined from `ore` by `refine {kind:"ALLOY"}` at a **COMMONS system
+ *      only**. New goods rows in the lot table; no new table.
+ *   2. **`refine` takes a `kind`.** Absent means `RATION` — the historical meaning — and an
+ *      unrecognised spelling is refused by name rather than defaulted. The `RATION` path keeps its
+ *      **event ids byte-identical** (`refine.ts` explains the empty tag), so no past `refine`
+ *      recomputes differently.
+ *   3. **`haul` is live.** A canon verb from SPEC §12.2 that `VERB_ARRIVES_AT` filed under *"step 11
+ *      (markets and the production graph)"*; `audit:budgets` read 40/40 before and reads 40/40 after.
+ *      Two new event kinds (`haul.departed` PUBLIC, `haul.landed` SENSED) and a **MOVE phase handler**
+ *      that lands arrived cargo.
+ *   4. **`hand.cargo` and `LotState.IN_TRANSIT` acquire their first non-empty values ever.** Both are
+ *      already captured and restored, so the snapshot *shape* is unchanged — what changes is that a
+ *      field which was `[]` in every capture this world has written can now be non-empty.
+ *   5. **`Ledger.splitLot`** — a new primitive, no postings (no value moves; same argument as
+ *      `relocate` one line above it).
+ *   6. **INV-W7** asserts the manifest against the in-transit lot total, and **HALTS** on a
+ *      difference.
+ *   7. **Two gates gain a component.** `build {kind:"ANCHOR"}` costs `ALLOY_ANCHOR_QTY` on top of
+ *      `ANCHOR_QTY`; a `graduate` whose origin is **not** COMMONS costs `ALLOY_GRADUATION_QTY`. A
+ *      crossing out of the Commons is unchanged, and `burnGoodsAt` walks no lots when the want is
+ *      zero, so a first crossing writes exactly the postings it wrote at 16.
+ *   8. **The heuristic cast gains five branches** (`refine {kind:"ALLOY"}`, an ASK, a BID, `haul`,
+ *      and an alloy-aware claim gate), so a bots-only world diverges from the first tick a Commons
+ *      member has spare ore.
+ *
+ * **Nothing is added to or removed from the RNG.** Every new branch is arithmetic over published
+ * figures: the alloy refine is a threshold, the market orders price off `LEVY_UNIT_MINOR` and the
+ * published reference, the haul is a route walk, and the claim gate is a comparison. The per-tick cast
+ * stream reaches the existing `syndicateChance` / `graduateChance` / `worksChance` / `claimChance`
+ * draws in the same order on every tick the new branches decline. Registering a handler on the
+ * **existing** MOVE slot changes no `Rng.derive(phase)` label — `tick/phases.ts` says at length why
+ * adding a phase would.
+ *
+ * ── THE DIVERGENCE SIGNATURE ─────────────────────────────────────────────────
+ *
+ * Two shapes, and both are nameable:
+ *
+ *   - **The first `build {kind:"ANCHOR"}` in the journal**, because `claimRejection` now has one more
+ *      clause and no world before this had a unit of alloy — so every historical anchor was raised by
+ *      a principal holding **zero**, and every one of them is now refused. This is the wide one, and
+ *      it is unavoidable: a gate that did not exist cannot have been satisfied retroactively.
+ *   - **The first `graduate` from a non-COMMONS seat**, for the same reason.
+ *
+ * `refine`, `haul`, `splitLot` and INV-W7 contribute **nothing**: `haul` has never been submitted (it
+ * was refused at the HTTP boundary), `kind` has never been sent, and the mirror compares two totals
+ * that were both zero. So the preflight is expected to name **the first anchor or the first deep
+ * crossing, whichever is earlier**, and `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` takes that tick — as at
+ * 1 → 2, 4 → 5, 5 → 6, 6 → 7, 7 → 8, 8 → 9, 13 → 14 and 14 → 15.
+ *
+ * ── AND IT IS A BALANCE CHANGE, WHICH IS THE POINT ───────────────────────────
+ *
+ * A claim now needs a good the claimant cannot make, so `claims` and `rent` are the two columns at
+ * risk and the sweep is the argument for {@link import('../works/params.js').ALLOY_ANCHOR_QTY}. The
+ * Levy is deliberately untouched — all four obligation constants still name `ration` and
+ * `test/core/goods-are-independent.test.ts` still passes — so `levyShort` and the red tribute line
+ * count, the only two meters that survive a null control, should not move at all. If they do, the
+ * fork between rations and alloy is taking ore the tribute needed, and the ratio in `ALLOY_IN_QTY` is
+ * wrong.
+ */
+export const RULES_VERSION = 18;
 
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
@@ -1053,8 +1137,16 @@ import { produce as produceNow } from '../works/produce.js';
 import { checkWorks } from '../works/invariants.js';
 import { rentApplies, rentOn, type RentTerms } from '../works/rent.js';
 import {
+  ALLOY_ANCHOR_QTY,
+  ALLOY_GOOD,
+  ALLOY_IN_QTY,
+  ALLOY_OUT_QTY,
+  ALLOY_STATEMENT,
+  ALLOY_TIER,
   FUEL_GOOD,
   FUEL_YIELD_PER_TICK,
+  REFINE_IN_QTY,
+  REFINE_OUT_QTY,
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
   WORKS_GOOD,
@@ -1517,7 +1609,16 @@ export interface GraduationQuote {
   readonly open: readonly SystemId[];
   readonly upkeepMinor: Minor;
   readonly upkeepQty: Qty;
-  /** The manufactured good the upkeep is paid in. Named here, not in the world layer. */
+  /**
+   * The good the *rations* half of the upkeep is paid in. Named here, not in the world layer.
+   *
+   * ⚠ **This comment used to read "the manufactured good the upkeep is paid in", and it was wrong** —
+   * it names `LEVY_GOOD`, which is refined 1:1 from ore anywhere on the map and is the opposite of a
+   * manufactured good. That mattered because §10.1 and `commonsBoundRejection` both promise the
+   * crossing takes "currency plus **manufactured** goods", so the field name, the doc and the two
+   * rules surfaces disagreed while each read correctly alone (scar #1). {@link alloyGood} is the
+   * manufactured half; this one is the ration half, and both are now named for what they are.
+   */
   readonly good: GoodId;
   /** Free (unlocked) currency in STORES right now. */
   readonly freeMinor: Minor;
@@ -2475,6 +2576,20 @@ export class Runtime {
         // left). The phase was an explicit no-op hook from commit #1 precisely so that
         // filling it would shift no other phase's seeded sub-stream — cashed here, and
         // no other phase moved.
+        // ── MOVE, AND THE SLOT IS THE RULE ─────────────────────────────────
+        //
+        // The tick loop resolves arrivals in this phase and then runs this handler, so cargo lands in
+        // the same phase as the hand carrying it. §15.2 puts MOVE before MARKETS *"so a hand that
+        // arrived this tick can trade where it arrived"* — and if cargo landed later, the published
+        // ETA would be exact for hands and a tick optimistic for goods. Two different answers to
+        // "when does my convoy get there" is scar #1 on the most quantitative surface in the game.
+        //
+        // Adding a *phase* would change the set of `Rng.derive(phase)` labels and therefore every
+        // seeded draw in the world (`tick/phases.ts` says so at length). Registering a handler on an
+        // existing slot changes none of them, and this handler draws nothing at all.
+        MOVE: (ctx) => {
+          this.landCargoNow(ctx);
+        },
         PREDATE: (ctx) => {
           // ── BATTLES BEFORE RAID RESOLUTION, AND THE ORDER IS THE WHOLE COUPLING ──
           //
@@ -3657,16 +3772,42 @@ export class Runtime {
         const holdingId = world.holdingByPrincipal.get(hand.principal);
         if (holdingId === undefined) return false;
         try {
+          const where = hand.destination ?? hand.location;
           const loss = loseHand(hand, routTick, rng, holdingOf(world, hand.principal).system);
-          if (loss.lostCargo.size > 0) {
-            // Goods on a hand are one of INV-2's conservation terms. Nothing in this
-            // build loads a hand (there is no `haul` verb yet), so this is unreachable
-            // today — and it is reported rather than dropped, because silently dropping
-            // it would make supply stop balancing with no event to point at.
-            faults.push(
-              `hand ${handId} was routed carrying cargo, which this build has no lot behind; ` +
-                `supply will not balance until the haul path retires it`,
-            );
+          // ── §10.1 #3: "RAIDS DESTROY OR RELOCATE CARGO", AND THIS IS THE DESTROY ──
+          //
+          // This branch used to be a fault that said *"Nothing in this build loads a hand (there is no
+          // `haul` verb yet), so this is unreachable today — and it is reported rather than dropped,
+          // because silently dropping it would make supply stop balancing with no event to point at."*
+          // It is reachable now, and the prediction was exactly right: `INV-W7` compares the manifest
+          // against the in-transit lot total and HALTS on a difference, so dropping the cargo here
+          // would stop the world on the first convoy anyone ever routed.
+          //
+          // `loseHand` clears the manifest, so the lots must be retired in the same step. Read
+          // `hand.destination` BEFORE the call: `loseHand` nulls it, and an in-transit lot is located
+          // at where it was *going*, never at where it was intercepted.
+          for (const [good, amount] of [...loss.lostCargo].sort((a, b) => compareIds(a[0], b[0]))) {
+            let left: number = amount;
+            for (const lot of this.haulPort(routTick).inTransitTo(hand.principal, where, good)) {
+              if (left <= 0) break;
+              const portion = Math.min(left, lot.qty);
+              try {
+                ledger.destroyGoods({
+                  eventId: `haul.lost:${handId}:${String(routTick)}:${lot.id}` as EventId,
+                  tick: routTick,
+                  sink: GOODS_SINK.LOSS,
+                  lotId: lot.id as LotId,
+                  qty: qty(portion),
+                });
+              } catch (inner: unknown) {
+                faults.push(
+                  `cargo lost with hand ${handId} could not be retired (${describeError(inner)}); ` +
+                    'INV-W7 will halt the tick rather than let the manifest and the ledger disagree',
+                );
+                break;
+              }
+              left -= portion;
+            }
           }
           return true;
         } catch (error: unknown) {
@@ -3684,6 +3825,50 @@ export class Runtime {
         return qty(total);
       },
     };
+  }
+
+  /**
+   * The `MOVE` phase's second half: land the cargo of every hand that finished travelling.
+   *
+   * One step per hand, so a world full of convoys pays for the sweep out of the tick's step budget
+   * rather than silently exceeding it (DET-9). Nothing here draws from the RNG.
+   */
+  private landCargoNow(ctx: PhaseContext): void {
+    ctx.step(this.world.hands.size);
+    const landed = landArrivedCargo(this.haulPort(ctx.tick), this.world);
+    for (const one of landed) {
+      // ── THE ARRIVAL IS `PUBLIC`, THE MANIFEST IS `SENSED` ───────────────────
+      //
+      // Same split as `haul.departed` and for the same §11.2 reason, with one difference that matters:
+      // the cargo has *stopped*, so its quantity is now part of the stores standing at a place and is
+      // `SENSED` rather than secret. It is published on a `SENSED` row so a principal with a hand in
+      // range — or one that bought the intel — can read it, and nobody else can. Putting it on the
+      // `PUBLIC` row would hand every viewer a manifest and delete the reason reconnaissance pays.
+      this.emitRow({
+        tick: ctx.tick,
+        kind: 'haul.landed',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: one.principal,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: 'haul::' + one.hand,
+        parentEventId: null,
+        isPublic: false,
+        publicAt: null,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: null,
+        visibility: 'SENSED',
+        // `SELF` and nothing else at admission. §11.2 grows a `SENSED` audience *after the fact* —
+        // "whoever has a hand in range, or bought the intel" — and `AudienceRow` carries its own
+        // `addedAtTick` precisely so that growth is dated. Enumerating in-range principals here would
+        // freeze the readership at the landing tick and would also have to decide what "in range"
+        // means, which is the sensing layer's question and not this handler's.
+        audience: [{ principal: one.principal, basis: 'SELF' }],
+        payload: { hand: one.hand, at: one.at, good: one.good, qty: one.qty },
+      });
+    }
   }
 
   /**
@@ -4768,6 +4953,15 @@ export class Runtime {
     const guarded = (h: VerbHandler): VerbHandler => (ctx, req) => this.unhonouredOnBehalf(req) ?? h(ctx, req);
     const table: Readonly<Record<string, VerbHandler>> = {
       refine: (ctx, req) => this.committing(ctx) ?? this.vRefine(ctx, req),
+      // ── `haul` SPENDS NO VERB: IT IS ONE OF THE 40 AND ITS STEP HAS ARRIVED ──
+      //
+      // `api/verbs.ts:VERB_ARRIVES_AT` filed it under "step 11 (markets and the production graph)"
+      // and this is that step, so `audit:budgets` reads 40/40 before and after. Behind `committing`
+      // for `trade`'s reason plus its own: a haul moves goods out of the place a settling assessment
+      // is payable at, and `reckoning/driver.ts:VERIFY_INPUTS` halts on any difference in the figures
+      // it froze — so a convoy departing inside the freeze would pause a healthy world on the one
+      // night that has an audience (A14).
+      haul: (ctx, req) => this.committing(ctx) ?? this.vHaul(ctx, req),
       create: (ctx, req) =>
         this.committing(ctx) ??
         this.sealCompliance(ctx, req) ??
@@ -5898,9 +6092,29 @@ export class Runtime {
   private vRefine(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const named = readString(req.params, ['system', 'at', 'place']) as SystemId | null;
     const system = named ?? holdingOf(this.world, req.principal).system;
+    // ── THE UNKNOWN KIND IS REFUSED BY NAME, NEVER DEFAULTED ──────────────────
+    //
+    // `refineKindOf` returns `'RATION'` for an ABSENT kind (the historical meaning, so no past
+    // action is reclassified) and `null` for one it does not recognise. Defaulting a typo to rations
+    // would consume ore into the wrong good and report success — the `graduate` defect D22 found,
+    // where a dropped param irreversibly graduated the wrong principal.
+    const namedKind = readString(req.params, ['kind', 'recipe', 'into']);
+    const kind = refineKindOf(namedKind);
+    if (kind === null) {
+      return reject(
+        'A2',
+        `refine has no kind "${String(namedKind)}". The recipes are ` +
+          `${REFINE_KINDS.map((k) => `{kind:"${k}"}`).join(' · ')} — ` +
+          `RATION is ${String(REFINE_IN_QTY)} ${WORKS_YIELD_GOOD} for ${String(REFINE_OUT_QTY)} ` +
+          `${WORKS_GOOD} anywhere, ALLOY is ${String(ALLOY_IN_QTY)} ${WORKS_YIELD_GOOD} for ` +
+          `${String(ALLOY_OUT_QTY)} ${ALLOY_GOOD} and runs ONLY at a ${ALLOY_TIER} system. ` +
+          'Omitting the kind means RATION.',
+      );
+    }
     return refine(
       {
         lotsOf: (p, sys, good) => this.goodLotsAt(p, sys, good),
+        tierOf: (sys) => this.world.map.systems.get(sys)?.tier ?? null,
         destroy: (a) => {
           this.ledger.destroyGoods({
             eventId: a.eventId,
@@ -5927,7 +6141,114 @@ export class Runtime {
       system,
       ctx.tick,
       readInt(req.params, ['qty', 'quantity', 'amount']),
+      kind,
     );
+  }
+
+  /**
+   * Everything `haul` reads and writes, and nothing else.
+   *
+   * The lot half is `goodLotsAt` — the same query `refine`, the Charge and the Levy already share, so
+   * "which lots may I spend here" keeps having one home (scar #5's shape when it has two).
+   */
+  private haulPort(tick: number): HaulPort {
+    return {
+      lotsOf: (p, sys, good) => this.goodLotsAt(p, sys, good),
+      split: (a) =>
+        this.ledger.splitLot({
+          lotId: a.lotId as LotId,
+          qty: a.qty,
+          // The lot id is derived from this event id and the index, so two lots split in one action
+          // get distinct ids and a replay reproduces both without a counter to snapshot (DET-3).
+          eventId: `haul.split:${String(tick)}:${a.lotId}` as EventId,
+          indexInEvent: a.index,
+          tick,
+        }),
+      depart: (lotIdent, to) => {
+        // Both fields in one call: `location` becomes the DESTINATION immediately so nothing at the
+        // origin can spend goods that have left, and `IN_TRANSIT` keeps them out of every
+        // `AVAILABLE` filter in the engine so nothing at the destination can spend them early. Either
+        // half alone is a hole — location-only lets the buyer spend cargo mid-lane, state-only leaves
+        // it spendable at the origin it is no longer at.
+        this.ledger.relocate(lotIdent as LotId, { location: to, state: 'IN_TRANSIT' });
+      },
+      land: (lotIdent) => {
+        this.ledger.relocate(lotIdent as LotId, { state: 'AVAILABLE' });
+      },
+      inTransitTo: (p, to, good) => {
+        const account = storesAccount(p);
+        if (this.ledger.account(account) === undefined) return [];
+        return this.ledger
+          .lotsInAccount(account)
+          .filter(
+            (lot) =>
+              lot.good === good &&
+              lot.qty > 0 &&
+              lot.state === 'IN_TRANSIT' &&
+              lot.location === to,
+          )
+          .sort((a, b) => compareIds(a.id, b.id))
+          .map((lot) => ({ id: lot.id, qty: lot.qty }));
+      },
+    };
+  }
+
+  /**
+   * `haul` — §10.2's *"everything is located"* made into a decision.
+   *
+   * Behind `committing` for `trade`'s reason and one of its own: a haul moves goods out of the place
+   * a settling assessment is payable at, and `reckoning/driver.ts:VERIFY_INPUTS` re-reads the figures
+   * it froze and halts on any difference. A convoy departing inside the freeze would pause a healthy
+   * world on the one night that has an audience (A14).
+   */
+  private vHaul(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const plan = haul(
+      this.haulPort(ctx.tick),
+      this.world,
+      req.principal,
+      {
+        hand: readString(req.params, ['hand', 'hand_id', 'handId']) as HandId | null,
+        to: readString(req.params, ['to', 'destination', 'system']) as SystemId | null,
+        good: readString(req.params, ['good', 'commodity']) as GoodId | null,
+        qty: readInt(req.params, ['qty', 'quantity', 'amount', 'units']),
+      },
+      ctx.tick,
+    );
+    if (!plan.ok) return plan;
+    // ── `PUBLIC` FOR THE CONVOY, AND THE MANIFEST IS NOT ON IT ────────────────
+    //
+    // §11.2 gives `PUBLIC` to "movement on public lanes... because a convoy is the map's motion and
+    // the map is the show" and `SENSED` to "cargo contents and hold values" — *a ship at sea is
+    // visible; its manifest is not.* So `good` and `qty` are deliberately ABSENT from this payload.
+    // Putting them here would put a `SENSED` fact on a `PUBLIC` row, which is the defect
+    // `frames/projection.ts` records happening twice already, and it would delete the reason scouting
+    // pays and intel is worth buying.
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'haul.departed',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: 'haul::' + plan.value.hand,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        hand: plan.value.hand,
+        from: plan.value.from,
+        to: plan.value.to,
+        arrivesAtTick: plan.value.arrivesAtTick,
+        lots: plan.value.lots,
+      },
+    });
+    return { ok: true, value: null };
   }
 
   private mintGrantId(tick: number, principal: PrincipalId): GrantId {
@@ -9331,6 +9652,7 @@ export class Runtime {
       system,
       tick: ctx.tick,
       anchorAvailable: this.chargeGoodAt(req.principal, system),
+      alloyAvailable: this.alloyAt(req.principal, system),
       bondRead: this.bondRead(),
       freeMinor: free,
     });
@@ -9370,6 +9692,33 @@ export class Runtime {
         'A15',
         `only ${String(burned)} of the ${String(ANCHOR_QTY)} units of ${CHARGE_GOOD} could be put into the ` +
           'anchor, so the claim was not taken. Check what is standing at that system and try again.',
+      );
+    }
+    // ── Step 3b: the manufactured half, and it is burned SECOND on purpose ────
+    //
+    // The rations half first because it is the larger loss and the one a claimant can replace out of
+    // its own ground; the alloy second because it is the one nobody outside the Commons can remake, so
+    // a partial failure here should cost the *replaceable* half rather than the irreplaceable one.
+    // `claimRejection` has already checked both, so a shortfall at this point is a bug rather than an
+    // agent's mistake — which is why it is a fault as well as a refusal.
+    const alloyBurned = this.burnGoodsAt(
+      req.principal,
+      system,
+      ALLOY_GOOD,
+      ALLOY_ANCHOR_QTY,
+      `claim.alloy:${req.principal}:${String(ctx.tick)}:${system}`,
+      ctx.tick,
+    );
+    if (alloyBurned < ALLOY_ANCHOR_QTY) {
+      this.faults.push(
+        `${req.principal} burned ${String(burned)} of ${CHARGE_GOOD} and only ` +
+          `${String(alloyBurned)} of the ${String(ALLOY_ANCHOR_QTY)} ${ALLOY_GOOD} the anchor at ${system} ` +
+          'needs; claimRejection passed it, so the two disagree about what is standing there',
+      );
+      return reject(
+        'A15',
+        `only ${String(alloyBurned)} of the ${String(ALLOY_ANCHOR_QTY)} units of ${ALLOY_GOOD} could be put ` +
+          `into the anchor, so the claim was not taken. ${ALLOY_STATEMENT}`,
       );
     }
 
@@ -9480,15 +9829,47 @@ export class Runtime {
     want: Qty,
     tick: number,
   ): Qty {
+    return this.burnGoodsAt(
+      principal,
+      system,
+      CHARGE_GOOD,
+      want,
+      `claim.anchor:${principal}:${String(tick)}:${system}`,
+      tick,
+    );
+  }
+
+  /**
+   * Destroy up to `want` units of one good standing at one system, into `sink:consumption`.
+   *
+   * ── ONE HOME FOR "BURN WHAT IS STANDING HERE" ─────────────────────────────
+   *
+   * Generalised out of `burnAnchorGoods` when the anchor gained its manufactured half, on exactly the
+   * reasoning `goodLotsAt`'s own header gives for the read side: *"a second copy is the shape that
+   * lets two callers disagree about `encumbranceId` or `AVAILABLE` (scar #5)."* Two burn loops would
+   * be two chances to forget that an `IN_TRANSIT` lot is not spendable — and the fourth good is the
+   * first one that spends any real time in transit.
+   *
+   * Returns what actually moved and never throws. The caller compares it against what it wanted; a
+   * handler that assumed success would record a payment that did not happen (A5′).
+   */
+  private burnGoodsAt(
+    principal: PrincipalId,
+    system: SystemId,
+    good: GoodId,
+    want: Qty,
+    idPrefix: string,
+    tick: number,
+  ): Qty {
     let left: number = want;
     let taken = 0;
-    for (const lot of this.chargeGoodLotsAt(principal, system)) {
+    for (const lot of this.goodLotsAt(principal, system, good)) {
       if (left <= 0) break;
       const portion = Math.min(left, lot.qty);
       if (portion <= 0) continue;
       try {
         this.ledger.destroyGoods({
-          eventId: `claim.anchor:${principal}:${String(tick)}:${system}:${lot.id}` as EventId,
+          eventId: `${idPrefix}:${lot.id}` as EventId,
           tick,
           sink: GOODS_SINK.CONSUMPTION,
           lotId: lot.id,
@@ -9496,7 +9877,7 @@ export class Runtime {
         });
       } catch (error: unknown) {
         this.faults.push(
-          `${principal} could not put ${String(portion)} of ${CHARGE_GOOD} into an anchor at ${system} ` +
+          `${principal} could not destroy ${String(portion)} of ${good} at ${system} ` +
             `(${describeError(error)}); only what actually moved is charged`,
         );
         continue;
@@ -9505,6 +9886,24 @@ export class Runtime {
       left -= portion;
     }
     return qty(taken);
+  }
+
+  /** Unpledged, `AVAILABLE` units of {@link ALLOY_GOOD} standing at one system. */
+  alloyAt(principal: PrincipalId, system: SystemId): Qty {
+    return qty(this.goodLotsAt(principal, system, ALLOY_GOOD).reduce((n, l) => n + l.qty, 0));
+  }
+
+  /**
+   * Every `haul` this principal could submit for one good right now — the affordance's input.
+   *
+   * The SAME `haulQuotes` the verb's own preconditions come from, so the menu can never offer a trip
+   * the engine declines (AGT-S2: an affordance the engine refuses costs an agent a real action every
+   * wake).
+   */
+  haulQuotesFor(principal: PrincipalId, good: GoodId, tick = this.engine.tick): readonly HaulQuote[] {
+    return haulQuotes(this.haulPort(tick), this.world, principal, good, tick, (system) =>
+      neighboursOf(this.world.map, system),
+    );
   }
 
   /**
@@ -10091,7 +10490,29 @@ export class Runtime {
         // halt on arithmetic its own rules guaranteed if this read today's number.
         rentCeilingBps: this.rentCeilingBps(),
       }),
+      // ── INV-W7: THE CARGO MIRROR, AND IT IS THE ONE THAT CAN LOSE VALUE ─────
+      //
+      // `world/hands.ts:cargoHeldByHands` carries a ⚠ CONTRACT GAP saying `hand.cargo` and the lot
+      // table cannot both be authoritative and that *"the only sanctioned use of this function against
+      // the ledger is equality"*. This is that equality, asserted every tick now that `haul` gives it
+      // a subject — for the project's whole life the two totals were both zero, which is why a mirror
+      // nobody checked read as a mirror that held.
+      ...checkCargoMirror({
+        state: this.world,
+        inTransitByGood: this.inTransitByGood(),
+        tick,
+      }).map((v) => halt(v.id, tick, v.message)),
     ];
+  }
+
+  /** Units of each good sitting in `IN_TRANSIT` lots, world-wide. INV-W7's other half. */
+  private inTransitByGood(): ReadonlyMap<GoodId, Qty> {
+    const out = new Map<GoodId, Qty>();
+    for (const lot of this.ledger.allLots()) {
+      if (lot.state !== 'IN_TRANSIT') continue;
+      out.set(lot.good, qty((out.get(lot.good) ?? 0) + lot.qty));
+    }
+    return out;
   }
 
   // ── GRADUATION: the exit from the Commons (§4.1, §6.3, A8, A15) ───────────

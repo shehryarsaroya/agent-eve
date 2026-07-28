@@ -133,6 +133,21 @@ export {
 } from './movement.js';
 
 export {
+  checkCargoMirror,
+  haul,
+  haulQuotes,
+  landArrivedCargo,
+  MAX_HAUL_QTY,
+  neighboursOf,
+  type HaulableLot,
+  type HaulPlan,
+  type HaulPort,
+  type HaulQuote,
+  type HaulRequest,
+  type Landing,
+} from './haul.js';
+
+export {
   assertVerbsClassified,
   classifyAction,
   commonsFloorRejection,

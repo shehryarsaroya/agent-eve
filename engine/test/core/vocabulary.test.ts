@@ -61,7 +61,7 @@ const VISIBILITY = ['PUBLIC', 'PARTIES', 'SENSED', 'SEALED', 'PRIVATE'] as const
  * meanings are ONE concept. Every entry needs that justification; "it seemed
  * fine" is how scar #1 shipped.
  */
-const SANCTIONED_DUAL_USE = new Set(['RAID', 'LEVY', 'STORES', 'TICK', 'SEALED']);
+const SANCTIONED_DUAL_USE = new Set(['RAID', 'LEVY', 'STORES', 'TICK', 'SEALED', 'HAUL']);
 
 const DECISION_SOURCE = ['LIVE', 'INTENT', 'DELEGATE', 'HEURISTIC', 'FALLBACK'] as const;
 const PROVENANCE = ['FACT', 'ASSERTION', 'ESTIMATE'] as const;
@@ -333,6 +333,18 @@ describe('DEFECT reports against src/core/types.ts — §3 collisions', () => {
     //   SEALED  — the visibility tier that holds seals. §3's SEAL row used to say
     //             "never a visibility level" while §3's own ladder included
     //             SEALED; that self-contradiction is now fixed in the canon.
+    //   HAUL    — ★ added when the verb went live and the word entered §3. Exactly RAID's shape,
+    //             and the canon row says so in the same place RAID's does: *"the verb, and the
+    //             VENTURE kind whose CARRIER role does the same thing for hire."* Carrying goods
+    //             yourself and paying somebody to carry them are ONE concept with two ways to buy
+    //             it — which is `VentureKind.HAUL`'s entire point, since `venture/kinds.ts` calls
+    //             `CARRIER` + `ESCORT` *"the vertical slice's exact shape"*.
+    //
+    //             This entry is a decision and not a formality. The word was live in `src/` as a
+    //             venture kind for the project's whole life and **was never in the canon**, so this
+    //             guard had nothing to compare it against — an uncanonised word is unpoliced by
+    //             construction, which is the mechanism §3's own warning block describes. Canonising
+    //             it is what made this test able to see it at all, and the test saw it immediately.
     const canon = new Set(specTerms());
     const collisions: string[] = [];
     for (const [enumName, members] of ALL_ENUMS) {

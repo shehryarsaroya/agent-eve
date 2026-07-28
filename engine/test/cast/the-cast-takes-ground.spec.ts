@@ -32,8 +32,9 @@ import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { PrincipalId, SystemId } from '../../src/core/types.js';
 import { ANCHOR_FUEL_BY_TIER, CHARGE_BY_TIER, CLAIM_BOND_MINOR } from '../../src/sovereignty/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
-import { FUEL_YIELD_PER_TICK } from '../../src/works/params.js';
+import { ALLOY_ANCHOR_QTY, FUEL_YIELD_PER_TICK } from '../../src/works/params.js';
 import { holdingOf, tierOf } from '../../src/world/index.js';
+import { giveAlloy } from '../works/alloy-fixture.js';
 
 /** The four seeds the balance gate was run on. Fixed, so the numbers below are reproducible. */
 export const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
@@ -56,7 +57,7 @@ interface Run {
  * returning an action proves only that it asked: `ActionLog` retention is bounded, so the tally
  * has to happen inside the loop.
  */
-export function play(seed: string, ticks: number, size = 8): Run {
+export function play(seed: string, ticks: number, size = 8, supplyAlloy = false): Run {
   setSpeed('instant');
   const runtime = new Runtime({ seed });
   const cast = new HeuristicCast(runtime, { size });
@@ -65,6 +66,7 @@ export function play(seed: string, ticks: number, size = 8): Run {
   const byMember = new Map<string, number>();
   const refusals = new Map<string, number>();
   for (let n = 0; n < ticks; n += 1) {
+    if (supplyAlloy) standAlloyAtEverySeat(runtime, cast);
     for (const action of cast.decide(runtime.engine.tick + 1, seed)) runtime.engine.submit(action);
     const report = runtime.runTick();
     for (const entry of runtime.engine.log.forTick(report.tick)) {
@@ -83,6 +85,42 @@ export function play(seed: string, ticks: number, size = 8): Run {
     ).toBe(false);
   }
   return { runtime, cast, verbs, byMember, refusals };
+}
+
+/**
+ * Stand one anchor's worth of alloy at every member's seat. **Off by default, on for one test.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **WHY A CAST TEST NEEDS A FIXTURE AT ALL, WHICH IS ITSELF THE FINDING.** With the fourth good
+ * live and nothing supplied, `fz-13` over 900 ticks produces **no FRONTIER claim at all** — measured:
+ * `brannock` walks to `sys-09`, which is the MARCHES gate to `sys-26`, and stops there, claiming the
+ * Marches instead. Two gates now stand between a cast member and the Frontier and it can pay neither:
+ *
+ *   - the second rung of `graduate` costs `ALLOY_GRADUATION_QTY` at the seat it leaves, and
+ *   - a frontier anchor costs `ALLOY_ANCHOR_QTY` standing at the system.
+ *
+ * Neither is reachable for a member that has already left the Commons. `refine {kind:"ALLOY"}` is
+ * four to eight times dearer outside it, and `heuristic.ts:alloyErrandFor`'s buy step is gated on
+ * `freeCash`, which is **identically zero for every principal in every world this repo has run**
+ * (D7's floor is the whole `STARTER_STAKE`) — a fact that file records against itself. So the errand
+ * collapses to its haul step, there is nothing to haul, and the Frontier is closed to the cast.
+ *
+ * That is a real property of today's world and it is reported rather than hidden here. What it is
+ * NOT is this test's subject: the assertions below are about **fuel** — that a FRONTIER system
+ * yields the third good, that the claimant's own quote publishes its share, and that the fuel stands
+ * where an anchor could burn it. Letting the alloy supply decide them would make a fuel test go red
+ * for a reason in `market/`.
+ *
+ * The other nine tests in this file pass `supplyAlloy: false` and their worlds are byte-identical to
+ * what they were before this parameter existed.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function standAlloyAtEverySeat(runtime: Runtime, cast: HeuristicCast): void {
+  for (const member of cast.roster) {
+    const seat = holdingOf(runtime.world, member.principal).system;
+    if (runtime.alloyAt(member.principal, seat) >= ALLOY_ANCHOR_QTY) continue;
+    giveAlloy(runtime, member.principal, seat);
+  }
 }
 
 /** Where a member's body stands now — the same thing the cast's own `bodyOf` reads. */
@@ -398,7 +436,11 @@ describe('fuel — the good only the Frontier makes — enters the world', () =>
    * ══════════════════════════════════════════════════════════════════════════
    */
   it('a cast member reaches the Frontier, works it, and holds the fuel its anchor will need', () => {
-    const run = play('fz-13', 900);
+    // ALLOY SUPPLIED — the only run in this file that gets any. The two gates between a cast member
+    // and the Frontier are both priced in a good it cannot make or buy once it has left the Commons,
+    // so without this there is no FRONTIER claim on any seed and the fuel assertions below would be
+    // vacuous. `standAlloyAtEverySeat` carries the measurement and the argument.
+    const run = play('fz-13', 900, 8, true);
     const frontier = run.runtime.sovereignty
       .liveClaims()
       .filter((c) => tierOf(run.runtime.world.map, c.system) === 'FRONTIER');

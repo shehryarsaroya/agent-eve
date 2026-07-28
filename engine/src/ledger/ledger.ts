@@ -435,6 +435,78 @@ export class Ledger {
     if (to.state !== undefined) l.state = to.state;
   }
 
+  /**
+   * Split `qty` off a lot into a **new lot in the same account**, and return its id.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **WHY THIS EXISTS, AND IT IS A DEFECT REPORT BEFORE IT IS A FEATURE.**
+   *
+   * `Runtime.consumeLevyGood` carries the scar in its own comment: *"`relocate` moves the WHOLE lot
+   * and the ledger has no split, so paying a 500 assessment out of a 45,000 lot moved all 45,000 to
+   * the Levy's place, destroyed 500, and left 44,500 stranded there."* A blind probe read that as a
+   * 500-unit Levy destroying 45,000 units, and it was soft-locked out of every goods-priced verb in
+   * the game — on a payment whose affordance promised `max_direct_loss: 500`.
+   *
+   * That was patched by relocating the remainder back, which works for a payment that happens inside
+   * one tick and **cannot** work for `haul`, where part of a lot has to be somewhere else for many
+   * ticks. So the missing primitive gets built rather than worked around a second time.
+   *
+   * ── WHY NO POSTINGS, WHICH IS THE CHECK THAT MATTERS ─────────────────────
+   *
+   * Same argument as {@link relocate}, one line above: *no value moves.* Both halves stay in the same
+   * account, with the same good, so that account's balance and its lot total are both unchanged and
+   * INV-7's mirror (`Σ lots per account === Σ postings per account`) holds by construction. A posting
+   * pair here would be a transfer from an account to itself, which `transferGoods` rightly refuses.
+   *
+   * ── AND WHY A PLEDGED LOT MAY NOT BE SPLIT ───────────────────────────────
+   *
+   * `lots.ts` makes `encumbranceId` exclusive — *"a pledged lot cannot back a second obligation, and
+   * cannot be sent away"*. Splitting one would silently produce an unpledged half out of collateral
+   * somebody is relying on, which is INV-4 defeated by arithmetic rather than by a missing check.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * `eventId` and `indexInEvent` derive the new id, so a replay produces the same ids without a
+   * counter to snapshot (DET-3, DET-5).
+   */
+  splitLot(args: {
+    readonly lotId: LotId;
+    readonly qty: Qty;
+    readonly eventId: EventId;
+    readonly indexInEvent: number;
+    readonly tick: number;
+  }): LotId {
+    const lot = this.requireLot(args.lotId);
+    if (args.qty <= 0) throw new LedgerError(`a lot split must be positive, got ${args.qty}`);
+    if (args.qty >= lot.qty) {
+      throw new LedgerError(
+        `INV-3: cannot split ${args.qty} off lot ${lot.id}, which holds ${lot.qty}; ` +
+          'a split leaves both halves non-empty — move the whole lot instead',
+      );
+    }
+    if (lot.encumbranceId !== null) {
+      throw new LedgerError(
+        `INV-4: lot ${lot.id} is pledged to ${lot.encumbranceId}; splitting it would produce an ` +
+          'unpledged half out of collateral another obligation is relying on',
+      );
+    }
+    const id = lotId(args.eventId, args.indexInEvent);
+    if (this.lots.has(id)) throw new LedgerError(`duplicate lot id ${id}`);
+    lot.qty = qty(lot.qty - args.qty);
+    this.indexLot(lot.account, id);
+    this.lots.set(id, {
+      id,
+      account: lot.account,
+      good: lot.good,
+      qty: args.qty,
+      location: lot.location,
+      state: lot.state,
+      encumbranceId: null,
+      createdTick: args.tick,
+      origin: lot.origin,
+    });
+    return id;
+  }
+
   // ── The record ────────────────────────────────────────────────────────────
 
   allPostings(): readonly Posting[] {

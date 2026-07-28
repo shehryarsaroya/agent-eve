@@ -27,6 +27,10 @@ import { TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
 import type { GoodId, ZoneTier } from '../core/types.js';
 import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
 import { LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
+// The anchor's manufactured half. `CHARGE_GOOD` below stays declared with its own literal —
+// `test/core/goods-are-independent.test.ts` forbids a goods constant defined in terms of another, and
+// these are a QUANTITY and a TIER, not a redefinition of which good the Charge is payable in.
+import { ALLOY_ANCHOR_QTY, ALLOY_GOOD, ALLOY_TIER } from '../works/params.js';
 
 /**
  * The good the Charge is denominated in.
@@ -283,8 +287,21 @@ export const FUEL_STATEMENT =
   'A cold anchor collects nothing — the tenants keep their whole share — and that is the ONLY penalty: ' +
   'no arrears, no lapse, no bond slashed. Bring fuel mid-Reckoning and the rent starts again for the rest ' +
   'of it. `fuel` is yielded ONLY by a WORKS standing at a FRONTIER system, it is not produced anywhere ' +
-  'else at any price, and no verb in this build moves goods between systems — so if you hold frontier ' +
-  'territory and work none of it, you must BUY fuel from the residents you are taxing. A MARCHES claim ' +
+  // ── ★ THIS SENTENCE SAID "no verb in this build moves goods between systems" AND IT WAS TRUE ──
+  //
+  // `haul` landed with the fourth good and the sentence became **a false rule on the surface a
+  // claimant is billed from**, which is scar #1 in the one place A5′ cares most about: a frontier
+  // rentier was being told its only option was to buy from its own tenants, when it can now carry fuel
+  // in from anywhere it can reach. The `agent.md` copy of §11A was updated in the same change and this
+  // one was missed — a duplicated rules string where only one copy moved, which is exactly the risk
+  // `agent-md.test.ts` pins the pair against and exactly the kind of miss a fixture sweep found.
+  //
+  // The replacement keeps the half that is still true (fuel exists in one tier and nowhere else) and
+  // states the half that changed, because "buy from your tenants" is now a *choice* rather than the
+  // only road, and a claimant that did not know that would overpay a monopolist it could have bypassed.
+  'else at any price — so if you hold frontier territory and work none of it, you must get fuel from ' +
+  'somebody: BUY it from the residents you are taxing, or `haul` it in one lane at a time on a hand. ' +
+  'A MARCHES claim ' +
   'needs no fuel at all: none can be made there, and an obligation the rules make impossible is not one ' +
   'we will record you as having missed.';
 
@@ -413,13 +430,20 @@ export function assertSovereigntySchedule(): void {
  */
 export const SOVEREIGNTY_STATEMENT =
   'A CLAIM is your sovereign hold on ONE system outside the Commons. You take it with `build` ' +
-  `{"kind":"ANCHOR","system":"<id>"}: it destroys ${String(ANCHOR_QTY)} units of ${CHARGE_GOOD} that are ` +
+  `{"kind":"ANCHOR","system":"<id>"}: it destroys ${String(ANCHOR_QTY)} units of ${CHARGE_GOOD} and ` +
+  `${String(ALLOY_ANCHOR_QTY)} units of ${ALLOY_GOOD} that are ` +
   'ALREADY STANDING at that system, and it requires you to have posted a BOND of ' +
   `${String(CLAIM_BOND_MINOR)} per claim with \`post_bond\`. The bond is slashable capital and it stays ` +
   'locked for as long as you hold the claim — it is not a deposit you get back. Your holding must stand at ' +
   'the system (`graduate` gets it there) and the system must be MARCHES or FRONTIER: a Commons claim is ' +
   'INVALID, not refused, because nothing in the Commons can be fought over. This gate is priced in produced ' +
-  'goods and slashable capital and NEVER in identities, so enrolling again buys you nothing here.';
+  'goods and slashable capital and NEVER in identities, so enrolling again buys you nothing here. ' +
+  // The half of the price that is deliberately unmakeable where it is spent. Written into the
+  // statement rather than left to the refusal, because a claimant that reads only this must still be
+  // able to see the whole bill — and this is the one line item no amount of local ore can supply.
+  `The ${ALLOY_GOOD} is the half you cannot make here: it is refined only at a ${ALLOY_TIER} system ` +
+  'and every claimable system is outside the Commons, so buy it at a Commons venue with `trade` and ' +
+  'bring it with `haul`.';
 
 /**
  * **A RULES SURFACE.** The Charge: what it is, when it is due, and what missing it costs.

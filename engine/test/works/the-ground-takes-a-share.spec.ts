@@ -30,6 +30,7 @@ import { CLAIM_RENT_BPS, RENT_STATEMENT } from '../../src/sovereignty/index.js';
 import { checkRentBoundedByMap, checkRentWithinGross } from '../../src/works/invariants.js';
 import { WORKS_SPINUP_TICKS, YIELD_PER_TICK } from '../../src/works/params.js';
 import { rentApplies, rentOn, rentSplit } from '../../src/works/rent.js';
+import { giveAlloy } from './alloy-fixture.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from '../api/harness.js';
 
 type Row = Record<string, unknown>;
@@ -119,8 +120,14 @@ async function landlordAndTenant(): Promise<{
   const landlord = await enrolFunded('landlord', 150_000);
   await takeOffered(landlord, 'graduate');
   await takeOffered(landlord, 'post_bond');
-  await takeOffered(landlord, 'build', 'ANCHOR');
   const system = String(((await observe(landlord))['holding'] as Row)['system']) as SystemId;
+  // Everything in this file is about the RENT — the split, the quote that must not overstate it, and
+  // the panel that draws it. The anchor's 500 units of alloy are supplied through the production
+  // faucet because no claimable system can refine one, and a landlord that had to run a Commons
+  // franchise first would make every rent assertion here fail for a reason in `market/`.
+  giveAlloy(h.runtime, landlord.principalId as PrincipalId, system);
+  run(1);
+  await takeOffered(landlord, 'build', 'ANCHOR');
   expect(h.runtime.sovereignty.liveAt(system), 'a live claim must stand').not.toBeNull();
 
   const tenant = await enrolFunded('tenant', 150_000);

@@ -87,7 +87,19 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'Levy fix) is treating the fixture as the finding. NOTE 2026-07-27: once the cast could leave the ' +
     'Commons, a 900-tick world DID offer it while the 1,800-tick sweep still did not — which is what ' +
     'forced both directions onto one shared sweep, because the pair was otherwise unsatisfiable.',
-  trade: 'REACHABLE ELSEWHERE — needs a resting order on the local book. Covered by test/market/verb.test.ts.',
+  // ── ★ `trade` CAME OFF THIS LIST, AND THAT IS THE ECONOMY STARTING ────────
+  //
+  // Its entry read *"REACHABLE ELSEWHERE — needs a resting order on the local book"*, which was true
+  // and was the whole problem: **in every world this repo had ever run there were ZERO orders and ZERO
+  // fills**, because no cast branch had ever placed one. 3,065 lines of `market/` sat behind a
+  // precondition nothing produced, and this list said so in words that read like a limit of the sweep
+  // rather than a hole in the game.
+  //
+  // The fourth good gave a Commons member something worth selling and `alloyAskFor` puts it on the
+  // book, so a resting order now exists and the affordance fires. The entry is deleted rather than
+  // reworded: an exception list that no longer matches the engine is a rules surface disagreeing with
+  // it, which is exactly what the rot check above exists to catch — and it caught this one before I
+  // thought to come and delete it, which is the second time that direction has paid for itself.
   withdraw: 'RESPONSE-ONLY — needs a syndicate membership to give notice on.',
   // `set_delivery_intent` USED TO LIVE HERE as the one HONEST GAP, and its removal is this list
   // working as designed: it is offered now, and the rot test above failed by name the moment the

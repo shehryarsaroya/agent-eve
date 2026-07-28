@@ -139,6 +139,10 @@ Four consequences run through everything below:
 | **CHARGE** | the **recurring per-Reckoning obligation a CLAIM owes**, in goods, by tier | the LEVY (which is the constellation's, not a claim's); a fee; a market charge |
 | **RENT** | the share of a system's extraction its CLAIM-holder takes from the WORKS standing there | the CHARGE; a lease payment; upkeep |
 | **FUEL** | the **Frontier-only third good** — what an ANCHOR burns per Reckoning to keep collecting RENT, and half of what a HULL is built from | a consumable generally; a capacitor charge |
+| **ORE** | the **raw good a WORKS extracts**, at every tier. The only input either recipe takes | a mineral class; goods generally |
+| **RATION** | what `refine {kind:"RATION"}` makes, and **the one good every obligation is priced in** — the LEVY, the CHARGE, a WORKS build, the endowment | food; upkeep (that is the *obligation*, not the good) |
+| **ALLOY** | ★ the **manufactured fourth good** — `refine {kind:"ALLOY"}` from ORE at a rate set by the TIER (`COMMONS 8:1 · MARCHES 32:1 · FRONTIER 64:1`), spent on an ANCHOR and on a CROSSING beyond the Commons, and payable against no obligation at all | a metal; a component; anything the LEVY takes |
+| **HAUL** | moving located goods one lane on one of your HANDS — the verb, and the VENTURE kind whose CARRIER role does the same thing for hire | a convoy (that is the MOTION, which is PUBLIC); freight generally; combat's remote REPAIR (§9A reserves *logistics* for this) |
 
 **The combat vocabulary (§9A, Phase 2).** Nine terms, each checked against every row above and against `src/` before it was spent. Three candidates were **rejected for collisions** and the rejections are recorded because they are the useful part: `operation` (spent — `trade` takes an `operation` parameter), `phase` (spent — the tick pipeline), `depth` (spent — a grant's delegation depth). A fourth, `front`, is spent by §10.1's scheduled weather front, so the mechanic that wanted it is **not built**.
 
@@ -159,6 +163,17 @@ Four consequences run through everything below:
 **Visibility is one five-tier ladder, used everywhere** — `PUBLIC | PARTIES | SENSED | SEALED | PRIVATE`, defined once in §11.2 with a declassify time per tier. There is no separate venture-visibility enum and no second spelling of any tier. Bond tiers are `OPEN | VOUCHED | BONDED`. "Pulse" and "Window" as horizon names are retired until Phase 2 needs them.
 
 > ### ⚑ How a word gets into code without getting into this table, and why that matters
+>
+> ### ⚑ And the same thing had happened to the goods themselves
+>
+> **`ORE` and `RATION` were the economy's two oldest nouns and neither was ever canonised.** They are in
+> `agent.md`, in every affordance string, in `WORKS_YIELD_GOOD` and `LEVY_GOOD`, and in the sentence
+> this table's own `FUEL` row calls *"the third good"* — a row that counted to three against two words
+> the canon had never heard of. `canon-word-per-concept.test.ts` can only police terms this table
+> lists, so both were **unpoliced by construction** for the project's entire life, and so was every
+> collision they could have had. `ALLOY` and `HAUL` are canonised in the same edit that builds them, so
+> the fourth good does not repeat it — and the two older words are fixed rather than left as the
+> precedent that made it acceptable.
 >
 > **CLAIM, ANCHOR, CHARGE, RENT and FUEL were live in `src/` before they were canon** — `CLAIM_RENT_BPS`, `CHARGE_GOOD`, `ANCHOR_FUEL_BY_TIER`, `FUEL_STATEMENT`, and `claimLines` as a `PUBLIC` frame field carrying the sovereignty layer's central noun. Two of the five entered the code in a single night.
 >
@@ -465,6 +480,31 @@ Newcomers are protected: a complete if low-margin loop exists entirely inside th
 ## 10. The economy
 
 **Its job is to make ventures necessary, not to be a subject.** Four goods, one build step, one order book per constellation.
+
+> ### ⚑ WHAT THE FOUR GOODS TURNED OUT TO BE, AND THE ONE THING THAT STILL DOES NOT CLEAR
+>
+> Built 2026-07-27 at `RULES_VERSION` 18. The four are **`ore`** (raw, every tier), **`ration`** (the
+> one good every obligation is priced in), **`fuel`** (Frontier-only, burned by an ANCHOR) and
+> **`alloy`** (§10.1's *manufactured* good). `haul` — a §12.2 verb filed as *"step 11 (markets and the
+> production graph)"* since the canon was written — went live with it, so goods can finally move.
+>
+> **The design that was tried first was a wall, and a measurement killed it.** Alloy was COMMONS-only,
+> exactly as fuel is FRONTIER-only. Over four seeds at six Reckonings the cast made 15,500–20,000 units
+> and put them on the book, and **`claims` went from 4 a seed to 0 and stayed there** — a Marches
+> claimant could neither refine alloy nor buy any, so the anchor gate was unpassable and the whole
+> sovereignty layer went with it. The shipped design is a **price gradient**: every tier refines alloy,
+> the Commons at 8 ore a unit against the Marches' 32 and the Frontier's 64, and that gradient runs
+> **opposite** to the ore yield (80 · 110 · 150). The tier with the least ore converts it best. Nothing
+> deadlocks, and the gain from trade is 24 ore a unit, which is what a convoy is worth.
+>
+> **⚠ And the buy side of the market is still unreachable, for a reason that predates all of this.**
+> `market/escrow.ts:freeCash` funds a BID from `freeBalance − ENDOWMENT_FLOOR_MINOR`; D7 puts that floor
+> at the whole `STARTER_STAKE` (250,000); and **every cast member in every world sits between 62,000
+> and 203,000**, so `freeCash` is *identically zero for every principal that has ever played this game.*
+> That — not the number of goods — is why 3,065 lines of `market/` had never printed a fill.
+> `ledger/endowment.ts` predicted it in its own words (*"erring toward withholding is the safe
+> direction"*) and nothing had ever measured what the erring cost. **Fixing it is an A15 decision about
+> what D7's floor should measure, not a patch**, and it is the next item in this section.
 
 ### 10.1 The demand side is the point
 

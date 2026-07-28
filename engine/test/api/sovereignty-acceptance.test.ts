@@ -37,6 +37,7 @@ import {
   CHARGE_MISSES_TO_LAPSE,
   CLAIM_BOND_MINOR,
 } from '../../src/sovereignty/index.js';
+import { giveAlloy } from '../works/alloy-fixture.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from './harness.js';
 
 let h: Harness;
@@ -192,7 +193,21 @@ async function enrolAndClaim(handle: string): Promise<{ who: Agent; system: stri
 
   const bonded = await observe(who);
   expect((bonded['holding'] as Row)['bond']).toMatchObject({ posted: CLAIM_BOND_MINOR, required: 0, claims: 0 });
-  await take(who, bonded, 'build', (a) => (a['params'] as Row)['kind'] === 'ANCHOR');
+
+  // ── THE ONE THING HERE THAT IS NOT COPIED FROM AN AFFORDANCE, AND WHY ─────
+  //
+  // The anchor's manufactured half is stood at the system through the same PRODUCTION faucet a
+  // `refine` posts through, so the ledger and every invariant see what they would see if it had been
+  // made in the Commons and hauled in. It is NOT reachable from where this principal stands: alloy
+  // refines four times cheaper in the Commons and a claim is always outside it, so the honest road
+  // is a franchise, a book that clears and a haul per lane — which
+  // `test/works/a-good-only-the-commons-makes.spec.ts` walks end to end through this same door.
+  // What THIS file has to keep proving is the Charge arc — assessed, paid, missed, lapsed, and
+  // previewed correctly before each settlement — and it would prove none of it from behind a market.
+  const anchorSystem = String((bonded['holding'] as Row)['system']) as SystemId;
+  giveAlloy(h.runtime, who.principalId as PrincipalId, anchorSystem);
+  tick(h, 1);
+  await take(who, await observe(who), 'build', (a) => (a['params'] as Row)['kind'] === 'ANCHOR');
 
   const claimed = await observe(who);
   const system = String((claimed['holding'] as Row)['system']);

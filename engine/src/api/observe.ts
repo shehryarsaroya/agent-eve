@@ -52,7 +52,7 @@ import {
   reckoningIndex,
   ticksUntilReckoning,
 } from '../core/time.js';
-import type { Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
+import type { GoodId, Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor, type Minor } from '../core/units.js';
 import { storesAccount } from '../ledger/index.js';
 import { MAX_ORDER_QTY, freeCash, sellableGoods, type PublicBook } from '../market/index.js';
@@ -148,7 +148,36 @@ import { LEVY_BALLOT, LEVY_GOOD, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../l
 import { syndicateAsPrincipal } from '../syndicate/book.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR, MAX_SYNDICATES_PER_PRINCIPAL } from '../syndicate/params.js';
-import { REFINE_IN_QTY, REFINE_OUT_QTY, WORKS_GOOD, WORKS_YIELD_GOOD } from '../works/params.js';
+import {
+  ALLOY_ANCHOR_QTY,
+  ALLOY_GOOD,
+  ALLOY_IN_BY_TIER,
+  ALLOY_OUT_QTY,
+  ALLOY_TIER,
+  FUEL_GOOD,
+  REFINE_IN_QTY,
+  REFINE_OUT_QTY,
+  WORKS_GOOD,
+  WORKS_YIELD_GOOD,
+} from '../works/params.js';
+import { tierRates } from '../works/refine.js';
+
+/**
+ * The goods a `haul` row is offered for, in canonical order.
+ *
+ * **All four, not just the interesting one.** The temptation is to offer `alloy` alone, since that is
+ * the good this verb was built for — and that would reproduce, in the menu, exactly the asymmetry the
+ * verb exists to remove: `fuel` is FRONTIER-only and a landlord that bought some at a tenant's venue
+ * would have no offered way to bring it to its anchor, while `ore` and `ration` are what a Commons
+ * manufacturer needs to *import*. A list that named one good would make the other three's trades
+ * legal-but-unoffered, which is this repo's defining defect written into the fix for it.
+ */
+const HAULABLE_GOODS: readonly GoodId[] = Object.freeze([
+  ALLOY_GOOD,
+  FUEL_GOOD,
+  WORKS_GOOD,
+  WORKS_YIELD_GOOD,
+]);
 import type { SealRoleRef } from '../seal/index.js';
 import {
   commonsBoundRejection,
@@ -156,6 +185,7 @@ import {
   handsOf,
   holdingOf,
   isPresent,
+  MAX_HAUL_QTY,
   occupiesSystem,
   principalIsCommonsBound,
   tierOf,
@@ -2022,6 +2052,98 @@ function affordancesFor(
     });
   }
 
+  // 5F. **THE FORK, AND IT IS A SEPARATE ROW BECAUSE IT IS A SEPARATE DECISION.**
+  //
+  //     `refine {kind:"ALLOY"}` competes with 5E for the *same lot*, so folding it into that entry
+  //     would hide the one choice §10.1 asked the economy to produce: this ore is either tonight's
+  //     tribute or ground you keep. Two rows, both priced, and `params.kind` distinguishes them —
+  //     the same discipline `build`'s three kinds already follow, and `agent.md` warns in as many
+  //     words not to match on the verb alone.
+  //
+  //     Offered only at a COMMONS system, because that is the whole mechanic. An entry the engine
+  //     would refuse costs an agent a real action every wake (AGT-S2), and offering this in the
+  //     Marches would do it every wake forever, since no amount of ore there ever satisfies it.
+  const hereTier = tierOf(world.map, holdingOf(world, principal).system);
+  const alloyIn = ALLOY_IN_BY_TIER[hereTier];
+  if (refinable >= alloyIn) {
+    const here = holdingOf(world, principal).system;
+    const batches = Math.trunc(refinable / alloyIn);
+    const out = batches * ALLOY_OUT_QTY;
+    eligible.push({
+      verb: 'refine',
+      params: { kind: 'ALLOY', system: here, qty: out },
+      cost: 1,
+      // No value leaves the principal: goods of one kind become goods of another in its own stores.
+      // The real cost is an OPPORTUNITY — the ore is gone from the ration recipe — and that is stated
+      // in the prose rather than dressed up as a loss, because `max_direct_loss` is a number a
+      // counterparty relies on and inflating it would make every other row's figure less trustworthy.
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `turns ${String(batches * alloyIn)} ${WORKS_YIELD_GOOD} standing at ${here} into ` +
+        `${String(out)} ${ALLOY_GOOD}, at ${String(alloyIn)}:${String(ALLOY_OUT_QTY)} — the rate ` +
+        `for a ${hereTier} system (${tierRates()}). ` +
+        `**THE SAME ORE CANNOT ALSO BECOME ${String(WORKS_GOOD).toUpperCase()}** — check what your ` +
+        `Levy needs before you spend it, because ${ALLOY_GOOD} pays no obligation of any kind. ` +
+        `What it buys is ground, and nothing else: an ANCHOR costs ${String(ALLOY_ANCHOR_QTY)} of it, ` +
+        `and every system a claim can exist on is outside the Commons. ` +
+        `${
+          hereTier === ALLOY_TIER
+            ? 'You are on the cheapest ground in the galaxy for this, and every claim in the game is ' +
+              'somewhere that pays more — what you make here is worth more to somebody out there.'
+            : `A ${ALLOY_TIER} system makes the same unit for ${String(ALLOY_IN_BY_TIER[ALLOY_TIER])} ` +
+              `${WORKS_YIELD_GOOD}, so buying it there and hauling it home is often cheaper than ` +
+              'refining it here. This is the price of making it yourself.'
+        } ` +
+        `Sell it with \`trade\`; move it with \`haul\`.`,
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'refine', { kind: 'ALLOY', system: here }),
+    });
+  }
+
+  // 5G. **`haul` — THE ONLY VERB THAT MOVES A GOOD, AND IT WAS NOT LIVE UNTIL NOW.**
+  //
+  //     AGT-R5 exists because of exactly this: *"a mechanic that works, is tested, renders, and
+  //     cannot be reached from the menu an agent is told to plan from."* Nine mechanics including the
+  //     A6 core loop hid behind that gap. So the verb and its row land together.
+  //
+  //     One row per (hand, good) that could actually move something, and the destinations are on the
+  //     row rather than in it: `params` names one lane so the offer is submittable as-is, and
+  //     `what_it_forecloses` lists the rest. `haulQuotes` has already dropped every hand the verb
+  //     would refuse — not present, nothing standing here, Commons-bound with no legal exit — so the
+  //     menu cannot offer a trip the engine declines.
+  for (const good of HAULABLE_GOODS) {
+    for (const quote of runtime.haulQuotesFor(principal, good, tick)) {
+      const to = quote.open[0];
+      if (to === undefined) continue;
+      eligible.push({
+        verb: 'haul',
+        params: { hand: quote.hand, to, good, qty: quote.carryable },
+        cost: 1,
+        // ── THE CARGO IS THE `max_direct_loss`, AND IT IS NOT ZERO ──────────────
+        //
+        // A convoy can be routed. §10.1 #3 makes raids destroy or relocate cargo and `routHand` now
+        // retires what a lost hand was carrying, so the goods on this trip are genuinely at risk in a
+        // way the same goods standing in a hold are not. Quoting 0 here would be the affordance
+        // promising safety the rules do not give — the exact shape of the Levy defect a blind probe
+        // reported as "a 500-unit Levy destroyed 45,000 units" on an affordance that said 500.
+        max_direct_loss: quote.carryable,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `loads ${String(quote.carryable)} ${good} from ${quote.from} onto ${quote.hand} and sends ` +
+          `it to ${to}. Goods are LOCATED (§10.2) and this is the only verb that moves them — a ` +
+          `market fill leaves the cargo at the venue it traded at, and an ANCHOR is paid in goods ` +
+          `already standing at the system it claims. The hand is unavailable until it arrives and ` +
+          `the cargo is unavailable with it; if the hand is routed on the way, the cargo is ` +
+          `DESTROYED. One lane per action${quote.open.length > 1 ? `; also open from here: ${quote.open.slice(1).join(' · ')}` : ''}. ` +
+          `You hold ${String(quote.availableHere)} unpledged ${good} at ${quote.from}` +
+          `${quote.availableHere > quote.carryable ? `, and one trip carries at most ${String(MAX_HAUL_QTY)}` : ''}.`,
+        expires_tick: tick + 1,
+        quote_id: quoteId(principal, tick, 'haul', { hand: quote.hand, good, to }),
+      });
+    }
+  }
+
   const worksSeat = runtime.graduationQuote(principal);
   const worksHere = worksSeat === null ? null : runtime.worksQuote(principal, worksSeat.from);
   if (worksHere !== null && worksHere.affordable && !worksHere.alreadyHeld) {
@@ -2202,6 +2324,15 @@ function affordancesFor(
   for (const claim of runtime.claimsOpenTo(principal, tick)) {
     if (claim.route === null) continue;
     if (claim.available_here < ANCHOR_QTY) continue;
+    // ── ★ AND THE MANUFACTURED HALF, WHICH THIS SITE FORGOT ────────────────
+    //
+    // **Found by a test that copies affordance `params` verbatim, 6 of 6 failing.** This gated on the
+    // charge good alone, so the menu offered an anchor to a principal holding zero alloy and
+    // `claimRejection` then refused it with A15 — an affordance the engine declines, which costs the
+    // agent a real action every wake (AGT-S2) and is the exact defect three blind probes found five of.
+    // `graduate` got this right by folding both halves into `affordable`; this site had two halves and
+    // checked one.
+    if (runtime.alloyAt(principal, claim.system) < ALLOY_ANCHOR_QTY) continue;
     const price = claim.cession?.price ?? 0;
     // `freeCash`, matching `vBuild`'s gate, not the raw free balance: a cession price is the
     // one principal-to-principal transfer in sovereignty, so it is payable out of EARNINGS
@@ -2220,7 +2351,8 @@ function affordancesFor(
       max_contingent_liability: CLAIM_BOND_MINOR,
       what_it_forecloses:
         `${claim.route === 'CESSION' ? `pays ${String(price)} to ${claim.claimant} and` : 'takes the claim by force of arrival inside the published window and'} ` +
-        `destroys ${String(ANCHOR_QTY)} of ${claim.good} standing at ${claim.system}. You become the claimant of ` +
+        `destroys ${String(ANCHOR_QTY)} of ${claim.good} AND ${String(ALLOY_ANCHOR_QTY)} of ${ALLOY_GOOD}, ` +
+        `both standing at ${claim.system}. You become the claimant of ` +
         `record — AND you inherit its ${String(claim.arrears)} arrears and this Reckoning's ` +
         `${String(claim.owed)} still owed, which a transfer never resets. Your holding must already stand there ` +
         `and you must have ${String(CLAIM_BOND_MINOR)} more bond posted per claim.`,
@@ -2267,7 +2399,11 @@ function affordancesFor(
       if (
         here === null &&
         shortfall <= 0 &&
-        runtime.chargeGoodAt(principal, holding.system) >= ANCHOR_QTY
+        runtime.chargeGoodAt(principal, holding.system) >= ANCHOR_QTY &&
+        // Both halves, for the reason the takeover site one block up now carries in full: an anchor
+        // costs a good this seat cannot make, and a menu that quoted only the payable half would send
+        // an agent into an A15 refusal with a real action spent.
+        runtime.alloyAt(principal, holding.system) >= ALLOY_ANCHOR_QTY
       ) {
         eligible.push({
           verb: 'build',
@@ -2276,8 +2412,11 @@ function affordancesFor(
           max_direct_loss: ANCHOR_QTY,
           max_contingent_liability: CLAIM_BOND_MINOR,
           what_it_forecloses:
-            `destroys ${String(ANCHOR_QTY)} of ${CHARGE_GOOD} standing at ${holding.system} and makes you its ` +
-            `claimant. From the next Reckoning onward the claim owes a CHARGE in goods that must be standing ` +
+            `destroys ${String(ANCHOR_QTY)} of ${CHARGE_GOOD} AND ${String(ALLOY_ANCHOR_QTY)} of ` +
+            `${ALLOY_GOOD}, both standing at ${holding.system}, and makes you its ` +
+            `claimant. The ${ALLOY_GOOD} is the half you cannot make here at the Commons rate — it is ` +
+            `refined everywhere but four times dearer outside the Commons, so most claimants buy it and ` +
+            `\`haul\` it in. From the next Reckoning onward the claim owes a CHARGE in goods that must be standing ` +
             `THERE, every Reckoning, forever — miss it three times running and the claim lapses and ` +
             `${String(CLAIM_BOND_MINOR)} of your bond is slashed. This is territory you have to MAINTAIN, not ` +
             `territory you buy once.`,

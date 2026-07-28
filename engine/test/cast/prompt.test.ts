@@ -43,6 +43,8 @@ import { charactersFor, HeuristicCast } from '../../src/cast/index.js';
 import { FREE_VERBS } from '../../src/tick/budget.js';
 import { setSpeed } from '../../src/core/time.js';
 import { Runtime } from '../../src/sim/runtime.js';
+import { holdingOf } from '../../src/world/index.js';
+import { giveAlloy } from '../works/alloy-fixture.js';
 
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
 
@@ -583,7 +585,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // prose went into `## 5`'s Levy block, which is FLOOR, so every position below grew by the same
     // +2,200 — that is what the ceiling was raised for and it is spent on purpose.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(64_233);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(68_101);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -601,7 +603,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }));
     expect(reachable.length, 'there must be reachable positions to measure').toBeGreaterThan(0);
     const worst = reachable.reduce((a, b) => (b.chars > a.chars ? b : a));
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(56_647);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(60_515);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1078,6 +1080,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
 
     expect(take('graduate'), '`graduate` must be offered to a funded newcomer').toBe(true);
     expect(take('post_bond'), '`post_bond` must be offered once out of the Commons').toBe(true);
+    // An anchor's manufactured half, supplied rather than hauled: this test is about which RULES a
+    // real claimant can read, not about the supply chain that gets it there. See `alloy-fixture.ts`
+    // for why that is honest and where the road itself is actually walked.
+    giveAlloy(runtime, me.principal, holdingOf(runtime.world, me.principal).system);
     expect(take('build', 'ANCHOR'), '`build` ANCHOR must be offered with a bond posted').toBe(true);
 
     const observation = observeMe();
@@ -1126,11 +1132,17 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // shape. So the count is asserted rather than trusted. It churns when the catalog changes,
     // which is the point: somebody looks.
     const source = readFileSync(new URL('../../src/cast/prompt.ts', import.meta.url), 'utf8');
-    const spelled = { 28: 'twenty-eight', 41: 'forty-one', 44: 'forty-four', 45: 'forty-five' };
+    const spelled = {
+      28: 'twenty-eight',
+      41: 'forty-one',
+      44: 'forty-four',
+      45: 'forty-five',
+      46: 'forty-six',
+    };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(45);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(46);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 45],
+      spelled[n as 46],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1203,10 +1215,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
       join: 'Answering either one — `yield` · `fight` · join, or say nothing',
       message: 'Negotiating',
+      // ★ `haul` — the canon verb whose step arrived with the fourth good. It is claimed by ONE
+      // block on purpose: the block states a rule about geography (the good is refined at one tier
+      // and spent at another) and neither `refine {kind:"ALLOY"}` nor `haul` is usable without it.
+      haul: 'The fourth good — the one only the COMMONS makes, and the one that flows the other way',
       move: '(preamble)',
       post_bond: '(preamble) + Taking one — `post_bond` then `build`',
       publish_offer: 'Negotiating',
-      refine: '(preamble)',
+      refine: '(preamble) + The fourth good — the one only the COMMONS makes, and the one that flows the other way',
       revoke: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
       seal: 'Seals — the say-do gap',
       set_delivery_intent: 'The Levy — nobody sits this out',
@@ -1311,12 +1327,30 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const doc = document();
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
-      34_940, // a newcomer on its first wake
-      41_409, // mid-game in the Commons
-      42_051, // about to take territory — and §11B is READABLE now, which it was not
-      56_647, // a claimant in trouble — the largest REACHABLE position
-      64_233, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
+      38_564, // a newcomer on its first wake
+      45_033, // mid-game in the Commons
+      45_906, // about to take territory — and §11B is READABLE now, which it was not
+      60_515, // a claimant in trouble — the largest REACHABLE position
+      68_101, // the analytic maximum, which at 72,000 fits WHOLE and is no longer priced down
     ]);
+    // ── ★ FIVE ROWS +3,637, AND IT IS THE FOURTH GOOD BEING WRITTEN DOWN ────────────────────
+    //
+    // Every row, including the newcomer's, and that is the honest signature of this change rather
+    // than a regression. §7's production-chain paragraph is FLOOR — it is where an agent learns that
+    // ore pays nothing — and the fork between `refine {kind:"RATION"}` and `refine {kind:"ALLOY"}`
+    // belongs in exactly that paragraph, along with the sentence that goods are located and `haul` is
+    // the only verb that moves them. A newcomer that did not read those two would refine its whole
+    // store into the wrong good and then find it in the wrong place.
+    //
+    // The remaining +2,000 or so is `### The fourth good`, which is RULES for anybody working ground
+    // or holding a claim and is **required** for a claimant: the anchor's manufactured half is a
+    // price no MARCHES seat can pay out of local production, and a claimant refused for a shortfall
+    // in a good it was never told it cannot make has been billed by a rule nobody showed it (A5′).
+    //
+    // 68,319 against `MAX_CONTRACT_CHARS` = 72,000 leaves **3,899 characters of margin** on a state
+    // no principal can occupy, and 11,485 on the largest reachable one. The margin is thinner than it
+    // was and that is worth saying out loud: the next section of this size needs the ceiling looked
+    // at rather than raised reflexively.
     // ── ★ FOUR ROWS +2,540, AND THAT IS THE ROLE `stake` GETTING WRITTEN DOWN ─────────────────
     //
     // `### The third half: \`stake\` on \`fill_role\`` is RULES for anybody offered `fill_role` or
