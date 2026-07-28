@@ -253,7 +253,10 @@ describe('§12 — when no `trade` is offered, `withheld` says WHICH thing is mi
     // world-wide `market.ticker` is `[]` — no fill has EVER printed — because every `trade`
     // affordance is an IOC against something already resting, so an empty book is an empty
     // menu and an agent reading only `affordances[]` concludes the market is shut.
-    const { runtime } = newcomerWorld('a2-mkt-nobook');
+    // A FUNDED principal, because that is who the template is for. A newcomer gets a different
+    // sentence and the reason is two tests down — its first draft invited an order the verb
+    // refused, which a probe found by copying it.
+    const runtime = world('a2-mkt-nobook', ALICE).runtime;
     tick(runtime);
     const view = observation(runtime, ALICE);
     expect((view.market['at'] as string[]).length, 'a venue IS reachable — that is the point').toBeGreaterThan(0);
@@ -266,6 +269,100 @@ describe('§12 — when no `trade` is offered, `withheld` says WHICH thing is mi
     expect(w.reason, 'the agent must be told this is not a refusal').toContain('NOT a refusal');
     expect(w.reason, 'and given the legal act the menu withholds').toContain(MAKER_NOTE);
     expect(MAKER_NOTE, 'which must name the order type, or it is advice with no verb').toContain('GTC');
+  });
+
+  it('★ AND IT NEVER INVITES AN ORDER IT CANNOT FUND — found by a probe following the row', () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // **AGT-S2 PRODUCED BY THE FIX FOR AGT-S2, found from outside and not from here.**
+    //
+    // The first version of the no-book row ended *"a GTC order at your own price is legal at any
+    // venue you stand in — send `trade` {…} yourself"* and stopped. A freshly enrolled probe,
+    // driven over real signed HTTP against a local build, did exactly that: it read the row, sent
+    // a GTC ASK for 10 `ration` at the venue the row named, and the verb refused it. Its whole
+    // 50,000 of `ration` **is** the endowment floor, so `sellableGoods` is 0, and its whole
+    // 250,000 of currency is endowment, so `freeCash` is 0. Neither side was placeable and the
+    // row invited an order anyway — costing the probe a real action.
+    //
+    // Invisible from inside: every test passed and the sentence was TRUE as a statement about the
+    // rules. It was false as *advice to the principal reading it*, which is the whole class.
+    //
+    // Asserted against the engine's own refusal, both sides, so the row's claim and the verb's
+    // behaviour cannot part company.
+    // ══════════════════════════════════════════════════════════════════════
+    const { runtime, venue } = newcomerWorld('a2-mkt-cannot-fund');
+    tick(runtime);
+    const view = observation(runtime, ALICE);
+    // Non-vacuity: the no-book branch is the one firing, and the principal really can fund
+    // neither side — which is every newcomer, on its first wake, for ever.
+    expect((view.market['at'] as string[]).length).toBeGreaterThan(0);
+    expect((view.market['books'] as unknown[]).length).toBe(0);
+    expect(freeCash(runtime.ledger, ALICE), 'no BID is fundable').toBe(0);
+    expect(sellableGoods(runtime.ledger, ALICE, GOOD, venue), 'and no ASK either').toBe(qty(0));
+
+    const ports = {
+      ledger: runtime.ledger,
+      world: runtime.world,
+      book: runtime.market,
+      principal: ALICE,
+      tick: runtime.engine.tick,
+    };
+    // THE ENGINE'S OWN ANSWER FIRST: both sides really are refused. If either were takeable the
+    // row below would be right to invite it, and this test would be asserting the wrong thing.
+    for (const side of ['BID', 'ASK'] as const) {
+      expect(
+        tradeCheck(ports, {
+          operation: 'place',
+          venue,
+          good: GOOD,
+          side,
+          quantity: 10,
+          limitPrice: 30,
+          durationTicks: null,
+          timeInForce: 'GTC',
+          order: null,
+        }),
+        `a GTC ${side} must be refused, or the row is allowed to invite it`,
+      ).not.toBeNull();
+    }
+
+    const got = withheld(runtime, ALICE);
+    expect(got.verbs).toContain('trade');
+    expect(got.reason, 'it must say the book is empty').toContain('no book exists at');
+    expect(got.reason, 'and that an order of your own would start one').toContain('an order OF YOUR OWN');
+    expect(got.reason, 'and that you cannot fund either side of it').toContain('could not fund either side');
+    expect(got.reason, 'and what WOULD change it, both halves').toContain('being PAID');
+    expect(got.reason).toContain('PRODUCING above');
+    // ★ AND IT MUST NOT HAND OUT THE TEMPLATE. That is the sentence the probe copied.
+    expect(got.reason, 'no order template for a principal that can place neither side').not.toContain(
+      '"operation":"place"',
+    );
+  });
+
+  it('★ BUT IT DOES NAME THE FUNDABLE SIDE WHEN THERE IS ONE — the control', () => {
+    // Without this the branch above is a blanket refusal to advise, which would close the only
+    // door out of an empty book. `market/fixture.ts`'s `world()` funds above the floor, so ALICE
+    // can rest both sides and must be told so, with figures.
+    const w = world('a2-mkt-can-fund', ALICE);
+    const runtime = w.runtime;
+    tick(runtime);
+    const view = observation(runtime, ALICE);
+    // Non-vacuity: still no book, so the same branch fires — only the funding differs.
+    expect((view.market['books'] as unknown[]).length, 'the same empty-book branch must fire').toBe(0);
+    expect(freeCash(runtime.ledger, ALICE)).toBeGreaterThan(0);
+    expect(sellableGoods(runtime.ledger, ALICE, GOOD, w.venue)).toBeGreaterThan(0);
+
+    const got = withheld(runtime, ALICE);
+    expect(got.verbs).toContain('trade');
+    expect(got.reason, 'now the template IS appropriate').toContain('"operation":"place"');
+    expect(got.reason).toContain('You can fund');
+    // The figures are the engine's own, not a literal beside them.
+    expect(got.reason).toContain(String(freeCash(runtime.ledger, ALICE)));
+    expect(got.reason).toContain(
+      `${String(sellableGoods(runtime.ledger, ALICE, GOOD, w.venue))} ${GOOD} at ${w.venue}`,
+    );
+    expect(got.reason, 'and it must not tell a funded principal it cannot fund anything').not.toContain(
+      'could not fund either side',
+    );
   });
 
   it('★ NOTHING TRANSFERABLE: carries `planOrder`’s own arithmetic, VERBATIM', () => {

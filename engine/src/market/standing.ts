@@ -47,7 +47,7 @@
 import type { GoodId, PrincipalId } from '../core/types.js';
 import { qty, type Minor, type Qty } from '../core/units.js';
 import { ENDOWMENT_GOOD, ENDOWMENT_GOOD_FLOOR_QTY } from '../ledger/endowment.js';
-import { Ledger, storesAccount } from '../ledger/index.js';
+import { Ledger, compareIds, storesAccount } from '../ledger/index.js';
 import type { WorldState } from '../world/state.js';
 import type { MarketBook } from './book.js';
 import { freeCash, sellableGoods } from './escrow.js';
@@ -149,12 +149,92 @@ export function endowmentStanding(
  *
  * On the live shard the world-wide `market.ticker` is `[]` — **no fill has ever printed** —
  * which is what an economy looks like when nobody can find the door.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **AND IT MUST SAY WHAT YOU CAN ACTUALLY REST, BECAUSE THE FIRST VERSION DID NOT AND A
+ * PROBE FOLLOWED IT STRAIGHT INTO A REFUSAL.**
+ *
+ * The first draft ended *"A GTC order at your own price is legal at any venue you stand in —
+ * send `trade` {…} yourself"* and stopped there. A freshly enrolled probe, driven over real
+ * signed HTTP, did exactly that: it read the row, sent a GTC ASK for 10 `ration` at the venue
+ * the row named, and the verb refused it — because its whole 50,000 of `ration` **is** the
+ * endowment floor, so `sellableGoods` is 0, and its whole 250,000 of currency is endowment, so
+ * `freeCash` is 0. **Neither side was placeable and the row invited an order anyway.**
+ *
+ * That is AGT-S2 produced *by the fix for AGT-S2* — the server telling an agent to do
+ * something and then declining — and it cost the probe a real action. It was invisible from
+ * inside: every test passed, the sentence was true as a statement about the RULES, and false
+ * as advice to the principal reading it. So the note is now a function of what that principal
+ * can fund, and when the answer is "neither side" it says so and names what would change it.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 export const MAKER_NOTE =
   'the menu offers TAKES only (every trade affordance is an IOC against a level that is already ' +
   'resting), so an empty book means an empty menu. A GTC order at your own price is legal at any ' +
   'venue you stand in and is the only way to start a book that has nothing on it — send `trade` ' +
   '{"operation":"place","venue":…,"good":…,"side":…,"quantity":…,"limit_price":…} yourself.';
+
+/**
+ * What this principal could actually **rest** right now, and on which side.
+ *
+ * A BID is fundable out of {@link freeCash}; an ASK is fundable out of any good it holds
+ * unpledged, in-place and above the endowment floor at a venue it stands in. Both read the same
+ * accessors `planOrder` gates on, so the sentence cannot promise what the verb refuses.
+ */
+function restable(
+  ledger: Ledger,
+  principal: PrincipalId,
+  venues: readonly VenueId[],
+): { readonly bidMinor: Minor; readonly asks: readonly string[] } {
+  const asks: string[] = [];
+  const account = storesAccount(principal);
+  if (ledger.account(account) !== undefined) {
+    /** `(good, venue)` pairs this principal holds anything of, canonically ordered. */
+    const pairs = new Map<string, { good: GoodId; venue: VenueId }>();
+    for (const lot of ledger.lotsInAccount(account)) {
+      const venue = lot.location as VenueId | null;
+      if (venue === null || !venues.includes(venue)) continue;
+      pairs.set(`${String(lot.good)}@${String(venue)}`, { good: lot.good, venue });
+    }
+    for (const key of [...pairs.keys()].sort(compareIds)) {
+      const pair = pairs.get(key);
+      if (pair === undefined) continue;
+      const q = sellableGoods(ledger, principal, pair.good, pair.venue);
+      if (q > 0) asks.push(`${String(q)} ${String(pair.good)} at ${String(pair.venue)}`);
+    }
+  }
+  return { bidMinor: freeCash(ledger, principal), asks };
+}
+
+/**
+ * The maker note, made true of the principal reading it. See {@link MAKER_NOTE}'s own note.
+ *
+ * Three answers, and the third is the one the first draft was missing: an agent that can rest
+ * NEITHER side must be told that, with the two figures and the two ways out, rather than handed
+ * a template that costs it an action to discover is refused.
+ */
+function makerAdvice(
+  ledger: Ledger,
+  principal: PrincipalId,
+  venues: readonly VenueId[],
+): string {
+  const { bidMinor, asks } = restable(ledger, principal, venues);
+  if (bidMinor <= 0 && asks.length === 0) {
+    return (
+      'This is NOT a refusal of the book — it is empty, and an order OF YOUR OWN would start one. ' +
+      'But you could not fund either side of it right now: transferable_minor is 0, so no BID can ' +
+      'be escrowed, and you hold nothing sellable at ' +
+      `${venues.length === 0 ? 'any venue you stand in' : [...venues].join(', ')}, so no ASK can ` +
+      'be either. market.endowment carries both figures and the rule behind them. What changes it: ' +
+      'being PAID by another principal raises transferable_minor one-for-one, and PRODUCING above ' +
+      'floor_qty makes goods sellable — burning endowment changes neither.'
+    );
+  }
+  const sides: string[] = [];
+  if (bidMinor > 0) sides.push(`a BID escrowing up to ${String(bidMinor)} (market.transferable_minor)`);
+  if (asks.length > 0) sides.push(`an ASK of up to ${asks.join(' · ')}`);
+  return `This is NOT a refusal — ${MAKER_NOTE} You can fund ${sides.join(' or ')} right now.`;
+}
 
 export interface TradeObstacleInput {
   readonly ledger: Ledger;
@@ -279,7 +359,7 @@ export function tradeObstacles(input: TradeObstacleInput): readonly string[] {
   if (books.length === 0) {
     out.push(
       `no trade is offered because no book exists at ${[...venues].join(', ')}: no order of any ` +
-        `principal is resting there. This is NOT a refusal — ${MAKER_NOTE}`,
+        `principal is resting there. ${makerAdvice(ledger, principal, venues)}`,
     );
     return out;
   }
@@ -300,8 +380,8 @@ export function tradeObstacles(input: TradeObstacleInput): readonly string[] {
     out.push(
       `no trade is offered because every book you can see (${books
         .map((b) => `${b.good}@${b.venue}`)
-        .join(', ')}) has printed before but has NOTHING resting on either side right now. This is ` +
-        `NOT a refusal — ${MAKER_NOTE}`,
+        .join(', ')}) has printed before but has NOTHING resting on either side right now. ` +
+        makerAdvice(ledger, principal, venues),
     );
     return out;
   }
