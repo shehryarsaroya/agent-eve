@@ -26,6 +26,7 @@ import { APPEND_ONLY_UNPARTITIONED } from '../../src/db/migrate.js';
 import {
   InMemoryJournalStore,
   Journal,
+  acceptanceStringForDiagnosis,
   bootFromStore,
   bootWorld,
 } from '../../src/persist/index.js';
@@ -41,6 +42,11 @@ import type { SubmittedAction } from '../../src/tick/index.js';
  * boot. Here the path is named rather than inherited from a default.
  */
 const GENESIS = { disabled: true } as const;
+
+/** Explicit comparator (DET-1): a bare `.sort()` is implementation-defined on non-strings. */
+function sorted(values: readonly (string | null)[]): readonly (string | null)[] {
+  return [...values].sort((x, y) => (String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0));
+}
 
 const SEED = 'divergence-annotation-1';
 const CAST = 6;
@@ -93,25 +99,35 @@ async function runLive(ticks: number): Promise<InMemoryJournalStore> {
   return store;
 }
 
-/** Hold once to learn the tick, then walk through the door naming it. */
-async function acceptAt(store: InMemoryJournalStore, fromTick: number): Promise<number> {
+/**
+ * Hold once to learn WHAT diverged, then walk through the door naming it.
+ *
+ * The probe boot is what produces the key, and that is the operator's real sequence too: the
+ * preflight replays, prints `<tick>:<fingerprint>`, and the restart is given exactly that. A
+ * fixture that synthesised the tick on its own would be testing a door no operator can reach.
+ */
+async function acceptAt(
+  store: InMemoryJournalStore,
+  fromTick: number,
+): Promise<{ readonly tick: number; readonly key: string }> {
   const probe = seated();
   refuseAfter(probe, fromTick);
   const held = await bootWorld(probe, store, { seed: SEED, checkpoint: GENESIS });
   expect(held.status).toBe('HELD');
   if (held.status !== 'HELD') throw new Error('unreachable');
   const at = held.diagnosis.tick;
+  const key = acceptanceStringForDiagnosis(held.diagnosis);
 
   const open = seated();
   refuseAfter(open, fromTick);
   const opened = await bootWorld(open, store, {
     seed: SEED,
-    acceptDivergenceFromTick: at,
+    acceptDivergence: key,
     nowMs: nextClock,
     checkpoint: GENESIS,
   });
   expect(opened.status).toBe('READY');
-  return at;
+  return { tick: at, key };
 }
 
 describe('the divergence annotation dedups on identity, not on existence', () => {
@@ -119,7 +135,7 @@ describe('the divergence annotation dedups on identity, not on existence', () =>
     const store = await runLive(200);
 
     // One operator accepts one rules change. One row.
-    const firstTick = await acceptAt(store, 60);
+    const { tick: firstTick } = await acceptAt(store, 60);
     expect((await store.divergences()).length).toBe(1);
 
     // The same door, same tick, again: still one row. (The covered half.)
@@ -129,7 +145,7 @@ describe('the divergence annotation dedups on identity, not on existence', () =>
     // A DIFFERENT rules change, diverging at a DIFFERENT tick, accepted later. This
     // is a second discontinuity in the same world's life and the record must say so —
     // a build that resumes across it silently is A5's forbidden lie.
-    const secondTick = await acceptAt(store, 140);
+    const { tick: secondTick } = await acceptAt(store, 140);
     expect(secondTick).not.toBe(firstTick);
 
     const rows = await store.divergences();
@@ -152,9 +168,9 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
     // key cannot tell these two apart — and the second world resumed with the record
     // naming only the first.
     const { a, b, fromTick } = await findCollidingPair(store);
-    const rowsAfterA = await acceptChange(store, a.principal, a.tick, fromTick);
+    const rowsAfterA = await acceptChange(store, a, fromTick);
     expect(rowsAfterA).toBe(1);
-    const rowsAfterB = await acceptChange(store, b.principal, b.tick, fromTick);
+    const rowsAfterB = await acceptChange(store, b, fromTick);
     expect(a.tick).toBe(b.tick);
     expect(a.principal).not.toBe(b.principal);
     expect(rowsAfterB).toBe(2);
@@ -162,6 +178,16 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
     const rows = await store.divergences();
     expect(rows.every((r) => r.tick === a.tick)).toBe(true);
     expect(new Set(rows.map((r) => r.detail)).size).toBe(2);
+
+    // ── THE POINT OF THE WHOLE CHANGE, IN THIS FIXTURE'S OWN TERMS ────────────
+    //
+    // Two discontinuities, one tick, two keys — so `a`'s standing acceptance would NOT have
+    // let `b` through, which is exactly what tick 287 did nineteen times in production. And
+    // the record now says WHICH was authorised rather than only that something was.
+    expect(a.key).not.toBe(b.key);
+    expect(a.key.split(':')[0]).toBe(b.key.split(':')[0]);
+    expect(new Set(rows.map((r) => r.acceptedAs)).size).toBe(2);
+    expect(sorted(rows.map((r) => r.acceptedAs))).toEqual(sorted([a.key, b.key]));
   }, 180_000);
 
   it('still annotates ONCE per restart after the world has run on past a Reckoning', async () => {
@@ -171,7 +197,7 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
     // If that count can reach the dedup key, every such restart writes a fresh row and
     // the annotation degrades from "the rules changed here" into a restart counter.
     const store = await runLive(250);
-    const at = await acceptAt(store, 60);
+    const { key } = await acceptAt(store, 60);
     const firstRows = await store.divergences();
     expect(firstRows.length).toBe(1);
     const toleratedBefore = firstRows[0]?.toleratedAfter ?? -1;
@@ -180,7 +206,7 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
     // Resume and run on past tick 287, so a NEW snapshot lands in the journal.
     const rt = seated();
     refuseAfter(rt, 60);
-    await bootWorld(rt, store, { seed: SEED, acceptDivergenceFromTick: at, nowMs: nextClock, checkpoint: GENESIS });
+    await bootWorld(rt, store, { seed: SEED, acceptDivergence: key, nowMs: nextClock, checkpoint: GENESIS });
     const journal = new Journal(store);
     const cast = new HeuristicCast(rt, { size: CAST });
     for (let i = 0; i < 60; i += 1) {
@@ -198,9 +224,15 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
 
     const again = seated();
     refuseAfter(again, 60);
+    // ── AND THE SAME KEY STILL OPENS IT AFTER THE JOURNAL GREW ────────────────
+    //
+    // The fingerprint is taken over the divergence, not over the journal, so a longer log
+    // with an extra Reckoning in it does not invalidate the operator's declaration. That is
+    // the property that lets the line stay in /etc/compact/env: it is stable for as long as
+    // the discontinuity it names is, and inert the moment a different one appears.
     const restarted = await bootWorld(again, store, {
       seed: SEED,
-      acceptDivergenceFromTick: at,
+      acceptDivergence: key,
       nowMs: nextClock,
       checkpoint: GENESIS,
     });
@@ -209,25 +241,36 @@ describe('two DIFFERENT rules changes that diverge at the SAME tick are both rec
     for (let restart = 0; restart < 2; restart += 1) {
       const more = seated();
       refuseAfter(more, 60);
-      await bootWorld(more, store, { seed: SEED, acceptDivergenceFromTick: at, nowMs: nextClock, checkpoint: GENESIS });
+      await bootWorld(more, store, { seed: SEED, acceptDivergence: key, nowMs: nextClock, checkpoint: GENESIS });
     }
     // One discontinuity happened, so the record says so exactly once.
     expect((await store.divergences()).length).toBe(1);
   }, 180_000);
 });
 
-/** The first-divergence tick each single-principal rules change produces. */
-async function firstDivergenceTickPerPrincipal(
+/**
+ * The first divergence each single-principal rules change produces: its tick AND its key.
+ *
+ * The key is carried through rather than re-derived at the accept, because the whole point of
+ * this describe block is two changes at ONE tick — so a fixture that only remembered the tick
+ * could not tell the door which of the two it meant, which is the defect under test.
+ */
+async function firstDivergencePerPrincipal(
   store: InMemoryJournalStore,
   fromTick: number,
-): Promise<ReadonlyMap<PrincipalId, number>> {
-  const found = new Map<PrincipalId, number>();
+): Promise<ReadonlyMap<PrincipalId, { readonly tick: number; readonly key: string }>> {
+  const found = new Map<PrincipalId, { readonly tick: number; readonly key: string }>();
   const probe = seated();
   for (const principal of [...probe.world.principalOrder].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0))) {
     const rt = seated();
     refuseOne(rt, principal, fromTick, `change targeting ${principal}`);
     const held = await bootWorld(rt, store, { seed: SEED, checkpoint: GENESIS });
-    if (held.status === 'HELD') found.set(principal, held.diagnosis.tick);
+    if (held.status === 'HELD') {
+      found.set(principal, {
+        tick: held.diagnosis.tick,
+        key: acceptanceStringForDiagnosis(held.diagnosis),
+      });
+    }
   }
   return found;
 }
@@ -241,31 +284,34 @@ async function firstDivergenceTickPerPrincipal(
  * Which world grows a collision is incidental to what is under test: that two DIFFERENT discontinuities
  * at one tick are both recorded.
  */
+interface Change {
+  readonly principal: PrincipalId;
+  readonly tick: number;
+  readonly key: string;
+}
+
 function collidingPairAt(
-  byPrincipal: ReadonlyMap<PrincipalId, number>,
-): readonly [{ principal: PrincipalId; tick: number }, { principal: PrincipalId; tick: number }] | null {
-  const groups = new Map<number, PrincipalId[]>();
-  for (const [p, t] of byPrincipal) groups.set(t, [...(groups.get(t) ?? []), p]);
-  for (const [tick, ps] of groups) {
+  byPrincipal: ReadonlyMap<PrincipalId, { readonly tick: number; readonly key: string }>,
+): readonly [Change, Change] | null {
+  const groups = new Map<number, Change[]>();
+  for (const [p, d] of byPrincipal) {
+    groups.set(d.tick, [...(groups.get(d.tick) ?? []), { principal: p, tick: d.tick, key: d.key }]);
+  }
+  for (const ps of groups.values()) {
     const [x, y] = ps;
-    if (x !== undefined && y !== undefined) {
-      return [
-        { principal: x, tick },
-        { principal: y, tick },
-      ];
-    }
+    if (x !== undefined && y !== undefined) return [x, y];
   }
   return null;
 }
 
 /** Sweep candidate refusal ticks until one produces a colliding pair, and say which tick it used. */
 async function findCollidingPair(store: InMemoryJournalStore): Promise<{
-  readonly a: { principal: PrincipalId; tick: number };
-  readonly b: { principal: PrincipalId; tick: number };
+  readonly a: Change;
+  readonly b: Change;
   readonly fromTick: number;
 }> {
   for (const fromTick of [100, 60, 140, 40, 180, 20, 220]) {
-    const pair = collidingPairAt(await firstDivergenceTickPerPrincipal(store, fromTick));
+    const pair = collidingPairAt(await firstDivergencePerPrincipal(store, fromTick));
     if (pair !== null) return { a: pair[0], b: pair[1], fromTick };
   }
   throw new Error(
@@ -276,20 +322,18 @@ async function findCollidingPair(store: InMemoryJournalStore): Promise<{
 }
 
 /** Walk one principal-specific change through the door; return the row count after. */
-async function acceptChange(
-  store: InMemoryJournalStore,
-  principal: PrincipalId,
-  tick: number,
-  fromTick = 100,
-): Promise<number> {
+async function acceptChange(store: InMemoryJournalStore, change: Change, fromTick = 100): Promise<number> {
   const rt = seated();
   // `fromTick` must be the SAME refusal tick the divergence was discovered at. It was hardcoded to
   // 100 while the search learned to sweep, so a pair found at another tick was accepted against a
   // world built from a different change — the divergence landed elsewhere and the world stayed HELD.
-  refuseOne(rt, principal, fromTick, `change targeting ${principal}`);
+  refuseOne(rt, change.principal, fromTick, `change targeting ${change.principal}`);
   const opened = await bootWorld(rt, store, {
     seed: SEED,
-    acceptDivergenceFromTick: tick,
+    // The KEY, which is what makes this fixture possible at all: `a` and `b` diverge at the
+    // same tick, so a bare tick could not distinguish them and each would have accepted the
+    // other. Their fingerprints differ because their `detail` differs.
+    acceptDivergence: change.key,
     nowMs: nextClock,
     checkpoint: GENESIS,
   });

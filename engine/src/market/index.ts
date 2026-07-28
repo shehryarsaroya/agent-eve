@@ -118,6 +118,8 @@ export {
   PUBLISHED_LEVELS,
   bookRows,
   booksFor,
+  // ★ The pixel signature (A13, §10): THE PRINT — a price on a place, and the gap to everywhere.
+  marketLinesFor,
   ownOrdersFor,
   ownPrintsFor,
   publicBook,

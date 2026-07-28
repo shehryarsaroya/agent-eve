@@ -24,6 +24,7 @@ import type { HallOfFameRow, PlaceName } from './memory.js';
 
 import type {
   ClaimState,
+  GoodId,
   Handle,
   HoldingId,
   PrincipalId,
@@ -60,6 +61,17 @@ export const MAX_FRAME_WORKS_LINES = 16;
 
 /** Syndicate lines a frame may draw. Fewer than works marks: an org is a bigger object. *(calibrate)* */
 export const MAX_FRAME_SYNDICATE_LINES = 8;
+
+/**
+ * Market prints a frame may draw. *(calibrate)*
+ *
+ * One line per `(venue, good)` that traded, and `(venue, good)` is the only key the book
+ * matches on — so this is the count of *places a price exists*. Sized like the works budget
+ * because it is the same kind of object: a small number of marks on a map, ranked so that
+ * overflow drops the least interesting. Overflow keeps the widest premium, because the gap
+ * between two places is what makes a price a story rather than a number.
+ */
+export const MAX_FRAME_MARKET_LINES = 16;
 
 /**
  * Battle lines a frame may draw. Equal to `MAX_LIVE_ENGAGEMENTS` + the ones that closed this
@@ -499,6 +511,102 @@ export interface SyndicateLine {
   readonly legend: string;
 }
 
+/**
+ * ★ **THE PRINT** — the market's pixel signature (A13, §10).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SIGNATURE, NAMED.** A claim **tints** a system. A WORKS **marks** it. A market
+ * **PRINTS A PRICE ON IT** — and the print carries the one number that makes two places
+ * comparable: what this good fetched *here*, against what it fetched everywhere.
+ *
+ * `market/` is 3,065 lines that had never printed a fill in any world this repo had run, and
+ * on the day it printed 18 of them there was still no market or fill key anywhere in
+ * `frames/latest.json`. A13 is a ship gate rather than a nicety, so this is the gate being
+ * satisfied: the first production fill is now visible, and visible as a *price*.
+ *
+ * **The drama of an economy is price, not activity.** A projection saying "a trade happened"
+ * is a log line. Two systems quoting the same good at prices 8% apart is a lane worth hauling
+ * down, a hub forming, and a blockade worth mounting — M1's whole argument for why the book is
+ * location-bound (*"a global book or teleporting fulfillment would erase most of the galaxy"*).
+ * So `premiumBps` is the field this signature exists for, and `vwap` is what makes it exact.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## §11.2, field by field — and the one thing deliberately left out
+ *
+ * Everything here is derived from **completed fills and nothing else.** `market/observe.ts`
+ * settles the tiers already and the two halves differ:
+ *
+ *   - **a completed fill is `PUBLIC`** — economy law 10, *"completed trades … become durable
+ *     economic history"*. It is the print, the mark and the receipt reel's raw material. And it
+ *     is `PUBLIC` **galaxy-wide**: every agent's `market.ticker` block is `recentPrints(book)`
+ *     over every venue, so A9's parity holds by construction. There is no fact on this line an
+ *     agent's own `observe` would not already answer.
+ *   - **a resting order is not on this line, and that is a decision.** Depth, price levels and
+ *     best bid/ask are `PUBLIC` too — but `booksFor` serves them only for venues where the
+ *     reader has a hand (§12.1, *"local book only"*). A galaxy-wide depth ladder on a frame
+ *     would therefore be a live fact most agents' `observe` would NOT show, which is A9
+ *     inverted. And `market/observe.ts` gives the sharper reason: *"a resting ask IS a hold
+ *     value — X has 400 of this good, here, right now"*, and a raider reading a manifest off a
+ *     public surface without ever scouting deletes the intel market. **A fill is a deed; a
+ *     resting order is a manifest.** Deeds go on the frame.
+ *
+ * `venue`, `good`, `lastPrice`, `lastTick`, `prints`, `volume`: the fills themselves, re-read.
+ * `vwap` and `galaxyVwap`: integer volume-weighted averages over those same fills — known
+ * arithmetic, which A2 requires be exact and machine-readable. `premiumBps`: the ratio of the
+ * two, in bps, so no float reaches a screen.
+ *
+ * **What a print may never carry**, each considered: resting depth or a best bid/ask (venue-
+ * gated above); an order's owner (`PRIVATE` — *"the principal itself; never anyone, never
+ * later"*); anybody's inventory, balance or escrow; a `reference_mark`, which is the *bond*
+ * valuation and belongs to the lender's question rather than the viewer's. `assertFrameBudgets`
+ * refuses a field whose name reads as a stockpile, by the same executable rule `claimLines` and
+ * `worksLines` use — the argument made checkable rather than remembered.
+ */
+export interface MarketLine {
+  /** The system the price is printed on. `(venue, good)` is the book's only key. */
+  readonly venue: SystemId;
+  readonly good: GoodId;
+  /** The most recent print here. What a viewer reads as "the price". */
+  readonly lastPrice: Minor;
+  readonly lastTick: number;
+  /**
+   * The earliest print this line counted — **so the frame states its own span.**
+   *
+   * `prints: 3` and `volume: 120` are counts over a period, and a count over an unstated period
+   * is not a fact. There is deliberately no policy window (`market/observe.ts` records the
+   * measurement that killed one): the span is whatever the book still remembers, and it is
+   * published rather than assumed. Staleness is `frame.tick − lastTick`, by eye.
+   */
+  readonly firstTick: number;
+  /** Prints on record here, at or before the frame's tick. A count of completed public acts. */
+  readonly prints: number;
+  /** Units that changed hands here in the window. */
+  readonly volume: Qty;
+  /** Volume-weighted average unit price here, integer. The comparable number. */
+  readonly vwap: Minor;
+  /** The same good's VWAP across EVERY venue in the same window. The thing to compare to. */
+  readonly galaxyVwap: Minor;
+  /**
+   * How many places traded this good in the window — **the field that says whether the premium
+   * beside it means anything.**
+   *
+   * With one venue there is no comparison to make, and a premium of 0 bps would read as "fairly
+   * priced" when the truth is "nothing to price it against". A2 forbids letting an absence
+   * render as a measurement, so the count is published and the legend says `ONLY MARKET`.
+   */
+  readonly venues: number;
+  /**
+   * `vwap` against `galaxyVwap`, in bps. Signed: positive is dear here, negative is cheap.
+   *
+   * Exactly zero when `venues < 2`, by identity — a sole market *is* the galaxy price. With two
+   * or more it may still be zero, and that is a real result (`AT PARITY`) rather than a missing
+   * one: integer bps over an integer denominator, so a gap under one bps rounds away.
+   */
+  readonly premiumBps: number;
+  /** `ORE · 1240 · +812 bps DEAR` — the words a viewer reads. */
+  readonly legend: string;
+}
+
 export interface WorksLine {
   readonly works: string;
   /** The system the mark sits on. */
@@ -756,6 +864,8 @@ export interface ReckoningFrame {
   /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
   readonly claimLines: readonly ClaimLine[];
   readonly worksLines: readonly WorksLine[];
+  /** ★ The market's signature (§10, A13): THE PRINT — a price on a place, and the gap to everywhere else. */
+  readonly marketLines: readonly MarketLine[];
   /**
    * §16's world-memory projections. Read-only over books that already exist, so neither can move
    * `state_hash` — and both are what tell a spectator arriving at Reckoning 40 that the map was earned
@@ -1158,6 +1268,118 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
         problems.push(
           `claim ${line.claim} carries '${key}'. A frame field derived from a private stockpile is the "fuel ` +
             'gauge" §11.2 refused: it leaks reserve coverage, the limiting good, and inbound convoy contents',
+        );
+      }
+    }
+  }
+
+  // ── A PRINT MAY NOT CONTRADICT ITS OWN PRICE ─────────────────────────────
+  //
+  // The claim tint's guard and the works mark's guard, in the same voice and for the same
+  // reason: a stranger has no second source. A price is worse than a legend to get wrong,
+  // because a viewer will do arithmetic on it — and an agent reading `market.ticker` can
+  // check the frame against the record, so a frame that disagrees with the book is not merely
+  // unreadable but refutable.
+  if (frame.marketLines.length > MAX_FRAME_MARKET_LINES) {
+    problems.push(
+      `${frame.marketLines.length} market prints, budget is ${MAX_FRAME_MARKET_LINES} — a price a viewer ` +
+        'can compare, not a tape',
+    );
+  }
+  for (const line of frame.marketLines) {
+    // A line exists because something traded. A print with no prints in it is the frame
+    // asserting a price the world never set — the market's version of a tint over territory
+    // nobody owns.
+    if (line.prints < 1) {
+      problems.push(
+        `${line.good} at ${line.venue} is drawn with ${line.prints} prints — a price on this frame means a ` +
+          'completed fill, and a line with none is a quote nobody ever made',
+      );
+    }
+    if (line.volume < 1) {
+      problems.push(`${line.good} at ${line.venue} printed ${line.prints} times and moved ${line.volume} units`);
+    }
+    // The span must contain the print it names, or the two numbers a viewer uses to judge how
+    // current a price is contradict each other.
+    if (line.firstTick > line.lastTick) {
+      problems.push(
+        `${line.good} at ${line.venue} spans ticks ${line.firstTick}..${line.lastTick}, which runs backwards`,
+      );
+    }
+    if (line.prints === 1 && line.firstTick !== line.lastTick) {
+      problems.push(
+        `${line.good} at ${line.venue} reports one print spanning ticks ${line.firstTick}..${line.lastTick}; ` +
+          'a single print happened at a single tick',
+      );
+    }
+    if (line.lastPrice < 0 || line.vwap < 0 || line.galaxyVwap < 0) {
+      problems.push(`${line.good} at ${line.venue} renders a negative price`);
+    }
+    // A single-venue good has nothing to compare against, so its premium must be exactly zero
+    // and its legend must say why. A "0 bps" beside a sole market reads as "fairly priced",
+    // which is a claim about a comparison that was never made.
+    if (line.venues < 1) {
+      problems.push(`${line.good} at ${line.venue} printed here and reports ${line.venues} venues trading it`);
+    }
+    if (line.venues < 2) {
+      if (line.premiumBps !== 0) {
+        problems.push(
+          `${line.good} trades only at ${line.venue} and still shows ${line.premiumBps} bps of premium — ` +
+            'there is no second price, so the number a viewer reads as "haul here" is invented',
+        );
+      }
+      if (line.vwap !== line.galaxyVwap) {
+        problems.push(
+          `${line.good} trades only at ${line.venue} at ${line.vwap} while the galaxy figure reads ` +
+            `${line.galaxyVwap} — a sole market IS the galaxy price, so these cannot differ`,
+        );
+      }
+      if (!line.legend.includes('ONLY MARKET')) {
+        problems.push(
+          `${line.good} trades only at ${line.venue} and its legend reads "${line.legend}"; a viewer must be ` +
+            'told that there is nothing to compare the price to (A2)',
+        );
+      }
+    }
+    // A premium with no galaxy figure behind it is a ratio over nothing.
+    if (line.galaxyVwap === 0 && line.premiumBps !== 0) {
+      problems.push(
+        `${line.good} at ${line.venue} quotes a premium of ${line.premiumBps} bps against a galaxy price of ` +
+          '0 — the ratio has no denominator, so the number on screen means nothing',
+      );
+    }
+    // ── THE DIRECTION, CHECKED — BUT NOT THE MAGNITUDE ───────────────────────
+    //
+    // A sign error would send a viewer's eye, and any reader building a hauling heuristic off
+    // this frame, the wrong way down the lane. So the premium may not CONTRADICT the two prices
+    // beside it. It may legitimately be zero when they differ by less than one bps: demanding a
+    // non-zero premium there would be a guard satisfied by fabricating a magnitude, which is
+    // worse than the rounding it was trying to catch.
+    if (line.vwap > line.galaxyVwap && line.premiumBps < 0) {
+      problems.push(
+        `${line.good} is DEARER at ${line.venue} (${line.vwap} vs ${line.galaxyVwap}) but its premium reads ` +
+          `${line.premiumBps} bps`,
+      );
+    }
+    if (line.vwap < line.galaxyVwap && line.premiumBps > 0) {
+      problems.push(
+        `${line.good} is CHEAPER at ${line.venue} (${line.vwap} vs ${line.galaxyVwap}) but its premium reads ` +
+          `${line.premiumBps} bps`,
+      );
+    }
+    // ── THE MANIFEST, REFUSED BY SHAPE RATHER THAN BY REVIEW ────────────────
+    //
+    // `market/observe.ts` puts a resting order's owner at `PRIVATE` and reasons that a resting
+    // ask IS a hold value ("X has 400 of this good, here, right now"), so a raider could read a
+    // manifest off a public surface without ever scouting. A fill is a deed and belongs here; a
+    // book, a ladder, depth, an owner or anybody's inventory does not. Same instrument as the
+    // claim line's stockpile refusal, aimed at this layer's own temptation.
+    for (const key of Object.keys(line)) {
+      if (/depth|resting|ladder|bid|ask|owner|principal|inventory|stock|reserve|held|escrow/i.test(key)) {
+        problems.push(
+          `${line.good} at ${line.venue} carries "${key}", which reads as a resting order rather than a ` +
+            'completed fill — §11.2 gates the book to venues the reader has a hand at, and a galaxy-wide ' +
+            'ladder on a frame is both A9 inverted and the manifest a raid is supposed to have to scout for',
         );
       }
     }

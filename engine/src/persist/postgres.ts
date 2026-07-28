@@ -556,8 +556,8 @@ export class PgJournalStore implements JournalStore {
     await this.pool.query(
       `INSERT INTO journal_divergence (
          tick, kind, from_rules_version, to_rules_version, detail,
-         expected_hash, actual_hash, tolerated_after, accepted_at_ms
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+         expected_hash, actual_hash, tolerated_after, accepted_at_ms, accepted_as
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [
         record.tick,
         record.kind,
@@ -568,6 +568,7 @@ export class PgJournalStore implements JournalStore {
         record.actualHash,
         record.toleratedAfter,
         record.acceptedAtMs,
+        record.acceptedAs,
       ],
     );
   }
@@ -575,7 +576,7 @@ export class PgJournalStore implements JournalStore {
   async divergences(): Promise<readonly DivergenceRecord[]> {
     const { rows } = await this.pool.query<DivergenceRow>(
       `SELECT tick, kind, from_rules_version, to_rules_version, detail,
-              expected_hash, actual_hash, tolerated_after, accepted_at_ms
+              expected_hash, actual_hash, tolerated_after, accepted_at_ms, accepted_as
          FROM journal_divergence ORDER BY tick ASC, seq ASC`,
     );
     return rows.map((r) => ({
@@ -588,6 +589,10 @@ export class PgJournalStore implements JournalStore {
       actualHash: r.actual_hash,
       toleratedAfter: Number(r.tolerated_after),
       acceptedAtMs: Number(r.accepted_at_ms),
+      // Null on the rows written before the door was bound to an identity. Read back as
+      // null rather than as a synthesised string: the honest record of a bare-tick
+      // acceptance is "this row does not say what was authorised".
+      acceptedAs: r.accepted_as,
     }));
   }
 
@@ -718,6 +723,7 @@ interface DivergenceRow {
   readonly actual_hash: string | null;
   readonly tolerated_after: string | number;
   readonly accepted_at_ms: string | number;
+  readonly accepted_as: string | null;
 }
 
 interface ActionRow {

@@ -54,6 +54,7 @@ import type { FrameSource } from './render.js';
  * | `claimLines` | `PUBLIC` | sovereignty and its published legal state — the argument is below, in full |
  * | `modelBadges` | `PUBLIC` | which model runs a cast seat; not a game fact |
  * | `worksLines` | `PUBLIC` | a structure on the map, its tier-fixed yield, and what the world has already handed over |
+ * | `marketLines` | `PUBLIC` | completed fills — economy law 10's "durable economic history", already in every agent's `market.ticker`; the argument is below |
  * | `syndicateLines` | `PUBLIC` | an organisation's standing legal shape, its pooled capital, and who may spend it |
  * | `map` | `PUBLIC` | the topology itself — A13 calls the map the game's only agreed representation |
  *
@@ -90,6 +91,43 @@ import type { FrameSource } from './render.js';
  * private stockpile and is the rejected fuel gauge exactly; anything that moves when a convoy
  * arrives. `extracted` and *held* differ by everything the holder has spent, and only the first
  * is on the public side of §11.2.
+ *
+ * ★ **`marketLines` is the fourth mechanic to reach the frame, and its argument turns on the
+ * one distinction §11.2 draws hardest: a DEED versus a MANIFEST.**
+ *
+ * The market's own tier table (`market/observe.ts`) already settles both halves, and they land on
+ * opposite sides:
+ *
+ *   - **A completed fill is `PUBLIC`** — economy law 10: *"completed trades … become durable
+ *     economic history."* It is the print, the valuation mark, and the receipt reel's raw
+ *     material. Crucially it is `PUBLIC` **galaxy-wide**: `marketView` hands every agent
+ *     `ticker: recentPrints(book, …)` over every venue, buyer and seller named. So A9's parity
+ *     holds *by construction* rather than by inspection — every field on this line is read out
+ *     of the same `book.fills()` log an agent's own `observe` already serves it.
+ *   - **A resting order is not on this line, deliberately.** Depth, price levels and best
+ *     bid/ask are `PUBLIC` too, but `booksFor` serves them only for venues where the reader has
+ *     a hand (§12.1's *"local book only"*). A galaxy-wide ladder on this frame would therefore
+ *     be a live fact most agents' `observe` would NOT show — A9 inverted, in the same shape as
+ *     the `roleTags` defect two paragraphs above. And `market/observe.ts` gives the sharper
+ *     reason: *"a resting ask IS a hold value — 'X has 400 of this good, here, right now'"*, so
+ *     publishing depth would let a raider read a manifest off a public surface without ever
+ *     scouting, which deletes the intel market. **A ship at sea is visible; its manifest is
+ *     not** — and a resting order is the manifest.
+ *
+ * **Why the projection is a PRICE and not a trade count.** The economy's drama is price. That two
+ * systems quote one good 8% apart is a lane worth hauling down, a hub forming and a blockade
+ * worth mounting — M1's entire reason for making the book location-bound. `vwap`, `galaxyVwap`
+ * and `premiumBps` are integer arithmetic over `PUBLIC` fills, which A2 requires be exact and
+ * machine-readable, and `venues` is what stops a sole market's 0 bps from reading as "fairly
+ * priced" when the truth is "nothing to compare it to".
+ *
+ * **What a print may never carry**, each considered: a `reference_mark` (that is the *bond*
+ * valuation — the lender's question, not the viewer's, and pinning it here would give
+ * "what is this worth" two homes); anybody's balance, inventory or escrow; an order's owner
+ * (`PRIVATE`: *"the principal itself; never anyone, never later"*); resting depth at any venue.
+ * `contract.ts:assertFrameBudgets` refuses a market line whose field name matches
+ * `/depth|resting|ladder|bid|ask|owner|principal|inventory|stock|reserve|held|escrow/i`, which is
+ * that rule made executable rather than remembered — the same instrument the claim line uses.
  *
  * **`claimLines` had to argue for itself hardest of all, because this is the exact field the
  * "fuel gauge" would have been.** The argument, field by field:
@@ -211,6 +249,20 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'battleLines',
   'claimLines',
   'worksLines',
+  // ── ★ THE MARKET'S PRINT (§10, A13) ────────────────────────────────────────
+  //
+  // Completed fills only, galaxy-wide, which is the tier `recentPrints` already serves to every
+  // agent through `market.ticker` — so this adds no disclosure and A9 holds by construction. No
+  // resting order, no depth, no ladder, no owner: those are venue-gated in `observe` and a
+  // resting ask is a hold value, so publishing them would be A9 inverted AND the manifest a
+  // raid is meant to have to scout for. The full argument is above.
+  //
+  // It is here because `market/` printed 18 fills and the frame carried no market key at all: the
+  // first production fill would have been invisible, which A13 makes a ship-blocker rather than a
+  // gap. The key is PRESENT even when nothing traded, because an absent key and an empty one read
+  // the same to a client, and "nothing has traded here yet" is a fact this frame must be able to
+  // state.
+  'marketLines',
   'syndicateLines',
   // ── §16'S WORLD MEMORY, AND WHY BOTH ARE ALREADY PUBLIC ────────────────────
   //

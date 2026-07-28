@@ -377,6 +377,14 @@ export async function planCheckpoint(
   // Production, measured directly (2026-07-27):
   //
   //   journal_divergence   9 rows, every one at tick 287, STATE_HASH_MISMATCH, rules 1 -> 2,4,5,6…9
+  //
+  // ⚑ "Every one at tick 287" was read here as a coincidence of the world's shape. It was not, and
+  // the full explanation arrived nineteen rows later: `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=287` was
+  // standing in `/etc/compact/env`, and because a tick is a LOCATION rather than an identity it
+  // pre-authorised every rules change that first diverged at the first snapshot tripwire — which is
+  // nearly all of them. See `acceptance.ts`. The rows above are honest; the gate that let them be
+  // written without asking was not. Nothing in this file changes: adoption's refusal was already
+  // correct, and it is correct for the same reason under a bound acceptance.
   //   posting log @ 2830   escrow:v:2830:117e86ad:p:vale    escrow:v:2830:69c52d4d:p:varrow
   //   capture   @ 4895     escrow:v:2830:516e910d:p:vale    escrow:v:2830:f34917a2:p:varrow
   //   counts    @ 4895     capture 5,542 postings / 2,791 events; log 1,495 / 3,180

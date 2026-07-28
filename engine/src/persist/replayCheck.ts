@@ -23,7 +23,20 @@
 import { pathToFileURL } from 'node:url';
 import { HeuristicCast } from '../cast/index.js';
 import { Runtime, RULES_VERSION } from '../sim/runtime.js';
-import { bootWorld, describeDiagnosis, type BootDiagnosis, type BootResult } from './boot.js';
+import {
+  ACCEPT_ENV_VAR,
+  acceptanceAuthorises,
+  describeAcceptanceRefusal,
+  operatorInstructionFor,
+  parseAcceptance,
+} from './acceptance.js';
+import {
+  bootWorld,
+  describeDiagnosis,
+  identityOf,
+  type BootDiagnosis,
+  type BootResult,
+} from './boot.js';
 import { PgJournalStore } from './postgres.js';
 import type {
   DivergenceRecord,
@@ -47,8 +60,13 @@ export interface ReplayCheckResult {
   readonly boot: BootResult | null;
   /**
    * True when the divergence is exactly the one an operator has already declared via
-   * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`. The check then passes: the deploy is
-   * deliberate and the boot that follows will write the annotation.
+   * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` — **its tick and its fingerprint**. The check then
+   * passes: the deploy is deliberate and the boot that follows will write the annotation.
+   *
+   * This field is the one that was wedged. It used to be `declared === diagnosis.tick`, and
+   * because nearly every rules change first diverges at the same tripwire, a declaration set
+   * once made it permanently true. It is now `acceptanceAuthorises`, which needs the
+   * declaration to name the change.
    */
   readonly preAccepted: boolean;
   readonly report: string;
@@ -59,8 +77,14 @@ export interface ReplayCheckOptions {
   readonly seed: string;
   /** Build the fresh, cast-seated runtime the boot replays into. */
   readonly buildRuntime: (seed: string) => Runtime;
-  /** The tick an operator has already declared, or null. */
-  readonly acceptDivergenceFromTick?: number | null;
+  /**
+   * The declaration an operator has already made, verbatim — `<tick>:<fingerprint>` — or null.
+   *
+   * The raw string rather than a number, because the check's job is to report what the deploy
+   * will do, and the deploy's boot judges the raw string. Two parsers would be two answers to
+   * "is this deploy authorised".
+   */
+  readonly acceptDivergence?: string | null;
   /** Progress sink; the CLI writes a line every few thousand ticks. */
   readonly onProgress?: (tick: number, headTick: number) => void;
 }
@@ -92,7 +116,7 @@ export async function replayCheck(opts: ReplayCheckOptions): Promise<ReplayCheck
     seed: persistedSeed,
     // Always null: the CHECK never walks through the operator door. It reports
     // whether the door would be needed, and whether the operator already opened it.
-    acceptDivergenceFromTick: null,
+    acceptDivergence: null,
     // And it never adopts a checkpoint. The question this answers is "does this build re-derive the
     // record", and adoption re-derives nothing — an adopted preflight would report the first
     // divergence in the tail, which is a different (and later) tick than the one boot will demand.
@@ -117,8 +141,21 @@ export async function replayCheck(opts: ReplayCheckOptions): Promise<ReplayCheck
     };
   }
 
-  const declared = opts.acceptDivergenceFromTick ?? null;
-  const preAccepted = declared !== null && declared === outcome.diagnosis.tick;
+  // ── THE JUDGEMENT THIS CHECK EXISTS TO MAKE ────────────────────────────────
+  //
+  // The preflight is where a deploy is stopped, so it is where a standing bare tick has to be
+  // caught — and it is the one surface that can print the *right* string, because it has just
+  // replayed and knows what diverged. `describeDiagnosis` already renders the refusal (boot
+  // put it in the diagnosis), so nothing is duplicated here except the pre-accepted branch,
+  // which only this function can decide.
+  const identity = identityOf(outcome.diagnosis);
+  const acceptance = parseAcceptance(opts.acceptDivergence);
+  const preAccepted = acceptanceAuthorises(acceptance, identity);
+  // `describeDiagnosis` renders the refusal for every kind EXCEPT a partial (adopted) boot,
+  // where `operatorInstruction` is null because no tick may be offered. The preflight never
+  // adopts, so `identity` here is always the first divergence in the whole record and the
+  // refusal is always the actionable one.
+  const refusal = describeAcceptanceRefusal(acceptance, identity);
   return {
     reproduces: false,
     diagnosis: outcome.diagnosis,
@@ -126,15 +163,17 @@ export async function replayCheck(opts: ReplayCheckOptions): Promise<ReplayCheck
     preAccepted,
     report:
       `replay-check: THIS BUILD WOULD NOT REPRODUCE THE RECORD (head tick ${String(head)}).\n\n` +
-      describeDiagnosis(outcome.diagnosis) +
+      describeDiagnosis({ ...outcome.diagnosis, acceptanceRefusal: refusal }) +
       (preAccepted
-        ? `\n\n  An operator has ALREADY declared this exact tick ` +
-          `(COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(declared)}), so the deploy may proceed and ` +
-          `the boot will write the annotation.`
-        : declared === null
-          ? ''
-          : `\n\n  An operator declared tick ${String(declared)}, but the FIRST divergence is at tick ` +
-            `${String(outcome.diagnosis.tick)}. The declaration must name the tick it was given.`),
+        // `raw` rather than the canonical string, so the report echoes what the operator actually
+        // set: a declaration may be a shorter prefix than this build prints, and telling them a
+        // value they did not type would send them editing a file that is already correct.
+        ? `\n\n  An operator has ALREADY declared this exact divergence ` +
+          `(${ACCEPT_ENV_VAR}=${acceptance.kind === 'BOUND' ? acceptance.raw : ''}), so the deploy ` +
+          `may proceed and the boot will write the annotation. The declaration names both the tick ` +
+          `and the change, so it authorises this one and nothing after it.`
+        : `\n\n  THE DEPLOY MUST STOP HERE. Either fix the change, or put exactly this in ` +
+          `/etc/compact/env and re-run:\n\n      ${operatorInstructionFor(identity)}\n`),
   };
 }
 
@@ -206,7 +245,9 @@ async function main(): Promise<number> {
     const result = await replayCheck({
       store,
       seed: process.env['COMPACT_SEED'] ?? 'compact-1',
-      acceptDivergenceFromTick: envInt('COMPACT_ACCEPT_DIVERGENCE_AT_TICK'),
+      // Verbatim. Parsing here would put a second reader of the operator's declaration in
+      // front of the one that judges it, and the two could disagree about a deploy.
+      acceptDivergence: process.env[ACCEPT_ENV_VAR] ?? null,
       buildRuntime: (seed) => {
         const runtime = new Runtime({ seed });
         const cast = new HeuristicCast(runtime, { size: castSize });

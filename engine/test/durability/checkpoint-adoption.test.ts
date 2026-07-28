@@ -471,7 +471,7 @@ describe('checkpoint adoption: the gate', () => {
     // it would fail inside `adoptSnapshot`, after the runtime had been mutated, where
     // the only possible answer is a hard stop with no door. Caught before anything
     // moves, it is a plain refusal — genesis replay, tripwire, and
-    // `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
+    // `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>`.
     const live = await liveRun();
     const store = new InMemoryJournalStore();
     await store.init(SEED);

@@ -512,10 +512,18 @@ CREATE TABLE IF NOT EXISTS journal_divergence (
   actual_hash         text,
   tolerated_after     integer NOT NULL DEFAULT 0,
   accepted_at_ms      bigint  NOT NULL,
+  -- `<tick>:<fingerprint>` — WHAT the operator authorised, not merely where. See
+  -- persist/acceptance.ts. Nullable: the rows written before acceptances were bound to a
+  -- divergence's identity were authorised by a bare tick, and back-filling a fingerprint
+  -- onto them would be inventing a decision nobody made (A5').
+  accepted_as         text,
   CONSTRAINT journal_divergence_tick_nonneg CHECK (tick >= 0),
   CONSTRAINT journal_divergence_kind CHECK (kind IN ('APPLIED_REFUSED', 'STATE_HASH_MISMATCH')),
   CONSTRAINT journal_divergence_detail_len CHECK (length(detail) <= 2000)
 );
+
+-- For the live world, whose table predates the column.
+ALTER TABLE journal_divergence ADD COLUMN IF NOT EXISTS accepted_as text;
 
 CREATE INDEX IF NOT EXISTS journal_divergence_tick_idx
   ON journal_divergence (tick, seq);

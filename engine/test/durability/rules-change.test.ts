@@ -33,6 +33,7 @@ import {
   BootError,
   InMemoryJournalStore,
   Journal,
+  acceptanceStringForDiagnosis,
   bootFromStore,
   bootWorld,
   describeDiagnosis,
@@ -165,8 +166,16 @@ describe('a rules change under the record HOLDS the world instead of crash-loopi
     expect(outcome.diagnosis.message).toContain('simulated rules change');
 
     // 3. And it says what to do about it, naming that tick and no other.
+    // ── AND IT NAMES THE DIVERGENCE, NOT MERELY ITS LOCATION ────────────────
+    //
+    // A bare `=<tick>` here was the wedge: nearly every rules change first diverges at the
+    // same tripwire, so the instruction this surface handed out pre-authorised all future
+    // changes. It must be `<tick>:<fingerprint>`.
     expect(outcome.diagnosis.operatorInstruction).toBe(
-      `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(outcome.diagnosis.tick)}`,
+      `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${acceptanceStringForDiagnosis(outcome.diagnosis)}`,
+    );
+    expect(outcome.diagnosis.operatorInstruction).toMatch(
+      /^COMPACT_ACCEPT_DIVERGENCE_AT_TICK=\d+:[0-9a-f]{16}$/,
     );
     const briefing = describeDiagnosis(outcome.diagnosis);
     expect(briefing).toContain('THE WORLD IS HELD');
@@ -195,7 +204,7 @@ describe('a rules change under the record HOLDS the world instead of crash-loopi
     if (genesis.outcome.status !== 'HELD') throw new Error('expected HELD');
     expect(genesis.outcome.diagnosis.tick).toBeLessThan(adopted.diagnosis.tick);
     expect(genesis.outcome.diagnosis.operatorInstruction).toBe(
-      `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(genesis.outcome.diagnosis.tick)}`,
+      `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${acceptanceStringForDiagnosis(genesis.outcome.diagnosis)}`,
     );
   }, 180_000);
 
@@ -224,8 +233,9 @@ describe('a rules change under the record HOLDS the world instead of crash-loopi
     expect(outcome.diagnosis.expectedHash).toBe('f'.repeat(64));
     expect(outcome.diagnosis.actualHash).toBe(first.stateHash);
     expect(outcome.diagnosis.operatorInstruction).toBe(
-      `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(first.tick)}`,
+      `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${acceptanceStringForDiagnosis(outcome.diagnosis)}`,
     );
+    expect(outcome.diagnosis.operatorInstruction).toContain(`=${String(first.tick)}:`);
   }, 120_000);
 
   it('the door refuses a tick the operator did not name', async () => {
@@ -234,13 +244,16 @@ describe('a rules change under the record HOLDS the world instead of crash-loopi
     if (held.outcome.status !== 'HELD') throw new Error('expected HELD');
     const real = held.outcome.diagnosis.tick;
 
+    const key = acceptanceStringForDiagnosis(held.outcome.diagnosis);
+    const fingerprint = key.split(':')[1] ?? '';
+
     // An operator who types the wrong tick is accepting something they were not shown.
     const wrong = await bootUnderChangedRules(live.store, 300, {
-      acceptDivergenceFromTick: real + 1,
+      acceptDivergence: `${String(real + 1)}:${fingerprint}`,
     });
     expect(wrong.outcome.status).toBe('HELD');
     if (wrong.outcome.status !== 'HELD') throw new Error('unreachable');
-    expect(wrong.outcome.message).toContain('must name the tick it was given');
+    expect(wrong.outcome.message).toContain('does not authorise it');
     expect((await live.store.divergences()).length).toBe(0);
   }, 120_000);
 });
@@ -256,7 +269,7 @@ describe('the operator door: resume, and write the discontinuity down', () => {
     const at = held.outcome.diagnosis.tick;
 
     const opened = await bootUnderChangedRules(live.store, 300, {
-      acceptDivergenceFromTick: at,
+      acceptDivergence: acceptanceStringForDiagnosis(held.outcome.diagnosis),
       nowMs: () => 1_700_000_000_000,
     });
     expect(opened.outcome.status).toBe('READY');
@@ -290,10 +303,11 @@ describe('the operator door: resume, and write the discontinuity down', () => {
     const live = await runLive();
     const held = await bootUnderChangedRules(live.store, 300);
     if (held.outcome.status !== 'HELD') throw new Error('expected HELD');
-    const at = held.outcome.diagnosis.tick;
 
     for (let restart = 0; restart < 3; restart += 1) {
-      const again = await bootUnderChangedRules(live.store, 300, { acceptDivergenceFromTick: at });
+      const again = await bootUnderChangedRules(live.store, 300, {
+        acceptDivergence: acceptanceStringForDiagnosis(held.outcome.diagnosis),
+      });
       expect(again.outcome.status).toBe('READY');
     }
     expect((await live.store.divergences()).length).toBe(1);
@@ -303,7 +317,7 @@ describe('the operator door: resume, and write the discontinuity down', () => {
     const live = await runLive(40);
     const outcome = await bootWorld(seatedRuntime('a-different-seed'), live.store, {
       seed: 'a-different-seed',
-      acceptDivergenceFromTick: 0,
+      acceptDivergence: '0:0000000000000000',
     });
     expect(outcome.status).toBe('HELD');
     if (outcome.status !== 'HELD') throw new Error('unreachable');
@@ -384,7 +398,7 @@ describe('the deploy preflight answers the question before the restart', () => {
     expect((await live.store.divergences()).length).toBe(0);
   }, 120_000);
 
-  it('passes when the operator has already declared that exact tick', async () => {
+  it('passes when the operator has already declared that exact divergence', async () => {
     const live = await runLive(200);
     const build = (): Runtime => {
       const runtime = seatedRuntime();
@@ -394,24 +408,26 @@ describe('the deploy preflight answers the question before the restart', () => {
     const first = await replayCheck({ store: live.store, seed: SEED, buildRuntime: build });
     const at = first.diagnosis?.tick ?? -1;
     expect(at).toBeGreaterThan(0);
+    if (first.diagnosis === null) throw new Error('unreachable');
 
+    const key = acceptanceStringForDiagnosis(first.diagnosis);
     const declared = await replayCheck({
       store: live.store,
       seed: SEED,
       buildRuntime: build,
-      acceptDivergenceFromTick: at,
+      acceptDivergence: key,
     });
     expect(declared.preAccepted).toBe(true);
-    expect(declared.report).toContain('ALREADY declared this exact tick');
+    expect(declared.report).toContain('ALREADY declared this exact divergence');
 
     const wrong = await replayCheck({
       store: live.store,
       seed: SEED,
       buildRuntime: build,
-      acceptDivergenceFromTick: at + 5,
+      acceptDivergence: `${String(at + 5)}:${key.split(':')[1] ?? ''}`,
     });
     expect(wrong.preAccepted).toBe(false);
-    expect(wrong.report).toContain('must name the tick it was given');
+    expect(wrong.report).toContain('the FIRST divergence is at tick');
   }, 180_000);
 
   it('is genuinely read-only: the store it hands boot absorbs even the metadata write', async () => {
@@ -537,7 +553,13 @@ describe('bootFromStore still throws for callers that want it to', () => {
     }
     expect(caught).toBeInstanceOf(BootError);
     expect((caught as BootError).diagnosis.kind).toBe('APPLIED_REFUSED');
+    // The BOUND form. This assertion used to be `=\d+$` and it is the one that would have let a
+    // bare tick back onto the throwing path unnoticed, so it now pins the shape it must NOT have
+    // as well as the shape it must.
     expect((caught as BootError).diagnosis.operatorInstruction).toMatch(
+      /^COMPACT_ACCEPT_DIVERGENCE_AT_TICK=\d+:[0-9a-f]{16}$/,
+    );
+    expect((caught as BootError).diagnosis.operatorInstruction).not.toMatch(
       /^COMPACT_ACCEPT_DIVERGENCE_AT_TICK=\d+$/,
     );
   }, 120_000);

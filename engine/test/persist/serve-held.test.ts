@@ -21,7 +21,13 @@ import { serve, API_BASE_PATH } from '../../src/api/server.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed } from '../../src/core/time.js';
-import { InMemoryJournalStore, Journal, bootFromStore } from '../../src/persist/index.js';
+import {
+  InMemoryJournalStore,
+  Journal,
+  acceptanceStringForDiagnosis,
+  bootFromStore,
+  bootWorld,
+} from '../../src/persist/index.js';
 
 const SEED = 'serve-held-1';
 const CAST = 4;
@@ -52,6 +58,21 @@ async function fixture(ticks: number): Promise<InMemoryJournalStore> {
   }
   await journal.drain();
   return store;
+}
+
+/**
+ * The key an operator would be handed for this store, learned the way they learn it.
+ *
+ * A probe boot rather than a hand-built identity string: the fingerprint covers the
+ * divergence's `detail`, and a fixture that reassembled that sentence itself would pass while
+ * the real preflight and the real boot disagreed about a character of it.
+ */
+async function keyFor(store: InMemoryJournalStore): Promise<string> {
+  const probe = new Runtime({ seed: SEED });
+  new HeuristicCast(probe, { size: CAST }).seat(SEED);
+  const held = await bootWorld(probe, store, { seed: SEED, checkpoint: { disabled: true } });
+  if (held.status !== 'HELD') throw new Error('the fixture did not diverge');
+  return acceptanceStringForDiagnosis(held.diagnosis);
 }
 
 describe('serve() holds instead of crash-looping', () => {
@@ -100,8 +121,14 @@ describe('serve() holds instead of crash-looping', () => {
         expect(body['failure']).toBe('STATE_HASH_MISMATCH');
         expect(body['tick']).toBe(target.tick);
         expect(body['expected_state_hash']).toBe('a'.repeat(64));
+        // The BOUND form. A bare `=<tick>` here would be the held HTTP surface — the one
+        // screen an operator trusts at 03:00 — issuing an instruction that pre-authorises
+        // every future rules change at this tick.
         expect(body['operator_instruction']).toBe(
-          `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(target.tick)}`,
+          `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${acceptanceStringForDiagnosis(started.boot.diagnosis)}`,
+        );
+        expect(String(body['operator_instruction'])).toMatch(
+          /^COMPACT_ACCEPT_DIVERGENCE_AT_TICK=\d+:[0-9a-f]{16}$/,
         );
         expect(String(body['detail'])).toContain('THE WORLD IS HELD');
       }
@@ -136,7 +163,7 @@ describe('serve() holds instead of crash-looping', () => {
       castSize: CAST,
       framesDir: null,
       store: corrupted,
-      acceptDivergenceFromTick: target.tick,
+      acceptDivergence: await keyFor(corrupted),
     });
     try {
       expect(started.boot.status).toBe('READY');

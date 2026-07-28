@@ -138,7 +138,9 @@ Then, in order:
    no caller and a self-destructing test saying so. What is missing is an initiator on `RaidRecord` —
    a CAPTURED table, so a `RULES_VERSION` bump and a declared discontinuity through the operator door.
    Routine here: this world is at version 6 and the deploy carries
-   `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
+   `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`. **Since `D37` that variable takes `<tick>:<fingerprint>`,
+   not a bare tick** — a bare number is refused, because for nineteen consecutive rules changes a
+   standing `=287` pre-authorised every one of them. The preflight prints the exact string.
 2. **The rest of Phase 2** — `PASS-SHIPS-COMBAT-extended`'s operation model, fitting, tackle,
    logistics, EWAR, capacitor, doctrines. Roadmap now, not a maybe.
 3. **A second good beyond `ore`/`ration`.** §10 specifies four; two exist. The constants are

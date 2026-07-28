@@ -227,6 +227,18 @@ export interface DivergenceRecord {
   readonly expectedHash: string | null;
   /** For a tripwire mismatch: what this build produced. Null for a refusal. */
   readonly actualHash: string | null;
+  /**
+   * **The acceptance string the operator's declaration had to match** —
+   * `<tick>:<fingerprint>`, from `acceptance.ts`. Null on a row written before acceptances
+   * were bound to a divergence's identity.
+   *
+   * It exists because `tick` alone could not say what was authorised. The nineteen rows this
+   * world already holds are all at tick 287, all with the same sentence in `detail`, because
+   * every rules change first diverges at the first snapshot tripwire — so the record showed
+   * nineteen discontinuities and could not show which nineteen. This column is the identity,
+   * and it is what an operator's standing declaration is now checked against.
+   */
+  readonly acceptedAs: string | null;
   /** How many further divergences the same boot tolerated after this one. */
   readonly toleratedAfter: number;
   /** Wall clock at acceptance, injected (DET-7). Audit only; nothing reads it back. */

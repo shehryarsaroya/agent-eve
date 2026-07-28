@@ -35,11 +35,16 @@
  */
 
 import type { GoodId, PrincipalId, SystemId } from '../core/types.js';
-import { minor, qty, type Minor, type Qty } from '../core/units.js';
+import { BPS_ONE, minor, qty, type Minor, type Qty } from '../core/units.js';
+// The frame contract owns the line's shape and this module fills it, exactly as
+// `predation/view.ts` fills `RaidLine`. One home per rules surface: a second `MarketLine`
+// declared here would be the same pixel signature described twice, and the two would drift
+// the first time a field was added.
+import type { MarketLine } from '../frames/contract.js';
 import { compareIds } from '../ledger/index.js';
-import type { MarketBook } from './book.js';
+import type { Fill, MarketBook } from './book.js';
 import { topOfBook } from './match.js';
-import { comparePriority, remainingOf, type Order, type Side, type VenueId } from './order.js';
+import { bookKey, comparePriority, remainingOf, type Order, type Side, type VenueId } from './order.js';
 
 /** Price levels published per side. Enough to read the shape; bounded (INV-26). */
 export const PUBLISHED_LEVELS = 5;
@@ -272,6 +277,153 @@ export function recentPrints(book: MarketBook, limit: number): readonly PublicPr
     buyer: f.buyer,
     seller: f.seller,
   }));
+}
+
+// ── THE PIXEL SIGNATURE (A13, §10) ──────────────────────────────────────────
+//
+// ★ **THE PRINT.** A claim tints a system, a WORKS marks it, and a market PRINTS A PRICE ON
+// IT. The shape is `../frames/contract.MarketLine`, whose header names the signature and argues
+// it field by field; the §11.2 clause that admits the key is in `frames/projection.ts`.
+//
+// **Built here rather than in the renderer, for the reason every other line set is**: a
+// renderer that computed its own prices would be inventing an economy, and a premium drawn
+// over a good that never traded at two places is the same class of lie as a red arc thrown at a
+// holding nobody attacked. This file can only see the book, and the book only holds fills.
+//
+// A9 holds by construction and it is worth stating where: this reads `book.fills()`, and every
+// agent's `market.ticker` is `recentPrints(book)` over the same log — galaxy-wide, buyer and
+// seller named. It reads no `Order`, so nothing venue-gated can reach a frame from here.
+
+/**
+ * One line per `(venue, good)` the book still remembers a print for, widest premium first.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THERE IS NO POLICY WINDOW, AND MEASURING ONE IS WHY.** The first draft measured one
+ * Reckoning, and three seeded six-Reckoning worlds printed 6, 3 and 1 fills — a sparse market is
+ * what a young economy looks like. Two of the three then rendered **no price at all** on their
+ * head frame while the record plainly held one. Widening to three Reckonings fixed one of the
+ * two: with trades this rare, *any* fixed window is empty most nights.
+ *
+ * That failure is the exact shape A2 forbids, and `visibleBooks` above had already reached the
+ * answer for the agent's side: *"dropping it the moment the depth empties would tell an agent the
+ * good has never traded here — which is a false statement about the world made by an absence."* A
+ * viewer is owed the same surface. **A price from six Reckonings ago is a price; nothing is not.**
+ *
+ * So the span is every fill still on the ring, and the line publishes **its own span** —
+ * {@link MarketLine.firstTick} and {@link MarketLine.lastTick}. That is what makes the counts
+ * honest without a constant: `prints: 3 · firstTick: 600 · lastTick: 863` is unambiguous, where
+ * "3 prints" against an unstated period would not be, and a policy number would additionally
+ * need calibrating against a trade rate nobody can predict yet. Bounded by `MAX_FILLS`
+ * structurally, and staleness is `frame.tick − lastTick`, which a viewer can do by eye.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `tick` is the upper bound rather than "now": rendering a past Reckoning's frame must not show a
+ * print from after it, or the archive would drift every time it was re-read.
+ */
+export function marketLinesFor(book: MarketBook, tick: number, limit: number): readonly MarketLine[] {
+  const window = book.fills().filter((f) => f.tick <= tick);
+  if (window.length === 0) return [];
+
+  // Per-good totals FIRST, so a venue's premium is measured against the whole galaxy rather
+  // than against itself. Two passes over a bounded ring; no sort of non-strings.
+  const galaxy = new Map<GoodId, { cost: number; qty: number }>();
+  for (const f of window) {
+    const cell = galaxy.get(f.good) ?? { cost: 0, qty: 0 };
+    cell.cost += f.unitPrice * f.qty;
+    cell.qty += f.qty;
+    galaxy.set(f.good, cell);
+  }
+
+  const byBook = new Map<string, Fill[]>();
+  for (const f of window) {
+    const key = bookKey(f.venue, f.good);
+    byBook.set(key, [...(byBook.get(key) ?? []), f]);
+  }
+  // How many places traded each good, which is what decides whether a premium MEANS anything.
+  const venuesPerGood = new Map<GoodId, Set<VenueId>>();
+  for (const f of window) {
+    const seen = venuesPerGood.get(f.good) ?? new Set<VenueId>();
+    seen.add(f.venue);
+    venuesPerGood.set(f.good, seen);
+  }
+
+  const lines: MarketLine[] = [];
+  for (const fills of byBook.values()) {
+    const first = fills[0];
+    if (first === undefined) continue;
+    let cost = 0;
+    let volume = 0;
+    // `last` by TICK, then by position in the append-only log, so two fills in one tick
+    // resolve the same way on every machine. Never `.sort()` on the fills themselves.
+    let last = first;
+    let firstTick = first.tick;
+    for (const f of fills) {
+      cost += f.unitPrice * f.qty;
+      volume += f.qty;
+      if (f.tick >= last.tick) last = f;
+      if (f.tick < firstTick) firstTick = f.tick;
+    }
+    const here = volume === 0 ? 0 : Math.round(cost / volume);
+    const total = galaxy.get(first.good) ?? { cost: 0, qty: 0 };
+    const everywhere = total.qty === 0 ? 0 : Math.round(total.cost / total.qty);
+    const venues = venuesPerGood.get(first.good)?.size ?? 1;
+    // ── WHY `venues` DECIDES THE PREMIUM AND NOT THE ARITHMETIC ──────────────
+    //
+    // A sole market IS the galaxy price, so its premium is zero by identity and there is
+    // nothing to compare. Elsewhere, integer bps against an integer denominator: a difference
+    // smaller than one bps truncates to 0, which is honest ("the same price, to the precision
+    // this field has") and is why `assertFrameBudgets` checks the premium's sign does not
+    // CONTRADICT the two prices rather than demanding it be non-zero. A guard that demanded a
+    // non-zero premium would be satisfied by fabricating a magnitude.
+    const premiumBps =
+      venues < 2 || everywhere === 0 ? 0 : Math.trunc(((here - everywhere) * BPS_ONE) / everywhere);
+    lines.push({
+      venue: first.venue,
+      good: first.good,
+      lastPrice: minor(last.unitPrice),
+      lastTick: last.tick,
+      firstTick,
+      prints: fills.length,
+      volume: qty(volume),
+      vwap: minor(here),
+      galaxyVwap: minor(everywhere),
+      venues,
+      premiumBps,
+      legend: printLegend(first.good, here, venues, premiumBps),
+    });
+  }
+
+  // Widest premium first: the gap between two places IS the story, so overflow must drop the
+  // places that agree with everyone else rather than the ones that do not. Ties broken by
+  // volume then by canonical id, so the frame is stable across runs (DET).
+  return lines
+    .sort(
+      (a, b) =>
+        Math.abs(b.premiumBps) - Math.abs(a.premiumBps) ||
+        b.volume - a.volume ||
+        compareIds(a.venue, b.venue) ||
+        compareIds(a.good, b.good),
+    )
+    .slice(0, limit);
+}
+
+/**
+ * `ORE · 1240 · +812 bps DEAR` — the words a viewer reads.
+ *
+ * Three states, not two, because "no premium" and "nothing to compare against" are different
+ * facts and A2 forbids letting an absence read as a measurement. A sole market says `ONLY
+ * MARKET`; two markets that agree say `AT PARITY`, which is a real and interesting result; a
+ * gap says which way and how far.
+ *
+ * No `toLocaleString`: it depends on the ICU build Node was compiled with, so a number could
+ * render differently on the server than in a test. Plain digits are the same everywhere.
+ */
+function printLegend(good: GoodId, vwap: number, venues: number, premiumBps: number): string {
+  const head = `${String(good).toUpperCase()} · ${String(vwap)}`;
+  if (venues < 2) return `${head} · ONLY MARKET`;
+  if (premiumBps === 0) return `${head} · AT PARITY across ${String(venues)} markets`;
+  const sign = premiumBps > 0 ? '+' : '-';
+  return `${head} · ${sign}${String(Math.abs(premiumBps))} bps ${premiumBps > 0 ? 'DEAR' : 'CHEAP'}`;
 }
 
 function ownOrder(order: Order): OwnOrder {
