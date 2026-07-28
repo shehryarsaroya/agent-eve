@@ -4,3 +4,4 @@ coverage/
 *.log
 .env
 tsconfig.build.tsbuildinfo
+node_modules
