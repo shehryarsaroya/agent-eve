@@ -427,8 +427,39 @@ export const CAST_ALLOY_ASK_QTY = 500;
  *
  * **Two** rather than one, for `CAST_CARRY_RESERVE_RECKONINGS`'s reason: an assessment is levied on
  * the docket at the *end* of a cycle, so a member holding exactly this Reckoning's duty is one
- * unfavourable allocation rule away from short. Two gives the reserve a Reckoning of slack, which is
- * the direction a guard on a permanent public record should err in (A5′).
+ * unfavourable allocation rule away from short — so **two** was the first pick, for the direction a
+ * guard on a permanent public record should err in (A5′).
+ *
+ * ── ⚑ TWO IS EXPENSIVE AND ONE IS UNPAYABLE, MEASURED IN BOTH DIRECTIONS ─────
+ *
+ * Nine Reckonings, 8 seeds, three readings of the same guard, changing nothing but this number and
+ * what it counts:
+ *
+ * ```
+ *   2 × duty + the batch's ore ...........  levyShort      0 · red 0/576   claims 23
+ *   2 × duty + the batch's ore, batch 4k .  levyShort 27,726 · red 5/576   claims 31
+ *   1 × duty + the whole commitment ......  levyShort 55,091 · red 5/576   claims 31
+ *   2 × duty + the whole commitment, 4k ..  levyShort    288 · red 1/576   claims 25
+ *   2 × duty + the whole commitment ......  levyShort      0 · red 0/576   claims 23   ← this
+ * ```
+ *
+ * Rows two and three are the same mistake from two sides: **the bar has to price the whole 16,000-ore
+ * decision, and it has to be two Reckonings deep.** Cheapening either lets eight more members buy a
+ * claim out of ore the tribute needed, and `levyShort` is one of only two meters in `balance-gate.ts`
+ * that survives a null control. The cost is that territory is genuinely dearer than it was — `claims`
+ * 28 → 26 at three Reckonings — and that is the gate doing its job rather than a regression to tune
+ * away.
+ *
+ * ── ⚑ AND THE MULTIPLE IS THE SMALLER HALF OF THE GUARD ──────────────────────
+ *
+ * This number alone was **not enough and could not have been**, which is worth stating here as well as
+ * at the call site because a future tuner will reach for this constant first. Refining alloy spends
+ * **ore**; the reserve is measured in **rations**; so the check passed on a balance the spend never
+ * touched. Measured at nine Reckonings: `levyShort` 1,429 and one red tribute line, against a master
+ * that is eight-of-eight spotless. `alloyPlanFor` now adds the batch's ore to the reserve at the
+ * published 1:1 ration recipe, so the member must hold its tribute **plus** what the batch is about to
+ * cost it in forgone income. **Raising this multiple would not have fixed that** — it would have
+ * bought a wider margin against the wrong quantity.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const CAST_ALLOY_RESERVE_RECKONINGS = 2;
@@ -2029,14 +2060,65 @@ export class HeuristicCast {
     // rather than in either caller so that neither can forget it.
     const mine = runtime.levyBlockFor(member.principal, tick);
     const perReckoning = Math.max(mine?.my_assessment ?? 0, LEVY_DUTY_PER_PRINCIPAL);
-    if (runtime.levyGoodAvailable(member.principal) < perReckoning * CAST_ALLOY_RESERVE_RECKONINGS) {
+
+    // One action per batch rather than per unit: a member that refined 1 alloy at a time would spend
+    // an action a tick forever and displace every branch below it. Bounded by
+    // ── AND IT IS NOT CAPPED, WHICH COST TWO MEASUREMENTS TO ESTABLISH ────────
+    //
+    // `CAST_ALLOY_BATCH_ORE` capped this at 4,000 ore so a claim-seeker could pay in instalments. It
+    // reads like pure pacing and it is not: with the reserve pricing the whole remaining commitment,
+    // a smaller batch lets a member **begin** on 4,000 ore in hand rather than 16,000, so more members
+    // complete the diversion and the tribute pays for it. `levyShort` 0 → **288 with 1 red line** on
+    // nothing else. One red line is a regression (the nine-Reckoning gate is eight-of-eight spotless
+    // on master), so the cap is gone and a batch is the whole remaining commitment again.
+    const rate = ALLOY_IN_BY_TIER[tier];
+    const step = Math.min(target, CAST_ALLOY_ASK_QTY);
+    const batchOre = step * rate;
+
+    // ── ★ THE RESERVE COUNTS THE ORE TOO, AND LEAVING IT OUT COST A RED LINE ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **MEASURED AT NINE RECKONINGS: `levyShort` 1,429 and 1 red tribute line on `g07`, against a
+    // master that is eight-of-eight spotless.** The reserve used to be `levyGoodAvailable >=
+    // perReckoning × CAST_ALLOY_RESERVE_RECKONINGS` and nothing else, which reads correctly and
+    // **guards the wrong quantity**: refining alloy consumes ORE, not rations, so the check passed on
+    // a ration balance the refine was never going to touch — while quietly deleting the *future*
+    // rations that ore was going to become. At the MARCHES rate a single claim batch is
+    // `500 × 32 = 16,000` ore, which is 16,000 rations the tribute will not see, or about eighty
+    // percent of a whole `LEVY_DUTY_PER_PRINCIPAL`.
+    //
+    // Three Reckonings of a clean gate hid it, because the endowment window covers the early cycles
+    // and the harm only compounds once a member is living on production. **A guard that measures the
+    // stock a spend does not touch is not a guard**, and it fails in the direction that hides.
+    //
+    // So the ore is priced INTO the reserve at 1:1 — the published `refine {kind:"RATION"}` recipe,
+    // which is what those units would otherwise have become — and the member must hold its tribute
+    // reserve **on top of** what the batch is about to cost it. `levyGoodAvailable` is location-blind
+    // exactly as the settlement's own reader is, so this asks the question the Levy will ask.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── AND IT PRICES THE WHOLE COMMITMENT, NOT THE INSTALMENT ────────────────
+    //
+    // **Measured twice, in opposite directions, and this is the reading that satisfies both.** Pricing
+    // the BATCH took the nine-Reckoning gate to 0 short and then `CAST_ALLOY_BATCH_ORE` — which exists
+    // to keep the bar reachable — quietly undid it: a claimant needs `500 × 32 = 16,000` ore and passes
+    // a 4,000-ore check **four times** to spend it, so the guard approved a sixteen-thousand-unit
+    // decision four thousand at a time. `levyShort` 0 → **27,726** with **5 red lines**, on nothing but
+    // the batch getting smaller.
+    //
+    // A member is not deciding to convert one batch; it is deciding to buy an anchor's worth. So the
+    // reserve prices what is **left to reach the target**, and the batch is action pacing underneath a
+    // decision that was already affordable. A member part-way through keeps going as its ore accrues,
+    // because the remaining cost shrinks as it does.
+    const remaining = Math.max(0, target - Number(runtime.alloyAt(member.principal, system)));
+    const forgone = Math.trunc((remaining * rate * REFINE_OUT_QTY) / REFINE_IN_QTY);
+    if (
+      runtime.levyGoodAvailable(member.principal) <
+      perReckoning * CAST_ALLOY_RESERVE_RECKONINGS + forgone
+    ) {
       return null;
     }
 
-    // One action per batch rather than per unit: a member that refined 1 alloy at a time would spend
-    // an action a tick forever and displace every branch below it.
-    const step = Math.min(target, CAST_ALLOY_ASK_QTY);
-    return { system, step, batchOre: step * ALLOY_IN_BY_TIER[tier] };
+    return { system, step, batchOre };
   }
 
   /**

@@ -76,7 +76,23 @@ describe("tomorrow's docket is built from what is actually riding", () => {
    * and fails loudly if the cast ever stops producing the case at all — which would itself be worth
    * knowing, because it would mean no two cast members ever meet as strangers.
    */
-  const CANDIDATE_SEEDS = ['docket-k', 'docket-q', 'docket-s', 'docket-u', 'docket-h', 'docket-f'] as const;
+  // ── EXTENDED FROM SIX TO TWELVE, WHICH IS WHAT THE ASSERTION'S OWN MESSAGE ASKS FOR ──
+  //
+  // The discriminating case below needs a docket carrying a pairing that has **never dealt**, and its
+  // failure message names the two possibilities in order: *"Either the cast stopped letting members
+  // meet as strangers, or the seed list needs extending — do not delete the assertion."* It is the
+  // second. `RULES_VERSION` 18 gives Commons members an alloy branch and claim-seekers an errand, so a
+  // handful of ventures shift by a handful of ticks and the six original seeds no longer happen to
+  // produce a stranger pairing on a docket. Nothing about strangers changed: members still meet
+  // without history, and six more seeds find them immediately.
+  //
+  // Extending rather than re-picking, because a wider list is strictly harder to lose than a luckier
+  // single seed — `test/levy/exposure-high-water.spec.ts` had to be re-seeded three times in this one
+  // session for exactly the want of that.
+  const CANDIDATE_SEEDS = [
+    'docket-k', 'docket-q', 'docket-s', 'docket-u', 'docket-h', 'docket-f',
+    'docket-a', 'docket-b', 'docket-c', 'docket-d', 'docket-e', 'docket-g',
+  ] as const;
 
   it('orders by stakes descending, because the biggest thing riding leads', () => {
     // Ordering holds on every seed, so it is asserted on the first one regardless.

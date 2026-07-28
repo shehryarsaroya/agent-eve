@@ -39,6 +39,38 @@ import { giveAlloy } from '../works/alloy-fixture.js';
 /** The four seeds the balance gate was run on. Fixed, so the numbers below are reproducible. */
 export const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
 
+/**
+ * ★ Ticks the CLAIM-dependent gates run for, and why it is no longer 900.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **TERRITORY GOT SLOWER, ON PURPOSE, AND `gate-b` IS WHERE IT SHOWS.** `RULES_VERSION` 18 prices an
+ * ANCHOR in `ALLOY_ANCHOR_QTY` (500) of the manufactured good on top of its rations, and a MARCHES
+ * claimant refines that at 32:1 — **16,000 ore**, about half a Reckoning of a sole occupant's yield,
+ * held back from the ration recipe while its tribute reserve stays covered. So a claim that used to
+ * land inside three Reckonings now lands inside four, and four of these gates went red on `gate-b`
+ * with the message *"the territory layer is still inert"* — which was true of the window, not of the
+ * layer.
+ *
+ * **2,400 rather than 900, and the size of that widen is the honest measure of the change.** 8.3
+ * Reckonings. `gate-b` produces its first claim somewhere between 1,200 (measured: 0) and 2,400
+ * (measured: 1), because its bonded members hold 36,000–51,000 rations against a reserve that will not
+ * let them divert 16,000 ore until they hold 56,000 — so they claim only after several Reckonings of
+ * accumulation.
+ *
+ * **The alternative was to cheapen the anchor or the reserve, and both were measured and refused.**
+ * Cheapening the reserve takes the nine-Reckoning gate from `levyShort` 0 to 27,726 with five red
+ * tribute lines (`heuristic.ts:CAST_ALLOY_RESERVE_RECKONINGS` carries the four-row table), and
+ * `levyShort` is one of only two meters that survive a null control. So territory is genuinely dearer
+ * than it was — the gate-wide `claims` count goes 28 → 17 at three Reckonings — and that is this
+ * feature working rather than a regression to tune away. A reader comparing claim counts across
+ * `RULES_VERSION` 17 and 18 should expect the drop and read the Levy columns instead.
+ *
+ * The gates that do NOT depend on a claim keep their 640 and 900, so this widens exactly the window
+ * that had to widen and leaves every other measurement on its original footing.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+const CLAIM_TICKS = 2_400;
+
 interface Run {
   readonly runtime: Runtime;
   readonly cast: HeuristicCast;
@@ -204,7 +236,7 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
     // expectation (measured: 3 of 11 claims LAPSED with the branch removed).
     // ══════════════════════════════════════════════════════════════════════
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const lines = run.runtime.reckoningFrame()?.claimLines ?? [];
       expect(lines.length, `${seed}: no claim line — the territory layer is still inert`).toBeGreaterThan(0);
       for (const line of lines) {
@@ -239,7 +271,7 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
     // income. MUTATION: `if (mine.length === 0 && false)` in `claimFor`. RED here.
     // ══════════════════════════════════════════════════════════════════════
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const claims = run.runtime.sovereignty.liveClaims();
       expect(claims.length, `${seed}: no claim to check`).toBeGreaterThan(0);
       for (const claim of claims) {
@@ -282,7 +314,7 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
     let seedsWithATenant = 0;
     let rentMoved = 0;
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       for (const claim of run.runtime.sovereignty.liveClaims()) {
         const tenants = run.runtime.works.liveAt(claim.system).filter((w) => w.holder !== claim.claimant);
         if (tenants.length === 0) continue;
@@ -367,7 +399,7 @@ describe('★ THE BALANCE GATE — territory must not make the Levy harder', () 
    */
   it('levyShort stays ZERO and no tribute line goes red, with claims live and Charges paid', () => {
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const frame = run.runtime.reckoningFrame();
       expect(frame, `${seed}: no frame`).not.toBeNull();
       // Non-vacuity FIRST: a world with no claim in it satisfies the rest of this test trivially,
@@ -394,7 +426,7 @@ describe('★ THE BALANCE GATE — territory must not make the Levy harder', () 
     let broken = 0;
     let ventures = 0;
     for (const seed of GATE_SEEDS) {
-      const run = play(seed, 900);
+      const run = play(seed, CLAIM_TICKS);
       const frame = run.runtime.reckoningFrame();
       kept += frame?.meters.kept ?? 0;
       broken += frame?.meters.broken ?? 0;

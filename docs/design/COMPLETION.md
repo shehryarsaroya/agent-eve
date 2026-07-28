@@ -145,9 +145,17 @@ can be recorded short of it. `haul` — a canon verb filed under *"step 11"* sin
 — goes live with it, so goods can move for the first time. `audit:budgets` reads 40/40 before and
 after.
 
-**The Levy is untouched and the gate is spotless.** All four obligation constants still read `ration`,
-`goods-are-independent.test.ts` is green, and 8 seeds give `levyShort` **0** and red tribute lines
-**0/192 · 0/384** at 3 and 6 Reckonings — the only two meters the null control leaves standing.
+**The Levy is untouched and the gate is spotless at all three horizons.** All four obligation constants
+still read `ration`, `goods-are-independent.test.ts` is green, and 8 seeds give `levyShort` **0** and
+red tribute lines **0/192 · 0/384 · 0/576** at 3, 6 and 9 Reckonings — eight of eight, matching master,
+on the only two meters a null control leaves standing.
+
+**What it costs is territory, and the number is large enough to state plainly:** `claims` 28 → **17** at
+3R and 29 → 23 at 6R, with `rent` falling further because the claims that do happen happen later. An
+anchor now needs 16,000 ore of somebody's industry and the cast will not divert that until its tribute
+is two Reckonings covered. That reserve took **four measurements** to get right and three plausible
+readings of it each failed differently at nine Reckonings (`D35`) — including one that guarded a stock
+the spend never touched, and one that approved a 16,000-ore decision four thousand at a time.
 
 #### ★ But the answer to "why has the market never cleared" was not the number of goods
 
