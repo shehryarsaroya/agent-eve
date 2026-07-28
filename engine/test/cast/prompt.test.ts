@@ -1441,7 +1441,17 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // against a required 4,000. Spent on `RULES_VERSION` 19's §11A block — the rule that decides
       // what a member may commit to a BID, which had no home in the contract at all until now,
       // because until 19 the answer was *nothing, for everyone, always*.
-      71_338,
+      //
+      // ── ★ 71,338 → 72,909 AT THE 120,000 RAISE, AND ONLY THIS ROW MOVED ─────
+      //
+      // The four rows above are **byte-identical** across the raise. This one grew by 1,571, which
+      // is the exact amount of CONTEXT the 72,000 bar had been trimming off a position no principal
+      // can occupy. So the raise bought back nothing a player will ever read — and that is the
+      // measurement that proves the mechanism rather than the number: **the budget governs CONTEXT
+      // only, and no REACHABLE position was ever being squeezed.** Had a reachable row moved here,
+      // the raise would have been silently restoring rules an agent had been denied, which is a
+      // different and much worse finding.
+      72_909,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

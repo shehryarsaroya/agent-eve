@@ -1042,8 +1042,38 @@ export const CONTRACT_POSITIONS: readonly {
  *
  * `CONTRACT_POSITIONS` carries the measured table and is the thing to read before adding a
  * section, because it is executable and this comment is not.
+ *
+ * ── 72,000 → 120,000, AND WHY THE LAST TWO ESTIMATES WERE BOTH WRONG ─────────
+ *
+ * The paragraph above promised 72,000 was *"several features of headroom rather than one"*. It
+ * bought **three** — combat's §9A, the market's endowment rules, and the goods floor — and the
+ * analytic margin fell 16,004 → **662**. The estimate before it made the same promise at 56,000 and
+ * bought two. So the failure is not the number; it is the *method*: each author measures the margin
+ * against their own feature and cannot see the two landing beside them, so every raise is spent by
+ * concurrent work before the next author reads this comment.
+ *
+ * That makes this a **shared scalar with no arbiter**, exactly like `RULES_VERSION` — where two
+ * agents each claimed the next integer, both deployed, and the live record briefly carried two rule
+ * sets stamped `10`. The fix there was that the owner pre-assigns the integer. The fix here is the
+ * same shape: **the owner sets this number and allocates per-feature character quotas from it**, and
+ * an author who cannot fit inside a quota reports the measurement instead of trimming a rule or
+ * moving the bar. Both of those were tried; the first cost an agent a rule it needed, and the second
+ * is why this paragraph exists twice.
+ *
+ * 120,000 is sized against the **whole remaining queue** rather than the next feature — coalitions,
+ * campaigns, compartmented authority, chokepoints, the risk market — at a measured ~600–2,500
+ * characters each, plus the 4,000 margin, plus room for the estimate to be wrong a third time.
+ *
+ * The precondition is unchanged and still the only thing that makes any of this legitimate: **FLOOR
+ * and RULES are emitted whatever the total**, so an overshoot is loud and never silent. Revert that
+ * and this number must come back down with it.
+ *
+ * Cost, so it is not hand-waved: ~30k tokens on a fully-developed claimant's wake, against a cast
+ * spending $0.24 of a $5.00 per-Reckoning cap with the floor-first ordering keeping ~21,000
+ * characters a byte-identical cacheable prefix. The budget was never the binding constraint here;
+ * silent truncation was, and that is what got fixed rather than priced.
  */
-export const MAX_CONTRACT_CHARS = 72_000;
+export const MAX_CONTRACT_CHARS = 120_000;
 
 /**
  * How far {@link MAX_CONTRACT_CHARS} must stay above the analytic maximum of the catalog.
