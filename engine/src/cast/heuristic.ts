@@ -34,7 +34,7 @@ import {
   worldFleetProfile,
 } from '../combat/index.js';
 import { Rng } from '../core/rng.js';
-import { inFreeze, isSettlementTick, TICKS_PER_RECKONING } from '../core/time.js';
+import { HAND_RECOVERY_TICKS, inFreeze, isSettlementTick, phaseOfReckoning, TICKS_PER_RECKONING } from '../core/time.js';
 import type { PrincipalId, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
@@ -85,6 +85,7 @@ import {
   reckoningOf,
   type Runtime,
 } from '../sim/runtime.js';
+import { DEMAND_WINDOW_TICKS } from '../predation/index.js';
 import type { SubmittedAction } from '../tick/index.js';
 
 /**
@@ -1321,10 +1322,24 @@ export class HeuristicCast {
     // `deliver {payer}` race above: nothing in the logs would say anything went wrong, and the cost
     // is four hands not filling roles for a Reckoning.
     //
-    // One member per tick, per standoff. The gap is re-read next tick against the party rows that
-    // have actually landed, so the coalition assembles at one hand a tick and stops the moment the
-    // reading flips — which is also the only coordination §15.2 permits a heuristic, since
-    // *"within-tick actions never react to another within-tick action"*.
+    // ── ★ AS MANY AS THE READING ASKS FOR, AND NOT ONE MORE ────────────────────
+    //
+    // The first version was **one member per tick per standoff**, and it is the wrong bound: a
+    // coalition needs two allies *at one standoff* and a march takes `GATE_TRANSIT` ticks, so a
+    // one-a-tick throttle plus a decision queue that puts a favour under every world bill means the
+    // second ally never arrives while the first is still relevant. Measured at 20 members × 3
+    // Reckonings: the throttle at 1 gives **12 joins and `maxParties` 1**; at the gap it gives
+    // **17 and `maxParties` 2**, which is the difference between an escort and a coalition.
+    //
+    // The bound is the **published gap** — `raider - defender_if_you_fight` — because that is exactly
+    // how many hands the reading is short, and it is the same figure {@link coalitionFor}'s gate 2
+    // reads. So the cast commits as many as the arithmetic asks for and stops there; over-committing
+    // is not a refusal (every one of those joins lands) which makes it worse than a race — nothing in
+    // the logs would say anything went wrong while hands sat out a Reckoning for nothing.
+    //
+    // Re-read next tick against the party rows that have actually landed, which is also the only
+    // coordination §15.2 permits a heuristic: *"within-tick actions never react to another
+    // within-tick action"*.
     //
     // The set is written by {@link coalitionFor} rather than inferred from the returned action here,
     // and the reason is that **a march does not name the raid it is walking toward.** `move` takes a
@@ -1332,7 +1347,7 @@ export class HeuristicCast {
     // cast-only key into a rules surface the engine does not read. The claim has to be staked where
     // the decision is made or it binds several ticks late — long after every member has already
     // sent a hand.
-    const reinforced = new Set<string>();
+    const reinforced = new Map<string, number>();
     for (const member of this.members) {
       const rng = Rng.fromSeed(`${seed}:cast:${member.principal}:${String(tick)}`);
       const action = this.decideOne(member, tick, rng, out.length, claimed, reinforced);
@@ -1371,11 +1386,11 @@ export class HeuristicCast {
     /** Payers a cast-mate is already carrying for this tick — see {@link HeuristicCast.decide}. */
     carriedThisTick: ReadonlySet<PrincipalId>,
     /**
-     * Standoffs a cast-mate is already reinforcing this tick. **Mutable, and written by
+     * How many cast-mates are already reinforcing each standoff this tick. **Mutable, and written by
      * {@link coalitionFor}** — see {@link HeuristicCast.decide} for why the claim cannot be inferred
-     * from the returned action.
+     * from the returned action, and why the bound is the gap rather than one.
      */
-    reinforcedThisTick: Set<string>,
+    reinforcedThisTick: Map<string, number>,
   ): SubmittedAction | null {
     const runtime = this.runtime;
     const base = {
@@ -1419,24 +1434,6 @@ export class HeuristicCast {
     // defect this file's combat branches exist to close — an asset that exists and is never used.
     const committing = this.engageFor(member, tick);
     if (committing !== null) return { ...base, ...committing };
-
-    // ── ★ TAKE SOMEBODY ELSE'S SIDE, OR START WALKING TOWARD IT ───────────────
-    //
-    // ══════════════════════════════════════════════════════════════════════════
-    // **THIRD, AND BELOW `engageFor` ON A CLOCK ARGUMENT RATHER THAN A PREFERENCE.** MUSTER is 6
-    // ticks and is the only window a hull may be committed in; a `join` has the whole 24-tick
-    // window. So when a member can do both in one tick, the hull is the perishable one — and the two
-    // are never in competition for the *same* standoff anyway, because a member that can `engage` is
-    // already a party and a member that must `join` is not.
-    //
-    // Above everything below it for the mirror of that reason: {@link coalitionFor}'s first move is
-    // usually a **march**, `GATE_TRANSIT` is 2–6 ticks intra-constellation, and a hand that starts
-    // walking after signing a venture arrives to find the standoff resolved. A branch placed under
-    // `sign` would inherit somebody else's deadline as a coin flip over whether a venture happened
-    // to be waiting.
-    // ══════════════════════════════════════════════════════════════════════════
-    const coalition = this.coalitionFor(member, tick, reinforcedThisTick);
-    if (coalition !== null) return { ...base, ...coalition };
 
     for (const venture of runtime.ventures.forPrincipal(member.principal)) {
       if (venture.state !== 'FORMING') continue;
@@ -1778,6 +1775,32 @@ export class HeuristicCast {
     // than waiting to be able to clear the whole bill.
     const supplying = this.chargeMove(member, tick);
     if (supplying !== null) return { ...base, ...supplying };
+
+    // ── ★ TAKE SOMEBODY ELSE'S SIDE, OR START WALKING TOWARD IT ───────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **BELOW EVERY WORLD BILL, AND THE PLACEMENT IS THE WHOLE OF WHY THIS BRANCH DOES NOT COST THE
+    // TRIBUTE ANYTHING.** It was written third — under `raidAnswerFor` and `engageFor`, above
+    // everything else — on a clock argument: a march is `GATE_TRANSIT` (2–6) ticks and a hand that
+    // starts walking after signing a venture arrives to find the standoff resolved. The argument was
+    // right about the clock and wrong about the resource.
+    //
+    // **A hand and an action are two different scarcities, and gate 3 only prices the hand.**
+    // {@link carriageNeeded} reserves the hand the Levy needs, so a coalition never *lends* the
+    // carrier — but a member gets **one action a tick**, and a branch above `levyMove` spends that
+    // action on a march while the carrier stands still. Measured, 8 seeds × 9 Reckonings: with
+    // `coalitionFor` disabled the sweep is `levyShort` **0, 0/576**; with it placed third it is
+    // **11,650 across two red lines** on `g02`, and *neither* of the two short principals had joined
+    // anything. The cost was never the pledge. It was the queue.
+    //
+    // So it sits under `levyMove` and `chargeMove` — a favour yields to a bill — and over
+    // {@link carryFor} and {@link crewMove}, which are the other two discretionary uses of a hand.
+    // It keeps its argument against `engageFor` above: MUSTER is 6 ticks and a `join` has 24, so the
+    // hull is the perishable one, and the two never compete for the same standoff anyway (a member
+    // that can `engage` is already a party and a member that must `join` is not).
+    // ══════════════════════════════════════════════════════════════════════════
+    const coalition = this.coalitionFor(member, tick, reinforcedThisTick);
+    if (coalition !== null) return { ...base, ...coalition };
 
     // ── ★ CARRY A NEIGHBOUR'S SHARE — §5.2's OTHER HALF, FIRST EXERCISED HERE ──
     //
@@ -3123,11 +3146,38 @@ export class HeuristicCast {
   private coalitionFor(
     member: CastMember,
     tick: number,
-    reinforcedThisTick: Set<string>,
+    reinforcedThisTick: Map<string, number>,
   ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
     const runtime = this.runtime;
     // No freeze guard for `raidAnswerFor`'s reason — `assertRaidSchedule` proves no world raid can
     // still be live in the freeze — and `move` is a built-in that the freeze does not gate either.
+    //
+    // ── ★ BUT A PLEDGE MUST NOT OUTLIVE THE RECKONING THAT PRICED IT ───────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE ONE WINDOW IN WHICH GATE 3 CANNOT SEE THE BILL.** Every other clause below prices the
+    // hand against *this* Reckoning's obligations, read off `levyBlockFor`. `shortfall_if_unpaid`
+    // falls monotonically as a member delivers (`levy/payment.ts`), so a member that has paid up
+    // reads zero and lends freely — **and a pledge made near the boundary is still out when the next
+    // assessment lands.** A standoff runs `DEMAND_WINDOW_TICKS` (24) and a beaten hand then recovers
+    // for up to `HAND_RECOVERY_TICKS.max` (48), so a hand lent inside the last 72 ticks of a
+    // Reckoning can be unavailable for a quarter of the next one, against a bill it could not read.
+    //
+    // Measured: with `coalitionFor` disabled, 8 seeds × 9 Reckonings is `levyShort` **0, 0/576**;
+    // with it enabled and this guard absent, one seed of eight tips — `p:brannock` and `p:sable` on
+    // `g02`, 11,650 short across two red lines. Neither of them had joined anything: the cost is a
+    // hand missing from a *later* Reckoning, which is exactly the shape a gate reading only the
+    // current one cannot price.
+    //
+    // A quarter of the Reckoning is a real cost and it is the honest one: it is the difference
+    // between lending a hand and lending a hand you can account for.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (
+      phaseOfReckoning(tick) + DEMAND_WINDOW_TICKS + HAND_RECOVERY_TICKS.max >
+      TICKS_PER_RECKONING
+    ) {
+      return null;
+    }
 
     // The signal, read once. `relationsFor` is bounded and the same call `grantCandidates` makes.
     // Both directions — see the block above for the measurement that forced the symmetry.
@@ -3150,7 +3200,7 @@ export class HeuristicCast {
       // Somebody else's standoff, and not one this member is already in. Its own is `raidAnswerFor`'s
       // and a raid it has already joined is `engageFor`'s.
       if (view.your_side !== null || view.target === member.principal) continue;
-      if (reinforcedThisTick.has(view.raid)) continue;
+
       // ── ★ AND NOT INSIDE THE GRACE, BECAUSE THE DECISION HAS ALREADY BEEN TAKEN ──
       //
       // {@link CAST_ANSWER_GRACE_TICKS} is the window in which the target stops waiting and pays. A
@@ -3172,6 +3222,8 @@ export class HeuristicCast {
       //    same figures `raidAnswerFor` answers from and the resolver resolves on (scar #1).
       const deficit = view.force.raider - view.force.defender_if_you_fight;
       if (deficit <= 0 || deficit > CAST_COALITION_MAX_DEFICIT) continue;
+      // As many cast-mates as the gap asks for, and not one more — see {@link HeuristicCast.decide}.
+      if ((reinforcedThisTick.get(view.raid) ?? 0) >= deficit) continue;
       // 3. A hand the member's own obligations and its own defence do not need.
       //
       // ── ★ AND THE TRIBUTE IS RESERVED WHETHER OR NOT IT IS PAYABLE **YET** ────
@@ -3204,7 +3256,7 @@ export class HeuristicCast {
         // Standing there already: take the side. No `system` param — `DEFENDER` is not a hostile act
         // and `vJoin` locates the raid from its id, so naming a place would be a field the handler
         // does not read.
-        reinforcedThisTick.add(view.raid);
+        reinforcedThisTick.set(view.raid, (reinforcedThisTick.get(view.raid) ?? 0) + 1);
         return { verb: 'join', params: { raid: view.raid, side: 'DEFENDER', hand: here[0]?.id } };
       }
       // Otherwise walk. The route is the observation's own (`RaidView.march`), so the tick the bot
@@ -3222,7 +3274,7 @@ export class HeuristicCast {
       // refused most of the coalitions this branch exists for.
       if (this.marchUnderwayTo(member, view.stage, tick)) continue;
       if (!this.mayEnter(member, march.next)) continue;
-      reinforcedThisTick.add(view.raid);
+      reinforcedThisTick.set(view.raid, (reinforcedThisTick.get(view.raid) ?? 0) + 1);
       return { verb: 'move', params: { hand: march.hand, to: march.next } };
     }
     return null;

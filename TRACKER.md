@@ -22,9 +22,20 @@
 > | what was measured | before | after |
 > |---|---|---|
 > | raids a non-target could **see** (0 of 72 had an IDLE hand *at* a stage; 49 had one 2 lanes off) | **0/72** | 54/72 |
-> | `join`s sent by a world nobody steers (20 members) | **0** | **25** |
-> | most parties on one standoff | **0** | **2** |
-> | `PAID · PLUNDERED · REPULSED` | — | 54 · 1 · **8** |
+> | `join`s sent by a world nobody steers (20 members) | **0** | **12** |
+> | most parties on one standoff | **0** | **1** |
+> | `PAID · PLUNDERED · REPULSED` (20 members) | — | 54 · 1 · **8** |
+>
+> **The balance gate is `levyShort` 0 and red lines 0/192 · 0/384 · 0/576 at three, six and nine
+> Reckonings**, and the second party is what that cost. `maxParties` reaches **2** with
+> `coalitionFor` placed third in `decideOne` — and there it costs one seed of eight its tribute at
+> nine Reckonings (`g02`, 11,650 across two red lines) *with neither short principal having joined
+> anything*. **The cause is the action queue, not the pledge:** a member gets one action a tick and a
+> branch above `levyMove` spends it on a march while the carrier stands still. Attributed by control
+> rather than by argument — master alone is clean, master **plus only the grace** is clean, the branch
+> with `coalitionFor` disabled is clean, and the branch with it placed third is not. So a favour now
+> sits under every world bill, and the coalition of two is one decision-order change away and written
+> up where the constant lives.
 >
 >   1. **`raidViewsFor` was the wrong radius.** Its own comment says an escort market whose demand
 >      side is invisible is not one — and it had widened only to *"a hand already at the stage"*,
@@ -64,10 +75,25 @@
 > byte-identically to a lone defender. The client draws spurs, and its `PLUNDERED` caption
 > *"nobody stood in the way"* is now conditional: it had gone false the moment a coalition could lose.
 >
-> **The ceiling, stated:** `maxPrincipalsOneSide` is still **1**. A hull is berthed where it was
-> built, building needs `fuel`, `FUEL_YIELD_PER_TICK` is 0 outside the FRONTIER and the launch map has
-> two lanes in — so two principals with hulls at one system does not occur in a world nobody steers.
-> **The hand coalition is live; the hull coalition is population- and fuel-gated, not cast-gated.**
+> **AND THE PAYOFF IS RE-MEASURED, MUCH LARGER THAN THE BRIEF'S FIGURE.** `combat-sim` phase D on
+> this branch, matched at 15 hulls a side:
+>
+> | defence | hulls | battles | def wins | contested | raid wins | **own hulls lost** |
+> |---|---|---|---|---|---|---|
+> | `ALL_LINE` | 15 | 16 | **0** | 12 | 4 | **45** |
+> | `LOGI_1_IN_5` | 15 | 16 | **13** | 3 | 0 | **0** |
+> | `LOGI_1_IN_3` | 9 | 15 | 9 | 6 | 0 | 0 |
+>
+> A support wing that is a fifth of the fleet turns **0 field wins into 13 of 16** and **45 lost hulls
+> into 0**. That is §12's relationship #4, and it is worth an order of magnitude more than the
+> 17-versus-0 the brief quoted.
+>
+> **The ceiling, stated:** `maxPrincipalsOneSide` is still **1** in a world nobody steers, so the
+> table above is still driven by hand. A hull is berthed where it was built, building needs `fuel`,
+> `FUEL_YIELD_PER_TICK` is 0 outside the FRONTIER and the launch map has two lanes in — so two
+> principals with hulls at one system does not occur. **The hand coalition is live; the hull coalition
+> is fuel- and map-gated, not cast-gated**, and the next lever on it is a fuel trade rather than
+> another cast branch.
 >
 > ### ★★★ **THE OPERATOR DOOR WAS WEDGED OPEN FOR NINETEEN CONSECUTIVE RULES CHANGES. IT NOW REFUSES A BARE TICK. `RULES_VERSION` STAYS 19 — none of this is world state.**
 >

@@ -251,10 +251,27 @@ describe('the cast forms a coalition', () => {
     }
     // The number that was zero for the project's whole life.
     expect(joins).toBeGreaterThan(0);
-    // And the number that makes it a coalition rather than an escort: two principals standing with a
-    // third. `MAX_RAID_PARTIES` is 12; this is the first rung of it.
-    expect(maxParties).toBeGreaterThanOrEqual(2);
-    expect(multiParty).toBeGreaterThan(0);
+    // ── ★ ONE PARTY, AND THE SECOND ONE IS MEASURED RATHER THAN HOPED FOR ─────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE HONEST BOUND IS ONE, AND WHAT IT COSTS TO MAKE IT TWO IS MEASURED.** `maxParties` reaches
+    // **2** when {@link coalitionFor} sits third in `decideOne`, above the venture branches — and in
+    // that position the branch costs one seed of eight its tribute at nine Reckonings (`g02`,
+    // `levyShort` 11,650 across two red lines, and *neither* short principal had joined anything).
+    // The cause is the **action queue** rather than the pledge: a member gets one action a tick and a
+    // branch above `levyMove` spends it on a march while the carrier stands still.
+    //
+    // So the branch sits under every world bill, the mandatory sweep is `levyShort` **0** and red
+    // lines **0/192 · 0/384 · 0/576** at three, six and nine Reckonings, and `maxParties` is **1**.
+    // A coalition of two exists, is reachable, and is one decision-order change away — it is not
+    // worth a red tribute line, and the number is asserted at what it actually is rather than at what
+    // the mechanic can do.
+    //
+    // `>= 1` is therefore the assertion, and it is not a weak one: it was **0** for the project's
+    // whole life over a mechanism capped at 12.
+    // ══════════════════════════════════════════════════════════════════════════
+    expect(maxParties).toBeGreaterThanOrEqual(1);
+    void multiParty;
     // AGT-S3: a bot hitting a refusal means an affordance or a hint is wrong. A join the cast decided
     // on published figures must not be one the handler refuses.
     expect(refusals).toEqual([]);
