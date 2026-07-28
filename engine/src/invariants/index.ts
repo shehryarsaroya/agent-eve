@@ -52,6 +52,7 @@ export {
 export {
   checkInv22,
   checkInv23,
+  type CustodyRow,
   type GrantSpend,
   type SignedDeal,
 } from './authority.js';

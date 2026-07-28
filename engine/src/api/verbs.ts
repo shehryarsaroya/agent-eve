@@ -142,7 +142,18 @@ export const VERB_ARRIVES_AT: Readonly<Record<string, string>> = Object.freeze({
   // since the canon was written, so `audit:budgets` read 40/40 before and reads 40/40 after. What
   // changed is that an agent told *"its mechanic lands at step 11"* now gets the mechanic instead of
   // a promise — which is the same gap `flee` had, resolved the other way.
-  audit: 'step 9 (offices and grants)',
+  // ── `audit` LEFT THIS TABLE, AND ITS DEPARTURE COST NO SLOT ──────────────
+  //
+  // It was filed here as "step 9 (offices and grants)" and that step has now landed twice
+  // over: `grant` and `revoke` went live, and `audit` stayed behind for twenty rules
+  // versions as a canon verb with no mechanic — one of §12.2's forty, reading as
+  // implemented in every summary of the verb surface, and unreachable. `Runtime.vAudit` is
+  // the handler; it reads a principal's own DOSSIER access log ahead of its reveal clock,
+  // which is §16.7 MUST-9's counterintel priced in the one currency A4 permits (an action).
+  //
+  // No slot was spent: `audit` has been one of the forty since the canon was written, so
+  // `audit:budgets` read 40/40 before and reads 40/40 after — the same accounting `haul`
+  // and `demand` came off this table under.
   // `yield`, `fight`, `join` and now `demand` were all here and all four are live, so their
   // entries are gone rather than left to read as a promise about a verb that already works.
   // `demand` — §9's AGENT-initiated standoff, and the only caller of the aggression capacity

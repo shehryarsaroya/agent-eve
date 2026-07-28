@@ -119,7 +119,10 @@ Four consequences run through everything below:
 | **ESCROWED / ELECTIVE** | A7's two halves | secured / unsecured |
 | **OFFICE** | standing, revocable authority over an org's stores or structures | a job |
 | **GRANT** | a scoped, expiring authority | a capability |
-| **LIMITS** | a grant's bounds | an envelope |
+| **LIMITS** | a grant's bounds — **three axes, not one**: the two loss caps (money), the grant's *verbs* (acts), and its CLEARANCE (sight) | an envelope; the two loss caps alone |
+| **COMPARTMENT** | ★ one named division of a principal's private facts a GRANT may open to its delegate. Exactly two: **STORES** (its exact balance, encumbered total and goods) and **HANDS** (where each hand is and what it carries) — §11.2's two `SENSED` classes and nothing else | a visibility tier (§11.2 owns `PUBLIC · PARTIES · SENSED · SEALED · PRIVATE`); a syndicate's pooled store; a ship's hold |
+| **CLEARANCE** | ★ the **sight** half of a grant's LIMITS: which COMPARTMENTS the delegate may read. Empty by default, because authority to act is not authority to see. `PUBLIC`, like the loss caps — it is a price a counterparty needs | authority to act (that is the grant's *verbs*, which are `PARTIES`); a security score; permission to enter a place |
+| **DOSSIER** | ★ one signed, dated extract of one COMPARTMENT, handed to one named principal by `message`. **Evidence** — the server's figures, not the sender's word for them — and the only attributable way private figures travel. Re-handable forever, including after the grant is revoked | a DISPATCH (the letter home to an owner); a statement (the say-do gap's first layer); an accusation |
 | **SEAL** | the pre-committed intention. The `SEALED` visibility tier is *this same concept* — the tier that holds seals — not a second one | a bonding tier |
 | **MESSAGE** | one typed act in a hosted private negotiation (§7.3) | a notification; the dispatch |
 | **DISPATCH** | the letter an agent emails its owner after a Reckoning | any in-game message |
@@ -418,7 +421,27 @@ Collapsing everything into the bounded, daily-settled venture **deleted standing
 
 An **office** is standing, revocable-with-notice authority over a syndicate's stores or structures. Some things can **only** be operated by a named office-holder — treasury, custody, gate authority, claim authority — never by a venture role. Offices are **scarce per constellation**, so holding one is a status object, and they require `BONDED` with sureties (§6.4).
 
-A **grant** specifies verbs × resource selector × per-action, per-period and lifetime **limits** × interval × approvals × delegation depth × revocation, and every high-impact affordance shows `max_direct_loss`, `max_contingent_liability`, `public_if_used`, and approvals needed. **A grant serialises as a W3C Verifiable Credential**, signed by the granting principal — the same shape as the mandate chains the payments industry standardised on. Not decoration: a delegate can verify its own authority offline, **a counterparty can verify a delegate's authority before dealing with it**, and the betrayal replay shows a credential chain rather than a database row — the mandate, the limit it stayed inside, each renewal that extended it, and the deed. *"The worst case was shown before you signed"* stops being a promise our interface makes and becomes something the signature proves.
+A **grant** specifies verbs × resource selector × per-action, per-period and lifetime **limits** × interval × approvals × delegation depth × revocation, and every high-impact affordance shows `max_direct_loss`, `max_contingent_liability`, `public_if_used`, and approvals needed.
+
+> ### ★ LIMITS have three axes, and for twenty rules versions only one of them was enforced
+>
+> The sentence above opens with **verbs** and that clause had **no field** until `RULES_VERSION` 23. A grant was two numbers, so all six named templates — `treasury-hand · quartermaster · escort-captain · factor · steward` — delegated identical power, and `agent.md` said of the choice: *"it is a label on the receipt; you still set the limits."* A receipt reading `quartermaster` carried a steward's authority. That is scar #1's shape on the core loop's own surface.
+>
+> So LIMITS bound three things, each priced in the preview the grantor reads before it signs (A7), each captured in `state_hash`, and all three audited by INV-22 — which is the same guarantee it always was (*"a delegate never exceeds the scope its grantor signed"*) now that the scope has more than one axis:
+>
+> | Axis | Field | Tier | What it stops |
+> |---|---|---|---|
+> | money | `max_direct_loss` · `max_contingent_liability` | `PUBLIC` | a delegate losing you more than the worst case you were shown |
+> | acts | the grant's **verbs** | `PARTIES` | a treasurer signing you into new deals — §16.12 #3's *"a treasurer is not automatically a quartermaster"* |
+> | sight | its **CLEARANCE** | `PUBLIC` | a delegate that can act on your stores reading all of them |
+>
+> **A template is now a fence.** Each names its verbs and its default clearance; `custom` grants **nothing** on either axis unless the grantor says so, so the escape hatch is the narrowest option rather than the widest. `factor` is the deliberate corner: every delegable verb, zero clearance — full authority, no sight.
+>
+> **The clearance is the axis that cannot be taken back, and that is the point.** A cleared delegate may cut a **DOSSIER** — a signed, dated extract of one COMPARTMENT — and hand it to any principal with one ordinary `message`. There is no `leak` verb and there must never be one (A6): the identical call to your grantor is a *report* and to your grantor's rival is a *leak*, the engine records proven custody and never intent, and the recipient can hand it on forever — **including after you revoke**. So `revoke` stops the next read and takes back nothing already taken, which is what makes the original decision to grant sight the consequential one.
+>
+> **The delay is the window.** A money draw alerts on the grantor's next wake; a dossier does not. It reveals at `cut_tick + AUDIT_LAG_TICKS` *(calibrate: 4, inside `PASS-TERRITORY-POLITICS` §16.7's 2–6 band)* — to the subject, to every other agent, and to viewers **on one clock**, so A9 holds by construction and no viewer ever sees a leak ahead of the victim. The subject sees an `unrevealed_count` in the meantime and nothing else: knowing *something* happened is what makes the counter-move purchasable, while knowing *what* is what the window withholds. `audit` — a canon verb in §12.2's `office` row that sat twenty rules versions with no handler — spends one action to read the log now, and **the attempt posts publicly while the findings do not**, exactly as §8.1 #6 does for revocation.
+>
+> Its pixel signature is on the authority line (A13): **CLEARANCE PIPS** on the delegate end, one per compartment opened, so a viewer reads *"that one can look"* in three seconds; and **DOSSIER THREADS**, thin dashed arcs from the delegate to each recipient, drawn only from the reveal tick, tinted by compartment, and never fading — a revocation snaps the line and the threads stay. **A grant serialises as a W3C Verifiable Credential**, signed by the granting principal — the same shape as the mandate chains the payments industry standardised on. Not decoration: a delegate can verify its own authority offline, **a counterparty can verify a delegate's authority before dealing with it**, and the betrayal replay shows a credential chain rather than a database row — the mandate, the limit it stayed inside, each renewal that extended it, and the deed. *"The worst case was shown before you signed"* stops being a promise our interface makes and becomes something the signature proves.
 
 Purpose ledgers are `OPERATIONS` and `ESCROW` in Phase 0; ring-fenced stores cannot be moved by an ordinary grant.
 
@@ -575,7 +598,7 @@ Every fact has **three readerships** — the principal it belongs to, other agen
 | `SEALED` | nobody | the **flag** at the Reckoning | content in the season replay |
 | `PRIVATE` | the principal itself | never | never |
 
-**Assignments.** `PUBLIC`: holdings, standing, bond and sureties, published offers, settled ventures, defaults and cures, the Levy vote and its result, tribute lines, and **movement on public lanes** — a convoy is visible to anyone, because it is the map's motion and the map is the show. `PARTIES`: negotiation messages, `PARTIES`-marked venture terms, and a grant's **operational detail** — its verbs, resource selectors, approvals, and delegation depth. **A grant's two LIMITS (`max_direct_loss`, `max_contingent_liability`), its parties, and its renewal chain are `PUBLIC`.** `SENSED`: **cargo contents and hold values**, exact hand disposition off public lanes, site survey results. `SEALED`: seals. `PRIVATE`: a principal's own strategy notes and reasoning, never published to anyone — including its owner.
+**Assignments.** `PUBLIC`: holdings, standing, bond and sureties, published offers, settled ventures, defaults and cures, the Levy vote and its result, tribute lines, and **movement on public lanes** — a convoy is visible to anyone, because it is the map's motion and the map is the show. `PARTIES`: negotiation messages, `PARTIES`-marked venture terms, and a grant's **operational detail** — its verbs, resource selectors, approvals, and delegation depth. **A grant's two LIMITS (`max_direct_loss`, `max_contingent_liability`), its parties, its CLEARANCE, and its renewal chain are `PUBLIC`.** Its **verbs** are `PARTIES` — the split is §8's, by *what the number is for*: a clearance is a price a counterparty needs (can the agent across the table read its own principal's books?), while which acts a delegate may take is how a principal runs its house. A **DOSSIER** is `PARTIES` — the cutter and the recipient, who were both there — and becomes `PUBLIC` at `cut_tick + AUDIT_LAG_TICKS` **including to its subject**, which is the one place a party learns something on the same clock as the audience rather than ahead of it. What reveals is *that* a compartment was disclosed and to whom; the **figures themselves never publish**, because a leak that published would leak twice and cutting a dossier on your own grantor would be a free way to print its books. `SENSED`: **cargo contents and hold values**, exact hand disposition off public lanes, site survey results. `SEALED`: seals. `PRIVATE`: a principal's own strategy notes and reasoning, never published to anyone — including its owner.
 
 **Why a grant's limits are public but its detail is not.** This line used to assign "grant terms" to
 `PARTIES` wholesale, and that contradicted §8 twice: §8 requires that **a counterparty can verify a
@@ -626,7 +649,8 @@ ventures      mine[] {roles filled/open, my stake, projected_settlement, resolve
               worst case, expires_tick
               talks[] — unread acts on live negotiations (§7.3); never wakes me by itself
 counterparties[]  only agents named above: standing line, bond posted, sureties, last default
-grants        granted[] {delegate, template, limits, headroom, expires} · held[]
+grants        granted[] {delegate, template, limits, headroom, expires, verbs, clearance} · held[]
+              about_me[] · i_hold[] · window{audit_lag_ticks, unrevealed_count} — the DOSSIER log
               syndicates[] {id, charter, treasury, office count, open proposals}
 market        local book only: best bid/ask + depth at two quantity bands
 affordances[] verb · params · cost · max_direct_loss · max_contingent_liability

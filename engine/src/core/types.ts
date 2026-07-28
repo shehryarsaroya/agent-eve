@@ -293,6 +293,25 @@ export interface Grant {
   readonly maxContingentLiability: Minor;
   spentDirect: Minor;
   spentContingent: Minor;
+  /**
+   * ★ **The verb fence** — which acts this grant delegates, in `DELEGABLE_VERBS` order
+   * (`grant/compartment.ts`). SPEC §8's own definition of a grant opens with *"a grant
+   * specifies **verbs** × resource selector × … limits"*, and this was the clause with no
+   * field: six named templates, one enforced power. A treasurer is now not automatically a
+   * quartermaster, and the word on the receipt is the word the engine checks.
+   */
+  readonly verbs: readonly string[];
+  /**
+   * ★ **The clearance** — which COMPARTMENTS of the grantor's private facts the delegate
+   * may read, in `COMPARTMENTS` order. Empty means *act, do not look*.
+   *
+   * Typed as `readonly string[]` rather than `readonly Compartment[]` for one reason:
+   * `core/types.ts` is the bottom of the import graph and `grant/` sits above it, so
+   * importing the union here would invert the layering that `ledger/`-importing-`levy/`
+   * was pulled apart for. `grant/book.ts` narrows on restore and INV-22 checks membership,
+   * so an unknown compartment cannot reach a row.
+   */
+  readonly clearance: readonly string[];
   readonly expiresTick: number;
   revokedAtTick: number | null;
 }

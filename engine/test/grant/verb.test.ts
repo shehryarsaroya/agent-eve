@@ -77,7 +77,12 @@ function act(
 
 const OK = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   delegate: 'p:delegate',
-  template: 'treasury-hand',
+  // `steward`, and the change is the point of `RULES_VERSION` 23: a template is an enforced FENCE
+  // rather than a label, so the office named in a fixture has to carry the verbs the fixture
+  // exercises. Most cases below do a delegated `create`, which a `treasury-hand` no longer permits —
+  // *"a treasurer is not automatically a quartermaster"* (§16.12 #3). The one case that asserts the
+  // template lands on the row names its own.
+  template: 'steward',
   max_direct_loss: 500,
   max_contingent_liability: 200,
   expires_tick: 100,
@@ -92,7 +97,7 @@ describe('grant — issuance (SPEC §8, A6)', () => {
 
   it('records an authoritative row with its worst case, and no refusal', () => {
     const w = world('g2');
-    expect(act(w.runtime, w.grantor, 'grant', OK())).toBeNull();
+    expect(act(w.runtime, w.grantor, 'grant', OK({ template: 'treasury-hand' }))).toBeNull();
 
     const grants = w.runtime.grants.forGrantor(w.grantor);
     expect(grants).toHaveLength(1);
@@ -428,6 +433,10 @@ describe('INV-22 is LIVE over the grant rows, not vacuous (A6 backstop)', () => 
       eventId: 'ev:overrun' as EventId,
       direct: minor(600),
       contingent: minor(0),
+      // Any verb `OK()`'s template carries. This case is about the LIMIT, so the draw has to be
+      // on a delegated verb — otherwise the book's fence refuses it first and the case stops
+      // testing INV-22's headroom clause at all.
+      verb: 'elect',
     });
 
     const report = w.runtime.runTick();
@@ -446,6 +455,7 @@ describe('INV-22 is LIVE over the grant rows, not vacuous (A6 backstop)', () => 
       eventId: 'ev:ok' as EventId,
       direct: minor(400),
       contingent: minor(0),
+      verb: 'elect',
     });
     const report = w.runtime.runTick();
     expect(report.halted).toBe(false);

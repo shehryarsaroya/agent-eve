@@ -247,6 +247,17 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // now the third time `books-in-the-hash` has asked for that within a minute of the table
   // landing. The lesson has stuck: the manifest entry is part of adding a book, not a follow-up.
   'syndicate',
+  // Dossiers and the audit stamps (§8, §16.7 MUST-8). Named in the same change that registered
+  // the table — the fourth time this manifest has been asked for within a minute of a book
+  // landing, and by now the entry is part of adding a book rather than a follow-up.
+  //
+  // The drop here is the A5′ shape specifically. A dossier row is an **attribution**: *this
+  // delegate handed this principal's balance sheet to that one*. An adopted world without the
+  // book comes up having forgotten every disclosure — so a grantor's access log is empty, a
+  // revealed leak un-happens, and the authority lines lose the threads that make a revocation
+  // legible. Worse in the other direction: the audit stamps go too, so a principal that spent an
+  // action reading its log would be shown nothing and could not tell that from an empty log.
+  'dossier',
 ];
 
 /** Why a checkpoint was not adopted, or null when one was. */

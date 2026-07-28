@@ -101,11 +101,17 @@ describe('the coverage columns are true', () => {
   it('reports which invariants no module produces state for — the list that matters', () => {
     const unproduced = INVARIANTS.filter((e) => e.producedIn === null).map((e) => e.id);
     // Pinned so that wiring one is a visible diff rather than an invisible drift.
+    // ★ INV-22 CAME OFF THIS LIST at `RULES_VERSION` 23, and the removal is the point of the pin.
+    //
+    // Its `producedIn` was `null` — *"no office/grant module writes these yet"* — which stopped
+    // being true the day `grant/book.ts` started writing the spend journal, and stayed `null`
+    // anyway. It now names `src/grant/book.ts + src/grant/dossier.ts`, the two modules whose rows
+    // the invariant reads. INV-23 stays `null` honestly: nothing writes the signed-deal journal
+    // its counterparty clause needs.
     expect(unproduced).toEqual([
       'INV-6',
       'INV-18',
       'INV-19',
-      'INV-22',
       'INV-23',
       'INV-24',
       'INV-25',

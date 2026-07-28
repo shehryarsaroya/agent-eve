@@ -89,6 +89,11 @@ function healthy(f: Fixture): InvariantInputs {
     standingChanges: [],
     grants: [grant()],
     grantSpends: [],
+    // Supplied, and EMPTY is the point: INV-22's custody clause reports a named skip when the
+    // dossier table is absent, and `requireAll` escalates every skip to a HALT — correctly, since
+    // the tick loop has no excuse for missing inputs. An empty table is an honest "nothing has
+    // been cut", which is what a healthy world with grants and no disclosures looks like.
+    custody: [],
     deals: [],
     settlements: [],
     settlementItems: [],
@@ -821,8 +826,8 @@ describe('the authority group fires', () => {
       {
         grants: [g],
         grantSpends: [
-          { grant: g.id, delegate: BOB, tick: 1, eventId: ev('s1'), direct: minor(600), contingent: minor(0) },
-          { grant: g.id, delegate: BOB, tick: 1, eventId: ev('s2'), direct: minor(600), contingent: minor(0) },
+          { grant: g.id, delegate: BOB, tick: 1, eventId: ev('s1'), direct: minor(600), contingent: minor(0), verb: 'create' },
+          { grant: g.id, delegate: BOB, tick: 1, eventId: ev('s2'), direct: minor(600), contingent: minor(0), verb: 'create' },
         ],
       },
       1,

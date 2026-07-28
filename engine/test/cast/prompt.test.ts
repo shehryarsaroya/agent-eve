@@ -515,8 +515,53 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // shaped like this one CANNOT catch a deleted gate — that is exactly how deleting `engage`
     // from a §9A block broke nothing. Both counts are pinned, so emptying any list fails HERE as
     // well as in the pinned maps below.
-    expect(verbPairs, 'verb gates in the catalog').toBe(38);
+    expect(verbPairs, 'verb gates in the catalog').toBe(41);
     expect(actPairs, 'act gates in the catalog').toBe(22);
+  });
+
+  it('★ NO HEADING OF `agent.md` IS A SLOT NOTHING FILLS — the fourth depth, checked here', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // Campaigns turned up a **fourth depth** of this project's recurring defect: not a verb with no
+    // handler, not an affordance nothing selects, not an invariant whose subject cannot occur, but
+    // **a reserved slot in a published contract that nothing ever fills** — §12.1 reserved a *siege
+    // clock* on the holding row and nothing had written to it for the project's whole life.
+    //
+    // The contract catalog has exactly that failure available to it, in both directions:
+    //
+    //   · a `##` or `###` heading in `agent.md` that no unit names and that is not in
+    //     CONTRACT_NOT_EXCERPTED is **rules prose no cast member can ever be shown**. It is worse
+    //     than a missing rule, because it reads as delivered in the document and in review.
+    //   · the reverse is already covered — `loadContractDocument` returns `null` and turns the cast
+    //     off when a catalogued heading is missing.
+    //
+    // Measured at the time of writing: **zero orphans.** Which is the point of asserting it — the
+    // number is only worth anything if something keeps it at zero.
+    // ══════════════════════════════════════════════════════════════════════════
+    const outside = new Set(CONTRACT_NOT_EXCERPTED.map((s) => s.heading));
+    const catalogued = new Set(CONTRACT_CATALOG.map(unitName));
+    const sections = new Set(CONTRACT_CATALOG.map((u) => u.section));
+    const orphans: string[] = [];
+    let section = '';
+    for (const line of AGENT_MD.split('\n')) {
+      if (line.startsWith('## ')) {
+        section = line.trim();
+        if (!sections.has(section) && !outside.has(section)) orphans.push(section);
+        continue;
+      }
+      if (!line.startsWith('### ')) continue;
+      // A `###` inside a section nobody excerpts is accounted for by the section's own entry.
+      if (outside.has(section) || !sections.has(section)) continue;
+      const name = `${section} › ${line.trim()}`;
+      if (!catalogued.has(name)) orphans.push(name);
+    }
+    expect(
+      orphans,
+      'these headings exist in the player contract and no unit selects them, so the house cast can ' +
+        'never read them. Claim each in CONTRACT_CATALOG, or record it in CONTRACT_NOT_EXCERPTED ' +
+        'with a CAPABILITY reason.',
+    ).toEqual([]);
+    // Non-vacuous: the walk must actually have seen the document.
+    expect(sections.size, 'no sections were walked at all').toBeGreaterThan(10);
   });
 
   it('★ EVERY UNIT IS REACHABLE BY SOMETHING — no unit is gated on nothing at all', () => {
@@ -705,6 +750,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // The remaining +40 on every position is the inline correction to the false sentence, which is a
     // rules surface contradicting the engine and not optional.
     //
+    // ⚑ **THE TWO ⚑ BLOCKS ABOVE ARE HISTORY AND THEIR NUMBERS ARE STALE — READ THE ASSERTIONS.**
+    // Every figure in them is measured against `MAX_CONTRACT_CHARS` = **72,000**, which was raised
+    // to 120,000 one commit before `RULES_VERSION` 23. So *"662 is not enough for a paragraph"* and
+    // *"the reachable margin is 6,677"* were both true when written and are both wrong now: the live
+    // figures are 44,566 analytic and 52,152 reachable, and they are on the `expect` lines below
+    // rather than in prose. Kept rather than rewritten because the REASONING is the valuable part —
+    // it is the record of two features that each had to be costed before they were written, and the
+    // second draft that was 340 characters shorter for the same four facts. Do not quote the
+    // numbers; do copy the method.
+    //
     // ⚑ For the next author: 662 is not enough for a paragraph. The reachable margin is 6,677 and
     // quoting THAT number is the mistake this comment block already warns about two screens up.
     //
@@ -731,7 +786,57 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ⚑ 678 is still not enough for a paragraph, and it is now not enough for a SENTENCE on every
     // position. The next block needs the ceiling looked at.
     const uncapped = excerptFor(doc, EVERY_SITUATION, 10_000_000);
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(76_894);
+    // ── ★ TWO FEATURES LANDED ON THIS NUMBER AND BOTH NOTES SURVIVE THE MERGE ──
+    //
+    // **22 · campaigns** added ~3,543 to EVERY position, because §11E's rules are gated on `build`
+    // and `build` also raises a WORKS — so a Commons newcomer pays for a mechanic it cannot reach.
+    // That is master's finding, it is recorded in the measured table below in campaigns' own words,
+    // and it is being fixed properly with a kind-aware selector rather than by trimming a rule.
+    //
+    // **23 · the clearance** added 74 to every position (§12.1's DOSSIER log line) and 2,525 to the
+    // two that are party to a grant (§10's `### CLEARANCE and the DOSSIER`). It is deliberately NOT
+    // an instance of campaigns' defect and the contrast is the useful part: the unit is gated on
+    // `grant`/`revoke`/`audit` plus `holdsGrant`, so a newcomer pays 74 characters for an
+    // observation key it can read and **nothing** for the mechanic. The gate is doing exactly what
+    // campaigns' `build` gate cannot.
+    //
+    // ── ★ RE-MEASURED, AND THE TWO DELTAS ADD EXACTLY — WHICH IS THE EVIDENCE ──
+    //
+    // Every number here was taken from the engine after the merge rather than summed, because the
+    // selector trades CONTEXT for rules and two independent measurements need not compose. They do,
+    // to the character, on all five positions:
+    //
+    //     baseline (f2bd06c)   39,489 · 47,877 · 48,750 · 65,323 · 72,909
+    //     + campaigns (22)     +3,543  +3,543  +3,543  +3,543  +3,985
+    //     + clearance (23)        +74     +74     +74  +2,525  +2,525
+    //     = merged             43,106 · 51,494 · 52,367 · 71,391 · 79,419   ← measured, not added
+    //
+    // **That the sums hold is a fact about the budget, not a coincidence.** Exact composition means
+    // the selector dropped no CONTEXT for either feature — i.e. nothing is being squeezed at
+    // 120,000, so `overBudget` is still a signal rather than the normal state. The day these stop
+    // adding is the day the bar is binding again, and that is the thing to watch for.
+    //
+    // ── ★ 24 · THE ACT GATE, AND IT COMPOSES TOO — IN THE OTHER DIRECTION ────
+    //
+    // The fix 22's note above asks for. It is the first row of this ledger to be NEGATIVE, and it
+    // composes exactly the same way — the two Commons positions fall by 3,360, which is §11E's five
+    // `build`-gated units to the character (315 + 636 + 858 + 471 + 1,070 = 3,350, plus five
+    // 2-character separators), and no other declared position moves at all:
+    //
+    //     = merged (23)        43,106 · 51,494 · 52,367 · 71,391 · 79,419
+    //     + act gate (24)      −3,360  −3,360       0       0       0
+    //     = now                39,746 · 48,134 · 52,367 · 71,391 · 79,419   ← measured, not added
+    //
+    // A negative delta that composes proves the same thing a positive one does and one thing more:
+    // **the excerpt did not lose a rule, it lost a READER.** The analytic ceiling is byte-identical
+    // across the change, so every character §11E ever had is still in the catalog; what changed is
+    // which principals are shown it. Had the ceiling fallen, the gate would have made some block
+    // unreachable, which is the failure this whole file exists to prevent.
+    //
+    // Analytic margin 120,000 − 79,419 = **40,581**. The reachable maximum is now a different row —
+    // `outside the Commons and landless, at its fullest`, 72,900 — leaving **47,100**, against a
+    // required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(79_419);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -761,7 +866,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // +116 at 20: the same paragraph, corrected. The floor now falls and is charged per principal,
     // so the two clauses that said otherwise had to go — a rules surface describing the old
     // behaviour is scar #1, and this one is published to every agent in the world.
-    // ── ★ 68,866 → 70,375, AND THE ROW CHANGED IDENTITY ─────────────────────
+    // ── ★ THE ROW CHANGED IDENTITY, AND THE `acts` GATE DID NOT MOVE IT ─────
     //
     // The largest reachable position is no longer the claimant in trouble. It is `outside the Commons
     // and landless, at its fullest`, one of two rows added because the coverage test was a tautology:
@@ -772,7 +877,15 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // The `acts` gate did not move this number in either direction: both of these rows are offered
     // every campaign act, so §11E was and remains theirs. The reachable margin is
     // 120,000 − 70,375 = **49,625** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(70_375);
+    // The largest reachable position is no longer the claimant in trouble. It is `outside the Commons
+    // and landless, at its fullest`, one of two rows added because the coverage test was a tautology:
+    // it dominates everything the analytic ceiling does except a held claim, and it keeps `graduate`
+    // and `form`, which a claimant cannot hold — so it is 1,509 characters larger than the claimant,
+    // the crossing block less §11B's required blocks.
+    //
+    // The act gate did not move this number in either direction: this row and the claimant are both
+    // offered every campaign act, so §11E was and remains theirs.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(72_900);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1405,11 +1518,15 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       46: 'forty-six',
       47: 'forty-seven',
       53: 'fifty-three',
+      // ★ 54 after the merge: campaigns' six §11E units and the clearance's one §10 unit both
+      // landed. `CONTRACT_CATALOG.length` is the only authority here — this map exists so the
+      // PROSE in prompt.ts cannot drift from it, and both features moved the prose.
+      54: 'fifty-four',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(53);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(54);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 53],
+      spelled[n as 54],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1456,6 +1573,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       admit: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
       apply: 'Joining — `apply` `{"syndicate":"<id>"}` · `admit` `{"syndicate":"<id>","principal":"<who>"}`',
       approve: 'OFFICES — `grant` with `on_behalf_of`',
+      // ★ `audit` — a canon verb that went LIVE at `RULES_VERSION` 23 after twenty versions with no
+      // handler. It is claimed by the same block as `grant` and `revoke` and that is deliberate:
+      // an access log is only worth reading because a CLEARANCE was granted, so a member offered
+      // `audit` needs the paragraph that explains what a clearance is, not a separate one.
+      audit:
+        'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
       // ── `build` DOES NOT CLAIM §11B's `### Taking one`, AND THE MAP IS WHY I LOOKED ──
       //
       // That block's heading contains the word `build` and it documents `build {"kind":"ANCHOR"}`,
@@ -1496,7 +1619,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         '(preamble) + The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
       form: 'Founding one — `form` `{"name":"...", ...}`',
       graduate: '`graduate` — leaving, and it is one-way',
-      grant: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
+      // ★ LEFT EXACTLY ALONE, AND IT IS THE CONTROL CASE. `grant` means ONE thing, so its verb
+      // gate is already as sharp as an act gate would be — `RULES_VERSION` 23's clearance block
+      // cost a newcomer 74 characters against campaigns' 3,360 through the same mechanism.
+      grant:
+        'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
       // `join {raid, side}` and `join {campaign, side, system}` are two sections of the document and
       // the verb gate shipped both to whoever was offered either. `side` is on BOTH, so it is not
       // the discriminator; which subject the affordance names is.
@@ -1511,7 +1638,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       publish_offer: 'Negotiating',
       // §7's production chain, which is FLOOR. The ALLOY fork is `refine{ALLOY}` below.
       refine: '(preamble)',
-      revoke: 'Doing it — `grant`, acting on behalf, and `revoke` (all live now)',
+      revoke:
+        'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
       seal: 'Seals — the say-do gap',
       set_delivery_intent: 'The Levy — nobody sits this out',
       sign: '(preamble)',
@@ -2026,7 +2154,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     const sizes = CONTRACT_POSITIONS.map((p) => excerptFor(doc, p.situation).text.length);
     expect(sizes, 'the measured table in the report and in CONTRACT_POSITIONS').toEqual([
       // ══════════════════════════════════════════════════════════════════════════
-      // ★ **THE `acts` GATE, MEASURED. TWO ROWS FELL BY 3,360 AND NOTHING ELSE MOVED.**
+      // ★ **THE `acts` GATE, MEASURED. TWO ROWS FELL AND NOTHING ELSE MOVED.**
       //
       // The note that used to sit here said §11E's cost was *"reported rather than trimmed"* and
       // named the fix: *"a `ContractSituation` field rather than the `build` verb, which is a change
@@ -2034,11 +2162,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // {@link ContractUnit.acts} plus `inCampaign`.
       //
       //   before  after   Δ       position
-      //   43,032  39,672  −3,360  a newcomer on its first wake
-      //   51,420  48,060  −3,360  mid-game in the Commons
-      //   52,293  52,293       0  about to take territory
-      //   68,866  68,866       0  a claimant in trouble
-      //   76,894  76,894       0  the analytic ceiling
+      //   43,106  39,746  −3,360  a newcomer on its first wake
+      //   51,494  48,134  −3,360  mid-game in the Commons
+      //   52,367  52,367       0  about to take territory
+      //   71,391  71,391       0  a claimant in trouble
+      //   79,419  79,419       0  the analytic ceiling
       //
       // **−3,360 is exactly §11E's five `build`-gated units** (315 + 636 + 858 + 471 + 1,070 = 3,350,
       // plus five 2-character separators). Nothing was rewritten and no rule was cut: the same prose
@@ -2054,13 +2182,31 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // Three rows are NEW. `at war` is where §11E's bill belongs and had no row before. The last two
       // exist because the coverage test was a tautology — see `CONTRACT_POSITIONS`.
       // ══════════════════════════════════════════════════════════════════════════
-      39_672, // a newcomer on its first wake            (−3,360: §11E, now gated on `build{CAMPAIGN}`)
-      48_060, // mid-game in the Commons                 (−3,360: same)
-      52_293, // about to take territory                 (unchanged: it can really declare one)
-      52_735, // ★ NEW — at war: party to a live campaign, offered every campaign act
-      68_866, // a claimant in trouble                   (unchanged)
-      59_911, // ★ NEW — the Commons at its fullest
-      70_375, // ★ NEW — outside the Commons and landless, at its fullest: the largest REACHABLE
+      39_746, // a newcomer on its first wake            (−3,360: §11E, now gated on `build{CAMPAIGN}`)
+      48_134, // mid-game in the Commons                 (−3,360: same)
+      52_367, // about to take territory                 (unchanged: it can really declare one)
+      52_809, // ★ NEW — at war: party to a live campaign, offered every campaign act
+      71_391, // a claimant in trouble                   (unchanged)
+      62_436, // ★ NEW — the Commons at its fullest
+      72_900, // ★ NEW — outside the Commons and landless, at its fullest: the largest REACHABLE
+      //
+      // ── ★ AND `RULES_VERSION` 23's CLEARANCE IS THE CONTROL CASE THAT REFINES THE LESSON ──
+      //
+      // Kept from the merge, because it is the half that stops this from being read as *"verb gating
+      // is broken"*. 23 added +74 to every row and +2,525 to the two that hold a grant. The 74 is one
+      // line of the §12.1 observe block, which every position pulls because every position reads the
+      // observation. The 2,525 is §10's `### CLEARANCE and the DOSSIER`, gated on
+      // `grant`/`revoke`/`audit` plus `holdsGrant` — so it lands on the two positions party to a
+      // grant and on neither of the first two.
+      //
+      // **Same catalog, same gating mechanism, opposite outcome**, and the difference is not the
+      // mechanism: `grant` means one thing and `build` means four. So verb gating is not replaced
+      // here and 30-odd single-meaning verbs are untouched — *verb gating is only as sharp as the
+      // verb*, and what this change adds is a discriminator for the six that have grown a second
+      // meaning. `CONTRACT_MULTI_MEANING_VERBS` names all of them and the five left verb-gated.
+      //
+      // The deltas still compose exactly: 22 and 23 summed with no absorption, and 24 does too — see
+      // the ceiling test. The day two deltas stop adding is the day the bar binds again.
       // ── ★ THE ANALYTIC MAXIMUM CROSSED THE CEILING, AND THE CAP ABSORBED IT ──
       //
       // **UNCAPPED it is 72,162 against `MAX_CONTRACT_CHARS` = 72,000** (pinned two tests above),
@@ -2087,7 +2233,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only, and no REACHABLE position was ever being squeezed.** Had a reachable row moved here,
       // the raise would have been silently restoring rules an agent had been denied, which is a
       // different and much worse finding.
-      76_894,
+      // ── ★ 72,909 → 76,894 at 22 → 79,419 at 23 ─────────────────────────────
+      //
+      // Both features spent here and neither had to trim a rule. Against 120,000 the analytic margin
+      // is 40,581, and for the first time in this file's history two consecutive features landed
+      // without the margin being the headline — which is exactly what the raise bought.
+      79_419,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

@@ -247,7 +247,11 @@ function observe(w: World, principal: PrincipalId): ReturnType<typeof buildObser
 function grantAuthority(w: World, direct: number, contingent: number): GrantId {
   const refusal = act(w.runtime, w.grantor, 'grant', {
     delegate: w.delegate,
-    template: 'treasury-hand',
+    // `steward`, not `treasury-hand`: this fixture's delegate does a delegated `create`, and since
+    // `RULES_VERSION` 23 a template is an enforced FENCE rather than a label — a treasury-hand
+    // carries `elect` only. The office named here now has to be one that carries the verb the
+    // case exercises, which is the whole point of the change.
+    template: 'steward',
     max_direct_loss: direct,
     max_contingent_liability: contingent,
     expires_tick: SETTLE_TICK + 10,

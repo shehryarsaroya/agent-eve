@@ -36,6 +36,11 @@ import type { CanonicalValue } from '../core/canonical.js';
 import type { Grant, GrantId, PrincipalId } from '../core/types.js';
 import type { Minor } from '../core/units.js';
 import { minor } from '../core/units.js';
+// From the leaf, never from `grant/index.js`. `grant/book.ts` imports THIS file (for
+// `isExpiredAt`/`isRevokedAt`), so an edge to the barrel would close a module cycle;
+// `grant/compartment.ts` imports nothing but `core/types.js`, so this edge is acyclic and
+// the office table stays in one home rather than being copied into `identity/`.
+import { officeShape } from '../grant/compartment.js';
 import { decodeBase58, encodeBase58 } from './encoding.js';
 import type { AgentKeypair, PublicKeyJwk } from './keys.js';
 import { jwkFromDidKey, thumbprint, verifyBytes } from './keys.js';
@@ -553,6 +558,27 @@ export function grantFromCredential(credential: GrantCredential): Grant {
     maxContingentLiability: claims.maxContingentLiability,
     spentDirect: minor(0),
     spentContingent: minor(0),
+    // ── THE FENCE AND THE CLEARANCE COME BACK FROM THE TEMPLATE, NOT FROM ZERO ──
+    //
+    // A credential's `credentialSubject` carries the template name, and since `RULES_VERSION`
+    // 23 a template IS a fence: `OFFICE_SHAPES` is the one home for "which verbs and which
+    // compartments does this office carry". So a rebuilt row gets exactly the scope the signed
+    // template names, which is the only answer that keeps the credential and the enforced row
+    // describing one grant (§8: "both describe one grant — the row is what the tick loop
+    // enforces, the credential is what travels").
+    //
+    // An unknown template falls back to **nothing on both axes**, deliberately: a row rebuilt
+    // from a credential this build cannot interpret must be inert, never permissive. That is the
+    // same direction `book.ts`'s restore narrows in, and for the same reason — the failure mode
+    // of a mis-parsed authority record has to be "this delegate can do nothing", not "this
+    // delegate can do everything".
+    //
+    // What is NOT reconstructible is a `custom` grant's explicit lists: they are server state on
+    // the row, exactly as `spentDirect` is, and a caller restoring one has to reconcile them the
+    // same way. Under-granting rather than over-granting is the whole discipline of this
+    // function's existing doc comment, applied to two more fields.
+    verbs: officeShape(claims.template)?.verbs ?? [],
+    clearance: officeShape(claims.template)?.clearance ?? [],
     expiresTick: claims.expiresTick,
     revokedAtTick: null,
   };
