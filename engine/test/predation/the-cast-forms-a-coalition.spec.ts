@@ -30,7 +30,6 @@ import {
   CAST_COALITION_MAX_DEFICIT,
   HeuristicCast,
 } from '../../src/cast/index.js';
-import { Rng } from '../../src/core/rng.js';
 import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { HandId, PrincipalId, SystemId } from '../../src/core/types.js';
 import { minor, qty } from '../../src/core/units.js';
@@ -97,6 +96,13 @@ interface Coalition {
    */
   readonly joinsStillStanding: number;
   /**
+   * Pledges whose standoff actually ran to the end of its window — the DENOMINATOR.
+   *
+   * Without it `joinsStillStanding > 0` is not a guard: it passed with the reservation deleted,
+   * because some hands stay put by luck. The property is *every* pledge that mattered, not *some*.
+   */
+  readonly pledgesThatMattered: number;
+  /**
    * ★ Ticks on which one member had two hands in transit toward the same live standoff.
    *
    * Must be zero. `hand.destination` is the next GATE, so a march longer than one hop is invisible to
@@ -117,6 +123,7 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
   const partiesOf = new Map<string, number>();
   let joinsWithSignal = 0;
   let joinsStillStanding = 0;
+  let pledgesThatMattered = 0;
   let doubleMarches = 0;
   /** raid -> the (principal, hand) pairs that joined it. Checked on the tick before it resolves. */
   const pledged = new Map<string, { principal: PrincipalId; hand: HandId }[]>();
@@ -151,19 +158,26 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
         (h) => h.state === 'IN_TRANSIT' && h.destination !== null,
       );
       for (const raid of runtime.raids.live()) {
-        const toward = inTransit.filter((h) => {
-          if (h.destination === raid.stage) return true;
-          const there = route(runtime.world.map, h.destination as SystemId, raid.stage)?.ticks;
-          const here = route(runtime.world.map, h.location, raid.stage)?.ticks;
-          return there !== undefined && here !== undefined && there < here;
-        });
-        if (toward.length > 1) doubleMarches += 1;
+        // ── AIMED **AT** THE STAGE, NOT MERELY CLOSER TO IT ────────────────────
+        //
+        // The first version of this counter asked whether a hand's destination was closer to the
+        // stage than its origin — the same route comparison `marchUnderwayTo` makes — and read **82**
+        // on a healthy run. Correctly: `levyMove`, `chargeMove`, `crewMove` and `alloyErrandFor` all
+        // move hands, and any of them can incidentally walk one in the direction of a standoff it
+        // knows nothing about. That is traffic, not a cascade, and a test that counted it would be
+        // asserting about the whole cast's logistics under a coalition's name.
+        //
+        // `destination === stage` is the last hop of a walk somebody chose to make TO that place, so
+        // two hands of one member aimed exactly there is the duplication and nothing else.
+        const aimed = inTransit.filter((h) => h.destination === raid.stage);
+        if (aimed.length > 1) doubleMarches += 1;
       }
     }
     // ── A PLEDGED HAND IS STILL STANDING THERE WHEN IT MATTERS ─────────────────
     for (const raid of runtime.raids.live()) {
       if (raid.resolvesAtTick !== runtime.engine.tick + 1) continue;
       for (const row of pledged.get(raid.id) ?? []) {
+        pledgesThatMattered += 1;
         const hand = handsOf(runtime.world, row.principal).find((h) => h.id === row.hand);
         if (hand?.state === 'IDLE' && hand.location === raid.stage) joinsStillStanding += 1;
       }
@@ -221,6 +235,7 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
     frameDefenders,
     joinsWithSignal,
     joinsStillStanding,
+    pledgesThatMattered,
     doubleMarches,
     halted,
   };
@@ -366,12 +381,22 @@ describe('the march is legal before it is published', () => {
     setSpeed('instant');
     const seed = 'coalition-commons';
     const runtime = new Runtime({ seed });
-    const rng = Rng.fromSeed(`${seed}:seats`);
-    const marches = runtime.seatInTier('MARCHES', rng.derive('marches'));
-    const commons = runtime.seatInTier('COMMONS', rng.derive('commons'));
-    if (marches === undefined || commons === undefined) throw new Error('the map needs both tiers');
+    // ── THE PLACES ARE NAMED, BECAUSE `seatInTier` PICKS BY SEED AND TIMING WOULD BIND FIRST ──
+    //
+    // The first version drew both seats from `seatInTier` and **the mutation survived** — twice. Two
+    // random tiers land in different constellations, `GATE_TRANSIT.interConstellation` is 8–20 ticks a
+    // lane against a 24-tick window, and the row was absent because the march would arrive LATE. The
+    // test read green about a legality rule it was not exercising at all.
+    //
+    // The launch map's first constellation is **mixed** — `sys-01`..`04` COMMONS and `sys-05`..`07`
+    // MARCHES — which is the fact `mayEnter`'s block comment records costing this repo a member that
+    // could never reach its own delivery place. Here it is the fixture: one lane, intra-constellation,
+    // 2–6 ticks, comfortably in time. So the only thing that can refuse the march is the bind.
+    const marches = 'sys-05' as SystemId;
+    const commons = 'sys-04' as SystemId;
     expect(tierOf(runtime.world.map, marches)).toBe('MARCHES');
     expect(tierOf(runtime.world.map, commons)).toBe('COMMONS');
+    expect(route(runtime.world.map, commons, marches)?.ticks ?? 999).toBeLessThan(DEMAND_WINDOW_TICKS);
 
     // The target stands where the raid will be. The two watchers differ in exactly one thing: one
     // holds in the Commons and is therefore bound (A8), the other holds in the Marches.
@@ -402,10 +427,15 @@ describe('the march is legal before it is published', () => {
     const freeView = runtime.raidsFor(free, runtime.engine.tick, 8).find((r) => r.raid === raid.id);
     expect(freeView).toBeDefined();
 
-    // And the bound one gets nothing at all: no march, and therefore not even a row, because a
-    // standoff it can never stand in is a briefing it would have to filter.
+    // And the bound one gets nothing at all: **not even a row**, because a standoff it can never
+    // stand in is a briefing it would have to filter.
+    //
+    // ⚑ Asserted as an ABSENT ROW and not as `boundView?.march ?? null` being null, which is what
+    // this was first and which **survived the mutation**: on an absent row the optional chain yields
+    // `undefined` and the `?? null` turns it into a pass. The vacuity the whole file is arranged
+    // against, in the one assertion written to catch a legality bug.
     const boundView = runtime.raidsFor(bound, runtime.engine.tick, 8).find((r) => r.raid === raid.id);
-    expect(boundView?.march ?? null).toBeNull();
+    expect(boundView, 'a Commons-bound principal must not be shown a Marches standoff').toBeUndefined();
     expect(principalIsCommonsBound(runtime.world, bound)).toBe(true);
     expect(principalIsCommonsBound(runtime.world, free)).toBe(false);
   });
@@ -461,20 +491,24 @@ describe('a coalition is priced, not free', () => {
    * ══════════════════════════════════════════════════════════════════════════
    */
   it('keeps the hand it pledged at the stage until the standoff resolves', () => {
-    let joins = 0;
     let standing = 0;
+    let mattered = 0;
     const outcomes: string[] = [];
     for (const seed of SEEDS) {
       const out = play(seed, TICKS);
-      joins += out.joins.length;
       standing += out.joinsStillStanding;
+      mattered += out.pledgesThatMattered;
       outcomes.push(...out.outcomes);
     }
-    expect(joins).toBeGreaterThan(0);
-    // Every hand pledged to a standoff that ran its full window was still there for the reading.
-    // Not `=== joins`: a standoff the target PAYS resolves early and there is nothing left to stand
-    // for, and a hand can be recalled by this member's own tribute — `musteredAt`'s `OWN` scope.
-    expect(standing).toBeGreaterThan(0);
+    // ── NON-VACUITY, AND IT IS THE DENOMINATOR THAT SUPPLIES IT ────────────────
+    //
+    // `standing > 0` was the first assertion and it **survived the mutation**: delete the reservation
+    // and some hands stay where they are anyway, so *some* is not a property. The guarantee is
+    // *every* pledge whose standoff actually ran to the end of its window — a standoff the target PAYS
+    // resolves early and there is nothing left to stand for, which is why the denominator is counted
+    // at `resolvesAtTick - 1` rather than taken as the join count.
+    expect(mattered).toBeGreaterThan(0);
+    expect(standing).toBe(mattered);
     // And the outcome the reservation buys: a world nobody steers now HOLDS fields.
     expect(outcomes.filter((s) => s === 'REPULSED').length).toBeGreaterThan(0);
   });
