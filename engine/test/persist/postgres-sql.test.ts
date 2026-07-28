@@ -363,6 +363,7 @@ describe('the bounded-boot reads ask Postgres for bounded things', () => {
       detail: `p:vale create \u0000 refused`,
       expectedHash: null,
       actualHash: null,
+      acceptedAs: '12400:9f3a1c4e5b07d218',
       toleratedAfter: 3,
       acceptedAtMs: 1_700_000_000_000,
     });
@@ -378,6 +379,10 @@ describe('the bounded-boot reads ask Postgres for bounded things', () => {
     expect(div?.sql).not.toMatch(/UPDATE|DELETE|ON CONFLICT/);
     expect(div?.params[4]).toBe('p:vale create   refused');
     expect(String(div?.params[4])).not.toContain('\u0000');
+    // WHAT was authorised, parameterised like everything else. The nineteen rows already in
+    // production carry a tick and nothing that says which of nineteen changes it was.
+    expect(div?.sql).toContain('accepted_as');
+    expect(div?.params[9]).toBe('12400:9f3a1c4e5b07d218');
     assertConsistent(pool.calls);
   });
 });

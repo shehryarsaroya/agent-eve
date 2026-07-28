@@ -217,6 +217,14 @@
   <div id="works"></div>
 </section>
 
+<!-- THE PRINT — the market's pixel signature (A13, §10). A claim tints a system, a WORKS
+     marks it, and a market prints a price on it. The one number that matters is the gap
+     between two places for the same good: that gap is a lane worth hauling down. -->
+<section id="market-sec" style="margin-top:38px">
+  <h2 class="sec">Prices</h2>
+  <div id="market"></div>
+</section>
+
 <section id="tribute-sec" style="margin-top:38px">
   <h2 class="sec">The Levy</h2>
   <div id="tribute"></div>
@@ -551,6 +559,45 @@ function renderWorks(lines, m) {
   }).join('');
 }
 
+// ★ THE PRINT — the market's signature (A13, §10).
+//
+// `market/` printed its first fill in this repo's history and there was no market key on the
+// frame at all, so the first production fill would have been invisible. What a viewer needs is
+// not "a trade happened" but a PRICE, and specifically the gap between two places quoting the
+// same good — that gap is why anybody hauls, why a hub forms, and what a blockade is worth.
+//
+// Only completed fills reach here. A resting order is a manifest (§11.2) and is not on the frame.
+// No handle map, and that is the tier boundary showing on the surface: a print names a place
+// and a price, never a principal. Buyer and seller are PUBLIC in the record, but putting them on
+// a price tag would turn the frame into a directory of who is holding what, where.
+function renderMarket(lines) {
+  const el = $('market');
+  if (!lines || lines.length === 0) {
+    el.innerHTML = '<div class="empty">Nothing has traded yet, anywhere. The book is location-bound &mdash; a price only exists where somebody bought and somebody sold &mdash; so an empty list means every hold is still full of goods nobody has put a number on.</div>';
+    return;
+  }
+  el.innerHTML = lines.map((l) => {
+    const bps = l.premiumBps || 0;
+    const dear = bps > 0;
+    const sole = (l.venues || 1) < 2;
+    // The gap, in the words a viewer thinks in. Never invented: 0 bps at a sole market says
+    // "nothing to compare", which is a different sentence from "fairly priced".
+    const gap = sole
+      ? 'the only market for it'
+      : bps === 0
+        ? 'the same price as everywhere else'
+        : '<strong>' + (dear ? '+' : '') + (bps / 100).toFixed(2) + '%</strong> ' +
+          (dear ? 'dearer' : 'cheaper') + ' than the galaxy (' + money(l.galaxyVwap) + ')';
+    return `
+    <div class="card">
+      <p class="hl">${esc(l.venue || '')} &mdash; ${esc(String(l.good || '').toUpperCase())} at ${money(l.vwap)}</p>
+      <p class="tn">${gap}</p>
+      <p class="tn">${l.prints} print${l.prints === 1 ? '' : 's'} &middot; ${money(l.volume)} units changed hands${l.prints > 1 ? ' between ticks ' + l.firstTick + ' and ' + l.lastTick : ' at tick ' + l.lastTick} &middot; last ${money(l.lastPrice)}</p>
+      ${sole || bps === 0 ? '' : '<p class="tn">A good worth more in one place than another is a lane worth moving it down. That is the whole reason the book is bound to a system.</p>'}
+    </div>`;
+  }).join('');
+}
+
 // The Levy's signature (§5.2): who owed tribute and who actually paid it. Nineteen of
 // these were in the frame and none reached the screen.
 function renderTribute(lines, m) {
@@ -716,6 +763,7 @@ async function load(file) {
     renderRaids(frame.raidLines, names);
     renderSyndicates(frame.syndicateLines, names);
     renderWorks(frame.worksLines, names);
+    renderMarket(frame.marketLines);
     renderTribute(frame.tributeLines, names);
     renderStandings(frame.standings);
     renderHallOfFame(frame.hallOfFame);

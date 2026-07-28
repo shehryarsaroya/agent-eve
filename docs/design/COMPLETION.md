@@ -234,8 +234,8 @@ unblocked, and untouched.
 
 ### 2. ~~Four of the show's thirteen surfaces are empty~~ → ONE, and it is not a cast gap
 
-The live frame publishes 13 keys (15 now, with the two world-memory projections). Every one carries
-data except `claimLines`. All four that were empty on 2026-07-26 morning turned out to be the SAME
+The live frame publishes 13 keys (15 with the two world-memory projections; **16 since `D38`, with the
+market's `marketLines`**). Every one carries data except `claimLines`. All four that were empty on 2026-07-26 morning turned out to be the SAME
 defect — the mechanic built, the affordance offered, and **no cast branch ever selecting it** — which is
 the "legal-but-unoffered" sweep one layer up, and reads in every report exactly like a missing feature:
 

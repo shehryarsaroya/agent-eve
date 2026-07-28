@@ -134,9 +134,36 @@ if [[ "$TARGET" == "api" || "$TARGET" == "sim" || "$TARGET" == "all" ]]; then
   #   exit 3  would NOT reproduce -> the deploy stops here and the world stays up
   #   exit 1  the check could not run -> also a stop, because an unrun check proves nothing
   #
-  # To deploy a deliberate rules change, set COMPACT_ACCEPT_DIVERGENCE_AT_TICK to the
-  # exact tick the check names, in /etc/compact/env. The boot then resumes the world and
-  # writes the discontinuity into the permanent public record (journal_divergence).
+  # ── HOW TO ACCEPT A DELIBERATE RULES CHANGE, AND WHY IT IS NOT A TICK ─────
+  #
+  # Set COMPACT_ACCEPT_DIVERGENCE_AT_TICK in /etc/compact/env to the FULL string the check
+  # prints — `<tick>:<fingerprint>`, e.g. `287:9f3a1c4e5b07d218`. The boot then resumes the
+  # world and writes the discontinuity into the permanent public record (journal_divergence),
+  # with `accepted_as` naming exactly what was authorised.
+  #
+  # A BARE TICK IS REFUSED, and that refusal is the point. Measured on this very world:
+  #
+  #     select count(*), min(tick), max(tick) from journal_divergence;
+  #      19 | 287 | 287
+  #
+  # Nineteen accepted divergences, every one at tick 287, because `=287` had been standing in
+  # /etc/compact/env since an early change and nearly every rules change first diverges at the
+  # world's first snapshot tripwire. A tick is WHERE a divergence is, never WHICH divergence it
+  # is — so the standing declaration pre-authorised all nineteen and would have pre-authorised
+  # every future one. The fingerprint binds the acceptance to the change, which is what lets
+  # the line safely stay in the env file: it is inert against the next change by construction.
+  #
+  # ── AND THAT IS WHY THIS SCRIPT DOES NOT CLEAR THE VARIABLE AFTER A SUCCESS ─
+  #
+  # It was proposed, and the availability cost is real. `Restart=always` means the process can
+  # come back at any moment, and a restart before the world has checkpointed under the NEW
+  # rules replays from genesis and hits the accepted tripwire again — so it needs the door
+  # still open. Clearing it here would turn any crash inside that window into a HELD world
+  # waiting on a human, in exchange for hygiene that the binding already provides
+  # structurally. A procedural fix layered on a structural one, paid for in outages.
+  #
+  # What replaces it: the preflight NAMES a standing declaration that no longer matches, so a
+  # stale line is visible on every deploy rather than silently effective on one.
   log "replay preflight — would this build still reproduce the record?"
   set +e
   $SSH "set -a && . /etc/compact/env && set +a && cd $CODE_DIR/engine && node dist/persist/replayCheck.js"
@@ -145,10 +172,11 @@ if [[ "$TARGET" == "api" || "$TARGET" == "sim" || "$TARGET" == "all" ]]; then
   case "$REPLAY_STATUS" in
     0) ok "this build reproduces the record — a restart will resume the world" ;;
     3) fail "THIS BUILD WOULD NOT REPRODUCE THE RECORD. The service was NOT restarted and the
-     live world is still up on the old build. Read the tick and the reason above. Either
-     fix the change, or accept the discontinuity deliberately by setting
-     COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<that exact tick> in /etc/compact/env and
-     re-running this deploy." ;;
+     live world is still up on the old build. Read the reason above: it prints the exact
+     COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint> line that accepts THIS change.
+     Either fix the change, or put that exact line in /etc/compact/env and re-run. A bare
+     tick is refused — it would pre-authorise every future change at the same tick, which is
+     how nineteen consecutive rules changes were waved through this gate." ;;
     *) fail "the replay preflight could not run (exit $REPLAY_STATUS). Refusing to restart: an
      unrun check proves nothing, and the failure mode it guards against is an
      unrecoverable crash loop with no HTTP surface." ;;
@@ -266,12 +294,61 @@ if $SSH "journalctl -u compact-api --since '-60s' --no-pager 2>/dev/null | grep 
   $SSH "journalctl -u compact-api --since '-120s' --no-pager | tail -40" >&2
   fail "the world is HELD: this build could not reproduce the record (see the diagnosis above).
      The process is alive and answering 503 on every route — it is NOT crash-looping — but no
-     world is being served. Accept the discontinuity with COMPACT_ACCEPT_DIVERGENCE_AT_TICK,
-     or roll back."
+     world is being served. The diagnosis prints the exact
+     COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint> line that accepts it — including
+     when the reason it is held is that a STANDING declaration from an earlier deploy names a
+     different change. Set that line, or roll back."
 fi
 
 # ── post-deploy verification — the scar #4 half ─────────────────────────────
+#
+# ── A HEALTHY DEPLOY MUST NOT REPORT FAILURE, EITHER ────────────────────────
+#
+# The last deploy exited **56** after every substantive step passed. The cause was in this
+# block, three times over: `BODY=$(curl … | head -c 40)`. `head` exits the moment it has its
+# 40 bytes and closes the pipe; `curl` then fails writing to it (56 is CURLE_RECV_ERROR), and
+# `set -o pipefail` makes the pipeline's status the failing one, and `set -e` exits on it. So
+# a completely sound deploy of a live world reported failure.
+#
+# That is the mirror image of scar #4, and no less dangerous. Scar #4 was a deploy that LOOKED
+# healthy while being broken. This is a deploy that looks broken while being fine — and an
+# operator who learns that the exit code lies has been trained to ignore every check in this
+# file, which disarms all of them at once.
+#
+# The fix is `fetch`: one curl into a variable, no pipe at all, and the truncation done by bash
+# substring expansion. A genuine fetch failure is then a genuine non-zero, named on the spot.
 log "post-deploy verification"
+
+# Fetch a URL into $BODY, or fail the deploy naming the URL.
+#
+# NO PIPELINE. `curl … | head` cannot distinguish "the server is down" from "the reader
+# stopped reading", and under pipefail both come back as the same non-zero. Here curl either
+# succeeds or its exit code reaches `fail` with the URL attached.
+#
+# The whole body is downloaded rather than the first N bytes. That is a deliberate trade: every
+# artifact checked here is bounded (agent.md is tens of kB, a frame is budget-capped by
+# `assertFrameBudgets`), and the alternative is the SIGPIPE this function exists to remove.
+BODY=''
+fetch() {
+  local url="$1" status=0
+  BODY=$(curl -sS --max-time 20 "$url") || status=$?
+  [[ "$status" -eq 0 ]] || fail "could not fetch $url (curl exit $status)"
+}
+
+# Does the first slice of $BODY contain $1 — or not? Substring tests, not `grep -qv`.
+#
+# `grep -qv PATTERN` succeeds when ANY line lacks the pattern, so on a multi-line body it is
+# true almost unconditionally — a check whose failure condition cannot occur, which is the
+# defect class this deploy is fixing elsewhere. It only worked before because the body had
+# already been truncated to one line. `[[ != * ]]` is correct at any length.
+#
+# Both are used as `head_x … || fail …` and never as `head_x … && fail …`: under `set -e` an
+# `a && b` list whose overall status is non-zero exits the script, so the ALL-CLEAR path of an
+# `&& fail` check would kill the deploy. That is the same class of accident as the SIGPIPE.
+head_has()   { [[ "${BODY:0:400}" == *"$1"* ]]; }
+head_lacks() { [[ "${BODY:0:400}" != *"$1"* ]]; }
+# The same question of the WHOLE body, for a key that legitimately sits deep in a document.
+body_has()   { [[ "$BODY" == *"$1"* ]]; }
 
 # The landing page is the thing most likely to be collateral damage, and it is
 # not something we deployed, so it is exactly what scar #4 says to check.
@@ -288,9 +365,9 @@ ok "whitepaper still 200"
 # web page, so a probe fetching the rules would get HTML and try to parse it as rules —
 # and the status code would say everything was fine. A 200 is not evidence; the content
 # is. This check exists because that is exactly what happened.
-FIRST=$(curl -s --max-time 20 https://agentinsurance.io/compact/agent.md | head -c 40)
-grep -q 'THE COMPACT' <<<"$FIRST" || fail "agent.md is not being served as markdown (got: ${FIRST:0:40})"
-grep -qv '<!DOCTYPE' <<<"$FIRST" || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
+fetch https://agentinsurance.io/compact/agent.md
+head_has 'THE COMPACT' || fail "agent.md is not being served as markdown (got: ${BODY:0:40})"
+head_lacks '<!DOCTYPE' || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
 ok "agent.md served as markdown"
 
 # THE FRAME THE CLIENT ACTUALLY FETCHES, fetched the way the client fetches it.
@@ -302,10 +379,20 @@ ok "agent.md served as markdown"
 # Same shape as the agent.md check above, and added for the same reason: a 200 carrying
 # the wrong body is worse than a 404, since it looks like success to everything except
 # the thing that has to parse it.
-FRAME=$(curl -s --max-time 20 https://agentinsurance.io/compact/frames/latest.json | head -c 60)
-grep -qv '<!DOCTYPE' <<<"$FRAME" || fail "frames/latest.json fell through to index.html — the client polls this and would parse HTML as a frame"
-grep -q '{' <<<"$FRAME" || fail "frames/latest.json is not JSON (got: ${FRAME:0:60})"
+fetch https://agentinsurance.io/compact/frames/latest.json
+head_lacks '<!DOCTYPE' || fail "frames/latest.json fell through to index.html — the client polls this and would parse HTML as a frame"
+head_has '{' || fail "frames/latest.json is not JSON (got: ${BODY:0:60})"
 ok "the spectator frame is served as JSON"
+
+# THE MARKET'S PIXEL SIGNATURE, ON THE FRAME A VIEWER ACTUALLY GETS (A13).
+#
+# `market/` printed its first fill in this repo's history and no market or price key existed
+# anywhere in `frames/latest.json`, so the first production fill would have been invisible.
+# A13 is a ship gate: no named pixel signature, not ready. The key must be PRESENT even when
+# empty — an absent key and an empty one are the same to a client, and "the economy has not
+# traded here yet" is a fact the frame is supposed to be able to state.
+body_has '"marketLines"' || fail "frames/latest.json carries no marketLines — the market has no pixel signature on the live frame (A13)"
+ok "the market's print reaches the frame"
 
 # THE ARCHIVE, FETCHED THE WAY A VIEWER REACHES IT.
 #
@@ -315,12 +402,18 @@ ok "the spectator frame is served as JSON"
 # reachable and undiscoverable, which for a viewer is the same thing. The index is the
 # fix, and it is checked the same way the frame is: by fetching the URL and reading the
 # body, because a 200 carrying HTML looks like success to everything but the parser.
-IDX=$(curl -s --max-time 20 https://agentinsurance.io/compact/frames/index.json | head -c 200)
-grep -qv '<!DOCTYPE' <<<"$IDX" || fail "frames/index.json fell through to index.html — the history strip would parse HTML as an index"
-grep -q '"reckonings"' <<<"$IDX" || fail "frames/index.json carries no reckonings (got: ${IDX:0:80})"
+fetch https://agentinsurance.io/compact/frames/index.json
+head_lacks '<!DOCTYPE' || fail "frames/index.json fell through to index.html — the history strip would parse HTML as an index"
+body_has '"reckonings"' || fail "frames/index.json carries no reckonings (got: ${BODY:0:80})"
 # And the file it names must actually be there. A table of contents with a broken link in
 # it is worse than no table of contents, because a viewer blames the show.
-ARCHIVED=$(sed -n 's/.*"file":"\(r-[0-9]*\.json\)".*/\1/p' <<<"$IDX" | head -1)
+#
+# Bash's own regex rather than `sed … | head -1`: that pipeline had the identical SIGPIPE shape
+# (head closes, sed dies, pipefail promotes it) and only ever survived because a 200-byte
+# herestring drained before head exited. `=~` finds the leftmost match, which is the first
+# entry in the index — the same file the old pipeline picked.
+ARCHIVED=''
+if [[ "$BODY" =~ \"file\":\"(r-[0-9]+\.json)\" ]]; then ARCHIVED="${BASH_REMATCH[1]}"; fi
 [[ -n "$ARCHIVED" ]] || fail "frames/index.json names no archive file"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://agentinsurance.io/compact/frames/$ARCHIVED" || echo 000)
 [[ "$CODE" == "200" ]] || fail "the index names $ARCHIVED and it returns $CODE — the archive has a broken link in it"

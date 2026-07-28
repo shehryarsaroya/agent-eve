@@ -61,6 +61,7 @@ import {
   CheckpointUnusableError,
   InMemoryJournalStore,
   Journal,
+  acceptanceStringForDiagnosis,
   bootFromStore,
   bootWorld,
   hydrateLedgerForSnapshot,
@@ -125,6 +126,8 @@ interface Forked {
   readonly victim: PrincipalId;
   /** The tick the operator accepted, which is the tick the fork begins at. */
   readonly acceptedAt: number;
+  /** The `<tick>:<fingerprint>` the door was actually opened with. */
+  readonly acceptedAs: string;
   /** The head the forked world reaches, and its hash. Neither matches the record. */
   readonly headTick: number;
   readonly headHash: string;
@@ -222,12 +225,14 @@ async function build(): Promise<Forked> {
     throw new Error('the injected rules change did not diverge; the fixture is not exercising a fork');
   }
   const acceptedAt = refusal.diagnosis.tick;
+  // The key the probe boot printed, not a tick this fixture chose. A bare tick is refused.
+  const acceptedAs = acceptanceStringForDiagnosis(refusal.diagnosis);
 
   const resumed = seated();
   refuseCreatesBy(resumed.runtime, victim, FORK_FROM);
   const opened = await bootFromStore(resumed.runtime, store, {
     seed: SEED,
-    acceptDivergenceFromTick: acceptedAt,
+    acceptDivergence: acceptedAs,
     nowMs: () => 1_700_000_000_000,
   });
   if (opened.divergenceAccepted === null) throw new Error('the door did not annotate the divergence');
@@ -257,6 +262,7 @@ async function build(): Promise<Forked> {
     store,
     victim,
     acceptedAt,
+    acceptedAs,
     headTick: resumed.runtime.engine.tick,
     headHash: resumed.runtime.engine.stateHash,
   };
@@ -358,7 +364,7 @@ describe('a forked record is refused BEFORE anything is read, and named for what
     const p = bootableProcess(fork);
     const result = await bootFromStore(p.runtime, fork.store, {
       seed: SEED,
-      acceptDivergenceFromTick: fork.acceptedAt,
+      acceptDivergence: fork.acceptedAs,
       checkpoint: { requiredTables: registeredTables(p.runtime) },
     });
 

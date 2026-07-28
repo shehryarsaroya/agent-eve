@@ -67,6 +67,15 @@
 import { RULES_VERSION, type Runtime } from '../sim/runtime.js';
 import type { SubmittedAction } from '../tick/index.js';
 import {
+  ACCEPT_ENV_VAR,
+  acceptanceAuthorises,
+  acceptanceStringFor,
+  describeAcceptanceRefusal,
+  operatorInstructionFor,
+  parseAcceptance,
+  type DivergenceIdentity,
+} from './acceptance.js';
+import {
   applyLedgerHydration,
   hydrateEventsForSnapshot,
   planCheckpoint,
@@ -138,8 +147,23 @@ export interface BootDiagnosis {
    * instruction can help (a seed mismatch is not a rules change; a HALT means the
    * invariants themselves fail, and continuing past that would publish a broken
    * world).
+   *
+   * **It carries a `<tick>:<fingerprint>` pair, never a bare tick**, and that is the fix
+   * for the wedge in `acceptance.ts`'s header: the previous form printed the *location* of
+   * the divergence, which every rules change shares, so the instruction this surface handed
+   * out was itself a permanent pre-authorisation of all future changes. A surface that
+   * exists to guide the operator must not print the wedged form.
    */
   readonly operatorInstruction: string | null;
+  /**
+   * Why the declaration in {@link BootOptions.acceptDivergence} did not authorise this
+   * divergence, or null when there was none or it did.
+   *
+   * Rendered by {@link describeDiagnosis} directly under the diagnosis, because the most
+   * likely reason a boot is HELD after this change is a *standing* acceptance from an
+   * earlier deploy — inert by design, and unhelpful if nothing says so.
+   */
+  readonly acceptanceRefusal: string | null;
 }
 
 export type BootFailureKind =
@@ -213,6 +237,8 @@ interface FirstDivergence {
   readonly detail: string;
   readonly expected: string | null;
   readonly actual: string | null;
+  /** The `<tick>:<fingerprint>` string the operator's declaration had to match. */
+  readonly acceptedAs: string;
 }
 
 /** READY: serve it. HELD: do not serve it, and say exactly why. */
@@ -232,18 +258,27 @@ export interface BootOptions {
   /** Called after each replayed tick, for a boot progress line on a long season. */
   readonly onProgress?: (tick: number, headTick: number) => void;
   /**
-   * **THE OPERATOR DOOR.** The tick at which the operator has decided to accept that
-   * this build no longer reproduces the record.
+   * **THE OPERATOR DOOR.** The declaration, verbatim, that this build no longer reproduces
+   * the record and that a human has decided to accept it — normally the raw value of
+   * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
    *
-   * It must equal the FIRST tick that diverges, not merely precede it: an operator
-   * who was told "tick 12 400" and types 12 400 is accepting the thing they were
-   * shown, while a blanket "accept anything" is the silent-continue this whole module
-   * exists to prevent. Divergences at later ticks are then tolerated and counted,
-   * because once the state has moved every downstream tripwire mismatches too.
+   * `<tick>:<fingerprint>`, and **a bare tick is refused.** It must name the FIRST divergence
+   * *and what that divergence is*: an operator who was told `12400:9f3a1c4e5b07d218` and sets
+   * exactly that is accepting the thing they were shown, while a bare `12400` accepts every
+   * change that ever first diverges there — which in this world is nearly all of them, and
+   * which is how nineteen consecutive rules changes walked through a gate that had never
+   * refused anything. `acceptance.ts` carries the measurement.
+   *
+   * Divergences at later ticks are then tolerated and counted, because once the state has
+   * moved every downstream tripwire mismatches too.
+   *
+   * A **string**, not a parsed value: boot is the one place a divergence is judged (see
+   * `onDivergence`), so it is also the place that decides whether a declaration is a key. A
+   * caller that pre-parsed would be a second opinion about what the operator authorised.
    *
    * Default null: refuse.
    */
-  readonly acceptDivergenceFromTick?: number | null;
+  readonly acceptDivergence?: string | null;
   /** Wall clock for the divergence annotation's audit column. Injected (DET-7). */
   readonly nowMs?: () => number;
   /** Ticks per journal page. Defaults to {@link REPLAY_PAGE_TICKS}. */
@@ -296,6 +331,13 @@ export async function bootFromStore(
   const journalledRules = await store.journalledRulesVersion();
   const rulesChanged = journalledRules !== null && journalledRules !== RULES_VERSION;
 
+  // Parsed once, before anything else can fail, so that every diagnosis this function can
+  // produce carries the "your standing declaration is a bare tick" notice — including the
+  // ones that have nothing to do with a rules change. A bare tick is wrong regardless of
+  // what diverged, and the operator reading a SEED_MISMATCH at 03:00 is the same operator
+  // who will reach for the door next.
+  const acceptance = parseAcceptance(opts.acceptDivergence);
+
   if (persistedSeed === null) {
     // Genesis: nothing to resume. Record the seed AND the rules version this world is
     // born under, so a later boot can say what the old ticks were computed by instead
@@ -329,6 +371,10 @@ export async function bootFromStore(
     journalledRulesVersion: journalledRules,
     runningRulesVersion: RULES_VERSION,
     rulesVersionChanged: rulesChanged,
+    // Null for a well-formed declaration that has not yet been tested against anything;
+    // non-null for a bare tick or an unparseable value, which are wrong on their own terms.
+    // The divergence site below replaces this with the specific refusal.
+    acceptanceRefusal: describeAcceptanceRefusal(acceptance, null),
   };
 
   if (persistedSeed !== opts.seed) {
@@ -379,7 +425,6 @@ export async function bootFromStore(
     else bucket.push(e);
   }
 
-  const accept = opts.acceptDivergenceFromTick ?? null;
   let firstDivergence: FirstDivergence | null = null;
   let toleratedAfter = 0;
   let ticksReplayed = 0;
@@ -411,7 +456,13 @@ export async function bootFromStore(
     ...opts.checkpoint,
     // The door is a claim about the whole record; adoption re-derives none of it. See
     // `CheckpointOptions.operatorJudgingDivergence` for the measured reason this is not optional.
-    ...(accept === null ? {} : { operatorJudgingDivergence: true }),
+    //
+    // Keyed on "the operator declared SOMETHING", not on "the declaration is well formed": a
+    // bare tick is refused as a key but it is still an operator reaching for the door, and the
+    // boot that has to print them the right string is the one that replayed from genesis.
+    // Adopting here would name a tick in the tail and hand out an instruction the next boot
+    // refuses — the door that closes behind them, twice over.
+    ...(acceptance.kind === 'ABSENT' ? {} : { operatorJudgingDivergence: true }),
   });
   let adoptedAtTick: number | null = null;
   let postingsHydrated = 0;
@@ -514,9 +565,10 @@ export async function bootFromStore(
   }
 
   /**
-   * The one place a divergence is judged. Either the operator named this exact tick
-   * and boot proceeds with it written down, or boot refuses — there is no third
-   * branch, and in particular no "continue quietly".
+   * The one place a divergence is judged. Either the operator's declaration names this exact
+   * divergence — its tick **and** its fingerprint — and boot proceeds with what was authorised
+   * written down, or boot refuses. There is no third branch, and in particular no "continue
+   * quietly" and no "the tick matched, close enough".
    */
   const onDivergence = (
     tick: number,
@@ -531,16 +583,17 @@ export async function bootFromStore(
       toleratedAfter += 1;
       return;
     }
-    if (accept !== tick) {
+    const identity = { tick, kind, detail, expectedHash: expected, actualHash: actual };
+    if (!acceptanceAuthorises(acceptance, identity)) {
       // ── AN ADOPTED BOOT MAY NOT SAY "FIRST" ─────────────────────────────────
       //
       // Adoption skips re-deriving the prefix, so the earliest divergence it can SEE is the earliest
       // in the tail. Measured in `a-forked-record-cannot-be-adopted.test.ts`: a boot that adopted the
       // checkpoint at tick 100 reported tick 117, and a genesis replay of the same journal found tick
-      // 66. Offering `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=117` there hands the operator an instruction
-      // the next genesis-replaying boot will refuse — a door that closes behind them. So an adopted
-      // boot names no tick and points at the question that can answer it. (A boot that IS given an
-      // accepted tick never adopts, so this branch and that one cannot both apply.)
+      // 66. Offering an acceptance for tick 117 there hands the operator an instruction the next
+      // genesis-replaying boot will refuse — a door that closes behind them. So an adopted boot names
+      // no tick and points at the question that can answer it. (A boot given ANY declaration never
+      // adopts, so this branch and that one cannot both apply.)
       const partial = adoptedAtTick !== null;
       throw new BootError(
         `${kind === 'APPLIED_REFUSED' ? 'replay refused an action the record says was applied' : 'TRIPWIRE'} ` +
@@ -551,10 +604,10 @@ export async function bootFromStore(
               'tail, so tick ' +
               `${String(tick)} is the first divergence in the tail and not necessarily the first in the ` +
               'record. Run the replay preflight, which re-derives from genesis, to get the tick to accept.)'
-            : accept === null
+            : acceptance.kind === 'ABSENT'
               ? ''
-              : ` (An operator accepted divergence from tick ${String(accept)}, but the FIRST divergence is at ` +
-                `tick ${String(tick)}. The instruction must name the tick it was given.)`),
+              : ` (${ACCEPT_ENV_VAR}='${acceptance.raw}' does not authorise it: an acceptance must name ` +
+                `both the tick and the divergence, and this one is ${acceptanceStringFor(identity)}.)`),
         {
           ...context,
           kind,
@@ -563,11 +616,26 @@ export async function bootFromStore(
           expectedHash: expected,
           actualHash: actual,
           action: kind === 'APPLIED_REFUSED' ? detail : null,
-          operatorInstruction: partial ? null : `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=${String(tick)}`,
+          // ── THE BOUND FORM, NEVER A BARE TICK ──────────────────────────────
+          //
+          // This surface exists to tell an operator what to set, so printing `=287` here would
+          // not merely be stale documentation — it would be this file *issuing* the wedge it now
+          // refuses, one deploy at a time, on the one screen the operator trusts.
+          operatorInstruction: partial ? null : operatorInstructionFor(identity),
+          acceptanceRefusal: describeAcceptanceRefusal(acceptance, identity),
         },
       );
     }
-    firstDivergence = { tick, kind, detail: safeDetail(detail), expected, actual };
+    firstDivergence = {
+      tick,
+      kind,
+      detail: safeDetail(detail),
+      expected,
+      actual,
+      // What was authorised, carried to the annotation so the record says WHAT the operator
+      // accepted rather than only that they accepted something.
+      acceptedAs: acceptanceStringFor(identity),
+    };
   };
 
   for (;;) {
@@ -729,6 +797,11 @@ export async function bootFromStore(
  * interpolated into it: the count grows as the world runs on past the accepted tick,
  * and it already has its own column (`toleratedAfter`) and its own line in the boot
  * banner. A duplicated number that made the key unstable was the only thing it bought.
+ *
+ * **`acceptedAs` is deliberately NOT in the key.** It is a pure function of the same five
+ * fields the fingerprint is taken over — tick, kind, both hashes, `detail` — so it can never
+ * discriminate a pair that `(tick, toRulesVersion, detail)` does not already separate.
+ * Adding it would be a second home for one distinction (scar #5) dressed as extra safety.
  */
 async function annotate(
   store: JournalStore,
@@ -750,6 +823,12 @@ async function annotate(
     ),
     expectedHash: first.expected,
     actualHash: first.actual,
+    // ── WHAT WAS AUTHORISED, NOT MERELY THAT SOMETHING WAS ────────────────────
+    //
+    // The nineteen rows already in production all read `tick 287` and are all the same
+    // sentence, because a tick is a location. This column is the identity, so the record
+    // now distinguishes nineteen changes from one change accepted nineteen times.
+    acceptedAs: first.acceptedAs,
     toleratedAfter,
     acceptedAtMs: nowMs,
   };
@@ -772,6 +851,7 @@ function applyEnrollment(
     readonly journalledRulesVersion: number | null;
     readonly runningRulesVersion: number;
     readonly rulesVersionChanged: boolean;
+    readonly acceptanceRefusal: string | null;
   },
 ): void {
   try {
@@ -799,6 +879,32 @@ function applyEnrollment(
   }
 }
 
+/**
+ * A diagnosis, as the thing an acceptance has to name.
+ *
+ * One home for the field mapping, because `BootDiagnosis` calls the divergence's detail
+ * `message` while {@link DivergenceIdentity} calls it `detail`. Every caller that re-did that
+ * by hand would be one rename away from printing an accept-string that does not open the
+ * door — an instruction surface that lies, which is the defect class this whole change is in.
+ *
+ * Meaningless for a diagnosis with no door (`operatorInstruction === null`); callers check
+ * that first, and the fingerprint of a seed mismatch accepts nothing regardless.
+ */
+export function identityOf(d: BootDiagnosis): DivergenceIdentity {
+  return {
+    tick: d.tick,
+    kind: d.kind,
+    detail: d.message,
+    expectedHash: d.expectedHash,
+    actualHash: d.actualHash,
+  };
+}
+
+/** The `<tick>:<fingerprint>` this diagnosis must be accepted with. */
+export function acceptanceStringForDiagnosis(d: BootDiagnosis): string {
+  return acceptanceStringFor(identityOf(d));
+}
+
 /** A one-screen operator briefing. Rendered to the log and to the held HTTP surface. */
 export function describeDiagnosis(d: BootDiagnosis): string {
   const lines = [
@@ -816,6 +922,11 @@ export function describeDiagnosis(d: BootDiagnosis): string {
       ` -> running ${String(d.runningRulesVersion)}${d.rulesVersionChanged ? '  <- CHANGED, the likely cause' : ''}`,
   );
   lines.push(``);
+  // The refusal FIRST when there is one: after this change the likeliest reason a boot is
+  // held is a standing declaration from an earlier deploy, which is inert by design and
+  // baffling if nothing says so. An operator who reads only the first paragraph should still
+  // learn that the variable they already set is not the one that opens this door.
+  if (d.acceptanceRefusal !== null) lines.push(d.acceptanceRefusal, ``);
   if (d.operatorInstruction === null) {
     lines.push(
       `  No operator instruction can accept this. It is not a rules change: fix the`,
@@ -827,6 +938,10 @@ export function describeDiagnosis(d: BootDiagnosis): string {
       `  permanent public record as a declared discontinuity at this exact tick:`,
       ``,
       `      ${d.operatorInstruction}`,
+      ``,
+      `  The value after the tick is this divergence's FINGERPRINT, and it is what makes`,
+      `  the acceptance a key rather than a location: it authorises this one change and is`,
+      `  inert against the next, so the line may safely be left in /etc/compact/env.`,
       ``,
       `  The world will then resume, and the record will say the ticks before and`,
       `  after this one were computed by different code. It never rewrites a past row.`,

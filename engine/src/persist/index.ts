@@ -22,13 +22,29 @@ export {
   snapshotRecord,
 } from './store.js';
 
+export {
+  ACCEPT_ENV_VAR,
+  ACCEPT_FINGERPRINT_CHARS,
+  ACCEPT_FINGERPRINT_MIN_CHARS,
+  acceptanceAuthorises,
+  acceptanceStringFor,
+  describeAcceptanceRefusal,
+  divergenceFingerprint,
+  operatorInstructionFor,
+  parseAcceptance,
+  type Acceptance,
+  type DivergenceIdentity,
+} from './acceptance.js';
+
 export { InMemoryJournalStore, JournalStoreError } from './memory.js';
 export { PgJournalStore, type PgJournalStoreOptions } from './postgres.js';
 export { extractTick, snapshotRecordOf } from './extract.js';
 export {
+  acceptanceStringForDiagnosis,
   bootFromStore,
   bootWorld,
   describeDiagnosis,
+  identityOf,
   BootError,
   REPLAY_PAGE_TICKS,
   type BootDiagnosis,

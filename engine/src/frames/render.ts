@@ -45,8 +45,10 @@ import {
   MAX_FRAME_CLAIM_LINES,
   type ClaimLine,
   MAX_FRAME_WORKS_LINES,
+  MAX_FRAME_MARKET_LINES,
   MAX_FRAME_SYNDICATE_LINES,
   type MapSystem,
+  type MarketLine,
   type WorksLine,
   type SyndicateLine,
   type ReckoningFrame,
@@ -127,6 +129,16 @@ export interface FrameSource {
    */
   readonly claimLines?: readonly ClaimLine[];
   readonly worksLines?: readonly WorksLine[];
+  /**
+   * ★ The market's prints (§10, A13), supplied by the market layer.
+   *
+   * Optional and passed in for the reason every other line set is, and the reason bites hardest
+   * here: a renderer that computed its own prices would be inventing an economy. `premiumBps` is
+   * the field a viewer reads as "this good is dear here, haul it in" — and a gap drawn between
+   * two places that traded at the same price is a lane that does not exist. This file cannot know
+   * what anything sold for and must not guess.
+   */
+  readonly marketLines?: readonly MarketLine[];
   /** §16 world memory. Optional so an `emptyFrame` and older fixtures stay valid. */
   readonly places?: readonly PlaceName[];
   readonly hallOfFame?: readonly HallOfFameRow[];
@@ -691,6 +703,24 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
           compareIds(a.works, b.works),
       )
       .slice(0, MAX_FRAME_WORKS_LINES),
+    // ── SORTED BY THE GAP, BECAUSE THE GAP IS THE STORY ──────────────────────
+    //
+    // Widest premium first, in absolute terms: a good 8% dear at one place and 8% cheap at
+    // another are the two ends of the same haul, and both belong on screen ahead of a market
+    // that agrees with everyone. Overflow therefore drops the places with nothing to say.
+    // (The market layer already ranks this way; re-stated here because the frame's budget is
+    // the renderer's to enforce, and a caller that supplied an unsorted list must still get a
+    // legible frame.)
+    marketLines: (src.marketLines ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          Math.abs(b.premiumBps) - Math.abs(a.premiumBps) ||
+          b.volume - a.volume ||
+          compareIds(a.venue, b.venue) ||
+          compareIds(a.good, b.good),
+      )
+      .slice(0, MAX_FRAME_MARKET_LINES),
     claimLines: (src.claimLines ?? [])
       .slice()
       .sort(
@@ -725,6 +755,9 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     battleLines: [],
     claimLines: [],
     worksLines: [],
+    // Present and empty, not absent. To a client the two are the same, and "nothing has traded
+    // yet" is a fact this artifact has to be able to state.
+    marketLines: [],
     standings: [],
     places: [],
     hallOfFame: [],

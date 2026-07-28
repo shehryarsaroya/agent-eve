@@ -279,6 +279,7 @@ import {
   clearMarkets,
   endowmentStanding,
   freeCash,
+  marketLinesFor,
   marketStateTable,
   MARKET_FEES,
   ownOrdersFor,
@@ -376,8 +377,10 @@ import {
 import {
   MAX_FRAME_BATTLE_LINES,
   MAX_FRAME_CLAIM_LINES,
+  MAX_FRAME_MARKET_LINES,
   MAX_RAID_LINES,
   type ClaimLine,
+  type MarketLine,
   type WorksLine,
   type SyndicateLine,
 } from '../frames/contract.js';
@@ -11676,6 +11679,27 @@ export class Runtime {
     return tributeLinesFor({ book: this.levy, world: this.world, reckoning: reckoningOf(tick), tick });
   }
 
+  /**
+   * ★ **THE PRINT** — the market's pixel signature (§10, A13).
+   *
+   * `market/` is 3,065 lines that had never printed a fill in any world this repo had run, and
+   * on the day it printed its first the frame carried no market key at all — so the first
+   * production fill would have been invisible to every viewer. A13 makes that a ship gate.
+   *
+   * Built by the market layer, never here and never in the renderer: a price nobody paid is the
+   * same class of lie as a red arc thrown at a holding nobody attacked.
+   *
+   * The §11.2 clause that admits the key, and the reason a resting order is NOT on it, are argued
+   * in `frames/projection.ts`.
+   */
+  marketLines(tick = this.engine.tick): readonly MarketLine[] {
+    // No window argument, and `market/observe.ts` records the measurement that removed it: a
+    // one-Reckoning window left two of three seeded worlds with no price on their head frame
+    // while the record held one, which is A2's "an absence is a false statement about the world".
+    // Every line publishes its own `firstTick..lastTick` span instead.
+    return marketLinesFor(this.marketBook, tick, MAX_FRAME_MARKET_LINES);
+  }
+
   /** Every book the driver writes to. Built per call: the venture book can be replaced. */
   private reckoningWorld(): ReckoningWorld {
     return {
@@ -12103,6 +12127,12 @@ export class Runtime {
       // rejected "fuel gauge" was exactly that, and this is what replaced it.
       claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
       worksLines: this.worksLines(outcome.tick),
+      // ★ The market's pixel signature (A13, §10): THE PRINT. Built by the market layer for the
+      // reason every other line set is — a renderer that computed its own prices would be
+      // inventing an economy, and `premiumBps` is read as "haul it here". The §11.2 clause that
+      // admits the key, and the argument for why a resting order is not on it, are in
+      // `frames/projection.ts`.
+      marketLines: this.marketLines(outcome.tick),
       // §16 world memory. Razed WORKS are included on purpose: a place keeps the name of whoever first
       // opened it, whether or not they still hold it — see `frames/memory.ts`.
       places: namesFor(this.worksBook.everInOrder(), handles),

@@ -56,11 +56,14 @@ import { createCast, type Cast } from '../cast/index.js';
 import { Runtime, RULES_VERSION } from '../sim/runtime.js';
 import type { PrincipalId } from '../core/types.js';
 import {
+  ACCEPT_ENV_VAR,
   InMemoryJournalStore,
   Journal,
   PgJournalStore,
   bootWorld,
+  describeAcceptanceRefusal,
   describeDiagnosis,
+  parseAcceptance,
   type BootDiagnosis,
   type BootOutcome,
   type JournalStore,
@@ -1623,12 +1626,14 @@ export interface ServeOptions {
   /** Override the connection string; defaults to the DB environment. */
   readonly databaseUrl?: string | null;
   /**
-   * **THE OPERATOR DOOR**, normally from `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
+   * **THE OPERATOR DOOR**, normally the verbatim value of
+   * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK`.
    *
-   * The exact tick at which the operator has decided to accept that this build no
-   * longer reproduces the record. Default null: hold the world instead.
+   * `<tick>:<fingerprint>` — the exact divergence the operator has decided to accept, named
+   * by where it is *and what it is*. A bare tick is refused; see `persist/acceptance.ts` for
+   * the nineteen deploys that refusal exists to stop. Default null: hold the world instead.
    */
-  readonly acceptDivergenceFromTick?: number | null;
+  readonly acceptDivergence?: string | null;
   /** Force a genesis replay, whatever the snapshot says. See {@link checkpointAdoptionDisabledFromEnv}. */
   readonly disableCheckpointAdoption?: boolean;
 }
@@ -2017,7 +2022,7 @@ async function bootTheWorld(
     const outcome = await bootWorld(runtime, store, {
       seed,
       nowMs: () => clock.nowMs(),
-      acceptDivergenceFromTick: options.acceptDivergenceFromTick ?? null,
+      acceptDivergence: options.acceptDivergence ?? null,
       ...(options.disableCheckpointAdoption === true
         ? { checkpoint: { disabled: true } as const }
         : {}),
@@ -2065,6 +2070,13 @@ async function bootTheWorld(
           runningRulesVersion: RULES_VERSION,
           rulesVersionChanged: false,
           operatorInstruction: null,
+          // The declaration is still reported even here, because "boot could not run at all"
+          // and "my standing acceptance is a bare tick" are two things an operator will be
+          // looking at together, and one of them is fixable in ten seconds.
+          acceptanceRefusal: describeAcceptanceRefusal(
+            parseAcceptance(options.acceptDivergence),
+            null,
+          ),
         },
       },
     };
@@ -2129,6 +2141,10 @@ class ServeGate {
             running_rules_version: held.runningRulesVersion,
             rules_version_changed: held.rulesVersionChanged,
             operator_instruction: held.operatorInstruction,
+            // A machine-readable half of what `detail` renders in prose. A monitor that
+            // notices "held, and the declaration was refused" can page a human with the
+            // actual cause instead of "the world is down".
+            acceptance_refusal: held.acceptanceRefusal,
           };
     // 503 on every route including /health: the world is genuinely unavailable, and
     // a 200 anywhere would let a monitor call this healthy.
@@ -2212,22 +2228,43 @@ function checkpointAdoptionDisabledFromEnv(): boolean {
   return false;
 }
 
-function acceptDivergenceFromEnv(): number | null {
-  const raw = process.env['COMPACT_ACCEPT_DIVERGENCE_AT_TICK'];
-  if (raw === undefined || raw.trim().length === 0) return null;
-  const n = Number(raw);
-  if (!Number.isSafeInteger(n) || n < 0) {
-    process.stderr.write(
-      `compact: COMPACT_ACCEPT_DIVERGENCE_AT_TICK='${raw}' is not a tick number. Ignoring it — ` +
-        'the world will hold rather than guess what an operator meant.\n',
-    );
-    return null;
+/**
+ * Read the operator's declaration and say out loud what it will and will not do.
+ *
+ * **It does not parse for the decision** — it passes the raw string through, because
+ * `bootFromStore` is the one place a divergence is judged and a second judge could disagree
+ * with it about a live deploy. What it does here is *announce*, on the one stream an operator
+ * watches during a restart: armed for this divergence, or refused and why.
+ *
+ * The bare-tick branch is the loud one on purpose. `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=287`
+ * stood in `/etc/compact/env` through nineteen rules changes and silently authorised every
+ * one of them, because a tick is where a divergence is and not which divergence it is.
+ */
+function acceptDivergenceFromEnv(): string | null {
+  const raw = process.env[ACCEPT_ENV_VAR] ?? null;
+  const acceptance = parseAcceptance(raw);
+  switch (acceptance.kind) {
+    case 'ABSENT':
+      return null;
+    case 'BOUND':
+      process.stderr.write(
+        `compact: ⚑ operator door armed for tick ${String(acceptance.tick)}, fingerprint ` +
+          `${acceptance.fingerprint}. If replay diverges at exactly that tick AND the divergence ` +
+          'is that one, the world resumes and the discontinuity is written into the permanent ' +
+          'public record. Any other divergence holds the world — that is what binding it means.\n',
+      );
+      return raw;
+    case 'BARE_TICK':
+    case 'MALFORMED': {
+      // Still returned verbatim rather than nulled. Boot has to see the mistake to name it in
+      // the HELD diagnosis the 503 serves; swallowing it here would leave an operator reading
+      // "the world is held" beside a variable they believe is set, with nothing joining the two.
+      process.stderr.write(
+        `compact: the operator door will NOT open.\n${describeAcceptanceRefusal(acceptance, null) ?? ''}\n`,
+      );
+      return raw;
+    }
   }
-  process.stderr.write(
-    `compact: ⚑ operator door armed for tick ${String(n)}. If replay diverges at exactly that tick, ` +
-      'the world resumes and the discontinuity is written into the permanent public record.\n',
-  );
-  return n;
 }
 
 const entry = process.argv[1];
@@ -2241,7 +2278,7 @@ if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
     trustEdge: process.env['COMPACT_TRUST_EDGE'] === 'true',
     castSize: Number(process.env['COMPACT_CAST'] ?? '12'),
     framesDir: process.env['COMPACT_FRAMES_DIR'] ?? null,
-    acceptDivergenceFromTick: acceptDivergenceFromEnv(),
+    acceptDivergence: acceptDivergenceFromEnv(),
     disableCheckpointAdoption: checkpointAdoptionDisabledFromEnv(),
   });
   if (started.created === null) {
