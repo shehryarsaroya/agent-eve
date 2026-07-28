@@ -70,6 +70,11 @@ describe('authority lines — the A6 pixel signature (§8, §14)', () => {
       grantedContingent: minor(0),
       spentContingent: minor(0),
       boundVentures: 0,
+      // The two A13 fields the clearance added. Empty by default so every existing case still
+      // asks what it asked — an act-only office with nothing disclosed — and the cases about the
+      // pips and the threads pass them explicitly.
+      clearance: [],
+      dossiers: [],
       state: 'UNUSED',
       ...over,
     };

@@ -248,6 +248,28 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'raidLines',
   'battleLines',
   'claimLines',
+  // ── ★ THE SAP (§16.6, A13), AND THE ONE FIELD THAT NEEDED AN ARGUMENT ─────
+  //
+  // Everything on a `SapLine` is `PUBLIC` on a tier already accepted three keys up. The two systems
+  // are on the map; the two principals are named by the `PUBLIC` declaration event; the score is the
+  // world's own verdict, exactly as `ClaimLine.legend` is; and `bond`/`forfeited` are posted
+  // slashable capital, which §6.4 puts at `PUBLIC` in its own words — *"public, and any amount"*.
+  //
+  // **`hollow` is the field that needed an argument, and it is `anchorHot`'s.** It says "this
+  // campaign has no materiel at its depot for its next pulse", which is a threshold on a stock, and
+  // §11.2 puts a stock at `SENSED`. It is admitted because it is not a quantity: it is one bit about
+  // a **published obligation** falling due at a **published tick**, which is precisely what
+  // `ClaimLine.anchorHot` already publishes about an unfuelled anchor. A viewer learns a war is
+  // failing; nobody learns what anybody holds.
+  //
+  // The rejected version, kept because it is the useful half: a `materielHere` figure on the line.
+  // That is the "fuel gauge" `sovereignty/view.ts` killed — a public recipe over a private stockpile,
+  // leaking reserve coverage, the limiting good, and the contents of an inbound convoy. One bit is
+  // the whole admissible signal, and `CampaignView.materiel_here` serves the number to PARTIES only.
+  //
+  // A9 then holds by construction: `SapLine` carries strictly fewer fields than `CampaignView`, which
+  // every agent's own `observe` already returns.
+  'saps',
   'worksLines',
   // ── ★ THE MARKET'S PRINT (§10, A13) ────────────────────────────────────────
   //

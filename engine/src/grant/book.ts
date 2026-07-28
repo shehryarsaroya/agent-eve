@@ -30,6 +30,7 @@ import { isExpiredAt, isRevokedAt } from '../identity/vc.js';
 import type { GrantSpend } from '../invariants/authority.js';
 import type { CanonicalValue } from '../core/canonical.js';
 import type { StateTable } from '../tick/snapshot.js';
+import { canonicalClearance, canonicalVerbs } from './compartment.js';
 import {
   readArray as snapArray,
   readInt as snapInt,
@@ -117,6 +118,20 @@ export class GrantBook {
     if (spend.direct < 0 || spend.contingent < 0) {
       throw new GrantBookError(`a spend never returns headroom: direct ${spend.direct}, contingent ${spend.contingent}`);
     }
+    // ── THE FENCE, AT THE BOOK RATHER THAN ONLY AT THE DOOR ──────────────────
+    //
+    // Each caller checks `carriesVerb` before it moves value, so this is unreachable from a
+    // request — exactly like the negative-spend throw above it, and there for the same
+    // reason. A draw recorded against a verb the grant does not carry is a **wrong row in a
+    // journal INV-22 halts the world over**, and A5′ says the record must never be wrong:
+    // better to abort the tick here, where the operator sees the grant id and the verb, than
+    // to publish a journal that accuses a delegate of a draw it was not authorised to make.
+    if (!grant.verbs.includes(spend.verb)) {
+      throw new GrantBookError(
+        `grant ${grant.id} carries ${grant.verbs.length === 0 ? 'no verbs' : grant.verbs.join(', ')} and this ` +
+          `draw is on "${spend.verb}"; the caller must check carriesVerb before it moves value`,
+      );
+    }
     if (this.spendLog.length >= MAX_GRANT_SPENDS) {
       throw new GrantBookError(`the grant spend journal is at its cap of ${MAX_GRANT_SPENDS}`);
     }
@@ -138,6 +153,48 @@ export class GrantBook {
    */
   hydrateSpends(spends: readonly GrantSpend[]): void {
     for (const s of spends) this.spendLog.push(s);
+  }
+
+  /**
+   * Does this grant delegate `verb`? The fence, as one predicate with one home.
+   *
+   * Every caller that is about to draw asks this, and `recordSpend` asks it again as the
+   * backstop. Two copies of "may this delegate do this" — one for the door an agent hits,
+   * one for the journal an invariant reads — is scar #1's setup on the core loop's own
+   * surface, so the door and the backstop call the same line.
+   */
+  carriesVerb(id: GrantId, verb: string): boolean {
+    return this.byId.get(id)?.verbs.includes(verb) ?? false;
+  }
+
+  /** Does this grant open `compartment` to its delegate? The sight half of the same rule. */
+  carriesClearance(id: GrantId, compartment: string): boolean {
+    return this.byId.get(id)?.clearance.includes(compartment) ?? false;
+  }
+
+  /**
+   * The live grant from `grantor` to `delegate` that opens `compartment`, or null.
+   *
+   * Separate from {@link liveGrantBetween} on purpose: that one picks by *headroom*, which
+   * is the right tiebreak for a draw and the wrong one for a read. A delegate holding two
+   * grants from one grantor — one wide and blind, one narrow and cleared — must have its
+   * read attributed to the grant that actually authorised it, or the custody chain names a
+   * grant whose clearance never included the compartment and INV-22 halts a legal act.
+   */
+  clearanceGrantFor(
+    grantor: PrincipalId,
+    delegate: PrincipalId,
+    compartment: string,
+    atTick: number,
+  ): Grant | null {
+    const candidates = this.all().filter(
+      (g) =>
+        g.grantor === grantor &&
+        g.delegate === delegate &&
+        g.clearance.includes(compartment) &&
+        this.isLive(g.id, atTick),
+    );
+    return candidates[0] ?? null;
   }
 
   /** Remaining headroom on a grant's two LIMITS, never below zero. */
@@ -225,6 +282,13 @@ export function grantsStateTable(
           maxContingentLiability: g.maxContingentLiability,
           spentDirect: g.spentDirect,
           spentContingent: g.spentContingent,
+          // Both scopes are captured for `spentDirect`'s reason: a rolled-back or replayed
+          // world that forgot a grant's fence would let a delegate draw on a verb the
+          // grantor never delegated, with a counter that still looks clean. Arrays of
+          // strings, already in canonical order by construction (`canonicalVerbs` /
+          // `canonicalClearance`), so nothing here can hash two ways.
+          verbs: [...g.verbs],
+          clearance: [...g.clearance],
           expiresTick: g.expiresTick,
           revokedAtTick: g.revokedAtTick,
         })),
@@ -237,6 +301,7 @@ export function grantsStateTable(
           eventId: s.eventId,
           direct: s.direct,
           contingent: s.contingent,
+          verb: s.verb,
         })),
     }),
     restore: (captured: CanonicalValue): void => {
@@ -257,6 +322,13 @@ export function grantsStateTable(
           // by construction, and INV-22 re-checks that agreement on the next tick.
           spentDirect: minor(snapInt(r, 'spentDirect', `grant ${id}`)),
           spentContingent: minor(snapInt(r, 'spentContingent', `grant ${id}`)),
+          // Narrowed on the way back in, and NOT trusted: a captured clearance naming a
+          // compartment this build does not have would otherwise become a live row that
+          // `carriesClearance` answers yes to and no `compartmentDigest` can serve.
+          verbs: canonicalVerbs(snapArray(r['verbs'] ?? [], `grant ${id} verbs`).map(String)),
+          clearance: canonicalClearance(
+            snapArray(r['clearance'] ?? [], `grant ${id} clearance`).map(String),
+          ),
           expiresTick: snapInt(r, 'expiresTick', `grant ${id}`),
           revokedAtTick: snapIntOrNull(r, 'revokedAtTick', `grant ${id}`),
         });
@@ -271,6 +343,7 @@ export function grantsStateTable(
           eventId: snapString(s, 'eventId', 'grant spend') as EventId,
           direct: minor(snapInt(s, 'direct', 'grant spend')),
           contingent: minor(snapInt(s, 'contingent', 'grant spend')),
+          verb: snapString(s, 'verb', 'grant spend'),
         });
       }
       book.hydrateSpends(spends);

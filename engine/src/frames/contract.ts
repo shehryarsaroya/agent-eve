@@ -23,6 +23,7 @@ import type { HallOfFameRow, PlaceName } from './memory.js';
  */
 
 import type {
+  CampaignState,
   ClaimState,
   GoodId,
   Handle,
@@ -49,6 +50,16 @@ export const MAX_AUTHORITY_LINES = 12;
 export const MAX_RAID_LINES = 6;
 /** §17: claim tints drawn per frame. A map of who owes what, not a heatmap. */
 export const MAX_FRAME_CLAIM_LINES = 12;
+
+/**
+ * ★ THE SAP's cap (A13). Six, and it is a **floor under the live wars** rather than a truncation.
+ *
+ * Every other line budget here picks the important members of a set larger than a viewer can read.
+ * This one is deliberately above `MAX_LIVE_CAMPAIGNS` (4), because a campaign is the largest object
+ * on the map and a dropped one would be a war in progress the map does not show — while the two
+ * spare slots let a just-ended campaign's obituary stay on screen for a Reckoning.
+ */
+export const MAX_FRAME_SAP_LINES = 6;
 
 /**
  * Works marks a frame may draw. *(calibrate)*
@@ -232,11 +243,75 @@ export interface AuthorityLine {
    */
   readonly boundVentures: number;
   /**
+   * ★ **THE CLEARANCE PIPS (A13) — how much this delegate can SEE.**
+   *
+   * One pip per COMPARTMENT the grant opens, drawn on the **delegate end** of the line: zero
+   * pips is an act-only office, two is a delegate that reads its grantor's balance sheet and the
+   * position of every hand it owns. The client draws them as small filled squares on the line's
+   * head, and the count is legible in three seconds without knowing the rules — *"that one can
+   * look."*
+   *
+   * It is a named signature rather than a number in a panel because §16.12 #3's whole claim is
+   * that *"organizations gain power only by taking a visible trust risk"*, and thickness already
+   * spends itself on money. A line that could not show sight would show only half the stake — the
+   * same defect `grantedContingent` was added to fix one field up, where a grant that authorised
+   * nothing direct and everything contingent drew as a hairline.
+   *
+   * Publishes nothing new: `clearance` is on the `PUBLIC` `grant.issued` row (§11.2 D9a puts a
+   * grant's LIMITS and parties at `PUBLIC`, and a clearance is a price a counterparty needs). The
+   * grant's **verbs** are deliberately absent — those are `PARTIES` operational detail, "how a
+   * principal actually runs its house".
+   */
+  readonly clearance: readonly string[];
+  /**
+   * ★ **THE DOSSIER THREADS (A13) — what the delegate did with what it could see.**
+   *
+   * A thin **dashed** thread from the delegate end of this line to each principal that has been
+   * handed a DOSSIER cut under it, tinted by compartment. The map's only dashed element, because a
+   * dossier is a **copy** rather than a transfer: nothing left the subject, and a solid line would
+   * read as value moving.
+   *
+   * Three properties the client can rely on, each load-bearing:
+   *
+   *   - **It appears only at reveal.** A thread is drawn from `revealsAtTick`, never before, so
+   *     the frame cannot show a leak the victim has not learned of. A9 is satisfied by
+   *     construction rather than by care — the same clock serves the subject, every other agent
+   *     and the viewer.
+   *   - **It never fades.** A revocation snaps the authority line; the threads stay. That is the
+   *     picture of the rule that makes this a real trust risk: revoking stops the next read and
+   *     takes back nothing already taken.
+   *   - **It hangs off the line, not off the map.** A re-handed dossier is attributed to the grant
+   *     its custody chain ROOTS at, so a chain of three re-hands still points at the promotion
+   *     that started it. That is §14's receipt reel requirement — the grant, the accepted warning
+   *     and the deed on one strip — expressed as geometry.
+   *
+   * A thread to the GRANTOR ITSELF is the honest case (an office holder reporting), and the client
+   * should draw it too: reading the same shape for a report and a leak is the point, and the frame
+   * has no business labelling which one it was.
+   */
+  readonly dossiers: readonly AuthorityDossier[];
+  /**
    * UNUSED nothing drawn on EITHER limit · DRAWN some headroom used · EXHAUSTED no
    * headroom left on either limit · REVOKED ending next tick.
    */
   readonly state: AuthorityLineState;
 }
+
+/** One revealed DOSSIER thread hanging off an {@link AuthorityLine}. */
+export interface AuthorityDossier {
+  readonly to: PrincipalId;
+  readonly compartment: string;
+  /** The tick it was cut, so the client can age a thread rather than drawing all of them alike. */
+  readonly cutAtTick: number;
+  /** True when this row is a re-hand rather than a first cut — a copy of a copy. */
+  readonly copied: boolean;
+}
+
+/**
+ * Threads per line. Small on purpose and for `MAX_AUTHORITY_LINES`' reason: convergence is the
+ * signature and a hairball is not. A delegate that has cut more than this has made the point.
+ */
+export const MAX_LINE_DOSSIERS = 4;
 
 /**
  * Predation's pixel signature (A13, §9) — **THE RAID LINE**.
@@ -688,6 +763,56 @@ export interface WorksLine {
   readonly fuelExtracted: number;
 }
 
+/**
+ * ★ **THE SAP** — a campaign's pixel signature (§16.6, A13).
+ *
+ * A notched band drawn from a campaign's DEPOT toward its OBJECTIVE. `notches` of `notchesToReach`
+ * is how far the trench has come; it advances on a BREACH and retreats on a REBUFF, so the band
+ * **is** the score and a viewer reads it without a legend. `dashed` is the published notice window
+ * before the first pulse — the defender sees the war coming. `hollow` is the campaign having no
+ * MATERIEL for its next pulse, so a starving war looks starved a whole Reckoning before it dies.
+ * `reached` is the only state in which the objective's own claim tint goes out and a ruin persists at
+ * the fallen anchor.
+ *
+ * The full argument, including the one §11.2 decision (`hollow` is one bit about a published
+ * obligation falling due at a published tick, never a stock reading — `anchorHot`'s exact
+ * precedent), is in `campaign/view.ts`.
+ *
+ * Strictly fewer fields than `CampaignView`, which is what makes A9 a theorem here rather than a
+ * review item: there is no fact on this line an agent's own `observe` would not answer.
+ */
+export interface SapLine {
+  readonly campaign: string;
+  /** Where the band starts: the attacker's forward system. */
+  readonly depot: SystemId;
+  /** Where it is aimed: the claimed system. */
+  readonly objective: SystemId;
+  readonly attacker: PrincipalId;
+  readonly defender: PrincipalId;
+  readonly state: CampaignState;
+  /** `2-1 of 3` · `MASSING · first pulse tick 504` · `REBUFFED 1-3`. One home, three readers. */
+  readonly legend: string;
+  /** How far the trench has advanced. Zero on any ending but TAKEN: nothing was taken. */
+  readonly notches: number;
+  /** Its full length — the breaches this campaign's scope requires. */
+  readonly notchesToReach: number;
+  readonly rebuffs: number;
+  readonly rebuffsToStand: number;
+  /** Drawn dashed: declared, not yet pressing. The published notice (§16.6 MUST-8). */
+  readonly dashed: boolean;
+  /** Drawn hollow: no MATERIEL at the depot for the next pulse. Supply, made visible. */
+  readonly hollow: boolean;
+  /** The band touches the objective. Only on TAKEN. */
+  readonly reached: boolean;
+  /** Posted, slashable, `PUBLIC` by §6.4 exactly as a claim bond is. */
+  readonly bond: Minor;
+  /** What the ending actually moved to the defender. Zero while live; A5 makes a loss public. */
+  readonly forfeited: Minor;
+  readonly nextPulseTick: number | null;
+  /** Roster size, both sides. §16.6 MUST-9's visible treaty edges, as a count. */
+  readonly allies: number;
+}
+
 export interface ClaimLine {
   readonly claim: string;
   /** The system the tint sits on. */
@@ -895,6 +1020,8 @@ export interface ReckoningFrame {
   readonly battleLines: readonly BattleLine[];
   /** Sovereignty's signature (§6.3, A13): who owes upkeep on what, and who is about to lose it. */
   readonly claimLines: readonly ClaimLine[];
+  /** ★ Campaigns' signature (§16.6, A13): THE SAP — a trench from a depot toward a claim. */
+  readonly saps: readonly SapLine[];
   readonly worksLines: readonly WorksLine[];
   /** ★ The market's signature (§10, A13): THE PRINT — a price on a place, and the gap to everywhere else. */
   readonly marketLines: readonly MarketLine[];
@@ -1007,6 +1134,37 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     problems.push('a ticker line exceeds 140 characters');
   }
 
+  for (const line of frame.authorityLines) {
+    if (line.dossiers.length > MAX_LINE_DOSSIERS) {
+      problems.push(
+        `authority line ${line.grantor}->${line.delegate} carries ${line.dossiers.length} dossier threads, ` +
+          `budget is ${MAX_LINE_DOSSIERS} — convergence is the signature, a hairball is not`,
+      );
+    }
+    // ── ★ NOTHING ON A DOSSIER THREAD MAY BE A COMPARTMENT FIGURE ─────────────
+    //
+    // The same guard `marketLines` and `claimLines` carry, aimed at this layer's own temptation.
+    // A thread says *a compartment was disclosed, to whom, when* — and the moment it carried the
+    // `digest` it would publish the subject's balance sheet to every viewer, which is §11.2's
+    // ladder inverted and would make cutting a dossier on your own grantor a free way to print
+    // its books. The argument is made **executable** rather than remembered, because the version
+    // of this that ships is the one where somebody added a field for a good reason.
+    for (const thread of line.dossiers) {
+      for (const key of Object.keys(thread)) {
+        // `at` is deliberately absent from this list even though a leaked figure could be
+        // spelled with it: `cutAtTick` and `revealsAtTick` are legitimate and a guard that
+        // produced a false problem string would halt a healthy frame, which is worse than the
+        // narrower list. The words here are the ones a *figure* would actually be named.
+        if (/digest|free|encumbered|balance|qty|quantity|figure|value|holds|held/i.test(key)) {
+          problems.push(
+            `dossier thread on ${line.grantor}->${line.delegate} carries "${key}"; a thread publishes THAT a ` +
+              'compartment was disclosed and to whom, never what was in it — the figures reach the two ' +
+              'holders and nobody else, ever',
+          );
+        }
+      }
+    }
+  }
   if (frame.authorityLines.length > MAX_AUTHORITY_LINES) {
     problems.push(
       `${frame.authorityLines.length} authority lines, budget is ${MAX_AUTHORITY_LINES} — convergence on a few hands is the signature, a hairball is not`,
@@ -1225,6 +1383,29 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     problems.push(
       `${frame.claimLines.length} claim lines, budget is ${MAX_FRAME_CLAIM_LINES} — a legend a viewer reads, not a heatmap`,
     );
+  }
+
+  if (frame.saps.length > MAX_FRAME_SAP_LINES) {
+    problems.push(
+      `${frame.saps.length} saps, budget is ${MAX_FRAME_SAP_LINES} — a campaign is the largest object on the map, ` +
+        'so a truncated set means a war in progress is not drawn at all',
+    );
+  }
+  for (const sap of frame.saps) {
+    // The band cannot be longer than itself: `notches > notchesToReach` draws a trench past the wall,
+    // which says on screen that the claim has fallen when the score says it has not (A5-PRIME).
+    if (sap.notches > sap.notchesToReach) {
+      problems.push(
+        `sap ${sap.campaign} has advanced ${sap.notches} notches of ${sap.notchesToReach}, which draws a band ` +
+          'past its objective while the score says it has not been taken',
+      );
+    }
+    if (sap.reached !== (sap.state === 'TAKEN')) {
+      problems.push(
+        `sap ${sap.campaign} is ${sap.state} and draws reached=${String(sap.reached)}. Only a TAKEN campaign ` +
+          'touches its objective; every other ending recoils to the depot, because nothing was taken',
+      );
+    }
   }
   for (const line of frame.claimLines) {
     // ── THE LEGEND AND THE STATE MUST AGREE, AND THE PIXEL IS WHAT IS BELIEVED ──

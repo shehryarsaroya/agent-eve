@@ -71,6 +71,11 @@ async function foundedBy(who: Agent, charter: Record<string, unknown>): Promise<
 
 const OFFICE = {
   template: 'custom',
+  // ★ `custom` grants NOTHING on either axis unless it is named (`RULES_VERSION` 23), so the fence
+  // is explicit here. That is the template working as designed rather than a fixture patch: the
+  // escape hatch is deliberately the narrowest option, because a default that quietly filled in
+  // the widest one would make the safest-looking word the most dangerous.
+  verbs: ['create', 'elect'],
   max_direct_loss: 10_000,
   max_contingent_liability: 0,
   expires_tick: 600,

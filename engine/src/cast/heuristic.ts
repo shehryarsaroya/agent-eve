@@ -3133,7 +3133,41 @@ export class HeuristicCast {
    *   4. **One member per tick per standoff**, through `reinforcedThisTick` — see
    *      {@link HeuristicCast.decide}.
    *
-   * ## The RAIDER side is deliberately not here, and the reason is a missing caller rather than a rule
+   * ## ★ THE HULL COALITION IS NOT HERE EITHER, AND IT IS FUEL- AND MAP-GATED RATHER THAN CAST-GATED
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE NEXT LEVER ON COALITION-SCALE COMBAT IS A FUEL TRADE, NOT ANOTHER BRANCH IN THIS FILE.**
+ * Written here because it is the one place a reader arrives asking *"why does the world still not
+ * field two principals' hulls on one side?"*, and the answer is not this branch's to give.
+ *
+ * What `join` opens is a **hand** coalition, and that is live: `FORCE_PER_JOINER` is 1 and a party
+ * row is a party row. What it does not open is a **hull** coalition, and the chain is four published
+ * facts with no cast decision anywhere in it:
+ *
+ *   1. `engage` requires a hull **berthed at the stage** — `fleet.ts`: *"a hull does not travel: to
+ *      fight somewhere you must have BUILT there"*;
+ *   2. `hullRefusalFor` requires the builder's **holding** to stand at that system, so a berth is a
+ *      body;
+ *   3. a hull costs `HULL_COST_GOODS.fuel`, and `FUEL_YIELD_PER_TICK` is **0 at every tier but
+ *      FRONTIER** (`works/params.ts`);
+ *   4. the launch map has exactly **two lanes into the Frontier** and `graduate` moves a body one
+ *      lane at a time — `the-cast-goes-to-war`'s header measures the consequence: *one* Frontier
+ *      member in twenty-four eight-member seeds.
+ *
+ * So two principals with hulls at one system is not a thing a policy constant can produce. Measured
+ * on this branch: `maxPrincipalsOneSide` is **1** in every seed of every sweep, while
+ * `combat-sim.ts` phase D — which stocks fuel from the faucet and drives the verbs by hand — shows
+ * what is behind the door at 15 hulls a side: an all-line defence takes **0** fields and loses
+ * **45** of its own hulls where a 1:5 support wing takes **13 of 16** and loses **0**.
+ *
+ * `MAX_FORMATIONS_PER_SIDE` is 6 and `MAX_RAID_PARTIES` is 12, so the mechanism is sized for six
+ * principals a side and neither cap is what binds. **The missing piece is a way for fuel to leave
+ * the Frontier** — a second traded good, or a `haul` a Frontier member has a reason to run — after
+ * which `engageFor` needs no change at all: it already declines only on the world-fleet gate, and
+ * `sideInRaid` already files a joiner's formation on the right side.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## The RAIDER side is deliberately not here, and the reason is a missing caller rather than a rule
    *
    * The same journal read the other way (`broke > 0`: *they* defaulted on *you*) is a legible reason
    * to take the other side, it is A6's own shape, and `RAID_JOIN_STAKE_MINOR` already prices it. What

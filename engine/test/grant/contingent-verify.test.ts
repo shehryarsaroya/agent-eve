@@ -119,7 +119,11 @@ function issueGrant(w: World, direct: number, contingent: number): GrantId {
   expect(
     act(w.runtime, w.grantor, 'grant', {
       delegate: w.delegate,
-      template: 'treasury-hand',
+      // `steward`, not `treasury-hand`: this fixture's delegate does a delegated `create`, and since
+      // `RULES_VERSION` 23 a template is an enforced FENCE rather than a label — a treasury-hand
+      // carries `elect` only. The office named here now has to be one that carries the verb the
+      // case exercises, which is the whole point of the change.
+      template: 'steward',
       max_direct_loss: direct,
       max_contingent_liability: contingent,
       expires_tick: SETTLE_TICK + 20,
@@ -374,6 +378,7 @@ describe('5. INV-22 after the new accruals', () => {
       eventId: 'ev:contingent-overrun' as EventId,
       direct: minor(0),
       contingent: minor(6_000_000),
+      verb: 'create',
     });
     const report = w.runtime.runTick();
     expect(report.halted).toBe(true);

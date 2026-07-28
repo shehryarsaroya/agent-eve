@@ -163,6 +163,15 @@ import {
   chargeConstituencyOf,
   type ClaimView,
 } from '../sovereignty/index.js';
+// Campaigns (§16.6). The constants the affordance publishes; the gates themselves live in
+// `src/campaign/` and the verbs run the same predicates this file probes through.
+import {
+  type CampaignView,
+  CAMPAIGN_SALVAGE_BPS,
+  LAST_DECLARE_PHASE,
+  MATERIEL_GOOD,
+  PULSE_MATERIEL_QTY,
+} from '../campaign/index.js';
 import { LEVY_BALLOT, LEVY_GOOD, LEVY_RULES, PUBLISHED_DEFAULT_RULE } from '../levy/index.js';
 import { syndicateAsPrincipal } from '../syndicate/book.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
@@ -199,6 +208,14 @@ const HAULABLE_GOODS: readonly GoodId[] = Object.freeze([
 ]);
 import type { SealRoleRef } from '../seal/index.js';
 import {
+  AUDIT_LAG_TICKS,
+  compartmentDigest,
+  DELEGABLE_VERBS,
+  isCompartment,
+  officeShape,
+  type Dossier,
+} from '../grant/index.js';
+import {
   commonsBoundRejection,
   GRADUATION_STATEMENT,
   handsOf,
@@ -207,6 +224,7 @@ import {
   MAX_HAUL_QTY,
   occupiesSystem,
   principalIsCommonsBound,
+  neighboursOf,
   tierOf,
   transitTicks,
 } from '../world/index.js';
@@ -442,6 +460,10 @@ export function buildObservation(input: ObserveInput): Observation {
   // two-homes shape of scar #1 with territory attached — and it is also four walks of the
   // claim book per observation.
   const myClaims = runtime.claimsFor(principal, tick);
+  // Read once and passed to both the `holding` block and the affordance layer. Two calls would be two
+  // force readings of the same war in one observation, and `readCampaignForce` is recomputed rather
+  // than cached — so they could disagree inside a single payload (scar #5's shape in a projection).
+  const myCampaigns = runtime.campaignsFor(principal, tick, MAX_LIST_ROWS);
   const mine = runtime.ventures.forPrincipal(principal);
 
   const solved = boardFor(runtime, principal, tick);
@@ -459,7 +481,8 @@ export function buildObservation(input: ObserveInput): Observation {
   // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
   // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick, board, solved.dropped, books, marketVenues)
+    ? affordancesFor(runtime, principal, tick, board, solved.dropped, myCampaigns,
+    books, marketVenues)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
   const exposure = runtime.ledger.encumbrances.cachedExposure(principal);
@@ -554,6 +577,15 @@ export function buildObservation(input: ObserveInput): Observation {
        * nothing here is a fact a stranger could not already count for itself.
        */
       aggression: runtime.aggressionFor(principal, tick),
+      // ── THE CAMPAIGN CLOCK (§16.6 MUST-8), PRESENT AT ZERO CAMPAIGNS AND AT FOUR ──
+      //
+      // On `header` for `raid_schedule`'s and `aggression`'s reason, and it is the same one:
+      // §17's observe budget is at ten of ten, `header` is where a world-wide published clock
+      // belongs, and a clock nobody can read is not a published clock. `aggressionFor`'s docblock
+      // records what the alternative cost — until §9's capacity became a standing block, the only
+      // mention of it in an observation was the `withheld` line that fires when it hits zero, so an
+      // agent learned the resource existed by exhausting it.
+      campaign_clock: runtime.campaignClock(tick),
       /**
        * §13B: the owner mandate is stable text, not per-tick state, so it is a free
        * read with a version announced here rather than a key of its own.
@@ -615,6 +647,14 @@ export function buildObservation(input: ObserveInput): Observation {
        * demand is a real row in `obligations.raid` instead, with its own deadline.
        */
       threats: claimThreats(myClaims),
+      // ── §12.1's RESERVED *"siege clock"* SLOT, FILLED ──────────────────────
+      //
+      // §12.1 lists `holding` as `state · threats · siege clock · upkeep_due`. The third of those
+      // had never been built, and campaigns are exactly it: a multi-Reckoning clock running against
+      // (or from) a principal's territory. So this spends **no** top-level key — the budget is at ten
+      // of ten and *"adding one means removing one"* — and it lands where the canon already put it.
+      campaigns: myCampaigns,
+      campaign_rules: runtime.campaignStatementFor(principal, tick),
       /**
        * §6.3's recurring upkeep, in **goods** — the Charge, summed over every claim.
        *
@@ -787,11 +827,70 @@ export function buildObservation(input: ObserveInput): Observation {
           .flatMap((s) => runtime.grants.forGrantor(syndicateAsPrincipal(s.id))),
       ]
         .slice(0, MAX_LIST_ROWS)
-        .map((g) => grantView(runtime, g, tick)),
+        .map((g) => grantView(runtime, g, tick, principal)),
       held: runtime.grants
         .forDelegate(principal)
         .slice(0, MAX_LIST_ROWS)
-        .map((g) => grantView(runtime, g, tick)),
+        .map((g) => grantView(runtime, g, tick, principal)),
+
+      /**
+       * ★ **THE ACCESS LOG (§8, §16.7 MUST-8) — three lists, three readerships.**
+       *
+       * A grant now delegates *sight*, and a delegate that can see something can hand it on.
+       * This is where that shows up, and it is deliberately in `grants` rather than as an
+       * eleventh top-level key: §17's observe budget is at its ceiling at ten, and a DOSSIER is
+       * *what a grant was used for*, so the key that publishes grants is its home.
+       *
+       *   - `about_me[]`  — cuts on YOUR compartments, once revealed (or once you `audit`).
+       *                     This is the counterintelligence surface: who read what, and when.
+       *   - `i_hold[]`    — documents in your hands, WITH the figures. Re-handable by id, and
+       *                     re-handable **after the grant that cut them is revoked** — which is
+       *                     §16.7 MUST-5's rule that revocation stops future reads and never
+       *                     erases what was already observed, and the reason `revoke` is not a
+       *                     cure for having trusted somebody.
+       *   - `window`      — how long a fresh cut on you stays dark, and whether you have paid to
+       *                     close it. Published as a number rather than left to be inferred: an
+       *                     agent that cannot see the lag cannot price the `audit` that shortens
+       *                     it, and a mechanic whose cost is legible while its benefit is not is
+       *                     a mechanic nobody will buy.
+       */
+      about_me: (() => {
+        const through = runtime.audits.through(principal);
+        return runtime.dossiers
+          .about(principal)
+          .filter((d) => runtime.dossiers.visibleToSubject(d, tick, through))
+          .slice(-MAX_LIST_ROWS)
+          .map((d) => dossierView(d, principal));
+      })(),
+      i_hold: runtime.dossiers
+        .heldBy(principal)
+        .slice(-MAX_LIST_ROWS)
+        .map((d) => dossierView(d, principal)),
+      window: {
+        /** Ticks a cut stays dark before it publishes to you, to every agent and to viewers alike. */
+        audit_lag_ticks: AUDIT_LAG_TICKS,
+        /** The last tick you spent an action reading this log, or null if you never have. */
+        audited_through_tick: runtime.audits.through(principal),
+        /**
+         * Cuts on you that exist and have NOT reached you yet — **a count, never the rows.**
+         *
+         * This is the one number in the observation that had to be argued rather than added,
+         * because publishing it at all seems to defeat the delay. It does not, and the
+         * distinction is the mechanic: the delay hides *what was taken, by whom, to whom*, and
+         * this says only *something was*. A victim that cannot tell "nobody is reading my
+         * books" from "four people are" has no reason ever to spend an action on `audit`, so
+         * the counterintel verb would be unreachable in practice while looking implemented —
+         * and the window would protect the mole absolutely instead of protecting it for four
+         * ticks. Four ticks of ambiguity about the details is a window; total ignorance that
+         * anything happened is a blindfold, and A2 forbids the second.
+         */
+        unrevealed_count: (() => {
+          const through = runtime.audits.through(principal);
+          return runtime.dossiers
+            .about(principal)
+            .filter((d) => !runtime.dossiers.visibleToSubject(d, tick, through)).length;
+        })(),
+      },
 
       /**
        * The syndicates this principal SITS IN.
@@ -1288,6 +1387,14 @@ function affordancesFor(
   board: readonly BoardRow[],
   /** Eligible slots the board's own cap dropped. See {@link boardFor}. */
   boardDropped: number,
+  /**
+   * The campaign views the payload publishes, passed rather than recomputed.
+   *
+   * `books`'s reason exactly: `readCampaignForce` is recomputed on every read and never cached, so
+   * two calls in one observation could publish two force readings of the same war — the affordance
+   * offering a join on one number while `holding.campaigns[]` shows another, inside a single payload.
+   */
+  campaignViews: readonly CampaignView[],
   /** The same books the payload publishes, so a quote cannot disagree with the ladder. */
   books: readonly PublicBook[],
   /**
@@ -1306,6 +1413,8 @@ function affordancesFor(
   /** Carries withheld: a co-member has an escrowable remainder this principal cannot reach. */
   let carryBlocked = 0;
   const carryBlockedWhy = new Set<string>();
+  /** `audit` withheld: grants are out, but none of them carries a CLEARANCE, so the log is empty. */
+  let auditNoClearance = 0;
   const world = runtime.world;
   const hands = handsOf(world, principal);
   const mine = runtime.ventures.forPrincipal(principal);
@@ -2553,6 +2662,8 @@ function affordancesFor(
   //     affordance order is a rules surface for exactly this reason: it is what an agent
   //     playing from the list actually does.
   //     ══════════════════════════════════════════════════════════════════════
+  // Campaign inputs, read once. Both go through the same predicates the verbs run — see 5e.
+  const campaignObjectives = runtime.campaignObjectivesFor(principal, tick);
   for (const claim of runtime.claimsOpenTo(principal, tick)) {
     if (claim.route === null) continue;
     if (claim.available_here < ANCHOR_QTY) continue;
@@ -2591,6 +2702,103 @@ function affordancesFor(
       expires_tick: claim.vulnerability.open ? claim.vulnerability.closes_tick : claim.deadline_tick,
       quote_id: quoteId(principal, tick, 'build', { kind: 'ANCHOR', system: claim.system }),
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 5e. CAMPAIGNS (§16.6) — declare one, take a side in one, or lift your own.
+  //
+  //     Ranked here, immediately after the anchor and before `post_bond`, and the position is a
+  //     decision rather than an accident. Above it are the acts with a clock somebody else set;
+  //     below it are the ones with none. A campaign has a clock — its next PULSE — but the clock is
+  //     a whole Reckoning away, so it must never outrank answering a standoff that resolves in 24
+  //     ticks. And it must never be FIRST for the reason `OFFERED_KINDS` records about `BUILD`: an
+  //     agent that copies its highest affordance verbatim would declare a war as its opening move.
+  //
+  //     **Every offer here is gated through `runtime.campaignDeclareRefusalFor` / the roster's own
+  //     `joinRefusal`** — the same functions the verbs run. AGT-S2 is the reason: an affordance the
+  //     engine then refuses costs an agent a real action every wake and, from the agent's side, is
+  //     indistinguishable from a counterparty having taken the slot.
+  // ══════════════════════════════════════════════════════════════════════════
+  for (const objective of campaignObjectives) {
+    const claimThere = runtime.sovereignty.liveAt(objective);
+    if (claimThere === null) continue;
+    eligible.push({
+      verb: 'build',
+      params: { kind: 'CAMPAIGN', system: objective },
+      cost: 1,
+      // The bond IS the worst case, exactly: it is what you lose if the campaign fails, and
+      // EXPOSURE is Σ open max_direct_loss and nothing else (§3). The materiel is a separate,
+      // recurring cost and is named in `what_it_forecloses` rather than folded in here — one number
+      // summing capital and goods would name a quantity of nothing in particular.
+      max_direct_loss: runtime.campaignBond,
+      max_contingent_liability: runtime.campaignBond,
+      what_it_forecloses:
+        `locks ${String(runtime.campaignBond)} of slashable capital and commits you to spending ` +
+        `${String(PULSE_MATERIEL_QTY)} of ${MATERIEL_GOOD} standing at YOUR OWN system, once per ` +
+        `Reckoning, against ${claimThere.claimant}'s claim on ${objective} (${claimThere.state}). It is the ` +
+        'ONLY way to take a claim from a holder that is paying its Charge. First pulse tick ' +
+        `${String(runtime.campaignFirstPulse(tick))} — never this Reckoning, so the defender gets a full ` +
+        'cycle of notice. Fail and the whole bond goes to it.',
+      // Not the pulse tick: the OFFER expires when the declaration window does, because a
+      // declaration made later this cycle still first pulses at the same tick. An `expires_tick` on
+      // the pulse would tell an agent it had a Reckoning to decide in when it has until the freeze.
+      expires_tick: tick - (tick % TICKS_PER_RECKONING) + LAST_DECLARE_PHASE,
+      quote_id: quoteId(principal, tick, 'build', { kind: 'CAMPAIGN', system: objective }),
+    });
+  }
+  for (const campaign of campaignViews) {
+    if (campaign.your_side === null) {
+      for (const side of ['DEFENDER', 'ATTACKER'] as const) {
+        // DEFENDER first, deliberately: the first offer of a verb is what survives truncation and
+        // what a blind copier takes, and the free side is the one that cannot cost an agent capital
+        // it did not understand it was risking.
+        if (runtime.campaignJoinRefusalFor(principal, campaign.campaign, side, tick) !== null) continue;
+        const stake = side === 'ATTACKER' ? runtime.campaignAllyStake : 0;
+        eligible.push({
+          verb: 'join',
+          // `system` is REQUIRED even though `vJoinCampaign` never reads it: `join` is classified
+          // HOSTILE, and the Commons floor refuses a hostile act that names no locatable place at all
+          // (A8 is checked at the door, before any handler). The `fight` affordance carries the same
+          // field for the same reason and says so. Found by the reachability test: without it the menu
+          // published a join the FLOOR refused, which is AGT-S2 with the refusal coming from a
+          // different door than the one the offer was gated on.
+          params: { campaign: campaign.campaign, side, system: campaign.objective },
+          cost: 1,
+          max_direct_loss: stake,
+          max_contingent_liability: stake,
+          what_it_forecloses:
+            side === 'ATTACKER'
+              ? `puts ${String(stake)} of slashable capital behind ${campaign.attacker}'s war on ` +
+                `${campaign.objective}, forfeit to ${campaign.defender} if the campaign fails. A ` +
+                'co-belligerent risks its own stake. Your IDLE hands standing at the objective count for ' +
+                'the attacker from the next pulse on — joining commits no hand by itself.'
+              : `puts you on ${campaign.defender}'s side at ${campaign.objective} at NO capital cost. Your ` +
+                'IDLE hands standing there count for the defence from the next pulse on, and ties go to the ' +
+                'defender. It also tags you to that side on the record for this campaign.',
+          expires_tick: campaign.next_pulse_tick ?? tick,
+          quote_id: quoteId(principal, tick, 'join', { campaign: campaign.campaign, side }),
+        });
+      }
+    }
+    if (campaign.your_side === 'ATTACKER' && runtime.campaignLiftRefusalFor(principal, campaign.campaign, tick) === null) {
+      eligible.push({
+        verb: 'withdraw',
+        params: { campaign: campaign.campaign },
+        // No `system`: `withdraw` is classified peaceful, and adding a target to a peaceful act would
+        // be a field with no meaning on the wire — an agent copying it would learn a rule that is not
+        // one.
+        cost: 1,
+        max_direct_loss: campaign.bond - Math.floor((campaign.bond * CAMPAIGN_SALVAGE_BPS) / 10_000),
+        max_contingent_liability: campaign.bond - Math.floor((campaign.bond * CAMPAIGN_SALVAGE_BPS) / 10_000),
+        what_it_forecloses:
+          `ends your campaign on ${campaign.objective} at ${campaign.legend}. ` +
+          `${String(CAMPAIGN_SALVAGE_BPS / 100)}% of the ${String(campaign.bond)} bond returns and the rest ` +
+          `goes to ${campaign.defender}. The claim is untouched and nothing you have spent on materiel comes ` +
+          'back. This is the cheaper of the two ways to lose.',
+        expires_tick: campaign.next_pulse_tick ?? tick,
+        quote_id: quoteId(principal, tick, 'withdraw', { campaign: campaign.campaign }),
+      });
+    }
   }
 
   // 5d. **Take a claim where you already stand**, and post the bond that backs it. No
@@ -2883,7 +3091,20 @@ function affordancesFor(
   //     heuristic cast now issues grants too and it picks from the same list. Two copies of "who may
   //     I hand an office to" — one for the menu an agent reads, one for the bot that plays — is scar
   //     #1's setup, and this is the worst verb in the game to have it on.
+  //
+  //     ★ **AND SINCE `RULES_VERSION` 23 THE PREVIEW PRICES THREE DIMENSIONS, NOT ONE.**
+  //
+  //     A7 requires that the grantor see the risk *before* it signs, and the risk stopped being
+  //     one number the day a grant gained a fence and a clearance. Two numbers with a silent
+  //     third axis is exposure accepted blind — scar #1 with money on it — so the row below
+  //     states, in order: which VERBS the delegate may take in your name, which COMPARTMENTS it
+  //     may read, and what it can do with what it reads. The last one is the part nobody prices
+  //     by instinct: a cleared delegate can hand your figures to anybody, the copy is permanent,
+  //     and revoking the grant does not take it back.
+  const grantShape = officeShape('treasury-hand');
   for (const candidate of runtime.grantCandidates(principal, tick, MAX_GRANT_OFFERS)) {
+    const fence = grantShape?.verbs ?? [];
+    const rooms = grantShape?.clearance ?? [];
     eligible.push({
       verb: 'grant',
       params: {
@@ -2892,6 +3113,12 @@ function affordancesFor(
         max_direct_loss: candidate.cap,
         max_contingent_liability: candidate.cap,
         expires_tick: candidate.expiresTick,
+        // Named explicitly rather than left to the template's default, though they are the same
+        // two lists. A copy-pasteable affordance is the one place an agent learns a parameter
+        // EXISTS, and a field that only ever appears as a default is a field no agent will ever
+        // vary — which is how `preference` sat on `create` unread for the project's whole life.
+        verbs: [...fence],
+        clearance: [...rooms],
       },
       cost: 1,
       max_direct_loss: candidate.cap,
@@ -2900,17 +3127,123 @@ function affordancesFor(
         `puts ${candidate.to} in an OFFICE over your treasury until tick ` +
         `${String(candidate.expiresTick)}. From the tick it lands they may act in your name up to ` +
         `${String(candidate.cap)} of direct loss and ${String(candidate.cap)} of contingent liability, and ` +
-        `you cannot undo an act they have already taken — only \`revoke\` what is left. They have kept ` +
-        `${String(candidate.kept)} promise(s) to you and broken ${String(candidate.broke)}. That record is ` +
-        `why this is offered and it is not a prediction: the grant, this warning, and whatever they do ` +
-        `with it all land on the same public record, and it is read back at settlement. This list is a ` +
-        `SHORTLIST, not a restriction — \`grant\` accepts any enrolled principal, including one you have ` +
-        `never dealt with, and the engine will not stop you. What is shown here is the ` +
-        `${String(MAX_GRANT_OFFERS)} with the strongest record with you, because an office is the ` +
+        `you cannot undo an act they have already taken — only \`revoke\` what is left. ` +
+        `A grant bounds THREE things and this one is a treasury-hand: it delegates the verb(s) ` +
+        `${fence.join(' and ')} and NOT ${DELEGABLE_VERBS.filter((v) => !fence.includes(v)).join(', ')}, ` +
+        `so they may pay your elective halves and cannot sign you into anything new. Its CLEARANCE is ` +
+        `${rooms.length === 0 ? 'empty — they act blind' : rooms.join(' and ')}` +
+        `${rooms.includes('STORES') ? ', so they read your exact free balance, your encumbered total and every good you hold' : ''}. ` +
+        `A CLEARANCE IS THE PART THAT CANNOT BE TAKEN BACK: a cleared delegate may cut a DOSSIER — a ` +
+        `signed, dated copy of those figures — and hand it to ANY principal with one \`message\`. You ` +
+        `learn of it ${String(AUDIT_LAG_TICKS)} ticks later, or sooner if you spend an action on ` +
+        `\`audit\`; and after you revoke, everything they already read stays theirs to pass on forever. ` +
+        `Pass "clearance": [] to grant authority with no sight at all (that is a \`factor\`). ` +
+        `They have kept ${String(candidate.kept)} promise(s) to you and broken ${String(candidate.broke)}. ` +
+        `That record is why this is offered and it is not a prediction: the grant, this warning, and ` +
+        `whatever they do with it all land on the same public record, and it is read back at settlement. ` +
+        `This list is a SHORTLIST, not a restriction — \`grant\` accepts any enrolled principal, ` +
+        `including one you have never dealt with, and the engine will not stop you. What is shown here ` +
+        `is the ${String(MAX_GRANT_OFFERS)} with the strongest record with you, because an office is the ` +
         `heaviest thing you can hand out.`,
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'grant', { to: candidate.to }),
     });
+  }
+
+  // 5C-bis. ★ **THE DOSSIER, AND `audit` — the sight half of A6 made reachable.**
+  //
+  //     Two mechanisms landed with the clearance and neither is worth anything unreachable. The
+  //     project has thirteen recorded instances of exactly that, the most recent being
+  //     `lockFillStake` — §7.3's escrow, its own passing test, no caller anywhere in `src/`.
+  //
+  //     **Offering a leak is not endorsing one, and this is the distinction A6 rests on.** The
+  //     row below offers `message {to, dossier}`, whose meaning is decided entirely by the
+  //     recipient the agent picks: to your grantor it is a report, to your grantor's rival it is
+  //     a leak, and it is the SAME CALL. The engine records custody and never intent (§16.7
+  //     MUST-9), so the menu names the act, prices the permanence, and leaves the choice where
+  //     A6 puts it — with the agent, through an ordinary legitimate verb.
+  //
+  //     The recipient in `params` is deliberately the SUBJECT — i.e. reporting to your own
+  //     grantor, the honest use — because a copy-pasteable affordance is a suggestion and the
+  //     safe one is the right default. `what_it_forecloses` states plainly that any principal
+  //     may be named instead.
+  // One counter, and it bounds BOTH loops. The first draft tested `eligible.filter(...)` inside the
+  // inner loop and `break`-ed on it, which only leaves the INNER loop — so a delegate holding three
+  // cleared grants could push six rows past a cap of two. A cap that is not actually a cap is worse
+  // than none: `withheld` reconciles `candidates === shown + Σ withheld` per field (PROP-O1), and an
+  // over-full list makes that arithmetic wrong in the direction nobody checks.
+  let citeOffers = 0;
+  for (const grant of runtime.grants.forDelegate(principal)) {
+    if (citeOffers >= MAX_GRANT_OFFERS) break;
+    if (!runtime.grants.isLive(grant.id, tick)) continue;
+    for (const room of grant.clearance) {
+      if (citeOffers >= MAX_GRANT_OFFERS) break;
+      if (!isCompartment(room)) continue;
+      citeOffers += 1;
+      eligible.push({
+        verb: 'message',
+        params: { to: grant.grantor, dossier: `${String(grant.grantor)}/${room}` },
+        cost: 1,
+        // Nothing of YOURS is at risk and that is the whole problem with this act: the loss is
+        // the subject's, and it is not denominated in currency at all. Stating 0 with the
+        // sentence below is honest; inventing a figure for somebody else's secret would not be.
+        max_direct_loss: 0,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `cuts a DOSSIER on ${grant.grantor}'s ${room} — the server's own figures, read at this tick and ` +
+          `signed, not your word for them — and hands it to the principal you name in "to". As written this ` +
+          `row reports to ${grant.grantor} ITSELF, which is what an office holder does; name any other ` +
+          `principal instead and the identical call is a leak. Costs you nothing and risks nothing of ` +
+          `yours. It is PERMANENT and ATTRIBUTABLE: the row names you, ${grant.grantor}, the recipient and ` +
+          `grant ${grant.id}, it reaches ${grant.grantor} and every viewer at tick ` +
+          `${String(tick + AUDIT_LAG_TICKS)} (sooner if ${grant.grantor} spends an action on \`audit\`), and ` +
+          `whoever receives it can hand it on again forever — including after ${grant.grantor} revokes ` +
+          `this grant. Nothing un-cuts a dossier. What ${grant.grantor} sees is THAT you disclosed and to ` +
+          `whom, never its own figures read back.`,
+        expires_tick: tick + 1,
+        quote_id: quoteId(principal, tick, 'message', { dossier: `${String(grant.grantor)}/${room}` }),
+      });
+    }
+  }
+
+  //     `audit` — the counterintelligence half, and the only thing that shortens the window.
+  //     Offered whenever a live grant of yours carries a CLEARANCE, because that is exactly when
+  //     the log can have anything in it. `unrevealed_count` on the same payload is what makes the
+  //     spend a decision rather than a ritual.
+  {
+    const cleared = runtime.grants
+      .forGrantor(principal)
+      .filter((g) => g.clearance.length > 0 && runtime.grants.isLive(g.id, tick));
+    const through = runtime.audits.through(principal);
+    const dark = runtime.dossiers
+      .about(principal)
+      .filter((d) => !runtime.dossiers.visibleToSubject(d, tick, through)).length;
+    if (cleared.length > 0) {
+      eligible.push({
+        verb: 'audit',
+        params: {},
+        cost: 1,
+        max_direct_loss: 0,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `reads your own access log NOW instead of waiting ${String(AUDIT_LAG_TICKS)} ticks. ` +
+          `${String(cleared.length)} live grant(s) of yours carry a CLEARANCE, so ` +
+          `${cleared.map((g) => `${String(g.delegate)} (${g.clearance.join('+')})`).join(', ')} can each cut a ` +
+          `DOSSIER on you at will. ${String(dark)} cut(s) exist that have not reached you yet; this reveals ` +
+          `every one of them, with who cut it, on which compartment, and to whom. It costs one action and ` +
+          `buys no power: you cannot un-cut a dossier, only \`revoke\` the clearance that makes the NEXT one ` +
+          `possible. The audit itself POSTS PUBLICLY, so your delegates will see that you looked — what it ` +
+          `found stays yours.`,
+        expires_tick: tick + 1,
+        quote_id: quoteId(principal, tick, 'audit', { through: String(tick) }),
+      });
+    } else if (runtime.grants.forGrantor(principal).length > 0) {
+      // PROP-O1: every eligible-looking omission is counted with a ground an agent can act on.
+      // A grantor with grants but no clearance out has an EMPTY log by construction, and
+      // `NO_RECORD` is precisely "we hold no row for it, and will not invent zeros that read as
+      // facts" — the alternative being an `audit` offer that spends a real action on nothing.
+      auditNoClearance = runtime.grants.forGrantor(principal).length;
+    }
   }
 
   // 5D. **FOUNDING A HOUSE.** `form` was legal, priced, and never offered — the fourth
@@ -3324,6 +3657,22 @@ function affordancesFor(
         'else\'s obligation for no payment the engine enforces',
     });
   }
+  if (auditNoClearance > 0) {
+    // ── COUNTED, BECAUSE AN EMPTY LOG AND A MISSING MECHANIC READ IDENTICALLY ──
+    //
+    // A grantor holding grants and offered no `audit` would reasonably conclude the verb does not
+    // apply to it. The truth is sharper and more useful: its own grants delegate ACTION and not
+    // SIGHT, so there is nothing that could be in the log — which is the fact that teaches the
+    // agent what a clearance actually is, at the moment it is holding the alternative.
+    reasons.push({
+      verb: 'audit',
+      text:
+        `${String(auditNoClearance)} grant(s) you issued carry no CLEARANCE, so nobody can cut a DOSSIER on ` +
+        'you and your access log is empty by construction — `audit` would spend a real action to read ' +
+        'nothing. A grant delegates authority to ACT (its verbs) and authority to SEE (its clearance) ' +
+        'separately, and yours delegate only the first. `grants.granted[].clearance` is the field',
+    });
+  }
   if (demandCapacitySpent) {
     // ── COUNTED, BECAUSE A MENU THAT SHRINKS WITHOUT SAYING WHY TEACHES THE WRONG RULE ──
     //
@@ -3371,6 +3720,37 @@ function affordancesFor(
               `Reason(s): ${[...demandRefusedWhy].sort(cmp).join(' · ')}`),
     });
   }
+  // ── CAMPAIGNS, AND THIS BRANCH EXISTS BECAUSE `trade` DID NOT HAVE ONE ─────
+  //
+  // `withheld` closes with *"Nothing you were eligible for has been dropped without this count"*, and
+  // that promise was measured false once: `trade` was silent in 497 of 576 observations across a
+  // swept world, with a reachable venue in every one of them, and `agt-r5-reachability.test.ts` could
+  // not catch it because it asks a GLOBAL question ("is every live verb offered somewhere") that
+  // passes. The property that broke is per-observation. So a campaign that is not offered says which
+  // of the three walls it hit, every time.
+  if (campaignObjectives.length === 0 && campaignViews.every((c) => c.your_side === null)) {
+    const holdingNow = world.holdingByPrincipal.get(principal) === undefined ? null : holdingOf(world, principal);
+    reasons.push({
+      verb: 'build',
+      text:
+        'no CAMPAIGN is offered. A campaign is the only way to take a claim from a holder that is PAYING its ' +
+        'Charge, and it needs three things at once: your HOLDING standing outside the Commons, a CLAIMED ' +
+        `system ONE LANE from it, and ${String(PULSE_MATERIEL_QTY)} of ${MATERIEL_GOOD} already standing where ` +
+        'your holding is. ' +
+        (holdingNow === null
+          ? 'You have no holding at all'
+          : tierOf(world.map, holdingNow.system) === 'COMMONS'
+            ? `Your holding stands at ${holdingNow.system}, in the COMMONS, and a campaign's DEPOT may never be ` +
+              'there (§16.6 MUST-1): the one place nobody may attack cannot also be the staging ground for ' +
+              'attacking everywhere else. `graduate` moves it one lane outward'
+            : `Your holding stands at ${holdingNow.system}. Its lane-neighbours are ` +
+              `${neighboursOf(world.map, holdingNow.system).join(' · ')} — a campaign can only be aimed at one ` +
+              'of those, and only while somebody holds a SUPPLIED or STRAINED claim on it. A CONTESTED claim is ' +
+              'takeable free in the vulnerability window, so a campaign against one is refused rather than ' +
+              'offered'),
+    });
+  }
+
   if (boardDropped > 0) {
     // The list this sentence is about is `ventures.board[]` itself, one level above the
     // affordances. It slices at `MAX_LIST_ROWS`, and until this branch existed the payload
@@ -3433,6 +3813,7 @@ function affordancesFor(
         worksWithheld +
         chargeNoHand +
         carryBlocked +
+        auditNoClearance +
         commonsBoundLanes +
         (demandCapacitySpent ? 1 : 0) +
         (demandSilent ? 1 : 0) +
@@ -3937,6 +4318,7 @@ function grantView(
   runtime: Runtime,
   grant: Grant,
   tick: number,
+  reader: PrincipalId,
 ): Readonly<Record<string, unknown>> {
   const headroom = runtime.grants.headroom(grant.id);
   return {
@@ -3950,9 +4332,84 @@ function grantView(
     spent_contingent: grant.spentContingent,
     headroom_direct: headroom.direct,
     headroom_contingent: headroom.contingent,
+    /**
+     * ★ **The verb fence** — which acts this grant delegates (SPEC §8, §16.12 #3).
+     *
+     * `PARTIES`, and this key is where that tier is served: §11.2 D9a puts a grant's
+     * *operational detail* — "which verbs, over which resources, with which approvals" — at
+     * `PARTIES` because it is "how a principal actually runs its house", while the LIMITS are a
+     * public price. Both principals bound by the grant read it here; nobody else does, and the
+     * `PUBLIC` `grant.issued` row deliberately omits it.
+     */
+    verbs: [...grant.verbs],
+    /**
+     * ★ **The clearance** — which COMPARTMENTS of the grantor's private facts the delegate may
+     * read. `PUBLIC` (it is on `grant.issued` and on the authority line), served here because
+     * both parties need it in the same row they read the LIMITS from.
+     */
+    clearance: [...grant.clearance],
+    /**
+     * ★ **What the clearance actually shows, for the delegate that holds it.**
+     *
+     * The point of a clearance is the figures, and a clearance whose figures were never served
+     * would be this project's signature defect on its newest field: a capability that exists and
+     * is never exercised is indistinguishable from one that is missing. So the digest is right
+     * here, in the row that says the delegate may read it, computed at this tick.
+     *
+     * `null` for the GRANTOR's own view of a grant it issued — not because the grantor may not
+     * see its own books (it obviously may, everywhere else in the observation) but because
+     * repeating them here would double the grants block for no information. `null` for a dead
+     * grant too: `isLive` is the gate on a read exactly as it is on a draw.
+     */
+    reads:
+      reader === grant.delegate && runtime.grants.isLive(grant.id, tick)
+        ? Object.fromEntries(
+            grant.clearance
+              .filter(isCompartment)
+              .map((room) => [room, compartmentDigest(runtime.compartmentPort(), grant.grantor, room, tick)]),
+          )
+        : null,
     expires_tick: grant.expiresTick,
     revoked_at_tick: grant.revokedAtTick,
     live: runtime.grants.isLive(grant.id, tick),
+  };
+}
+
+/**
+ * One DOSSIER, as one of the three principals it concerns may read it (§8, §16.7 MUST-8).
+ *
+ * ── WHO GETS THE DIGEST, AND WHY THE SUBJECT DOES NOT ────────────────────────
+ *
+ * The `digest` is the private figures. It goes to whoever legitimately **holds** the document
+ * — the cutter and the recipient — and to nobody else, because a dossier is a copy in someone's
+ * hands rather than a publication. The SUBJECT gets the *fact* of the disclosure and not the
+ * figures, which sounds backwards for one second and then is obviously right: the subject
+ * already knows its own balance, and what it needs from its access log is **who has been
+ * reading it and when**.
+ *
+ * That split is also what keeps this from becoming a second leak. If the reveal published the
+ * numbers, then every leak would leak twice — once to the recipient and once to the entire
+ * galaxy and the audience — and cutting a dossier on your own grantor would be a free way to
+ * publish its books. §11.2's ladder is about *who may read a fact*, not about a fact becoming
+ * public because it moved.
+ */
+function dossierView(row: Dossier, reader: PrincipalId): Readonly<Record<string, unknown>> {
+  const holder = reader === row.cutBy || reader === row.toWhom;
+  return {
+    id: row.id,
+    subject: row.subject,
+    compartment: row.compartment,
+    cut_by: row.cutBy,
+    to_whom: row.toWhom,
+    /** The clearance it was read under, or null when this row is a re-hand of one already held. */
+    under_grant: row.grant,
+    /** The row it was copied from, or null for a first cut. The custody chain, as one field. */
+    copied_from: row.parent,
+    cut_at_tick: row.cutAtTick,
+    /** When the subject, every other agent and every viewer learn of it — one clock for all three. */
+    reveals_at_tick: row.revealsAtTick,
+    /** The figures. Held documents only; the subject reads the disclosure, not its own numbers back. */
+    digest: holder ? row.digest : null,
   };
 }
 

@@ -46,6 +46,8 @@ function grant(n: number, from: string, to: string): Grant {
     maxContingentLiability: minor(1_000),
     spentDirect: minor(0),
     spentContingent: minor(0),
+    verbs: ['create', 'elect'],
+    clearance: [],
     expiresTick: 9_999,
     revokedAtTick: null,
   };

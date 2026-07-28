@@ -217,6 +217,13 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // holding no claims, no arrears counters and no bond locks — every posted bond an orphan lock
   // INV-4 halts on, and every claim silently un-owned.
   'sovereignty',
+  // ── CAMPAIGNS (§16.6), AND THE MANIFEST ENTRY IS PART OF ADDING THE BOOK ──
+  //
+  // Not a follow-up. A restorable table missing from this list is a book an adoption silently drops
+  // while the gate reports nothing missing — which is exactly how `mint` and `delivery` were found,
+  // by an equivalence test, after adopt-plus-tail reproduced a checkpoint and then diverged on the
+  // first tick after it. A dropped campaign row is a live war with a bond locked inside it.
+  'campaign',
   // WORKS. Named in the same change that registered the table, for the reason the two
   // entries above learned the hard way. This book decides how many goods enter the world every
   // tick, so an adopted world that dropped it would come up with every place unworked — and the
@@ -240,6 +247,17 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // now the third time `books-in-the-hash` has asked for that within a minute of the table
   // landing. The lesson has stuck: the manifest entry is part of adding a book, not a follow-up.
   'syndicate',
+  // Dossiers and the audit stamps (§8, §16.7 MUST-8). Named in the same change that registered
+  // the table — the fourth time this manifest has been asked for within a minute of a book
+  // landing, and by now the entry is part of adding a book rather than a follow-up.
+  //
+  // The drop here is the A5′ shape specifically. A dossier row is an **attribution**: *this
+  // delegate handed this principal's balance sheet to that one*. An adopted world without the
+  // book comes up having forgotten every disclosure — so a grantor's access log is empty, a
+  // revealed leak un-happens, and the authority lines lose the threads that make a revocation
+  // legible. Worse in the other direction: the audit stamps go too, so a principal that spent an
+  // action reading its log would be shown nothing and could not tell that from an empty log.
+  'dossier',
 ];
 
 /** Why a checkpoint was not adopted, or null when one was. */

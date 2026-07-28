@@ -47,7 +47,7 @@ import { checkInv20 as checkSealVerdictScope } from '../seal/invariants.js';
 import { checkInv21 as checkStandingBatch, type StandingCause } from '../seal/standing.js';
 import { checkInv10, checkInv8, checkInv9, type RoleFills } from '../world/invariants.js';
 import type { WorldState } from '../world/state.js';
-import { checkInv22, checkInv23, type GrantSpend, type SignedDeal } from './authority.js';
+import { checkInv22, checkInv23, type CustodyRow, type GrantSpend, type SignedDeal } from './authority.js';
 import { checkInv17, type DefaultRegister } from './attribution.js';
 import {
   checkInv24,
@@ -135,6 +135,8 @@ export interface InvariantInputs {
   readonly grants?: readonly Grant[];
   readonly grantSpends?: readonly GrantSpend[];
   readonly deals?: readonly SignedDeal[];
+  /** INV-22's custody clause: every DOSSIER cut, and the clearance that authorised it. */
+  readonly custody?: readonly CustodyRow[];
 
   // ── the clock and the crowd ──────────────────────────────────────────────
   readonly levy?: Inv24Inputs;
@@ -367,9 +369,15 @@ export function checkInvariants(world: InvariantInputs, tick: number): Invariant
     skip('INV-22', 'no grant table supplied');
     skip('INV-23', 'no grant table supplied');
   } else {
-    guarded('INV-22', () => checkInv22(grants, world.grantSpends ?? [], tick));
+    guarded('INV-22', () => checkInv22(grants, world.grantSpends ?? [], tick, world.custody ?? []));
     if (world.grantSpends === undefined) {
       skip('INV-22', 'no spend journal supplied; the concurrency clause did not run');
+    }
+    if (world.custody === undefined) {
+      // Named rather than silent, on INV-25's discipline: an invariant reporting green over a
+      // subject that cannot occur is indistinguishable from one that is working, and this
+      // clause spent its first day exactly there while `grant/dossier.ts` existed unwired.
+      skip('INV-22', 'no dossier table supplied; the custody clause did not run');
     }
     guarded('INV-23', () => checkInv23(grants, world.deals ?? [], tick));
     if (world.deals === undefined) {

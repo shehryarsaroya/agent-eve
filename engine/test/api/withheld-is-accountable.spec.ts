@@ -170,6 +170,11 @@ const OPEN: Readonly<Record<string, string>> = Object.freeze({
  * fire on nothing.
  */
 const UNTRIGGERED: Readonly<Record<string, string>> = Object.freeze({
+  audit:
+    'ALREADY ACCOUNTED, BY A DEDICATED BRANCH — `auditNoClearance`, tagged `audit`. It is the one verb ' +
+    'whose two states are total: a grantor with a live CLEARANCE out is OFFERED the act, and a grantor ' +
+    'with grants but no clearance gets the row saying its access log is empty by construction. A ' +
+    'principal that has issued no grant at all is not withholding anything — there is no subject.',
   admit: 'RESPONSE-ONLY — needs a pending application to your syndicate; offered while one is pending.',
   apply: 'RESPONSE-ONLY — needs a syndicate whose charter admits applications, which is somebody else\'s act.',
   approve: 'RESPONSE-ONLY — needs an open proposal in a syndicate you sit in.',

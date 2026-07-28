@@ -171,6 +171,56 @@ export type EngagementState = 'MUSTER' | 'CONTACT' | 'CONTEST' | 'BREAK' | 'AFTE
  */
 export type ClaimState = 'SUPPLIED' | 'STRAINED' | 'CONTESTED' | 'LAPSED' | 'CEDED';
 
+// ── Campaigns ───────────────────────────────────────────────────────────────
+
+/**
+ * A CAMPAIGN's states (SPEC §3, `PASS-TERRITORY-POLITICS` §16.6 MUST-4 and MUST-13).
+ *
+ * Declared here for {@link RaidState}'s reason: **two** rules surfaces need it — the campaign
+ * book and the frame's SAP — and §3 is a rules surface, so the same seven words declared twice
+ * would be one pixel signature described in two places.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **FIVE OF THE SEVEN ARE ENDINGS, AND THAT IS §16.6 MUST-13 DISCHARGED.** *"Endless formal
+ * aggression produces avoidance; multiple exit paths create bargaining, mercy, humiliation,
+ * reparations, clientage, and broken peace."* Each terminal state below is a different sentence
+ * a viewer can be told and a different arithmetic on the attacker's bond:
+ *
+ *   - `TAKEN` — the attacker landed its BREACHES. The OBJECTIVE's claim lapses; bond returned.
+ *   - `REBUFFED` — the defender stood often enough. Bond **forfeit to the defender**.
+ *   - `STARVED` — the MATERIEL stopped arriving. Bond forfeit to the defender.
+ *   - `LIFTED` — the attacker withdrew. Salvage back; the rest forfeit.
+ *   - `MOOT` — the objective stopped existing (ceded, lapsed on its own, or changed hands).
+ *     Bond returned in full, because nobody failed at anything.
+ *
+ * `MOOT` is the one that makes a defender's fire sale a real move: **cede the claim and the
+ * war has nothing left to take.** §16.6 MUST-13 lists exactly that as an ending, and without
+ * it a besieged claimant's only options are pay or lose.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `MASSING` rather than `MOBILIZING` (§16.6's own word): the ladder there is six rungs and this
+ * build ships two live ones, so borrowing the six-rung vocabulary for a two-rung machine would
+ * promise a mechanic that is not here. `MASSING` is the published notice window — a campaign's
+ * first PULSE is never in the Reckoning it was declared in, so a defender always gets a full
+ * wake cycle on the same information (§16.6 MUST-8, A4).
+ *
+ * `REBUFFED` rather than `HELD`, `REPULSED` or `BROKEN`: `stageHeld` owns *held* (§3's TACKLE
+ * row says so by name), `REPULSED` is a {@link RaidState}, and *broken* is the promise
+ * scoreboard's word (§14.2's `KEPT · BROKEN`). One word may not carry a second concept.
+ */
+export type CampaignState = 'MASSING' | 'PRESSING' | 'TAKEN' | 'REBUFFED' | 'STARVED' | 'LIFTED' | 'MOOT';
+
+/**
+ * What one PULSE decided. Three outcomes, and the third is the reason supply is a mechanic.
+ *
+ * `BREACH` — the attacker out-forced the defender at the OBJECTIVE, having paid its MATERIEL.
+ * `REBUFF` — the defender's force met or beat it. Ties go to the defender, as in §9.
+ * `STARVED` — the MATERIEL was not standing at the DEPOT, so nothing was pressed at all. It
+ * counts for the defender **and** counts toward the campaign's own death, which is what makes
+ * cutting a corridor a way for a smaller defender to win (§16.6 MUST-5).
+ */
+export type PulseOutcome = 'BREACH' | 'REBUFF' | 'STARVED';
+
 /**
  * A7's two halves. The escrowed part auto-executes at settlement; the elective
  * part **never** does. Full escrow deletes the betrayal; zero escrow enables
@@ -243,6 +293,25 @@ export interface Grant {
   readonly maxContingentLiability: Minor;
   spentDirect: Minor;
   spentContingent: Minor;
+  /**
+   * ★ **The verb fence** — which acts this grant delegates, in `DELEGABLE_VERBS` order
+   * (`grant/compartment.ts`). SPEC §8's own definition of a grant opens with *"a grant
+   * specifies **verbs** × resource selector × … limits"*, and this was the clause with no
+   * field: six named templates, one enforced power. A treasurer is now not automatically a
+   * quartermaster, and the word on the receipt is the word the engine checks.
+   */
+  readonly verbs: readonly string[];
+  /**
+   * ★ **The clearance** — which COMPARTMENTS of the grantor's private facts the delegate
+   * may read, in `COMPARTMENTS` order. Empty means *act, do not look*.
+   *
+   * Typed as `readonly string[]` rather than `readonly Compartment[]` for one reason:
+   * `core/types.ts` is the bottom of the import graph and `grant/` sits above it, so
+   * importing the union here would invert the layering that `ledger/`-importing-`levy/`
+   * was pulled apart for. `grant/book.ts` narrows on restore and INV-22 checks membership,
+   * so an unknown compartment cannot reach a row.
+   */
+  readonly clearance: readonly string[];
   readonly expiresTick: number;
   revokedAtTick: number | null;
 }

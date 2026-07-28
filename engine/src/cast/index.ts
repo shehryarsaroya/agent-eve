@@ -189,8 +189,10 @@ export {
 } from './parse.js';
 
 export {
+  CONTRACT_ACTS,
   CONTRACT_CATALOG,
   CONTRACT_CEILING_MARGIN,
+  CONTRACT_MULTI_MEANING_VERBS,
   CONTRACT_NOT_EXCERPTED,
   CONTRACT_POSITIONS,
   CONTRACT_SECTIONS,
@@ -200,8 +202,10 @@ export {
   MAX_OBSERVATION_CHARS,
   NO_SITUATION,
   REPLY_SCHEMA,
+  actTokensOf,
   buildPrompt,
   citedSection,
+  discriminatorsOf,
   excerptFor,
   loadContract,
   loadContractDocument,

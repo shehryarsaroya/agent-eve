@@ -166,11 +166,11 @@ import { slotClaimAt } from '../observe/forecast.js';
 // The Levy's pixel signature (§5.2, A13). Imported as a *type only*: this runtime
 // populates `TributeLine`, it does not define it — `frames/contract.ts` owns the shape and
 // the client already draws that one.
-import type { AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } from '../frames/contract.js';
+import type { AuthorityDossier, AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } from '../frames/contract.js';
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 import { hallOfFame, namesFor } from '../frames/memory.js';
-import { readInt, readString } from '../core/params.js';
+import { readInt, readList, readString } from '../core/params.js';
 import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
 import { sign } from '../venture/sign.js';
@@ -261,7 +261,72 @@ import {
   type SettlementAccounts,
   type VentureRecord,
 } from '../venture/index.js';
-import { MAX_GRANT_SPENDS, GrantBook, grantsStateTable } from '../grant/index.js';
+import {
+  AUDIT_LAG_TICKS,
+  AuditLog,
+  canonicalClearance,
+  canonicalVerbs,
+  compartmentDigest,
+  COMPARTMENTS,
+  DELEGABLE_VERBS,
+  DossierBook,
+  dossiersStateTable,
+  GrantBook,
+  grantsStateTable,
+  isCompartment,
+  MAX_DIGEST_CHARS,
+  MAX_DOSSIERS,
+  MAX_GRANT_SPENDS,
+  OFFICE_NAMES,
+  officeShape,
+  type CompartmentPort,
+  type Dossier,
+  type DossierId,
+} from '../grant/index.js';
+// ── CAMPAIGNS (§16.6) ───────────────────────────────────────────────────────
+//
+// The whole layer through one barrel, in the shape `predation` and `sovereignty` already use: the
+// gates, the resolver and the views are functions of their inputs in their own module, and what
+// lives here is the adapter that gathers them. `works/refine.ts`'s rule, and the reason is this
+// file: three mechanical edits landed in the wrong place in it in one day and all three passed tsc.
+import {
+  assertCampaignSchedule,
+  Book as CampaignBook,
+  campaignClockAt,
+  campaignStateTable,
+  campaignTickerLine,
+  campaignViewsFor,
+  CAMPAIGN_BOND_MINOR,
+  CAMPAIGN_ENDINGS_STATEMENT,
+  CAMPAIGN_JOIN_STAKE_MINOR,
+  CAMPAIGN_ROSTER_STATEMENT,
+  CAMPAIGN_STATEMENT,
+  checkCampaignInvariants,
+  declareRefusal,
+  duePulses,
+  firstPulseTickFor,
+  isCampaignSide,
+  isLiveCampaign,
+  joinRefusal,
+  joinStakeFor,
+  liftEnding,
+  liftRefusal,
+  MATERIEL_GOOD,
+  MAX_LIVE_CAMPAIGNS,
+  openCampaign,
+  PULSE_MATERIEL_QTY,
+  resolvePulse,
+  sapLinesFor,
+  type CampaignEnding,
+  type CampaignId,
+  type CampaignRecord,
+  type CampaignSide,
+  type CampaignView,
+  type DeclarePort,
+  type CampaignViewPort,
+  type PulsePort,
+  type RosterPort,
+} from '../campaign/index.js';
 // ── THE MARKET (SPEC §12.2 `trade`, PASS-ECONOMY-RISK-extended §4/M1) ────────
 //
 // Wired here for the same reason the Levy is: a book that exists in `src/market/`
@@ -381,6 +446,7 @@ import {
   MAX_FRAME_BATTLE_LINES,
   MAX_FRAME_CLAIM_LINES,
   MAX_FRAME_MARKET_LINES,
+  MAX_LINE_DOSSIERS,
   MAX_RAID_LINES,
   type ClaimLine,
   type MarketLine,
@@ -1320,23 +1386,99 @@ import {
  * measures separately.
  */
 /**
- * ── 20 → 21 · ★ COALITIONS. THE CAST TAKES SOMEBODY ELSE'S SIDE ──────────────
+ * ── 22 · CAMPAIGNS (§16.6): A NEW CAPTURED TABLE, SO THE HASH MOVES FROM TICK 0 ──
  *
- * `RULES_VERSION` is a **shared resource** (see 11's, 19's and 20's notes above): two agents each
- * taking the next integer once left the live record carrying snapshots stamped `10` from two
- * different rule sets, and *a version stamp whose meaning depends on which deploy wrote it is not a
- * version stamp.* **21 was allocated to this branch in advance**, with 20 the latest live.
+ * **21 was not allocated to this branch.** `RULES_VERSION` is a shared resource with an arbiter
+ * (HARD RULE 7's shape applied to an integer — two worktrees each bumped 9 → 10 once and the live
+ * record briefly held two rule sets stamped `10`). The owner pre-assigned **22** here; whatever
+ * holds 21 is somebody else's, and this file must not renumber it.
+ *
+ * ⚑ **21 IS NOBODY'S, AND 24'S NOTE BELOW SAYS WHY.** The branch it was allocated to landed third
+ * and renumbered itself to 24, because the sequence has to stay monotonic and 22 and 23 merged
+ * first. So there is no 21 in the record and no world will ever be stamped with one: allocation
+ * reserved a slot in a queue that is ordered by *landing*, not by dispatch.
+ *
+ * **What changes.** A `campaign` state table joins `state_hash`. Every existing table is byte-
+ * identical, but the snapshot's table set is hashed as sorted `(name, value)` pairs, so **every
+ * tick's hash moves from tick 0** — unavoidable for any change to the captured set, and the same
+ * shape version 20's `EndowmentBook.goods` had.
+ *
+ * **Expected divergence signature.** The first snapshot tripwire after the deploy:
+ * `SNAPSHOT_HASH_MISMATCH` at the first tick a snapshot is taken, with the running world's tables
+ * carrying a `campaign` entry the journalled one does not. `hydrate.ts` refuses the checkpoint on
+ * `RULES_VERSION_MISMATCH` first, which is the cheaper door: one genesis replay, then adoption
+ * resumes.
+ *
+ * **What the balance gate can and cannot see.** Nothing changes for a world in which no campaign is
+ * ever declared: no new faucet, no new sink, no change to any existing figure, and the pulse handler
+ * returns immediately on an empty book. So `levyShort` and the red-line count are expected
+ * unmoved, and that is a **safety check rather than evidence about the feature** — a cast that never
+ * calls `build {kind:"CAMPAIGN"}` produces a gate table identical to master's by construction.
+ */
+/**
+ * ── 23 · THE CLEARANCE (§8, §16.12 #3): TWO MORE CAPTURED FIELDS AND A THIRD TABLE ──
+ *
+ * **Landed on top of 22, not instead of it.** The note above is campaigns' and is still true; this
+ * is the next bump and the two discontinuities compose — a world coming from 21 or earlier crosses
+ * both. Recorded stacked rather than merged because an operator reading a `RULES_VERSION_MISMATCH`
+ * needs to know which change moved which table, and one blended paragraph loses that.
+ *
+ *
+ * `Grant` gained two CAPTURED fields — `verbs` (the fence) and `clearance` (the sight) — and
+ * `GrantSpend` gained `verb`. All three are inside `grantsStateTable`'s capture, so this is a
+ * **declared discontinuity**: a world restored from a version-20 snapshot has grants with no
+ * fence and no clearance, and `book.ts`'s restore narrows the absent arrays to empty. Empty is
+ * the safe direction for both — a grant with no fence delegates nothing and a grant with no
+ * clearance sees nothing — so an old grant becomes inert rather than becoming unlimited. It
+ * still changes the hash, which is what the operator door is for.
+ *
+ * A third table joins the capture in the same edit (`dossiersStateTable`), which is the other
+ * half of why this is a version bump rather than an addition: a world whose snapshot has no
+ * dossier table restores with an empty one, and an empty custody journal is honest — nothing
+ * had been cut.
+ */
+/**
+ * ── 24 · ★ COALITIONS: THE CAST TAKES SOMEBODY ELSE'S SIDE ───────────────────
+ *
+ * **Landed on top of 23, and the integer is 24 because 21 was wrong by the time it merged.**
+ * Stacked rather than blended for the reason 23's note gives: an operator reading a
+ * `RULES_VERSION_MISMATCH` needs to know which change moved which table, and the three
+ * discontinuities compose — a world crossing from 21 or earlier crosses all three.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **⚑ THE LESSON IS NARROWER THAN "PRE-ASSIGN THE INTEGER", AND PRE-ASSIGNMENT IS WHY.**
+ *
+ * This branch WAS pre-assigned — **21**, before any of the three was written — and 11's note above
+ * records what pre-assignment was introduced to stop: two worktrees each bumping `9 → 10` and the
+ * live record briefly holding two rule sets stamped `10`. That worked. It did not work here, and
+ * the two failures are different in kind:
+ *
+ *   · **Collision** is two branches claiming one integer. Allocation fixes it, and did.
+ *   · **Ordering** is one branch holding an integer that is no longer *next* by the time it merges.
+ *     Campaigns took 22 and the clearance took 23 while this branch was still measuring, both
+ *     landing first. Publishing 21 now would make the sequence non-monotonic: a world at 22 would
+ *     read a 21-stamped snapshot as **older** rules when it is strictly newer, and `hydrate.ts`
+ *     compares for inequality rather than for order, so nothing would have caught it.
+ *
+ * **A version is a position in a published sequence, not a name.** So the integer belongs to
+ * whatever merges, not to whoever was dispatched first — allocation reserves a *slot in the queue*
+ * and the queue is ordered by landing. The correct protocol is therefore: pre-assign to avoid the
+ * collision, and **renumber to the tail at merge**, which is what happened here (21 → 24).
+ * ══════════════════════════════════════════════════════════════════════════
  *
  * ── NO CAPTURED TABLE CHANGES SHAPE, AND THE BUMP IS STILL CORRECT ───────────
  *
- * ══════════════════════════════════════════════════════════════════════════
- * Nothing here adds, removes or re-types a field inside `capture()`. What changes is **what the
- * cast decides**, which moves the world's trajectory from the first tick a raid spawns — so a
- * journal written under 20 and replayed under this build diverges, and the honest place to say so
- * is the stamp rather than the deploy log. Every field added is a projection (`RaidView.march`,
- * `RaidView.force.defender_joiners`, `RaidLine.defenders`/`raiders`), read fresh from books that
- * already exist and never hashed.
- * ══════════════════════════════════════════════════════════════════════════
+ * Unlike 22 and 23, nothing here adds, removes or re-types a field inside `capture()`. What changes
+ * is **what the cast decides**, which moves the world's trajectory from the first tick a raid
+ * spawns — so a journal written under 23 and replayed under this build diverges, and the honest
+ * place to say so is the stamp rather than the deploy log. Every field added is a projection
+ * (`RaidView.march`, `RaidView.force.defender_joiners`, `RaidLine.defenders`/`raiders`), read fresh
+ * from books that already exist and never hashed.
+ *
+ * **Expected divergence signature**, and it differs from 22's and 23's: not
+ * `SNAPSHOT_HASH_MISMATCH` from a changed table set, but a **state divergence at the first tick a
+ * raid is live** — the cast answers a standoff at a different tick and marches a hand that used to
+ * stand still. `hydrate.ts` refuses on `RULES_VERSION_MISMATCH` first either way.
  *
  * ── WHAT CHANGES, AND ALL FIVE ARE THE SAME DEFECT AT DIFFERENT DEPTHS ───────
  *
@@ -1348,7 +1490,9 @@ import {
  *   2. **`raidAnswerFor` stops paying on the spawn tick** ({@link CAST_ANSWER_GRACE_TICKS}). Paying
  *      early costs exactly what paying late costs, and paying early closed the escort market's
  *      demand side before its supply side could walk 2–6 ticks.
- *   3. **`coalitionFor` is the new branch**: march, then `join`, priced on standing.
+ *   3. **`coalitionFor` is the new branch**: march, then `join`, priced on standing — and placed
+ *      **under every world bill**, because a hand and an action are two different scarcities and only
+ *      the hand was gated.
  *   4. **`musteredAt` now reserves a JOINER's hand**, not only the target's. Without it four other
  *      branches walked away the hand this member had publicly promised, and `readForce` re-counts
  *      at resolution — measured `PLUNDERED 1-2` with two allies nominally standing, 6,000 of the
@@ -1357,12 +1501,16 @@ import {
  *      `target === me ? 'DEFENDER' : 'RAIDER'`, which is correct until a coalition exists and then
  *      puts a defender joiner on the raider's side.
  *
+ * **What the balance gate sees**, and unlike 22's it is evidence rather than a safety check: the
+ * cast now enters the mechanic on every seed, so `levyShort` **0** and red lines
+ * **0/192 · 0/384 · 0/576** at three, six and nine Reckonings are a measurement of a world that
+ * fought rather than of a feature nobody called.
+ *
  * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` for the declared
  * discontinuity (`D37`) — a bare tick is refused, and the fingerprint is bound to this change and
  * inert against the next.
  */
-export const RULES_VERSION = 21;
-
+export const RULES_VERSION = 24;
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
  *
@@ -1523,10 +1671,15 @@ export const GRANT_MAX_LIFETIME_TICKS = 3 * TICKS_PER_RECKONING;
 export const MAX_GRANTS = 4_096;
 
 /**
- * The named grant templates (SPEC §8: "ship 5–8 named templates"). For now these are
- * labels an agent picks so a receipt reads as an *office* rather than a raw limit
- * pair; server-computed per-template worst cases are a follow-on. `custom` is the
- * escape hatch for an explicit, un-templated limit pair.
+ * The named grant templates (SPEC §8: "ship 5–8 named templates").
+ *
+ * ★ **These used to be labels and are now fences.** The list is `OFFICE_NAMES`, derived from
+ * `grant/compartment.ts`'s `OFFICE_SHAPES`, so the six words an agent picks from and the six
+ * powers the engine enforces are the same six by construction. Two copies of that list — one
+ * for the menu, one for the rules — is scar #1's setup on A6's own surface, and it is what
+ * shipped for the first twenty rules versions: `agent.md` §10 said of `template` *"it is a
+ * label on the receipt; you still set the limits"*, and a receipt reading `quartermaster`
+ * carried a steward's authority.
  */
 /**
  * How many principals a creator may name in its preference order.
@@ -1541,14 +1694,7 @@ export const MAX_GRANTS = 4_096;
  */
 export const MAX_VENTURE_PREFERENCE = 8;
 
-export const GRANT_TEMPLATES: readonly string[] = Object.freeze([
-  'treasury-hand',
-  'quartermaster',
-  'escort-captain',
-  'factor',
-  'steward',
-  'custom',
-]);
+export const GRANT_TEMPLATES: readonly string[] = OFFICE_NAMES;
 
 /**
  * Statements accepted into the **open window** and not yet resolved. Bounded (INV-26).
@@ -2402,6 +2548,16 @@ export class Runtime {
   private grantCounter = 0;
 
   /**
+   * The dossier book and the audit stamps (SPEC §8, §16.7 MUST-8) — *what a delegate did with
+   * what it could see*, on a delay. Replaced wholesale by `dossiersStateTable`'s restore for
+   * `grantBook`'s reason: an aborted tick must not leave a leak on somebody's record, and two
+   * worlds that disagree about who holds whose secrets must never hash the same.
+   */
+  private dossierBook = new DossierBook();
+  private auditStamps = new AuditLog();
+  private dossierCounter = 0;
+
+  /**
    * The order books, behind a getter because the rollback **replaces** the object.
    *
    * Same shape as `ventureBook`, `levyBookRef` and `grantBook`, and for the same
@@ -2492,6 +2648,20 @@ export class Runtime {
    * reference across a tick boundary — see {@link Runtime.sovereignty}.
    */
   private sovereigntyBookRef = new SovereigntyBook();
+
+  /**
+   * The campaign book (§16.6). Replaced wholesale by the rollback — see {@link Runtime.campaigns}.
+   */
+  private campaignBookRef = new CampaignBook();
+
+  /**
+   * One 140-character line per campaign beat, for the frame's ticker (§14.5).
+   *
+   * A Ring, outside `state_hash`, for `raidTicker`'s reason exactly: it is a display buffer derived
+   * from the book, and hashing one would make two identical worlds differ over what a viewer had
+   * scrolled past.
+   */
+  private readonly campaignTicker = new Ring<string>(MAX_RAID_TICKER_LINES);
   /** The Reckoning whose Charge has been minted. Assessing twice is refused, not silent. */
   private chargeAssessedReckoning = -1;
   private chargeOutcome: ChargeSettlement | null = null;
@@ -2564,6 +2734,13 @@ export class Runtime {
     // principals' currency after the Reckoning froze the figures it was computed from. A
     // clock that makes the published window unplayable must not start a world (A5′).
     assertSovereigntySchedule();
+    // And a fourth. A campaign's numbers can be calibrated into a war that never ends: if the
+    // breaches to take and the rebuffs to stand both fit inside the pulse clock, a campaign could
+    // exhaust its sunset with neither side at its number, and the only two things the engine could
+    // then do are leave the row live forever with a bond locked inside it (the endless aggression
+    // §16.6 MUST-20 cuts, arriving through a calibration) or invent a verdict (A12). Refused here,
+    // at construction, rather than discovered on the fifth Reckoning of somebody's war.
+    assertCampaignSchedule();
     this.world = createWorld(launchMap());
     this.ledger = new Ledger();
     this.hazards = options.hazards ?? false;
@@ -2632,6 +2809,19 @@ export class Runtime {
           () => this.grantBook,
           (book) => {
             this.grantBook = book;
+          },
+        ),
+        // Dossiers and the audit stamps. In the hash for a reason the grant book's comment
+        // states one field over, arriving with more force: a dossier row is an ATTRIBUTION —
+        // "this delegate handed this principal's balance sheet to that one" — and A5′ says the
+        // record must never be wrong. A row surviving an aborted tick would be a permanent
+        // public accusation about an act that did not happen, and an audit stamp outside the
+        // hash would let a restored world show a grantor a leak its own log had never revealed.
+        dossiersStateTable(
+          () => ({ dossiers: this.dossierBook, audits: this.auditStamps }),
+          (restored) => {
+            this.dossierBook = restored.dossiers;
+            this.auditStamps = restored.audits;
           },
         ),
         // The order books. An order is a claim on value, so the same two arguments
@@ -2710,6 +2900,20 @@ export class Runtime {
           () => this.sovereigntyBookRef,
           (book) => {
             this.sovereigntyBookRef = book;
+          },
+        ),
+        // Campaigns. A campaign row holds a live bond lock and decides whether a future tick takes
+        // a principal's territory and slashes 50,000 of its capital — so a hash blind to it would
+        // call two worlds identical while one was about to do that, and an aborted tick would leave
+        // a recorded BREACH standing against materiel destruction that was rolled back. Registered
+        // from this module's first commit, with its `CHECKPOINT_REQUIRED_TABLES` entry in the same
+        // change: seven books were once found outside the hash in one night, and two more
+        // (`mint`, `delivery`) were found *in* the hash and missing from the manifest, which an
+        // adoption drops silently while the gate reports nothing missing.
+        campaignStateTable(
+          () => this.campaignBookRef,
+          (book) => {
+            this.campaignBookRef = book;
           },
         ),
         // ══════════════════════════════════════════════════════════════════════
@@ -2796,11 +3000,30 @@ export class Runtime {
           // permanent record names ventures that never existed. `hydrate.ts` named
           // the grant half of this as a known gap; the venture half was unnamed.
           name: 'mint',
-          capture: () => ({ venture: this.ventureCounter, grant: this.grantCounter }),
+          capture: () => ({
+            venture: this.ventureCounter,
+            grant: this.grantCounter,
+            // The third minter, added the tick the dossier book landed rather than left to be
+            // found by the same measurement: a re-minted dossier id renames a custody chain,
+            // and a chain whose parent id no longer resolves is INV-22's "an attribution we
+            // assert rather than prove" — the exact halt this table exists to prevent.
+            dossier: this.dossierCounter,
+          }),
           restore: (captured) => {
             const root = snapObject(captured, 'mint');
             this.ventureCounter = snapInt(root, 'venture', 'mint');
             this.grantCounter = snapInt(root, 'grant', 'mint');
+            // ── STRICT, AND NOT TOLERANT OF ABSENCE ─────────────────────────
+            //
+            // The first draft defaulted an absent key to 0 "for one release", on the reasoning
+            // that a version-20 snapshot has no `dossier` key. That reasoning is wrong twice.
+            // A `RULES_VERSION` bump already refuses adoption (`persist/boot.ts` names it in the
+            // diagnosis and replays from genesis), so the case cannot arise — and if it somehow
+            // did, restoring the counter to 0 beside a NON-empty book is exactly the id-collision
+            // this table exists to prevent: `mintDossierId` hashes an ordinal, `DossierBook.add`
+            // throws on a duplicate id, and the throw lands inside a tick as a HALT. Loud here
+            // beats quiet there.
+            this.dossierCounter = snapInt(root, 'dossier', 'mint');
           },
         },
         {
@@ -2902,6 +3125,16 @@ export class Runtime {
           // because a phase's sub-stream is per-phase and this draws from PREDATE's own.
           this.battlesNow(ctx);
           this.predateNow(ctx);
+          // Campaign pulses resolve LAST of the three, and the order is a rule rather than a
+          // preference. Battles first, so a hull wrecked tonight has already sent its hand to
+          // RECOVERING; then raids, so a hand routed by a repulse is off the board; then pulses,
+          // which count hands. A pulse that ran first would count presence the same tick's weather
+          // was about to remove, and the force reading would credit a defender that no longer had
+          // anybody standing there.
+          //
+          // It takes no phase of its own: adding one would change the set of `Rng.derive(phase)`
+          // labels and therefore every seeded draw in the world.
+          this.pulseCampaignsNow(ctx);
         },
         MARKETS: (ctx) => {
           this.clearMarketsNow(ctx);
@@ -3018,6 +3251,7 @@ export class Runtime {
         // in taken territory and a slashed bond, so it is held to INV-17's standard —
         // reproducible from the delivery journal by a second road, or the tick halts.
         (tick) => this.sovereigntyViolations(tick),
+        (tick) => this.campaignViolations(tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     },
@@ -3090,6 +3324,66 @@ export class Runtime {
   /** The grant book (A6). Never held across a tick boundary: the rollback replaces it. */
   get grants(): GrantBook {
     return this.grantBook;
+  }
+
+  /** The dossier book (§8, §16.7 MUST-8). Never held across a tick boundary: the rollback replaces it. */
+  get dossiers(): DossierBook {
+    return this.dossierBook;
+  }
+
+  /** When each principal last spent an action reading its own access log (`audit`). */
+  get audits(): AuditLog {
+    return this.auditStamps;
+  }
+
+  /**
+   * The port `compartmentDigest` reads a subject's private figures through (§8, §11.2).
+   *
+   * A port rather than direct access for `works/refine.ts`'s reason and one of its own: this is
+   * the **only** road from the engine's private state to a string a third principal will hold,
+   * so keeping it three named functions wide means a reviewer can see exactly what a DOSSIER can
+   * ever contain. Widening it is a visible edit; reaching around it is not possible from
+   * `compartment.ts`, which imports no world state at all.
+   *
+   * Note what is absent and must stay absent: seals (PROP-D2 — `HONOURED | CONTRADICTED` to
+   * every agent forever, no tier, no delay), private reasoning (§11.2's `PRIVATE` row is "never
+   * published to anyone — including its owner"), and credentials of any kind (§11.3).
+   */
+  compartmentPort(): CompartmentPort {
+    return {
+      purse: (subject) => {
+        const account = storesAccount(subject);
+        if (this.ledger.account(account) === undefined) return { free: 0, encumbered: 0 };
+        return {
+          free: this.ledger.freeBalance(account),
+          encumbered: this.ledger.encumbrances.encumberedInAccount(account),
+        };
+      },
+      goods: (subject) =>
+        [...this.ledger.goodsInAccount(storesAccount(subject)).entries()]
+          .sort((a, b) => compareIds(a[0], b[0]))
+          .map(([good, quantity]) => [String(good), quantity] as const),
+      hands: (subject) =>
+        handsOf(this.world, subject)
+          .slice()
+          .sort((a, b) => compareIds(a.id, b.id))
+          .map((hand) => ({
+            id: String(hand.id),
+            at: String(hand.location),
+            state: hand.state,
+            boundFor: hand.destination === null ? null : String(hand.destination),
+          })),
+    };
+  }
+
+  /**
+   * Mint a dossier id. Content-derived exactly as {@link mintGrantId} is, so a replay from
+   * `(snapshot, action_log, seed)` produces the same custody chain rather than a renamed one.
+   */
+  private mintDossierId(tick: number, cutBy: PrincipalId): DossierId {
+    this.dossierCounter += 1;
+    const stamp = canonicalHash({ tick, cutBy, ordinal: this.dossierCounter }).slice(0, 8);
+    return `d:${String(tick)}:${stamp}` as DossierId;
   }
 
   /** The Levy's book. Never held across a tick boundary: the rollback replaces it. */
@@ -4573,6 +4867,16 @@ export class Runtime {
    * ══════════════════════════════════════════════════════════════════════════
    */
   private vJoin(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // ── A CAMPAIGN'S ROSTER COMES FIRST, AND ONLY ON AN EXPLICIT `campaign` PARAM ──
+    //
+    // §16.6 MUST-9's ally market on the verb that already means "take a side in somebody's fight".
+    // Keyed on the parameter being **present**, never on a raid lookup failing: a mistyped raid id
+    // must keep producing the raid layer's own refusal, or an agent aiming at a standoff would be
+    // told about a mechanic it never asked for (scar #1's shape in a hint).
+    const namedCampaign = readString(req.params, ['campaign']);
+    if (namedCampaign !== null) {
+      return this.vJoinCampaign(ctx, req, namedCampaign as CampaignId);
+    }
     const found = this.raidNamedBy(req, 'join');
     if ('ok' in found) return found;
     const raid = found.raid;
@@ -4901,6 +5205,31 @@ export class Runtime {
           caps: [
             { path: 'grants', max: MAX_GRANTS },
             { path: 'spends', max: MAX_GRANT_SPENDS },
+            // ★ The fence and the clearance, declared the tick they entered the capture. INV-26
+            // caught both as undeclared within one test run and halted an aged world at tick 304,
+            // which is exactly the behaviour scar #3 bought: *"an array with no declared cap is
+            // itself a violation"*, before anybody has filled it. Their caps are the closed lists
+            // themselves — a grant cannot carry more verbs than exist to delegate, nor more
+            // compartments than exist to open — so these bounds cannot rot as either list grows.
+            { path: 'grants.*.verbs', max: DELEGABLE_VERBS.length },
+            { path: 'grants.*.clearance', max: COMPARTMENTS.length },
+          ],
+        },
+        {
+          label: 'dossier',
+          value: dossiersStateTable(
+            () => ({ dossiers: this.dossierBook, audits: this.auditStamps }),
+            () => {
+              /* read-only here: INV-26 never restores */
+            },
+          ).capture(),
+          // The dossier book has **no prune path** (see `grant/dossier.ts`'s retention note), so
+          // the cap is the only thing bounding it and INV-26 watching that number approach is the
+          // whole safety argument. `audits` is one row per principal and bounded by the population,
+          // which `MAX_DOSSIERS` dominates by three orders of magnitude.
+          caps: [
+            { path: 'dossiers', max: MAX_DOSSIERS },
+            { path: 'audits', max: MAX_DOSSIERS },
           ],
         },
       ],
@@ -4920,6 +5249,23 @@ export class Runtime {
       // its LIMITS (the worst case the grantor was shown before it signed, A7).
       grants: this.grantBook.all(),
       grantSpends: this.grantBook.allSpends(),
+      // ★ INV-22's custody clause, wired the same tick the book landed. A clause whose
+      // subject cannot occur reports green over an empty table for as long as nobody looks
+      // (INV-22 itself did exactly that for the project's whole life), so the table is
+      // supplied from the first tick and the invariant reads the world rather than a skip.
+      // `lagTicks` travels with each row so the invariant checks the RULE rather than a
+      // second copy of the constant.
+      custody: this.dossierBook.all().map((d) => ({
+        id: d.id,
+        subject: d.subject,
+        compartment: d.compartment,
+        cutBy: d.cutBy,
+        grant: d.grant,
+        parent: d.parent,
+        cutAtTick: d.cutAtTick,
+        revealsAtTick: d.revealsAtTick,
+        lagTicks: AUDIT_LAG_TICKS,
+      })),
       ...(levy === null ? {} : { levy }),
       ...(docket === undefined ? {} : { docket }),
     };
@@ -5433,6 +5779,12 @@ export class Runtime {
       // the attempted revocation is itself what posts — better drama than either extreme.
       grant: (ctx, req) => this.committing(ctx) ?? this.vGrant(ctx, req),
       revoke: (ctx, req) => this.vRevoke(ctx, req),
+      // ── `audit` — the third office verb, and it was canon with no handler ────
+      //
+      // Not behind `committing` for `revoke`'s reason and one more of its own: it moves no
+      // value and touches nothing in the settlement set, and the freeze is exactly when a
+      // grantor most wants to know who has been reading its books.
+      audit: (ctx, req) => this.vAudit(ctx, req),
       // ── `trade` — §12.2's one market verb, now live ────────────────────────
       //
       // Behind `committing` for a reason that is not obvious and is load-bearing:
@@ -5817,6 +6169,22 @@ export class Runtime {
             '(verb: grant), or create on your own account.',
         );
       }
+      // ── THE FENCE (SPEC §8: a grant specifies VERBS × … × limits) ───────────
+      //
+      // Before the terms are built, so a refusal leaves the world untouched — the same
+      // placement rule the headroom checks follow. A `treasury-hand` may pay its grantor's
+      // bills and may NOT sign it into new deals, which is §16.12 #3's "a treasurer is not
+      // automatically a quartermaster" as an enforced sentence rather than a label.
+      if (!this.grantBook.carriesVerb(grant.id, 'create')) {
+        return reject(
+          'INV-22',
+          `grant ${grant.id} is a ${grant.template} and carries ` +
+            `${grant.verbs.length === 0 ? 'no verbs at all' : grant.verbs.join(' and ')}, not \`create\`. ` +
+            `${creator} delegated a SCOPE, not only a budget: you may draw on its LIMITS through the verbs it ` +
+            'named and no others. Ask it for a grant that carries `create` (a quartermaster, escort-captain, ' +
+            'factor or steward), or create on your own account.',
+        );
+      }
     }
 
     const made = createVenture({
@@ -5956,6 +6324,7 @@ export class Runtime {
           eventId: `escrow:${id}` as EventId,
           direct: required,
           contingent: elective,
+          verb: 'create',
         });
         drew = true;
       }
@@ -6313,6 +6682,19 @@ export class Runtime {
     // is acting under and the engine checks that exact one.
     const mandate = this.electionMandate(ctx, req, venture, roleIndex);
     if ('rejection' in mandate) return mandate.rejection;
+    // The fence, checked here rather than inside `electionMandate` because that function's job
+    // is "who is paying" and this one's is "may they" — and because a refusal must land before
+    // the election is written, so a refused delegate leaves no election behind.
+    if (mandate.grant !== null && !this.grantBook.carriesVerb(mandate.grant.id, 'elect')) {
+      return reject(
+        'INV-22',
+        `grant ${mandate.grant.id} is a ${mandate.grant.template} and carries ` +
+          `${mandate.grant.verbs.length === 0 ? 'no verbs at all' : mandate.grant.verbs.join(' and ')}, not ` +
+          `\`elect\`. Deciding what ${venture.creator} pays at the Reckoning is the one act that turns its ` +
+          'promise into a kept or broken one, and it delegated a scope rather than a budget. Ask it for a ' +
+          'grant that carries `elect` (a treasury-hand, factor or steward).',
+      );
+    }
     const role = venture.roles.find((r) => r.index === roleIndex);
     if (role === undefined) {
       return reject(
@@ -6389,6 +6771,7 @@ export class Runtime {
         eventId: `elect:${venture.id}:${String(roleIndex)}` as unknown as EventId,
         direct,
         contingent,
+        verb: 'elect',
       });
     }
     this.elections.set(key, raw);
@@ -6787,9 +7170,66 @@ export class Runtime {
     if (this.world.holdingByPrincipal.get(delegate) === undefined) {
       return reject('A2', `there is no principal ${delegate} to delegate to; name one that has enrolled.`);
     }
-    const template = readString(req.params, ['template']) ?? 'custom';
-    if (!GRANT_TEMPLATES.includes(template)) {
+    // ── THE DEFAULT TEMPLATE IS `factor`, AND THAT IS A COMPATIBILITY DECISION ──
+    //
+    // It was `custom`, which now carries nothing on either axis — so an agent that omitted
+    // `template` would have got a refusal for a call that worked at `RULES_VERSION` 20. That is
+    // the engine and the document disagreeing about a field an agent may reasonably leave out.
+    //
+    // `factor` is the *legacy shape named*: both delegable verbs, zero clearance. Before this
+    // change every grant delegated `create` and `elect` (there was no fence) and conveyed no
+    // sight (there was no clearance), which is `factor` exactly. So an omitted `template` keeps
+    // doing precisely what it did, the new sight axis is strictly opt-in, and the one thing that
+    // cannot happen is an absent field widening authority — a default that granted a clearance
+    // nobody asked for would be A7 violated by omission.
+    const template = readString(req.params, ['template']) ?? 'factor';
+    const shape = officeShape(template);
+    if (shape === undefined) {
       return reject('A2', `template must be one of ${GRANT_TEMPLATES.join(', ')}; got "${template}".`);
+    }
+    // ── THE FENCE AND THE CLEARANCE (SPEC §8, §16.12 #3) ─────────────────────
+    //
+    // The template supplies both defaults; an explicit list overrides. Which way round that
+    // goes is the whole safety property: a named template is a *narrowing* an agent picked
+    // off a menu, and an explicit list is a decision it typed — so a grantor that names
+    // `treasury-hand` gets `elect` and STORES and nothing else, and one that wants a fifth
+    // combination says so out loud. `custom` defaults to NOTHING on both axes, so the escape
+    // hatch is the narrowest template rather than the widest.
+    const fence = canonicalVerbs(readList(req.params, ['verbs', 'verb']) ?? shape.verbs);
+    const clearance = canonicalClearance(
+      readList(req.params, ['clearance', 'compartments', 'compartment']) ?? shape.clearance,
+    );
+    const unknownVerbs = (readList(req.params, ['verbs', 'verb']) ?? []).filter(
+      (v) => !DELEGABLE_VERBS.includes(v),
+    );
+    if (unknownVerbs.length > 0) {
+      return reject(
+        'A2',
+        `a grant delegates only ${DELEGABLE_VERBS.join(' and ')} today, and you named ` +
+          `${unknownVerbs.join(', ')}. Those are the two verbs that accept on_behalf_of and draw on a ` +
+          'grant\'s LIMITS, so they are the only ones a fence can bind — a wider list would read as a ' +
+          'scope the engine does not enforce.',
+      );
+    }
+    const unknownRooms = (readList(req.params, ['clearance', 'compartments', 'compartment']) ?? []).filter(
+      (c) => !isCompartment(c),
+    );
+    if (unknownRooms.length > 0) {
+      return reject(
+        'A2',
+        `clearance names COMPARTMENTS and the compartments are ${COMPARTMENTS.join(' and ')}; you named ` +
+          `${unknownRooms.join(', ')}. STORES is your balance and your goods; HANDS is where each of your ` +
+          'hands is and what it is carrying. There is deliberately no compartment over seals or reasoning: ' +
+          'a seal is HONOURED or CONTRADICTED to every agent forever and nothing buys the content.',
+      );
+    }
+    if (fence.length === 0) {
+      return reject(
+        'A2',
+        `this grant would delegate no verb at all, so the delegate could never act on it — an office nobody ` +
+          `can use. Name a template with teeth (${GRANT_TEMPLATES.filter((t) => t !== 'custom').join(', ')}) ` +
+          `or pass "verbs": [${DELEGABLE_VERBS.map((v) => `"${v}"`).join(', ')}] explicitly.`,
+      );
     }
     const maxDirect = readInt(req.params, ['max_direct_loss', 'maxDirectLoss']);
     const maxContingent = readInt(req.params, ['max_contingent_liability', 'maxContingentLiability']) ?? 0;
@@ -6836,6 +7276,8 @@ export class Runtime {
       maxContingentLiability: minor(maxContingent),
       spentDirect: minor(0),
       spentContingent: minor(0),
+      verbs: fence,
+      clearance,
       expiresTick,
       revokedAtTick: null,
     };
@@ -6862,6 +7304,26 @@ export class Runtime {
         template,
         maxDirectLoss: maxDirect,
         maxContingentLiability: maxContingent,
+        // ── WHY BOTH SCOPES ARE ON A `PUBLIC` ROW, AND THE ONE THAT IS NOT ─────
+        //
+        // §11.2 D9a splits a grant by *what the number is for*: **the LIMITS are a public
+        // price** because a counterparty needs them to judge how much rope a delegate has,
+        // while **the operational detail is private strategy** — "knowing a delegate may lose
+        // 250,000 is a price; knowing it may do so only on Tuesdays, over ore, with two
+        // approvals, is a plan."
+        //
+        // `clearance` is a price and it is published. It is the *trust risk* §16.12 #3 says an
+        // organisation must take visibly to gain power, and it is the thing a counterparty most
+        // needs before dealing with a delegate: whether the agent across the table can see its
+        // own principal's books. A secret clearance would also make the pixel signature a lie —
+        // an authority line that cannot show sight shows no stake.
+        //
+        // `verbs` is the fence and it stays OFF this row for exactly D9a's reason: which acts a
+        // delegate may take is how a principal runs its house, and publishing it hands a rival
+        // the map of the internal controls. It is `PARTIES` — in `grants.granted[]` and
+        // `grants.held[]`, to the two principals bound by it — and the authority line renders
+        // the clearance without it.
+        clearance: [...clearance],
         expiresTick,
       },
       visibility: 'PUBLIC',
@@ -6998,6 +7460,13 @@ export class Runtime {
 
   /** `withdraw` — an ADAPTER. The operation lives in `venture/withdraw.ts` (D21). */
   private vWithdraw(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // §16.6 MUST-13's voluntary exit, on the verb that already means "take yourself out of a
+    // commitment". Keyed on an explicit `campaign` param for `vJoin`'s reason: a venture withdrawal
+    // must keep producing the venture layer's refusals.
+    const namedCampaign = readString(req.params, ['campaign']);
+    if (namedCampaign !== null) {
+      return this.vLiftCampaign(ctx, req, namedCampaign as CampaignId);
+    }
     return withdraw(
       {
         ventureOf: (id) => this.ventures.get(id),
@@ -7130,6 +7599,14 @@ export class Runtime {
   }
 
   private vMessage(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // ── THE `cite` BRANCH: HANDING OVER A DOSSIER (§8, §16.7 MUST-7/8) ────────
+    //
+    // A `message` that names a dossier is not addressed to a venture, it is addressed to a
+    // PRINCIPAL — so it is dispatched before the venture parse rather than after it. That is
+    // the one widening this feature makes to an existing verb, and it is the correct one:
+    // §7.3's channel is between principals, a venture is merely its usual subject, and A6
+    // forbids the alternative outright. There is no `leak` verb and there never will be.
+    if (readString(req.params, ['dossier', 'cite']) !== null) return this.cite(ctx, req);
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
     const act = readEnum(req.params, ['act', 'type'], [
       'offer',
@@ -7142,7 +7619,8 @@ export class Runtime {
     if (ventureId === null || act === null) {
       return reject(
         'A2',
-        'message needs {"venture": "<id>", "act": "offer|counter|accept|decline|assure", "text": "..."}.',
+        'message needs {"venture": "<id>", "act": "offer|counter|accept|decline|assure", "text": "..."} — or, ' +
+          'to hand somebody a DOSSIER, {"to": "<principal>", "dossier": "<subject>/STORES|HANDS"}.',
       );
     }
     if (text.length > MAX_MESSAGE_LENGTH) {
@@ -7170,6 +7648,276 @@ export class Runtime {
       );
     }
     this.talk.push({ venture: ventureId, from: req.principal, act, text, tick: ctx.tick });
+    return { ok: true, value: null };
+  }
+
+  /**
+   * `message {to, dossier}` — cut or re-hand a DOSSIER (SPEC §8; §16.7 MUST-7 and MUST-8).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS IS THE ACT THAT MAKES A LEAK A DISTINCT, ATTRIBUTABLE THING — AND IT IS NOT A
+   * BETRAYAL VERB.**
+   *
+   * A6: *"There is no `betray()` verb and no hidden loyalty meter; betrayal happens through
+   * ordinary legitimate actions."* So this is one call with two completely different
+   * meanings, decided entirely by **who the recipient is**:
+   *
+   *     message {to: <my grantor>,  dossier: "<my grantor>/STORES"}   → a report
+   *     message {to: <its rival>,   dossier: "<my grantor>/STORES"}   → a leak
+   *
+   * The engine cannot and must not tell them apart. It records the figures, the authority
+   * they were read under, and the two names — §16.7 MUST-9's rule that counterintel surfaces
+   * facts "never `82% spy`", and MUST-8's that the audit chain "establishes only proven
+   * custody or last authorized readers."
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Two roads in, and the second is the one that makes `revoke` not a cure:
+   *
+   *   1. **A first cut**, under a live grant whose CLEARANCE names the compartment. The
+   *      digest is read at THIS tick, so it is a photograph rather than a claim.
+   *   2. **A re-hand** of a dossier the sender already holds. It needs no clearance and no
+   *      live grant — §16.7 MUST-5: *"revocation prevents future reads but never erases
+   *      information already observed."* The digest is copied verbatim, stamps and all, so a
+   *      months-old figure is visibly months old and cannot be passed off as current.
+   *
+   * The row reveals to the subject, every agent and every viewer together at
+   * `cutAtTick + AUDIT_LAG_TICKS`. One clock for all three readerships, so A9 holds by
+   * construction: no viewer sees this ahead of a non-party agent, and no agent — including the
+   * victim — sees it ahead of a viewer.
+   */
+  private cite(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const raw = readString(req.params, ['dossier', 'cite']);
+    if (raw === null) return reject('A2', 'message needs a dossier reference to cite.');
+    const to = readString(req.params, ['to', 'recipient', 'delegate']) as PrincipalId | null;
+    if (to === null) {
+      return reject(
+        'A2',
+        'a dossier goes to exactly one named principal: {"to": "<principal>", "dossier": ' +
+          '"<subject>/STORES"}. It is a copy handed over, not a broadcast — say it in public with ' +
+          '`claim` if that is what you meant.',
+      );
+    }
+    if (to === req.principal) {
+      return reject(
+        'A2',
+        'you cannot hand a dossier to yourself: you already hold whatever you can read, and a self-hand ' +
+          'would put a row on the subject\'s access log for a disclosure that never left the room.',
+      );
+    }
+    if (this.world.holdingByPrincipal.get(to) === undefined) {
+      return reject('A2', `there is no principal ${to} to hand this to; name one that has enrolled.`);
+    }
+    if (this.dossierBook.size >= MAX_DOSSIERS) {
+      return reject(
+        'INV-26',
+        `the dossier book is at its published cap of ${String(MAX_DOSSIERS)}. Nothing prunes it — evidence ` +
+          'that declassifies later has to survive until then — so the cap is the bound and it is reached, ' +
+          'not passed.',
+      );
+    }
+
+    // ── Re-handing something already held ─────────────────────────────────────
+    //
+    // Tried FIRST, because a reference that names a held row is unambiguous while
+    // `<subject>/<compartment>` is a request to read something new. An agent that holds
+    // `d:120:ab12ef34` and passes it on should never accidentally cut a fresh one.
+    const held = this.dossierBook.get(raw as DossierId);
+    if (held !== undefined) {
+      if (held.toWhom !== req.principal && held.cutBy !== req.principal) {
+        return reject(
+          'INV-22',
+          `you do not hold ${raw}: a dossier reaches you because you cut it or somebody handed it to you, ` +
+            'and re-handing one you have only heard about would be an attribution the record cannot prove.',
+        );
+      }
+      const copy: Dossier = {
+        id: this.mintDossierId(ctx.tick, req.principal),
+        subject: held.subject,
+        compartment: held.compartment,
+        cutBy: req.principal,
+        toWhom: to,
+        grant: null,
+        parent: held.id,
+        // The COPY's own clock, not the parent's. A re-hand is a fresh disclosure to a fresh
+        // party and the subject is entitled to learn about it on the same lag as any other; a
+        // copy that inherited an already-elapsed reveal time would publish instantly, and one
+        // that inherited a future one would let a chain of re-hands hide behind the first lag.
+        cutAtTick: ctx.tick,
+        revealsAtTick: ctx.tick + AUDIT_LAG_TICKS,
+        // Verbatim, stamps included. `compartmentDigest` puts the read tick inside the string,
+        // so a stale figure announces its own age and cannot be re-dated by passing it on.
+        digest: held.digest,
+      };
+      this.dossierBook.add(copy);
+      this.emitDossier(ctx, req, copy);
+      return { ok: true, value: null };
+    }
+
+    // ── A first cut ───────────────────────────────────────────────────────────
+    const slash = raw.lastIndexOf('/');
+    const subject = (slash < 0 ? raw : raw.slice(0, slash)) as PrincipalId;
+    const room = slash < 0 ? '' : raw.slice(slash + 1).toUpperCase();
+    if (!isCompartment(room)) {
+      return reject(
+        'A2',
+        `a dossier reference is "<subject>/<COMPARTMENT>" — the compartments are ${COMPARTMENTS.join(' and ')} ` +
+          `— or the id of one you already hold. Got "${raw}".`,
+      );
+    }
+    const grant = this.grantBook.clearanceGrantFor(subject, req.principal, room, ctx.tick);
+    if (grant === null) {
+      return reject(
+        'INV-22',
+        `you hold no live grant from ${subject} whose CLEARANCE opens its ${room}. A grant delegates two ` +
+          'things separately: authority to ACT (its verbs) and authority to SEE (its clearance), and a ' +
+          'delegate with the first and not the second is the ordinary case, not a mistake. Ask for a ' +
+          `clearance on ${room}, or re-hand a dossier you already hold by its id.`,
+      );
+    }
+    const digest = compartmentDigest(this.compartmentPort(), subject, room, ctx.tick);
+    if (digest.length > MAX_DIGEST_CHARS) {
+      // A refusal, never a slice. A truncated digest is a *partial* figure the recipient would
+      // read as the whole truth — PROP-O1's argument about truncation, arriving on a document
+      // that will outlive the grant that produced it.
+      return reject(
+        'INV-26',
+        `${subject}'s ${room} is ${String(digest.length)} characters of figures, over the ` +
+          `${String(MAX_DIGEST_CHARS)}-character cap on a dossier. A truncated extract reads as a complete ` +
+          'one, so this is refused rather than shortened.',
+      );
+    }
+    const cut: Dossier = {
+      id: this.mintDossierId(ctx.tick, req.principal),
+      subject,
+      compartment: room,
+      cutBy: req.principal,
+      toWhom: to,
+      grant: grant.id,
+      parent: null,
+      cutAtTick: ctx.tick,
+      revealsAtTick: ctx.tick + AUDIT_LAG_TICKS,
+      digest,
+    };
+    this.dossierBook.add(cut);
+    this.emitDossier(ctx, req, cut);
+    return { ok: true, value: null };
+  }
+
+  /**
+   * The row a cut posts. One home, because the two roads into {@link cite} must produce the
+   * same record or the ticker would describe a first cut and a re-hand differently.
+   *
+   * ── THE VISIBILITY, WHICH IS THE WHOLE OF A9 HERE ────────────────────────────
+   *
+   * `PARTIES` now, with `audience` the two principals who already know because they did it,
+   * and `publicAt`/`declassifyAt` at `revealsAtTick`. So:
+   *
+   *   - the cutter and the recipient see it immediately (they were there);
+   *   - the SUBJECT does not — that is the window, and it is the mechanic;
+   *   - every other agent and every viewer see it at the same tick the subject does.
+   *
+   * **The digest is not on the row.** The figures are the private fact; the *disclosure* is
+   * the public one. Publishing the numbers at reveal would make every leak a second leak, to
+   * the whole galaxy and to the audience, which is §11.2's ladder inverted — and it would make
+   * cutting a dossier on your own grantor a way to publish its books for free. What reveals is
+   * *that* it happened, on whose compartment, under which grant, to whom.
+   */
+  private emitDossier(ctx: PhaseContext, req: ActionRequest, row: Dossier): void {
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'grant.dossier_cut',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: row.subject,
+      grantId: row.grant,
+      eventFamilyId: row.grant === null ? `dossier::${row.id}` : `grant::${row.grant}`,
+      parentEventId: null,
+      isPublic: false,
+      publicAt: row.revealsAtTick,
+      declassifyAt: row.revealsAtTick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        dossier: row.id,
+        subject: row.subject,
+        compartment: row.compartment,
+        cutBy: row.cutBy,
+        toWhom: row.toWhom,
+        grant: row.grant,
+        parent: row.parent,
+        cutAtTick: row.cutAtTick,
+        revealsAtTick: row.revealsAtTick,
+      },
+      visibility: 'PARTIES',
+      // `PARTY` for both, because both are: one cut it and one holds it. Neither is `SELF`
+      // (that basis is the subject reading its own row, and the subject is precisely who this
+      // audience excludes until `revealsAtTick`) and neither is `INTEL` (nobody bought this).
+      audience: [
+        { principal: row.cutBy, basis: 'PARTY' },
+        { principal: row.toWhom, basis: 'PARTY' },
+      ],
+    });
+  }
+
+  /**
+   * `audit` — spend an action to read your own access log now instead of waiting for it
+   * (SPEC §12.2's `office` row; §16.7 MUST-8 and MUST-9).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE VERB WAS IN THE CANON FOR TWENTY RULES VERSIONS WITH NO HANDLER**, filed in
+   * `api/verbs.ts` as *"step 9 (offices and grants)"* — one of §12.2's forty, reading as
+   * implemented in every summary, and unreachable. Landing it spends no slot: the budget
+   * audit read 40/40 before and reads 40/40 after.
+   *
+   * What it does is the one thing that shortens a betrayal's window. A dossier reveals at
+   * `cutAtTick + AUDIT_LAG_TICKS` by itself; an audit reveals every row cut **at or before
+   * now**, immediately, to the auditor. So a suspicious grantor can pay to close the gap, and
+   * §16.7 MUST-9's requirement that counterintel "itself consume resources and trust" is met
+   * by the action budget rather than by a new currency.
+   *
+   * **The attempt posts publicly and the findings do not.** That is SPEC §8.1 #6's rule for
+   * revocation applied to the same shape of act: *"the attempted revocation is itself what
+   * posts, which is better drama than either extreme."* A mole can see that its grantor is
+   * looking — which is a beat, not a leak — and cannot see what it found.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Deliberately **not** behind `committing`: an audit moves no value, creates no obligation
+   * and touches nothing in the settlement set. Refusing it inside the freeze would mean the one
+   * window where an agent most wants to know who has been reading its books is the window it
+   * cannot ask.
+   */
+  private vAudit(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    // Rows cut on this principal that its own log has not published yet. Counted before the
+    // stamp is recorded, because the count is what the receipt says and recording first would
+    // make every audit report zero.
+    const pending = this.dossierBook
+      .about(req.principal)
+      .filter((d) => !this.dossierBook.visibleToSubject(d, ctx.tick, this.auditStamps.through(req.principal)));
+    this.auditStamps.record(req.principal, ctx.tick);
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'grant.audited',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `audit::${req.principal}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      // The ATTEMPT, and the count. Not the rows: naming the compartments or the delegates
+      // would publish the findings to everyone at the moment of the audit, which is the reveal
+      // clock deleted. A count is enough for the ticker and tells a rival nothing it could not
+      // infer from the fact that an audit happened at all.
+      payload: { auditor: req.principal, revealed: pending.length, throughTick: ctx.tick },
+      visibility: 'PUBLIC',
+      audience: [],
+    });
     return { ok: true, value: null };
   }
 
@@ -7637,6 +8385,14 @@ export class Runtime {
         // this clause every posted bond reads to INV-4 as an orphan lock and the tick halts
         // — the market's and predation's extension for the third time, same one line.
         this.sovereignty.isLive(String(ref)) ||
+        // ── AND A CAMPAIGN'S BOND, WHICH IS THE FIFTH TIME AND THE SAME ONE LINE ──
+        //
+        // A campaign's bond and every ATTACKER ally's stake name the campaign as the obligation they
+        // secure, and the obligation book has never heard of it — so without this clause the most
+        // ordinary act in the mechanic (declaring a war) makes INV-4 read a legal lock as an orphan
+        // and halts the tick. Agent-reachable, on a healthy world; §15.4 puts a false halt in the
+        // same class as a false default.
+        this.campaigns.isLive(String(ref)) ||
         // ── ★ AND A **FORMING** VENTURE, WHICH IS THE FOURTH TIME, SAME ONE LINE ──
         //
         // §7.3 escrows a role stake **at fill time**, and a role is filled while the venture is
@@ -9173,6 +9929,32 @@ export class Runtime {
       const value = req.params[key];
       if (typeof value === 'number' || typeof value === 'string') terms[key] = value;
     }
+    // ── ★ THE FENCE AND THE CLEARANCE MUST SURVIVE THE VOTE ───────────────────
+    //
+    // `terms` is `Record<string, number | string>` — a CAPTURED shape, so it cannot grow an array
+    // without a table change — and `carryOffice` re-enters `vGrant` with exactly these keys. So a
+    // proposal that dropped them would appoint an office **on different terms from the one the
+    // members approved**, which is the worst possible place for a rules-surface disagreement:
+    // §16.4 MUST-2's whole point is that a charter decides *"action-specific authority"*, and a
+    // vote on a `quartermaster` that lands as something else is scar #1 with a constitution.
+    //
+    // Measured rather than reasoned: without these two lines a MAJORITY syndicate's `custom`
+    // appointment carried and then refused itself at the re-entry with *"this grant would delegate
+    // no verb at all"* — the proposal succeeded and the office never existed.
+    //
+    // Stored as space-delimited strings because `readList` accepts exactly that, canonicalised
+    // first so nothing hashed depends on the order an agent happened to type.
+    for (const [key, raw] of [
+      ['verbs', canonicalVerbs(readList(req.params, ['verbs', 'verb']) ?? [])],
+      ['clearance', canonicalClearance(readList(req.params, ['clearance', 'compartments', 'compartment']) ?? [])],
+    ] as const) {
+      // Only when the proposer named it. An absent key must stay absent so the template's default
+      // still applies at the re-entry — writing `''` here would turn "I said nothing" into "I said
+      // nothing at all is permitted", which is the `readList` null-vs-empty distinction thrown away
+      // at the one point it decides what an approved office can do.
+      if (readList(req.params, key === 'verbs' ? ['verbs', 'verb'] : ['clearance', 'compartments', 'compartment']) === null) continue;
+      terms[key] = raw.join(' ');
+    }
     let proposal;
     try {
       proposal = this.syndicateBook.propose({
@@ -10104,11 +10886,20 @@ export class Runtime {
     const kind = (readString(req.params, ['kind', 'what', 'structure']) ?? 'ANCHOR').toUpperCase();
     if (kind === 'WORKS') return this.vBuildWorks(ctx, req);
     if (kind === 'HULL') return this.vBuildHull(ctx, req);
+    // ── THE FOURTH KIND, AND IT IS THE ONLY ONE THAT UN-BUILDS SOMETHING ──────
+    //
+    // `build {kind:"CAMPAIGN"}` is §16.6's declaration. It fits `build`'s shape exactly — a durable
+    // thing brought into being at a place, out of committed capital, with the actor's own body
+    // deciding where — and it takes no slot from §17's spent 40-verb budget, which `refine
+    // {kind:"ALLOY"}` established as the way to add a mechanic without adding a word.
+    if (kind === 'CAMPAIGN') return this.vDeclareCampaign(ctx, req);
     if (kind !== 'ANCHOR') {
       return reject(
         'PHASE-0',
-        `\`build\` raises an ANCHOR or a WORKS. An ANCHOR takes territory; a WORKS extracts what a place ` +
-          `yields. Send {"kind":"ANCHOR","system":"<id>"} or {"kind":"WORKS","system":"<id>"}. ` +
+        `\`build\` raises an ANCHOR, a WORKS, a HULL or a CAMPAIGN. An ANCHOR takes unheld territory; a WORKS ` +
+          `extracts what a place yields; a HULL is a warship; a CAMPAIGN is the only way to take a claim from a ` +
+          `holder that is PAYING for it. Send {"kind":"ANCHOR","system":"<id>"}, {"kind":"WORKS","system":"<id>"} ` +
+          `or {"kind":"CAMPAIGN","system":"<the claimed system next door>"}. ` +
           SOVEREIGNTY_STATEMENT,
       );
     }
@@ -10966,6 +11757,699 @@ export class Runtime {
         }
       },
     };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // CAMPAIGNS (§16.6) — the adapter, and nothing but the adapter
+  //
+  // Every decision in this layer is a function of its inputs in `src/campaign/`. What lives here
+  // gathers those inputs and performs the ledger motion the resolver described. `works/refine.ts`
+  // states the reason and this file is the evidence for it: three mechanical edits landed in the
+  // wrong place in these 12,700 lines in one day and all three passed `tsc`.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /** The campaign book. Never held across a tick boundary: the rollback replaces it. */
+  get campaigns(): CampaignBook {
+    return this.campaignBookRef;
+  }
+
+  /** The published campaign clock, for `header`. Present at zero campaigns and at four alike. */
+  campaignClock(tick: number): ReturnType<typeof campaignClockAt> {
+    return campaignClockAt(this.campaigns, tick, MAX_LIVE_CAMPAIGNS);
+  }
+
+  /** Ticker lines from campaign beats, newest last. Read by the frame (§14.5). */
+  campaignTickerLines(): readonly string[] {
+    return this.campaignTicker.all;
+  }
+
+  /**
+   * THE SAPs, for the frame (A13).
+   *
+   * Built here rather than in `render.ts` for the reason every line set is: a renderer that computed
+   * its own notches would be inventing a war's score.
+   */
+  sapLines(tick: number): ReturnType<typeof sapLinesFor> {
+    return sapLinesFor({
+      book: this.campaigns,
+      tick,
+      materielAt: (principal, system) => this.materielAt(principal, system),
+    });
+  }
+
+  /** Every campaign this principal can see, for `holding.campaigns[]`. */
+  campaignsFor(principal: PrincipalId, tick: number, limit: number): readonly CampaignView[] {
+    return campaignViewsFor({
+      book: this.campaigns,
+      port: this.campaignViewPort(tick),
+      principal,
+      tick,
+      limit,
+    });
+  }
+
+  /**
+   * Unpledged MATERIEL standing at one place, in one principal's stores.
+   *
+   * Through `goodLotsAt`, which is the one home for "unencumbered lots of a good, here" — a second
+   * summation would be able to disagree with the resolver about whether a pulse is funded, and the
+   * failure mode is a SAP drawn solid over a campaign that is about to starve (scar #5).
+   */
+  private materielAt(principal: PrincipalId, system: SystemId): Qty {
+    return qty(
+      this.goodLotsAt(principal, system, MATERIEL_GOOD).reduce((n, lot) => n + lot.qty, 0),
+    );
+  }
+
+  /**
+   * Everything a PULSE reads. Four methods, and two of them are shared with §9 on purpose.
+   *
+   * `handsAt` is `predationPort`'s `handsDefending` — the same predicate, not a second copy, because
+   * "an IDLE hand of yours standing here" must mean one thing in a standoff and in a war or the two
+   * mechanics disagree about who is present. `claimAt` is the sovereignty book's own read.
+   */
+  private campaignPulsePort(tick: number): PulsePort {
+    const port = this.predationPort(tick);
+    return {
+      tierOf: (system) => tierOf(this.world.map, system),
+      claimAt: (system) => {
+        const claim = this.sovereignty.liveAt(system);
+        return claim === null ? null : { claimant: claim.claimant, state: claim.state };
+      },
+      handsAt: (principal, system) => port.handsDefending(principal, system),
+      materielLotsAt: (principal, system) => this.goodLotsAt(principal, system, MATERIEL_GOOD),
+    };
+  }
+
+  private campaignViewPort(tick: number): CampaignViewPort {
+    return {
+      ...this.campaignPulsePort(tick),
+      materielAt: (principal, system) => this.materielAt(principal, system),
+    };
+  }
+
+  /**
+   * Everything a declaration touches. Narrow on purpose: the signature enumerates its reach.
+   */
+  private campaignDeclarePort(): DeclarePort {
+    return {
+      tierOf: (system) => this.world.map.systems.get(system)?.tier ?? null,
+      neighboursOf: (system) => neighboursOf(this.world.map, system),
+      holdingSystemOf: (principal) =>
+        this.world.holdingByPrincipal.get(principal) === undefined
+          ? null
+          : holdingOf(this.world, principal).system,
+      holdingIsRuin: (principal) =>
+        this.world.holdingByPrincipal.get(principal) !== undefined &&
+        holdingOf(this.world, principal).state === 'FALLEN',
+      claimAt: (system) => {
+        const claim = this.sovereignty.liveAt(system);
+        return claim === null ? null : { claimant: claim.claimant, state: claim.state };
+      },
+      materielAt: (principal, system) => this.materielAt(principal, system),
+      freeStoresOf: (principal) => freeStores(this.ledger, principal),
+      lockBond: (args) => this.lockCampaignCapital(args.campaign, args.principal, args.amount, args.tick, 'bond'),
+    };
+  }
+
+  /**
+   * Lock a campaign's bond or an ally's stake. One implementation, two callers, one `try`.
+   *
+   * `maxDirectLoss` is the amount exactly, because it **is** the worst case: it is what the attacker
+   * loses if the campaign fails, and EXPOSURE is Σ open `max_direct_loss` and nothing else (§3). A
+   * throw is turned into `null` and the caller into a sentence, so a lock that cannot be taken costs
+   * an agent a refusal rather than a 500 (scar #11).
+   */
+  private lockCampaignCapital(
+    campaign: CampaignId,
+    principal: PrincipalId,
+    amount: Minor,
+    tick: number,
+    kind: 'bond' | 'stake',
+  ): string | null {
+    if (amount <= 0) return null;
+    try {
+      return this.ledger.encumbrances.lock({
+        eventId: `${campaign}:${kind}:${principal}`,
+        tick,
+        principal,
+        account: storesAccount(principal),
+        amountMinor: amount,
+        obligationRef: campaign as unknown as VentureId,
+        maxDirectLoss: amount,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * `build {kind:"CAMPAIGN"}` — declare a war.
+   *
+   * The order is the honesty, exactly as `vBuild`'s anchor branch is: refuse on the merits with
+   * nothing moved, then lock, then write, then publish. Nothing is destroyed at declaration — the
+   * MATERIEL is spent at the first PULSE, and the gate has already checked it is standing there.
+   */
+  private vDeclareCampaign(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const objective = readString(req.params, ['system', 'system_id', 'at', 'objective', 'target']) as SystemId | null;
+    if (objective === null) {
+      return reject(
+        'A2',
+        'name the system you are campaigning against: `build` {"kind":"CAMPAIGN","system":"<id>"}. It must be a ' +
+          `CLAIMED system one lane from where your holding stands. ${CAMPAIGN_STATEMENT}`,
+      );
+    }
+    const opened = openCampaign(this.campaignDeclarePort(), this.campaigns, {
+      attacker: req.principal,
+      objective,
+      tick: ctx.tick,
+    });
+    if (!opened.ok) return opened;
+    const campaign = opened.value;
+
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'campaign.declared',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `campaign::${campaign.id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        campaign: campaign.id,
+        attacker: campaign.attacker,
+        defender: campaign.defender,
+        objective: campaign.objective,
+        depot: campaign.depot,
+        bond: campaign.bond,
+        breaches_needed: campaign.breachesNeeded,
+        rebuffs_needed: campaign.rebuffsNeeded,
+        first_pulse_tick: campaign.firstPulseTick,
+        materiel_good: MATERIEL_GOOD,
+        materiel_per_pulse: PULSE_MATERIEL_QTY,
+      },
+    });
+    this.campaignTicker.push(campaignTickerLine(campaign));
+    // The defender is offered a wake on the declaration, not on the first pulse. That is the whole
+    // of §16.6 MUST-8's notice: a full cycle to move hands, on the same information, before anything
+    // is pressed. A wake offered at the pulse would be a warning that arrives after the shot.
+    ctx.offerWake(campaign.defender, 'THREAT', campaign.id);
+    return { ok: true, value: null };
+  }
+
+  /** `join {campaign, side}` — §16.6 MUST-9's roster, on a verb that already means this. */
+  private vJoinCampaign(ctx: PhaseContext, req: ActionRequest, id: CampaignId): WorldResult<null> {
+    const named = readString(req.params, ['side']);
+    const side: CampaignSide | null =
+      named === null ? null : isCampaignSide(named.toUpperCase()) ? (named.toUpperCase() as CampaignSide) : null;
+    if (side === null) {
+      // Refused by name rather than defaulted. A default here would put a principal on a side it did
+      // not choose, with capital at risk on one of the two branches (`refineKindOf`'s rule, and D22's
+      // recorded cost of a dropped param: it irreversibly graduated the wrong principal).
+      return reject(
+        'A2',
+        `name your side: join {"campaign":"${id}","side":"ATTACKER"} or {"side":"DEFENDER"}. ` +
+          CAMPAIGN_ROSTER_STATEMENT,
+      );
+    }
+    const port: RosterPort = {
+      isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
+      freeStoresOf: (principal) => freeStores(this.ledger, principal),
+      lockStake: (args) =>
+        this.lockCampaignCapital(args.campaign, args.principal, args.amount, args.tick, 'stake'),
+    };
+    const refusal = joinRefusal(port, this.campaigns, {
+      principal: req.principal,
+      campaign: id,
+      side,
+      tick: ctx.tick,
+    });
+    if (refusal !== null) return refusal;
+
+    const stake = joinStakeFor(side);
+    let encumbranceId: string | null = null;
+    if (stake > 0) {
+      encumbranceId = port.lockStake({ campaign: id, principal: req.principal, amount: stake, tick: ctx.tick });
+      if (encumbranceId === null) {
+        return reject(
+          'INV-4',
+          `your stake of ${String(stake)} could not be locked, so you were not added to the roster and nothing ` +
+            'of yours is committed.',
+        );
+      }
+    }
+    this.campaigns.addParty(id, {
+      principal: req.principal,
+      side,
+      stake,
+      encumbranceId,
+      joinedAtTick: ctx.tick,
+    });
+    const campaign = this.campaigns.require(id);
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'campaign.joined',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `campaign::${id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource ?? null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: { campaign: id, side, stake, objective: campaign.objective },
+    });
+    return { ok: true, value: null };
+  }
+
+  /** `withdraw {campaign}` — §16.6 MUST-13's voluntary exit, at `abandon`'s own salvage rate. */
+  private vLiftCampaign(ctx: PhaseContext, req: ActionRequest, id: CampaignId): WorldResult<null> {
+    const refusal = liftRefusal(this.campaigns, { principal: req.principal, campaign: id, tick: ctx.tick });
+    if (refusal !== null) return refusal;
+    const campaign = this.campaigns.require(id);
+    this.settleCampaign(ctx.tick, campaign, liftEnding(campaign, ctx.tick), ctx.frozenStateVersion);
+    return { ok: true, value: null };
+  }
+
+  /**
+   * Resolve every campaign whose PULSE is due. The `PREDATE` handler's campaign half.
+   *
+   * Returns immediately on an empty book, which is what makes the `RULES_VERSION` 22 divergence
+   * claim checkable: a world in which nobody ever declares a campaign runs exactly as it did.
+   */
+  private pulseCampaignsNow(ctx: PhaseContext): void {
+    const due = duePulses(this.campaigns, ctx.tick);
+    if (due.length === 0) return;
+    // One step per pulse, so a busy book is paid for out of the tick's step budget rather than
+    // silently exceeding it (DET-9).
+    ctx.step(due.length);
+    const port = this.campaignPulsePort(ctx.tick);
+    for (const campaign of due) {
+      const plan = resolvePulse(port, campaign, ctx.tick);
+
+      // ── DESTROY THE MATERIEL FIRST, THEN RECORD ─────────────────────────────
+      //
+      // `refine`'s ordering rule (AGT-X9), and here it decides what a failure leaves behind:
+      // destroy-then-record leaves the attacker poorer with no breach, which is visible and
+      // recoverable; record-then-destroy would credit an assault the world was never paid for, and
+      // `CMP-3` halts on exactly that mismatch. A5′ costs a Reckoning of supply, never a lie.
+      let spent = 0;
+      for (const [i, lot] of plan.destroy.entries()) {
+        try {
+          this.ledger.destroyGoods({
+            eventId: `${campaign.id}:materiel:${String(ctx.tick)}:${String(i)}` as EventId,
+            tick: ctx.tick,
+            sink: GOODS_SINK.CONSUMPTION,
+            lotId: lot.lotId as LotId,
+            qty: lot.qty,
+          });
+          spent += lot.qty;
+        } catch (error: unknown) {
+          this.faults.push(
+            `campaign ${campaign.id} could not spend its materiel at ${campaign.depot} (${describeError(error)})`,
+          );
+        }
+      }
+
+      if (plan.row !== null) {
+        // Recorded from what the ledger ACTUALLY destroyed, never from the plan's intent. The same
+        // rule `book.close` enforces for a raid by making the intended figure unreachable — and
+        // `CMP-3` reproduces this number from the posting log by a second road.
+        this.campaigns.recordPulse(campaign.id, { ...plan.row, materielSpent: qty(spent) });
+        const row = campaign.pulses[campaign.pulses.length - 1];
+        this.emitRow({
+          tick: ctx.tick,
+          kind: 'campaign.pulsed',
+          rulesVersion: RULES_VERSION,
+          // Nobody acted. A pulse is a scheduled resolution on a published clock, which is what
+          // makes it A14-compliant and why it has no actor — exactly as `raid.resolved` has none.
+          actorPrincipalId: null,
+          onBehalfOfPrincipalId: null,
+          grantId: null,
+          eventFamilyId: `campaign::${campaign.id}`,
+          parentEventId: null,
+          isPublic: true,
+          publicAt: ctx.tick,
+          declassifyAt: ctx.tick,
+          provenanceClass: 'FACT',
+          actedOnStateVersion: ctx.frozenStateVersion,
+          decisionSource: null,
+          visibility: 'PUBLIC',
+          audience: [],
+          payload: {
+            campaign: campaign.id,
+            objective: campaign.objective,
+            outcome: row?.outcome ?? plan.row.outcome,
+            attacker_force: plan.row.attackerForce,
+            defender_force: plan.row.defenderForce,
+            terrain: plan.row.terrain,
+            materiel_spent: spent,
+            breaches: campaign.breaches,
+            rebuffs: campaign.rebuffs,
+            breaches_needed: campaign.breachesNeeded,
+          },
+        });
+        this.campaignTicker.push(campaignTickerLine(campaign));
+        ctx.offerWake(campaign.attacker, 'THREAT', campaign.id);
+        ctx.offerWake(campaign.defender, 'THREAT', campaign.id);
+      }
+
+      if (plan.endsWith !== null) {
+        this.settleCampaign(ctx.tick, campaign, plan.endsWith, ctx.frozenStateVersion);
+      }
+    }
+  }
+
+  /**
+   * End a campaign: release the locks, move the bond, lapse the objective if it was TAKEN.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE LAPSE IS SOVEREIGNTY'S, PERFORMED THROUGH SOVEREIGNTY'S OWN METHODS.** `settle.ts`'s
+   * header records what a second lapse path costs: two versions of "settle a claim" disagreed about
+   * whether a retaken system inherits its arrears, and one of them published the worst outcome the
+   * mechanic has against a claimant that had been shown the best. So this calls `end`, `recordLapse`
+   * and the same `slash` the Charge settlement uses, and writes **no shortfall row and no miss**.
+   *
+   * That last clause is A5′ and it is the most important line in this method. A campaign-caused
+   * lapse is not an arrears: the claimant may have paid every ration it owed. Recording a miss to
+   * reach the lapse would make `claimLegend` publish `ARREARS 2 of 2` about a claimant that was
+   * never short, which is the permanent public accusation A5′ exists to forbid. The record says what
+   * happened — **conquered** — and `claim.lapsed` carries the campaign that did it.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private settleCampaign(
+    tick: number,
+    campaign: CampaignRecord,
+    ending: CampaignEnding,
+    stateVersion: number | null,
+  ): void {
+    // Release every lock first. A forfeit out of a locked balance would be refused by the ledger,
+    // and a lock left open on an ended campaign is that capital destroyed with no posting (INV-4,
+    // and `CMP-6` halts on it).
+    for (const id of [
+      campaign.bondEncumbranceId,
+      ...campaign.parties.map((p) => p.encumbranceId),
+    ]) {
+      if (id === null) continue;
+      try {
+        this.ledger.encumbrances.release(id, tick);
+      } catch (error: unknown) {
+        this.faults.push(`campaign ${campaign.id} could not release lock ${id} (${describeError(error)})`);
+      }
+    }
+
+    let forfeited = 0;
+    if (ending.forfeited > 0) {
+      // Forfeited to the DEFENDER, never to a sink. `predate.ts`'s rule: forfeiture to the
+      // counterparty rather than to a sink is what stops a failed attack being a griefer's bargain.
+      // And `seizeCurrency` moves at most what is there and returns the figure, so an attacker that
+      // spent down between declaring and losing forfeits what it has and the record says so.
+      try {
+        forfeited += this.ledger.seizeCurrency({
+          eventId: `${campaign.id}:forfeit:${campaign.attacker}` as EventId,
+          tick,
+          from: storesAccount(campaign.attacker),
+          to: storesAccount(campaign.defender),
+          amount: minor(ending.forfeited),
+        }).seized;
+      } catch (error: unknown) {
+        this.faults.push(`campaign ${campaign.id} bond could not be forfeited (${describeError(error)})`);
+      }
+      // An ATTACKER ally's stake follows the campaign it backed. §16.6 MUST-9: a co-belligerent
+      // risks its own stake or it is not one. A DEFENDER's stake is zero, so there is nothing here.
+      for (const party of campaign.parties) {
+        if (party.side !== 'ATTACKER' || party.stake <= 0) continue;
+        try {
+          forfeited += this.ledger.seizeCurrency({
+            eventId: `${campaign.id}:forfeit:${party.principal}` as EventId,
+            tick,
+            from: storesAccount(party.principal),
+            to: storesAccount(campaign.defender),
+            amount: party.stake,
+          }).seized;
+        } catch (error: unknown) {
+          this.faults.push(
+            `campaign ${campaign.id} ally stake could not be forfeited from ${party.principal} ` +
+              `(${describeError(error)})`,
+          );
+        }
+      }
+    }
+
+    // ── THE OBJECTIVE FALLS ────────────────────────────────────────────────────
+    let slashed = 0;
+    if (ending.lapseObjective) {
+      const claim = this.sovereignty.liveAt(campaign.objective);
+      if (claim !== null && claim.claimant === campaign.defender) {
+        slashed = this.slashClaimBond(claim.claimant, campaign.objective, tick);
+        this.sovereignty.end(campaign.objective, 'LAPSED', reckoningOf(tick), null);
+        this.sovereignty.recordLapse(campaign.objective);
+      }
+    }
+
+    // `CMP-5` asserts `forfeited + returned === bond`, so the row records what the ledger MOVED for
+    // the bond and the ending's own `returned` for the rest. A bond whose holder had already spent
+    // it down forfeits less than the ending named, and the row must say so rather than the plan.
+    this.campaigns.end(campaign.id, {
+      state: ending.state,
+      tick,
+      forfeited: minor(ending.forfeited),
+      returned: ending.returned,
+    });
+    const ended = this.campaigns.require(campaign.id);
+
+    this.emitRow({
+      tick,
+      kind: ending.state === 'TAKEN' ? 'campaign.taken' : 'campaign.ended',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: ending.state === 'LIFTED' ? campaign.attacker : null,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `campaign::${campaign.id}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: tick,
+      declassifyAt: tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: stateVersion,
+      decisionSource: null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        campaign: campaign.id,
+        state: ending.state,
+        attacker: campaign.attacker,
+        defender: campaign.defender,
+        objective: campaign.objective,
+        breaches: campaign.breaches,
+        rebuffs: campaign.rebuffs,
+        bond: campaign.bond,
+        forfeited_moved: forfeited,
+        returned: ending.returned,
+        claim_lapsed: ending.lapseObjective,
+        claim_bond_slashed: slashed,
+        why: ending.why,
+      },
+    });
+    this.campaignTicker.push(campaignTickerLine(ended));
+  }
+
+  /**
+   * Slash one claim's bond, through the same arithmetic the Charge settlement uses.
+   *
+   * `bondAtRiskFor` caps it at ONE claim's requirement (`bond.ts`: 4 claims × 200,000 posted loses
+   * 50,000 on one lapse, not the lot), so a conquered claimant's other territory does not cascade —
+   * and `SOV-3` halts if anything above that ceiling was ever taken.
+   */
+  private slashClaimBond(principal: PrincipalId, system: SystemId, tick: number): number {
+    const want = bondAtRiskFor(this.sovereignty, principal, this.bondRead());
+    if (want <= 0) return 0;
+    for (const id of this.sovereignty.bondLocksOf(principal)) {
+      try {
+        this.ledger.encumbrances.release(id, tick);
+      } catch {
+        // Reported nowhere and swallowed deliberately: a lock that will not release is already
+        // covered by INV-4 on the next tick, and a throw here would abort a Reckoning.
+      }
+      this.sovereignty.dropBondLock(principal, id);
+      break;
+    }
+    try {
+      const free = freeStores(this.ledger, principal);
+      const take = minor(Math.min(want, free));
+      if (take <= 0) return 0;
+      this.ledger.retireCurrency({
+        eventId: `campaign.slash:${system}:${String(tick)}` as EventId,
+        tick,
+        from: storesAccount(principal),
+        sink: CURRENCY_SINK.UPKEEP,
+        amount: take,
+      });
+      return take;
+    } catch (error: unknown) {
+      this.faults.push(`campaign lapse could not slash ${principal}'s bond (${describeError(error)})`);
+      return 0;
+    }
+  }
+
+  /**
+   * **THE ONE PREDICATE.** The affordance layer and `vDeclareCampaign` both refuse through this.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * This project's signature defect runs in both directions and one function closes both. Nine
+   * mechanics were once legal and unreachable because an affordance was never written — `grant`, the
+   * A6 core loop, among them; and an affordance with its own copy of a gate offers moves the handler
+   * then refuses, which costs an agent an action and its trust in the menu (AGT-S2). `api/observe.ts`
+   * calls this before offering a campaign, and `openCampaign` calls it again. They cannot disagree,
+   * because there is only one of them.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  campaignDeclareRefusalFor(attacker: PrincipalId, objective: SystemId, tick: number): Rejection | null {
+    return declareRefusal(this.campaignDeclarePort(), this.campaigns, { attacker, objective, tick });
+  }
+
+  /**
+   * Every objective this principal could declare against right now, canonical order.
+   *
+   * The **claimed neighbours of its own holding**, and nothing wider. A campaign is aimed one lane,
+   * so a candidate list computed any other way would offer places the gate then refuses — and the
+   * refusal would be about geography, which no amount of the agent's effort can fix this wake.
+   */
+  campaignObjectivesFor(principal: PrincipalId, tick: number): readonly SystemId[] {
+    if (this.world.holdingByPrincipal.get(principal) === undefined) return [];
+    const depot = holdingOf(this.world, principal).system;
+    return neighboursOf(this.world.map, depot).filter(
+      (system) => this.campaignDeclareRefusalFor(principal, system, tick) === null,
+    );
+  }
+
+  /** Campaigns this principal may still lift or join, for the affordance layer. */
+  liveCampaignsTouching(principal: PrincipalId): readonly CampaignRecord[] {
+    return this.campaigns.live().filter(
+      (c) => c.attacker === principal || c.defender === principal || isLiveCampaign(c.state),
+    );
+  }
+
+  /**
+   * The one campaign statement that applies to this principal right now, or `null`.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ONE, NEVER THREE, AND THE REASON IS MEASURED.** `sovereigntyStatementFor` records it: three
+   * statements at once was ~3 KB of static prose per wake, `cast/prompt.ts` truncated `affordances[]`
+   * past 16,000 chars, and a 12-member cast fell from 192 to 172 LIVE decisions — below the health
+   * floor. So the surface picks the statement the principal's situation actually needs.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  campaignStatementFor(principal: PrincipalId, tick: number): string | null {
+    const mine = this.campaigns.forPrincipal(principal).filter((c) => isLiveCampaign(c.state));
+    // In a war, and it can still end: the endings are what a losing side needs and the only thing
+    // that makes a fire sale or a lift discoverable.
+    if (mine.length > 0) return CAMPAIGN_ENDINGS_STATEMENT;
+    // Not in one, but somebody else's is live and joinable: the roster rules, which carry the
+    // asymmetry (defending is free, attacking is not) that decides whether joining is worth it.
+    if (this.campaigns.liveCount() > 0) return CAMPAIGN_ROSTER_STATEMENT;
+    // Could declare one: what it is, what it costs, and the sentence that says why it exists at all.
+    if (this.campaignObjectivesFor(principal, tick).length > 0) return CAMPAIGN_STATEMENT;
+    return null;
+  }
+
+  /** The roster gate, for the affordance. The same predicate `vJoinCampaign` runs (AGT-S2). */
+  campaignJoinRefusalFor(
+    principal: PrincipalId,
+    campaign: string,
+    side: CampaignSide,
+    tick: number,
+  ): Rejection | null {
+    return joinRefusal(
+      {
+        isSeated: (who) => this.world.holdingByPrincipal.get(who) !== undefined,
+        freeStoresOf: (who) => freeStores(this.ledger, who),
+        // Never called from the affordance path — `joinRefusal` only reads — and supplied rather than
+        // stubbed so the port is the same object the verb builds. A port with a different shape here
+        // would be a second implementation of the gate's inputs, which is the drift this closes.
+        lockStake: (args) =>
+          this.lockCampaignCapital(args.campaign, args.principal, args.amount, args.tick, 'stake'),
+      },
+      this.campaigns,
+      { principal, campaign: campaign as CampaignId, side, tick },
+    );
+  }
+
+  /** The lift gate, for the affordance. The same predicate `vLiftCampaign` runs. */
+  campaignLiftRefusalFor(principal: PrincipalId, campaign: string, tick: number): Rejection | null {
+    return liftRefusal(this.campaigns, { principal, campaign: campaign as CampaignId, tick });
+  }
+
+  /** What declaring costs, published in the affordance. One home, so the menu cannot understate it. */
+  get campaignBond(): Minor {
+    return CAMPAIGN_BOND_MINOR;
+  }
+
+  /** What an ATTACKER ally risks. Published beside the offer, never implied. */
+  get campaignAllyStake(): Minor {
+    return CAMPAIGN_JOIN_STAKE_MINOR;
+  }
+
+  /** When a campaign declared now would first press. The affordance's `expires_tick` is not this. */
+  campaignFirstPulse(tick: number): number {
+    return firstPulseTickFor(tick);
+  }
+
+  /** CMP-1..7, for the tick's ASSERT hook. */
+  private campaignViolations(tick: number): readonly InvariantViolation[] {
+    return checkCampaignInvariants({
+      book: this.campaigns,
+      tick,
+      tierOf: (system) => tierOf(this.world.map, system),
+      materielDestroyedFor: (campaign) => this.materielDestroyedFor(campaign, tick),
+      lockIsOpen: (encumbranceId) => this.ledger.encumbrances.isOpen(encumbranceId),
+    });
+  }
+
+  /**
+   * CMP-3's second road: what the **posting log** says this campaign destroyed.
+   *
+   * Recomputed from the postings rather than read off the row, which is the whole point — a row
+   * checked against itself is a detector agreeing with itself. Scoped to the tick a pulse resolved
+   * on, for `goodsMovedForRaid`'s reason: the postings are append-only, so a pulse verified three
+   * Reckonings ago cannot become wrong, and re-walking them every tick would cost O(season) per tick
+   * and prove nothing new. `null` skips the clause, which is what a fixture with no ledger needs.
+   */
+  private materielDestroyedFor(campaign: CampaignRecord, tick: number): Qty | null {
+    const pulse = campaign.pulses.find((p) => p.tick === tick);
+    if (pulse === undefined) return null;
+    const account = storesAccount(campaign.attacker);
+    let moved = 0;
+    for (const p of campaign.pulses) {
+      for (let i = 0; i < MAX_SEIZE_LOTS; i += 1) {
+        const postings = this.ledger.postingsFor(
+          `${campaign.id}:materiel:${String(p.tick)}:${String(i)}` as EventId,
+        );
+        if (postings.length === 0) continue;
+        for (const posting of postings) {
+          if (posting.account !== account) continue;
+          if (posting.good !== MATERIEL_GOOD) continue;
+          const delta: number = posting.amountQty ?? 0;
+          if (delta < 0) moved += 0 - delta;
+        }
+      }
+    }
+    return qty(moved);
   }
 
   /** SOV-1..7 plus the A5′ attribution guard, for the tick's ASSERT hook. */
@@ -12206,6 +13690,22 @@ export class Runtime {
       if (v.boundByGrant === null) continue;
       boundByGrant.set(v.boundByGrant, (boundByGrant.get(v.boundByGrant) ?? 0) + 1);
     }
+    // ★ The dossier threads, indexed by the grant each custody chain ROOTS at. Built once over
+    // the book for `boundByGrant`'s reason — the frame stays linear in the books rather than
+    // quadratic in grants × dossiers, which is the shape INV-7 was pulled off.
+    const threadsByGrant = new Map<GrantId, AuthorityDossier[]>();
+    for (const d of this.dossierBook.all()) {
+      // The reveal clock, and it is the ONLY gate. Publishing a thread before `revealsAtTick`
+      // would put a leak on screen that the victim's own `observe` cannot yet answer — A9's
+      // exact prohibition, and the shape of four separate visibility leaks found in this
+      // codebase in one week.
+      if (outcome.tick < d.revealsAtTick) continue;
+      const root = this.dossierBook.rootOf(d);
+      if (root === null) continue;
+      const rows = threadsByGrant.get(root) ?? [];
+      rows.push({ to: d.toWhom, compartment: d.compartment, cutAtTick: d.cutAtTick, copied: d.parent !== null });
+      threadsByGrant.set(root, rows);
+    }
     const authorityLines: AuthorityLine[] = this.grantBook
       .all()
       .filter((g) => g.expiresTick >= outcome.tick)
@@ -12233,6 +13733,13 @@ export class Runtime {
           grantedContingent: g.maxContingentLiability,
           spentContingent: g.spentContingent,
           boundVentures: boundByGrant.get(g.id) ?? 0,
+          // ★ THE CLEARANCE PIPS and THE DOSSIER THREADS (A13, §16.12 #3).
+          clearance: [...g.clearance],
+          // ★ Only revealed rows, and only rows whose custody chain ROOTS at this grant — so a
+          // dossier re-handed twice still points at the promotion that made it possible, and no
+          // thread is ever drawn before the subject has learned of it (A9 by construction; the
+          // frame and the subject read one clock).
+          dossiers: threadsByGrant.get(g.id)?.slice(0, MAX_LINE_DOSSIERS) ?? [],
           state,
         };
       });
@@ -12334,6 +13841,10 @@ export class Runtime {
       // that no field on this line is a function of anything a claimant STILL holds: the
       // rejected "fuel gauge" was exactly that, and this is what replaced it.
       claimLines: this.claimLines(outcome.tick).slice(0, MAX_FRAME_CLAIM_LINES),
+      // ★ Campaigns' pixel signature (A13, §16.6): THE SAP. Already selected and ordered by
+      // `sapLinesFor`, so this is a pass-through — the module that owns the score is the one that
+      // knows which of two 1-1 campaigns is closer to deciding something.
+      saps: this.sapLines(outcome.tick),
       worksLines: this.worksLines(outcome.tick),
       // ★ The market's pixel signature (A13, §10): THE PRINT. Built by the market layer for the
       // reason every other line set is — a renderer that computed its own prices would be

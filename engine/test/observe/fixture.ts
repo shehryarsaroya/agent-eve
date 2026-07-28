@@ -212,6 +212,8 @@ export function grantFrom(options: {
     maxContingentLiability: minor(options.maxContingentLiability ?? 20_000),
     spentDirect: minor(0),
     spentContingent: minor(0),
+    verbs: ['create', 'elect'],
+    clearance: [],
     expiresTick: options.expiresTick ?? 500,
     revokedAtTick: options.revokedAtTick ?? null,
   };

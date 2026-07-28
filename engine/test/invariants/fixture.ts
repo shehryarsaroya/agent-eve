@@ -152,6 +152,8 @@ export function grant(overrides: Partial<Grant> = {}): Grant {
     maxContingentLiability: minor(20_000),
     spentDirect: minor(0),
     spentContingent: minor(0),
+    verbs: ['create', 'elect'],
+    clearance: [],
     expiresTick: 10_000,
     revokedAtTick: null,
     ...overrides,

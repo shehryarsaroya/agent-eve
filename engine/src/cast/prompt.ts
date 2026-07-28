@@ -51,12 +51,64 @@ export interface ContractSituation {
    * its rules: see {@link unitGrade}.
    */
   readonly verbs: ReadonlySet<string>;
+  /**
+   * ★ **The specific ACTS offered this wake, for the verbs that mean more than one thing.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════════
+   * ★ **VERB GATING IS ONLY AS SHARP AS THE VERB.** That is the lesson, and it is deliberately
+   * *not* "verb gating is broken" — the distinction is load-bearing and it has a control case.
+   *
+   * `RULES_VERSION` 23's clearance block went into this same catalog through the same verb gate
+   * and cost a newcomer **74 characters**: one observation-key line it can actually read. §11E's
+   * campaign block went in the same way and cost **3,360**. The difference is not the mechanism.
+   * It is that `grant`, `revoke` and `audit` each mean exactly one thing, while `build` means
+   * four. So the ~30 verbs that mean one thing keep their verb gate untouched, and what is added
+   * here is a **discriminator for the six that have grown a second meaning** —
+   * {@link CONTRACT_MULTI_MEANING_VERBS} names them and the five deliberately left alone.
+   *
+   * The shape has cost this catalog three times, and all three are multi-meaning verbs:
+   *
+   *   1. §11A's funding rules were keyed on `verbs.has('trade')`, so the text explaining *why
+   *      you cannot trade* was selected exactly when you already could. The confusing case got
+   *      nothing. (Fixed by reading the NUMBER — `endowmentWithheld` below.)
+   *   2. §11D's hull rules claimed `build`, costing a Commons newcomer 2,188 characters of
+   *      predation preamble for a hull it could not build. Moved to §11A by hand.
+   *   3. §11E's campaign rules claimed `build` — and `build` now means at least four acts
+   *      (`WORKS`, `ANCHOR`, `HULL`, `CAMPAIGN`) and is offered to essentially every principal.
+   *      Every position paid **3,360 characters** identically, including a newcomer on its
+   *      first wake, which cannot declare a campaign for many Reckonings: a campaign needs a
+   *      lane-adjacent CLAIMED system, twice a claim bond, and a depot §16.6 MUST-1 forbids in
+   *      the Commons outright.
+   *
+   * So a unit may now name the ACT it documents instead of the verb — {@link ContractUnit.acts} —
+   * and this is the set it is matched against. Nothing else about the selector changes.
+   *
+   * ── THE VOCABULARY IS CLOSED, AND THAT IS THE SAFETY PROPERTY ────────────────
+   *
+   * Only tokens in {@link CONTRACT_ACTS} appear here, and `prompt.test.ts` pins that set against
+   * the catalog **both ways**: every act a unit gates on is in the vocabulary, and every token in
+   * the vocabulary is gated on by some unit. A typo in a unit's `acts` therefore fails loudly
+   * instead of silently never matching — which is the failure direction that would drop a rule.
+   * ══════════════════════════════════════════════════════════════════════════════
+   */
+  readonly acts: ReadonlySet<string>;
   readonly inCommons: boolean;
   readonly commonsBound: boolean;
   /** Predation can legally reach it: A8 makes hostile action in the Commons *invalid*. */
   readonly outsideCommons: boolean;
   /** It holds a role in at least one live venture, so settlement is about to happen to it. */
   readonly inVenture: boolean;
+  /**
+   * ★ A campaign it is a **party to** is running — `holding.campaigns[]` with a `your_side`.
+   *
+   * The situation half of the §11E fix. The act tokens say *"a campaign is declarable, or a lift
+   * is available"*; this says *"one is already running against you or for you"*, which is the
+   * state a campaign's rules are needed in and no verb announces. A campaign pulses **once a
+   * Reckoning on a published clock whether or not you are awake**, and a starved pulse walks the
+   * bond — so a defender that was never given the timetable loses ground to a rule nothing showed
+   * it. Same shape as `inBattle`, one clock out.
+   */
+  readonly inCampaign: boolean;
   /**
    * It has issued authority, or holds authority somebody else issued.
    *
@@ -82,8 +134,28 @@ export interface ContractSituation {
    * moves when the income stops. `agent-md.test.ts` says so about `FUEL_STATEMENT`.
    */
   readonly anchorCold: boolean;
-  /** A demand or a world raid stands against it, with a deadline. */
+  /**
+   * A demand or a world raid stands against **it**, with a deadline — `your_side === 'TARGET'`.
+   *
+   * Not the length of `obligations.raid[]`, and `readSituation` carries what that cost: at
+   * `RULES_VERSION` 24 the list started including standoffs a hand could WALK to, so a length test
+   * made every bystander a target and shipped it `yield`/`fight` rules it may not use.
+   */
   readonly underRaid: boolean;
+  /**
+   * ★ A live standoff somebody **else** is in, and this principal could still reach it.
+   *
+   * §9's escort market, as the reader sees it. `raidViewsFor` returns a non-party row only when this
+   * principal has an IDLE hand at the stage or one that could march there before the window shuts, so
+   * the row's existence *is* the reachability — and `your_side === null` is the party test.
+   *
+   * Its own field rather than a verb gate, for {@link inCampaign}'s reason: **no verb announces it.**
+   * A bystander already standing at the stage is offered `join{RAID}`; one two lanes off is offered
+   * `move`, which every principal is offered for every hand it owns. Gating the coalition rules on
+   * `move` would make them free to the whole world (§11E's defect) and gating them on `join{RAID}`
+   * alone would hide them from the reader who still has to walk.
+   */
+  readonly nearStandoff: boolean;
   /**
    * A battle it is a party to is live — `obligations.battle`, §9A.
    *
@@ -126,8 +198,25 @@ export interface ContractUnit {
   /**
    * Verbs whose rules are HERE. Any one of them offered ⇒ this unit ships, whatever the
    * budget. This is the list the guarantee runs on; see {@link unitGrade}.
+   *
+   * Use this when the rules really are **verb-wide** — §11A's `### \`build\` is FOUR different
+   * acts` documents every kind, so it claims `build` and should. Use {@link acts} when they
+   * belong to one kind of a verb that means several things.
    */
   readonly verbs: readonly string[];
+  /**
+   * ★ Specific ACTS whose rules are HERE, when the verb alone is the wrong key.
+   *
+   * Same guarantee and same precedence as {@link verbs} — checked in {@link unitGrade} *before*
+   * any predicate, never dropped for length. It is an **additional discriminator, not a
+   * replacement**: the two lists are both consulted, so a unit may name a verb-wide rule and an
+   * act-specific one at once, and the property that a rule an agent can act on this wake is
+   * never dropped is unchanged.
+   *
+   * Every token must be in {@link CONTRACT_ACTS}. A unit that gates on one act should normally
+   * take that verb OFF `verbs` — leaving both is what made §11E free for a newcomer.
+   */
+  readonly acts?: readonly string[];
   /**
    * Standing facts that make this unit **mandatory** even with no verb offered.
    *
@@ -159,7 +248,271 @@ const S11A = '## 11A. WORKS — the only reason goods exist';
 const S11B = '## 11B. Sovereignty — territory you have to MAINTAIN';
 const S11C = '## 11C. SYNDICATES — pooling, and the authority that comes with it';
 const S11D = '## 11D. PREDATION — two kinds, and only one of them has a name';
+const S11E = '## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for';
 const S12 = '## 12. Getting good';
+
+/**
+ * How an affordance names WHICH act it is, read straight off `params`.
+ *
+ * Two shapes, because the engine uses two and neither is negotiable from here:
+ *
+ *   · **A value key** — `build {kind:"WORKS"}`, `deliver {obligation:"CHARGE"}`,
+ *     `vote {ballot:"LEVY"}`. The token takes the value.
+ *   · **A subject key** — `join {raid:…}` versus `join {campaign:…}`, `withdraw {venture:…}`
+ *     versus `withdraw {campaign:…}`, `abandon {claim:…}` versus `abandon {venture:…}`. There is
+ *     no `kind` on these; the discriminator is *which key is present at all*, so the token takes
+ *     the KEY NAME, upper-cased.
+ *
+ * Ordered, so the token for one affordance is deterministic. Nothing here invents a default: an
+ * affordance that names no discriminator produces **no** act token, only its verb. `refine
+ * {system}` is the ration recipe and the engine spells it by omission — writing
+ * `refine{RATION}` here would be this file asserting a value the payload does not carry, which
+ * is the class of thing A2 forbids and `situationalFocus` has already been caught doing twice.
+ */
+const ACT_VALUE_KEYS: readonly string[] = Object.freeze(['kind', 'obligation', 'ballot']);
+const ACT_SUBJECT_KEYS: readonly string[] = Object.freeze(['campaign', 'raid', 'venture', 'claim']);
+
+/**
+ * ★ **The closed vocabulary of act tokens the catalog gates on.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Twelve tokens, and the list is short **on purpose**: a token nothing gates on would be this
+ * project's signature defect in the mechanism built to fix it — *a capability that exists and is
+ * never exercised is indistinguishable from one that is missing.* So `prompt.test.ts` pins this
+ * set against {@link CONTRACT_CATALOG} in both directions:
+ *
+ *   · every act any unit names is in here — so a typo in a unit's `acts` fails LOUDLY instead of
+ *     silently never matching, which is the direction that would drop a needed rule;
+ *   · every token in here is named by some unit — so the vocabulary cannot grow decoration.
+ *
+ * {@link readSituation} filters to this set, which is what keeps a position's declared `acts`
+ * writable: the engine publishes `create {kind:"HAUL"}`, `elect {venture:…}`, `trade {side:"BID"}`
+ * and a dozen more discriminated affordances whose rules are genuinely verb-wide, and none of
+ * them needs to appear in a fixture.
+ *
+ * **Which verbs are discriminated here and which are deliberately not is the audit**, and it is
+ * recorded as data in {@link CONTRACT_MULTI_MEANING_VERBS} rather than in a comment, because the
+ * comment version of this table was wrong about `build` for two features.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+export const CONTRACT_ACTS: ReadonlySet<string> = Object.freeze(
+  new Set([
+    // `build` — four acts. WORKS has its own block; ANCHOR and HULL are documented by the
+    // verb-wide `### \`build\` is FOUR different acts` block, so they need no token.
+    'build{WORKS}',
+    'build{CAMPAIGN}',
+    // `refine` — the ALLOY fork. The ration recipe carries no `kind` and is §7's FLOOR chain.
+    'refine{ALLOY}',
+    // `join` — a raid side and a campaign side are different sections.
+    'join{RAID}',
+    'join{CAMPAIGN}',
+    // `withdraw` — a campaign LIFT and a venture exit. Neither is the syndicate notice the
+    // §11C block that used to claim this verb documents; see that entry.
+    'withdraw{CAMPAIGN}',
+    'withdraw{VENTURE}',
+    // `abandon` — ceding a claim and quitting a role.
+    'abandon{CLAIM}',
+    'abandon{VENTURE}',
+    // `vote` — two ballots, and only one of them is allocated by EXPOSURE.
+    'vote{LEVY}',
+    'vote{CHARGE}',
+    // `deliver` — the Charge is goods standing at a claimed system; the Levy is §5's FLOOR block.
+    'deliver{CHARGE}',
+  ]),
+);
+
+/**
+ * ★ **THE AUDIT: every verb that means more than one thing, and where each meaning's rules live.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * This exists because the same defect landed three times and each time the reasoning happened in
+ * a comment nobody re-checked. A verb that grows a second meaning is a *rules-surface* event: the
+ * unit gated on it silently starts shipping to a population that cannot perform the act it
+ * documents. So the ledger is data, and two tests read it —
+ *
+ *   1. every verb listed as `ACT_GATED` really has a unit gating one of its acts, and every verb
+ *      listed as `VERB_GATED` really has none (so a row cannot go stale in either direction);
+ *   2. a **real world is swept** and a verb whose offers DISAGREE about their discriminator while
+ *      this table has no row for it fails, naming the verb and the values — which is how the
+ *      fourth instance gets caught before it costs a newcomer 3,360 characters.
+ *
+ * `VERB_GATED` is a real answer, not a to-do list, and five rows carry it. The interesting ones:
+ * `deliver`'s Levy half lives in a FLOOR block, so gating it more finely would change nothing at
+ * all; `create`'s five venture kinds share one set of promise rules, which is the case the whole
+ * mechanism must NOT be applied to; and `grant` is the control case that decided the shape of this
+ * change — one meaning, one gate, 74 characters.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+export const CONTRACT_MULTI_MEANING_VERBS: readonly {
+  readonly verb: string;
+  /**
+   * The distinct meanings the engine can offer — in {@link discriminatorsOf}'s spelling where the
+   * affordance carries a discriminator this file reads, and in words where it does not.
+   *
+   * `publish_offer {cede}` and `grant {on_behalf_of}` are the second kind: real second meanings
+   * that turn on a key nothing here discriminates on. They are in the ledger because the ledger is
+   * the AUDIT — *which verbs mean more than one thing* — and it would be a worse document if it
+   * only listed the ones that happen to be machine-detectable.
+   */
+  readonly acts: readonly string[];
+  readonly gate: 'ACT_GATED' | 'VERB_GATED';
+  readonly because: string;
+}[] = Object.freeze([
+  {
+    verb: 'build',
+    acts: ['build{WORKS}', 'build{ANCHOR}', 'build{CAMPAIGN}', 'build{HULL}'],
+    gate: 'ACT_GATED',
+    because:
+      'the third instance and the expensive one: §11E cost EVERY position +3,543 characters off a ' +
+      'verb offered to essentially everybody. WORKS and CAMPAIGN carry tokens; ANCHOR and HULL are ' +
+      'documented by the verb-wide `### `build` is FOUR different acts` block, which claims `build`.',
+  },
+  {
+    verb: 'refine',
+    acts: ['refine{ALLOY}', 'refine (no kind — the ration recipe)'],
+    gate: 'ACT_GATED',
+    because:
+      '§11A `### The fourth good` is the ALLOY recipe and the geography that makes it worth ' +
+      'refining, so it is gated on `refine{ALLOY}` and on `haul`. Measured cost of the fix: ZERO ' +
+      'characters on all five positions, because the block is also `wanted` for anybody working ' +
+      'ground and the engine offers both recipes off the same ore (1,122 of 1,122 swept ' +
+      'observations carried both). Fixed anyway — a gate that is right for the wrong reason ' +
+      'stops being right the day the rates diverge.',
+  },
+  {
+    verb: 'join',
+    acts: ['join{RAID}', 'join{CAMPAIGN}'],
+    gate: 'ACT_GATED',
+    because:
+      'both directions were wrong: a bystander to a raid was shipped §11E, and a campaign ally was ' +
+      'shipped §11D — a section A8 makes unreachable for half the world. `side` is NOT the ' +
+      'discriminator; a side exists on both.',
+  },
+  {
+    verb: 'withdraw',
+    acts: ['withdraw{CAMPAIGN}', 'withdraw{VENTURE}'],
+    gate: 'ACT_GATED',
+    because:
+      'the worst variant found: §11C `### Leaving costs a Reckoning of notice` claimed `withdraw`, ' +
+      'and the engine’s `withdraw` **cannot leave a syndicate at all** (`SyndicateBook.giveNotice` ' +
+      'has no caller). So every venture exit and every campaign lift shipped the syndicate notice ' +
+      'rules, and the act that block documents could never select it. `withdraw{VENTURE}` now ' +
+      'selects §4’s `stake` block, which is where the forfeit it actually costs is written down.',
+  },
+  {
+    verb: 'abandon',
+    acts: ['abandon{CLAIM}', 'abandon{VENTURE}'],
+    gate: 'ACT_GATED',
+    because:
+      'quitting a venture role pulled §11B’s preamble plus `### Losing it` — 2,962 characters of ' +
+      'sovereignty for a member that holds no ground.',
+  },
+  {
+    verb: 'vote',
+    acts: ['vote{LEVY}', 'vote{CHARGE}'],
+    gate: 'ACT_GATED',
+    because:
+      'the Levy ballot picks between BY_STORES, BY_EXPOSURE, EVEN and INVERSE_EXPOSURE; the Charge ' +
+      'ballot picks between EVEN, BY_CLAIMS and BY_TIER and reads no EXPOSURE at all. §4’s 4,462-' +
+      'character `stake` block is EXPOSURE’s rules, so a claimant voting on the Charge was being ' +
+      'charged for a quantity its ballot does not read.',
+  },
+  {
+    verb: 'deliver',
+    acts: ['deliver{LEVY}', 'deliver{CHARGE}', 'deliver{LEVY} with `payer`'],
+    gate: 'ACT_GATED',
+    because:
+      'three meanings, and the split is asymmetric on purpose. §5’s Levy block is FLOOR — every ' +
+      'position pays for it every wake whatever the gate — so `deliver{LEVY}` and the `payer` ' +
+      'carry need no token and get none. `deliver{CHARGE}` is act-gated onto §11B’s CHARGE block, ' +
+      'which is where the Charge and its ballot are both written down.',
+  },
+  {
+    verb: 'create',
+    acts: ['create{HAUL}', 'create{ESCORT}', 'create{SURVEY}', 'create{DIG}', 'create{BUILD}'],
+    gate: 'VERB_GATED',
+    because:
+      '★ THE CASE THE MECHANISM MUST NOT BE APPLIED TO. Five venture kinds, ONE set of promise ' +
+      'rules: the two halves, the proportion and the negotiation channel are identical whichever ' +
+      'kind is created. Splitting this would ship five copies of one rule and select none of them ' +
+      'for a sixth kind.',
+  },
+  {
+    verb: 'publish_offer',
+    acts: ['publish_offer{text}', 'publish_offer{cede}'],
+    gate: 'VERB_GATED',
+    because:
+      'the `cede` shape sells a claim and its rules are in §11B `### Losing it`, which is already ' +
+      'reached by `abandon{CLAIM}`, `inArrears` and `holdsClaim`. The `text` shape is what §4 ' +
+      '`### Negotiating` documents. Neither gate is wrong today, and `cede` carries no key this ' +
+      'file discriminates on.',
+  },
+  {
+    verb: 'trade',
+    acts: ['trade{BID}', 'trade{ASK}'],
+    gate: 'VERB_GATED',
+    because:
+      'one block documents both sides, and the rule that decides what may be committed — ' +
+      '`market.transferable_minor` — binds a BID and an ASK identically.',
+  },
+  {
+    verb: 'grant',
+    acts: ['grant (own)', 'grant with `on_behalf_of` (an office)'],
+    gate: 'VERB_GATED',
+    because:
+      '★ THE CONTROL CASE FOR THE WHOLE MECHANISM. `grant` means ONE thing however it is ' +
+      'parameterised, so its verb gate is already as sharp as an act gate: `RULES_VERSION` 23 put ' +
+      '§10’s `### CLEARANCE and the DOSSIER` behind `grant`/`revoke`/`audit` plus `holdsGrant` and ' +
+      'it cost a newcomer **74 characters** against §11E’s 3,360, through the same catalog and the ' +
+      'same mechanism. That is why verb gating is not replaced here — it is only as sharp as the ' +
+      'verb, and for thirty-odd verbs the verb is sharp enough.',
+  },
+  {
+    verb: 'set_delivery_intent',
+    acts: ['set_delivery_intent{LEVY}'],
+    gate: 'VERB_GATED',
+    because: 'one obligation is offered today, and its only home is §5’s Levy block, which is FLOOR.',
+  },
+]);
+
+/**
+ * Every act one affordance could be named by, **before** the vocabulary filter.
+ *
+ * Exported separately from {@link actTokensOf} because the unfiltered list is what the *tripwire*
+ * needs: `build` grew from two kinds to four across three features and nothing noticed, because a
+ * new `kind` is a new param VALUE and no test was watching params. `prompt.test.ts` sweeps a real
+ * world through this function and fails when a verb's offers disagree about their discriminator
+ * while {@link CONTRACT_MULTI_MEANING_VERBS} has no row for it.
+ *
+ * Deterministic and total: unknown params, missing params and a partial observation all produce
+ * the empty list.
+ */
+export function discriminatorsOf(verb: string, params: unknown): readonly string[] {
+  const bag = typeof params === 'object' && params !== null ? (params as Record<string, unknown>) : {};
+  const tokens: string[] = [];
+  for (const key of ACT_VALUE_KEYS) {
+    const value = bag[key];
+    if (typeof value === 'string' && value.length > 0) tokens.push(`${verb}{${value}}`);
+  }
+  for (const key of ACT_SUBJECT_KEYS) {
+    const value = bag[key];
+    if (value !== undefined && value !== null) tokens.push(`${verb}{${key.toUpperCase()}}`);
+  }
+  return tokens;
+}
+
+/**
+ * Which acts one affordance names, **as the catalog spells them**. The only producer of
+ * {@link ContractSituation.acts}.
+ *
+ * Filtered to {@link CONTRACT_ACTS}, so the situation carries exactly the vocabulary the catalog
+ * reads and no more — which is what keeps a declared position writable and stops a token nothing
+ * gates on from existing. A filtered-out discriminator reads as "no act", which is safe because
+ * {@link unitGrade} still has the verb list and the predicates.
+ */
+export function actTokensOf(verb: string, params: unknown): readonly string[] {
+  return discriminatorsOf(verb, params).filter((token) => CONTRACT_ACTS.has(token));
+}
 
 /**
  * Every selectable unit of the player contract, in document order, each with the rule for
@@ -192,7 +545,7 @@ const S12 = '## 12. Getting good';
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of forty-seven could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of fifty-five could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -229,14 +582,27 @@ const S12 = '## 12. Getting good';
  * is a section reordered, and the cast should notice — {@link loadContractDocument} returns
  * `null` for any catalogued `##` or `###` heading that moved, whatever this wake needs.
  *
+ * ── ★ A UNIT MAY GATE ON AN ACT, NOT ONLY A VERB ─────────────────────────────
+ *
+ * {@link ContractUnit.acts} and {@link CONTRACT_ACTS}. Read the note on
+ * {@link ContractSituation.acts} for why: three units in a row were gated on a verb that had
+ * grown a second meaning, and the third one — §11E on `build` — put a **campaign section in a
+ * newcomer's first wake**. `verbs` is still right for a rule that is genuinely verb-wide;
+ * `acts` is for a rule that belongs to one KIND of a verb. Both are checked before any
+ * predicate, so the guarantee below is unchanged in strength and only sharper in aim.
+ *
  * ── ONE THING THIS CATALOG RECORDS RATHER THAN FIXES ─────────────────────────
  *
- * `claim`, `deny`, `withdraw` and `propose` appear in `agent.md` **only as names in §7's verb
- * table**. §7 is FLOOR so they are always readable, and the guarantee below holds — but a row
- * in a table is not a rule, and `withdraw` is listed under `venture` there while its only
- * actual rules (`### Leaving costs a Reckoning of notice`) are about leaving a *syndicate*.
- * That is a hard-rule-4 smell in the document, not in the selection, and it wants a separate
- * change.
+ * `claim`, `deny` and `propose` appear in `agent.md` **only as names in §7's verb table**. §7 is
+ * FLOOR so they are always readable, and the guarantee below holds — but a row in a table is not
+ * a rule, and those three still want a block each.
+ *
+ * `withdraw` used to be the fourth name on that list, for a reason that turned out to be a
+ * *defect* rather than a documentation gap: its rules were in §11C, about leaving a syndicate,
+ * which is not a thing the verb does. `withdraw{VENTURE}` now selects §4's `stake` block — where
+ * the forfeit it costs is stated — and `withdraw{CAMPAIGN}` selects §11E's exits. What remains
+ * open is in the *engine*, not here: `SyndicateBook.giveNotice` has no caller, so §11C documents
+ * an exit no agent can take. Recorded in {@link CONTRACT_MULTI_MEANING_VERBS}.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
@@ -252,7 +618,11 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   {
     section: S4,
     block: null,
-    verbs: ['fill_role', 'sign', 'abandon'],
+    verbs: ['fill_role', 'sign'],
+    // `abandon` means TWO things and only one of them is a venture: `abandon {venture, role_index}`
+    // quits a role, `abandon {claim}` cedes territory. Gated on the verb, a claimant ceding ground
+    // pulled this preamble; gated here, quitting a role no longer pulls §11B's.
+    acts: ['abandon{VENTURE}', 'withdraw{VENTURE}'],
     wanted: (s) => s.inVenture,
     because: 'you hold no role in a live venture and no venture verb is offered to you',
   },
@@ -290,17 +660,33 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
    * told about — A5′'s shape, and the reason `verbs: ['fill_role']` grades it RULES rather than
    * CONTEXT.
    *
-   * `vote` is the second key because EXPOSURE is what two of §5.2's four allocation rules are computed
-   * from. A member deciding between `BY_EXPOSURE` and `INVERSE_EXPOSURE` without knowing that its own
-   * stakes are the number being weighed is voting on a figure it does not know it controls — and until
-   * `D31` there was no such figure, so nothing in the document had to say it.
+   * `vote{LEVY}` is the second key because EXPOSURE is what two of §5.2's four allocation rules are
+   * computed from. A member deciding between `BY_EXPOSURE` and `INVERSE_EXPOSURE` without knowing that
+   * its own stakes are the number being weighed is voting on a figure it does not know it controls —
+   * and until `D31` there was no such figure, so nothing in the document had to say it.
+   *
+   * ── ★ `vote`, NOT `vote{LEVY}`, WAS THE SECOND INSTANCE OF THE `build` DEFECT ──
+   *
+   * There are two ballots. The Levy's picks between `BY_STORES`, `BY_EXPOSURE`, `EVEN` and
+   * `INVERSE_EXPOSURE`; the **Charge's** picks between `EVEN`, `BY_CLAIMS` and `BY_TIER` and reads no
+   * EXPOSURE at all. This block is 4,462 characters of EXPOSURE, so a claimant with an open Charge
+   * ballot and no venture role was being charged for the rules of a quantity its ballot does not read.
+   * §11B's own CHARGE block is where `vote{CHARGE}` belongs and it now claims it.
+   *
+   * ── AND `withdraw{VENTURE}`, WHICH HAD ITS RULES IN THE WRONG SECTION ENTIRELY ──
+   *
+   * *"`withdraw` from a venture you have staked in and the stake is **forfeit to the other
+   * parties**"* is in this block, and it is the only place the document says so. Until now
+   * `withdraw` selected §11C's *syndicate* notice rules instead — the wrong rules, for an act the
+   * engine cannot perform. Being handed the wrong rule is worse than being handed none.
    */
   {
     section: S4,
     block: '### The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
-    verbs: ['fill_role', 'vote'],
+    verbs: ['fill_role'],
+    acts: ['vote{LEVY}', 'withdraw{VENTURE}'],
     wanted: (s) => s.inVenture,
-    because: 'neither `fill_role` nor `vote` is offered to you this wake, so there is no bid to place',
+    because: 'neither `fill_role` nor the Levy ballot is offered to you this wake, so there is no bid to place',
   },
 
   // ── §5 · the clock. All floor: nobody sits the Levy out (A14).
@@ -371,6 +757,29 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     wanted: (s) => s.holdsGrant,
     because: 'no grant verb is offered to you this wake',
   },
+  // ── ★ THE CLEARANCE (`RULES_VERSION` 23), AND WHY IT IS `required` RATHER THAN `wanted` ──
+  //
+  // Every other §10 block is `wanted`: knowing what a grant IS matters and is not an A5′ rule.
+  // This one is different, and the difference is the whole reason the mechanic needs a section.
+  //
+  // A loss LIMIT is recoverable — it expires, it is bounded, and the number was on the affordance.
+  // A CLEARANCE is not: a cleared delegate can cut a DOSSIER, the copy is permanent, it travels to
+  // any principal, and **revoking the grant takes back nothing already taken.** A grantor that
+  // signs a clearance without knowing that has accepted an unbounded, irreversible exposure on the
+  // strength of a preview it did not understand — which is A7 failing at the one axis with no
+  // upper bound in currency. And a DELEGATE holding a clearance is holding somebody else's secret
+  // with no rule telling it what the act costs.
+  //
+  // So it is `required` for anyone on either side of a grant, and it is claimed by the same three
+  // verbs: a member offered `grant` needs it before it signs, and a member offered `audit` cannot
+  // price the action without it.
+  {
+    section: S10,
+    block: '### CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
+    verbs: ['grant', 'revoke', 'audit'],
+    required: (s) => s.holdsGrant,
+    because: 'you are neither party to a grant nor offered one, so no clearance can exist',
+  },
 
   // ── §11 · the Commons. The preamble carries the Commons-bound `move` REFUSAL, which is
   //    why `move` is claimed here and not in §7: being refused for that rule is the AGT-S2
@@ -422,15 +831,20 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     // rules — it costs `fuel`, which only the FRONTIER makes, and its fit is FROZEN at build —
     // belong in the same block as the ANCHOR's "needs a posted bond". Same verb, same trigger, no
     // second preamble. §11D keeps the battle itself.
-    block: '### `build` is THREE different acts — read the `kind`',
+    block: '### `build` is FOUR different acts — read the `kind`',
     verbs: ['build'],
     because: '`build` is not offered to you this wake',
   },
   {
     section: S11A,
+    // The block is named for one kind, so it is gated on one kind. Measured on a swept 900-tick
+    // world: `build {kind:"HULL"}` was offered in 133 observations and `build {kind:"WORKS"}` in 46,
+    // so a shipwright with no affordable WORKS was reading how to raise one. The kind block above
+    // still reaches it — that is the one that documents all four.
     block: '### Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
-    verbs: ['build'],
-    because: '`build` is not offered to you this wake',
+    verbs: [],
+    acts: ['build{WORKS}'],
+    because: 'no WORKS is offered to you this wake — you cannot afford one where you stand',
   },
   {
     section: S11A,
@@ -446,8 +860,18 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     // anchor's manufactured half is a price no MARCHES or FRONTIER seat can pay out of local
     // production, and a claimant refused for a shortfall in a good it was never told it cannot make
     // has been billed by a rule nobody showed it.
+    // ── ★ `refine{ALLOY}`, NOT `refine`, AND THE FIX COSTS ZERO CHARACTERS ────
+    //
+    // `refine` means two recipes: `{system}` makes the ration every obligation is payable in, and
+    // `{kind:"ALLOY", …}` makes the good that buys ground. This block is the second one, so it is
+    // gated on the second one. Measured cost of the change: **0 on all five positions**, because
+    // `wanted` already covers everybody who works ground and the engine offers both recipes off the
+    // same lot (1,122 of 1,122 swept observations carried both). Changed anyway — a gate that is
+    // right only because two populations coincide stops being right the day the rates diverge, and
+    // the rates are `ALLOY_IN_BY_TIER`, which is per-tier already.
     block: '### The fourth good — the one only the COMMONS makes, and the one that flows the other way',
-    verbs: ['refine', 'haul'],
+    verbs: ['haul'],
+    acts: ['refine{ALLOY}'],
     required: (s) => s.holdsClaim,
     wanted: (s) => s.holdsWorks || s.canBuildWorks || s.holdsClaim,
     because: 'you neither work ground that makes ore nor hold ground that spends alloy',
@@ -499,6 +923,97 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   //    whole, which is why it was in CONTRACT_NOT_EXCERPTED — but a member about to take
   //    territory needs 1,983 of it, and a claimant needs the rest for A5′ reasons: never a
   //    lapse against a claimant that was never shown what it owed.
+  // ══════════════════════════════════════════════════════════════════════════
+  // §11E — CAMPAIGNS. All six blocks are gated RULES, never FLOOR.
+  //
+  // FLOOR is the expensive placement — every position pays for it — and a campaign is reachable only
+  // by a principal whose holding stands one lane from somebody else's claim, which is a narrow state.
+  //
+  // ── ★ THIS SECTION WAS GATED ON `build`, AND THAT WAS NOT A GATE AT ALL ───
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // The comment that used to sit here said *"`build` is shared with §11A and §11B and that is
+  // correct: the `kind` block explains the fourth kind, and this section is what the fourth kind
+  // DOES. Same verb, same trigger, no second preamble."* Every clause of that is true and the
+  // conclusion was still wrong, because **`build` is offered to essentially every principal** — it
+  // also raises a WORKS. Measured:
+  //
+  //   newcomer's first wake      39,489 → 43,032   (+3,543)
+  //   mid-game in the Commons    47,877 → 51,420   (+3,543)
+  //   about to take territory    48,750 → 52,293   (+3,543)
+  //   largest reachable          65,323 → 68,866   (+3,543)
+  //
+  // Identical on every position, including a newcomer on its first wake — 8% of its excerpt for a
+  // mechanic it cannot reach for many Reckonings, since a campaign needs a lane-adjacent CLAIMED
+  // system and twice a claim bond. That is the most cost-sensitive reader in the game paying for
+  // the one section it provably cannot use.
+  //
+  // So the gate is the ACT: `build{CAMPAIGN}` is what the affordance list actually publishes when a
+  // campaign is declarable, and it is checked with exactly the precedence the verb had — before any
+  // predicate, never dropped for length. The situation half is `inCampaign`, for the party to a
+  // running one that is offered no verb this wake and still owes the clock a decision.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    section: S11E,
+    block: null,
+    verbs: [],
+    acts: ['build{CAMPAIGN}', 'join{CAMPAIGN}', 'withdraw{CAMPAIGN}'],
+    wanted: (s) => s.inCampaign,
+    because: 'no campaign is offered to you this wake and you are party to none',
+  },
+  {
+    section: S11E,
+    block: '### Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}`',
+    verbs: [],
+    acts: ['build{CAMPAIGN}'],
+    because: 'no campaign is offered to you this wake',
+  },
+  {
+    section: S11E,
+    // The PULSE block goes to anyone offered a campaign `join` too, and that is the load-bearing
+    // pairing: an ally that does not know force is counted AT THE PULSE will sign up and march away,
+    // contributing nothing it was told it would. A5′ in the agent-facing text rather than in the
+    // engine.
+    //
+    // `required` for a party to a live one, and this is the §9A `inBattle` argument one clock out: a
+    // campaign pulses once a Reckoning **whether or not you are awake**, force is counted at that
+    // instant, and a starved pulse walks toward forfeiting the whole bond. A defender that was never
+    // given the timetable loses ground to a rule nothing showed it.
+    block: '### The PULSE — once a Reckoning, on a published clock, whether you are awake or not',
+    verbs: [],
+    acts: ['build{CAMPAIGN}', 'join{CAMPAIGN}'],
+    required: (s) => s.inCampaign,
+    because: 'no campaign is offered to you this wake and you are party to none',
+  },
+  {
+    section: S11E,
+    block: '### Reading it — `holding.campaigns[]`',
+    verbs: [],
+    acts: ['build{CAMPAIGN}', 'join{CAMPAIGN}', 'withdraw{CAMPAIGN}'],
+    wanted: (s) => s.inCampaign,
+    because: 'no campaign is offered to you this wake and you are party to none',
+  },
+  {
+    section: S11E,
+    // `join{CAMPAIGN}`, not `join`. A raid's `join {raid, side}` and a campaign's
+    // `join {campaign, side, system}` are different sections of the document, and `side` exists on
+    // both — so the discriminator is which SUBJECT the affordance names, never the side.
+    block: '### Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}`',
+    verbs: [],
+    acts: ['join{CAMPAIGN}'],
+    because: 'no campaign side is open to you this wake',
+  },
+  {
+    section: S11E,
+    // `withdraw{CAMPAIGN}` is on this block because the LIFT is one of the four endings, and an
+    // attacker that cannot see the cheaper way to lose will hold a losing war to its bond-forfeiting
+    // end. `wanted` on `inCampaign` covers the attacker whose lift is refused this particular wake.
+    block: '### Getting out — and there are four ways, not one',
+    verbs: [],
+    acts: ['build{CAMPAIGN}', 'withdraw{CAMPAIGN}'],
+    wanted: (s) => s.inCampaign,
+    because: 'no campaign is offered to you this wake and you are party to none',
+  },
   {
     section: S11B,
     block: null,
@@ -516,6 +1031,12 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     section: S11B,
     block: '### Paying for it — the CHARGE',
     verbs: [],
+    // ★ The two acts this block documents, by name: `deliver {obligation:"CHARGE", system}` and
+    // `vote {ballot:"CHARGE", rule}`. Both were already covered by `required: holdsClaim` — the
+    // engine only offers either to a claimant — and they are named anyway, because `vote{CHARGE}`
+    // came OFF §4's EXPOSURE block in this change and a ballot whose rules are claimed by no unit
+    // is how a verb ends up with rules nobody can read.
+    acts: ['deliver{CHARGE}', 'vote{CHARGE}'],
     // A5′. `obligations.charge` carries the arithmetic; this is the rule behind it, and a
     // claimant billed from a rule it was never given is the libel case §15.4 is about.
     required: (s) => s.holdsClaim,
@@ -524,7 +1045,12 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   {
     section: S11B,
     block: '### Losing it — arrears, the window, and two exits that beat a lapse',
-    verbs: ['abandon'],
+    // `abandon{CLAIM}`, not `abandon`. Quitting a venture role is the same verb, and gated on it
+    // this block plus §11B's preamble cost a mid-game member with no territory 2,962 characters of
+    // sovereignty. `publish_offer {cede}` is the other exit here and stays verb-free: it is reached
+    // by `inArrears` and `holdsClaim`, which is every principal that has one to sell.
+    verbs: [],
+    acts: ['abandon{CLAIM}'],
     required: (s) => s.inArrears,
     wanted: (s) => s.holdsClaim,
     because: 'no claim of yours is in arrears',
@@ -561,8 +1087,29 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   },
   {
     section: S11C,
+    // ── ★ THIS CLAIMED `withdraw`, AND IT IS THE WORST VARIANT OF THE DEFECT ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // The engine's `withdraw` takes `{campaign}` (a campaign LIFT) or `{venture, role_index}` (a
+    // role exit) and **nothing else**: `SyndicateBook.giveNotice` has no caller, so no verb in this
+    // world leaves a syndicate at all. So the gate was inverted twice over — every venture exit and
+    // every campaign lift pulled this block plus §11C's preamble, and the act the block documents
+    // could never select it, because that act does not exist.
+    //
+    // The other two instances shipped rules to a reader that could not use them. This one shipped
+    // **the wrong rules to a reader that had a real decision to make**: a member quitting a staked
+    // role was handed "you stay a sitting member until your notice expires" instead of §4's *"the
+    // stake is forfeit to the other parties"*, which is the sentence that act actually costs it.
+    // `withdraw{VENTURE}` now selects that block.
+    //
+    // Kept in the catalog on `inSyndicate` alone rather than moved to CONTRACT_NOT_EXCERPTED: the
+    // rule is still a TRUE fact about a house a member sits in — it is why nobody can drain the
+    // pool the moment a vote goes against them — and that is worth reading whether or not the exit
+    // is buildable. That the exit has no verb is a gap in the syndicate module, not in the
+    // selection, and it is recorded in CONTRACT_MULTI_MEANING_VERBS so it is looked at on purpose.
+    // ══════════════════════════════════════════════════════════════════════════
     block: '### Leaving costs a Reckoning of notice',
-    verbs: ['withdraw'],
+    verbs: [],
     wanted: (s) => s.inSyndicate,
     because: 'you sit in no syndicate to give notice on',
   },
@@ -588,9 +1135,49 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   {
     section: S11D,
     block: '### Answering either one — `yield` · `fight` · join, or say nothing',
-    verbs: ['yield', 'fight', 'join'],
+    // `join{RAID}`, not `join`. A campaign ally is offered `join {campaign, side, system}` and was
+    // being handed §11D's preamble plus this block — predation rules, to a member whose standoff is
+    // a campaign and whose Commons neighbours A8 makes unreachable. The mirror of §11E getting
+    // `join` from a raid bystander: one verb, two sections, and it was wrong in both directions.
+    verbs: ['yield', 'fight'],
+    acts: ['join{RAID}'],
     required: (s) => s.underRaid,
     because: 'no raid or demand stands against you',
+  },
+  // ── ★ THE COALITION, AND IT IS AN ORPHAN HEADING'S FIX ────────────────────
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // **THE SECTION SHIPPED WITHOUT A UNIT AND THE CAST COULD NEVER HAVE READ IT.** `RULES_VERSION`
+  // 24 added 3,263 characters to §11D — `join`'s price, the `march` block with its ETA, the party
+  // and formation caps, why paying early buys nothing — and claimed none of it. So the mechanic the
+  // whole wave existed to open had rules no member could be shown: the fourth DEPTH of this
+  // project's recurring defect, and the one the merge caught automatically rather than a reviewer.
+  //
+  // Three depths already recorded: a verb with no affordance, an affordance nothing selects, an
+  // invariant whose subject cannot occur. This is **a published slot nothing fills** — and it is the
+  // same shape as `join{RAID}` itself, which master found *"wrong in both directions"*.
+  //
+  // ── WHY THIS GATE, AND WHY NOT `move` ────────────────────────────────────
+  //
+  // `acts: ['join{RAID}']` covers the reader already standing at the stage. `nearStandoff` covers
+  // the one that still has to walk, and it is not a convenience: a marching bystander is offered
+  // `move` and NOT `join`, because a `join` affordance for a hand that is not there is a move the
+  // handler refuses (AGT-S2). Gating on `move` instead would ship this to every principal alive for
+  // every hand it owns, which is §11E's +3,543 defect with a different section number.
+  //
+  // `wanted`, not `required`: taking a side is an option with a clock, not an A5′ problem. A member
+  // that is never shown it loses an opportunity; the `required` rows in this section are the ones
+  // where silence costs goods or a hull.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    section: S11D,
+    block: '### Standing with somebody else — `join`, and the coalition it makes',
+    verbs: [],
+    acts: ['join{RAID}'],
+    wanted: (s) => s.nearStandoff,
+    because:
+      'no standoff you are not already a side of is within reach of a hand — `join` costs no ' +
+      'aggression capacity, so this is the one act in §9 whose price is entirely presence',
   },
   {
     section: S11D,
@@ -698,16 +1285,22 @@ export const CONTRACT_NOT_EXCERPTED: readonly {
  */
 export const EVERY_SITUATION: ContractSituation = Object.freeze({
   verbs: new Set(CONTRACT_CATALOG.flatMap((unit) => [...unit.verbs])),
+  // Derived from the catalog for the same reason `verbs` is: the ceiling has to be *the whole
+  // catalog*, and a hand-typed act list would silently stop being that the next time a unit is
+  // added. `CONTRACT_ACTS` is pinned against this in `prompt.test.ts`, both directions.
+  acts: new Set(CONTRACT_CATALOG.flatMap((unit) => [...(unit.acts ?? [])])),
   inCommons: true,
   commonsBound: true,
   outsideCommons: true,
   inVenture: true,
+  inCampaign: true,
   holdsGrant: true,
   inSyndicate: true,
   holdsClaim: true,
   inArrears: true,
   anchorCold: true,
   underRaid: true,
+  nearStandoff: true,
   inBattle: true,
   holdsWorks: true,
   canBuildWorks: true,
@@ -738,19 +1331,69 @@ const CLAIMANT_CANNOT_HOLD: ReadonlySet<string> = new Set([
   'admit',
 ]);
 
+/**
+ * Verbs and acts a **Commons** holding is never offered, each for a reason in the engine.
+ *
+ * A8 is the big one and it is asserted against a real observation in `prompt.test.ts`: hostile
+ * action inside the Commons is *invalid*, not merely rare, so nothing stands against a Commons
+ * holding and it answers nothing. Territory is the other: a claim cannot exist on Commons ground,
+ * so the bond, the two exits and the Charge's own ballot are all unreachable. And §16.6 MUST-1
+ * forbids a campaign DEPOT in the Commons — *"the one place nobody may attack cannot also be the
+ * staging ground for attacking everywhere else"* — which is why `build{CAMPAIGN}` is here and
+ * `join{CAMPAIGN}` is **not**: a Commons principal really is offered both sides of a distant war.
+ */
+const COMMONS_CANNOT_HOLD: ReadonlySet<string> = new Set([
+  // A8.
+  'yield', 'fight', 'demand', 'engage', 'join{RAID}',
+  // Territory is outside the Commons.
+  'post_bond', 'abandon{CLAIM}', 'deliver{CHARGE}', 'vote{CHARGE}',
+  // §16.6 MUST-1, and only an attacker lifts its own war.
+  'build{CAMPAIGN}', 'withdraw{CAMPAIGN}',
+]);
+
+/** Verbs and acts a **landless** holding is never offered: there is no claim to bill or cede. */
+const LANDLESS_CANNOT_HOLD: ReadonlySet<string> = new Set([
+  'abandon{CLAIM}', 'deliver{CHARGE}', 'vote{CHARGE}',
+]);
+
+/**
+ * {@link EVERY_SITUATION}'s verbs and acts minus one exclusion set. Derived, never typed out.
+ *
+ * The alternative was a second hand-written list per position, and a fixture that keeps
+ * `join{RAID}` while dropping `join` is asserting something the engine cannot produce — which is
+ * exactly how the `##` version's arithmetic went wrong. One set covers both, because an act token
+ * is excluded either by name or by its verb being excluded.
+ */
+function offeredExcept(cannotHold: ReadonlySet<string>): {
+  readonly verbs: Set<string>;
+  readonly acts: Set<string>;
+} {
+  return {
+    verbs: new Set([...EVERY_SITUATION.verbs].filter((verb) => !cannotHold.has(verb))),
+    acts: new Set(
+      [...EVERY_SITUATION.acts].filter(
+        (act) => !cannotHold.has(act) && !cannotHold.has(act.slice(0, act.indexOf('{'))),
+      ),
+    ),
+  };
+}
+
 /** Nothing held, nothing offered. The other end of the range. */
 export const NO_SITUATION: ContractSituation = Object.freeze({
   verbs: new Set<string>(),
+  acts: new Set<string>(),
   inCommons: false,
   commonsBound: false,
   outsideCommons: false,
   inVenture: false,
+  inCampaign: false,
   holdsGrant: false,
   inSyndicate: false,
   holdsClaim: false,
   inArrears: false,
   anchorCold: false,
   underRaid: false,
+  nearStandoff: false,
   inBattle: false,
   holdsWorks: false,
   canBuildWorks: false,
@@ -764,7 +1407,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are forty-seven: 2^47 is not enumerable, and it
+ * was free. At `###` granularity there are fifty-five: 2^55 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -817,6 +1460,21 @@ export const CONTRACT_POSITIONS: readonly {
       commonsBound: true,
       canBuildWorks: true,
       verbs: new Set(['create', 'publish_offer', 'message', 'graduate', 'move', 'build', 'form']),
+      // ── ★ `build{WORKS}`, AND *NOT* `build{CAMPAIGN}` — MEASURED, NOT ASSUMED ──
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // This is the row the whole `acts` mechanism exists for. Gated on the VERB, §11E cost this
+      // position **+3,543 characters — 8% of its excerpt — for a mechanic it cannot reach**: a
+      // campaign needs a lane-adjacent CLAIMED system, twice a claim bond, and a depot, and §16.6
+      // MUST-1 makes a Commons depot INVALID rather than merely refused. `observe.ts`'s own
+      // withheld reason says so in as many words: *"a campaign's DEPOT may never be there (§16.6
+      // MUST-1)"*.
+      //
+      // So `build{CAMPAIGN}` and `withdraw{CAMPAIGN}` are provably unreachable from the Commons —
+      // the first needs the depot, the second is the attacker's own lift — and this row does not
+      // declare them.
+      // ══════════════════════════════════════════════════════════════════════════
+      acts: new Set(['build{WORKS}']),
     },
   },
   {
@@ -832,7 +1490,13 @@ export const CONTRACT_POSITIONS: readonly {
       verbs: new Set([
         'create', 'publish_offer', 'message', 'elect', 'fill_role', 'sign', 'seal',
         'graduate', 'move', 'build', 'refine', 'form', 'apply', 'deliver', 'vote',
+        // A role in a LIVE venture is offered both exits unconditionally (R5), and this row is
+        // the maximal one that holds a role. Neither verb gates any unit any more — that is the
+        // point — but a position that omits an offered verb is a ceiling checked against the
+        // wrong thing.
+        'withdraw', 'abandon',
       ]),
+      acts: new Set(['build{WORKS}', 'refine{ALLOY}', 'vote{LEVY}', 'withdraw{VENTURE}', 'abandon{VENTURE}']),
     },
   },
   {
@@ -848,6 +1512,56 @@ export const CONTRACT_POSITIONS: readonly {
         'create', 'publish_offer', 'message', 'elect', 'seal', 'move', 'build', 'refine',
         'post_bond', 'deliver', 'vote', 'graduate',
       ]),
+      // A graduated holding CAN stage a campaign — the depot rule is what excludes the Commons,
+      // not the lack of a claim — so this row keeps `build{CAMPAIGN}` and pays for §11E. It does
+      // not keep `withdraw{CAMPAIGN}`: only the attacker of a LIVE campaign may lift one, and
+      // that principal is `at war` below.
+      acts: new Set(['build{WORKS}', 'refine{ALLOY}', 'vote{LEVY}', 'build{CAMPAIGN}']),
+    },
+  },
+  {
+    // ── ★ THE SIXTH POSITION, AND IT IS WHERE §11E's BILL BELONGS ─────────────
+    //
+    // Added with the `acts` gate, because the four rows above were each paying for the campaign
+    // section and none of them was the principal that uses it. This one is: party to a live
+    // campaign, offered all three of its acts, outside the Commons.
+    //
+    // ★ AND IT IS THE ROW THAT RECORDS AN ENGINE FINDING. `join {campaign, side}` has **no tier
+    // gate at all** — `campaign/roster.ts:joinRefusal` asks for a seated holding and, for the
+    // ATTACKER side, free capital — and `campaignViewsFor` returns every LIVE campaign to every
+    // principal. Measured directly against the campaign fixture: a principal seated in the
+    // COMMONS is offered both sides of a war two tiers away. So `join{CAMPAIGN}` is reachable
+    // from anywhere, which is why the Commons rows above would legitimately grow §11E's
+    // `join`-gated half the day a campaign exists — and why the two blocks they no longer carry
+    // are the two that are gated on the acts a Commons holding provably cannot be offered.
+    // ⚑ **THIS ROW IS ARGUED, NOT SWEPT, AND THE NEXT AUTHOR SHOULD KNOW WHICH.**
+    //
+    // The coverage test drives a heuristic world, and that world has never declared a campaign — a
+    // 900-tick 8-member sweep offered `build {kind:"HULL"}` 133 times and `build {kind:"CAMPAIGN"}`
+    // **zero**. So every other row here is checked against observations the engine really produced,
+    // and the campaign acts on this one are checked against `campaign/roster.ts` and the campaign
+    // fixture instead. Removing an act from a row that some *other* reachable row still dominates
+    // is therefore invisible to the sweep — mutation-verified, and it changes no character, because
+    // the units it would drop are `wanted` for the same population anyway.
+    //
+    // The day the cast declares a campaign unaided, re-run the sweep and this row earns its numbers.
+    name: 'at war — party to a live campaign, offered every campaign act',
+    reachable: true,
+    situation: {
+      ...NO_SITUATION,
+      outsideCommons: true,
+      inCampaign: true,
+      inVenture: true,
+      holdsWorks: true,
+      canBuildWorks: true,
+      verbs: new Set([
+        'create', 'publish_offer', 'message', 'elect', 'seal', 'move', 'build', 'refine',
+        'post_bond', 'deliver', 'vote', 'graduate', 'join', 'withdraw', 'haul',
+      ]),
+      acts: new Set([
+        'build{WORKS}', 'refine{ALLOY}', 'vote{LEVY}',
+        'build{CAMPAIGN}', 'join{CAMPAIGN}', 'withdraw{CAMPAIGN}',
+      ]),
     },
   },
   {
@@ -861,12 +1575,72 @@ export const CONTRACT_POSITIONS: readonly {
       ...EVERY_SITUATION,
       inCommons: false,
       commonsBound: false,
-      // See CLAIMANT_CANNOT_HOLD: six verbs come off, each for a reason in the engine.
-      verbs: new Set(
-        [...EVERY_SITUATION.verbs].filter(
-          (verb) => !CLAIMANT_CANNOT_HOLD.has(verb),
-        ),
-      ),
+      // See CLAIMANT_CANNOT_HOLD: six verbs come off, each for a reason in the engine, and their
+      // acts come off with them — see `offeredExcept`.
+      ...offeredExcept(CLAIMANT_CANNOT_HOLD),
+    },
+  },
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ★ THE TWO ROWS BELOW EXIST BECAUSE THE COVERAGE TEST WAS **VACUOUS**.
+  //
+  // *"★ THE POSITIONS DOMINATE A REAL WORLD — swept, not assumed"* asks whether some declared
+  // position dominates every situation a live world produces, and it could never fail: the
+  // analytic ceiling has **every fact true and every verb offered**, so it dominates anything by
+  // construction. The assertion was therefore a tautology dressed as coverage — this project's
+  // signature defect (an invariant whose subject cannot occur) inside the guard written to stop the
+  // position list going stale.
+  //
+  // It had gone stale, and not slightly. Requiring a **reachable** position to dominate, and
+  // sweeping the same 6-member 240-tick world the test already drives, **120 of 120 observations
+  // escaped** — every single one. So the unreachable ceiling row was doing 100% of the coverage and
+  // the four rows the budget is quoted by covered *nothing the world actually produces*.
+  //
+  // The fact every escape carried is `endowmentWithheld`, which is true of essentially every member
+  // of every world this repo has run (D7) and which no reachable row declared. Also missing: a
+  // Commons member inside a syndicate, and a graduated landless member with a raid standing.
+  //
+  // The five named rows above are deliberately NOT widened to fix that — they are quoted in
+  // reports and changing what they mean would make every historical number incomparable. These two
+  // are the maximal rows for the two landless tiers, so the guard has something real to hold, and
+  // each is derived by SUBTRACTION from the analytic ceiling with the engine's own reason per
+  // exclusion. `prompt.test.ts` now requires domination by a reachable row and names the escape.
+  // ══════════════════════════════════════════════════════════════════════════════
+  {
+    name: 'the Commons at its fullest — every fact and act A8 and §11B leave reachable inside it',
+    reachable: true,
+    situation: {
+      ...EVERY_SITUATION,
+      outsideCommons: false,
+      holdsClaim: false,
+      inArrears: false,
+      anchorCold: false,
+      // A8 makes hostile action here INVALID, so nothing stands against it and no battle is live.
+      underRaid: false,
+      inBattle: false,
+      // ★ And nothing is NEAR it either, which is one clause further than it looks. `nearStandoff`
+      // is *"a live standoff somebody else is in, that a hand of mine could reach"* — and a
+      // Commons-bound principal's hands may not leave the Commons at all (`commonsBoundRejection`),
+      // while A8 forbids a raid inside it. So both ends are closed and `marchTo` returns null for
+      // this principal against every stage in the galaxy.
+      //
+      // Measured before this line: the row inherited `true` from `EVERY_SITUATION` and grew **890
+      // characters** of coalition rules for an act it can never perform — §11E's defect, in the
+      // fixture that exists to measure §11E's defect.
+      nearStandoff: false,
+      ...offeredExcept(COMMONS_CANNOT_HOLD),
+    },
+  },
+  {
+    name: 'outside the Commons and landless, at its fullest — a raid standing, no ground to bill',
+    reachable: true,
+    situation: {
+      ...EVERY_SITUATION,
+      inCommons: false,
+      commonsBound: false,
+      holdsClaim: false,
+      inArrears: false,
+      anchorCold: false,
+      ...offeredExcept(LANDLESS_CANNOT_HOLD),
     },
   },
   {
@@ -1276,21 +2050,60 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
   // arrears, its deadline, its bond at risk and whether its anchor is hot.
   const claims = list(obligations['charge']).map(obj);
   const tier = String(holding['tier']);
+  const affordances = list(observation['affordances']).map(obj);
 
   return {
-    verbs: new Set(list(observation['affordances']).map((a) => String(obj(a)['verb']))),
+    verbs: new Set(affordances.map((a) => String(a['verb']))),
+    // ★ The act half, from the SAME rows, by the same rule for every verb. Not a second source of
+    // truth: one pass over `affordances[]` produces both, so a verb can never be present without
+    // its acts or an act without its verb.
+    acts: new Set(affordances.flatMap((a) => actTokensOf(String(a['verb']), a['params']))),
     inCommons: tier === 'COMMONS',
     commonsBound: holding['commons_bound'] === true,
     // Not `!inCommons`: an observation with no `holding` at all must not read as "predation can
     // reach you", because that would ship §11D to a stub and, worse, read as a fact.
     outsideCommons: tier === 'MARCHES' || tier === 'FRONTIER',
     inVenture: list(ventures['mine']).length > 0,
+    // `holding.campaigns[]` is every campaign this principal can SEE — §12.1's siege-clock slot — so
+    // the party test is `your_side`, never the row's existence. Reading it as `length > 0` would make
+    // every principal in the galaxy a party to every war, which is the `holding.sovereignty !== null`
+    // mistake `situationalFocus` was caught making one function down.
+    inCampaign: list(holding['campaigns']).some((row) => obj(row)['your_side'] !== null),
     holdsGrant: list(grants['granted']).length > 0 || list(grants['held']).length > 0,
     inSyndicate: list(grants['syndicates']).length > 0,
     holdsClaim: claims.length > 0,
     inArrears: claims.some((claim) => Number(claim['arrears'] ?? 0) > 0),
     anchorCold: claims.some((claim) => claim['anchor_hot'] === false),
-    underRaid: list(obligations['raid']).length > 0,
+    // ── ★ `your_side`, NOT `length` — AND THE COALITION WAVE IS WHY ───────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // This read `length > 0`, which was true of `obligations.raid[]` for as long as that list held
+    // only standoffs the reader was a party to. `RULES_VERSION` 24 widened `raidViewsFor` to include
+    // **a live standoff a hand could still walk to**, so the list now carries rows about other
+    // principals — and `length > 0` silently turned every bystander into a target.
+    //
+    // What that ships: §11D's preamble and `### Answering either one` are both `required` on this
+    // field, and they document `yield` and `fight`, which only the TARGET may send. So a member
+    // nothing stands against would be handed the deadline rules for somebody else's deadline. That
+    // is §11E's defect exactly — a rules surface reaching a population that cannot perform the act —
+    // and it is `inCampaign`'s mistake verbatim: *"reading it as `length > 0` would make every
+    // principal in the galaxy a party to every war."* Two waves, one predicate, same error.
+    //
+    // The field's own doc says *"a demand or a world raid stands against **it**"*, so `length` was
+    // already the wrong reading of a correct sentence.
+    // ══════════════════════════════════════════════════════════════════════════
+    underRaid: list(obligations['raid']).some((row) => obj(row)['your_side'] === 'TARGET'),
+    // ★ The other half of the same split: a standoff somebody ELSE is in, close enough to reach.
+    //
+    // `your_side === null` is *"in the list and not in the fight"*, and the list is already the
+    // reachable set — `raidViewsFor` returns a non-party row only when this principal has an IDLE
+    // hand at the stage or one that could march there before the window shuts. So this is exactly
+    // §9's escort-market demand side as the reader sees it, and it needs its own field for
+    // `inCampaign`'s reason: **no verb announces it.** A bystander standing at the stage is offered
+    // `join`; a bystander two lanes off is offered `move`, which every principal alive is offered
+    // for every hand it owns — so gating the coalition rules on the verb would make them either free
+    // to everybody or invisible to the reader who is walking.
+    nearStandoff: list(obligations['raid']).some((row) => obj(row)['your_side'] === null),
     // `obligations.battle`, adjacent to `raid` because a battle is what a raid row becomes when
     // its target answers FIGHT. Same block, different deadline.
     inBattle: list(obligations['battle']).length > 0,
@@ -1310,17 +2123,30 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * ══════════════════════════════════════════════════════════════════════════════
  * **THE GUARANTEE IS THE SECOND CLAUSE AND IT LIVES HERE, NOT IN THE PREDICATES.**
  *
- * A unit one of whose `verbs` is offered in `affordances[]` is `RULES` — checked before any
- * per-unit predicate, and `RULES` is never dropped for any reason including length. That
- * ordering is the whole safety argument: an agent is refused for breaking a rule it was given,
- * never for one it was not. There are forty-seven units; put the same rule inside each
- * predicate and the forty-fifth will forget it.
+ * A unit one of whose `verbs` — **or one of whose `acts`** — is offered in `affordances[]` is
+ * `RULES`: checked before any per-unit predicate, and `RULES` is never dropped for any reason
+ * including length. That ordering is the whole safety argument: an agent is refused for breaking
+ * a rule it was given, never for one it was not. There are fifty-five units; put the same rule
+ * inside each predicate and the forty-fifth will forget it.
+ *
+ * ── ★ `acts` IS A SECOND DISCRIMINATOR AT THE SAME PRECEDENCE, NOT A WEAKER ONE ──
+ *
+ * The two loops are adjacent and both sit above `required`/`wanted`, so the property does not
+ * change shape when a unit moves from a verb gate to an act gate: **whatever is offered, its
+ * rules ship.** What changes is only the aim — `build` matched four acts and now matches the
+ * ones a unit says it documents. `prompt.test.ts` walks every verb AND every act of every unit
+ * and asserts that offering it alone pulls that unit in at `RULES`, and asserts the walk is
+ * non-vacuous (a unit whose lists have both been emptied is caught by the pinned map, because an
+ * empty list means the loop body never runs and an exhaustive test over it proves nothing).
  * ══════════════════════════════════════════════════════════════════════════════
  */
 export function unitGrade(unit: ContractUnit, situation: ContractSituation): UnitGrade {
   if (unit.floor === true) return 'FLOOR';
   for (const verb of unit.verbs) {
     if (situation.verbs.has(verb)) return 'RULES';
+  }
+  for (const act of unit.acts ?? []) {
+    if (situation.acts.has(act)) return 'RULES';
   }
   if (unit.required?.(situation) === true) return 'RULES';
   if (unit.wanted?.(situation) === true) return 'CONTEXT';
