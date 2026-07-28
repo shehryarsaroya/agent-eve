@@ -218,6 +218,40 @@ async function main(): Promise<void> {
     case 'act': {
       const verb = rest[0];
       if (verb === undefined) throw new Error('act needs a verb');
+
+      // ── AN AFFORDANCE MAY BE SUBMITTED VERBATIM ──────────────────────────
+      //
+      // The first probe to use this harness lost a finding to its ergonomics: it pasted a whole
+      // affordance object where the verb goes, got back *"'{...}' is not a verb in this game"*, and
+      // reported a live bug — that `create {kind:"SURVEY"}` was offered and then refused. SURVEY is a
+      // perfectly valid venture kind. The game was right and the harness was easy to hold wrong.
+      //
+      // That is worth fixing rather than documenting, because the mistake is the *natural* one:
+      // affordances arrive as `{verb, params}` and the obvious move is to send one back. Accepting
+      // that shape makes the harness match the surface it probes — and it makes a probe test exactly
+      // what was OFFERED, byte for byte, rather than a hand-retyped approximation of it. That is
+      // strictly the better experiment: the defect class this whole instrument exists to catch is an
+      // affordance that cannot be acted on, and retyping is precisely how a probe would mask one.
+      if (verb.trimStart().startsWith('{')) {
+        const aff = JSON.parse(verb) as { verb?: unknown; params?: unknown };
+        if (typeof aff.verb !== 'string') {
+          throw new Error('that JSON has no string `verb` field — paste an affordance, or pass `<verb> <params>`');
+        }
+        show(
+          `act ${aff.verb} (affordance verbatim)`,
+          await request(keypair, 'POST', 'act', {
+            actions: [
+              {
+                verb: aff.verb,
+                params: (aff.params ?? {}) as Record<string, unknown>,
+                clientSequence: Math.floor(Date.now() / 1000),
+              },
+            ],
+          }),
+        );
+        break;
+      }
+
       const params = rest[1] === undefined ? {} : (JSON.parse(rest[1]) as Record<string, unknown>);
       show(
         `act ${verb}`,
