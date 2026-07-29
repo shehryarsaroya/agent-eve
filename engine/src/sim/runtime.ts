@@ -8571,18 +8571,49 @@ export class Runtime {
   }
 
   /** One home, two callers: {@link parleysFor} for the menu and {@link parleyRefusalFor} for both. */
-  private parleyPort(): ParleyPort {
+  /**
+   * ⚑ **`tick` IS A PARAMETER BECAUSE `this.engine.tick` IS THE WRONG TICK IN A HANDLER.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * `Engine.tick` is `completedTick`, advanced at **COMMIT** — after every phase — so inside a handler
+   * `ctx.tick` is `engine.tick + 1`. The first version of this port read reach and the entitlement at
+   * `engine.tick` while spends were counted at the tick passed in: one tick of skew, landing on the
+   * Reckoning boundary the expiry rule is about.
+   *
+   * **What the skew did NOT do, stated because the first version of this note claimed it did.** It did
+   * not let last cycle's allowance fund this cycle's spend. `remaining` re-derives the allowance from
+   * the tick it is *given*, and it is the binding gate — so mutating either line above and re-running
+   * the boundary sweep leaves it green, which is how the overclaim was caught. Writing "this was a
+   * capacity leak" would have been a false statement in a docblock about a rules surface, which is the
+   * class of thing this repo has shipped three times.
+   *
+   * **What it actually did**, both worth fixing and neither a leak:
+   *
+   *   - a **false refusal** exactly at a boundary tick — an agent whose allowance opens at `ctx.tick`
+   *     but was closed at `engine.tick` hits the `allowance === 0` early return and is told it needs a
+   *     kept elective promise, one tick before that stops being true;
+   *   - a **one-tick-late grant expiry** in reach: a grant that dies at `ctx.tick` still named its
+   *     counterparty as addressable, so the menu and the verb both admitted an address that had just
+   *     become illegal.
+   *
+   * One tick, one meaning, and the fix costs a parameter. Found by reading the tick loop rather than by
+   * a test — and the test that exists now (`test/say/parley.spec.ts`'s boundary sweep) pins the
+   * *equivalence* between the published count and the shared gate, which is the property that matters
+   * whatever the next skew turns out to be.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private parleyPort(tick: number): ParleyPort {
     return {
-      reach: (principal) => this.reachFor(principal, this.engine.tick),
-      remaining: (principal, tick) =>
+      reach: (principal) => this.reachFor(principal, tick),
+      remaining: (principal, at) =>
         parleysRemaining(
           this.parleys.all,
           principal,
-          tick,
+          at,
           reckoningIndex,
-          parleyAllowanceFor(this.parleyEntitlementOf(principal, tick)),
+          parleyAllowanceFor(this.parleyEntitlementOf(principal, at)),
         ),
-      entitlement: (principal) => this.parleyEntitlementOf(principal, this.engine.tick),
+      entitlement: (principal) => this.parleyEntitlementOf(principal, tick),
       isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
       bookSize: () => this.parleys.size,
     };
@@ -8596,7 +8627,7 @@ export class Runtime {
    * menu. There is one of these, so they cannot disagree.
    */
   parleyRefusalFor(from: PrincipalId, to: PrincipalId, tick: number): Rejection | null {
-    return parleyRefusal(this.parleyPort(), from, to, tick);
+    return parleyRefusal(this.parleyPort(tick), from, to, tick);
   }
 
   /**
@@ -8641,7 +8672,7 @@ export class Runtime {
   /** `message {to, act, text}` — an ADAPTER. The operation lives in `say/parley.ts`. */
   private vParley(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const port: ParleyWritePort = {
-      ...this.parleyPort(),
+      ...this.parleyPort(ctx.tick),
       record: (entry) => {
         this.parleys.push(entry);
       },

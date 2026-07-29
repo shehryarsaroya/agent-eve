@@ -61,12 +61,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildObservation } from '../../src/api/observe.js';
 import type { PrincipalId } from '../../src/core/types.js';
+import { TICKS_PER_RECKONING } from '../../src/core/time.js';
 import { minor } from '../../src/core/units.js';
 import { AUDIT_LAG_TICKS } from '../../src/grant/dossier.js';
 import { compareIds } from '../../src/ledger/index.js';
 import { PARLEYS_PER_RECKONING, MAX_PARLEY_LENGTH } from '../../src/say/parley.js';
 import { MAX_MESSAGE_LENGTH, type Runtime } from '../../src/sim/runtime.js';
-import { act, campaignWorld, fund, tick } from '../campaign/fixture.js';
+import { act, campaignWorld, fund, runTo, tick } from '../campaign/fixture.js';
 
 function observe(runtime: Runtime, principal: PrincipalId): ReturnType<typeof buildObservation> {
   return buildObservation({
@@ -443,6 +444,107 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
         'never tell the second bidder anything.',
     ).toBeNull();
     expect(w.runtime.parleysFor(recruit, w.runtime.engine.tick).parleys_remaining, 'and now it is spent').toBe(0);
+  });
+
+  it('⚑ the MENU and the VERB agree on every tick of a Reckoning boundary — the allowance does not leak', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE REGRESSION FOR A ONE-TICK SKEW, AND IT SAT ON THE ONE BOUNDARY THE DESIGN RESTS ON.**
+    //
+    // `Engine.tick` is `completedTick`, advanced at COMMIT — after every phase — so inside a handler
+    // `ctx.tick` is `engine.tick + 1`. `parleyPort` read reach and the entitlement at `engine.tick`
+    // while spends were counted at the tick passed in, and at `ctx.tick % 288 === 0` that meant the
+    // **previous** Reckoning's inbound count funding a spend recorded in the **new** one: *"unspent
+    // capacity DOES NOT CARRY"* failing at exactly the tick it is about.
+    //
+    // Asserted as the property rather than the instance, because the instance is one tick wide and
+    // any future skew will land somewhere else: **for every tick across the boundary, the shared gate
+    // says yes exactly when the published count says there is capacity.** That is AGT-S2 as an
+    // equivalence, and it is what makes a menu trustworthy at a cycle edge.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ── THE SUBJECT MUST BE THE REPLIER, AND THE FIRST VERSION GOT THAT WRONG ──
+    //
+    // Swept against the ATTACKER, all three mutations of this guard SURVIVED: an attacker is entitled
+    // through `freeCash` and reachable through a campaign, and **both are tick-independent**, so a
+    // one-tick skew is invisible on it. The quantity that is Reckoning-scoped is the REPLY allowance,
+    // so the replier is the only principal a skew can be measured on. A guard swept against the wrong
+    // subject is this project's signature defect wearing a passing test.
+    const w = warWorld('parley-boundary', 2);
+    const replier = w.bystanders[0];
+    if (replier === undefined) throw new Error('no replier');
+
+    // One approach, inside Reckoning 0. That is the replier's whole allowance and it expires with the
+    // cycle: nobody has paid for it to speak in Reckoning 1.
+    expect(act(w.runtime, w.attacker, 'message', { to: replier, act: 'offer', text: 'join me' })).toBeNull();
+    const boundary = TICKS_PER_RECKONING;
+    expect(w.runtime.engine.tick, 'the approach must land inside Reckoning 0').toBeLessThan(boundary);
+    const capacity = w.runtime.parleysFor(replier, w.runtime.engine.tick + 1);
+    expect(capacity.distinct_counterparties, 'the replier is entitled to nothing of its own').toBe(0);
+    expect(capacity.earned_minor).toBe(0);
+    expect(capacity.parleys_remaining, 'and holds exactly the one reply it was paid for').toBe(1);
+
+    const answers = new Set<boolean>();
+    runTo(w.runtime, boundary - 3);
+    while (w.runtime.engine.tick <= boundary + 2) {
+      const at = w.runtime.engine.tick + 1;
+      const published = w.runtime.parleysFor(replier, at).parleys_remaining > 0;
+      const gate = w.runtime.parleyRefusalFor(replier, w.attacker, at) === null;
+      expect(
+        gate,
+        `at tick ${String(at)} the menu published ${published ? 'capacity' : 'none'} and the shared gate said ` +
+          `${gate ? 'yes' : 'no'}. One of the two is reading a different Reckoning — and inside a handler ` +
+          '`ctx.tick` is `engine.tick + 1`, because `Engine.tick` advances at COMMIT.',
+      ).toBe(published);
+      // ── THE EXPIRY, PER SIDE OF THE BOUNDARY ────────────────────────────────
+      //
+      // Before it: the reply it was paid for. At and after it: nothing, because the approach that
+      // funded it was in the previous cycle and *unspent capacity does not carry*. This is the
+      // assertion that catches the Reckoning scope being dropped from the count.
+      expect(
+        published,
+        at < boundary
+          ? `at tick ${String(at)} the replier still holds the reply it was paid for`
+          : `at tick ${String(at)} the reply must be GONE — the approach that funded it was in the previous ` +
+            'Reckoning, and a reply allowance that carried would be the war chest §9 refuses to fund',
+      ).toBe(at < boundary);
+      answers.add(published);
+      tick(w.runtime);
+    }
+    expect(
+      answers.size,
+      'the sweep must have seen BOTH answers, or it is asserting an equivalence over one value',
+    ).toBe(2);
+  });
+
+  it('⚑ a SPENT allowance refreshes at the boundary — the spends are Reckoning-scoped too', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The other half of "expires unspent", and it needs its own test: the sweep above is about the
+    // *replier*, whose allowance is zero past the boundary either way, so removing the Reckoning filter
+    // from `parleysRemaining` itself SURVIVED it (mutation M25). Two filters implement the expiry —
+    // one over the inbound count, one over the spends — and each needs the subject it can be seen on.
+    //
+    // Here the subject is an ENTITLED principal that spent everything: if last cycle's spends kept
+    // counting it would be permanently mute after one busy Reckoning, which is the expiry rule failing
+    // in the direction that looks like caution.
+    // ══════════════════════════════════════════════════════════════════════════
+    const w = warWorld('parley-refresh', 2);
+    const target = w.runtime.reachFor(w.attacker, w.runtime.engine.tick)[0]?.principal;
+    if (target === undefined) throw new Error('no reachable target');
+    for (let n = 0; n < PARLEYS_PER_RECKONING; n += 1) {
+      expect(act(w.runtime, w.attacker, 'message', { to: target, act: 'offer', text: `t${String(n)}` })).toBeNull();
+    }
+    expect(w.runtime.engine.tick, 'all inside Reckoning 0').toBeLessThan(TICKS_PER_RECKONING);
+    expect(
+      w.runtime.parleysFor(w.attacker, w.runtime.engine.tick + 1).parleys_remaining,
+      'spent, in the cycle it was spent in',
+    ).toBe(0);
+
+    runTo(w.runtime, TICKS_PER_RECKONING);
+    expect(
+      w.runtime.parleysFor(w.attacker, w.runtime.engine.tick + 1).parleys_remaining,
+      'and whole again in the next: the allowance refreshes, so a principal that used all three last ' +
+        'cycle is not mute this cycle',
+    ).toBe(PARLEYS_PER_RECKONING);
+    expect(w.runtime.parleyRefusalFor(w.attacker, target, w.runtime.engine.tick + 1)).toBeNull();
   });
 
   it('refuses an unreachable principal, and the sentence says what would change it', () => {
