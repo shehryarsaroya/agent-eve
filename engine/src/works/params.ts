@@ -670,11 +670,20 @@ export const WORKS_BUILD_QTY: Qty = qty(5_000);
  *
  * ══════════════════════════════════════════════════════════════════════════
  * **THE SHUT DOOR IS WHAT MAKES A RAZED MEMBER'S LOSS COMPOUND, AND THE BALANCE GATE SEES IT.**
- * 8 seeds × 9 Reckonings on `RULES_VERSION` 30: the two seeds that recorded a razing (`g04`, `g05`)
- * are **exactly** the two with a non-zero `levyShort` (28,281 and 33,638) and the only two with red
- * tribute lines (2/72 each); every seed with `razed: 0` is clean. `g04` also carries `TRAPPED: 1` —
- * the gate's own name for *a member holding no WORKS and rich enough in currency to buy one, which
- * cannot*. That is this constant's trap, re-entered by a principal that has already been through it.
+ * 8 seeds × 9 Reckonings, `RULES_VERSION` 30 against **the same seeds on master (`f277801`)** rather
+ * than against a remembered figure:
+ *
+ *     levyShort        0  ->  61,919
+ *     red tribute    0/576 ->   4/576
+ *     works             64 ->      62      (3 razed, 1 rebuilt)
+ *     TRAPPED            0 ->       1
+ *
+ * The attribution is exact rather than inferred: the two seeds that recorded a razing (`g04` 1, `g05`
+ * 2) are **exactly** the two with a non-zero `levyShort` (28,281 and 33,638) and the only two with red
+ * lines (2/72 each); all six `razed: 0` seeds are 0 on both builds. Master's `g04`/`g05` already carry
+ * `hulls 3` and battles, so combat is not the confound. `TRAPPED: 1` is the gate's own name for *a
+ * member holding no WORKS and rich enough in currency to buy one, which cannot* — this constant's
+ * trap, re-entered by a principal that has already been through it once.
  *
  * The mechanism is a loop: a rout takes the goods **and** the structure in one event, so the member
  * has no stock and no source; without 5,000 units it cannot rebuild; without a rebuild it makes none.
