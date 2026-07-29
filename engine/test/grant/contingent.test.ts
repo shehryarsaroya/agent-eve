@@ -293,6 +293,7 @@ describe('the elective total is accrued as contingent spend, and the split is ho
       wakesRemaining: 16,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     }) as unknown as { grants: { granted: Record<string, unknown>[] } };
     const row = observation.grants.granted[0];

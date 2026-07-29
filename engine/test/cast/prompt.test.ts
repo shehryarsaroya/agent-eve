@@ -72,6 +72,7 @@ function anObservation(): Observation {
     wakesRemaining: 16,
     stale: false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   });
 }
@@ -919,10 +920,24 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // to §11D what 24's predecessor did to §11E. A section is not a cost in this budget; a *reader*
     // is.
     //
-    // Analytic margin 120,000 − 82,682 = **37,318**. The reachable maximum is still `outside the
-    // Commons and landless, at its fullest`, now 76,163 — leaving **43,837**, against a required
+    // ── ★ 27 · CORRECTIONS: +3,202, AND IT COMPOSES EXACTLY TOO ──────────────
+    //
+    //     = coalitions (24)          39,746 · 48,134 · 52,367 · 52,809 · 74,654 · 62,436 · 76,163 · 82,682
+    //     + corrections (27)         +1,809  +1,809  +1,895  +1,895  +3,202  +3,116  +3,202  +3,202
+    //     = now                      41,555 · 49,943 · 54,262 · 54,704 · 77,856 · 65,552 · 79,365 · 85,884
+    //
+    // The fourth row to compose with nothing absorbed — and the first where **no row is
+    // byte-identical**, which is the correct signature for this change rather than a regression:
+    // every previous entry added a *block* and gated it, so most readers paid nothing. 27 added no
+    // block at all. It corrected sentences inside blocks that every position already reads,
+    // including a **false rule** stated twice (alloy as COMMONS-only, against the engine's
+    // `ALLOY_IN_BY_TIER` gradient) and a **wrong count** in a FLOOR section (`build` as three acts,
+    // against four). A correction cannot be gated away from the readers the wrong version reached.
+    //
+    // Analytic margin 120,000 − 85,884 = **34,116**. The reachable maximum is still `outside the
+    // Commons and landless, at its fullest`, now 79,365 — leaving **40,635**, against a required
     // 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(82_682);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(85_993);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -977,7 +992,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // is for — it has hands, no ground to bill, and standoffs it can walk to. The reachable margin is
     // 120,000 − 76,163 = **43,837** against a required 4,000, which is the number to quote about
     // SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(76_163);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(79_474);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1107,6 +1122,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
           wakesRemaining: 16,
           stale: false,
           corrections: [],
+          correctionsDropped: 0,
           actionsRemaining: 4,
         });
         const situation = readSituation(observation as unknown as Record<string, unknown>);
@@ -1171,6 +1187,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
             wakesRemaining: 16,
             stale: false,
             corrections: [],
+            correctionsDropped: 0,
             actionsRemaining: 4,
           }) as unknown as Record<string, unknown>,
         );
@@ -1549,6 +1566,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         wakesRemaining: 16,
         stale: false,
         corrections: [],
+        correctionsDropped: 0,
         actionsRemaining: 4,
       });
     /** Take the affordance the engine is offering, so the path is the real one. */
@@ -1750,7 +1768,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // ★ `haul` — the canon verb whose step arrived with the fourth good. It is claimed by ONE
       // block on purpose: the block states a rule about geography (the good is refined at one tier
       // and spent at another) and neither `refine {kind:"ALLOY"}` nor `haul` is usable without it.
-      haul: 'The fourth good — the one only the COMMONS makes, and the one that flows the other way',
+      haul: 'The fourth good — the one the COMMONS makes CHEAPEST, and the one that flows the other way',
       move: '(preamble)',
       post_bond: '(preamble) + Taking one — `post_bond` then `build`',
       publish_offer: 'Negotiating',
@@ -1801,7 +1819,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // `+` is this map's own spelling for "more than one unit claims this gate".
       'join{RAID}':
         'Answering either one — `yield` · `fight` · join, or say nothing + Standing with somebody else — `join`, and the coalition it makes',
-      'refine{ALLOY}': 'The fourth good — the one only the COMMONS makes, and the one that flows the other way',
+      'refine{ALLOY}': 'The fourth good — the one the COMMONS makes CHEAPEST, and the one that flows the other way',
       'vote{CHARGE}': 'Paying for it — the CHARGE',
       'vote{LEVY}': 'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
       'withdraw{CAMPAIGN}':
@@ -1950,6 +1968,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
           wakesRemaining: 16,
           stale: false,
           corrections: [],
+          correctionsDropped: 0,
           actionsRemaining: 4,
         });
         for (const affordance of observation.affordances) {
@@ -2336,13 +2355,66 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // immediately: the landless row is where the +3,263 shows up as a REACHABLE cost, and without
       // it the only row carrying this section would have been the unreachable ceiling.
       // ══════════════════════════════════════════════════════════════════════════
-      39_746, // a newcomer on its first wake            (−3,360: §11E, now gated on `build{CAMPAIGN}`)
-      48_134, // mid-game in the Commons                 (−3,360: same)
-      52_367, // about to take territory                 (unchanged: it can really declare one)
-      52_809, // ★ NEW — at war: party to a live campaign, offered every campaign act
-      74_654, // a claimant in trouble                   (+3,263 at 24: §11D's coalition block)
-      62_436, // ★ NEW — the Commons at its fullest      (unchanged at 24: A8 closes both ends)
-      76_163, // ★ NEW — outside the Commons and landless, at its fullest: the largest REACHABLE
+      //
+      // ── ★ AT 27, +1,809 TO EVERY ROW AND +3,202 TO THE THREE THAT WORK GROUND ──
+      //
+      // 27 is a *corrections* pass, not a feature, and the shape of its cost says so: it added no
+      // block and every character went into blocks that already existed. The two figures decompose
+      // exactly, which is the check that matters here:
+      //
+      //   +1,809 to EVERY position, of which
+      //     +1,013  §11A `### The fourth good` — **a FALSE RULE, corrected.** `agent.md` asserted
+      //             twice that alloy *"runs only at a COMMONS system … cannot make one unit, at any
+      //             occupancy, with any amount of ore, ever."* The engine has `ALLOY_IN_BY_TIER`
+      //             (COMMONS 8 · MARCHES 32 · FRONTIER 64) and its own comment calls it *"a price
+      //             gradient rather than a wall, because the wall version was measured and
+      //             deadlocked"*. A probe hauled 288 ore to the Marches and got 9 alloy. The doc had
+      //             also contradicted ITSELF for fifteen versions — eight lines below the
+      //             prohibition it priced self-refining at *"four times the price"*.
+      //     +503    §6 preamble — `corrections_dropped`, and the prompt RANKING, so the ordering the
+      //             fix installs is checkable by the agent reading it rather than only by us.
+      //     +318    §6 `### Read affordances[] carefully` — withheld from the MENU is not withheld
+      //             from the GAME, which is the sentence a capped list needs to not read as a ban.
+      //     +257    §8 — the spectator frames exist and are at `/compact/frames/`, not the API path.
+      //     +151    §7 — the alloy rate again (§7 states it too) and **`build` is FOUR acts, not
+      //             three**: §7 said three, the engine has WORKS · ANCHOR · CAMPAIGN · HULL, and §7
+      //             is FLOOR so that line was charged to every position on every wake.
+      //
+      //   +1,393 MORE on the three rows that hold a grant or work claimed ground:
+      //     +1,307  §10 `### CLEARANCE and the DOSSIER` — that a clearance is a **continuous,
+      //             per-tick, unlogged** read, which `audit` cannot show you because `audit` and
+      //             `about_me[]` list *cut dossiers* and never reads. §10 documented the leak half
+      //             in four bullets and the surveillance half nowhere, so a grantor could read all
+      //             four and still not know its books were being watched.
+      //     +86     §11B — the anchor's alloy, restated as the gradient.
+      //
+      // **§13's +1,153 is charged to nobody**, and that is the gating working rather than luck:
+      // `CONTRACT_NOT_EXCERPTED` excludes *"## 13. When something seems wrong"* as *"a bug-report
+      // channel you cannot reach from a plan"*, so the whole `briefing.corrections[]` reference —
+      // `repeats`, `nearest_legal: null`, `corrections_dropped`, the `clientSequence` match key —
+      // costs the cast zero and is there for the HTTP agents that read the file.
+      //
+      // The one row worth arguing is the newcomer's +1,809 for a rule about the fourth good. It
+      // stays: a newcomer is offered `refine` on its first wake, `refine{ALLOY}` is one of its two
+      // recipes, and the previous text would have sent it hauling ore it never needed to move. A
+      // correct rule is not a feature and does not get to be optional.
+      41_555, // a newcomer on its first wake            (+1,809 at 27)
+      49_943, // mid-game in the Commons                 (+1,809 at 27)
+      54_371, // about to take territory                 (+1,895 at 27: §11B's anchor line too)
+      54_813, // at war: party to a live campaign        (+1,895 at 27)
+      77_965, // a claimant in trouble                   (+3,202 at 27: §10's clearance read)
+      65_552, // the Commons at its fullest              (+3,116 at 27)
+      79_474, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,311)
+      //
+      // ── ★ +109 MORE ON FIVE ROWS: THE ENGINE'S OWN STATEMENT WAS WRONG TOO ──
+      //
+      // The alloy prohibition was not only in `agent.md`. `SOVEREIGNTY_STATEMENT` — a **rules
+      // surface**, published in `post_bond`/`build` refusals and in every claim statement — said *"it
+      // is refined only at a COMMONS system … so buy it at a Commons venue"*, and `agent.md` §11B
+      // quotes that constant **verbatim** under a golden-file test. So the two surfaces were held in
+      // sync on the false version by the guard whose whole job is keeping them in sync. Fixing the
+      // constant is what moved these five rows, and only these five: §11B is gated on holding or
+      // taking a claim, and a newcomer is charged none of it.
       //
       // ── ★ AND `RULES_VERSION` 23's CLEARANCE IS THE CONTROL CASE THAT REFINES THE LESSON ──
       //
@@ -2392,7 +2464,13 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // Three features spent here and none had to trim a rule. Against 120,000 the analytic margin is
       // **37,318**, and for the first time in this file's history three consecutive features landed
       // without the margin being the headline — which is exactly what the raise bought.
-      82_682,
+      //
+      // ── 82,682 → 85,884 at 27 ────────────────────────────────────────────────
+      //
+      // +3,202, and the margin is **34,116** against a required 4,000. Nothing trimmed, and nothing
+      // to argue about the ceiling this time: 27 is a corrections pass and the largest single item in
+      // it is a false rule being made true.
+      85_993,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

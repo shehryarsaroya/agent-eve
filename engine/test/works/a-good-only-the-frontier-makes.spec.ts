@@ -256,6 +256,7 @@ describe('the fourth statement is SERVED, not merely exported', () => {
       wakesRemaining: 9,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     });
     const holding = observation.holding as Record<string, unknown>;

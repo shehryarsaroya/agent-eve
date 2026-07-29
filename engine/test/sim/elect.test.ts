@@ -178,6 +178,7 @@ function observe(runtime: Runtime, principal: PrincipalId): readonly Affordance[
     wakesRemaining: 16,
     stale: false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   }).affordances;
 }
@@ -191,6 +192,7 @@ function briefing(runtime: Runtime, principal: PrincipalId): Readonly<Record<str
     wakesRemaining: 16,
     stale: false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   }).briefing;
 }

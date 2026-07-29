@@ -283,6 +283,7 @@ function ballotWindowReadings(runtime: Runtime): readonly BallotReading[] {
       wakesRemaining: 4,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     });
     // `verb === 'vote'` alone is not enough: §12.2 is "one verb, three ballots" and the CHARGE

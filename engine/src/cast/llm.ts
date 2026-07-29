@@ -533,7 +533,11 @@ export class LlmCast {
     state.lastWakeTick = tick;
 
     // Draining here and nowhere else is the designed semantics: a correction is delivered
-    // when an observation is read, exactly as it is for an agent over HTTP.
+    // when an observation is read, exactly as it is for an agent over HTTP — and note this
+    // path was always correct about it, because it sits *inside* the `wakes.spend` gate
+    // above. `server.ts` is where the drain got detached from the wake (Defect 1).
+    // Counted before the drain: `takeCorrections` deletes the ring and the counter with it.
+    const correctionsDropped = this.runtime.droppedCorrections(member.principal);
     const corrections = this.runtime.takeCorrections(member.principal);
     for (const correction of corrections) {
       this.memory.remember(
@@ -552,6 +556,7 @@ export class LlmCast {
       wakesRemaining: this.wakes.remaining(member.principal),
       stale: false,
       corrections,
+      correctionsDropped,
       actionsRemaining: Math.max(0, ACTIONS_PER_TICK - (actedThisTick ? 1 : 0)),
     });
 

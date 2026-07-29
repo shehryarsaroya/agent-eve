@@ -869,7 +869,7 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     // same lot (1,122 of 1,122 swept observations carried both). Changed anyway — a gate that is
     // right only because two populations coincide stops being right the day the rates diverge, and
     // the rates are `ALLOY_IN_BY_TIER`, which is per-tier already.
-    block: '### The fourth good — the one only the COMMONS makes, and the one that flows the other way',
+    block: '### The fourth good — the one the COMMONS makes CHEAPEST, and the one that flows the other way',
     verbs: ['haul'],
     acts: ['refine{ALLOY}'],
     required: (s) => s.holdsClaim,
