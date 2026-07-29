@@ -64,6 +64,37 @@
  * INVALID, and `claim.ts` refuses a Commons claim, so there is no objective to press) and the raid
  * path stages outside the Commons (`target.ts` draws only non-COMMONS lots). Both of those are one
  * edit away from being wrong, in a file whose author would have no reason to think about structures.
+ *
+ * ## A15: what a razing costs, by path — and the one number worth a second look
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * A15 says a gate priced in *identities* is unpriced, so each road here has to be priced in produced
+ * goods, slashable capital, or an independently-capitalised counterparty. Three roads:
+ *
+ *   1. **A world-spawned raid.** No agent pays anything because no agent acts — this is weather on
+ *      `RAID_SPAWN_PHASES`, which is A14's whole point. Nothing to price.
+ *   2. **A campaign.** `CAMPAIGN_BOND_MINOR` is 2× `CLAIM_BOND_MINOR` and forfeit on failure, plus
+ *      `PULSE_MATERIEL_QTY` of produced goods destroyed per pulse at a depot one lane out. Priced in
+ *      both of A15's admissible currencies, heavily.
+ *   3. **An agent's `demand`.** One unit of `aggression.ts` capacity, which is per-principal,
+ *      **non-transferable and expires unspent** — so N enrolments buy N separate small threats rather
+ *      than one large one, exactly as that module argues.
+ *
+ * **The number to keep an eye on is on road 3, and it is not the capacity.** `DEMAND_OWN_FORCE` is 0,
+ * so all of a demand's force is hands: the initiator's own party row is 1, terrain at the MARCHES is
+ * 1, and {@link RAZE_FORCE_MARGIN} is 2 — so **a lone demand cannot raze anything**, and razing by an
+ * agent's own act needs the initiator plus two joiners. That is §9's escort market running in the
+ * aggressive direction and it is the right shape.
+ *
+ * What it means numerically is that two `join`s at `RAID_JOIN_STAKE_MINOR` (500 each, forfeit to the
+ * target on a repulse, plus a hand routed) are what convert one aggression spend into the destruction
+ * of a 65,000 structure. Those joiners do stake slashable capital and do risk a hand, so this is A15's
+ * third category rather than "acquire another account" — **but 1,000 of at-risk capital against 65,000
+ * of certain capital is a wide gap, and it is wide because `join` was priced when the largest thing a
+ * standoff could take was goods.** Nothing here changes that price; this note exists so that whoever
+ * revisits `RAID_JOIN_STAKE_MINOR` knows razing is now on the other side of the scale, and so the gap
+ * is a recorded observation rather than something the next reader has to rediscover.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 
 import type { PrincipalId, SystemId, ZoneTier } from '../core/types.js';
