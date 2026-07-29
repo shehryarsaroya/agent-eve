@@ -193,17 +193,53 @@ if [[ "$TARGET" == "client" || "$TARGET" == "all" ]]; then
   rsync -az -e "ssh -i $KEY" "$REPO_ROOT/client/" "root@$HOST:$WEB_DIR/"
   ok "client synced (deliberately without --delete)"
 
-  # agent.md is the ONE artifact an agent must be able to play from with zero extra
-  # reading, so it has to be fetchable. Copied from engine/agent.md rather than kept as
-  # a second file in client/, because two copies of a rules surface is scar #1 waiting
-  # for someone to edit the wrong one.
+  ok "client synced"
+fi
+
+# ── the rules surface ships with the RULES, not with the client ──────────────
+#
+# ⚑ **agent.md USED TO BE PUBLISHED ONLY BY THE `client` TARGET, AND THAT WAS A REAL OUTAGE
+# OF THE RULES SURFACE.** Found by a blind probe on 2026-07-28: the deployed rulebook was
+# **1,091 lines against 1,514 in the repo** — no §11D, no §11E — so every live agent had been
+# playing with **no documentation of hulls, battles or campaigns at all**, while the engine
+# offered them all three. Fifteen rules versions shipped through `deploy.sh api` and not one
+# of them carried the document that describes them.
+#
+# The comment that used to sit here called agent.md *"the ONE artifact an agent must be able
+# to play from with zero extra reading"* — which is exactly why it cannot be gated on the
+# cosmetic target. **A rules change and its rulebook are one deploy.** This is scar #4's
+# family: a deploy that reports success while silently omitting a component, except the
+# component here is the rules themselves.
+#
+# Still copied from `engine/agent.md` rather than kept as a second file under `client/`,
+# because two copies of a rules surface is scar #1 waiting for someone to edit the wrong one.
+if [[ "$TARGET" == "api" || "$TARGET" == "client" || "$TARGET" == "all" ]]; then
   scp -q -i "$KEY" "$REPO_ROOT/engine/agent.md" "root@$HOST:$WEB_DIR/agent.md"
   ok "agent.md published from its single source"
 fi
 
-# ── the rules surface must actually be served ───────────────────────────────
-if [[ "$TARGET" == "client" || "$TARGET" == "all" ]]; then
-  :
+# ── the SERVED rulebook must be the one in this repo, line for line ─────────
+#
+# The old post-deploy check asserted only that `agent.md` came back as MARKDOWN. It passed
+# for fifteen rules versions while the served document was **423 lines shorter than the repo's**
+# and missing two whole sections. A check that cannot tell a stale rulebook from a current one
+# is the "detector that cannot fail" shape this project keeps finding — it was green throughout.
+#
+# So compare the line count of what is actually served against the file that was just shipped.
+# Not a hash: nginx may serve it with different line endings and a byte compare would cry wolf,
+# which is how a check gets ignored. A line count catches truncation and a missing section,
+# which are the two ways this has actually gone wrong.
+if [[ "$TARGET" == "api" || "$TARGET" == "client" || "$TARGET" == "all" ]]; then
+  WANT=$(wc -l < "$REPO_ROOT/engine/agent.md" | tr -d ' ')
+  GOT=$(curl -s --max-time 20 https://agentinsurance.io/compact/agent.md | wc -l | tr -d ' ')
+  if [[ "$WANT" != "$GOT" ]]; then
+    fail "THE SERVED RULEBOOK IS NOT THE ONE IN THIS REPO: agent.md is $WANT lines here and
+     $GOT lines at agentinsurance.io/compact/agent.md. Agents play from the served copy, so a
+     stale one means the engine offers verbs the rules do not describe. This exact gap hid
+     hulls, battles and campaigns from every live agent for fifteen rules versions because
+     agent.md was published only by the 'client' target."
+  fi
+  ok "the served rulebook matches this repo ($WANT lines)"
 fi
 
 # ── services ────────────────────────────────────────────────────────────────
