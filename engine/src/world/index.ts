@@ -97,6 +97,7 @@ export {
   LODE_WEIGHT,
   tierHasLodes,
   type Lode,
+  type LodeBases,
 } from './lode.js';
 
 export {

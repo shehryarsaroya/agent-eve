@@ -145,10 +145,35 @@ const MEMO = new WeakMap<WorldMap, ReadonlyMap<SystemId, Lode>>();
  * on `world/`), and so the *one* place the tier figures live stays `works/params.ts`. A second copy
  * of `YIELD_PER_TICK` here would be scar #5 in the table the whole economy is priced off.
  */
-export function lodesOf(
-  map: WorldMap,
-  bases: { readonly yield: Readonly<Record<ZoneTier, Qty>>; readonly fuel: Readonly<Record<ZoneTier, Qty>> },
-): ReadonlyMap<SystemId, Lode> {
+export interface LodeBases {
+  readonly yield: Readonly<Record<ZoneTier, Qty>>;
+  readonly fuel: Readonly<Record<ZoneTier, Qty>>;
+}
+
+/**
+ * ★ What a principal seated on this ground **owes** per Reckoning — {@link assertLodes}'s floor.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A SEPARATE ARGUMENT FROM {@link LodeBases}, AND THE SEPARATION IS A SCAR.** The first version put
+ * these three fields on `LodeBases`, which meant `works/params.ts` — where the tier bases live — had
+ * to import `CHARGE_BY_TIER` from `sovereignty/params.ts`. **`tsc` accepted it and the engine would
+ * not start**: `sovereignty/params.ts` initialises constants that reference each other at module
+ * scope, and the added edge closed a cycle into the middle of that, producing
+ * `ReferenceError: Cannot access 'ALLOY_ANCHOR_QTY' before initialization` on the first import.
+ * A type-only gate cannot see it; only running it can.
+ *
+ * So the floor figures are supplied at the **call site** — `sim/runtime.ts`, which already holds
+ * `works`, `levy` and `sovereignty` together without a cycle — and the allocation keeps needing
+ * nothing but yield and fuel.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface LodeFloor {
+  readonly dutyPerReckoning: number;
+  readonly chargeByTier: Readonly<Record<ZoneTier, Qty>>;
+  readonly ticksPerReckoning: number;
+}
+
+export function lodesOf(map: WorldMap, bases: LodeBases): ReadonlyMap<SystemId, Lode> {
   const cached = MEMO.get(map);
   if (cached !== undefined) return cached;
 
@@ -215,11 +240,7 @@ export function lodesOf(
 }
 
 /** One system's ground. Throws rather than defaulting: a silent tier figure would hide a torn map. */
-export function lodeAt(
-  map: WorldMap,
-  system: SystemId,
-  bases: Parameters<typeof lodesOf>[1],
-): Lode {
+export function lodeAt(map: WorldMap, system: SystemId, bases: LodeBases): Lode {
   const lode = lodesOf(map, bases).get(system);
   if (lode === undefined) throw new LodeError(`no lode for ${system}`);
   return lode;
@@ -234,7 +255,7 @@ export function lodeAt(
  * clause is this project's signature defect aimed at its own new mechanic: a "distinct" map on which
  * every system yields the same figure is `premiumBps`-structurally-zero with more code behind it.
  */
-export function assertLodes(map: WorldMap, bases: Parameters<typeof lodesOf>[1]): void {
+export function assertLodes(map: WorldMap, bases: LodeBases, floor: LodeFloor): void {
   const problems: string[] = [];
   const lodes = lodesOf(map, bases);
 
@@ -275,6 +296,54 @@ export function assertLodes(map: WorldMap, bases: Parameters<typeof lodesOf>[1])
     if (fuelSum !== wantFuel) {
       problems.push(`tier ${tier} fuel sums to ${String(fuelSum)} against a flat ${String(wantFuel)}`);
     }
+    // ── ★ THE FLOOR: NO LODE MAY MAKE A SYSTEM A TRAP TO SETTLE ON ──────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS CLAUSE EXISTS BECAUSE THE COMMONS ARGUMENT HAS TO APPLY TO THE OTHER TIERS TOO.**
+    // The Commons is uniform because 80/tick is 23,040 a Reckoning against a ≈20,000 Levy, so a 0.8×
+    // lode would be 17,568 — structurally short, and A8 promises a floor. That reasoning does not
+    // stop at the Commons: a MARCHES or FRONTIER system whose **sole** occupant cannot fund the
+    // tribute assessed on it plus its own Charge is a place the map invites you to settle and then
+    // bankrupts you for settling, which is the `g07` structural residue arriving **by design**
+    // instead of by accident — and that residue is already §10's one open item at twelve Reckonings.
+    //
+    // Measured at **occupancy 1 and a claim held**, because that is the binding case and the tightest
+    // one the design intends to be viable: `YIELD_PER_TICK`'s own calibration promises *"one WORKS
+    // alone at a system slightly beats its own burn"*. Occupancy 2 is negative on every tier at
+    // every band **including flat** — that is the contention the design wants and this clause must
+    // not accidentally forbid it, which is why the divisor is 1 and not the occupant count.
+    //
+    // The band sweep that set `LODE_WEIGHT.min`, poorest-system claimant margin per Reckoning:
+    //
+    // | band | MARCHES claimant | FRONTIER claimant |
+    // |---|---|---|
+    // | `6..12` | **−2,976** | +1,800 |
+    // | `7..12` | **−672** | +4,680 |
+    // | `8..12` | +1,344 | +7,560 |
+    // | **`9..12` (shipped)** | **+3,936** | **+8,712** |
+    // | `12..12` (flat) | +7,680 | +16,200 |
+    //
+    // So the cliff is between `7..12` and `8..12`, and the shipped band clears it by two weight
+    // steps. `8..12` would technically pass and is **not** taken: +1,344 is the same order as a
+    // Reckoning's rounding, and a floor that close to zero is a floor nobody can plan against.
+    // ══════════════════════════════════════════════════════════════════════════
+    for (const id of ids) {
+      const lode = lodes.get(id);
+      if (lode === undefined) continue;
+      const income = lode.yieldPerTick * floor.ticksPerReckoning;
+      const owed = floor.dutyPerReckoning + Number(floor.chargeByTier[tier]);
+      if (income <= owed) {
+        problems.push(
+          `${id} (${tier}) yields ${String(lode.yieldPerTick)} a tick, so its SOLE occupant earns ` +
+            `${String(income)} a Reckoning against ${String(owed)} owed (Levy ` +
+            `${String(floor.dutyPerReckoning)} + Charge ${String(floor.chargeByTier[tier])}) — the lode has ` +
+            'made this system a place the map invites a principal to settle and then bankrupts it for ' +
+            `settling. Narrow LODE_WEIGHT (currently ${String(LODE_WEIGHT.min)}..${String(LODE_WEIGHT.max)}); ` +
+            'the same arithmetic is why the COMMONS is uniform',
+        );
+      }
+    }
+
     // ── NON-VACUITY ─────────────────────────────────────────────────────────
     if (ids.length > 1 && seen.size < 2) {
       problems.push(

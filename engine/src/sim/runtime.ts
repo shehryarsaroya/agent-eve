@@ -137,6 +137,7 @@ import {
   type LevySettlement,
   type LevySubject,
   type SweepPort,
+  LEVY_DUTY_PER_PRINCIPAL,
 } from '../levy/index.js';
 import {
   DefaultRegister,
@@ -466,6 +467,7 @@ import {
   Book as SovereigntyBook,
   CESSION_SALVAGE_BPS,
   CHARGE_BALLOT,
+  CHARGE_BY_TIER,
   CHARGE_GOOD,
   CHARGE_MISSES_TO_LAPSE,
   CHARGE_STATEMENT,
@@ -3017,7 +3019,14 @@ export class Runtime {
     // in a direction nothing downstream could diagnose — a tier whose shares over-sum breaks A15's
     // map-bounded-output proof and starts INV-W1 halting worlds for an invisible reason; a tier
     // whose shares are all equal is `premiumBps`-structurally-zero with more code behind it.
-    assertMapLodes(this.world.map);
+    // The floor figures come from HERE and not from `works/params.ts`, because that edge closes a
+    // module cycle into `sovereignty/params.ts`'s top-level initialisation — `tsc` accepts it and the
+    // engine does not start. `LodeFloor`'s docblock records the exact ReferenceError.
+    assertMapLodes(this.world.map, {
+      dutyPerReckoning: Number(LEVY_DUTY_PER_PRINCIPAL),
+      chargeByTier: CHARGE_BY_TIER,
+      ticksPerReckoning: TICKS_PER_RECKONING,
+    });
     this.ledger = new Ledger();
     this.hazards = options.hazards ?? false;
     // Attached in production, so `target` and `measure` are checked at the door and a

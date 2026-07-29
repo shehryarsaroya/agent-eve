@@ -57,7 +57,14 @@
 
 import { qty, type Minor, type Qty } from '../core/units.js';
 import type { GoodId, SystemId, ZoneTier } from '../core/types.js';
-import { assertLodes, lodeAt, lodesOf, type Lode } from '../world/lode.js';
+import {
+  assertLodes,
+  lodeAt,
+  lodesOf,
+  type Lode,
+  type LodeBases,
+  type LodeFloor,
+} from '../world/lode.js';
 import type { WorldMap } from '../world/map.js';
 import { minor } from '../core/units.js';
 
@@ -575,8 +582,8 @@ export function allLodes(map: WorldMap): ReadonlyMap<SystemId, Lode> {
 }
 
 /** Assert the map's ground is conserved and non-uniform. Called from the world's own boot check. */
-export function assertMapLodes(map: WorldMap): void {
-  assertLodes(map, LODE_BASES);
+export function assertMapLodes(map: WorldMap, floor: LodeFloor): void {
+  assertLodes(map, LODE_BASES, floor);
 }
 
 /**
@@ -586,7 +593,7 @@ export function assertMapLodes(map: WorldMap): void {
  * `world/` and not the other way round — and because a second copy of `YIELD_PER_TICK` inside the
  * allocator would be scar #5 in the table the whole economy is priced off.
  */
-const LODE_BASES = { yield: YIELD_PER_TICK, fuel: FUEL_YIELD_PER_TICK } as const;
+const LODE_BASES: LodeBases = { yield: YIELD_PER_TICK, fuel: FUEL_YIELD_PER_TICK };
 
 /**
  * Currency to raise a WORKS, and it is spent from **earned** cash.
