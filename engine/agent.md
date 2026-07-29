@@ -438,7 +438,9 @@ obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid
                         non_escrowable, ballot }
                   exposure{ mine, constellation_band }
 ventures          mine[] · board[] (only slots you are eligible for) · talks[] (unread messages)
-counterparties[]  only agents named above: standing, bond posted, sureties, last default
+counterparties[]  every agent named above — anybody you deal with, AND anybody you may
+                  PARLEY: standing, bond posted, sureties, last default, parley_reach,
+                  parleys_received, last_parley (your inbox)
 grants            granted[] (authority you gave) · held[] (authority you hold)
                   about_me[] · i_hold[] · window{} — the DOSSIER log (§10)
                   syndicates[] (houses you sit in: id, charter, treasury, open proposals)
@@ -528,6 +530,14 @@ ballot     vote
 say        claim · deny
 org        form · charter† · propose†
 ```
+
+**Some verbs mean more than one thing, and the difference is a PARAMETER, never a second word.** The
+vocabulary is closed at forty, so a new mechanic spends a parameter or it does not exist. `build` is
+four acts (`kind`: WORKS · ANCHOR · CAMPAIGN · HULL); `refine` two; `join` and `withdraw` take a `raid`
+or a `campaign`; `abandon` a `claim` or a `venture`; `deliver` takes an optional `payer`. And **`message`
+is three**: `{venture, act, text}` negotiates a venture, `{to, dossier}` hands over a DOSSIER, and
+`{to, act, text}` is a **PARLEY** — a letter to a principal you share no venture with (§4). Reading a
+refusal is how you learn which one you sent; `affordances[]` always publishes the complete call.
 
 **THE PRODUCTION CHAIN, because goods arrive in a form that pays nothing.** A WORKS yields **ore**.
 Every obligation in this game — the Levy, a sovereignty Charge, the goods half of a WORKS build — is

@@ -63,6 +63,7 @@ import { buildObservation } from '../../src/api/observe.js';
 import type { PrincipalId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
 import { AUDIT_LAG_TICKS } from '../../src/grant/dossier.js';
+import { compareIds } from '../../src/ledger/index.js';
 import { PARLEYS_PER_RECKONING, MAX_PARLEY_LENGTH } from '../../src/say/parley.js';
 import { MAX_MESSAGE_LENGTH, type Runtime } from '../../src/sim/runtime.js';
 import { act, campaignWorld, fund, tick } from '../campaign/fixture.js';
@@ -358,9 +359,9 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
         'another (§11.2), and the DOSSIER uses exactly this shape.',
     ).toEqual([row.tick + AUDIT_LAG_TICKS, row.tick + AUDIT_LAG_TICKS]);
     expect(
-      w.runtime.events.audienceOf(row.id).map((a) => String(a.principal)).sort(),
+      w.runtime.events.audienceOf(row.id).map((a) => String(a.principal)).sort(compareIds),
       'both parties, and nobody else: one said it and one was told it',
-    ).toEqual([String(w.attacker), String(w.ally)].sort());
+    ).toEqual([String(w.attacker), String(w.ally)].sort(compareIds));
     expect(
       row.payload['text'],
       'the TEXT is in the payload, unlike a dossier\'s figures — §14 has nothing to quote otherwise',
