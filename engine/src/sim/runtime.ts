@@ -1611,7 +1611,62 @@ import {
  * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
  * prints the exact string, and a bare tick is refused.
  */
-export const RULES_VERSION = 26;
+/**
+ * ── 27 · ★ THE CONSTELLATION CLOSES RANKS: 26's OWN BILL BECOMES PAYABLE ─────
+ *
+ * **Landed on top of 26 and stacked rather than blended**, for 23's and 24's reason: an operator
+ * reading a `RULES_VERSION_MISMATCH` has to know which change moved which table, and the
+ * discontinuities compose.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **NO CAPTURED TABLE CHANGES AT ALL — THIS IS 24's SHAPE, NOT 26's.** Nothing here adds, removes or
+ * re-types a field inside any `capture()`, and no engine rule, verb, affordance or observation field
+ * moves. **One cast constant changes value**, `CAST_CARRY_RESERVE_RECKONINGS` 2 → 1, and that is a
+ * version bump for exactly the reason 24's note gives: what changes is *what the cast decides*, so a
+ * journal written under 26 and replayed under this build diverges, and the honest place to say so is
+ * the stamp rather than the deploy log.
+ *
+ * ── WHAT IT FIXES: THE ONE RED TRIBUTE LINE 26 LEFT BEHIND ───────────────────
+ *
+ * 26 item 5 gave EXPOSURE its delegated half and said so in as many words — *"every docket in a world
+ * with a live grant is allocated differently"*, *"the gate is what says the allocation still clears"*.
+ * At three and six Reckonings it did clear. At **nine** it did not, on one seed and one line:
+ *
+ *   · `g07`, Reckoning 7, constellation 1, `BY_EXPOSURE`, docket 120,000. `p:halcyon` carried weight
+ *     107,824 — of which 1,000 is `LEVY_EXPOSURE_UNIT`, **426** was its encumbrance term and the
+ *     remaining ~106,000 was four live grants with `spentDirect` 0 on every one — was assessed
+ *     **48,768**, delivered 29,898 by its own hand across 22 deliveries, was carried 13,503, ended
+ *     holding **0** of the levy good and was recorded short **5,367**.
+ *   · `presenceOwed` was **0**, so every unit of the shortfall was in the bucket §5.2 lets another
+ *     principal's hand fill, and its five co-members were holding **156,947 unpledged units** of the
+ *     same good in the same constellation with nothing outstanding of their own.
+ *
+ * So the allocation was not the defect. The **distribution** was: `carryFor`'s reserve of
+ * `2 x max(assessment, LEVY_DUTY_PER_PRINCIPAL)` is larger than anything a mid-sized member holds by
+ * the aged horizon, so `surplus - reserve` was negative for all five and §5.2's carry switched itself
+ * off at exactly the horizon it was written for. The constant's own declaration carries the full
+ * measurement, the rejected alternative, and why the reduction stops at one rather than zero.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * Not `SNAPSHOT_HASH_MISMATCH` from a changed table set — 24's signature instead: a **state
+ * divergence at the first tick a member's carry decision differs**, which is the first tick at which
+ * a principal holds levy good between one and two Reckonings' worth of its own duty and a co-member
+ * has an escrowable remainder open. In a world with live grants that is early and common.
+ * `hydrate.ts` refuses on `RULES_VERSION_MISMATCH` first either way, which is the cheaper door.
+ *
+ * **What the balance gate sees, and here it is evidence rather than a safety check** — the change
+ * exists to move these two columns. 8 seeds x 3 · 6 · 9 Reckonings: `levyShort` **0 · 0 · 0** against
+ * master's 0 · 0 · **5,367**, red tribute lines **0/192 · 0/384 · 0/576** against 0/192 · 0/384 ·
+ * **1/576**, and `CARRIED` **+59%** at six and **+25%** at nine — the column that names the mechanism
+ * that closed it. `test/cast/the-constellation-closes-ranks.spec.ts` is the regression, and it goes
+ * red on `p:halcyon` at R7 if the constant goes back.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
+ * prints the exact string, and a bare tick is refused.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const RULES_VERSION = 27;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.

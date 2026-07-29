@@ -429,7 +429,9 @@ export const CAST_ALLOY_ASK_QTY = 500;
  * **Two** rather than one, for `CAST_CARRY_RESERVE_RECKONINGS`'s reason: an assessment is levied on
  * the docket at the *end* of a cycle, so a member holding exactly this Reckoning's duty is one
  * unfavourable allocation rule away from short — so **two** was the first pick, for the direction a
- * guard on a permanent public record should err in (A5′).
+ * guard on a permanent public record should err in (A5′). (The **reason** is what is borrowed there,
+ * not the number: that constant went to **one** at `RULES_VERSION` 27, on a measurement about how
+ * much a member *holds* rather than about what it is about to spend.)
  *
  * ── ⚑ TWO IS EXPENSIVE AND ONE IS UNPAYABLE, MEASURED IN BOTH DIRECTIONS ─────
  *
@@ -615,19 +617,99 @@ export const CAST_ARMS_RESERVE_MULTIPLE = 2;
  * agent with a reason to give away its last unit may; §5.2's whole redistributive half is that
  * who bears the burden is a choice somebody makes.
  *
- * Two Reckonings, and the per-Reckoning unit is `max(this Reckoning's assessment,
+ * The per-Reckoning unit is `max(this Reckoning's assessment,
  * LEVY_DUTY_PER_PRINCIPAL)`. The `max` is load-bearing: under `BY_STORES` a goods-rich member's
  * assessment is a share of `Σ duty` and can far exceed its own duty, so the rule-fixed figure
  * alone would under-reserve exactly the member this branch is aimed at — and the assessment
  * alone would under-reserve a member the constellation happened to spare this once.
  *
- * Not one, because one leaves nothing for a bad vote next Reckoning. Not three, because at three
- * the `g01` carriers — 360,000 units against a 23,900 assessment — still clear it easily while a
- * mid-sized holder never does, and a gate that only the richest member in the world can pass is
- * indistinguishable from a missing branch, which is the defect this change exists to close.
+ * Not three, because at three the `g01` carriers — 360,000 units against a 23,900 assessment —
+ * still clear it easily while a mid-sized holder never does, and a gate that only the richest
+ * member in the world can pass is indistinguishable from a missing branch, which is the defect
+ * this change exists to close.
+ *
+ * ── ★ 2 → 1 AT `RULES_VERSION` 27, BECAUSE TWO BECAME THREE'S PROBLEM ONE HORIZON LATER ──
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE PARAGRAPH ABOVE PREDICTED THIS AND RULED OUT THE WRONG NUMBER.** *"A gate that only the
+ * richest member in the world can pass is indistinguishable from a missing branch"* was the
+ * argument against **three**, measured at six Reckonings. At nine it is the argument against
+ * **two**, and the reason is arithmetic rather than judgement: by the aged horizon a member's
+ * whole stock of the levy good has converged to roughly one-and-a-half times its own duty
+ * (24,840–41,642 units against `LEVY_DUTY_PER_PRINCIPAL` 20,000), so a reserve of
+ * `2 x max(assessment, 20,000)` is **larger than anything a mid-sized member ever holds** and the
+ * branch switches itself off at exactly the horizon it was written for.
+ *
+ * ── WHAT THAT COST, AND WHY IT WAS `RULES_VERSION` 26 THAT REVEALED IT ────
+ *
+ * 26 gave EXPOSURE its delegated half (§3: Σ open `max_direct_loss`, an encumbrance **and** a
+ * grant, and only the first was ever summed). That was correct and it is not what this constant
+ * is about — what it did was make `BY_EXPOSURE` discriminate for the first time, which put a
+ * genuinely uneven docket in front of a carry mechanism that could no longer fire.
+ *
+ * Measured, seed `g07`, Reckoning 7, constellation 1, rule `BY_EXPOSURE`, docket 120,000.
+ * `p:halcyon` carried weight 107,824 against 19,507–54,475 for its five co-members — of which
+ * `LEVY_EXPOSURE_UNIT` is 1,000, its **encumbrance** term was 426, and the remaining ~106,000 was
+ * four simultaneous live grants with `spentDirect` 0 on every one. Assessed **48,768**, it
+ * delivered 29,898 by its own hand across **22 deliveries**, was carried 13,503, ended the
+ * Reckoning holding **0** of the levy good, and was recorded short **5,367**.
+ *
+ * The decisive figure is not any of those. It is that `presenceOwed` was **0** — every unit of the
+ * shortfall sat in the **escrowable** bucket, the one §5.2 lets another principal's hand fill —
+ * while its five co-members were sitting on **157,000 unspent units of the same good in the same
+ * constellation**. Not one of them could carry: at reserves of 40,000–49,278 against holdings of
+ * 24,840–40,000, `carryFor`'s `surplus - reserve` was negative for **all five**. The goods were
+ * there, the bucket was open, the verb was legal, and the cast's own reserve refused it.
+ *
+ * ── MEASURED AGAINST THE OTHER CANDIDATE, WHICH IS WHY IT IS THIS ONE ─────
+ *
+ * The competing reading is that the *bill* is wrong rather than the delivery — that a member should
+ * price a mandate's EXPOSURE into the decision to sign it, the way `hullFor` prices the tribute.
+ * That was built and measured, and the numbers rejected it. 8 seeds x 9 Reckonings, and only the
+ * first two columns are evidence (see {@link CAST_ALLOY_RESERVE_RECKONINGS} on why the rest are not):
+ *
+ * | change | levyShort | red | ventures | battles | CARRIED |
+ * |---|---|---|---|---|---|
+ * | master | 5,367 | 1/576 | 5,413 | 19 | 453,066 |
+ * | **this (reserve 2 → 1)** | **0** | **0/576** | **5,338** | **18** | **568,511** |
+ * | reserve 2 → **0** | **957** | **1/576** | 5,296 | 17 | 699,986 |
+ * | grant gate, bound `DUTY x 2` | 0 | 0/576 | 4,908 | 12 | 440,088 |
+ * | grant gate, bound `max(assessment, DUTY) x 2` | **13,099** | 1/576 | — | — | — |
+ *
+ * **Zero is why the reduction stops at one, and the row is a measurement rather than a story.** With
+ * no reserve at all the sweep is *worse* while moving the most goods of any reading taken — 957 short
+ * across one red line on 699,986 `CARRIED` — which is the tell on its own: more distribution and a
+ * worse meter. What it is **not** is the failure the paragraph above predicted. Traced: the 0 line is
+ * `g02`, `p:sable` assessed 117,819 under `INVERSE_EXPOSURE`, carried 82,473 by its roll, delivering
+ * 34,389 itself and finishing 957 short **on its own non-escrowable presence share** — the one bucket
+ * no carry may ever fill (§5.2). That arrives through a changed trajectory, not through goods `sable`
+ * gave away, so *"the charity became a second shortfall"* is unproven at zero and is deliberately not
+ * claimed here. The reduction stops at one because one is where the meters are clean, which is the
+ * only claim the sweep supports.
+ *
+ * The last row is why the competing reading is not a *fix* even though its middle row reaches 0:
+ * bounding a grantor's exposure against a figure that itself rises with the assessment is a positive
+ * feedback loop, and the same lever with that threshold made `g07` **two and a half times worse**. A
+ * lever whose sign depends on its calibration is a calibration, not a repair. It also costs 9% of the
+ * world's ventures and a third of its battles against 1.4% and one battle here, and pays for the fix
+ * by issuing 12% fewer grants — spending A6's exercise to buy a clean meter.
+ *
+ * This row instead moves the one column that names its own mechanism: **`CARRIED` +25% at nine
+ * Reckonings and +59% at six.** The shortfall was escrowable, the constellation was holding thirty
+ * times it, and what closed the line was the goods moving.
+ *
+ * ── ⚑ AND IT DOES NOT REPEAL `aged-solvency.spec.ts`, WHICH WAS CHECKED ────
+ *
+ * That file pins a **structural** residue as a §10 calibration decision the owner holds: `g07`'s
+ * constellation 1 produces less than it owes, and distribution moves goods without making them. Run
+ * to **twelve** Reckonings the residue duly reappears — two members short at R10 with the whole
+ * constellation down to 52,415 units against a 120,000 docket, every unit of it escrowable and none
+ * of it anywhere to be had. Master at the same horizon is `levyShort` **46,969** across three
+ * Reckonings against **11,113** across one here, so this is the same finding four times smaller and
+ * not a new one. Nine Reckonings is where the gate looks; twelve is where §10 is still owed an answer.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const CAST_CARRY_RESERVE_RECKONINGS = 2;
+export const CAST_CARRY_RESERVE_RECKONINGS = 1;
 
 /**
  * How much stronger than the other side the cast's committed hulls must be. *(calibrate)*
