@@ -1568,6 +1568,34 @@ function affordancesFor(
   venues: readonly VenueId[],
 ): AffordanceSet {
   const eligible: Affordance[] = [];
+
+  // ── ★ PHASE 3'S RISK MARKET, PUSHED HERE AND NOT AFTER THE TRUNCATION ──────
+  //
+  // The first wiring pushed these onto `list` *below*, past `prioritised.slice(0, MAX_AFFORDANCES)`.
+  // Two things were wrong with that and both are this file's own rules:
+  //
+  //   1. **It could take the payload past `MAX_AFFORDANCES`**, which is INV-26's bounded buffer.
+  //   2. **It skipped the distinct-verb-first pass**, whose comment says in full why that pass exists:
+  //      *"it guarantees no mechanic is invisible merely because another mechanic has many variants."*
+  //      A COVER offer arriving after the slice is outside that guarantee in both directions — it
+  //      cannot be dropped, and it cannot be counted in `dropped` either.
+  //
+  // So the offers join the pool before any ordering happens, exactly like every other mechanic's, and
+  // `elect` goes first because it is the one with a deadline: §7.4's honour window closes at the freeze
+  // and an election nobody was offered is a refusal the clock wrote.
+  const riskAffordances = runtime.riskAffordances(principal, tick);
+  for (const offer of riskAffordances.offered) {
+    eligible.push({
+      verb: offer.verb,
+      params: offer.params,
+      cost: 1,
+      max_direct_loss: offer.maxDirectLoss,
+      max_contingent_liability: offer.maxContingentLiability,
+      what_it_forecloses: offer.forecloses.join('; '),
+      expires_tick: offer.expiresTick,
+      quote_id: quoteId(principal, tick, offer.verb, offer.params),
+    });
+  }
   /** Charge deliveries withheld because no hand of this principal is standing there. */
   let chargeNoHand = 0;
   const chargeNoHandAt: string[] = [];
@@ -4039,21 +4067,8 @@ function affordancesFor(
   // Every ground here is an existing `WithheldGround` (`SHORT_FUNDS · WINDOW_SHUT · NO_RECORD ·
   // FROZEN`) rather than a fifth: an agent that has learned `SHORT_FUNDS` on a venture already knows
   // what it means over a COVER, and the union is a closed set checked against §3's canon.
-  const risk = runtime.riskAffordances(principal, tick);
-  for (const offer of risk.offered) {
-    list.push({
-      verb: offer.verb,
-      params: offer.params,
-      cost: 1,
-      max_direct_loss: offer.maxDirectLoss,
-      max_contingent_liability: offer.maxContingentLiability,
-      what_it_forecloses: offer.forecloses.join('; '),
-      expires_tick: offer.expiresTick,
-      quote_id: quoteId(principal, tick, offer.verb, offer.params),
-    });
-  }
   let riskWithheld = 0;
-  for (const row of risk.withheld) {
+  for (const row of riskAffordances.withheld) {
     riskWithheld += 1;
     reasons.push({ verb: row.verb, text: row.text });
   }
