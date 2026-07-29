@@ -163,15 +163,25 @@ can be recorded short of it. `haul` — a canon verb filed under *"step 11"* sin
 — goes live with it, so goods can move for the first time. `audit:budgets` reads 40/40 before and
 after.
 
-> ⚑ **And `haul` shipped with two world halts any player could reach, found 2026-07-28 by a blind
-> probe and fixed in `D41` (`Lot.carrier`, `RULES_VERSION` 25).** Two hauls one tick apart broke
-> INV-W7's cargo mirror (`landArrivedCargo` reconciled a per-hand manifest against an anonymous pool
-> of in-transit lots and landed **whole lots** past the mark); two hauls in the *same* tick out of the
-> one starter-allotment lot collided on the derived split-lot id, and `splitLot`'s throw escaped the
-> verb into `VALIDATE+LOCK` and PAUSED the world. **Production survived both only because no cast
-> branch sends `haul`** while the affordance offers it to every real principal — the fourth depth of
-> this file's own thesis, arriving as an availability bug. Read that before treating "the verb exists"
-> as evidence about any other verb no cast selects.
+> ⚑ **And `haul` shipped with THREE defects, two of them world halts any player could reach — found
+> 2026-07-28/29 by a blind probe and fixed in `D41` (`Lot.carrier`, `RULES_VERSION` 25).** Two hauls one
+> tick apart broke INV-W7's cargo mirror (`landArrivedCargo` reconciled a per-hand manifest against an
+> anonymous pool of in-transit lots and landed **whole lots** past the mark); two hauls in the *same*
+> tick out of the one starter-allotment lot collided on the derived split-lot id, and `splitLot`'s throw
+> escaped the verb into `VALIDATE+LOCK` and PAUSED the world. **The third broke nothing and was worse in
+> kind:** `haul.landed` was emitted `SENSED` with `declassifyAt: ctx.tick` and `publicAt: null`, so
+> `visibilityFaultsAtBirth` refused **every row the verb ever emitted** and `flushRecord` filed each
+> refusal as a `faults` string. The cargo landed, the manifest cleared, INV-W7 stayed green, nothing
+> halted, and **the record was silent** — an arrival the viewer can never draw (A13) and a manifest the
+> principal that bought intel can never read.
+>
+> ⚠️ **And the first draft of this note asserted the wrong reason, which is the more useful finding.** It
+> said *"production survived only because no cast branch sends `haul`"*. `cast/heuristic.ts:2586` does,
+> and `scripts/haul-reach-probe.ts` counts **15 hauls / 15 landings in 3 Reckonings across 4 seeds** in a
+> world nobody steers, first departure at tick 578. Nobody had ever counted. Read that before treating
+> "no cast selects it" as evidence about **any** verb — and note that all three defects were found by
+> the same instrument, the third one only *after* the first two were fixed and a counter existed to
+> print `landed` beside `departed`.
 
 **The Levy is untouched and the gate is spotless at all three horizons.** All four obligation constants
 still read `ration`, `goods-are-independent.test.ts` is green, and 8 seeds give `levyShort` **0** and
