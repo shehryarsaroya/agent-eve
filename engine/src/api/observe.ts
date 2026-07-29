@@ -3082,7 +3082,15 @@ function affordancesFor(
   {
     const capacity = runtime.parleysFor(principal, tick);
     const reach = runtime.reachFor(principal, tick);
-    if (capacity.parleys_remaining > 0) {
+    // ── BOTH CONJUNCTS, AND THE SECOND WAS MISSING ────────────────────────────
+    //
+    // The first version branched on capacity alone, so a principal with a full allowance and an
+    // EMPTY reach set fell into the offer branch, published nothing (the loop had nothing to
+    // iterate) and produced no `withheld` row either. That is `trade`'s defect exactly — silent in
+    // 497 of 576 observations with a reachable venue in every one — reintroduced in the block whose
+    // own comment cites it. `test/api/withheld-is-accountable.spec.ts` promotes `message` to CLOSED
+    // on the strength of this line.
+    if (capacity.parleys_remaining > 0 && reach.length > 0) {
       for (const row of reach.slice(0, MAX_PARLEY_AFFORDANCES)) {
         if (runtime.parleyRefusalFor(principal, row.principal, tick) !== null) {
           parleyGated += 1;
