@@ -749,6 +749,35 @@ export function electCover(
 ): WorldResult<null> {
   const coverId = readString(params, ['cover', 'cover_id']) as CoverId | null;
   if (coverId === null) return reject('A2', 'elect {"cover":"<id>","election":"IN_FULL"}.');
+
+  // ── ★ A NAMED GRANT IS REFUSED HERE, BY NAME, AND THE GAP IS THE REASON ────
+  //
+  // **`grant`, not `on_behalf_of`, and finding that out is the point.** The first version of this
+  // branch checked `on_behalf_of` and was **dead code**: `elect` is not in `HONOURS_ON_BEHALF`, so the
+  // runtime's own `unhonouredOnBehalf` guard refuses that spelling before this function runs. A
+  // venture's election delegates through `electionMandate`, which reads `['grant', 'grant_id']` and
+  // charges the named grantor's limits — *"a delegate may hold authority from several principals … a
+  // draw against the wrong grantor's limit is a wrong row in a journal INV-22 halts the world over."*
+  //
+  // A COVER's election does not resolve a mandate at all, so the door is shut rather than half-wired,
+  // and it says so. A refusal reading *"X is the payer, not you"* would be true and would describe the
+  // **wrong rule** — a delegate holding a perfectly good grant would go looking for a fence problem
+  // that does not exist, which is scar #1's shape in the agent-facing text.
+  //
+  // ⚑ Named as a gap because it is A6's own shape with a bigger number on it: a delegate that could
+  // refuse its grantor's insurance obligation at the moment of maximum leverage is the signature moment.
+  const namedGrant = readString(params, ['grant', 'grant_id']);
+  if (namedGrant !== null) {
+    return reject(
+      'A2',
+      `elect on a COVER cannot be delegated yet, and it will not quietly ignore grant=${namedGrant} ` +
+        'either — an election a delegate believes it made and did not is a payer the record calls a ' +
+        "defaulter (A5\u2032). Only the COVER's own payer may decide. Nothing was elected. A venture " +
+        "role's election IS delegable; a COVER's is not, because it would have to draw against the " +
+        'grantor\u2019s limits and that journal is what INV-22 halts the world over.',
+    );
+  }
+
   const cover = port.book.cover(coverId);
   if (cover === undefined) return reject('PROP-R3', `there is no cover ${coverId}.`);
   if (cover.payer !== principal) {

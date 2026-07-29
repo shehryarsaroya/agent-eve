@@ -284,3 +284,85 @@ describe('and when it is NOT offered, the menu says so — the withheld half', (
     expect(offersOf(runtime, payer, 'publish_offer', 'kind', 'COVER').length).toBe(0);
   });
 });
+
+describe('delegation on a COVER election is shut, and the refusal says WHY', () => {
+  it('★ refuses `on_behalf_of` by name rather than with a true-but-misleading reason', () => {
+    const world = riskWorld('reach-delegate', 5, 'MARCHES');
+    const { runtime, principals } = world;
+    const [payee, payer, delegate, bankA, bankB] = principals;
+    if (
+      payee === undefined ||
+      payer === undefined ||
+      delegate === undefined ||
+      bankA === undefined ||
+      bankB === undefined
+    ) {
+      throw new Error('unreachable');
+    }
+    fund(runtime, bankA, payer, 200_000);
+    fund(runtime, bankB, payee, 200_000);
+
+    runTo(runtime, FIRST_ANNOUNCE_TICK);
+    const front = runtime.risk.allFronts()[0];
+    if (front === undefined) throw new Error('unreachable');
+    const cell = [...front.swath].sort((a, b) => b.intensityBps - a.intensityBps)[0];
+    if (cell === undefined) throw new Error('unreachable');
+    stockAt(runtime, payee, cell.system, 400_000, LEVY_GOOD);
+    act(runtime, payer, 'publish_offer', {
+      kind: 'COVER',
+      system: cell.system,
+      good: LEVY_GOOD,
+      limit: 40_000,
+      premium: 1_000,
+      elective_bps: COVER_ELECTIVE_BPS_CEILING,
+    });
+    const cover = runtime.risk.coversBy(payer)[0];
+    if (cover === undefined) throw new Error('unreachable');
+    act(runtime, payee, 'sign', { cover: cover.id, terms_hash: cover.termsHash ?? '' });
+    runTo(runtime, FIRST_LANDFALL_TICK);
+    tick(runtime);
+
+    // Non-vacuity: the election really is available to the payer itself, so the refusal below is about
+    // delegation and not about the state of the obligation.
+    expect(runtime.risk.dueBy(payer).length, 'an INDEMNITY is open').toBe(1);
+    const own = act(runtime, payer, 'elect', { cover: cover.id, election: 'IN_FULL' });
+    expect(own, `the payer's own election was refused: ${own?.hint ?? ''}`).toBeNull();
+
+    // ★ And a delegate's is refused with the honest reason.
+    //
+    // `grant`, not `on_behalf_of`: `elect` is NOT in `HONOURS_ON_BEHALF` and a venture's election
+    // delegates through `electionMandate`, which reads `['grant','grant_id']`. The first version of
+    // both this test and the branch it exercises used the wrong spelling and the branch was dead code —
+    // refused one layer up by `unhonouredOnBehalf`, with a message about a different rule.
+    //
+    // MUTATION: delete the `namedGrant !== null` branch from `wire.ts:electCover`. The act is still
+    // refused — by `cover.payer !== principal` — so a naive test passes. What breaks is the SENTENCE:
+    // it becomes "X is the payer, not you", which is true and describes the wrong rule. `elect` is in
+    // `DELEGABLE_VERBS`, so an agent holding a good grant would read that as a fence problem and go
+    // looking for one that does not exist. That is scar #1 in the agent-facing text.
+    const delegated = act(runtime, delegate, 'elect', {
+      cover: cover.id,
+      election: 'IN_FULL',
+      grant: 'g:whatever',
+    });
+    expect(delegated, 'a delegate is refused').not.toBeNull();
+    expect(delegated?.hint, 'and told it is DELEGATION that is unavailable, not its grant').toMatch(
+      /cannot be delegated/,
+    );
+    expect(
+      delegated?.hint,
+      'and that a venture role’s election IS delegable, so the distinction is learnable',
+    ).toMatch(/venture role/);
+    expect(delegated?.hint, 'and that nothing happened').toMatch(/Nothing was elected/);
+    // And the OTHER spelling is refused one layer up, by the runtime's own guard, which is why the
+    // branch above must not check it: `elect does not act on another principal's behalf`.
+    const wrongSpelling = act(runtime, delegate, 'elect', {
+      cover: cover.id,
+      election: 'IN_FULL',
+      on_behalf_of: payer,
+    });
+    expect(wrongSpelling?.hint, 'the runtime guard owns `on_behalf_of`').toMatch(
+      /does not act on another principal/,
+    );
+  });
+});
