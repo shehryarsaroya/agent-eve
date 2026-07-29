@@ -163,6 +163,16 @@ can be recorded short of it. `haul` — a canon verb filed under *"step 11"* sin
 — goes live with it, so goods can move for the first time. `audit:budgets` reads 40/40 before and
 after.
 
+> ⚑ **And `haul` shipped with two world halts any player could reach, found 2026-07-28 by a blind
+> probe and fixed in `D41` (`Lot.carrier`, `RULES_VERSION` 25).** Two hauls one tick apart broke
+> INV-W7's cargo mirror (`landArrivedCargo` reconciled a per-hand manifest against an anonymous pool
+> of in-transit lots and landed **whole lots** past the mark); two hauls in the *same* tick out of the
+> one starter-allotment lot collided on the derived split-lot id, and `splitLot`'s throw escaped the
+> verb into `VALIDATE+LOCK` and PAUSED the world. **Production survived both only because no cast
+> branch sends `haul`** while the affordance offers it to every real principal — the fourth depth of
+> this file's own thesis, arriving as an availability bug. Read that before treating "the verb exists"
+> as evidence about any other verb no cast selects.
+
 **The Levy is untouched and the gate is spotless at all three horizons.** All four obligation constants
 still read `ration`, `goods-are-independent.test.ts` is green, and 8 seeds give `levyShort` **0** and
 red tribute lines **0/192 · 0/384 · 0/576** at 3, 6 and 9 Reckonings — eight of eight, matching master,

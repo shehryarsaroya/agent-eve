@@ -336,6 +336,7 @@ describe('UNIT-L2 lots', () => {
             qty: qty(4),
             location: HOME,
             state: 'AVAILABLE',
+            carrier: null,
             origin: ALICE,
           },
         ],
