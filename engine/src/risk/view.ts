@@ -41,7 +41,7 @@
  */
 
 import type { GoodId, PrincipalId, SystemId } from '../core/types.js';
-import { BPS_ONE, minor, type Bps, type Minor, type Qty } from '../core/units.js';
+import { BPS_ONE, bps, minor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { ENDOWMENT_GOOD } from '../ledger/endowment.js';
 import { compareIds } from '../ledger/order.js';
 import type { RiskBook } from './book.js';
@@ -448,8 +448,24 @@ export function coverAffordances(input: CoverAffordanceInput): {
         'to write against. Fronts are scheduled and announced — the CONE arrives first.',
     });
   } else {
+    // ★ THE MIDPOINT OF A7's BAND, NOT ITS FLOOR — and the reason is this project's own lesson.
+    //
+    // The first version suggested `COVER_ELECTIVE_BPS_FLOOR`, which is the *safest* number for the
+    // payer and the wrong one for the affordance. `escrowedDue = min(covered, escrowed)` makes the
+    // elective half the TOP slice of a claim (`indemnity.ts:openPrimary`), so at the floor a COVER's
+    // promise is only tested by a loss above 75% of its limit — and *"an affordance nothing selects is
+    // indistinguishable from one that does not exist."* A blind copier taking the default would write
+    // cover whose elective half is decoration, and this repo's whole method is that what gets copied
+    // is what exists.
+    //
+    // So the suggestion is the band's midpoint: half certain, half on the payer's word, and a promise a
+    // moderate loss actually reaches. Both ends of the band remain available and the offer publishes
+    // `elective_bps` explicitly, so this is a *default* rather than a rule.
+    const suggestedElectiveBps = bps(
+      Math.trunc((COVER_ELECTIVE_BPS_FLOOR + COVER_ELECTIVE_BPS_CEILING) / 2),
+    );
     const escrowNeeded = minor(
-      input.suggestedLimit - Math.trunc((input.suggestedLimit * COVER_ELECTIVE_BPS_FLOOR) / BPS_ONE),
+      input.suggestedLimit - Math.trunc((input.suggestedLimit * suggestedElectiveBps) / BPS_ONE),
     );
     if (input.freeCash < escrowNeeded) {
       withheld.push({
@@ -470,7 +486,7 @@ export function coverAffordances(input: CoverAffordanceInput): {
           good: target.good,
           limit: input.suggestedLimit,
           premium: input.suggestedPremium,
-          elective_bps: COVER_ELECTIVE_BPS_FLOOR,
+          elective_bps: suggestedElectiveBps,
         },
         maxDirectLoss: escrowNeeded,
         maxContingentLiability: minor(input.suggestedLimit - escrowNeeded),
