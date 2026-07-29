@@ -72,6 +72,7 @@
 import type { ZoneTier } from '../core/types.js';
 import { BPS_ONE, bps, minor, type Bps, type Minor } from '../core/units.js';
 import { FREEZE_FIRST_PHASE, TICKS_PER_RECKONING } from '../core/time.js';
+import { LEVY_DUTY_PER_PRINCIPAL, LEVY_UNIT_MINOR } from '../levy/params.js';
 
 /**
  * The canon words this module spends, as data, so `canon-word-per-concept` can police them.
@@ -222,13 +223,39 @@ export const VULNERABILITY_BY_TIER: Readonly<Record<ZoneTier, Bps>> = Object.fre
 });
 
 /**
- * Goods a principal keeps at a struck system whatever the INTENSITY, per good.
+ * ★ Goods a principal keeps whatever the INTENSITY, per good. **One RECKONING's flat duty.**
  *
- * Not mercy — measurement. A front that can take a principal's *last* unit of `ration` leaves it
- * holding the LEVY, which is payable only in located goods, with no way to pay: A5′ with our own
- * economy as the cause, which is the exact failure `ledger/endowment.ts` refused to ship.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Not mercy — A5′. A front that can take a principal's *last* unit of `ration` leaves it holding the
+ * LEVY, which is payable only in located goods, with no way to pay: **A5′ with our own economy as the
+ * cause**, which is the exact failure `ledger/endowment.ts` refused to ship.
+ *
+ * **THE ARGUMENT ABOVE WAS WRITTEN FIRST AND THE NUMBER WAS AN ORDER OF MAGNITUDE TOO LOW.** It was a
+ * literal `2_000` against a flat duty of 20,000 units, and `test/cast/the-constellation-closes-ranks`
+ * found it at the aged horizon: R8 of `g07` recorded `p:halcyon` **4,275 short of 49,686** while its
+ * constellation held 96,770 unpledged units above their own duty. The goods had been burned by fronts
+ * at R3 and R6 and the reserve could not cover the gap. So the constant is now **derived from the duty
+ * it exists to protect** rather than chosen — if `LEVY_DUTY_PER_PRINCIPAL` moves, this moves with it,
+ * which is the difference between a rule and a coincidence.
+ *
+ * Charged **once per `(account, good)`** across every struck system, not per system — see
+ * `front.ts:destroySet`. A principal holding the good in three struck places keeps this much in total,
+ * not three times it.
+ *
+ * ⚑ **AND THE REASON THIS FLOOR HAS TO CARRY SO MUCH IS A HALF OF §10.1 THAT IS NOT BUILT.**
+ *
+ * > *"A front is: a published multi-Reckoning forecast … a **destroy set** … and a **deposit set** that
+ * > opens *new sites* in its wake. **That last clause is load-bearing**: it is the fresh opportunity
+ * > that keeps entering the world … and the reason the map is never the same twice."* — §10.1
+ *
+ * The destroy set is here; **the deposit set is not**, because opening a SITE is `src/world/`, which
+ * was another agent's lane this round. So this front destroys without renewing — which is precisely
+ * what §10.1 warns makes it *"a fourth tax"* rather than *"a central force"*. The spare floor is
+ * standing in for the renewal, and it should come **back down** when the deposit set lands. Written
+ * here rather than left as a tuning number somebody later mistakes for balance.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
-export const FRONT_SPARES_QTY = 2_000;
+export const FRONT_SPARES_QTY = LEVY_DUTY_PER_PRINCIPAL / LEVY_UNIT_MINOR;
 
 // ── The COVER (RSK1, RSK3, A7) ──────────────────────────────────────────────
 
