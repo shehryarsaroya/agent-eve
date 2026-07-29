@@ -4561,6 +4561,31 @@ export class Runtime {
   private landCargoNow(ctx: PhaseContext): void {
     ctx.step(this.world.hands.size);
     const landed = landArrivedCargo(this.haulPort(ctx.tick), this.world);
+    // ── WHEN A LANDING STOPS BEING SECRET, AND WHY IT IS NOT `ctx.tick` ───────
+    //
+    // `SENSED`'s row in §11.2 reads *"whoever has a hand in range or bought the intel; **everyone
+    // after the Reckoning it mattered in**"* — so a landing declassifies at the boundary of its own
+    // Reckoning, which is the first tick of the next one. `ticksUntilReckoning` is in `[1, 288]`, so
+    // this is **strictly** later than `ctx.tick` at every phase including settlement, which is what
+    // `VISIBILITY_RULES.SENSED.declassifyAt = 'STRICTLY_LATER'` demands.
+    //
+    // ── THIS WAS `ctx.tick`, AND IT COST EVERY ROW ────────────────────────────
+    //
+    // `declassifyAt: ctx.tick` with `publicAt: null` broke the SENSED contract twice over — a
+    // `STRICTLY_LATER` tier declassifying at birth, and a `fullOnDeclassify` tier with no `publicAt`
+    // — so `visibilityFaultsAtBirth` refused **every `haul.landed` row ever emitted**, and
+    // `flushRecord` turned each refusal into a `faults` string rather than a halt (correctly: one
+    // malformed row must not stop the shard). The cargo landed, the manifest cleared, INV-W7 stayed
+    // green and no test failed, because all of that is *state* — and the **record was silent**. Nine
+    // landings in a 3-Reckoning heuristic world produced nine faults and zero rows.
+    //
+    // Which is A5′ read from the other side: the record was not wrong, it was *absent*, and an
+    // absent arrival is a convoy the viewer can never draw (A13) and a manifest the principal that
+    // paid for intel can never read. `scripts/haul-reach-probe.ts` prints `haul.landed` next to
+    // `haul.departed` for exactly this reason — the two counts must match, and 9 against 0 is what
+    // found this. A row that is refused on every single emission is indistinguishable from a row
+    // nothing emits, which is this project's signature defect at the depth of the record itself.
+    const declassifyAt = ctx.tick + ticksUntilReckoning(ctx.tick);
     for (const one of landed) {
       // ── THE ARRIVAL IS `PUBLIC`, THE MANIFEST IS `SENSED` ───────────────────
       //
@@ -4579,8 +4604,9 @@ export class Runtime {
         eventFamilyId: 'haul::' + one.hand,
         parentEventId: null,
         isPublic: false,
-        publicAt: null,
-        declassifyAt: ctx.tick,
+        // `SENSED` is `fullOnDeclassify`, so these two are the same tick by rule, not by choice.
+        publicAt: declassifyAt,
+        declassifyAt,
         provenanceClass: 'FACT',
         actedOnStateVersion: ctx.frozenStateVersion,
         decisionSource: null,
