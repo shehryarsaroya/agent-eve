@@ -183,6 +183,7 @@ import {
   parleysRemaining,
   parleysVisibleTo,
   type ParleyCapacity,
+  type ParleyEntitlement,
   type ParleyEntry,
   type ParleyPort,
   type ParleyWritePort,
@@ -8492,7 +8493,7 @@ export class Runtime {
         return near;
       },
       constellationOf: (system) => String(systemOf(this.world.map, system).constellation),
-      awaitingReply: (principal) => this.awaitingReplyTo(principal, tick),
+      approachedBy: (principal) => this.approachesTo(principal, tick).senders,
       liveGrants: (principal) => {
         const rows: { readonly id: string; readonly counterparty: PrincipalId; readonly iAmGrantor: boolean }[] = [];
         for (const grant of this.grantBook.forGrantor(principal)) {
@@ -8522,40 +8523,51 @@ export class Runtime {
    * handed it, which is A15 defeated by the field name. It is the same distinction `post_bond` does
    * *not* draw, which is why a bond is not the price (see `parley.ts` §2).
    */
-  private parleyEntitlementOf(
-    principal: PrincipalId,
-    tick: number,
-  ): { readonly distinctCounterparties: number; readonly earnedMinor: Minor; readonly awaitingReply: number } {
+  private parleyEntitlementOf(principal: PrincipalId, tick: number): ParleyEntitlement {
     return {
       distinctCounterparties: this.standing.row(principal).distinctCounterparties,
       earnedMinor: freeCash(this.ledger, principal),
-      awaitingReply: this.awaitingReplyTo(principal, tick).length,
+      inboundParleys: this.approachesTo(principal, tick).received,
     };
   }
 
   /**
-   * Distinct principals that addressed this one **inside the Reckoning containing `tick`** and have
-   * had no answer back.
+   * Who addressed this principal **inside the Reckoning containing `tick`**, and how many times.
    *
    * ONE HOME, THREE READERS — the reach rule (which offers the reply), the allowance (which funds it)
-   * and the header block (which publishes the count). Three copies of "who is waiting on me" is three
+   * and the header block (which publishes both counts). Three copies of "who wrote to me" is three
    * chances for a menu to offer a reply the allowance will not pay for, which is AGT-S2 arriving
    * through a predicate rather than through a gate.
    *
-   * Scoped to the Reckoning for the allowance's reason: a reply owed from six cycles ago is a standing
-   * licence to address somebody who spoke once, and a licence that accumulates is the war chest §9
-   * refuses to fund.
+   * **Two numbers because they answer two questions, and conflating them was a bug.** `received` is a
+   * count of *messages* and funds the allowance; `awaiting` is a count of *principals* with an open
+   * conversation and is what an agent acts on. The first version returned only `awaiting` and used it
+   * for both — so a principal addressed by two others answered one, watched its allowance fall by the
+   * same reply twice (`remaining` is `allowance − sent`), and went mute to the second for the rest of
+   * the cycle.
+   *
+   * Scoped to the Reckoning for the allowance's reason: a licence to address somebody who spoke once
+   * six cycles ago accumulates exactly the way §9 refuses to fund a war chest.
    */
-  private awaitingReplyTo(principal: PrincipalId, tick: number): readonly PrincipalId[] {
+  private approachesTo(
+    principal: PrincipalId,
+    tick: number,
+  ): { readonly senders: readonly PrincipalId[]; readonly received: number; readonly awaiting: number } {
     const here = reckoningIndex(tick);
     const asked = new Set<PrincipalId>();
     const answered = new Set<PrincipalId>();
+    let received = 0;
     for (const entry of this.parleys.all) {
       if (reckoningIndex(entry.tick) !== here) continue;
-      if (entry.to === principal) asked.add(entry.from);
-      else if (entry.from === principal) answered.add(entry.to);
+      if (entry.to === principal) {
+        asked.add(entry.from);
+        received += 1;
+      } else if (entry.from === principal) {
+        answered.add(entry.to);
+      }
     }
-    return [...asked].filter((p) => !answered.has(p)).sort(compareIds);
+    const senders = [...asked].sort(compareIds);
+    return { senders, received, awaiting: senders.filter((p) => !answered.has(p)).length };
   }
 
   /** One home, two callers: {@link parleysFor} for the menu and {@link parleyRefusalFor} for both. */
@@ -8606,7 +8618,8 @@ export class Runtime {
       reachable_principals: reachable,
       distinct_counterparties: entitlement.distinctCounterparties,
       earned_minor: entitlement.earnedMinor,
-      awaiting_your_reply: entitlement.awaitingReply,
+      principals_awaiting_your_reply: this.approachesTo(principal, tick).awaiting,
+      parleys_received_this_reckoning: entitlement.inboundParleys,
       refreshes_at_tick: tick - (tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING,
       declassifies_after_ticks: AUDIT_LAG_TICKS,
       reading_costs_parleys: 0,

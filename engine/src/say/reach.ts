@@ -126,13 +126,14 @@ export interface ReachPort {
   /** Live grants this principal is a party to, either direction. */
   readonly liveGrants: (principal: PrincipalId) => readonly ReachGrant[];
   /**
-   * Principals that have addressed this one and are still owed an answer this Reckoning.
+   * Principals that have addressed this one **inside the current Reckoning**.
    *
-   * Scoped to the Reckoning by the caller for the reason the allowance is: a reply owed from six
-   * cycles ago is a standing licence to talk to somebody who spoke once, which accumulates exactly
-   * the way §9 forbids a war chest to.
+   * Not filtered to *unanswered*: the allowance already bounds how much can be said, and filtering
+   * here would close the channel to a second sender the moment the first was answered. Scoped to the
+   * Reckoning for the allowance's reason — a licence to talk to somebody who spoke once six cycles
+   * ago accumulates exactly the way §9 forbids a war chest to.
    */
-  readonly awaitingReply: (principal: PrincipalId) => readonly PrincipalId[];
+  readonly approachedBy: (principal: PrincipalId) => readonly PrincipalId[];
 }
 
 /**
@@ -171,15 +172,16 @@ export function reachableFor(port: ReachPort, principal: PrincipalId): readonly 
   // Ranked ahead of everything because it is the only rung where somebody is *waiting*, and because
   // the dedupe keeps the first row: a principal that both wrote to you and stands in your war should
   // read as an open conversation rather than as a stranger in your constellation.
-  for (const other of [...port.awaitingReply(principal)].sort(compareIds)) {
+  for (const other of [...port.approachedBy(principal)].sort(compareIds)) {
     push({
       principal: other,
       why: 'REPLY',
       about: 'parley',
       sentence:
-        `${other} addressed you this Reckoning and you have not answered. Answering costs you nothing you had ` +
-        'to earn — the price of a parley is on whoever starts one — and `counterparties[].last_parley` carries ' +
-        'what it said, with its standing row beside it so you can price the offer before you take it.',
+        `${other} addressed you this Reckoning, so you may answer it whatever your own record. Answering costs ` +
+        'nothing you had to earn — the price of a parley is on whoever starts one — and ' +
+        '`counterparties[].last_parley` carries what it said, with its standing row beside it so you can price ' +
+        'the offer before you take it.',
     });
   }
 

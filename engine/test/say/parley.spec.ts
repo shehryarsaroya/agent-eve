@@ -19,6 +19,43 @@
  * The assertion that matters is therefore the last one in this file, and it is not "the suite is
  * green": **the attacker's force reading changes because it asked.**
  * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ── ★ THE CAST HOOK, AS A NAMED LIST OF CALLS ────────────────────────────────
+ *
+ * `src/cast/heuristic.ts` is another agent's lane this round, so the branch is reported rather than
+ * written. Two halves, and **the second is the one without which the mechanism is dead**: a channel
+ * whose messages nobody reads is `lockFillStake` with a passing test and no caller.
+ *
+ * **(a) ASK — for a member that is a campaign belligerent and would lose the next pulse.**
+ *
+ *     const capacity = runtime.parleysFor(me, tick);          // header.parley
+ *     if (capacity.parleys_remaining === 0) return;           // priced, and it says why in `.rule`
+ *     for (const view of runtime.campaignsFor(me, tick, 24))  // holding.campaigns[]
+ *       if (view.your_side !== null && view.force.outcome_if_pulsed_now === 'REBUFF')
+ *         for (const row of runtime.reachFor(me, tick))       // ONLY these ids are legal
+ *           if (runtime.parleyRefusalFor(me, row.principal, tick) === null)
+ *             emit('message', { to: row.principal, act: 'offer', text: <the terms> });
+ *
+ *   Rank by `runtime.standing.row(row.principal).defaults` ascending — §12.4's advice, now applicable
+ *   to a stranger for the first time — and prefer `why === 'CAMPAIGN'` rows over `'GRANT'` ones.
+ *
+ * **(b) ANSWER — for every member, every wake, and it costs nothing to be entitled to.**
+ *
+ *     for (const c of observation.counterparties)             // the inbox IS the address book
+ *       if (c.parleys_received > 0 && c.last_parley !== null) {
+ *         if (<the terms are worth taking> && <a live campaign names the asker>)
+ *           emit('join', { campaign: <id>, side: <the side the asker is on>, system: <objective> });
+ *         emit('message', { to: c.principal, act: 'accept' | 'decline', text: <why> });
+ *       }
+ *
+ *   `header.parley.principals_awaiting_your_reply` is the count, and a member with no entitlement of its own
+ *   still has exactly that many parleys — so (b) is reachable for every seat in the world from the
+ *   first Reckoning, which (a) is not.
+ *
+ * **What to measure once it exists.** `scripts/parley-probe.ts` reports entitlement, reach and offers;
+ * what it cannot report until the cast has these branches is *uptake* — parleys sent, replies sent, and
+ * **roster rows whose principal had received a parley naming that campaign.** That last number is the
+ * only one that answers "did a coalition form because somebody asked".
  */
 
 import { describe, expect, it } from 'vitest';
@@ -27,7 +64,7 @@ import type { PrincipalId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
 import { AUDIT_LAG_TICKS } from '../../src/grant/dossier.js';
 import { PARLEYS_PER_RECKONING, MAX_PARLEY_LENGTH } from '../../src/say/parley.js';
-import type { Runtime } from '../../src/sim/runtime.js';
+import { MAX_MESSAGE_LENGTH, type Runtime } from '../../src/sim/runtime.js';
 import { act, campaignWorld, fund, tick } from '../campaign/fixture.js';
 
 function observe(runtime: Runtime, principal: PrincipalId): ReturnType<typeof buildObservation> {
@@ -114,6 +151,20 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
       offers.map((o) => (o.params as Record<string, unknown>)['to']),
       "the objective's constellation must be reachable, or the recruiting case this exists for is missing",
     ).toContain(w.ally);
+
+    // ── AND IT MUST SURVIVE `firstOfEachVerb` ─────────────────────────────────
+    //
+    // `api/observe.ts` sorts the first offer of each verb ahead of every repeat, because that is what
+    // an agent copying its menu takes. `message` has two other shapes — `assure` on an unpaid elective
+    // half, and a DOSSIER cut — so the parley is only first when neither applies. For a belligerent
+    // that owes no elective half and holds no clearance, which is exactly the probe's position, it
+    // must be: an agent that copies its top row while losing a war should be asking for help.
+    const firstMessage = observe(w.runtime, w.attacker).affordances.find((a) => a.verb === 'message');
+    expect(
+      (firstMessage?.params as Record<string, unknown> | undefined)?.['to'],
+      'a belligerent owing no elective half must find the PARLEY as its FIRST `message` offer, or a blind ' +
+        'copier fighting a war it cannot win alone never asks anybody',
+    ).not.toBeUndefined();
   });
 
   it('the verb accepts the exact params the menu published (AGT-S2)', () => {
@@ -202,7 +253,7 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
     const recruitCapacity = w.runtime.parleysFor(recruit, w.runtime.engine.tick);
     expect(recruitCapacity.distinct_counterparties, 'the recruit has kept no elective promise').toBe(0);
     expect(recruitCapacity.earned_minor, 'and nobody has paid it anything').toBe(0);
-    expect(recruitCapacity.awaiting_your_reply, 'but somebody is waiting on it').toBe(1);
+    expect(recruitCapacity.principals_awaiting_your_reply, 'but somebody is waiting on it').toBe(1);
     expect(
       recruitCapacity.parleys_remaining,
       'so it may answer exactly the one principal that addressed it, and start nothing',
@@ -267,6 +318,57 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
     expect(w.runtime.parleysVisible(w.defender, entry.revealsAtTick).length).toBe(1);
   });
 
+  it('★ writes a `say.parley` ROW on the record, PARTIES and ASSERTION — not just a ring entry', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE HALF A MUTATION TEST CAUGHT NOTHING ABOUT.** Every assertion above reads the parley RING,
+    // which is what agents see. The event LEDGER is what the viewer, the audit and §14's receipt reel
+    // read — and the brief's own example is `haul.landed`, refused on **every** emission for the
+    // project's life, so the record stayed silent while nothing failed and no test went red.
+    //
+    // Flipping `provenanceClass` from `ASSERTION` to `FACT` was mutation M11 and it **survived** the
+    // whole file. This closes it, and the field is not a formality: `FACT` is the engine vouching for
+    // a claim it cannot check. It vouches that these words were said, at this tick, by this principal,
+    // and for nothing about whether they are true. Stamping an agent's promise `FACT` is A5′ inverted
+    // on the one surface §14 quotes verbatim.
+    // ══════════════════════════════════════════════════════════════════════════
+    const w = warWorld('parley-record');
+    expect(
+      act(w.runtime, w.attacker, 'message', { to: w.ally, act: 'assure', text: 'your lanes are safe with me' }),
+    ).toBeNull();
+
+    const rows = w.runtime.events
+      .ticks()
+      .flatMap((t) => w.runtime.events.eventsAtTick(t))
+      .filter((e) => e.event.kind === 'say.parley');
+    expect(rows.length, 'exactly one row, and it must EXIST — a ring entry is not a record').toBe(1);
+    const record = rows[0];
+    if (record === undefined) throw new Error('no row');
+    const row = record.event;
+
+    expect(row.isPublic, 'PARTIES while live means not public at send').toBe(false);
+    expect(record.visibility).toBe('PARTIES');
+    expect(
+      row.provenanceClass,
+      'ASSERTION. The engine vouches that it was SAID, never that it is TRUE — mutation M11 flipped this to ' +
+        'FACT and every other assertion in this file still passed.',
+    ).toBe('ASSERTION');
+    expect(
+      [row.publicAt, row.declassifyAt],
+      'both clocks are the row\'s own reveal tick. Two numbers is how a leak publishes on one surface before ' +
+        'another (§11.2), and the DOSSIER uses exactly this shape.',
+    ).toEqual([row.tick + AUDIT_LAG_TICKS, row.tick + AUDIT_LAG_TICKS]);
+    expect(
+      w.runtime.events.audienceOf(row.id).map((a) => String(a.principal)).sort(),
+      'both parties, and nobody else: one said it and one was told it',
+    ).toEqual([String(w.attacker), String(w.ally)].sort());
+    expect(
+      row.payload['text'],
+      'the TEXT is in the payload, unlike a dossier\'s figures — §14 has nothing to quote otherwise',
+    ).toBe('your lanes are safe with me');
+    expect(row.payload['why']).toBe('CAMPAIGN');
+    expect(row.payload['about'], 'and the public situation that made the address legal').toBe(w.campaign);
+  });
+
   it('the allowance EXPIRES UNSPENT and the count is published before it is charged', () => {
     const w = warWorld('parley-capacity', 3);
     const before = w.runtime.parleysFor(w.attacker, w.runtime.engine.tick);
@@ -301,6 +403,45 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
       'the refusal must say it does not accumulate. An agent that thinks capacity banks will plan a recruiting ' +
         'round it can never fund — `aggressionNote` records the same argument for demands.',
     ).toMatch(/does not accumulate|DO NOT CARRY/i);
+  });
+
+  it('⚑ an unentitled principal addressed by TWO others can answer BOTH — the allowance is a denominator', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE REGRESSION FOR A BUG THE FIRST VERSION HAD AND THE ONE-SENDER TEST COULD NOT SEE.**
+    //
+    // The reply allowance was `min(3, unanswered senders)`, and `remaining` is `allowance − sent`. So
+    // answering the first sender removed it from `unanswered` AND counted as spend — the same reply
+    // subtracted twice — and a recruit courted by both sides of a war could answer one of them and was
+    // then mute to the other for the rest of the Reckoning. That is the megaphone defect one layer in,
+    // and it would have shipped: the coalition test has one sender and passed throughout.
+    //
+    // The term is now a count of parleys RECEIVED, which is monotone inside a Reckoning: a denominator
+    // rather than a balance.
+    // ══════════════════════════════════════════════════════════════════════════
+    const w = warWorld('parley-two-askers', 1);
+    const recruit = w.bystanders[0];
+    if (recruit === undefined) throw new Error('no recruit');
+
+    // Both sides court the same bystander. The defender is entitled (the fixture funds it for its
+    // claim bond) and the attacker is entitled, and both stand in the same war as the recruit's
+    // constellation, so both may address it.
+    expect(act(w.runtime, w.attacker, 'message', { to: recruit, act: 'offer', text: 'join me, 20000' })).toBeNull();
+    expect(act(w.runtime, w.defender, 'message', { to: recruit, act: 'offer', text: 'defend, 25000' })).toBeNull();
+
+    const capacity = w.runtime.parleysFor(recruit, w.runtime.engine.tick);
+    expect(capacity.distinct_counterparties, 'the recruit has earned nothing').toBe(0);
+    expect(capacity.earned_minor).toBe(0);
+    expect(capacity.parleys_received_this_reckoning, 'two parleys arrived').toBe(2);
+    expect(capacity.principals_awaiting_your_reply, 'from two distinct principals').toBe(2);
+    expect(capacity.parleys_remaining, 'so it holds two replies, not one').toBe(2);
+
+    expect(act(w.runtime, recruit, 'message', { to: w.attacker, act: 'decline', text: 'not enough' })).toBeNull();
+    expect(
+      act(w.runtime, recruit, 'message', { to: w.defender, act: 'accept', text: 'done' }),
+      'the SECOND reply must land. Under the old arithmetic this was refused A15 and the recruit could ' +
+        'never tell the second bidder anything.',
+    ).toBeNull();
+    expect(w.runtime.parleysFor(recruit, w.runtime.engine.tick).parleys_remaining, 'and now it is spent').toBe(0);
   });
 
   it('refuses an unreachable principal, and the sentence says what would change it', () => {
@@ -349,6 +490,17 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
       text: 'x'.repeat(MAX_PARLEY_LENGTH + 1),
     });
     expect(long?.invariant, 'the cap is INV-26 (bounded buffers), not a style rule').toBe('INV-26');
+
+    // ── ONE PUBLISHED QUANTITY, TWO DECLARATIONS, PINNED (scar #5) ────────────
+    //
+    // `MAX_PARLEY_LENGTH` cannot import `MAX_MESSAGE_LENGTH` without a module cycle, so the two
+    // literals are held equal here instead. `agent.md` tells an agent one number for "how long a
+    // message can be" and it must not silently become two.
+    expect(
+      MAX_PARLEY_LENGTH,
+      'a parley and a venture MESSAGE must carry the same length. If this diverges, `agent.md` §4 states ' +
+        'one figure for two limits and one of them is a lie (scar #1 through a constant).',
+    ).toBe(MAX_MESSAGE_LENGTH);
   });
 
   it('does not disturb a MESSAGE inside a venture, or a DOSSIER hand', () => {

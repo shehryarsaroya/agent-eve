@@ -939,21 +939,21 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 85,884 = **34,116**. The reachable maximum is still `outside the
     // Commons and landless, at its fullest`, now 79,365 — leaving **40,635**, against a required
     // 4,000.
-    // ── ★ 31 · THE PARLEY: +2,555, AND IT COMPOSES ON FIVE ROWS OF EIGHT ─────
+    // ── ★ 31 · THE PARLEY: +2,700, AND IT COMPOSES ON FIVE ROWS OF EIGHT ─────
     //
     //     = corrections (27)         41,555 · 49,943 · 54,371 · 54,813 · 77,965 · 65,552 · 79,474 · 85,993
-    //     + the parley (31)              +0      +0      +0  +2,555  +2,555  +2,555  +2,555  +2,555
-    //     = now                      41,555 · 49,943 · 54,371 · 57,368 · 80,520 · 68,107 · 82,029 · 88,548
+    //     + the parley (31)              +0      +0      +0  +2,700  +2,700  +2,700  +2,700  +2,700
+    //     = now                      41,555 · 49,943 · 54,371 · 57,513 · 80,665 · 68,252 · 82,174 · 88,693
     //
     // The fifth composition with nothing absorbed, and the signature is 24's rather than 27's: one
     // new block, act-gated, so three readers pay nothing. The three zeroes are a newcomer, a
     // mid-game Commons member and a graduated member with no grant — none of which can address
     // anybody, and all three of which would have paid under a `verbs: ['message']` gate.
     //
-    // Analytic margin 120,000 − 88,548 = **31,452**. The reachable maximum is still `outside the
-    // Commons and landless, at its fullest`, now 82,029 — leaving **37,971**, against a required
+    // Analytic margin 120,000 − 88,693 = **31,307**. The reachable maximum is still `outside the
+    // Commons and landless, at its fullest`, now 82,174 — leaving **37,826**, against a required
     // 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(88_548);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(88_693);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1008,10 +1008,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // is for — it has hands, no ground to bill, and standoffs it can walk to. The reachable margin is
     // 120,000 − 76,163 = **43,837** against a required 4,000, which is the number to quote about
     // SAFETY and never the number to quote about ROOM.
-    // 82,029 at 31 (+2,555, §4's PARLEY). Margin 120,000 − 82,029 = **37,971** against a required
+    // 82,174 at 31 (+2,700, §4's PARLEY). Margin 120,000 − 82,174 = **37,826** against a required
     // 4,000. Still `outside the Commons and landless, at its fullest`: it holds a grant, so the GRANT
     // rung reaches its counterparty even with A8 keeping campaigns away from it.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(82_029);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(82_174);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2427,19 +2427,19 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // correct rule is not a feature and does not get to be optional.
       //
       // ══════════════════════════════════════════════════════════════════════════
-      // ★ **31 · THE PARLEY. +2,555 ON FIVE ROWS, AND ZERO ON THE THREE THAT CANNOT SPEAK.**
+      // ★ **31 · THE PARLEY. +2,700 ON FIVE ROWS, AND ZERO ON THE THREE THAT CANNOT SPEAK.**
       //
       //   before  after   Δ       position
       //   41,555  41,555       0  a newcomer on its first wake
       //   49,943  49,943       0  mid-game in the Commons
       //   54,371  54,371       0  about to take territory
-      //   54,813  57,368  +2,555  at war: party to a live campaign
-      //   77,965  80,520  +2,555  a claimant in trouble
-      //   65,552  68,107  +2,555  the Commons at its fullest
-      //   79,474  82,029  +2,555  outside the Commons and landless, at its fullest
-      //   85,993  88,548  +2,555  the analytic ceiling
+      //   54,813  57,513  +2,700  at war: party to a live campaign
+      //   77,965  80,665  +2,700  a claimant in trouble
+      //   65,552  68,252  +2,700  the Commons at its fullest
+      //   79,474  82,174  +2,700  outside the Commons and landless, at its fullest
+      //   85,993  88,693  +2,700  the analytic ceiling
       //
-      // **+2,555 is §4's new `### Talking to somebody you share no venture with: the PARLEY` to the
+      // **+2,700 is §4's new `### Talking to somebody you share no venture with: the PARLEY` to the
       // character**, so it lands whole wherever it lands and nothing was trimmed to fit it.
       //
       // **The three zeroes are the gate, and the first one is the number that mattered.** `message` is
@@ -2468,10 +2468,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       41_555, // a newcomer on its first wake            (+1,809 at 27, +0 at 31)
       49_943, // mid-game in the Commons                 (+1,809 at 27, +0 at 31)
       54_371, // about to take territory                 (+1,895 at 27, +0 at 31)
-      57_368, // at war: party to a live campaign        (+2,555 at 31: the PARLEY, and its row)
-      80_520, // a claimant in trouble                   (+2,555 at 31)
-      68_107, // the Commons at its fullest              (+2,555 at 31)
-      82_029, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,555)
+      57_513, // at war: party to a live campaign        (+2,700 at 31: the PARLEY, and its row)
+      80_665, // a claimant in trouble                   (+2,700 at 31)
+      68_252, // the Commons at its fullest              (+2,700 at 31)
+      82_174, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,700)
       //
       // ── ★ +109 MORE ON FIVE ROWS: THE ENGINE'S OWN STATEMENT WAS WRONG TOO ──
       //
@@ -2538,12 +2538,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // to argue about the ceiling this time: 27 is a corrections pass and the largest single item in
       // it is a false rule being made true.
       //
-      // ── 85,993 → 88,548 at 31 ────────────────────────────────────────────────
+      // ── 85,993 → 88,693 at 31 ────────────────────────────────────────────────
       //
-      // +2,555, margin **31,452** against a required 4,000. One act-gated block, and the ceiling row
+      // +2,700, margin **31,307** against a required 4,000. One act-gated block, and the ceiling row
       // is the only one of the five that is unreachable — the four that matter are all real positions
       // that hold a grant or stand in a war.
-      88_548,
+      88_693,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

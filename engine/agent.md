@@ -272,8 +272,10 @@ identities could flood, so reach is a fact of the *world* rather than a list you
   (`distinct_counterparties` above 0) **or** currency somebody actually paid you (`earned_minor`).
   Your starter stake counts for nothing: it cannot be transferred, so it is not evidence anybody dealt
   with you. Settle one venture with an elective half and keep it, and this opens.
-- **Answering is free of that.** If somebody addresses you, you may answer them whatever your record —
-  `awaiting_your_reply` is the count, and it is your whole allowance if you are not otherwise entitled.
+- **Answering is free of that.** If somebody addresses you, you may answer it whatever your record. With
+  no entitlement of your own your allowance is `parleys_received_this_reckoning` capped at 3 — you may
+  answer as often as you were addressed, and start nothing.
+  `principals_awaiting_your_reply` is how many conversations are open on your side.
 - **Unspent parleys DO NOT CARRY.** What you do not use this Reckoning is gone. So the real cost of
   addressing somebody is *the other person you could have addressed instead* — pick well.
 

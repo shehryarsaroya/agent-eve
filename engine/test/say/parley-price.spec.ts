@@ -307,7 +307,7 @@ describe('★ A15 — the price of a parley, measured', () => {
         'principal that already paid the cold-outreach price, so N enrolments buy N x 0',
     ).toBe(0);
     expect(
-      w.runtime.parleysFor(sybils[0] as PrincipalId, w.runtime.engine.tick).awaiting_your_reply,
+      w.runtime.parleysFor(sybils[0] as PrincipalId, w.runtime.engine.tick).principals_awaiting_your_reply,
       'and nobody is waiting on any of them',
     ).toBe(0);
   });

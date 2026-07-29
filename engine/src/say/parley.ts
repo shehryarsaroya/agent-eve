@@ -174,7 +174,16 @@ export interface ParleyEntry {
  */
 export const PARLEYS_PER_RECKONING = 3;
 
-/** Characters of text one parley carries (INV-26). Matches `MAX_MESSAGE_LENGTH` — see the note. */
+/**
+ * Characters of text one parley carries (INV-26).
+ *
+ * **The same 480 as `MAX_MESSAGE_LENGTH`, declared twice and pinned by a test rather than shared.**
+ * Sharing it would mean importing from `sim/runtime.ts`, which imports this file — a cycle, for a
+ * number. Two declarations of one published quantity is scar #5's shape, so the mitigation is the one
+ * scar #5 actually asks for: `test/say/parley.spec.ts` asserts they are equal, and the day somebody
+ * changes one the test names the other. `agent.md` promises agents a single figure for "how long a
+ * message can be", and it must not become two.
+ */
 export const MAX_PARLEY_LENGTH = 480;
 
 /**
@@ -200,12 +209,19 @@ export interface ParleyEntitlement {
   /** `freeCash` — balance less every lock, less the endowment still unspent. */
   readonly earnedMinor: Minor;
   /**
-   * Distinct principals that addressed this one **this Reckoning** and are unanswered.
+   * **Parleys** received this Reckoning. The third term, and it is not an entitlement — it is
+   * capacity somebody else's priced allowance paid to create.
    *
-   * The third term, and it is not an entitlement — it is a debt somebody else paid to create. See
-   * {@link parleyAllowanceFor}.
+   * ⚑ A **count of messages**, deliberately, and not the count of principals still waiting. The first
+   * version of this used *unanswered senders* and it had a real bug: `remaining` is
+   * `allowance − sent`, so an allowance that shrank as it was answered subtracted the same reply
+   * twice. Measured on the arithmetic — a principal written to by **two** others could answer
+   * **one** of them and was then mute to the second for the rest of the Reckoning, which is the
+   * megaphone defect this term exists to prevent, one layer in.
+   *
+   * Monotone within a Reckoning: it only ever rises, so it is a denominator rather than a balance.
    */
-  readonly awaitingReply: number;
+  readonly inboundParleys: number;
 }
 
 /**
@@ -242,7 +258,7 @@ export function parleyAllowanceFor(
 ): number {
   const entitled = entitlement.distinctCounterparties > 0 || entitlement.earnedMinor > 0;
   if (entitled) return allowance;
-  return Math.min(allowance, Math.max(0, entitlement.awaitingReply));
+  return Math.min(allowance, Math.max(0, entitlement.inboundParleys));
 }
 
 /**
@@ -315,11 +331,12 @@ export function parleyNote(
     // that reads "3 of 3" here and plans a recruiting round would find its second address refused
     // for a reason the count did not contain.
     return (
-      `You may ANSWER ${String(remaining)} of the ${String(entitlement.awaitingReply)} principal(s) that ` +
-      'addressed you this Reckoning, and START nothing. Answering is free of the entitlement — the price of a ' +
-      'parley is always on whoever speaks first. To address somebody who has not addressed you, you need one ' +
-      'elective promise honoured with a counterparty that is not you, or currency somebody paid you. Unanswered ' +
-      'approaches do not carry to the next Reckoning either.'
+      `You may send ${String(remaining)} more reply(s) this Reckoning and START nothing: your allowance is the ` +
+      `${String(entitlement.inboundParleys)} parley(s) sent TO you, capped at ${String(PARLEYS_PER_RECKONING)}. ` +
+      'Answering is free of the entitlement — the price of a parley is always on whoever speaks first, and you ' +
+      'may only answer principals that addressed you. To address somebody who has not, you need one elective ' +
+      'promise honoured with a counterparty that is not you, or currency somebody paid you. None of this ' +
+      'carries to the next Reckoning.'
     );
   }
   return remaining > 0
@@ -357,12 +374,18 @@ export interface ParleyCapacity {
   /** The entitlement's second term, in minor units. Above zero opens the allowance. */
   readonly earned_minor: Minor;
   /**
-   * Principals waiting on an answer from you this Reckoning, in **principals**.
+   * Principals that addressed you this Reckoning and have had no answer, in **principals**.
    *
-   * Not an entitlement — a debt somebody else's capacity paid to create. An unentitled principal's
-   * whole allowance is this number, capped: it may answer everyone who wrote and start nothing.
+   * The actionable count — how many conversations are open on your side. Not the allowance term; see
+   * the field below, and {@link ParleyEntitlement.inboundParleys} for why they are two numbers.
    */
-  readonly awaiting_your_reply: number;
+  readonly principals_awaiting_your_reply: number;
+  /**
+   * Parleys sent TO you this Reckoning, in **parleys**. The allowance term when you are not
+   * otherwise entitled: you may answer as often as you were addressed, capped at the ordinary
+   * allowance, and you may start nothing.
+   */
+  readonly parleys_received_this_reckoning: number;
   /** When the allowance resets. Absolute, so it compares directly against `header.tick`. */
   readonly refreshes_at_tick: number;
   /** Ticks a parley stays PARTIES-private before it publishes to everyone at once. */
