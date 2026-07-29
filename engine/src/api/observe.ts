@@ -94,6 +94,13 @@ import {
   RAID_JOIN_STAKE_MINOR,
   RAID_TAKE_MULTIPLE,
 } from '../predation/index.js';
+// ── PARLEY (§3) — the direct address, and the price on it ────────────────────
+//
+// The rule lives in `say/`, not here: this file publishes the menu and `runtime.parleyRefusalFor`
+// is the one gate both it and the verb ask. Only the two published constants are imported, so a
+// `withheld` sentence quoting the allowance cannot quote a different number than the engine charges.
+import { PARLEYS_PER_RECKONING } from '../say/parley.js';
+import { MAX_REACH_ROWS } from '../say/reach.js';
 // ── COMBAT (SPEC §9A) ───────────────────────────────────────────────────────
 //
 // The offer BUILDERS live in `combat/view.ts`, not here. This file is 3,300 lines and the last two
@@ -894,7 +901,28 @@ export function buildObservation(input: ObserveInput): Observation {
         .map((t) => ({ venture: t.venture, from: t.from, act: t.act, text: t.text, tick: t.tick })),
     },
 
-    counterparties: counterpartiesFor(runtime, principal, mine, board).slice(0, MAX_LIST_ROWS),
+    /**
+     * ★ **THE ADDRESS BOOK AND THE INBOX ARE ONE LIST, AND THAT IS THE FIX.**
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * A probe fighting a campaign it could not win alone read `counterparties[]` as **empty** — so
+     * §12.4's own advice, *"look at `counterparties[].last_default` before you trust someone"*, was
+     * inapplicable to the only relationship that mattered: the ally it did not have yet. The list
+     * was every principal it had *already dealt with*, which for the decision in front of it was
+     * every principal except the ones it needed.
+     *
+     * So the list now also carries the principals the world stands the reader beside — the ones
+     * `affordances[]` names as PARLEY recipients — with the same standing row, and the mail each has
+     * actually sent. Two consequences worth stating:
+     *
+     *   - §12.1's *"only agents named above"* is honoured rather than widened: a reachable principal
+     *     IS named above, in `affordances[]`, by a `message {to}` row carrying its real id.
+     *   - Pricing a stranger becomes possible **before** dealing with it, which is what §8 requires
+     *     of a grant's public limits and what a coalition requires of an ally. An agent asked to pay
+     *     20,000 a hand can now read the asker's `last_default` first.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    counterparties: counterpartiesFor(runtime, principal, mine, board, tick).slice(0, MAX_LIST_ROWS),
 
     grants: {
       // Authority you HANDED OUT (you are the grantor): watch each delegate's spend
@@ -4020,6 +4048,46 @@ function affordancesFor(
         `${clearanceOffersDroppedSubjects.join(', ')} — read them off \`grants.held[].clearance\``,
     });
   }
+  if (parleyWithheldReason !== null) {
+    // ── COUNTED, BECAUSE THREE DIFFERENT SILENCES READ IDENTICALLY ─────────────
+    //
+    // *Not entitled*, *spent* and *nobody reachable* produce the same empty menu, and a probe
+    // reported exactly that confusion about §9's capacity in as many words: it could not tell zero
+    // capacity from silence. `capacity.rule` is the sentence that names which one and what would
+    // change it — the entitlement is a deal, never another account (A15).
+    reasons.push({
+      verb: 'message',
+      text:
+        `${String(parleyWithheldCount)} PARLEY act(s) are not offered. ${parleyWithheldReason} A MESSAGE inside ` +
+        'a venture you already share is unaffected: it is free, unrationed, and needs no entitlement',
+    });
+  }
+  if (parleyReachDropped > 0) {
+    // ── COUNTED, AND THE SUBJECTS NAMED ───────────────────────────────────────
+    //
+    // `clearanceOffersDropped`'s lesson one channel over: a probe held two live grants, the menu
+    // offered dossiers on one, and `withheld` named a count without a subject — so the omission was
+    // unactionable. Naming the principals is what lets an agent construct the call itself, which is
+    // the whole promise of "withheld from the MENU is not withheld from the GAME".
+    reasons.push({
+      verb: 'message',
+      text:
+        `${String(parleyReachDropped)} principal(s) you may PARLEY are not on this list — the menu carries ` +
+        `${String(MAX_PARLEY_AFFORDANCES)} at a time because your allowance is ` +
+        `${String(PARLEYS_PER_RECKONING)} a Reckoning and a longer list is rows you cannot take. ` +
+        `\`message {"to": "<principal>", "act": "offer", "text": "..."}\` is accepted for any of them, up to ` +
+        `${String(MAX_REACH_ROWS)} reachable principals: ${[...parleyReachDroppedNames].sort(cmp).join(', ')}`,
+    });
+  }
+  if (parleyGated > 0) {
+    reasons.push({
+      verb: 'message',
+      text:
+        `${String(parleyGated)} reachable principal(s) were dropped by the shared gate rather than by the cap ` +
+        '— the same function `message {to}` itself runs, so the menu never publishes an address the verb ' +
+        'would refuse (AGT-S2). `header.parley.rule` carries the reason',
+    });
+  }
   if (demandCapacitySpent) {
     // ── COUNTED, BECAUSE A MENU THAT SHRINKS WITHOUT SAYING WHY TEACHES THE WRONG RULE ──
     //
@@ -4594,6 +4662,7 @@ function counterpartiesFor(
   principal: PrincipalId,
   mine: readonly VentureRecord[],
   board: readonly BoardRow[],
+  tick: number,
 ): Readonly<Record<string, unknown>>[] {
   const named = new Set<PrincipalId>();
   for (const venture of mine) {
@@ -4603,9 +4672,56 @@ function counterpartiesFor(
     }
   }
   for (const row of board) named.add(row.creator);
+  // Everyone the reader may PARLEY, because `affordances[]` names each of them by id — so they are
+  // "agents named above" in §12.1's sense, and a standing line is exactly what an agent needs
+  // before it answers a stranger's offer of 20,000 a hand.
+  const reach = runtime.reachFor(principal, tick);
+  for (const row of reach) named.add(row.principal);
   named.delete(principal);
 
-  return [...named].sort(cmp).map((other) => standingRow(runtime, other));
+  // The mail, indexed once so the map below stays linear over the ring.
+  const inbound = new Map<PrincipalId, { readonly count: number; readonly last: ParleyRead }>();
+  for (const entry of runtime.parleysVisible(principal, tick)) {
+    if (entry.to !== principal) continue;
+    const prior = inbound.get(entry.from);
+    inbound.set(entry.from, {
+      count: (prior?.count ?? 0) + 1,
+      last: { act: entry.act, text: entry.text, tick: entry.tick, publishes_at_tick: entry.revealsAtTick },
+    });
+  }
+
+  return [...named].sort(cmp).map((other) => {
+    const reachRow = reach.find((r) => r.principal === other);
+    const mail = inbound.get(other);
+    return {
+      ...standingRow(runtime, other),
+      /**
+       * Why this principal is addressable, or `null` when it is not (an ordinary counterparty from a
+       * venture you share). Named rather than implied: "you may talk to it" and "you have dealt with
+       * it" are two different relationships, and one list that did not distinguish them would be a
+       * field an agent reads as trust when it means proximity.
+       */
+      parley_reach: reachRow === undefined ? null : { why: reachRow.why, about: reachRow.about },
+      /**
+       * What it has actually said to you. **Present at zero**, because an absent field and a field
+       * reading zero are the same thing to a reader that has never seen one — and "nobody has written
+       * to me" has to be sayable.
+       *
+       * A9: this is the reader's own mail, which is the one thing a party sees ahead of the audience.
+       * `publishes_at_tick` on each is the tick every agent and every viewer read it together.
+       */
+      parleys_received: mail?.count ?? 0,
+      last_parley: mail?.last ?? null,
+    };
+  });
+}
+
+/** One inbound parley, as a counterparty row carries it. */
+interface ParleyRead {
+  readonly act: string;
+  readonly text: string;
+  readonly tick: number;
+  readonly publishes_at_tick: number;
 }
 
 /**

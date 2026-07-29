@@ -182,7 +182,6 @@ import {
   parleyRefusal,
   parleysRemaining,
   parleysVisibleTo,
-  PARLEYS_PER_RECKONING,
   type ParleyCapacity,
   type ParleyEntry,
   type ParleyPort,
@@ -1682,7 +1681,68 @@ import {
  * prints the exact string, and a bare tick is refused.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 27;
+/**
+ * ── 31 · ★ AN AGENT COULD NOT SPEAK TO ANOTHER AGENT ─────────────────────────
+ *
+ * **Landed on top of 30 and stacked rather than blended**, for 23's, 24's and 27's reason: an
+ * operator reading a `RULES_VERSION_MISMATCH` has to know which change moved which surface, and the
+ * discontinuities compose.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **NO CAPTURED TABLE CHANGES.** Nothing here adds, removes or re-types a field inside any
+ * `capture()`. The PARLEY book is a `Ring` beside `talk`, which has never been captured or
+ * persisted, and `say/parley.ts` §3 argues why the `DossierBook`'s capture argument does not
+ * transfer: a parley's reveal tick is derived from its own `tick`, so there is no stored second
+ * number that a rolled-back or replayed world could publish on a different tick than it published
+ * on.
+ *
+ * What moves is the **agent-facing surface**, which is a rules surface (scar #1) and therefore a
+ * version bump on its own:
+ *
+ *   1. **`message` accepts a third object.** `{to, act, text}` sends a PARLEY — one typed act
+ *      addressed to a named principal with no shared venture. The verb budget is untouched at 40 of
+ *      40: this is a parameter, the same shape as `deliver {payer}` and `build {kind:...}`, and
+ *      `message` already selected its object by parameter (`{venture}` → MESSAGE, `{to, dossier}` →
+ *      DOSSIER).
+ *   2. **`header.parley`** — a new standing block, present at zero, at full and at not-entitled.
+ *   3. **`affordances[]` carries `message {to}` rows naming real principals**, one per reachable
+ *      recipient, capped at `MAX_PARLEY_AFFORDANCES` with the rest named in `header.withheld`.
+ *   4. **`counterparties[]` grows two fields and a membership rule** — `parley_reach`,
+ *      `parleys_received`/`last_parley`, and it now includes every principal the reader may address.
+ *   5. **A new event kind, `say.parley`**, `PARTIES` at send and `PUBLIC` at
+ *      `sent_tick + AUDIT_LAG_TICKS`, `provenanceClass: 'ASSERTION'`.
+ *
+ * ── WHAT IT FIXES ────────────────────────────────────────────────────────────
+ *
+ * A blind probe fighting a campaign at the Marches read `attacker 3, defender 4, terrain 1,
+ * outcome_if_pulsed_now: REBUFF` — a reading no play of its own could change, because the defender
+ * gets +1 terrain, ties go to the defender, and one principal caps at three hands, so **a solo
+ * attacker can only ever beat a garrison of one.** The arithmetic makes coalitions mandatory,
+ * `join {campaign, side}` is the published answer, `counterparties[]` was **empty**, and it
+ * published *"COALITION WANTED: join campaign:234:0 ATTACKER at sys-06 … I pay 20000 per hand"* as a
+ * standing offer **into the void**, because `message` took only a venture it was not a party to or a
+ * dossier it was not cleared to cut.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * Not `SNAPSHOT_HASH_MISMATCH` from a changed table set — 24's and 27's signature instead. Nothing
+ * in the hash moves, so a journal written under 30 replays byte-identically **unless a principal
+ * sends a parley**, which no cast branch does yet (the hook is a named list of calls, not code:
+ * `src/cast/heuristic.ts` is another agent's lane this round). So on the live shard the practical
+ * divergence is **none until an LLM cast member reads the new affordance**, and the honest place to
+ * say so is the stamp rather than the deploy log. `hydrate.ts` refuses on `RULES_VERSION_MISMATCH`
+ * first either way, which is the cheaper door.
+ *
+ * **What the balance gate sees: nothing, and that is the claim.** A parley moves no value, locks
+ * nothing, and is free of the action budget, so `levyShort` and the red tribute lines are a **safety
+ * check** here rather than evidence — they must be unchanged from master, and a move in either
+ * direction would mean this touched the economy, which it must not.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
+ * prints the exact string, and a bare tick is refused.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const RULES_VERSION = 31;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -8432,6 +8492,7 @@ export class Runtime {
         return near;
       },
       constellationOf: (system) => String(systemOf(this.world.map, system).constellation),
+      awaitingReply: (principal) => this.awaitingReplyTo(principal, tick),
       liveGrants: (principal) => {
         const rows: { readonly id: string; readonly counterparty: PrincipalId; readonly iAmGrantor: boolean }[] = [];
         for (const grant of this.grantBook.forGrantor(principal)) {
@@ -8461,11 +8522,40 @@ export class Runtime {
    * handed it, which is A15 defeated by the field name. It is the same distinction `post_bond` does
    * *not* draw, which is why a bond is not the price (see `parley.ts` §2).
    */
-  private parleyEntitlementOf(principal: PrincipalId): { readonly distinctCounterparties: number; readonly earnedMinor: Minor } {
+  private parleyEntitlementOf(
+    principal: PrincipalId,
+    tick: number,
+  ): { readonly distinctCounterparties: number; readonly earnedMinor: Minor; readonly awaitingReply: number } {
     return {
       distinctCounterparties: this.standing.row(principal).distinctCounterparties,
       earnedMinor: freeCash(this.ledger, principal),
+      awaitingReply: this.awaitingReplyTo(principal, tick).length,
     };
+  }
+
+  /**
+   * Distinct principals that addressed this one **inside the Reckoning containing `tick`** and have
+   * had no answer back.
+   *
+   * ONE HOME, THREE READERS — the reach rule (which offers the reply), the allowance (which funds it)
+   * and the header block (which publishes the count). Three copies of "who is waiting on me" is three
+   * chances for a menu to offer a reply the allowance will not pay for, which is AGT-S2 arriving
+   * through a predicate rather than through a gate.
+   *
+   * Scoped to the Reckoning for the allowance's reason: a reply owed from six cycles ago is a standing
+   * licence to address somebody who spoke once, and a licence that accumulates is the war chest §9
+   * refuses to fund.
+   */
+  private awaitingReplyTo(principal: PrincipalId, tick: number): readonly PrincipalId[] {
+    const here = reckoningIndex(tick);
+    const asked = new Set<PrincipalId>();
+    const answered = new Set<PrincipalId>();
+    for (const entry of this.parleys.all) {
+      if (reckoningIndex(entry.tick) !== here) continue;
+      if (entry.to === principal) asked.add(entry.from);
+      else if (entry.from === principal) answered.add(entry.to);
+    }
+    return [...asked].filter((p) => !answered.has(p)).sort(compareIds);
   }
 
   /** One home, two callers: {@link parleysFor} for the menu and {@link parleyRefusalFor} for both. */
@@ -8473,15 +8563,17 @@ export class Runtime {
     return {
       reach: (principal) => this.reachFor(principal, this.engine.tick),
       remaining: (principal, tick) =>
-        parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, this.parleyAllowanceOf(principal)),
-      allowance: (principal) => this.parleyAllowanceOf(principal),
+        parleysRemaining(
+          this.parleys.all,
+          principal,
+          tick,
+          reckoningIndex,
+          parleyAllowanceFor(this.parleyEntitlementOf(principal, tick)),
+        ),
+      entitlement: (principal) => this.parleyEntitlementOf(principal, this.engine.tick),
       isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
       bookSize: () => this.parleys.size,
     };
-  }
-
-  private parleyAllowanceOf(principal: PrincipalId): number {
-    return parleyAllowanceFor(this.parleyEntitlementOf(principal));
   }
 
   /**
@@ -8504,7 +8596,7 @@ export class Runtime {
    * before it is charged is a surprise, not a price (A2).
    */
   parleysFor(principal: PrincipalId, tick: number): ParleyCapacity {
-    const entitlement = this.parleyEntitlementOf(principal);
+    const entitlement = this.parleyEntitlementOf(principal, tick);
     const allowance = parleyAllowanceFor(entitlement);
     const remaining = parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, allowance);
     const reachable = this.reachFor(principal, tick).length;
@@ -8514,6 +8606,7 @@ export class Runtime {
       reachable_principals: reachable,
       distinct_counterparties: entitlement.distinctCounterparties,
       earned_minor: entitlement.earnedMinor,
+      awaiting_your_reply: entitlement.awaitingReply,
       refreshes_at_tick: tick - (tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING,
       declassifies_after_ticks: AUDIT_LAG_TICKS,
       reading_costs_parleys: 0,

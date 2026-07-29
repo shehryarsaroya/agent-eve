@@ -199,22 +199,50 @@ export interface ParleyEntitlement {
   readonly distinctCounterparties: number;
   /** `freeCash` — balance less every lock, less the endowment still unspent. */
   readonly earnedMinor: Minor;
+  /**
+   * Distinct principals that addressed this one **this Reckoning** and are unanswered.
+   *
+   * The third term, and it is not an entitlement — it is a debt somebody else paid to create. See
+   * {@link parleyAllowanceFor}.
+   */
+  readonly awaitingReply: number;
 }
 
 /**
- * The allowance, which is `PARLEYS_PER_RECKONING` or **zero**. See §2(b) of this file's header.
+ * The allowance: `PARLEYS_PER_RECKONING` when entitled, otherwise **exactly enough to answer**.
  *
- * Binary rather than scaled with standing, deliberately: an allowance that grew with
- * `distinctCounterparties` would be a second, unmeasured knob on the same quantity the Levy and the
- * venture board already price, and A4 forbids anything that turns accumulated advantage into
- * throughput. What is being bought here is *the right to speak at all*, and that is a threshold.
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A CHANNEL YOU CANNOT ANSWER IS A MEGAPHONE, AND THE FIRST VERSION OF THIS WAS ONE.**
+ *
+ * The entitlement prices **cold outreach** — the act of addressing somebody who did not ask to be
+ * addressed. It has nothing to say about answering, and a flat `entitled ? N : 0` made every
+ * unentitled recipient mute: measured on the campaign fixture, the ally an attacker recruited held
+ * `freeCash` 0 and `distinct_counterparties` 0, so it could read *"I pay 20000 per hand"* and had no
+ * way to say yes. That is precisely the defect `talksFor` closed for venture channels, with the arrow
+ * reversed, and it would have shipped as *"the channel works between the already-connected"*.
+ *
+ * So an unentitled principal's allowance is the number of people **waiting on it**, capped at the
+ * ordinary allowance. It cannot start a conversation and it can finish every one it is in.
+ *
+ * **Still A15-safe, and the argument is structural rather than numeric.** A free identity's reply
+ * capacity is zero until some *other* principal spends its own priced capacity addressing it, so N
+ * enrolments buy N × 0. The channel opens only where somebody who paid chose to open it, which is the
+ * same shape that makes `join {side:"DEFENDER"}` free: the cost sits on the initiator, and no volume
+ * exists that an initiator did not fund.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Binary in the entitled branch rather than scaled with standing, deliberately: an allowance that
+ * grew with `distinctCounterparties` would be a second, unmeasured knob on a quantity the Levy and
+ * the venture board already price, and A4 forbids anything that turns accumulated advantage into
+ * throughput. What is bought here is *the right to speak first*, and that is a threshold.
  */
 export function parleyAllowanceFor(
   entitlement: ParleyEntitlement,
   allowance: number = PARLEYS_PER_RECKONING,
 ): number {
   const entitled = entitlement.distinctCounterparties > 0 || entitlement.earnedMinor > 0;
-  return entitled ? allowance : 0;
+  if (entitled) return allowance;
+  return Math.min(allowance, Math.max(0, entitlement.awaitingReply));
 }
 
 /**
@@ -262,13 +290,14 @@ export function parleyNote(
 ): string {
   if (allowance === 0) {
     return (
-      'You may address NOBODY outside a venture you already share. A parley reaches a principal you have ' +
-      'never dealt with, and the right to send one is priced: you need EITHER one elective promise ' +
-      'honoured with a counterparty that is not you (`header.standing.standing.elective_honoured` with ' +
-      '`distinct_counterparties` above 0 — a fully escrowed venture earns a performance record and zero ' +
-      'trust) OR currency somebody actually paid you. Enrolment mints neither: your starter stake is ' +
-      'withheld from transfer, so it counts for nothing here. Settle one venture with an elective half ' +
-      'and keep it, and this opens. The price is a deal, never another account (A15).'
+      'You may START no conversation outside a venture you already share, and nobody is waiting on you. A ' +
+      'parley reaches a principal you have never dealt with, and the right to send the FIRST one is priced: ' +
+      'you need EITHER one elective promise honoured with a counterparty that is not you ' +
+      '(`header.standing.standing.distinct_counterparties` above 0 — a fully escrowed venture earns a ' +
+      'performance record and ZERO trust) OR currency somebody actually paid you. Enrolment mints neither: ' +
+      'your starter stake is withheld from transfer, so it counts for nothing here. Settle one venture with ' +
+      'an elective half and keep it, and this opens. Answering somebody who addresses you needs none of it ' +
+      '— the price is always on whoever starts. The price is a deal, never another account (A15).'
     );
   }
   if (reachable === 0) {
@@ -278,6 +307,19 @@ export function parleyNote(
       'the roster and the objective-constellation holders of a live campaign you are in, and the counterparty ' +
       'of a live grant. Declare or `join` a campaign, or `grant`, and the names appear in `affordances[]`. ' +
       'Unspent parleys DO NOT CARRY.'
+    );
+  }
+  const coldEntitled = entitlement.distinctCounterparties > 0 || entitlement.earnedMinor > 0;
+  if (!coldEntitled && remaining > 0) {
+    // The reply-only state, named rather than left to be inferred from a smaller number. An agent
+    // that reads "3 of 3" here and plans a recruiting round would find its second address refused
+    // for a reason the count did not contain.
+    return (
+      `You may ANSWER ${String(remaining)} of the ${String(entitlement.awaitingReply)} principal(s) that ` +
+      'addressed you this Reckoning, and START nothing. Answering is free of the entitlement — the price of a ' +
+      'parley is always on whoever speaks first. To address somebody who has not addressed you, you need one ' +
+      'elective promise honoured with a counterparty that is not you, or currency somebody paid you. Unanswered ' +
+      'approaches do not carry to the next Reckoning either.'
     );
   }
   return remaining > 0
@@ -314,6 +356,13 @@ export interface ParleyCapacity {
   readonly distinct_counterparties: number;
   /** The entitlement's second term, in minor units. Above zero opens the allowance. */
   readonly earned_minor: Minor;
+  /**
+   * Principals waiting on an answer from you this Reckoning, in **principals**.
+   *
+   * Not an entitlement — a debt somebody else's capacity paid to create. An unentitled principal's
+   * whole allowance is this number, capped: it may answer everyone who wrote and start nothing.
+   */
+  readonly awaiting_your_reply: number;
   /** When the allowance resets. Absolute, so it compares directly against `header.tick`. */
   readonly refreshes_at_tick: number;
   /** Ticks a parley stays PARTIES-private before it publishes to everyone at once. */
@@ -328,7 +377,17 @@ export interface ParleyCapacity {
 export interface ParleyPort {
   readonly reach: (principal: PrincipalId) => readonly ReachRow[];
   readonly remaining: (principal: PrincipalId, tick: number) => number;
-  readonly allowance: (principal: PrincipalId) => number;
+  /**
+   * The three real figures, never a derived boolean.
+   *
+   * The first version of this port exposed `allowance(): number` and the two refusal branches
+   * therefore **fabricated** an entitlement to hand {@link parleyNote} — `{distinctCounterparties: 0,
+   * earnedMinor: 0}` in one and `{1, 0}` in the other, neither of them true of anybody. That is
+   * `standingRow`'s hardcoded zero in miniature: *a constant that looks like data is worse than a
+   * missing field*, and it would have printed "you need a kept elective promise" at an agent that had
+   * three.
+   */
+  readonly entitlement: (principal: PrincipalId) => ParleyEntitlement;
   readonly isSeated: (principal: PrincipalId) => boolean;
   readonly bookSize: () => number;
 }
@@ -354,14 +413,13 @@ export function parleyRefusal(
   if (!port.isSeated(to)) {
     return reject('A2', `there is no principal ${to} to address; name one that has enrolled and holds a seat.`);
   }
-  const allowance = port.allowance(from);
+  const entitlement = port.entitlement(from);
+  const allowance = parleyAllowanceFor(entitlement);
+  const reach = port.reach(from);
   if (allowance === 0) {
-    return reject(
-      'A15',
-      parleyNote(0, 0, { distinctCounterparties: 0, earnedMinor: 0 as Minor }, port.reach(from).length),
-    );
+    return reject('A15', parleyNote(0, 0, entitlement, reach.length));
   }
-  const row = reachTo(port.reach(from), to);
+  const row = reachTo(reach, to);
   if (row === null) {
     return reject(
       'A15',
@@ -375,10 +433,7 @@ export function parleyRefusal(
   }
   const remaining = port.remaining(from, tick);
   if (remaining <= 0) {
-    return reject(
-      'A15',
-      parleyNote(0, allowance, { distinctCounterparties: 1, earnedMinor: 0 as Minor }, port.reach(from).length),
-    );
+    return reject('A15', parleyNote(0, allowance, entitlement, reach.length));
   }
   if (port.bookSize() >= MAX_PARLEY_ENTRIES) {
     return reject(

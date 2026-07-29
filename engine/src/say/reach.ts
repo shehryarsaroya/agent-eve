@@ -67,8 +67,18 @@
 import type { PrincipalId, SystemId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 
-/** Why one principal is addressable. On the record beside the words, never inferred later. */
-export type ReachWhy = 'CAMPAIGN' | 'GRANT';
+/**
+ * Why one principal is addressable. On the record beside the words, never inferred later.
+ *
+ * ★ **`REPLY` is the rung that keeps this a channel rather than a megaphone.** `talksFor` records
+ * the same lesson one channel over, in the other direction: the venture write gate was once wider
+ * than the read gate and an outsider could push text into a channel it would never see a reply in.
+ * *"A candidate that cannot read the creator's answer cannot negotiate, and a probe named the missing
+ * reply as the reason the negotiation channel felt unbuildable."* A parley an agent cannot answer is
+ * the same defect with the arrow reversed — and the recipient of a cold approach is, by construction,
+ * the party that never chose to be in the conversation.
+ */
+export type ReachWhy = 'CAMPAIGN' | 'GRANT' | 'REPLY';
 
 /**
  * One addressable principal, and the situation that makes it addressable.
@@ -115,6 +125,14 @@ export interface ReachPort {
   readonly constellationOf: (system: SystemId) => string;
   /** Live grants this principal is a party to, either direction. */
   readonly liveGrants: (principal: PrincipalId) => readonly ReachGrant[];
+  /**
+   * Principals that have addressed this one and are still owed an answer this Reckoning.
+   *
+   * Scoped to the Reckoning by the caller for the reason the allowance is: a reply owed from six
+   * cycles ago is a standing licence to talk to somebody who spoke once, which accumulates exactly
+   * the way §9 forbids a war chest to.
+   */
+  readonly awaitingReply: (principal: PrincipalId) => readonly PrincipalId[];
 }
 
 /**
@@ -147,6 +165,23 @@ export function reachableFor(port: ReachPort, principal: PrincipalId): readonly 
     seen.add(row.principal);
     rows.push(row);
   };
+
+  // ── 0. REPLIES, FIRST ─────────────────────────────────────────────────────
+  //
+  // Ranked ahead of everything because it is the only rung where somebody is *waiting*, and because
+  // the dedupe keeps the first row: a principal that both wrote to you and stands in your war should
+  // read as an open conversation rather than as a stranger in your constellation.
+  for (const other of [...port.awaitingReply(principal)].sort(compareIds)) {
+    push({
+      principal: other,
+      why: 'REPLY',
+      about: 'parley',
+      sentence:
+        `${other} addressed you this Reckoning and you have not answered. Answering costs you nothing you had ` +
+        'to earn — the price of a parley is on whoever starts one — and `counterparties[].last_parley` carries ' +
+        'what it said, with its standing row beside it so you can price the offer before you take it.',
+    });
+  }
 
   // ── 1. CAMPAIGNS ──────────────────────────────────────────────────────────
   //
