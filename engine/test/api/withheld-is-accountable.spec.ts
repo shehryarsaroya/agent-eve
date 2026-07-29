@@ -51,10 +51,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { buildObservation } from '../../src/api/observe.js';
+import { buildObservation, MAX_DOSSIER_OFFERS } from '../../src/api/observe.js';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed } from '../../src/core/time.js';
+import type { PrincipalId } from '../../src/core/types.js';
+import { COMPARTMENTS } from '../../src/grant/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
+import { commonsSystems } from '../../src/world/index.js';
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -82,14 +85,40 @@ const CLOSED: Readonly<Record<string, Trigger>> = Object.freeze({
   /** An IDLE hand is the input `move` consumes, and it is published on every `hands[]` row. */
   move: (o) => rows(o['hands']).some((h) => h['state'] === 'IDLE'),
   /**
-   * A role this principal holds, in a FORMING venture, that it has not signed. `sign` is the
-   * one act that stops a venture lapsing, so an unaccounted absence here costs a real deal.
+   * A FORMING venture of this principal's that it has not signed. `sign` is the one act that
+   * stops a venture lapsing, so an unaccounted absence here costs a real deal.
+   *
+   * ★ **`my_role !== null` USED TO BE PART OF THIS, AND IT MADE THE GUARD BLIND TO THE CREATOR.**
+   * A probe reported that `sign` is never offered to a venture's creator, that two fully-staffed
+   * ventures died ABANDONED of it, and that two other agents' hands were wasted. **The report is
+   * false** — verified from outside on a live world: a creator's `sign` arrives first in the list,
+   * with copy-pasteable params, and `briefing.prompt` names it in words.
+   *
+   * But the reason this sweep could not have contradicted it is the finding. `ventures.mine[]`
+   * holds ventures you created *or* hold a role in, so inside `mine` **`my_role === null` means you
+   * are the creator** — and the old clause excluded exactly that row. The one case a probe would
+   * doubt was the one case the guard could not see, and the guard reported green either way. That
+   * is this project's standing defect (an invariant whose subject cannot occur) applied to the
+   * accountability sweep itself, so the clause is gone and the creator case is asserted
+   * non-vacuously below.
    */
   sign: (o) =>
     rows(obj(o['ventures'])['mine']).some(
-      (v) => v['my_role'] !== null && v['i_have_signed'] === false && v['state'] === 'FORMING',
+      (v) => v['i_have_signed'] === false && v['state'] === 'FORMING',
     ),
 });
+
+/**
+ * The creator half of `sign`'s trigger, counted separately.
+ *
+ * A widened trigger that never fires on the widened case is the same vacuity one level in: the
+ * clause would be gone from the source and the coverage would not have moved. Inside
+ * `ventures.mine[]`, `my_role === null` is the creator.
+ */
+const SIGN_AS_CREATOR: Trigger = (o) =>
+  rows(obj(o['ventures'])['mine']).some(
+    (v) => v['my_role'] === null && v['i_have_signed'] === false && v['state'] === 'FORMING',
+  );
 
 /**
  * **OPEN** — found in `trade`'s position by this sweep and NOT closed here, with the measured
@@ -205,6 +234,9 @@ interface Sample {
   readonly silent: Map<string, number>;
   readonly observations: number;
   readonly live: readonly string[];
+  /** Observations where `sign`'s trigger fired for a CREATOR — see SIGN_AS_CREATOR. */
+  readonly signAsCreatorFired: number;
+  readonly signAsCreatorSilent: number;
 }
 
 /**
@@ -227,6 +259,8 @@ function sweep(): Sample {
   const fired = new Map<string, number>();
   const silent = new Map<string, number>();
   let observations = 0;
+  let signAsCreatorFired = 0;
+  let signAsCreatorSilent = 0;
   for (let i = 0; i < 900; i += 1) {
     const target = rt.engine.tick + 1;
     for (const a of cast.decide(target, seed)) rt.engine.submit(a);
@@ -242,6 +276,7 @@ function sweep(): Sample {
         wakesRemaining: 9,
         stale: false,
         corrections: [],
+        correctionsDropped: 0,
         actionsRemaining: 4,
       }) as unknown as Payload;
       observations += 1;
@@ -253,9 +288,21 @@ function sweep(): Sample {
         if (offered.has(verb) || named.has(verb)) continue;
         silent.set(verb, (silent.get(verb) ?? 0) + 1);
       }
+      // The creator case on its own counter — see SIGN_AS_CREATOR.
+      if (SIGN_AS_CREATOR(payload)) {
+        signAsCreatorFired += 1;
+        if (!offered.has('sign') && !named.has('sign')) signAsCreatorSilent += 1;
+      }
     }
   }
-  sweptOnce = { fired, silent, observations, live: [...rt.liveVerbs].sort(cmp) };
+  sweptOnce = {
+    fired,
+    silent,
+    observations,
+    live: [...rt.liveVerbs].sort(cmp),
+    signAsCreatorFired,
+    signAsCreatorSilent,
+  };
   return sweptOnce;
 }
 
@@ -286,6 +333,25 @@ describe('PROP-O1 — every unoffered verb is either inapplicable or NAMED, per 
         'without this count" and that promise is false for each of them. Add a tagged row, or move ' +
         'the verb to OPEN with a reason and its measured rate.',
     ).toEqual([]);
+  }, 180_000);
+
+  it('★ `sign` AS THE CREATOR — the case a probe doubted and this guard could not see', () => {
+    // The trigger used to require `my_role !== null`, which inside `ventures.mine[]` excludes
+    // exactly the creator. A probe then claimed `sign` is never offered to a creator, and nothing
+    // here could have contradicted it either way. Both halves are asserted: the case OCCURS in a
+    // world nobody steers, and it is never silent when it does.
+    const { signAsCreatorFired, signAsCreatorSilent, observations } = sweep();
+    expect(
+      signAsCreatorFired,
+      `no creator ever held an unsigned FORMING venture in ${String(observations)} observations, so ` +
+        'widening the trigger moved the source and not the coverage — which is the vacuity this ' +
+        'change exists to remove, one level in',
+    ).toBeGreaterThan(0);
+    expect(
+      signAsCreatorSilent,
+      'a creator must never be left unable to close its own venture with nothing saying why: it ' +
+        "wastes every hand its counterparties committed, not only the creator's own action",
+    ).toBe(0);
   }, 180_000);
 
   it('★ `trade` SPECIFICALLY, because it is the one that was 86% silent', () => {
@@ -391,6 +457,7 @@ describe('PROP-O1 — every unoffered verb is either inapplicable or NAMED, per 
           wakesRemaining: 9,
           stale: false,
           corrections: [],
+          correctionsDropped: 0,
           actionsRemaining: 4,
         }) as unknown as Payload;
         const withheldVerbs = strings(obj(obj(payload['header'])['withheld'])['verbs']);
@@ -420,4 +487,191 @@ describe('PROP-O1 — every unoffered verb is either inapplicable or NAMED, per 
         'trusting either version',
     ).toBeGreaterThan(0);
   }, 180_000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// ★ THE VERB WAS ACCOUNTED FOR AND THE CAPABILITY WAS NOT — per-TARGET accountability
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ★ **A LIVE CAPABILITY WAS DROPPED FROM THE LIST WITH NO COUNTED REASON, AND THE SWEEP ABOVE
+ * COULD NOT SEE IT.**
+ *
+ * A blind probe ran a complete betrayal with two identities. At tick 424 its delegate held two
+ * live grants — one an OFFICE in a syndicate, one over `p:probe-trust-01`, the principal that had
+ * trusted it — and both `reads` blocks were serving that principal's stores and hands on every
+ * tick. The affordance list offered dossiers on **the syndicate only**. `withheld` said
+ * `count: 4, verbs: [build, move, trade]`, naming neither `message` nor the subject. The probe
+ * hand-built the call; it was accepted; the leak landed.
+ *
+ * **Why the sweep is blind to this by construction.** Its unit is the bare verb string
+ * (`offered.has(verb) || named.has(verb)`), and a dossier is not a verb — it is
+ * `message {to, dossier}`. `message` *was* in `affordances[]`, targeting the syndicate, so the
+ * verb was fully accounted for while two live capabilities on it were gone. Promoting `message`
+ * from OPEN to CLOSED would not have caught it either. That is the file's own header warning
+ * (global-vs-per-observation) reappearing one level down as **verb-vs-target**, and the fix is a
+ * property whose unit is the `(verb, target)` pair.
+ *
+ * The cause was two things at once, both in `observe.ts`'s 5C-bis:
+ *
+ *   1. the cap was `MAX_GRANT_OFFERS` — **a cap on a different list** (how many principals to
+ *      suggest you promote), reused for how many of your own live capabilities to admit to;
+ *   2. the walk was grant-id hash order, so one grantor could consume every slot — and neither
+ *      `break` incremented anything, so the drop was outside all sixteen terms of the sum.
+ *
+ * Both halves are asserted below, and mutation-verified: the cap is `MAX_DOSSIER_OFFERS`, the
+ * walk is breadth-first by grantor, and the tail is counted with the subjects named.
+ */
+describe('every principal a delegate may cut a dossier on is offered or NAMED', () => {
+  const CLEARED = (delegate: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    delegate,
+    template: 'steward', // create+elect, clearance STORES+HANDS — the widest shape there is
+    max_direct_loss: 500,
+    max_contingent_liability: 500,
+    expires_tick: 400,
+    ...over,
+  });
+
+  /** A world with `n` grantors, each having granted the one delegate a cleared office. */
+  function cleared(seed: string, n: number): { rt: Runtime; delegate: PrincipalId; grantors: PrincipalId[] } {
+    setSpeed('instant');
+    const rt = new Runtime({ seed });
+    const stage = commonsSystems(rt.world.map)[0];
+    if (stage === undefined) throw new Error('the launch map has no Commons system');
+    const delegate = 'p:deleg' as PrincipalId;
+    rt.seat(delegate, 'deleg', stage);
+    rt.standing.open(delegate);
+    const grantors: PrincipalId[] = [];
+    for (let i = 0; i < n; i += 1) {
+      const who = `p:grantor-${String(i)}` as PrincipalId;
+      rt.seat(who, `grantor-${String(i)}`, stage);
+      rt.standing.open(who);
+      grantors.push(who);
+      const outcome = rt.engine.submit({
+        principal: who,
+        verb: 'grant',
+        params: CLEARED(delegate),
+        clientSequence: 0,
+        arrivalMs: 0,
+        decisionSource: 'LIVE',
+      });
+      if (!outcome.ok) throw new Error(`grant refused at the door: ${outcome.invariant} ${outcome.hint}`);
+      const report = rt.runTick();
+      if (report.halted) throw new Error(`halted: ${report.violations.map((v) => v.id).join(',')}`);
+      // NON-VACUITY, per grantor: a `reads` block that is null means the clearance never bound,
+      // and every assertion below would be about an absence with no capability behind it.
+      const grant = rt.grants.forGrantor(who)[0];
+      if (grant === undefined || grant.clearance.length === 0) {
+        throw new Error(`grantor ${who} issued no cleared grant`);
+      }
+    }
+    return { rt, delegate, grantors };
+  }
+
+  function seen(rt: Runtime, delegate: PrincipalId): { targets: Set<string>; payload: Payload } {
+    const payload = buildObservation({
+      runtime: rt,
+      principal: delegate,
+      serverNowMs: 0,
+      fresh: true,
+      wakesRemaining: 9,
+      stale: false,
+      corrections: [],
+      correctionsDropped: 0,
+      actionsRemaining: 4,
+    }) as unknown as Payload;
+    const targets = new Set(
+      rows(payload['affordances'])
+        .filter((a) => a['verb'] === 'message' && obj(a['params'])['dossier'] !== undefined)
+        .map((a) => String(obj(a['params'])['dossier'])),
+    );
+    return { targets, payload };
+  }
+
+  it('★ THE DEFECT: two cleared grantors, and BOTH are offered — not just whichever id sorts first', () => {
+    const { rt, delegate, grantors } = cleared('two-grantors', 2);
+    const { targets, payload } = seen(rt, delegate);
+
+    // Non-vacuity first: the delegate really is reading both principals right now. If `reads` were
+    // null this test would be asserting that a menu omits nothing from an empty capability set.
+    const held = rows(obj(payload['grants'])['held']);
+    expect(held.length, 'the delegate must hold both grants').toBe(2);
+    for (const row of held) {
+      expect(row['live']).toBe(true);
+      const reads = obj(row['reads']);
+      expect(
+        Object.keys(reads).sort(cmp),
+        'both clearances must be actively serving figures, or the omission has nothing behind it',
+      ).toEqual([...COMPARTMENTS].sort(cmp));
+    }
+
+    // THE ASSERTION. Before the fix this was `{syn-or-first-grantor}/STORES` and `.../HANDS` only.
+    const subjects = new Set([...targets].map((t) => String(t.split('/')[0])));
+    expect(
+      [...subjects].sort(cmp),
+      'a delegate cleared over two principals was offered dossiers on one of them; the other was ' +
+        'dropped by a cap sized for an unrelated list, in grant-id hash order, and counted nowhere',
+    ).toEqual([...grantors].map(String).sort(cmp));
+    // And nothing was withheld, because the cap is now wide enough for this shape.
+    expect(strings(obj(obj(payload['header'])['withheld'])['verbs'])).not.toContain('message');
+  });
+
+  it('past the cap, every grantor still appears once and the tail is COUNTED with its subjects', () => {
+    // Four grantors x two compartments = 8 candidate rows against a cap of 6. Breadth-first is
+    // what makes the guarantee statable: the drop must fall on a SECOND row for some grantor,
+    // never on a grantor's only row, because "the menu never mentions this subject" and "the menu
+    // shows one of this subject's two compartments" are different lies.
+    const { rt, delegate, grantors } = cleared('past-the-cap', 4);
+    const { targets, payload } = seen(rt, delegate);
+    expect(targets.size, 'the list is capped').toBe(MAX_DOSSIER_OFFERS);
+
+    const subjects = new Set([...targets].map((t) => String(t.split('/')[0])));
+    expect(
+      [...subjects].sort(cmp),
+      'breadth-first: every grantor a delegate can read appears at least once',
+    ).toEqual([...grantors].map(String).sort(cmp));
+
+    const withheld = obj(obj(payload['header'])['withheld']);
+    expect(
+      strings(withheld['verbs']),
+      'the drop must be attributed to the verb it is about — `message`, since a dossier is not a verb',
+    ).toContain('message');
+    expect(Number(withheld['count']), 'and included in the count').toBeGreaterThanOrEqual(
+      8 - MAX_DOSSIER_OFFERS,
+    );
+    // The ground must name the subjects, not just the number: a delegate reading it can then
+    // construct the call, which is what §6's promise means and what an uncounted `break` denied.
+    const reason = String(withheld['reason']);
+    const omitted = [...grantors]
+      .flatMap((g) => [...COMPARTMENTS].map((room) => `${String(g)}/${room}`))
+      .filter((t) => !targets.has(t));
+    expect(omitted.length).toBe(8 - MAX_DOSSIER_OFFERS);
+    for (const t of omitted) {
+      expect(reason, `the withheld ground must name ${t}, or the count is unactionable`).toContain(t);
+    }
+  });
+
+  it('the door is WIDER than the menu, and the menu says so', () => {
+    // The asymmetry that made the probe's leak possible: `GrantBook.clearanceGrantFor` is a
+    // per-subject predicate with no cap, so a hand-built call against an omitted subject is
+    // accepted. That is correct — a cap on a MENU must never become a cap on the GAME — but it
+    // is only honest if the menu admits it, which is the sentence this pins.
+    const { rt, delegate, grantors } = cleared('door-wider', 4);
+    const { targets, payload } = seen(rt, delegate);
+    const omitted = [...grantors]
+      .flatMap((g) => [...COMPARTMENTS].map((room) => `${String(g)}/${room}`))
+      .find((t) => !targets.has(t));
+    expect(omitted, 'this test needs a dropped row to be about anything').toBeDefined();
+    if (omitted === undefined) return;
+
+    const [subject, room] = omitted.split('/');
+    expect(
+      rt.grants.clearanceGrantFor(subject as PrincipalId, delegate, String(room), rt.engine.tick),
+      'the door still admits the row the menu dropped',
+    ).not.toBeNull();
+    expect(
+      String(obj(obj(payload['header'])['withheld'])['reason']),
+      'and the menu must not let an agent read the cap as a prohibition',
+    ).toContain('Withheld from the MENU is not withheld from the GAME');
+  });
 });

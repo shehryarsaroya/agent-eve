@@ -500,7 +500,7 @@ export function createApp(options: ApiOptions): CreatedApp {
         ownerEmail: null,
       });
 
-      const observation = observe(principal, true);
+      const observation = observe(principal, true, true);
 
       return send(res, 201, {
         ok: true,
@@ -630,7 +630,9 @@ export function createApp(options: ApiOptions): CreatedApp {
       // here as well is what makes the *preview* immediate, rather than a correction
       // the agent has to come back for a tick later.
       if (expected.value !== undefined && expected.value !== runtime.engine.stateVersion) {
-        const preview = observe(who, false);
+        // Not a wake, so it peeks: a PROP-W3 mismatch submitted nothing and must not
+        // consume a verdict from a tick that did.
+        const preview = observe(who, false, false);
         return send(res, 200, {
           ok: true,
           replayed: false,
@@ -781,7 +783,11 @@ export function createApp(options: ApiOptions): CreatedApp {
         replayed: false,
         outcome,
         stateVersion: runtime.engine.stateVersion,
-        observation: observe(who, false),
+        // ── THE CALL SITE THAT WAS DEFECT 1 ────────────────────────────────
+        //
+        // `POST /act` is not a wake, so this observation PEEKS. It drained until now, and
+        // three refusals in three consecutive ticks arrived at the next wake as one.
+        observation: observe(who, false, false),
       });
     });
   });
@@ -1073,17 +1079,38 @@ export function createApp(options: ApiOptions): CreatedApp {
   }
 
   /**
-   * Build an observation, draining any undelivered corrections into it.
+   * Build an observation, delivering any undelivered corrections into it.
    *
-   * `drain` is false for the copies attached to a correction's own `observation`
-   * field: draining there would consume the refusals *while reporting them*, and the
-   * next read would show nothing — a hint delivered to a nested field nobody looks at
-   * twice. One drain per response, at the top level.
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`drain` HAS NO DEFAULT, AND THAT IS THE FIX FOR DEFECT 1.** It was `drain = true`,
+   * and "one drain per response, at the top level" was the rule it was written for. Two
+   * call sites then took that default without meaning to — `POST /act`'s own
+   * `observation`, and the PROP-W3 preview — and neither of those responses is a **wake**.
+   *
+   * The consequence, measured by a probe from outside: three illegal actions in three
+   * consecutive ticks with no wake between them, then one wake, returned **one**
+   * correction. Each act response had eaten the previous tick's verdict into a
+   * `fresh: false` payload the agent had every reason to discount, leaving a batch that
+   * read as 2-for-3 successful. §13 promises *one row per refused action*, and
+   * `RULES_VERSION` 19 had already fixed this exact failure for `GET /observe` — where the
+   * argument is spelled out as `observe(who, fresh, fresh)` and pinned by a source test —
+   * only for it to walk back in through a defaulted parameter one screen down.
+   *
+   * So: **`drain` is true if and only if the response is a wake**, every caller says
+   * which, and `tsc` refuses the file if one forgets. Non-wake responses get
+   * `Runtime.peekCorrections` rather than `[]`, because reporting nothing while three
+   * verdicts wait is §13's forbidden shape — an accepted no-op with no verdict — moved one
+   * level in. A peek consumes nothing, so the wake that owes them still delivers them, in
+   * full, exactly once.
+   * ══════════════════════════════════════════════════════════════════════════
    */
-  function observe(principal: PrincipalId, fresh: boolean, drain = true): Observation {
+  function observe(principal: PrincipalId, fresh: boolean, drain: boolean): Observation {
     const reckoning = reckoningIndex(Math.max(0, runtime.engine.tick));
     const row = wakes.get(principal);
     const spent = row !== undefined && row.reckoning === reckoning ? row.spent : 0;
+    // Read the drop counter BEFORE the drain: `takeCorrections` deletes the ring, so asking
+    // afterwards always answers zero — which would have made the field decoration.
+    const correctionsDropped = runtime.droppedCorrections(principal);
     return buildObservation({
       runtime,
       principal,
@@ -1091,7 +1118,8 @@ export function createApp(options: ApiOptions): CreatedApp {
       fresh,
       wakesRemaining: wakesRemainingFor(spent),
       stale: runtime.engine.status === 'PAUSED',
-      corrections: drain ? runtime.takeCorrections(principal) : [],
+      corrections: drain ? runtime.takeCorrections(principal) : runtime.peekCorrections(principal),
+      correctionsDropped,
       actionsRemaining: actionsRemainingFor(principal),
     });
   }
@@ -1211,6 +1239,7 @@ export function createApp(options: ApiOptions): CreatedApp {
       wakesRemaining: wakesRemainingFor(wakes.get(principal)?.spent ?? 0),
       stale: runtime.engine.status === 'PAUSED',
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: actionsRemainingFor(principal),
     });
     return solved.affordances;

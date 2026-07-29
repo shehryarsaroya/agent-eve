@@ -1879,12 +1879,41 @@ export interface OfferEntry {
  * ══════════════════════════════════════════════════════════════════════════
  */
 export interface PendingCorrection {
-  readonly tick: number;
+  /** The MOST RECENT tick this refusal happened on. See {@link PendingCorrection.repeats}. */
+  tick: number;
   readonly verb: string;
-  readonly clientSequence: number;
+  clientSequence: number;
   readonly invariant: string;
   readonly hint: string;
-  readonly params: Readonly<Record<string, unknown>>;
+  params: Readonly<Record<string, unknown>>;
+  /**
+   * ★ **How many consecutive times this identical refusal has happened, beyond the first.**
+   *
+   * ── THE FLOOD, WHICH IS THE SAME DEFECT AS THE DROP ──────────────────────────
+   *
+   * A3 makes a durable intent the thing that keeps an offline agent playing: *"creating one costs
+   * an action; its routine ticks do not."* But a refused intent run is logged `REFUSED` like any
+   * other action, and `Runtime.runTick` holds a correction for every refused row — so an intent
+   * whose refusal is a **standing condition** rather than a transient one posts an identical
+   * verdict every tick, for ever. `IntentBook.ran` counts those into `refusals` and deliberately
+   * never stops the intent on them, which is right for a convoy still in transit and wrong here.
+   *
+   * A probe measured it: `set_delivery_intent` re-firing after its Levy assessment was discharged
+   * produced **16 identical rows in 16 ticks** (`A14, "this assessment is already discharged in
+   * full"`), and world-wide `pendingCorrections` reached **130 across 11 principals**.
+   *
+   * That is the drop defect wearing the other face. A ring of sixteen slots holding sixteen copies
+   * of one standing condition has lost every real verdict in it — so fixing the drain alone would
+   * have bought an agent a channel that no longer loses its mail and is full of one sentence.
+   *
+   * **Collapsed, not discarded.** "Your standing intent has been refused for the same reason on 16
+   * consecutive ticks" is a *stronger* signal than one refusal — it says `stop` the intent — and it
+   * costs one slot instead of sixteen. So an identical `(verb, invariant, hint)` bumps this counter
+   * and refreshes `tick`, `clientSequence` and `params` to the latest occurrence.
+   *
+   * Zero for a refusal that has happened once, which is the ordinary case.
+   */
+  repeats: number;
 }
 
 /** Corrections held per principal awaiting delivery. Bounded (INV-26, scar #3). */
@@ -5503,8 +5532,67 @@ export class Runtime {
     return out;
   }
 
+  /**
+   * The same rows, **without consuming them.** For any response that is not a wake.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE DEFECT THIS EXISTS TO CLOSE.** `takeCorrections` is the only reader, and it
+   * drains. So *every* place that built an observation consumed the whole ring —
+   * including `POST /act`, which attaches an observation to its response and is not a
+   * wake. A probe filed the consequence with the measurement attached: three illegal
+   * actions in three consecutive ticks, no wake between them, then one wake returned
+   * **one** correction. Two verdicts had been drained into two `fresh: false` act
+   * responses, and the survivor made the batch look 2-for-3 successful.
+   *
+   * That is the *same* bug `RULES_VERSION` 19 fixed one file over — a verdict consumed
+   * by a poll the agent made for another reason — re-entering through a call site whose
+   * `drain` argument was defaulted rather than stated. The default is now gone, and the
+   * non-wake answer is this method rather than `[]`: reporting nothing while three
+   * verdicts wait is §13's forbidden shape ("an accepted no-op with no verdict") moved
+   * one level down, and a peek is honest about both the rows and the fact that the wake
+   * still owes them to you.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  peekCorrections(principal: PrincipalId): readonly PendingCorrection[] {
+    return this.pendingCorrections.get(principal)?.all ?? [];
+  }
+
+  /**
+   * How many of this principal's corrections the ring has **dropped** — the oldest
+   * first, at {@link MAX_PENDING_CORRECTIONS}.
+   *
+   * A `Ring` that silently loses the row a claim rests on fails in the direction that
+   * hides, which this repo has shipped three times. `Ring` has counted its drops since
+   * it was written and nothing ever read the counter, so a principal that refused
+   * seventeen actions without waking was told about sixteen and could not tell.
+   */
+  droppedCorrections(principal: PrincipalId): number {
+    return this.pendingCorrections.get(principal)?.droppedCount ?? 0;
+  }
+
   private holdCorrection(principal: PrincipalId, correction: PendingCorrection): void {
     const ring = this.pendingCorrections.get(principal) ?? new Ring<PendingCorrection>(MAX_PENDING_CORRECTIONS);
+    // ── COLLAPSE A STANDING CONDITION INTO ONE ROW ────────────────────────────
+    //
+    // See {@link PendingCorrection.repeats} for the measurement. A durable intent refused for a
+    // reason that cannot change posts an identical verdict every tick, and sixteen copies of one
+    // sentence is a ring with no signal left in it. Matched on `(verb, invariant, hint)`: the hint
+    // carries every figure the engine put in the refusal, so two rows agreeing on all three are
+    // the same standing condition and not two facts. `clientSequence` and `params` are
+    // deliberately NOT part of the key — an intent's `clientSequence` is its run count, so it
+    // differs on every re-fire, and keying on it is precisely what let the flood through.
+    const same = ring.all.find(
+      (c) => c.verb === correction.verb && c.invariant === correction.invariant && c.hint === correction.hint,
+    );
+    if (same !== undefined) {
+      same.repeats += 1;
+      // Refreshed to the LATEST occurrence: an agent asking "is this still happening?" needs the
+      // most recent tick, and the first one is recoverable as `tick - repeats` for a consecutive run.
+      same.tick = correction.tick;
+      same.clientSequence = correction.clientSequence;
+      same.params = correction.params;
+      return;
+    }
     ring.push(correction);
     this.pendingCorrections.set(principal, ring);
   }
@@ -5660,6 +5748,7 @@ export class Runtime {
             invariant: entry.rejection.invariant,
             hint: entry.rejection.hint,
             params: entry.params,
+            repeats: 0,
           });
         }
       }
@@ -8158,6 +8247,7 @@ export class Runtime {
             hand: refused.request.hand,
             stake: refused.request.stake,
           },
+          repeats: 0,
         });
       }
       this.pendingFills = [];

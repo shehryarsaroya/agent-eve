@@ -265,8 +265,27 @@ export const MAX_LIST_ROWS = 24;
  * but an office is the heaviest thing an agent can hand out — so the menu shows the two best-attested
  * candidates rather than everyone with a record, and an agent that wants a different delegate names
  * one itself. *(calibrate)*
+ *
+ * **It is not the cap on the DOSSIER list.** See {@link MAX_DOSSIER_OFFERS} — 5C-bis borrowed this
+ * constant, and a cap sized for "who should I promote?" silently deleted "whose books may I leak?".
  */
 
+
+/**
+ * How many `message {to, dossier}` rows the menu carries at once — the **sight** half of A6.
+ *
+ * Its own constant, because it answers a different question from {@link MAX_GRANT_OFFERS}: not *how
+ * many candidates is it decent to suggest*, but *how many live capabilities may this list omit*. The
+ * answer §6 forces is "none it does not count", and the answer a probe measured was two rows out of
+ * four, both spent on the same grantor, with nothing in `withheld` to say so.
+ *
+ * Sized against the shape of the thing being enumerated rather than picked for taste: a row is a
+ * `(grantor, compartment)` pair, `COMPARTMENTS` has two members, so six rows covers three grantors
+ * exhaustively — and because {@link clearanceOffers} fills it breadth-first, six *distinct grantors*
+ * each get a row before any grantor gets a second. A delegate with more cleared grantors than that is
+ * a case the count and the ground now name explicitly. *(calibrate)*
+ */
+export const MAX_DOSSIER_OFFERS = 6;
 
 /**
  * Kinds offered as a `create` affordance.
@@ -416,8 +435,25 @@ export interface ObserveInput {
   /**
    * Refusals that could only be known after the tick resolved, drained by the caller
    * so that reading an observation is what delivers them exactly once.
+   *
+   * **Drained by a WAKE and peeked by everything else** (`Runtime.peekCorrections`).
+   * The caller decides which, and it must decide explicitly — `server.ts:observe` takes
+   * `drain` with no default, because the whole of Defect 1 was two call sites that
+   * omitted the argument and got the destructive branch for free.
    */
   readonly corrections: readonly PendingCorrection[];
+  /**
+   * How many older refusals the per-principal ring **threw away** at
+   * `MAX_PENDING_CORRECTIONS`, so an agent can tell "dropped" from "never recorded".
+   *
+   * `Ring` has counted its drops since it was written and nothing read the counter, so
+   * a principal that refused seventeen actions between two wakes was told about sixteen
+   * and had no way to know. It matters more now than it did: before Defect 1 was fixed,
+   * every `POST /act` emptied the ring, so the cap was effectively unreachable and this
+   * number would have been zero forever — a bound that hides is exactly the shape
+   * `MAX_RECKONING_SUMMARIES` and `LEVY_RETAINED_RECKONINGS` already cost this repo.
+   */
+  readonly correctionsDropped: number;
   /**
    * Material actions the caller may still send into the **open window**.
    *
@@ -465,6 +501,19 @@ export function buildObservation(input: ObserveInput): Observation {
   // than cached — so they could disagree inside a single payload (scar #5's shape in a projection).
   const myCampaigns = runtime.campaignsFor(principal, tick, MAX_LIST_ROWS);
   const mine = runtime.ventures.forPrincipal(principal);
+  // ── READ ONCE, FOR THE `grants` BLOCK *AND* THE DILEMMA SENTENCE ────────────
+  //
+  // Both of these were derived a second time inside `promptFor` when the A6 branch landed, which is
+  // the mistake this file already names twice (`books`, `campaignViews`): a projection and the prose
+  // that points at it must come off one read, or they can disagree inside a single payload. It is
+  // also the cheaper arrangement — `forGrantor` sorts the whole grant book on every call and
+  // `visibleToSubject` walks every dossier, and doing that twice per observation showed up as a
+  // measurable slowdown in `blind-play`'s 200-tick gate.
+  const myGrantsOut = runtime.grants.forGrantor(principal);
+  const dossiersOnMe = (() => {
+    const through = runtime.audits.through(principal);
+    return runtime.dossiers.about(principal).filter((d) => runtime.dossiers.visibleToSubject(d, tick, through));
+  })();
 
   const solved = boardFor(runtime, principal, tick);
   const board = solved.rows;
@@ -821,7 +870,7 @@ export function buildObservation(input: ObserveInput): Observation {
       // holds is already theirs to decide. Being unable to see what they voted for is the
       // anomaly.
       granted: [
-        ...runtime.grants.forGrantor(principal),
+        ...myGrantsOut,
         ...runtime.syndicates
           .of(principal, tick)
           .flatMap((s) => runtime.grants.forGrantor(syndicateAsPrincipal(s.id))),
@@ -854,14 +903,7 @@ export function buildObservation(input: ObserveInput): Observation {
        *                     it, and a mechanic whose cost is legible while its benefit is not is
        *                     a mechanic nobody will buy.
        */
-      about_me: (() => {
-        const through = runtime.audits.through(principal);
-        return runtime.dossiers
-          .about(principal)
-          .filter((d) => runtime.dossiers.visibleToSubject(d, tick, through))
-          .slice(-MAX_LIST_ROWS)
-          .map((d) => dossierView(d, principal));
-      })(),
+      about_me: dossiersOnMe.slice(-MAX_LIST_ROWS).map((d) => dossierView(d, principal)),
       i_hold: runtime.dossiers
         .heldBy(principal)
         .slice(-MAX_LIST_ROWS)
@@ -986,7 +1028,7 @@ export function buildObservation(input: ObserveInput): Observation {
     affordances: affordanceSet.list,
 
     briefing: {
-      prompt: promptFor(runtime, principal, mine, board, input.fresh, tick),
+      prompt: promptFor(runtime, principal, mine, board, myCampaigns, myGrantsOut, dossiersOnMe, input.fresh, tick),
       if_you_do_nothing: ifYouDoNothing(runtime, principal, mine, tick),
       /**
        * **The delivery half of PROP-O7.**
@@ -1002,6 +1044,22 @@ export function buildObservation(input: ObserveInput): Observation {
        * of the decision in front of the agent, which is what `briefing` is for.
        *
        * It is a hint. It is never an event (scar #10).
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * **ONE ROW PER REFUSED ACTION, WHICH IT WAS NOT.** A probe refused three
+       * actions in three consecutive ticks with no wake between them and its one
+       * wake returned **one** row — so the batch read as 2-for-3 successful. The
+       * rows were recorded correctly and then consumed: every `POST /act` attaches
+       * an observation, that observation drained the ring, and a `fresh: false`
+       * act response is precisely the payload an agent discounts as stale. That is
+       * the `RULES_VERSION` 19 defect ("a verdict consumed by a poll the agent made
+       * for some other reason") re-entering through a defaulted argument.
+       *
+       * Fixed at the call sites, not here: `drain` is now mandatory and true only
+       * for a wake, and every other observation gets `Runtime.peekCorrections`.
+       * This list is therefore complete for the wake that delivers it, and
+       * `corrections_dropped` accounts for anything the ring could not hold.
+       * ══════════════════════════════════════════════════════════════════════
        */
       corrections: input.corrections.map((c) => ({
         tick: c.tick,
@@ -1009,8 +1067,42 @@ export function buildObservation(input: ObserveInput): Observation {
         clientSequence: c.clientSequence,
         invariant: c.invariant,
         hint: c.hint,
-        nearest_legal: affordanceSet.list.find((a) => a.verb === c.verb) ?? affordanceSet.list[0] ?? null,
+        /**
+         * ★ **A STANDING CONDITION IS ONE ROW WITH A COUNT, NOT N ROWS.**
+         *
+         * See `PendingCorrection.repeats`: a durable intent refused for a reason that cannot change
+         * used to post an identical verdict every tick — measured at 16 rows in 16 ticks from one
+         * `set_delivery_intent`, and 130 pending across 11 principals world-wide. `tick` is the most
+         * recent occurrence, so the first of a consecutive run is `tick - repeats`.
+         *
+         * Read it as the instruction it is: a positive `repeats` on an intent's verb means the
+         * intent is stuck, not that the world is busy, and the answer is to stop it rather than to
+         * wait. Zero is the ordinary case.
+         */
+        repeats: c.repeats,
+        /**
+         * ★ **`?? affordanceSet.list[0]` USED TO BE THE LAST TERM HERE, AND IT INVENTED ADVICE.**
+         *
+         * When nothing in the list matched the refused verb, this handed back *whatever happened to
+         * be first* — so a probe's refused `set_delivery_intent` came back with a `nearest_legal` of
+         * `create DIG`, which its own report called "neither near nor legal". A field named
+         * `nearest_legal` carrying an unrelated act is worse than an absent one: the whole value of
+         * this channel is that an agent can copy the row and act, and PROP-O7 promises *"the nearest
+         * legal thing you could do instead"* — not "an affordance".
+         *
+         * `null` is the honest answer, and it costs the agent nothing it had: the prose `hint` names
+         * the invariant and the fix, and `affordances[]` is in the same payload.
+         */
+        nearest_legal: affordanceSet.list.find((a) => a.verb === c.verb) ?? null,
       })),
+      /**
+       * The accountable half of the bound above. Zero in every ordinary observation;
+       * positive only when a principal refused more than `MAX_PENDING_CORRECTIONS`
+       * actions between two wakes, and then it says how many rows are gone rather than
+       * letting the list quietly be short. Same discipline as `header.withheld`: an
+       * omission gets a **counted reason**, never silence.
+       */
+      corrections_dropped: input.correctionsDropped,
     },
   };
 }
@@ -1380,6 +1472,71 @@ function localSummary(
   };
 }
 
+/**
+ * Every `(grantor, compartment)` a delegate may cut a DOSSIER on, **breadth-first by grantor**,
+ * with the tail counted rather than dropped.
+ *
+ * Extracted from 5C-bis and given its own cap for the reason argued at that call site: the old code
+ * borrowed `MAX_GRANT_OFFERS` — a cap on an unrelated list — and walked grant-id hash order, so one
+ * grantor could take every slot and a live readable subject vanished from the menu with no counted
+ * reason. The door is `GrantBook.clearanceGrantFor`, which is a per-subject predicate with no cap at
+ * all; this is the only place the *enumeration* exists, and it is the enumeration that has to be
+ * fair.
+ *
+ * Round-robin is what makes the guarantee statable: **every grantor a delegate can read appears at
+ * least once, up to `MAX_DOSSIER_OFFERS` distinct grantors.** Within a grantor the compartments keep
+ * `grant.clearance`'s own order, which `canonicalClearance` already fixed, so nothing here is
+ * order-sensitive to a `Map` walk and nothing needs `Rng`.
+ */
+function clearanceOffers(
+  runtime: Runtime,
+  principal: PrincipalId,
+  tick: number,
+): {
+  readonly shown: readonly { readonly grant: Grant; readonly room: string }[];
+  readonly dropped: number;
+  readonly droppedSubjects: readonly string[];
+} {
+  // Grouped by grantor, insertion-ordered off `forDelegate` (which is id-sorted, hence
+  // deterministic). An array of pairs rather than a Map keyed by principal id, so no iteration
+  // order question arises at all — DET-7 bans numeric-key Map order and this sidesteps the class.
+  const byGrantor: { grantor: string; rows: { grant: Grant; room: string }[] }[] = [];
+  for (const grant of runtime.grants.forDelegate(principal)) {
+    if (!runtime.grants.isLive(grant.id, tick)) continue;
+    for (const room of grant.clearance) {
+      if (!isCompartment(room)) continue;
+      const key = String(grant.grantor);
+      const bucket = byGrantor.find((b) => b.grantor === key);
+      if (bucket === undefined) byGrantor.push({ grantor: key, rows: [{ grant, room }] });
+      else bucket.rows.push({ grant, room });
+    }
+  }
+
+  const shown: { grant: Grant; room: string }[] = [];
+  const deepest = byGrantor.reduce((n, b) => Math.max(n, b.rows.length), 0);
+  for (let round = 0; round < deepest; round += 1) {
+    for (const bucket of byGrantor) {
+      const row = bucket.rows[round];
+      if (row === undefined) continue;
+      if (shown.length >= MAX_DOSSIER_OFFERS) break;
+      shown.push(row);
+    }
+    if (shown.length >= MAX_DOSSIER_OFFERS) break;
+  }
+
+  const total = byGrantor.reduce((n, b) => n + b.rows.length, 0);
+  const seen = new Set(shown.map((r) => `${String(r.grant.grantor)}/${r.room}`));
+  const droppedSubjects = [
+    ...new Set(
+      byGrantor
+        .flatMap((b) => b.rows)
+        .filter((r) => !seen.has(`${String(r.grant.grantor)}/${r.room}`))
+        .map((r) => `${String(r.grant.grantor)}/${r.room}`),
+    ),
+  ].sort(cmp);
+  return { shown, dropped: total - shown.length, droppedSubjects };
+}
+
 function affordancesFor(
   runtime: Runtime,
   principal: PrincipalId,
@@ -1415,6 +1572,10 @@ function affordancesFor(
   const carryBlockedWhy = new Set<string>();
   /** `audit` withheld: grants are out, but none of them carries a CLEARANCE, so the log is empty. */
   let auditNoClearance = 0;
+  /** Dossier rows `MAX_DOSSIER_OFFERS` dropped — see 5C-bis. Was silent, and a leak rode through it. */
+  let clearanceOffersDropped = 0;
+  /** Whose compartments those dropped rows were about, so the ground names a subject. */
+  let clearanceOffersDroppedSubjects: readonly string[] = [];
   const world = runtime.world;
   const hands = handsOf(world, principal);
   const mine = runtime.ventures.forPrincipal(principal);
@@ -1885,8 +2046,25 @@ function affordancesFor(
     if (venture.state !== 'FORMING') continue;
     if (venture.countersigned.has(principal)) continue;
     if (venture.termsHash === null) continue;
-    const role = roleOfPrincipal(venture, principal);
-    const owed = role === null ? escrowRequired(venture) : minor(0);
+    const payer = venture.creator === principal;
+    // ── ★ `max_direct_loss` WAS KEYED ON THE WRONG FACT, AND READ 0 ────────────
+    //
+    // It was `role === null ? escrowRequired(venture) : minor(0)` — the escrow quoted to
+    // whoever holds NO role, rather than to whoever OWES it. Those coincide for a filler
+    // and for a bare creator, and come apart for the one case in between: **a creator that
+    // also fills a role in its own venture.** `fill_role` on your own venture is offered
+    // from the menu, so this is a copy-two-affordances-in-a-row path, not an edge case.
+    //
+    // Measured from outside on a live world: the same creator's own `sign` quoted
+    // `max_direct_loss: 4800` before it filled a role and **0** after, while the escrow it
+    // owed had not changed by a unit. A6's headline promise is *"with `max_direct_loss` and
+    // `max_contingent_liability` shown before you sign"* — reported as zero, on the verb
+    // that promise is named after, for the party that carries the whole escrow.
+    //
+    // `src/observe/catalogue.ts` had it right all along (`isCreator ? escrowRequired : 0`),
+    // which is the "two builders, one question, two answers" shape: the path `api/server.ts`
+    // actually serves was the wrong one.
+    const owed = payer ? escrowRequired(venture) : minor(0);
     // ── `sign` binds the terms and carries NO election ─────────────────────────
     //
     // It used to carry one, and the affordance was right to while `sign` was the only
@@ -1897,7 +2075,6 @@ function affordancesFor(
     // affordance below — and `Runtime.vSign` **refuses** an `election` on a `sign`
     // rather than dropping it, so this parameter list and that handler cannot drift
     // into a payer that thinks it elected and did not.
-    const payer = venture.creator === principal;
     eligible.push({
       verb: 'sign',
       params: {
@@ -3172,14 +3349,41 @@ function affordancesFor(
   // cleared grants could push six rows past a cap of two. A cap that is not actually a cap is worse
   // than none: `withheld` reconciles `candidates === shown + Σ withheld` per field (PROP-O1), and an
   // over-full list makes that arithmetic wrong in the direction nobody checks.
-  let citeOffers = 0;
-  for (const grant of runtime.grants.forDelegate(principal)) {
-    if (citeOffers >= MAX_GRANT_OFFERS) break;
-    if (!runtime.grants.isLive(grant.id, tick)) continue;
-    for (const room of grant.clearance) {
-      if (citeOffers >= MAX_GRANT_OFFERS) break;
-      if (!isCompartment(room)) continue;
-      citeOffers += 1;
+  //
+  // ── ★ AND THEN THE CAP THAT WAS A CAP DROPPED THE MOST DANGEROUS ACT IN THE GAME ──
+  //
+  // The paragraph above fixed the arithmetic and left two defects standing, both found by a probe
+  // that ran a complete betrayal from outside:
+  //
+  //   1. **`MAX_GRANT_OFFERS` is a cap on a DIFFERENT LIST.** It sizes 5C's shortlist of principals
+  //      you might grant an office TO — "the 2 with the strongest record with you, because an office
+  //      is the heaviest thing you can hand out". Borrowing it here made the DOSSIER list two rows
+  //      long for a reason that has nothing to do with dossiers, which is HARD RULE 4's failure mode
+  //      one level below the vocabulary: one constant standing for two concepts.
+  //   2. **The order was grant-id hash order, so one grantor could take every slot.** `forDelegate`
+  //      returns `all()`, sorted lexicographically by `g:<tick>:<hash>` (`grant/book.ts`). A delegate
+  //      holding an OFFICE in a syndicate *and* a personal grant over `p:probe-trust-01` therefore
+  //      got both rows spent on `syn:…/STORES` and `syn:…/HANDS` — and `p:probe-trust-01` never
+  //      appeared, while **two live grants were serving that principal's stores and hands on every
+  //      tick**. `withheld` said `count: 4, verbs: [build, move, trade]` and named neither `message`
+  //      nor the subject: both `break`s incremented nothing, so the drop was outside all 16 terms of
+  //      the sum. The probe hand-built the call, it was ACCEPTED, and the leak landed.
+  //
+  // §6 says *"we never truncate this list. If something was left out you get a `withheld` count and
+  // a reason."* This was the counterexample, and it was the worst possible row to lose: leaking a
+  // dossier on the principal who trusted you is A6's signature act, and the menu offered it only
+  // against a syndicate.
+  //
+  // So: **its own cap, breadth-first by grantor, and every drop counted.** Breadth-first is the
+  // load-bearing half — a cap that always resolves in favour of the same subject is
+  // indistinguishable from that subject being the only one you can read. The door
+  // (`Runtime.cite` -> `GrantBook.clearanceGrantFor`) is uncapped and subject-agnostic, so the menu
+  // being narrower than the door is exactly the "engine knows, surface lies" shape.
+  const dossierRows = clearanceOffers(runtime, principal, tick);
+  clearanceOffersDropped = dossierRows.dropped;
+  clearanceOffersDroppedSubjects = dossierRows.droppedSubjects;
+  for (const { grant, room } of dossierRows.shown) {
+    {
       eligible.push({
         verb: 'message',
         params: { to: grant.grantor, dossier: `${String(grant.grantor)}/${room}` },
@@ -3673,6 +3877,27 @@ function affordancesFor(
         'separately, and yours delegate only the first. `grants.granted[].clearance` is the field',
     });
   }
+  if (clearanceOffersDropped > 0) {
+    // ── COUNTED, BECAUSE THIS IS THE ROW WHOSE ABSENCE WAS THE DEFECT ──────────
+    //
+    // A probe held two live grants — one over a syndicate, one over the principal that trusted it —
+    // and the menu offered dossiers on the syndicate only. It hand-built the other call; it was
+    // accepted; the leak landed. `withheld` had said `count: 4, verbs: [build, move, trade]`, so the
+    // single most consequential omission in A6's whole loop was the one thing the accountability
+    // channel did not mention. Naming the SUBJECTS rather than only the number is the part that
+    // makes it actionable: a delegate reading this can construct the call, which is exactly what
+    // §6's promise means and what an uncounted `break` denied.
+    reasons.push({
+      verb: 'message',
+      text:
+        `${String(clearanceOffersDropped)} DOSSIER row(s) you are cleared to cut are not on this list — the ` +
+        `menu carries ${String(MAX_DOSSIER_OFFERS)} at a time, breadth-first so every grantor you can read ` +
+        'appears at least once. Withheld from the MENU is not withheld from the GAME: `message ' +
+        '{"to": "<any principal>", "dossier": "<grantor>/<COMPARTMENT>"}` is accepted for any live grant ' +
+        'you hold, capped by nothing. The omitted ones are ' +
+        `${clearanceOffersDroppedSubjects.join(', ')} — read them off \`grants.held[].clearance\``,
+    });
+  }
   if (demandCapacitySpent) {
     // ── COUNTED, BECAUSE A MENU THAT SHRINKS WITHOUT SAYING WHY TEACHES THE WRONG RULE ──
     //
@@ -3814,6 +4039,7 @@ function affordancesFor(
         chargeNoHand +
         carryBlocked +
         auditNoClearance +
+        clearanceOffersDropped +
         commonsBoundLanes +
         (demandCapacitySpent ? 1 : 0) +
         (demandSilent ? 1 : 0) +
@@ -4415,18 +4641,83 @@ function dossierView(row: Dossier, reader: PrincipalId): Readonly<Record<string,
 
 // ── Briefing ────────────────────────────────────────────────────────────────
 
-/** One sentence naming the actual dilemma. Never a greeting. */
+/**
+ * One sentence naming the actual dilemma. Never a greeting.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★ **THE RANKING, AND WHY A6 SITS AT THE TOP OF IT.**
+ *
+ * This field contradicted `if_you_do_nothing` **in the same object**, and a probe caught it
+ * mid-betrayal. With five offices out, three compartments leaked to three rivals and 7,800 of
+ * permanent default riding, the victim was told:
+ *
+ *   *"Nothing is waiting on you and 3 of your hands are idle; an idle hand earns nothing, and
+ *   the Commons is safe but poor."*
+ *
+ * — while `if_you_do_nothing`, one key over, said *"your elective 7800 is NOT paid … a default on
+ * the record."* Earlier in the same run it had coached the victim to finish staffing the venture
+ * its delegate had fabricated, calling it *"the 1 **you** created."*
+ *
+ * The ladder only ever read `mine`, `board` and idle hands, so **every fact about the core loop
+ * was invisible to the sentence the agent reads first.** A6 is not a side system: it is the core
+ * loop, and a dilemma field that cannot mention it is the eleventh instance of this project's
+ * standing defect — a mechanism that exists, is exercised, and is unreachable in the one place an
+ * agent looks to decide.
+ *
+ * The order below is not taste. It is **live liability, then permanence, then opportunity**:
+ *
+ *   1. `authorityInUse` — somebody is acting on authority you granted. Money is moving in your
+ *      name *now*, one verb (`revoke`) still bounds what is left, and **this fact has no other home
+ *      in the briefing at all.** One branch covers draws, delegated binds and cut dossiers together,
+ *      because they are one dilemma about one counterparty and splitting them would make the ranking
+ *      between them arbitrary.
+ *   2. `campaignPressure` — a war whose next pulse is scheduled and takes ground whether you are
+ *      awake or not (A14). Second rather than first only because it already has a dedicated
+ *      `holding.campaigns[].if_you_do_nothing` saying the same thing precisely; among facts that
+ *      *do* have another home, this is the largest and most preventable.
+ *   3. an unelected elective riding into this settlement — recoverable this tick, **permanent**
+ *      after it. A5′: a default libels you forever, so it outranks any window that merely closes.
+ *      Below the war because declining an elective is a legitimate choice and losing a claim is not.
+ *   4. the venture ladder, unchanged: your countersignature, your open roles, the board.
+ *   5. the idle-hands line, which may now only be reached when everything above is empty — which is
+ *      what makes it true.
+ *
+ * **The war half was corroborated independently**, in a run that shared nothing with the first: both
+ * the attacker and the **besieged defender** of a live campaign read *"Nothing is waiting on you and
+ * 3 of your hands are idle; … the Commons is safe but poor."* Neither was in the Commons, and the
+ * attacker's three "idle" hands **were the war's entire force.** One key over,
+ * `holding.campaigns[0].if_you_do_nothing` said *"the pulse at tick 792 is a BREACH against you — 2
+ * of 3, and at 3 the claim LAPSES and your bond is slashed."* Two probes, two scenarios, one
+ * ranking bug.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
 function promptFor(
   runtime: Runtime,
   principal: PrincipalId,
   mine: readonly VentureRecord[],
   board: readonly BoardRow[],
+  /**
+   * The campaign views the payload publishes, **passed rather than recomputed** — the `books` and
+   * `campaignViews` rule applied to prose. A second derivation of "how is my war going" is how the
+   * sentence and the block it points at come to disagree inside one payload, which is the defect
+   * class this whole function is being repaired for.
+   */
+  campaigns: readonly CampaignView[],
+  /** Grants this principal ISSUED, and dossiers already revealed to it — both read once, above. */
+  issued: readonly Grant[],
+  dossiersOnMe: readonly Dossier[],
   fresh: boolean,
   tick: number,
 ): string {
   if (!fresh) {
     return 'You are outside a wake, so this snapshot carries no fresh affordances and no quote_id. Nothing here can be acted on; wait for your next wake or the next Reckoning.';
   }
+  const delegated = authorityInUse(runtime, mine, issued, dossiersOnMe);
+  if (delegated !== null) return delegated;
+  const war = campaignPressure(campaigns);
+  if (war !== null) return war;
+  const riding = electiveRiding(runtime, principal, mine, tick);
+  if (riding !== null) return riding;
   const unsigned = mine.filter((v) => v.state === 'FORMING' && !v.countersigned.has(principal));
   if (unsigned.length > 0) {
     const first = unsigned[0];
@@ -4491,6 +4782,144 @@ function promptFor(
   }
   const idle = handsOf(runtime.world, principal).filter((h) => h.state === 'IDLE').length;
   return `Nothing is waiting on you and ${String(idle)} of your hands are idle; an idle hand earns nothing, and the Commons is safe but poor.`;
+}
+
+/**
+ * ★ **Somebody is acting on authority you granted** — the A6 branch of the dilemma, and the one
+ * the field never had.
+ *
+ * Three facts, one sentence, because they are one dilemma about one counterparty: a delegate that
+ * has DRAWN on your treasury, a venture it SIGNED YOU INTO, and a DOSSIER it cut on your books
+ * and handed somewhere. Ranking them against each other would have been arbitrary; naming the
+ * delegate and letting the agent decide is what §13B means by narrative and never control.
+ *
+ * Read off the same books the `grants` key publishes — `allSpends()` is INV-22's own journal,
+ * `dossiers.about` filtered by `visibleToSubject` is exactly `grants.about_me[]`, and `mine`
+ * carries `boundByGrant`. One source per fact, so the sentence and the block it points at cannot
+ * disagree (the `books`/`campaignViews` rule, applied to prose).
+ *
+ * **Silent while nothing has happened**, which is the whole difference between this and a warning:
+ * issuing a grant is not a dilemma, and a grantor whose delegates have all behaved gets the
+ * ordinary ladder. It is the *use* that is news.
+ */
+function authorityInUse(
+  runtime: Runtime,
+  mine: readonly VentureRecord[],
+  /** Grants THIS principal issued — the only ones where it carries the risk. Read once by the caller. */
+  issuedRows: readonly Grant[],
+  leaked: readonly Dossier[],
+): string | null {
+  // A grant this principal HOLDS over somebody else is its own authority and no dilemma at all.
+  if (issuedRows.length === 0 && leaked.length === 0) return null;
+  const issued = new Map(issuedRows.map((g) => [g.id, g] as const));
+
+  const bound = mine.filter((v) => v.boundByGrant !== null && issued.has(v.boundByGrant));
+  // The journal, walked only once something is actually delegated. Bounded by INV-26, but it is a
+  // per-observation walk and the cheap exits above are what keep it off the common path.
+  const draws = issued.size === 0 ? [] : runtime.grants.allSpends().filter((s) => issued.has(s.grant));
+  if (draws.length === 0 && bound.length === 0 && leaked.length === 0) return null;
+
+  // The delegate with the most to answer for, named. Ties broken by id so the sentence is
+  // deterministic (DET-7: no `Date.now`, no unstable sort key).
+  const tally = new Map<string, number>();
+  for (const s of draws) tally.set(String(s.delegate), (tally.get(String(s.delegate)) ?? 0) + 1);
+  for (const v of bound) {
+    const g = v.boundByGrant === null ? undefined : issued.get(v.boundByGrant);
+    if (g !== undefined) tally.set(String(g.delegate), (tally.get(String(g.delegate)) ?? 0) + 1);
+  }
+  for (const d of leaked) tally.set(String(d.cutBy), (tally.get(String(d.cutBy)) ?? 0) + 1);
+  const worst = [...tally.entries()].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0];
+
+  const drawn = draws.reduce((sum, s) => sum + Number(s.direct), 0);
+  const parts: string[] = [];
+  if (bound.length > 0) {
+    const first = bound[0];
+    parts.push(
+      `${String(bound.length)} venture(s) were signed in your name — ${first === undefined ? '' : `${first.id}, `}` +
+        'which you did not create and cannot unsign',
+    );
+  }
+  if (draws.length > 0) {
+    parts.push(`${String(draws.length)} draw(s) totalling ${String(drawn)} have been taken against your LIMITS`);
+  }
+  if (leaked.length > 0) {
+    const rooms = [...new Set(leaked.map((d) => d.compartment))].sort(cmp).join('+');
+    const to = [...new Set(leaked.map((d) => String(d.toWhom)))].sort(cmp);
+    parts.push(
+      `${String(leaked.length)} DOSSIER(s) on your ${rooms} have been cut and handed to ` +
+        `${to.slice(0, 3).join(', ')}${to.length > 3 ? ` and ${String(to.length - 3)} more` : ''} — ` +
+        'permanent, re-handable forever, and nothing un-cuts one',
+    );
+  }
+  return (
+    `Authority you granted is being USED${worst === undefined ? '' : `, most of it by ${worst[0]}`}: ` +
+    `${parts.join('; ')}. This is legitimate and none of it can be undone — \`revoke\` bounds only what ` +
+    `is LEFT, and \`audit\` buys you the ${String(AUDIT_LAG_TICKS)}-tick window on reads you have not been ` +
+    'told about yet. Read `grants.granted[]` for the remaining headroom and `grants.about_me[]` for who ' +
+    'has been reading you, and decide whether this delegate keeps its office.'
+  );
+}
+
+/**
+ * ★ **A war whose next pulse is already scheduled** — the branch a second probe's siege demanded.
+ *
+ * Both the attacker and the besieged defender of a live campaign were told their hands were idle and
+ * the Commons was safe, while the attacker's "idle" hands were the war's whole force. A14's point is
+ * that the pulse *"fires whether you are awake or not"*, so a prompt that omits it is omitting the
+ * one thing on a clock the agent cannot dodge.
+ *
+ * Read straight off `CampaignView.if_you_do_nothing` — the sentence the campaign block already
+ * publishes, quoted rather than re-derived, so the top-level dilemma and `holding.campaigns[0]`
+ * cannot say different things about the same war. `campaignsFor` returns them sorted by how close
+ * each is to deciding something, so the first party row is the one that matters most.
+ */
+function campaignPressure(campaigns: readonly CampaignView[]): string | null {
+  const mine = campaigns.find((c) => c.your_side !== null);
+  if (mine === undefined) return null;
+  const clock =
+    mine.next_pulse_tick === null
+      ? 'its next pulse is not scheduled'
+      : `its next pulse is at tick ${String(mine.next_pulse_tick)} and fires whether you are awake or not`;
+  return (
+    `You are ${String(mine.your_side)} in campaign ${mine.campaign} over ${mine.objective}, standing ` +
+    `${mine.legend}, and ${clock}. ${mine.if_you_do_nothing} Hands committed to a war are not idle ` +
+    'hands; `holding.campaigns[]` carries the force reading, the depot and the materiel this pulse ' +
+    'will consume, and there are four ways out rather than one.'
+  );
+}
+
+/**
+ * ★ **An elective half riding into THIS settlement, unelected** — the branch whose absence let the
+ * dilemma field say "nothing is waiting on you" over 7,800 of imminent permanent default.
+ *
+ * Second in the ladder, not third, and A5′ is the reason: a formation window that closes retires a
+ * venture with nothing settled, while a settlement that arrives unelected writes a `DEFAULTED` row
+ * that no verb in this game removes. Recoverable-now-and-permanent-after outranks
+ * recoverable-now-and-forgotten-after.
+ *
+ * Deliberately the **same arithmetic** as `if_you_do_nothing` — `unelectedElective` over the
+ * ventures resolving by `nextSettlement` — because the defect was not that the number was missing
+ * from the payload. It was there, one key over. The defect was that the two keys **disagreed**, and
+ * two derivations of one figure is how they would disagree again.
+ */
+function electiveRiding(
+  runtime: Runtime,
+  principal: PrincipalId,
+  mine: readonly VentureRecord[],
+  tick: number,
+): string | null {
+  const settlement = nextSettlement(tick);
+  const resolving = mine.filter((v) => v.state === 'LIVE' && v.resolvesAtTick <= settlement);
+  const owed = resolving.reduce((sum, v) => sum + unelectedElective(runtime, v, principal), 0);
+  if (owed <= 0) return null;
+  const first = resolving.find((v) => unelectedElective(runtime, v, principal) > 0);
+  return (
+    `${String(owed)} of ELECTIVE half is unelected and settles at tick ${String(settlement)}` +
+    `${first === undefined ? '' : ` (${first.id} first)`}. Paying it is genuinely your choice — the ` +
+    'escrowed half auto-executes either way — but the choice is recorded: `elect` IN_FULL and it ' +
+    'counts as honoured, or let it settle and a DEFAULT goes on your permanent public record naming ' +
+    'you as promisor, which no verb in this game removes. Whoever is owed it reads the same row.'
+  );
 }
 
 /**

@@ -60,6 +60,7 @@ function firstWorksOffer(seed: string): { readonly text: string; readonly shareP
           wakesRemaining: 9,
           stale: false,
           corrections: [],
+          correctionsDropped: 0,
           actionsRemaining: 4,
         });
       } catch {

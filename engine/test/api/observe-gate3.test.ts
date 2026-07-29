@@ -92,6 +92,7 @@ function direct(
     wakesRemaining: options.wakesRemaining ?? WAKES_PER_RECKONING,
     stale: options.stale ?? false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   }) as unknown as Row;
 }

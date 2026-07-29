@@ -132,6 +132,7 @@ describe('§12.1 — the observation is exactly ten keys, in agent.md order', ()
       wakesRemaining: 16,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     });
     const target = before.affordances[0]?.verb;
@@ -150,6 +151,7 @@ describe('§12.1 — the observation is exactly ten keys, in agent.md order', ()
         wakesRemaining: 16,
         stale: false,
         corrections: [],
+        correctionsDropped: 0,
         actionsRemaining: 4,
       });
       const withheld = observation.header['withheld'] as Record<string, unknown>;

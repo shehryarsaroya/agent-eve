@@ -37,6 +37,7 @@ describe('the verb is live and says so', () => {
       wakesRemaining: 16,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     });
     const trade = seen.affordances.find((a) => a.verb === 'trade');

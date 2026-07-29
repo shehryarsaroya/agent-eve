@@ -200,9 +200,38 @@ describe('the fourth good is a PRICE that depends on place, not a wall', () => {
     // correctly alone. Pinned against the constants rather than typed again.
     //
     // MUTATION: change any entry in `ALLOY_IN_BY_TIER` or either gate quantity. RED here.
+    // ── ★ THIS TEST PINNED agent.md TO A RULE THE ENGINE DOES NOT ENFORCE ────
+    //
+    // It required the literal string *"**8 ore for 1 alloy, and it runs only at a COMMONS system**"* —
+    // inside a `describe` block whose own title is **"the fourth good is a PRICE that depends on
+    // place, not a wall"**, three assertions below one that loops over every entry of
+    // `ALLOY_IN_BY_TIER`. So the file simultaneously knew alloy was a gradient and *guaranteed that
+    // `agent.md` kept calling it a prohibition*, for fifteen rules releases. That is scar #1 — the
+    // engine and the agent-facing text disagreeing about one rule while each reads correctly alone —
+    // occurring inside the golden-file guard built to prevent scar #1, which is why it survived.
+    //
+    // A probe found it by playing: 288 ore hauled to a Marches system, `refine {kind:"ALLOY", qty:9}`,
+    // nine alloy standing there, no correction. It cost nothing to fix and would have cost an agent
+    // every haul it made to avoid a wall that was not there.
+    //
+    // Pinned against the CONSTANTS now, in both directions, so neither surface can drift again.
     const md = readAgentMd();
+    for (const tier of TIERS) {
+      expect(
+        md,
+        `agent.md must publish the ${tier} rate (${String(ALLOY_IN_BY_TIER[tier])}:1) — the whole point is ` +
+          'that the cost depends on where the ore stands, and a claimant that reads only the Commons ' +
+          'figure will price an anchor at a quarter of what it actually pays',
+      ).toContain(`${tier} ${String(ALLOY_IN_BY_TIER[tier])}:1`);
+    }
+    expect(
+      md,
+      'and it must NOT re-assert the prohibition: alloy runs at every tier, and `works/refine.ts` says ' +
+        'why in as many words — "a price gradient rather than a wall, because the wall version was ' +
+        'measured and deadlocked"',
+    ).not.toContain('runs only at a COMMONS system');
+    expect(md, 'nor anywhere else').not.toContain('refined only at a');
     for (const wanted of [
-      `**8 ore for 1 alloy, and it runs only at a COMMONS system**`,
       `${String(ALLOY_ANCHOR_QTY)} of it`,
       'Goods are LOCATED, and `haul` is the only verb that moves them',
       'A market fill settles the cargo at the venue it traded at',

@@ -156,6 +156,7 @@ describe('the A6 core loop reaches the menu, and only after trust is earned', ()
           wakesRemaining: 9,
           stale: false,
           corrections: [],
+          correctionsDropped: 0,
           actionsRemaining: 4,
         }) as unknown as Row;
         const offers = ((o['affordances'] ?? []) as readonly Row[]).filter(

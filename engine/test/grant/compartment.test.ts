@@ -53,6 +53,7 @@ import {
 import { checkInv22, type CustodyRow, type GrantSpend } from '../../src/invariants/authority.js';
 import { commonsSystems } from '../../src/world/index.js';
 import { MAX_GRANT_OFFERS, Runtime, type PendingCorrection } from '../../src/sim/runtime.js';
+import { MAX_DOSSIER_OFFERS } from '../../src/api/observe.js';
 
 type Row = Record<string, unknown>;
 const obj = (v: unknown): Row => (typeof v === 'object' && v !== null ? (v as Row) : {});
@@ -136,6 +137,7 @@ function observe(w: World, who: PrincipalId): Row {
     actionsRemaining: 4,
     wakesRemaining: 16,
     corrections: [],
+    correctionsDropped: 0,
   }) as unknown as Row;
 }
 
@@ -243,9 +245,24 @@ describe('non-vacuity — a compartment can bind, and each verb is reachable', (
     // `candidates === shown + Σ withheld` per field, so an over-full list makes that arithmetic
     // wrong in the direction nobody checks. Found by reading, not by a failing test, which is why
     // this one exists.
+    // ── ★ AND THEN THE CAP THAT WAS A CAP DROPPED A LIVE CAPABILITY ───────────
+    //
+    // Fixing the arithmetic left two defects standing, both found by a probe running a betrayal from
+    // outside. The cap was `MAX_GRANT_OFFERS` — **a cap on a different list** (how many principals to
+    // suggest you promote) — and the walk was grant-id hash order, so ONE grantor could take every
+    // slot. A delegate holding an office in a syndicate *and* a personal grant over the principal
+    // that trusted it was offered dossiers on the syndicate only; `withheld` said
+    // `count: 4, verbs: [build, move, trade]`, naming neither `message` nor the subject, because
+    // neither `break` incremented anything. The probe hand-built the call, it was accepted, and the
+    // leak landed.
+    //
+    // So: `MAX_DOSSIER_OFFERS`, breadth-first by grantor, every drop counted with its subjects named.
+    // The property this case now pins is the one that survived the rename — **the cap bounds the
+    // whole list and not each grant** — and the fairness half is in
+    // `test/api/withheld-is-accountable.spec.ts`, where the accountability promise lives.
     const w = world('nv7');
     // Three grantors, each handing this delegate a steward's office: 3 grants × 2 compartments = 6
-    // candidate rows against a cap of 2.
+    // candidate rows.
     for (const name of ['a', 'b', 'c']) {
       const grantor = `p:g-${name}` as PrincipalId;
       w.runtime.seat(grantor, `g-${name}`, w.stage);
@@ -256,8 +273,25 @@ describe('non-vacuity — a compartment can bind, and each verb is reachable', (
     const cite = rows(observe(w, w.delegate)['affordances']).filter(
       (a) => a['verb'] === 'message' && 'dossier' in obj(a['params']),
     );
-    expect(cite.length).toBeLessThanOrEqual(MAX_GRANT_OFFERS);
+    expect(
+      cite.length,
+      'the cap bounds the WHOLE list, not each grant: 3 cleared grants must not yield 3 × the cap',
+    ).toBeLessThanOrEqual(MAX_DOSSIER_OFFERS);
     expect(cite.length, 'and it is not zero — the cap must bound a list that exists').toBeGreaterThan(0);
+    // And the two caps are now SEPARATE constants, which is the whole correction: one sizes "how many
+    // principals is it decent to suggest you promote", the other "how many of your own live
+    // capabilities may this list omit". Reusing one for both is HARD RULE 4 one level below the
+    // vocabulary, and it is what deleted a subject from the menu.
+    expect(MAX_DOSSIER_OFFERS).not.toBe(MAX_GRANT_OFFERS);
+    // Six candidates against a cap of six, so all six are shown — and the per-grant bug would have
+    // published eighteen. That is the arithmetic this case is for; the case where the cap actually
+    // BITES, and the fairness of what it drops, is `test/api/withheld-is-accountable.spec.ts` with
+    // four grantors against six slots.
+    expect(
+      new Set(cite.map((a) => String(obj(a['params'])['dossier']).split('/')[0])).size,
+      'every grantor the delegate can read must appear, not just whichever grant-id sorts first — the ' +
+        'old walk was grant-id hash order and one grantor could take every slot',
+    ).toBe(3);
   });
 
   it('the `grant` affordance names verbs and clearance in its params, so the fields are discoverable', () => {

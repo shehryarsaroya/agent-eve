@@ -287,6 +287,7 @@ describe('observe surfaces grants, so an agent can see and use its authority (A6
       wakesRemaining: 16,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     }) as unknown as { grants: { granted: Row[]; held: Row[] } };
     return observation.grants;
