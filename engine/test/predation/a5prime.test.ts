@@ -547,6 +547,8 @@ function inertPort(): PredationPort {
     principals: () => [],
     assailableOf: () => [],
     presentHandsAt: () => 0,
+    worksAt: () => [],
+    razeWorks: () => false,
     tierOf: () => 'MARCHES',
     handsDefending: () => [],
     standingOf: () => qty(0),

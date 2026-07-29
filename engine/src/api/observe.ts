@@ -1628,7 +1628,18 @@ function affordancesFor(
           `paying hands over ${String(view.costs.pay)} of ${view.good} at ${view.stage} at once and the raid ` +
           `leaves. It is not a default and it does not move your standing — nothing a raid does ever does. ` +
           `Ignoring it costs ${String(view.costs.if_you_do_nothing)} instead (the published multiple is ` +
-          `${String(RAID_TAKE_MULTIPLE)}x, capped at half of what is actually there).`,
+          `${String(RAID_TAKE_MULTIPLE)}x, capped at half of what is actually there).` +
+          // ── ★ AND THE PART THAT IS NOT GOODS AT ALL ───────────────────────
+          //
+          // `works_at_risk` reached the payload the moment `RaidView` carried it, and a field nothing
+          // points at is a capability an agent cannot find — this project's signature defect on the
+          // exact surface A2 calls the interface. A razing is the largest loss in this decision and it
+          // is not denominated in the good the other two numbers are, so it has to be said in words.
+          (view.costs.works_at_risk === null
+            ? ''
+            : ` And as it stands the raid would RAZE ${view.costs.works_at_risk} — a WORKS is destroyed ` +
+              `permanently, and rebuilding costs 5000 ration plus 60000 currency with no first-works ` +
+              `discount. Paying stops that too.`),
         expires_tick: view.resolves_tick,
         quote_id: quoteId(principal, tick, 'yield', { raid: view.raid }),
       });
@@ -1654,6 +1665,20 @@ function affordancesFor(
           `sends every IDLE hand you have there to RECOVERING — never destroyed, and never your holding, your ` +
           `identity or your standing. Winning costs nothing and takes any raider's forfeited stake. Others may ` +
           `still join either side before tick ${String(view.resolves_tick)}.` +
+          // ── ★ THE RAZE MARGIN, WHICH IS WHY MUSTERING PAYS EVEN IF YOU LOSE ─
+          //
+          // The one number that makes `fight` rational against a raid you cannot beat: losing narrowly
+          // costs goods, being ROUTED costs the structure. `save_works_force` is the published
+          // threshold and it is the same call the resolver makes (scar #1), so the menu and the
+          // outcome cannot disagree.
+          (view.costs.works_at_risk === null
+            ? view.costs.save_works_force > 0
+              ? ` Your structures at ${view.stage} are out of raze range as it stands.`
+              : ''
+            : ` ★ As it stands the raid would also RAZE ${view.costs.works_at_risk}: an assault that wins by ` +
+              `2 or more DESTROYS a WORKS at the stage, permanently. ` +
+              `${String(view.costs.save_works_force)} more force here puts it out of range — you would still ` +
+              `lose the ${view.good}, and you would keep the structure. One hand is 1 and one joiner is 1.`) +
           // ── THE HALF THAT MAKES A FLEET WORTH FLYING, AND IT WAS MISSING ────
           //
           // A world raid's own force USED to be a scalar nothing could touch, so an agent that read

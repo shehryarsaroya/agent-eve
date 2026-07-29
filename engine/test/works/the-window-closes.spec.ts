@@ -268,24 +268,30 @@ describe('★ THE CURRENCY DOOR, and every clause of it that must not drift', ()
     );
   }, 2 * MINUTES);
 
-  it('★ the door is once per IDENTITY, not once per live WORKS — the raze trap, pre-empted', () => {
+  it('★ the door is once per IDENTITY, not once per live WORKS — the raze trap, now SPRUNG', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // **THIS GUARDS A DEFECT THAT DOES NOT EXIST YET, AND THAT IS THE POINT.**
+    // **THIS GUARDED A DEFECT THAT DID NOT EXIST YET. IT EXISTS NOW, AND THE ANSWER HELD.**
     //
-    // `WorksRecord` carries `razed`/`razedAtTick`, both captured and restored, and `ofPrincipal`
-    // filters on them — so `ofPrincipal(p).length === 0` means *"holds none now"*, which is the same
-    // answer as *"never held one"* only while nothing razes a WORKS. Nothing does today (`grep -rn
-    // "razed" src` finds readers only). The day a raid, a siege or an `abandon` can end one, the live
-    // predicate reopens the bootstrap door once per razing at `WORKS_GOODS_IN_CURRENCY_MINOR` a turn.
+    // Written when `Book.raze` had no caller anywhere in `src/`: `ofPrincipal` filters `razed`, so
+    // `ofPrincipal(p).length === 0` means *"holds none now"*, which is the same answer as *"never held
+    // one"* only while nothing razes a WORKS. The prediction was that the day a raid or a siege could
+    // end one, the live predicate would reopen the bootstrap door **once per razing at
+    // `WORKS_GOODS_IN_CURRENCY_MINOR` a turn** — the `Book.prune` failure shape, invisible in every
+    // test because the mechanism was not built.
     //
-    // That is the `Book.prune` failure shape: a fix whose predicate could be undone by a mechanism
-    // its author had not checked, invisible in every test because the mechanism was not built. So the
-    // gate is `everHeldBy` and this test razes a row by hand to prove it.
+    // `RULES_VERSION` 30 built it. `works/raze.ts` ends a WORKS off a raid rout and off a campaign
+    // breach, so the two predicates have genuinely parted and this is no longer a hypothetical.
     //
-    // **If raze lands and this test is in the way, that is the test working.** Whether a principal
-    // that LOST its only WORKS deserves a fresh bootstrap is a real design question — it is trapped
-    // again by exactly the arithmetic this file documents — and it must be answered on purpose rather
-    // than inherited from which accessor somebody reached for.
+    // **The design question it trapped, answered on purpose:** a principal that LOSES its only WORKS
+    // does **not** get a fresh bootstrap. The door's justification is a once-per-identity window out
+    // of a trap the *enrolment allotment* creates; a principal that has held a WORKS has had a goods
+    // income, and losing it to an assault is the loss A5 exists to make real. A door reopening per
+    // razing would make being raided profitable for anyone holding currency and delete the
+    // replacement demand razing was built to create.
+    //
+    // Still razed here through the book rather than through a raid, and deliberately: this file's
+    // subject is the DOOR, and driving a whole standoff to reach it would make a door test fail for
+    // predation's reasons. `test/works/raze.spec.ts` asserts the same answer on the full engine path.
     // ══════════════════════════════════════════════════════════════════════════
     const { runtime, who } = drainedThenBuilds('door-raze');
     const seat = holdingOf(runtime.world, who).system;
@@ -293,13 +299,9 @@ describe('★ THE CURRENCY DOOR, and every clause of it that must not drift', ()
     expect(row, 'it came through the door').toBeDefined();
     if (row === undefined) return;
 
-    // Reaching into the book because there is no verb: the whole hazard is that a future verb will
-    // do this, and a test that waited for the verb would be written after the hole shipped.
-    const razed = runtime.works.at(row.id);
-    expect(razed).not.toBeNull();
-    if (razed === null) return;
-    (razed as { razed: boolean }).razed = true;
-    (razed as { razedAtTick: number | null }).razedAtTick = runtime.engine.tick;
+    // The real method now, not a cast-away `readonly`: `raze` is what the two callers call, and a
+    // test that hand-mutated the row would keep passing if `raze` stopped setting `razed` at all.
+    runtime.works.raze({ id: row.id, tick: runtime.engine.tick, reckoning: 0, by: null });
 
     expect(runtime.works.ofPrincipal(who).length, 'the LIVE set is empty again').toBe(0);
     expect(runtime.works.everHeldBy(who), 'but the lifetime answer is unchanged').toBe(true);

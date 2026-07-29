@@ -10,6 +10,7 @@ import { phaseOfReckoning, reckoningIndex } from '../core/time.js';
 import type { InvariantViolation, SystemId } from '../core/types.js';
 import { BPS_ONE } from '../core/units.js';
 import { halt } from '../invariants/registry.js';
+import { compareIds } from '../ledger/order.js';
 import { tierOf, type WorldMap } from '../world/map.js';
 import type { Book } from './book.js';
 import { FUEL_YIELD_PER_TICK, WORKS_PER_PRINCIPAL_PER_SYSTEM, YIELD_PER_TICK } from './params.js';
@@ -163,16 +164,36 @@ export function checkRentWithinGross(input: WorksInvariantInputs): readonly Inva
  *
  * This is the check that catches double collection — two rent postings for one share sum to
  * `2 × bps` of the yield and trip it, where INV-W4 alone would not.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SUBJECT SET IS A UNION, AND RAZING IS WHY.** It used to be `workedSystems()` alone, which
+ * filters `razed`. The tally does not — it survives its subject ending, deliberately, exactly as it
+ * survives a claim ending. So the day a WORKS could fall, razing the last one at a system
+ * mid-Reckoning dropped that system out of this check with a non-zero tally standing, and the one
+ * invariant that catches double rent collection stopped running there. Silently, and in the
+ * direction that hides.
+ *
+ * `rentTalliedSystems` is the other half of the union. A system in it and not in `workedSystems()`
+ * is precisely a place whose production was destroyed after its landlord had already collected, and
+ * that is the case the bound must still hold for: the ceiling is a property of the MAP and the
+ * ticks, so it does not care whether anything is still standing there.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 export function checkRentBoundedByMap(input: WorksInvariantInputs): readonly InvariantViolation[] {
   const out: InvariantViolation[] = [];
   const reckoning = reckoningIndex(input.tick);
+  // `compareIds`, never a bare `.sort()`: both inputs are already in it, and an invariant that
+  // reported its violations in a different order on two replays of one seed is a determinism killer
+  // in the artifact that halts the world.
+  const subjects = [
+    ...new Set<SystemId>([...input.book.workedSystems(), ...input.book.rentTalliedSystems(reckoning)]),
+  ].sort(compareIds);
   // Every tick of this Reckoning up to and including the current one. An upper bound on purpose:
   // a world that began mid-Reckoning has run fewer, and an invariant must never accuse a world of
   // arithmetic it did not do.
   const ticksSoFar = phaseOfReckoning(input.tick) + 1;
   const ceiling = input.rentCeilingBps ?? BPS_ONE;
-  for (const system of input.book.workedSystems()) {
+  for (const system of subjects) {
     const taken = input.book.rentTakenAt(system, reckoning);
     if (taken <= 0) continue;
     const tier = tierOf(input.map, system);
@@ -230,6 +251,85 @@ export function checkFuelIsFrontierOnly(input: WorksInvariantInputs): readonly I
   return out;
 }
 
+/**
+ * INV-W7 — a RUIN is coherent: it fell in the Reckoning its tick says, and it never fell ahead of
+ * itself.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **AN INVARIANT WHOSE SUBJECT COULD NOT OCCUR UNTIL NOW, WHICH IS THE THIRD DEPTH OF THIS
+ * PROJECT'S SIGNATURE DEFECT.** INV-22 was green over an empty journal for the project's whole life
+ * and INV-23 before it. So this one is written *with* the mechanism that gives it a subject, and
+ * `test/works/raze.spec.ts` asserts non-vacuity first — it fails if the world it runs contains no
+ * ruin at all, because an invariant over an empty set reports green and means nothing.
+ *
+ * Three clauses, and each is a wrong *public* fact rather than a tidiness complaint:
+ *
+ *   1. **`razed` and its two labels agree.** THE RUIN reads `fellAtReckoning` and `razedBy` off the
+ *      row; a razed row missing its Reckoning would render a ruin labelled with nothing, and an
+ *      unrazed row carrying one would render a ruin over a working structure.
+ *   2. **The Reckoning matches the tick.** `fellAtReckoning` is stored rather than derived (see
+ *      `WorksRecord`), and a stored derivable is a second spelling — scar #5 — so the two are
+ *      checked against each other rather than trusted.
+ *   3. **Nothing falls before it was raised.** A ruin dated earlier than its own construction is the
+ *      false-record shape A5′ forbids, and it is the exact artifact a mis-threaded `tick` produces.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function checkRuinsAreCoherent(input: WorksInvariantInputs): readonly InvariantViolation[] {
+  const out: InvariantViolation[] = [];
+  for (const works of input.book.everInOrder()) {
+    if (!works.razed) {
+      if (works.razedAtTick !== null || works.fellAtReckoning !== null || works.razedBy !== null) {
+        out.push(
+          halt(
+            'INV-W7',
+            input.tick,
+            `${works.id} is not razed but carries a razing label (tick ${String(works.razedAtTick)}, ` +
+              `Reckoning ${String(works.fellAtReckoning)}, by ${String(works.razedBy)}). A standing WORKS ` +
+              'wearing a ruin\'s labels renders as a ruin on a structure that is still extracting',
+          ),
+        );
+      }
+      continue;
+    }
+    if (works.razedAtTick === null || works.fellAtReckoning === null) {
+      out.push(
+        halt(
+          'INV-W7',
+          input.tick,
+          `${works.id} is razed but its labels are incomplete (tick ${String(works.razedAtTick)}, ` +
+            `Reckoning ${String(works.fellAtReckoning)}). THE RUIN is labelled with the handle and the ` +
+            'Reckoning it fell, and a ruin that cannot say when it fell is a loss with no date',
+        ),
+      );
+      continue;
+    }
+    const expected = reckoningIndex(works.razedAtTick);
+    if (works.fellAtReckoning !== expected) {
+      out.push(
+        halt(
+          'INV-W7',
+          input.tick,
+          `${works.id} records falling at tick ${String(works.razedAtTick)} — Reckoning ` +
+            `${String(expected)} — but is labelled Reckoning ${String(works.fellAtReckoning)}. The stored ` +
+            'Reckoning and the tick are two spellings of one fact and they have parted (scar #5)',
+        ),
+      );
+    }
+    if (works.razedAtTick < works.raisedAtTick) {
+      out.push(
+        halt(
+          'INV-W7',
+          input.tick,
+          `${works.id} was raised at tick ${String(works.raisedAtTick)} and records falling at ` +
+            `${String(works.razedAtTick)}, before it existed. A ruin dated ahead of its own structure is ` +
+            'a permanent public fact that never happened (A5′)',
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 export function checkWorks(input: WorksInvariantInputs): readonly InvariantViolation[] {
   return [
     ...checkYieldCap(input),
@@ -238,6 +338,7 @@ export function checkWorks(input: WorksInvariantInputs): readonly InvariantViola
     ...checkRentWithinGross(input),
     ...checkRentBoundedByMap(input),
     ...checkFuelIsFrontierOnly(input),
+    ...checkRuinsAreCoherent(input),
   ];
 }
 

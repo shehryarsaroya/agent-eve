@@ -56,6 +56,11 @@ import { compareIds } from '../ledger/order.js';
 // a campaign is fought by the same arithmetic as a standoff, and two spellings of `FORCE_PER_HAND`
 // would make that claim false the first time either moved (scar #5).
 import { FORCE_BY_TIER, FORCE_PER_HAND, FORCE_PER_JOINER } from '../predation/params.js';
+// The razing rule, shared with the raid path. Same import argument as §9's force constants above:
+// a campaign is fought by the same arithmetic as a standoff, so it must END A STRUCTURE by the same
+// arithmetic too — two spellings of `RAZE_FORCE_MARGIN` would make that claim false the first time
+// either moved, and A8 would then hold on one path and not the other.
+import { razeVerdict, type RazeCandidate } from '../works/raze.js';
 import {
   Book,
   isLiveCampaign,
@@ -81,6 +86,15 @@ export interface PulsePort {
   handsAt(principal: PrincipalId, system: SystemId): readonly HandId[];
   /** Unpledged lots of MATERIEL standing at `system`, canonical order. */
   materielLotsAt(principal: PrincipalId, system: SystemId): readonly { readonly id: string; readonly qty: number }[];
+  /**
+   * Live WORKS the defender holds at the objective — what a BREACH can end.
+   *
+   * The DEFENDER's and nobody else's, which is `resolvePulse`'s own rule about bonds applied to
+   * structures: *"a bond may not be forfeited to a principal that never chose to be in the war"*, so
+   * neither may a tenant's factory be burned for standing on ground somebody else went to war over.
+   * A campaign's landlord loses its own production; its tenants lose their landlord.
+   */
+  worksAt(principal: PrincipalId, system: SystemId): readonly RazeCandidate[];
 }
 
 /**
@@ -96,6 +110,34 @@ export interface PulsePlan {
   /** Lots to destroy into the CONSUMPTION sink, in canonical order, summing to `materielSpent`. */
   readonly destroy: readonly { readonly lotId: string; readonly qty: Qty }[];
   readonly endsWith: CampaignEnding | null;
+  /**
+   * ★ The WORKS this pulse's BREACH ends, or null — **and this is the whole economic point of a war.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE ASYMMETRY THIS CLOSES.** Three breaches took a SUPPLIED claim and the anchor fell, so
+   * territory changed hands **with its production untouched.** A war's prize arrived with the
+   * factories intact and nobody had to rebuild anything, which is why the economy had no reason to
+   * keep running once everybody had built: destruction is what creates replacement demand, and this
+   * layer created none.
+   *
+   * On the **BREACH** rather than on `TAKEN`, deliberately, and it is the more interesting rule:
+   *
+   *   - **A war nobody wins still costs the defender its production.** A campaign that breaches once
+   *     and is then rebuffed leaves the claim where it was and the works in ruins — so an attacker
+   *     that loses has still done economic damage, and a defender that "won" has a bill. That is
+   *     *"every war has an economic consequence"* holding for the wars that end in nothing, which is
+   *     most of them.
+   *   - **It lands on a clock nobody controls.** A pulse resolves at `CAMPAIGN_PULSE_PHASE`, once per
+   *     Reckoning, on the Charge's own clock (A14). Razing on `TAKEN` would have fired at most once
+   *     per campaign and only for the winner; this fires on the schedule the war already rides.
+   *   - **`WORKS_PER_PRINCIPAL_PER_SYSTEM` is 1**, so the second and third breaches of a campaign
+   *     find nothing standing and say so. The first assault that lands is the one that burns the
+   *     works, and the rest of the war is fought over ground that has already stopped producing.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly razes: RazeCandidate | null;
+  /** The sentence {@link razeVerdict} returned, on every pulse that read force. Null otherwise. */
+  readonly razeWhy: string | null;
 }
 
 /**
@@ -127,7 +169,7 @@ export interface CampaignEnding {
  * (the assault), then the verdict.
  */
 export function resolvePulse(port: PulsePort, campaign: CampaignRecord, tick: number): PulsePlan {
-  const none = { campaign: campaign.id, row: null, destroy: [] } as const;
+  const none = { campaign: campaign.id, row: null, destroy: [], razes: null, razeWhy: null } as const;
 
   // ── 1. IS THERE STILL AN OBJECTIVE? ───────────────────────────────────────
   //
@@ -217,11 +259,33 @@ export function resolvePulse(port: PulsePort, campaign: CampaignRecord, tick: nu
     defenderHands: reading.defenderHands,
   };
 
+  // ── 4. AND WHAT THE ASSAULT DESTROYS ──────────────────────────────────────
+  //
+  // Asked on every pulse that read force, including a REBUFF: `razeVerdict` needs the margin either
+  // way and its `why` is the honest sentence for both answers. The margin on a rebuff is negative or
+  // zero by construction (`outcome` is BREACH exactly when the attacker is ahead), so a rebuffed
+  // pulse can never raze — but the *reason* it did not is recorded rather than inferred, because
+  // "the defender held" and "the defender held by one hand" are different facts about a war.
+  //
+  // The Commons branch inside `razeVerdict` is unreachable from here — `declare.ts` refuses a
+  // COMMONS objective as INVALID and `claim.ts` refuses a COMMONS claim, so there is no campaign to
+  // pulse — and it is asked anyway. A8 is a floor, and a floor that depended on two other files
+  // continuing to agree with it is not one.
+  const raze = razeVerdict({
+    tier: port.tierOf(campaign.objective),
+    system: campaign.objective,
+    standing: port.worksAt(campaign.defender, campaign.objective),
+    attackerForce: reading.attackerForce,
+    defenderForce: reading.defenderForce,
+  });
+
   return {
     campaign: campaign.id,
     row,
     destroy: picked.lots,
     endsWith: verdictAfter(campaign, row, tick),
+    razes: raze.falls,
+    razeWhy: raze.why,
   };
 }
 

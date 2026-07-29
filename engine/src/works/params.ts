@@ -653,11 +653,44 @@ export const WORKS_BUILD_QTY: Qty = qty(5_000);
  *
  * The gate is `WorksBook.everHeldBy`, which counts **razed** rows, and that choice is load-bearing
  * rather than tidy. `ofPrincipal` filters `razed` and would have answered *"holds none now"* — the
- * same answer today, since nothing in this build razes a WORKS, and a different one the day a raid or
- * a siege can end one. At that point the shorter predicate reopens this door once per razing at
- * 25,000 a turn: an A15 hole arriving with a feature that has nothing to do with it, and exactly the
- * shape of the `Book.prune` defect that made a §9 fix evaporate in production only. **There is no
- * cycle to farm and `everHeldBy` is what keeps it that way.**
+ * same answer only while nothing razed a WORKS. **Something does now:** `works/raze.ts` ends one off
+ * a raid rout and off a campaign breach, so the two predicates have genuinely parted and the
+ * prediction written here before the mechanism existed was exact — the shorter spelling would reopen
+ * this door **once per razing at 25,000 a turn**, an A15 hole arriving with a feature that has
+ * nothing to do with it and the shape of the `Book.prune` defect that made a §9 fix evaporate in
+ * production only. **There is no cycle to farm and `everHeldBy` is what keeps it that way.**
+ *
+ * The decision razing forced, and it was made rather than inherited: **a razed principal rebuilds in
+ * goods like everybody else.** A door reopening per razing would invert the loss A5 exists to make
+ * real and delete the replacement demand razing was built to create. `test/works/raze.spec.ts` asserts
+ * it on the engine's own path, and `test/works/the-window-closes.spec.ts` still asserts it on a
+ * hand-razed row.
+ *
+ * ── ★ AND WHAT THAT DECISION COSTS, MEASURED AT NINE RECKONINGS ──────────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SHUT DOOR IS WHAT MAKES A RAZED MEMBER'S LOSS COMPOUND, AND THE BALANCE GATE SEES IT.**
+ * 8 seeds × 9 Reckonings on `RULES_VERSION` 30: the two seeds that recorded a razing (`g04`, `g05`)
+ * are **exactly** the two with a non-zero `levyShort` (28,281 and 33,638) and the only two with red
+ * tribute lines (2/72 each); every seed with `razed: 0` is clean. `g04` also carries `TRAPPED: 1` —
+ * the gate's own name for *a member holding no WORKS and rich enough in currency to buy one, which
+ * cannot*. That is this constant's trap, re-entered by a principal that has already been through it.
+ *
+ * The mechanism is a loop: a rout takes the goods **and** the structure in one event, so the member
+ * has no stock and no source; without 5,000 units it cannot rebuild; without a rebuild it makes none.
+ * The Levy shortfall is that loop showing up in the one place the record publishes.
+ *
+ * **Reopening the door per razing is the obvious lever and it is NOT an A15 hole**, which is worth
+ * writing down because the note above reads as though it would be. A15 forbids gates priced in
+ * *identities*; this one would be priced in *having been routed*, which costs a 65,000 structure and
+ * half the stock at the stage. And by the bullet above the door is **five times** what the goods are
+ * worth, so taking it is strictly loss-making — there is no cycle that profits, only a worse way to
+ * pay when the better one is unavailable. Which is what a door out of a trap is.
+ *
+ * It is left SHUT anyway, because whether a routed principal gets a second bootstrap is a design call
+ * about how permanent loss should be (A5), not a defect to patch — and the two seeds are evidence for
+ * whoever makes it rather than a reason to make it here.
+ * ══════════════════════════════════════════════════════════════════════════
  *
  * `GRADUATION_UPKEEP_QTY` and `ANCHOR_QTY` are deliberately **left alone**: measured at 6 and 9
  * Reckonings in `test/works/the-window-closes.spec.ts`, a principal that comes through this door

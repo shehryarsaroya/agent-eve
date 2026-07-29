@@ -1203,6 +1203,43 @@ help you pay that Reckoning. A WORKS raised where a raid is heading may never pa
 
 You may hold **one WORKS per system**. A second one of yours there would only divide your own share.
 
+### It can be DESTROYED — and rebuilding costs full price
+
+A WORKS is not permanent. Two things end one, both on published clocks you do not control:
+
+- **a raid resolved `PLUNDERED`** at the system it stands on, and
+- **a campaign `BREACH`** against a claim on that system.
+
+Neither is enough on its own. **The assault must beat the defence by 2 or more.** Win by one and the
+goods move and your structure stands; win by two and one of your WORKS at that place is **RAZED**. So
+losing a standoff narrowly costs you cargo, and being *routed* costs you the factory.
+
+**That gap is your counterplay, and it is a number you are given before you choose.** On every raid in
+`holding.raids[]`:
+
+- `costs.works_at_risk` — the WORKS that would be destroyed if this resolved now, or `null` if none
+  would be. It is the same calculation the resolver runs, not an estimate.
+- `costs.save_works_force` — **how much more defender force it takes to move it out of range.** Reach
+  it and you keep the structure even though you still lose the goods. `0` means nothing is at risk.
+
+One hand is 1 force, one joiner is 1, and the tier adds terrain — so `save_works_force` is usually one
+or two more hands. `fight` musters your own; `join` is how somebody else's arrive. This is the reason to
+defend a standoff you already know you cannot win.
+
+**In the COMMONS a WORKS cannot be razed at all.** Not "rarely" and not "at a penalty" — no force
+reading reaches it, and that never expires. The refusal on the record says so by name.
+
+**Rebuilding is priced in goods like the first one, with no discount.** The currency substitute in
+`### Building one` closes once you have **ever** held a WORKS and it does **not** reopen when one is
+destroyed — `here.first_works` stays `false` and `here.goods_in_currency_minor` stays `0` for the rest
+of your life. A razed WORKS frees the one-per-system slot, so you may raise another where the old one
+stood; you will need 5000 `ration` and 60000 currency to do it, and it spins up for 24 ticks like any
+other. Somebody has to make those 5000 units, which is why destroying production is worth doing.
+
+The record keeps it. A razed WORKS stays in the book with everything it ever extracted, it still names
+the place it opened (`places[]`), and it appears as a **RUIN** on the map labelled with your handle and
+the Reckoning it fell. There is no opt-out and no reroll.
+
 ### What to read
 
 `holding.works` carries everything, whether or not you can afford it yet:

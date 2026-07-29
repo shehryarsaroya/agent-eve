@@ -105,7 +105,9 @@ describe('a razed WORKS stops extracting and stays in the record (A5)', () => {
     const online = WORKS_SPINUP_TICKS + 10;
     expect(book.sharesAt(SYS, 'COMMONS', online).size).toBe(2);
     const first = book.liveAt(SYS)[0];
-    book.raze(first?.id ?? ('x' as never), online);
+    // `raze` takes the Reckoning and the razer now: THE RUIN is labelled with both, and INV-W7
+    // halts a world carrying a razed row without them.
+    book.raze({ id: first?.id ?? ('x' as never), tick: online, reckoning: 0, by: null });
     expect(book.sharesAt(SYS, 'COMMONS', online).size, 'no longer extracting').toBe(1);
     expect(totalAt(book, online), 'and the survivor takes the whole yield').toBe(
       YIELD_PER_TICK.COMMONS,

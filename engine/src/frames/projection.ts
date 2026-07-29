@@ -303,6 +303,20 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // Intended. A world where losing everything also erases that you built the place is a world with no
   // history in it.
   'places',
+  // ── ★ THE RUIN, and it is the same argument `places` is admitted on ─────────
+  //
+  // Every field is already `PUBLIC`. The WORKS rows are (`worksLines` publishes holder, place and
+  // cumulative extraction while one stands); the razing that ended it is on the `raid.resolved` and
+  // `campaign.pulsed` receipts, both `PUBLIC` at their own tick with no delay; and the handles are
+  // the map's. So a ruin publishes no fact an agent's own `observe` could not already assemble — it
+  // is an ORDERING of facts, which is what A9's parity permits and what makes a projection worth
+  // having.
+  //
+  // Admitted deliberately as its own key rather than folded into `worksLines`: a razed WORKS dropping
+  // out of the live marks renders as a mark that was never there, and this project's one recurring
+  // defect is a capability that is indistinguishable from a missing one. A loss needs a mark of its
+  // own or it is not on screen (A13).
+  'ruins',
   'hallOfFame',
   'map',
 ]);

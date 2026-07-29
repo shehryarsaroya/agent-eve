@@ -1,4 +1,4 @@
-import type { HallOfFameRow, PlaceName } from './memory.js';
+import type { HallOfFameRow, PlaceName, Ruin } from './memory.js';
 /**
  * Settled Reckoning → `ReckoningFrame`. The last mile from world to screen.
  *
@@ -46,6 +46,7 @@ import {
   type ClaimLine,
   type SapLine,
   MAX_FRAME_WORKS_LINES,
+  MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
   MAX_FRAME_SYNDICATE_LINES,
   type MapSystem,
@@ -151,6 +152,7 @@ export interface FrameSource {
   readonly marketLines?: readonly MarketLine[];
   /** §16 world memory. Optional so an `emptyFrame` and older fixtures stay valid. */
   readonly places?: readonly PlaceName[];
+  readonly ruins?: readonly Ruin[];
   readonly hallOfFame?: readonly HallOfFameRow[];
   readonly syndicateLines?: readonly SyndicateLine[];
   readonly map?: readonly MapSystem[];
@@ -702,6 +704,16 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
         lastDefaultTick: row.lastDefaultTick,
       })),
     places: src.places ?? [],
+    // ── THE RUINS: RE-SORTED HERE, NEWEST FIRST, AND THE CAP APPLIED HERE ─────
+    //
+    // `ruinsFor` already orders and caps, and this restates both for the reason the `marketLines`
+    // comment above gives: the frame's budget is the renderer's to enforce, and a caller that
+    // supplied an unsorted list must still get a legible frame. The sort key is the same one —
+    // newest fall first, ties on the works id — so the two cannot disagree about which ruin is news.
+    ruins: (src.ruins ?? [])
+      .slice()
+      .sort((a, b) => b.fellAtTick - a.fellAtTick || compareIds(a.works, b.works))
+      .slice(0, MAX_FRAME_RUINS),
     hallOfFame: src.hallOfFame ?? [],
     worksLines: (src.worksLines ?? [])
       .slice()
@@ -776,6 +788,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     marketLines: [],
     standings: [],
     places: [],
+    ruins: [],
     hallOfFame: [],
     syndicateLines: [],
     map: [],

@@ -22,6 +22,8 @@ import type { Minor, Qty } from '../core/units.js';
 // rules surface: a second `RaidLine` declared here would be the same pixel signature
 // described twice, and the two would drift the first time a field was added.
 import type { RaidLine } from '../frames/contract.js';
+// The razing preview, and it is the resolver's own call rather than a copy of it (scar #1).
+import { forceToSaveWorks, worksAtRisk, type RazeCandidate } from '../works/raze.js';
 import type { Book, RaidRecord, RaidState } from './book.js';
 import { RAID_JOIN_STAKE_MINOR, RAID_TAKE_MULTIPLE } from './params.js';
 import { payFor, readForce, takeFor } from './resolve.js';
@@ -109,6 +111,36 @@ export interface RaidView {
     readonly pay: Qty;
     readonly if_you_do_nothing: Qty;
     readonly join_stake: Minor;
+    /**
+     * ★ The WORKS this standoff would END if it resolved now, or `null` when none would.
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     * **THE THIRD THING A RAID CAN TAKE, AND THE ONE THAT WAS NOT PRICED.** `pay` and
+     * `if_you_do_nothing` are both quantities of GOODS; a razing costs a structure —
+     * `WORKS_COST_MINOR` plus `WORKS_BUILD_QTY`, and every tick of `YIELD_PER_TICK` it would have
+     * extracted afterwards. An agent choosing between `yield` and `fight` off a menu that only
+     * priced goods would be choosing with the largest number missing.
+     *
+     * Computed by {@link import('../works/raze.js').worksAtRisk}, which IS
+     * {@link import('../works/raze.js').razeVerdict} — literally the same call the resolver makes,
+     * not a second arithmetic. Scar #1 is the reason that is structural rather than careful: two
+     * individually-correct surfaces disagreeing about one number survived a full build and three
+     * critic passes.
+     *
+     * `null` covers all three refusals, and {@link save_works_force} is what distinguishes them: in
+     * the Commons nothing is ever at risk and the force to save is 0.
+     * ══════════════════════════════════════════════════════════════════════
+     */
+    readonly works_at_risk: string | null;
+    /**
+     * How much MORE defender force it takes to move the structures out of raze range.
+     *
+     * The counterplay as a number rather than as folklore (A2), and it is the reason to bring hands
+     * to a standoff already lost: a defender that reaches this keeps its production even though the
+     * goods still go. **Zero** means nothing needs saving — either the margin is already unreachable
+     * or the stage is in the Commons, where A8 makes razing invalid outright.
+     */
+    readonly save_works_force: number;
   };
   readonly lost: Qty;
   readonly forfeited: Minor;
@@ -196,6 +228,14 @@ export interface RaidViewPort {
   handsDefending(principal: PrincipalId, stage: SystemId): readonly HandId[];
   /** What the reader still has at the stage in the raided good. Its OWN stock only. */
   standingOf(principal: PrincipalId, stage: SystemId, good: string): Qty;
+  /**
+   * Live WORKS this principal holds at the stage — what a rout would end.
+   *
+   * On the **view** port as well as on `PredationPort`, for the same reason `raidForceLeft` is on
+   * both: this is the number that decides whether `fight` is worth an action, and an observation
+   * that showed a different set from the resolver's would be scar #1 with a structure at stake.
+   */
+  worksAt(principal: PrincipalId, system: SystemId): readonly RazeCandidate[];
   /**
    * How much of the raid's own force is still on the field, or `null` when nothing counts it.
    *
@@ -346,6 +386,25 @@ function viewOf(
       // it takes the multiple capped by what is actually there.
       if_you_do_nothing: takeFor(raid.demandQty, standing),
       join_stake: RAID_JOIN_STAKE_MINOR,
+      // ── ★ AND WHAT SILENCE COSTS IN CAPITAL, NOT ONLY IN GOODS ────────────
+      //
+      // Asked about the TARGET's production rather than the reader's, because a razing takes the
+      // target's structure whoever is reading — a bystander pricing `join` needs to know what is
+      // actually on the table, and it is what makes an escort worth hiring for more than the cargo.
+      // The same `worksAt` the resolver uses, through the same force reading.
+      works_at_risk:
+        worksAtRisk({
+          tier: port.tierOf(raid.stage),
+          system: raid.stage,
+          standing: port.worksAt(raid.target, raid.stage),
+          attackerForce: reading.raiderForce,
+          defenderForce: reading.defenderForce,
+        })?.id ?? null,
+      save_works_force: forceToSaveWorks({
+        tier: port.tierOf(raid.stage),
+        attackerForce: reading.raiderForce,
+        defenderForce: reading.defenderForce,
+      }),
     },
     lost: raid.lostQty,
     forfeited: raid.forfeited,

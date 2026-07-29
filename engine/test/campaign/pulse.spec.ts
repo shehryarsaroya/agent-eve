@@ -77,6 +77,9 @@ function port(over: {
     Array.from({ length: n }, (_, i) => `${tag}:${String(i)}` as HandId);
   return {
     tierOf: () => 'MARCHES',
+    // No production at the objective by default, so the razing branch is off unless a case asks
+    // for it. `test/works/raze.spec.ts` is where the campaign razing is asserted with rows present.
+    worksAt: () => [],
     claimAt: () =>
       over.claim === undefined ? { claimant: DEFENDER, state: 'SUPPLIED' as ClaimState } : over.claim,
     handsAt: (principal) =>

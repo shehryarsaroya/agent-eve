@@ -36,6 +36,51 @@ import { compareIds } from '../ledger/index.js';
 import type { Handle, PrincipalId, Standing, SystemId } from '../core/types.js';
 import type { WorksRecord } from '../works/book.js';
 
+/**
+ * ★ **THE RUIN** — one destroyed WORKS, still on the map, labelled with who lost it and when.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE NAMED PIXEL SIGNATURE FOR RAZING, AND IT HAD TO BE A POSITIVE MARK.**
+ * A13: no named pixel signature, not ready. The obvious rendering of a razed WORKS is that its mark
+ * *disappears* from `worksLines` — and that is not a signature, it is this project's signature
+ * DEFECT arriving at the pixel layer: **a mark that vanished is indistinguishable from a mark that
+ * was never there**, to a viewer and to every reader of every frame. The system that stopped
+ * producing would look exactly like the system that never produced.
+ *
+ * So a razing leaves something behind. §16's Phase 0 acceptance already asks for exactly this shape
+ * for the other structure — *"a permanent ruin at a fallen holding's berth labelled with the handle
+ * and the Reckoning it fell"* — so this is the canon term applied to the second thing that can fall,
+ * not a new one (HARD RULE 4: one word per concept, and `ruin` already means this).
+ *
+ * **The vocabulary, beside the four the map already has:** a claim tints a system · a convoy is a
+ * line that can be severed · THE SAP is a notched band whose advance is the score · a broken compact
+ * snaps the link and scars both parties · **and A RUIN is a dark mark where production used to be,
+ * carrying the handle that built it, the handle that ended it, and the Reckoning it fell.**
+ *
+ * It is memory, not state, and the distinction is load-bearing: a ruin never leaves. `worksLines`
+ * draws what extracts, this draws what stopped, and a system carrying both is a place that was
+ * fought over and rebuilt — which is the one thing a map of current facts can never show.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface Ruin {
+  readonly works: string;
+  readonly system: SystemId;
+  /** Who built it. A ruin is named for its builder, exactly as a place is. */
+  readonly holder: PrincipalId;
+  readonly handle: string;
+  /** Who ended it, or `null` when the world did — a world-spawned raid has no principal. */
+  readonly razedBy: PrincipalId | null;
+  /** `null` for the world, so a renderer never prints a handle nobody owns. */
+  readonly razedByHandle: string | null;
+  /** The Reckoning it fell in. THE RUIN's label, with the handle. */
+  readonly fellAtReckoning: number;
+  readonly fellAtTick: number;
+  /** Cumulative units the place handed it before it fell. The epitaph, as a number. */
+  readonly extracted: number;
+  /** `RUIN · fell R12 to vex` — the one line a viewer reads. */
+  readonly legend: string;
+}
+
 /** A place, and who opened it. */
 export interface PlaceName {
   readonly system: SystemId;
@@ -90,6 +135,53 @@ export function namesFor(
       sinceTick: w.raisedAtTick,
       founderStillThere: !w.razed,
     }));
+}
+
+/**
+ * The ruins, newest first — what this world has destroyed, and who destroyed it.
+ *
+ * **Newest first, unlike every other projection in this file**, and the reason is what the field is
+ * for: `places` is a gazetteer and reads in map order, while a ruin is *news*. The Reckoning a works
+ * fell in is the story, so the most recent falls sit at the top and the cap below drops the oldest
+ * — which is the only direction a cap may drop in, because a viewer reading a legend of ruins is
+ * asking what just happened.
+ *
+ * Ties on `razedAtTick` break on `compareIds`, never on Map order: two WORKS razed in one tick is
+ * reachable (three raids resolve at three phases, but a campaign pulse and a raid can land together),
+ * and JS Map iteration order is a determinism killer this repo bans by name.
+ */
+export function ruinsFor(
+  works: readonly WorksRecord[],
+  handles: ReadonlyMap<PrincipalId, Handle>,
+  limit: number,
+): readonly Ruin[] {
+  const out: Ruin[] = [];
+  for (const w of works) {
+    // Both labels required, never defaulted. INV-W7 halts a world that carries a razed row without
+    // them, so a row reaching here without them is a bug — and inventing `R0` for it would put a
+    // Reckoning this world never had on a permanent public mark (A5′). Skipping is the honest
+    // failure: the invariant is what reports it, not the renderer.
+    if (!w.razed || w.razedAtTick === null || w.fellAtReckoning === null) continue;
+    const by = w.razedBy;
+    const byHandle = by === null ? null : handleOf(handles, by);
+    out.push({
+      works: String(w.id),
+      system: w.system,
+      holder: w.holder,
+      handle: handleOf(handles, w.holder),
+      razedBy: by,
+      razedByHandle: byHandle,
+      fellAtReckoning: w.fellAtReckoning,
+      fellAtTick: w.razedAtTick,
+      extracted: w.extracted,
+      // "to the world" rather than a handle when nobody ordered it: a world-spawned raid has no
+      // author, and naming one would be a permanent public claim that a real agent did this.
+      legend: `RUIN · fell R${String(w.fellAtReckoning)} to ${byHandle ?? 'the world'}`,
+    });
+  }
+  return out
+    .sort((a, b) => b.fellAtTick - a.fellAtTick || compareIds(a.works, b.works))
+    .slice(0, Math.max(0, limit));
 }
 
 /**

@@ -52,6 +52,26 @@ export interface WorksRecord {
   /** Ended WORKS stay in the book: the record is append-only and A5 has no opt-out. */
   readonly razed: boolean;
   readonly razedAtTick: number | null;
+  /**
+   * The Reckoning this WORKS fell in, or `null` while it stands. **THE RUIN's label.**
+   *
+   * Derivable from `razedAtTick` and stored anyway, and the precedent is exact:
+   * `world/holding.ts` carries `fellAtReckoning` beside the tick for the same reason §16 asks for
+   * *"a permanent ruin at a fallen holding's berth labelled with the handle and the Reckoning it
+   * fell"*. A projection that re-derived it would be one `setSpeed` away from labelling a ruin with
+   * a Reckoning the world never had — `TICKS_PER_RECKONING` is a runtime setting, and a ruin is a
+   * permanent public claim about when a real agent lost real capital (A5′).
+   */
+  readonly fellAtReckoning: number | null;
+  /**
+   * Who ended it, or `null` while it stands.
+   *
+   * On the row rather than only on the event, because THE RUIN is a projection over this book and a
+   * ruin that could not name the principal that made it would be a loss with no author — which is
+   * most of what makes a razing a story rather than an accident. The event carries it too; this is
+   * the state the map reads.
+   */
+  readonly razedBy: PrincipalId | null;
   /** Cumulative units extracted. The audit trail, and what the frame draws. */
   extracted: Qty;
   /**
@@ -174,18 +194,25 @@ export class Book {
    * principal drained past it had no legal way back into the economy. That justification is about a
    * *lifetime*, so the gate has to be too.
    *
-   * `ofPrincipal` filters `razed`, so it answers "holds none **now**". Nothing in this build razes a
-   * WORKS — `grep -rn "razed" src` finds only readers — so the two predicates agree today, and that
-   * is exactly the reason this method exists rather than the shorter spelling: **the day a raid, a
-   * siege or an `abandon` can end a WORKS, the shorter one silently reopens the bootstrap door once
-   * per razing, at 25,000 a turn, which is an A15 hole that would arrive with a feature that has
-   * nothing to do with it.** The engagement book's `prune` shipped a fix that evaporated in
-   * production for the same reason: a predicate whose subject could be removed by a mechanism its
-   * author had not checked.
+   * `ofPrincipal` filters `razed`, so it answers "holds none **now**", and this one answers "held
+   * one ever". **THAT DAY HAS ARRIVED AND THE TWO PREDICATES NOW DISAGREE** — `works/raze.ts` ends a
+   * WORKS off a raid and off a campaign breach, so `ofPrincipal` goes back to zero for a principal
+   * whose only structure was burned. The prediction written here before the mechanism existed was
+   * exact: the shorter spelling would reopen the bootstrap door **once per razing, at 25,000 a
+   * turn** — an A15 hole arriving with a feature that has nothing to do with it, and the shape of
+   * the `Book.prune` defect that made a §9 fix evaporate in production only.
    *
-   * When raze does land, whether a principal that LOST its only WORKS gets a fresh bootstrap is a
-   * real design decision — `the door is once per identity` in `test/works/the-window-closes.spec.ts`
-   * is the test that will force somebody to make it on purpose.
+   * The decision this forced, made on purpose: **a principal that LOSES its only WORKS does not get
+   * a fresh bootstrap.** The door's justification is a once-per-*identity* window out of a trap the
+   * *enrolment allotment* creates, and a principal that has held a WORKS has had a goods income —
+   * losing it to an assault is the loss A5 exists to make real, not a return to the starting line.
+   * The rebuild is priced in goods like everybody else's, which is the replacement demand razing was
+   * built to create; a currency door reopening on each razing would let a rich agent buy its way
+   * around production indefinitely by being raided, and make the razing *profitable*.
+   *
+   * `the door is once per IDENTITY` in `test/works/the-window-closes.spec.ts` razed a row by hand to
+   * force this decision, and `test/works/raze.spec.ts` now razes one through the engine and asserts
+   * the same answer on the real path.
    * ══════════════════════════════════════════════════════════════════════════
    */
   everHeldBy(holder: PrincipalId): boolean {
@@ -228,6 +255,8 @@ export class Book {
       onlineAtTick: args.tick + WORKS_SPINUP_TICKS,
       razed: false,
       razedAtTick: null,
+      fellAtReckoning: null,
+      razedBy: null,
       extracted: qty(0),
       rentPaid: qty(0),
       fuelExtracted: qty(0),
@@ -236,15 +265,70 @@ export class Book {
     return row;
   }
 
-  raze(id: WorksId, tick: number): void {
-    const row = this.rows.get(id);
-    if (row === undefined) throw new WorksError(`${id} does not exist`);
-    this.rows.set(id, { ...row, razed: true, razedAtTick: tick });
+  /**
+   * End a WORKS. The row stays, and everything about it that was ever true stays with it.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE COUNTERS ARE NOT CLEARED, AND THAT IS THE WHOLE OF A5 HERE.** `extracted`, `rentPaid` and
+   * `fuelExtracted` are what the place handed over while it stood, and they are still true after it
+   * falls: INV-W4 walks `everInOrder()` precisely so a razed WORKS's rent history is still
+   * checkable, and THE RUIN publishes `extracted` as what was lost. Zeroing them would delete a
+   * landlord's public take along with its tenant's structure — no opt-out, no reroll.
+   *
+   * **Idempotent by refusal, not by shrug.** Razing an already-razed row throws rather than quietly
+   * overwriting `razedBy`, because the second caller would be re-authoring a permanent public fact
+   * about who destroyed whose capital, and the two callers of this method resolve on two different
+   * clocks that can both come due in one Reckoning.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  raze(args: {
+    readonly id: WorksId;
+    readonly tick: number;
+    readonly reckoning: number;
+    readonly by: PrincipalId | null;
+  }): void {
+    const row = this.rows.get(args.id);
+    if (row === undefined) throw new WorksError(`${args.id} does not exist`);
+    if (row.razed) {
+      throw new WorksError(
+        `${args.id} was already razed at tick ${String(row.razedAtTick)} and a razing is not re-authored`,
+      );
+    }
+    this.rows.set(args.id, {
+      ...row,
+      razed: true,
+      razedAtTick: args.tick,
+      fellAtReckoning: args.reckoning,
+      razedBy: args.by,
+    });
+  }
+
+  /**
+   * Every WORKS this world has ended, canonical order. **THE RUIN's subject set.**
+   *
+   * The complement of `liveInOrder`, and the only accessor that asks for the razed rows *as such*
+   * rather than tolerating them. It exists because a razed WORKS vanishing from `worksLines` is
+   * indistinguishable on screen from one that was never raised — this project's signature defect
+   * arriving at the pixel layer — so the loss needs a positive mark of its own (A13).
+   */
+  ruinsInOrder(): readonly WorksRecord[] {
+    return [...this.rows.values()].filter((w) => w.razed).sort((a, b) => compareIds(a.id, b.id));
+  }
+
+  /** WORKS still standing. Distinct from {@link size}, which counts ruins too. */
+  get liveSize(): number {
+    return this.liveInOrder().length;
   }
 
   credit(id: WorksId, amount: Qty): void {
     const row = this.rows.get(id);
     if (row === undefined) throw new WorksError(`${id} does not exist`);
+    // Defence in depth, and the depth is the point: today every caller reaches this through an id
+    // set from `sharesAt`, which filters `razed`, so a ruin cannot be credited *by its caller*
+    // rather than by anything here. That is exactly the guarantee that quietly stops holding when
+    // somebody adds a fourth caller with a different id source — and a ruin that kept extracting
+    // would make INV-W1's cap arithmetic true about a set the ledger no longer matches.
+    if (row.razed) throw new WorksError(`${id} was razed at tick ${String(row.razedAtTick)} and extracts nothing`);
     row.extracted = qty(row.extracted + amount);
   }
 
@@ -260,6 +344,11 @@ export class Book {
   creditRent(id: WorksId, amount: Qty, reckoning: number, claimant: PrincipalId): void {
     const row = this.rows.get(id);
     if (row === undefined) throw new WorksError(`${id} does not exist`);
+    // Same guard as `credit`, and it matters more here: rent credited against a ruin would move
+    // BOTH the WORKS's lifetime `rentPaid` and the claim's Reckoning tally, so it would publish a
+    // landlord collecting from a structure that no longer exists — and INV-W5 would then be checking
+    // a tally against a system that may have left `workedSystems()` entirely.
+    if (row.razed) throw new WorksError(`${id} was razed at tick ${String(row.razedAtTick)} and pays no rent`);
     if (amount <= 0) return;
     row.rentPaid = qty(row.rentPaid + amount);
     const standing = this.rent.get(row.system);
@@ -283,6 +372,30 @@ export class Book {
   rentTakenAt(system: SystemId, reckoning: number): Qty {
     const tally = this.rent.get(system);
     return tally !== undefined && tally.reckoning === reckoning ? tally.taken : qty(0);
+  }
+
+  /**
+   * Systems carrying a non-zero rent tally for `reckoning`, canonical order.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **INV-W5's SUBJECT SET, AND IT EXISTS BECAUSE RAZING OPENED A HOLE IN THE OLD ONE.**
+   * INV-W5 used to walk `workedSystems()`, which filters `razed`, while the tally it checks does
+   * **not** — the tally survives its subject ending on purpose, exactly as it survives a claim
+   * ending. Raze the last WORKS at a system mid-Reckoning and that system left the invariant's
+   * subject set with a non-zero tally standing, so the one check that catches double rent collection
+   * silently stopped running there.
+   *
+   * That is a failure **in the direction that hides**, which this repo has now shipped three times
+   * (`MAX_RECKONING_SUMMARIES`, `LEVY_RETAINED_RECKONINGS`, an offer cap counting unusable rows). It
+   * was a no-op for the project's whole life because nothing razed a WORKS, and it would have become
+   * reachable in the same commit as the feature that made it reachable — with every test still green.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  rentTalliedSystems(reckoning: number): readonly SystemId[] {
+    return [...this.rent.values()]
+      .filter((r) => r.reckoning === reckoning && r.taken > 0)
+      .map((r) => r.system)
+      .sort(compareIds);
   }
 
   /**
@@ -334,6 +447,10 @@ export class Book {
   creditFuel(id: WorksId, amount: Qty): void {
     const row = this.rows.get(id);
     if (row === undefined) throw new WorksError(`${id} does not exist`);
+    // And here for INV-W6's sake: fuel is the one good whose existence the map alone authorises, so
+    // a ruin credited with any would be a permanent counter-example to "fuel exists only where the
+    // map says it does" that no live-row filter would ever surface.
+    if (row.razed) throw new WorksError(`${id} was razed at tick ${String(row.razedAtTick)} and yields no fuel`);
     row.fuelExtracted = qty(row.fuelExtracted + amount);
   }
 
@@ -374,6 +491,11 @@ export class Book {
           onlineAtTick: w.onlineAtTick,
           razed: w.razed,
           razedAtTick: w.razedAtTick,
+          // Inside the hash, both of them. A ruin's Reckoning and its author are the only permanent
+          // public record of who destroyed whose production; two worlds that disagreed about either
+          // would hash the same, and THE RUIN is a projection over exactly these two fields.
+          fellAtReckoning: w.fellAtReckoning,
+          razedBy: w.razedBy,
           extracted: w.extracted,
           rentPaid: w.rentPaid,
           fuelExtracted: w.fuelExtracted,
@@ -406,6 +528,8 @@ export class Book {
       const where = `works.works[${String(i)}]`;
       const o = readObject(raw, where);
       const razedAt = o['razedAtTick'];
+      const fellAt = o['fellAtReckoning'];
+      const razedBy = o['razedBy'];
       const row: WorksRecord = {
         id: readString(o, 'id', where) as WorksId,
         system: readString(o, 'system', where) as SystemId,
@@ -414,6 +538,14 @@ export class Book {
         onlineAtTick: readInt(o, 'onlineAtTick', where),
         razed: readBool(o, 'razed', where),
         razedAtTick: razedAt === null || razedAt === undefined ? null : readInt(o, 'razedAtTick', where),
+        // Tolerant, like `rentPaid` and `fuelExtracted` before them, and for a stronger reason than
+        // either: **no snapshot in this world's history can contain a razed WORKS**, because nothing
+        // could raze one until this version. So `undefined` here is not a missing field on a fallen
+        // structure, it is a structure that never fell, and `null` is its true history. A strict
+        // reader would refuse to restore the live world across this one deploy and refuse it on a
+        // row where the honest answer is knowable.
+        fellAtReckoning: fellAt === null || fellAt === undefined ? null : readInt(o, 'fellAtReckoning', where),
+        razedBy: razedBy === null || razedBy === undefined ? null : (readString(o, 'razedBy', where) as PrincipalId),
         extracted: qty(readInt(o, 'extracted', where)),
         // Tolerant for exactly one deploy: a snapshot written before the rent landed has no
         // counter on its WORKS, and zero is the true history for a world in which no rent was

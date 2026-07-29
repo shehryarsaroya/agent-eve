@@ -50,6 +50,11 @@ import {
   RAID_STAGE_HELD_TICKS,
   RAID_VICTIM_COOLDOWN_TICKS,
 } from './params.js';
+// The razing DECISION, imported rather than restated. `predation` already reaches into `works` for
+// nothing at all, so this is a new edge — and it is the right direction: production is what a raid
+// destroys, so predation depends on the rule for ending a structure and `works` knows nothing about
+// raids. The reverse edge would be the cycle.
+import { razeVerdict, type RazeCandidate } from '../works/raze.js';
 import { demandFor, payFor, readForce, takeFor, type ForceReading } from './resolve.js';
 import { isSpawnTick, resolvesAt } from './schedule.js';
 import { rankCandidates, type TargetPort } from './target.js';
@@ -99,6 +104,27 @@ export interface PredationPort extends TargetPort, RaidViewPort {
   routHand(handId: HandId, tick: number): boolean;
   /** Is this principal still enrolled and standing? A raid on a ghost is a MISS. */
   isSeated(principal: PrincipalId): boolean;
+  /**
+   * Live WORKS this principal holds at this place — what a rout could end.
+   *
+   * A port rather than a book reference, for the reason every other line here is one: `predation`
+   * must not import the production book. The conversion from a row to a
+   * {@link import('../works/raze.js').RazeCandidate} is the adapter's, and the *decision* is
+   * `works/raze.ts`'s, so this module still only reads and only the runtime writes.
+   */
+  worksAt(principal: PrincipalId, system: SystemId): readonly RazeCandidate[];
+  /**
+   * End one WORKS. Returns true if the book took it.
+   *
+   * Never throws for a game outcome: a razing that the book refuses is an operator fault and the
+   * raid must still close, exactly as a `seize` that moves nothing still closes. The record then
+   * says the structure stands, because the record says what the engine DID (A5′).
+   */
+  razeWorks(args: {
+    readonly works: string;
+    readonly by: PrincipalId | null;
+    readonly tick: number;
+  }): boolean;
 }
 
 /**
@@ -122,7 +148,30 @@ export interface RaidOutcome {
   readonly forfeited: Minor;
   readonly routed: readonly HandId[];
   readonly force: ForceReading | null;
+  /**
+   * The WORKS this raid ended, or null — **and `why` is populated either way.**
+   *
+   * A razing is a permanent loss of production capacity, so the row that records a standoff has to
+   * be able to say both that one happened and that one did not, with the arithmetic that decided it.
+   * "No razing" has three distinct causes — the Commons forbids it, the margin was not met, nothing
+   * of the target's stood there — and a record that collapsed them into an absent field would be a
+   * record that lied by omission about the most expensive thing a raid can do.
+   */
+  readonly razed: RazedRecord | null;
+  /** The sentence {@link import('../works/raze.js').razeVerdict} returned. Null on a MISS. */
+  readonly razeWhy: string | null;
   readonly isDefault: false;
+}
+
+/** What a rout destroyed, in the units the world had already handed over. */
+export interface RazedRecord {
+  readonly works: string;
+  readonly system: SystemId;
+  readonly holder: PrincipalId;
+  /** Cumulative units the place handed this WORKS before it fell. THE RUIN's epitaph. */
+  readonly extracted: number;
+  /** `attackerForce - defenderForce`, the number that authorised this. */
+  readonly margin: number;
 }
 
 export interface PredateReport {
@@ -381,6 +430,42 @@ function resolveOne(
     if (port.routHand(handId, tick)) routed.push(handId);
   }
 
+  // ── AND THE THIRD THING A RAID CAN TAKE: PRODUCTION ───────────────────────
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // **ONLY ON A ROUT, AND ONLY WHEN GOODS ACTUALLY MOVED.** Two gates, and the second is free
+  // because of the line below: `state` is `PLUNDERED` only when `lost > 0`, and `MISSED` otherwise.
+  // So a raid that found the place emptied is a MISS and razes nothing — which keeps `resolve.ts`'s
+  // published promise that *"the target that emptied the place during the window loses nothing, and
+  // that is the reward for reading the schedule"* exactly as it was. Razing on an empty stage would
+  // have inverted a documented reward, and the fix for a missing loss must not be a new punishment
+  // for the one play the rules already tell agents to make.
+  //
+  // The margin is `works/raze.ts`'s, not restated here, and the Commons refusal is its too — one
+  // predicate for this path and the campaign's, or the two drift and A8 holds in only one of them.
+  // ══════════════════════════════════════════════════════════════════════════
+  let razed: RazedRecord | null = null;
+  let razeWhy: string | null = null;
+  if (lost > 0) {
+    const verdict = razeVerdict({
+      tier: port.tierOf(raid.stage),
+      system: raid.stage,
+      standing: port.worksAt(raid.target, raid.stage),
+      attackerForce: force.raiderForce,
+      defenderForce: force.defenderForce,
+    });
+    razeWhy = verdict.why;
+    if (verdict.falls !== null && port.razeWorks({ works: verdict.falls.id, by: razerOf(raid), tick })) {
+      razed = {
+        works: verdict.falls.id,
+        system: verdict.falls.system,
+        holder: verdict.falls.holder,
+        extracted: verdict.falls.extracted,
+        margin: verdict.margin,
+      };
+    }
+  }
+
   grantWorldProtections(book, raid, tick, false);
   return close(book, raid, tick, onFault, {
     state: lost > 0 ? 'PLUNDERED' : 'MISSED',
@@ -389,7 +474,24 @@ function resolveOne(
     force,
     routed,
     relocatedTo,
+    razed,
+    razeWhy,
   });
+}
+
+/**
+ * Who the record names as having razed a structure — and `null` is the world, deliberately.
+ *
+ * A world-spawned raid has no principal behind it, and inventing one would put a real agent's handle
+ * on a destruction it did not order: the exact libel A5′ forbids, in the one field a ruin is labelled
+ * with forever. An agent-initiated `demand` has an initiator and it is named.
+ *
+ * The lowest-id RAIDER joiner is **not** used as a fallback. A joiner bought a share of the goods; it
+ * did not author the war, and a bystander's handle on a ruin would be a permanent public claim that
+ * nobody chose.
+ */
+function razerOf(raid: RaidRecord): PrincipalId | null {
+  return raid.initiator;
 }
 
 /**
@@ -432,6 +534,13 @@ function close(
     readonly force: ForceReading | null;
     readonly routed: readonly HandId[];
     readonly relocatedTo: readonly { readonly principal: PrincipalId; readonly qty: Qty }[];
+    /**
+     * Optional because only the PLUNDERED branch can reach a razing, and the other three call sites
+     * would otherwise carry two `null`s each to say nothing happened. `??` below makes the absent
+     * case explicit rather than `undefined` leaking onto a published record.
+     */
+    readonly razed?: RazedRecord | null;
+    readonly razeWhy?: string | null;
   },
 ): RaidOutcome | null {
   try {
@@ -461,6 +570,8 @@ function close(
     forfeited: outcome.forfeited,
     routed: outcome.routed,
     force: outcome.force,
+    razed: outcome.razed ?? null,
+    razeWhy: outcome.razeWhy ?? null,
     isDefault: false,
   };
 }

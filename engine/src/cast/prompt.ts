@@ -848,6 +848,31 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   },
   {
     section: S11A,
+    // ── ★ RAZING, AND THE GATE IS `outsideCommons` RATHER THAN A VERB ──────────
+    //
+    // Three rules in one block and all three are A5′-shaped for a WORKS holder: your structure can be
+    // destroyed, the margin that decides it, and the fact that rebuilding gets NO discount. A member
+    // that lost a WORKS and expected the 25,000 currency door to reopen has been billed by a rule
+    // nobody showed it, which is exactly the class this catalog exists to prevent.
+    //
+    // **`wanted` on `holdsWorks || canBuildWorks`, not on a verb**, because the population that needs
+    // it is *people with production to lose* and no verb identifies that. `fight` and `join` are the
+    // counterplay, but they are only offered when a standoff is already live — a member reading this
+    // for the first time inside a 24-tick window has already chosen wrong. So it ships with the WORKS
+    // rules, to whoever holds or can raise one.
+    //
+    // **And `outsideCommons`, which is the same call `join{RAID}`'s row records:** A8 makes a Commons
+    // WORKS unrazable, so for a Commons-seated member every rule here reads as a threat that cannot
+    // reach it. That is not a saving of characters, it is a saving of a *wrong impression* — the block
+    // still states the Commons exemption for anybody who does get it, so a member that graduates out
+    // reads it on the wake it becomes true.
+    block: '### It can be DESTROYED — and rebuilding costs full price',
+    verbs: [],
+    wanted: (s) => s.outsideCommons && (s.holdsWorks || s.canBuildWorks),
+    because: 'you are inside A8\'s floor, where a WORKS cannot be razed, and hold none besides',
+  },
+  {
+    section: S11A,
     // ── ★ THE FOURTH GOOD, AND IT CLAIMS `haul` AS WELL AS `refine` ───────────
     //
     // Two verbs on one block, which is unusual here and is the honest shape: the block states a rule
