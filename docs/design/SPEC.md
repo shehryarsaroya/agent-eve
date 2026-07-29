@@ -173,6 +173,32 @@ Four consequences run through everything below:
 | **BREACH** | a PULSE the attacker won. `BREACHES_TO_TAKE` of them LAPSE the OBJECTIVE's CLAIM. The defender's half is a **REBUFF** | a broken COMPACT (that snaps a link and is a *default*); a hull breach (§9A's last tank layer is **STRUCTURE**) |
 **And four effect names, which are not new concepts but must not drift**: **RANGE** is the five-cell contested distance between two engaged lines (`CONTACT · CLOSE · MID · LONG · EXTREME`) and is *derived*, never declared. **TACKLE** is escape denial; a FORMATION under enough of it is **PINNED**, never "held" (§9's `stageHeld` owns that). **CAPACITOR** is the per-slice energy budget; a FORMATION with none is **operationally dead** and still undamaged. **EWAR** is any effect that degrades an opponent's targeting or application rather than its hull — and combat's remote repair is called **REPAIR**, never *logistics*, because §10 and the depth audit both spend that word on hauling.
 
+**The risk-market vocabulary (§16's Phase 3, `PASS-ECONOMY-RISK` §7–8).** Five terms, each checked
+against every row above, against the combat and campaign tables, and against `src/` before it was
+spent. **Six candidates were rejected for collisions and the rejections are the useful part**, because
+each one names a word a reader would otherwise have assumed was free: `claim` (spent four ways, and
+this table already ruled that the sovereignty sense keeps the bare word — it is also a live *verb* and
+a live *field*), `peril` (spent — `ledger/cargoLost.ts`'s `perilShed` is the EXPOSURE a lock sheds when
+its cargo burns), `footprint` (spent — §10.1's holding upkeep is *"convex in footprint"*), `forecast`
+(spent — `venture/preview.ts`'s `forecastsFor` is a projection of your take), `writer` (spent
+seventeen times as the single-writer-of-a-table idiom, so the two parties are the **payer** and the
+**payee**, which §7.4's settlement already calls them), and `policy` (spent fifty-seven times as
+"standing policy").
+
+| Term | Means | Never means |
+|---|---|---|
+| **FRONT** | ★ the scheduled catastrophe: a published CONE that narrows over RECKONINGS, then **lands** and destroys located goods in its SWATH. §10.1's fourth sink, and the word the combat table **reserved for exactly this** — *"`front` is spent by §10.1's scheduled weather front"* | a battle line (§9A's positional axis is ECHELON); a war's lateral axis; a RAID (predation is somebody's decision, §9; a front is nobody's) |
+| **CONE** | the FRONT's published prediction — per-system landfall odds in bps, widening then narrowing as landfall approaches | a forecast of your take from a VENTURE (§7.1 owns that); a scan result; the SWATH, which is what actually happened |
+| **SWATH** | the systems one FRONT struck, each with an integer INTENSITY | the CONE; a holding's footprint (§10.1's upkeep convexity owns *footprint*); a lane; a constellation |
+| **COVER** | ★ one principal's promise to pay another for goods a FRONT destroys — **A7's two halves written over somebody else's loss**. Its subject is either located goods **or another COVER**, and that second shape is what lets one failure propagate | insurance in the abstract; a CLAIM; a hull's tank layers; §9A's repair coverage |
+| **INDEMNITY** | what a COVER owes once a FRONT has struck its subject. The ESCROWED half pays itself; the ELECTIVE half is *elected*, and refusing it is the layer's signature default | a CHARGE-CLAIM (the insolvency waterfall's creditor demand); a premium; a payout in general |
+
+**The layer costs zero verbs, and that is a finding rather than a constraint.** §17's ceiling is 40 and
+all 40 are spent; the pass's own vocabulary wanted four (`underwrite.request`, `bind`, `claim-payout`,
+`default`). It needed none, because **A7's two halves already were the security ladder and `elect`'s
+`IN_FULL | <amount> | silence` already was pay / part-pay / default**. So `publish_offer {kind:"COVER"}`
+is a third shape of a verb that had two, and `sign {cover}` and `elect {cover}` are second shapes.
+
 **Visibility is one five-tier ladder, used everywhere** — `PUBLIC | PARTIES | SENSED | SEALED | PRIVATE`, defined once in §11.2 with a declassify time per tier. There is no separate venture-visibility enum and no second spelling of any tier. Bond tiers are `OPEN | VOUCHED | BONDED`. "Pulse" and "Window" as horizon names are retired until Phase 2 needs them.
 
 > ### ⚑ How a word gets into code without getting into this table, and why that matters

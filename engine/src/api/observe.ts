@@ -4027,6 +4027,36 @@ function affordancesFor(
   if (tradeWhy.length > 0) {
     reasons.push({ verb: 'trade', text: tradeWhy.join('; also ') });
   }
+
+  // ── ★ PHASE 3'S RISK MARKET, OFFERED OR ACCOUNTED — NEVER SILENT ───────────
+  //
+  // `test/api/withheld-is-accountable.spec.ts` measures the *silence rate* of a verb against a
+  // payload-readable trigger, and it exists because `trade` was silent in **497 of 576** observations
+  // with a reachable venue in every one while `AGT-R5` stayed green. So the three risk acts arrive as
+  // one call that returns both halves — the offers and a tagged row per omission — and a caller
+  // cannot take the first without the second.
+  //
+  // Every ground here is an existing `WithheldGround` (`SHORT_FUNDS · WINDOW_SHUT · NO_RECORD ·
+  // FROZEN`) rather than a fifth: an agent that has learned `SHORT_FUNDS` on a venture already knows
+  // what it means over a COVER, and the union is a closed set checked against §3's canon.
+  const risk = runtime.riskAffordances(principal, tick);
+  for (const offer of risk.offered) {
+    list.push({
+      verb: offer.verb,
+      params: offer.params,
+      cost: 1,
+      max_direct_loss: offer.maxDirectLoss,
+      max_contingent_liability: offer.maxContingentLiability,
+      what_it_forecloses: offer.forecloses.join('; '),
+      expires_tick: offer.expiresTick,
+      quote_id: quoteId(principal, tick, offer.verb, offer.params),
+    });
+  }
+  let riskWithheld = 0;
+  for (const row of risk.withheld) {
+    riskWithheld += 1;
+    reasons.push({ verb: row.verb, text: row.text });
+  }
   return {
     list,
     withheld: {
@@ -4047,7 +4077,8 @@ function affordancesFor(
         commonsBoundLanes +
         (demandCapacitySpent ? 1 : 0) +
         (demandSilent ? 1 : 0) +
-        (tradeWhy.length > 0 ? 1 : 0),
+        (tradeWhy.length > 0 ? 1 : 0) +
+        riskWithheld,
       verbs: [...new Set(reasons.map((r) => r.verb).filter((v): v is string => v !== null))].sort(cmp),
       reason:
         reasons.length === 0

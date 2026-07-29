@@ -35,6 +35,7 @@
  */
 
 import type {
+  CoverId,
   EventId,
   GrantId,
   InvariantViolation,
@@ -83,8 +84,17 @@ export interface DefaultAttribution {
   readonly defaultEventId: EventId;
   /** Who the record accuses. */
   readonly promisor: PrincipalId;
-  /** The promise that broke. */
-  readonly obligation: VentureId | GrantId;
+  /**
+   * The promise that broke.
+   *
+   * ★ **Three kinds, and `CoverId` is the third.** Widened when Phase 3's risk market landed: an
+   * INDEMNITY's elective half is A7's promise over somebody else's loss, so a COVER is a promise that
+   * can break and INV-17 is the check that says whether the record may say so. Leaving the union at
+   * two would have forced the risk market either to fabricate a venture id — a wrong row in the one
+   * journal the world halts over — or to name its default event something the pattern misses, which
+   * is *"the real hole"* this file's header warns about by name.
+   */
+  readonly obligation: VentureId | GrantId | CoverId;
   readonly cause: DefaultCauseKind;
   /** The event that proves the cause. Must exist, and must precede the default. */
   readonly causeEventId: EventId;
@@ -112,6 +122,12 @@ export const DEFAULT_EVENT_KINDS: ReadonlySet<string> = new Set([
   // top-severity check in the codebase returned `[]` on every real default event.
   // `test/invariants/attribution.test.ts` now pins the two tables against each other.
   'venture.default',
+  // Phase 3's risk market. Registered rather than left to the pattern for `venture.default`'s exact
+  // reason: the pattern is `/(^|_)DEFAULT.../` on an uppercase word and this module names its kinds
+  // `indemnity.default`, so the two conventions would never have met and the top-severity check would
+  // have returned `[]` on every broken cover promise. (It *does* match here by luck of the trailing
+  // word; registering it means it still matches if either convention moves.)
+  'indemnity.default',
 ]);
 
 /**

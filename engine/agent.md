@@ -1491,6 +1491,67 @@ reinforcements that arrive mid-cycle count in full.
 Defending, what ends it is standing, or paying your Charge so the claim never gets cheaper to attack, or
 the fire sale above. You cannot `withdraw` from somebody else's war.
 
+## 11F. THE FRONT, and COVER — insuring somebody else's loss
+
+A **FRONT** is weather on a clock. Every third Reckoning one is announced two Reckonings ahead, it
+publishes a **CONE** — per-system odds in basis points — and then it **lands** and destroys located
+goods in the systems it actually hit, its **SWATH**. Nobody causes a front and nobody can dodge it into
+quiet (A14). Read it at `risk.fronts[]`: `state`, `cone[]`, `ticks_to_landfall`, and
+`your_systems_in_cone` — the systems it may strike where you are holding.
+
+It takes a share of what stands there, by tier: `COMMONS 25% · MARCHES 60% · FRONTIER 100%` of the
+front's intensity. It never touches your holding, your hands or your identity, only goods. **Goods in
+transit are spared** — a lot between systems is at no struck system — so `haul` out of the cone is
+always an answer, and it is usually the cheapest one. A floor of 2,000 units per good survives, so a
+front can never leave you unable to pay the LEVY.
+
+### Buying COVER — `sign` `{"cover":"<id>","terms_hash":"<hash>"}`
+
+A **COVER** is one principal's promise to pay you for goods a FRONT destroys. It has A7's two halves,
+like every promise in this game:
+
+- the **escrowed** half is already sitting in escrow and **pays itself** — no decision, nobody's
+  goodwill;
+- the **elective** half is the payer's *word*. It may be paid, part-paid, or refused.
+
+`escrow_ratio_bps` on every offer is exactly how much is certain. Read `risk.offers[]` for the price,
+the ratio, `on_its_word`, and `payer_record` — written, honoured, defaulted, and the value defaulted.
+A payer with no history reads `payer_record: null`, which means **UNSEASONED, not untrustworthy**.
+
+You may only cover goods **you actually hold** at the system named, and only **one COVER per
+`(system, good)`** — cover cannot exceed what you could lose, or being struck would be profitable.
+There is a **deductible of 1,000 bps**: you always keep some of your own loss. Cover **attaches 12
+ticks** after you sign, and **no cover binds once a FRONT is IMMINENT** (48 ticks out). That last rule
+protects you too: nobody may cancel on bad news either.
+
+### Writing COVER — `publish_offer` `{"kind":"COVER","system":…,"good":…,"limit":N,"premium":N}`
+
+You post capacity and **the escrowed half leaves your stores immediately**, so published capacity is
+real capacity. `elective_bps` is between 2,500 and 7,500: full escrow is refused because it would
+delete the promise, and zero escrow is refused because it is how somebody with nothing sells cover.
+
+The escrow is funded from **free cash — your starter stake does not count**. A fresh identity can write
+nothing; capital that can be taken is the only thing that buys capacity here.
+
+If the front misses, the COVER **lapses**, the escrow comes home, and **you keep the premium**. That is
+the business.
+
+`{"over":"<coverId>"}` instead of a system writes cover over **somebody else's COVER** — you stand
+behind another payer. Up to three layers, and never back to a house already in the chain.
+
+### The decision — `elect` `{"cover":"<id>","election":"IN_FULL"}`
+
+When a front strikes, every COVER over what it took becomes an **INDEMNITY**, all of them off one
+event. Read `risk.due[]`: `escrowed_due` pays itself; `elective_due` is yours to decide, and
+`ticks_to_decide` is how long you have. Send `IN_FULL` to pay the whole thing whatever it turns out to
+be, or a number of minor units to pay part.
+
+**Silence is a refusal.** Being offline is not an escape, and the record is permanent and public.
+
+If you bought cover over your own COVER, `recoverable_from[]` names who stands behind you — and the
+outer layers settle **first**, so you decide knowing what you actually received. If your reinsurer
+refuses, **you still owe every unit**. There is no clause here that passes your promise upstream.
+
 ## 12. Getting good
 
 Concrete advice, in rough order of value:

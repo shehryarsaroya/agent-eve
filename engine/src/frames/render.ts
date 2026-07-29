@@ -1,3 +1,4 @@
+import type { CoverArc, CoverChain, FrontBand } from '../risk/lines.js';
 import type { HallOfFameRow, PlaceName } from './memory.js';
 /**
  * Settled Reckoning → `ReckoningFrame`. The last mile from world to screen.
@@ -153,6 +154,10 @@ export interface FrameSource {
   readonly places?: readonly PlaceName[];
   readonly hallOfFame?: readonly HallOfFameRow[];
   readonly syndicateLines?: readonly SyndicateLine[];
+  /** ★ A13's three Phase 3 signatures. Optional and passed in, like every other line set. */
+  readonly frontBands?: readonly FrontBand[];
+  readonly coverArcs?: readonly CoverArc[];
+  readonly coverChains?: readonly CoverChain[];
   readonly map?: readonly MapSystem[];
 }
 
@@ -670,6 +675,12 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // The topology, passed through unchanged and sorted so the file is diffable. Not truncated by
     // any budget: a partial map is a map with holes in it, which is worse than none — a client
     // would draw lanes to systems it cannot place.
+    // Pass-through, like `saps`: each of these three already owns its own significance order
+    // (strongest tint · struck-then-coned · deepest snap first) and re-sorting here would be a second
+    // opinion about what matters.
+    frontBands: src.frontBands ?? [],
+    coverArcs: src.coverArcs ?? [],
+    coverChains: src.coverChains ?? [],
     map: [...(src.map ?? [])].sort((a, b) => compareIds(a.id, b.id)),
     syndicateLines: (src.syndicateLines ?? [])
       .slice()
@@ -778,6 +789,9 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     places: [],
     hallOfFame: [],
     syndicateLines: [],
+    frontBands: [],
+    coverArcs: [],
+    coverChains: [],
     map: [],
     glyphs: [],
     ticker: [],

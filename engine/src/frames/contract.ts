@@ -1,4 +1,5 @@
 import type { HallOfFameRow, PlaceName } from './memory.js';
+import type { CoverArc, CoverChain, FrontBand } from '../risk/lines.js';
 /**
  * The frame contract — the interface between the world and the show.
  *
@@ -93,6 +94,16 @@ export const MAX_FRAME_MARKET_LINES = 16;
  * follow; the point of the budget is that a battle gets the screen, not that many do.
  */
 export const MAX_FRAME_BATTLE_LINES = 4;
+/**
+ * A13's Phase 3 budgets. §17: **≤7 labels a frame**, so these are what a viewer can actually follow.
+ *
+ * `frontBands` is the largest of the three because a band is *one* label — the front's name — drawn
+ * across many cells, exactly as the map is one picture over thirty systems. A chain is the opposite:
+ * every link is a principal's name, so six is already at the ceiling.
+ */
+export const MAX_FRAME_FRONT_BANDS = 12;
+export const MAX_FRAME_COVER_ARCS = 8;
+export const MAX_FRAME_COVER_CHAINS = 4;
 
 /**
  * Formation bars one battle line may carry. Both sides, both caps.
@@ -1054,6 +1065,12 @@ export interface ReckoningFrame {
   readonly hallOfFame: readonly HallOfFameRow[];
   readonly syndicateLines: readonly SyndicateLine[];
   /** The topology, so the map can be drawn at all (A13). Fixed per world. */
+  /** ★ A13's first Phase 3 signature: THE FRONT BAND. A swept band of tinted systems. */
+  readonly frontBands: readonly FrontBand[];
+  /** ★ A13's second: THE COVER ARC. Filled for the escrowed half, hollow for the elective. */
+  readonly coverArcs: readonly CoverArc[];
+  /** ★ A13's third: THE COVER CHAIN. Snaps at the link that broke; every link inward greys. */
+  readonly coverChains: readonly CoverChain[];
   readonly map: readonly MapSystem[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
@@ -1175,6 +1192,36 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     problems.push(
       `${frame.raidLines.length} raid lines, budget is ${MAX_RAID_LINES} — a countdown a viewer can follow, not a weather map`,
     );
+  }
+
+  // ── A13's Phase 3 signatures, budgeted like every other line set ──────────
+  if (frame.frontBands.length > MAX_FRAME_FRONT_BANDS) {
+    problems.push(
+      `${frame.frontBands.length} front band cells, budget is ${MAX_FRAME_FRONT_BANDS} — a swept band, ` +
+        'not a weather map',
+    );
+  }
+  if (frame.coverArcs.length > MAX_FRAME_COVER_ARCS) {
+    problems.push(`${frame.coverArcs.length} cover arcs, budget is ${MAX_FRAME_COVER_ARCS}`);
+  }
+  if (frame.coverChains.length > MAX_FRAME_COVER_CHAINS) {
+    problems.push(
+      `${frame.coverChains.length} cover chains, budget is ${MAX_FRAME_COVER_CHAINS} — every link is a ` +
+        'principal’s name and §17 allows seven labels',
+    );
+  }
+  for (const arc of frame.coverArcs) {
+    // The arc's fill fraction IS the published escrow ratio (§7.5). An arc outside 0..BPS_ONE would be
+    // a picture that disagrees with the number beside it, which is scar #1 rendered.
+    if (arc.filledBps < 0 || arc.filledBps > 10_000) {
+      problems.push(`cover arc ${arc.cover} is ${String(arc.filledBps)} bps filled; 0..10000`);
+    }
+  }
+  for (const chain of frame.coverChains) {
+    // A chain that reports a snap with no SNAPPED link is a caption with no picture under it.
+    if (chain.snappedAt > 0 && !chain.links.some((l) => l.state === 'SNAPPED')) {
+      problems.push(`cover chain ${chain.primary} says it snapped at ${String(chain.snappedAt)} but no link did`);
+    }
   }
 
   if (frame.battleLines.length > MAX_FRAME_BATTLE_LINES) {

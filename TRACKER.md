@@ -6,6 +6,138 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **PHASE 3'S RISK MARKET EXISTS, AND THE `HAZARD` PHASE HAS ITS FIRST CONTENT IN THE PROJECT'S LIFE. `RULES_VERSION` 29.**
+>
+> `src/risk/` — 3,000 lines across ten files, **zero new verbs**, 14 tests. v1.1 built this design
+> around a risk market *as the core loop*; v2.0 deferred it and promoted betrayal-via-authority. This
+> is the deferred half, built on top of what the intervening phases proved rather than beside it.
+>
+> **§10.1's fourth sink was anticipated in five places and implemented in none.** `tick/phases.ts` has
+> a `HAZARD` phase whose note reads *"hazards roll against what is still standing"*; `sim/runtime.ts`
+> carries `hazards?: boolean` defaulting to **false** with the comment *"Phase 0 has no hazard content
+> yet"*; `GOODS_SINK.LOSS`'s own comment says *"raids, **fronts** and `CARGO_LOST` all charge it"*;
+> `cargoLost.ts` names the cause as *"the raid, **the front**, the interception"*; and §3's combat
+> table **reserved the word** — *"`front` is spent by §10.1's scheduled weather front, so the mechanic
+> that wanted it is not built."* Five citations, one word held in reserve, and nothing that could
+> destroy a single unit of goods on a schedule. That is why §15.4's false-default audit had never had a
+> hazard to run with and why four of six `ResolutionKind` values were unreachable.
+>
+> ### ★ A CATASTROPHE PROPAGATES, AND THE MEASUREMENT NAMES WHAT DECIDES IT
+>
+> `scripts/risk-probe.ts`, 3 seeds × 4 Reckonings, one FRONT each:
+>
+> | primary's balance sheet | fronts | destroyed | naked | bound | ceded | cohort | defaults | **propagated** | deepest |
+> |---|---|---|---|---|---|---|---|---|---|
+> | **DEEP** (200k free) | 3 | 216,794 | 3 | 6 | 3 | 6 | 3 | **0** | 0 |
+> | **THIN** (drained at the strike) | 3 | 216,794 | 3 | 6 | 3 | 6 | 6 | **3** | 2 |
+>
+> **Contagion is a property of the mechanism AND the balance sheet, and a probe that had only run the
+> deep case would have reported `PROP 0` and called the layer a tax with extra steps.** A well-funded
+> primary absorbs its reinsurer's refusal out of pocket; a thin one cannot, and its default cites *the
+> reinsurer's default event* rather than the storm's. That is SOL4 verbatim — *"solvent if its
+> reinsurer pays, dead tonight if it does not"* — and §15.4's Mode B asking that every default *"carry
+> the event ID of the loss or the missed delivery that caused it"*.
+>
+> ### ★ A15, BY MEASUREMENT: 0 · 0 · 0 AT N = 1 / 4 / 16
+>
+> A COVER's escrow is funded from `market/escrow.ts:freeCash` = `freeBalance − endowments.remaining`,
+> so **a fresh identity can write nothing**. The gate fired on the acceptance suite's first run and it
+> was right: *"the escrowed half of a 20000 limit is 15000 and your free cash is 0."*
+>
+> **And it fired a second time on the buy side**, which matters more than the first: a payee's premium
+> is also priced in `freeCash`, because otherwise a puppet paying a premium to its operator moves
+> endowment into the operator's spendable balance — D7's laundering funnel through a door nobody had
+> built. **Both sides of the risk market are priced in earned capital.** That is correct for A15 and it
+> is a real constraint on reachability: **a newcomer can neither write cover nor buy it.** GOV3's
+> newcomer microinsurance is the design answer and it is listed as out of scope in `risk/params.ts`.
+>
+> ### FIVE DEFECTS THE ACCEPTANCE TEST FOUND, EACH SILENT
+>
+> Every one of these passed `tsc`, passed lint, and left a book that looked correct.
+>
+> 1. **★ Every COVER lapsed before its FRONT landed.** `expiresTick` was one field doing two jobs, set
+>    to `offeredTick + 144`, so a cover bound for a front 431 ticks out expired first: the premium was
+>    paid, the escrow was locked, the strike came, and **the cohort was empty**. `front.struck` reported
+>    the goods destroyed, `cover.bound` was on the record, INV-R1…R7 were green over a book with no
+>    INDEMNITY in it, and a payee that had paid for cover received nothing **with no default recorded**.
+>    Fixed by splitting `COVER_OFFER_TTL_TICKS` from `COVER_TERM_TICKS`; the general lesson is written
+>    at the constant — *two lifetimes in one field is the same class of bug as two key grammars in one
+>    map.*
+> 2. **Every `indemnity.opened` row was refused into `faults`.** INV-12: *"a cause must precede its
+>    effect."* The rows cited a synthetic `front:<id>:strike` string, `ctx.emit` mints ids in `DERIVE`,
+>    and the record went silent while the book stayed correct — `haul.landed`'s bug verbatim. Fixed with
+>    an `emitNow` that appends the strike immediately and returns its minted id.
+> 3. **INV-17 halted the world**, correctly: *"default event ev:1151:0 (indemnity.default) has no
+>    attributable cause; the record is accusing p:rk03 with no evidence."* Closed by registering the
+>    attribution and widening `DefaultAttribution.obligation` to `VentureId | GrantId | CoverId` — a
+>    COVER is the third kind of promise that can break. `appendPublic` also had `parentEventId`
+>    hard-coded `null`, so a caller that passed a cause had it silently dropped.
+> 4. **The propagation map held a content-derived id, not a ledger one.** `letDownBy` satisfied itself
+>    and INV-17 refused: *"cites cause …, which is not in the ledger."* The default is now published and
+>    registered **inside** the settlement walk, so one id serves three consumers.
+> 5. **`publish_offer {kind:"COVER"}` was silent for the principal best placed to use it.** The target
+>    picker read the *reader's own* holdings, and a payer writes cover over somebody **else's** goods.
+>
+> ### WHAT WAS BUILT, AGAINST §7–8's MUST TIER
+>
+> The pass's MUST tier is **27 items**; the owner scoped three (catastrophe, correlated claims, the
+> pay/default decision) plus the structural feature that makes them a market. **Built:** RSK1 (policy
+> grammar, insurable interest) · RSK3 (the security ladder, as A7's one band) · RSK4 (the loss oracle,
+> automatic claims) · **RSK5 (the honour/default decision)** · RSK7 (the decomposed record) · **CAT1
+> (regional footprints, shared loss)** · CAT2 (public forecasts, provable fairness) · CAT4 (deductible)
+> · CAT5 (waiting period) · CAT6 (conserved interest — an A5′ guard) · **RE1 (facultative
+> reinsurance)** · RE6 (fingerprints, depth cap, no cycles) · **SOL2 (phased clearing, outermost
+> first)** · SOL4 (liquidity ≠ solvency, as the honour window) · GOV1's Commons/Marches/Frontier
+> vulnerability ladder · GOV4's bounded contagion.
+>
+> **Deliberately not built, with reasons at `risk/params.ts`:** RSK2's reverse auction, RSK6's
+> technical premium, CAT3's marginal tail capital, SOL1's balance sheet (all four are *pricing*, and a
+> price nobody pays is decoration) · RE2/RE3/RE4/RE5 (four shapes of one primitive; RE1 tests the
+> primitive) · **GOV2's guaranty fund — it is a fifth currency faucet**, which `ledger/accounts.ts`
+> calls *"a constitutional change, not a code change"* · RSK10's bonded contest (a contest that delays
+> a due date is the false-default problem with a verb attached).
+>
+> ### §3 — FIVE WORDS SPENT, SIX REJECTED
+>
+> **FRONT · CONE · SWATH · COVER · INDEMNITY**, each with a `never means` column in `risk/params.ts`.
+> The rejections are the useful part: **`claim`** (spent four ways; §3 already ruled the sovereignty
+> sense keeps the bare word, and it is also a live verb and a live field) · **`peril`** (spent by
+> `cargoLost.ts`, where `perilShed` means the EXPOSURE a lock sheds) · **`footprint`** (spent by
+> §10.1's convex-in-footprint upkeep) · **`forecast`** (spent by `venture/preview.ts`) · **`writer`**
+> (spent seventeen times as the single-writer-of-a-table idiom — so the parties are **payer** and
+> **payee**, which `venture/settlement.ts` already uses for exactly this relationship) · **`policy`**
+> (spent fifty-seven times as "standing policy").
+>
+> ### ZERO NEW VERBS, AND THAT IS THE FINDING
+>
+> §17's ceiling is 40 and 40 are spent. The pass wanted four (`underwrite.request`, `bind`,
+> `claim-payout`, `default`) and needed none: **`Election = Minor | IN_FULL` already was pay /
+> part-pay / default**, and A7's two halves already were the security ladder. So
+> `publish_offer {kind:"COVER"}` (a third shape), `sign {cover}` and `elect {cover}` (second shapes)
+> carry the whole layer.
+>
+> **A13:** THE FRONT BAND · THE COVER ARC · THE COVER CHAIN, on `ReckoningFrame` and on
+> `PUBLIC_FACT_KEYS`. The arc's fill fraction *is* `escrowRatioBps`, so the picture and §7.5's
+> published number are one quantity. The chain **snaps at the link that broke and greys every link
+> inward**, which is contagion rendered.
+>
+> **agent.md §11F: 3,826 characters**, gated on `publish_offer{COVER}` / `sign{COVER}` /
+> `elect{COVER}`. Measured cost: **0 on four of seven positions**, +3,826 on the three actually offered
+> a COVER act. Gated on the bare verbs it would have charged every position — §11E's +3,543 defect
+> with a different section number.
+>
+> ### OPEN, NAMED
+>
+> · **A risk default does not move §6.4 STANDING.** `StandingDelta.venture` is typed `VentureId` and
+>   `checkStandingJournal` requires a `DefaultRegister` row that is venture-scoped; closing it is three
+>   coupled invariants in `src/reckoning/`. RSK7's own record exists instead (`RiskBook.record`).
+> · **The elective half is the TOP slice of a claim**, so a small loss under a mostly-escrowed COVER
+>   produces `electiveDue: 0` — no promise tested. Kept (it is RSK3's own model) and written up at
+>   `openPrimary`: `elective_bps` is the payer's dial for how exposed its word is.
+> · **No heuristic cast branch.** `src/cast/heuristic.ts` was another agent's lane; the six calls and
+>   the four gates are enumerated and *run* in `test/risk/cast-hook.spec.ts`.
+> · **Not deployed.** The owner sequences deploys and signs the operator door's fingerprints.
+
 > ### ★★★ **COALITIONS EXIST. `MAX_RAID_PARTIES` IS 12 AND NO STANDOFF IN THIS PROJECT'S HISTORY HAD EVER CARRIED ONE PARTY. `RULES_VERSION` 24.**
 >
 > `join` had a handler, an affordance, a party row, a stake asymmetry, a force term

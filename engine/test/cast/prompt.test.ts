@@ -521,7 +521,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // token master split out precisely because a raid side and a campaign side are different rules.
     // Two units on one act is not a collision — the both-ways pin below requires every token to be
     // gated by SOME unit, and a bystander needs the answering block's preamble as well as this one.
-    expect(actPairs, 'act gates in the catalog').toBe(23);
+    expect(actPairs, 'act gates in the catalog').toBe(29);
   });
 
   it('★ NO HEADING OF `agent.md` IS A SLOT NOTHING FILLS — the fourth depth, checked here', () => {
@@ -937,7 +937,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 85,884 = **34,116**. The reachable maximum is still `outside the
     // Commons and landless, at its fullest`, now 79,365 — leaving **40,635**, against a required
     // 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(85_993);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(89_819);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -992,7 +992,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // is for — it has hands, no ground to bill, and standoffs it can walk to. The reachable margin is
     // 120,000 − 76,163 = **43,837** against a required 4,000, which is the number to quote about
     // SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(79_474);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(83_300);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1660,7 +1660,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       55: 'fifty-five',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(55);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(59);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
       spelled[n as 55],
     );
@@ -1801,6 +1801,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       actMap[act] = homesOf((u) => (u.acts ?? []).includes(act));
     }
     expect(actMap).toEqual({
+      // ── ★ PHASE 3's THREE, and every one of them is `(preamble) + <its own block>` ──
+      //
+      // The preamble is the FRONT's clock and it goes to all three, because a front is weather and
+      // anybody pricing it needs the timetable. The per-act blocks are the three decisions.
+      'elect{COVER}':
+        '(preamble) + The decision — `elect` `{"cover":"<id>","election":"IN_FULL"}`',
+      'publish_offer{COVER}':
+        '(preamble) + Writing COVER — `publish_offer` ' +
+        '`{"kind":"COVER","system":…,"good":…,"limit":N,"premium":N}`',
+      'sign{COVER}': '(preamble) + Buying COVER — `sign` `{"cover":"<id>","terms_hash":"<hash>"}`',
       'abandon{CLAIM}': 'Losing it — arrears, the window, and two exits that beat a lapse',
       'abandon{VENTURE}': '(preamble)',
       // ★ Five of §11E's six units, and this row is where the +3,360 went: onto the act that is
@@ -2398,13 +2408,30 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // stays: a newcomer is offered `refine` on its first wake, `refine{ALLOY}` is one of its two
       // recipes, and the previous text would have sent it hauling ore it never needed to move. A
       // correct rule is not a feature and does not get to be optional.
-      41_555, // a newcomer on its first wake            (+1,809 at 27)
-      49_943, // mid-game in the Commons                 (+1,809 at 27)
-      54_371, // about to take territory                 (+1,895 at 27: §11B's anchor line too)
-      54_813, // at war: party to a live campaign        (+1,895 at 27)
-      77_965, // a claimant in trouble                   (+3,202 at 27: §10's clearance read)
-      65_552, // the Commons at its fullest              (+3,116 at 27)
-      79_474, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,311)
+      // ── ★ §11F, PHASE 3's RISK MARKET, MEASURED. FOUR POSITIONS PAID ZERO. ──
+      //
+      //   before  after   Δ       position
+      //   41,555  41,555      0  a newcomer on its first wake
+      //   49,943  49,943      0  mid-game in the Commons
+      //   54,371  54,371      0  about to take territory
+      //   54,813  54,813      0  at war: party to a live campaign
+      //   77,965  81,791  +3,826 a claimant in trouble
+      //   65,552  69,378  +3,826 the Commons at its fullest
+      //   79,474  83,300  +3,826 outside the Commons and landless
+      //
+      // **The `acts` gate is why the first four are zero**, and it is version 24's lesson applied
+      // before it cost anything rather than after. `sign` and `elect` are offered to essentially every
+      // principal holding a venture role, so a §11F gated on the bare verbs would have charged
+      // **every** position +3,826 — §11E's +3,543 defect with a different section number. Gated on
+      // `sign{COVER}` / `elect{COVER}` / `publish_offer{COVER}`, only a position actually offered a
+      // COVER act pays for the section, and the four that are not offered one pay nothing.
+      41_555, // a newcomer on its first wake            (0 at 29 — the `acts` gate held)
+      49_943, // mid-game in the Commons                 (0 at 29)
+      54_371, // about to take territory                 (0 at 29)
+      54_813, // at war: party to a live campaign        (0 at 29)
+      81_791, // a claimant in trouble                   (+3,826 at 29: §11F)
+      69_378, // the Commons at its fullest              (+3,826 at 29)
+      83_300, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,826)
       //
       // ── ★ +109 MORE ON FIVE ROWS: THE ENGINE'S OWN STATEMENT WAS WRONG TOO ──
       //
@@ -2470,7 +2497,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +3,202, and the margin is **34,116** against a required 4,000. Nothing trimmed, and nothing
       // to argue about the ceiling this time: 27 is a corrections pass and the largest single item in
       // it is a false rule being made true.
-      85_993,
+      //
+      // ── 85,993 → 89,819 at 29 (Phase 3's risk market) ────────────────────────
+      //
+      // +3,826 for §11F, and the margin is **30,181** against a required 4,000. The number that
+      // matters more is one row up: the largest **reachable** position went 79,474 → 83,300, so the
+      // reachable margin is 36,700 and no rule was trimmed. Four of the seven reachable positions
+      // paid **nothing**, which is the `acts` gate doing the job version 24 built it for.
+      89_819,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
