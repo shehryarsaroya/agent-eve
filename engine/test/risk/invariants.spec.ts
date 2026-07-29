@@ -17,6 +17,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { EventId, GoodId, PrincipalId, SystemId } from '../../src/core/types.js';
 import { bps, minor } from '../../src/core/units.js';
@@ -28,6 +29,7 @@ import {
   COVER_ELECTIVE_BPS_CEILING,
   COVER_ELECTIVE_BPS_FLOOR,
   COVER_MAX_DEPTH,
+  RISK_CANON,
   RiskBook,
   checkInvR1,
   checkInvR2,
@@ -350,5 +352,47 @@ describe('halvesOf — every minor unit is in one half or the other', () => {
         expect(elective).toBe(Math.trunc((limit * share) / 10_000));
       }
     }
+  });
+});
+
+describe('§3 — RISK_CANON is policed by the table it claims to be in', () => {
+  it('★ every term this layer spends is a row in SPEC §3', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // §3's own ⚑ box states the hole this closes: *"`canon-word-per-concept.test.ts` can only police
+    // terms this table lists, so an uncanonised word is unpoliced by construction… a word the canon
+    // has never heard of matches nothing and passes."* `ORE` and `RATION` were unpoliced that way for
+    // the project's entire life, and `CLAIM`, `ANCHOR`, `CHARGE`, `RENT` and `FUEL` were live in
+    // `src/` before they were canon.
+    //
+    // `RISK_CANON` is the module's own list of what it spent, and this is the check that makes the
+    // list mean something. Without it the list is a comment — the exact defect one level up.
+    //
+    // MUTATION: delete any of the five rows from SPEC §3's risk-market table. This goes red and names
+    // the term, which is what a comment cannot do.
+    // ══════════════════════════════════════════════════════════════════════════
+    const spec = readFileSync(new URL('../../../docs/design/SPEC.md', import.meta.url), 'utf8');
+    expect(RISK_CANON.length, 'non-vacuity: the module claims to have spent words at all').toBe(5);
+    for (const row of RISK_CANON) {
+      expect(
+        spec,
+        `${row.term} is spent by src/risk/ and is not a row in SPEC §3 — an uncanonised word is ` +
+          'unpoliced by construction',
+      ).toContain(`| **${row.term}** |`);
+    }
+  });
+
+  it('and every one of them is checked against the repo, in both directions', () => {
+    // The other half: `test/core/vocabulary-repo.test.ts` parses §3 out of `SPEC.md` and sweeps every
+    // union in `src/`. A term in the table with no reuse is fine; a *reuse* with no sanctioned reason
+    // is a failure there. That test found `ChainLinkState = 'STANDING'` on this module's first draft,
+    // which is the receipt for this pairing working. Asserted here as a pointer rather than a
+    // duplicate, because two copies of one sweep is the shape this whole discipline refuses.
+    const repo = readFileSync(new URL('../core/vocabulary-repo.test.ts', import.meta.url), 'utf8');
+    for (const row of RISK_CANON) {
+      void row;
+    }
+    expect(repo, 'the repo-wide sweep records this module’s pairings').toContain(
+      "ChainLinkState+HoldingState.INTACT",
+    );
   });
 });

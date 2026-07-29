@@ -46,6 +46,7 @@ import { ENDOWMENT_GOOD } from '../ledger/endowment.js';
 import { compareIds } from '../ledger/order.js';
 import type { RiskBook } from './book.js';
 import {
+  electiveOutstanding,
   escrowRatioBps,
   isAttached,
   isLiveCover,
@@ -210,7 +211,8 @@ function frontNote(state: FrontState, yours: number, ticksOut: number): string {
   }
   return (
     `Lands in ${String(ticksOut)} ticks. ${String(yours)} of the systems it may strike hold goods of ` +
-    `yours. COVER shuts ${String(FRONT_COVER_FREEZE_TICKS)} ticks before landfall.`
+    `yours. COVER shuts ${String(FRONT_COVER_FREEZE_TICKS)} ticks before landfall, and whatever it owes ` +
+    `falls due ${String(HONOUR_WINDOW_TICKS)} ticks after it lands — that window is when a payer decides.`
   );
 }
 
@@ -227,7 +229,9 @@ function offerView(book: RiskBook, cover: CoverRecord, tick: number): CoverOffer
     premium: cover.premium,
     escrowRatioBps: escrowRatioBps(cover),
     escrowed: cover.escrowed,
-    onItsWord: minor(cover.elective - cover.settledElectiveMinor),
+    // `electiveOutstanding`, not the subtraction: one home for "what is still riding on its word", so
+    // the offer card and the arc's hollow part cannot disagree by an arithmetic slip.
+    onItsWord: electiveOutstanding(cover),
     expiresTick: cover.offerExpiresTick,
     attachesInTicks: cover.attachesTick === null ? COVER_WAIT_TICKS : Math.max(0, cover.attachesTick - tick),
     deductibleBps: COVER_DEDUCTIBLE_BPS,
@@ -531,16 +535,3 @@ function pickTarget(input: RiskViewInput): { readonly system: SystemId; readonly
   }
   return best === null ? null : { system: best.system, good: ENDOWMENT_GOOD };
 }
-
-/** The band published to agents, so `agent.md` and the engine cannot disagree about it. */
-export const COVER_BAND_STATEMENT =
-  `A COVER's elective share is between ${String(COVER_ELECTIVE_BPS_FLOOR)} and ` +
-  `${String(COVER_ELECTIVE_BPS_CEILING)} bps. Full escrow is refused — it would delete the promise — ` +
-  `and so is zero escrow, which is how a counterparty with nothing sells cover (A7).`;
-
-/** The clock, published. */
-export const FRONT_CLOCK_STATEMENT =
-  `A FRONT is announced two RECKONINGS out, shuts to new COVER ${String(FRONT_COVER_FREEZE_TICKS)} ` +
-  `ticks before it lands, strikes, and then its INDEMNITIES fall due at that RECKONING's settlement — ` +
-  `${String(HONOUR_WINDOW_TICKS)} ticks later. A COVER attaches ${String(COVER_WAIT_TICKS)} ticks ` +
-  `after you sign it.`;

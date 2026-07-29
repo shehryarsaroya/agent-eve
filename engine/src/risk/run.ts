@@ -56,11 +56,7 @@ import { compareIds } from '../ledger/order.js';
 import type { WorldMap } from '../world/map.js';
 import type { Election } from '../venture/settlement.js';
 import { RiskBook } from './book.js';
-import {
-  isAttached,
-  type CoverId,
-  type CoverRecord,
-} from './cover.js';
+import { isAttached, type CoverId } from './cover.js';
 import {
   announceFront,
   destroySet,
@@ -467,20 +463,3 @@ export function attachSeasoned(book: RiskBook, tick: number): number {
   return attached;
 }
 
-/** Every live cover a payer stands behind, for the affordance's `max_contingent_liability`. */
-export function contingentLiabilityOf(book: RiskBook, payer: PrincipalId): Minor {
-  let total = minor(0);
-  for (const cover of book.coversBy(payer)) {
-    if (cover.state === 'SETTLED' || cover.state === 'LAPSED') continue;
-    total = addMinor(total, minor(cover.elective - cover.settledElectiveMinor));
-  }
-  return total;
-}
-
-/** Every cover row a reader needs to price a counterparty, cheapest first. */
-export function offersRanked(book: RiskBook, tick: number): readonly CoverRecord[] {
-  return [...book.openOffers(tick)].sort(
-    (a, b) =>
-      a.premium - b.premium || b.escrowed - a.escrowed || compareIds(a.id, b.id),
-  );
-}

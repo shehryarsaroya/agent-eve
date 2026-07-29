@@ -29,6 +29,7 @@ import { RiskBook } from './book.js';
 import {
   bindCover,
   coverEscrow,
+  coverLine,
   cycleInChain,
   fingerprintOf,
   halvesOf,
@@ -39,6 +40,7 @@ import {
 import {
   announceIfDue,
   attachSeasoned,
+  FRONT_SINK,
   lapseExpired,
   settleCohort,
   strikeFront,
@@ -186,7 +188,7 @@ export function runFrontPhase(port: RiskWirePort): void {
     // The cohort's rows cite this one as their parent and their cause, so it must be **in the ledger
     // with a minted id** before they are drafted. A synthetic string here got every
     // `indemnity.opened` row refused into `faults`. See `RiskWirePort.emitNow`.
-    const provisional = strikePreview(frontPort, port, front);
+    const provisional = strikePreview(frontPort, front);
     const cause =
       port.emitNow({
         kind: 'front.struck',
@@ -277,11 +279,9 @@ export function runFrontPhase(port: RiskWirePort): void {
  */
 function strikePreview(
   frontPort: FrontPort,
-  port: RiskWirePort,
   front: Parameters<typeof strikeFront>[2],
 ): { readonly lots: number; readonly qty: number } {
   const set = destroySet(front, frontPort.lots());
-  void port;
   return { lots: set.length, qty: set.reduce((sum, l) => sum + l.qty, 0) };
 }
 
@@ -294,8 +294,10 @@ function frontPortOf(port: RiskWirePort): FrontPort {
       port.ledger.destroyGoods({
         eventId: args.eventId,
         tick: port.tick,
-        // §10.2's own sink, whose comment has named fronts for the whole project.
-        sink: 'sink:loss' as never,
+        // §10.2's own sink, whose comment has named fronts for the whole project. The named constant
+        // rather than the string: a magic literal beside an exported name for the same account is two
+        // homes for one fact, which is what lets a future sink land in the wrong one.
+        sink: FRONT_SINK,
         lotId: args.lotId,
         qty: args.qty,
       });
@@ -720,12 +722,9 @@ export function signCover(
       depth: cover.depth,
     },
   });
-  port.ticker(
-    `${principal} bought COVER from ${cover.payer} — ${String(cover.elective)} of it on ${cover.payer}'s word`.slice(
-      0,
-      140,
-    ),
-  );
+  // `coverLine` rather than a second spelling of the same sentence: the ticker and the receipt must
+  // agree, and two hand-rolled strings about one promise is scar #1's shape in prose.
+  port.ticker(coverLine(cover));
   return { ok: true, value: null };
 }
 

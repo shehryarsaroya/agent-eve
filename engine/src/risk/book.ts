@@ -66,7 +66,7 @@ import {
   type CoverState,
 } from './cover.js';
 import type { FrontId, FrontRecord, FrontState } from './front.js';
-import type { IndemnityId, IndemnityRecord, IndemnityState } from './indemnity.js';
+import { settlementOrder, type IndemnityId, type IndemnityRecord, type IndemnityState } from './indemnity.js';
 
 /**
  * The closed state sets a restore validates against, spelled once.
@@ -330,11 +330,18 @@ export class RiskBook {
     return [...this.indemnities.values()].sort((a, b) => compareIds(a.id, b.id));
   }
 
-  /** The cohort off one FRONT, in **settlement order**: outermost cession first (SOL2). */
+  /**
+   * The cohort off one FRONT, in **settlement order**: outermost cession first (SOL2).
+   *
+   * Through {@link settlementOrder} rather than an inlined comparator. The order IS the propagation
+   * channel — a reinsurer answering after the house it stands behind deletes the contagion without
+   * deleting a line of the code that implements it — so it has one home and `propagates.spec.ts` names
+   * the mutation that flips it.
+   */
   cohortOf(front: FrontId): readonly IndemnityRecord[] {
     return this.allIndemnities()
       .filter((i) => i.front === front)
-      .sort((a, b) => b.depth - a.depth || compareIds(a.id, b.id));
+      .sort(settlementOrder);
   }
 
   /** Open INDEMNITIES a payer owes. What `observe` publishes as its obligations due (RSK5). */

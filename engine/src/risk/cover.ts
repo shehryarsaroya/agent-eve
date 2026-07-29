@@ -58,15 +58,7 @@
  */
 
 import { canonicalHash, type CanonicalValue } from '../core/canonical.js';
-import type {
-  AccountId,
-  CoverId,
-  EventId,
-  GoodId,
-  GrantId,
-  PrincipalId,
-  SystemId,
-} from '../core/types.js';
+import type { AccountId, CoverId, GoodId, GrantId, PrincipalId, SystemId } from '../core/types.js';
 import { BPS_ONE, addMinor, bps, minor, subMinor, type Bps, type Minor } from '../core/units.js';
 import { reject, type WorldResult } from '../world/result.js';
 import type { PinnedValuation } from '../venture/terms.js';
@@ -601,9 +593,4 @@ export function coverLine(cover: CoverRecord): string {
     `${cover.payer} covers ${String(cover.payee ?? 'anyone')} on ${subject}: ` +
     `${String(cover.escrowed)} escrowed, ${String(cover.elective)} on its word`
   );
-}
-
-/** Never used for control flow; the event id a settlement stamps its postings with. */
-export function coverEventId(cover: CoverId, what: string, tick: number): EventId {
-  return `${cover}:${what}:${String(tick)}` as EventId;
 }

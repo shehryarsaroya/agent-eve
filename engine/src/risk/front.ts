@@ -53,7 +53,7 @@
  */
 
 import { Rng } from '../core/rng.js';
-import { TICKS_PER_RECKONING, phaseOfReckoning, reckoningIndex } from '../core/time.js';
+import { TICKS_PER_RECKONING, reckoningIndex } from '../core/time.js';
 import type { EventId, GoodId, SystemId } from '../core/types.js';
 import { BPS_ONE, bps, qty, type Bps, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
@@ -143,14 +143,6 @@ export function landfallTickOf(reckoning: number): number {
 /** The tick a front for `reckoning` is announced. */
 export function announceTickOf(reckoning: number): number {
   return landfallTickOf(reckoning) - FRONT_CONE_RECKONINGS * TICKS_PER_RECKONING;
-}
-
-/** True on exactly the tick a front is announced. */
-export function isAnnounceTick(tick: number): boolean {
-  for (let r = reckoningIndex(tick); r <= reckoningIndex(tick) + FRONT_CONE_RECKONINGS + 1; r += 1) {
-    if (isFrontReckoning(r) && announceTickOf(r) === tick) return true;
-  }
-  return false;
 }
 
 /** The RECKONING whose front is announced on `tick`, or `null`. */
@@ -303,15 +295,6 @@ export function stateAt(front: FrontRecord, tick: number, coverFreezeTicks: numb
   return 'FORECAST';
 }
 
-export function intensityAt(front: FrontRecord, system: SystemId): Bps {
-  for (const cell of front.swath) if (cell.system === system) return cell.intensityBps;
-  return bps(0);
-}
-
-export function isInSwath(front: FrontRecord, system: SystemId): boolean {
-  return front.swath.some((c) => c.system === system);
-}
-
 // ── The destroy set ─────────────────────────────────────────────────────────
 
 /** One lot, and how much of it the FRONT takes. */
@@ -378,12 +361,3 @@ export function isLandfallTick(front: FrontRecord, tick: number): boolean {
   return tick === front.landfallTick && front.struckAtTick === null;
 }
 
-/** Where a front is in its own arc, for the observation. `phaseOfReckoning` is the tick's. */
-export function ticksToLandfall(front: FrontRecord, tick: number): number {
-  return front.landfallTick - tick;
-}
-
-/** For the ticker line: the phase of the Reckoning a front lands in. */
-export function landfallPhase(front: FrontRecord): number {
-  return phaseOfReckoning(front.landfallTick);
-}

@@ -76,7 +76,6 @@ import { storesAccount } from '../ledger/accounts.js';
 import { IN_FULL, type DefaultCause, type Election } from '../venture/settlement.js';
 import { COVER_DEDUCTIBLE_BPS } from './params.js';
 import {
-  electiveOutstanding,
   escrowedOutstanding,
   recordCoverPaid,
   type CoverId,
@@ -671,7 +670,3 @@ export function electiveOwed(ind: IndemnityRecord): Minor {
   return subMinor(ind.electiveDue, ind.electivePaid);
 }
 
-/** The cover's remaining promise, for the affordance's `max_contingent_liability`. */
-export function contingentOf(cover: CoverRecord): Minor {
-  return electiveOutstanding(cover);
-}
