@@ -241,6 +241,76 @@ describe('the manifest and the ledger are the same quantity and they agree', () 
     });
   }, 60_000);
 
+  it('★ THE LANDING REACHES THE RECORD — every arrival writes a `haul.landed` row', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // THE THIRD DEFECT, AND THE ONLY ONE THAT BROKE NOTHING.
+    //
+    // `haul.landed` was emitted `SENSED` with `declassifyAt: ctx.tick` and `publicAt: null`, which
+    // violates that tier twice — `STRICTLY_LATER` declassifying at birth, and a `fullOnDeclassify`
+    // tier with a null `publicAt`. `visibilityFaultsAtBirth` therefore refused **every row the verb
+    // has ever emitted**, and `flushRecord` records a refusal as a `faults` string rather than a halt.
+    //
+    // So the cargo landed, the manifest cleared, INV-W7 stayed green, the world never halted, and the
+    // record said nothing at all. Nine landings in a 3-Reckoning heuristic world (`g01`) produced
+    // nine faults and zero rows. Nothing in the suite could see it because everything in the suite
+    // asserts on *state*, and the state was right the whole time.
+    //
+    // MUTATION: restore `publicAt: null, declassifyAt: ctx.tick`. RED on `landed` (0, not 1) and RED
+    // on `faults` — which is the assertion that matters, because a silent record is the failure mode.
+    // ══════════════════════════════════════════════════════════════════════════
+    const f = world('convoy-record');
+    walkTo(f, 9);
+    expect(submitHaul(f, f.hands[0] as HandId, 5_000).hint).toBe('');
+    tickOrExplain(f);
+
+    let guard = 0;
+    while (f.rt.ledger.lotsCarriedBy(f.hands[0] as HandId).length > 0 && guard < 12) {
+      tickOrExplain(f);
+      guard += 1;
+    }
+    expect(guard, 'the convoy must actually arrive').toBeLessThan(12);
+
+    const rows = f.rt.events
+      .ticks()
+      .flatMap((t) => f.rt.events.eventsAtTick(t))
+      .filter((r) => r.event.kind === 'haul.landed' || r.event.kind === 'haul.departed');
+    const departed = rows.filter((r) => r.event.kind === 'haul.departed');
+    const landed = rows.filter((r) => r.event.kind === 'haul.landed');
+    expect(departed.length, 'one departure').toBe(1);
+    expect(landed.length, 'and one landing — the record must hold BOTH halves of the journey').toBe(
+      1,
+    );
+
+    // The refusal path, asserted directly: a row the record rejects is a fault, and a run that
+    // published every row it meant to publish has none. This is the half a state assertion misses.
+    const faults = (f.rt as unknown as { readonly faults: { readonly all: readonly string[] } })
+      .faults.all;
+    expect(
+      faults.filter((s) => s.includes('haul')),
+      'the record refused nothing',
+    ).toEqual([]);
+
+    // §11.2: `SENSED` is "whoever has a hand in range or bought the intel; everyone AFTER THE
+    // RECKONING IT MATTERED IN" — so the row declassifies strictly later, at the Reckoning boundary,
+    // and to FULL. Pinning both halves stops a future edit from "fixing" the refusal by demoting the
+    // manifest to `PUBLIC`, which would hand every viewer a cargo list and delete the reason
+    // reconnaissance is worth paying for.
+    const row = landed[0];
+    expect(row?.visibility, 'the manifest is SENSED, never PUBLIC').toBe('SENSED');
+    expect(row?.event.isPublic).toBe(false);
+    expect(
+      row?.event.declassifyAt ?? 0,
+      'declassifies strictly later than the tick it happened on',
+    ).toBeGreaterThan(row?.event.tick ?? 0);
+    expect(row?.event.publicAt, 'and it declassifies to FULL, so the two ticks agree').toBe(
+      row?.event.declassifyAt,
+    );
+    expect(row?.event.payload, 'the landed quantity is what the LEDGER moved').toMatchObject({
+      good: LEVY_GOOD,
+      qty: 5_000,
+    });
+  }, 60_000);
+
   it('every IN_TRANSIT lot has a carrier and every carrier is in transit', () => {
     // `Lot.carrier`'s contract, asserted rather than documented — this is what makes a future sink
     // that lands a lot without clearing the carrier halt instead of quietly re-pooling it.

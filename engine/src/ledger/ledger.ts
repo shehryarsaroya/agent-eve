@@ -496,6 +496,21 @@ export class Ledger {
    *
    * A landing, a rout and an interception all need the same answer, and there is now exactly
    * one place that gives it.
+   *
+   * ── THE COST, STATED, AND WHEN IT NEEDS AN INDEX ──────────────────────────
+   *
+   * A full scan of the lot table, deliberately un-indexed. `lotsByAccount` exists because
+   * `allLots().filter(...)` was **sorting every lot in the galaxy** on a path called once per ask
+   * principal per book, and that is not this path: a carrier read happens only when a hand
+   * **lands** or is **routed**, which is once per journey rather than once per tick, and it sorts
+   * only the matched subset rather than the whole table. An index here would also be materially
+   * harder to keep right than `lotsByAccount`, whose safety argument is that *"a lot's `account` is
+   * never reassigned in place"* — `carrier` is reassigned in place, by {@link relocate}, on every
+   * departure and every landing.
+   *
+   * If a future layer reads this per tick rather than per journey — a lane-interception sweep, say —
+   * index it then, and maintain it in `relocate`, the `opens` loop, `splitLot`, `restore` and the
+   * zero-qty delete. Five sites, so do it for a measurement rather than for a feeling.
    * ══════════════════════════════════════════════════════════════════════════
    */
   lotsCarriedBy(hand: HandId): readonly Lot[] {

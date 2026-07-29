@@ -43,6 +43,16 @@ interface Row {
   readonly peakTransitLots: number;
   readonly peakCarryingHands: number;
   readonly landed: number;
+  /**
+   * Rows the RECORD refused, which is the column that found the third defect.
+   *
+   * `flushRecord` turns a rejected row into a `faults` string rather than a halt — correct, since one
+   * malformed row must not stop the shard, and invisible unless something prints it. `haul.landed` was
+   * refused on **every** emission for the whole life of the verb: the cargo landed, INV-W7 stayed
+   * green, no test failed, and the record was silent. A meter for the mechanism is not enough; the
+   * meter has to cover the record too.
+   */
+  readonly refused: number;
 }
 
 function arg(name: string, fallback: string): string {
@@ -86,7 +96,22 @@ function runSeed(seed: string, reckonings: number, members: number): Row {
     for (const hand of rt.world.hands.values()) if (hand.cargo.size > 0) carrying += 1;
     if (carrying > peakCarryingHands) peakCarryingHands = carrying;
   }
-  return { seed, halted, submitted, applied, peakTransitLots, peakCarryingHands, landed };
+  const faults = (rt as unknown as { readonly faults: { readonly all: readonly string[] } }).faults
+    .all;
+  const refused = faults.filter((s) => s.includes('the record refused')).length;
+  if (refused > 0) {
+    console.log(`  ${seed} RECORD REFUSED ${String(refused)} row(s) — first: ${faults[0] ?? ''}`);
+  }
+  return {
+    seed,
+    halted,
+    submitted,
+    applied,
+    peakTransitLots,
+    peakCarryingHands,
+    landed,
+    refused,
+  };
 }
 
 const seeds = arg('seeds', 'g01,g02,g03,g04').split(',');
@@ -94,7 +119,7 @@ const reckonings = Number(arg('reckonings', '3'));
 const members = Number(arg('members', '8'));
 
 console.log(
-  `seed   halted  haul.submitted  haul.applied  haul.landed  peak.lots  peak.carrying`,
+  `seed   halted  haul.submitted  haul.applied  haul.landed  refused  peak.lots  peak.carrying`,
 );
 const rows: Row[] = [];
 for (const seed of seeds) {
@@ -103,6 +128,7 @@ for (const seed of seeds) {
   console.log(
     `${row.seed.padEnd(7)}${String(row.halted).padEnd(8)}${String(row.submitted).padStart(14)}` +
       `${String(row.applied).padStart(14)}${String(row.landed).padStart(13)}` +
+      `${String(row.refused).padStart(9)}` +
       `${String(row.peakTransitLots).padStart(11)}${String(row.peakCarryingHands).padStart(15)}`,
   );
 }
@@ -111,9 +137,13 @@ const total = rows.reduce(
     submitted: a.submitted + r.submitted,
     applied: a.applied + r.applied,
     landed: a.landed + r.landed,
+    refused: a.refused + r.refused,
     halted: a.halted || r.halted,
   }),
-  { submitted: 0, applied: 0, landed: 0, halted: false },
+  { submitted: 0, applied: 0, landed: 0, refused: 0, halted: false },
 );
 console.log(`RESULT ${JSON.stringify({ ...total, seeds: seeds.length, reckonings, members })}`);
-if (total.halted) process.exitCode = 1;
+// A departure with no landing is a journey the record lost, and a refusal is the record saying so.
+// Both are failures of this probe, not observations of it — `applied` and `landed` must agree once
+// the window is long enough for every convoy to arrive.
+if (total.halted || total.refused > 0) process.exitCode = 1;
