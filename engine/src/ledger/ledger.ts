@@ -32,6 +32,7 @@ import type {
   AccountId,
   EventId,
   GoodId,
+  HandId,
   Posting,
   PrincipalId,
   SystemId,
@@ -77,6 +78,13 @@ export interface LotOpen {
   readonly qty: Qty;
   readonly location: SystemId;
   readonly state: LotState;
+  /**
+   * The hand carrying it, and **required rather than defaulted** for `perilReleased`'s reason:
+   * the caller has to decide. `state` and `carrier` must agree (see {@link Lot.carrier}), and a
+   * default of `null` would let a transfer of an in-transit lot silently open an `IN_TRANSIT`
+   * lot nobody is carrying — a lot the tick's own cargo mirror then halts on.
+   */
+  readonly carrier: HandId | null;
   readonly origin: PrincipalId;
 }
 
@@ -451,11 +459,60 @@ export class Ledger {
    * Move a lot in space, or in and out of transit. No value moves, so there are
    * no postings — the movement event belongs to the world module, which is also
    * the only thing that knows the gate transit table (INV-10).
+   *
+   * ── `carrier` IS PART OF THE SAME WRITE, NEVER A SECOND CALL ───────────────
+   *
+   * `Lot.carrier`'s contract is `carrier !== null` **iff** `state === 'IN_TRANSIT'`, and a
+   * caller that set the state here and the carrier somewhere else would leave a window in
+   * which that is false — which is exactly how `location` and `state` were nearly split
+   * apart (`haulPort.depart` says why: *"either half alone is a hole"*). So it is one
+   * argument on one method, and {@link checkLotCarriers} halts on any lot where the two
+   * disagree at tick close.
    */
-  relocate(id: LotId, to: { readonly location?: SystemId; readonly state?: LotState }): void {
+  relocate(
+    id: LotId,
+    to: {
+      readonly location?: SystemId;
+      readonly state?: LotState;
+      readonly carrier?: HandId | null;
+    },
+  ): void {
     const l = this.requireLot(id);
     if (to.location !== undefined) l.location = to.location;
     if (to.state !== undefined) l.state = to.state;
+    if (to.carrier !== undefined) l.carrier = to.carrier;
+  }
+
+  /**
+   * Every lot one hand is carrying, canonical order. The single road to "this hand's cargo".
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THIS REPLACES A GUESS.** What stood here was a query keyed on
+   * `(account, good, destination)` — an anonymous pool — and a caller that wanted one hand's
+   * cargo walked it in id order until a running total was covered. Two ordinary hauls on
+   * consecutive ticks then halted the world on INV-W7, because the walk lands **whole lots**:
+   * it overshoots the arriving hand's manifest, lands a second hand's cargo early, and clears
+   * only the first hand's manifest. See {@link Lot.carrier}.
+   *
+   * A landing, a rout and an interception all need the same answer, and there is now exactly
+   * one place that gives it.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  lotsCarriedBy(hand: HandId): readonly Lot[] {
+    const out: Lot[] = [];
+    for (const lot of this.lots.values()) {
+      if (lot.carrier === hand) out.push(lot);
+    }
+    return out.sort((a, b) => compareIds(a.id, b.id));
+  }
+
+  /** Every lot in transit, canonical order. INV-W7's ledger half, and the only reader of it. */
+  lotsInTransit(): readonly Lot[] {
+    const out: Lot[] = [];
+    for (const lot of this.lots.values()) {
+      if (lot.state === 'IN_TRANSIT') out.push(lot);
+    }
+    return out.sort((a, b) => compareIds(a.id, b.id));
   }
 
   /**
@@ -524,6 +581,10 @@ export class Ledger {
       location: lot.location,
       state: lot.state,
       encumbranceId: null,
+      // Both halves keep the state, so both halves must keep the carrier or the split would
+      // manufacture an `IN_TRANSIT` lot nobody is carrying — INV-W7's own failure mode, made
+      // by the primitive that was added to serve `haul`.
+      carrier: lot.carrier,
       createdTick: args.tick,
       origin: lot.origin,
     });
@@ -585,6 +646,7 @@ export class Ledger {
         location: open.location,
         state: open.state,
         encumbranceId: null,
+        carrier: open.carrier,
         createdTick: draft.tick,
         origin: open.origin,
       });
@@ -801,6 +863,7 @@ export class Ledger {
           qty: args.qty,
           location: args.location,
           state: 'AVAILABLE',
+          carrier: null,
           origin: args.origin,
         },
       ],
@@ -918,6 +981,10 @@ export class Ledger {
           qty: args.qty,
           location: lot.location,
           state: lot.state,
+          // Mirrors `state`, exactly as `location` does: goods handed over mid-lane are still on
+          // that lane and still in that hand. Inheriting is what keeps INV-W7's carrier half true
+          // through a transfer; hard-coding `null` here would break it on the first such fill.
+          carrier: lot.carrier,
           origin: lot.origin,
         },
       ],
@@ -1049,6 +1116,7 @@ export class Ledger {
         location: l.location,
         state: l.state,
         encumbranceId: l.encumbranceId,
+        carrier: l.carrier,
       })),
       encumbrances: this.encumbrances.canonicalRows().map((r) => ({
         id: r.id,

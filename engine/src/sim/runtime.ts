@@ -528,6 +528,7 @@ import {
   type HaulPort,
   type HaulQuote,
   type Rejection,
+  type TransitLot,
   type WorldResult,
   type WorldState,
 } from '../world/index.js';
@@ -1509,8 +1510,51 @@ import {
  * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` for the declared
  * discontinuity (`D37`) — a bare tick is refused, and the fingerprint is bound to this change and
  * inert against the next.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **25 — `Lot.carrier`, AND IT CLOSES TWO WORLD HALTS ANY PLAYER COULD REACH.**
+ *
+ * A blind probe playing a fresh turbo world through the front door stopped it at tick 35 hauling
+ * `ration` to pay its Levy. Two independent defects, both agent-reachable, both on the *only* verb
+ * that moves goods between systems — and production survived them only because **no cast branch
+ * sends `haul`**, while the affordance offers it to real principals. That is this project's signature
+ * defect turned into an availability bug: the thing protecting the shard was that nothing exercised
+ * the feature.
+ *
+ *   1. **`INV-W7` — the manifest and the ledger disagreed.** `landArrivedCargo` reconciled a
+ *      **per-hand** manifest against an **anonymous pool** of in-transit lots keyed
+ *      `(account, good, destination)`, walking it in lot-id order until the arriving hand's total was
+ *      covered. Lot ids do not partition by hand (a split lot is named after its event), and the walk
+ *      lands **whole lots** — so it overshot, landed a second hand's cargo early, and cleared only
+ *      the first hand's manifest. **Two hauls on consecutive ticks halted the world.** Reproduced at
+ *      `test/world/a-convoy-carries-its-own-cargo.spec.ts`, which halts without this change.
+ *   2. **`TICK-STAGE` — the split-id collision.** `haul.split:<tick>:<parentLot>` counted its index
+ *      inside one action, so two hauls in one tick out of the same parent lot derived the same lot id;
+ *      `splitLot` threw `duplicate lot id` and the throw escaped the verb into `VALIDATE+LOCK`, which
+ *      aborts the tick and PAUSES the shard. Enrolment issues ONE 50,000-unit allotment lot and THREE
+ *      hands, so "send two hands out at once" was enough.
+ *
+ * **The fix is the field `world/hands.ts` has been naming since `haul` landed** — *"the clean fix is
+ * a `carrier: HandId | null` on the lot"*. With it there is no pool and no walk: a landing, a rout
+ * and (when it exists) an interception each retire exactly the lots their hand departed with, and
+ * INV-W7 now asserts the mirror **per hand as well as per good**, plus refuses an in-transit lot with
+ * no carrier at all. `haul` also plans its splits before it writes anything and **refuses** instead of
+ * throwing, because a verb that throws is a verb that halts the world.
+ *
+ * ── THE CAPTURED TABLE CHANGES SHAPE, WHICH IS WHY THIS IS 25 ────────────────
+ *
+ * `carrier` is inside `ledgerStateTable.capture()` and inside `Ledger.stateHash()`, for
+ * `encumbranceId`'s reason: a world where the same units are on a different hand is a different
+ * world, and a snapshot that dropped the field would restore a convoy's cargo as the anonymous pool
+ * this change exists to delete.
+ *
+ * **Expected divergence signature:** `SNAPSHOT_HASH_MISMATCH` on the first boot, exactly as 22 and
+ * 23 — the lot rows carry one more key. `hydrate.ts` refuses on `RULES_VERSION_MISMATCH` first. The
+ * live world has **never had an in-transit lot** (no cast branch hauls), so every existing lot
+ * restores with `carrier: null` and that is the true value for all of them.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 24;
+export const RULES_VERSION = 25;
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
  *
@@ -4480,8 +4524,7 @@ export class Runtime {
         const holdingId = world.holdingByPrincipal.get(hand.principal);
         if (holdingId === undefined) return false;
         try {
-          const where = hand.destination ?? hand.location;
-          const loss = loseHand(hand, routTick, rng, holdingOf(world, hand.principal).system);
+          loseHand(hand, routTick, rng, holdingOf(world, hand.principal).system);
           // ── §10.1 #3: "RAIDS DESTROY OR RELOCATE CARGO", AND THIS IS THE DESTROY ──
           //
           // This branch used to be a fault that said *"Nothing in this build loads a hand (there is no
@@ -4491,30 +4534,33 @@ export class Runtime {
           // against the in-transit lot total and HALTS on a difference, so dropping the cargo here
           // would stop the world on the first convoy anyone ever routed.
           //
-          // `loseHand` clears the manifest, so the lots must be retired in the same step. Read
-          // `hand.destination` BEFORE the call: `loseHand` nulls it, and an in-transit lot is located
-          // at where it was *going*, never at where it was intercepted.
-          for (const [good, amount] of [...loss.lostCargo].sort((a, b) => compareIds(a[0], b[0]))) {
-            let left: number = amount;
-            for (const lot of this.haulPort(routTick).inTransitTo(hand.principal, where, good)) {
-              if (left <= 0) break;
-              const portion = Math.min(left, lot.qty);
-              try {
-                ledger.destroyGoods({
-                  eventId: `haul.lost:${handId}:${String(routTick)}:${lot.id}` as EventId,
-                  tick: routTick,
-                  sink: GOODS_SINK.LOSS,
-                  lotId: lot.id as LotId,
-                  qty: qty(portion),
-                });
-              } catch (inner: unknown) {
-                faults.push(
-                  `cargo lost with hand ${handId} could not be retired (${describeError(inner)}); ` +
-                    'INV-W7 will halt the tick rather than let the manifest and the ledger disagree',
-                );
-                break;
-              }
-              left -= portion;
+          // `loseHand` clears the manifest, so the lots must be retired in the same step — and they
+          // are read BY CARRIER, not by destination. The destination read was a query against the
+          // anonymous in-transit pool, so routing one hand destroyed whatever lots happened to sort
+          // first among every convoy of that principal heading to that system. It was unreachable
+          // (only IDLE hands rout, and an IDLE hand's manifest is empty) and it was still wrong; the
+          // carrier makes it exact, which is the point of having one.
+          // Every lot this hand carries, of every good — not the goods named in `lostCargo`. The
+          // manifest is the mirror, not the authority: a lot carried by a hand whose manifest never
+          // mentioned it would survive a rout under the narrower loop and then halt the tick on the
+          // carrier half of INV-W7, which is a correct halt for an incorrect reason. `loseHand`'s
+          // `lostCargo` is therefore no longer read here — the carrier is the record of what is on
+          // the hand, and the manifest is what the viewer and a raid's sensing see.
+          for (const lot of ledger.lotsCarriedBy(handId)) {
+            try {
+              ledger.destroyGoods({
+                eventId: `haul.lost:${handId}:${String(routTick)}:${lot.id}` as EventId,
+                tick: routTick,
+                sink: GOODS_SINK.LOSS,
+                lotId: lot.id,
+                qty: lot.qty,
+              });
+            } catch (inner: unknown) {
+              faults.push(
+                `cargo lost with hand ${handId} could not be retired (${describeError(inner)}); ` +
+                  'INV-W7 will halt the tick rather than let the manifest and the ledger disagree',
+              );
+              break;
             }
           }
           return true;
@@ -7015,38 +7061,46 @@ export class Runtime {
         this.ledger.splitLot({
           lotId: a.lotId as LotId,
           qty: a.qty,
-          // The lot id is derived from this event id and the index, so two lots split in one action
-          // get distinct ids and a replay reproduces both without a counter to snapshot (DET-3).
-          eventId: `haul.split:${String(tick)}:${a.lotId}` as EventId,
-          indexInEvent: a.index,
+          // ── THE ID MUST NAME THE HAND, OR TWO HAULS IN ONE TICK COLLIDE ────────
+          //
+          // This was `haul.split:<tick>:<parentLot>` with the index counted inside one `haul`. Two
+          // hauls submitted in the same tick out of the same parent lot therefore derived the SAME
+          // lot id, `splitLot` threw `duplicate lot id`, and the throw escaped the verb into
+          // `VALIDATE+LOCK` and PAUSED the world. It is the cheapest halt an agent could reach:
+          // enrolment hands out ONE 50,000-unit allotment lot and THREE hands, so "send two hands
+          // out at once" — the obvious first move — stopped the shard.
+          //
+          // The hand closes it and needs no counter, so nothing new is captured: a hand becomes
+          // `IN_TRANSIT` the moment its haul is applied, `isPresent` is then false, and so **one
+          // hand can haul at most once per tick**. `(tick, hand, parentLot, seq)` is therefore
+          // unique, and it is content-derived, so a replay reproduces every id without a counter to
+          // snapshot (DET-3, DET-5).
+          eventId: `haul.split:${String(tick)}:${a.hand}:${a.lotId}` as EventId,
+          indexInEvent: a.seq,
           tick,
         }),
-      depart: (lotIdent, to) => {
-        // Both fields in one call: `location` becomes the DESTINATION immediately so nothing at the
-        // origin can spend goods that have left, and `IN_TRANSIT` keeps them out of every
-        // `AVAILABLE` filter in the engine so nothing at the destination can spend them early. Either
-        // half alone is a hole — location-only lets the buyer spend cargo mid-lane, state-only leaves
-        // it spendable at the origin it is no longer at.
-        this.ledger.relocate(lotIdent as LotId, { location: to, state: 'IN_TRANSIT' });
+      depart: (lotIdent, to, carrier) => {
+        // Three fields in one call: `location` becomes the DESTINATION immediately so nothing at the
+        // origin can spend goods that have left, `IN_TRANSIT` keeps them out of every `AVAILABLE`
+        // filter in the engine so nothing at the destination can spend them early, and `carrier`
+        // names the hand so a landing, a rout or an interception retires THIS convoy's lots rather
+        // than guessing from a shared pool. Any one of the three alone is a hole — location-only
+        // lets the buyer spend cargo mid-lane, state-only leaves it spendable at the origin it is no
+        // longer at, and carrier-less is the INV-W7 halt two consecutive hauls produced.
+        this.ledger.relocate(lotIdent as LotId, {
+          location: to,
+          state: 'IN_TRANSIT',
+          carrier,
+        });
       },
       land: (lotIdent) => {
-        this.ledger.relocate(lotIdent as LotId, { state: 'AVAILABLE' });
+        this.ledger.relocate(lotIdent as LotId, { state: 'AVAILABLE', carrier: null });
       },
-      inTransitTo: (p, to, good) => {
-        const account = storesAccount(p);
-        if (this.ledger.account(account) === undefined) return [];
-        return this.ledger
-          .lotsInAccount(account)
-          .filter(
-            (lot) =>
-              lot.good === good &&
-              lot.qty > 0 &&
-              lot.state === 'IN_TRANSIT' &&
-              lot.location === to,
-          )
-          .sort((a, b) => compareIds(a.id, b.id))
-          .map((lot) => ({ id: lot.id, qty: lot.qty }));
-      },
+      carriedBy: (hand, good) =>
+        this.ledger
+          .lotsCarriedBy(hand)
+          .filter((lot) => lot.good === good && lot.qty > 0)
+          .map((lot) => ({ id: lot.id, qty: lot.qty })),
     };
   }
 
@@ -12576,22 +12630,33 @@ export class Runtime {
       // the ledger is equality"*. This is that equality, asserted every tick now that `haul` gives it
       // a subject — for the project's whole life the two totals were both zero, which is why a mirror
       // nobody checked read as a mirror that held.
+      //
+      // ★ AND IT EARNED ITS KEEP AT `RULES_VERSION` 25: it caught two ordinary hauls on consecutive
+      // ticks landing more units than the arriving hand carried, which is a defect no other invariant
+      // in this file can see (INV-1 conserves supply and a landing conserves it perfectly; INV-7's
+      // mirrors are per account and a landing does not change accounts). It now compares **per hand**
+      // as well as per good, which is why it takes lots rather than a per-good total — see
+      // `world/haul.ts:checkCargoMirror`.
       ...checkCargoMirror({
         state: this.world,
-        inTransitByGood: this.inTransitByGood(),
+        inTransit: this.lotsInTransit(),
         tick,
       }).map((v) => halt(v.id, tick, v.message)),
     ];
   }
 
-  /** Units of each good sitting in `IN_TRANSIT` lots, world-wide. INV-W7's other half. */
-  private inTransitByGood(): ReadonlyMap<GoodId, Qty> {
-    const out = new Map<GoodId, Qty>();
-    for (const lot of this.ledger.allLots()) {
-      if (lot.state !== 'IN_TRANSIT') continue;
-      out.set(lot.good, qty((out.get(lot.good) ?? 0) + lot.qty));
-    }
-    return out;
+  /**
+   * Every `IN_TRANSIT` lot, with its carrier. INV-W7's ledger half.
+   *
+   * The carrier travels with the row rather than being summed away here, because the invariant
+   * compares **per hand** as well as per good — the world-wide total per good held while the lots
+   * were on the wrong hands, which is how a shared-pool landing stayed green for a tick and halted
+   * on the next.
+   */
+  private lotsInTransit(): readonly TransitLot[] {
+    return this.ledger
+      .lotsInTransit()
+      .map((lot) => ({ id: lot.id, good: lot.good, qty: lot.qty, carrier: lot.carrier }));
   }
 
   // ── GRADUATION: the exit from the Commons (§4.1, §6.3, A8, A15) ───────────

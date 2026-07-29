@@ -401,11 +401,28 @@ export function unloadCargo(hand: HandRecord, good: GoodId, amount: Qty): WorldR
  * double-counts every carried good, which is scar #5 exactly — one quantity, two
  * homes, and a loss handler that destroys 2x the real value.
  *
- * So until the two are reconciled (the clean fix is a `carrier: HandId | null` on
- * the lot, making `hand.cargo` a derived read), the only sanctioned use of this
- * function against the ledger is **equality**: assert it matches the carried
- * subtotal of the lot table. That is INV-7's own rule — "asserted where a mirror
- * exists for convenience: aggregate never crosses the mirror".
+ * So the only sanctioned use of this function against the ledger is **equality**:
+ * assert it matches the carried subtotal of the lot table. That is INV-7's own rule
+ * — "asserted where a mirror exists for convenience: aggregate never crosses the
+ * mirror".
+ *
+ * ── ★ THE RECONCILIATION THIS PARAGRAPH ASKED FOR HAS HAPPENED ──────────────
+ *
+ * The clean fix it named — *"a `carrier: HandId | null` on the lot, making
+ * `hand.cargo` a derived read"* — landed at `RULES_VERSION` 25, and it landed because
+ * the missing field was **an agent-reachable world halt** rather than a tidiness
+ * item: `landArrivedCargo` had to guess which in-transit lots belonged to the
+ * arriving hand by walking an anonymous pool in lot-id order, and two ordinary hauls
+ * on consecutive ticks stopped the shard on INV-W7 (`world/haul.ts`,
+ * `test/world/a-convoy-carries-its-own-cargo.spec.ts`).
+ *
+ * `hand.cargo` is **not** a derived read even so, and that half is deliberate: it is
+ * the `SENSED` **manifest** (§11.2 — *a ship at sea is visible; its manifest is not*),
+ * so it is what the viewer draws and what a raid would sense, while the lot table
+ * stays authoritative for the quantity. The gap therefore stands as a *warning about
+ * summing* and no longer as an open design question — `checkCargoMirror` asserts the
+ * equality **per hand and per good** every tick, which is the strongest form of the
+ * rule this paragraph states.
  */
 export function cargoHeldByHands(hands: Iterable<HandRecord>): Map<GoodId, Qty> {
   const totals = new Map<GoodId, Qty>();
