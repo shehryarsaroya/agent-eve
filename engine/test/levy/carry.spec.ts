@@ -208,6 +208,7 @@ describe('the affordance offers it, and the verb accepts the row', () => {
       wakesRemaining: 4,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     });
   }

@@ -710,9 +710,33 @@ describe("agent.md's verb table says which verbs actually exist", () => {
   });
 
   it('names the two consequences an agent would otherwise discover by losing something', () => {
-    // Three kinds since the HULL landed; the sentence has to count them correctly or it is scar #1
-    // in the sentence that exists to prevent scar #1.
-    expect(AGENT_MD, '`build` being three acts').toContain('`build` is three acts');
+    // ── ★ THE COUNT WAS WRONG, IN A FLOOR SECTION, PINNED BY THIS LINE ────────
+    //
+    // This asserted the literal *"`build` is three acts"* and its comment said *"three kinds since
+    // the HULL landed; the sentence has to count them correctly or it is scar #1 in the sentence that
+    // exists to prevent scar #1."* Then CAMPAIGN landed and made it four, and neither the sentence
+    // nor the comment nor this assertion moved — so the guard held §7 at three while the engine ran
+    // four, which is precisely the failure the comment names, committed by the line that names it.
+    //
+    // §7 is FLOOR, so every position was charged that sentence on every wake.
+    //
+    // The source of truth is `Runtime.vBuild`'s dispatcher (`sim/runtime.ts`), whose own refusal reads
+    // *"`build` raises an ANCHOR, a WORKS, a HULL or a CAMPAIGN"*. `CONTRACT_ACTS` is NOT the source —
+    // it holds two `build{...}` tokens because it is the prompt-gating vocabulary and ANCHOR and HULL
+    // need no gate, which is a distinction worth stating since reaching for it here looked obvious.
+    //
+    // Asserted so the SENTENCE is self-consistent as well as correct: the word and the enumeration
+    // have to agree, so the next kind cannot be added to the list while the count stays behind.
+    const KINDS = ['WORKS', 'ANCHOR', 'CAMPAIGN', 'HULL'] as const;
+    expect(AGENT_MD, '`build`\'s kind count').toContain('`build` is FOUR acts');
+    const sentence = AGENT_MD.slice(AGENT_MD.indexOf('`build` is FOUR acts'));
+    const named = KINDS.filter((k) => sentence.slice(0, 200).includes(k));
+    expect(
+      named.length,
+      `the sentence says FOUR and enumerates ${String(named.length)}: ${named.join(', ')}. The word and ` +
+        'the list must agree, or the next kind gets added to one and not the other — which is exactly ' +
+        'how this line came to say "three" while the engine ran four.',
+    ).toBe(4);
     // ── THIS ASSERTION USED TO SAY THE OPPOSITE, AND THE INVERSION IS THE FIX ──
     //
     // It pinned *"cargo cannot be intercepted in transit, because the hand is what is in transit"* —

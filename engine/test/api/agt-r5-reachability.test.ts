@@ -170,6 +170,7 @@ function sweep(): { readonly offered: ReadonlySet<string>; readonly live: readon
         wakesRemaining: 9,
         stale: false,
         corrections: [],
+        correctionsDropped: 0,
         actionsRemaining: 4,
       });
       for (const a of o.affordances) offered.add(a.verb);

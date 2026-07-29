@@ -160,6 +160,17 @@ async function play(
 }
 
 describe('AGT-S1 / §16 step 7 — the blind-play gate', () => {
+  // ── AN EXPLICIT TIMEOUT, BECAUSE THIS ONE NEVER HAD ONE ────────────────────
+  //
+  // Every other heavy test in this repo passes one (`120_000` is the house figure); this one ran on
+  // vitest's **5,000 ms default** while doing 200 ticks of an 8-member world over real sockets. It was
+  // already at ~4.5 s on an idle machine, so it was a flake generator that happened not to have
+  // flaked yet — and it went red the first time it shared a machine with a second suite, reporting a
+  // timeout where the honest reading is "the budget was never sized for this test".
+  //
+  // Measured while setting this: **3.5 s alone** (three consecutive runs: 3513 · 3553 · 3570 ms),
+  // 5.1 s under a fully loaded box. 60 s is a real bound — it catches a hang, which is what a timeout
+  // is for — without failing on a busy CPU, which is not.
   it('plays 200 ticks from agent.md alone with zero 4xx and zero 5xx', async () => {
     const cast = new HeuristicCast(h.runtime, { size: 8 });
     cast.seat('blind-play');
@@ -215,7 +226,7 @@ describe('AGT-S1 / §16 step 7 — the blind-play gate', () => {
       repeated,
       'a rejection reason hit 3+ times is a rules-surface defect (AGT-S3), not agent error',
     ).toEqual([]);
-  });
+  }, 60_000);
 
   it('reaches a legal first move in one round trip, from the enroll response alone', async () => {
     // High Water's validated pattern #2, and the property that makes a harness need

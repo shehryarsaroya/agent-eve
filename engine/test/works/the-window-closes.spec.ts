@@ -401,6 +401,7 @@ describe('★ A2 — the two surfaces an agent reads must NAME the door', () => 
       wakesRemaining: 4,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     });
     const holdingBlock = obs['holding'] as Record<string, unknown>;

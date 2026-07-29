@@ -94,6 +94,7 @@ describe('one convoy of a trade: place, clear, settle', () => {
       wakesRemaining: 16,
       stale: false,
       corrections: [],
+      correctionsDropped: 0,
       actionsRemaining: 4,
     });
     const market = seen.market;

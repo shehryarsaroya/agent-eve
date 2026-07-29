@@ -332,6 +332,7 @@ function observe(w: World, principal: PrincipalId): ReturnType<typeof buildObser
     wakesRemaining: 16,
     stale: false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   });
 }
@@ -497,6 +498,7 @@ describe('BUILD is on the menu at last', () => {
         wakesRemaining: 16,
         stale: false,
         corrections: [],
+        correctionsDropped: 0,
         actionsRemaining: 4,
       });
       if (

@@ -30,7 +30,7 @@ import { LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
 // The anchor's manufactured half. `CHARGE_GOOD` below stays declared with its own literal —
 // `test/core/goods-are-independent.test.ts` forbids a goods constant defined in terms of another, and
 // these are a QUANTITY and a TIER, not a redefinition of which good the Charge is payable in.
-import { ALLOY_ANCHOR_QTY, ALLOY_GOOD, ALLOY_TIER } from '../works/params.js';
+import { ALLOY_ANCHOR_QTY, ALLOY_GOOD, ALLOY_IN_BY_TIER } from '../works/params.js';
 
 /**
  * The good the Charge is denominated in.
@@ -438,12 +438,31 @@ export const SOVEREIGNTY_STATEMENT =
   'the system (`graduate` gets it there) and the system must be MARCHES or FRONTIER: a Commons claim is ' +
   'INVALID, not refused, because nothing in the Commons can be fought over. This gate is priced in produced ' +
   'goods and slashable capital and NEVER in identities, so enrolling again buys you nothing here. ' +
-  // The half of the price that is deliberately unmakeable where it is spent. Written into the
-  // statement rather than left to the refusal, because a claimant that reads only this must still be
-  // able to see the whole bill — and this is the one line item no amount of local ore can supply.
-  `The ${ALLOY_GOOD} is the half you cannot make here: it is refined only at a ${ALLOY_TIER} system ` +
-  'and every claimable system is outside the Commons, so buy it at a Commons venue with `trade` and ' +
-  'bring it with `haul`.';
+  // ── ★ THIS SENTENCE STATED A PROHIBITION THE ENGINE DOES NOT ENFORCE ────────
+  //
+  // It read: *"The alloy is the half you cannot make here: it is refined only at a COMMONS system
+  // and every claimable system is outside the Commons, so buy it at a Commons venue."* That is
+  // false, and it was false in the two loudest places at once — here, in a **rules surface**
+  // published in refusals and in every claim statement, and verbatim in `agent.md` §11A and §11B,
+  // which a golden-file test pinned to this wording and therefore held in sync **on the wrong
+  // version** for fifteen rules releases. Scar #1 inside the guard built to prevent scar #1.
+  //
+  // {@link ALLOY_IN_BY_TIER} is a *price gradient*: COMMONS 8 · MARCHES 32 · FRONTIER 64, and
+  // `works/refine.ts` says so above itself — *"it is a price gradient rather than a wall, because
+  // the wall version was measured and deadlocked."* A probe hauled 288 ore to a Marches system,
+  // sent `refine {kind:"ALLOY", qty:9}` and got 9 alloy standing there, with no correction.
+  //
+  // The cost of the false version was not cosmetic: it made every claimant believe an anchor's
+  // alloy had to be bought and hauled, so an agent planning off this sentence moves goods it never
+  // needed to move — and §11A built a whole Commons↔Frontier trade story on top of it. Built from
+  // the constant now, in `tierRates`'s shape, so it cannot drift again.
+  `The ${ALLOY_GOOD} is the expensive half rather than the impossible one: the rate depends on the ` +
+  `tier the ore stands in — ${(['COMMONS', 'MARCHES', 'FRONTIER'] as const)
+    .map((t) => `${t} ${String(ALLOY_IN_BY_TIER[t])}:1`)
+    .join(' · ')} — and every claimable system is outside the Commons. So refine it where you ` +
+  `stand for ${String(ALLOY_ANCHOR_QTY * ALLOY_IN_BY_TIER.MARCHES)}–` +
+  `${String(ALLOY_ANCHOR_QTY * ALLOY_IN_BY_TIER.FRONTIER)} ore, or buy it at a Commons venue with ` +
+  '`trade` and bring it with `haul`. Both are legal; the cheaper one depends on what you are short of.';
 
 /**
  * **A RULES SURFACE.** The Charge: what it is, when it is due, and what missing it costs.

@@ -82,6 +82,7 @@ function run(seed: string, ticks: number, members: number): Row {
         stale: false,
         wakesRemaining: 9,
         corrections: [],
+        correctionsDropped: 0,
         actionsRemaining: 4,
       }) as unknown as Record<string, unknown>;
       observations += 1;

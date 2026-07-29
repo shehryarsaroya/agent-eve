@@ -58,6 +58,7 @@ function observeRaid(runtime: Runtime, principal: PrincipalId, raid: string): Re
     wakesRemaining: 4,
     stale: false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   }).obligations['raid'] as readonly Record<string, unknown>[] | undefined;
   return rows?.find((r) => r['raid'] === raid);

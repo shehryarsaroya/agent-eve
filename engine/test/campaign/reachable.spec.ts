@@ -38,6 +38,7 @@ function observe(runtime: Runtime, principal: PrincipalId): ReturnType<typeof bu
     wakesRemaining: 4,
     stale: false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   });
 }

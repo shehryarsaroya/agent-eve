@@ -130,6 +130,7 @@ function observation(runtime: Runtime, principal: PrincipalId): ReturnType<typeo
     wakesRemaining: 16,
     stale: false,
     corrections: [],
+    correctionsDropped: 0,
     actionsRemaining: 4,
   });
 }

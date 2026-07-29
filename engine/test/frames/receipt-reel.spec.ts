@@ -225,6 +225,7 @@ describe('the assurance is OFFERED, not just legal', () => {
         wakesRemaining: 1,
         stale: false,
         corrections: [],
+        correctionsDropped: 0,
         actionsRemaining: 4,
       }) as unknown as Record<string, unknown>;
       const assure = (built['affordances'] as Record<string, unknown>[]).find(
