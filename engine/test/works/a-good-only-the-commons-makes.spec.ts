@@ -45,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
-import type { PrincipalId, SystemId, ZoneTier } from '../../src/core/types.js';
+import type { HandId, PrincipalId, SystemId, ZoneTier } from '../../src/core/types.js';
 import { qty } from '../../src/core/units.js';
 import { ENDOWMENT_GOOD } from '../../src/ledger/endowment.js';
 import { storesAccount } from '../../src/ledger/index.js';
@@ -646,17 +646,32 @@ describe('a haul is bounded, refused honestly, and never strands goods', () => {
     const rt = new Runtime({ seed: 'alloy-mirror' });
     const state = rt.world;
     // Honest: nothing carried, nothing in transit.
-    expect(checkCargoMirror({ state, inTransitByGood: new Map(), tick: 1 })).toEqual([]);
+    expect(checkCargoMirror({ state, inTransit: [], tick: 1 })).toEqual([]);
     // MUTATION, APPLIED: a lot in transit with no hand carrying it — what a routed convoy would leave
     // behind if `routHand` did not retire the cargo. `runtime.ts` predicted this failure in a comment
     // before it was reachable, and the prediction was right.
     const broken = checkCargoMirror({
       state,
-      inTransitByGood: new Map([[ALLOY_GOOD, qty(500)]]),
+      inTransit: [{ id: 'lot:ghost:0', good: ALLOY_GOOD, qty: qty(500), carrier: null }],
       tick: 1,
     });
     expect(broken.map((v) => v.id)).toContain('INV-W7');
     expect(broken[0]?.severity, 'a quantity with two homes that disagree is scar #5').toBe('HALT');
+    // ★ AND THE CARRIER HALF, which the global sum cannot see: the units are on a hand that does not
+    // declare them. A shared-pool landing produced exactly this — balanced world-wide, wrong per hand,
+    // and green for a tick before it halted on the next. `test/world/a-convoy-carries-its-own-cargo`
+    // drives it through the verb; this pins the check itself.
+    const swapped = checkCargoMirror({
+      state,
+      inTransit: [
+        { id: 'lot:swapped:0', good: ALLOY_GOOD, qty: qty(500), carrier: 'p:ghost:h1' as HandId },
+      ],
+      tick: 1,
+    });
+    expect(
+      swapped.some((v) => v.message.includes('per hand')),
+      'a lot on a hand whose manifest does not declare it must HALT, not be summed away',
+    ).toBe(true);
   });
 });
 
