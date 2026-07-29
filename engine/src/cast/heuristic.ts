@@ -61,7 +61,7 @@ import {
   ALLOY_TIER,
   REFINE_IN_QTY,
   REFINE_OUT_QTY,
-  YIELD_PER_TICK,
+  systemYield,
 } from '../works/params.js';
 import { freeCash } from '../market/index.js';
 import {
@@ -2186,7 +2186,10 @@ export class HeuristicCast {
     const bodies = holdingOccupancy(runtime.world);
     const hereShare = runtime.worksQuote(member.principal, here).sharePerTick;
     const hereBodies = bodies.get(here) ?? 1;
-    const hereTier = YIELD_PER_TICK[tierOf(runtime.world.map, here)];
+    // ★ §16.12 #1: rank by what the SYSTEM yields, not by its tier. Ranking by tier made all
+    // eighteen Marches systems interchangeable to the cast, which is the behavioural half of the
+    // defect the resource-distinct clause names — the engine offered a choice and nothing chose.
+    const hereYield = systemYield(runtime.world.map, here);
 
     let best: { readonly to: SystemId; readonly share: number; readonly bodies: number } | null = null;
     // Canonical order over the destinations, so the third sort key is the id and two runs of one
@@ -2212,7 +2215,7 @@ export class HeuristicCast {
       // because members that keep moving never settle next to each other. So the rule earns its place
       // twice, and the second reason is the better one: territory is worth holding only if somebody
       // else is standing on it.
-      if (YIELD_PER_TICK[tierOf(runtime.world.map, to)] <= hereTier) continue;
+      if (systemYield(runtime.world.map, to) <= hereYield) continue;
       const share = runtime.worksQuote(member.principal, to).sharePerTick;
       if (share <= hereShare) continue;
       const there = bodies.get(to) ?? 0;

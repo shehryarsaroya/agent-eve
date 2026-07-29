@@ -57,6 +57,7 @@ import type { FrameSource } from './render.js';
  * | `marketLines` | `PUBLIC` | completed fills — economy law 10's "durable economic history", already in every agent's `market.ticker`; the argument is below |
  * | `syndicateLines` | `PUBLIC` | an organisation's standing legal shape, its pooled capital, and who may spend it |
  * | `map` | `PUBLIC` | the topology itself — A13 calls the map the game's only agreed representation |
+ * | `swayLines` | `PUBLIC` | ★ where each bloc's force stops — integer arithmetic over the topology, holdings, claims and three published constants; the argument is below |
  *
  * **`map` needed the least argument of anything here and was missing the longest.** §11.2 gives
  * `PUBLIC` to *"movement on public lanes — a convoy is visible to anyone, because it is the map's
@@ -305,6 +306,31 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   'places',
   'hallOfFame',
   'map',
+  // ── ★ THE VERGE (§16.12 #1, A13), AND IT ADDS NO DISCLOSURE AT ALL ─────────
+  //
+  // A `SwayLine` is integer arithmetic over three things already admitted above and one set of
+  // published constants: `map` (the topology), `handles` (holdings — *"a holding is rendered with
+  // its name on it"*), `claimLines` (*"territory nobody can see is not territory"*), and
+  // `SWAY_AT_SEAT`/`SWAY_PER_HOP`/`SWAY_STRAIT_TOLL`, which `agent.md` states and every relevant
+  // observation carries verbatim in `SWAY_STATEMENT`. A2 requires known arithmetic be exact and
+  // machine-readable, and a number a stranger holding this frame can already compute leaks nothing
+  // by being drawn.
+  //
+  // ★ **A9 holds by construction, and it holds because of a decision made in the ENGINE.**
+  // `world/sway.ts` derives the reading from HOLDINGS and CLAIMS and **deliberately not from
+  // hands**, and its own docblock gives this as the reason: hand disposition is `SENSED` — *"a ship
+  // at sea is visible; its manifest is not"* — so a border drawn from live hand positions would put
+  // every fleet's location on a public screen and delete the intel market. The tier argument is
+  // therefore satisfied at the point of derivation rather than by a filter applied here, which is
+  // the difference between a projection that cannot leak and one that currently does not.
+  //
+  // What is NOT here, each considered: the full per-principal table (only the strongest reacher per
+  // system, because publishing the derivation rather than the border would make this a targeting
+  // service); anybody's stores at the system or anywhere (sway reads no quantity of anything); the
+  // hands standing there. `contract.ts:assertFrameBudgets` refuses a sway line whose field name
+  // matches `/stock|reserve|held|cargo|hand|goods|stores|escrow|cover|remaining/i`, which is that
+  // rule made executable rather than remembered — the same instrument as the claim line's.
+  'swayLines',
 ]);
 
 export class ProjectionError extends Error {}

@@ -56,7 +56,9 @@
  */
 
 import { qty, type Minor, type Qty } from '../core/units.js';
-import type { GoodId, ZoneTier } from '../core/types.js';
+import type { GoodId, SystemId, ZoneTier } from '../core/types.js';
+import { assertLodes, lodeAt, lodesOf, type Lode } from '../world/lode.js';
+import type { WorldMap } from '../world/map.js';
 import { minor } from '../core/units.js';
 
 /** The good a WORKS extracts. One good in this build, and the Levy and Charge want it. */
@@ -533,6 +535,58 @@ export const FUEL_YIELD_PER_TICK: Readonly<Record<ZoneTier, Qty>> = Object.freez
   MARCHES: qty(0),
   FRONTIER: qty(10),
 });
+
+// ── ★ §16.12 #1's RESOURCE-DISTINCT CLAUSE: PER-SYSTEM YIELD ────────────────
+
+/**
+ * What **this system** yields per tick — the figure every consumer must use.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **{@link YIELD_PER_TICK} IS NOW A TIER *BASE*, NOT A SYSTEM'S OUTPUT.** Every read of the table
+ * by tier alone was the defect §16.12 #1's first clause names: all eighteen MARCHES systems yielded
+ * exactly 110 and **nothing else distinguished any of them**, so there was no reason to want *that*
+ * system rather than *any* system — and therefore no trade route, no hauling risk, and no price that
+ * depends on place. `world/lode.ts` carries the whole argument, including why a tier's TOTAL is
+ * conserved exactly (A15's map-bounded-output proof, and the Levy's payability) and why the COMMONS
+ * is uniform (A8: its margin over the Levy is the thinnest that is still positive).
+ *
+ * The tier figure stays exported because it is the **base** the allocation conserves and the
+ * denominator `Lode.richnessBps` is measured against. Reading it *as a system's output* is the bug;
+ * `test/world/the-ground-is-not-uniform.spec.ts` sweeps `src/` for that shape.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function systemYield(map: WorldMap, system: SystemId): Qty {
+  return lodeAt(map, system, LODE_BASES).yieldPerTick;
+}
+
+/** What **this system** yields per tick in {@link FUEL_GOOD}. Still zero outside the FRONTIER. */
+export function systemFuelYield(map: WorldMap, system: SystemId): Qty {
+  return lodeAt(map, system, LODE_BASES).fuelPerTick;
+}
+
+/** This system's ground, in full — the row `holding.graduation` and the frame's map both publish. */
+export function systemLode(map: WorldMap, system: SystemId): Lode {
+  return lodeAt(map, system, LODE_BASES);
+}
+
+/** Every system's ground. */
+export function allLodes(map: WorldMap): ReadonlyMap<SystemId, Lode> {
+  return lodesOf(map, LODE_BASES);
+}
+
+/** Assert the map's ground is conserved and non-uniform. Called from the world's own boot check. */
+export function assertMapLodes(map: WorldMap): void {
+  assertLodes(map, LODE_BASES);
+}
+
+/**
+ * The two tier tables, bundled once.
+ *
+ * `world/lode.ts` takes them as an argument rather than importing them, because `works/` depends on
+ * `world/` and not the other way round — and because a second copy of `YIELD_PER_TICK` inside the
+ * allocator would be scar #5 in the table the whole economy is priced off.
+ */
+const LODE_BASES = { yield: YIELD_PER_TICK, fuel: FUEL_YIELD_PER_TICK } as const;
 
 /**
  * Currency to raise a WORKS, and it is spent from **earned** cash.

@@ -6,6 +6,186 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **THE MAP HAS BORDERS AND ITS GROUND IS NO LONGER UNIFORM. `PASS-TERRITORY-POLITICS` §16.12's FIRST-RANKED FEATURE, ALL THREE CLAUSES. `RULES_VERSION` 28.**
+>
+> §16.12 #1 — *"a fixed, **resource-distinct** graph with **chokepoints** and **capacity-limited
+> projection** … this creates local power, supply lines, borders, markets, and a real place for smaller
+> groups to exist"* — ranked **first of five**, above stewardship sovereignty and above campaigns, both
+> of which shipped before it. Three new nouns, all canon (§3), **all derived from the fixed map and none
+> stored**, and **no verb spent** (40/40, `observe` keys 10/10).
+>
+> | | before | after |
+> |---|---|---|
+> | lanes that matter more than another | **0 of 35** | **10 STRAITS** of 35, incl. all four constellation gates |
+> | a principal's reach, of 26 non-Commons systems | **26 — unlimited** | **2 to 12**, median ~5 |
+> | systems no principal's force reaches | **0** | **114 of 208** across 8 seeds (55%) |
+> | distinct yields inside the MARCHES | **1** (110 everywhere, all 18) | **97 to 129** |
+> | distinct yields inside the FRONTIER | **1** (150 everywhere) | **124 to 166**; fuel 8 to 11 |
+>
+> **1. STRAIT** (`src/world/strait.ts`) — a lane the region cannot cheaply route around: cutting it
+> strands ≥ `STRAIT_MIN_SEVERED` (3) systems, or the cheapest way around is ≥ `STRAIT_DETOUR_HOPS` (6)
+> lanes. **The threshold is a structural break, not a tuned number**: the launch map's detour histogram
+> is `{2:9, 3:4, 4:4, 10:8, CUT:10}` — an empty gap between 4 and 10, so anything in 5..10 selects the
+> same lanes. Over **300 generated seeds**: 4–17 straits, mode 8, **never zero**, which is what licenses
+> `assertStraits`' non-vacuity clause to run at construction.
+>
+> **2. SWAY** (`src/world/sway.ts`) — how many of your 3 hands count as FORCE where you are **not
+> defending**: `SWAY_AT_SEAT` (= `HANDS_PER_PRINCIPAL`, by import) at each place you hold, −1 per lane,
+> −`SWAY_STRAIT_TOLL` (2) per STRAIT you hold neither end of. **Offence is projected; defence is
+> present** — a raid's target and a claim's defender are never gated and never capped, because §16.1
+> MUST-3 built chokepoints to *"let a smaller defender exploit interior lines"* and a reach limit that
+> thinned the defence would invert the mechanic it came from.
+>
+> **3. LODE** (`src/world/lode.ts`) — per-system yield. Yield was `YIELD_PER_TICK[tier]`, so **all
+> eighteen MARCHES systems produced exactly 110 and nothing else distinguished any of them**: no reason
+> to want *that* system rather than *any* system, hence no trade route, no hauling risk, no price that
+> depends on place — which is the same defect `marketLines.premiumBps` had already measured from the
+> other end (*"12 at every venue, always"*). **Tier totals are conserved exactly** by
+> `largestRemainder`, so A15's map-bounded-output proof and the Levy's payability are untouched: a lode
+> moves where the ore is, never how much exists. **The COMMONS is uniform**, and that is arithmetic
+> rather than symmetry — 80/tick is 23,040 against a ≈20,000 Levy, so a 0.8× lode would be **17,568
+> against 20,000, structurally short**, and A8 promises a floor.
+>
+> ### ★ THE TWO HALVES REINFORCE EACH OTHER, AND NOBODY AUTHORED IT
+>
+> `sys-25` **Ironhold** is an end of **three** straits — so holding it waives three tolls and takes a
+> single-seat principal's reach from **3 systems to 12, a 4× multiplier** — *and* it is among the three
+> **richest** systems on the map (166/tick, +1,066 bps). The keystone of the graph and the prize are the
+> same place, emergent from one seeded map. Losing it cuts its holder back to its own doorstep.
+>
+> | seat | straits at it | reach | reach if the toll were not waived |
+> |---|---|---|---|
+> | `sys-25` Ironhold | **3** | **12** | 3 |
+> | `sys-20` Ashen Ford | 2 | 8 | 2 |
+> | `sys-26` Jetsam | 2 | 6 | 1 |
+> | `sys-21` Copper Wick | 0 | **2** | 2 |
+>
+> ### ★★ **AND IT DECIDES 1,275 THINGS IN A WORLD NOBODY STEERS** (`scripts/border-probe.ts`, 8 seeds × 6 Reckonings)
+>
+> The balance gate came back **byte-identical to master on every column**, which is the reading a
+> perfectly neutral change and a **mechanic that never fires** produce identically — this project has
+> shipped the second seventeen times while reading the first. So a second instrument was built for the
+> distinction, with denominators, because a zero over a zero denominator and a zero over a positive one
+> are different findings:
+>
+> | measured | count |
+> |---|---|
+> | `demand` candidates considered | 1,729 |
+> | …refused because SWAY at the stage was **0** | **556 (32%)** |
+> | …refused as Commons-bound (the AGT-S2 branch) | **647** |
+> | reachable standoffs a hand could walk to | 1,204 |
+> | …whose RAIDER `join` was withheld for sway | **72** |
+> | `raidersOutOfSway` at a resolution | 0 |
+> | campaign PULSES resolved · `attackerUnsupplied` | **0 · 0** |
+>
+> **The two zeroes are reported as zeroes with a zero denominator, not as passes.** The cast declared no
+> campaign in these seeds, so the campaign cap is gate-verified and mutation-verified and **not
+> cast-exercised** — `scripts/campaign-sim.ts` is the instrument that would exercise it, and that is the
+> honest state. `raidersOutOfSway` is 0 because the gates refuse a zero-sway raider before a party row
+> exists; it can only go positive when reach is **lost during** a window, which is the case a gate
+> structurally cannot cover and the reason the reading is taken again at resolution.
+>
+> ### THE BALANCE GATE, AND THE DELIVERY PATH MEASURED SEPARATELY
+>
+> **8 seeds × 3 · 6 · 9 Reckonings, master `f2778014` against this branch.** `levyShort` **0 · 0 · 0**
+> and red tribute lines **0/192 · 0/384 · 0/576** — matching master, which was clean at all three.
+> Every context column was byte-identical for the strait/sway half (`kept` 349/736/1162, `broken`
+> 31/52/66, `ventures` 1727/3499/5338, `claims` 8/24/26, `rent` 0/14,344/59,543, `CARRIED`
+> 19,446/233,484/568,511). Every effect of that half points at **less** predation and **no** weaker
+> defence, which is why it is a safety check rather than evidence.
+>
+> **The delivery path was measured explicitly** (`scripts/delivery-path-probe.ts`), because `levyShort`
+> is an outcome meter and would not see the two named hazards. Master against branch, 6 Reckonings:
+> **identical on every column** — the goods/hands split **234 of 384 (60.9%)** both sides, `move` 1,126,
+> `deliver` 472, `haul` 30, `applied` 30,354, `refused` 4,691, and **`REACH-REFUSED` 0**, which is the
+> executable form of *"the friction is on force and never on freight"*. `move`, `haul` and `deliver` do
+> not read either module and must not.
+>
+> ⚑ **AND THE STATE-HASH DIVERGENCE WAS TRACKED TO ITS CAUSE RATHER THAN ASSUMED.** All 8 seeds' final
+> `state_hash` differ while every behavioural column matches. Diffing the tables one by one: **every
+> state table is byte-identical except `venture`**, and `VentureRecord.rulesVersion` is stamped per row
+> by INV-15. So on these seeds the strait/sway half is **behaviourally inert** and the divergence is the
+> version stamp itself — which is a much narrower claim than "something diverged", and it took one
+> command instead of an argument.
+>
+> ### THE PIXEL SIGNATURES (A13) — THREE, AND THE FRAME CARRIES ALL OF THEM
+>
+> - **THE PINCH** — `MapSystem.straits[]`: a strait's lane drawn **narrowed at its waist**, notched with
+>   the detour, or solid with the count of systems stranded when there is no way around at all. Both
+>   ends carry the same numbers and name each other; `assertFrameBudgets` checks the symmetry, because a
+>   one-sided strait draws a pinch on one half of a lane.
+> - **THE VERGE** — new key `swayLines[]`, one row per non-Commons system: whose force reaches it
+>   hardest, by how much, how many reach it at all, and whether it is a gate. A renderer draws **one
+>   closed fence per bloc**; the seam where two meet is a border, and ground nobody reaches is drawn
+>   **bare** — which is §16.12 #1's own last clause on screen.
+> - **THE LODE** — `MapSystem.yieldPerTick`/`fuelPerTick`/`richnessBps`: **the node is sized by what its
+>   ground yields.** The frame published `worksLines.yieldPerTick` as a *tier constant* before this, so
+>   all eighteen Marches marks drew identically — §16.1 MUST-4's *"coloured copies"*, on the only
+>   surface a viewer has.
+>
+> All three are `PUBLIC` by construction, not by inspection: sway is derived from HOLDINGS and CLAIMS
+> and **deliberately never from hands**, because hand disposition is `SENSED` and a border drawn from
+> live hand positions would put every fleet on a public screen and delete the intel market. The tier
+> argument is satisfied at the point of **derivation**, which is the difference between a projection that
+> cannot leak and one that currently does not.
+>
+> ### ⚑ FOUR DEFECTS THIS FOUND, THREE OF THEM PRE-EXISTING
+>
+> 1. **AGT-S2, closed.** 24's open list: *"`join {campaign, side}` has no tier gate — a Commons-seated
+>    principal is offered both sides of a war two tiers away, and its hands are Commons-bound so it can
+>    never reach the objective."* `joinRefusal` now refuses it outright with `A15` and names `graduate`.
+>    A roster row commits no hand, so nothing downstream had ever noticed: the ally contributed 0 at
+>    every pulse, forever, having paid an action and possibly a stake.
+> 2. **`join{CAMPAIGN}` was still in the Commons position's offered set** in `CONTRACT_POSITIONS`, so
+>    that fixture asserted something the engine can no longer produce. Removing it made the Commons row
+>    **442 characters cheaper**; leaving it would have grown that row **+2,891** for an act A8 and A15
+>    jointly make impossible — §11E's own defect, third instance, inside the fixture built to measure it.
+> 3. **`worksQuote` published the TIER's fuel figure**, i.e. the number an agent reads immediately
+>    before spending a one-way priced act. Caught by an existing test, not by review.
+> 4. **`swayShortfall` shared the capped Dijkstra with `swayAt`**, so a system beyond the cap returned
+>    `undefined` → `null`, and `swayNote` reads `null` as *"you hold no ground outside the COMMONS at
+>    all"* — a rules surface telling a principal with two claims that it held nothing. Found by
+>    self-review, fixed with an uncapped walk on the explanation path only.
+>
+> ### CHARACTER BUDGET, MEASURED NOT ESTIMATED
+>
+> **§11F is 2,891 characters against a 6,000 quota**, act-gated on `join{RAID}` · `join{CAMPAIGN}` ·
+> `build{CAMPAIGN}` plus the verb `demand` (one meaning, so its verb gate is already as sharp as an act
+> gate — `grant`'s control case). Gating on the bare `build` would have charged all eight positions,
+> which is §11E's +3,543 defect with a new section number.
+>
+> | position | 27 | 28 | Δ |
+> |---|---|---|---|
+> | a newcomer on its first wake | 41,555 | 41,555 | **0** |
+> | mid-game in the Commons | 49,943 | 49,943 | **0** |
+> | about to take territory | 54,371 | 57,262 | +2,891 |
+> | at war | 54,813 | 57,704 | +2,891 |
+> | a claimant in trouble | 77,965 | 80,856 | +2,891 |
+> | the Commons at its fullest | 65,552 | **65,110** | **−442** |
+> | outside the Commons and landless | 79,474 | 82,365 | +2,891 |
+> | the analytic ceiling | 85,993 | 88,884 | +2,891 |
+>
+> The LODE rule went into §11A's existing `### A place yields; you do not` block (+1,246), which is
+> where an agent already reads yield and is already gated on `build{WORKS}`/`refine`.
+>
+> ### MUTATION TESTING: 23 MUTATIONS, ALL KILLED BY NAME — AND FOUR SURVIVED FIRST
+>
+> `test/world/the-map-has-borders.spec.ts`, 18 tests. **M1 and M2 are killed at map *construction*** —
+> `assertStraits` refuses the world, which is the strongest available kill. The four that survived the
+> first pass are the useful part and each got a test written for it: the **campaign attacker cap**
+> (`Math.min(standing, attackerSway)` → `standing` passed **44 tests**), the **campaign ally cap**, and
+> **both `demandRefusal` clauses** (deleting either left `demand.spec.ts` — the file whose stated job is
+> *"every clause of it bites"* — entirely green, because its port answers full reach by default).
+>
+> ### WHAT IS NOT DONE, STATED PLAINLY
+>
+> - **The campaign half is not cast-exercised.** 0 pulses in 8 seeds × 6 Reckonings.
+> - **`ALLOY_IN_BY_TIER` is still per-tier**, so `premiumBps` is still structurally 0. Per-system refine
+>   rates are the next lever on the market's own dead signature, and the cheapest one left.
+> - **Frontier fuel is 8–11, never 0.** The sharper design — *some* frontier ground makes none — was
+>   deliberately not taken in the same change as the ore spread; it is one constant away.
+> - **No client panel.** The frame carries what a renderer needs; the renderer is the owner's.
+
 > ### ★★★ **COALITIONS EXIST. `MAX_RAID_PARTIES` IS 12 AND NO STANDOFF IN THIS PROJECT'S HISTORY HAD EVER CARRIED ONE PARTY. `RULES_VERSION` 24.**
 >
 > `join` had a handler, an affordance, a party row, a stake asymmetry, a force term

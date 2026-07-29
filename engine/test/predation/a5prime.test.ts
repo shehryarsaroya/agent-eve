@@ -54,7 +54,19 @@ import {
   runToFirstRaid,
   tick,
 } from './fixture.js';
-import { tierOf } from '../../src/world/index.js';
+import { tierOf, SWAY_AT_SEAT } from '../../src/world/index.js';
+
+/**
+ * ★ §16.12 #1's SWAY term, held at full for every arithmetic test in this file.
+ *
+ * `noBattle`'s reason, applied to the other new term: these tests measure hands, joiners and
+ * terrain, so the capacity limit is pinned open and they measure what they always measured. The
+ * cap's own arithmetic — including that a raider at 0 contributes nothing and shows up in
+ * `raidersOutOfSway` — is asserted in `test/world/the-map-has-borders.spec.ts` against the
+ * engine's own reading rather than against a fixture built beside the assertion.
+ */
+const fullSway = () => SWAY_AT_SEAT;
+
 
 function inputs(book: Book, over: Partial<PredationInvariantInputs> = {}): PredationInvariantInputs {
   return {
@@ -552,7 +564,7 @@ function inertPort(): PredationPort {
     standingOf: () => qty(0),
     // No battle book at all, so nothing is counting any raid's hulls and every drawn force
     // stands. `null` rather than 0 for `readForce`'s stated reason: 0 would be a free repulse.
-    raidForceLeft: () => null,
+    raidForceLeft: () => null, swayAt: fullSway,
     // Nowhere to march from and nowhere to march to. A port that owns no hands cannot route one.
     marchTo: () => null,
     isSeated: () => true,

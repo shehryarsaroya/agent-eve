@@ -30,15 +30,27 @@
  */
 
 import { inFreeze, isSettlementTick } from '../core/time.js';
-import type { PrincipalId } from '../core/types.js';
+import type { PrincipalId, SystemId } from '../core/types.js';
 import { type Minor } from '../core/units.js';
 import { reject, type Rejection } from '../world/result.js';
+import { swayNote, SWAY_STATEMENT } from '../world/sway.js';
 import { Book, isLiveCampaign, type CampaignId, type CampaignSide } from './book.js';
 import { CAMPAIGN_JOIN_STAKE_MINOR, MAX_CAMPAIGN_PARTIES } from './params.js';
 
 /** What a join reads and writes. One lock, nothing else. */
 export interface RosterPort {
   isSeated(principal: PrincipalId): boolean;
+  /**
+   * ★ Hands this principal may **project** at the campaign's OBJECTIVE (§16.12 #1, `world/sway.ts`).
+   *
+   * The reading `readCampaignForce` takes at every PULSE, so what the affordance offers and what
+   * the pulse counts come from one implementation.
+   */
+  swayAt(principal: PrincipalId, objective: SystemId): number;
+  /** Sway-cost the cheapest route consumed, or `null` when nothing held reaches. For the message. */
+  swayShortfall(principal: PrincipalId, objective: SystemId): number | null;
+  /** A15's outbound half: is this principal's holding civic-leased in the COMMONS? */
+  isCommonsBound(principal: PrincipalId): boolean;
   freeStoresOf(principal: PrincipalId): Minor;
   lockStake(args: {
     readonly campaign: CampaignId;
@@ -114,6 +126,50 @@ export function joinRefusal(
       'INV-26',
       `campaign ${args.campaign}'s roster holds ${String(MAX_CAMPAIGN_PARTIES)} parties, which is the declared ` +
         'cap. Nothing was spent.',
+    );
+  }
+  // ── ★ CAN YOUR HANDS REACH THE OBJECTIVE AT ALL? (§16.12 #1, and AGT-S2) ───
+  //
+  // **THIS CLOSES A DEFECT THIS SECTION SHIPPED WITH, AND IT IS NOT MERELY A REACH LIMIT.**
+  // `RULES_VERSION` 24's open findings list it by name: *"`join {campaign, side}` has no tier gate —
+  // a Commons-seated principal is offered both sides of a war two tiers away, and its hands are
+  // Commons-bound so it can never reach the objective. An offer it cannot fulfil, costing a real
+  // action."* A roster row commits no hand, so nothing downstream ever noticed; the ally simply
+  // contributed 0 at every pulse, forever, having paid an action and possibly a stake for it.
+  //
+  // Commons-bound comes first and is reported as itself. Both branches read 0 sway, and the
+  // corrections differ — `graduate` versus take ground nearer — which is the distinction
+  // `withheld.ts` draws for `move` and refuses to collapse.
+  if (port.isCommonsBound(args.principal)) {
+    return reject(
+      'A15',
+      `your holding is civic-leased in the COMMONS, so your hands are Commons-bound and none of them can ` +
+        `ever stand at ${campaign.objective}. Force at a campaign is the hands you actually have there when a ` +
+        'PULSE resolves, so a roster row would promise a war something you cannot deliver — on either side. ' +
+        '`graduate` moves your holding one lane outward, at a price in currency and produced goods. Nothing ' +
+        'was spent.',
+    );
+  }
+  // ── AND THE ASYMMETRY IS DELIBERATE: BOTH SIDES ARE GATED HERE ────────────
+  //
+  // A raid's `join` gates only the RAIDER, because a raid party commits a hand that is **already
+  // standing at the stage** — presence has been paid for in moves, and §16.1 MUST-3 wants the
+  // chokepoint to favour whoever is already there. A campaign roster row commits **nothing**: it is
+  // a declaration, checked against hands at a pulse days later. That is exactly §16.13's *"costless
+  // blues and low-friction bloc-wide projection"*, whose replacement it names as *"constrain shared
+  // capacity by distance"* — so distance binds on both sides of a war and on neither side of a
+  // standoff, and the two mechanics differ because the two commitments differ.
+  //
+  // What is never gated on either path is the attacker's or the DEFENDER's **own** hands at their
+  // own ground. `readCampaignForce` counts those in full; a claim is a seat, so a holder defending
+  // its own claim reads `SWAY_AT_SEAT` by construction.
+  const sway = port.swayAt(args.principal, campaign.objective);
+  if (sway <= 0) {
+    return reject(
+      'A4',
+      `${swayNote(0, campaign.objective, port.swayShortfall(args.principal, campaign.objective))} A campaign ` +
+        `counts the hands you have standing at ${campaign.objective} when each PULSE resolves, so a roster row ` +
+        `here would be a promise of force you cannot supply. ${SWAY_STATEMENT}`,
     );
   }
   if (inFreeze(args.tick) || isSettlementTick(args.tick)) {

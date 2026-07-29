@@ -516,12 +516,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // shaped like this one CANNOT catch a deleted gate — that is exactly how deleting `engage`
     // from a §9A block broke nothing. Both counts are pinned, so emptying any list fails HERE as
     // well as in the pinned maps below.
-    expect(verbPairs, 'verb gates in the catalog').toBe(41);
+    // ★ 44 at 28: §11F's three units each gate on `demand`, which means one thing however it is
+    // parameterised — the `grant` control case, and `principal` is not an ACT_SUBJECT_KEY so no
+    // `demand{...}` token could ever be produced to gate on instead.
+    expect(verbPairs, 'verb gates in the catalog').toBe(44);
     // ★ 23 at 24: §11D's coalition block is the second unit to gate on `join{RAID}`, which is the
     // token master split out precisely because a raid side and a campaign side are different rules.
     // Two units on one act is not a collision — the both-ways pin below requires every token to be
     // gated by SOME unit, and a bystander needs the answering block's preamble as well as this one.
-    expect(actPairs, 'act gates in the catalog').toBe(23);
+    // ★ 32 at 28: §11F's three units gate on `join{RAID}`, `join{CAMPAIGN}` and `build{CAMPAIGN}`
+    // — nine pairs. Three units on one act is not a collision (see the note above `expect(actPairs`
+    // at 24): the both-ways pin below only requires every token to be gated by SOME unit.
+    expect(actPairs, 'act gates in the catalog').toBe(32);
   });
 
   it('★ NO HEADING OF `agent.md` IS A SLOT NOTHING FILLS — the fourth depth, checked here', () => {
@@ -937,7 +943,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 85,884 = **34,116**. The reachable maximum is still `outside the
     // Commons and landless, at its fullest`, now 79,365 — leaving **40,635**, against a required
     // 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(85_993);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(88_884);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -992,7 +998,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // is for — it has hands, no ground to bill, and standoffs it can walk to. The reachable margin is
     // 120,000 − 76,163 = **43,837** against a required 4,000, which is the number to quote about
     // SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(79_474);
+    // ★ 82,365 at 28: +2,891 for §11F. A landless member outside the Commons has hands, no ground
+    // to bill and standoffs it can walk to — so it is exactly the principal whose SWAY decides
+    // whether walking is worth anything, and the reachable margin is 120,000 − 82,365 = **37,635**
+    // against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(82_365);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1658,11 +1668,13 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // section had shipped with NO unit at all — the orphan-heading guard above caught it on the
       // merge, before any reviewer did.
       55: 'fifty-five',
+      // ★ 58 at 28: §11F's three units — a preamble, the STRAITS block and the SWAY block.
+      58: 'fifty-eight',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(55);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(58);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 55],
+      spelled[n as 58],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -1743,7 +1755,13 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       claim: '(preamble)',
       create: 'Every promise has two halves + Choosing the proportion — `elective_bps` on `create`',
       deliver: 'The Levy — nobody sits this out',
-      demand: 'Opening one — `demand`',
+      // ★ At 28 `demand` also pulls §11F, and this is the whole of what a verb gate on a
+      // single-meaning verb buys: `demand` means one thing, so gating on it is already as sharp as
+      // an act gate, and the three positions that can open one are the three that pay.
+      demand:
+        'Opening one — `demand` + (preamble) + ' +
+        'STRAITS — the lanes the region cannot route around + ' +
+        'SWAY — how many hands count as force, and where',
       deny: '(preamble)',
       elect: 'Every promise has two halves + Paying the elective half: `elect`, and say `IN_FULL`',
       // §9A. THREE blocks, and C1 was deleting one of them: the timetable (the only window a hull
@@ -1806,19 +1824,22 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // ★ Five of §11E's six units, and this row is where the +3,360 went: onto the act that is
       // only ever offered to a principal whose holding can actually stage a war.
       'build{CAMPAIGN}':
-        '(preamble) + Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}` + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one',
+        '(preamble) + Declaring one — `build` `{"kind":"CAMPAIGN","system":"<the claimed system>"}` + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Getting out — and there are four ways, not one' +
+        ' + (preamble) + STRAITS — the lanes the region cannot route around + SWAY — how many hands count as force, and where',
       'build{WORKS}': 'Building one — `build` `{"kind":"WORKS","system":"<id>"}`',
       'deliver{CHARGE}': 'Paying for it — the CHARGE',
       // A campaign ally gets the pulse clock, how to read the row and how to take the side — and
       // NOT how to declare one or how to lift one, neither of which is available to it.
       'join{CAMPAIGN}':
-        '(preamble) + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}`',
+        '(preamble) + The PULSE — once a Reckoning, on a published clock, whether you are awake or not + Reading it — `holding.campaigns[]` + Taking a side — `join` `{"campaign":"<id>","side":"ATTACKER"|"DEFENDER"}`' +
+        ' + (preamble) + STRAITS — the lanes the region cannot route around + SWAY — how many hands count as force, and where',
       // ★ TWO units at 24, and the pair is the point: a bystander offered `join{RAID}` needs the
       // answering block (what the force arithmetic is, and that ties go to the defender) AND the
       // coalition block (what its hand costs, and that `join` draws no aggression capacity). The
       // `+` is this map's own spelling for "more than one unit claims this gate".
       'join{RAID}':
-        'Answering either one — `yield` · `fight` · join, or say nothing + Standing with somebody else — `join`, and the coalition it makes',
+        'Answering either one — `yield` · `fight` · join, or say nothing + Standing with somebody else — `join`, and the coalition it makes' +
+        ' + (preamble) + STRAITS — the lanes the region cannot route around + SWAY — how many hands count as force, and where',
       'refine{ALLOY}': 'The fourth good — the one the COMMONS makes CHEAPEST, and the one that flows the other way',
       'vote{CHARGE}': 'Paying for it — the CHARGE',
       'vote{LEVY}': 'The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
@@ -2080,8 +2101,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     });
     expect(
       asIfVerbGated.text.length - asIs.text.length,
+      // ★ 6,251 at 28: §11E's 3,360 plus §11F's 2,891, because `build{CAMPAIGN}` gates both. That
+      // the two ADD is the check — the day a delta gets absorbed is the day the budget binds — and
+      // it is why §11F is act-gated rather than gated on the bare `build` a newcomer really is
+      // offered.
       'what the verb gate cost a newcomer, pinned so the saving cannot quietly come back',
-    ).toBe(3_360);
+    ).toBe(6_251);
   });
 
   it('★ A PARTY TO A LIVE CAMPAIGN IS REQUIRED THE PULSE — no verb announces the clock', () => {
@@ -2398,13 +2423,45 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // stays: a newcomer is offered `refine` on its first wake, `refine{ALLOY}` is one of its two
       // recipes, and the previous text would have sent it hauling ore it never needed to move. A
       // correct rule is not a feature and does not get to be optional.
-      41_555, // a newcomer on its first wake            (+1,809 at 27)
-      49_943, // mid-game in the Commons                 (+1,809 at 27)
-      54_371, // about to take territory                 (+1,895 at 27: §11B's anchor line too)
-      54_813, // at war: party to a live campaign        (+1,895 at 27)
-      77_965, // a claimant in trouble                   (+3,202 at 27: §10's clearance read)
-      65_552, // the Commons at its fullest              (+3,116 at 27)
-      79_474, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,311)
+      // ── ★ AT 28 (§16.12 #1, STRAITS AND SWAY): +2,891 TO SIX ROWS, AND ONE ROW GOT CHEAPER ──
+      //
+      //   before  after   Δ       position
+      //   41,555  41,555       0  a newcomer on its first wake
+      //   49,943  49,943       0  mid-game in the Commons
+      //   54,371  57,262  +2,891  about to take territory
+      //   54,813  57,704  +2,891  at war
+      //   77,965  80,856  +2,891  a claimant in trouble
+      //   65,552  65,110  **−442**  the Commons at its fullest
+      //   79,474  82,365  +2,891  outside the Commons and landless
+      //   85,993  88,884  +2,891  the analytic ceiling
+      //
+      // **+2,891 is §11F's whole size to the character**, so the section lands whole wherever it
+      // lands and nothing was trimmed to fit it — against a 6,000 quota, less than half spent. The
+      // gate is `verbs: ['demand']` plus `acts: ['join{RAID}', 'join{CAMPAIGN}', 'build{CAMPAIGN}']`:
+      // `demand` means one thing so its verb gate is already sharp (`grant`'s control case), while
+      // `join` and `build` each carry a second meaning and are act-gated. Gating on the bare `build`
+      // would have charged all eight rows, which is §11E's +3,543 defect with a new section number.
+      //
+      // ★ **THE −442 IS THE FINDING, AND IT IS A DEFECT CLOSED RATHER THAN A SAVING.** 24's open
+      // list said: *"`join {campaign, side}` has no tier gate — a Commons-seated principal is
+      // offered both sides of a war two tiers away, and its hands are Commons-bound so it can never
+      // reach the objective."* `campaign/roster.ts` now refuses that outright, so `join{CAMPAIGN}`
+      // left `COMMONS_CANNOT_HOLD`'s complement — and with it went 442 characters of §11E that the
+      // Commons row had been charged for an act it could never perform. Had the token stayed, this
+      // row would have grown **+2,891** instead: §11E's own defect, for the third time, inside the
+      // fixture built to measure §11E's defect. It was found by measuring, not by reasoning.
+      //
+      // The two zero rows are the proof the gate aims: a newcomer and a Commons member read none of
+      // this, because neither can open a demand, join a raid or stage a campaign — and `holding.sway`
+      // still carries their reach and its rule on every wake regardless of this catalog, so neither
+      // can be refused for a rule it was never shown.
+      41_555, // a newcomer on its first wake            (0 at 28)
+      49_943, // mid-game in the Commons                 (0 at 28)
+      57_262, // about to take territory                 (+2,891 at 28: §11F, it can stage a campaign)
+      57_704, // at war: party to a live campaign        (+2,891 at 28)
+      80_856, // a claimant in trouble                   (+2,891 at 28)
+      65_110, // the Commons at its fullest              (**−442** at 28: AGT-S2's `join{CAMPAIGN}` fix)
+      82_365, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,891)
       //
       // ── ★ +109 MORE ON FIVE ROWS: THE ENGINE'S OWN STATEMENT WAS WRONG TOO ──
       //
@@ -2470,7 +2527,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +3,202, and the margin is **34,116** against a required 4,000. Nothing trimmed, and nothing
       // to argue about the ceiling this time: 27 is a corrections pass and the largest single item in
       // it is a false rule being made true.
-      85_993,
+      88_884,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

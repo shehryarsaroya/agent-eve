@@ -28,6 +28,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { systemFuelYield, systemYield } from '../../src/works/params.js';
+import { launchMap } from '../../src/world/index.js';
 import { buildObservation } from '../../src/api/observe.js';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
@@ -298,7 +300,7 @@ describe('the split of the second good is the split of the first', () => {
     const { book } = bookWith([LORD, WORKER, 'p:third' as PrincipalId]);
     const at = WORKS_SPINUP_TICKS + 10;
     for (const tier of ['COMMONS', 'MARCHES', 'FRONTIER'] as readonly ZoneTier[]) {
-      const shares = book.fuelSharesAt(SYS, tier, at);
+      const shares = book.fuelSharesAt(SYS, FUEL_YIELD_PER_TICK[tier], at);
       let total = 0;
       for (const v of shares.values()) total += v;
       // MUTATION: divide fuel among the LIVE set instead of the online set, or round up in
@@ -310,14 +312,14 @@ describe('the split of the second good is the split of the first', () => {
     }
     // Outside the Frontier the map yields none, so the split is EMPTY rather than a map of zeroes:
     // a zero row would put a fuel posting of 0 on the ledger at every system every tick.
-    expect(book.fuelSharesAt(SYS, 'MARCHES', at).size).toBe(0);
-    expect(book.fuelSharesAt(SYS, 'FRONTIER', at).size).toBe(3);
+    expect(book.fuelSharesAt(SYS, FUEL_YIELD_PER_TICK['MARCHES'], at).size).toBe(0);
+    expect(book.fuelSharesAt(SYS, FUEL_YIELD_PER_TICK['FRONTIER'], at).size).toBe(3);
   });
 
   it('a WORKS still spinning up takes no fuel, and does not dilute the others', () => {
     const { book } = bookWith([LORD]);
     book.raise({ system: SYS, holder: WORKER, tick: 100 });
-    const shares = book.fuelSharesAt(SYS, 'FRONTIER', WORKS_SPINUP_TICKS + 10);
+    const shares = book.fuelSharesAt(SYS, FUEL_YIELD_PER_TICK['FRONTIER'], WORKS_SPINUP_TICKS + 10);
     expect(shares.size, 'only the online one').toBe(1);
     expect([...shares.values()][0]).toBe(FUEL_YIELD_PER_TICK.FRONTIER);
   });
@@ -330,7 +332,7 @@ describe('the anchor has to be hot, and hot costs fuel once a Reckoning', () => 
   } {
     const book = new Book();
     for (const [i, holder] of holders.entries()) book.raise({ system: SYS, holder, tick: i });
-    return { book, shares: book.sharesAt(SYS, 'FRONTIER', WORKS_SPINUP_TICKS + 10) };
+    return { book, shares: book.sharesAt(SYS, YIELD_PER_TICK['FRONTIER'], WORKS_SPINUP_TICKS + 10) };
   }
 
   const terms = (fuelWant: number): RentTerms => ({ claimant: LORD, bps: CLAIM_RENT_BPS, fuelWant });
@@ -480,8 +482,11 @@ describe('INV-W6: a fuel unit outside the Frontier stops the world', () => {
     const h2 = new Book();
     h2.raise({ system: 'sys-05' as SystemId, holder: WORKER, tick: 0 });
     const marchesWorks = worksId('sys-05' as SystemId, 0, WORKER);
-    // A map stub is enough: the invariant asks only for the tier of a system.
-    const map = { systems: new Map([['sys-05', { tier: 'MARCHES' }]]) } as never;
+    // ★ A STUB IS NO LONGER ENOUGH, AND THAT IS THE POINT OF §16.12 #1. The invariant used to ask
+    // only for a system's TIER; it now asks what that SYSTEM yields (`systemFuelYield`), because a
+    // tier lookup is exactly the defect the resource-distinct clause names. So the real launch map
+    // goes in — `sys-05` is a genuine MARCHES system on it, which is what the case is about.
+    const map = launchMap();
     expect(checkFuelIsFrontierOnly({ book: h2, map, tick: 10 })).toEqual([]);
     // MUTATION, applied: credit fuel to a Marches WORKS. In the live world this is what a
     // mis-keyed tier lookup would do, and the symptom would be a book that quietly clears.
@@ -618,9 +623,12 @@ describe('a FRONTIER system actually hands fuel over, through the front door', (
     // to prefer frontier ground beyond the raw yield, and the whole asymmetry is undiscoverable.
     const quote = h.runtime.worksQuote(p, system);
     expect(quote.fuelGood).toBe(FUEL_GOOD);
-    expect(quote.fuelYieldPerTick).toBe(FUEL_YIELD_PER_TICK.FRONTIER);
+    // ★ Per-SYSTEM since §16.12 #1: asserted against the engine's own reading of this system's
+    // ground rather than against the tier constant, which is now only the base a tier conserves.
+    expect(quote.fuelYieldPerTick).toBe(systemFuelYield(h.runtime.world.map, system));
+    expect(quote.fuelYieldPerTick, 'and the FRONTIER still makes fuel at all').toBeGreaterThan(0);
     expect(quote.fuelSharePerTick, 'and what YOURS would take of it').toBeGreaterThan(0);
-    expect(quote.yieldPerTick).toBe(YIELD_PER_TICK.FRONTIER);
+    expect(quote.yieldPerTick).toBe(systemYield(h.runtime.world.map, system));
 
     // ══════════════════════════════════════════════════════════════════════
     // **AND THE AGENT CAN ACTUALLY READ IT.** The three assertions above passed for a day while
@@ -637,7 +645,7 @@ describe('a FRONTIER system actually hands fuel over, through the front door', (
     >;
     const here = worksBlock['here'] as Record<string, unknown>;
     expect(here['fuel_good']).toBe(FUEL_GOOD);
-    expect(here['fuel_yield_per_tick']).toBe(FUEL_YIELD_PER_TICK.FRONTIER);
+    expect(here['fuel_yield_per_tick']).toBe(systemFuelYield(h.runtime.world.map, system));
     expect(here['fuel_share_per_tick'], 'the whole of the frontier premium').toBe(
       quote.fuelSharePerTick,
     );
@@ -671,22 +679,28 @@ describe('a FRONTIER system actually hands fuel over, through the front door', (
     // MUTATION: skip the fuel `sourceGoods` in `produce`. RED here — and the third good would
     // exist in the params file and nowhere in the world.
     expect(gained, 'a frontier place must hand over fuel').toBeGreaterThan(0);
+    // ★ Per-SYSTEM since §16.12 #1 — and the ENGINE's reading of this system's ground, not the tier
+    // constant, which is now the base a tier's total conserves rather than a system's output.
     expect(gained, 'exactly the published rate, sole occupant, over the measured window').toBe(
-      FUEL_YIELD_PER_TICK.FRONTIER * ticks,
+      systemFuelYield(h.runtime.world.map, system) * ticks,
     );
+    // Non-vacuity: this ground is genuinely frontier ground and genuinely makes fuel.
+    expect(systemFuelYield(h.runtime.world.map, system)).toBeGreaterThan(0);
     // Located where it was dug, like everything else (§10.2). A landlord elsewhere cannot burn it.
     expect(h.runtime.fuelAt(p, 'sys-01' as SystemId)).toBe(0);
     // And the ore is unaffected: two goods from ONE place, counted apart (hard rule 4). A single
     // `extracted` summing both would make the frame's number a quantity of nothing in particular
     // and would silently widen INV-W4's and INV-W5's bounds, which are stated against the ore.
-    expect(h.runtime.refinableAt(p, system) - oreBefore).toBe(YIELD_PER_TICK.FRONTIER * ticks);
+    expect(h.runtime.refinableAt(p, system) - oreBefore).toBe(
+      systemYield(h.runtime.world.map, system) * ticks,
+    );
     expect(h.runtime.works.liveAt(system)[0]?.fuelExtracted).toBeGreaterThanOrEqual(gained);
     expect(h.runtime.works.liveAt(system)[0]?.extracted).toBeGreaterThan(
       h.runtime.works.liveAt(system)[0]?.fuelExtracted ?? 0,
     );
     // The mark draws it, or the third good has no pixel signature (A13).
     const mark = h.runtime.worksLines(h.runtime.engine.tick).find((l) => l.system === system);
-    expect(mark?.fuelPerTick).toBe(FUEL_YIELD_PER_TICK.FRONTIER);
+    expect(mark?.fuelPerTick).toBe(systemFuelYield(h.runtime.world.map, system));
     expect(mark?.fuelExtracted).toBe(h.runtime.works.liveAt(system)[0]?.fuelExtracted);
   }, 120_000);
 
@@ -694,11 +708,17 @@ describe('a FRONTIER system actually hands fuel over, through the front door', (
     // A15 sanity, not a mechanism test: the claim gate is priced in produced goods, and this checks
     // the arithmetic leaves a first move. One frontier WORKS produces the anchor's ration cost and
     // its own tier's Charge inside a Reckoning, and the fuel to light one anchor twice over.
-    expect(YIELD_PER_TICK.FRONTIER * TICKS_PER_RECKONING).toBeGreaterThan(
+// ★ Asserted at the POOREST frontier system since §16.12 #1, not at the tier figure. A claim gate
+    // that only the richest ground can fund is A15 with a geography exemption, and the tier base is
+    // an average that no longer describes anybody's actual ground.
+    const map = launchMap();
+    const frontier = map.systemOrder.filter((id) => map.systems.get(id)?.tier === 'FRONTIER');
+    expect(frontier.length).toBeGreaterThan(1);
+    const poorestOre = Math.min(...frontier.map((id) => systemYield(map, id)));
+    const poorestFuel = Math.min(...frontier.map((id) => systemFuelYield(map, id)));
+    expect(poorestOre * TICKS_PER_RECKONING).toBeGreaterThan(
       Number(ANCHOR_QTY) + Number(CHARGE_BY_TIER.FRONTIER),
     );
-    expect(FUEL_YIELD_PER_TICK.FRONTIER * TICKS_PER_RECKONING).toBeGreaterThan(
-      Number(ANCHOR_FUEL_BY_TIER.FRONTIER),
-    );
+    expect(poorestFuel * TICKS_PER_RECKONING).toBeGreaterThan(Number(ANCHOR_FUEL_BY_TIER.FRONTIER));
   });
 });

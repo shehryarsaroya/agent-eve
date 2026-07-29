@@ -23,6 +23,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { systemYield } from '../../src/works/params.js';
 import { BPS_ONE, minor, qty } from '../../src/core/units.js';
 import type { PrincipalId, SystemId } from '../../src/core/types.js';
 import { storesAccount } from '../../src/ledger/index.js';
@@ -198,7 +199,9 @@ describe('a claim takes a share of the ground under it', () => {
     // the test pass or fail on which gate the graduation affordance happened to offer.
     const tier = h.runtime.world.map.systems.get(system)?.tier;
     expect(tier, 'the system must be on the map').toBeDefined();
-    const yieldPerTick = YIELD_PER_TICK[tier ?? 'COMMONS'];
+    // ★ Per-SYSTEM since §16.12 #1. The tier figure is the base a tier's total conserves, not what
+    // this ground hands over — and rent is a share of what this ground hands over.
+    const yieldPerTick = systemYield(h.runtime.world.map, system);
     expect(h.runtime.works.liveAt(system).length, 'exactly one WORKS, so the share is the whole yield').toBe(1);
 
     // Spin-up first: a WORKS that is not online extracts nothing, so there is nothing to share.

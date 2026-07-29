@@ -12,7 +12,11 @@ import { BPS_ONE } from '../core/units.js';
 import { halt } from '../invariants/registry.js';
 import { tierOf, type WorldMap } from '../world/map.js';
 import type { Book } from './book.js';
-import { FUEL_YIELD_PER_TICK, WORKS_PER_PRINCIPAL_PER_SYSTEM, YIELD_PER_TICK } from './params.js';
+import {
+  systemFuelYield,
+  systemYield,
+  WORKS_PER_PRINCIPAL_PER_SYSTEM,
+} from './params.js';
 
 export interface WorksInvariantInputs {
   readonly book: Book;
@@ -41,8 +45,11 @@ export function checkYieldCap(input: WorksInvariantInputs): readonly InvariantVi
   const out: InvariantViolation[] = [];
   for (const system of input.book.workedSystems()) {
     const tier = tierOf(input.map, system);
-    const cap = YIELD_PER_TICK[tier];
-    const shares = input.book.sharesAt(system, tier, input.tick);
+    // ★ §16.12 #1: the cap is this SYSTEM's yield. Reading the tier here would have made the
+    // invariant refuse a rich system's honest output and wave a poor one's over-sum through —
+    // failing in BOTH directions, which is worse than not checking.
+    const cap = systemYield(input.map, system);
+    const shares = input.book.sharesAt(system, cap, input.tick);
     let total = 0;
     for (const amount of shares.values()) total += amount;
     if (total > cap) {
@@ -176,14 +183,15 @@ export function checkRentBoundedByMap(input: WorksInvariantInputs): readonly Inv
     const taken = input.book.rentTakenAt(system, reckoning);
     if (taken <= 0) continue;
     const tier = tierOf(input.map, system);
-    const cap = Math.trunc((YIELD_PER_TICK[tier] * ticksSoFar * ceiling) / BPS_ONE);
+    const perTick = systemYield(input.map, system);
+    const cap = Math.trunc((perTick * ticksSoFar * ceiling) / BPS_ONE);
     if (taken > cap) {
       out.push(
         halt(
           'INV-W5',
           input.tick,
           `the claim on ${system} (${tier}) has taken ${String(taken)} in rent this Reckoning against a ` +
-            `ceiling of ${String(cap)} — ${String(YIELD_PER_TICK[tier])} a tick over ${String(ticksSoFar)} ` +
+            `ceiling of ${String(cap)} — ${String(perTick)} a tick over ${String(ticksSoFar)} ` +
             `ticks at ${String(ceiling)} bps. A rent above what the place can yield is paid per TENANT ` +
             'rather than per place, which makes territorial income scale with the number of identities (A15)',
         ),
@@ -214,7 +222,7 @@ export function checkFuelIsFrontierOnly(input: WorksInvariantInputs): readonly I
   for (const works of input.book.everInOrder()) {
     if (works.fuelExtracted <= 0) continue;
     const tier = tierOf(input.map, works.system);
-    if (FUEL_YIELD_PER_TICK[tier] <= 0) {
+    if (systemFuelYield(input.map, works.system) <= 0) {
       out.push(
         halt(
           'INV-W6',

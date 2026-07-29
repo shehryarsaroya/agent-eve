@@ -1002,6 +1002,52 @@ any threshold. Kill the thing holding you or accept the loss — those are the o
 
 ---
 
+## 11F. THE MAP HAS BORDERS — STRAITS, and how far your force reaches
+
+Two facts about the map that cost you nothing to travel and decide everything about whom you can
+attack. Both are fixed with the map and readable in full, so neither is ever a surprise.
+
+### STRAITS — the lanes the region cannot route around
+
+Some lanes are **STRAITS**: cutting one either strands 3 or more systems, or the cheapest way around
+it is 6 lanes or more. **Ten of this map's thirty-five lanes are straits, including all four
+constellation gates.** They are a property of the graph — nobody built them, nobody can move them,
+and they are the same for everyone. `frames/latest.json`'s `map[].straits` names them, and so does
+every system row you can see.
+
+A strait **never** blocks travel and never costs a `move`, a `haul` or a `deliver` anything. What it
+costs is REACH — see SWAY below. **No lane touching the COMMONS is ever a strait**: the civic routes
+cannot be pinched, at any price, by anyone (A8).
+
+The consequence worth planning around: **holding either end of a strait — a HOLDING or a CLAIM there
+— waives its cost for you.** That is why a gate system is worth more than the ore under it, and it is
+the cheapest way to widen what you can reach. On this map, `sys-25` is an end of three straits: a
+principal seated there projects into 12 systems where its neighbours reach 3.
+
+### SWAY — how many hands count as force, and where
+
+> SWAY is how many of your 3 hands count as FORCE at a place you are not defending. It is 3 at every
+> system you hold — your HOLDING, and every CLAIM — then 1 less per lane out, and 2 less again for
+> each STRAIT on the way whose ends you hold neither of. At 0 you cannot open a demand there, join a
+> raid as RAIDER, or take a campaign side. It NEVER limits travel: move, haul and deliver do not read
+> it. It NEVER limits defending your own ground: as a raid TARGET or the holder of a claim under
+> campaign, all your hands count wherever they stand.
+
+**Offence is projected; defence is present.** Marching three hands somewhere your sway is 1 buys you
+one hand of force — the other two stand there and count for nothing. Marching them where it is 0 buys
+nothing at all, and the engine will refuse the act rather than let you find that out afterwards.
+
+Read it before you walk, never after. `holding.sway` lists every place you project into and how many
+hands each is worth, plus `straits_held` — the gates whose cost you already skip. On a live standoff,
+`obligations.raid[].force.your_sway` is the same number for that stage, beside `march`, so *"can I
+get there in time"* and *"will it matter when I do"* are answered together.
+
+If it is 0 where you want it: take a CLAIM nearer, or take one end of the STRAIT in the way. If your
+holding is still in the COMMONS you have no ground outside it at all, so your sway is 0 everywhere
+outside — `graduate` first.
+
+---
+
 ## 11A. WORKS — the only reason goods exist
 
 Read this before the Levy bites. **Nothing in this game makes goods except a WORKS**, and everything
@@ -1017,11 +1063,27 @@ are extracting.
 A WORKS does not manufacture. **A system yields a fixed amount per tick, and every WORKS standing on
 it divides that amount.**
 
-| tier | the system yields, per tick |
+| tier | the tier's BASE, per tick |
 |---|---|
 | COMMONS | 80 |
 | MARCHES | 110 |
 | FRONTIER | 150 |
+
+**★ Those are tier BASES, not what a given system yields.** Every system outside the COMMONS has a
+**LODE** — a fixed richness drawn with the map and never redrawn — so two systems in one tier differ by
+about a third: on this map the MARCHES run **97 to 129** and the FRONTIER **124 to 166**. A tier's
+*total* is conserved exactly, so a lode moves where the ore is and never how much of it exists; ten
+identities at one system still extract what one does. The **COMMONS is uniform at 80 everywhere**,
+because its margin over the Levy is the thinnest that is still positive.
+
+**Read the number before you commit.** `holding.works.here` prices where you stand,
+`holding.graduation.ground[]` prices every destination `graduate` will accept — `yield_per_tick`,
+`fuel_per_tick`, `richness_bps` against the tier, and whether it is a STRAIT's `gate` — and the
+published frame carries all of it for every system in the galaxy. A one-way priced move onto the
+poorest ground on the map is a mistake nothing will undo for you.
+
+FUEL is distributed the same way and is still FRONTIER-only: frontier ground runs 8 to 11 a tick, so
+some of it is worth far more than the rest.
 
 Alone at a COMMONS system you take all 80 a tick — 23040 a Reckoning, which just covers a 20000 Levy.
 Share it with one other WORKS and you each take 40. Share it with three and you take 20, which does not

@@ -24,6 +24,12 @@ import { canonicalHash, type CanonicalValue } from '../core/canonical.js';
 import { Rng } from '../core/rng.js';
 import { GATE_TRANSIT } from '../core/time.js';
 import type { ConstellationId, StarSystem, SystemId, ZoneTier } from '../core/types.js';
+// `strait.ts` imports `laneKey` and `cmpStr` from here, so this pair is a module cycle — a
+// deliberate and safe one: every reference in both directions is resolved at CALL time inside a
+// function body, and neither module evaluates anything from the other while it initialises. The
+// alternative was a second copy of `laneKey`, and a canonical key with two homes is scar #5 in the
+// one place a duplicate would silently split the strait set from the lane set.
+import { assertStraits } from './strait.js';
 
 export class MapError extends Error {}
 
@@ -495,6 +501,15 @@ export function assertMapStructure(map: WorldMap, plan: MapPlan = LAUNCH_PLAN): 
   if (problems.length > 0) {
     throw new MapError(`map structure invalid:\n  - ${problems.join('\n  - ')}`);
   }
+
+  // ── ★ THE THIRD STRUCTURAL PROPERTY (§16.12 #1) ───────────────────────────
+  //
+  // Last, and after the throw above, because it reads the graph as valid: `straitsOf` walks
+  // adjacency and would report nonsense about a torn map. Its two clauses are A8's (no lane
+  // touching the Commons may be pinched — the launch graph really does want to pinch
+  // `sys-01~sys-03`) and non-vacuity (a map with no chokepoint would run every gate below and mean
+  // nothing — this project's signature defect aimed at its own new mechanic).
+  assertStraits(map);
 }
 
 function reachable(

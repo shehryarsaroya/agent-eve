@@ -28,6 +28,7 @@ import {
   type TargetPort,
 } from '../../src/predation/index.js';
 import { GOOD, raidRow } from './fixture.js';
+import { SWAY_AT_SEAT } from '../../src/world/index.js';
 
 function party(principal: string, side: 'RAIDER' | 'DEFENDER'): RaidParty {
   return {
@@ -58,10 +59,22 @@ function allPresent(raid: { readonly parties: readonly RaidParty[] }) {
  */
 const noBattle = () => null;
 
+/**
+ * ★ §16.12 #1's SWAY term, held at full for every arithmetic test in this file.
+ *
+ * `noBattle`'s reason, applied to the other new term: these tests measure hands, joiners and
+ * terrain, so the capacity limit is pinned open and they measure what they always measured. The
+ * cap's own arithmetic — including that a raider at 0 contributes nothing and shows up in
+ * `raidersOutOfSway` — is asserted in `test/world/the-map-has-borders.spec.ts` against the
+ * engine's own reading rather than against a fixture built beside the assertion.
+ */
+const fullSway = () => SWAY_AT_SEAT;
+
+
 describe('force is arithmetic and higher wins — no dice, no rounds, no positioning', () => {
   it('sums hands, joiners and terrain, and publishes every term', () => {
     const raid = raidRow({ force: 3, parties: [party('p:a', 'DEFENDER'), party('p:b', 'RAIDER')] });
-    const reading = readForce({ raid, tier: 'MARCHES', defenderHands: 2, handsAtStage: allPresent(raid), raidForceLeft: noBattle });
+    const reading = readForce({ raid, tier: 'MARCHES', defenderHands: 2, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway });
 
     // defender: 2 hands + 1 defender joiner + 1 terrain = 4. raider: 3 + 1 joiner = 4.
     expect(reading.terms).toEqual({
@@ -71,6 +84,12 @@ describe('force is arithmetic and higher wins — no dice, no rounds, no positio
       raidForce: 3,
       raidForceAtSpawn: 3,
       raiderJoiners: 1,
+      // ★ §16.12 #1's meter. Zero here because `fullSway` holds the capacity limit open for every
+      // arithmetic test in this file; it is asserted non-zero in
+      // `test/world/the-map-has-borders.spec.ts`, where a raider is genuinely out of reach. The
+      // field is in this exhaustive comparison on purpose — `toEqual` over the whole `terms` object
+      // is what makes a NEW published term impossible to add without a reader noticing.
+      raidersOutOfSway: 0,
     });
     expect(reading.defenderForce).toBe(4);
     expect(reading.raiderForce).toBe(4);
@@ -79,25 +98,25 @@ describe('force is arithmetic and higher wins — no dice, no rounds, no positio
   it('ties go to the defender, and that is a published rule rather than a rounding accident', () => {
     const raid = raidRow({ force: 3 });
     // 3 hands + 0 terrain in the FRONTIER == the raid's 3. Exactly level.
-    const level = readForce({ raid, tier: 'FRONTIER', defenderHands: 3, handsAtStage: allPresent(raid), raidForceLeft: noBattle });
+    const level = readForce({ raid, tier: 'FRONTIER', defenderHands: 3, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway });
     expect(level.defenderForce).toBe(level.raiderForce);
     expect(level.verdict).toBe('REPULSED');
 
-    const short = readForce({ raid, tier: 'FRONTIER', defenderHands: 2, handsAtStage: allPresent(raid), raidForceLeft: noBattle });
+    const short = readForce({ raid, tier: 'FRONTIER', defenderHands: 2, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway });
     expect(short.verdict).toBe('PLUNDERED');
   });
 
   it('an unanswered raid has no defence at all — silence is the expensive answer (A14)', () => {
     const raid = raidRow({ force: 2 });
-    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 0, handsAtStage: allPresent(raid), raidForceLeft: noBattle }).verdict).toBe(
+    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 0, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway }).verdict).toBe(
       'PLUNDERED',
     );
   });
 
   it('the Frontier gives no terrain bonus and the Marches gives one', () => {
     const raid = raidRow({ force: 2 });
-    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 1, handsAtStage: allPresent(raid), raidForceLeft: noBattle }).defenderForce).toBe(1);
-    expect(readForce({ raid, tier: 'MARCHES', defenderHands: 1, handsAtStage: allPresent(raid), raidForceLeft: noBattle }).defenderForce).toBe(2);
+    expect(readForce({ raid, tier: 'FRONTIER', defenderHands: 1, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway }).defenderForce).toBe(1);
+    expect(readForce({ raid, tier: 'MARCHES', defenderHands: 1, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway }).defenderForce).toBe(2);
   });
 });
 
@@ -123,7 +142,7 @@ describe("★ the raid's own force is measured at resolution, not drawn once at 
   it('a destroyed world fleet takes the raid down with it — a repulse the defender earned', () => {
     const raid = raidRow({ force: 3 });
     // Two hands on the Frontier: 2 against 3, which is exactly the reading `fz-13` lost on.
-    const before = readForce({ raid, tier: 'FRONTIER', defenderHands: 2, handsAtStage: allPresent(raid), raidForceLeft: noBattle });
+    const before = readForce({ raid, tier: 'FRONTIER', defenderHands: 2, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway });
     expect(before.verdict, 'the pre-fix reading, kept as the contrast').toBe('PLUNDERED');
 
     const wiped = readForce({
@@ -131,7 +150,7 @@ describe("★ the raid's own force is measured at resolution, not drawn once at 
       tier: 'FRONTIER',
       defenderHands: 2,
       handsAtStage: allPresent(raid),
-      raidForceLeft: () => 0,
+      raidForceLeft: () => 0, swayAt: fullSway,
     });
     expect(wiped.raiderForce, 'nothing of the raid is left on the field').toBe(0);
     expect(wiped.terms.raidForce).toBe(0);
@@ -149,7 +168,7 @@ describe("★ the raid's own force is measured at resolution, not drawn once at 
       tier: 'FRONTIER',
       defenderHands: 2,
       handsAtStage: allPresent(raid),
-      raidForceLeft: () => 3,
+      raidForceLeft: () => 3, swayAt: fullSway,
     });
     expect(partial.raiderForce).toBe(3);
     expect(partial.verdict).toBe('PLUNDERED');
@@ -164,7 +183,7 @@ describe("★ the raid's own force is measured at resolution, not drawn once at 
       tier: 'MARCHES',
       defenderHands: 9,
       handsAtStage: allPresent(raid),
-      raidForceLeft: () => 99,
+      raidForceLeft: () => 99, swayAt: fullSway,
     });
     expect(inflated.raiderForce).toBe(2);
     expect(inflated.terms.raidForce).toBe(2);
@@ -178,6 +197,7 @@ describe("★ the raid's own force is measured at resolution, not drawn once at 
       defenderHands: 1,
       handsAtStage: allPresent(raid),
       raidForceLeft: () => -4,
+      swayAt: fullSway,
     });
     expect(reading.raiderForce).toBe(0);
   });
@@ -193,7 +213,7 @@ describe("★ the raid's own force is measured at resolution, not drawn once at 
       tier: 'FRONTIER',
       defenderHands: 2,
       handsAtStage: allPresent(raid),
-      raidForceLeft: noBattle,
+      raidForceLeft: noBattle, swayAt: fullSway,
     });
     expect(reading.raiderForce).toBe(3);
     expect(reading.verdict).toBe('PLUNDERED');
@@ -209,7 +229,7 @@ describe("★ the raid's own force is measured at resolution, not drawn once at 
       tier: 'FRONTIER',
       defenderHands: 0,
       handsAtStage: allPresent(raid),
-      raidForceLeft: noBattle,
+      raidForceLeft: noBattle, swayAt: fullSway,
     });
     expect(reading.terms.raidForce).toBe(0);
     expect(reading.raiderForce, "one raider joiner's hand and nothing else").toBe(1);

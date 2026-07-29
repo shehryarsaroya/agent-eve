@@ -33,6 +33,7 @@ import {
   type PulsePort,
 } from '../../src/campaign/index.js';
 import { FORCE_BY_TIER } from '../../src/predation/params.js';
+import { SWAY_AT_SEAT } from '../../src/world/index.js';
 
 const ATTACKER = 'p:atk' as PrincipalId;
 const DEFENDER = 'p:def' as PrincipalId;
@@ -77,6 +78,10 @@ function port(over: {
     Array.from({ length: n }, (_, i) => `${tag}:${String(i)}` as HandId);
   return {
     tierOf: () => 'MARCHES',
+    // ★ §16.12 #1's cap, pinned open for every arithmetic test here (see `resolve.test.ts`'s
+    // `fullSway`). Its own behaviour is asserted in `test/world/the-map-has-borders.spec.ts`
+    // against a real world's reading rather than against this fixture.
+    swayAt: () => SWAY_AT_SEAT,
     claimAt: () =>
       over.claim === undefined ? { claimant: DEFENDER, state: 'SUPPLIED' as ClaimState } : over.claim,
     handsAt: (principal) =>
