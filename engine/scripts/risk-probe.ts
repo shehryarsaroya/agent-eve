@@ -77,7 +77,10 @@ function seat(runtime: Runtime, tier: 'COMMONS' | 'MARCHES' | 'FRONTIER', seed: 
 
 function stock(runtime: Runtime, who: PrincipalId, at: SystemId, amount: number, good: GoodId = LEVY_GOOD): void {
   runtime.ledger.sourceGoods({
-    eventId: `probe:stock:${who}:${at}:${String(amount)}` as never,
+    // The TICK is in the id, and it has to be: two fronts can strike the same system in one run, and a
+    // content-derived id without the tick collides on `duplicate lot id` the second time. Found at
+    // seven Reckonings, which is the first horizon with two fronts in it.
+    eventId: `probe:stock:${who}:${at}:${String(amount)}:${String(runtime.engine.tick)}` as never,
     tick: runtime.engine.tick,
     faucet: GOODS_FAUCET.EXTRACTION,
     to: storesAccount(who),

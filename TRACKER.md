@@ -24,12 +24,18 @@
 >
 > ### ★ A CATASTROPHE PROPAGATES, AND THE MEASUREMENT NAMES WHAT DECIDES IT
 >
-> `scripts/risk-probe.ts`, 3 seeds × 4 Reckonings, one FRONT each:
+> `scripts/risk-probe.ts`, 4 seeds × 7 Reckonings, **two** FRONTS a seed:
 >
 > | primary's balance sheet | fronts | destroyed | naked | bound | ceded | cohort | defaults | **propagated** | deepest |
 > |---|---|---|---|---|---|---|---|---|---|
-> | **DEEP** (200k free) | 3 | 216,794 | 3 | 6 | 3 | 6 | 3 | **0** | 0 |
-> | **THIN** (drained at the strike) | 3 | 216,794 | 3 | 6 | 3 | 6 | 6 | **3** | 2 |
+> | **DEEP** (200k free) | 8 | 418,416 | 8 | 16 | 8 | 16 | 8 | **0** | 0 |
+> | **THIN** (drained at the strike) | 8 | 418,416 | 12 | 8 | 4 | 8 | 8 | **4** | 2 |
+>
+> **4 of 4 seeds propagate when the primary is thin; 0 of 4 when it is deep.** And the THIN row carries
+> a second-order finding nobody designed: it binds **half** the cover the deep row does, because a payer
+> that has been drained cannot fund a second escrow. **A15's gate doubles as a solvency gate** — an
+> insolvent house cannot keep selling paper, which is RSK3's *"fake capacity underprices honest
+> insurers until the first disaster"* prevented by arithmetic rather than by a licence.
 >
 > **Contagion is a property of the mechanism AND the balance sheet, and a probe that had only run the
 > deep case would have reported `PROP 0` and called the layer a tax with extra steps.** A well-funded
