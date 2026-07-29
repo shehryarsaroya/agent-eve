@@ -145,6 +145,7 @@ export {
   type HaulQuote,
   type HaulRequest,
   type Landing,
+  type TransitLot,
 } from './haul.js';
 
 export {

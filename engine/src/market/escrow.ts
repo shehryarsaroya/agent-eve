@@ -262,7 +262,22 @@ function escrowLots(
   if (ledger.account(account) === undefined) return [];
   return ledger
     .lotsInAccount(account)
-    .filter((lot) => lot.good === good && lot.location === venue && lot.encumbranceId === null)
+    .filter(
+      (lot) =>
+        lot.good === good &&
+        lot.location === venue &&
+        lot.encumbranceId === null &&
+        // ── THE LAST STATE-BLIND SPEND PATH, CLOSED ─────────────────────────────
+        //
+        // Unreachable today and added anyway: `escrowGoods` draws from `sellableLots`, which is
+        // `AVAILABLE`-only, so nothing can put an in-transit lot in a market escrow. But this was
+        // the ONE lot query in the engine that would have treated a travelling lot as deliverable,
+        // and `Ledger.transferGoods` inherits `state` and `carrier` — so the day a fill is handed
+        // over mid-lane, the sell side would filter and the delivery side would not. That
+        // asymmetry is scar #5's shape (two callers disagreeing about one predicate), and the
+        // audit that found the `haul` halts found this next to it.
+        lot.state === 'AVAILABLE',
+    )
     .sort((a, b) => compareIds(a.id, b.id))
     .map((lot) => ({ id: lot.id, qty: lot.qty }));
 }

@@ -23,7 +23,7 @@
 
 import type { CanonicalValue } from '../core/canonical.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
-import type { AccountId, GoodId, PrincipalId, SystemId } from '../core/types.js';
+import type { AccountId, GoodId, HandId, PrincipalId, SystemId } from '../core/types.js';
 import type { StateTable } from '../tick/snapshot.js';
 import type { Ledger } from './ledger.js';
 import type { AccountKind, ValueLedger } from './accounts.js';
@@ -149,6 +149,12 @@ export function ledgerStateTable(
           location: lot.location,
           state: lot.state,
           encumbranceId: lot.encumbranceId,
+          // ★ `RULES_VERSION` 25. Which hand is carrying it — see `ledger/lots.ts:Lot.carrier`.
+          // In the hash for `encumbranceId`'s reason: a world where the same units are on a
+          // different hand is a different world, and a snapshot that dropped this would restore
+          // a convoy's cargo as an anonymous in-transit pool, which is the halt this field
+          // exists to end.
+          carrier: lot.carrier,
           createdTick: lot.createdTick,
           origin: lot.origin,
         }));
@@ -211,6 +217,7 @@ export function ledgerStateTable(
           location: str(o, 'location', where) as SystemId,
           state: str(o, 'state', where) as LotState,
           encumbranceId: strOrNull(o, 'encumbranceId', where),
+          carrier: strOrNull(o, 'carrier', where) as HandId | null,
           createdTick: int(o, 'createdTick', where),
           origin: str(o, 'origin', where) as PrincipalId,
         };

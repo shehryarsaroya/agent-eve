@@ -60,6 +60,21 @@
  * sanctioned use of this function against the ledger is equality"* — so the mirror is now checked
  * every tick instead of being trusted, and INV-2's in-transit bucket has a subject for the first
  * time.
+ *
+ * ── ★ AND ONE STEP OF THAT WAS MISSING, WHICH COST TWO WORLD HALTS ───────────
+ *
+ * *"Written in one step"* was true of the manifest and the lot **state**, and false of the thing
+ * that says **which hand** a travelling lot is in. Without it the in-transit lots of one principal
+ * form an anonymous pool keyed `(account, good, destination)`, and `landArrivedCargo` had to *guess*
+ * an arriving hand's share by walking that pool in lot-id order until a running total was covered.
+ * Lot ids do not partition by hand and the walk lands **whole lots**, so it overshot — and two
+ * ordinary hauls on consecutive ticks halted the shard on the very invariant above. A second,
+ * cheaper halt sat next to it: two hauls in **one** tick out of the same parent lot derived the same
+ * split-lot id, and `splitLot`'s throw escaped this function into `VALIDATE+LOCK`.
+ *
+ * `Lot.carrier` (`RULES_VERSION` 25) is the field `hands.ts` had already named as the clean fix, and
+ * the reproduction is `test/world/a-convoy-carries-its-own-cargo.spec.ts`. Read {@link HaulPort}'s
+ * `carriedBy` before touching the landing sweep.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
@@ -99,18 +114,45 @@ export interface HaulableLot {
 export interface HaulPort {
   /** Unpledged, `AVAILABLE` lots of `good` this principal holds AT `system`, canonical order. */
   readonly lotsOf: (principal: PrincipalId, system: SystemId, good: GoodId) => readonly HaulableLot[];
-  /** Split `qty` off a lot into a new lot in the same account. Returns the new lot's id. */
-  readonly split: (args: { readonly lotId: string; readonly qty: Qty; readonly index: number }) => string;
-  /** Send a lot into transit toward `to`. No value moves, so there are no postings. */
-  readonly depart: (lotId: string, to: SystemId) => void;
-  /** Land a lot at the place it was sent to. The inverse of {@link depart}. */
+  /**
+   * Split `qty` off a lot into a new lot in the same account. Returns the new lot's id.
+   *
+   * `seq` is a **per-tick** ordinal, not a per-action one: two hauls submitted in the same tick
+   * out of the same parent lot derived the same id from `(tick, parentLot, indexWithinThisHaul)`
+   * and the second one threw `duplicate lot id` out of the verb, halting the tick. See
+   * {@link haul} for the whole sequence.
+   */
+  readonly split: (args: {
+    readonly lotId: string;
+    readonly qty: Qty;
+    /** The hand this haul is for. Part of the derived lot id, which is what makes it unique. */
+    readonly hand: HandId;
+    /** Ordinal within this haul. One hand hauls at most once per tick, so this closes the id. */
+    readonly seq: number;
+  }) => string;
+  /**
+   * Send a lot into transit toward `to`, **in the named hand**. No value moves, so no postings.
+   *
+   * The carrier is part of this call rather than a second one, because `Lot.carrier`'s contract is
+   * that it is non-null exactly while the lot is `IN_TRANSIT`.
+   */
+  readonly depart: (lotId: string, to: SystemId, carrier: HandId) => void;
+  /** Land a lot at the place it was sent to, clearing its carrier. The inverse of {@link depart}. */
   readonly land: (lotId: string) => void;
-  /** Lots of this principal that are in transit toward `to`, carrying `good`. Canonical order. */
-  readonly inTransitTo: (
-    principal: PrincipalId,
-    to: SystemId,
-    good: GoodId,
-  ) => readonly HaulableLot[];
+  /**
+   * Lots this hand is carrying of `good`, canonical order.
+   *
+   * ── WHY THIS IS KEYED ON THE HAND AND NOT ON THE DESTINATION ────────────────
+   *
+   * It used to be `inTransitTo(principal, to, good)` — an **anonymous pool** — and every caller
+   * that wanted one hand's cargo walked that pool in id order until the hand's manifest total was
+   * covered. That is a guess, and it is wrong two ways: lot ids do not partition by hand (a split
+   * lot is named after its *event*, so one haul's lots interleave with another's), and the walk
+   * lands **whole lots**, so it overshoots. Two hauls on consecutive ticks therefore landed more
+   * units than the arriving hand carried, cleared only that hand's manifest, and stopped the world
+   * on INV-W7. `test/world/a-convoy-carries-its-own-cargo.spec.ts` is that halt, pinned.
+   */
+  readonly carriedBy: (hand: HandId, good: GoodId) => readonly HaulableLot[];
 }
 
 export interface HaulRequest {
@@ -151,6 +193,21 @@ export interface HaulPlan {
  * which is not present. So the manifest is written first and the hand leaves second. Getting this
  * backwards produces a hand in transit carrying nothing while its lots are in transit anyway, which
  * is the mirror broken on the first haul ever attempted.
+ *
+ * ── AND WHY THE LOT PLAN IS BUILT BEFORE ANYTHING IS WRITTEN ─────────────────
+ *
+ * `port.split` reaches `Ledger.splitLot`, which **throws** — on a pledged lot (INV-4), on a
+ * non-positive or whole-lot split (INV-3), and on a duplicate derived id. A throw out of a verb
+ * handler is not a refusal: verbs run inside `VALIDATE+LOCK`, so it aborts the tick and PAUSES the
+ * world. Two ordinary hauls submitted in one tick out of the same parent lot did exactly that
+ * (`duplicate lot id lot:haul.split:<tick>:<parent>:0`), which made a world halt reachable by any
+ * enrolled agent in its first minute — the starter allotment is one lot and a principal has three
+ * hands.
+ *
+ * So the draw is planned first, as arithmetic over the lot list, and the plan states which lots
+ * travel whole and which need a split. Then the manifest and the departures are written. If a split
+ * still refuses, the whole haul refuses with a sentence and **nothing has moved** — which is the
+ * promise the check order above already makes, extended over the one step that could break it.
  */
 export function haul(
   port: HaulPort,
@@ -229,26 +286,64 @@ export function haul(
     );
   }
 
-  // ── NOTHING ABOVE MUTATED. FROM HERE ON IT DOES, IN ONE ORDER. ──────────────
-  const carried = loadCargo(hand, req.good, qty(req.qty), tick);
-  if (!carried.ok) return carried;
-
+  // ── THE PLAN. STILL NOTHING MUTATED. ────────────────────────────────────────
+  //
+  // A whole lot travels as itself; a partial one is split so the remainder stays put. The Levy's
+  // 45,000-unit teleport was exactly this case handled by moving the whole lot and relocating the
+  // remainder back afterwards, which cannot work across ticks.
+  const plan: { readonly lotId: string; readonly portion: number; readonly whole: boolean }[] = [];
   let left = req.qty;
-  let index = 0;
-  let touched = 0;
   for (const lot of lots) {
     if (left <= 0) break;
     const portion = Math.min(left, lot.qty);
     if (portion <= 0) continue;
-    // A whole lot travels as itself; a partial one is split so the remainder stays put. The Levy's
-    // 45,000-unit teleport was exactly this case handled by moving the whole lot and relocating the
-    // remainder back afterwards, which cannot work across ticks.
-    const travelling = portion === lot.qty ? lot.id : port.split({ lotId: lot.id, qty: qty(portion), index });
-    index += 1;
-    port.depart(travelling, req.to);
+    plan.push({ lotId: lot.id, portion, whole: portion === lot.qty });
     left -= portion;
-    touched += 1;
   }
+  if (left > 0) {
+    // Unreachable given the `have < req.qty` check above, and refused rather than asserted because
+    // the alternative in a verb handler is a throw, and a throw here halts the world.
+    return reject(
+      'A2',
+      `the lots standing at ${from} could not cover ${String(req.qty)} ${req.good} ` +
+        `(${String(req.qty - left)} of ${String(req.qty)} planned). Nothing was moved.`,
+    );
+  }
+
+  // ── THE SPLITS, WHICH ARE THE ONLY STEP THAT CAN REFUSE, AND THEY GO FIRST ──
+  //
+  // A split moves **no value** (`Ledger.splitLot`: both halves stay in the same account with the
+  // same good and the same state), so a partly-done split run leaves the world entirely consistent
+  // — more lots, the same units, standing where they stood, and INV-7's mirror untouched. That is
+  // what makes it safe to do them before the manifest is written and to refuse mid-run without an
+  // unwind. Doing them *after* the load would need one, and an unwind that has to re-merge two lots
+  // is a second thing to get wrong.
+  const travelling: string[] = [];
+  for (const [i, step] of plan.entries()) {
+    if (step.whole) {
+      travelling.push(step.lotId);
+      continue;
+    }
+    try {
+      travelling.push(port.split({ lotId: step.lotId, qty: qty(step.portion), hand: hand.id, seq: i }));
+    } catch (error: unknown) {
+      // A refusal, never a throw. Verbs run inside `VALIDATE+LOCK`, so a throw out of this function
+      // aborts the tick and PAUSES the world — the agent-reachable halt §15.4 calls the top
+      // engineering risk, and the exact way two same-tick hauls used to stop a healthy world.
+      return reject(
+        'INV-3',
+        `hand ${hand.id} could not take ${String(step.portion)} ${req.good} off lot ${step.lotId} ` +
+          `(${error instanceof Error ? error.message : String(error)}). No goods left ${from}.`,
+      );
+    }
+  }
+
+  // ── NOTHING ABOVE MOVED ANY GOODS. FROM HERE ON IT DOES, IN ONE ORDER. ──────
+  const carried = loadCargo(hand, req.good, qty(req.qty), tick);
+  if (!carried.ok) return carried;
+
+  for (const lotIdent of travelling) port.depart(lotIdent, req.to, hand.id);
+  const touched = travelling.length;
 
   hand.state = 'IN_TRANSIT';
   hand.destination = req.to;
@@ -306,17 +401,41 @@ export function landArrivedCargo(port: HaulPort, state: WorldState): readonly La
     for (const good of goods) {
       const want = cargoOf(hand, good);
       if (want <= 0) continue;
-      let left: number = want;
-      for (const lot of port.inTransitTo(hand.principal, hand.location, good)) {
-        if (left <= 0) break;
+      // ── EVERY LOT THIS HAND CARRIES, AND ONLY THOSE ─────────────────────────
+      //
+      // No running total and no early break. This used to draw from an anonymous
+      // `(principal, destination, good)` pool until `want` was covered, which landed **whole
+      // lots** past the mark: the excess was another hand's cargo, landed early, with its
+      // manifest left standing — the INV-W7 halt two consecutive hauls produced. Landing the
+      // carried set is exact by construction, so the sum below is a check rather than a hope.
+      let landed = 0;
+      for (const lot of port.carriedBy(hand.id, good)) {
         port.land(lot.id);
-        left -= lot.qty;
+        landed += lot.qty;
       }
       unloadCargo(hand, good, want);
-      out.push({ hand: hand.id, principal: hand.principal, at: hand.location, good, qty: want });
+      out.push({
+        hand: hand.id,
+        principal: hand.principal,
+        at: hand.location,
+        good,
+        // What the LEDGER actually landed, never what the manifest claimed. If the two ever
+        // disagree the mirror below halts the tick, and this row is what the record shows —
+        // never the larger of the two (A5′).
+        qty: qty(landed),
+      });
     }
   }
   return out;
+}
+
+/** One in-transit lot, as INV-W7 needs to read it. */
+export interface TransitLot {
+  readonly id: string;
+  readonly good: GoodId;
+  readonly qty: number;
+  /** `null` is itself a violation: an in-transit lot nobody is carrying. */
+  readonly carrier: HandId | null;
 }
 
 /**
@@ -334,23 +453,55 @@ export function landArrivedCargo(port: HaulPort, state: WorldState): readonly La
  *
  * HALT rather than WARN. A quantity with two homes that disagree is scar #5, and scar #5 destroyed
  * exactly twice the real value while every individual component read correctly.
+ *
+ * ── THE GLOBAL SUM WAS NOT ENOUGH, AND THE SECOND HALF IS WHY ─────────────────
+ *
+ * The world-wide total per good held while **the lots were on the wrong hands**: a landing that
+ * drew from an anonymous `(principal, destination, good)` pool could land hand A's units against
+ * hand B's manifest and stay balanced for a tick, then diverge on the next. So the check is now
+ * **per carrier as well as per good**, and it also refuses an in-transit lot with no carrier at all.
+ * The global sum is kept rather than replaced: it is the one that catches a lot destroyed in transit
+ * by a sink that never heard of a hand, which no per-hand comparison can see.
  */
 export function checkCargoMirror(args: {
   readonly state: WorldState;
-  readonly inTransitByGood: ReadonlyMap<GoodId, Qty>;
+  readonly inTransit: readonly TransitLot[];
   readonly tick: number;
 }): readonly { readonly id: string; readonly severity: 'HALT'; readonly message: string }[] {
+  // Nested rather than a `hand`+separator+`good` string key, deliberately: a composite key needs a
+  // separator, `test/core/vocabulary-repo.test.ts` refuses a literal NUL anywhere in `src/` (and it
+  // caught this exact line), and any printable separator can appear inside an id. Two levels of
+  // `Map` need no separator at all.
   const manifest = new Map<GoodId, number>();
+  const byHand = new Map<HandId, Map<GoodId, number>>();
   for (const hand of handsInOrder(args.state)) {
     for (const [good, amount] of hand.cargo) {
       manifest.set(good, (manifest.get(good) ?? 0) + amount);
+      const row = byHand.get(hand.id) ?? new Map<GoodId, number>();
+      row.set(good, (row.get(good) ?? 0) + amount);
+      byHand.set(hand.id, row);
     }
   }
-  const goods = new Set<GoodId>([...manifest.keys(), ...args.inTransitByGood.keys()]);
+  const inTransitByGood = new Map<GoodId, number>();
+  const inTransitByHand = new Map<HandId, Map<GoodId, number>>();
   const out: { readonly id: string; readonly severity: 'HALT'; readonly message: string }[] = [];
+  const orphans: string[] = [];
+  for (const lot of args.inTransit) {
+    inTransitByGood.set(lot.good, (inTransitByGood.get(lot.good) ?? 0) + lot.qty);
+    if (lot.carrier === null) {
+      orphans.push(`${lot.id} (${String(lot.qty)} ${lot.good})`);
+      continue;
+    }
+    const row = inTransitByHand.get(lot.carrier) ?? new Map<GoodId, number>();
+    row.set(lot.good, (row.get(lot.good) ?? 0) + lot.qty);
+    inTransitByHand.set(lot.carrier, row);
+  }
+
+  // ── HALF ONE: the world-wide total per good. ────────────────────────────────
+  const goods = new Set<GoodId>([...manifest.keys(), ...inTransitByGood.keys()]);
   for (const good of [...goods].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
     const onHands = manifest.get(good) ?? 0;
-    const inLots = args.inTransitByGood.get(good) ?? 0;
+    const inLots = inTransitByGood.get(good) ?? 0;
     if (onHands === inLots) continue;
     out.push({
       id: 'INV-W7',
@@ -360,6 +511,37 @@ export function checkCargoMirror(args: {
         `at tick ${String(args.tick)}. The manifest and the ledger are the same quantity with two ` +
         'homes and they disagree, which is scar #5.',
     });
+  }
+
+  // ── HALF TWO: the same equality, per hand. ──────────────────────────────────
+  if (orphans.length > 0) {
+    out.push({
+      id: 'INV-W7',
+      severity: 'HALT',
+      message:
+        `${String(orphans.length)} lot(s) are IN_TRANSIT with no carrier at tick ${String(args.tick)}: ` +
+        `${orphans.slice(0, 4).join(', ')}. A lot in transit is in a hand or it is nowhere; a sink that ` +
+        'moved one without clearing its carrier has re-created the anonymous pool INV-W7 exists to end.',
+    });
+  }
+  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  for (const handId of [...new Set([...byHand.keys(), ...inTransitByHand.keys()])].sort(cmp)) {
+    const declared = byHand.get(handId) ?? new Map<GoodId, number>();
+    const carried = inTransitByHand.get(handId) ?? new Map<GoodId, number>();
+    for (const good of [...new Set([...declared.keys(), ...carried.keys()])].sort(cmp)) {
+      const onHand = declared.get(good) ?? 0;
+      const inLots = carried.get(good) ?? 0;
+      if (onHand === inLots) continue;
+      out.push({
+        id: 'INV-W7',
+        severity: 'HALT',
+        message:
+          `hand ${handId} declares ${String(onHand)} ${good} in its manifest but carries ` +
+          `${String(inLots)} in the lot table at tick ${String(args.tick)}. The manifest is per hand, ` +
+          'so the ledger must be too — a landing that draws from a shared pool is the defect this ' +
+          'half found.',
+      });
+    }
   }
   return out;
 }
