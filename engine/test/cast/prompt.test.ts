@@ -937,7 +937,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 85,884 = **34,116**. The reachable maximum is still `outside the
     // Commons and landless, at its fullest`, now 79,365 — leaving **40,635**, against a required
     // 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(85_993);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(88_377);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -992,7 +992,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // is for — it has hands, no ground to bill, and standoffs it can walk to. The reachable margin is
     // 120,000 − 76,163 = **43,837** against a required 4,000, which is the number to quote about
     // SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(79_474);
+    // ★ +2,384 at 30, and this row carries razing's whole reachable cost: a landless member outside
+    // the Commons holds no ground a claim protects, works ground somebody else may claim, and can be
+    // routed at a stage it walked to. It is the principal §11A's destruction rules are written for.
+    // The reachable margin is 120,000 − 81,858 = **38,142** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(81_858);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1658,11 +1662,15 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // section had shipped with NO unit at all — the orphan-heading guard above caught it on the
       // merge, before any reviewer did.
       55: 'fifty-five',
+      // ★ 56 at 30: §11A's `### It can be DESTROYED` block. One unit for 2,384 characters, and it is
+      // charged to the five positions outside the Commons and to none of the three inside it — A8
+      // makes a Commons WORKS unrazable, so the rules cannot reach a reader they cannot bind.
+      56: 'fifty-six',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(55);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(56);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 55],
+      spelled[n as 56],
     );
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
@@ -2398,13 +2406,46 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // stays: a newcomer is offered `refine` on its first wake, `refine{ALLOY}` is one of its two
       // recipes, and the previous text would have sent it hauling ore it never needed to move. A
       // correct rule is not a feature and does not get to be optional.
-      41_555, // a newcomer on its first wake            (+1,809 at 27)
-      49_943, // mid-game in the Commons                 (+1,809 at 27)
-      54_371, // about to take territory                 (+1,895 at 27: §11B's anchor line too)
-      54_813, // at war: party to a live campaign        (+1,895 at 27)
-      77_965, // a claimant in trouble                   (+3,202 at 27: §10's clearance read)
-      65_552, // the Commons at its fullest              (+3,116 at 27)
-      79_474, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,311)
+      // ── ★ AT 30, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // 30 makes a WORKS destructible, and §11A `### It can be DESTROYED` is its rules surface: your
+      // structure can be ended, the margin that decides it, and the fact that rebuilding gets **no**
+      // first-works discount. That last clause is why the block is not optional — a member that lost a
+      // WORKS and expected the 25,000 currency door to reopen has been billed by a rule nobody showed
+      // it, which is the class this catalog exists to prevent.
+      //
+      //   before  after   Δ       position
+      //   41,555  41,555      0  a newcomer on its first wake
+      //   49,943  49,943      0  mid-game in the Commons
+      //   54,371  56,755 +2,384  about to take territory
+      //   54,813  57,197 +2,384  at war
+      //   77,965  80,349 +2,384  a claimant in trouble
+      //   65,552  65,552      0  the Commons at its fullest
+      //   79,474  81,858 +2,384  outside the Commons and landless, at its fullest
+      //   85,993  88,377 +2,384  the analytic ceiling
+      //
+      // **+2,384 is `agent.md`'s delta to the character**, so the block lands whole wherever it lands
+      // and nothing was trimmed to fit it.
+      //
+      // **The three zeroes are the gate, and they are the whole argument for it.** The unit is `wanted`
+      // on `outsideCommons && (holdsWorks || canBuildWorks)`. A8 makes a Commons WORKS unrazable — no
+      // force reading reaches it, and `razeVerdict` refuses it as INVALID rather than merely failing —
+      // so every rule in the block is a threat that cannot touch a Commons-seated reader. Note that
+      // `mid-game in the Commons` **holds a WORKS** and still pays nothing: the works predicate alone
+      // would have charged it, and `outsideCommons` is what makes it free. That is the same call
+      // `join{RAID}`'s row records, and the same error §11E cost 3,543 characters for.
+      //
+      // The block still states the Commons exemption for the five that do get it, so a member reading
+      // it on the wake it graduates out learns both the threat and where it stops.
+      // ══════════════════════════════════════════════════════════════════════════
+      41_555, // a newcomer on its first wake                 (+0 at 30: A8 — nothing to fear)
+      49_943, // mid-game in the Commons                      (+0 at 30: holds a WORKS, still safe)
+      56_755, // about to take territory                  (+2,384 at 30)
+      57_197, // at war: party to a live campaign         (+2,384 at 30)
+      80_349, // a claimant in trouble                    (+2,384 at 30)
+      65_552, // the Commons at its fullest                   (+0 at 30: A8 again)
+      81_858, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,384)
       //
       // ── ★ +109 MORE ON FIVE ROWS: THE ENGINE'S OWN STATEMENT WAS WRONG TOO ──
       //
@@ -2470,7 +2511,13 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +3,202, and the margin is **34,116** against a required 4,000. Nothing trimmed, and nothing
       // to argue about the ceiling this time: 27 is a corrections pass and the largest single item in
       // it is a false rule being made true.
-      85_993,
+      //
+      // ── 85,993 → 88,377 at 30 ────────────────────────────────────────────────
+      //
+      // +2,384 for §11A `### It can be DESTROYED`. Margin **31,623** against a required 4,000, and the
+      // ceiling remains unreachable by construction — it holds a claim *and* is landless, which no
+      // principal is (`SOV-2` anchors a claimant's holding on its claim).
+      88_377,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
