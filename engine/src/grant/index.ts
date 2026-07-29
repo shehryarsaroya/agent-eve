@@ -13,7 +13,19 @@
  *   - `dossier.ts`     what it did with what it saw: evidence, custody, and the delayed audit
  */
 
-export { MAX_GRANT_SPENDS, GrantBook, GrantBookError, grantsStateTable } from './book.js';
+export {
+  MAX_GRANT_RELEASES,
+  MAX_GRANT_SPENDS,
+  GrantBook,
+  GrantBookError,
+  grantsStateTable,
+} from './book.js';
+export {
+  preferWiderGrant,
+  selectGrant,
+  type GrantSelection,
+  type GrantSelectionPort,
+} from './select.js';
 export {
   canonicalClearance,
   canonicalVerbs,
@@ -27,6 +39,7 @@ export {
   OFFICE_NAMES,
   OFFICE_SHAPES,
   officeShape,
+  officesCarrying,
   STORES_COMPARTMENT,
   type Compartment,
   type CompartmentPort,

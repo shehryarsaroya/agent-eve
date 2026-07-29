@@ -47,7 +47,14 @@ import { checkInv20 as checkSealVerdictScope } from '../seal/invariants.js';
 import { checkInv21 as checkStandingBatch, type StandingCause } from '../seal/standing.js';
 import { checkInv10, checkInv8, checkInv9, type RoleFills } from '../world/invariants.js';
 import type { WorldState } from '../world/state.js';
-import { checkInv22, checkInv23, type CustodyRow, type GrantSpend, type SignedDeal } from './authority.js';
+import {
+  checkInv22,
+  checkInv23,
+  type CustodyRow,
+  type GrantRelease,
+  type GrantSpend,
+  type SignedDeal,
+} from './authority.js';
 import { checkInv17, type DefaultRegister } from './attribution.js';
 import {
   checkInv24,
@@ -134,6 +141,14 @@ export interface InvariantInputs {
   // ── authority ────────────────────────────────────────────────────────────
   readonly grants?: readonly Grant[];
   readonly grantSpends?: readonly GrantSpend[];
+  /**
+   * ★ INV-22's release clause: every draw given back because its obligation can no longer be owed.
+   *
+   * Reported as a `skip` when absent, on INV-25's discipline — a journal-vs-cache check run over the
+   * spends alone would net a released grant *higher* than its row and halt a healthy world, so an
+   * omitted release journal is a hole rather than a quiet default.
+   */
+  readonly grantReleases?: readonly GrantRelease[];
   readonly deals?: readonly SignedDeal[];
   /** INV-22's custody clause: every DOSSIER cut, and the clearance that authorised it. */
   readonly custody?: readonly CustodyRow[];
@@ -369,9 +384,20 @@ export function checkInvariants(world: InvariantInputs, tick: number): Invariant
     skip('INV-22', 'no grant table supplied');
     skip('INV-23', 'no grant table supplied');
   } else {
-    guarded('INV-22', () => checkInv22(grants, world.grantSpends ?? [], tick, world.custody ?? []));
+    guarded('INV-22', () =>
+      checkInv22(
+        grants,
+        world.grantSpends ?? [],
+        tick,
+        world.custody ?? [],
+        world.grantReleases ?? [],
+      ),
+    );
     if (world.grantSpends === undefined) {
       skip('INV-22', 'no spend journal supplied; the concurrency clause did not run');
+    }
+    if (world.grantReleases === undefined) {
+      skip('INV-22', 'no release journal supplied; the give-back clause did not run');
     }
     if (world.custody === undefined) {
       // Named rather than silent, on INV-25's discipline: an invariant reporting green over a

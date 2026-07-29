@@ -485,7 +485,11 @@ export function buildObservation(input: ObserveInput): Observation {
     books, marketVenues)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
-  const exposure = runtime.ledger.encumbrances.cachedExposure(principal);
+  // ★ `Runtime.exposureOf`, not `cachedExposure`: §3's EXPOSURE is Σ open `max_direct_loss`, and a
+  // GRANT carries one. Reading the encumbrance cache alone showed a probe holding five live grants
+  // worth 160,000 of delegated authority an `exposure.mine` of 0 for a whole run, while two of the
+  // Levy's four allocation rules billed it off the same figure. One home, carried in `runtime.ts`.
+  const exposure = runtime.exposureOf(principal, tick);
   const stores = runtime.ledger.account(storesAccount(principal));
 
   return {
@@ -3958,6 +3962,8 @@ interface BoardRow {
    * (D9a) and `venture.formed` carries the grant id on a public row.
    */
   readonly creator_bound_by_grant: string | null;
+  /** ★ The delegate that bound `creator`, or null. See `VentureRecord.actedBy` (A5′). */
+  readonly creator_acted_by: string | null;
   readonly wage: number | null;
   readonly share: number | null;
   readonly escrowed: number;
@@ -4044,6 +4050,10 @@ function boardFor(
         stage: venture.stage,
         creator: venture.creator,
         creator_bound_by_grant: venture.boundByGrant,
+        // The counterparty fact that goes with it: WHO put the creator on the hook. A filler
+        // deciding whether to trust the elective half is deciding about two principals, and the row
+        // named one of them.
+        creator_acted_by: venture.actedBy,
         wage: role.terms.wage,
         share: role.terms.share,
         escrowed: role.terms.escrowed,
@@ -4215,6 +4225,16 @@ function ventureRow(
      * principal on the hook for the elective half did not personally agree to this deal.
      */
     bound_by_grant: venture.boundByGrant,
+    /**
+     * ★ **Who bound you**, or null (A5′).
+     *
+     * A blind probe read this row back on a `DEFAULTED` venture it had never created and never
+     * signed, saw `creator` and `countersigned` naming *itself*, and found no field anywhere that
+     * named the delegate that had acted — the only road to it was resolving `bound_by_grant`
+     * against `grants.granted[]`, a table inside the victim's own private observation. The record
+     * is the product; it named the wrong principal.
+     */
+    acted_by: venture.actedBy,
     projected_settlement: yourTakeAtP50(venture, principal),
     talks: runtime.talksFor(principal).filter((t) => t.venture === venture.id).length,
   };
@@ -4720,8 +4740,11 @@ function sealSlotFor(runtime: Runtime, principal: PrincipalId, tick: number): nu
  */
 function exposureBand(runtime: Runtime): string {
   let total = 0;
-  for (const p of runtime.ledger.encumbrances.principalsWithExposure()) {
-    total += runtime.ledger.encumbrances.cachedExposure(p);
+  // Every principal on the roll, not only those with a lock: the delegated half of EXPOSURE is
+  // carried by grants, and `principalsWithExposure` only knows about the encumbrance table — so the
+  // world band would have read "none open" over a galaxy full of live mandates.
+  for (const p of runtime.world.principalOrder) {
+    total += runtime.exposureOf(p);
   }
   if (total === 0) return 'none open';
   if (total < 100_000) return 'under 100000';

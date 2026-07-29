@@ -129,6 +129,54 @@ export interface VentureRecord extends Venture {
    * counterparty that had already seen it.
    */
   readonly boundByGrant: GrantId | null;
+  /**
+   * ★ **The principal that actually acted**, or null when the creator acted for itself.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A5′: THE PERMANENT PUBLIC RECORD NAMED THE WRONG PRINCIPAL.**
+   *
+   * A blind probe ran a full betrayal with two identities and read this back off the settled row:
+   *
+   *     { "id":"v:316:…", "state":"DEFAULTED", "creator":"p:probe-trust-01",
+   *       "countersigned":["p:probe-trust-01", …], "i_have_signed":true,
+   *       "bound_by_grant":"g:84:…" }
+   *
+   * `p:probe-trust-01` did not create that venture and never signed it. `p:probe-trust-02` did, and
+   * **was not named on the record at all** — final standings: grantor `defaults: 2`, delegate
+   * `defaults: 0`. The whole product is a public record of who kept their word, and it recorded the
+   * wrong name.
+   *
+   * ── WHY THIS IS NOT A SECOND HOME FOR A FACT THE GRANT ALREADY CARRIES ───────
+   *
+   * That objection was written into the docket-card code — *"the delegate is read off the grant
+   * rather than off the venture … duplicating the delegate onto the venture row would be two homes
+   * for one fact (scar #5)"* — and it is wrong for three reasons, each fatal on its own:
+   *
+   *   1. **A derivation is not a record.** `boundByGrant` → `Grant.delegate` walks a **mutable**
+   *      table: `revoke` writes to it, and `MAX_GRANTS` bounds it. A5′ is about the permanent row,
+   *      and a permanent row whose subject must be looked up somewhere that can change is a row
+   *      that can come to say something different later.
+   *   2. **It made the actor invisible where it matters most.** Two public artifacts resolved
+   *      grant → delegate and neither can carry a *default*: the frame's authority lines are capped
+   *      at twelve, and its docket cards are built from ventures still **LIVE** (`MAX_DOCKET_CARDS`
+   *      7, `atStake > 0`), so a settled default never appears on one at all. Measured on a turbo
+   *      world: the frame published for a Reckoning with **four broken promises** carried an empty
+   *      docket. A projection that drops the row a claim rests on fails *in the direction that
+   *      hides*, and this repo has now shipped that three times.
+   *   3. **A6 says the replay must point at the promotion and the deed.** It could not: the deed's
+   *      row named nobody but the victim.
+   *
+   * So the venture row is now the ONE home for *who acted*, the grant remains the one home for
+   * *what authority they held*, and the docket card reads this field instead of re-deriving it.
+   * `createVenture` refuses the two halves disagreeing, so `actedBy === null` and
+   * `boundByGrant === null` cannot come apart.
+   *
+   * Not in `terms_hash`, for `boundByGrant`'s reason: the terms are the same terms whoever formed
+   * them, and folding the actor in would make an identical deal unsignable by a counterparty that
+   * had already seen it.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly actedBy: PrincipalId | null;
   readonly valuation: PinnedValuation;
   readonly rulesVersion: number;
   resolvedAtTick: number | null;
@@ -180,6 +228,11 @@ export interface CreateVentureInput {
    * function takes it as a fact, exactly as it takes the pinned valuation.
    */
   readonly boundByGrant?: GrantId | null;
+  /**
+   * The **delegate** that formed this in the creator's name, when one did. Absent for an ordinary
+   * create, and required whenever `boundByGrant` is present — see {@link VentureRecord.actedBy}.
+   */
+  readonly actedBy?: PrincipalId | null;
 }
 
 /**
@@ -192,6 +245,30 @@ export interface CreateVentureInput {
  */
 export function createVenture(input: CreateVentureInput): WorldResult<VentureRecord> {
   const spec = kindSpec(input.kind);
+
+  // ── THE AUTHORITY AND THE ACTOR ARE ONE FACT IN TWO HALVES (A5′) ───────────
+  //
+  // First, so the two can never come apart anywhere — not on the live path, not on the restore
+  // path, not in a fixture. A row carrying a grant and no actor is the defect this field closes,
+  // rebuilt one caller away; a row carrying an actor and no grant is a delegation with no
+  // authority behind it, which is the accusation A5′ forbids most. Both throw rather than reject:
+  // the caller is the engine, and an agent cannot reach either shape.
+  const actedBy = input.actedBy ?? null;
+  const boundByGrant = input.boundByGrant ?? null;
+  if ((actedBy === null) !== (boundByGrant === null)) {
+    throw new VentureError(
+      `${input.id} names ${actedBy === null ? 'a grant with no actor' : 'an actor with no grant'} ` +
+        `(actedBy ${String(actedBy)}, boundByGrant ${String(boundByGrant)}); a delegated formation is ` +
+        'recorded with both or it is not recorded at all',
+    );
+  }
+  if (actedBy !== null && actedBy === input.creator) {
+    throw new VentureError(
+      `${input.id} records ${input.creator} as acting on its own behalf under grant ${String(boundByGrant)}; ` +
+        'a delegated formation has two principals, and a row saying otherwise would attribute a ' +
+        "delegate's act to its grantor",
+    );
+  }
 
   if (input.terms.length !== spec.roles.length) {
     return reject(
@@ -287,9 +364,10 @@ export function createVenture(input: CreateVentureInput): WorldResult<VentureRec
     // seeded here rather than left waiting on a signature it may never be awake to give. One home for
     // the answer, in `create.ts`, so the affordance list and the frame cannot reach a different one.
     countersigned: new Set<PrincipalId>(
-      boundAtFormation({ creator: input.creator, boundByGrant: input.boundByGrant ?? null }),
+      boundAtFormation({ creator: input.creator, boundByGrant }),
     ),
-    boundByGrant: input.boundByGrant ?? null,
+    boundByGrant,
+    actedBy,
     valuation: input.valuation,
     rulesVersion: input.rulesVersion,
     resolvedAtTick: null,

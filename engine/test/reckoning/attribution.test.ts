@@ -173,6 +173,8 @@ describe('INV-17 — the attribution column, resolved by the caller that appends
           amount: minor(10),
           cause: 'DECLINED',
           causeEventId: 'ev:999:0' as never,
+          actedBy: null,
+          boundByGrant: null,
         },
         handle: settlementHandle(RECKONING, haul.id),
         settledEventId: settled,

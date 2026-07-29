@@ -89,6 +89,11 @@ function healthy(f: Fixture): InvariantInputs {
     standingChanges: [],
     grants: [grant()],
     grantSpends: [],
+    // ★ INV-22's release clause (`RULES_VERSION` 26), supplied empty for exactly the reason the
+    // custody note below gives — and this test is what caught it: `requireAll` escalated the
+    // "no release journal supplied" skip to a HALT the moment the clause existed, which is the
+    // anti-flattery mechanism working on the same day the clause landed.
+    grantReleases: [],
     // Supplied, and EMPTY is the point: INV-22's custody clause reports a named skip when the
     // dossier table is absent, and `requireAll` escalates every skip to a HALT — correctly, since
     // the tick loop has no excuse for missing inputs. An empty table is an honest "nothing has

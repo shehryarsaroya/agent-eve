@@ -194,7 +194,9 @@ export {
 
 export {
   allRoleIndices,
+  electiveCeilingOfRole,
   forecastsFor,
+  maxElectiveLiability,
   projectedSettlement,
   referenceSplit,
   takeAtPercentile,

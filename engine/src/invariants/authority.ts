@@ -50,6 +50,45 @@ export interface GrantSpend {
 }
 
 /**
+ * Why a draw was given back. Registered rather than free-form, for `DefaultCauseKind`'s reason:
+ * *"the reason it released"* as prose is a permanent record nobody can verdict on, and a release is
+ * headroom returned to a limit A7 promised was the whole of it.
+ *
+ * `ABANDONED` is the only member, and that is the finding rather than a budget: it covers both paths
+ * that retire a venture without ever binding anybody — the creator's own `abandon`, and a formation
+ * window that closed with a role still open. A SETTLED or DEFAULTED venture's elective half *was*
+ * owed, so there is nothing there to give back.
+ */
+export type GrantReleaseCause = 'ABANDONED';
+
+export const GRANT_RELEASE_CAUSES: readonly GrantReleaseCause[] = Object.freeze(['ABANDONED']);
+
+/**
+ * ★ One draw **given back** because the obligation it was drawn against can no longer be owed.
+ *
+ * Deliberately the same shape as {@link GrantSpend} plus a cause, and it **names the draw it
+ * reverses** through `eventId`: `GrantBook.releaseSpend` refuses a release that cannot find its
+ * spend, and refuses one larger than what is still outstanding on it. So the pair of journals is
+ * self-checking — every release has a draw, and Σ releases per draw can never exceed it — which is
+ * the property that lets INV-22 read a *net* without the net becoming a place to hide a spend.
+ *
+ * `delegate` is carried even though the engine, not the delegate, performs a release: it is the
+ * delegate whose mandate is being un-charged, and a journal row that cannot say whose authority it
+ * is about is a row an operator cannot read under pressure.
+ */
+export interface GrantRelease {
+  readonly grant: GrantId;
+  readonly delegate: PrincipalId;
+  readonly tick: number;
+  /** The `eventId` of the spend this returns. Must exist in the spend journal. */
+  readonly eventId: EventId;
+  readonly direct: Minor;
+  readonly contingent: Minor;
+  readonly verb: string;
+  readonly cause: GrantReleaseCause;
+}
+
+/**
  * One dossier row, for INV-22's custody clause — the shape `grant/dossier.ts` writes,
  * narrowed to what the invariant reads.
  *
@@ -92,16 +131,46 @@ export interface CustodyRow {
  * two invariants owns "the delegate did more than it was allowed", which is exactly the kind
  * of two-homes-one-rule split scar #5 names.
  */
+/**
+ * The composite key a draw is indexed under: **one function, both sides.**
+ *
+ * The spend side and the release side of the clause below were written as two template literals
+ * fifty lines apart, and they disagreed about the separator — so every release reported *"names no
+ * draw in the spend journal"* and halted the world on a legitimate `abandon`. Caught by an existing
+ * test that ran a delegated world to its window close, which is the only kind of test that could
+ * have: both literals were individually correct.
+ */
+function drawKey(grant: GrantId, eventId: EventId): string {
+  return `${grant}::${eventId}`;
+}
+
 export function checkInv22(
   grants: readonly Grant[],
   spends: readonly GrantSpend[],
   tick: number,
   custody: readonly CustodyRow[] = [],
+  /**
+   * ★ The release journal (`GrantRelease`). Defaulted to empty so every existing caller keeps
+   * checking exactly what it checked before — a world that has released nothing sums the same
+   * either way — and so the clause below is *additive* rather than a new reading of an old journal.
+   */
+  releases: readonly GrantRelease[] = [],
 ): readonly InvariantViolation[] {
   const out: InvariantViolation[] = [];
   const summed = new Map<GrantId, { readonly direct: Minor; readonly contingent: Minor }>();
   const known = new Map<GrantId, Grant>();
   for (const g of grants) known.set(g.id, g);
+  // Draws by (grant, eventId), so the release clause can check each give-back against the exact
+  // draw it names rather than against the grant's total — a release that exceeded its own draw
+  // while staying under the grant's total is headroom laundered out of an unrelated act.
+  const drawnByEvent = new Map<string, { direct: number; contingent: number }>();
+  for (const s of spends) {
+    const key = drawKey(s.grant, s.eventId);
+    const acc = drawnByEvent.get(key) ?? { direct: 0, contingent: 0 };
+    acc.direct += s.direct;
+    acc.contingent += s.contingent;
+    drawnByEvent.set(key, acc);
+  }
 
   for (const spend of [...spends].sort(
     (a, b) => cmp(a.grant, b.grant) || a.tick - b.tick || cmp(a.eventId, b.eventId),
@@ -188,6 +257,95 @@ export function checkInv22(
     });
   }
 
+  // ── ★ THE RELEASE CLAUSE ─────────────────────────────────────────────────────
+  //
+  // A release returns headroom to a limit A7 promised was the whole of it, so it is audited at
+  // exactly the strength a spend is: every give-back must name a draw that exists, must not exceed
+  // what is still outstanding on that draw, and must be attributed to the grant's own delegate. An
+  // unaudited release is a way to spend a mandate twice while both the counter and the spend journal
+  // look clean — which is the read-modify-write race this invariant was written for, wearing a
+  // refund.
+  const returnedByEvent = new Map<string, { direct: number; contingent: number }>();
+  for (const release of [...releases].sort(
+    (a, b) => cmp(a.grant, b.grant) || a.tick - b.tick || cmp(a.eventId, b.eventId),
+  )) {
+    if (release.direct < 0 || release.contingent < 0) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `release ${release.eventId} against grant ${release.grant} is negative (direct ${release.direct}, ` +
+            `contingent ${release.contingent}); a release never charges a limit`,
+        ),
+      );
+    }
+    const grant = known.get(release.grant);
+    if (grant === undefined) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `release ${release.eventId} returns headroom to grant ${release.grant}, which is not in the ` +
+            'grant table',
+        ),
+      );
+      continue;
+    }
+    if (release.delegate !== grant.delegate) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `release ${release.eventId} on grant ${release.grant} is attributed to ${release.delegate}, but ` +
+            `the grant names ${grant.delegate}`,
+        ),
+      );
+    }
+    if (!GRANT_RELEASE_CAUSES.includes(release.cause)) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `release ${release.eventId} on grant ${release.grant} cites cause "${String(release.cause)}", ` +
+            `which is not one of ${GRANT_RELEASE_CAUSES.join(', ')}`,
+        ),
+      );
+    }
+    const key = drawKey(release.grant, release.eventId);
+    const drawn = drawnByEvent.get(key);
+    if (drawn === undefined) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `release ${release.eventId} on grant ${release.grant} names no draw in the spend journal; ` +
+            'headroom can only be returned to a limit it was charged to',
+        ),
+      );
+      continue;
+    }
+    const back = returnedByEvent.get(key) ?? { direct: 0, contingent: 0 };
+    back.direct += release.direct;
+    back.contingent += release.contingent;
+    returnedByEvent.set(key, back);
+    if (back.direct > drawn.direct || back.contingent > drawn.contingent) {
+      out.push(
+        halt(
+          'INV-22',
+          tick,
+          `grant ${release.grant} draw ${release.eventId} was charged ${drawn.direct}/${drawn.contingent} ` +
+            `(direct/contingent) and has had ${back.direct}/${back.contingent} returned; a release can never ` +
+            'exceed the draw it names',
+        ),
+      );
+    }
+    const acc = summed.get(release.grant) ?? { direct: minor(0), contingent: minor(0) };
+    summed.set(release.grant, {
+      direct: minor(acc.direct - release.direct),
+      contingent: minor(acc.contingent - release.contingent),
+    });
+  }
+
   for (const grant of [...known.values()].sort((a, b) => cmp(a.id, b.id))) {
     if (grant.maxDirectLoss < 0 || grant.maxContingentLiability < 0) {
       out.push(
@@ -235,7 +393,7 @@ export function checkInv22(
         halt(
           'INV-22',
           tick,
-          `grant ${grant.id}: the spend journal sums to ${acc.direct} direct, the row caches ` +
+          `grant ${grant.id}: the spend journal nets to ${acc.direct} direct, the row caches ` +
             `${grant.spentDirect}. Concurrent delegates race a counter; they cannot race a journal`,
         ),
       );
@@ -245,7 +403,7 @@ export function checkInv22(
         halt(
           'INV-22',
           tick,
-          `grant ${grant.id}: the spend journal sums to ${acc.contingent} contingent, the row caches ` +
+          `grant ${grant.id}: the spend journal nets to ${acc.contingent} contingent, the row caches ` +
             `${grant.spentContingent}`,
         ),
       );

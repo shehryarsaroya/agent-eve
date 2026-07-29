@@ -78,6 +78,7 @@
 import type {
   AccountId,
   EventId,
+  GrantId,
   HandId,
   PrincipalId,
   VentureId,
@@ -319,6 +320,21 @@ export interface VentureDefault {
   readonly cause: DefaultCause;
   /** INV-17. Never null: a default with no attributable cause is a top-severity halt. */
   readonly causeEventId: EventId;
+  /**
+   * ★ **Who bound the payer**, or null when the payer bound itself (A5′, A6).
+   *
+   * The default is the most serious thing this engine writes about an agent, and until now it named
+   * only the principal it accuses. That principal may never have seen the venture: a delegate can
+   * form one in its grantor's name and the grantor is bound at formation (`GRANT_IS_CONSENT`). So
+   * *"who broke this promise"* and *"who made it"* are two facts, and the row carried one.
+   *
+   * `payer` is unchanged and is still the promisor — the grantor really is liable, that is what the
+   * grant meant. This is the second half of the sentence, copied from {@link VentureRecord.actedBy}
+   * so a default row is readable without a second lookup into a mutable table.
+   */
+  readonly actedBy: PrincipalId | null;
+  /** The grant `actedBy` acted under, or null. Non-null exactly when `actedBy` is. */
+  readonly boundByGrant: GrantId | null;
 }
 
 /**
@@ -347,10 +363,33 @@ export interface StandingDelta {
   readonly electiveHonouredValue: Minor;
   readonly defaults: number;
   readonly defaultedValue: Minor;
+  /**
+   * ★ Who bound `principal` into the obligation this delta came out of, or null (A5′, A6).
+   *
+   * Standing is the permanent public number other agents read to decide who to trust, and a
+   * `DEFAULT` delta moves it against `principal` — which is right, the grantor is liable. What was
+   * missing is that the same row could not say the promise was made by somebody else: the probe's
+   * final standings read grantor `defaults: 2`, delegate `defaults: 0`, with no field anywhere on
+   * the path from the number to the actor.
+   *
+   * Reported, not applied: §6.4's weighting is not here and neither is any adjustment for
+   * delegation. The engine does not decide that a delegated default counts for less — that is a
+   * judgement, and A12 keeps the engine out of judgements. It records who did it.
+   */
+  readonly actedBy: PrincipalId | null;
+  readonly boundByGrant: GrantId | null;
 }
 
 export interface VentureSettlement {
   readonly venture: VentureId;
+  /**
+   * ★ Who formed this venture in the creator's name, or null (A5′, A6). Copied from the venture row
+   * so `reckoning/receipts.ts` can put the actor in an indexed **column** — the schema's own reason
+   * for `actor_principal_id`/`on_behalf_of_principal_id`/`grant_id` being columns is that *"the A6
+   * replay has to join on these"*, and until now a delegated settlement filled none of them.
+   */
+  readonly actedBy: PrincipalId | null;
+  readonly boundByGrant: GrantId | null;
   readonly outcome: ResolutionKind;
   readonly claims: ClaimBreakdown;
   readonly payouts: readonly RolePayout[];
@@ -1148,6 +1187,9 @@ function finaliseVenture(
             // destroyed the value; otherwise it is this settlement — the elapsed
             // window, which is a fact in the ledger and not an inference.
             causeEventId: w.input.causeEventId ?? w.input.eventId,
+            // A5′. Read straight off the venture row, which is the one home for it.
+            actedBy: v.actedBy,
+            boundByGrant: v.boundByGrant,
           });
           if (!selfDealt) {
             standing.push({
@@ -1159,6 +1201,8 @@ function finaliseVenture(
               electiveHonouredValue: minor(0),
               defaults: 1,
               defaultedValue: p.electiveShortfall,
+              actedBy: v.actedBy,
+              boundByGrant: v.boundByGrant,
             });
           }
         }
@@ -1175,6 +1219,11 @@ function finaliseVenture(
           electiveHonouredValue: p.electivePaid,
           defaults: 0,
           defaultedValue: minor(0),
+          // Symmetric with the DEFAULT branch, and it has to be: a record that names the actor
+          // only when the promise BROKE is a record that reads as an accusation format. The
+          // delegate that keeps its grantor's promises is on the row for the same reason.
+          actedBy: v.actedBy,
+          boundByGrant: v.boundByGrant,
         });
       }
     }
@@ -1205,6 +1254,8 @@ function finaliseVenture(
 
   return {
     venture: v.id,
+    actedBy: v.actedBy,
+    boundByGrant: v.boundByGrant,
     outcome: w.input.outcome,
     claims: w.claims,
     payouts,
