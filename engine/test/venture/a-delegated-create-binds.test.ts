@@ -83,6 +83,10 @@ describe('the creator is countersigned at formation exactly when a grant stood i
       valuation: f.valuation,
       rulesVersion: 1,
       boundByGrant: 'g:7' as GrantId,
+      // ★ `RULES_VERSION` 26: the authority and the ACTOR are one fact in two halves, and
+      // `createVenture` throws on a grant with no actor — a delegated formation the record cannot
+      // attribute is the A5′ failure this field closes (`VentureRecord.actedBy`).
+      actedBy: BRAM,
     });
     expect(made.ok).toBe(true);
     if (!made.ok) return;
@@ -155,6 +159,9 @@ describe('the creator is countersigned at formation exactly when a grant stood i
       ...args,
       id: 'v-house-bound' as VentureId,
       boundByGrant: 'g:office' as GrantId,
+      // The office-HOLDER, which is the whole point of a house creator: the syndicate cannot sign
+      // and cannot act, so somebody with hands did both in its name and the row says who.
+      actedBy: ALICE,
     });
     expect(bound.ok).toBe(true);
     if (!bound.ok) return;

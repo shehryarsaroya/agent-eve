@@ -138,6 +138,104 @@ export function yourTakeAtP50(
   return takeAtPercentile(venture, principal, 'p50', stageBps)?.take ?? minor(0);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ THE WORST CASE, WHICH IS THE ONLY NUMBER A LIMIT MAY BE MEASURED AGAINST (A7)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The **most** one role's elective part can ever come to — exact, not a forecast.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A LIMIT THAT BINDS TO THE p50 OF A DISTRIBUTION IS NOT A LIMIT.**
+ *
+ * A blind probe held a grant with `max_contingent_liability: 30000`, had its delegate create a
+ * HAUL (value 8000, `elective_bps` 2500), and watched the engine **charge the grant 2,000** — Σ
+ * `role.terms.elective`, the pinned figure. The server then told the grantor its actual ceiling in
+ * the same observation: role 0 *"up to 5460"*, role 1 *"up to 2340"*, and `if_you_do_nothing`:
+ * *"your elective **7800** is NOT paid — … a default on the record."* Drawn against the limit:
+ * 2,000. Payable: **7,800**. Per-kind the multiplier was HAUL 3.9× and BUILD 3.93×, and it is
+ * unbounded in principle because the two numbers are **independent**: the pinned figure scales with
+ * the `value` the *delegate* chooses, while the amount actually asked for is
+ * `claim - min(claim, escrowed)` where the claim is a share of proceeds — and proceeds come from the
+ * KIND's `baseYieldMinor`, which no parameter of `create` touches.
+ *
+ * `agent.md` §10 tells a grantor the LIMITS *"are the whole of it"* and the refusal asserted the
+ * tail is *"capped by the second LIMIT the grantor was shown before it signed"*. Both were false.
+ * That is scar #1 with money on it.
+ *
+ * ── WHY THIS IS THE FIX RATHER THAN A NARROWER PROMISE ───────────────────────
+ *
+ * Because the engine **already** charges the worst case for the same obligation one verb away.
+ * `elect`'s `IN_FULL` branch draws `Runtime.electiveCeilingOf`, whose own docstring says the pinned
+ * `role.terms.elective` *may not* stand in for it: *"on a share role the due is `claim -
+ * escrowedDue` … so a venture that over-performs owes MORE than the pinned figure — §7.1's trap, in
+ * the one field the document says to trust."* So the codebase had already decided; `create` had not
+ * been told. Narrowing the text instead would have meant writing, on the most-read surface in the
+ * game, that the number bounding a grantor's downside bounds the median case — which no grantor
+ * would read as a bound.
+ *
+ * ── WHY THIS IS EXACT AND NOT PROBABILISTIC ──────────────────────────────────
+ *
+ * The residual is a seeded draw inside a band the kind publishes, so `residualAtPercentile('p90')`
+ * is the band's **top end** rather than a quantile, and proceeds are monotone in it. Quoted at a
+ * **full fill** because a venture reaches `LIVE` only fully filled and only a `LIVE` venture
+ * settles, and because claims are monotone in the filled set (a role's claim is proportional to
+ * `Σ filled shares × its own share`, so every unfilled role lowers it). Both bounds therefore hold
+ * with equality in the case that actually occurs, not merely in expectation.
+ *
+ * `stageBps` defaults to {@link NEUTRAL_STAGE_BPS}, which is what every caller in the engine passes
+ * today. **If a stage condition above neutral is ever introduced, this bound moves with it** — the
+ * argument is a bound on proceeds, and a multiplier above 1 raises proceeds.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function electiveCeilingOfRole(
+  venture: VentureRecord,
+  roleIndex: number,
+  stageBps: Bps = NEUTRAL_STAGE_BPS,
+): Minor {
+  const filled = allRoleIndices(venture);
+  const proceeds = computeProceeds({
+    kind: venture.kind,
+    filled,
+    stageBps,
+    residualSignedBps: residualAtPercentile(venture.kind, 'p90'),
+  }).proceeds;
+  const claims = computeClaims(venture, proceeds, filled);
+  return claims.roles.find((r) => r.roleIndex === roleIndex)?.electiveDue ?? minor(0);
+}
+
+/**
+ * ★ **Σ over every role of {@link electiveCeilingOfRole}** — the most the creator of this venture
+ * can ever be asked for on the elective half, and therefore the figure a delegated `create` charges
+ * against `max_contingent_liability` (SPEC §8.1 #2, A7).
+ *
+ * Σ over **every** role rather than the filled ones, for {@link electiveTotal}'s reason: at creation
+ * no role is filled, so the worst case is that every one of them goes to a stranger and the creator
+ * owes all of it. A figure that assumed the creator would take a slot itself would be a forecast
+ * dressed as a bound.
+ *
+ * `electiveTotal` still exists and is still the **pinned** figure — what the parties priced the
+ * unsecured half at, which is the right number for the card, the docket's `atStake`, and the
+ * escrow/elective partition of `pinnedValue`. One word per concept: that is the PRICE, this is the
+ * BOUND, and the whole defect was one standing in for the other.
+ */
+export function maxElectiveLiability(
+  venture: VentureRecord,
+  stageBps: Bps = NEUTRAL_STAGE_BPS,
+): Minor {
+  const filled = allRoleIndices(venture);
+  const proceeds = computeProceeds({
+    kind: venture.kind,
+    filled,
+    stageBps,
+    residualSignedBps: residualAtPercentile(venture.kind, 'p90'),
+  }).proceeds;
+  const claims = computeClaims(venture, proceeds, filled);
+  let total = minor(0);
+  for (const role of claims.roles) total = minor(total + role.electiveDue);
+  return total;
+}
+
 /**
  * **`projected_settlement`** — "if this resolved now, you receive X, they receive Y"
  * (§7), for every live venture and for the spectator card.

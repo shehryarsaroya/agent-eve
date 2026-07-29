@@ -30,7 +30,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { checkInv26 } from '../../src/invariants/crowd.js';
-import { MAX_GRANT_SPENDS } from '../../src/grant/index.js';
+import { MAX_GRANT_RELEASES, MAX_GRANT_SPENDS } from '../../src/grant/index.js';
 import { MAX_GRANTS, Runtime } from '../../src/sim/runtime.js';
 import { grantsStateTable } from '../../src/grant/index.js';
 import { setSpeed } from '../../src/core/time.js';
@@ -67,9 +67,15 @@ describe('the cap walker is actually handed something', () => {
     expect(MAX_GRANTS).toBeGreaterThan(0);
     expect(MAX_GRANT_SPENDS).toBeGreaterThan(0);
     const src = readFileSync(new URL('../../src/sim/runtime.ts', import.meta.url), 'utf8');
-    const block = src.slice(src.indexOf('capped: ['), src.indexOf('capped: [') + 900);
+    // Wide enough to reach the whole `grant` entry's cap list. 900 was enough for two caps and not
+    // for four, so this went red on a change that added a correctly-declared one — a window that
+    // fails in the direction that HIDES would have been the worse bug, but a window that fails on
+    // a comment is still a window, and the fix is to size it to the block rather than to today.
+    const block = src.slice(src.indexOf('capped: ['), src.indexOf('capped: [') + 3_000);
+    expect(MAX_GRANT_RELEASES).toBeGreaterThan(0);
     expect(block, 'the grants cap must come from the constant').toContain('max: MAX_GRANTS');
     expect(block, 'and the spends cap likewise').toContain('max: MAX_GRANT_SPENDS');
+    expect(block, 'and the releases cap likewise').toContain('max: MAX_GRANT_RELEASES');
   });
 
   it('walks the real grant capture with no undeclared arrays in it', () => {
@@ -89,6 +95,10 @@ describe('the cap walker is actually handed something', () => {
       [
         { path: 'grants', max: MAX_GRANTS },
         { path: 'spends', max: MAX_GRANT_SPENDS },
+        // ★ The release journal, declared at `RULES_VERSION` 26. This test did exactly what its own
+        // comment promised — it went red the day the capture grew a third array, before any world
+        // could halt on it — and so did INV-26 itself, on the first suite run after the field landed.
+        { path: 'releases', max: MAX_GRANT_RELEASES },
       ],
       rt.engine.tick,
       'grant',

@@ -185,6 +185,20 @@ export const OFFICE_SHAPES: Readonly<Record<string, OfficeShape>> = Object.freez
 /** The template names, in the order `GRANT_TEMPLATES` publishes them. */
 export const OFFICE_NAMES: readonly string[] = Object.freeze(Object.keys(OFFICE_SHAPES));
 
+/**
+ * The template names whose shape carries `verb`, in {@link OFFICE_NAMES} order.
+ *
+ * Derived from {@link OFFICE_SHAPES} rather than listed, for `isTopYield`'s reason: a refusal that
+ * names the offices to ask for is only useful while the list is true, and a hand-maintained list of
+ * *"a quartermaster, escort-captain, factor or steward"* in a refusal string is a rules surface that
+ * rots the first time an office's verbs change. `custom` never appears — it carries nothing until
+ * its grantor names something, so telling an agent to ask for one would be telling it to ask for an
+ * office nobody can use.
+ */
+export function officesCarrying(verb: string): readonly string[] {
+  return OFFICE_NAMES.filter((name) => officeShape(name)?.verbs.includes(verb) === true);
+}
+
 export function officeShape(template: string): OfficeShape | undefined {
   return Object.prototype.hasOwnProperty.call(OFFICE_SHAPES, template)
     ? OFFICE_SHAPES[template]

@@ -27,7 +27,8 @@ import type { EventId, Grant, GrantId, PrincipalId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 import { addMinor, minor, type Minor } from '../core/units.js';
 import { isExpiredAt, isRevokedAt } from '../identity/vc.js';
-import type { GrantSpend } from '../invariants/authority.js';
+import type { GrantRelease, GrantSpend } from '../invariants/authority.js';
+import { GRANT_RELEASE_CAUSES, type GrantReleaseCause } from '../invariants/authority.js';
 import type { CanonicalValue } from '../core/canonical.js';
 import type { StateTable } from '../tick/snapshot.js';
 import { canonicalClearance, canonicalVerbs } from './compartment.js';
@@ -49,6 +50,13 @@ export class GrantBookError extends Error {}
  */
 export const MAX_GRANT_SPENDS = 16_384;
 
+/**
+ * A cap on the release journal (INV-26), and it is **half** the spend cap on purpose: a release
+ * always names a spend that is already in the journal, so there can never be more releases than
+ * spends, and a bound larger than that would be a bound that cannot bind.
+ */
+export const MAX_GRANT_RELEASES = MAX_GRANT_SPENDS;
+
 export class GrantBook {
   private readonly byId = new Map<GrantId, Grant>();
 
@@ -59,6 +67,35 @@ export class GrantBook {
    * and a journal is not. Append-only within a run; captured and replayed with the rows.
    */
   private readonly spendLog: GrantSpend[] = [];
+
+  /**
+   * ★ The **release** journal — draws given back because the obligation they were drawn against
+   * can no longer be owed (SPEC §8.1 #2, A7).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A RETIRED VENTURE USED TO CONSUME THE GRANTOR'S BUDGET FOREVER.**
+   *
+   * A blind probe watched a BUILD with 28,000 of elective liability retire **ABANDONED** having
+   * paid nobody, and read `spent_contingent: 28000, headroom_contingent: 2000` off the grant on
+   * three separate wakes afterwards — while the grantor's own `if_you_do_nothing` promised *"your
+   * escrow … is refunded in full … and nothing stays locked."* 30,000 of a 30,000 mandate gone on
+   * ventures that never bound anybody, **at zero cost to the delegate**: a
+   * denial-of-authority attack whose only requirement is a `create` and an `abandon`.
+   *
+   * ── WHY A SECOND JOURNAL AND NOT A NEGATIVE SPEND ────────────────────────────
+   *
+   * `recordSpend` refuses a negative row — *"a spend never returns headroom"* — and INV-22 halts
+   * the world over one. Both are right and neither should be relaxed: a journal whose rows can be
+   * negative is a journal in which an over-release and a legitimate draw look alike. So a release
+   * is its own row, it must **name the spend it gives back**, and it can never exceed it
+   * ({@link GrantBook.releaseSpend}). INV-22 then reads the net — Σ spends − Σ releases — and the
+   * row caches remain the cache it checks.
+   *
+   * Captured with the rows and the spends, for `spentDirect`'s reason: a restored world that forgot
+   * a release would believe a delegate had drained a mandate it had handed back.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private readonly releaseLog: GrantRelease[] = [];
 
   get(id: GrantId): Grant | undefined {
     return this.byId.get(id);
@@ -140,9 +177,123 @@ export class GrantBook {
     this.spendLog.push(spend);
   }
 
+  /**
+   * ★ Give back a draw whose obligation can no longer be owed.
+   *
+   * **Where it happens:** the two paths that retire a venture without ever binding anybody —
+   * `abandon` (the creator gives up a FORMING venture) and `retireFormation` (its window closed
+   * with a role still open). Both already refund the escrow and release the stakes; this is the
+   * same release applied to the authority the escrow was drawn against.
+   *
+   * **Where it deliberately does NOT happen:** settlement. A SETTLED or DEFAULTED venture's
+   * elective half *was* owed and is now either paid or on the record forever, so the draw records
+   * a commitment the delegate really made. Releasing there would turn `max_contingent_liability`
+   * from a lifetime bound into a concurrent one, which is a different promise from the one the
+   * grantor read.
+   *
+   * Five refusals, and each is a way an over-release could launder headroom back into a spent
+   * mandate — which is INV-22's own subject seen from the other side, so they throw rather than
+   * return: the caller is the engine, and there is no correct way to continue past *"I am about to
+   * un-charge a limit by more than was ever charged to it"*.
+   */
+  releaseSpend(release: GrantRelease): void {
+    const grant = this.byId.get(release.grant);
+    if (grant === undefined) throw new GrantBookError(`no grant ${release.grant} to release against`);
+    if (release.direct < 0 || release.contingent < 0) {
+      throw new GrantBookError(
+        `a release never charges a limit: direct ${release.direct}, contingent ${release.contingent}`,
+      );
+    }
+    if (release.direct === 0 && release.contingent === 0) return;
+    // The draw this names, netted against anything already given back for it. A release that
+    // cannot find its spend is a release of headroom nobody ever charged.
+    const outstanding = this.netDrawOf(release.grant, release.eventId);
+    if (!outstanding.charged) {
+      throw new GrantBookError(
+        `release ${release.eventId} against grant ${release.grant} names no draw in the journal; ` +
+          'headroom can only be returned to a limit it was charged to',
+      );
+    }
+    const drawnDirect = outstanding.direct;
+    const drawnContingent = outstanding.contingent;
+    if (release.direct > drawnDirect || release.contingent > drawnContingent) {
+      throw new GrantBookError(
+        `release ${release.eventId} against grant ${release.grant} would return ${release.direct}/` +
+          `${release.contingent} (direct/contingent) against ${drawnDirect}/${drawnContingent} still ` +
+          'outstanding on that draw; a release can never exceed the draw it names',
+      );
+    }
+    if (this.releaseLog.length >= MAX_GRANT_RELEASES) {
+      throw new GrantBookError(`the grant release journal is at its cap of ${MAX_GRANT_RELEASES}`);
+    }
+    grant.spentDirect = minor(Math.max(0, grant.spentDirect - release.direct));
+    grant.spentContingent = minor(Math.max(0, grant.spentContingent - release.contingent));
+    this.releaseLog.push(release);
+  }
+
   /** The spend journal, in the order draws were recorded. INV-22's source of truth. */
   allSpends(): readonly GrantSpend[] {
     return this.spendLog;
+  }
+
+  /** The release journal, in the order draws were given back. INV-22's other input. */
+  allReleases(): readonly GrantRelease[] {
+    return this.releaseLog;
+  }
+
+  /**
+   * ★ What **one draw** on one grant still stands at, net of releases — and whether it was ever
+   * charged at all.
+   *
+   * Three readers, which is why it is a method rather than three loops:
+   *
+   *   1. {@link GrantBook.releaseSpend}, to refuse a give-back larger than its own draw;
+   *   2. `Runtime.releaseGrantDraw`, to know how much to give back when a venture retires;
+   *   3. **`elect`, so a liability already charged at `create` is not charged twice.** That third
+   *      one appeared the moment `create` started charging the worst case: `elect`'s `IN_FULL`
+   *      branch draws the same p90 ceiling, so a `steward` used for both verbs consumed 2× the
+   *      bound, and a mandate sized for one venture would have refused the very `elect` that keeps
+   *      its promise — the engine manufacturing a default, which is A5′'s own failure.
+   */
+  netDrawOf(
+    grant: GrantId,
+    eventId: EventId,
+  ): { readonly charged: boolean; readonly direct: Minor; readonly contingent: Minor } {
+    let direct = 0;
+    let contingent = 0;
+    let charged = false;
+    for (const s of this.spendLog) {
+      if (s.grant !== grant || s.eventId !== eventId) continue;
+      charged = true;
+      direct += s.direct;
+      contingent += s.contingent;
+    }
+    for (const r of this.releaseLog) {
+      if (r.grant !== grant || r.eventId !== eventId) continue;
+      direct -= r.direct;
+      contingent -= r.contingent;
+    }
+    return { charged, direct: minor(Math.max(0, direct)), contingent: minor(Math.max(0, contingent)) };
+  }
+
+  /**
+   * What a grant has actually been charged, net of releases — the figure the row caches hold and
+   * INV-22 recomputes. One home, so the invariant and the book cannot disagree about the arithmetic.
+   */
+  netSpendOf(id: GrantId): { readonly direct: Minor; readonly contingent: Minor } {
+    let direct = 0;
+    let contingent = 0;
+    for (const s of this.spendLog) {
+      if (s.grant !== id) continue;
+      direct += s.direct;
+      contingent += s.contingent;
+    }
+    for (const r of this.releaseLog) {
+      if (r.grant !== id) continue;
+      direct -= r.direct;
+      contingent -= r.contingent;
+    }
+    return { direct: minor(direct), contingent: minor(contingent) };
   }
 
   /**
@@ -153,6 +304,11 @@ export class GrantBook {
    */
   hydrateSpends(spends: readonly GrantSpend[]): void {
     for (const s of spends) this.spendLog.push(s);
+  }
+
+  /** Restore-only, for {@link GrantBook.hydrateSpends}'s reason. Bypasses the cap and the cache. */
+  hydrateReleases(releases: readonly GrantRelease[]): void {
+    for (const r of releases) this.releaseLog.push(r);
   }
 
   /**
@@ -219,17 +375,34 @@ export class GrantBook {
   }
 
   /**
-   * The live grant authorising `delegate` to act for `grantor` at `atTick`, or null.
+   * Every live grant from `grantor` to `delegate` at `atTick`, in canonical id order.
    *
-   * At most one is expected per (grantor, delegate) pair at a time, but if more than
-   * one is live the one with the most direct headroom is returned — a delegate should
-   * be told the most it can do, and picking deterministically (headroom, then id)
-   * keeps replay stable.
+   * The input to {@link selectGrant}, which is where "which of these authorises this verb"
+   * is decided. This method deliberately does **not** rank them: ranking without knowing the
+   * verb is what made a grantor's oldest, narrowest grant shadow four wider ones.
    */
-  liveGrantBetween(grantor: PrincipalId, delegate: PrincipalId, atTick: number): Grant | null {
-    const candidates = this.all().filter(
+  liveGrantsBetween(grantor: PrincipalId, delegate: PrincipalId, atTick: number): readonly Grant[] {
+    return this.all().filter(
       (g) => g.grantor === grantor && g.delegate === delegate && this.isLive(g.id, atTick),
     );
+  }
+
+  /**
+   * Is there ANY live grant from `grantor` to `delegate`? — and if so, one of them.
+   *
+   * ── THIS IS NO LONGER HOW A DRAW PICKS ITS MANDATE ───────────────────────────
+   *
+   * It answers *"does this delegate hold authority here at all"*, which is what the
+   * anti-self-dealing guard (§8.1 #3) and the grant-candidate filter actually ask. A draw asks a
+   * different question — *"which mandate authorises this verb"* — and must go through
+   * {@link selectGrant}, because ranking by headroom before consulting the fence returns the
+   * oldest grant whatever it carries. See `grant/select.ts` for the probe run that found it.
+   *
+   * Kept ranked (most direct headroom, then id) so the two callers that only need existence still
+   * get a deterministic row rather than an arbitrary one.
+   */
+  liveGrantBetween(grantor: PrincipalId, delegate: PrincipalId, atTick: number): Grant | null {
+    const candidates = this.liveGrantsBetween(grantor, delegate, atTick);
     if (candidates.length === 0) return null;
     return candidates.reduce((best, g) => {
       const bh = best.maxDirectLoss - best.spentDirect;
@@ -238,6 +411,45 @@ export class GrantBook {
       if (gh < bh) return best;
       return compareIds(g.id, best.id) < 0 ? g : best;
     });
+  }
+
+  /**
+   * ★ **EXPOSURE's delegated half: Σ `max_direct_loss` over every LIVE grant this principal has
+   * issued** (SPEC §3, §11B).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **§11B SAYS EXPOSURE IS Σ YOUR OPEN `max_direct_loss`, AND A GRANT'S WAS NEVER IN IT.**
+   *
+   * `EncumbranceBook.recomputeExposure` sums the `maxDirectLoss` of open *locks*, and a grant is
+   * not a lock — so a principal with five live grants totalling 160,000 of `max_direct_loss`
+   * registered as **exposure 0**, which is what a blind probe measured for a whole run.
+   *
+   * That is not a cosmetic gap. Two of the Levy's four allocation rules read EXPOSURE (§5.2), and
+   * the published default is `INVERSE_EXPOSURE` — so a principal loaded up by its delegate showed
+   * as the *least* exposed in its constellation and was **shielded** by the rule, which is the
+   * exact inverse of §5's *"hiding is the most taxed posture in the game."*
+   *
+   * ── THE CAP, NOT THE DRAW, AND THAT IS THE WHOLE POINT ───────────────────────
+   *
+   * `maxDirectLoss` rather than `spentDirect` or the remaining headroom: EXPOSURE is *"the most
+   * you can lose"*, and a grantor that has signed a 50,000 mandate its delegate has not yet used
+   * can lose 50,000 tonight. Charging the drawn part only would make signing a wide grant a way to
+   * carry peril without registering any — a hiding posture bought with an act the frame already
+   * draws. Revoking or letting it expire is what reduces the figure, and that is a real, legible
+   * lever rather than a loophole.
+   *
+   * Nothing double-counts: escrow committed by a delegated `create` leaves the grantor's stores as
+   * a transfer, opens no lock, and therefore appears in neither term.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  delegatedExposureOf(grantor: PrincipalId, atTick: number): Minor {
+    let total = 0;
+    for (const g of this.byId.values()) {
+      if (g.grantor !== grantor) continue;
+      if (!this.isLive(g.id, atTick)) continue;
+      total += g.maxDirectLoss;
+    }
+    return minor(total);
   }
 
   forDelegate(delegate: PrincipalId): readonly Grant[] {
@@ -303,6 +515,22 @@ export function grantsStateTable(
           contingent: s.contingent,
           verb: s.verb,
         })),
+      // The releases, for the spends' reason. A capture that carried the draws and not the
+      // give-backs would restore a world in which every abandoned venture had permanently eaten
+      // its grantor's budget — the defect this journal exists to close, reintroduced by the
+      // rollback path.
+      releases: read()
+        .allReleases()
+        .map((r) => ({
+          grant: r.grant,
+          delegate: r.delegate,
+          tick: r.tick,
+          eventId: r.eventId,
+          direct: r.direct,
+          contingent: r.contingent,
+          verb: r.verb,
+          cause: r.cause,
+        })),
     }),
     restore: (captured: CanonicalValue): void => {
       const root = snapObject(captured, 'grant table');
@@ -347,6 +575,28 @@ export function grantsStateTable(
         });
       }
       book.hydrateSpends(spends);
+      const releases: GrantRelease[] = [];
+      for (const row of snapArray(root['releases'] ?? [], 'grant releases')) {
+        const r = snapObject(row, 'grant release');
+        const cause = snapString(r, 'cause', 'grant release');
+        if (!GRANT_RELEASE_CAUSES.includes(cause as GrantReleaseCause)) {
+          throw new GrantBookError(
+            `grant release cause "${cause}" is not one of ${GRANT_RELEASE_CAUSES.join(', ')}; a restored ` +
+              'release with an unknown cause is headroom returned for a reason this build cannot state',
+          );
+        }
+        releases.push({
+          grant: snapString(r, 'grant', 'grant release') as GrantId,
+          delegate: snapString(r, 'delegate', 'grant release') as PrincipalId,
+          tick: snapInt(r, 'tick', 'grant release'),
+          eventId: snapString(r, 'eventId', 'grant release') as EventId,
+          direct: minor(snapInt(r, 'direct', 'grant release')),
+          contingent: minor(snapInt(r, 'contingent', 'grant release')),
+          verb: snapString(r, 'verb', 'grant release'),
+          cause: cause as GrantReleaseCause,
+        });
+      }
+      book.hydrateReleases(releases);
       write(book);
     },
   };

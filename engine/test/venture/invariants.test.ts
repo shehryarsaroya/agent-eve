@@ -260,6 +260,8 @@ describe('INV-6 — the settlement arithmetic', () => {
           amount: minor(10),
           cause: 'DECLINED',
           causeEventId: ev('x'),
+          actedBy: null,
+          boundByGrant: null,
         },
       ],
     };
@@ -284,6 +286,8 @@ describe('INV-6 — the settlement arithmetic', () => {
           amount: minor(10),
           cause: 'DECLINED',
           causeEventId: ev(''),
+          actedBy: null,
+          boundByGrant: null,
         },
       ],
     };
@@ -307,6 +311,8 @@ describe('INV-6 — the settlement arithmetic', () => {
           electiveHonouredValue: minor(500),
           defaults: 0,
           defaultedValue: minor(0),
+          actedBy: null,
+          boundByGrant: null,
         },
       ],
     };
@@ -330,6 +336,8 @@ describe('INV-6 — the settlement arithmetic', () => {
           electiveHonouredValue: minor(500),
           defaults: 0,
           defaultedValue: minor(0),
+          actedBy: null,
+          boundByGrant: null,
         },
       ],
     };

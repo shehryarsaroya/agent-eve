@@ -29,7 +29,7 @@
  * the postings by `eventFamilyId`, and nothing reads them to decide anything.
  */
 
-import type { EventId, GameEvent, PrincipalId, VentureId } from '../core/types.js';
+import type { EventId, GameEvent, GrantId, PrincipalId, VentureId } from '../core/types.js';
 import type { AudienceAdmission, NewEvent } from '../events/index.js';
 import { compareIds } from '../ledger/index.js';
 import type { VentureRecord } from './venture.js';
@@ -60,10 +60,60 @@ export interface ReceiptContext {
   readonly parentEventId: EventId | null;
 }
 
+/**
+ * ★ Who a delegated settlement row names, in the two columns that already exist for it.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **INV-17 HAS ALWAYS HAD A BRANCH FOR THIS AND IT HAS NEVER BEEN REACHABLE.**
+ *
+ * `checkInv17` accepts a default row whose `actorPrincipalId` is *not* the promisor **provided
+ * `onBehalfOfPrincipalId` is** — the exact `(delegate, grantor)` convention `venture.formed` has
+ * used since the grant layer shipped. Every settlement row in this module wrote `null` into both
+ * columns, so that clause has been dead code for the project's whole life while the delegate was
+ * recoverable from no column at all. Another verb-with-no-affordance, one layer down.
+ *
+ * So on a delegated venture the pair is `(actedBy, creator)` and `grant_id` is set; on an ordinary
+ * one it is `(creator, null)` with no grant, byte-identical to before. `payload.payer` is untouched
+ * and is still the unambiguous "who the record accuses", which is what the dossier, the register and
+ * `DefaultAttribution.promisor` all read — so nothing that decides a reputation changes hands.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+function attributionOf(
+  settlement: Pick<VentureSettlement, 'actedBy' | 'boundByGrant'>,
+  creator: PrincipalId,
+): {
+  readonly actor: PrincipalId;
+  readonly onBehalfOf: PrincipalId | null;
+  readonly grant: GrantId | null;
+} {
+  if (settlement.actedBy === null) return { actor: creator, onBehalfOf: null, grant: null };
+  return { actor: settlement.actedBy, onBehalfOf: creator, grant: settlement.boundByGrant };
+}
+
+/** The payload keys a delegated row adds, and nothing at all on an ordinary one. */
+function attributionPayload(
+  settlement: Pick<VentureSettlement, 'actedBy' | 'boundByGrant'>,
+  creator: PrincipalId,
+): Readonly<Record<string, unknown>> {
+  if (settlement.actedBy === null) return {};
+  return {
+    // Duplicated from the columns deliberately, exactly as `causeEventId` is: the columns are what
+    // an auditor joins on, and this is the human-readable copy beside the rest of the row.
+    actedBy: settlement.actedBy,
+    boundByGrant: settlement.boundByGrant,
+    boundNote:
+      `${settlement.actedBy} bound ${creator} to this under grant ${String(settlement.boundByGrant)}. ` +
+      `${creator} did not countersign and did not need to: the grant was the consent, and its LIMITS ` +
+      'were the bound.',
+  };
+}
+
 function publicEvent(args: {
   readonly ctx: ReceiptContext;
   readonly kind: string;
   readonly actor: PrincipalId | null;
+  readonly onBehalfOf?: PrincipalId | null;
+  readonly grant?: GrantId | null;
   readonly venture: VentureId;
   readonly payload: GameEvent['payload'];
 }): NewEvent {
@@ -72,8 +122,8 @@ function publicEvent(args: {
     kind: args.kind,
     rulesVersion: args.ctx.rulesVersion,
     actorPrincipalId: args.actor,
-    onBehalfOfPrincipalId: null,
-    grantId: null,
+    onBehalfOfPrincipalId: args.onBehalfOf ?? null,
+    grantId: args.grant ?? null,
     eventFamilyId: args.ctx.familyOf(args.venture),
     parentEventId: args.ctx.parentEventId,
     isPublic: true,
@@ -110,11 +160,17 @@ export function formationEvent(
       .filter((p) => p !== venture.creator)
       .map((p): AudienceAdmission => ({ principal: p, basis: 'PARTY' })),
   ];
+  // The same pair the settlement rows use, from the same function: a formation row that named only
+  // the creator was the first place the delegate went missing, and this module writes both ends of
+  // the venture's life.
+  const who = attributionOf(venture, venture.creator);
   if (venture.visibility === 'PUBLIC') {
     return publicEvent({
       ctx,
       kind: VENTURE_EVENT_KINDS.formed,
-      actor: venture.creator,
+      actor: who.actor,
+      onBehalfOf: who.onBehalfOf,
+      grant: who.grant,
       venture: venture.id,
       payload: formationPayload(venture),
     });
@@ -123,9 +179,9 @@ export function formationEvent(
     tick: ctx.tick,
     kind: VENTURE_EVENT_KINDS.formed,
     rulesVersion: ctx.rulesVersion,
-    actorPrincipalId: venture.creator,
-    onBehalfOfPrincipalId: null,
-    grantId: null,
+    actorPrincipalId: who.actor,
+    onBehalfOfPrincipalId: who.onBehalfOf,
+    grantId: who.grant,
     eventFamilyId: ctx.familyOf(venture.id),
     parentEventId: ctx.parentEventId,
     isPublic: false,
@@ -145,6 +201,7 @@ function formationPayload(venture: VentureRecord): GameEvent['payload'] {
     venture: venture.id,
     kind: venture.kind,
     creator: venture.creator,
+    ...attributionPayload(venture, venture.creator),
     stage: venture.stage,
     termsHash: venture.termsHash,
     windowOpensTick: venture.windowOpensTick,
@@ -177,6 +234,8 @@ export function settlementEvents(
   ctx: ReceiptContext,
 ): readonly NewEvent[] {
   const out: NewEvent[] = [];
+  const who = attributionOf(settlement, creator);
+  const whoPayload = attributionPayload(settlement, creator);
 
   out.push(
     publicEvent({
@@ -185,10 +244,18 @@ export function settlementEvents(
         settlement.terminalState === 'DEFERRED'
           ? VENTURE_EVENT_KINDS.deferred
           : VENTURE_EVENT_KINDS.settled,
-      actor: creator,
+      actor: who.actor,
+      onBehalfOf: who.onBehalfOf,
+      grant: who.grant,
       venture: settlement.venture,
       payload: {
         venture: settlement.venture,
+        // ★ The settled row is the one a probe read back and found naming only the victim, so the
+        // creator and the actor are both on it. `creator` is stated rather than left implicit for
+        // the same reason: the row that says a venture DEFAULTED must not need a second row to say
+        // whose it was.
+        creator,
+        ...whoPayload,
         outcome: settlement.outcome,
         terminalState: settlement.terminalState,
         proceeds: settlement.claims.proceeds,
@@ -219,10 +286,14 @@ export function settlementEvents(
       publicEvent({
         ctx,
         kind: VENTURE_EVENT_KINDS.loss,
-        actor: creator,
+        actor: who.actor,
+        onBehalfOf: who.onBehalfOf,
+        grant: who.grant,
         venture: settlement.venture,
         payload: {
           venture: settlement.venture,
+          creator,
+          ...whoPayload,
           outcome: settlement.outcome,
           amount: settlement.recordedLoss,
           // Structural, matching `ledger/cargoLost.ts`'s literal `isDefault: false`:
@@ -239,10 +310,14 @@ export function settlementEvents(
       publicEvent({
         ctx,
         kind: VENTURE_EVENT_KINDS.loss,
-        actor: creator,
+        actor: who.actor,
+        onBehalfOf: who.onBehalfOf,
+        grant: who.grant,
         venture: settlement.venture,
         payload: {
           venture: settlement.venture,
+          creator,
+          ...whoPayload,
           outcome: settlement.outcome,
           amount: settlement.unattributed,
           isDefault: false,
@@ -260,7 +335,14 @@ export function settlementEvents(
       publicEvent({
         ctx,
         kind: VENTURE_EVENT_KINDS.defaulted,
-        actor: d.payer,
+        // ★ A5′. `d.payer` is still the promisor — it is in the payload below, it is what
+        // `DefaultAttribution.promisor` records, and it is what the dossier queries. What the
+        // COLUMNS now carry is the pair INV-17 was already written to accept: the delegate that
+        // bound the payer, and the payer it bound. On a self-created venture both of these are the
+        // payer and `null`, exactly as before.
+        actor: d.actedBy ?? d.payer,
+        onBehalfOf: d.actedBy === null ? null : d.payer,
+        grant: d.boundByGrant,
         venture: settlement.venture,
         // ── AN OPEN CONSTRAINT, stated here because this is where it bites ────────
         //
@@ -292,6 +374,10 @@ export function settlementEvents(
           payee: d.payee,
           amount: d.amount,
           cause: d.cause,
+          // The actor, on the accusation itself. Without this the only road from a default to the
+          // principal that created the obligation ran through the grant table — which the probe
+          // could reach only inside the victim's own private observation.
+          ...attributionPayload(d, d.payer),
           // Kept in the payload too: the column is what INV-17 checks and what an
           // auditor joins on, and this is the human-readable copy beside the rest of
           // the row. Deliberately duplicated, and the invariant asserts they agree.

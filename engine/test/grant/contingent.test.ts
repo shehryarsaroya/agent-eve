@@ -41,13 +41,36 @@ import { UnitError, minor } from '../../src/core/units.js';
 import { MAX_GRANT_SPENDS } from '../../src/grant/index.js';
 import { checkInv22, type GrantSpend } from '../../src/invariants/authority.js';
 import { storesAccount } from '../../src/ledger/index.js';
-import { electiveTotal, escrowRequired, pinnedValue } from '../../src/venture/index.js';
+import {
+  allRoleIndices,
+  electiveTotal,
+  escrowRequired,
+  pinnedValue,
+  type VentureRecord,
+} from '../../src/venture/index.js';
+import { slotClaimAt } from '../../src/observe/forecast.js';
 import { commonsSystems } from '../../src/world/index.js';
 import { buildObservation } from '../../src/api/observe.js';
 import { Runtime, type PendingCorrection } from '../../src/sim/runtime.js';
 
 const SETTLE_TICK = TICKS_PER_RECKONING - 1;
 const FREEZE_TICK = SETTLE_TICK - FREEZE_TICKS;
+
+/**
+ * ★ **The worst case the creator can be billed on the elective half**, recomputed here through
+ * `slotClaimAt` — a different code path from the `venture/preview.ts` function the gate calls.
+ *
+ * `RULES_VERSION` 26 moved the contingent draw off `Σ role.terms.elective` (the PRICE) and onto
+ * this (the BOUND), because the two are independent: the price scales with the `value` the delegate
+ * chooses and the bill scales with the KIND's `baseYieldMinor`, which no `create` param touches. A
+ * HAUL at value 8000 charged 2,000 against a payable of 7,800. `agent.md` §10 says the LIMITS are
+ * "the whole of it", so the limit has to be measured against the number that can actually arrive.
+ */
+function worstCaseElective(v: VentureRecord): number {
+  let total = 0;
+  for (const i of allRoleIndices(v)) total += slotClaimAt(v, i, 'p90').electiveDue;
+  return total;
+}
 
 interface World {
   readonly runtime: Runtime;
@@ -179,15 +202,27 @@ describe('the un-escrowable attack: max_direct_loss 0 buys unbounded contingent 
   it('is ALLOWED once the grantor actually authorises the liability — the gate is a bound, not a ban', () => {
     // The other direction of A5′: a delegate must not be refused for an obligation the
     // grantor did in fact authorise. A guard that only ever says no is not a guard.
+    // Learn the exact bound from a wide-open world, then grant precisely that — so the boundary
+    // asserted is the ENGINE's recorded number rather than a figure typed in beside the change.
+    const probe = world('c-allowed-probe');
+    grant(probe, { direct: 0, contingent: 10_000_000 });
+    expect(createOnBehalf(probe, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    const pv = probe.runtime.ventures.forPrincipal(probe.grantor)[0];
+    if (pv === undefined) throw new Error('the probe venture did not land');
+    const need = worstCaseElective(pv);
+
     const w = world('c-allowed');
-    const id = grant(w, { direct: 0, contingent: 40_000 });
+    const id = grant(w, { direct: 0, contingent: need });
     expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
 
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     expect(v?.creator).toBe(w.grantor);
     // Exactly consumed, to the minor unit: nothing rounded, nothing left over.
-    expect(w.runtime.grants.get(id)?.spentContingent).toBe(40_000);
+    expect(w.runtime.grants.get(id)?.spentContingent).toBe(need);
     expect(w.runtime.grants.headroom(id).contingent).toBe(0);
+    // And the bound really is bigger than the price — the defect, pinned in the direction that
+    // makes it fail if the gate ever drifts back onto the pinned figure.
+    expect(need).toBeGreaterThan(electiveTotal(v as VentureRecord));
   });
 });
 
@@ -202,13 +237,16 @@ describe('the elective total is accrued as contingent spend, and the split is ho
     if (v === undefined) throw new Error('the venture did not land');
     // Derived from the venture that actually exists, never re-guessed from kind+value.
     const escrow = escrowRequired(v);
-    const elective = electiveTotal(v);
+    const elective = worstCaseElective(v);
     // A HAUL is escrowable, so this is the interesting case: both halves are non-zero
     // and different, which is what makes a swap or a double-count visible.
     expect(escrow).toBeGreaterThan(0);
     expect(elective).toBeGreaterThan(0);
     expect(escrow).not.toBe(elective);
-    expect(escrow + elective).toBe(pinnedValue(v));
+    // The PRICE partitions the pinned value; the BOUND does not, and must not — a bound that
+    // equalled the price would be the p50 masquerading as a worst case.
+    expect(escrow + electiveTotal(v)).toBe(pinnedValue(v));
+    expect(elective).toBeGreaterThan(electiveTotal(v));
 
     const row = w.runtime.grants.get(id);
     expect(row?.spentDirect).toBe(escrow);
@@ -234,7 +272,10 @@ describe('the elective total is accrued as contingent spend, and the split is ho
       .filter((row) => row.event.kind === 'venture.formed');
     expect(formed).toHaveLength(1);
     expect(formed[0]?.event.payload['escrowed']).toBe(escrow);
-    expect(formed[0]?.event.payload['elective']).toBe(elective);
+    // The receipt publishes the PRICE, which is what the parties agreed. The bound is the grant's
+    // business and is on the authority line; putting the worst case here would describe a venture
+    // as bigger than the deal anybody signed.
+    expect(formed[0]?.event.payload['elective']).toBe(electiveTotal(v));
   });
 
   it('the grantor watches BOTH headrooms fall in its own observation (A6 is visible or it is nothing)', () => {
@@ -256,8 +297,8 @@ describe('the elective total is accrued as contingent spend, and the split is ho
     }) as unknown as { grants: { granted: Record<string, unknown>[] } };
     const row = observation.grants.granted[0];
     expect(row?.['id']).toBe(id);
-    expect(row?.['spent_contingent']).toBe(electiveTotal(v));
-    expect(row?.['headroom_contingent']).toBe(250_000 - electiveTotal(v));
+    expect(row?.['spent_contingent']).toBe(worstCaseElective(v));
+    expect(row?.['headroom_contingent']).toBe(250_000 - worstCaseElective(v));
     expect(row?.['spent_direct']).toBe(escrowRequired(v));
   });
 
@@ -265,15 +306,21 @@ describe('the elective total is accrued as contingent spend, and the split is ho
     // Per-act limits are not the promise; §8.1 #2 says the LIMITS are "over the
     // composite". A budget that reset every act would be no budget at all.
     const w = world('c-cumulative');
-    const id = grant(w, { direct: 0, contingent: 100_000 });
+    const budget = 100_000;
+    const id = grant(w, { direct: 0, contingent: budget });
     expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
     expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
-    expect(w.runtime.grants.get(id)?.spentContingent).toBe(80_000);
+    const both = w.runtime.ventures
+      .forPrincipal(w.grantor)
+      .reduce((n, v) => n + worstCaseElective(v), 0);
+    expect(w.runtime.grants.get(id)?.spentContingent).toBe(both);
 
     const refusal = createOnBehalf(w, { kind: 'BUILD', value: 40_000 });
     expect(refusal?.invariant).toBe('INV-22');
-    expect(refusal?.hint).toContain('contingent headroom of 20000');
-    expect(refusal?.hint).toContain('already spent 80000');
+    // Read off the engine's own recorded spend, not a literal: the whole point of this change is
+    // that the number the gate charges is no longer the one a reader would guess from the params.
+    expect(refusal?.hint).toContain(`contingent headroom of ${String(budget - both)}`);
+    expect(refusal?.hint).toContain(`already spent ${String(both)}`);
     expect(w.runtime.ventures.forPrincipal(w.grantor)).toHaveLength(2);
   });
 
@@ -465,6 +512,10 @@ describe('A13 — contingent draw renders, so the attack cannot look UNUSED', ()
     const w = world('c-render');
     grant(w, { direct: 0, contingent: 400_000 });
     expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    const drawn = w.runtime.ventures
+      .forPrincipal(w.grantor)
+      .reduce((n, v) => n + worstCaseElective(v), 0);
+    expect(drawn).toBeGreaterThan(0);
 
     while (w.runtime.engine.tick <= SETTLE_TICK) {
       const report = w.runtime.runTick();
@@ -479,7 +530,7 @@ describe('A13 — contingent draw renders, so the attack cannot look UNUSED', ()
     if (line === undefined) throw new Error('the grant drew no authority line at all');
 
     expect(line.spent).toBe(0); // no escrow moved — this is why the old state read UNUSED
-    expect(line.spentContingent).toBe(40_000);
+    expect(line.spentContingent).toBe(drawn);
     expect(line.grantedContingent).toBe(400_000);
     expect(line.state).toBe('DRAWN');
     expect(line.state).not.toBe('UNUSED');

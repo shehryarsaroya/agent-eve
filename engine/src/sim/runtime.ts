@@ -77,7 +77,7 @@ import type {
   ZoneTier,
   Standing,
 } from '../core/types.js';
-import { BPS_ONE, bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
+import { addMinor, BPS_ONE, bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { EventLedger, eventsStateTable, type NewEvent } from '../events/index.js';
 import {
   CURRENCY_FAUCET,
@@ -157,12 +157,13 @@ import {
   type ReckoningWorld,
   type ReckoningObligations,
 } from '../reckoning/index.js';
-// §7.1: "there is one function that answers 'what is this role owed', and both the quote
-// and the payout read it." `slotClaimAt` is that function with the holder lookup lifted,
-// and `test/observe/catalogue.test.ts` pins it against the preview at all three
-// percentiles — so reading it here is reading the settlement's own arithmetic rather
-// than a second copy of the escrowed/elective split.
-import { slotClaimAt } from '../observe/forecast.js';
+// §7.1: "there is one function that answers 'what is this role owed', and both the quote and the
+// payout read it." This runtime used to reach for `observe/forecast.ts:slotClaimAt` for the p90
+// elective ceiling; since `RULES_VERSION` 26 that ceiling has TWO gates reading it — `elect`'s
+// IN_FULL branch and the delegated `create` — so it moved to `venture/preview.ts`
+// (`electiveCeilingOfRole`), beside the terms it is computed from. `slotClaimAt` stays the board's
+// three-percentile reader and `test/grant/*` recompute through it, which keeps the two roads to one
+// number honest instead of collapsing them into an import.
 // The Levy's pixel signature (§5.2, A13). Imported as a *type only*: this runtime
 // populates `TributeLine`, it does not define it — `frames/contract.ts` owns the shape and
 // the client already draws that one.
@@ -231,6 +232,7 @@ import {
   computeProceeds,
   createVenture,
   drawResidual,
+  electiveCeilingOfRole,
   electiveTotal,
   escrowRequired,
   filledIndices,
@@ -240,6 +242,7 @@ import {
   isLive,
   kindSpec,
   lockFillStake,
+  maxElectiveLiability,
   minElectiveBps,
   NEUTRAL_STAGE_BPS,
   openIndices,
@@ -276,10 +279,13 @@ import {
   isCompartment,
   MAX_DIGEST_CHARS,
   MAX_DOSSIERS,
+  MAX_GRANT_RELEASES,
   MAX_GRANT_SPENDS,
   OFFICE_NAMES,
   officeShape,
+  selectGrant,
   type CompartmentPort,
+  type GrantSelectionPort,
   type Dossier,
   type DossierId,
 } from '../grant/index.js';
@@ -1510,7 +1516,68 @@ import {
  * discontinuity (`D37`) — a bare tick is refused, and the fingerprint is bound to this change and
  * inert against the next.
  */
-export const RULES_VERSION = 24;
+/**
+ * ── 26 · ★ THE RECORD NAMES THE PRINCIPAL THAT ACTED, AND A LIMIT MEANS THE WORST CASE ──
+ *
+ * **26, not 25.** 25 was allocated to a concurrent branch (a world-halting `haul` bug); this is the
+ * tail at the time of writing, per 24's protocol — *pre-assign to avoid the collision, renumber to
+ * the tail at merge*. Stacked on 24 and 25 rather than blended, for 23's reason.
+ *
+ * Five defects a blind probe found by running a full betrayal through the front door with two
+ * identities. **Two of them violated load-bearing axioms**, and the two that did are the two that
+ * make this a version bump rather than an addition.
+ *
+ * ── STRUCTURAL: ONE NEW CAPTURED FIELD AND ONE NEW CAPTURED JOURNAL ──────────
+ *
+ *   1. **`VentureRecord.actedBy`** — inside the already-hashed `venture` capture, so the same *from
+ *      the first delegated row onward* signature as 7 → 8's `boundByGrant`. A world restored from a
+ *      version-24 snapshot has delegated ventures with a grant and no actor, and `createVenture`
+ *      **refuses** that pair rather than defaulting it: a row whose actor the world cannot reproduce
+ *      is a row the world must not publish (A5′). So the restore fails loudly at the operator door
+ *      instead of quietly rebuilding an under-attributed record.
+ *   2. **`grantsStateTable` gains a `releases[]` journal.** New key inside an existing capture, so a
+ *      version-24 snapshot restores with an empty release journal — which is honest: nothing had
+ *      been given back, because nothing could be.
+ *
+ * ── BEHAVIOURAL, AND THIS IS THE HALF THAT MOVES THE WORLD ───────────────────
+ *
+ *   3. **A delegated `create` charges the WORST CASE against `max_contingent_liability`**, not the
+ *      pinned Σ `role.terms.elective`. Measured 3.9× on HAUL and 3.93× on BUILD, and unbounded in
+ *      principle. Every journalled delegated `create` therefore draws a different amount, and the
+ *      ones near a limit replay as refusals — divergence from the **first delegated create in the
+ *      record**, exactly 7 → 8's signature.
+ *   4. **Grant selection consults the verb and honours an explicit `grant`.** A journalled
+ *      `create … on_behalf_of` that was refused because the oldest grant was a `treasury-hand` now
+ *      succeeds under the quartermaster the delegate already held. Divergence from the first such
+ *      action, and there are many: the probe could reach the core loop only by revoking grants in
+ *      strict age order.
+ *   5. **EXPOSURE includes Σ open grant `max_direct_loss`.** Two of the Levy's four allocation rules
+ *      read it and the published default is `INVERSE_EXPOSURE`, so **every docket in a world with a
+ *      live grant is allocated differently** from the first tick a grant is live. The largest
+ *      behavioural change in this bump and the one most visible in a divergence report.
+ *   6. **An ABANDONED delegated venture releases its draw**, so headroom that was permanently
+ *      consumed comes back and a later `create` that used to be refused now lands.
+ *
+ * **What the balance gate sees:** `levyShort` and the red tribute lines are a safety check here
+ * rather than evidence — 5 changes the Levy's weights for the first time in this world's life, so the
+ * gate is what says the allocation still clears.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
+ * prints the exact string, and a bare tick is refused.
+ */
+export const RULES_VERSION = 26;
+
+/**
+ * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
+ *
+ * Read by the draw (`vCreate`) and by the give-back ({@link Runtime.releaseGrantDraw}), and a
+ * release must name the exact draw it reverses — so two string literals four thousand lines apart
+ * would be a release that silently matches nothing and a grantor's budget that stays charged, which
+ * is the defect the release journal exists to close, reintroduced by a typo nothing could catch.
+ */
+export function ventureEscrowDrawId(venture: VentureId): EventId {
+  return `escrow:${venture}` as EventId;
+}
 /**
  * Read a formation's ordered target predicates, tolerating a list or a delimited string.
  *
@@ -2215,6 +2282,12 @@ export function ventureStateTable(
         // `terms_hash` (the terms are the same terms), so the hash witness cannot catch it and the
         // capture has to carry it explicitly.
         boundByGrant: v.boundByGrant,
+        // ★ A6's other half: **who** used that authority (A5′). Captured for `boundByGrant`'s
+        // reason and one stronger — `createVenture` refuses a grant with no actor, so a capture
+        // that dropped this field would not restore an under-attributed venture, it would fail to
+        // restore the venture at all. That is the correct direction: a row whose actor the world
+        // cannot reproduce is a row the world must not publish.
+        actedBy: v.actedBy,
         roles: v.roles.map((r) => ({
           index: r.index,
           label: r.label,
@@ -2307,6 +2380,7 @@ function readVenture(raw: CanonicalValue, where: string): VentureRecord {
     // `countersigned` is seeded by the same `boundAtFormation` call the live path used. Writing the
     // field and then the signature set separately would be two homes for one fact.
     boundByGrant: snapStringOrNull(o, 'boundByGrant', where) as GrantId | null,
+    actedBy: snapStringOrNull(o, 'actedBy', where) as PrincipalId | null,
   });
   if (!made.ok) {
     throw new VentureRestoreError(`${where}: ${made.invariant} ${made.hint}`);
@@ -5205,6 +5279,11 @@ export class Runtime {
           caps: [
             { path: 'grants', max: MAX_GRANTS },
             { path: 'spends', max: MAX_GRANT_SPENDS },
+            // ★ The release journal, declared the tick it entered the capture — and INV-26 caught it
+            // as undeclared on the FIRST test run after the field landed, halting 840 tests. Third
+            // time this clause has done exactly what scar #3 bought it for, and worth recording as
+            // a working instrument rather than a stumble.
+            { path: 'releases', max: MAX_GRANT_RELEASES },
             // ★ The fence and the clearance, declared the tick they entered the capture. INV-26
             // caught both as undeclared within one test run and halted an aged world at tick 304,
             // which is exactly the behaviour scar #3 bought: *"an array with no declared cap is
@@ -5249,6 +5328,10 @@ export class Runtime {
       // its LIMITS (the worst case the grantor was shown before it signed, A7).
       grants: this.grantBook.all(),
       grantSpends: this.grantBook.allSpends(),
+      // ★ INV-22's release clause. Supplied unconditionally, empty array and all: a
+      // journal-vs-cache check run over the spends alone nets a released grant HIGHER than its row
+      // and would halt a healthy world on the first `abandon` of a delegated venture.
+      grantReleases: this.grantBook.allReleases(),
       // ★ INV-22's custody clause, wired the same tick the book landed. A clause whose
       // subject cannot occur reports green over an empty table for as long as nobody looks
       // (INV-22 itself did exactly that for the project's whole life), so the table is
@@ -6159,32 +6242,24 @@ export class Runtime {
     // `venture/create.ts`). The headroom checks stay where they are — they need the terms — so this
     // is only the existence half moving up. Still before any value moves, so a refusal here leaves
     // the world untouched.
+    // ── THE MANDATE IS CHOSEN BY THE VERB, AND AN EXPLICIT `grant` IS HONOURED ──
+    //
+    // This used to be `liveGrantBetween` — most direct headroom, tiebreak on id, therefore **the
+    // oldest grant** — followed by a fence check on whatever that returned. A probe holding five
+    // grants from one principal, four of them carrying `create`, had every single delegated create
+    // refused because the oldest was a `treasury-hand`; naming the right one in a `grant` param
+    // changed nothing, because nothing read it. `grant/select.ts` carries the whole run.
     let grant: Grant | null = null;
     if (delegated) {
-      grant = this.grantBook.liveGrantBetween(creator, req.principal, ctx.tick);
-      if (grant === null) {
-        return reject(
-          'INV-23',
-          `you hold no live grant from ${creator} to act on its behalf. Ask it to grant you scoped authority ` +
-            '(verb: grant), or create on your own account.',
-        );
-      }
-      // ── THE FENCE (SPEC §8: a grant specifies VERBS × … × limits) ───────────
-      //
-      // Before the terms are built, so a refusal leaves the world untouched — the same
-      // placement rule the headroom checks follow. A `treasury-hand` may pay its grantor's
-      // bills and may NOT sign it into new deals, which is §16.12 #3's "a treasurer is not
-      // automatically a quartermaster" as an enforced sentence rather than a label.
-      if (!this.grantBook.carriesVerb(grant.id, 'create')) {
-        return reject(
-          'INV-22',
-          `grant ${grant.id} is a ${grant.template} and carries ` +
-            `${grant.verbs.length === 0 ? 'no verbs at all' : grant.verbs.join(' and ')}, not \`create\`. ` +
-            `${creator} delegated a SCOPE, not only a budget: you may draw on its LIMITS through the verbs it ` +
-            'named and no others. Ask it for a grant that carries `create` (a quartermaster, escort-captain, ' +
-            'factor or steward), or create on your own account.',
-        );
-      }
+      const chosen = selectGrant(this.grantSelectionPort(), {
+        grantor: creator,
+        delegate: req.principal,
+        verb: 'create',
+        atTick: ctx.tick,
+        named: readString(req.params, ['grant', 'grant_id']) as GrantId | null,
+      });
+      if (!chosen.ok) return chosen;
+      grant = chosen.value;
     }
 
     const made = createVenture({
@@ -6204,6 +6279,10 @@ export class Runtime {
       // `venture/create.ts:boundAtFormation` for the whole argument and for what it cost while it was
       // the other way round.
       boundByGrant: grant?.id ?? null,
+      // A5′. The authority AND the actor, together or not at all — `createVenture` refuses the two
+      // halves disagreeing, so there is no shape of this call that records a delegated formation
+      // the record cannot attribute.
+      actedBy: grant === null ? null : req.principal,
     });
     if (!made.ok) return made;
 
@@ -6233,8 +6312,25 @@ export class Runtime {
     // Derived from `made.value` — the terms the venture is ACTUALLY created with — never
     // re-guessed from the kind and the value, or the number gated would drift from the
     // number owed the moment terms stop being the default (scar #1's shape).
+    //
     // ══════════════════════════════════════════════════════════════════════════
-    const elective = electiveTotal(made.value);
+    // ★ AND IT IS THE **WORST CASE**, NOT THE PINNED FIGURE. THIS WAS THE SECOND HALF OF
+    // THE SAME DEFECT AND IT SURVIVED THE FIRST FIX.
+    //
+    // The gate charged `electiveTotal` — Σ `role.terms.elective`, what the parties PRICED the
+    // unsecured half at. The settlement asks for `claim - min(claim, escrowed)`, where the claim is
+    // a share of *proceeds* and proceeds come from the KIND's `baseYieldMinor`. The two numbers are
+    // independent, and the delegate chooses the one the gate read: a HAUL at value 8000 charged
+    // 2,000 against a payable of 7,800, and the same observation told the grantor both figures.
+    //
+    // `maxElectiveLiability` is the p90-at-full-fill ceiling — exact, not probabilistic, because
+    // the residual is a seeded draw inside a published band and claims are monotone in both the
+    // residual and the filled set. It is the same reading `elect`'s IN_FULL branch has always
+    // drawn on (`electiveCeilingOf`), so the two delegable verbs now charge one arithmetic instead
+    // of two. Whose docstring, one method away, already said the pinned figure may not stand in
+    // for it.
+    // ══════════════════════════════════════════════════════════════════════════
+    const elective = maxElectiveLiability(made.value);
 
     // ── The delegation gate (A6, §8.1). Runs BEFORE any value moves. A delegate needs a
     // live grant from the creator, and a delegated create draws on BOTH of its LIMITS:
@@ -6256,8 +6352,16 @@ export class Runtime {
       if (elective > headroom.contingent) {
         return reject(
           'INV-22',
-          `the elective part of this ${kind} totals ${String(elective)} and would exceed grant ${grant.id}'s ` +
-            `remaining contingent headroom of ${String(headroom.contingent)} ` +
+          // The number in this sentence is the number `recordSpend` charges below, and it is the
+          // WORST CASE rather than the pinned price — because the sentence goes on to claim the
+          // tail is "capped by the second LIMIT the grantor was shown", and a cap measured against
+          // the p50 of a distribution is not a cap. `electiveTotal(made.value)` is quoted beside it
+          // so an agent can see the two and price the gap it used to be charged on.
+          `the most this ${kind} can ever ask ${creator} for on the elective half is ` +
+            `${String(elective)} (priced at ${String(electiveTotal(made.value))}, but a share role's due ` +
+            `is its claim less its escrow and proceeds run to the top of ${kind}'s published band), and that ` +
+            `would exceed grant ${grant.id}'s remaining contingent headroom of ` +
+            `${String(headroom.contingent)} ` +
             `(max_contingent_liability ${String(grant.maxContingentLiability)}, already spent ` +
             `${String(grant.spentContingent)}).` +
             (isEscrowable(kind)
@@ -6321,7 +6425,7 @@ export class Runtime {
           grant: grant.id,
           delegate: req.principal,
           tick: ctx.tick,
-          eventId: `escrow:${id}` as EventId,
+          eventId: ventureEscrowDrawId(id),
           direct: required,
           contingent: elective,
           verb: 'create',
@@ -6381,7 +6485,16 @@ export class Runtime {
         // The unsecured tail, on the record at formation. A7 requires the priced
         // elective part to be *displayed*, and a receipt that showed only the escrow
         // would describe an un-escrowable BUILD as a venture with nothing at stake.
-        elective,
+        //
+        // ★ TWO FIELDS, BECAUSE THERE ARE TWO NUMBERS AND CONFLATING THEM WAS THE DEFECT.
+        // `elective` is the PRICE — `Σ role.terms.elective`, what the parties agreed the unsecured
+        // half is worth, and the figure the card, the board row and `pinnedValue` all use.
+        // `electiveCeiling` is the BOUND — the most the creator can actually be asked for once
+        // proceeds run to the top of the kind's published band, and the figure a delegated create
+        // charges against `max_contingent_liability`. Publishing only the first is how a grantor
+        // came to be told 2,000 about a 7,800 obligation on the same screen.
+        elective: electiveTotal(made.value),
+        electiveCeiling: elective,
         termsHash: made.value.termsHash,
         ...(delegated && grant !== null
           ? {
@@ -6680,21 +6793,13 @@ export class Runtime {
     // principals, `liveGrantBetween` picks by headroom, and a draw against the wrong grantor's limit is
     // a wrong row in a journal INV-22 halts the world over — A5′. So the delegate says which mandate it
     // is acting under and the engine checks that exact one.
+    // `electionMandate` now answers "who is paying AND under which mandate" in one call, because the
+    // fence is part of the *choice* rather than a check on whatever the choice returned — the same
+    // correction `create` needed, and for the same reason: a delegate holding a `quartermaster` and
+    // a `treasury-hand` from one grantor had its `elect` refused whenever the quartermaster happened
+    // to win the headroom race, naming a grant it was not trying to use.
     const mandate = this.electionMandate(ctx, req, venture, roleIndex);
     if ('rejection' in mandate) return mandate.rejection;
-    // The fence, checked here rather than inside `electionMandate` because that function's job
-    // is "who is paying" and this one's is "may they" — and because a refusal must land before
-    // the election is written, so a refused delegate leaves no election behind.
-    if (mandate.grant !== null && !this.grantBook.carriesVerb(mandate.grant.id, 'elect')) {
-      return reject(
-        'INV-22',
-        `grant ${mandate.grant.id} is a ${mandate.grant.template} and carries ` +
-          `${mandate.grant.verbs.length === 0 ? 'no verbs at all' : mandate.grant.verbs.join(' and ')}, not ` +
-          `\`elect\`. Deciding what ${venture.creator} pays at the Reckoning is the one act that turns its ` +
-          'promise into a kept or broken one, and it delegated a scope rather than a budget. Ask it for a ' +
-          'grant that carries `elect` (a treasury-hand, factor or steward).',
-      );
-    }
     const role = venture.roles.find((r) => r.index === roleIndex);
     if (role === undefined) {
       return reject(
@@ -6751,8 +6856,28 @@ export class Runtime {
       // p90 ceiling; a stated amount is knowable now and draws on the DIRECT one. That is exactly the
       // split §8 defines and the `grant` affordance already shows as `max_direct_loss` and
       // `max_contingent_liability`, so a grantor who read the warning has already priced this.
+      //
+      // ── ★ NETTED AGAINST WHAT `create` ALREADY CHARGED THIS GRANT FOR THIS VENTURE ──
+      //
+      // Since `create` started charging the WORST case rather than the pinned price, both delegable
+      // verbs read the same p90 ceiling — so a `factor` or `steward` used for both consumed the
+      // bound twice for one liability, and a mandate sized for exactly one venture would have
+      // refused the `elect` that keeps its promise. Forcing a default out of an authority limit is
+      // the engine manufacturing a breach (A5′), which is worse than the over-charge it came from.
+      //
+      // Netted at the **venture** level because that is the level `create` charges at (Σ over roles,
+      // one journal row per venture) and because the liability is one obligation however many roles
+      // divide it. Netted per **grant**, so a second mandate is charged in full: a different grantor
+      // — or the same grantor's separate, separately-limited office — has not been charged for this.
       const direct = raw === IN_FULL ? minor(0) : minor(raw);
-      const contingent = raw === IN_FULL ? this.electiveCeilingOf(venture, roleIndex) : minor(0);
+      const alreadyCharged =
+        raw === IN_FULL
+          ? this.grantBook.netDrawOf(grant.id, ventureEscrowDrawId(venture.id)).contingent
+          : minor(0);
+      const contingent =
+        raw === IN_FULL
+          ? minor(Math.max(0, this.electiveCeilingOf(venture, roleIndex) - alreadyCharged))
+          : minor(0);
       const room = this.grantBook.headroom(grant.id);
       if (direct > room.direct || contingent > room.contingent) {
         return reject(
@@ -6794,10 +6919,17 @@ export class Runtime {
    * the same shape as scar #1 — and the inconsistency would land on an agent as two mechanics to learn
    * where there is one.
    *
-   * Inference is also unambiguous here in a way it is not for `create`. The elective half is paid by
-   * `venture.creator` and by nobody else, so the grantor is not a choice the actor makes — it is a
-   * fact about the venture. There is nothing for a param to disambiguate, so `elect` needs no extra
-   * field at all: acting as a delegate is simply electing on a venture you did not create.
+   * ── ★ THE GRANTOR IS STILL INFERRED; **WHICH GRANT** IS NOT ──────────────────
+   *
+   * The paragraph above is still right about the *grantor*: the elective half is paid by
+   * `venture.creator` and by nobody else, so there is nothing for a param to disambiguate there.
+   * It was wrong about the *grant*, and the reasoning it gave — consistency with `create` — is
+   * exactly why: `create` picked by headroom, ignored the verb, and ignored an explicit `grant`, so
+   * "be consistent with `create`" propagated the defect instead of preventing it.
+   *
+   * Both verbs now go through {@link selectGrant}: the verb is part of the selection, and an
+   * explicit `grant` is honoured rather than dropped. That is still one concept with one spelling —
+   * it is just the correct one.
    */
   private electionMandate(
     ctx: PhaseContext,
@@ -6807,18 +6939,34 @@ export class Runtime {
   ): { readonly grant: Grant | null } | { readonly rejection: WorldResult<null> } {
     if (venture.creator === req.principal) return { grant: null };
 
-    const grant = this.grantBook.liveGrantBetween(venture.creator, req.principal, ctx.tick);
-    if (grant === null) {
-      return {
-        rejection: reject(
-          'PROP-V4',
-          `only ${venture.creator} elects on ${venture.id}: the elective half is paid out of the payer's ` +
-            'own stores, and you hold no live grant from them to act on their behalf. Ask them to grant you ' +
-            'scoped authority (verb: grant), or elect on the ventures you created. An expired or revoked ' +
-            'mandate reads the same way here — authority ends on a stated tick (scar #7).',
-        ),
-      };
+    const named = readString(req.params, ['grant', 'grant_id']) as GrantId | null;
+    const chosen = selectGrant(this.grantSelectionPort(), {
+      grantor: venture.creator,
+      delegate: req.principal,
+      verb: 'elect',
+      atTick: ctx.tick,
+      named,
+    });
+    if (!chosen.ok) {
+      // `INV-23` from `selectGrant` means "you hold no live grant here at all", and on `elect` that
+      // is PROP-V4's own sentence: the elective half is the payer's to decide. The scope and limit
+      // refusals keep the invariant `selectGrant` named, because those are about the grant — and a
+      // delegate that NAMED a grant gets `selectGrant`'s sentence either way, because it is asking
+      // about a specific mandate rather than about who may elect.
+      if (chosen.invariant === 'INV-23' && named === null) {
+        return {
+          rejection: reject(
+            'PROP-V4',
+            `only ${venture.creator} elects on ${venture.id}: the elective half is paid out of the payer's ` +
+              'own stores, and you hold no live grant from them to act on their behalf. Ask them to grant you ' +
+              'scoped authority (verb: grant), or elect on the ventures you created. An expired or revoked ' +
+              'mandate reads the same way here — authority ends on a stated tick (scar #7).',
+          ),
+        };
+      }
+      return { rejection: chosen };
     }
+    const grant = chosen.value;
     // ── ONE DELEGATE ELECTION PER ROLE, AND IT FAILS CLOSED ───────────────────
     //
     // `elect` is restatable until the freeze, which is right for a principal spending its own stores.
@@ -7454,8 +7602,60 @@ export class Runtime {
   electiveCeilingOf(venture: VentureRecord, roleIndex: number): Minor {
     const role = venture.roles.find((r) => r.index === roleIndex);
     if (role === undefined) return minor(0);
-    const ceiling = slotClaimAt(venture, roleIndex, 'p90').electiveDue;
+    // `electiveCeilingOfRole`, not a local p90 read: since the delegated `create` gate started
+    // charging the same worst case, the ceiling has TWO gates reading it and one arithmetic is the
+    // whole point. `venture/preview.ts` owns it and carries the argument.
+    const ceiling = electiveCeilingOfRole(venture, roleIndex);
     return minor(Math.max(0, ceiling - role.settledElectiveMinor));
+  }
+
+  /**
+   * The narrow read-only view of the grant book that {@link selectGrant} takes (D21's port shape).
+   *
+   * Built per call rather than cached: it closes over `this.grantBook`, which is *replaced* wholesale
+   * by the state table's restore path, so a port captured once would go on answering from the book
+   * an aborted tick threw away.
+   */
+  private grantSelectionPort(): GrantSelectionPort {
+    return {
+      get: (id) => this.grantBook.get(id),
+      isLive: (id, atTick) => this.grantBook.isLive(id, atTick),
+      liveGrantsBetween: (grantor, delegate, atTick) =>
+        this.grantBook.liveGrantsBetween(grantor, delegate, atTick),
+    };
+  }
+
+  /**
+   * ★ **EXPOSURE — Σ this principal's open `max_direct_loss`, and now that includes its grants.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE ONE HOME OF THE FIGURE §3 DEFINES, AND IT WAS MISSING ITS DELEGATED HALF.**
+   *
+   * §3: *"EXPOSURE means Σ of your open `max_direct_loss`, **and nothing else**."* Two things in
+   * this engine carry a `max_direct_loss`: an **encumbrance** and a **grant**. Only the first was
+   * ever summed. So a blind probe with five live grants totalling 160,000 of `max_direct_loss` read
+   * `obligations.exposure.mine: 0` for a whole run, and `levy.exposure_peak_this_cycle: 0` with it.
+   *
+   * Two of the Levy's four allocation rules read this figure and the published default is
+   * `INVERSE_EXPOSURE` — so a principal loaded up by its delegate registered as the **least**
+   * exposed in its constellation and was *shielded* by the rule. §5 says hiding is the most taxed
+   * posture in the game; the arithmetic paid for it.
+   *
+   * `RULES_VERSION` 17 added the per-Reckoning high-water mark for exactly this reading, and the
+   * grant half was never in its subject — the sampler read `cachedExposure` directly. It reads this
+   * instead, which is why there is a method here rather than a second sum at each call site.
+   *
+   * The two terms cannot double-count: `EncumbranceBook` locks live in STORES and a grant opens no
+   * lock, while escrow committed by a delegated `create` leaves the grantor's stores as a transfer
+   * and appears in neither. INV-5 still checks the encumbrance term against its own recompute; the
+   * delegated term has no cache to drift, because it is computed from the grant rows every time.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  exposureOf(principal: PrincipalId, tick = this.engine.tick): Minor {
+    return addMinor(
+      this.ledger.encumbrances.cachedExposure(principal),
+      this.grantBook.delegatedExposureOf(principal, tick),
+    );
   }
 
   /** `withdraw` — an ADAPTER. The operation lives in `venture/withdraw.ts` (D21). */
@@ -7565,6 +7765,11 @@ export class Runtime {
         },
         refundEscrow: (venture) => {
           this.refundEscrow(ctx.tick, venture);
+          // ★ The authority half of the same refund. `abandon` gave the money back and left the
+          // grant charged, so a delegate could burn a grantor's whole `max_contingent_liability` on
+          // ventures that never bound anybody. Wired here rather than inside `abandon`'s port
+          // interface because it is the same call `retireFormation` makes — one home, two paths.
+          this.releaseGrantDraw(ctx.tick, venture);
         },
         releaseStakes: (venture) => {
           releaseStakes(this.ledger, venture, ctx.tick);
@@ -8317,6 +8522,61 @@ export class Runtime {
     this.obligations.close(venture.id);
     this.refundEscrow(ctx.tick, venture);
     this.releaseElections(venture.id);
+    this.releaseGrantDraw(ctx.tick, venture);
+  }
+
+  /**
+   * ★ Give a delegated venture's draw back to its grant, because the obligation can no longer be owed.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **WHERE THE RELEASE HAPPENS, STATED IN ONE PLACE.**
+   *
+   * Exactly the two paths that retire a venture **without it ever binding anybody**:
+   *
+   *   - {@link Runtime.retireFormation} — the formation window closed with a role still open;
+   *   - `vAbandon` — the creator gave up its own FORMING venture.
+   *
+   * Both already refund the escrow and release the stakes, and both used to leave the *authority*
+   * charged. A probe watched 30,000 of a 30,000 mandate consumed by ventures that never went live,
+   * at zero cost to the delegate — combined with the oldest-grant selection bug, a
+   * **denial-of-authority attack** whose only requirement is `create` then `abandon`.
+   *
+   * Deliberately **not** at settlement: a SETTLED or DEFAULTED venture's elective half *was* owed,
+   * so the draw records a commitment the delegate really made. Releasing there would turn
+   * `max_contingent_liability` from a lifetime bound into a concurrent one, which is a different
+   * promise from the one the grantor read before it signed.
+   *
+   * Never throws out of a phase. `releaseSpend` refuses a release with no matching draw (a venture
+   * created before this version, or one whose escrow draw was zero on both halves), and that is a
+   * fact about the world rather than a fault — so the miss is recorded in `faults` and the tick
+   * continues. A halt here would take the world down over a venture nobody was harmed by.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private releaseGrantDraw(tick: number, venture: VentureRecord): void {
+    if (venture.boundByGrant === null || venture.actedBy === null) return;
+    const grant = this.grantBook.get(venture.boundByGrant);
+    if (grant === undefined) return;
+    // The `eventId` the draw was recorded under, from the one place that mints it.
+    const drawId = ventureEscrowDrawId(venture.id);
+    const outstanding = this.grantBook.netDrawOf(grant.id, drawId);
+    if (outstanding.direct <= 0 && outstanding.contingent <= 0) return;
+    try {
+      this.grantBook.releaseSpend({
+        grant: grant.id,
+        delegate: venture.actedBy,
+        tick,
+        eventId: drawId,
+        direct: outstanding.direct,
+        contingent: outstanding.contingent,
+        verb: 'create',
+        cause: 'ABANDONED',
+      });
+    } catch (error: unknown) {
+      this.faults.push(
+        `${venture.id} retired ${venture.state} and its draw on grant ${grant.id} could not be released ` +
+          `(${describeError(error)}); the grantor's headroom stays charged for an obligation nobody can owe`,
+      );
+    }
   }
 
   // ── The Reckoning ─────────────────────────────────────────────────────────
@@ -8918,9 +9178,12 @@ export class Runtime {
    * is order-independent, idempotent within a tick, and cannot lower a mark. `levy/book.ts`
    * carries the argument for the quantity; this carries the argument for the *reader*.
    *
-   * `cachedExposure` and not `principalPosition(...).exposure`: they are the same number by
-   * construction (`ledger/invariants.ts` builds the position from the cache) and the cache is the
-   * one INV-5 checks, so this is the shortest road to the figure rather than a second one.
+   * ★ `exposureOf` and not `cachedExposure`: the cache is the ENCUMBRANCE term only, and §3's
+   * EXPOSURE is Σ open `max_direct_loss` over everything that has one — which includes a **grant**.
+   * Sampling the cache directly is how a principal that had handed out 160,000 of authority came to
+   * be billed as the least exposed member of its constellation. `Runtime.exposureOf` carries the
+   * whole argument and is the one home; this reads it so the high-water mark and the affordance can
+   * never be computed from different sums.
    *
    * `principalOrder` and not the holding table, so a principal whose holding the map has lost is
    * still observed — the roll is lifetime enrolments (A10) and the Levy assesses all of it.
@@ -8929,7 +9192,7 @@ export class Runtime {
   private observeExposurePeaks(ctx: PhaseContext): void {
     const reckoning = reckoningOf(ctx.tick);
     for (const principal of this.world.principalOrder) {
-      this.levy.observeExposure(reckoning, principal, this.ledger.encumbrances.cachedExposure(principal));
+      this.levy.observeExposure(reckoning, principal, this.exposureOf(principal, ctx.tick));
     }
   }
 
@@ -13716,7 +13979,27 @@ export class Runtime {
         // carries the whole elective tail. Nothing drawn on either limit is UNUSED;
         // no headroom left on either is EXHAUSTED; anything between is DRAWN.
         const headroom = this.grantBook.headroom(g.id);
-        const drawn = g.spentDirect > 0 || g.spentContingent > 0;
+        // ── ★ GROSS DRAWS FROM THE JOURNAL, NOT THE LIVE ROW CACHE ──────────────
+        //
+        // The row cache is *outstanding* charge, and since `RULES_VERSION` 26 it FALLS when an
+        // abandoned venture returns its draw. Reading it here put the A13 defect straight back: a
+        // delegate that opened three ventures in its grantor's name and let their windows close
+        // rendered `UNUSED`, on a frame, with a grant it had spent all cycle drawing on. That is
+        // the same error as the Levy's instantaneous EXPOSURE reading — measuring the right
+        // quantity at the wrong moment — and the line's question is *"what has this delegate
+        // done"*, which only the journal can answer. Headroom below stays live, because that is a
+        // different question and the grantor needs the current answer to it.
+        const gross = ((): { readonly direct: number; readonly contingent: number } => {
+          let direct = 0;
+          let contingent = 0;
+          for (const s of this.grantBook.allSpends()) {
+            if (s.grant !== g.id) continue;
+            direct += s.direct;
+            contingent += s.contingent;
+          }
+          return { direct, contingent };
+        })();
+        const drawn = gross.direct > 0 || gross.contingent > 0;
         const state: AuthorityLineState =
           g.revokedAtTick !== null
             ? 'REVOKED'
@@ -13729,9 +14012,9 @@ export class Runtime {
           grantor: g.grantor,
           delegate: g.delegate,
           granted: g.maxDirectLoss,
-          spent: g.spentDirect,
+          spent: minor(gross.direct),
           grantedContingent: g.maxContingentLiability,
-          spentContingent: g.spentContingent,
+          spentContingent: minor(gross.contingent),
           boundVentures: boundByGrant.get(g.id) ?? 0,
           // ★ THE CLEARANCE PIPS and THE DOSSIER THREADS (A13, §16.12 #3).
           clearance: [...g.clearance],
@@ -13812,12 +14095,17 @@ export class Runtime {
             v.roles.map((r) => r.filledByPrincipal).filter((x): x is PrincipalId => x !== null),
             v.id,
           ),
-          // A6 on the docket. Present only when a delegate committed the creator under a grant; the
-          // delegate is read off the grant rather than off the venture, because the venture records
-          // the AUTHORITY and the grant records who holds it, and duplicating the delegate onto the
-          // venture row would be two homes for one fact (scar #5).
-          boundGrantor: v.boundByGrant === null ? null : v.creator,
-          boundBy: v.boundByGrant === null ? null : (this.grantBook.get(v.boundByGrant)?.delegate ?? null),
+          // ── A6 ON THE DOCKET, NOW READ OFF THE ROW RATHER THAN DERIVED ──────────
+          //
+          // This used to look the delegate up through `grantBook.get(v.boundByGrant)?.delegate`,
+          // and the comment here argued that putting it on the venture would be *"two homes for one
+          // fact (scar #5)"*. That argument was wrong and it cost A5′: the grant table is mutable
+          // and capped, so the only road from a permanent public default to the principal that
+          // created the obligation ran through a row that can change. `VentureRecord.actedBy` is
+          // now the one home and this reads it — so there is *one* home, and it is the append-only
+          // one.
+          boundGrantor: v.actedBy === null ? null : v.creator,
+          boundBy: v.actedBy,
           // The creator's OFFER, as one bps figure over the whole venture: A7's unsecured share. Read
           // off `ventureEscrowRatioBps`, the venture module's own function, so the arc a viewer sees
           // and the ratio §7.5 puts on the card are one number.

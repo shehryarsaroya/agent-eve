@@ -12,7 +12,8 @@ import { describe, expect, it } from 'vitest';
 import { GrantBook, GrantBookError, grantsStateTable } from '../../src/grant/index.js';
 import { canonicalHash } from '../../src/core/canonical.js';
 import type { EventId, Grant, GrantId, PrincipalId } from '../../src/core/types.js';
-import type { GrantSpend } from '../../src/invariants/authority.js';
+import type { GrantRelease, GrantSpend } from '../../src/invariants/authority.js';
+import { checkInv22 } from '../../src/invariants/authority.js';
 import { minor } from '../../src/core/units.js';
 
 let spendSeq = 0;
@@ -176,5 +177,159 @@ describe('grantsStateTable — capture / restore / hash (fable F2: not outside t
     const ha = canonicalHash(grantsStateTable(() => a, () => undefined).capture());
     const hb = canonicalHash(grantsStateTable(() => b, () => undefined).capture());
     expect(hb).not.toBe(ha);
+  });
+});
+
+// ── ★ THE RELEASE JOURNAL (`RULES_VERSION` 26) ───────────────────────────────
+
+describe('a draw can be given BACK, and every way of laundering headroom is refused', () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A RETIRED VENTURE USED TO CONSUME ITS GRANTOR'S BUDGET FOREVER.** A blind probe watched a
+   * BUILD with 28,000 of elective liability retire ABANDONED having paid nobody, and read
+   * `spent_contingent: 28000, headroom_contingent: 2000` off the grant on three later wakes — a
+   * denial-of-authority attack whose only requirement is a `create` and an `abandon`.
+   *
+   * `recordSpend` refuses a negative row (*"a spend never returns headroom"*) and INV-22 halts over
+   * one, and both should stay that way: a journal whose rows can be negative is a journal in which
+   * an over-release and a legitimate draw look alike. So a release is its own row and it must NAME
+   * the draw it gives back. These cases are the five ways that could go wrong — every one of them
+   * is engine-side and unreachable from a request, which is exactly why they are tested here rather
+   * than assumed (an invariant whose subject cannot occur reports green forever).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  const release = (
+    grantId: GrantId,
+    eventId: EventId,
+    direct: number,
+    contingent: number,
+    over: Partial<GrantRelease> = {},
+  ): GrantRelease => ({
+    grant: grantId,
+    delegate: 'p:bob' as PrincipalId,
+    tick: 9,
+    eventId,
+    direct: minor(direct),
+    contingent: minor(contingent),
+    verb: 'create',
+    cause: 'ABANDONED',
+    ...over,
+  });
+
+  function bookWithDraw(): { book: GrantBook; id: GrantId; draw: EventId } {
+    const book = new GrantBook();
+    const id = G('g:rel');
+    book.add(grant({ id, grantor: 'p:alice' as PrincipalId, delegate: 'p:bob' as PrincipalId }));
+    const spend = sp(id, 400, 300);
+    book.recordSpend(spend);
+    return { book, id, draw: spend.eventId };
+  }
+
+  it('returns headroom to the row cache and the journal together', () => {
+    const { book, id, draw } = bookWithDraw();
+    expect(book.headroom(id)).toEqual({ direct: 600, contingent: 200 });
+    book.releaseSpend(release(id, draw, 400, 300));
+    expect(book.get(id)?.spentDirect).toBe(0);
+    expect(book.get(id)?.spentContingent).toBe(0);
+    expect(book.headroom(id)).toEqual({ direct: 1000, contingent: 500 });
+    expect(book.allReleases()).toHaveLength(1);
+    // The net the invariant recomputes agrees with the cache it just moved.
+    expect(book.netSpendOf(id)).toEqual({ direct: 0, contingent: 0 });
+    expect(checkInv22(book.all(), book.allSpends(), 10, [], book.allReleases())).toEqual([]);
+  });
+
+  it('refuses a release that names no draw — headroom cannot be returned where none was charged', () => {
+    const { book, id } = bookWithDraw();
+    expect(() => book.releaseSpend(release(id, 'ev:never-drawn' as EventId, 1, 0))).toThrow(
+      GrantBookError,
+    );
+    expect(book.get(id)?.spentDirect).toBe(400);
+    expect(book.allReleases()).toHaveLength(0);
+  });
+
+  it('refuses a release LARGER than the draw it names, on either half', () => {
+    for (const [direct, contingent] of [
+      [401, 0],
+      [0, 301],
+    ]) {
+      const { book, id, draw } = bookWithDraw();
+      expect(() =>
+        book.releaseSpend(release(id, draw, direct as number, contingent as number)),
+      ).toThrow(GrantBookError);
+      expect(book.netSpendOf(id)).toEqual({ direct: 400, contingent: 300 });
+    }
+  });
+
+  it('refuses a SECOND release of the same draw — the give-back is not repeatable', () => {
+    const { book, id, draw } = bookWithDraw();
+    book.releaseSpend(release(id, draw, 400, 300));
+    expect(() => book.releaseSpend(release(id, draw, 1, 0))).toThrow(GrantBookError);
+    expect(book.allReleases()).toHaveLength(1);
+  });
+
+  it('refuses a negative release, so a "release" cannot charge a limit', () => {
+    const { book, id, draw } = bookWithDraw();
+    expect(() => book.releaseSpend(release(id, draw, -1, 0))).toThrow(GrantBookError);
+    expect(book.allReleases()).toHaveLength(0);
+  });
+
+  it('INV-22 catches a release the book itself would have refused', () => {
+    // The book is the door; the invariant is the net. A release forged straight into the journal —
+    // a bad restore, a replay, a future caller that skips `releaseSpend` — has to be caught too,
+    // and each clause is asserted separately so none of them can be vacuous.
+    const { book, id, draw } = bookWithDraw();
+    const cases: readonly { readonly row: GrantRelease; readonly says: string }[] = [
+      { row: release(id, 'ev:phantom' as EventId, 1, 0), says: 'names no draw' },
+      { row: release(id, draw, 401, 0), says: 'can never exceed the draw it names' },
+      { row: release(G('g:missing'), draw, 1, 0), says: 'not in the' },
+      { row: release(id, draw, 1, 0, { delegate: 'p:carol' as PrincipalId }), says: 'is attributed to' },
+      {
+        row: release(id, draw, 1, 0, { cause: 'WHIM' as unknown as GrantRelease['cause'] }),
+        says: 'is not one of',
+      },
+      { row: release(id, draw, -1, 0), says: 'is negative' },
+    ];
+    for (const c of cases) {
+      const found = checkInv22(book.all(), book.allSpends(), 11, [], [c.row]);
+      expect(found.map((v) => v.message).join(' | '), c.says).toContain(c.says);
+      expect(found.every((v) => v.id === 'INV-22')).toBe(true);
+    }
+    // Non-vacuity, and it has to go through the book: a release handed to the invariant alone nets
+    // the journal below the row cache, which is the journal-vs-cache clause correctly firing. So the
+    // clean case is a release the book actually APPLIED — the pair moves together or neither does.
+    const clean = bookWithDraw();
+    clean.book.releaseSpend(release(clean.id, clean.draw, 400, 300));
+    expect(
+      checkInv22(clean.book.all(), clean.book.allSpends(), 11, [], clean.book.allReleases()),
+    ).toEqual([]);
+  });
+
+  it('round-trips through the state table, so a rollback cannot forget a give-back', () => {
+    const { book, id, draw } = bookWithDraw();
+    book.releaseSpend(release(id, draw, 400, 300));
+    let restored: GrantBook | null = null;
+    const table = grantsStateTable(
+      () => book,
+      (b) => {
+        restored = b;
+      },
+    );
+    const captured = table.capture();
+    if (table.restore === undefined) throw new Error('the grant table has no restore');
+    table.restore(captured);
+    if (restored === null) throw new Error('restore never ran');
+    const back: GrantBook = restored;
+    expect(back.allReleases()).toHaveLength(1);
+    expect(back.get(id)?.spentDirect).toBe(0);
+    expect(back.netSpendOf(id)).toEqual({ direct: 0, contingent: 0 });
+    expect(canonicalHash(grantsStateTable(() => back, () => undefined).capture())).toBe(
+      canonicalHash(captured),
+    );
+    // A captured cause this build cannot state is refused rather than restored.
+    const forged = JSON.parse(JSON.stringify(captured)) as {
+      releases: { cause: string }[];
+    };
+    forged.releases[0]!.cause = 'WHIM';
+    expect(() => table.restore?.(forged as never)).toThrow(GrantBookError);
   });
 });
