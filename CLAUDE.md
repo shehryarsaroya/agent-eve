@@ -119,7 +119,58 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
   epoch*, or a world that never forked. The three theories this cost — a closed escrow account, world
   length, enrolment re-seating — were each killed by one database query.
 
-### The goal, restated 2026-07-27
+### ★ THE GOAL, restated 2026-07-28 — COMPLETE IT, AND PROVE IT BY PLAYING IT
+
+**Two halves, and the second is not optional.** Owner direction, and it supersedes the framing below.
+
+**(1) Finish the game.** Three items remain of the roadmap: **chokepoints** and capacity-limited power
+projection (`PASS-TERRITORY-POLITICS` §16.12's *first*-ranked feature, unbuilt), **Phase 3's risk
+market** (`PASS-ECONOMY-RISK` §7–8; `src/risk/` does not exist), and **the director layer** — something
+that decides where the camera looks, since the data supports it and nothing implements it. Wars,
+coalitions, compartmented authority, four goods and a clearing market all landed on 2026-07-27/28 at
+`RULES_VERSION` 24.
+
+**(2) Play it through, thoroughly, and keep playing it.** Not as a phase — as the standing method.
+Every layer built so far was *reachable* only after somebody played it from outside:
+
+| what looked done | what playing it found |
+|---|---|
+| the economy | **dead in production since tick 1,200** — every sim starts at tick 0 |
+| A7's staked half | `lockFillStake` had **no caller**, with its own passing unit test |
+| the market | `freeCash` identically **0 for every principal, forever** |
+| coalitions | not a missing branch — **four gates**, one satisfied 0 times in 72 raids |
+| the operator door | **wedged open for nineteen consecutive rules changes** |
+
+That is ~16 instances of one defect at four depths — a verb with no handler, an affordance nothing
+selects, an invariant whose subject cannot occur, and **a reserved slot in a published contract that
+nothing fills**. Each reads as *complete* in every summary and in every test run.
+
+**So the completion bar is not "the code exists". It is:** a mechanism is *offered* to someone who can
+use it, something in the world actually *selects* it, an instrument *counts* it, and a blind probe can
+*reach* it by playing. `test/api/withheld-is-accountable.spec.ts` enforces the first, and
+`scripts/*-probe.ts` are the instruments for the rest.
+
+**How to play it (this works; use it):** `scripts/probe.ts` drives a real signed identity over Ed25519
++ RFC 9421. Identities persist in `~/.compact-probes` — **outside the repo, they are secrets** — because
+a probe that re-enrols is always a newcomer and cannot see what only breaks in a mature world. Rules
+learned the hard way: **`PROBE_FULL=1` always** (truncation cuts the affordances tail and caused six
+false findings), **paste affordances verbatim** rather than retyping params, and **read
+`briefing.corrections[]`**. Anything spanning Reckonings — settlement, campaigns, the ladder — needs a
+local `COMPACT_SPEED=turbo` world on its own port and data dir; a campaign is 1,440 ticks, five days at
+production speed and ~48 minutes at turbo. **Never measure A4 anywhere but `prod`.**
+
+**And the two instruments find disjoint classes**, exactly as `HIGH-WATER-LESSONS.md` predicted: codex
+finds arithmetic and exploits, probes find experience and lies. Probes are unreliable on facts about the
+engine — six for six wrong — and the *only* source of the answer to "is this interesting". **Verify
+every probe's factual claim against production before acting; treat its verdict on how the game FEELS
+as the payload.**
+
+**The gate that ends this project's uncertainty is still unrun:** three humans watch one Reckoning and
+each name a character they rooted for and what was at stake, without reading the rules. §16 says if it
+fails, nothing downstream was worth building. It cannot be automated, it is the cheapest item on the
+list, and everything above is a bet that the answer is yes.
+
+### The goal, restated 2026-07-27 *(superseded by the above; kept for the Phase 2 override)*
 
 **Build the whole game, including combat.** §16 calls Phase 2 *"optional, possibly forever"* and
 `PASS-SHIPS-COMBAT` argues the layer may never be needed — **the owner has overridden that.** Combat
