@@ -288,6 +288,19 @@ export const MAX_LIST_ROWS = 24;
 export const MAX_DOSSIER_OFFERS = 6;
 
 /**
+ * `message {to}` rows the menu carries at a time (§3's PARLEY).
+ *
+ * Sized against the **allowance** rather than against the reach set, which is the deliberate part:
+ * `PARLEYS_PER_RECKONING` is 3, so an agent can act on three of these in a cycle and a menu of thirty
+ * would be twenty-seven rows an agent reads, ranks and cannot take. Six leaves it a genuine choice —
+ * the decision the expiring allowance exists to force is *whom*, and a choice of three from three is
+ * not one — while `MAX_REACH_ROWS` (32) stays the bound on what the engine will accept, and
+ * `header.withheld` names every principal dropped so the agent can still construct the call.
+ * *(calibrate)*
+ */
+export const MAX_PARLEY_AFFORDANCES = 6;
+
+/**
  * Kinds offered as a `create` affordance.
  *
  * RAID and SIEGE are excluded because they are hostile and every newcomer is Commons-seated, where a
@@ -630,6 +643,36 @@ export function buildObservation(input: ObserveInput): Observation {
        * nothing here is a fact a stranger could not already count for itself.
        */
       aggression: runtime.aggressionFor(principal, tick),
+      /**
+       * **THE PARLEY PRICE (§3, `say/parley.ts`), PUBLISHED BEFORE IT IS CHARGED (A2).**
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * A blind probe fighting a campaign at the Marches read `attacker 3, defender 4, terrain 1,
+       * outcome_if_pulsed_now: REBUFF` — a reading no play of its own could change, because one
+       * principal caps at three hands and ties go to the defender, so **the arithmetic makes a
+       * coalition mandatory.** `join {campaign, side}` was the published answer, `counterparties[]`
+       * was **empty**, and it published *"COALITION WANTED … I pay 20000 per hand"* as a standing
+       * offer **into the void**, because `message` took a venture it was not in or a dossier it
+       * could not cut. There was no way to say anything to a principal it was not already in
+       * business with.
+       *
+       * `message {to, act, text}` is that channel, and an open channel is a Sybil vector, so it is
+       * priced (A15). This block is the price, and it is present at **zero, at full, and at
+       * not-entitled** alike — the third state being the one §9's aggression capacity spent this
+       * project's whole life without, where its only appearance in an observation was the
+       * `withheld` line that fires exactly when the count hits zero. An agent must not have to
+       * discover a resource by exhausting it.
+       * ══════════════════════════════════════════════════════════════════════
+       *
+       * On `header` for `aggression`'s reason, and it is the same one: §17's observe budget is at
+       * ten of ten (`OBSERVE_KEYS` is counted, not trusted), and `header` is where the payload keeps
+       * the reader's clocks, budgets and record. A per-Reckoning allowance is a budget.
+       *
+       * **A9 by construction.** Every input is the reader's own or already `PUBLIC`: its standing
+       * row (published here and in every `counterparties[]` about it), its `freeCash`, and a count
+       * of principals whose holdings and campaign rosters are public facts.
+       */
+      parley: runtime.parleysFor(principal, tick),
       // ── THE CAMPAIGN CLOCK (§16.6 MUST-8), PRESENT AT ZERO CAMPAIGNS AND AT FOUR ──
       //
       // On `header` for `raid_schedule`'s and `aggression`'s reason, and it is the same one:
@@ -1576,6 +1619,14 @@ function affordancesFor(
   const carryBlockedWhy = new Set<string>();
   /** `audit` withheld: grants are out, but none of them carries a CLEARANCE, so the log is empty. */
   let auditNoClearance = 0;
+  /** Reachable principals `MAX_PARLEY_AFFORDANCES` dropped, and who they were. */
+  let parleyReachDropped = 0;
+  let parleyReachDroppedNames: readonly string[] = [];
+  /** Reachable principals the shared gate refused for a reason the reach rule does not know. */
+  let parleyGated = 0;
+  /** Why no parley is offered at all: not entitled, spent, or nobody reachable. See the block. */
+  let parleyWithheldReason: string | null = null;
+  let parleyWithheldCount = 0;
   /** Dossier rows `MAX_DOSSIER_OFFERS` dropped — see 5C-bis. Was silent, and a leak rode through it. */
   let clearanceOffersDropped = 0;
   /** Whose compartments those dropped rows were about, so the ground names a subject. */
@@ -2979,6 +3030,73 @@ function affordancesFor(
         expires_tick: campaign.next_pulse_tick ?? tick,
         quote_id: quoteId(principal, tick, 'withdraw', { campaign: campaign.campaign }),
       });
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 5e-bis. **PARLEY — ASK SOMEBODY** (§3, `say/parley.ts`).
+  //
+  //     ★ The affordance that makes a coalition askable. It sits here, directly under `join`,
+  //     because it is the same decision from the other side: `join` is taking a side in somebody's
+  //     war and this is asking somebody to take yours. An agent reading its own losing force
+  //     reading must find both in one place.
+  //
+  //     **One row per reachable principal, each naming a REAL id** — never a placeholder and never
+  //     an instruction to guess one. A2's whole argument: an affordance is a complete, copyable act,
+  //     and `{"to": "<principal>"}` as literal text is a rule the agent cannot follow. This is also
+  //     the answer to the probe's `counterparties[]` being empty: these principals are now *named
+  //     above*, so `counterpartiesFor` carries their standing line and §12.4's advice — "look at
+  //     `counterparties[].last_default` before you trust someone" — becomes applicable to the only
+  //     relationship that mattered.
+  //
+  //     Gated through `runtime.parleyRefusalFor`, the same function `vParley` runs (AGT-S2).
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const capacity = runtime.parleysFor(principal, tick);
+    const reach = runtime.reachFor(principal, tick);
+    if (capacity.parleys_remaining > 0) {
+      for (const row of reach.slice(0, MAX_PARLEY_AFFORDANCES)) {
+        if (runtime.parleyRefusalFor(principal, row.principal, tick) !== null) {
+          parleyGated += 1;
+          continue;
+        }
+        eligible.push({
+          verb: 'message',
+          // `act: "offer"` rather than `assure`: an opening address to a stranger is a proposal, and
+          // `assure` is the unsecured promise — the most damaging sentence in the game if broken
+          // (§14). A menu must not hand a copier the binding-sounding one by default.
+          params: { to: row.principal, act: 'offer', text: '' },
+          // FREE, like every other `message`. `FREE_VERBS`' own note: charging for talk starves the
+          // receipt reel. The price of a parley is the per-Reckoning allowance and the entitlement,
+          // never the action budget — see `parley.ts` §2 for why an action would not be A15-safe
+          // anyway (N enrolments buy N budgets).
+          cost: 0,
+          max_direct_loss: 0,
+          // Zero, and it is a fact rather than an omission: a parley moves nothing and binds nothing.
+          // What it costs is one of `header.parley.parleys_remaining`, which is denominated in
+          // parleys and not in currency, so folding it in here would name a quantity of nothing.
+          max_contingent_liability: 0,
+          what_it_forecloses:
+            `${row.sentence} Spends 1 of your ${String(capacity.parleys_remaining)} remaining parley(s) this ` +
+            'Reckoning; unspent ones DO NOT CARRY. It is PARTIES-private to the two of you and becomes PUBLIC ' +
+            `at tick ${String(tick + capacity.declassifies_after_ticks)} — to every agent and every viewer at ` +
+            'once, printed beside what you both actually did. It binds nothing and moves nothing: what it buys ' +
+            'is that somebody who could help you knows you asked, and on what terms. Put your own text in ' +
+            '"text" — the empty string here is a placeholder, not a message.',
+          expires_tick: tick + QUOTE_PIN_TICKS,
+          quote_id: quoteId(principal, tick, 'message', { to: row.principal }),
+        });
+      }
+      parleyReachDropped = Math.max(0, reach.length - MAX_PARLEY_AFFORDANCES);
+      parleyReachDroppedNames = reach.slice(MAX_PARLEY_AFFORDANCES).map((r) => String(r.principal));
+    } else {
+      // ── THE THREE SILENCES, TOLD APART ────────────────────────────────────
+      //
+      // A menu that simply omits the act leaves an agent unable to distinguish *not entitled*
+      // from *spent* from *nobody to talk to* — which is exactly what a probe reported about
+      // §9's capacity, in those words. Each carries the sentence that says what would change it.
+      parleyWithheldReason = capacity.rule;
+      parleyWithheldCount = Math.max(1, reach.length);
     }
   }
 

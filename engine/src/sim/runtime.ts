@@ -174,6 +174,21 @@ import { hallOfFame, namesFor } from '../frames/memory.js';
 import { readInt, readList, readString } from '../core/params.js';
 import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
+import {
+  MAX_PARLEY_ENTRIES,
+  parley,
+  parleyAllowanceFor,
+  parleyNote,
+  parleyRefusal,
+  parleysRemaining,
+  parleysVisibleTo,
+  PARLEYS_PER_RECKONING,
+  type ParleyCapacity,
+  type ParleyEntry,
+  type ParleyPort,
+  type ParleyWritePort,
+} from '../say/parley.js';
+import { reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
 import { sign } from '../venture/sign.js';
 import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
@@ -529,6 +544,7 @@ import {
   reject,
   releaseHand,
   route,
+  systemOf,
   tierOf,
   type Enrolment,
   type HaulPort,
@@ -2776,6 +2792,13 @@ export class Runtime {
   /** Resolution-time refusals awaiting delivery, per principal. See the type's note. */
   private readonly pendingCorrections = new Map<PrincipalId, Ring<PendingCorrection>>();
   private readonly talk = new Ring<TalkEntry>(MAX_TALK_ENTRIES);
+  /**
+   * The PARLEY book (§3, `say/parley.ts`) — direct addresses between principals with no shared
+   * venture. A ring beside `talk` rather than a state table, for the reason `parley.ts` §3 argues:
+   * the reveal clock is derived from the row's own tick, so there is no stored second number to
+   * drift, and this is the same class of object `talk` has always been.
+   */
+  private readonly parleys = new Ring<ParleyEntry>(MAX_PARLEY_ENTRIES);
   private readonly offers = new Ring<OfferEntry>(MAX_OFFER_ENTRIES);
   private readonly claims = new Ring<ClaimEntry>(MAX_CLAIM_ENTRIES);
 
@@ -8038,6 +8061,21 @@ export class Runtime {
     // §7.3's channel is between principals, a venture is merely its usual subject, and A6
     // forbids the alternative outright. There is no `leak` verb and there never will be.
     if (readString(req.params, ['dossier', 'cite']) !== null) return this.cite(ctx, req);
+    // ── THE `to` BRANCH: A PARLEY (§3, `say/parley.ts`) ───────────────────────
+    //
+    // The third object on this verb, and the same widening the `dossier` branch above already
+    // argued for: §7.3's channel is between principals and a venture is merely its usual
+    // subject. Dispatched after `dossier` and before the venture parse, because `{to, dossier}`
+    // is a document and `{to, act, text}` is a letter — the presence of `dossier` decides, so
+    // the narrower reading is tried first and a caller that sends both gets the document.
+    //
+    // ★ **This is the defect that made a coalition unaskable.** At the Marches the defender
+    // gets +1 terrain, ties go to the defender and one principal caps at three hands, so a solo
+    // attacker can only ever beat a garrison of one — the arithmetic makes coalitions MANDATORY,
+    // `join {campaign, side}` is the published answer, and there was no channel that could ask
+    // anybody to take it. A probe published *"COALITION WANTED"* as a standing offer into the
+    // void because that was the only surface it had.
+    if (readString(req.params, ['to', 'recipient']) !== null) return this.vParley(ctx, req);
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
     const act = readEnum(req.params, ['act', 'type'], [
       'offer',
@@ -8051,7 +8089,10 @@ export class Runtime {
       return reject(
         'A2',
         'message needs {"venture": "<id>", "act": "offer|counter|accept|decline|assure", "text": "..."} — or, ' +
-          'to hand somebody a DOSSIER, {"to": "<principal>", "dossier": "<subject>/STORES|HANDS"}.',
+          'to PARLEY a principal you share no venture with, {"to": "<principal>", "act": "offer", "text": ' +
+          '"..."} — or, to hand somebody a DOSSIER, {"to": "<principal>", "dossier": "<subject>/STORES|HANDS"}. ' +
+          '`header.parley` carries how many parleys you have this Reckoning and `affordances[]` names every ' +
+          'principal you may address.',
       );
     }
     if (text.length > MAX_MESSAGE_LENGTH) {
@@ -8350,6 +8391,211 @@ export class Runtime {
       audience: [],
     });
     return { ok: true, value: null };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PARLEY (§3) — the direct address. `say/parley.ts` carries the whole argument: the tier and
+  // its §11.2 derivation, the two-gate price and its A15 proof, and why the book is a ring.
+  // Everything here is the ADAPTER: what the pure rule may read, named once so both the menu and
+  // the verb read the same thing.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * What REACH may see. Narrow on purpose — the signature is the enumeration.
+   *
+   * `tick` is closed over rather than passed per call because a grant's liveness is a function of
+   * it, and a port whose two members disagreed about "now" could offer a parley to the counterparty
+   * of a grant that had already expired.
+   */
+  private reachPort(tick: number): ReachPort {
+    return {
+      liveCampaigns: () =>
+        this.campaigns.live().map((c) => ({
+          id: String(c.id),
+          attacker: c.attacker,
+          defender: c.defender,
+          objective: c.objective,
+          roster: c.parties.map((p) => p.principal),
+        })),
+      // Every seated principal whose holding stands in the constellation containing `system`.
+      // Holdings are `PUBLIC` (§11.2) and `principalOrder` is the canonical iteration order, so
+      // this is deterministic without a sort and identical for every reader.
+      seatedNear: (system) => {
+        const target = systemOf(this.world.map, system).constellation;
+        const near: PrincipalId[] = [];
+        for (const principal of this.world.principalOrder) {
+          const id = this.world.holdingByPrincipal.get(principal);
+          const holding = id === undefined ? undefined : this.world.holdings.get(id);
+          if (holding === undefined) continue;
+          if (systemOf(this.world.map, holding.system).constellation === target) near.push(principal);
+        }
+        return near;
+      },
+      constellationOf: (system) => String(systemOf(this.world.map, system).constellation),
+      liveGrants: (principal) => {
+        const rows: { readonly id: string; readonly counterparty: PrincipalId; readonly iAmGrantor: boolean }[] = [];
+        for (const grant of this.grantBook.forGrantor(principal)) {
+          if (!this.grantBook.isLive(grant.id, tick)) continue;
+          rows.push({ id: String(grant.id), counterparty: grant.delegate, iAmGrantor: true });
+        }
+        for (const grant of this.grantBook.forDelegate(principal)) {
+          if (!this.grantBook.isLive(grant.id, tick)) continue;
+          rows.push({ id: String(grant.id), counterparty: grant.grantor, iAmGrantor: false });
+        }
+        return rows;
+      },
+    };
+  }
+
+  /** Every principal this one may address, with the public situation that makes each one legal. */
+  reachFor(principal: PrincipalId, tick: number): readonly ReachRow[] {
+    return reachableFor(this.reachPort(tick), principal);
+  }
+
+  /**
+   * The two figures that decide whether this principal may parley at all.
+   *
+   * **`freeCash`, never `freeBalance`.** The difference is the whole endowment, and D7's fourth
+   * property — `freeCash <= earned - transferredOut` — is what makes this term unmintable by
+   * enrolling. `freeBalance` here would be a gate every free identity pays with a stake the world
+   * handed it, which is A15 defeated by the field name. It is the same distinction `post_bond` does
+   * *not* draw, which is why a bond is not the price (see `parley.ts` §2).
+   */
+  private parleyEntitlementOf(principal: PrincipalId): { readonly distinctCounterparties: number; readonly earnedMinor: Minor } {
+    return {
+      distinctCounterparties: this.standing.row(principal).distinctCounterparties,
+      earnedMinor: freeCash(this.ledger, principal),
+    };
+  }
+
+  /** One home, two callers: {@link parleysFor} for the menu and {@link parleyRefusalFor} for both. */
+  private parleyPort(): ParleyPort {
+    return {
+      reach: (principal) => this.reachFor(principal, this.engine.tick),
+      remaining: (principal, tick) =>
+        parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, this.parleyAllowanceOf(principal)),
+      allowance: (principal) => this.parleyAllowanceOf(principal),
+      isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
+      bookSize: () => this.parleys.size,
+    };
+  }
+
+  private parleyAllowanceOf(principal: PrincipalId): number {
+    return parleyAllowanceFor(this.parleyEntitlementOf(principal));
+  }
+
+  /**
+   * **The one gate on `message {to, ...}`, exposed so the affordance asks the verb's own question.**
+   *
+   * AGT-S2, and `demandRefusalFor` is the precedent: an affordance carrying its own copy of a gate
+   * offers moves the handler then refuses, which costs an agent a real action and its trust in the
+   * menu. There is one of these, so they cannot disagree.
+   */
+  parleyRefusalFor(from: PrincipalId, to: PrincipalId, tick: number): Rejection | null {
+    return parleyRefusal(this.parleyPort(), from, to, tick);
+  }
+
+  /**
+   * §2's price as a standing block on `header`, present at zero, at full and at not-entitled alike.
+   *
+   * The third state is the one §9's capacity did not have for the project's whole life: its only
+   * appearance in an observation was a `withheld` line that fires exactly when the count reaches
+   * zero, so an agent learned the resource existed by exhausting it. A price an agent cannot read
+   * before it is charged is a surprise, not a price (A2).
+   */
+  parleysFor(principal: PrincipalId, tick: number): ParleyCapacity {
+    const entitlement = this.parleyEntitlementOf(principal);
+    const allowance = parleyAllowanceFor(entitlement);
+    const remaining = parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, allowance);
+    const reachable = this.reachFor(principal, tick).length;
+    return {
+      parleys_remaining: remaining,
+      parleys_per_reckoning: allowance,
+      reachable_principals: reachable,
+      distinct_counterparties: entitlement.distinctCounterparties,
+      earned_minor: entitlement.earnedMinor,
+      refreshes_at_tick: tick - (tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING,
+      declassifies_after_ticks: AUDIT_LAG_TICKS,
+      reading_costs_parleys: 0,
+      rule: parleyNote(remaining, allowance, entitlement, reachable),
+    };
+  }
+
+  /**
+   * The parleys a principal may read — its own mail now, everybody's once the clock has run.
+   *
+   * `null` is the viewer's list, and it takes the declassified clause alone. **One predicate for
+   * all three readerships** is how A9 holds by construction here: a viewer is never ahead of a
+   * non-party agent, and the only thing a party sees early is a letter addressed to it.
+   */
+  parleysVisible(reader: PrincipalId | null, tick: number): readonly ParleyEntry[] {
+    return parleysVisibleTo(this.parleys.all, reader, tick);
+  }
+
+  /** `message {to, act, text}` — an ADAPTER. The operation lives in `say/parley.ts`. */
+  private vParley(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const port: ParleyWritePort = {
+      ...this.parleyPort(),
+      record: (entry) => {
+        this.parleys.push(entry);
+      },
+      auditLagTicks: AUDIT_LAG_TICKS,
+    };
+    const outcome = parley(port, req.principal, req.params, ctx.tick);
+    if (!outcome.ok) return outcome;
+    this.emitParley(ctx, req, outcome.value);
+    return { ok: true, value: null };
+  }
+
+  /**
+   * The row, `PARTIES` now and `PUBLIC` at `revealsAtTick` — one clock for all three readerships.
+   *
+   * Byte-for-byte `emitDossier`'s visibility shape, because it is the same question with a different
+   * payload: two parties who were both there, a delay, and then everyone at once. **The text is in
+   * the payload**, unlike a dossier's figures, and that difference is the point of §14 — the receipt
+   * reel needs the words to quote, and a parley's words bind nobody, cost nobody anything, and are
+   * the sender's own. A dossier's figures are somebody else's books, which is why those never
+   * publish.
+   */
+  private emitParley(ctx: PhaseContext, req: ActionRequest, entry: ParleyEntry): void {
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'say.parley',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      // Keyed on the two principals in canonical order, so a whole correspondence threads under one
+      // family whichever of them spoke first. `about` would thread it under the war instead and lose
+      // the exchange the moment the war ended, which is exactly when §14 wants to read it.
+      eventFamilyId: `parley::${[String(req.principal), String(entry.to)].sort(compareIds).join('::')}`,
+      parentEventId: null,
+      isPublic: false,
+      publicAt: entry.revealsAtTick,
+      declassifyAt: entry.revealsAtTick,
+      // `ASSERTION`, never `FACT`. A parley is the sender's own words: the engine vouches that they
+      // were said, at that tick, by that principal, and for nothing whatsoever about their truth.
+      // Stamping an agent's promise `FACT` is A5′ inverted — the record asserting something it
+      // cannot know, on the one surface §14 quotes verbatim.
+      provenanceClass: 'ASSERTION',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        from: entry.from,
+        to: entry.to,
+        act: entry.act,
+        text: entry.text,
+        sentAtTick: entry.tick,
+        revealsAtTick: entry.revealsAtTick,
+        why: entry.why,
+        about: entry.about,
+      },
+      visibility: 'PARTIES',
+      audience: [
+        { principal: entry.from, basis: 'PARTY' },
+        { principal: entry.to, basis: 'PARTY' },
+      ],
+    });
   }
 
   /**
