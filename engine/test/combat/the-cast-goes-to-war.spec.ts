@@ -67,37 +67,55 @@ import { holdingOf, tierOf } from '../../src/world/index.js';
  *
  * **Two, and asserted per seed rather than in aggregate**, because one of them is what makes the
  * logistics branch detectable at all: with `crewMove` deleted `fz-13` still fights (its hands happen to
- * be home when the world arrives) and the second seed builds three hulls and flies **none** —
- * `engage: 0`, zero wrecks. An aggregate over both would pass with the branch removed, which is the
- * vacuous shape this project keeps finding and which the first version of this file had.
+ * be home when the world arrives) and the second seed goes quiet. An aggregate over both would pass
+ * with the branch removed, which is the vacuous shape this project keeps finding and which the first
+ * version of this file had.
  *
- * ── ★ `g16` → `g10` AT `RULES_VERSION` 16, AND THE HEADER'S OWN INSTRUCTION IS WHY ──
+ * ── ★ `g16` → `g10` AT `RULES_VERSION` 16, `g10` → `g05` AT 26, AND THE HEADER'S INSTRUCTION IS WHY ──
  *
  * ══════════════════════════════════════════════════════════════════════════
  * The header says: *"If the map or the seating changes, re-pick a seed that seats a raider at `sys-09`
- * or `sys-16` rather than deleting the assertion."* Neither changed — the **cast's trajectory** did.
- * `D31` made `fill_role` carry a stake, and §7.3 resolves a contested slot *pro-rata by stake*, so which
- * member wins which slot moves. On `g16` that is enough to cost `kestrel` its one engagement:
- * `engage` **1 → 0**, wrecks **564 → 0**, battles 3 → 2, with the same three hulls built. `fz-13` is
- * untouched (`engage` 1, wrecks 2,076).
+ * or `sys-16` rather than deleting the assertion."* Neither has ever changed — the **cast's
+ * trajectory** did, twice, and both times on a seed chosen *because* it sits on a knife edge.
  *
- * **This is trajectory sensitivity rather than a broken branch, and `D31` measured the size of it
- * directly**: with *zero* stakes and nothing changed but the SIGN of `canonicalRequestOrder`'s
- * `principal_id` tie-break — a semantically null edit — 8 seeds at 3 Reckonings lose 15% of their
- * ventures and 83% of `CARRIED`. `g16` was chosen because it sits on a knife edge (that is what makes
- * it detect `crewMove`), and a knife edge is exactly what a trajectory change tips.
+ * **At 16:** `D31` made `fill_role` carry a stake and §7.3 resolves a contested slot pro-rata by
+ * stake, so which member wins which slot moved. On `g16` that cost `kestrel` its one engagement —
+ * `engage` **1 → 0**, wrecks **564 → 0** — with the same three hulls built.
  *
- * `g10` replaces it on the same two criteria, both re-measured under the new cast:
+ * **At 26 (`D41`):** EXPOSURE gained its delegated half — Σ `max_direct_loss` over live GRANTS, which
+ * §3 always said it was and which nothing had ever summed. That moved the Levy's allocation **for
+ * the first time in this world's life**: `INVERSE_EXPOSURE` is the published default and had been one
+ * flat weight, and it now discriminates hard. Measured on `g10` at 900 ticks, 8 members: **hulls 3
+ * (unchanged — the supply chain is intact), `engage` 1 → 0, battles 2 → 0.** Measured on the same
+ * world, the size of the input that moved: `p:sable` carries **73,816** of delegated exposure against
+ * **261** of lock exposure, and `p:varrow`, which granted nothing, carries **252** and nothing else.
+ * A 272× spread where there had been none is what tipped the edge.
  *
- *   · it seats a raider (`brannock`) on a Frontier gate, graduates, builds the doctrine and fights —
- *     `engage` 1, wrecks 780, 2 battles reaching AFTERMATH;
- *   · and it **still detects the logistics branch**: with `crewMove` deleted, `g10` goes `engage` 1 → 0
- *     and wrecks 780 → 0 while still building three hulls, which is precisely the property `g16` was
- *     carrying. `g24` was the other candidate and was rejected for failing this second test — it
- *     fights with `crewMove` gone, so the pair would have stopped covering it.
+ * `g05` replaces it, re-measured under the new cast: **frontier 1, hulls 3, `engage` 2, wrecks 2,
+ * two battles reaching CONTEST with one of ours in both.**
+ *
+ * ── ⚑ AND THE `crewMove` COVERAGE IS NOW PARTIAL, WHICH IS RECORDED RATHER THAN CLAIMED ──
+ *
+ * `g10` detected a `crewMove` deletion as `engage` **1 → 0**. **No seed of the 34 scanned does that
+ * under the new cast** — `g05` goes `engage` **2 → 1** and wrecks **2 → 1**, and `fz-13` is
+ * unchanged at 2. So the pair no longer covers that branch by going dark, and saying it did would be
+ * a comment claiming coverage the file does not have.
+ *
+ * What replaces the claim is an **assertion**: {@link CREW_MOVE_FLOOR} requires `g05` to reach
+ * `engage` ≥ 2, so deleting `crewMove` turns this file RED on the number rather than on a zero. That
+ * is weaker evidence than a seed going silent and it is *checkable*, which a comment is not.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const WAR_SEEDS = ['fz-13', 'g10'] as const;
+/**
+ * ★ The `engage` floor `g05` must clear, and it exists to keep the logistics branch covered.
+ *
+ * `g05` engages **twice** with `crewMove` intact and **once** without it, so a `> 0` assertion would
+ * stay green with the branch deleted. Keyed by seed because it is a fact about one seed's trajectory
+ * and not a property of the layer — the same reason `WAR_SEEDS` is asserted per seed.
+ */
+const CREW_MOVE_FLOOR: Readonly<Record<string, number>> = Object.freeze({ 'g05': 2 });
+
+export const WAR_SEEDS = ['fz-13', 'g05'] as const;
 
 /** Seeds the balance half is asserted over. The four the territorial gate was measured on. */
 const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
@@ -405,6 +423,17 @@ function oneWar(seed: string): void {
       expect(battle.sides.has('DEFENDER'), 'and we were on ours').toBe(true);
     }
     expect(war.verbs.get('engage') ?? 0, `${seed}: \`engage\` was submitted and accepted`).toBeGreaterThan(0);
+    // ★ And the floor that keeps `crewMove` covered on the seed that can carry it. See
+    // {@link CREW_MOVE_FLOOR}: `> 0` alone stays green with the logistics branch deleted.
+    const floor = CREW_MOVE_FLOOR[seed];
+    if (floor !== undefined) {
+      expect(
+        war.verbs.get('engage') ?? 0,
+        `${seed}: engage fell below ${String(floor)}, which is what deleting \`crewMove\` does to this ` +
+          'seed — the hands never reach the berth, so the hulls sit crewless and only the walk-free ' +
+          'engagement happens. Check the logistics branch before re-picking the seed.',
+      ).toBeGreaterThanOrEqual(floor);
+    }
 }
 
 /** One war seed's losses. */

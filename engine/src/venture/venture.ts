@@ -156,11 +156,13 @@ export interface VentureRecord extends Venture {
    *      table: `revoke` writes to it, and `MAX_GRANTS` bounds it. A5′ is about the permanent row,
    *      and a permanent row whose subject must be looked up somewhere that can change is a row
    *      that can come to say something different later.
-   *   2. **It made the actor invisible where it matters most.** The only public artifacts that
-   *      resolved grant → delegate are the reckoning frame's authority lines and docket cards, and
-   *      both are **capped** projections (`MAX_DOCKET_CARDS`, and `atStake > 0` filters cards out
-   *      entirely). A cap that drops the row a claim rests on fails *in the direction that hides* —
-   *      this repo has now shipped that three times.
+   *   2. **It made the actor invisible where it matters most.** Two public artifacts resolved
+   *      grant → delegate and neither can carry a *default*: the frame's authority lines are capped
+   *      at twelve, and its docket cards are built from ventures still **LIVE** (`MAX_DOCKET_CARDS`
+   *      7, `atStake > 0`), so a settled default never appears on one at all. Measured on a turbo
+   *      world: the frame published for a Reckoning with **four broken promises** carried an empty
+   *      docket. A projection that drops the row a claim rests on fails *in the direction that
+   *      hides*, and this repo has now shipped that three times.
    *   3. **A6 says the replay must point at the promotion and the deed.** It could not: the deed's
    *      row named nobody but the victim.
    *
