@@ -43,17 +43,57 @@
 
 import type { CanonicalValue } from '../core/canonical.js';
 import { TICKS_PER_RECKONING } from '../core/time.js';
-import type { GoodId, PrincipalId, SystemId } from '../core/types.js';
-import { addMinor, minor, type Minor } from '../core/units.js';
-import { compareIds } from '../ledger/order.js';
 import {
+  readArray,
+  readInt,
+  readObject,
+  readString,
+  SnapshotError,
+  type StateTable,
+} from '../tick/snapshot.js';
+import type { GoodId, PrincipalId, SystemId } from '../core/types.js';
+import { addMinor, type Minor } from '../core/units.js';
+import { compareIds } from '../ledger/order.js';
+import { bps, minor } from '../core/units.js';
+import { DEFAULT_VALUATION_RULE } from '../ledger/valuation.js';
+import { pinnedAt } from '../venture/terms.js';
+import {
+  coverEscrow,
   isLiveCover,
+  LIVE_COVER_STATES,
   type CoverId,
   type CoverRecord,
   type CoverState,
 } from './cover.js';
-import type { FrontId, FrontRecord } from './front.js';
-import type { IndemnityId, IndemnityRecord } from './indemnity.js';
+import type { FrontId, FrontRecord, FrontState } from './front.js';
+import type { IndemnityId, IndemnityRecord, IndemnityState } from './indemnity.js';
+
+/**
+ * The closed state sets a restore validates against, spelled once.
+ *
+ * A restore that accepted an unknown state would put a row back that no branch can resolve — a live
+ * promise in a state nothing settles, which is `Book.prune`'s failure mode with the boot path as the
+ * cause. So the sets are here and `SnapshotError` is the answer, never a coercion.
+ */
+const FRONT_STATES: readonly FrontState[] = Object.freeze([
+  'FORECAST',
+  'IMMINENT',
+  'STRUCK',
+  'PASSED',
+] as FrontState[]);
+const COVER_STATES: readonly CoverState[] = Object.freeze([
+  ...LIVE_COVER_STATES,
+  'SETTLED',
+  'LAPSED',
+] as CoverState[]);
+const INDEMNITY_STATES: readonly IndemnityState[] = Object.freeze([
+  'OPEN',
+  'DUE',
+  'PAID',
+  'PART_PAID',
+  'DEFAULTED',
+  'DEFERRED',
+] as IndemnityState[]);
 import {
   MAX_COVERS,
   MAX_COVERS_PER_PAYER,
@@ -415,6 +455,168 @@ export class RiskBook {
   // ── Durability ────────────────────────────────────────────────────────────
 
   /**
+   * Put every row back, exactly. Refuses rather than coerces: a malformed row is a bad *writer*, and
+   * *"coercing it would restore a world that **looks** restored"* (`market/stateTable.ts`).
+   *
+   * Rebuilds the interest registry and the retention index from the rows rather than capturing them
+   * separately — two homes for one fact is what lets a restore disagree with itself, and CAT6's
+   * exclusivity check has to be true of the book that came back, not of the one that was saved.
+   */
+  restore(captured: CanonicalValue): void {
+    this.fronts.clear();
+    this.covers.clear();
+    this.indemnities.clear();
+    this.records.clear();
+    this.interests.clear();
+    this.resolvedAt.clear();
+    const root = readObject(captured, 'risk');
+
+    for (const [i, raw] of readArray(root['fronts'] ?? [], 'risk.fronts').entries()) {
+      const where = `risk.fronts[${String(i)}]`;
+      const o = readObject(raw, where);
+      const state = readString(o, 'state', where);
+      if (!FRONT_STATES.includes(state as never)) {
+        throw new SnapshotError(`${where}: unknown front state ${state}`);
+      }
+      const struck = o['struckAtTick'];
+      const cause = o['causeEventId'];
+      this.fronts.set(readString(o, 'id', where) as FrontId, {
+        id: readString(o, 'id', where) as FrontId,
+        state: state as FrontRecord['state'],
+        announcedTick: readInt(o, 'announcedTick', where),
+        landfallTick: readInt(o, 'landfallTick', where),
+        eye: readString(o, 'eye', where) as SystemId,
+        struckAtTick: struck === null || struck === undefined ? null : readInt(o, 'struckAtTick', where),
+        causeEventId:
+          cause === null || cause === undefined ? null : (readString(o, 'causeEventId', where) as never),
+        swath: Object.freeze(
+          readArray(o['swath'] ?? [], `${where}.swath`).map((cell, j) => {
+            const c = readObject(cell, `${where}.swath[${String(j)}]`);
+            return {
+              system: readString(c, 'system', where) as SystemId,
+              intensityBps: bps(readInt(c, 'intensityBps', where)),
+            };
+          }),
+        ),
+        cone: Object.freeze(
+          readArray(o['cone'] ?? [], `${where}.cone`).map((cell, j) => {
+            const c = readObject(cell, `${where}.cone[${String(j)}]`);
+            return {
+              system: readString(c, 'system', where) as SystemId,
+              oddsBps: bps(readInt(c, 'oddsBps', where)),
+            };
+          }),
+        ),
+      });
+    }
+
+    for (const [i, raw] of readArray(root['covers'] ?? [], 'risk.covers').entries()) {
+      const where = `risk.covers[${String(i)}]`;
+      const o = readObject(raw, where);
+      const state = readString(o, 'state', where);
+      if (!COVER_STATES.includes(state as never)) {
+        throw new SnapshotError(`${where}: unknown cover state ${state}`);
+      }
+      const subject = readObject(o['over'] ?? {}, `${where}.over`);
+      const kind = readString(subject, 'kind', where);
+      const over =
+        kind === 'GOODS'
+          ? ({
+              kind: 'GOODS' as const,
+              system: readString(subject, 'system', where) as SystemId,
+              good: readString(subject, 'good', where) as GoodId,
+            })
+          : ({ kind: 'COVER' as const, cover: readString(subject, 'cover', where) as CoverId });
+      const payee = o['payee'];
+      const boundTick = o['boundTick'];
+      const attaches = o['attachesTick'];
+      const hash = o['termsHash'];
+      const version = o['actedOnStateVersion'];
+      const id = readString(o, 'id', where) as CoverId;
+      const payer = readString(o, 'payer', where) as PrincipalId;
+      const row: CoverRecord = {
+        id,
+        payer,
+        payee: payee === null || payee === undefined ? null : (readString(o, 'payee', where) as PrincipalId),
+        over,
+        limit: minor(readInt(o, 'limit', where)),
+        premium: minor(readInt(o, 'premium', where)),
+        electiveBps: bps(readInt(o, 'electiveBps', where)),
+        escrowed: minor(readInt(o, 'escrowed', where)),
+        elective: minor(readInt(o, 'elective', where)),
+        state: state as CoverState,
+        offeredTick: readInt(o, 'offeredTick', where),
+        boundTick: boundTick === null || boundTick === undefined ? null : readInt(o, 'boundTick', where),
+        attachesTick: attaches === null || attaches === undefined ? null : readInt(o, 'attachesTick', where),
+        offerExpiresTick: readInt(o, 'offerExpiresTick', where),
+        expiresTick: readInt(o, 'expiresTick', where),
+        termsHash: hash === null || hash === undefined ? null : readString(o, 'termsHash', where),
+        actedOnStateVersion:
+          version === null || version === undefined ? null : readInt(o, 'actedOnStateVersion', where),
+        escrow: coverEscrow(id, payer),
+        valuation: pinnedAt(DEFAULT_VALUATION_RULE, readInt(o, 'offeredTick', where)),
+        rulesVersion: 0,
+        depth: readInt(o, 'depth', where),
+        fingerprint: readString(o, 'fingerprint', where),
+        settledEscrowedMinor: minor(readInt(o, 'settledEscrowedMinor', where)),
+        settledElectiveMinor: minor(readInt(o, 'settledElectiveMinor', where)),
+        boundByGrant: null,
+        actedBy: null,
+      };
+      this.covers.set(id, row);
+      if (isLiveCover(row.state)) this.claimInterest(row);
+    }
+
+    for (const [i, raw] of readArray(root['indemnities'] ?? [], 'risk.indemnities').entries()) {
+      const where = `risk.indemnities[${String(i)}]`;
+      const o = readObject(raw, where);
+      const state = readString(o, 'state', where);
+      if (!INDEMNITY_STATES.includes(state as never)) {
+        throw new SnapshotError(`${where}: unknown indemnity state ${state}`);
+      }
+      const id = readString(o, 'id', where) as IndemnityId;
+      this.indemnities.set(id, {
+        id,
+        cover: readString(o, 'cover', where) as CoverId,
+        front: readString(o, 'front', where) as FrontId,
+        payer: readString(o, 'payer', where) as PrincipalId,
+        payee: readString(o, 'payee', where) as PrincipalId,
+        grossLoss: minor(readInt(o, 'grossLoss', where)),
+        deductible: minor(readInt(o, 'deductible', where)),
+        covered: minor(readInt(o, 'covered', where)),
+        escrowedDue: minor(readInt(o, 'escrowedDue', where)),
+        electiveDue: minor(readInt(o, 'electiveDue', where)),
+        escrowedPaid: minor(readInt(o, 'escrowedPaid', where)),
+        electivePaid: minor(readInt(o, 'electivePaid', where)),
+        openedTick: readInt(o, 'openedTick', where),
+        dueTick: readInt(o, 'dueTick', where),
+        causeEventId: readString(o, 'causeEventId', where) as never,
+        depth: readInt(o, 'depth', where),
+        state: state as IndemnityState,
+        deferrals: readInt(o, 'deferrals', where),
+        boundByGrant: null,
+        actedBy: null,
+      });
+    }
+
+    for (const [i, raw] of readArray(root['records'] ?? [], 'risk.records').entries()) {
+      const where = `risk.records[${String(i)}]`;
+      const o = readObject(raw, where);
+      const principal = readString(o, 'principal', where) as PrincipalId;
+      this.records.set(principal, {
+        principal,
+        written: readInt(o, 'written', where),
+        limitWritten: minor(readInt(o, 'limitWritten', where)),
+        premiumEarned: minor(readInt(o, 'premiumEarned', where)),
+        honoured: readInt(o, 'honoured', where),
+        defaulted: readInt(o, 'defaulted', where),
+        defaultedValue: minor(readInt(o, 'defaultedValue', where)),
+        paidOut: minor(readInt(o, 'paidOut', where)),
+      });
+    }
+  }
+
+  /**
    * The whole book, canonically, for the state table and the hash.
    *
    * Every row, in id order, including the record — `test/durability/books-in-the-hash.test.ts`'s
@@ -491,4 +693,40 @@ export class RiskBook {
       })),
     };
   }
+}
+
+/**
+ * ★ Put the book back. **A book with a `capture` and no `restore` is worse than a book with neither.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * `sim/runtime.ts` states the failure this exists for, measured: adopting a checkpoint at tick 575
+ * produced *"the adopted world's hash equalled the genesis-replayed hash to the byte and every balance
+ * agreed, while the cast's `electiveHonoured` went 4, 6, 2, 4 … → all zeros. A wrong boot that passes
+ * its own integrity check is worse than a slow one."* Seven books were once found outside the hash in
+ * one night, and two more were found *in* the hash and missing from the **manifest**, which an adoption
+ * drops silently while the gate reports nothing missing.
+ *
+ * So this book arrives with **all three** in one change — `capture`, `restore`, and its
+ * `CHECKPOINT_REQUIRED_TABLES` entry — because `test/durability/books-in-the-hash.test.ts` asserts the
+ * registered set and the manifest are equal in **both** directions, and it is right to.
+ *
+ * What an adopted world would lose without it: **every live COVER**. Not a counter and not a
+ * projection — the promises themselves, each with money locked in an escrow account the ledger would
+ * still be carrying. Every one of those escrows becomes an orphan, every payee that had paid a premium
+ * is silently uninsured, and no default is recorded anywhere because the obligation ceased to exist.
+ * That is `Book.prune`'s failure mode arriving through the boot path instead.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+export function riskStateTable(getBook: () => RiskBook, setBook: (book: RiskBook) => void): StateTable {
+  return {
+    name: 'risk',
+    capture(): CanonicalValue {
+      return getBook().capture();
+    },
+    restore(captured: CanonicalValue): void {
+      const fresh = new RiskBook();
+      fresh.restore(captured);
+      setBook(fresh);
+    },
+  };
 }

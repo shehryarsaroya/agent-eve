@@ -1812,6 +1812,7 @@ import {
   type WithheldRisk,
 } from '../risk/index.js';
 import { frontBands } from '../risk/lines.js';
+import { riskStateTable } from '../risk/book.js';
 import {
   electCover,
   publishCover,
@@ -2777,7 +2778,7 @@ export class Runtime {
    * and the instruments all read it, and a private field with six accessors is the same coupling
    * wearing more code.
    */
-  readonly risk = new RiskBook();
+  private riskBookRef = new RiskBook();
   /**
    * `coverId → what its payer elected`. The risk twin of {@link elections}.
    *
@@ -2788,6 +2789,14 @@ export class Runtime {
    * load-bearing row five times.
    */
   private readonly coverElections = new Map<CoverId, Election>();
+  /**
+   * Behind a getter because a **restore replaces the book**, the same shape as `campaignBookRef` and
+   * `registerRef` and for the same reason: a hash-only table attests to a book without being able to
+   * put it back, and a field every reader had captured a reference to would keep the pre-adoption copy.
+   */
+  get risk(): RiskBook {
+    return this.riskBookRef;
+  }
   /** The only writer of standing (§6.4, INV-21). */
   readonly standing = new StandingBook();
   /**
@@ -3202,6 +3211,24 @@ export class Runtime {
           () => this.campaignBookRef,
           (book) => {
             this.campaignBookRef = book;
+          },
+        ),
+        // ── ★ PHASE 3's RISK BOOK, REGISTERED IN THE SAME CHANGE THAT ADDED IT ──
+        //
+        // With its `CHECKPOINT_REQUIRED_TABLES` entry, for the reason the block below spells out at
+        // length: *"seven books were once found outside the hash in one night, and two more (`mint`,
+        // `delivery`) were found IN the hash and missing from the manifest, which an adoption drops
+        // silently while the gate reports nothing missing."*
+        //
+        // What an adopted world would lose here is not a counter: it is **every live COVER**, each
+        // with money the ledger is still holding in an escrow account. Every escrow becomes an orphan
+        // lock, every payee that paid a premium is silently uninsured, and **no default is recorded
+        // anywhere** — because the obligation ceased to exist rather than being broken. A5′ through
+        // the boot path.
+        riskStateTable(
+          () => this.riskBookRef,
+          (book) => {
+            this.riskBookRef = book;
           },
         ),
         // ══════════════════════════════════════════════════════════════════════

@@ -176,7 +176,7 @@ export {
   type StruckInterest,
 } from './indemnity.js';
 
-export { RiskBook, RiskBookError, type RiskRecord } from './book.js';
+export { RiskBook, RiskBookError, riskStateTable, type RiskRecord } from './book.js';
 
 export {
   announceIfDue,
