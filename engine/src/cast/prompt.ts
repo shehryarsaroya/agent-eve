@@ -249,6 +249,7 @@ const S11B = '## 11B. Sovereignty — territory you have to MAINTAIN';
 const S11C = '## 11C. SYNDICATES — pooling, and the authority that comes with it';
 const S11D = '## 11D. PREDATION — two kinds, and only one of them has a name';
 const S11E = '## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for';
+const S11F = "## 11F. THE FRONT, and COVER — insuring somebody else's loss";
 const S12 = '## 12. Getting good';
 
 /**
@@ -270,7 +271,33 @@ const S12 = '## 12. Getting good';
  * is the class of thing A2 forbids and `situationalFocus` has already been caught doing twice.
  */
 const ACT_VALUE_KEYS: readonly string[] = Object.freeze(['kind', 'obligation', 'ballot']);
-const ACT_SUBJECT_KEYS: readonly string[] = Object.freeze(['campaign', 'raid', 'venture', 'claim']);
+/**
+ * `cover` is the fifth and `to` the sixth. Both arrived in the same merge, from two features that
+ * each believed itself to be adding the last one — which is why this list is a single frozen array
+ * with both notes above it rather than two declarations that a union would silently duplicate.
+ *
+ * `to` is the PARLEY discriminator (`RULES_VERSION` 31).
+ *
+ * `message` selects its object by parameter — `{venture}` is a MESSAGE, `{to, dossier}` hands a
+ * DOSSIER, `{to, act, text}` sends a PARLEY — and `venture` was already here, so the new object needed
+ * a token or its rules would have had to hang off the bare verb. That is the `build` defect exactly:
+ * `message` is offered to essentially everybody (every principal owing an elective half gets an
+ * `assure` row), so a verb gate would have charged **every position** for the parley rules.
+ *
+ * It matches the DOSSIER offer too, and that is correct rather than sloppy: a delegate holding a
+ * clearance is reachable through its grant, so anybody offered `{to, dossier}` can also `{to, act}`.
+ * One token for "you may address a principal directly" is one concept.
+ */
+const ACT_SUBJECT_KEYS: readonly string[] = Object.freeze([
+  'campaign',
+  'raid',
+  'venture',
+  'claim',
+  // Phase 3. `sign` and `elect` each have two meanings and neither carries a `kind`: a venture's is
+  // discriminated by `venture`, a COVER's by `cover`. Same shape as `join {raid}` vs `join {campaign}`.
+  'cover',
+  'to',
+]);
 
 /**
  * ★ **The closed vocabulary of act tokens the catalog gates on.**
@@ -318,6 +345,18 @@ export const CONTRACT_ACTS: ReadonlySet<string> = Object.freeze(
     'vote{CHARGE}',
     // `deliver` — the Charge is goods standing at a claimed system; the Levy is §5's FLOOR block.
     'deliver{CHARGE}',
+    // Phase 3's risk market. Three verbs, three second meanings, one section (§11F) — and the gate
+    // matters here for §11E's measured reason: `sign` and `elect` are offered to essentially every
+    // principal with a live venture, so gating §11F on the bare verbs would charge every position
+    // ~3,800 characters for a mechanic most of them are not in.
+    'publish_offer{COVER}',
+    'sign{COVER}',
+    'elect{COVER}',
+    // `message` — a PARLEY (and a DOSSIER hand) address a PRINCIPAL; a MESSAGE addresses a venture.
+    // §4's `### Talking to somebody you share no venture with` is the only home of the reach rule
+    // and the entitlement, and both are refusable, so it is RULES for whoever is offered the act and
+    // nothing at all for the far larger population offered only `message {venture, act: "assure"}`.
+    'message{TO}',
   ]),
 );
 
@@ -439,13 +478,35 @@ export const CONTRACT_MULTI_MEANING_VERBS: readonly {
   },
   {
     verb: 'publish_offer',
-    acts: ['publish_offer{text}', 'publish_offer{cede}'],
-    gate: 'VERB_GATED',
+    acts: ['publish_offer{text}', 'publish_offer{cede}', 'publish_offer{COVER}'],
+    gate: 'ACT_GATED',
     because:
-      'the `cede` shape sells a claim and its rules are in §11B `### Losing it`, which is already ' +
-      'reached by `abandon{CLAIM}`, `inArrears` and `holdsClaim`. The `text` shape is what §4 ' +
-      '`### Negotiating` documents. Neither gate is wrong today, and `cede` carries no key this ' +
-      'file discriminates on.',
+      'THREE shapes now, and the third is what moved this row from VERB_GATED. The `cede` shape sells ' +
+      'a claim and its rules are in §11B `### Losing it`, already reached by `abandon{CLAIM}`, ' +
+      '`inArrears` and `holdsClaim`; the `text` shape is what §4 `### Negotiating` documents; and ' +
+      '`kind:"COVER"` writes insurance, whose rules are §11F. That third meaning DOES carry a key this ' +
+      'file discriminates on, so it is gated — and measured at **zero characters on four of seven ' +
+      'positions** because a principal offered only the prose shape never sees §11F.',
+  },
+  {
+    verb: 'sign',
+    acts: ['sign (a venture’s terms)', 'sign{COVER}'],
+    gate: 'ACT_GATED',
+    because:
+      '§4’s promise rules are the FLOOR block every position pays for, and they are right for a ' +
+      'venture. A COVER’s rules are §11F — a different clock, a different subject, and a ' +
+      '`terms_hash` echoed off an offer rather than off a role — so `sign{COVER}` selects that ' +
+      'section and a venture signature does not.',
+  },
+  {
+    verb: 'elect',
+    acts: ['elect (a venture role)', 'elect{COVER}'],
+    gate: 'ACT_GATED',
+    because:
+      '★ the case the mechanism was BUILT for, arriving on schedule. `elect` is offered to almost ' +
+      'every principal with a live venture, so §11F gated on the bare verb would have charged every ' +
+      'one of them 3,826 characters of insurance — §11E’s +3,543 defect exactly. The election ITSELF ' +
+      'is one concept (§4’s `IN_FULL` paragraph covers both), but what is being elected on is not.',
   },
   {
     verb: 'trade',
@@ -472,6 +533,19 @@ export const CONTRACT_MULTI_MEANING_VERBS: readonly {
     acts: ['set_delivery_intent{LEVY}'],
     gate: 'VERB_GATED',
     because: 'one obligation is offered today, and its only home is §5’s Levy block, which is FLOOR.',
+  },
+  {
+    verb: 'message',
+    acts: ['message{VENTURE}', 'message{TO} — a PARLEY, or a DOSSIER hand'],
+    gate: 'ACT_GATED',
+    because:
+      '★ the fifth instance, and the shape `build` taught. `message {venture, act:"assure"}` is offered ' +
+      'to every principal that owes an elective half — which is nearly everybody that has ever created ' +
+      'a venture — so a verb gate on §4’s parley block would have charged EVERY position 2,555 ' +
+      'characters of reach rules and an entitlement, for an act most of them cannot take. `to` is the ' +
+      'discriminator and it is the honest one: it is present exactly when the address is a PRINCIPAL. ' +
+      '§4’s `### Negotiating` keeps the bare verb, because the typed acts and the settlement ' +
+      'declassify rule bind every shape of `message` alike.',
   },
 ]);
 
@@ -545,7 +619,7 @@ export function actTokensOf(verb: string, params: unknown): readonly string[] {
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of fifty-six could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of sixty-one could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -651,6 +725,36 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     block: '### Negotiating',
     verbs: ['message', 'publish_offer'],
     because: 'neither `message` nor `publish_offer` is offered to you this wake',
+  },
+  /**
+   * ★ The PARLEY, gated on the ACT and never on the verb (`RULES_VERSION` 31).
+   *
+   * RULES rather than CONTEXT, and the test is the one this file applies throughout: **can the member
+   * be refused for not knowing it?** Three ways, all of them costing a wake to discover —
+   *
+   *   · it addresses somebody the world does not stand it beside (`A15`, reach);
+   *   · it has never honoured an elective half and has been paid nothing, so it may open no
+   *     conversation at all (`A15`, entitlement) — and the *fix* for that is a fact about ventures
+   *     that appears nowhere else in the document;
+   *   · it banks its allowance across a Reckoning boundary and finds it gone.
+   *
+   * And one more that is worse than a refusal: a member that does not know a parley **publishes four
+   * ticks later** will say something in what it believes is confidence. That is A5′-adjacent — not the
+   * record being wrong, but the member being wrong about the record, which §11's say-do gap then prints
+   * under its name for ever.
+   *
+   * `wanted` is deliberately absent. There is no standing fact that makes this worth having: a
+   * principal with no reachable recipient and no allowance has nothing to do with it, and the engine
+   * says so in `header.parley.rule` for free.
+   */
+  {
+    section: S4,
+    block: '### Talking to somebody you share no venture with: the PARLEY',
+    verbs: [],
+    acts: ['message{TO}'],
+    because:
+      'no principal is reachable for you to address directly this wake — `header.parley` carries the ' +
+      'count and the reason, and a MESSAGE inside a venture you already share needs none of it',
   },
   /**
    * ★ RULES for anybody offered `fill_role` **or** a `vote`, and the second key is the point.
@@ -1017,6 +1121,51 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     acts: ['build{CAMPAIGN}', 'join{CAMPAIGN}', 'withdraw{CAMPAIGN}'],
     wanted: (s) => s.inCampaign,
     because: 'no campaign is offered to you this wake and you are party to none',
+  },
+  // ══════════════════════════════════════════════════════════════════════════
+  // §11F · PHASE 3's RISK MARKET — and the gate is `acts`, for §11E's measured reason.
+  //
+  // `sign` and `elect` are offered to essentially every principal that holds a venture role, so
+  // gating this section on the bare verbs would ship ~3,800 characters of insurance to every position
+  // in the game — which is §11E's +3,543 defect with a different section number. The tokens are
+  // `publish_offer{COVER}`, `sign{COVER}` and `elect{COVER}`, and the split below is asymmetric on
+  // purpose: the FRONT's preamble reaches anybody offered any of the three (a front is weather and
+  // everybody standing in the cone needs its clock), while the writing and deciding blocks are gated
+  // on the act that performs them.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    section: S11F,
+    block: null,
+    verbs: [],
+    acts: ['publish_offer{COVER}', 'sign{COVER}', 'elect{COVER}'],
+    because: 'no COVER act is offered to you this wake, so no FRONT is close enough to price',
+  },
+  {
+    section: S11F,
+    block: '### Buying COVER — `sign` `{"cover":"<id>","terms_hash":"<hash>"}`',
+    verbs: [],
+    acts: ['sign{COVER}'],
+    because: 'you are offered no COVER to buy this wake',
+  },
+  {
+    section: S11F,
+    block:
+      '### Writing COVER — `publish_offer` ' +
+      '`{"kind":"COVER","system":…,"good":…,"limit":N,"premium":N}`',
+    verbs: [],
+    acts: ['publish_offer{COVER}'],
+    because: 'you are not offered the act of writing cover this wake',
+  },
+  {
+    section: S11F,
+    // ★ `required` for a payer with an INDEMNITY due, and that is A5′ in the agent-facing text: an
+    // election is a decision with a deadline, silence is a refusal, and a payer that was never shown
+    // the rule is a payer the record calls a defaulter for not reading its mind. Same argument the
+    // PULSE block above makes one clock out.
+    block: '### The decision — `elect` `{"cover":"<id>","election":"IN_FULL"}`',
+    verbs: [],
+    acts: ['elect{COVER}'],
+    because: 'nothing is due from you on a COVER this wake',
   },
   {
     section: S11E,
@@ -1432,7 +1581,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are fifty-six: 2^55 is not enumerable, and it
+ * was free. At `###` granularity there are sixty-one: 2^55 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -1586,6 +1735,13 @@ export const CONTRACT_POSITIONS: readonly {
       acts: new Set([
         'build{WORKS}', 'refine{ALLOY}', 'vote{LEVY}',
         'build{CAMPAIGN}', 'join{CAMPAIGN}', 'withdraw{CAMPAIGN}',
+        // ★ `message{TO}` at 31, and this row is the one the PARLEY exists for. A party to a live
+        // campaign reaches its attacker, its defender, its roster and every holder in the
+        // objective's constellation, so `api/observe.ts` offers it `message {to}` — and without
+        // this token the fixture would have measured **zero** cost for the section written to fix
+        // its own defect. Argued rather than swept, like the campaign acts above and for the same
+        // reason: the heuristic cast has never declared a campaign.
+        'message{TO}',
       ]),
     },
   },
@@ -2151,7 +2307,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` — **or one of whose `acts`** — is offered in `affordances[]` is
  * `RULES`: checked before any per-unit predicate, and `RULES` is never dropped for any reason
  * including length. That ordering is the whole safety argument: an agent is refused for breaking
- * a rule it was given, never for one it was not. There are fifty-six units; put the same rule
+ * a rule it was given, never for one it was not. There are sixty-one units; put the same rule
  * inside each predicate and the forty-fifth will forget it.
  *
  * ── ★ `acts` IS A SECOND DISCRIMINATOR AT THE SAME PRECEDENCE, NOT A WEAKER ONE ──

@@ -24,6 +24,15 @@ export type SystemId = string & { readonly __brand: 'SystemId' };
 export type ConstellationId = string & { readonly __brand: 'ConstellationId' };
 export type VentureId = string & { readonly __brand: 'VentureId' };
 export type GrantId = string & { readonly __brand: 'GrantId' };
+/**
+ * Phase 3's COVER — one principal's promise to pay another for goods a FRONT destroys (§3).
+ *
+ * Here rather than in `src/risk/` because `src/invariants/attribution.ts` has to name it: a COVER is
+ * the **third** kind of obligation that can default, and INV-17's `DefaultAttribution.obligation`
+ * must be able to say which promise broke. A brand declared inside the module that uses it would
+ * have forced the top-severity invariant to import from a Phase 3 feature.
+ */
+export type CoverId = string & { readonly __brand: 'CoverId' };
 export type OfficeId = string & { readonly __brand: 'OfficeId' };
 export type EventId = string & { readonly __brand: 'EventId' };
 export type AccountId = string & { readonly __brand: 'AccountId' };

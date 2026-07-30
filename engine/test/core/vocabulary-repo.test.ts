@@ -66,6 +66,18 @@ const SANCTIONED = new Map<string, string>([
   ['AssertScope.TICK', 'the tick horizon and an assertion scoped to tick close are the same tick'],
   ['AssertScope.RECKONING', 'the Reckoning horizon; a Reckoning-scoped assertion names that same horizon'],
   ['Visibility.SEALED', "the visibility tier that holds seals — §3's SEAL row now says so explicitly"],
+  // ★ 31's PARLEY. `ReachWhy` answers *why one principal is addressable*, and two of its three rungs
+  // name the thing that makes it so: the CAMPAIGN you both stand in, the GRANT one of you holds over
+  // the other. That is the canon concept **as the reason**, the same shape as `AssertScope.TICK` —
+  // "the tick horizon and an assertion scoped to tick close are the same tick".
+  //
+  // Renaming them was the alternative and it is strictly worse. `VIA_CAMPAIGN` would be a second word
+  // for one concept, which is HARD RULE 4's violation with the sign flipped: §3 forbids one word
+  // wearing two concepts, and the remedy for that must not be two words wearing one. The third rung,
+  // `REPLY`, needs no entry — it is not a canon term, and it is the rung that keeps a cold approach a
+  // channel rather than a megaphone.
+  ['ReachWhy.CAMPAIGN', 'the campaign you both stand in IS the reason you may address each other — the canon concept as a reason, not a second sense of the word'],
+  ['ReachWhy.GRANT', 'a live grant between two principals is what makes them addressable; the reach rung names the same grant §3 defines and nothing else'],
   // ★ Added when `haul` went live and the word entered §3, and it is RAID's entry with a different
   // noun: carrying goods yourself and hiring a CARRIER to carry them are ONE concept bought two ways,
   // which is what `venture/kinds.ts` means by calling `CARRIER` + `ESCORT` "the vertical slice's exact
@@ -127,6 +139,29 @@ const SHARED_MEMBERS = new Map<string, string>([
     'one who raids, whether it is a slot inside a RAID venture or the side a joiner takes in a standoff — the identical shape the ESCORT entry above sanctions, and §3 names RAID once for both'],
   ['AccountKind+Compartment.STORES',
     "the same pair SANCTIONED records one entry up, arriving through the other check: the account that HOLDS a principal's assets, inventory and balances, and the compartment that reveals them. §3's STORES row covers both, and a delegate cleared for STORES reads the STORES account — the words agree because the things do"],
+  // ── ★ PHASE 3's RISK MARKET. Seven pairings, and every one is one concept about a new subject. ──
+  //
+  // A COVER is A7's promise and an INDEMNITY is what it owes, so their lifecycles borrow a venture's
+  // vocabulary **on purpose**: `venture/settlement.ts`'s words for "the promise resolved", "the
+  // promise broke" and "it carried to the next Reckoning" are the right words for a COVER too, and
+  // inventing a second set would teach an agent a distinction that does not exist. That is the same
+  // argument the `ChargeRule+LevyRule.EVEN` entry below makes.
+  ['CoverState+VentureState.SETTLED',
+    'a promise that resolved and is now history — one concept, applied to a venture and to a COVER. §3 gives ESCROWED/ELECTIVE to A7\'s two halves and a COVER is A7 over somebody else\'s loss, so its lifecycle borrowing the venture\'s spelling is the words agreeing because the things do'],
+  ['IndemnityState+VentureState.DEFAULTED',
+    'THE one concept this whole design is about: an elective half that went unpaid and is attributable. Spelling it differently for a COVER would split the record\'s central fact in two, and INV-17 treats both as accusations through one `DefaultRegister`'],
+  ['CascadeStatus+IndemnityState+VentureState.DEFERRED',
+    '§15.3\'s deferral exactly, now in three places: carried to the next Reckoning, NOT terminal, never a default. The two-way entry above already argued it; the third subject changes nothing, and a COVER deferring under a different name would be the one spelling that lets a truncated cascade read as a breach'],
+  ['ChainLinkState+IndemnityState+RaidState.PAID',
+    '"the obligation was met in full" — a raid demand answered, an INDEMNITY honoured, and the link a viewer sees for it. The frame state is the picture OF the record state, so a third word would put the caption and the row into disagreement, which is scar #1 rendered'],
+  ['ClaimState+CoverState.LAPSED',
+    'an obligation whose clock ran out with nothing owed either way: a CLAIM that stopped paying its CHARGE, and a COVER whose term ended with no FRONT having struck. Both are "expired, not broken", and that distinction from DEFAULTED is the one A5\' most depends on'],
+  ['IndemnityState+OrderState.OPEN',
+    '"live and unresolved" — a resting order and an INDEMNITY awaiting its settlement. An adjective about two subjects, the same shape as the `LIVE` and `FULL` entries above'],
+  ['CoverState+FrontState.STRUCK',
+    'the FRONT landed. A front that has STRUCK and a COVER that has been STRUCK are the same instant seen from the peril and from the promise: one event, and the COVER row exists precisely to say "this front reached me". Two words would let the record date the same moment twice'],
+  ['ChainLinkState+HoldingState.INTACT',
+    '"not destroyed" — a holding that has not fallen, and a chain link whose promise has not snapped. The `ChainLinkState` member was `STANDING` in its first draft and this guard refused it in one line, correctly: §3 gives STANDING to the public factual vectors. See `risk/lines.ts` for the note'],
   ['ChargeRule+LevyRule.EVEN',
     'ONE allocation rule — "every subject on the roll bears the same share" — offered on two ballots, the Levy\'s over principals and the Charge\'s over claims. Renaming either would be the mirror of the §3 error: two words for one concept, so an agent reading EVEN on one ballot and FLAT on the other would learn a distinction that does not exist. The two are also computed by the same weight of 1, in the same largest-remainder pass'],
 ]);

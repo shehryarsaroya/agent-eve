@@ -217,6 +217,19 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // holding no claims, no arrears counters and no bond locks — every posted bond an orphan lock
   // INV-4 halts on, and every claim silently un-owned.
   'sovereignty',
+  // ── ★ PHASE 3's RISK MARKET, NAMED IN THE CHANGE THAT ADDED THE BOOK ──────
+  //
+  // Not a follow-up, for the reason every entry below this one gives: `books-in-the-hash.test.ts`
+  // asserts the registered set and this list are equal in BOTH directions, and a restorable table
+  // missing from here is a book an adoption drops while the gate reports nothing missing.
+  //
+  // A dropped risk row is worse than a dropped campaign row, and it is worth saying why: a COVER is
+  // the first object in this engine designed to **outlive several RECKONINGS**, and its escrowed half
+  // is real money in a real escrow account the ledger table would still be carrying. An adopted world
+  // without this book comes up holding orphan escrows, with every payee that paid a premium silently
+  // uninsured and **no default recorded anywhere** — because the promise ceased to exist rather than
+  // being broken, which is the one thing A5′ cannot tolerate.
+  'risk',
   // ── CAMPAIGNS (§16.6), AND THE MANIFEST ENTRY IS PART OF ADDING THE BOOK ──
   //
   // Not a follow-up. A restorable table missing from this list is a book an adoption silently drops

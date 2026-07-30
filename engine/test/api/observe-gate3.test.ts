@@ -833,8 +833,25 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
     // that proves nothing about the branch it is here to pin.
     expect(marketAt.length, 'the filler must be standing in a market').toBeGreaterThan(0);
     expect(tradeWithheld, 'and its trade must really be withheld').toBe(1);
+    // ── AND A FIFTH TERM: PHASE 3's RISK ACTS, RECOMPUTED THE SAME WAY ──────────
+    //
+    // `src/risk/` adds `publish_offer {kind:"COVER"}` / `sign {cover}` / `elect {cover}` to the menu,
+    // and a tagged row for each one it withholds. Read off `runtime.riskAffordances` — the SAME
+    // function the observation calls, for the reason the `trade` term above states in full: a literal
+    // count here would be a second answer to a question the payload already answered.
+    //
+    // Non-vacuity below: at this tick no FRONT is in FORECAST, so exactly one row is withheld under
+    // `NO_RECORD`. If that ever becomes zero this term stops proving anything and the assertion after
+    // it says so.
+    const riskWithheld = h.runtime.riskAffordances(
+      filler.principalId as never,
+      h.runtime.engine.tick,
+    ).withheld.length;
+    expect(riskWithheld, 'no FRONT is announced this early, so the COVER act is withheld and counted').toBe(
+      1,
+    );
     expect(Number(withheld['count'])).toBe(
-      rows.length * (idle.length - 1) + boundLanes + worksWithheld + tradeWithheld,
+      rows.length * (idle.length - 1) + boundLanes + worksWithheld + tradeWithheld + riskWithheld,
     );
     expect(String(withheld['reason']), 'and the row says which thing is missing').toContain('no trade is offered');
     expect((withheld['verbs'] ?? []) as string[], 'and names the verb, machine-readably').toContain('trade');

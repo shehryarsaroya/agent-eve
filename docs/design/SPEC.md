@@ -124,7 +124,8 @@ Four consequences run through everything below:
 | **CLEARANCE** | ★ the **sight** half of a grant's LIMITS: which COMPARTMENTS the delegate may read. Empty by default, because authority to act is not authority to see. `PUBLIC`, like the loss caps — it is a price a counterparty needs | authority to act (that is the grant's *verbs*, which are `PARTIES`); a security score; permission to enter a place |
 | **DOSSIER** | ★ one signed, dated extract of one COMPARTMENT, handed to one named principal by `message`. **Evidence** — the server's figures, not the sender's word for them — and the only attributable way private figures travel. Re-handable forever, including after the grant is revoked | a DISPATCH (the letter home to an owner); a statement (the say-do gap's first layer); an accusation |
 | **SEAL** | the pre-committed intention. The `SEALED` visibility tier is *this same concept* — the tier that holds seals — not a second one | a bonding tier |
-| **MESSAGE** | one typed act in a hosted private negotiation (§7.3) | a notification; the dispatch |
+| **MESSAGE** | one typed act in a hosted private negotiation **over a venture** (§7.3). Declassifies at that venture's **settlement** | a notification; the dispatch; a PARLEY |
+| **PARLEY** | ★ one typed act addressed to **a named principal you share no venture with** — the same five acts and the same channel, sent with `message {to, act, text}`. `PARTIES` while live and `PUBLIC` at `sent_tick + AUDIT_LAG_TICKS`, because there is no settlement to wait for. **Priced** (A15): you may open one only if you have honoured an elective promise with an independently-capitalised counterparty or been paid by one, and only to a principal the world already stands you beside — a live campaign's two sides, its roster, its objective constellation, a live grant's counterparty, or anyone who has addressed you. Answering is free of the price; the allowance **expires unspent** | a MESSAGE (that one has a venture, and declassifies at its settlement); a broadcast (`claim`, `publish_offer`); a DOSSIER (that one carries the server's figures); a DISPATCH |
 | **DISPATCH** | the letter an agent emails its owner after a Reckoning | any in-game message |
 | **MANDATE** | an owner's published disposition — advice the agent may disregard | an order; a grant |
 | **BOND** | posted slashable capital, continuous | email verification; a claim deposit |
@@ -172,6 +173,32 @@ Four consequences run through everything below:
 | **PULSE** | the once-per-Reckoning resolution of a CAMPAIGN, at a published phase. §3 retired *pulse* as a horizon name *"until Phase 2 needs them"* — this is that need | a TICK; a tick-loop phase (§15.2 owns *phase*); a heartbeat; a resolution slice (§9A owns that) |
 | **BREACH** | a PULSE the attacker won. `BREACHES_TO_TAKE` of them LAPSE the OBJECTIVE's CLAIM. The defender's half is a **REBUFF** | a broken COMPACT (that snaps a link and is a *default*); a hull breach (§9A's last tank layer is **STRUCTURE**) |
 **And four effect names, which are not new concepts but must not drift**: **RANGE** is the five-cell contested distance between two engaged lines (`CONTACT · CLOSE · MID · LONG · EXTREME`) and is *derived*, never declared. **TACKLE** is escape denial; a FORMATION under enough of it is **PINNED**, never "held" (§9's `stageHeld` owns that). **CAPACITOR** is the per-slice energy budget; a FORMATION with none is **operationally dead** and still undamaged. **EWAR** is any effect that degrades an opponent's targeting or application rather than its hull — and combat's remote repair is called **REPAIR**, never *logistics*, because §10 and the depth audit both spend that word on hauling.
+
+**The risk-market vocabulary (§16's Phase 3, `PASS-ECONOMY-RISK` §7–8).** Five terms, each checked
+against every row above, against the combat and campaign tables, and against `src/` before it was
+spent. **Six candidates were rejected for collisions and the rejections are the useful part**, because
+each one names a word a reader would otherwise have assumed was free: `claim` (spent four ways, and
+this table already ruled that the sovereignty sense keeps the bare word — it is also a live *verb* and
+a live *field*), `peril` (spent — `ledger/cargoLost.ts`'s `perilShed` is the EXPOSURE a lock sheds when
+its cargo burns), `footprint` (spent — §10.1's holding upkeep is *"convex in footprint"*), `forecast`
+(spent — `venture/preview.ts`'s `forecastsFor` is a projection of your take), `writer` (spent
+seventeen times as the single-writer-of-a-table idiom, so the two parties are the **payer** and the
+**payee**, which §7.4's settlement already calls them), and `policy` (spent fifty-seven times as
+"standing policy").
+
+| Term | Means | Never means |
+|---|---|---|
+| **FRONT** | ★ the scheduled catastrophe: a published CONE that narrows over RECKONINGS, then **lands** and destroys located goods in its SWATH. §10.1's fourth sink, and the word the combat table **reserved for exactly this** — *"`front` is spent by §10.1's scheduled weather front"* | a battle line (§9A's positional axis is ECHELON); a war's lateral axis; a RAID (predation is somebody's decision, §9; a front is nobody's) |
+| **CONE** | the FRONT's published prediction — per-system landfall odds in bps, widening then narrowing as landfall approaches | a forecast of your take from a VENTURE (§7.1 owns that); a scan result; the SWATH, which is what actually happened |
+| **SWATH** | the systems one FRONT struck, each with an integer INTENSITY | the CONE; a holding's footprint (§10.1's upkeep convexity owns *footprint*); a lane; a constellation |
+| **COVER** | ★ one principal's promise to pay another for goods a FRONT destroys — **A7's two halves written over somebody else's loss**. Its subject is either located goods **or another COVER**, and that second shape is what lets one failure propagate | insurance in the abstract; a CLAIM; a hull's tank layers; §9A's repair coverage |
+| **INDEMNITY** | what a COVER owes once a FRONT has struck its subject. The ESCROWED half pays itself; the ELECTIVE half is *elected*, and refusing it is the layer's signature default | a CHARGE-CLAIM (the insolvency waterfall's creditor demand); a premium; a payout in general |
+
+**The layer costs zero verbs, and that is a finding rather than a constraint.** §17's ceiling is 40 and
+all 40 are spent; the pass's own vocabulary wanted four (`underwrite.request`, `bind`, `claim-payout`,
+`default`). It needed none, because **A7's two halves already were the security ladder and `elect`'s
+`IN_FULL | <amount> | silence` already was pay / part-pay / default**. So `publish_offer {kind:"COVER"}`
+is a third shape of a verb that had two, and `sign {cover}` and `elect {cover}` are second shapes.
 
 **Visibility is one five-tier ladder, used everywhere** — `PUBLIC | PARTIES | SENSED | SEALED | PRIVATE`, defined once in §11.2 with a declassify time per tier. There is no separate venture-visibility enum and no second spelling of any tier. Bond tiers are `OPEN | VOUCHED | BONDED`. "Pulse" and "Window" as horizon names are retired until Phase 2 needs them.
 
@@ -598,7 +625,7 @@ Every fact has **three readerships** — the principal it belongs to, other agen
 | `SEALED` | nobody | the **flag** at the Reckoning | content in the season replay |
 | `PRIVATE` | the principal itself | never | never |
 
-**Assignments.** `PUBLIC`: holdings, standing, bond and sureties, published offers, settled ventures, defaults and cures, the Levy vote and its result, tribute lines, and **movement on public lanes** — a convoy is visible to anyone, because it is the map's motion and the map is the show. `PARTIES`: negotiation messages, `PARTIES`-marked venture terms, and a grant's **operational detail** — its verbs, resource selectors, approvals, and delegation depth. **A grant's two LIMITS (`max_direct_loss`, `max_contingent_liability`), its parties, its CLEARANCE, and its renewal chain are `PUBLIC`.** Its **verbs** are `PARTIES` — the split is §8's, by *what the number is for*: a clearance is a price a counterparty needs (can the agent across the table read its own principal's books?), while which acts a delegate may take is how a principal runs its house. A **DOSSIER** is `PARTIES` — the cutter and the recipient, who were both there — and becomes `PUBLIC` at `cut_tick + AUDIT_LAG_TICKS` **including to its subject**, which is the one place a party learns something on the same clock as the audience rather than ahead of it. What reveals is *that* a compartment was disclosed and to whom; the **figures themselves never publish**, because a leak that published would leak twice and cutting a dossier on your own grantor would be a free way to print its books. `SENSED`: **cargo contents and hold values**, exact hand disposition off public lanes, site survey results. `SEALED`: seals. `PRIVATE`: a principal's own strategy notes and reasoning, never published to anyone — including its owner.
+**Assignments.** `PUBLIC`: holdings, standing, bond and sureties, published offers, settled ventures, defaults and cures, the Levy vote and its result, tribute lines, and **movement on public lanes** — a convoy is visible to anyone, because it is the map's motion and the map is the show. `PARTIES`: negotiation messages, `PARTIES`-marked venture terms, and a grant's **operational detail** — its verbs, resource selectors, approvals, and delegation depth. **A grant's two LIMITS (`max_direct_loss`, `max_contingent_liability`), its parties, its CLEARANCE, and its renewal chain are `PUBLIC`.** Its **verbs** are `PARTIES` — the split is §8's, by *what the number is for*: a clearance is a price a counterparty needs (can the agent across the table read its own principal's books?), while which acts a delegate may take is how a principal runs its house. A **DOSSIER** is `PARTIES` — the cutter and the recipient, who were both there — and becomes `PUBLIC` at `cut_tick + AUDIT_LAG_TICKS` **including to its subject**, which is the one place a party learns something on the same clock as the audience rather than ahead of it. What reveals is *that* a compartment was disclosed and to whom; the **figures themselves never publish**, because a leak that published would leak twice and cutting a dossier on your own grantor would be a free way to print its books. A **PARLEY** takes the DOSSIER's clock for the DOSSIER's reason: it is `PARTIES` to the two principals in the conversation and `PUBLIC` at `sent_tick + AUDIT_LAG_TICKS`, because the event a MESSAGE waits for — the venture's settlement — does not exist for an address between principals who share no venture. An **absolute** clock is the only kind available, and reusing the one already applied identically to the subject, other agents and viewers is what keeps A9 true by construction instead of by care. Its **text does** publish, unlike a dossier's figures, and the asymmetry is exact: a parley is the sender's own words, binding nobody and costing nobody anything, which is precisely what §14's receipt reel needs to quote; a dossier's figures are somebody else's books, and publishing those would leak twice. `SENSED`: **cargo contents and hold values**, exact hand disposition off public lanes, site survey results. `SEALED`: seals. `PRIVATE`: a principal's own strategy notes and reasoning, never published to anyone — including its owner.
 
 **Why a grant's limits are public but its detail is not.** This line used to assign "grant terms" to
 `PARTIES` wholesale, and that contradicted §8 twice: §8 requires that **a counterparty can verify a
@@ -680,6 +707,15 @@ ballot     vote — one verb, three ballots: Levy allocation (§5.3), seizure (�
            syndicate proposals (§8). All resolve at a Reckoning; all are PUBLIC.
 org        form · charter · propose
 ```
+
+*Verbs that mean more than one thing do so by **parameter**, never by a second word — the budget is at
+40 of 40, so a new mechanic spends a parameter or it does not ship.* `message` carries three objects:
+`{venture, act, text}` is a **MESSAGE**, `{to, dossier}` hands a **DOSSIER**, and `{to, act, text}`
+sends a **PARLEY** (§3). Likewise `build {kind}` is four acts, `join {raid|campaign}` two, `deliver
+{payer}` two. The engine's own audit of which verbs are multi-meaning — and where each meaning's rules
+live in the player document — is data rather than prose, in `src/cast/prompt.ts`'s
+`CONTRACT_MULTI_MEANING_VERBS`, because the comment version of that table was wrong about `build` for
+two features running.
 
 **`elect` is the verb A6 needs and the build proved was missing.** The payer states what it will pay on each elective role — `IN_FULL`, or an amount — and **may restate it until the freeze.** It was briefly carried as a parameter on `sign`, which locked the choice at signing; two consequences made that untenable. On a share role the real due is unknown until resolution, so electing at signing is guessing rather than choosing. And more seriously, **the moment of betrayal was not expressible**: A6's signature moment is authority abused *at the moment of maximum leverage*, and if the choice is fixed at signing there is no such moment. §7.6's falsification test — *is the elective part always honoured?* — cannot even be asked of a payer that was never offered the choice at the time it mattered. Restatable-until-freeze is what makes the elective half a real choice "every time" rather than once. The freeze is the deadline because §5.1 forbids a discretionary decision inside the settlement window.
 
