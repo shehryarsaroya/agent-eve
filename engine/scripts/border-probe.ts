@@ -3,7 +3,25 @@
  * ★ **DOES A CHOKEPOINT EVER DECIDE ANYTHING?** — the instrument that separates §16.12 #1 from a label.
  *
  * ══════════════════════════════════════════════════════════════════════════
- * **WHY THIS EXISTS, AND WHY IT IS THE MOST IMPORTANT FILE IN THE FEATURE.**
+ * ★ **THE GENERAL RULE, AND IT IS WHY THIS FILE EXISTS AT ALL:**
+ *
+ * > **I built this instrument because the balance gate came back byte-identical to master — and that
+ * > is the reading a neutral change and a dead mechanic produce identically.**
+ *
+ * Keep that sentence when you change this file. It is not about chokepoints; it is about every
+ * feature that lands here. An unchanged meter is evidence of *nothing having moved*, which is exactly
+ * as consistent with "the change was correctly inert" as with "the change never fires" — and this
+ * project has shipped the second **seventeen times** while reading the first, because the second
+ * looks like success in every summary and on every dashboard.
+ *
+ * The way out is never a better argument. It is a **denominator**: count the times the mechanism was
+ * *asked*, next to the times it *bound*. A zero over a positive denominator is a real negative result
+ * you can act on. A zero over a zero denominator is an instrument that cannot see the thing it was
+ * built to watch — which is a finding about the instrument, and must be reported as one rather than
+ * as a pass.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * **WHY THIS EXISTS FOR §16.12 #1 SPECIFICALLY.**
  *
  * `balance-gate.ts` reported §16.12 #1's landing as **byte-identical to master on every column at
  * three and six Reckonings** — same `kept`, same `broken`, same `ventures`, same `claims`, same

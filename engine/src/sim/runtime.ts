@@ -114,6 +114,7 @@ import {
   LEVY_GOOD,
   LEVY_NOMINAL_MINOR,
   LEVY_STARTER_ALLOTMENT,
+  LEVY_UNIT_MINOR,
   MAX_LEVY_CARRY_OFFERS,
   assessCycle,
   ballotFor,
@@ -175,6 +176,21 @@ import { hallOfFame, namesFor } from '../frames/memory.js';
 import { readInt, readList, readString } from '../core/params.js';
 import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
+import {
+  MAX_PARLEY_ENTRIES,
+  parley,
+  parleyAllowanceFor,
+  parleyNote,
+  parleyRefusal,
+  parleysRemaining,
+  parleysVisibleTo,
+  type ParleyCapacity,
+  type ParleyEntitlement,
+  type ParleyEntry,
+  type ParleyPort,
+  type ParleyWritePort,
+} from '../say/parley.js';
+import { reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
 import { sign } from '../venture/sign.js';
 import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
@@ -540,6 +556,7 @@ import {
   swayShortfall,
   SWAY_AT_SEAT,
   SWAY_STATEMENT,
+  systemOf,
   tierOf,
   type Enrolment,
   type HaulPort,
@@ -1679,6 +1696,87 @@ import {
  * ══════════════════════════════════════════════════════════════════════════
  */
 /**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ## ★ 29 — PHASE 3's RISK MARKET, AND THE FRONT THAT MAKES IT POSSIBLE
+ *
+ * **`src/risk/` — the deferred half of the original design, built back.** v1.1 was built around a
+ * risk market *as the core loop*; v2.0 deferred it to Phase 3 and promoted betrayal-via-authority.
+ * This is that half, and it lands on top of what the intervening phases proved rather than beside it.
+ *
+ * **Three CAPTURED tables gained rows and one existing table gained a discriminant**, so the version
+ * moves and the deploy declares a discontinuity through the operator door:
+ *
+ *   - `RiskBook` — fronts, covers, indemnities and RSK7's record, all four inside `state_hash`;
+ *   - `HAZARD` gained its **first content in the project's life** (registering a handler on an
+ *     existing phase shifts no other phase's seeded sub-stream — that is why the slot was left as an
+ *     explicit no-op hook from commit #1);
+ *   - `OBLIGE` gained a step between `settleNow` and the Levy sweep;
+ *   - `DefaultAttribution.obligation` widened to `VentureId | GrantId | CoverId`, because a COVER is
+ *     the third kind of promise that can break and INV-17 is the check that decides whether the
+ *     record may say so.
+ *
+ * **Zero new verbs**, which is the finding rather than the constraint. §17's ceiling is 40 and 40 are
+ * spent, and the pass's own vocabulary (`underwrite.request`, `bind`, `claim-payout`, `default`)
+ * wanted four. It needed none: `publish_offer {kind:"COVER"}`, `sign {cover}` and `elect {cover}` are
+ * third and second shapes of verbs that already existed, because **A7's two halves and the
+ * `Election = Minor | IN_FULL` decision already were** pay / part-pay / default over a different
+ * subject.
+ * ── 31 · ★ AN AGENT COULD NOT SPEAK TO ANOTHER AGENT ─────────────────────────
+ *
+ * **Landed on top of 30 and stacked rather than blended**, for 23's, 24's and 27's reason: an
+ * operator reading a `RULES_VERSION_MISMATCH` has to know which change moved which surface, and the
+ * discontinuities compose.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **NO CAPTURED TABLE CHANGES.** Nothing here adds, removes or re-types a field inside any
+ * `capture()`. The PARLEY book is a `Ring` beside `talk`, which has never been captured or
+ * persisted, and `say/parley.ts` §3 argues why the `DossierBook`'s capture argument does not
+ * transfer: a parley's reveal tick is derived from its own `tick`, so there is no stored second
+ * number that a rolled-back or replayed world could publish on a different tick than it published
+ * on.
+ *
+ * What moves is the **agent-facing surface**, which is a rules surface (scar #1) and therefore a
+ * version bump on its own:
+ *
+ *   1. **`message` accepts a third object.** `{to, act, text}` sends a PARLEY — one typed act
+ *      addressed to a named principal with no shared venture. The verb budget is untouched at 40 of
+ *      40: this is a parameter, the same shape as `deliver {payer}` and `build {kind:...}`, and
+ *      `message` already selected its object by parameter (`{venture}` → MESSAGE, `{to, dossier}` →
+ *      DOSSIER).
+ *   2. **`header.parley`** — a new standing block, present at zero, at full and at not-entitled.
+ *   3. **`affordances[]` carries `message {to}` rows naming real principals**, one per reachable
+ *      recipient, capped at `MAX_PARLEY_AFFORDANCES` with the rest named in `header.withheld`.
+ *   4. **`counterparties[]` grows two fields and a membership rule** — `parley_reach`,
+ *      `parleys_received`/`last_parley`, and it now includes every principal the reader may address.
+ *   5. **A new event kind, `say.parley`**, `PARTIES` at send and `PUBLIC` at
+ *      `sent_tick + AUDIT_LAG_TICKS`, `provenanceClass: 'ASSERTION'`.
+ *
+ * ── WHAT IT FIXES ────────────────────────────────────────────────────────────
+ *
+ * A blind probe fighting a campaign at the Marches read `attacker 3, defender 4, terrain 1,
+ * outcome_if_pulsed_now: REBUFF` — a reading no play of its own could change, because the defender
+ * gets +1 terrain, ties go to the defender, and one principal caps at three hands, so **a solo
+ * attacker can only ever beat a garrison of one.** The arithmetic makes coalitions mandatory,
+ * `join {campaign, side}` is the published answer, `counterparties[]` was **empty**, and it
+ * published *"COALITION WANTED: join campaign:234:0 ATTACKER at sys-06 … I pay 20000 per hand"* as a
+ * standing offer **into the void**, because `message` took only a venture it was not a party to or a
+ * dossier it was not cleared to cut.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * Not `SNAPSHOT_HASH_MISMATCH` from a changed table set — 24's and 27's signature instead. Nothing
+ * in the hash moves, so a journal written under 30 replays byte-identically **unless a principal
+ * sends a parley**, which no cast branch does yet (the hook is a named list of calls, not code:
+ * `src/cast/heuristic.ts` is another agent's lane this round). So on the live shard the practical
+ * divergence is **none until an LLM cast member reads the new affordance**, and the honest place to
+ * say so is the stamp rather than the deploy log. `hydrate.ts` refuses on `RULES_VERSION_MISMATCH`
+ * first either way, which is the cheaper door.
+ *
+ * **What the balance gate sees: nothing, and that is the claim.** A parley moves no value, locks
+ * nothing, and is free of the action budget, so `levyShort` and the red tribute lines are a **safety
+ * check** here rather than evidence — they must be unchanged from master, and a move in either
+ * direction would mean this touched the economy, which it must not.
+ *
  * ── 28 · ★ THE MAP GETS BORDERS: STRAITS AND SWAY (§16.12 #1) ────────────────
  *
  * **Stacked on 27, not blended**, for 23/24/27's reason: an operator reading a
@@ -1730,7 +1828,7 @@ import {
  * prints the exact string, and a bare tick is refused.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 28;
+export const RULES_VERSION = 33;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -1830,9 +1928,44 @@ import {
   systemLode,
   systemYield,
 } from '../works/params.js';
+import {
+  coverAffordances,
+  coverArcs,
+  coverChains,
+  riskViewFor,
+  RiskBook,
+  type CoverArc,
+  type CoverChain,
+  type CoverId,
+  type FrontBand,
+  type HoldingRead,
+  type RiskAffordance,
+  type RiskView,
+  type WithheldRisk,
+} from '../risk/index.js';
+import { frontBands } from '../risk/lines.js';
+import { riskStateTable } from '../risk/book.js';
+import {
+  electCover,
+  publishCover,
+  runCohortPhase,
+  runFrontPhase,
+  signCover,
+  type CohortReport,
+  type RiskWirePort,
+} from '../risk/wire.js';
 
 /** INV-26: raid ticker lines retained for the frame. Bounded, published. */
 export const MAX_RAID_TICKER_LINES = 32;
+
+/**
+ * How long a published COVER offer stands, in ticks.
+ *
+ * Half a Reckoning. Long enough that a payee waking inside its wake budget can find it, short
+ * enough that an offer's escrow is not locked across a whole front's life for nothing — an offer
+ * escrows at publication (RSK2's firm capacity), so a term nobody can take is capital sterilised.
+ */
+export const COVER_OFFER_TERM_TICKS = 144;
 
 /** Ticks a formation window stays open by default. */
 export const FORMATION_WINDOW_TICKS = 12;
@@ -2770,6 +2903,32 @@ export class Runtime {
    * means restoring into a fresh register.
    */
   private registerRef = new DefaultRegister();
+  /**
+   * Phase 3's risk market — fronts, covers, indemnities and RSK7's record.
+   *
+   * Public for the same reason `ventures` and `seals` are: the observation builder, the frame source
+   * and the instruments all read it, and a private field with six accessors is the same coupling
+   * wearing more code.
+   */
+  private riskBookRef = new RiskBook();
+  /**
+   * `coverId → what its payer elected`. The risk twin of {@link elections}.
+   *
+   * A **second map and not a widened key** on the venture election book, deliberately. That book's
+   * key is `${venture}::${roleIndex}` and its release runs off a venture reaching a terminal state;
+   * a cover has no role index and terminates on a different clock. One map with two key grammars is
+   * two lifetimes in one structure, which is exactly the shape that made `Book.prune` eat a
+   * load-bearing row five times.
+   */
+  private readonly coverElections = new Map<CoverId, Election>();
+  /**
+   * Behind a getter because a **restore replaces the book**, the same shape as `campaignBookRef` and
+   * `registerRef` and for the same reason: a hash-only table attests to a book without being able to
+   * put it back, and a field every reader had captured a reference to would keep the pre-adoption copy.
+   */
+  get risk(): RiskBook {
+    return this.riskBookRef;
+  }
   /** The only writer of standing (§6.4, INV-21). */
   readonly standing = new StandingBook();
   /**
@@ -2842,6 +3001,13 @@ export class Runtime {
   /** Resolution-time refusals awaiting delivery, per principal. See the type's note. */
   private readonly pendingCorrections = new Map<PrincipalId, Ring<PendingCorrection>>();
   private readonly talk = new Ring<TalkEntry>(MAX_TALK_ENTRIES);
+  /**
+   * The PARLEY book (§3, `say/parley.ts`) — direct addresses between principals with no shared
+   * venture. A ring beside `talk` rather than a state table, for the reason `parley.ts` §3 argues:
+   * the reveal clock is derived from the row's own tick, so there is no stored second number to
+   * drift, and this is the same class of object `talk` has always been.
+   */
+  private readonly parleys = new Ring<ParleyEntry>(MAX_PARLEY_ENTRIES);
   private readonly offers = new Ring<OfferEntry>(MAX_OFFER_ENTRIES);
   private readonly claims = new Ring<ClaimEntry>(MAX_CLAIM_ENTRIES);
 
@@ -3201,6 +3367,24 @@ export class Runtime {
             this.campaignBookRef = book;
           },
         ),
+        // ── ★ PHASE 3's RISK BOOK, REGISTERED IN THE SAME CHANGE THAT ADDED IT ──
+        //
+        // With its `CHECKPOINT_REQUIRED_TABLES` entry, for the reason the block below spells out at
+        // length: *"seven books were once found outside the hash in one night, and two more (`mint`,
+        // `delivery`) were found IN the hash and missing from the manifest, which an adoption drops
+        // silently while the gate reports nothing missing."*
+        //
+        // What an adopted world would lose here is not a counter: it is **every live COVER**, each
+        // with money the ledger is still holding in an escrow account. Every escrow becomes an orphan
+        // lock, every payee that paid a premium is silently uninsured, and **no default is recorded
+        // anywhere** — because the obligation ceased to exist rather than being broken. A5′ through
+        // the boot path.
+        riskStateTable(
+          () => this.riskBookRef,
+          (book) => {
+            this.riskBookRef = book;
+          },
+        ),
         // ══════════════════════════════════════════════════════════════════════
         // THE FIVE BOOKS THAT WERE IN NO TABLE.
         //
@@ -3439,6 +3623,19 @@ export class Runtime {
         VENTURES: (ctx) => {
           this.resolveFills(ctx);
         },
+        // ── ★ HAZARD, AND THE SLOT IS THE RULE — AND IT WAS EMPTY UNTIL NOW ─────
+        //
+        // §15.2's own note on this phase: *"Hazards roll against what is still standing. After
+        // VENTURES, so a hazard cannot pre-empt a settlement."* The phase has existed as an explicit
+        // no-op hook since commit #1 — `UNBUILT_PHASES` was emptied without it ever gaining
+        // content, `hazards` still defaults to **false**, and `GOODS_SINK.LOSS`'s own comment has
+        // named *"raids, **fronts** and `CARGO_LOST`"* for the whole project. This is the front.
+        //
+        // Registering here shifts nothing: `PhaseContext.rng` is already `derive(phase)`, so the
+        // draws below come out of HAZARD's own sub-stream and no other phase's outcome moves.
+        HAZARD: (ctx) => {
+          this.frontNow(ctx);
+        },
         OBLIGE: (ctx) => {
           // ── ★ THE EXPOSURE HIGH-WATER MARK, FIRST OF EVERYTHING IN THIS PHASE ──
           //
@@ -3466,6 +3663,20 @@ export class Runtime {
           // mark the Reckoning resolved (INV-20).
           this.freezeNow(ctx);
           this.settleNow(ctx);
+          // ── ★ THE INDEMNITY COHORT, AND ITS POSITION IS THE RULE TOO ───────
+          //
+          // **After `settleNow`, and for the Levy sweep's exact reason.**
+          // `reckoning/driver.ts:verifyInputs` re-reads every payer's free balance between the
+          // freeze and the settlement and **halts on any difference in either direction**. Paying an
+          // INDEMNITY moves currency into a payee's STORES, so running it before the venture batch
+          // would pause a healthy world on the one tick that has an audience (A14).
+          //
+          // **Before the Levy and the Charge**, and that half is economic rather than architectural:
+          // a principal the front struck may be the one that cannot meet its tribute, and an
+          // INDEMNITY paid before the sweep is the difference between cover *working* and cover
+          // arriving after the bailiff. That is the whole demand side of this layer, and putting it
+          // after the sweep would have made the mechanism technically live and practically useless.
+          this.riskCohortNow(ctx);
           // ── THE LEVY, AND THE ORDER IS THE RULE ────────────────────────────
           //
           // `assessLevyNow` first, because a world that starts mid-cycle must be
@@ -6114,7 +6325,17 @@ export class Runtime {
         this.sealCompliance(ctx, req) ??
         this.commonsCapacityRejection(req.principal) ??
         this.vFillRole(ctx, req),
-      sign: (ctx, req) => this.committing(ctx) ?? this.vSign(ctx, req),
+      // ── `sign` HAS TWO SHAPES: a venture's terms, and a COVER's ────────────
+      //
+      // Discriminated by which key is present, which is the same shape `join {raid}` vs
+      // `join {campaign}` and `abandon {claim}` vs `abandon {venture}` already use. Both shapes are
+      // one act — "countersign the terms you were shown" — so §3 is satisfied by one word meaning one
+      // thing, and §17's verb ceiling is not touched.
+      sign: (ctx, req) =>
+        this.committing(ctx) ??
+        (req.params['cover'] === undefined && req.params['cover_id'] === undefined
+          ? this.vSign(ctx, req)
+          : this.vSignCover(ctx, req)),
       // ── `elect` is NOT behind `committing`, and it needs its own refusal ────
       //
       // `committing`'s sentence ends "submit again next tick", which is true of a
@@ -6123,10 +6344,26 @@ export class Runtime {
       // already resolved. §5.1 forbids a *discretionary decision* inside the settlement
       // window, and the honest thing to tell a payer at that point is that its last
       // statement is what happens — not to try again.
-      elect: (ctx, req) => this.electingFrozen(ctx) ?? this.vElect(ctx, req),
+      // ★ `elect` HAS TWO SHAPES TOO, and this is the one that makes Phase 3 cost no verb.
+      // `Election = Minor | IN_FULL` is already pay / part-pay / default, which is §7.4 MUST-5's
+      // `pay_claim | pay_partial | default_claim` with nothing added.
+      elect: (ctx, req) =>
+        this.electingFrozen(ctx) ??
+        (req.params['cover'] === undefined && req.params['cover_id'] === undefined
+          ? this.vElect(ctx, req)
+          : this.vElectCover(ctx, req)),
       withdraw: (ctx, req) => this.committing(ctx) ?? this.vWithdraw(ctx, req),
       abandon: (ctx, req) => this.committing(ctx) ?? this.vAbandon(ctx, req),
-      publish_offer: (ctx, req) => this.vPublishOffer(ctx, req),
+      // ── `publish_offer` HAS THREE SHAPES: prose, `cede`, and now `kind:"COVER"` ──
+      //
+      // `say/offer.ts`'s header states the precedent for the second: *"naming a claim (`cede`)
+      // publishes an offer with a subject the engine can actually transfer."* Cover is such a
+      // subject. Discriminated on `kind` so `discriminatorsOf` mints `publish_offer{COVER}` for the
+      // player-contract gate without a new key.
+      publish_offer: (ctx, req) =>
+        (readString(req.params, ['kind']) ?? '').toUpperCase() === 'COVER'
+          ? this.vPublishCover(ctx, req)
+          : this.vPublishOffer(ctx, req),
       message: (ctx, req) => this.vMessage(ctx, req),
       claim: (ctx, req) => this.vSay(ctx, req, false),
       deny: (ctx, req) => this.vSay(ctx, req, true),
@@ -8148,6 +8385,21 @@ export class Runtime {
     // §7.3's channel is between principals, a venture is merely its usual subject, and A6
     // forbids the alternative outright. There is no `leak` verb and there never will be.
     if (readString(req.params, ['dossier', 'cite']) !== null) return this.cite(ctx, req);
+    // ── THE `to` BRANCH: A PARLEY (§3, `say/parley.ts`) ───────────────────────
+    //
+    // The third object on this verb, and the same widening the `dossier` branch above already
+    // argued for: §7.3's channel is between principals and a venture is merely its usual
+    // subject. Dispatched after `dossier` and before the venture parse, because `{to, dossier}`
+    // is a document and `{to, act, text}` is a letter — the presence of `dossier` decides, so
+    // the narrower reading is tried first and a caller that sends both gets the document.
+    //
+    // ★ **This is the defect that made a coalition unaskable.** At the Marches the defender
+    // gets +1 terrain, ties go to the defender and one principal caps at three hands, so a solo
+    // attacker can only ever beat a garrison of one — the arithmetic makes coalitions MANDATORY,
+    // `join {campaign, side}` is the published answer, and there was no channel that could ask
+    // anybody to take it. A probe published *"COALITION WANTED"* as a standing offer into the
+    // void because that was the only surface it had.
+    if (readString(req.params, ['to', 'recipient']) !== null) return this.vParley(ctx, req);
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
     const act = readEnum(req.params, ['act', 'type'], [
       'offer',
@@ -8161,7 +8413,10 @@ export class Runtime {
       return reject(
         'A2',
         'message needs {"venture": "<id>", "act": "offer|counter|accept|decline|assure", "text": "..."} — or, ' +
-          'to hand somebody a DOSSIER, {"to": "<principal>", "dossier": "<subject>/STORES|HANDS"}.',
+          'to PARLEY a principal you share no venture with, {"to": "<principal>", "act": "offer", "text": ' +
+          '"..."} — or, to hand somebody a DOSSIER, {"to": "<principal>", "dossier": "<subject>/STORES|HANDS"}. ' +
+          '`header.parley` carries how many parleys you have this Reckoning and `affordances[]` names every ' +
+          'principal you may address.',
       );
     }
     if (text.length > MAX_MESSAGE_LENGTH) {
@@ -8460,6 +8715,287 @@ export class Runtime {
       audience: [],
     });
     return { ok: true, value: null };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PARLEY (§3) — the direct address. `say/parley.ts` carries the whole argument: the tier and
+  // its §11.2 derivation, the two-gate price and its A15 proof, and why the book is a ring.
+  // Everything here is the ADAPTER: what the pure rule may read, named once so both the menu and
+  // the verb read the same thing.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * What REACH may see. Narrow on purpose — the signature is the enumeration.
+   *
+   * `tick` is closed over rather than passed per call because a grant's liveness is a function of
+   * it, and a port whose two members disagreed about "now" could offer a parley to the counterparty
+   * of a grant that had already expired.
+   */
+  private reachPort(tick: number): ReachPort {
+    return {
+      liveCampaigns: () =>
+        this.campaigns.live().map((c) => ({
+          id: String(c.id),
+          attacker: c.attacker,
+          defender: c.defender,
+          objective: c.objective,
+          roster: c.parties.map((p) => p.principal),
+        })),
+      // Every seated principal whose holding stands in the constellation containing `system`.
+      // Holdings are `PUBLIC` (§11.2) and `principalOrder` is the canonical iteration order, so
+      // this is deterministic without a sort and identical for every reader.
+      seatedNear: (system) => {
+        const target = systemOf(this.world.map, system).constellation;
+        const near: PrincipalId[] = [];
+        for (const principal of this.world.principalOrder) {
+          const id = this.world.holdingByPrincipal.get(principal);
+          const holding = id === undefined ? undefined : this.world.holdings.get(id);
+          if (holding === undefined) continue;
+          if (systemOf(this.world.map, holding.system).constellation === target) near.push(principal);
+        }
+        return near;
+      },
+      constellationOf: (system) => String(systemOf(this.world.map, system).constellation),
+      approachedBy: (principal) => this.approachesTo(principal, tick).senders,
+      liveGrants: (principal) => {
+        const rows: { readonly id: string; readonly counterparty: PrincipalId; readonly iAmGrantor: boolean }[] = [];
+        for (const grant of this.grantBook.forGrantor(principal)) {
+          if (!this.grantBook.isLive(grant.id, tick)) continue;
+          rows.push({ id: String(grant.id), counterparty: grant.delegate, iAmGrantor: true });
+        }
+        for (const grant of this.grantBook.forDelegate(principal)) {
+          if (!this.grantBook.isLive(grant.id, tick)) continue;
+          rows.push({ id: String(grant.id), counterparty: grant.grantor, iAmGrantor: false });
+        }
+        return rows;
+      },
+    };
+  }
+
+  /** Every principal this one may address, with the public situation that makes each one legal. */
+  reachFor(principal: PrincipalId, tick: number): readonly ReachRow[] {
+    return reachableFor(this.reachPort(tick), principal);
+  }
+
+  /**
+   * The two figures that decide whether this principal may parley at all.
+   *
+   * **`freeCash`, never `freeBalance`.** The difference is the whole endowment, and D7's fourth
+   * property — `freeCash <= earned - transferredOut` — is what makes this term unmintable by
+   * enrolling. `freeBalance` here would be a gate every free identity pays with a stake the world
+   * handed it, which is A15 defeated by the field name. It is the same distinction `post_bond` does
+   * *not* draw, which is why a bond is not the price (see `parley.ts` §2).
+   */
+  private parleyEntitlementOf(principal: PrincipalId, tick: number): ParleyEntitlement {
+    return {
+      distinctCounterparties: this.standing.row(principal).distinctCounterparties,
+      earnedMinor: freeCash(this.ledger, principal),
+      inboundParleys: this.approachesTo(principal, tick).received,
+    };
+  }
+
+  /**
+   * Who addressed this principal **inside the Reckoning containing `tick`**, and how many times.
+   *
+   * ONE HOME, THREE READERS — the reach rule (which offers the reply), the allowance (which funds it)
+   * and the header block (which publishes both counts). Three copies of "who wrote to me" is three
+   * chances for a menu to offer a reply the allowance will not pay for, which is AGT-S2 arriving
+   * through a predicate rather than through a gate.
+   *
+   * **Two numbers because they answer two questions, and conflating them was a bug.** `received` is a
+   * count of *messages* and funds the allowance; `awaiting` is a count of *principals* with an open
+   * conversation and is what an agent acts on. The first version returned only `awaiting` and used it
+   * for both — so a principal addressed by two others answered one, watched its allowance fall by the
+   * same reply twice (`remaining` is `allowance − sent`), and went mute to the second for the rest of
+   * the cycle.
+   *
+   * Scoped to the Reckoning for the allowance's reason: a licence to address somebody who spoke once
+   * six cycles ago accumulates exactly the way §9 refuses to fund a war chest.
+   */
+  private approachesTo(
+    principal: PrincipalId,
+    tick: number,
+  ): { readonly senders: readonly PrincipalId[]; readonly received: number; readonly awaiting: number } {
+    const here = reckoningIndex(tick);
+    const asked = new Set<PrincipalId>();
+    const answered = new Set<PrincipalId>();
+    let received = 0;
+    for (const entry of this.parleys.all) {
+      if (reckoningIndex(entry.tick) !== here) continue;
+      if (entry.to === principal) {
+        asked.add(entry.from);
+        received += 1;
+      } else if (entry.from === principal) {
+        answered.add(entry.to);
+      }
+    }
+    const senders = [...asked].sort(compareIds);
+    return { senders, received, awaiting: senders.filter((p) => !answered.has(p)).length };
+  }
+
+  /** One home, two callers: {@link parleysFor} for the menu and {@link parleyRefusalFor} for both. */
+  /**
+   * ⚑ **`tick` IS A PARAMETER BECAUSE `this.engine.tick` IS THE WRONG TICK IN A HANDLER.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * `Engine.tick` is `completedTick`, advanced at **COMMIT** — after every phase — so inside a handler
+   * `ctx.tick` is `engine.tick + 1`. The first version of this port read reach and the entitlement at
+   * `engine.tick` while spends were counted at the tick passed in: one tick of skew, landing on the
+   * Reckoning boundary the expiry rule is about.
+   *
+   * **What the skew did NOT do, stated because the first version of this note claimed it did.** It did
+   * not let last cycle's allowance fund this cycle's spend. `remaining` re-derives the allowance from
+   * the tick it is *given*, and it is the binding gate — so mutating either line above and re-running
+   * the boundary sweep leaves it green, which is how the overclaim was caught. Writing "this was a
+   * capacity leak" would have been a false statement in a docblock about a rules surface, which is the
+   * class of thing this repo has shipped three times.
+   *
+   * **What it actually did**, both worth fixing and neither a leak:
+   *
+   *   - a **false refusal** exactly at a boundary tick — an agent whose allowance opens at `ctx.tick`
+   *     but was closed at `engine.tick` hits the `allowance === 0` early return and is told it needs a
+   *     kept elective promise, one tick before that stops being true;
+   *   - a **one-tick-late grant expiry** in reach: a grant that dies at `ctx.tick` still named its
+   *     counterparty as addressable, so the menu and the verb both admitted an address that had just
+   *     become illegal.
+   *
+   * One tick, one meaning, and the fix costs a parameter. Found by reading the tick loop rather than by
+   * a test — and the test that exists now (`test/say/parley.spec.ts`'s boundary sweep) pins the
+   * *equivalence* between the published count and the shared gate, which is the property that matters
+   * whatever the next skew turns out to be.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private parleyPort(tick: number): ParleyPort {
+    return {
+      reach: (principal) => this.reachFor(principal, tick),
+      remaining: (principal, at) =>
+        parleysRemaining(
+          this.parleys.all,
+          principal,
+          at,
+          reckoningIndex,
+          parleyAllowanceFor(this.parleyEntitlementOf(principal, at)),
+        ),
+      entitlement: (principal) => this.parleyEntitlementOf(principal, tick),
+      isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
+      bookSize: () => this.parleys.size,
+    };
+  }
+
+  /**
+   * **The one gate on `message {to, ...}`, exposed so the affordance asks the verb's own question.**
+   *
+   * AGT-S2, and `demandRefusalFor` is the precedent: an affordance carrying its own copy of a gate
+   * offers moves the handler then refuses, which costs an agent a real action and its trust in the
+   * menu. There is one of these, so they cannot disagree.
+   */
+  parleyRefusalFor(from: PrincipalId, to: PrincipalId, tick: number): Rejection | null {
+    return parleyRefusal(this.parleyPort(tick), from, to, tick);
+  }
+
+  /**
+   * §2's price as a standing block on `header`, present at zero, at full and at not-entitled alike.
+   *
+   * The third state is the one §9's capacity did not have for the project's whole life: its only
+   * appearance in an observation was a `withheld` line that fires exactly when the count reaches
+   * zero, so an agent learned the resource existed by exhausting it. A price an agent cannot read
+   * before it is charged is a surprise, not a price (A2).
+   */
+  parleysFor(principal: PrincipalId, tick: number): ParleyCapacity {
+    const entitlement = this.parleyEntitlementOf(principal, tick);
+    const allowance = parleyAllowanceFor(entitlement);
+    const remaining = parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, allowance);
+    const reachable = this.reachFor(principal, tick).length;
+    return {
+      parleys_remaining: remaining,
+      parleys_per_reckoning: allowance,
+      reachable_principals: reachable,
+      distinct_counterparties: entitlement.distinctCounterparties,
+      earned_minor: entitlement.earnedMinor,
+      principals_awaiting_your_reply: this.approachesTo(principal, tick).awaiting,
+      parleys_received_this_reckoning: entitlement.inboundParleys,
+      refreshes_at_tick: tick - (tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING,
+      declassifies_after_ticks: AUDIT_LAG_TICKS,
+      reading_costs_parleys: 0,
+      rule: parleyNote(remaining, allowance, entitlement, reachable),
+    };
+  }
+
+  /**
+   * The parleys a principal may read — its own mail now, everybody's once the clock has run.
+   *
+   * `null` is the viewer's list, and it takes the declassified clause alone. **One predicate for
+   * all three readerships** is how A9 holds by construction here: a viewer is never ahead of a
+   * non-party agent, and the only thing a party sees early is a letter addressed to it.
+   */
+  parleysVisible(reader: PrincipalId | null, tick: number): readonly ParleyEntry[] {
+    return parleysVisibleTo(this.parleys.all, reader, tick);
+  }
+
+  /** `message {to, act, text}` — an ADAPTER. The operation lives in `say/parley.ts`. */
+  private vParley(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    const port: ParleyWritePort = {
+      ...this.parleyPort(ctx.tick),
+      record: (entry) => {
+        this.parleys.push(entry);
+      },
+      auditLagTicks: AUDIT_LAG_TICKS,
+    };
+    const outcome = parley(port, req.principal, req.params, ctx.tick);
+    if (!outcome.ok) return outcome;
+    this.emitParley(ctx, req, outcome.value);
+    return { ok: true, value: null };
+  }
+
+  /**
+   * The row, `PARTIES` now and `PUBLIC` at `revealsAtTick` — one clock for all three readerships.
+   *
+   * Byte-for-byte `emitDossier`'s visibility shape, because it is the same question with a different
+   * payload: two parties who were both there, a delay, and then everyone at once. **The text is in
+   * the payload**, unlike a dossier's figures, and that difference is the point of §14 — the receipt
+   * reel needs the words to quote, and a parley's words bind nobody, cost nobody anything, and are
+   * the sender's own. A dossier's figures are somebody else's books, which is why those never
+   * publish.
+   */
+  private emitParley(ctx: PhaseContext, req: ActionRequest, entry: ParleyEntry): void {
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'say.parley',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: req.principal,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      // Keyed on the two principals in canonical order, so a whole correspondence threads under one
+      // family whichever of them spoke first. `about` would thread it under the war instead and lose
+      // the exchange the moment the war ended, which is exactly when §14 wants to read it.
+      eventFamilyId: `parley::${[String(req.principal), String(entry.to)].sort(compareIds).join('::')}`,
+      parentEventId: null,
+      isPublic: false,
+      publicAt: entry.revealsAtTick,
+      declassifyAt: entry.revealsAtTick,
+      // `ASSERTION`, never `FACT`. A parley is the sender's own words: the engine vouches that they
+      // were said, at that tick, by that principal, and for nothing whatsoever about their truth.
+      // Stamping an agent's promise `FACT` is A5′ inverted — the record asserting something it
+      // cannot know, on the one surface §14 quotes verbatim.
+      provenanceClass: 'ASSERTION',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: req.decisionSource,
+      payload: {
+        from: entry.from,
+        to: entry.to,
+        act: entry.act,
+        text: entry.text,
+        sentAtTick: entry.tick,
+        revealsAtTick: entry.revealsAtTick,
+        why: entry.why,
+        about: entry.about,
+      },
+      visibility: 'PARTIES',
+      audience: [
+        { principal: entry.from, basis: 'PARTY' },
+        { principal: entry.to, basis: 'PARTY' },
+      ],
+    });
   }
 
   /**
@@ -12223,6 +12759,191 @@ export class Runtime {
     }
   }
 
+  // ── Phase 3 · the risk market. Six delegations; the behaviour is in `src/risk/wire.ts` ──
+  //
+  // `D21`: *"where new code goes: **not** `sim/runtime.ts`."* Every function below hands the module a
+  // port and returns. Nothing here decides anything, which is the point — three edits landed in the
+  // wrong place in this file in one day, all passing `tsc`.
+
+  /** The port `src/risk/` sees the world through. Eight members, none of them `Runtime`. */
+  private riskPort(ctx: PhaseContext): RiskWirePort {
+    return {
+      ledger: this.ledger,
+      book: this.risk,
+      map: this.world.map,
+      rng: ctx.rng,
+      tick: ctx.tick,
+      frozenStateVersion: ctx.frozenStateVersion,
+      emit: (draft) => {
+        this.emitRow({
+          tick: ctx.tick,
+          kind: draft.kind,
+          rulesVersion: RULES_VERSION,
+          actorPrincipalId: draft.actor,
+          onBehalfOfPrincipalId: null,
+          grantId: null,
+          eventFamilyId: draft.family,
+          parentEventId: draft.parent,
+          isPublic: true,
+          publicAt: ctx.tick,
+          declassifyAt: ctx.tick,
+          // A FRONT's CONE is a published prediction and its SWATH is a fact, so the forecast row is
+          // an ESTIMATE and everything else is a FACT. A5's record must not call a forecast a fact.
+          provenanceClass: draft.kind === 'front.forecast' ? 'ESTIMATE' : 'FACT',
+          actedOnStateVersion: ctx.frozenStateVersion,
+          decisionSource: null,
+          payload: draft.payload,
+          visibility: 'PUBLIC',
+          audience: [],
+        });
+      },
+      emitNow: (draft) =>
+        this.appendPublic({
+          tick: ctx.tick,
+          kind: draft.kind,
+          // `null`, and it has to be: a FRONT is nobody's decision, exactly as `raid.spawned` is.
+          actor: draft.actor,
+          family: draft.family,
+          parent: draft.parent,
+          payload: draft.payload,
+          actedOnStateVersion: ctx.frozenStateVersion,
+        }),
+      step: (n) => ctx.step(n),
+      ticker: (line) => this.raidTicker.push(line.slice(0, 140)),
+      attribute: (row) => {
+        this.register.attribute({
+          defaultEventId: row.defaultEventId,
+          promisor: row.promisor,
+          obligation: row.obligation,
+          cause: row.cause,
+          causeEventId: row.causeEventId,
+          tick: ctx.tick,
+          reckoningIndex: reckoningOf(ctx.tick),
+        });
+      },
+      freeCash: (principal) => freeCash(this.ledger, principal),
+      markOf: (good) => this.markOf(good, ctx.tick),
+      rulesVersion: RULES_VERSION,
+      offerTermTicks: COVER_OFFER_TERM_TICKS,
+    };
+  }
+
+  /** `HAZARD`. See `wire.ts:runFrontPhase` for the four-step order and why it is a rule. */
+  private frontNow(ctx: PhaseContext): void {
+    runFrontPhase(this.riskPort(ctx));
+  }
+
+  /** `OBLIGE`, after `settleNow`. See `wire.ts:runCohortPhase`. */
+  private riskCohortNow(ctx: PhaseContext): CohortReport {
+    return runCohortPhase(this.riskPort(ctx), this.coverElections);
+  }
+
+  /** THE FRONT BAND — A13's first signature. */
+  frontBandLines(tick: number = this.engine.tick): readonly FrontBand[] {
+    return frontBands(this.risk, tick, new Map());
+  }
+
+  /** THE COVER ARC — A13's second. */
+  coverArcLines(tick: number = this.engine.tick): readonly CoverArc[] {
+    return coverArcs(this.risk, tick);
+  }
+
+  /** THE COVER CHAIN — A13's third, and the one that renders contagion. */
+  coverChainLines(tick: number = this.engine.tick): readonly CoverChain[] {
+    return coverChains(this.risk, tick);
+  }
+
+  /** What a principal holds, in the shape `src/risk/view.ts` reads. */
+  private riskHoldings(principal: PrincipalId, tick: number): readonly HoldingRead[] {
+    const out: HoldingRead[] = [];
+    const seen = new Set<string>();
+    for (const lot of this.ledger.lotsInAccount(storesAccount(principal))) {
+      if (lot.state === 'IN_TRANSIT') continue;
+      const key = `${lot.location}::${lot.good}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      let qty = 0;
+      for (const other of this.ledger.lotsInAccount(storesAccount(principal))) {
+        if (other.good === lot.good && other.location === lot.location && other.state !== 'IN_TRANSIT') {
+          qty += other.qty;
+        }
+      }
+      out.push({ system: lot.location, good: lot.good, qty: qty as Qty, unitPrice: this.markOf(lot.good, tick) });
+    }
+    return out;
+  }
+
+  /**
+   * The mark a COVER pins for one good.
+   *
+   * The book's volume-weighted reference price where there is one, and **§10.2's administered price
+   * where there is not** — never zero. A zero mark values every loss at nothing, so an INDEMNITY pays
+   * nothing while the COVER reads as honoured: scar #1 with the whole mechanic inside it.
+   *
+   * `LEVY_UNIT_MINOR` is the fallback because it is *"the one administered price this game
+   * publishes"*, so a mark nobody traded is still a number both parties can look up rather than one
+   * this module invented. §10.3 forbids last-trade marking outright — self-matching two of your own
+   * principals to print a 50x mark is *"the game's single most dangerous exploit"* — and `vwap` over a
+   * multi-tick window with related-party edges excluded is what `marketLinesFor` already computes.
+   */
+  markOf(good: GoodId, tick: number): Minor {
+    const line = this.marketLines(tick).find((l) => l.good === good);
+    if (line !== undefined && line.vwap > 0) return minor(line.vwap);
+    return LEVY_UNIT_MINOR;
+  }
+
+  /** Everything a principal reads about risk. §12.1: a decision document, not telemetry. */
+  riskView(principal: PrincipalId, tick: number = this.engine.tick): RiskView {
+    return riskViewFor({
+      book: this.risk,
+      principal,
+      tick,
+      holdings: this.riskHoldings(principal, tick),
+      freeCash: freeCash(this.ledger, principal),
+    });
+  }
+
+  /**
+   * Every risk act a principal may take now, **and a tagged row for every one it may not**.
+   *
+   * Both halves from one call, deliberately: a caller that could publish the offers and forget the
+   * omissions is a caller that can ship a silent verb, which is what
+   * `test/api/withheld-is-accountable.spec.ts` measures and what cost `trade` 497 of 576 observations.
+   */
+  riskAffordances(
+    principal: PrincipalId,
+    tick: number = this.engine.tick,
+  ): { readonly offered: readonly RiskAffordance[]; readonly withheld: readonly WithheldRisk[] } {
+    return coverAffordances({
+      book: this.risk,
+      principal,
+      tick,
+      holdings: this.riskHoldings(principal, tick),
+      freeCash: freeCash(this.ledger, principal),
+      frozen: inFreeze(tick),
+      offerTermTicks: COVER_OFFER_TERM_TICKS,
+      // A limit and a premium a blind copier can send verbatim. Scaled off the endowment rather than
+      // hard-coded, so the suggestion stays sane if the stake moves.
+      suggestedLimit: minor(Math.trunc(STARTER_STAKE / 10)),
+      suggestedPremium: minor(Math.trunc(STARTER_STAKE / 200)),
+    });
+  }
+
+  /** `publish_offer {kind:"COVER"}`. */
+  private vPublishCover(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    return publishCover(this.riskPort(ctx), req.principal, req.params);
+  }
+
+  /** `sign {cover}`. */
+  private vSignCover(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    return signCover(this.riskPort(ctx), req.principal, req.params, ctx.frozenStateVersion);
+  }
+
+  /** `elect {cover}`. */
+  private vElectCover(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
+    return electCover(this.riskPort(ctx), req.principal, req.params, this.coverElections, MAX_ELECTIONS);
+  }
+
   /**
    * Settle the Charge: shortfall, arrears, lapse, slashed bond.
    *
@@ -14650,6 +15371,16 @@ export class Runtime {
       // admits the key, and the argument for why a resting order is not on it, are in
       // `frames/projection.ts`.
       marketLines: this.marketLines(outcome.tick),
+      // ── ★ A13's THREE PHASE 3 SIGNATURES ────────────────────────────────────
+      //
+      // THE FRONT BAND · THE COVER ARC · THE COVER CHAIN. All three are read off the risk book at the
+      // settled tick, like every other line set, and all three are on `PUBLIC_FACT_KEYS` with the A9
+      // argument written at the entry: nothing here is a fact a viewer may read that an agent's own
+      // `observe` does not already carry, and the one thing that WOULD break that — a front's SWATH
+      // before it lands — is the reason `frontBands` publishes the CONE while the front is unstruck.
+      frontBands: this.frontBandLines(outcome.tick),
+      coverArcs: this.coverArcLines(outcome.tick),
+      coverChains: this.coverChainLines(outcome.tick),
       // §16 world memory. Razed WORKS are included on purpose: a place keeps the name of whoever first
       // opened it, whether or not they still hold it — see `frames/memory.ts`.
       places: namesFor(this.worksBook.everInOrder(), handles),
@@ -14769,13 +15500,31 @@ export class Runtime {
   private appendPublic(draft: {
     readonly tick: number;
     readonly kind: string;
-    readonly actor: PrincipalId;
+    /**
+     * `null` for a world fact.
+     *
+     * Widened from `PrincipalId` when the FRONT landed here: *"`raid.spawned` carries
+     * `actorPrincipalId: null` and it has to: nobody issues a world raid"*, and nobody issues a
+     * FRONT either. `NewEvent.actorPrincipalId` has always been nullable; this signature was the
+     * narrower of the two and would have forced a fabricated actor onto a fact nobody caused.
+     */
+    readonly actor: PrincipalId | null;
     /**
      * §15.1's "immutable primary cohort". The venture, so the receipt reel pulls
      * formation, delivery and settlement out of one `transcript(family)` call — the same
      * cohort `ReceiptContext.familyOf` uses, spelled the same way.
      */
     readonly family: string;
+    /**
+     * §15.1's causal edge, and INV-17 **requires** it on a default row: *"the attribution must survive
+     * a restart, not only this process."*
+     *
+     * Added when Phase 3's risk market landed. It was hard-coded `null` here, so a caller that passed
+     * a cause had it silently dropped and `checkInv17` halted the world one phase later with
+     * *"attributed to ev:1080:0 in the register but carries no parent_event_id"* — the register and the
+     * permanent record disagreeing about why, which is the one thing that check exists to refuse.
+     */
+    readonly parent?: EventId | null;
     readonly payload: Readonly<Record<string, unknown>>;
     readonly actedOnStateVersion: number;
   }): EventId | null {
@@ -14787,7 +15536,7 @@ export class Runtime {
       onBehalfOfPrincipalId: null,
       grantId: null,
       eventFamilyId: draft.family,
-      parentEventId: null,
+      parentEventId: draft.parent ?? null,
       isPublic: true,
       publicAt: draft.tick,
       declassifyAt: draft.tick,

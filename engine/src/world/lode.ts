@@ -77,25 +77,90 @@ import { type WorldMap } from './map.js';
 export class LodeError extends Error {}
 
 /**
- * The band a system's weight is drawn from. **Nine to twelve, and the floor is load-bearing.**
+ * The band a system's weight is drawn from. **Forty to forty-six, and it sits between THREE measured
+ * walls rather than between one wall and a preference.**
  *
- * The spread is `12/9` = **1.33×** between the richest and the poorest ground in a tier, which is
- * enough that a hauler, a claimant and a raider all rank systems differently — and small enough that
- * the poorest system still clears its own burn, which is the constraint that sets the floor rather
- * than taste:
+ * ══════════════════════════════════════════════════════════════════════════
+ * ⚑ **THE NUMBERS BELOW ARE `scripts/lode-band.ts`'s OUTPUT, AND THAT MATTERS MORE THAN THE BAND.**
+ * This docblock and {@link assertLodes}'s used to carry **two tables of the same arithmetic that
+ * disagreed with each other** — ≈94 / +3,072 here against +3,936 twenty lines down — one an estimate
+ * written before the allocator existed, one a reading, with nothing saying which. Both are deleted.
+ * There is one source now and it is a command.
+ * ══════════════════════════════════════════════════════════════════════════
  *
- * | tier | base | poorest | per Reckoning alone | its burn | margin |
+ * ── THE THREE WALLS ──────────────────────────────────────────────────────────
+ *
+ * **1. The FLOOR pushes the spread NARROW.** A system whose SOLE occupant cannot fund the tribute
+ * assessed on it plus its own Charge is a place the map invites a principal to settle and then
+ * bankrupts it for settling — the `g07` structural residue arriving **by design**, and that residue
+ * is already §10's one open item at twelve Reckonings. The clause is {@link assertLodes}'s floor
+ * block and the arithmetic is per tier.
+ *
+ * ⚑ And the floor is not the only thing pulling that way. **A tier's total is conserved; the total
+ * of the systems the world actually STANDS on is conserved by nothing.** A cast occupies six of
+ * twenty-two producing systems, so the occupied subset can sit below the tier base — measured at
+ * **−864 a Reckoning** on `g01` at the 1.25× draft, which is small, compounds into the stock buffer,
+ * and surfaced as a **10,474 `levyShort` at Reckoning 8** on a seed master keeps spotless. It went
+ * away at 1.15×. `scripts/lode-residue.ts` is the instrument, and it prints the discriminator —
+ * occupied Σ against base Σ — because a shortfall reads identically whether the cast settled poor or
+ * the allocation misfired.
+ *
+ * **2. ORE NON-VACUITY caps how narrow it may go**, and the FRONTIER binds it: eight systems, so
+ * with too few distinct weight values every draw can land on one number, every frontier system
+ * yields the tier figure, and `assertLodes` **halts the world at construction** for a tier with no
+ * instance of the clause it exists to serve. `10..12` and `11..12` both do this — measured, not
+ * feared: one seed in 300 at three weight values, and not rare at two.
+ *
+ * **3. FUEL NON-VACUITY caps it again, harder, and it is the wall that actually decided this.**
+ * `FUEL_YIELD_PER_TICK.FRONTIER` is **10** over **8** systems — a total of 80, so one unit is a
+ * 10% step and the good cannot express a spread finer than that. At 1.10× every frontier system
+ * yields exactly 10 and `agent.md`'s *"some of it is worth far more than the rest"* becomes false
+ * while every ore assertion stays green. Nothing in `assertLodes` checks it, because the non-vacuity
+ * clause reads `yieldPerTick` only — so this wall is invisible to the engine and is held by
+ * {@link LODE_WEIGHT}'s calibration and by `the-ground-is-not-uniform.spec.ts`, which asserts the
+ * fuel spread directly. **A coarse good is the narrowest thing on the map, and it sets the band.**
+ *
+ * ── THE SWEEP, WORST POOREST-SYSTEM MARGIN OVER 300 GENERATED SEEDS ─────────
+ *
+ * Worst over seeds, not the launch map's own draw. The guard runs at **construction on every world
+ * the engine builds**, so a band the generator can come within a rounding step of violating is a
+ * band that eventually halts a world — and the launch map being lucky is not a property of the rule.
+ *
+ * | band | ratio | MARCHES margin | FRONTIER margin | ore distinct | fuel spread |
  * |---|---|---|---|---|---|
- * | `MARCHES` | 110 | ≈94 | 27,072 | 24,000 Levy+Charge | **+3,072** |
- * | `FRONTIER` | 150 | ≈129 | 37,152 | 27,000 Levy+Charge | **+10,152** |
+ * | `8..12` | 1.50× | **−960** | +4,104 | — | *(below the floor)* |
+ * | `9..12` *(the first draft)* | 1.33× | **+1,344** | +7,560 | **2** | 8–11 |
+ * | `10..12` | 1.20× | +3,360 | +9,864 | **1 — HALTS** | — |
+ * | `11..12` | 1.09× | +5,088 | +13,032 | **1 — HALTS** | — |
+ * | `24..30` | 1.25× | +3,072 | +9,864 | 3 | 9–11 |
+ * | `36..42` | 1.17× | +4,512 | +11,880 | 3 | 9–11 |
+ * | **`40..46` (shipped)** | **1.15×** | **+4,800** | **+12,168** | **3** | **9–11** |
+ * | `45..53` | 1.18× | +4,224 | +11,304 | 3 | 9–11 |
+ * | `50..58` | 1.16× | +4,800 | +11,880 | 3 | **10 only — flat** |
+ * | `100..110` | 1.10× | +5,664 | +13,320 | 3 | **10 only — flat** |
  *
- * A wider band was the first draft and it is recorded because the rejection is the useful part: at
- * `8..13` (1.63×) the poorest MARCHES system yields ≈84, which is 24,192 against a 24,000 burn — a
- * margin of **192 units a Reckoning**, indistinguishable from zero, and `g07`'s structural residue
- * arriving by design instead of by accident. The band is set by the tightest tier's break-even, not
- * by how interesting the map looks.
+ * **Separating RATIO from MAGNITUDE is what made the band findable, and the first draft conflated
+ * them.** The poorest share is ≈ `base × 2m/(m+M)`, so the floor depends only on the **ratio** —
+ * while the number of distinct weight values is `M − m + 1`, which depends only on the
+ * **magnitude**. `9..12` had to be wide because it was small. Lift the magnitude and the ratio is
+ * free to narrow, which is why the shipped band clears the floor by 3.6× what the draft did while
+ * being *narrower*, not wider.
+ *
+ * `40..46` is then the best worst-case floor among the bands whose FUEL still varies: 1.10× and
+ * 1.16× both post a better ore margin and both flatten fuel to a single figure. The last row of that
+ * table is the whole design: **the coarsest good on the map is what stops the band narrowing
+ * further**, and it stops it before the ore floor wants to.
+ *
+ * ⚑ **`9..12` FAILED ITS OWN STATED TEST**, and that is why it was not kept. Its note argued *"the
+ * cliff is between `7..12` and `8..12` and the shipped band clears it by two weight steps"* and
+ * rejected `8..12` because *"+1,344 is the same order as a Reckoning's rounding, and a floor that
+ * close to zero is a floor nobody can plan against."* On the sweep the cliff is between `8..12` and
+ * `9..12`, `9..12` clears it by **zero** steps, and **+1,344 is `9..12`'s own worst case** — the
+ * number its author rejected, one row off. The table it came from was shifted by exactly one band:
+ * every figure in it was real and every label on those figures was one row too wide. That is the
+ * most expensive kind of wrong number, because every individual entry checks out.
  */
-export const LODE_WEIGHT = { min: 9, max: 12 } as const;
+export const LODE_WEIGHT = { min: 40, max: 46 } as const;
 
 /** The tiers a lode varies. The COMMONS is absent on purpose — see the header (A8). */
 export const LODE_TIERS: readonly ZoneTier[] = Object.freeze(['MARCHES', 'FRONTIER']);
@@ -135,8 +200,22 @@ export interface Lode {
  * Derived, memoised, and keyed by the map object — `strait.ts`'s pattern and its reason: a cache
  * over a pure function of a frozen input, holding no world state, so it can never reach
  * `state_hash`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ⚑ **THE `bases` ARE PART OF THE KEY, AND THEY WERE NOT.** `strait.ts` memoises a function of one
+ * argument; this one takes two, and the first version cached on the map alone. So a second call with
+ * *different* bases returned the first call's answer, silently — a pure function that is not
+ * actually a function of its inputs.
+ *
+ * In production it could not bite: `works/params.ts` passes one frozen `LODE_BASES` and there is no
+ * other caller. That is precisely the argument that keeps this class of bug alive, and it was found
+ * by a test doing the one thing production does not — asserting that a starved base table is refused
+ * **and that the shipped one still passes on the same map**. The control half read the mutant's
+ * cached allocation and the guard looked broken. A cache that answers a question it was not asked is
+ * worse than no cache, because the reading it produces is confident.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-const MEMO = new WeakMap<WorldMap, ReadonlyMap<SystemId, Lode>>();
+const MEMO = new WeakMap<WorldMap, { readonly bases: LodeBases; readonly lodes: ReadonlyMap<SystemId, Lode> }>();
 
 /**
  * Every system's ground, keyed by system, in canonical system order.
@@ -175,7 +254,9 @@ export interface LodeFloor {
 
 export function lodesOf(map: WorldMap, bases: LodeBases): ReadonlyMap<SystemId, Lode> {
   const cached = MEMO.get(map);
-  if (cached !== undefined) return cached;
+  // Reference equality on `bases`, not a deep compare: the one production caller passes a module
+  // constant, so the hit path stays O(1) and a caller that builds a fresh table simply recomputes.
+  if (cached !== undefined && cached.bases === bases) return cached.lodes;
 
   // A labelled sub-stream of the map's own seed, so the ground is **fixed with the map** and adding
   // a consumer to any other stage cannot shift these draws (`Rng.derive`'s whole reason).
@@ -235,7 +316,7 @@ export function lodesOf(map: WorldMap, bases: LodeBases): ReadonlyMap<SystemId, 
     }
   }
 
-  MEMO.set(map, out);
+  MEMO.set(map, { bases, lodes: out });
   return out;
 }
 
@@ -313,19 +394,23 @@ export function assertLodes(map: WorldMap, bases: LodeBases, floor: LodeFloor): 
     // every band **including flat** — that is the contention the design wants and this clause must
     // not accidentally forbid it, which is why the divisor is 1 and not the occupant count.
     //
-    // The band sweep that set `LODE_WEIGHT.min`, poorest-system claimant margin per Reckoning:
+    // ⚑ **THE BAND SWEEP DOES NOT LIVE HERE ANY MORE.** A second copy of it did, and it disagreed
+    // with {@link LODE_WEIGHT}'s by ~900 units on MARCHES and ~1,400 on FRONTIER. One source now:
+    // `scripts/lode-band.ts` runs the real allocator, and `LODE_WEIGHT` quotes its output.
     //
-    // | band | MARCHES claimant | FRONTIER claimant |
-    // |---|---|---|
-    // | `6..12` | **−2,976** | +1,800 |
-    // | `7..12` | **−672** | +4,680 |
-    // | `8..12` | +1,344 | +7,560 |
-    // | **`9..12` (shipped)** | **+3,936** | **+8,712** |
-    // | `12..12` (flat) | +7,680 | +16,200 |
+    // What this clause reads on the SHIPPED launch map, for orientation only — the sweep's
+    // worst-over-300-seeds figures are the ones the band was set against, because this guard runs at
+    // construction on every world the engine builds and not only on the one that ships:
     //
-    // So the cliff is between `7..12` and `8..12`, and the shipped band clears it by two weight
-    // steps. `8..12` would technically pass and is **not** taken: +1,344 is the same order as a
-    // Reckoning's rounding, and a floor that close to zero is a floor nobody can plan against.
+    // | tier | n | base | poorest | income/Rk | owed | margin |
+    // |---|---|---|---|---|---|---|
+    // | `COMMONS` | 4 | 80 | 80 *(uniform)* | 23,040 | 20,000 | +3,040 |
+    // | `MARCHES` | 18 | 110 | **100** (richest 115) | 28,800 | 24,000 | **+4,800** |
+    // | `FRONTIER` | 8 | 150 | **141** (richest 158) | 40,608 | 27,000 | **+13,608** |
+    //
+    // The COMMONS row is the one that never moves and it is the argument's origin: +3,040 is the
+    // thinnest margin in the game and it is why that tier is uniform (A8). Every other tier's floor
+    // is held here instead of by symmetry.
     // ══════════════════════════════════════════════════════════════════════════
     for (const id of ids) {
       const lode = lodes.get(id);
@@ -388,7 +473,7 @@ export function assertLodes(map: WorldMap, bases: LodeBases, floor: LodeFloor): 
 export const LODE_STATEMENT =
   'Two systems in the same tier do NOT yield the same. Each has a LODE — a fixed richness, drawn ' +
   `with the map and never redrawn, between ${String(LODE_WEIGHT.min)} and ${String(LODE_WEIGHT.max)} ` +
-  'in weight, so the richest ground in a tier out-yields the poorest by about a third. A tier\'s ' +
+  'in weight, so the richest ground in a tier out-yields the poorest by about 15%. A tier\'s ' +
   'TOTAL output is unchanged: a lode moves where the ore is, never how much of it exists, so ' +
   'crowding one system still divides one system\'s yield and extra identities still buy nothing ' +
   '(A15). The COMMONS is the exception and is uniform everywhere, because its margin over the Levy ' +

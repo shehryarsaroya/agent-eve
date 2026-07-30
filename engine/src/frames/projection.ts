@@ -218,6 +218,15 @@ import type { FrameSource } from './render.js';
  * derived from a private stockpile, however public the formula.
  */
 export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
+  // ★ A13's three Phase 3 signatures. All three are PUBLIC by §11.2 and A9's parity rule holds by
+  // construction: a FRONT's CONE, a COVER's terms and an INDEMNITY's outcome are every one of them
+  // things `observe` already hands every agent (`src/risk/view.ts`), so nothing here is a fact a
+  // viewer can read that an agent cannot. The **SWATH before landfall** is the one thing that would
+  // break that, and `frontBands` publishes the cone while the front is unstruck for exactly that
+  // reason — see `lines.ts:frontBands`.
+  'frontBands',
+  'coverArcs',
+  'coverChains',
   'reckoning',
   'tick',
   'stateHash',

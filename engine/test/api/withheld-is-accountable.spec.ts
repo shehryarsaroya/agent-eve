@@ -82,6 +82,25 @@ const CLOSED: Readonly<Record<string, Trigger>> = Object.freeze({
    * a market and I am offered no trade and nothing says why.*
    */
   trade: (o) => strings(obj(o['market'])['at']).length > 0,
+  /**
+   * ★ **PROMOTED FROM `OPEN` AT `RULES_VERSION` 31, AND THE OLD ENTRY'S REASON IS WHY.**
+   *
+   * It read: *"TRIGGER TOO COARSE — 209/568 (36.8%) silent while `counterparties[]` is non-empty.
+   * `message` is scoped to a VENTURE you are both party to, not to anyone you have heard of, so
+   * having a counterparty is not having somebody to talk to."*
+   *
+   * That was an exact description of the defect 31 fixes, filed as a reason not to fix the row.
+   * **Having a counterparty is now having somebody to talk to**: `counterparties[]` carries every
+   * principal a PARLEY may reach, `message {to, act, text}` is the act, and when it is not offered
+   * `header.parley.rule` says which of the three walls was hit — not entitled, spent, or nobody
+   * reachable. So the trigger stops being too coarse by the list becoming exactly what the trigger
+   * assumed it was.
+   *
+   * A stale exception on a list like this is worse than a missing one: it is the review surface
+   * asserting a limitation the engine no longer has, which is how a fixed defect gets re-argued as a
+   * constraint.
+   */
+  message: (o) => rows(o['counterparties']).length > 0,
   /** An IDLE hand is the input `move` consumes, and it is published on every `hands[]` row. */
   move: (o) => rows(o['hands']).some((h) => h['state'] === 'IDLE'),
   /**
@@ -164,10 +183,6 @@ const OPEN: Readonly<Record<string, string>> = Object.freeze({
     'core loop, so silence here is the most expensive on this list. But an office must EXIST before ' +
     'it can be granted, and offices are voted into being — so the row would have to explain a ' +
     'multi-step path, which is a rules excerpt rather than a withheld reason.',
-  message:
-    'TRIGGER TOO COARSE — 209/568 (36.8%) silent while `counterparties[]` is non-empty. `message` is ' +
-    'scoped to a VENTURE you are both party to, not to anyone you have heard of, so having a ' +
-    'counterparty is not having somebody to talk to.',
   elect:
     'TRIGGER TOO COARSE — 124/377 (32.9%) silent while a LIVE venture exists. `elect` is for a ' +
     'venture YOU created, on a role somebody ELSE holds, inside the commitment window. Three ' +
@@ -612,8 +627,23 @@ describe('every principal a delegate may cut a dossier on is offered or NAMED', 
       'a delegate cleared over two principals was offered dossiers on one of them; the other was ' +
         'dropped by a cap sized for an unrelated list, in grant-id hash order, and counted nowhere',
     ).toEqual([...grantors].map(String).sort(cmp));
-    // And nothing was withheld, because the cap is now wide enough for this shape.
-    expect(strings(obj(obj(payload['header'])['withheld'])['verbs'])).not.toContain('message');
+    // ── AND NO **DOSSIER** ROW WAS WITHHELD, because the cap is wide enough for this shape ──
+    //
+    // Narrowed at `RULES_VERSION` 31 from *"`message` is not in `withheld.verbs`"*, which stopped
+    // being the right question the moment `message` grew a third act. The delegate here stands in no
+    // campaign and has honoured no elective promise, so its PARLEY allowance is legitimately zero and
+    // `header.parley.rule` legitimately accounts for it — under the old spelling this test would have
+    // failed on a row that is correct, and the tempting repair (drop the parley row) would have
+    // reopened `trade`'s defect to keep an unrelated assertion green.
+    //
+    // So the claim is checked where it lives: no row about a DOSSIER. A verb tag cannot carry it,
+    // because one verb now has three acts and `withheld` is tagged per verb.
+    expect(
+      String(obj(obj(payload['header'])['withheld'])['reason']),
+      'a delegate cleared over two principals was offered dossiers on both, so no DOSSIER row may be ' +
+        'counted as dropped. Asserted on the SENTENCE rather than the verb tag, because `withheld` is ' +
+        'tagged per verb and one verb now has three acts.',
+    ).not.toMatch(/DOSSIER row\(s\)/);
   });
 
   it('past the cap, every grantor still appears once and the tail is COUNTED with its subjects', () => {

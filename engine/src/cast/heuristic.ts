@@ -61,7 +61,7 @@ import {
   ALLOY_TIER,
   REFINE_IN_QTY,
   REFINE_OUT_QTY,
-  systemYield,
+  YIELD_PER_TICK,
 } from '../works/params.js';
 import { freeCash } from '../market/index.js';
 import {
@@ -2186,10 +2186,7 @@ export class HeuristicCast {
     const bodies = holdingOccupancy(runtime.world);
     const hereShare = runtime.worksQuote(member.principal, here).sharePerTick;
     const hereBodies = bodies.get(here) ?? 1;
-    // ★ §16.12 #1: rank by what the SYSTEM yields, not by its tier. Ranking by tier made all
-    // eighteen Marches systems interchangeable to the cast, which is the behavioural half of the
-    // defect the resource-distinct clause names — the engine offered a choice and nothing chose.
-    const hereYield = systemYield(runtime.world.map, here);
+    const hereTier = YIELD_PER_TICK[tierOf(runtime.world.map, here)];
 
     let best: { readonly to: SystemId; readonly share: number; readonly bodies: number } | null = null;
     // Canonical order over the destinations, so the third sort key is the id and two runs of one
@@ -2215,7 +2212,29 @@ export class HeuristicCast {
       // because members that keep moving never settle next to each other. So the rule earns its place
       // twice, and the second reason is the better one: territory is worth holding only if somebody
       // else is standing on it.
-      if (systemYield(runtime.world.map, to) <= hereYield) continue;
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // ⚑ **33 POINTED THIS LINE AT `systemYield` AND LEFT THE COMMENT SAYING IT FORBADE LATERAL
+      // HOPS. IT NO LONGER DID.** With per-system yield the test `richer MARCHES <= this MARCHES` is
+      // FALSE, so every lateral hop the paragraph above was written to forbid became legal again —
+      // and the three measurements in it came back, on a tree where nothing else had changed:
+      // `g07` spread from 5 occupied systems to 6, `g01` took a **150** `levyShort` in Reckoning 2
+      // where master and the strait/sway half were both spotless, `g24` stopped publishing a battle
+      // line, and the coalition file's two PROPERTY assertions broke — `doubleMarches` 0 → **5** and
+      // one pledged hand of five walking off its stage. Five of the seven failures on that branch
+      // were this line, and it read as a §16.12 improvement in the diff.
+      //
+      // **The tier gate stays, and §16.12 #1 loses nothing by it.** The resource-distinct clause is
+      // about *choosing ground*, and the choice is already made one line down: `sharePerTick` comes
+      // from `worksQuote`, which is per-system (`quotedGross` divides `systemYield`), so among the
+      // destinations a tier crossing admits the cast now picks the RICHEST rather than an arbitrary
+      // one — which it could not do before, because all eighteen MARCHES quotes were equal on yield
+      // and differed only by occupancy. The gate answers *whether* to cross; the lode answers
+      // *where to*. `test/world/the-ground-is-not-uniform.spec.ts` asserts both halves.
+      // ══════════════════════════════════════════════════════════════════════════
+      if (YIELD_PER_TICK[tierOf(runtime.world.map, to)] <= hereTier) continue;
+      // ★ §16.12 #1: per-system, via the engine's own quote. Never a recomputation — `worksQuote`
+      // is the number the affordance publishes and the one the PRODUCE phase pays out.
       const share = runtime.worksQuote(member.principal, to).sharePerTick;
       if (share <= hereShare) continue;
       const there = bodies.get(to) ?? 0;

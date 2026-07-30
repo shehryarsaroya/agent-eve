@@ -31,6 +31,23 @@
  *
  * Output is one row per seed plus a TOTAL row, on stdout, plus a machine-readable
  * `RESULT <json>` line so a sweep can be diffed between two checkouts without eyeballing.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **READ THIS BEFORE QUOTING A CLEAN RUN AS EVIDENCE.**
+ *
+ * > **A byte-identical sweep is the reading a neutral change and a dead mechanic produce
+ * > identically.**
+ *
+ * This file answers *"did the world still work"*. It cannot answer *"did the thing I built ever
+ * do anything"*, and the two are routinely confused because a clean table looks like success. §16.12
+ * #1 came back identical to master on **every** column at three, six and nine Reckonings — which was
+ * correct, and said nothing at all about whether one lane had ever mattered.
+ *
+ * So a feature landing needs a **second instrument with a denominator**: how many times the mechanism
+ * was *asked*, next to how many times it *bound*. `scripts/border-probe.ts` is the worked example and
+ * carries the argument in full. This project has shipped a mechanic used by nothing **seventeen
+ * times**; not one of those was caught by this file, and this file was green for all of them.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 
 import { HeuristicCast } from '../src/cast/index.js';

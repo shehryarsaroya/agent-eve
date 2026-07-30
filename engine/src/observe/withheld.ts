@@ -90,7 +90,11 @@ export type WithheldField = (typeof WITHHELD_FIELDS)[number];
  * - `NO_PRICE` — the book is too thin to price what this would risk, so we will not
  *   publish a `max_direct_loss` we cannot stand behind (PROP-O4, `THIN_BOOK`).
  * - `LIMITS_SPENT` — a grant's headroom is exhausted (§8, INV-22).
- * - `WINDOW_SHUT` — the venture's formation window does not contain this tick.
+ * - `WINDOW_SHUT` — **a window that closed.** Two subjects, one rule: the venture's formation window
+ *   does not contain this tick, or a FRONT is `IMMINENT` and no longer accepts new COVER (CAT12).
+ *   Named here rather than left to a reader, because *"an uncanonised word is unpoliced by
+ *   construction"* applies to a documented union member's *meaning* as much as to a term — a second
+ *   subject that only the call site knows about is a ground an agent cannot act on.
  * - `UNSENSED` — you have no hand in range and bought no intel (§11.2, PROP-VI2).
  * - `NO_RECORD` — we hold no row for it, and will not invent zeros that read as facts.
  * - `NODE_BUDGET` — a free solver stopped at its declared node bound (§12.1).
