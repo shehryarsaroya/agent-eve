@@ -365,7 +365,7 @@ export function checkInvR8(book: RiskBook): readonly RiskViolation[] {
   /** `front::principal` → what it owes off that front. Half of its own loss. */
   const owed = new Map<string, Minor>();
   /**
-   * `front::payee::system::good` → the largest gross loss any primary claims for that subject.
+   * `front::payee` → (`system::good` → the largest gross loss any primary claims for that subject).
    *
    * **Max per subject, never a sum**, and that is what makes case 2 fire: two COVERS over one holding
    * each report the *same* destroyed goods, so summing their `grossLoss` would hand the payee twice the
