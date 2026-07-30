@@ -5,11 +5,12 @@
  * **HIGHER FORCE WINS, DETERMINISTICALLY. NO DICE.**
  *
  *     defenderForce = FORCE_PER_HAND x (hands the target committed)
- *                   + FORCE_PER_JOINER x (joiners on the DEFENDER side)
+ *                   + FORCE_PER_HAND x (hands DEFENDER joiners have standing here)
  *                   + FORCE_BY_TIER[tier of the stage]
  *
  *     raiderForce   = the raid's OWN force still on the field  (see below)
- *                   + FORCE_PER_JOINER x (joiners on the RAIDER side WITH SWAY >= 1 here)
+ *                   + FORCE_PER_HAND x SUM over raider parties of
+ *                       min(that principal's hands standing here, its SWAY here)
  *
  *     defenderForce >= raiderForce  ->  REPULSED       (ties go to the defender)
  *     otherwise                     ->  PLUNDERED
@@ -32,6 +33,46 @@
  * holds neither end of. The defender's hands are never read that way, and `ForceArgs.swayAt`
  * carries the argument in full: a chokepoint exists to favour the interior line, so a reach limit
  * that thinned the defence would invert the mechanic it came from.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ⚑ **THE RAIDER'S SUM USED TO COUNT PARTY *ROWS*, AND THAT WAS TWO BUGS AT ONCE.**
+ *
+ * It read `FORCE_PER_JOINER x (raider parties with SWAY >= 1)` — one point per PRINCIPAL, with the
+ * sway magnitude read only as a boolean. A blind player found what that costs from the outside:
+ * *"`force.your_sway: 3` at the target system with two IDLE hands standing there and
+ * `force.raider: 1`. No verb converts them. Offence is priced in allies the reach rules forbid
+ * asking."* It was exactly right, and there was no verb — `demand` commits one hand, `join` is
+ * refused to a principal already in the standoff, and `engage`'s hulls add nothing to a demand.
+ *
+ * Two things it contradicted, each on its own sufficient:
+ *
+ *   1. **`SWAY_STATEMENT`, which we ship to agents verbatim**, says *"SWAY is how many of your 3
+ *      HANDS count as FORCE at a place you are not defending."* The raid layer read it as a
+ *      permission bit. Scar #1 exactly: the engine and its own rules text disagreeing about one
+ *      rule, each individually coherent — and here the *text* was the correct one.
+ *   2. **The campaign layer already does it properly.** `campaign/pulse.ts:readCampaignForce`
+ *      computes `min(hands present, sway)` for the attacker and for every ally. Two hostile
+ *      mechanics read the same `swayAt` port in incompatible units, and only one of them
+ *      implemented the published sentence.
+ *
+ * It also made the two sides of one comparison incommensurable: the TARGET's own hands were
+ * `FORCE_PER_HAND x hands` (up to 3 from one `fight`) while a raider was `1`, whatever it brought.
+ * So the fix is not a buff — it is the raider side being measured in the unit the target's side was
+ * always measured in.
+ *
+ * **AND ALLIES ON BOTH SIDES ARE COUNTED IN HANDS, FOR THE SAME REASON.** `defenderJoiners` was also
+ * a row count, so leaving it alone would have made a defender ally's three hands worth 1 against a
+ * raider ally's 3 — inverting §16.1 MUST-3's whole point, that a chokepoint *"lets a smaller defender
+ * exploit interior lines"*. `campaign/pulse.ts` is the precedent for both halves at once: attacker
+ * and every attacking ally at `min(present, sway)`, defender and every defending ally at `present`.
+ * This is now the same arithmetic in the same units, one layer down.
+ *
+ * **What it does NOT change:** the sway *asymmetry* (offence is supplied, defence is present — a
+ * raider at 0 sway still buys nothing and {@link ForceReading.terms.raidersOutOfSway} still counts
+ * it), terrain, the tie rule, or `march` being the act that adds a hand. There is no new verb:
+ * **the hands you have standing there are the force you have**, which is what §16.12 #1 means by
+ * capacity-limited projection and what makes `move` worth an action before a window closes.
  * ══════════════════════════════════════════════════════════════════════════
  *
  * ══════════════════════════════════════════════════════════════════════════
@@ -84,7 +125,6 @@ import type { RaidParty, RaidRecord } from './book.js';
 import {
   FORCE_BY_TIER,
   FORCE_PER_HAND,
-  FORCE_PER_JOINER,
   RAID_DEMAND_QTY,
   RAID_MAX_TAKE_BPS,
   RAID_TAKE_MULTIPLE,
@@ -107,6 +147,14 @@ export interface ForceReading {
   readonly terms: {
     readonly defenderHands: number;
     readonly defenderJoiners: number;
+    /**
+     * ★ **HANDS the DEFENDER joiners have standing here** — the term of the sum, never capped by sway.
+     *
+     * `defenderJoiners` beside it counts PRINCIPALS. Both are published because they are different
+     * findings that one number reports identically: three allies with one hand each and one ally with
+     * three read the same force and mean very different things about who turned up.
+     */
+    readonly defenderAllyHands: number;
     readonly terrain: number;
     /**
      * The raid's own force **as it stands now** — what went into `raiderForce`.
@@ -118,6 +166,8 @@ export interface ForceReading {
     readonly raidForce: number;
     /** What the raid was given at spawn, inside `RAID_FORCE`'s published band. Never moves. */
     readonly raidForceAtSpawn: number;
+    /** ★ Supplied raider HANDS: `Σ min(hands standing here, sway here)`. See the module header. */
+    readonly raiderHands: number;
     readonly raiderJoiners: number;
     /**
      * ★ Raider parties still standing at the stage whose SWAY there is **0**, so their hands
@@ -228,7 +278,13 @@ export interface ForceArgs {
 export function readForce(args: ForceArgs): ForceReading {
   const stillThere = (party: RaidParty): boolean =>
     args.handsAtStage(party.principal).some((id) => id === party.handId);
-  const defenderJoiners = args.raid.parties.filter((p) => p.side === 'DEFENDER' && stillThere(p)).length;
+  const defendersPresent = args.raid.parties.filter((p) => p.side === 'DEFENDER' && stillThere(p));
+  const defenderJoiners = defendersPresent.length;
+  // Allies in HANDS, no sway cap — defence is present, offence is supplied. See the header.
+  const defenderAllyHands = defendersPresent.reduce(
+    (n, p) => n + args.handsAtStage(p.principal).length,
+    0,
+  );
   // ── ★ §16.12 #1: A RAIDER'S HANDS COUNT ONLY WITHIN ITS SWAY ──────────────
   //
   // `stillThere` is presence — the hand is standing at the stage. Sway is *supply*: whether that
@@ -236,6 +292,15 @@ export function readForce(args: ForceArgs): ForceReading {
   // required on the raider's side and only presence is required on the defender's, for the reason
   // written out on `ForceArgs.swayAt`.
   const raidersPresent = args.raid.parties.filter((p) => p.side === 'RAIDER' && stillThere(p));
+  // ── ★ HANDS, CAPPED BY SWAY — the same `min(present, sway)` a campaign PULSE uses ──
+  //
+  // See the header. `handsAtStage` is the IDLE-and-present set, the identical predicate the target's
+  // own muster is counted with, so both sides of the comparison are in hands. A party whose sway is 0
+  // contributes 0 through the `min` rather than through a separate filter — one arithmetic, and the
+  // gate is still exactly the published one.
+  const raiderHandsOf = (p: RaidParty): number =>
+    Math.max(0, Math.min(args.handsAtStage(p.principal).length, args.swayAt(p.principal)));
+  const raiderHands = raidersPresent.reduce((n, p) => n + raiderHandsOf(p), 0);
   const raiderJoiners = raidersPresent.filter((p) => args.swayAt(p.principal) >= 1).length;
   const terrain = FORCE_BY_TIER[args.tier] ?? 0;
 
@@ -245,8 +310,8 @@ export function readForce(args: ForceArgs): ForceReading {
   const raidForce = left === null ? args.raid.force : Math.min(args.raid.force, Math.max(0, left));
 
   const defenderForce =
-    FORCE_PER_HAND * Math.max(0, args.defenderHands) + FORCE_PER_JOINER * defenderJoiners + terrain;
-  const raiderForce = raidForce + FORCE_PER_JOINER * raiderJoiners;
+    FORCE_PER_HAND * Math.max(0, args.defenderHands) + FORCE_PER_HAND * defenderAllyHands + terrain;
+  const raiderForce = raidForce + FORCE_PER_HAND * raiderHands;
 
   return {
     defenderForce,
@@ -256,9 +321,20 @@ export function readForce(args: ForceArgs): ForceReading {
     terms: {
       defenderHands: Math.max(0, args.defenderHands),
       defenderJoiners,
+      /** ★ HANDS those joiners have standing here — the term of the sum. Never capped by sway. */
+      defenderAllyHands,
       terrain,
       raidForce,
       raidForceAtSpawn: args.raid.force,
+      /**
+       * ★ Supplied raider HANDS — `Σ min(hands standing here, sway here)`. **The term of the sum.**
+       *
+       * Published because it is what changed and because an agent that reads `raiderJoiners` alone
+       * cannot tell a coalition of three that brought one hand each from one principal that brought
+       * three. It is also the meter on the fix: if this never exceeds `raiderJoiners` in any world,
+       * nobody ever marched a second hand and the change bought nothing.
+       */
+      raiderHands,
       raiderJoiners,
       raidersOutOfSway: raidersPresent.length - raiderJoiners,
     },

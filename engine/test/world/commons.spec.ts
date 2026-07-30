@@ -289,7 +289,27 @@ describe('E2E-21 — every verb x every hostile parameterisation against a Commo
 
   it('fails closed when a hostile act names no target, or one the world cannot find', () => {
     const f = fixture();
-    expect(commonsFloorRejection(f.state, 'demand', {})?.hint).toMatch(/must name the hand/);
+    // ── ★ THE SENTENCE CHANGED AT 35, AND THE OLD PIN WAS PART OF THE DEFECT ──
+    //
+    // It used to open *"'demand' is a hostile act and must name the hand, holding, principal or
+    // system it is aimed at; nothing in the Commons can be a target at all"* — and a blind player got
+    // that for a `join` at a MARCHES system against a MARCHES target, checked its tier, found it
+    // correct, and could not reach the real fault. The refusal is `targets.length === 0`; the tier was
+    // never consulted. It also instructed a `join` in `holding`, a param `join` does not read.
+    //
+    // So the pin moves to the three things the sentence must now do: name the actual fault, disclaim
+    // the tier it did not check, and list the spellings from `TARGET_KEYS` itself.
+    const noTarget = commonsFloorRejection(f.state, 'demand', {})?.hint ?? '';
+    expect(noTarget, 'the fault is a missing target, not a tier').toMatch(/names no target this world can locate/);
+    expect(noTarget, 'and it must not assert anything about the target\'s tier').toMatch(
+      /NOTHING HAS BEEN DECIDED ABOUT YOUR TARGET/,
+    );
+    expect(noTarget, 'the spellings come from TARGET_KEYS, so `target_system` is among them').toContain(
+      'target_system',
+    );
+    expect(noTarget, 'and the reason the floor needs one at all is still stated').toMatch(
+      /hostile action is INVALID rather than punished/,
+    );
     expect(commonsFloorRejection(f.state, 'demand', { hand_id: 'p-ghost:h1' })?.hint).toMatch(
       /cannot locate/,
     );

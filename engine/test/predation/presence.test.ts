@@ -107,7 +107,16 @@ describe('a joiner counts only while its hand is standing at the stage', () => {
     const raiderForceWhilePresent = Number(
       (beforeFlight?.['force'] as Record<string, unknown> | undefined)?.['raider'],
     );
-    expect(raiderForceWhilePresent).toBe(raid.force + 1);
+    // ── ★ RECALIBRATED AT 35: A PARTY SUPPLIES ITS HANDS, NOT ONE POINT ──────
+    //
+    // `raid.force + 1` was a true reading of an arithmetic that scored a joiner at `FORCE_PER_JOINER`
+    // per PRINCIPAL. `readForce` now scores both sides in hands, so a seated principal with all
+    // `HANDS_PER_PRINCIPAL` idle at the stage supplies all of them, capped by its SWAY there (which is
+    // `SWAY_AT_SEAT` at its own seat). The PROPERTY under test is untouched: a hand that is not
+    // standing there counts for nothing. Only the size of what standing there is worth has moved.
+    expect(raiderForceWhilePresent, 'all of its hands are idle at its own seat').toBe(
+      raid.force + SWAY_AT_SEAT,
+    );
 
     // Leave as late as the published clock allows: still IN_TRANSIT on the deadline tick.
     const out = laneOut(runtime, stage);
@@ -151,7 +160,16 @@ describe('a joiner counts only while its hand is standing at the stage', () => {
     while (runtime.raids.require(raid.id).state === 'DEMANDED') tick(runtime);
     const done = runtime.raids.require(raid.id);
     const targetHandsAtStage = 3; // a principal has exactly three (INV-8), all idle here
-    expect(done.defenderForce).toBe(targetHandsAtStage + 1 /* ally */ + 1 /* MARCHES */);
+    // ── ★ RECALIBRATED AT 35: A PARTY SUPPLIES ITS HANDS, NOT ONE POINT ──────
+    //
+    // `raid.force + 1` was a true reading of an arithmetic that scored a joiner at `FORCE_PER_JOINER`
+    // per PRINCIPAL. `readForce` now scores both sides in hands, so a seated principal with all
+    // `HANDS_PER_PRINCIPAL` idle at the stage supplies all of them, capped by its SWAY there (which is
+    // `SWAY_AT_SEAT` at its own seat). The PROPERTY under test is untouched: a hand that is not
+    // standing there counts for nothing. Only the size of what standing there is worth has moved.
+    expect(done.defenderForce).toBe(
+      targetHandsAtStage + SWAY_AT_SEAT /* the ally's own hands */ + 1 /* MARCHES */,
+    );
     expect(done.state).toBe('REPULSED');
     // It stood there and it paid for it: the losing-side hand recovers, the winner's does
     // not, and this ally was on the winning side.
@@ -176,7 +194,14 @@ describe('a joiner counts only while its hand is standing at the stage', () => {
     if (handId === undefined) throw new Error('the join must have been admitted');
 
     const withHand = observeRaid(runtime, raid.target, raid.id);
-    expect((withHand?.['force'] as Record<string, unknown>)['raider']).toBe(raid.force + 1);
+    // ── ★ RECALIBRATED AT 35: A PARTY SUPPLIES ITS HANDS, NOT ONE POINT ──────
+    //
+    // `raid.force + 1` was a true reading of an arithmetic that scored a joiner at `FORCE_PER_JOINER`
+    // per PRINCIPAL. `readForce` now scores both sides in hands, so a seated principal with all
+    // `HANDS_PER_PRINCIPAL` idle at the stage supplies all of them, capped by its SWAY there (which is
+    // `SWAY_AT_SEAT` at its own seat). The PROPERTY under test is untouched: a hand that is not
+    // standing there counts for nothing. Only the size of what standing there is worth has moved.
+    expect((withHand?.['force'] as Record<string, unknown>)['raider']).toBe(raid.force + SWAY_AT_SEAT);
 
     const out = laneOut(runtime, stage);
     submit(runtime, raider, 'move', { hand: handId, to: out.to });

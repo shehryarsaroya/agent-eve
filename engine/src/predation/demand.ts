@@ -121,9 +121,13 @@ export const DEMAND_RULE_STATEMENT =
   'it. It costs one of your aggression capacity for the Reckoning, which DOES NOT CARRY — unspent ' +
   'capacity is gone at the next Reckoning, so a standing toll is unfundable by design (§9). You state ' +
   'the place, the good and the quantity; the demand is pinned and never recomputed. Unlike a world ' +
-  'raid a demand brings NO force of its own: all of it is hands, counted at resolution, so one hand ' +
-  'against the Marches (terrain 1) ties and TIES GO TO THE DEFENDER — bring somebody, or aim at the ' +
-  'Frontier, where terrain is 0. You stake slashable capital and one IDLE hand; if the target repulses ' +
+  'raid a demand brings NO force of its own: all of it is hands, counted at resolution. YOUR FORCE IS ' +
+  `EVERY IDLE HAND YOU HAVE STANDING THERE, up to your SWAY — so all ${String(SWAY_AT_SEAT)} of yours ` +
+  'count if all three are present and your reach covers the place, and one alone against the Marches ' +
+  '(terrain 1) ties and TIES GO TO THE DEFENDER — bring another of your own hands, or aim at the ' +
+  'Frontier, where terrain is 0. `move` is the act that adds a hand; `join` ' +
+  'cannot, because one principal is one party row. An ally adds ITS hands the same way. ' +
+  'You stake slashable capital and one IDLE hand; if the target repulses ' +
   'you the stake goes to it and the hand goes RECOVERING. Nothing tells you what the target holds ' +
   'before you commit: guess wrong and you hit ballast (MISSED) having paid in full. Beating a demand ' +
   'buys the defender the stake and nothing else — a demand writes no stage hold and no victim ' +

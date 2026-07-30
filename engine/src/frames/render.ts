@@ -176,12 +176,49 @@ export interface SettledView {
   readonly electiveBps: number;
   /** The value that was riding on the elective half — what the drama is about. */
   readonly atStake: Minor;
+  /**
+   * ★ **WHAT WAS ACTUALLY WITHHELD** — the sum of every role's `electiveShortfall`. **A5′.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE DEED SENTENCE ACCUSED A REAL AGENT OF 2.9x WHAT IT DID, PERMANENTLY AND IN PUBLIC.**
+   *
+   * A blind player read *"lode-vela walked away from 4K it had promised."* What happened: role 0 was
+   * honoured **in full** (`electiveHonouredValue: 2712`) and role 1 declined 1,439 of 1,440. It
+   * walked away from **1,439**. The sentence was built from {@link atStake}, which is
+   * `sum(electiveDue)` — the whole elective half of the whole venture, honoured parts included — so
+   * every partial default in the game's history has been reported as a total one.
+   *
+   * A5′ is *"the record must never be wrong"*, and it puts a wrong record above a crash precisely
+   * because this is the sentence that cannot be taken back: a default libels the principal it names
+   * for as long as the world runs, and the honoured 2,712 was the part of the story that made the
+   * agent look better, deleted by the arithmetic.
+   *
+   * {@link atStake} stays exactly what it was and is still right for its three other readers — the
+   * headline (*"X was riding on Y's haul"*), the honoured sentence (*"paid X it could have kept"*),
+   * and the ON A PROMISE meter (*"value riding on nothing but someone's word"*). Those all ask what
+   * the venture was worth. Only the accusation asks what was taken, and it is the one that had no
+   * field of its own. Both quantities were already in scope in the loop that built the row — the
+   * defect was a missing field, not a missing measurement.
+   *
+   * Optional, so existing fixtures and `emptyFrame` stay valid; a caller that does not know says
+   * nothing and the sentence falls back to naming the whole promise rather than inventing a split.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly withheld?: Minor;
   readonly defaulted: boolean;
   readonly deferred: boolean;
   /** Parties, in id order. The renderer never re-sorts by anything unstable. */
   readonly parties: readonly PrincipalId[];
   readonly publicLine: string | null;
   readonly sealVerdict: 'HONOURED' | 'CONTRADICTED' | null;
+  /**
+   * Who contradicted it, named. Null on `HONOURED`, and on a venture nobody sealed.
+   *
+   * §14's subject is an agent, not a venture. A `CONTRADICTED` flag on a two-party row leaves a
+   * viewer unable to say which of them broke its own pre-commitment — the say-do gap with the "do"
+   * attributed and the "say" anonymous. Optional so existing fixtures stay valid.
+   */
+  readonly sealContradictedBy?: PrincipalId | null;
   /** Declassified negotiation, present only when an elective promise broke. */
   readonly messages: readonly { readonly tick: number; readonly from: PrincipalId; readonly text: string }[];
 }
@@ -398,10 +435,34 @@ function tensionFor(src: FrameSource, u: UpcomingView): string {
   return 'They have dealt before, and it held.';
 }
 
+/**
+ * ★ **THE ONE SENTENCE IN THIS GAME THAT ACCUSES A NAMED PRINCIPAL. A5′ governs it.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE ACCUSING CLAUSE NAMES WHAT WAS WITHHELD AND NEVER THE WHOLE PROMISE**, and it is exact
+ * rather than rounded. Two changes, one defect: see {@link SettledView.withheld} for the 2.9x
+ * overstatement, which is the arithmetic half.
+ *
+ * The rounding half is smaller and the same axis. `money` compresses to `4K`, which is right for a
+ * viewer reading a stake in three seconds and wrong for a permanent public accusation: at 1,500 it
+ * prints `2K` and **overstates by a third**, in the direction that harms the principal named. So the
+ * withheld figure is printed in full and the promise it came out of is rounded beside it — the
+ * accusation is exact, its context is readable, and a viewer can see the honoured remainder by
+ * subtraction rather than being told a partial default was a total one.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
 function consequenceFor(src: FrameSource, v: SettledView): string {
   const payer = handleOf(src, v.creator);
   if (v.deferred) return `${payer}'s ${v.kind.toLowerCase()} did not resolve. It carries to tomorrow.`;
-  if (v.defaulted) return `${payer} walked away from ${money(v.atStake)} it had promised.`;
+  if (v.defaulted) {
+    // `undefined` means the caller did not measure it — fall back to the whole promise rather than
+    // print a split nobody computed. Every production caller measures it (`Runtime.reckoningFrame`).
+    const withheld = v.withheld ?? v.atStake;
+    // A default that took everything reads as one clause: naming "1,440 of the 1,440" invites a
+    // reader to look for a remainder that is not there.
+    if (withheld >= v.atStake) return `${payer} walked away from all ${String(v.atStake)} it had promised.`;
+    return `${payer} walked away from ${String(withheld)} of the ${money(v.atStake)} it had promised.`;
+  }
   return `${payer} paid ${money(v.atStake)} it could have kept.`;
 }
 
@@ -457,6 +518,11 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       cast: chipsFor(src, v.parties),
       publicLine: v.publicLine,
       sealVerdict: v.sealVerdict,
+      // Named only where there is something to name. `undefined` is dropped by the canonical
+      // serialiser, so an HONOURED row asserts nothing about a contradiction that did not happen.
+      ...(v.sealVerdict === 'CONTRADICTED' && v.sealContradictedBy !== null && v.sealContradictedBy !== undefined
+        ? { sealContradictedBy: handleOf(src, v.sealContradictedBy) }
+        : {}),
       // Seal content reaches VIEWERS only. Agents get the verdict and nothing else,
       // at any tier, on any delay (PROP-D2) — a fixed-lag reveal of private
       // pre-commitments is exactly what makes a collusive stalemate stable.

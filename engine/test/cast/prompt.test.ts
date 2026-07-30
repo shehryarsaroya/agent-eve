@@ -1004,7 +1004,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_266);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(101_273);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1015,7 +1015,21 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 95,760 = **24,240**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 89,241 — leaving **30,759**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_266);
+    // ── ★ AND AT 35, +1,007 MORE: THE CROWDING TERM AND THE SEAL EXAMPLE ────
+    //
+    // Two rules-surface edits, both forced by a blind player being misled by text that was true:
+    // §7's `share_per_tick` paragraph (the lode is the SMALLER term — crowding spreads a tier by
+    // ~435% against the lode's ~15%), and §8's copyable `seal` example, which the document described
+    // in prose and named `unit` for a field the engine reads as `measure`.
+    //
+    // **MEASURED against this tree, not added to the line above** — and the rule earned itself again
+    // on this branch: the first reading was 101,272 and the second 101,273, because reflowing one
+    // pinned sentence onto its own line added a newline. A cell that is arithmetic on the last cell
+    // would have been wrong by one and nobody would have known which end.
+    //
+    // Analytic margin 120,000 − 101,273 = **18,727**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 94,754 — leaving **25,246**, against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(101_273);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1079,7 +1093,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // is exactly the principal §11A's destruction rules are written for.
     // Margin 120,000 − 89,241 = **30,759** against a required 4,000 — the number to quote about
     // SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(93_747);
+    // 93,747 → 94,754 at 35. See the analytic note above: this row pays for §7's crowding paragraph
+    // and §8's seal example, and the margin is 120,000 − 94,754 = **25,246** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(94_754);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2626,13 +2642,29 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // Nothing was trimmed at any position. `agent.md`'s bill for 33 is 4,506 characters against a
       // 6,000 quota — the LODE's 1,615 includes the floor paragraph a settler needs before it
       // commits, and §11G's 2,891 is charged only to principals who can project force.
-      44_027, // a newcomer on its first wake            (+1,615: the LODE only — it cannot reach a standoff)
-      52_415, // mid-game in the Commons                 (+1,615)
-      62_118, // about to take territory        (+4,506 LODE/§11G, +2,384 RAZE — it holds works to lose)
-      65_260, // at war: party to a live campaign        (+4,506, +2,384)
-      92_238, // a claimant in trouble                   (+4,506, +2,384)
-      74_108, // the Commons at its fullest              (+1,173; +0 for RAZE — A8, nothing to fear)
-      93_747, // outside the Commons and landless, at its fullest: the largest REACHABLE (+4,506, +2,384)
+      // ── ★ 35 · +1,007 ON EVERY ROW, AND THAT FLATNESS IS THE POINT ────────
+      //
+      // Two rules-surface corrections, and both are charged to EVERY position because both are FLOOR
+      // rules rather than act-gated ones — which is right, and is why the deltas below are identical:
+      //
+      //   · §7's crowding paragraph. The lode is the SMALLER term. A blind player read
+      //     `yield 110 · richness_bps 0 · gate: true`, crossed onto the most crowded system on the
+      //     map, and was not wrong about anything it read — the row published the ~15% spread and
+      //     hid the ~435% one. Every principal that can `graduate` or `build` needs this, which is
+      //     all of them.
+      //   · §8's copyable `seal` example. The document described the five fields in prose and called
+      //     one of them `unit`; the engine reads `measure`. PROP-D1 refused the documented spelling.
+      //     Sealing is required for every role held, so this is FLOOR too.
+      //
+      // 1,007 against a 4,000 quota, and neither is discretionary: both are cases of a rules surface
+      // that read as complete while misleading its reader (hard rule 4, scar #1).
+      44_683, // a newcomer on its first wake            (+656)
+      53_422, // mid-game in the Commons                 (+1,007)
+      63_125, // about to take territory                 (+1,007)
+      66_267, // at war: party to a live campaign        (+1,007)
+      93_245, // a claimant in trouble                   (+1,007)
+      75_115, // the Commons at its fullest              (+1,007)
+      94_754, // outside the Commons and landless, at its fullest: the largest REACHABLE (+1,007)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -2807,7 +2839,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      100_266,
+      101_273,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

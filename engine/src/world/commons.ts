@@ -464,6 +464,19 @@ function spellingHint(verb: string, params: ActionParams): string {
   );
 }
 
+/**
+ * The target spellings, as one readable clause — from {@link TARGET_KEYS}, never retyped.
+ *
+ * The refusal above used to name *"the hand, holding, principal or system"* as prose, which is how it
+ * came to instruct a `join` in a param (`holding`) that `join` does not read. Generated from the table
+ * the resolver actually consults, so the refusal cannot name a key the floor would not accept.
+ */
+function namedTargetKeys(): string {
+  return (Object.keys(TARGET_KEYS) as (keyof typeof TARGET_KEYS)[])
+    .map((kind) => `${kind} (\`${TARGET_KEYS[kind].join('` or `')}\`)`)
+    .join(', ');
+}
+
 /** Venture kinds that are not acts of force. Exact spellings, for the same reason. */
 const PEACEFUL_VENTURE_KINDS: readonly string[] = ['HAUL', 'DIG', 'ESCORT', 'BUILD', 'SURVEY', 'LEVY'];
 
@@ -507,10 +520,39 @@ export function commonsFloorRejection(
     // So the *reason* is named without the *classification* moving. Nothing is granted
     // here; a mis-cased ballot is still refused.
     const spelling = spellingHint(verb, params);
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★ **THIS SENTENCE ANSWERED THE WRONG QUESTION, AND A BLIND PLAYER COULD NOT LEARN THE RULE.**
+    //
+    // `join {"raid":"raid:207:d0","side":"RAIDER"}` at a **MARCHES** system, against a MARCHES target,
+    // came back *"'join' is a hostile act and must name the hand, holding, principal or system it is
+    // aimed at; nothing in the Commons can be a target at all."* Every clause of that is a true
+    // statement of A8 and none of it is what happened: the Commons was not involved anywhere, and the
+    // refusal is `targets.length === 0` — the params carried no key the floor can resolve. So the
+    // player read a tier rule, checked its tier, found it correct, and had no way to reach the actual
+    // fault. *"The player could not learn the real rule by playing."*
+    //
+    // Two things change and neither touches the classification (nothing is granted here):
+    //
+    //   1. **The sentence leads with what happened** — no locatable target — and states explicitly
+    //      that nothing has been decided about the Commons. The old order buried a parameter fault
+    //      under a rule about a zone.
+    //   2. **It names the spellings THIS verb reads**, from `TARGET_KEYS` itself rather than a
+    //      hand-written list of four nouns. The old list named `holding`, which `join` never reads,
+    //      so the one concrete instruction in the refusal was a param the verb does not take.
+    //
+    // The floor stays A8 because the floor IS A8 and it is the thing refusing: it cannot clear an act
+    // whose landing place is unknown. What it may not do is describe a tier it never checked.
+    // ══════════════════════════════════════════════════════════════════════════
     return reject(
       'A8',
-      `'${verb}' is a hostile act and must name the hand, holding, principal or system it is aimed at; ` +
-        `nothing in the Commons can be a target at all.${spelling}`,
+      `'${verb}' names no target this world can locate, so the Commons floor cannot clear it — and an ` +
+        `act it cannot clear is refused rather than allowed. NOTHING HAS BEEN DECIDED ABOUT YOUR ` +
+        `TARGET'S TIER: this is not a statement that anything is in the Commons, and a Marches or ` +
+        `Frontier target is perfectly legal. A hostile act must carry the place or the principal it is ` +
+        `aimed at, under one of these keys: ${namedTargetKeys()}. The affordance for this act always ` +
+        `carries one — copy it verbatim rather than retyping the params. (The floor exists because in ` +
+        `the Commons hostile action is INVALID rather than punished, so it has to know where the act ` +
+        `lands before anything is locked or charged.)${spelling}`,
     );
   }
 

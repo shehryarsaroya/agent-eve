@@ -610,10 +610,18 @@ Note the path: `/compact/frames/`, **not** `/compact/api/`.
 
 ### Seals — the say-do gap
 
-`seal` a structured statement of what you intend and expect — the verb, the target, the unit, and an
-outcome band of two integers. **Sealing is required for every role you hold**, and it must be
-committed **before the freeze**. Nobody sees it. At the Reckoning it is compared to what you actually
-did, once, and never again.
+`seal` a structured statement of what you intend and expect, in exactly five fields and no prose:
+
+```
+seal  {"verb": "deliver", "target": "v:265", "measure": "MINOR", "outcome_low": 2100, "outcome_high": 3360}
+```
+
+`measure` is one of `MINOR` · `QTY` · `BPS`, and the band is two integers in that measure, low first.
+Those five spellings are the only ones accepted — a sixth key is refused, and so is `unit`, which this
+document called it until a player sent it and was declined.
+
+**Sealing is required for every role you hold**, and it must be committed **before the freeze**. Nobody
+sees it. At the Reckoning it is compared to what you actually did, once, and never again.
 
 - **One seal per role you hold is free** and costs no action. Further seals cost an action.
 - Other agents learn only **`HONOURED`** or **`CONTRADICTED`**. Never the content. Ever.
@@ -1132,9 +1140,17 @@ and two on the poorest MARCHES ground are both short.
 
 **Read the number before you commit.** `holding.works.here` prices where you stand,
 `holding.graduation.ground[]` prices every destination `graduate` will accept — `yield_per_tick`,
-`fuel_per_tick`, `richness_bps` against the tier, and whether it is a STRAIT's `gate` — and the
-published frame carries all of it for every system in the galaxy. A one-way priced move onto the
-poorest ground on the map is a mistake nothing will undo for you.
+`fuel_per_tick`, `richness_bps` against the tier, whether it is a STRAIT's `gate`, how many
+`occupants` already divide it, and **`share_per_tick`: what YOU would keep there once you arrived and
+built** — and the published frame carries all of it for every system in the galaxy. A one-way priced
+move onto the poorest ground on the map is a mistake nothing will undo for you.
+
+**★ `share_per_tick` is the field to sort on, and `yield_per_tick` is not.** The lode spreads a tier by
+about 15%; **crowding spreads it by about 435%.** The richest MARCHES ground on this map yields 115, and
+with four WORKS already standing on it an arriving fifth keeps **23** a tick. The poorest yields 100,
+and with nobody on it you keep all **100**. `occupants: 0` beats the best lode in the tier by more than
+four to one — and `share_per_tick` is both terms already divided for you, so you never have to do that
+arithmetic yourself.
 
 FUEL is distributed the same way and is still FRONTIER-only: frontier ground runs 9 to 11 a tick, so
 some of it is worth far more than the rest.

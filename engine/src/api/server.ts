@@ -50,7 +50,14 @@ import {
   ticksToMs,
   type Clock,
 } from '../core/time.js';
-import { publishFrame, publishReplayedFrame } from '../frames/write.js';
+import { join } from 'node:path';
+import {
+  FRAME_INDEX,
+  frameFileName,
+  LATEST,
+  publishFrame,
+  publishReplayedFrame,
+} from '../frames/write.js';
 import { costOf } from '../tick/index.js';
 import { createCast, type Cast } from '../cast/index.js';
 import { Runtime, RULES_VERSION } from '../sim/runtime.js';
@@ -215,6 +222,14 @@ export interface ApiOptions {
     readonly enrolledAtTick: number;
     readonly ownerEmail: string | null;
   }) => void;
+  /**
+   * ★ Where settled frames are written, so `GET /frames/*.json` can serve them. `null` = none written.
+   *
+   * The same value {@link ServeOptions.framesDir} carries, passed in rather than re-read from the
+   * environment: two readers of one env var is how the writer and the reader come to disagree about
+   * where a file is.
+   */
+  readonly framesDir?: string | null;
 }
 
 /**
@@ -878,6 +893,96 @@ export function createApp(options: ApiOptions): CreatedApp {
     });
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★ **`GET /frames/latest.json` — THE ROUTE `agent.md` SENDS AGENTS TO AND THE APP DENIED EXISTED.**
+  //
+  // §8: *"There is an audience, and you can read what it reads. `GET /compact/frames/latest.json` …
+  // Note the path: `/compact/frames/`, **not** `/compact/api/`."* §11G sends an agent to the same file
+  // for the straits. In production nginx serves it off disk and both sentences are true. On a locally
+  // run world the Express app had **no frames route at all**, so the doc's own instruction returned
+  // `NO_SUCH_ROUTE` with a detail asserting *"the whole API is …"* — a refusal that names the route
+  // list is only as honest as the list, and this one omitted `/agent.md` too.
+  //
+  // Two halves, and the second is the one that matters: serve the file when there is one, and when
+  // there is not, say WHY rather than that the route does not exist. `COMPACT_FRAMES_DIR` unset means
+  // no frame has ever been written — a fact about this process, not about the API — and an operator
+  // following the manual needs to be told which of the two it hit. Same tier either way: the frame is
+  // `PUBLIC` and unsigned by construction, so this is deliberately outside `admit`.
+  //
+  // The precedent for getting this wrong quietly is in `frames/write.ts`: *"D23 finding #5 reported the
+  // per-Reckoning archive as not served. It was served the whole time — the audit fetched `r-15.json`
+  // and the file is `r-000015.json`."* So the archive spelling is served here through
+  // {@link frameFileName}, never by pasting a pattern.
+  // ══════════════════════════════════════════════════════════════════════════
+  const framesHandler = (req: Request, res: Response): void => {
+    guard(res, () => {
+      const name = String(req.params['name']);
+      const archive = /^r-(\d+)\.json$/.exec(name);
+      const wanted =
+        name === LATEST || name === FRAME_INDEX
+          ? name
+          : archive === null
+            ? null
+            : frameFileName(Number(archive[1]));
+      if (wanted === null) {
+        send(
+          res,
+          404,
+          refusal(
+            WIRE_REASON.NO_SUCH_ROUTE,
+            `no frame ${scrub(name)}. The frames are GET /compact/frames/${LATEST} (the last settled ` +
+              `Reckoning), /compact/frames/${FRAME_INDEX} (every one so far), and ` +
+              `/compact/frames/${frameFileName(1)} for one by number — six digits, zero-padded.`,
+          ),
+        );
+        return;
+      }
+      if (options.framesDir === null || options.framesDir === undefined) {
+        send(
+          res,
+          404,
+          refusal(
+            WIRE_REASON.NO_SUCH_ROUTE,
+            `the frames route EXISTS and this world is not writing frames: COMPACT_FRAMES_DIR is unset, ` +
+              `so nothing has been published to ${scrub(name)}. Set it and the file appears at the next ` +
+              `settled Reckoning. In production nginx serves this path off disk, which is why \`agent.md\` ` +
+              `§8 sends you here; nothing about your request or your identity is wrong.`,
+          ),
+        );
+        return;
+      }
+      let body: string;
+      try {
+        body = readFileSync(join(options.framesDir, wanted), 'utf8');
+      } catch {
+        send(
+          res,
+          404,
+          refusal(
+            WIRE_REASON.NO_SUCH_ROUTE,
+            `the frames route EXISTS and ${scrub(wanted)} has not been written yet — no Reckoning has ` +
+              `settled since this world started, or that one is outside the retained window. ` +
+              `/compact/frames/${FRAME_INDEX} lists every frame that does exist.`,
+          ),
+        );
+        return;
+      }
+      // `no-store` for the same reason every other route is: the poll-primary path is behind
+      // Cloudflare and a cached frame at a Reckoning is the one moment it must not be stale.
+      res.status(200).set('Cache-Control', 'no-store').type('application/json').send(body);
+    });
+  };
+
+  // ── REGISTERED ON THE APP, NOT THE ROUTER, AND AT THE PATH `agent.md` PRINTS ──
+  //
+  // The router is mounted twice (`/compact/api` and `/`), and `/compact/frames/...` is under neither —
+  // which is how the first version of this fix landed a route that still 404'd, from a test. §8's
+  // sentence is *"Note the path: `/compact/frames/`, **not** `/compact/api/`"*, so the path in the
+  // document is the path that has to answer. Both spellings, the same handler, for the reason the
+  // router is mounted twice: SPEC §12.5 and `agent.md` disagree about the prefix and both must work.
+  app.get('/compact/frames/:name', framesHandler);
+  app.get('/frames/:name', framesHandler);
+
   app.use(API_BASE_PATH, router);
   // SPEC §12.5 writes `POST /enroll`; `agent.md` writes `/compact/api/enroll`.
   // Both are mounted and each signature verifies against its own `@path`, so the
@@ -891,9 +996,14 @@ export function createApp(options: ApiOptions): CreatedApp {
       404,
       refusal(
         WIRE_REASON.NO_SUCH_ROUTE,
+        // Every registered route, and it is a list of what is REGISTERED rather than of what
+        // somebody remembered: it used to omit `/agent.md`, which has been served since §12.5, and
+        // said nothing about `/frames/`, which `agent.md` itself sends agents to. A refusal that
+        // enumerates is only as true as its enumeration, and this one is the reader's whole map.
         `no route ${req.method} ${scrub(req.path)}. The whole API is POST ${API_BASE_PATH}/enroll, ` +
           `GET ${API_BASE_PATH}/observe, POST ${API_BASE_PATH}/act, GET ${API_BASE_PATH}/health, ` +
-          `POST ${API_BASE_PATH}/discrepancy.`,
+          `POST ${API_BASE_PATH}/discrepancy, GET ${API_BASE_PATH}/agent.md, and the unsigned public ` +
+          `frames at GET /compact/frames/${LATEST} · /compact/frames/${FRAME_INDEX}.`,
       ),
     );
   });
@@ -1182,6 +1292,23 @@ export function createApp(options: ApiOptions): CreatedApp {
        * a read does.
        */
       nearest_legal: nearestFresh(hintSet, verb),
+      /**
+       * ★ **Whether {@link nearest_legal} is the SAME VERB you sent, or an unrelated alternative.**
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * `nearestLegal` prefers a same-verb affordance and falls back to `affordances[0]` — which is
+       * `OFFERED_KINDS[0]`, so a refused `join` came back with `nearest_legal: create {kind:"DIG"}`
+       * and a blind player's report called it *"neither near nor legal"*. The same defect was fixed
+       * on the `observe` corrections path (`api/observe.ts` uses `?? null` and says so), and the
+       * fallback survives here because PROP-O7 makes a null `nearest` a **fault** — *"a refusal with
+       * no next move is where an agent starts looping"* — so the two rules pull opposite ways.
+       *
+       * Both are right, and what was missing is the label: an agent needs a next move AND needs to
+       * know whether it is an answer to the thing it just tried. `false` means *"nothing legal of
+       * that verb exists for you right now; this is something else you could do instead."*
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      nearest_legal_is_same_verb: nearestFresh(hintSet, verb)?.verb === verb,
       observation,
     };
   }
@@ -1846,6 +1973,8 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
   const created = createApp({
     runtime,
     clock,
+    // The same directory `publishFrame` writes to, so the reader and the writer are one value.
+    framesDir: options.framesDir,
     trustEdge: options.trustEdge,
     keyring,
     seats,
