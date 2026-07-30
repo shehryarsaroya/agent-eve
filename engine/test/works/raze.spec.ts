@@ -23,7 +23,7 @@ import { Book as WorksBook, worksId, type WorksId } from '../../src/works/book.j
 import { checkRuinsAreCoherent, checkRentBoundedByMap } from '../../src/works/invariants.js';
 import { RAZE_FORCE_MARGIN, forceToSaveWorks, razeVerdict, worksAtRisk } from '../../src/works/raze.js';
 import { WORKS_SPINUP_TICKS, YIELD_PER_TICK } from '../../src/works/params.js';
-import { FORCE_BY_TIER } from '../../src/predation/params.js';
+import { FORCE_BY_TIER, FORCE_PER_HAND } from '../../src/predation/params.js';
 import { resolvePulse, type PulsePort } from '../../src/campaign/pulse.js';
 import { campaignIdFor, type CampaignRecord } from '../../src/campaign/book.js';
 import { CAMPAIGN_PULSES, PULSE_MATERIEL_QTY } from '../../src/campaign/params.js';
@@ -66,37 +66,81 @@ describe('a rout ends a structure; a win only takes goods', () => {
     expect(verdict.why).toContain('RAZED');
   });
 
-  it('★ REFUSES A MARGIN OF ONE — losing by a single hand costs goods, never capital', () => {
+  it('★ REFUSES ANYTHING SHORT OF A ROUT — losing narrowly costs goods, never capital', () => {
     // MUTATION: change `margin < RAZE_FORCE_MARGIN` to `margin <= 0` (or `margin < 1`) in
     // `razeVerdict`. This goes red immediately, and the mechanic it would have shipped is the one the
     // module argues against at length: a razing on every won standoff, three times a Reckoning, at
     // 65,000 of capital a time.
-    //
-    // A margin of exactly 1 is the COMMONEST way to lose a standoff — `FORCE_PER_HAND` and
-    // `FORCE_PER_JOINER` are both 1 — so this branch is the one that decides whether razing is what a
-    // rout does or what a win does.
-    expect(RAZE_FORCE_MARGIN, 'the constant this test is about').toBe(2);
-    const byOne = razeVerdict({
+    expect(RAZE_FORCE_MARGIN, 'the constant this test is about').toBe(4);
+    for (const margin of [1, 2, 3]) {
+      const near = razeVerdict({
+        tier: 'MARCHES',
+        system: SYS,
+        standing: [candidate()],
+        attackerForce: 2 + margin,
+        defenderForce: 2,
+      });
+      expect(near.falls, `won by ${String(margin)}: the goods move and the structure stands`).toBeNull();
+      expect(near.margin).toBe(margin);
+      expect(near.why, 'and the record says which number refused it').toContain('the structures stand');
+    }
+    // And the exact boundary razes, so it is asserted from both sides rather than only the safe one.
+    const met = razeVerdict({
       tier: 'MARCHES',
       system: SYS,
       standing: [candidate()],
-      attackerForce: 3,
+      attackerForce: 2 + RAZE_FORCE_MARGIN,
       defenderForce: 2,
     });
-    expect(byOne.falls, 'won by one: the goods move and the structure stands').toBeNull();
-    expect(byOne.margin).toBe(1);
-    expect(byOne.why, 'and the record says which number refused it').toContain('the structures stand');
+    expect(met.falls, 'won by the margin exactly: the structure falls').not.toBeNull();
+  });
 
-    // And the very next unit over the line does raze — so the boundary is asserted from both sides,
-    // not just from the safe one.
-    const byTwo = razeVerdict({
-      tier: 'MARCHES',
-      system: SYS,
-      standing: [candidate()],
-      attackerForce: 4,
-      defenderForce: 2,
-    });
-    expect(byTwo.falls, 'won by two: the margin is met exactly').not.toBeNull();
+  it('★ THE TIER TABLE: two hands keep a structure on EVERY tier, against EVERY draw', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE PROPERTY A MARGIN OF 2 DID NOT HAVE, AND THE REASON THE CONSTANT MOVED.**
+    // `FORCE_BY_TIER.FRONTIER` is 0 — the Frontier is not policed — so at margin 2 the drawn
+    // `RAID_FORCE` band (2–5) met the bar on **every** draw against an undefended Frontier target,
+    // and the gate did not exist on the deepest ground in the game. `test/combat/the-cast-goes-to-war`
+    // is what found it: `p:brannock` lost its Frontier WORKS and combat's two-sided battle line went
+    // to zero.
+    //
+    // MUTATION: set `RAZE_FORCE_MARGIN` back to 2. The FRONTIER/undefended row flips to `true` at
+    // force 2 and 3, and the two-hands row flips at 4 and 5 — the exact hole.
+    // ══════════════════════════════════════════════════════════════════════════
+    expect(FORCE_BY_TIER.FRONTIER, 'unpoliced: no terrain at all').toBe(0);
+    expect(FORCE_BY_TIER.MARCHES, 'policed: one of terrain').toBe(1);
+
+    const razes = (tier: 'MARCHES' | 'FRONTIER', hands: number, raidForce: number): boolean =>
+      razeVerdict({
+        tier,
+        system: SYS,
+        standing: [candidate()],
+        attackerForce: raidForce,
+        defenderForce: hands * FORCE_PER_HAND + (FORCE_BY_TIER[tier] ?? 0),
+      }).falls !== null;
+
+    // Undefended on the FRONTIER: the top half of the band still takes the structure, so unpoliced
+    // ground is genuinely dangerous. That half is the mechanic; without it nothing is ever razed.
+    expect([2, 3, 4, 5].map((f) => razes('FRONTIER', 0, f))).toEqual([false, false, true, true]);
+    // One hand narrows it to the top of the band alone.
+    expect([2, 3, 4, 5].map((f) => razes('FRONTIER', 1, f))).toEqual([false, false, false, true]);
+    // ★ TWO of a principal's three hands (INV-8) is safety against every draw, on both tiers. This is
+    // the row that makes the loss a CHOICE rather than weather, and it is what margin 2 did not give.
+    for (const tier of ['FRONTIER', 'MARCHES'] as const) {
+      expect([2, 3, 4, 5].map((f) => razes(tier, 2, f)), `${tier}, two hands`).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ]);
+    }
+    // And the policed zone is strictly safer than the unpoliced one at every strength, which is what
+    // "the Marches are policed" has to mean if the tier table means anything.
+    for (const f of [2, 3, 4, 5]) {
+      if (razes('MARCHES', 0, f)) {
+        expect(razes('FRONTIER', 0, f), `force ${String(f)}: the Frontier can be no safer`).toBe(true);
+      }
+    }
   });
 
   it('a defender that loses the goods can still save the works, and is told the price', () => {
@@ -109,7 +153,7 @@ describe('a rout ends a structure; a win only takes goods', () => {
     const alone = { tier: 'MARCHES' as const, system: SYS, standing: [candidate()], attackerForce: attacker };
 
     const need = forceToSaveWorks({ tier: 'MARCHES', attackerForce: attacker, defenderForce: 1 });
-    expect(need, 'one hand against six: four more hands moves it out of raze range').toBe(4);
+    expect(need, 'force 1 against 6 needs to reach 3, so two more hands').toBe(2);
 
     expect(razeVerdict({ ...alone, defenderForce: 1 }).falls, 'undefended: the works falls').not.toBeNull();
     expect(
@@ -612,14 +656,16 @@ describe('a campaign BREACH razes the defender\'s production, and a REBUFF never
     // At the MARCHES `FORCE_BY_TIER` is 1, so three attacking hands against an empty objective reads
     // 3 v 1 — a BREACH with a margin of exactly 2, which is the razing threshold.
     expect(FORCE_BY_TIER.MARCHES).toBe(1);
-    const plan = resolvePulse(port({ attackerHands: 3, works: true }), campaign(), 216);
+    // Five hands against an empty MARCHES objective reads 5 v 1 — a BREACH with a margin of
+    // exactly `RAZE_FORCE_MARGIN`, which is the razing threshold.
+    const plan = resolvePulse(port({ attackerHands: 5, works: true }), campaign(), 216);
     expect(plan.row?.outcome, 'it must actually breach').toBe('BREACH');
     expect(plan.razes, 'and the breach must end the works').not.toBeNull();
     expect(plan.razes?.holder).toBe(DEFENDER);
     expect(plan.razeWhy).toContain('RAZED');
   });
 
-  it('★ A BREACH BY ONE TAKES THE GROUND AND LEAVES THE FACTORY STANDING', () => {
+  it('★ A BREACH SHORT OF A ROUT TAKES THE GROUND AND LEAVES THE FACTORY STANDING', () => {
     // MUTATION: raze on `outcome === 'BREACH'` instead of on the margin. Red.
     //
     // Two hands against an empty MARCHES objective is 2 v 1 — a BREACH, margin 1. The claim advances
@@ -679,9 +725,9 @@ describe('a campaign BREACH razes the defender\'s production, and a REBUFF never
     // property of the numbers rather than a comment: a campaign has a fixed, published number of
     // resolutions and every one of them can raze.
     expect(CAMPAIGN_PULSES, 'a bounded number of scheduled resolutions').toBeGreaterThan(0);
-    const first = resolvePulse(port({ attackerHands: 3, works: true }), campaign(), 216);
+    const first = resolvePulse(port({ attackerHands: 5, works: true }), campaign(), 216);
     const later = resolvePulse(
-      port({ attackerHands: 3, works: true }),
+      port({ attackerHands: 5, works: true }),
       { ...campaign(), breaches: 1, pulses: [] },
       216 + TICKS_PER_RECKONING,
     );

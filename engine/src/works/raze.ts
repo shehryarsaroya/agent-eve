@@ -104,23 +104,47 @@ import type { WorksId } from './book.js';
 /**
  * How far an assault must win by before it can end a structure rather than only take goods. *(calibrate)*
  *
- * **Two, in `FORCE_PER_HAND` units, which is exactly two hands.** The number is chosen against the
- * force table rather than picked round:
+ * ══════════════════════════════════════════════════════════════════════════
+ * **FOUR, AND IT WAS TWO UNTIL THE TESTS FOUND WHAT TWO ACTUALLY MEANT.** The first version
+ * reasoned "two hands' worth, and `FORCE_BY_TIER` gives the defender terrain, so the margin
+ * compounds with the map." **That last clause is false on the tier it matters on:**
+ * `FORCE_BY_TIER.FRONTIER` is **0** — deliberately, because *"the Marches are policed and the
+ * Frontier is not"* — so an undefended Frontier target reads force 0, the drawn `RAID_FORCE` band is
+ * 2–5, and the margin was **met by every possible draw**. On the deepest ground in the game, the
+ * gate did not exist.
  *
- *   - `FORCE_PER_HAND` and `FORCE_PER_JOINER` are both 1 and `RAID_FORCE` draws 2–5, so a target
- *     that commits **two hands, or one hand and one joiner**, moves a losing standoff out of raze
- *     range against everything but the top of the band. That is a real, cheap, legible counterplay
- *     available to a newcomer, which is what a floor has to be.
- *   - It is strictly greater than 1, so a standoff lost by a single hand — the commonest way to
- *     lose one — costs goods and not capital. A margin of 1 would make razing the default outcome
- *     of every unanswered raid, and 0 would make it the outcome of every won one.
- *   - `FORCE_BY_TIER` gives the defender terrain, so the margin compounds with the map: the deeper
- *     ground a WORKS stands on, the more force it takes to end it, without a second rule.
+ * Measured, and this is how it was caught rather than reasoned: `test/combat/the-cast-goes-to-war`
+ * went red on seed `g24`. `p:brannock`'s Frontier WORKS was razed at tick 360; `engage` fell from 2
+ * to **0** and two-sided battle lines from 202 to **0** — A13's combat signature deleted, because
+ * razing had removed the only cast member standing outside the Commons. `test/cast/the-cast-takes-
+ * ground` went red the same way: fuel extracted 0, since the razed WORKS *was* the world's only
+ * Frontier production. **Three of nine swept seeds razed, and the holder was `p:brannock` on all
+ * three** — not a coincidence, but the shape of the bug: raids stage outside the Commons, so razing
+ * lands exclusively on whoever has graduated out, which is also whoever carries combat and fuel.
  *
- * A world in which nothing is ever razed is the defect this module exists to fix, so the number is
- * the smallest one that keeps a mustered defence meaningful — not the largest one that is safe.
+ * ── FOUR IS DERIVED FROM THE SAME NUMBERS `RAID_FORCE` IS ────────────────────
+ *
+ * `RAID_FORCE`'s own note fixes the frame: *"a principal has exactly three hands (INV-8) and the
+ * Marches gives one of terrain, so a solo defence tops out at 4 against a band that reaches 5."* On
+ * the Frontier a solo defence tops out at **3**. So, undefended, with `FORCE_PER_HAND` = 1:
+ *
+ *     tier      terrain   razes at        one hand      two hands
+ *     FRONTIER        0   force 4 or 5    force 5       never
+ *     MARCHES         1   force 5         never         never
+ *     COMMONS         0   never (A8)      —             —
+ *
+ * That is the property the constant has to have and two did not: **a defender that commits two of
+ * its three hands keeps its structure on every tier, against every draw** — while an *undefended*
+ * Frontier works still falls on half the band, which is what makes unpoliced ground dangerous
+ * without making it indefensible. The Marches stay much safer, which is what "policed" should mean.
+ *
+ * It is also the largest value that leaves razing reachable at all. At 6 no world raid could ever
+ * reach it undefended (the band tops out at 5) and razing would need a coalition every time — which
+ * is the *other* failure this module exists to avoid: a capability that exists and is never
+ * exercised is indistinguishable from one that is missing.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-export const RAZE_FORCE_MARGIN = 2;
+export const RAZE_FORCE_MARGIN = 4;
 
 /**
  * One live WORKS an assault could end, with the only field the decision reads besides its id.
