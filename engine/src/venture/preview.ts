@@ -56,7 +56,7 @@ import {
   roleOfPrincipal,
   type VentureRecord,
 } from './venture.js';
-import { computeClaims, type ResolutionKind } from './settlement.js';
+import { IN_FULL, computeClaims, type Election, type ResolutionKind } from './settlement.js';
 
 /** What one party is quoted, and how much of it is actually guaranteed. */
 export interface TakeForecast {
@@ -234,6 +234,175 @@ export function maxElectiveLiability(
   let total = minor(0);
   for (const role of claims.roles) total = minor(total + role.electiveDue);
   return total;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ WHAT THE CREATOR OWES — THE PAYING SIDE OF A7, WHICH HAD NO FIELD AT ALL
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * What one role can **still** be charged for on the elective half: the ceiling, less
+ * whatever a previous pass already paid.
+ *
+ * ── WHY THE SUBTRACTION IS PART OF THE NUMBER AND NOT AN ADJUSTMENT ─────────
+ *
+ * §15.3's deferral settles one obligation **twice**, and `settlement.ts` is explicit that
+ * every figure deciding an outcome is a fact about the *obligation* and lives on the
+ * venture's own rows — `role.settledElectiveMinor` is that row. `payElectiveParts` pays
+ * `due - already`, and `assertDeferralConsistent` halts if a second pass makes less due
+ * than a first pass already paid. So a quote of the bare ceiling on a deferred venture
+ * would name a charge the engine will never make.
+ *
+ * `Runtime.electiveCeilingOf` — which is what `elect`'s `max_direct_loss` is — computes
+ * exactly this expression, and the first draft of {@link creatorElective} used the bare
+ * `electiveCeilingOfRole` instead. On a non-deferred venture the two agree (the field is
+ * zero), so every test passed; on a deferred one the row would have over-quoted the
+ * affordance beside it. **One obligation, two numbers, visible only in the rarer branch**
+ * — the shape this whole change exists to remove. Hence a named function rather than a
+ * `-` written twice.
+ */
+export function electiveChargeOfRole(
+  venture: VentureRecord,
+  roleIndex: number,
+  stageBps: Bps = NEUTRAL_STAGE_BPS,
+): Minor {
+  const role = venture.roles.find((r) => r.index === roleIndex);
+  if (role === undefined) return minor(0);
+  return minor(Math.max(0, electiveCeilingOfRole(venture, roleIndex, stageBps) - role.settledElectiveMinor));
+}
+
+/**
+ * The elective half **as the payer sees it**: what this venture can ask its creator for,
+ * and how much of that the creator has not yet elected.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A7 IS "AN UNSECURED PROMISE CREATES DRAMA", AND THE PROMISOR COULD NOT READ IT.**
+ *
+ * Every published figure for the elective half was oriented at the party being *paid*.
+ * `ventureRow.my_elective` is the elective on the role **you hold** — `OWED_TO_ME` for a
+ * filler, `SELF` on your own role — and `ventureRow`'s own docstring said so explicitly:
+ * *"What YOU owe as a creator is never here — it is the `elect` affordances."* Which is
+ * true, and is not sufficient, for three reasons that only show up from the paying seat:
+ *
+ *   1. **An affordance is not a field.** The creator's liability existed only inside the
+ *      prose of `what_it_forecloses`, one affordance per role. A2 says known arithmetic is
+ *      *exact and machine-readable*; a number an agent must regex out of an English
+ *      sentence is neither.
+ *   2. **The affordance is gone exactly when the obligation is largest.** `elect` is
+ *      withheld in the freeze and at settlement (§5.1 puts no decision in the settlement
+ *      window) and no affordance list is solved at all outside a wake. So at the two reads
+ *      that matter most — the last look before the freeze, and any cached snapshot — the
+ *      creator's own observation named no obligation of any size.
+ *   3. **A venture the creator holds no role in reported `my_elective: 0` and
+ *      `my_elective_direction: null`** — a bare creator, which is the ordinary case, read
+ *      *zero* on the row for the promise it was about to be judged on.
+ *
+ * ── WHY IT IS THE CHARGE AND NOT THE PINNED `terms.elective` ────────────────
+ *
+ * Because `terms.elective` is the **pinned price** and the charge is the **bound**, and
+ * this file already carries the scar from confusing them ({@link electiveCeilingOfRole}:
+ * *"A LIMIT THAT BINDS TO THE p50 OF A DISTRIBUTION IS NOT A LIMIT"*). Measured from
+ * outside on a live world, the row's pinned figure understated the `elect` affordance's own
+ * `max_direct_loss` by ~60% — 2,100 against 3,360 — so publishing the pinned figure as
+ * *what you owe* would have added a **fourth** number to an obligation that already had
+ * three. `elect`'s `IN_FULL` branch charges {@link electiveChargeOfRole}; so does a delegated
+ * `create` against `max_contingent_liability`; so does this. One home, one number.
+ *
+ * ── ROLES HELD BY SOMEBODY ELSE, AND ONLY THOSE ──
+ *
+ * The same filter `elect` itself applies and for the same reason (§6.4, scar #9): a role
+ * the creator fills with its own hand is paid into the account the money is already in, is
+ * booked as paid in full, and can never be a breach. Counting it here would publish a
+ * liability the engine will never charge — the mirror of the defect this closes.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export interface CreatorElective {
+  /**
+   * Σ over every role held by another principal of {@link electiveChargeOfRole} — the most
+   * this venture can ever ask its creator for. Equal, by construction, to the sum of the
+   * `max_direct_loss` figures on its own `elect` affordances, because that is the same
+   * expression (`Runtime.electiveCeilingOf`).
+   */
+  readonly owed: Minor;
+  /**
+   * How much of {@link owed} no election covers yet. Zero once every such role is elected
+   * `IN_FULL`; this is the figure that becomes a permanent public default if the venture
+   * settles while it is above zero.
+   */
+  readonly unelected: Minor;
+  /**
+   * ★ {@link owed} **plus every role still open** — the worst case, and therefore the only
+   * figure `max_contingent_liability` may be measured against (A6, §8.1 #2).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`sign` QUOTED THE CREATOR ZERO, ON THE VERB A6'S PROMISE IS NAMED AFTER.**
+   *
+   * `sign`'s `max_contingent_liability` was `Σ (terms.elective - settledElectiveMinor)` over
+   * roles **already held by somebody else** — and a creator countersigns its own venture
+   * within a tick or two of `create`, when *no* role is filled yet. So the loop is: `create`
+   * quotes the elective half honestly, and then the act that actually binds the creator to
+   * those terms quotes the same liability as **0**. "with `max_direct_loss` and
+   * `max_contingent_liability` shown before you sign" is A6's headline sentence, and the
+   * contingent column was zero for the party carrying the entire contingency.
+   *
+   * The bound has to count the **open** roles, because an open role is exactly what may still
+   * go to a stranger — that is `maxElectiveLiability`'s own argument for summing over every
+   * role at creation, applied one verb later, when some roles may already be settled. Roles
+   * the creator filled **itself** are excluded and stay excluded: those are booked as paid in
+   * full and can never be a breach (scar #9), so counting them would over-quote rather than
+   * merely mis-quote.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly ceiling: Minor;
+}
+
+/**
+ * What a role's payer has stated for it, or `undefined` for "nothing".
+ *
+ * A lookup rather than the election book itself, so this module keeps knowing nothing about
+ * `Runtime` — the same shape `stageBps` is passed in. `IN_FULL` is the string and an exact
+ * amount is a number, which is how {@link creatorElective} discriminates them without a
+ * third case to forget.
+ */
+export type ElectionLookup = (venture: VentureId, roleIndex: number) => Election | undefined;
+
+/**
+ * {@link CreatorElective} for one venture, from the reader's seat.
+ *
+ * Zero on both counts for a reader that did not create the venture: the elective half is
+ * the **creator's** promise (§5.1 — `elect` is the creator's verb), so nobody else can owe
+ * it, and returning a non-zero figure to a filler would restate the exact ambiguity
+ * `my_elective_direction` exists to remove.
+ */
+export function creatorElective(
+  venture: VentureRecord,
+  reader: PrincipalId,
+  elections: ElectionLookup,
+  stageBps: Bps = NEUTRAL_STAGE_BPS,
+): CreatorElective {
+  if (venture.creator !== reader) {
+    return { owed: minor(0), unelected: minor(0), ceiling: minor(0) };
+  }
+  let owed = 0;
+  let unelected = 0;
+  let ceiling = 0;
+  for (const role of venture.roles) {
+    // A role the creator fills with its own hand is out of all three figures (scar #9).
+    if (role.filledByPrincipal === reader) continue;
+    const charge = electiveChargeOfRole(venture, role.index, stageBps);
+    // An OPEN role counts toward the worst case and toward nothing else: nobody is owed it
+    // yet, so it cannot be owed or unelected, and it can still go to a stranger.
+    ceiling += charge;
+    if (role.filledByPrincipal === null) continue;
+    owed += charge;
+    const stated = elections(venture.id, role.index);
+    // `IN_FULL` covers whatever the due turns out to be, so nothing is left unelected —
+    // that is the whole point of the intention-election (see {@link IN_FULL}). An exact
+    // amount covers itself and no more, and an absent entry pays nothing (PROP-V4).
+    if (stated === IN_FULL) continue;
+    unelected += Math.max(0, charge - (stated ?? 0));
+  }
+  return { owed: minor(owed), unelected: minor(unelected), ceiling: minor(ceiling) };
 }
 
 /**

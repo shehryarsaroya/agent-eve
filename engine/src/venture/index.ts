@@ -211,7 +211,9 @@ export {
 
 export {
   allRoleIndices,
+  creatorElective,
   electiveCeilingOfRole,
+  electiveChargeOfRole,
   forecastsFor,
   maxElectiveLiability,
   projectedSettlement,
@@ -219,6 +221,8 @@ export {
   takeAtPercentile,
   ventureEscrowRatioBps,
   yourTakeAtP50,
+  type CreatorElective,
+  type ElectionLookup,
   type ProjectedParty,
   type ProjectedSettlement,
   type ReferenceShare,
