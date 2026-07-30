@@ -315,7 +315,31 @@ export class Book {
     return [...this.rows.values()].filter((w) => w.razed).sort((a, b) => compareIds(a.id, b.id));
   }
 
-  /** WORKS still standing. Distinct from {@link size}, which counts ruins too. */
+  /**
+   * WORKS still standing. Distinct from {@link size}, which counts ruins too.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE PAIR EXISTS BECAUSE RAZING BROKE THE OLD BOUND, AND SCAR #3 IS WHERE THAT GETS LOOKED FOR.**
+   * Before anything could raze a WORKS the book had a hard ceiling from the map and the population —
+   * `principals × systems × WORKS_PER_PRINCIPAL_PER_SYSTEM` — because a row could only ever be added
+   * to a slot that was empty and slots were never freed. Razing frees the slot, and a rebuild mints a
+   * **new** id (`worksId` includes the tick), so `size` now grows monotonically for the life of the
+   * world and never falls. That is inside `capture()`, so the snapshot grows with it.
+   *
+   * **It is bounded, and the bound is the clock rather than the population** — which is the property
+   * worth having and the reason no cap is imposed here. A razing needs a resolution: at most
+   * `RAID_SPAWN_PHASES.length` (3) raid resolutions and one pulse per live campaign per Reckoning. So
+   * ruins accrue at **O(Reckonings)**, not O(principals), and enrolling a thousand puppets adds
+   * nothing — the same A15 shape the yield cap has.
+   *
+   * **No `prune`, deliberately.** A5 has no opt-out, `namesFor` reads razed rows so a place keeps its
+   * founder's name, and THE RUIN is a projection over exactly these rows — a window that dropped the
+   * oldest would delete the history all three depend on and would fail *in the direction that hides*,
+   * which this repo has shipped three times (`MAX_RECKONING_SUMMARIES`, `LEVY_RETAINED_RECKONINGS`, an
+   * offer cap counting unusable rows). The frame's `MAX_FRAME_RUINS` caps what is *drawn*, never what
+   * is kept, and it drops the oldest because a viewer is asking what just happened.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   get liveSize(): number {
     return this.liveInOrder().length;
   }

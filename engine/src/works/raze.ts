@@ -139,9 +139,37 @@ import type { WorksId } from './book.js';
  * without making it indefensible. The Marches stay much safer, which is what "policed" should mean.
  *
  * It is also the largest value that leaves razing reachable at all. At 6 no world raid could ever
- * reach it undefended (the band tops out at 5) and razing would need a coalition every time — which
- * is the *other* failure this module exists to avoid: a capability that exists and is never
- * exercised is indistinguishable from one that is missing.
+ * reach it undefended (the band tops out at 5) and razing would need a coalition every time.
+ *
+ * ── ★ AND THE HONEST COST OF 4, MEASURED AT ALL THREE VALUES ─────────────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **AT 4, A WORLD-SPAWNED RAID NEVER RAZED ANYTHING IN THE HEURISTIC WORLD — AND THAT IS THE OTHER
+ * FAILURE THIS PROJECT KEEPS SHIPPING.** Reported rather than tuned away, because the numbers are the
+ * argument and every alternative was measured on the same eight seeds:
+ *
+ *     margin  razings (8 seeds x 9 Reckonings)   g24's two-sided battle line   levyShort
+ *          2  3                                  DELETED  (202 -> 0)           61,919
+ *          3  fires (1 on g24, 1 on fz-13)        DELETED  (202 -> 0)           not measured
+ *          4  0                                   intact   (202)                0
+ *
+ * At 2 and at 3 the razing lands on `p:brannock` — and it lands there because **the 8-member cast has
+ * exactly one member standing outside the Commons**, so A8 makes every other structure unrazable and
+ * the one razable member is also the only one that fights, reaches the Frontier and digs fuel. Razing
+ * it deletes two layers; not razing it means razing never happens. That is a property of the cast, not
+ * of this rule, and 16 members did not change it (byte-identical meters, still zero razings).
+ *
+ * There is a second-order effect worth naming because it is counter-intuitive: **razing a principal
+ * makes it LESS likely to be raided again.** `rankCandidates` ranks targets by what they hold, so a
+ * burned-out member drops out of the target ranking, out of standoffs, and out of the drama. In `g24`
+ * that is the actual causal chain from "brannock lost its WORKS" to "no DEFENDER formation ever
+ * appears" — not a missing hull.
+ *
+ * **What DOES exercise it at 4**, so the capability is not merely asserted: 34 mutation-covered unit
+ * cases in `test/works/raze.spec.ts`, and `test/works/replacement-demand.spec.ts` razing through the
+ * engine's own path on a real aged world and proving the rebuild. And the agent-facing road is open —
+ * `DEMAND_OWN_FORCE` is 0 and the initiator's hand counts 1, so a `demand` reaches this margin with
+ * **three joiners**, which is §9's escort market pointed offensively and needs no calibration change.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const RAZE_FORCE_MARGIN = 4;
