@@ -88,6 +88,25 @@ interface Coalition {
    */
   readonly joinsWithSignal: number;
   /**
+   * ★ Of those, the ones justified by the **priced** arm rather than by the friendship arm.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE SIGNAL BECAME A DISJUNCTION, AND WITHOUT THIS COLUMN THE NEW HALF COULD BE DEAD.**
+   *
+   * `coalitionFor`'s gate 1 was `settled.has(target)` alone, which refused **40 of 52** chances
+   * measured over 8 seeds — a favour was the only motive the cast had, because a DEFENDER joiner
+   * collects nothing (`predate.ts` forfeits raider stakes to the *target*, and a world raid has no
+   * raider stakes at all). It is now `settled OR view.if_repulsed.protects_you`: a repulsed world
+   * raid holds the stage against the world for a whole Reckoning, for **everyone** standing there,
+   * so a member with a WORKS or stock at the stage is buying its own protection.
+   *
+   * Counting only the disjunction would let the priced arm be satisfied zero times forever while
+   * the test stayed green on the friendship arm — this project's signature defect, inside the test
+   * written to prevent it. So the arm is counted separately and asserted non-empty.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly joinsPriced: number;
+  /**
    * ★ Joins whose hand was still standing at the stage on the tick before the standoff resolved.
    *
    * `readForce` counts joiners *"only while its hand is still standing there"*, so a coalition that
@@ -122,6 +141,7 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
   const refusals: string[] = [];
   const partiesOf = new Map<string, number>();
   let joinsWithSignal = 0;
+  let joinsPriced = 0;
   let joinsStillStanding = 0;
   let pledgesThatMattered = 0;
   let doubleMarches = 0;
@@ -141,7 +161,14 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
         const settled = runtime
           .relationsFor(action.principal)
           .some((r) => r.other === target && (r.kept > 0 || r.youKept > 0));
-        if (settled) joinsWithSignal += 1;
+        // The priced arm, read off the published view the cast itself gated on — never recomputed
+        // here, or the test would assert its own copy of the rule rather than the rule (scar #5).
+        const priced =
+          runtime
+            .raidsFor(action.principal, runtime.engine.tick, 20)
+            .find((v) => v.raid === raid)?.if_repulsed.protects_you ?? false;
+        if (settled || priced) joinsWithSignal += 1;
+        if (!settled && priced) joinsPriced += 1;
         const hand = action.params['hand'];
         if (typeof hand === 'string') {
           pledged.set(raid, [
@@ -234,6 +261,7 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
     outcomes,
     frameDefenders,
     joinsWithSignal,
+    joinsPriced,
     joinsStillStanding,
     pledgesThatMattered,
     doubleMarches,
@@ -461,16 +489,27 @@ describe('a coalition is priced, not free', () => {
    * fails — 30 of 38 reachable standoffs clear every other gate, so unsignalled joins arrive at once.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  it('joins only a principal it has settled an elective half with', () => {
+  it('joins only where it has a settled half OR ground of its own a repulse would hold', () => {
     let joins = 0;
     let withSignal = 0;
+    let priced = 0;
     for (const seed of SEEDS) {
       const out = play(seed, TICKS);
       joins += out.joins.length;
       withSignal += out.joinsWithSignal;
+      priced += out.joinsPriced;
     }
+    // Non-vacuity first: the branch fired at all.
     expect(joins).toBeGreaterThan(0);
+    // The gate holds — no join is unmotivated. This is the guard, and it is the same disjunction
+    // `coalitionFor` asks, read off the published view rather than re-derived here.
     expect(withSignal).toBe(joins);
+    // ── AND THE NEW ARM IS NOT DECORATION ──────────────────────────────────────
+    //
+    // `withSignal === joins` passes identically if the priced arm never once decided anything —
+    // the friendship arm alone would carry it, and the widening would be a comment. This project
+    // has shipped that exact shape seventeen times, so the arm gets its own denominator.
+    expect(priced).toBeGreaterThan(0);
   });
 
   /**

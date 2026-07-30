@@ -199,7 +199,9 @@ import {
   parleyNote,
   parleyRefusal,
   parleysRemaining,
+  parleysSent,
   parleysVisibleTo,
+  ParleyEntitlementBook,
   type ParleyCapacity,
   type ParleyEntitlement,
   type ParleyEntry,
@@ -3155,6 +3157,12 @@ export class Runtime {
    * drift, and this is the same class of object `talk` has always been.
    */
   private readonly parleys = new Ring<ParleyEntry>(MAX_PARLEY_ENTRIES);
+  /**
+   * The per-Reckoning high-water mark of every principal's free cash — what makes
+   * `parleys_per_reckoning` a figure for the Reckoning rather than for the instant it was read.
+   * Filled by {@link sampleParleyEntitlements}, read by {@link parleyEntitlementOf}.
+   */
+  private readonly parleyEntitlement = new ParleyEntitlementBook();
   private readonly offers = new Ring<OfferEntry>(MAX_OFFER_ENTRIES);
   private readonly claims = new Ring<ClaimEntry>(MAX_CLAIM_ENTRIES);
 
@@ -6476,6 +6484,9 @@ export class Runtime {
     }
     const report = this.engine.runTick();
     if (!report.halted) {
+      // Before any correction is filed, because this is a fact about the tick that just closed and
+      // an agent's next `observe` must not be able to precede it. See `sampleParleyEntitlements`.
+      this.sampleParleyEntitlements(report.tick);
       for (const entry of this.engine.log.forTick(report.tick)) {
         this.census.record(report.tick, entry.decisionSource);
         if (entry.outcome === 'REFUSED' && entry.rejection !== null) {
@@ -8994,9 +9005,41 @@ export class Runtime {
   private parleyEntitlementOf(principal: PrincipalId, tick: number): ParleyEntitlement {
     return {
       distinctCounterparties: this.standing.row(principal).distinctCounterparties,
-      earnedMinor: freeCash(this.ledger, principal),
+      // ── ★ THE HIGH-WATER MARK FOR THIS RECKONING, NOT THE BALANCE THIS INSTANT ──
+      //
+      // The full argument is on `ParleyEntitlement.earnedMinor`. In one line: this used to be the
+      // bare `freeCash`, so escrowing into a venture revoked the right to speak mid-Reckoning from
+      // a field called `per_reckoning`. The book can only ever return a figure this principal
+      // genuinely held at some tick of this cycle, so A15's price is unchanged and a free identity
+      // still reads 0.
+      earnedMinor: this.parleyEntitlement.highWater(
+        principal,
+        tick,
+        freeCash(this.ledger, principal),
+        reckoningIndex,
+      ),
       inboundParleys: this.approachesTo(principal, tick).received,
     };
+  }
+
+  /**
+   * Sample every principal's free cash into the parley high-water book. Once a tick, from the
+   * clock, for everybody — never on `observe`.
+   *
+   * `WakeBook.rollTo`'s note is the reason it is here rather than folded into
+   * {@link parleyEntitlementOf}: *"a budget that rolled on first use would give an agent that acted
+   * early in a Reckoning a different allowance from one that acted late, which is A4 through a side
+   * door."* Latching on read would be the same door with *how often you looked* as the key. A
+   * principal's free cash can only change when a tick applies actions, so a per-tick sample sees
+   * every value any observer could ever have seen.
+   *
+   * O(principals) with one ledger read each, against a measured 7.7 ms tick at 20 principals and a
+   * projected 82 ms at 300. Bounded by enrolment, which is itself capped at seats.
+   */
+  private sampleParleyEntitlements(tick: number): void {
+    for (const principal of [...this.world.holdingByPrincipal.keys()].sort(compareIds)) {
+      this.parleyEntitlement.sample(principal, tick, freeCash(this.ledger, principal), reckoningIndex);
+    }
   }
 
   /**
@@ -9110,6 +9153,7 @@ export class Runtime {
     const entitlement = this.parleyEntitlementOf(principal, tick);
     const allowance = parleyAllowanceFor(entitlement);
     const remaining = parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, allowance);
+    const sent = parleysSent(this.parleys.all, principal, tick, reckoningIndex);
     const reachable = this.reachFor(principal, tick).length;
     return {
       parleys_remaining: remaining,
@@ -9119,6 +9163,10 @@ export class Runtime {
       earned_minor: entitlement.earnedMinor,
       principals_awaiting_your_reply: this.approachesTo(principal, tick).awaiting,
       parleys_received_this_reckoning: entitlement.inboundParleys,
+      parleys_sent_this_reckoning: sent.length,
+      // Deduplicated and canonically ordered: two parleys to one principal is one conversation,
+      // and `compareIds` is the repo's one ordering for principal ids (never a bare `.sort()`).
+      parleyed_this_reckoning: [...new Set(sent)].sort(compareIds),
       refreshes_at_tick: tick - (tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING,
       declassifies_after_ticks: AUDIT_LAG_TICKS,
       reading_costs_parleys: 0,

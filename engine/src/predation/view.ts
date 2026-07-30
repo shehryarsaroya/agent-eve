@@ -26,7 +26,7 @@ import type { RaidLine } from '../frames/contract.js';
 // The razing preview, and it is the resolver's own call rather than a copy of it (scar #1).
 import { forceToSaveWorks, worksAtRisk, type RazeCandidate } from '../works/raze.js';
 import type { Book, RaidRecord, RaidState } from './book.js';
-import { RAID_JOIN_STAKE_MINOR, RAID_TAKE_MULTIPLE } from './params.js';
+import { RAID_JOIN_STAKE_MINOR, RAID_STAGE_HELD_TICKS, RAID_TAKE_MULTIPLE } from './params.js';
 import { payFor, readForce, takeFor } from './resolve.js';
 
 /**
@@ -161,6 +161,54 @@ export interface RaidView {
      */
     readonly save_works_force: number;
   };
+  /**
+   * ★ What beating this raid buys the **reader** — the price of an escort, which had none.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **§9 SAYS WORLD RAIDS EXIST PARTLY TO GIVE ESCORTS A GUARANTEED MARKET, AND UNTIL THIS FIELD
+   * THE MARKET HAD NO PRICE ON EITHER SIDE.**
+   *
+   * Read `predate.ts`'s REPULSED branch for what a DEFENDER joiner collects: raider stakes are
+   * forfeited **to the target**, and a world raid has no raider parties to forfeit anything. So an
+   * escort risked a hand for the window and `HAND_RECOVERY_TICKS` (12–48) more if the defence lost,
+   * and was paid exactly zero either way. Measured consequence, 8 seeds × 3 Reckonings: the cast's
+   * coalition branch could only justify a `join` as a *favour* to a principal it had already
+   * settled a promise with, which refused **40 of 52** chances and left 65 of 72 standoffs `PAID`.
+   *
+   * The payment was already in the engine and nothing published it. A repulsed **world** raid runs
+   * `book.holdStage(stage, tick + RAID_STAGE_HELD_TICKS)`, and `target.ts`'s selection skips every
+   * candidate row at a held stage — not merely the target's. Beating a raid therefore buys one full
+   * Reckoning in which the world cannot raid **anybody** at that system, and that is worth real
+   * money to whoever keeps a WORKS or a holding there.
+   *
+   * So this is not a new mechanic. It is a consequence that existed, was never rendered, and was
+   * therefore indistinguishable from missing — the defect this project keeps re-teaching, here in
+   * its "reserved slot nothing fills" form.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly if_repulsed: {
+    /**
+     * Ticks of world-raid immunity a repulse would buy **at this system, for everyone standing
+     * there**. Zero on an agent's `demand`: `grantWorldProtections` returns early on one, because
+     * an agent's choice must never mint immunity from the world for a friend.
+     */
+    readonly stage_held_ticks: number;
+    /** Live WORKS the READER holds at the stage. What the hold would protect. */
+    readonly your_works_here: number;
+    /** The reader's own stock at the stage in the raided good. Its own only, never the target's. */
+    readonly your_standing_here: Qty;
+    /**
+     * ★ The two above reduced to the decision they exist for: **does a repulse protect something
+     * of yours?**
+     *
+     * Published rather than left to the reader to derive, for the reason `verdict_if_resolved_now`
+     * is published next to the force terms: the sum and the answer must come from one place or two
+     * correct surfaces will eventually disagree about which side of the line a reader is on
+     * (scar #1). False for the target itself is not a special case — a target reading this sees
+     * `true` whenever it holds anything here, which is exactly right.
+     */
+    readonly protects_you: boolean;
+  };
   readonly lost: Qty;
   readonly forfeited: Minor;
   /**
@@ -287,6 +335,32 @@ export interface RaidViewPort {
    * when I do"* are answered together.
    */
   swayAt(principal: PrincipalId, stage: SystemId): number;
+}
+
+/**
+ * One home for **what a repulse is worth to whoever is reading** ({@link RaidView.if_repulsed}).
+ *
+ * A function rather than three inline expressions because `protects_you` and the two quantities it
+ * is derived from must be computed together: the cast gates a `join` on the boolean and the agent
+ * reads the quantities, and two places deciding "does this protect me" is scar #1 with a hand at
+ * stake. Both reads are the reader's own and neither is the target's.
+ */
+function repulseBuys(
+  port: RaidViewPort,
+  raid: RaidRecord,
+  reader: PrincipalId,
+): RaidView['if_repulsed'] {
+  // An agent's demand grants no hold, so it buys nothing and the honest figure is zero rather than
+  // a hold that would never be written. `grantWorldProtections` is the rule this mirrors.
+  const heldTicks = raid.initiator === null ? RAID_STAGE_HELD_TICKS : 0;
+  const works = port.worksAt(reader, raid.stage).length;
+  const standing = port.standingOf(reader, raid.stage, raid.good);
+  return {
+    stage_held_ticks: heldTicks,
+    your_works_here: works,
+    your_standing_here: standing,
+    protects_you: heldTicks > 0 && (works > 0 || standing > 0),
+  };
 }
 
 /** One home for "would that hand get there before the window shuts". */
@@ -473,6 +547,7 @@ function viewOf(
         defenderForce: reading.defenderForce,
       }),
     },
+    if_repulsed: repulseBuys(port, raid, reader),
     lost: raid.lostQty,
     forfeited: raid.forfeited,
     // Null once a hand of the reader's is already standing there — there is nothing left to walk,
