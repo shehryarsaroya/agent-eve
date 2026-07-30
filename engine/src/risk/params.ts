@@ -69,10 +69,10 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { ZoneTier } from '../core/types.js';
+import type { GoodId, ZoneTier } from '../core/types.js';
 import { BPS_ONE, bps, minor, type Bps, type Minor } from '../core/units.js';
 import { FREEZE_FIRST_PHASE, TICKS_PER_RECKONING } from '../core/time.js';
-import { LEVY_DUTY_PER_PRINCIPAL, LEVY_UNIT_MINOR } from '../levy/params.js';
+import { LEVY_DUTY_PER_PRINCIPAL, LEVY_GOOD, LEVY_UNIT_MINOR } from '../levy/params.js';
 
 /**
  * The canon words this module spends, as data, so `canon-word-per-concept` can police them.
@@ -223,39 +223,74 @@ export const VULNERABILITY_BY_TIER: Readonly<Record<ZoneTier, Bps>> = Object.fre
 });
 
 /**
- * ★ Goods a principal keeps whatever the INTENSITY, per good. **One RECKONING's flat duty.**
+ * ★ Goods a principal keeps whatever the INTENSITY, per good. **ONE FLOOR PER GOOD, NOT ONE FLOOR.**
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * Not mercy — A5′. A front that can take a principal's *last* unit of `ration` leaves it holding the
- * LEVY, which is payable only in located goods, with no way to pay: **A5′ with our own economy as the
- * cause**, which is the exact failure `ledger/endowment.ts` refused to ship.
+ * Not mercy — A5′. A front that can take a principal's *last* unit of {@link LEVY_GOOD} leaves it
+ * holding the LEVY, which is payable only in located goods, with no way to pay: **A5′ with our own
+ * economy as the cause**, which is the exact failure `ledger/endowment.ts` refused to ship.
  *
  * **THE ARGUMENT ABOVE WAS WRITTEN FIRST AND THE NUMBER WAS AN ORDER OF MAGNITUDE TOO LOW.** It was a
  * literal `2_000` against a flat duty of 20,000 units, and `test/cast/the-constellation-closes-ranks`
  * found it at the aged horizon: R8 of `g07` recorded `p:halcyon` **4,275 short of 49,686** while its
- * constellation held 96,770 unpledged units above their own duty. The goods had been burned by fronts
- * at R3 and R6 and the reserve could not cover the gap. So the constant is now **derived from the duty
- * it exists to protect** rather than chosen — if `LEVY_DUTY_PER_PRINCIPAL` moves, this moves with it,
- * which is the difference between a rule and a coincidence.
+ * constellation held 96,770 unpledged units above their own duty. So the levy good's floor is
+ * **derived from the duty it exists to protect** rather than chosen — if `LEVY_DUTY_PER_PRINCIPAL`
+ * moves, it moves with it, which is the difference between a rule and a coincidence.
+ *
+ * ⚑ **AND THEN THAT DERIVATION WAS APPLIED TO ALL FOUR GOODS AND KILLED THE SINK FOR THREE OF THEM.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * `destroySet` keys its spare ledger on `${lot.account}::${lot.good}` and charged **one number** —
+ * 20,000, a figure derived for `ration` from a `ration`-denominated duty — against **every good**.
+ * Measured on a driven world: of 13 exposed `(account, good)` groups, **5 cleared the floor and all
+ * five were `ration`**. `ore` peaked at 720, `alloy` at 500, `fuel` at 1,200. A holder of ≤ 20,000
+ * units of anything lost **exactly zero at any intensity**, so §10.1's *"fourth goods sink"* was a
+ * `ration`-only sink and the front could not touch the three goods the demand side runs on.
+ *
+ * That is *"a cap sized for one good and applied to four"* — the same shape as the flat weight that
+ * made three of the Levy's four allocation rules decoration, arriving through a spare floor.
+ *
+ * So the floor is now a **function of the good**, and the two branches carry different arguments:
+ *
+ *   - {@link FRONT_SPARES_LEVY_QTY} — the levy good. One Reckoning's flat duty, derived. **This one is
+ *     A5′**: without it a front manufactures a LEVY shortfall the holder could not have avoided.
+ *   - {@link FRONT_SPARES_OTHER_QTY} — every other good. **Nothing in this game is payable in `ore`,
+ *     `alloy` or `fuel`**, so no obligation becomes impossible when they burn and the A5′ argument does
+ *     not transfer. The floor is a small legibility token rather than a shield: a lot that goes to
+ *     exactly zero reads on the map as *deleted* rather than *damaged*, and A13 owns that distinction.
+ * ══════════════════════════════════════════════════════════════════════════════
  *
  * Charged **once per `(account, good)`** across every struck system, not per system — see
  * `front.ts:destroySet`. A principal holding the good in three struck places keeps this much in total,
  * not three times it.
  *
- * ⚑ **AND THE REASON THIS FLOOR HAS TO CARRY SO MUCH IS A HALF OF §10.1 THAT IS NOT BUILT.**
+ * ⚑ **THE LEVY FLOOR IS ALSO CARRYING A HALF OF §10.1 THAT IS NOT BUILT.**
  *
  * > *"A front is: a published multi-Reckoning forecast … a **destroy set** … and a **deposit set** that
  * > opens *new sites* in its wake. **That last clause is load-bearing**: it is the fresh opportunity
  * > that keeps entering the world … and the reason the map is never the same twice."* — §10.1
  *
- * The destroy set is here; **the deposit set is not**, because opening a SITE is `src/world/`, which
- * was another agent's lane this round. So this front destroys without renewing — which is precisely
- * what §10.1 warns makes it *"a fourth tax"* rather than *"a central force"*. The spare floor is
- * standing in for the renewal, and it should come **back down** when the deposit set lands. Written
- * here rather than left as a tuning number somebody later mistakes for balance.
- * ══════════════════════════════════════════════════════════════════════════════
+ * The destroy set is here; **the deposit set is not**. So this front destroys without renewing — which
+ * is precisely what §10.1 warns makes it *"a fourth tax"* rather than *"a central force"*. The levy
+ * floor is standing in for the renewal, and it should come **back down** when the deposit set lands.
+ *
+ * ⚑ `Math.trunc` is not decoration. `LEVY_DUTY_PER_PRINCIPAL / LEVY_UNIT_MINOR` is a bare `/`, exact
+ * today **only** because `LEVY_UNIT_MINOR` happens to be 1 — and this number reaches `destroySet`,
+ * which decides a hashed quantity. The docblock at the top of this file claims *"Integers throughout:
+ * no float reaches a hash"*; without the truncation that claim was one constant change from false.
  */
-export const FRONT_SPARES_QTY = LEVY_DUTY_PER_PRINCIPAL / LEVY_UNIT_MINOR;
+export const FRONT_SPARES_LEVY_QTY = Math.trunc(LEVY_DUTY_PER_PRINCIPAL / LEVY_UNIT_MINOR);
+
+/** Every good that is not {@link LEVY_GOOD}. See {@link FRONT_SPARES_LEVY_QTY} for why it is small. */
+export const FRONT_SPARES_OTHER_QTY = 100;
+
+/**
+ * The spare floor for one good. **The only door to either number**, so a caller cannot pick the wrong
+ * one — which is exactly what a single exported `FRONT_SPARES_QTY` let `destroySet` do for four goods.
+ */
+export function frontSparesFor(good: GoodId): number {
+  return good === LEVY_GOOD ? FRONT_SPARES_LEVY_QTY : FRONT_SPARES_OTHER_QTY;
+}
 
 // ── The COVER (RSK1, RSK3, A7) ──────────────────────────────────────────────
 
@@ -333,7 +368,20 @@ export const COVER_LIMIT_CEILING_BPS: Bps = bps(BPS_ONE);
  * **Would a test notice either clearing?** Yes, by two roads, and they are named here so the claim
  * is checkable: `test/risk/retention.spec.ts` drives a COVER across four Reckonings — one past
  * this window — and asserts it still pays; and it mutation-deletes the row mid-chain and asserts
- * an INV-R halt rather than a silent non-payment.
+ * an INV-R violation rather than a silent non-payment.
+ *
+ * ⚑ **THAT SECOND SENTENCE USED TO SAY "AN INV-R HALT" AND IT WAS NOT ONE.** The test calls
+ * `checkRiskInvariants` directly and asserts `faults.length > 0`, which is a *checker* returning a
+ * row — and for the whole of this module's first life that was the strongest claim available, because
+ * **INV-R was not registered with the engine at all**. `assertRiskInvariants` had exactly one caller,
+ * inside `runCohortPhase`, which runs only on a settlement tick, only per struck FRONT, and only when
+ * that front's cohort is non-empty. So a book that violated INV-R1…R7 on any other tick — including a
+ * book a *restore* rebuilt — was never checked by anything, and an unregistered invariant cannot halt.
+ *
+ * `runtime.ts`'s `assertions` array now carries a risk entry beside the market's, predation's,
+ * combat's, sovereignty's and the campaign's, so the checkers run in `ASSERT` **every tick** and a
+ * violation aborts the tick through the one halt path there is. `retention.spec.ts` keeps its direct
+ * call *and* gained a driven sibling that asserts the real halt.
  */
 export const RISK_RETAINED_RECKONINGS = 4;
 
@@ -356,11 +404,36 @@ export const MAX_INDEMNITIES = 1_024;
 export const MAX_COVERS_PER_PAYER = 32;
 
 /**
- * Live fronts at once.
+ * **Unstruck** FRONTs at once.
  *
  * One, and the argument is A13 rather than performance: §17 budgets **seven labels a frame**, and
  * two fronts with two CONES and two SWATHS is a weather map instead of a story. CAT1's spectator
  * line is singular for the same reason — *"a catastrophe front crosses the galaxy"*.
+ *
+ * ⚑ **THIS COULD NOT FIRE, AND THE WAY IT COULD NOT FIRE IS THE INTERESTING PART.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * `announceIfDue` used it as a **silent skip** — count the unstruck live fronts, and `return null`
+ * without announcing if the count was at the cap. Two things were wrong with that and they point in
+ * opposite directions:
+ *
+ *   1. **The arithmetic makes the count unreachable.** With {@link FRONT_EVERY_RECKONINGS} = 3 and
+ *      {@link FRONT_CONE_RECKONINGS} = 2, the front for reckoning `R + 3` is announced at
+ *      `landfallTickOf(R) + TICKS_PER_RECKONING` — a full Reckoning *after* the previous front already
+ *      struck. So the unstruck count is 0 at every announcement tick the schedule can produce, and the
+ *      branch was a guard whose subject cannot occur: the fifteenth instance of this repo's signature
+ *      defect, in the module whose header claims to have avoided it.
+ *   2. **Skipping would have been the wrong answer anyway.** A14: the front *"is scheduled, announced,
+ *      and undodgeable — the same lever as the Levy."* Quietly not announcing a scheduled front is the
+ *      one outcome A14 forbids, and it would have been invisible: no row, no ticker, no fault.
+ *
+ * So the skip is gone. `announceIfDue` **throws** if the cap is already met — *"abort the tick and
+ * halt. Never publish a broken tick"* is the honest response to a schedule that has drifted — and
+ * {@link import('./invariants.js').checkInvR9} carries the same bound as a *measured* invariant with
+ * `RiskSubjects.unstruckFronts` as its denominator, so "one unstruck front" is a number an instrument
+ * prints rather than a claim a comment makes. Mutation: set `FRONT_EVERY_RECKONINGS = 1` and the
+ * invariant fires, because front `R + 1` is then announced a Reckoning *before* front `R` lands.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
 export const MAX_LIVE_FRONTS = 1;
 

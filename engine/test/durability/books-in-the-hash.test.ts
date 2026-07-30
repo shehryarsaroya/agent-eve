@@ -46,6 +46,18 @@ import {
 } from '../../src/persist/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { captureSnapshot, type StateTable } from '../../src/tick/index.js';
+import { riskSubjects } from '../../src/risk/index.js';
+import {
+  FIRST_ANNOUNCE_TICK,
+  FIRST_LANDFALL_TICK,
+  act,
+  fund,
+  riskWorld,
+  runTo,
+  seatsFor,
+  stockAt,
+  tick as riskTick,
+} from '../risk/fixture.js';
 
 /** The same seed the checkpoint-adoption fixture uses, so standing really moves at 287. */
 const SEED = 'checkpoint-1';
@@ -718,3 +730,108 @@ function sealRow(over: Record<string, CanonicalValue> = {}): CanonicalValue {
     ...over,
   };
 }
+
+// ── 5. ★ THE `risk` TABLE, OVER A FIXTURE THAT ACTUALLY HOLDS A COVER ────────
+
+/**
+ * ★★ **THE GENERIC ROUND TRIP ABOVE COVERS `risk`, AND IT PASSED OVER AN EMPTY TABLE.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * `for (const [name, captured] of before.tables) tableOf(runtime, name).restore?.(captured)` restores
+ * every registered table, `risk` included — and it was green while `RiskBook.restore` **could not put a
+ * single COVER back**:
+ *
+ * ```
+ * risk.covers[0].offerExpiresTick: expected a safe integer
+ * ```
+ *
+ * `restore` read the key through a bare `readInt` and `capture` never wrote it. The fixture above stops
+ * at tick **287** — before the first FRONT is even announced (tick 504), with a heuristic cast that has
+ * no earned capital and therefore cannot write cover at all — so the table it round-tripped was `{fronts:
+ * [], covers: [], indemnities: [], records: []}`. **A round trip over an empty table is this file's own
+ * subject arriving one level up:** the guard exists, it is registered, it is in the manifest, and its
+ * subject cannot occur.
+ *
+ * This block builds the subject. It runs its own world to the announcement tick, writes and binds a real
+ * COVER through the real verbs, and then round-trips `risk` through the **registered** `StateTable` —
+ * the adoption path itself. It is a separate `describe` rather than an extension of the fixture above
+ * because reaching tick 504 with a cast that can pay for cover is a different world, and the note in
+ * `seated()` is right that a fixture producing a different history each time makes every non-vacuity
+ * check a coin flip.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('★ the `risk` table round-trips a world that HOLDS a cover', () => {
+  function withCover(): Runtime {
+    const world = riskWorld('books-risk', 5, 'MARCHES');
+    const { runtime } = world;
+    const [holder, payer, bankA, bankB] = seatsFor(world, 0, 1, 2, 3);
+    fund(runtime, bankA, payer, 200_000);
+    fund(runtime, bankB, holder, 200_000);
+    runTo(runtime, FIRST_ANNOUNCE_TICK);
+    const front = runtime.risk.allFronts()[0];
+    if (front === undefined) throw new Error('the fixture needs an announced FRONT');
+    const cell = [...front.swath].sort((a, b) => b.intensityBps - a.intensityBps)[0];
+    if (cell === undefined) throw new Error('the fixture needs a struck cell');
+    stockAt(runtime, holder, cell.system, 400_000);
+    const offered = act(runtime, payer, 'publish_offer', {
+      kind: 'COVER',
+      system: cell.system,
+      good: 'ration',
+      limit: 60_000,
+      premium: 1_000,
+      elective_bps: 7_500,
+    });
+    expect(offered, `publish_offer refused: ${offered?.hint ?? ''}`).toBeNull();
+    const cover = runtime.risk.coversBy(payer)[0];
+    if (cover === undefined) throw new Error('the offer is not in the book');
+    const signed = act(runtime, holder, 'sign', { cover: cover.id, terms_hash: cover.termsHash ?? '' });
+    expect(signed, `sign refused: ${signed?.hint ?? ''}`).toBeNull();
+    // A landfall too, so the table also carries an INDEMNITY with §15.4's two landfall captures on it.
+    runTo(runtime, FIRST_LANDFALL_TICK);
+    riskTick(runtime);
+    return runtime;
+  }
+
+  it('is not vacuous: `risk` is REQUIRED, registered, and non-empty', () => {
+    const runtime = withCover();
+    expect(CHECKPOINT_REQUIRED_TABLES, 'a checkpoint may not omit it').toContain('risk');
+    expect(runtime.engine.stateTables.map((t) => t.name), 'and it is registered').toContain('risk');
+    const subjects = riskSubjects(runtime.risk);
+    // ★ THE DENOMINATOR THE OLD FIXTURE DID NOT HAVE. Every one of these was 0 at tick 287.
+    expect(subjects.covers, 'a cover').toBeGreaterThan(0);
+    expect(subjects.boundCovers, 'bound, so every nullable field is populated').toBeGreaterThan(0);
+    expect(subjects.indemnities, 'and an INDEMNITY off a real strike').toBeGreaterThan(0);
+    expect(subjects.struckFronts, 'off a front that landed').toBeGreaterThan(0);
+  });
+
+  it('★★ capture → restore reproduces the BYTES, with a cover in the table', () => {
+    const runtime = withCover();
+    const before = captureSnapshot(runtime.engine.stateTables, runtime.engine.tick, 0);
+    const captured = before.tables.find(([n]) => n === 'risk')?.[1] ?? null;
+    expect(captured, 'the snapshot carries `risk`').not.toBeNull();
+
+    // MUTATION: delete `offerExpiresTick` from `RiskBook.capture()` and this throws with the exact
+    // message a production boot printed. That is the whole defect, and this is the assertion that would
+    // have caught it before the deploy rather than after.
+    expect(() => tableOf(runtime, 'risk').restore?.(captured), 'the restore does not throw').not.toThrow();
+    expect(riskSubjects(runtime.risk).covers, 'and the cover survived the swap').toBeGreaterThan(0);
+
+    const after = captureSnapshot(runtime.engine.stateTables, runtime.engine.tick, 0);
+    // `adoptSnapshot`'s own check. A field missing from `capture` is a field outside `state_hash`, so
+    // this equality is also what makes the hash able to see the offer clock at all (§15.5).
+    expect(after.stateHash, 'byte for byte').toBe(before.stateHash);
+  });
+
+  it('★ `state_hash` can SEE the offer clock — it could not, because it was not captured', () => {
+    const runtime = withCover();
+    const before = captureSnapshot(runtime.engine.stateTables, runtime.engine.tick, 0);
+    const cover = runtime.risk.allCovers()[0];
+    if (cover === undefined) throw new Error('unreachable');
+    // Move only the field that used to be invisible. Two replicas differing in nothing else must not
+    // agree — *"a hash that cannot see a field cannot detect a divergence in it."*
+    (cover as { offerExpiresTick: number }).offerExpiresTick = cover.offerExpiresTick + 1;
+    const after = captureSnapshot(runtime.engine.stateTables, runtime.engine.tick, 0);
+    // MUTATION: remove `offerExpiresTick` from `capture()` and these two hashes become equal.
+    expect(after.stateHash, 'the hash moved with it').not.toBe(before.stateHash);
+  });
+});

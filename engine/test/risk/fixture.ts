@@ -56,6 +56,33 @@ export function commonsRiskWorld(seed: string, count = 3): RiskWorld {
   return riskWorld(seed, count, 'COMMONS');
 }
 
+/**
+ * Name the seats a scenario needs, in one line, **with the arity preserved**.
+ *
+ * `world.principals[i]` is `PrincipalId | undefined` under `noUncheckedIndexedAccess`, so every fixture
+ * that wants eight named roles otherwise opens with eight `if (x === undefined) throw` lines — noise that
+ * buries the setup the test is actually about. The mapped tuple over `indexes` keeps each result
+ * non-optional, so destructuring reads like the scenario: `const [holder, primary, reinsurer] = …`.
+ *
+ * It throws rather than padding: a scenario that asked for a seat the world does not have is a scenario
+ * whose subject may not exist, which is the failure this whole suite is written against.
+ */
+export function seatsFor<T extends readonly number[]>(
+  world: RiskWorld,
+  ...indexes: T
+): { [K in keyof T]: PrincipalId } {
+  return indexes.map((i) => {
+    const seat = world.principals[i];
+    if (seat === undefined) {
+      throw new Error(
+        `the fixture seated ${String(world.principals.length)} principals and this scenario needs seat ` +
+          `${String(i)}`,
+      );
+    }
+    return seat;
+  }) as { [K in keyof T]: PrincipalId };
+}
+
 /** Put located goods in a principal's stores. See the header on why this bypasses the WORKS. */
 export function stockAt(
   runtime: Runtime,

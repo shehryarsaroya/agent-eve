@@ -522,6 +522,26 @@ export function coverAffordances(input: CoverAffordanceInput): {
  * `sign` side already filters to principals with a real insurable interest (RSK1), so an offer nobody
  * can bind lapses `UNTAKEN` and its escrow goes home — which is a published outcome with its own row,
  * not a silent loss.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⚑ **AND FOR THE MODULE'S FIRST LIFE THIS RECOMMENDED GROUND THAT WOULD NOT BURN.**
+ *
+ * `coneOf` truncated its candidate systems by **system id** rather than by distance from the eye, so the
+ * cone's highest-odds cell was routinely a system the SWATH never touched — measured: the eye published
+ * at 9,209 bps and spared, while four of the five struck systems appeared nowhere in the cone. This
+ * function faithfully returned the strongest published cell, and the suggestion an agent copies verbatim
+ * therefore aimed its escrow at the wrong place. **A correct read of a wrong number.**
+ *
+ * ★ **This function's correctness now DEPENDS on two properties of `front.ts`, and they are stated here
+ * because nothing local to this file could detect them breaking:**
+ *
+ *   1. the SWATH is truncated **nearest-first**, so the eye is always in its own swath;
+ *   2. `CONE_ODDS_PER_HOP_BPS > 2 × CONE_JITTER_BPS`, so ranking the cone by odds *is* ranking it by
+ *      distance and the strongest cell is always the eye.
+ *
+ * `test/risk/forecast.spec.ts` asserts both directly and asserts this function's output is in the swath
+ * over 200 fronts. A change to either ranking that left this file untouched would put the defect back.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
 function pickTarget(input: RiskViewInput): { readonly system: SystemId; readonly good: GoodId } | null {
   let best: { system: SystemId; odds: number } | null = null;
