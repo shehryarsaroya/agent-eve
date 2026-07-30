@@ -58,6 +58,60 @@ describe('runtime.reckoningFrame', () => {
     expect(latest.tributeLines.length).toBeGreaterThan(0);
   });
 
+  it('★ writes `live.json` too, on EVERY tick, and it MOVES', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The end-to-end half of the artifact: `runSim` (and `api/server.ts`, which runs the same two
+    // lines) must publish the live frame on every tick, not only at a settlement. Before it existed
+    // this directory held one file that changed once every 288 ticks, and at `SPEEDS.prod` that is
+    // once every 24 hours against a client polling every 15 seconds.
+    //
+    // `liveFramesMoved` is the meter and it is asserted as a RATIO of the ticks run rather than as
+    // `> 0`: a single moving frame in 293 would satisfy `> 0` and would still be a still image.
+    //
+    // MUTATION: move the live publish inside the `isSettlementTick` branch in `sim/cli.ts`. RED on
+    // `liveFramesWritten`, because 293 ticks contain one settlement.
+    // ══════════════════════════════════════════════════════════════════════════
+    const dir = mkdtempSync(join(tmpdir(), 'rf-live-'));
+    const ticks = TICKS_PER_RECKONING + 5;
+    const result = runSim({
+      ...DEFAULT_ARGS,
+      seed: 'frame-live-e2e',
+      ticks,
+      principals: 12,
+      framesDir: dir,
+      quiet: true,
+    });
+    expect(result.liveFramesWritten, 'one live frame per tick').toBe(ticks);
+    expect(
+      result.liveFramesMoved,
+      `only ${String(result.liveFramesMoved)} of ${String(ticks)} live frames differed from the one ` +
+        'before it — a file that is republished unchanged is the still image this artifact replaces',
+    ).toBeGreaterThan(ticks / 2);
+
+    const live = JSON.parse(readFileSync(join(dir, 'live.json'), 'utf8')) as {
+      tick: number;
+      phase: string;
+      ticksUntilReckoning: number;
+      glyphs: { state: string }[];
+      meters: { onAPromise: number };
+      rundown?: unknown;
+      sealVerdict?: unknown;
+    };
+    // The last tick published, not the last settlement — that is the whole difference.
+    expect(live.tick).toBe(ticks - 1);
+    expect(['EARLY', 'COMMITMENT', 'FREEZE', 'SETTLING']).toContain(live.phase);
+    expect(live.ticksUntilReckoning).toBeGreaterThan(0);
+    // ★ And a state the NIGHTLY frame cannot express, on the artifact a viewer actually polls.
+    expect(
+      live.glyphs.some((g) => g.state === 'FORMING' || g.state === 'LIVE'),
+      '`glyphFor` derives its state from a SETTLED outcome, so FORMING and LIVE are unreachable on ' +
+        'the nightly frame. If they are unreachable here too, the live frame is not a live frame',
+    ).toBe(true);
+    // A9: the three time-scoped tiers have one carrier and it is absent.
+    expect(live.rundown).toBeUndefined();
+    expect(live.sealVerdict).toBeUndefined();
+  });
+
   it('is deterministic: the same run writes a byte-identical latest frame', () => {
     const a = mkdtempSync(join(tmpdir(), 'rf-a-'));
     const b = mkdtempSync(join(tmpdir(), 'rf-b-'));
