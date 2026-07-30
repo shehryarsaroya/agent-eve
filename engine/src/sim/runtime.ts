@@ -1954,9 +1954,61 @@ import {
  * instead of by system id, so the published forecast is no longer anti-correlated with the loss and
  * the FRONT's spare floor is per-good instead of one `ration`-derived 20,000 applied to four goods.
  *
- * The `RULES_VERSION` is 36 rather than 35 because 35 is the surface lode's, landing in parallel.
+ * The `RULES_VERSION` is 36 rather than 35 because 35 was pre-assigned to the surface lode, which was
+ * landing in parallel and which renumbered to **37** when it merged (see the next block).
  */
-export const RULES_VERSION = 36;
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **37 — A RAIDER'S FORCE IS COUNTED IN HANDS, NOT IN PARTY ROWS.**
+ *
+ * One arithmetic changes and it is the one that decides who wins a standoff. `predation/resolve.ts`
+ * carries the whole argument; the short version is that `readForce` scored the raider's side at
+ * `FORCE_PER_JOINER x (parties with sway >= 1)` — **one point per PRINCIPAL, with the sway magnitude
+ * read only as a boolean** — while the TARGET's side was scored `FORCE_PER_HAND x hands`. So the two
+ * sides of one comparison were in different units, and a blind player found it from the outside:
+ * *"`force.your_sway: 3` at the target system with two IDLE hands standing there and
+ * `force.raider: 1`. No verb converts them."* There was none.
+ *
+ * It contradicted two things we had already shipped:
+ *
+ *   1. **`SWAY_STATEMENT`**, a rules surface an agent reads verbatim: *"SWAY is how many of your 3
+ *      HANDS count as FORCE at a place you are not defending."* The engine read it as a permission
+ *      bit. Scar #1, with the agent-facing text on the correct side of the disagreement.
+ *   2. **`campaign/pulse.ts:readCampaignForce`**, which already computes `min(present, sway)` for the
+ *      attacker and every attacking ally and `present` for every defending one. Two hostile mechanics,
+ *      one `swayAt` port, two incompatible units.
+ *
+ * Both sides' ALLIES move to hands for the same reason — leaving `defenderJoiners` a row count would
+ * make a defender ally's three hands worth 1 against a raider ally's 3, inverting §16.1 MUST-3's
+ * *"a smaller defender exploits interior lines"*. The sway **asymmetry** is untouched: offence is
+ * supplied, defence is present.
+ *
+ * **No verb is spent** (40/40 stands). The act that adds a hand is `move`, which is why
+ * `RaidView.march` no longer goes null the moment one hand of yours is there, and why the
+ * `your_side !== null` arm of the raid affordance chain now exists at all — it did not, so an
+ * initiator standing at its own demand's stage got no affordance, no withheld row and no counter.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * `SNAPSHOT_HASH_MISMATCH` at the first resolved standoff whose reading differs — the `raid` table's
+ * verdict, and every posting that follows from it. A world with no live raid at the cutover diverges
+ * at the next spawn. `hydrate.ts` refuses on `RULES_VERSION_MISMATCH` first, which is the cheaper
+ * door.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
+ * prints the exact string, and a bare tick is refused.
+ *
+ * ── RENUMBERED 35 → 37 AT MERGE ──────────────────────────────────────────────
+ *
+ * 35 was pre-assigned while the surface lode was on a parallel branch; the risk market landed first
+ * and took 36. Renumbered to the tail per 24's protocol — *pre-assign to avoid the collision,
+ * renumber to the tail at merge* — and **stacked rather than blended**, because an operator reading a
+ * `RULES_VERSION_MISMATCH` has to know which change moved which table. 36 moved `risk`; 37 moves
+ * `raid`. This is the fifth version to arrive out of order.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const RULES_VERSION = 37;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -11760,6 +11812,26 @@ export class Runtime {
     readonly yieldPerTick: number;
     readonly occupants: number;
     /**
+     * ★ **WHO they are, named.** Canonical order, one entry per live WORKS at `system`.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * **A COUNT WITH NOBODY ATTACHED IS A COST; A COUNT WITH NAMES ATTACHED IS A DECISION** — the
+     * same argument `rentTo` is admitted on, one field along. A blind player reported reading
+     * `occupants: 4` at the system its own body stood on and being unable to learn a single name; it
+     * learned three of them only because the `demand` affordance happened to list them as targets,
+     * which is the wrong door and does not exist for a principal that cannot raid.
+     *
+     * `PUBLIC`, and it publishes nothing new: a WORKS is raised by a `PUBLIC` event, `WorksLine.holder`
+     * has always been on the spectator frame, and A9 requires that an agent's own `observe` never
+     * answer *less* than the frame a stranger can read. Withholding it here was the parity failing in
+     * the direction that hides — the audience knew who was on your ground and you did not.
+     *
+     * `WORKS_PER_PRINCIPAL_PER_SYSTEM` is 1, so this is already distinct; it is not deduplicated,
+     * because the day that constant moves the count and the list must keep agreeing.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    readonly occupiedBy: readonly PrincipalId[];
+    /**
      * What this principal would **keep** per tick once online, at today's crowding and rent.
      *
      * ══════════════════════════════════════════════════════════════════════════
@@ -11847,7 +11919,9 @@ export class Runtime {
     readonly fuelSharePerTick: number;
   } {
     const tier = tierOf(this.world.map, system);
-    const occupants = this.worksBook.liveAt(system).length;
+    // ONE read of the book, so the count and the names can never disagree about the same instant.
+    const standing = this.worksBook.liveAt(system);
+    const occupants = standing.length;
     // ── WHY THIS IS `freeBalance` AND THE CESSION PRICE IS `freeCash` ────────
     //
     // The first version used `freeCash` here, reasoning that a WORKS is permanent income and
@@ -11884,10 +11958,27 @@ export class Runtime {
     // counting itself" and "the number that decides whether the build pays for itself", so an agent
     // budgeting off it under-plans its income by a third.
     //
-    // `held` is read ONCE and used twice — here and by the currency door below. Two calls would be
-    // two chances to disagree about whether this is a first WORKS, which is the same shape as the
-    // occupancy bug this comment records.
-    const held = this.worksBook.ofPrincipal(principal).length > 0;
+    // `held` is read ONCE and used twice — by the ore division here and by the fuel division below.
+    // Two calls would be two chances to disagree about whether this build is an arrival, which is the
+    // same shape as the occupancy bug this comment records.
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★ **AND IT IS `holdsAt`, NOT `ofPrincipal` — "AT THIS SYSTEM", NOT "ANYWHERE".**
+    //
+    // The measurement above is per-system: *"sole occupant of a COMMONS system taking the full 80,
+    // quoted 40"* is about the system the reader is standing on. `ofPrincipal(...).length > 0`
+    // answers a **global** question, so a principal holding a WORKS at `sys-01` was quoted
+    // `yield / occupants` for every OTHER system on the map — the pre-arrival rate this whole
+    // division exists to refuse. At four occupants that overstates the destination by 22% on the
+    // most-quoted number in the economy, for exactly the reader about to spend a one-way act on it.
+    //
+    // It was unreachable through the heuristic cast, which declines to graduate while it holds a
+    // WORKS, and `alreadyHeld` two dozen lines down was already per-system — two predicates for one
+    // question, one of them right. The tell for the next one: a WORKS is raised **where your body
+    // stands** (`vBuildWorks` refuses otherwise), so "do I already divide this system's yield" is
+    // never a question about anywhere else.
+    // ══════════════════════════════════════════════════════════════════════════
+    const held = this.worksBook.holdsAt(principal, system) > 0;
     const quotedGross = Math.trunc(
       systemYield(this.world.map, system) / (held ? Math.max(1, occupants) : occupants + 1),
     );
@@ -11949,6 +12040,8 @@ export class Runtime {
       good: WORKS_YIELD_GOOD,
       yieldPerTick: systemYield(this.world.map, system),
       occupants,
+      // `liveAt` is already canonical by WORKS id (DET-2), so this order is stable across replays.
+      occupiedBy: standing.map((w) => w.holder),
       // ── THE CROWDING DIVISION IS ABOVE; THE RENT COMES OFF IT HERE ──────────
       //
       // Split with the SAME function the PRODUCE phase uses, so the quote and the ledger cannot
@@ -15588,15 +15681,49 @@ export class Runtime {
     // Built once here rather than per-venture: `auditRecords()` and the talk ring are both
     // whole-world reads, and doing them inside the loop would be O(ventures × seals) on the
     // settlement tick, which is the heaviest tick there is.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★ **§14'S SAY-DO GAP HAD NEVER ONCE BEEN SHOWN, AND TWO LINES HERE ARE WHY.**
+    //
+    // A blind player read `sealVerdict: "HONOURED"` on a venture row while the same agent's
+    // `standing.contradicted_seals` went to 1 **off that seal**. A visual audit of two frames then
+    // measured the field at 104 `HONOURED` · 76 `null` · **zero `CONTRADICTED`, ever** — and reported
+    // it as *"looks constant, not computed"*. It was computed. The branch below is live. Both of the
+    // filters it used to carry were wrong, and each one alone was enough:
+    //
+    //   1. **`rec.role === null` dropped the seal from the frame — but not from standing.**
+    //      `role` is the free SLOT a seal claims, not what it is about (`seal/book.ts`: *"The role
+    //      whose free slot this seal claims, or null to spend an action"*). A seal that names no
+    //      held role costs an action and carries `role: null`, and `SealBook.resolve` charges
+    //      standing for **every** CONTRADICTED verdict regardless. So the exact population that
+    //      moves `contradicted_seals` was the population this loop skipped — the frame said
+    //      HONOURED, the standing panel said 1, and both were reading the same judgement.
+    //   2. **The key was the wrong venture.** `rec.role.venture` is where the free slot came from;
+    //      `intent.target` is what the seal PROMISED. They coincide for a cast member copying its
+    //      own affordance and diverge for exactly the player capable of contradicting one, so the
+    //      verdict was filed against the venture that paid for the seal rather than the venture the
+    //      promise was about — A5′, on the say-do record itself.
+    //
+    // So: no `role` filter, and the key is the target. `judge()` is still the only source of a
+    // verdict (`seal/verdict.ts`), which is what keeps this and `standing.contradicted_seals` one
+    // fact — `test/frames/say-do.test.ts` now drives a real contradiction through `reckoningFrame`
+    // rather than re-implementing the filter it is checking.
+    // ══════════════════════════════════════════════════════════════════════════
     const verdictByVenture = new Map<string, 'HONOURED' | 'CONTRADICTED'>();
+    const contradictedBy = new Map<string, PrincipalId>();
     for (const rec of this.seals.auditRecords()) {
-      if (rec.role === null || rec.verdict === null) continue;
+      if (rec.verdict === null) continue;
       // CONTRADICTED wins if any seal on the venture was contradicted: the story is that
       // a pre-commitment was broken, and one broken seal is that story regardless of how
       // many others held.
-      const key = String(rec.role.venture);
+      const key = rec.intent.target;
       if (rec.verdict === 'CONTRADICTED' || !verdictByVenture.has(key)) {
         verdictByVenture.set(key, rec.verdict);
+      }
+      // WHO broke it. A verdict with nobody attached is the same defect as an occupancy count with
+      // nobody attached: the row that names the venture cannot name the agent, and §14's whole
+      // subject is an agent. First contradiction wins, in `auditRecords`' canonical seal-id order.
+      if (rec.verdict === 'CONTRADICTED' && !contradictedBy.has(key)) {
+        contradictedBy.set(key, rec.principal);
       }
     }
     const talkByVenture = new Map<string, readonly TalkEntry[]>();
@@ -15625,6 +15752,19 @@ export class Runtime {
         rolesTotal: v.roles.length,
         electiveBps: v.roles.length === 0 ? 0 : Math.round((electiveDue / Math.max(1, st.claims.proceeds)) * 10_000),
         atStake: electiveDue,
+        // ── ★ A5′: WHAT WAS WITHHELD, NOT WHAT WAS PROMISED ─────────────────────
+        //
+        // `electiveShortfall` is `electiveDue - electivePaid` per role, and it was sitting in the
+        // same `st.payouts` this loop already sums for `electiveDue`. The deed sentence was built
+        // from the total, so `lode-vela` — which honoured role 0's 2,712 in full and declined 1,439
+        // of role 1's 1,440 — was published as having *"walked away from 4K it had promised"*, 2.9x
+        // what it did, permanently and in public, about a real agent. See
+        // `SettledView.withheld` and `consequenceFor` for the whole argument.
+        //
+        // Summed over the payouts rather than read off `st.defaults`, on purpose: `st.defaults`
+        // carries only the *attributable* ones, and a sentence that quietly dropped an
+        // unattributable shortfall would be wrong in the other direction on the same field.
+        withheld: sumMinor(st.payouts.map((pp) => pp.electiveShortfall)),
         defaulted: st.terminalState === 'DEFAULTED',
         deferred: st.terminalState === 'DEFERRED',
         parties: partiesOf(v),
@@ -15639,6 +15779,8 @@ export class Runtime {
         // What it SEALED — the flag only. The verdict is a separate PUBLIC fact parented
         // to the seal; the content is not in this frame and cannot be.
         sealVerdict: verdictByVenture.get(String(st.venture)) ?? null,
+        /** WHO contradicted it, named. Null on `HONOURED` and on a venture nobody sealed. */
+        sealContradictedBy: contradictedBy.get(String(st.venture)) ?? null,
         // The negotiation, declassified. `PARTIES` while live, public AT SETTLEMENT — which
         // is now — and carried only where an elective promise BROKE, because a reel on a
         // kept promise would be the show editorialising (A12).

@@ -360,6 +360,24 @@ describe('what is never lost', () => {
     if (helper === undefined) throw new Error('fixture');
     // A defender joiner on a target that never answers: the raid wins and the helper's
     // hand pays for it.
+    //
+    // ── ★ RECALIBRATED AT 35: THE HELPER NOW SUPPLIES ITS HANDS, NOT ONE POINT ──
+    //
+    // `readForce` scores allies on both sides in HANDS, so a seated helper with all three idle at the
+    // stage would contribute 3 + the Marches' terrain against a drawn `RAID_FORCE` of 2–5 — and the
+    // outcome would depend on the draw. The SUBJECT here is what happens to a hand on the LOSING side,
+    // so the fixture has to lose: two of the helper's three hands are parked one lane away, leaving it
+    // supplying exactly 1 — which is the arithmetic this test was written against, restated as a
+    // property of the fixture rather than of the engine.
+    const spare = [...runtime.world.hands.values()].filter((h) => h.principal === helper).slice(1);
+    const elsewhere = [...(runtime.world.map.systems.get(raid.stage)?.lanes ?? [])][0];
+    if (elsewhere === undefined) throw new Error('the stage must have a lane out');
+    for (const hand of spare) {
+      hand.location = elsewhere;
+      hand.destination = null;
+      hand.state = 'IDLE';
+      hand.presentSinceTick = runtime.engine.tick;
+    }
     act(runtime, helper, 'join', { raid: raid.id, side: 'DEFENDER' });
     runTo(runtime, raid.resolvesAtTick);
 

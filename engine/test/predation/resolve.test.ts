@@ -76,13 +76,23 @@ describe('force is arithmetic and higher wins — no dice, no rounds, no positio
     const raid = raidRow({ force: 3, parties: [party('p:a', 'DEFENDER'), party('p:b', 'RAIDER')] });
     const reading = readForce({ raid, tier: 'MARCHES', defenderHands: 2, handsAtStage: allPresent(raid), raidForceLeft: noBattle, swayAt: fullSway });
 
-    // defender: 2 hands + 1 defender joiner + 1 terrain = 4. raider: 3 + 1 joiner = 4.
+    // ── ★ AT 35 THE ALLY TERMS ARE HANDS, NOT PARTY ROWS ────────────────────
+    //
+    // defender: 2 target hands + `allPresent` hands for the one DEFENDER ally + 1 terrain.
+    // raider: the raid's own 3 + `min(hands standing, sway)` for the one RAIDER ally.
+    //
+    // `allPresent(raid)` answers every party's own hand at the stage, so each ally supplies 1 here
+    // and the sums are unchanged at 4 and 4 — which is the point: this fixture has one hand per ally,
+    // so the unit change is invisible in the TOTAL and visible only in the new terms. The arithmetic
+    // that separates hands from rows is asserted where it can bind, two tests down.
     expect(reading.terms).toEqual({
       defenderHands: 2,
       defenderJoiners: 1,
+      defenderAllyHands: 1,
       terrain: FORCE_BY_TIER['MARCHES'],
       raidForce: 3,
       raidForceAtSpawn: 3,
+      raiderHands: 1,
       raiderJoiners: 1,
       // ★ §16.12 #1's meter. Zero here because `fullSway` holds the capacity limit open for every
       // arithmetic test in this file; it is asserted non-zero in
