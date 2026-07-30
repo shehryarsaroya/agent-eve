@@ -1,4 +1,4 @@
-import type { HallOfFameRow, PlaceName } from './memory.js';
+import type { HallOfFameRow, PlaceName, Ruin } from './memory.js';
 import type { CoverArc, CoverChain, FrontBand } from '../risk/lines.js';
 /**
  * The frame contract — the interface between the world and the show.
@@ -73,6 +73,20 @@ export const MAX_FRAME_WORKS_LINES = 16;
 
 /** Syndicate lines a frame may draw. Fewer than works marks: an org is a bigger object. *(calibrate)* */
 export const MAX_FRAME_SYNDICATE_LINES = 8;
+
+/**
+ * Ruins a frame may draw. **THE RUIN's budget.** *(calibrate)*
+ *
+ * Half the works budget, and the ratio is the claim it makes: a map should be able to show that
+ * rather more is standing than has fallen, and a world where ruins outnumbered works by two to one
+ * would be a world whose Levy had already failed. Eight is also two whole Reckonings of the maximum
+ * razing rate the raid clock can produce (`RAID_SPAWN_PHASES` is three a Reckoning, and only a rout
+ * razes), so a viewer arriving at any Reckoning sees at least the last two Reckonings of losses.
+ *
+ * Overflow drops the OLDEST — see `Frame.ruins`. That direction is not a preference; a cap that drops
+ * the newest hides exactly the event the field exists to show.
+ */
+export const MAX_FRAME_RUINS = 8;
 
 /**
  * Market prints a frame may draw. *(calibrate)*
@@ -1220,6 +1234,15 @@ export interface ReckoningFrame {
    */
   readonly standings: readonly StandingRow[];
   readonly places: readonly PlaceName[];
+  /**
+   * ★ **THE RUINS** — what this world has destroyed, newest first. Razing's pixel signature.
+   *
+   * Capped by {@link MAX_FRAME_RUINS} rather than unbounded, and the cap drops the OLDEST, which is
+   * the only safe direction: `ruinsFor` sorts newest-first, so overflow loses ancient history and
+   * never this Reckoning's news. A cap that dropped the newest would fail in the direction that
+   * hides, which this repo has shipped three times.
+   */
+  readonly ruins: readonly Ruin[];
   readonly hallOfFame: readonly HallOfFameRow[];
   readonly syndicateLines: readonly SyndicateLine[];
   /** ★ A13's first Phase 3 signature: THE FRONT BAND. A swept band of tinted systems. */
@@ -1512,6 +1535,32 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
   // The claim tint's guard, in the same voice, for the same reason: the frame is a stranger's
   // only source, so a mark reading EXTRACTING beside a dead share — or SPINNING UP beside a live
   // one — is a published contradiction with nothing to check it against.
+  // ── ★ A RUIN MAY NOT CONTRADICT ITS OWN LABEL ────────────────────────────
+  //
+  // Same voice, same reason, and one extra clause the works marks do not need: a ruin's whole content
+  // is a claim about a *past* loss, so its Reckoning label is the only thing a viewer can check it by.
+  // A ruin whose legend named a different Reckoning from its own field would be a permanent public
+  // statement about when a real agent lost real capital, disagreeing with itself on one frame (A5′).
+  if (frame.ruins.length > MAX_FRAME_RUINS) {
+    problems.push(
+      `${frame.ruins.length} ruins, budget is ${MAX_FRAME_RUINS} — a legend a viewer reads, not a graveyard`,
+    );
+  }
+  for (const ruin of frame.ruins) {
+    if (!ruin.legend.includes(`R${String(ruin.fellAtReckoning)}`)) {
+      problems.push(
+        `ruin ${ruin.works} is labelled "${ruin.legend}" but fell at Reckoning ${String(ruin.fellAtReckoning)} — ` +
+          'a ruin\'s legend is the only thing a viewer can date it by',
+      );
+    }
+    if (ruin.razedBy === null && ruin.razedByHandle !== null) {
+      problems.push(
+        `ruin ${ruin.works} names no razer but carries the handle "${ruin.razedByHandle}" — a world-spawned ` +
+          'raid has no author and a frame must not invent one',
+      );
+    }
+  }
+
   if (frame.worksLines.length > MAX_FRAME_WORKS_LINES) {
     problems.push(
       `${frame.worksLines.length} works marks, budget is ${MAX_FRAME_WORKS_LINES} — a legend a viewer reads, not a heatmap`,

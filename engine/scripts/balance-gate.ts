@@ -70,6 +70,25 @@ interface GateRow {
   readonly hulls: number;
   readonly battles: number;
   readonly works: number;
+  /**
+   * ★ WORKS this world DESTROYED — the razings. `Book.ruinsInOrder().length`.
+   *
+   * The meter that lands with the mechanism, and the reason it is here rather than inferred: for the
+   * project's whole life `Book.raze` had no caller, and nothing in any instrument would have printed
+   * the difference between *"nobody destroys production"* and *"production cannot be destroyed"*. A
+   * `razed` of 0 across every seed is therefore a **finding**, not a clean bill: it means the raid
+   * clock never produced a rout with a structure standing under it, and the loop is not closed.
+   */
+  readonly razed: number;
+  /**
+   * ★ WORKS raised by a principal AFTER one of its own was razed — **the replacement demand.**
+   *
+   * This is the column the whole change exists to move. Destroying capacity only closes EVE's loop if
+   * somebody rebuilds: a razing with no rebuild has added a loss and no economy, and that answer is
+   * worth more than a shipped mechanic. Counted per holder against its earliest razing rather than as
+   * `raised - razed`, because the latter cannot tell a replacement from a newcomer's first structure.
+   */
+  readonly rebuilt: number;
   /** Members holding no WORKS and rich enough in currency to buy one. The trap. */
   readonly trapped: number;
   /**
@@ -156,6 +175,24 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
 
   const rent = runtime.works.liveInOrder().reduce((n, w) => n + w.rentPaid, 0);
 
+  // ── ★ RAZINGS AND REBUILDS ────────────────────────────────────────────────
+  //
+  // `rebuilt` is per holder against that holder's EARLIEST razing: a WORKS raised after a principal
+  // first lost one is a replacement. `raised - razed` would count a newcomer's first structure as a
+  // rebuild and report replacement demand a world never produced.
+  const ruins = runtime.works.ruinsInOrder();
+  const firstLossOf = new Map<string, number>();
+  for (const ruin of ruins) {
+    const at = ruin.razedAtTick ?? Number.MAX_SAFE_INTEGER;
+    const held = firstLossOf.get(String(ruin.holder));
+    if (held === undefined || at < held) firstLossOf.set(String(ruin.holder), at);
+  }
+  let rebuilt = 0;
+  for (const works of runtime.works.everInOrder()) {
+    const lost = firstLossOf.get(String(works.holder));
+    if (lost !== undefined && works.raisedAtTick > lost) rebuilt += 1;
+  }
+
   let trapped = 0;
   for (const member of roster) {
     if (runtime.works.ofPrincipal(member.principal).length > 0) continue;
@@ -177,6 +214,8 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
     hulls: runtime.fleet.all().length,
     battles: runtime.battles.all().length,
     works: runtime.works.liveInOrder().length,
+    razed: ruins.length,
+    rebuilt,
     trapped,
     carried,
     finalStateHash,
@@ -237,7 +276,7 @@ process.stdout.write(
     `(${String(Math.floor(args.ticks / TICKS_PER_RECKONING))} Reckonings) x ${String(args.members)} members\n\n`,
 );
 process.stdout.write(
-  'seed        levyShort  red/lines   kept broken  ventures claims     rent hulls battles works TRAPPED   CARRIED\n',
+  'seed        levyShort  red/lines   kept broken  ventures claims     rent hulls battles works RAZED REBUILT TRAPPED   CARRIED\n',
 );
 const rows: GateRow[] = [];
 for (const seed of args.seeds) {
@@ -250,6 +289,7 @@ for (const seed of args.seeds) {
       `${String(row.ventures).padStart(9)} ${String(row.claims).padStart(6)} ` +
       `${String(row.rent).padStart(8)} ${String(row.hulls).padStart(5)} ` +
       `${String(row.battles).padStart(7)} ${String(row.works).padStart(5)} ` +
+      `${String(row.razed).padStart(5)} ${String(row.rebuilt).padStart(7)} ` +
       `${String(row.trapped).padStart(7)} ${String(row.carried).padStart(9)}` +
       `${row.halted ? '  HALTED' : ''}\n`,
   );
@@ -271,6 +311,8 @@ const total = {
   hulls: sum((r) => r.hulls),
   battles: sum((r) => r.battles),
   works: sum((r) => r.works),
+  razed: sum((r) => r.razed),
+  rebuilt: sum((r) => r.rebuilt),
   trapped: sum((r) => r.trapped),
   carried: sum((r) => r.carried),
 };
@@ -298,6 +340,7 @@ process.stdout.write(
     `${String(total.ventures).padStart(9)} ${String(total.claims).padStart(6)} ` +
     `${String(total.rent).padStart(8)} ${String(total.hulls).padStart(5)} ` +
     `${String(total.battles).padStart(7)} ${String(total.works).padStart(5)} ` +
+    `${String(total.razed).padStart(5)} ${String(total.rebuilt).padStart(7)} ` +
     `${String(total.trapped).padStart(7)} ${String(total.carried).padStart(9)}\n`,
 );
 if (!seesTheEconomy) {

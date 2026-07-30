@@ -172,7 +172,7 @@ import {
 import type { AuthorityDossier, AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } from '../frames/contract.js';
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
-import { hallOfFame, namesFor } from '../frames/memory.js';
+import { hallOfFame, namesFor, ruinsFor } from '../frames/memory.js';
 import { readInt, readList, readString } from '../core/params.js';
 import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
@@ -468,6 +468,7 @@ import {
 import {
   MAX_FRAME_BATTLE_LINES,
   MAX_FRAME_CLAIM_LINES,
+  MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
   MAX_LINE_DOSSIERS,
   MAX_RAID_LINES,
@@ -1828,7 +1829,87 @@ import {
  * prints the exact string, and a bare tick is refused.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 33;
+/**
+ * ── 32 · ★ A WORKS CAN BE DESTROYED, AND THE ECONOMY GETS A DEMAND SIDE ──────
+ *
+ * **Stacked on top of 31, not blended**, for the reason 23, 24, 27, 29 and 31 each give: an operator
+ * reading a `RULES_VERSION_MISMATCH` has to know which change moved which table. Built as 30 and
+ * renumbered to the tail at merge, because 29 and 31 landed on parallel branches while this was open.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS IS 26's AND 29's SHAPE: A CAPTURED TABLE CHANGES.** `WorksRecord` gains two fields —
+ * `fellAtReckoning` and `razedBy` — and both are inside `works.capture()` and therefore inside
+ * `state_hash`. `restore` is **tolerant** of their absence for exactly one deploy, and the tolerance
+ * is safe for a stronger reason than `rentPaid`'s or `fuelExtracted`'s was: **no snapshot in this
+ * world's history can contain a razed WORKS**, because nothing could raze one until this version. So
+ * `undefined` is not a missing label on a fallen structure; it is a structure that never fell, and
+ * `null` is its true history.
+ *
+ * ── WHAT IT FIXES: THE HALF OF EVE'S ECONOMY THAT WAS MISSING ────────────────
+ *
+ * In EVE every module is manufactured from ore another player mined and loss is permanent, so
+ * **destruction creates demand** — the engine under everything else. This build had half of it: goods
+ * are produced, hulls are built, hulls die permanently, and **nothing destroyed a WORKS**. So
+ * production capacity only ever went up, the economy had no reason to keep running once everybody had
+ * built, and a war's prize arrived with its factories intact. `Book.raze` was written, captured,
+ * restored and **never called from anywhere in `src/`** for the project's whole life; the three
+ * `razed` filters in `book.ts` were no-ops; and — the part that made this cheap — the REBUILD half was
+ * already wired and unreachable, because three `cast/heuristic.ts` branches gate on `ofPrincipal`,
+ * which filters `razed`.
+ *
+ * Five things move, and only the first two are new mechanism:
+ *
+ *   1. **`works/raze.ts`** — one decision, one constant ({@link import('../works/raze.js').RAZE_FORCE_MARGIN}
+ *      = 4), two callers: a raid resolved `PLUNDERED` and a campaign `BREACH`. A rout ends a
+ *      structure; a win only takes goods. **The constant was 2 and the tests found what 2 meant:**
+ *      `FORCE_BY_TIER.FRONTIER` is 0, so an undefended Frontier target reads force 0 against a drawn
+ *      band of 2–5 and *every* draw cleared the bar — the gate did not exist on the deepest ground in
+ *      the game. Four is derived from `RAID_FORCE`'s own note (three hands, one of terrain on the
+ *      Marches) and gives the property 2 did not: **two of a principal's three hands keeps its
+ *      structure on every tier against every draw**, while an undefended Frontier works still falls on
+ *      the top half of the band.
+ *   2. **THE RUIN** — `frames/memory.ts:ruinsFor` and `Frame.ruins`, the pixel signature. A razed
+ *      WORKS drops out of `worksLines` silently, and a mark that vanished is indistinguishable from a
+ *      mark that was never there — this project's signature defect arriving at the pixel layer. §16
+ *      already asked for exactly this shape for a fallen holding.
+ *   3. **INV-W7** — a ruin's two labels agree with its tick and with each other. An invariant whose
+ *      subject could not occur before this version, so its test asserts non-vacuity first.
+ *   4. **INV-W5's subject set becomes a union.** It walked `workedSystems()`, which filters `razed`,
+ *      while the tally it checks does not — so razing a system's last WORKS mid-Reckoning dropped that
+ *      system out of the one check that catches double rent collection. A no-op for the project's
+ *      whole life, reachable in the same commit that reached it, with every test green.
+ *   5. **`credit`/`creditRent`/`creditFuel` refuse a ruin.** Today unreachable, because every caller's
+ *      id set comes from `sharesAt`, which filters — and that is a guarantee held by the *callers*,
+ *      which is the kind that stops holding when somebody adds a fourth one.
+ *
+ * ── AND THE A15 DOOR THE MECHANISM WAS PREDICTED TO OPEN ─────────────────────
+ *
+ * `WORKS_GOODS_IN_CURRENCY_MINOR` (version 14) lets a principal's **first** WORKS pay its goods half
+ * in retired currency, gated on `WorksBook.everHeldBy`, which counts razed rows. Its author wrote what
+ * the shorter predicate `ofPrincipal` — *"holds none now"* — would cost: *"reopens this door once per
+ * razing at 25,000 a turn: an A15 hole arriving with a feature that has nothing to do with it."*
+ * **This is that feature**, the prediction was exact, and the gate is unchanged: a razed principal
+ * rebuilds in goods like everybody else. `test/works/raze.spec.ts` and
+ * `test/works/replacement-demand.spec.ts` assert it on the engine's own path.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * `SNAPSHOT_HASH_MISMATCH` from the changed `works` table, at the first tick after the new build
+ * captures. `hydrate.ts` refuses on `RULES_VERSION_MISMATCH` first, which is the cheaper door.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
+ * prints the exact string, and a bare tick is refused.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ── RENUMBERED 32 → 34 AT MERGE ──────────────────────────────────────────────
+ *
+ * 32 was pre-assigned while the lode was on a parallel branch; the lode landed first and took 33.
+ * Renumbered to the tail per 24's protocol — *pre-assign to avoid the collision, renumber to the
+ * tail at merge* — and stacked rather than blended, because an operator reading a
+ * `RULES_VERSION_MISMATCH` has to know which change moved which table. This is the fourth version
+ * tonight to arrive out of order and the protocol has now paid for itself four times.
+ */
+export const RULES_VERSION = 34;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -1903,7 +1984,7 @@ import {
   MAX_SYNDICATES_PER_PRINCIPAL,
   PROPOSAL_TTL_TICKS,
 } from '../syndicate/params.js';
-import { Book as WorksBook, worksStateTable } from '../works/book.js';
+import { Book as WorksBook, worksStateTable, type WorksId } from '../works/book.js';
 import { produce as produceNow } from '../works/produce.js';
 import { checkWorks } from '../works/invariants.js';
 import { rentApplies, rentOn, type RentTerms } from '../works/rent.js';
@@ -5014,6 +5095,36 @@ export class Runtime {
         }
         return qty(total);
       },
+
+      // ── ★ WHAT A ROUT CAN END: THE PRODUCTION STANDING AT THE STAGE ────────
+      //
+      // `liveAt(...).filter(holder)` rather than `ofPrincipal(...).filter(system)` — the same set by
+      // either road, and the first is the one that filters `razed` *and* narrows by place first, so
+      // it cannot hand `razeVerdict` a ruin to raze twice. `Book.raze` refuses that anyway; a port
+      // that could produce it would still be a port that had to be trusted.
+      worksAt: (principal, system) =>
+        this.worksBook
+          .liveAt(system)
+          .filter((w) => w.holder === principal)
+          .map((w) => ({ id: w.id, system: w.system, holder: w.holder, extracted: w.extracted })),
+
+      razeWorks: (args) => {
+        try {
+          this.worksBook.raze({
+            id: args.works as WorksId,
+            tick: args.tick,
+            reckoning: reckoningOf(args.tick),
+            by: args.by,
+          });
+          return true;
+        } catch (error: unknown) {
+          // Reported and swallowed, never thrown: a razing the book refuses is an operator fault and
+          // the raid must still close. `resolveOne` records `razed: null` on a false return, so the
+          // permanent public record says the structure stands — which is what actually happened.
+          this.faults.push(`raid could not raze ${args.works} at tick ${String(args.tick)} (${describeError(error)})`);
+          return false;
+        }
+      },
     };
   }
 
@@ -5182,6 +5293,17 @@ export class Runtime {
         routed: outcome.routed.length,
         defender_force: outcome.force?.defenderForce ?? 0,
         raider_force: outcome.force?.raiderForce ?? 0,
+        // ── ★ THE THIRD THING A RAID CAN TAKE ──────────────────────────────────
+        //
+        // Goods were always here and hulls die in the battle beside this; production was the loss
+        // this record could not express. `razed` names the structure and `raze_why` carries the
+        // arithmetic either way, because "the margin was not met" is a fact a target that mustered
+        // hands paid for and is entitled to see on the public receipt (A2, A9 — the spectator frame
+        // shows no fact an agent's own `observe` would not).
+        razed: outcome.razed?.works ?? null,
+        razed_extracted: outcome.razed?.extracted ?? 0,
+        raze_margin: outcome.razed?.margin ?? null,
+        raze_why: outcome.razeWhy,
         // Stated on the receipt itself rather than left to be inferred, because the one
         // thing this record must never be mistaken for is an accusation (§15.4).
         is_default: false,
@@ -13328,6 +13450,13 @@ export class Runtime {
       // allowed in is an ally whose hands can count.
       swayAt: (principal, system) => this.swayFor(principal, system),
       materielLotsAt: (principal, system) => this.goodLotsAt(principal, system, MATERIEL_GOOD),
+      // The same read the raid path uses, through the same accessor, so the two callers of
+      // `razeVerdict` cannot disagree about which structures were standing.
+      worksAt: (principal, system) =>
+        this.worksBook
+          .liveAt(system)
+          .filter((w) => w.holder === principal)
+          .map((w) => ({ id: w.id, system: w.system, holder: w.holder, extracted: w.extracted })),
     };
   }
 
@@ -13579,6 +13708,36 @@ export class Runtime {
         }
       }
 
+      // ── ★ THE BREACH RAZES, AND IT IS DONE BEFORE THE PULSE IS RECORDED ─────
+      //
+      // `plan.razes` is non-null only on a margin of `RAZE_FORCE_MARGIN` or more, which implies the
+      // attacker was ahead, which implies the outcome is BREACH — so this needs no second outcome
+      // test and deliberately has none: a `plan.outcome === 'BREACH'` check here would be a second
+      // spelling of the margin rule, and the two would part the first time either moved.
+      //
+      // **Razed before the row is written, and `razed` reflects what the BOOK took.** Same ordering
+      // rule as the materiel above and for the same reason: destroy-then-record leaves a ruin with a
+      // pulse row that names it, while record-then-destroy would publish a razing that may not have
+      // happened. A5′ — the record must never be wrong — and a ruin is the most permanent public
+      // claim in this file.
+      let razed: string | null = null;
+      if (plan.razes !== null) {
+        try {
+          this.worksBook.raze({
+            id: plan.razes.id,
+            tick: ctx.tick,
+            reckoning: reckoningOf(ctx.tick),
+            by: campaign.attacker,
+          });
+          razed = plan.razes.id;
+        } catch (error: unknown) {
+          this.faults.push(
+            `campaign ${campaign.id} could not raze ${plan.razes.id} at ${campaign.objective} ` +
+              `(${describeError(error)})`,
+          );
+        }
+      }
+
       if (plan.row !== null) {
         // Recorded from what the ledger ACTUALLY destroyed, never from the plan's intent. The same
         // rule `book.close` enforces for a raid by making the intended figure unreachable — and
@@ -13615,6 +13774,12 @@ export class Runtime {
             breaches: campaign.breaches,
             rebuffs: campaign.rebuffs,
             breaches_needed: campaign.breachesNeeded,
+            // What the assault destroyed, and why it destroyed nothing when it did not. Both on the
+            // public event, because a razing is a permanent loss of production capacity and the
+            // three reasons one did not happen — the Commons, the margin, an empty objective — are
+            // different facts a reader is entitled to.
+            razed: razed,
+            raze_why: plan.razeWhy,
           },
         });
         this.campaignTicker.push(campaignTickerLine(campaign));
@@ -15397,6 +15562,13 @@ export class Runtime {
       // §16 world memory. Razed WORKS are included on purpose: a place keeps the name of whoever first
       // opened it, whether or not they still hold it — see `frames/memory.ts`.
       places: namesFor(this.worksBook.everInOrder(), handles),
+      // ── ★ THE RUINS: WHAT THIS WORLD HAS DESTROYED ──────────────────────────
+      //
+      // `ruinsInOrder()` rather than `everInOrder()`, because this is the one projection that wants
+      // the razed rows AS SUCH rather than tolerating them. A razed WORKS drops out of `worksLines`
+      // silently, and a mark that vanished is indistinguishable from a mark that was never there —
+      // so the loss gets a mark of its own or razing has no pixel signature at all (A13).
+      ruins: ruinsFor(this.worksBook.ruinsInOrder(), handles, MAX_FRAME_RUINS),
       hallOfFame: hallOfFame(this.standing.rows(), handles),
       syndicateLines: this.syndicateLines(outcome.tick),
       // ── THE MAP, WHICH THE FRAME HAS NEVER CARRIED ──────────────────────────

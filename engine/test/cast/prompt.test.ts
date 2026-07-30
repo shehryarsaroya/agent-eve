@@ -1004,7 +1004,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(97_882);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_266);
+    // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
+    //
+    // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
+    // Commons and on none of the three inside it. **MEASURED against the merged catalog, not added to
+    // the line above**, which is the rule the paragraph above earned: 93,376 + 2,384 happens to be
+    // 95,760 here, and it would not have been if the new block had displaced anything. Reading it is
+    // the only way to know which.
+    //
+    // Analytic margin 120,000 − 95,760 = **24,240**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 89,241 — leaving **30,759**, against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_266);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1063,14 +1074,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // 857 of FLOOR) and 29's COVER rules another +3,826, because this row is the one position that
     // qualifies for both: it holds a grant, so the GRANT rung reaches its counterparty even with A8
     // keeping campaigns away from it, and it creates ventures, so it can be offered `sign{COVER}`.
-    //
-    // ★ **91,363 at 33** — +4,506 for §16.12 #1, the LODE's 1,615 plus §11G's act-gated 2,891. It is
-    // landless outside the Commons, so it has hands, no ground to bill and standoffs it can walk to:
-    // exactly the principal whose SWAY decides whether walking is worth anything, and exactly the one
-    // that has to read a destination's yield before it spends a one-way act on the poorest ground on
-    // the map. Margin 120,000 − 91,363 = **28,637** against a required 4,000 — the number to quote
-    // about SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(91_363);
+    // ★ +2,384 at 32, and this row carries razing's whole reachable cost: a landless member outside
+    // the Commons works ground somebody else may claim and can be routed at a stage it walked to. It
+    // is exactly the principal §11A's destruction rules are written for.
+    // Margin 120,000 − 89,241 = **30,759** against a required 4,000 — the number to quote about
+    // SAFETY and never the number to quote about ROOM.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(93_747);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1738,22 +1747,35 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       55: 'fifty-five',
       // ★ 56 at 31 (§4's PARLEY block, one unit, act-gated on `message{TO}`) and 60 once Phase 3's
       // four COVER units landed in the same merge. Both branches wrote their own number into the
-      // prose and neither was right afterwards, which is what this map exists to catch. **63 at 33**,
-      // and it is the third consecutive reading: §11G's three units — a preamble, the STRAITS block
-      // and the SWAY block. The branch that built them wrote `58` into the prose against a catalog
-      // that had neither of the other two features in it.
-      63: 'sixty-three',
+      // prose and neither was right afterwards, which is what this map exists to catch.
+      60: 'sixty',
+      // ★ 61 at 32: §11A's `### It can be DESTROYED`. One unit, `wanted`-gated rather than act-gated —
+      // no verb identifies "has production to lose", and the counterplay verbs (`fight`, `join`) are
+      // only offered once a standoff is already live, by which point a member reading the rules for
+      // the first time inside a 24-tick window has already chosen wrong.
+      64: 'sixty-four',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(63);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(64);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 63],
+      spelled[n as 64],
     );
+    // ── ★ MATCHED ON A WORD BOUNDARY, NOT AS A SUBSTRING ─────────────────────
+    //
+    // `not.toContain` was the check until the count reached **sixty-one**, at which point the guard
+    // failed on `spelled[60]` — because "sixty-one" contains "sixty". A stale-number guard that goes
+    // red on the correct number is worse than no guard: the obvious way out is to delete the row it
+    // trips on, which is exactly the row that catches the next drift.
+    //
+    // So the compound numbers are matched with a trailing boundary. `sixty-one` no longer counts as an
+    // occurrence of `sixty`, and `sixty` still counts as one wherever it really appears.
     for (const [count, word] of Object.entries(spelled)) {
       if (Number(count) === n || Number(count) === n + 1) continue;
-      expect(source, `prompt.ts still says "${word}" and there are ${String(n)} units`).not.toContain(
-        word,
-      );
+      const stale = new RegExp(`${word}(?![a-z-])`);
+      expect(
+        stale.test(source),
+        `prompt.ts still says "${word}" and there are ${String(n)} units`,
+      ).toBe(false);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -2606,11 +2628,46 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // commits, and §11G's 2,891 is charged only to principals who can project force.
       44_027, // a newcomer on its first wake            (+1,615: the LODE only — it cannot reach a standoff)
       52_415, // mid-game in the Commons                 (+1,615)
-      59_734, // about to take territory                 (+4,506: LODE + §11G, it can stage a campaign)
-      62_876, // at war: party to a live campaign        (+4,506)
-      89_854, // a claimant in trouble                   (+4,506)
-      74_108, // the Commons at its fullest              (+1,173 = 1,615 − 442, AGT-S2's `join{CAMPAIGN}` fix)
-      91_363, // outside the Commons and landless, at its fullest: the largest REACHABLE (+4,506)
+      62_118, // about to take territory        (+4,506 LODE/§11G, +2,384 RAZE — it holds works to lose)
+      65_260, // at war: party to a live campaign        (+4,506, +2,384)
+      92_238, // a claimant in trouble                   (+4,506, +2,384)
+      74_108, // the Commons at its fullest              (+1,173; +0 for RAZE — A8, nothing to fear)
+      93_747, // outside the Commons and landless, at its fullest: the largest REACHABLE (+4,506, +2,384)
+      // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // 32 makes a WORKS destructible, and §11A `### It can be DESTROYED` is its rules surface: your
+      // structure can be ended, the margin that decides it, the force that saves it, and the fact that
+      // rebuilding gets **no** first-works discount. That last clause is why the block is not optional
+      // — a member that lost a WORKS and expected the 25,000 currency door to reopen has been billed by
+      // a rule nobody showed it, which is the class this catalog exists to prevent.
+      //
+      //   before  after   Δ       position
+      //   42,412  42,412      0  a newcomer on its first wake
+      //   50,800  50,800      0  mid-game in the Commons
+      //   55,228  57,612 +2,384  about to take territory
+      //   58,370  60,754 +2,384  at war
+      //   85,348  87,732 +2,384  a claimant in trouble
+      //   72,935  72,935      0  the Commons at its fullest
+      //   86,857  89,241 +2,384  outside the Commons and landless, at its fullest
+      //   93,376  95,760 +2,384  the analytic ceiling
+      //
+      // **+2,384 is `agent.md`'s delta to the character**, so the block lands whole wherever it lands
+      // and nothing was trimmed to fit it. Every row is a READING of the merged catalog, taken after
+      // 29 and 31 were both in the tree — the mistake this table's own header records is arithmetic on
+      // a pin taken when the catalog held only one of the three features.
+      //
+      // **The three zeroes are the gate, and they are the whole argument for it.** The unit is `wanted`
+      // on `outsideCommons && (holdsWorks || canBuildWorks)`. A8 makes a Commons WORKS unrazable — no
+      // force reading reaches it, and `razeVerdict` refuses it as INVALID rather than merely failing —
+      // so every rule in the block is a threat that cannot touch a Commons-seated reader. Note that
+      // `mid-game in the Commons` **holds a WORKS** and still pays nothing: the works predicate alone
+      // would have charged it, and `outsideCommons` is what makes it free. Same call as `join{RAID}`'s
+      // row, and the same error §11E cost every position 3,543 characters for.
+      //
+      // The block still states the Commons exemption for the five that do get it, so a member reading
+      // it on the wake it graduates out learns both the threat and where it stops.
+      // ══════════════════════════════════════════════════════════════════════════
       //
       // ══════════════════════════════════════════════════════════════════════════
       // ★ **31 · THE PARLEY. +857 EVERYWHERE AND +2,700 MORE ON FIVE ROWS OF EIGHT.**
@@ -2745,14 +2802,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // figure is 93,376, margin **26,624** against a required 4,000, and the largest reachable
       // position is 86,857 with 33,143 to spare. Read the two dead numbers above as the reason this
       // cell must be re-measured rather than adjusted whenever two features land together.
+      // ── 93,376 → 95,760 at 32 ────────────────────────────────────────────────
       //
-      // ── AND 33's §16.12 #1 ON TOP: 93,376 → 97,886 ──────────────────────────
-      //
-      // +4,506 (the LODE's 1,615 plus §11G's 2,891), margin **22,118** against a required 4,000, and
-      // the largest reachable position is 91,363 with 28,637 to spare. Nothing trimmed at any
-      // position. Third merge running where a branch's own prediction — 88,884 here — did not
-      // survive contact with the other features that landed the same night.
-      97_882,
+      // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
+      // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
+      // holding on its claim).
+      100_266,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

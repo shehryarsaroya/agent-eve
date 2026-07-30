@@ -623,7 +623,7 @@ export function actTokensOf(verb: string, params: unknown): readonly string[] {
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of sixty-three could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of sixty-four could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -953,6 +953,31 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     verbs: [],
     acts: ['build{WORKS}'],
     because: 'no WORKS is offered to you this wake — you cannot afford one where you stand',
+  },
+  {
+    section: S11A,
+    // ── ★ RAZING, AND THE GATE IS `outsideCommons` RATHER THAN A VERB ──────────
+    //
+    // Three rules in one block and all three are A5′-shaped for a WORKS holder: your structure can be
+    // destroyed, the margin that decides it, and the fact that rebuilding gets NO discount. A member
+    // that lost a WORKS and expected the 25,000 currency door to reopen has been billed by a rule
+    // nobody showed it, which is exactly the class this catalog exists to prevent.
+    //
+    // **`wanted` on `holdsWorks || canBuildWorks`, not on a verb**, because the population that needs
+    // it is *people with production to lose* and no verb identifies that. `fight` and `join` are the
+    // counterplay, but they are only offered when a standoff is already live — a member reading this
+    // for the first time inside a 24-tick window has already chosen wrong. So it ships with the WORKS
+    // rules, to whoever holds or can raise one.
+    //
+    // **And `outsideCommons`, which is the same call `join{RAID}`'s row records:** A8 makes a Commons
+    // WORKS unrazable, so for a Commons-seated member every rule here reads as a threat that cannot
+    // reach it. That is not a saving of characters, it is a saving of a *wrong impression* — the block
+    // still states the Commons exemption for anybody who does get it, so a member that graduates out
+    // reads it on the wake it becomes true.
+    block: '### It can be DESTROYED — and rebuilding costs full price',
+    verbs: [],
+    wanted: (s) => s.outsideCommons && (s.holdsWorks || s.canBuildWorks),
+    because: 'you are inside A8\'s floor, where a WORKS cannot be razed, and hold none besides',
   },
   {
     section: S11A,
@@ -1635,7 +1660,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are sixty-three: 2^63 is not enumerable, and it
+ * was free. At `###` granularity there are sixty-four: 2^55 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -2361,7 +2386,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` — **or one of whose `acts`** — is offered in `affordances[]` is
  * `RULES`: checked before any per-unit predicate, and `RULES` is never dropped for any reason
  * including length. That ordering is the whole safety argument: an agent is refused for breaking
- * a rule it was given, never for one it was not. There are sixty-three units; put the same rule
+ * a rule it was given, never for one it was not. There are sixty-four units; put the same rule
  * inside each predicate and the forty-fifth will forget it.
  *
  * ── ★ `acts` IS A SECOND DISCRIMINATOR AT THE SAME PRECEDENCE, NOT A WEAKER ONE ──
