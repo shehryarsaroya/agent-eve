@@ -354,6 +354,17 @@ export interface EngineOptions {
    */
   readonly restingOrders?: () => number;
   /**
+   * How many stored lots exist, for {@link STEP_BUDGET.perStoredLot}.
+   *
+   * Injected exactly as `restingOrders` is, and for the same reason: the engine must not
+   * reach into the ledger. **Defaulting this to `() => 0` is what took production down for
+   * an hour** — the term was added to `stepBudgetFor` and the caller was not, so the budget
+   * stayed at 1,760 and `DET-9` halted the replay at tick 7,128 a second time, with the fix
+   * present in the deployed build. A budget term with no caller is this project's signature
+   * defect wearing the mechanism meant to prevent it.
+   */
+  readonly storedLots?: () => number;
+  /**
    * Report whether an act is inside its module's own free allowance. Only `seal` uses
    * it today ("one free per role held", §17 and agent.md). Omit it and every act is
    * metered normally, which fails closed.
@@ -438,6 +449,7 @@ export class Engine {
   private readonly assertions: readonly ((tick: number) => readonly InvariantViolation[])[];
   /** Sizes the step budget for the MARKETS phase. See `STEP_BUDGET.perRestingOrder`. */
   private readonly restingOrders: () => number;
+  private readonly storedLots: () => number;
   private readonly invariantInputs: (tick: number) => InvariantInputs;
   private readonly requireAllInvariants: boolean;
   private readonly roleFills: () => RoleFills;
@@ -493,6 +505,7 @@ export class Engine {
     this.queue = new SubmissionQueue(this.completedTick + 1);
     this.budget = new ActionBudget(options.actionsPerTick);
     this.restingOrders = options.restingOrders ?? ((): number => 0);
+    this.storedLots = options.storedLots ?? ((): number => 0);
     this.handlers = options.handlers ?? {};
     this.verbs = { ...BUILT_IN_VERBS, ...(options.verbs ?? {}) };
     this.assertions = options.assertions ?? [];
@@ -820,6 +833,7 @@ export class Engine {
       this.intents.liveCount(),
       this.dueThisTick.length,
       this.restingOrders(),
+      this.storedLots(),
     );
 
     const traces: PhaseTrace[] = [{ phase: 'FREEZE_QUEUE', unbuilt: false, steps: 0 }];

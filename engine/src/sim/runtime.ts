@@ -3452,6 +3452,11 @@ export class Runtime {
       // world with no market and DET-9 aborted a legitimate book walk — an
       // agent-reachable halt (AGT-X9). See `STEP_BUDGET.perRestingOrder`.
       restingOrders: () => this.marketBook.countOpen(),
+      // HAZARD reads every principal's holdings, so the budget has to know how many lots
+      // exist. Supplied here beside `restingOrders` because the engine must not reach into
+      // the ledger, and asserted by `test/tick/budget-has-a-caller.spec.ts` — a term whose
+      // hook is never supplied silently defaults to zero, which is how this shipped once.
+      storedLots: () => this.ledger.allLots().length,
       obligations: this.obligationSource(),
       // ── THE COMMIT SINK IS A TRIPWIRE NOW, NOT THE WRITER ──────────────────
       //
