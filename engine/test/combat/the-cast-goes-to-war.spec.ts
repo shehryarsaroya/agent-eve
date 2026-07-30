@@ -145,6 +145,36 @@ const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
  * The alternative — one pair that passes everything — was `['fz-13', 'g24']`, and it fails the test
  * this file cares most about: with `crewMove` deleted **the whole file would stay green**, which is
  * the vacuity its own header calls out.
+ *
+ * ── ★ RE-SCANNED AT 33, AND THE PIN DID NOT HAVE TO MOVE ──────────────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * §16.12 #1's lode broke this file's frame assertion — `g24: battleLines is empty on every published
+ * frame` — and the reflex is to hunt for a seed that is green again. **That is a silencer, not a
+ * re-pin**, and this file has been re-pinned twice already (`g10` → `g05`). So `scripts/war-seed-scan.ts`
+ * exists now: it plays every candidate and prints **the whole table, pass and fail**, so the next
+ * person has the data rather than the conclusion.
+ *
+ * The scan said the pin was fine and the *engine* was not. `g24` had lost its line to
+ * `cast/heuristic.ts:graduateFor` — the lode pointed the anti-lateral-hop gate at `systemYield`, which
+ * made every lateral hop legal again, and a cast that wanders is a cast that is not standing on a
+ * battle line when the frame is drawn. Fixing the gate restored `g24` untouched.
+ *
+ * The table, 900 ticks × 8 members, after the fix:
+ *
+ * | seed | CONTEST | wrecks | lines | two-sided | engage | qualifies |
+ * |---|---|---|---|---|---|---|
+ * | `fz-13` | yes | 3 | 2 | **1** | 1 | ★ |
+ * | `g05` | yes | 6 | 2 | **1** | 4 | ★ |
+ * | `g10` | yes | 3 | 1 | 0 | 1 | — *(RAIDER-only, as its row above says)* |
+ * | `g24` | yes | 3 | 3 | **1** | 1 | ★ |
+ * | `g01` `g02` `g03` `g06` `g07` | no | 0 | 0 | 0 | 0 | — |
+ * | `g08` | yes | 0 | 1 | 0 | 0 | — |
+ *
+ * **Three of ten carry the property**, which is what licenses a two-seed pin: a property one seed of
+ * ten satisfies is a coincidence and would need an assertion instead, the way {@link CREW_MOVE_FLOOR}
+ * replaced a seed that no longer went silent. `g05` is the spare, and it is already a `WAR_SEEDS`
+ * member — so if `LINE_SEEDS` ever does have to move, it moves there and the scan says why.
  * ══════════════════════════════════════════════════════════════════════════
  */
 const LINE_SEEDS = ['fz-13', 'g24'] as const;

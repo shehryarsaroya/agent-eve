@@ -6,7 +6,14 @@
 
 ## ⏱ STATUS
 
-> ### ★★★ **THE MAP HAS BORDERS AND ITS GROUND IS NO LONGER UNIFORM. `PASS-TERRITORY-POLITICS` §16.12's FIRST-RANKED FEATURE, ALL THREE CLAUSES. `RULES_VERSION` 28.**
+> ### ★★★ **THE MAP HAS BORDERS AND ITS GROUND IS NO LONGER UNIFORM. `PASS-TERRITORY-POLITICS` §16.12's FIRST-RANKED FEATURE, ALL THREE CLAUSES. `RULES_VERSION` 33.**
+>
+> ⚑ **READ THE 33 SECTION BELOW THIS ONE FIRST.** What follows was written for the STRAIT/SWAY half at
+> version 28, on a tree that had neither Phase 3's risk market nor the PARLEY in it. Its strait and
+> sway content stands; **its LODE numbers, its character budget and its `sys-25` narrative do not** —
+> every one of them was re-measured on the merged tree and moved. That is recorded rather than
+> silently corrected because it is the third merge running in which a branch's own pins did not
+> survive contact with the features that landed beside it.
 >
 > §16.12 #1 — *"a fixed, **resource-distinct** graph with **chokepoints** and **capacity-limited
 > projection** … this creates local power, supply lines, borders, markets, and a real place for smaller
@@ -184,6 +191,232 @@
 >   rates are the next lever on the market's own dead signature, and the cheapest one left.
 > - **Frontier fuel is 8–11, never 0.** The sharper design — *some* frontier ground makes none — was
 >   deliberately not taken in the same change as the ore spread; it is one constant away.
+> - **No client panel.** The frame carries what a renderer needs; the renderer is the owner's.
+
+> ### ★★★ **33 — THE LODE LANDS, AND THE BAND IS SET BY THE COARSEST GOOD ON THE MAP.** `RULES_VERSION` 33.
+>
+> §16.12 #1's **third** clause, merged onto 31 (the risk market + the PARLEY) and renumbered to the
+> tail. STRAIT and SWAY came across verified and were not disturbed. **No verb spent** — 40/40,
+> observe keys 10/10, axioms 15/15.
+>
+> ### ⚑ THE DEFECT THAT COST FIVE OF THE SEVEN FAILURES, AND IT READ AS AN IMPROVEMENT IN THE DIFF
+>
+> `cast/heuristic.ts:graduateFor` carries a paragraph headed *"A CROSSING IS A TIER DECISION, NOT A
+> LATERAL MOVE"* with three measurements behind it — `sable` crossing twice and declining 13 elective
+> promises, 25 extra defaults, `tenants 5 → 1` and rent `31,350 → 3,113`. The lode pointed that gate at
+> `systemYield` and **left the paragraph in place.** With per-system yield the test *"a richer MARCHES
+> system is not more than this MARCHES system"* is false, so every lateral hop the paragraph forbids
+> became legal again while the comment still said it did not. **Scar #1's shape**: engine and its own
+> rules text disagreeing about one rule, each individually coherent.
+>
+> | failure | cause |
+> |---|---|
+> | `aged-solvency` · `g07` occupies 6 systems not 5 | lateral hops |
+> | `aged-solvency` · `g01` `levyShort` **150** at R2, where master is spotless | lateral hops |
+> | `the-cast-goes-to-war` · `g24` publishes no battle line | lateral hops |
+> | `the-cast-forms-a-coalition` · `doubleMarches` **0 → 5** | lateral hops |
+> | `the-cast-forms-a-coalition` · a pledged hand of five walks off its stage | lateral hops |
+> | `prompt.test.ts` · analytic maximum, 8 position costs | a pin taken on a tree without 29 or 31 |
+>
+> **The tier gate is restored and §16.12 loses nothing by it.** `worksQuote(...).sharePerTick` is
+> already per-system (`quotedGross` divides `systemYield`), so among the destinations a tier crossing
+> admits the cast now picks the **richest**, which it could not do before: all eighteen MARCHES quotes
+> were equal on yield and differed only by occupancy. The gate answers *whether* to cross; the lode
+> answers *where to*.
+>
+> ### ★ THE BAND: `LODE_WEIGHT` 9..12 → **40..46**, 1.33× → **1.15×**, AND THREE WALLS SET IT
+>
+> `scripts/lode-band.ts` runs the real allocator over **300 seeds** and reports the **worst**
+> poorest-system margin, not the launch map's — the guard runs at construction on *every* world the
+> engine builds, and the shipped map being lucky is not a property of the rule. Sole occupant holding a
+> claim, per Reckoning:
+>
+> | wall | 9..12 (the draft) | **40..46 (shipped)** |
+> |---|---|---|
+> | FLOOR · MARCHES | +1,344 | **+4,800** |
+> | FLOOR · FRONTIER | +7,560 | **+12,168** |
+> | ORE non-vacuity · worst FRONTIER distinct | 2 *(1 = the world HALTS)* | **3** |
+> | FUEL non-vacuity | 8–11 | **9–11** |
+>
+> **FUEL is the wall that actually decided it, and nothing in the engine can see it.**
+> `FUEL_YIELD_PER_TICK.FRONTIER` is **10 over 8 systems** — one unit is a 10% step, so below ≈1.15×
+> every frontier system yields exactly 10, every ore assertion stays green, and `agent.md`'s *"some of
+> it is worth far more than the rest"* quietly becomes false. `assertLodes`' non-vacuity clause reads
+> `yieldPerTick` only. Measured at `50..58` and `100..110`, both of which post a *better* ore floor.
+> **The coarsest good on the map stops the band narrowing, and it stops it before the ore floor wants
+> to.**
+>
+> **Separating RATIO from MAGNITUDE is what made the band findable.** The poorest share is
+> ≈ `base × 2m/(m+M)` — ratio only — while the count of distinct weight values is `M − m + 1` —
+> magnitude only. `9..12` had to be *wide* because it was *small*; lift the magnitude and the ratio is
+> free to narrow. The shipped band clears the floor by **3.6×** what the draft did while being
+> **narrower**.
+>
+> ⚑ **`9..12` failed its own stated test.** Its note rejected `8..12` because *"+1,344 is the same
+> order as a Reckoning's rounding, and a floor that close to zero is a floor nobody can plan against"* —
+> **+1,344 is `9..12`'s own worst case.** The table it came from was shifted by exactly one band: every
+> figure in it real, every label one row too wide. The most expensive kind of wrong number.
+>
+> ### ★★ THE OCCUPIED SUBSET IS CONSERVED BY NOTHING, AND IT IS A 1% SYSTEMATIC DRAG
+>
+> A tier's total is conserved exactly. **The total of the systems the world actually STANDS on is
+> not** — a cast occupies five to seven of twenty-two producing systems, and that subset can sit below
+> the tier base. Measured with `scripts/lode-residue.ts`, occupied Σ against base Σ, 8 seeds:
+>
+> | g01 | g02 | g03 | g04 | g05 | g06 | g07 | g08 | mean |
+> |---|---|---|---|---|---|---|---|---|
+> | −576 | **+864** | −576 | −2,304 | −6,912 | −1,152 | −1,728 | −1,152 | **−1,692** |
+>
+> **Negative on seven of eight**, ≈**1.0%** of occupied output. It is not noise and the cause is
+> legible: `graduateFor` maximises `sharePerTick` = `systemYield / (occupants + 1)`, and **the
+> occupancy term swamps a ≤15% yield term** — an empty system at 103 quotes 103 where a rich one with
+> one tenant quotes 57. The cast is playing correctly; it simply does not compete for rich ground, so
+> the world takes the lode's downside without its upside. **That is this project's signature defect at
+> the "affordance nothing selects" depth, and it is the honest open item this change leaves.** The
+> mechanism that would close it is contest — claims, rent, raids on rich ground — not a constant.
+>
+> ### ★★ THE GATE WENT RED ONCE, AND THE TEST THAT CAUGHT IT NAMED ITS OWN FIX
+>
+> **Balance gate, 8 seeds × 3 · 6 · 9 Reckonings.** Master's baseline was **measured** at `14fbd00`
+> rather than quoted — `TRACKER.md` records it clean at nine, but that reading is from `RULES_VERSION`
+> 16 and master is 31, so it was re-run: **0 short, 0/576.** Confirmed clean, and therefore one red
+> line would have been a regression.
+>
+> | horizon | master | 33, reserve 1 | **33, shipped** |
+> |---|---|---|---|
+> | 3 Reckonings | 0 · 0/192 | 0 · 0/192 | **0 · 0/192** |
+> | 6 Reckonings | 0 · 0/384 | 0 · 0/384 | **0 · 0/384** |
+> | 9 Reckonings | 0 · 0/576 | **3,241 · 1/576** | **0 · 0/576** |
+>
+> `CARRIED` 32,344 · 275,835 · **748,220**; `works` 64 at every horizon; `halted` 0/24; `TRAPPED` 0.
+> The remaining columns are reported and **not claimed** — the null control moved `ventures` −15% and
+> `CARRIED` −83% on nothing but a tie-break sign, so they are not meters: `kept` 346/747/1187,
+> `broken` 42/71/94, `ventures` 1,545/2,889/4,611, `claims` 10/21/25, `rent` 1,980/15,954/63,924,
+> `hulls` 6, `battles` 3/5/12.
+>
+> **What went red, and it is `g07` — the constellation this repo already documents as structurally
+> insolvent.** The decomposition is the whole finding:
+>
+> - g07 seats **8 principals on 5 producing systems**. At the flat tier figure that is **149,760
+>   produced against 160,000 owed — −10,240 before any lode exists.** The lode adds **−1,728**, so it
+>   widens a pre-existing negative margin by 17% and does not create one.
+> - `p:halcyon` finished **3,241 short at R8, every unit of it in the ESCROWABLE bucket** — the share
+>   §5.2 lets another principal's hand carry — while its constellation held **87,609 unpledged units
+>   above their own outstanding duty. Twenty-seven times the shortfall.**
+> - **The goods were there, the bucket was open, the verb was legal, and cast policy refused it.**
+>   `the-constellation-closes-ranks.spec.ts` said so in its own failure message and named the constant:
+>   `CAST_CARRY_RESERVE_RECKONINGS`. That is the same failure `RULES_VERSION` 26 hit, one feature later,
+>   and the test written for it did its job.
+>
+> **So the fix is distribution, not production: the reserve goes 1 → 0**, re-measured rather than
+> inherited. Its own docblock table says *"the reduction stops at one because one is where the meters
+> are clean, which is the only claim the sweep supports"* — on the merged tree **zero** is where they
+> are clean, and the table now carries both rows. It is safe for the reason the call site states:
+> `surplus` is already net of the carrier's own outstanding duty, so the reserve is purely
+> **forward-looking**. At zero a member gives away what it does not owe *this* Reckoning and keeps
+> nothing against the *next* one, while its ground keeps producing. **It can never fund somebody
+> else's bill out of its own.**
+>
+> ⚑ And the 957 that argued against zero on master *was already disclaimed by the paragraph that
+> recorded it*: traced to `p:sable`'s own **non-escrowable presence share**, the one bucket no carry
+> may ever fill, arriving through a changed trajectory rather than through goods it gave away.
+>
+> - **No system is a trap to settle on**: the floor guard holds at +4,800 worst-case over 300 seeds and
+>   every system's sole occupant clears its own burn on every one of them. `g07` is not a poor *place*;
+>   it is a constellation with more principals than ground.
+>
+> **The two levers still on the table, neither taken:** raise `FUEL_YIELD_PER_TICK.FRONTIER` — the
+> coarsest good is what walls the ratio at 1.15×, and at base 20 the band could narrow to ≈1.08× and
+> roughly halve the drag — or the §10 calibration `aged-solvency.spec.ts` already pins as the owner's.
+> Both are owner calls with their own gate runs. **And twelve Reckonings is still where §10 is owed an
+> answer**, which the reserve's docblock says and this change does not repeal.
+>
+> ### THE DELIVERY PATH, MEASURED SEPARATELY
+>
+> 8 seeds × 6 Reckonings: a member's goods and hands are in different systems in **231 of 384
+> observations (60.2%)**, `move` 1,748, `deliver` 482, `haul` 23, applied 28,150, refused 4,602, and
+> **`REACH-REFUSED` 0** with 0 halts. Master's own reading of that split is 234/384 (60.9%), so making
+> the map's ground uneven did not move the hazard the probe exists to watch. That last zero is the executable form of *"the friction is on
+> force and never on freight"* — `move`, `haul` and `deliver` read neither `sway.ts` nor `lode.ts`.
+>
+> ### A15, RE-MEASURED WITH PER-SYSTEM YIELD IN PLACE
+>
+> The map-bounded-output proof rests on a **per-system** cap, and the lode changes the numerator of
+> exactly that division — so it was taken again rather than inherited, and taken on a tier the lode
+> actually varies (the Commons is uniform, so the old measurement could not see this). **1, 4 and 16
+> puppets at one system extract the identical total, on the poorest ground and on the richest**, and
+> the closed form checks too: the total is the PLACE's yield over the online window. 16 at the rich
+> system still out-extracts 16 at the poor one, which is the ground mattering rather than the identity
+> count.
+>
+> ### ★ THE SPEC THAT WAS CITED THREE TIMES BEFORE IT EXISTED
+>
+> `test/world/the-ground-is-not-uniform.spec.ts`, **21 tests**. `lode.ts` cited it twice and
+> `works/params.ts` once — *"Measured rather than argued: see …"* — and **the lode shipped with no test
+> of its own at all.** A citation to a missing file is the strongest form of this project's signature
+> defect: it reads as *measured* to every reader including its author. Each of those three sentences is
+> now a test and they are the first three.
+>
+> **Two defects it found on its first run, and one more beside it:**
+>
+> 1. **`lodesOf` memoised on the MAP alone while taking `bases` too**, so a second call with different
+>    bases silently returned the first one's answer — a pure function that is not a function of its
+>    inputs. It could not bite in production (one frozen caller), which is exactly the argument that
+>    keeps this class alive. Found by the mutation test asserting a starved table is refused **and that
+>    the shipped one still passes on the same map**; the control half read the mutant's cache.
+> 2. **`CONTRACT_ACTS` says "Twelve tokens" over a set of sixteen** — stale since the risk market's
+>    three COVER tokens and the parley's `message{TO}` landed, through a merge, a review and a full
+>    suite, because the prose-count guard covered `CONTRACT_CATALOG` and **nothing covered this**. Now
+>    pinned the same way.
+> 3. **`aged-solvency.spec.ts` summed `YIELD_PER_TICK[tierOf(...)]`** over the occupied set — §16.12
+>    #1's own defect sitting inside the test that measures the residue it causes.
+>
+> ### CHARACTER BUDGET, MEASURED ON THE MERGED TREE
+>
+> | position | 31 | 33 | Δ |
+> |---|---|---|---|
+> | a newcomer on its first wake | 42,412 | 44,027 | **+1,615** |
+> | mid-game in the Commons | 50,800 | 52,415 | +1,615 |
+> | about to take territory | 55,228 | 59,734 | +4,506 |
+> | at war | 58,370 | 62,876 | +4,506 |
+> | a claimant in trouble | 85,348 | 89,854 | +4,506 |
+> | the Commons at its fullest | 72,935 | 74,108 | **+1,173** |
+> | outside the Commons and landless | 86,857 | 91,363 | +4,506 |
+> | the analytic ceiling | 93,376 | **97,882** | +4,506 |
+>
+> **4,506 against a 6,000 quota**, and it decomposes exactly: the LODE is **+1,615 everywhere**, §11G
+> (STRAITS + SWAY) is **+2,891 act-gated** on `join{RAID}` · `join{CAMPAIGN}` · `build{CAMPAIGN}` plus
+> the verb `demand`, and the Commons row is `1,615 − 442` because AGT-S2's fix removed a
+> `join{CAMPAIGN}` the engine can no longer produce. Analytic margin **22,118** of 120,000; the largest
+> reachable position is 91,363 with **28,637** to spare against a required 4,000.
+>
+> **The LODE's +1,615 is paid by a newcomer too, and that is correct rather than a gate failure.**
+> `holding.graduation.ground[]` prices destinations a newcomer is about to spend a one-way act on; a
+> rule that only reaches principals who have already crossed is a rule delivered after the decision it
+> governs.
+>
+> ⚑ **§11G, not §11F.** Master's risk market took `11F` first and it is already published in
+> `agent.md`, the SPEC canon rows and `prompt.test.ts`. Renumbering a section an agent has already read
+> is a rules-surface edit for a cosmetic ordering gain.
+>
+> ### WHAT IS NOT DONE, STATED PLAINLY
+>
+> - **The 1% occupied-subset drag** above. The cast does not compete for rich ground, so §16.12's
+>   variation is created and not yet exploited.
+> - **`g07` at TWELVE Reckonings**, which the carry reserve's docblock already flags: the structural
+>   residue reappears there and no amount of distribution reaches it. Nine is where the gate looks.
+> - **`ALLOY_IN_BY_TIER` is still per-tier**, so `premiumBps` is still structurally 0. Per-system refine
+>   rates are the next lever on the market's dead signature and the cheapest one left.
+> - **Frontier fuel is 9–11, never 0.** The sharper design — *some* frontier ground makes none — is one
+>   constant away and would need the fuel base raised first.
+> - **`LINE_SEEDS` did not have to move, and that was established by scanning rather than by relief.**
+>   `scripts/war-seed-scan.ts` plays every candidate and prints the whole table, pass and fail: **3 of 10
+>   named seeds carry the two-sided-battle-line property** (`fz-13`, `g05`, `g24`), which is what
+>   licenses a two-seed pin — a property one seed of ten satisfies is a coincidence and needs an
+>   assertion instead, the way `CREW_MOVE_FLOOR` replaced a seed that no longer went silent. The scan
+>   said the pin was fine and the **engine** was not: `g24` had lost its line to the lateral-hop defect,
+>   and fixing the gate restored it untouched. Table pasted into the spec so the next re-pin starts from
+>   data.
 > - **No client panel.** The frame carries what a renderer needs; the renderer is the owner's.
 
 > ### ★★★ **PHASE 3'S RISK MARKET EXISTS, AND THE `HAZARD` PHASE HAS ITS FIRST CONTENT IN THE PROJECT'S LIFE. `RULES_VERSION` 29.**
