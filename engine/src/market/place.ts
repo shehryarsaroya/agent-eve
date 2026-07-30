@@ -46,6 +46,8 @@ import {
   type TimeInForce,
   type VenueId,
 } from './order.js';
+import { ENDOWMENT_RULE } from './standing.js';
+import { storesAccount } from '../ledger/accounts.js';
 import {
   escrowGoods,
   freeCash,
@@ -190,11 +192,38 @@ function planOrder(ctx: PlaceContext, req: TradeRequest, replacing: Order | null
     const credit = replacing !== null && replacing.side === 'BID' ? lockedCash(ctx.ledger, replacing.encumbranceId) : 0;
     const free = minor(freeCash(ctx.ledger, ctx.principal) + credit);
     if (free < required) {
+      // ══════════════════════════════════════════════════════════════════════════
+      // ★ **"YOU HAVE 0 FREE" AGAINST A BALANCE OF 90,660 — ARITHMETICALLY RIGHT, MAXIMALLY
+      // CONFUSING**, and this is the gate on alloy, territory and cover.
+      //
+      // `freeCash` is `freeBalance − endowments.remaining`, and `market/escrow.ts` says so out loud:
+      // *"A fresh identity's `freeCash` is still, and always, 0."* A blind player read the sentence as
+      // a claim about its BALANCE, which was 90,660, and had no way to reconcile the two — the refusal
+      // named neither `transferable_minor` (which publishes exactly this figure), nor the endowment,
+      // nor D7, and then advised *"lower the quantity or the price"*, which is unactionable at 0.
+      //
+      // `ENDOWMENT_RULE` already existed, already said all of it, and had exactly one reader:
+      // `market.endowment.rule`. The withheld row quoted this refusal verbatim and appended a pointer
+      // — but that row fires only when `trade` is ABSENT from the menu, so an agent that constructed
+      // its own BID never saw it. So the rule goes in the refusal, where the loss happens: A2 says a
+      // refusal that leaves an agent with no next move costs it a wake to find one (AGT-S2), and here
+      // the next move is *be paid by somebody*, which no amount of repricing reaches.
+      // ══════════════════════════════════════════════════════════════════════════
+      const held = ctx.ledger.account(storesAccount(ctx.principal)) === undefined
+        ? minor(0)
+        : ctx.ledger.freeBalance(storesAccount(ctx.principal));
+      const endowed = ctx.ledger.endowments.remaining(ctx.principal);
       return reject(
         'A7',
         `a buy order escrows the maximum it could spend: ${String(wanted)} x ${String(unitPrice)} = ` +
-          `${String(required)}, and you have ${String(free)} free. An order that cannot be escrowed is ` +
-          'refused rather than half-placed — unescrowed depth is fake depth. Lower the quantity or the price.',
+          `${String(required)}, and you have ${String(free)} TRANSFERABLE. An order that cannot be escrowed is ` +
+          'refused rather than half-placed — unescrowed depth is fake depth. ' +
+          (endowed > 0
+            ? `THIS IS NOT YOUR BALANCE. Your unlocked balance is ${String(held)}, of which ` +
+              `${String(endowed)} is enrolment ENDOWMENT and may not be sent to another principal, ` +
+              `leaving ${String(free)} — the same figure \`market.transferable_minor\` publishes and ` +
+              `\`market.endowment\` breaks down. ${ENDOWMENT_RULE}`
+            : 'Lower the quantity or the price.'),
       );
     }
   } else {

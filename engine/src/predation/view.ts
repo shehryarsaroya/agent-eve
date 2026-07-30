@@ -103,6 +103,18 @@ export interface RaidView {
      */
     readonly defender_joiners: number;
     /** ★ The same for the other end of the arc. Its stake is public; so is its presence. */
+    /**
+     * ★ **SUPPLIED RAIDER HANDS** — `Σ min(hands standing here, sway here)`, the term of the sum.
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     * The raider's sum used to be one point per PRINCIPAL, so a blind player stood at the stage with
+     * `your_sway: 3` and two IDLE hands and read `force.raider: 1` with no verb that could change it.
+     * This is the field that number now comes from, and `raider_joiners` beside it is the count of
+     * principals — a coalition of three bringing one hand each and one principal bringing three read
+     * `3` here and differ there, which is the distinction a reader pricing `join` actually needs.
+     * ══════════════════════════════════════════════════════════════════════
+     */
+    readonly raider_hands: number;
     readonly raider_joiners: number;
     readonly terrain: number;
     readonly verdict_if_resolved_now: 'REPULSED' | 'PLUNDERED';
@@ -116,6 +128,8 @@ export interface RaidView {
      * the defence would invert the mechanic it came from.
      */
     readonly your_sway: number;
+    /** ★ Your own IDLE hands standing at the stage now. The cap is {@link your_sway}; this is the fill. */
+    readonly your_hands_here: number;
     /**
      * ★ Raider hands standing here that SWAY did not let count — the mechanic's meter.
      *
@@ -506,6 +520,7 @@ function viewOf(
       raid_force_at_spawn: reading.terms.raidForceAtSpawn,
       defender_if_you_fight: reading.defenderForce,
       defender_joiners: reading.terms.defenderJoiners,
+      raider_hands: reading.terms.raiderHands,
       raider_joiners: reading.terms.raiderJoiners,
       terrain: reading.terms.terrain,
       verdict_if_resolved_now: reading.verdict,
@@ -519,6 +534,15 @@ function viewOf(
        * will not matter"*, which is what makes the route above safe to publish.
        */
       your_sway: port.swayAt(reader, raid.stage),
+      /**
+       * ★ **YOUR OWN HANDS STANDING AT THE STAGE RIGHT NOW** — IDLE and present, the set that counts.
+       *
+       * Beside {@link your_sway} because the pair IS the decision: sway is the cap and this is what
+       * you have brought against it. A blind player read `your_sway: 3` with two hands standing there
+       * and `force.raider: 1`, and had no field anywhere that would have let it see the third number
+       * was 1 — the count of party ROWS. Force is hands now, and this is yours.
+       */
+      your_hands_here: port.handsDefending(reader, raid.stage).length,
       raiders_out_of_sway: reading.terms.raidersOutOfSway,
     },
     costs: {
@@ -552,10 +576,20 @@ function viewOf(
     forfeited: raid.forfeited,
     // Null once a hand of the reader's is already standing there — there is nothing left to walk,
     // and publishing a route to where you are would read as an instruction to leave.
-    march:
-      port.handsDefending(reader, raid.stage).length > 0
-        ? null
-        : marchFor(port.marchTo(reader, raid.stage, tick), raid.resolvesAtTick),
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★ **THIS WAS NULLED THE MOMENT ONE HAND OF YOURS WAS THERE, AND THAT USED TO BE RIGHT.**
+    //
+    // The old comment: *"Null once a hand of the reader's is already standing there — there is
+    // nothing left to walk, and publishing a route to where you are would read as an instruction to
+    // leave."* True while force was one point per PARTY ROW: a second hand bought nothing, so a route
+    // for it was noise. `readForce` now counts `min(hands standing here, sway here)`, so a second hand
+    // buys a whole point of force and the route to it is the most useful row on the standoff.
+    //
+    // `marchTo` already skips hands that are at the stage, so this can only ever name one that is
+    // elsewhere — it is a REINFORCEMENT route, never an instruction to leave. It goes null only when
+    // there is genuinely no such hand.
+    // ══════════════════════════════════════════════════════════════════════════
+    march: marchFor(port.marchTo(reader, raid.stage, tick), raid.resolvesAtTick),
   };
 }
 

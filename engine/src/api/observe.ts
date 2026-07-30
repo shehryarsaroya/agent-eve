@@ -75,6 +75,7 @@ import {
   maxElectiveBps,
   minElectiveBps,
   openIndices,
+  partiesOf,
   pinnedValue,
   roleOfPrincipal,
   yourTakeAtP50,
@@ -227,6 +228,9 @@ import {
 import {
   commonsBoundRejection,
   GRADUATION_STATEMENT,
+  HANDS_PER_PRINCIPAL,
+  isStrait,
+  SWAY_STRAIT_TOLL,
   LODE_STATEMENT,
   handsOf,
   holdingOf,
@@ -1338,6 +1342,17 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
       /** WORKS standing there now, yours or anyone's. Your share falls as this rises. */
       occupants: quote.occupants,
       /**
+       * ★ **WHO those occupants are, named.** `PUBLIC` — the spectator frame has always shown it.
+       *
+       * A blind player read `occupants: 4` on the ground under its own body and could not learn one
+       * name; it got three of them only because `demand` happened to list them as targets, which is
+       * a door that does not exist for a principal with no reach. These are the principals dividing
+       * the yield with you — the ones to `message`, buy out, hire, or take the ground from. Includes
+       * you when a WORKS of yours stands here, because the list is the ground's occupancy and not a
+       * list of rivals.
+       */
+      occupied_by: quote.occupiedBy,
+      /**
        * What yours would **KEEP** per tick once online, at today's crowding **and after rent**.
        *
        * ══════════════════════════════════════════════════════════════════════
@@ -1449,12 +1464,34 @@ function graduationBlock(
      * differs by about a third across a tier, and this is where an agent reads it **before** it
      * spends a one-way, priced, irreversible act on the poorest system on the map.
      *
-     * A2, in its own words: known arithmetic is exact and machine-readable. Every figure here is a
-     * pure function of the fixed map, so it is the same for every reader and cannot go stale.
+     * A2, in its own words: known arithmetic is exact and machine-readable.
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     * ⚑ **AND IT PUBLISHED THE 15% TERM WHILE HIDING THE 430% ONE.** A blind player crossed onto
+     * `sys-05` because the row read *"yield 110 · richness_bps 0 · gate: true"* — and it was the most
+     * crowded system on the map, four WORKS dividing 110 into 27 each, while a rival sat **alone** on
+     * `sys-10` taking 115. THE LODE spreads a tier by about 15%; **occupancy spreads it by 430%.** So
+     * the fields above were a true, comparable, exactly-arithmetic account of the *smaller* term, and
+     * the field that decided the income was the one an agent could not read at all.
+     *
+     * That is A2's second clause failing in the direction that hides: *"never hand it a solved
+     * game"* was satisfied and *"never make an agent need a wiki"* was not, because the only way to
+     * learn a destination's crowding was to spend the 50,000-plus-5,000 one-way act and look. It is
+     * also the reason three separate measurements said the cast never competes for rich ground — it
+     * **cannot**, because emptiness was not published.
+     *
+     * `share_per_tick` is the fix and the count is not: the count is a term an agent has to divide a
+     * published yield by, and every arithmetic step we leave to a reader is a step it can get wrong.
+     * So both are here and the derived figure is the one the field name promises — the SAME
+     * `worksQuote` the build affordance quotes, the `works` block publishes and `vBuildWorks`
+     * charges, so a destination cannot read one way here and another way on arrival (scar #1).
      * ══════════════════════════════════════════════════════════════════════
      */
     ground: quote.open.map((system) => {
       const lode = runtime.lodeFor(system);
+      // ONE arithmetic, never a recomputation — `yield_per_tick / (occupants + 1)` less the rent is
+      // exactly what `holding.works.here` will say once your body is standing there.
+      const there = runtime.worksQuote(principal, system);
       return {
         system,
         tier: lode.tier,
@@ -1464,6 +1501,29 @@ function graduationBlock(
         richness_bps: lode.richnessBps,
         /** Whether it is a STRAIT's endpoint — holding one waives that gate's SWAY toll. */
         gate: lode.gate,
+        /**
+         * ★ **WORKS ALREADY STANDING THERE.** The term that dominates this decision.
+         *
+         * A place yields what it yields however many divide it (A15), so every occupant here is a
+         * share of {@link yield_per_tick} that will not be yours. Zero is the number to look for.
+         */
+        occupants: there.occupants,
+        /** Who they are, named — the principals you would be dividing this ground with. */
+        occupied_by: there.occupiedBy,
+        /**
+         * ★ **WHAT YOU WOULD KEEP PER TICK IF YOU CROSSED AND BUILT HERE** — the decision figure.
+         *
+         * `yield_per_tick` divided by `occupants + 1` (you, arriving), less the rent a claim here
+         * would take. **Read this and not `yield_per_tick`**: the richest ground on the map pays
+         * worse than the poorest if four WORKS already stand on it.
+         */
+        share_per_tick: there.sharePerTick,
+        /** The same for FUEL, which only a FRONTIER system makes. Zero elsewhere. */
+        fuel_share_per_tick: there.fuelSharePerTick,
+        /** What a claim here would take of your share, in bps. Zero on unclaimed ground. */
+        rent_bps: there.rentBps,
+        /** WHO would take it, named — a landlord you can deal with, or `null`. */
+        rent_to: there.rentTo,
       };
     }),
     lode_statement: LODE_STATEMENT,
@@ -1740,6 +1800,15 @@ function affordancesFor(
    */
   let raiderJoinsBeyondSway = 0;
   const raiderJoinSwayWhy = new Set<string>();
+  /**
+   * ★ Standoffs the reader is A PARTY TO where more of its hands would count and none can get there.
+   *
+   * The `your_side !== null` arm of the raid chain did not exist at all, so an initiator standing at
+   * its own demand's stage got no affordance, no reason and no counter — this project's signature
+   * defect landing on §9's own initiator. Collected here rather than pushed inline because `reasons`
+   * is declared below the loop, and one array in two scopes is how a count and its text drift apart.
+   */
+  const reinforcementSilent: string[] = [];
   /** Reachable principals `MAX_PARLEY_AFFORDANCES` dropped, and who they were. */
   let parleyReachDropped = 0;
   let parleyReachDroppedNames: readonly string[] = [];
@@ -1868,7 +1937,11 @@ function affordancesFor(
         expires_tick: view.resolves_tick,
         quote_id: quoteId(principal, tick, 'fight', { raid: view.raid }),
       });
-    } else if (view.your_side === null && view.march !== null) {
+    } else if (view.your_side === null && view.force.your_hands_here <= 0 && view.march !== null) {
+      // `your_hands_here <= 0` used to be implicit in `march !== null` — the view nulled the route the
+      // moment a hand of the reader's stood at the stage. It does not any more (a second hand is worth a
+      // point of force now), so the condition has to be stated here or this branch swallows the `join`
+      // branch below and a reader standing AT the stage is told to walk to it.
       // ── ★ THE MARCH: THE ONE ACT THAT MAKES `join` REACHABLE, AND IT HAD NO AFFORDANCE ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -1952,6 +2025,62 @@ function affordancesFor(
           expires_tick: view.resolves_tick,
           quote_id: quoteId(principal, tick, 'join', { raid: view.raid, side: 'RAIDER', principal: view.target }),
         });
+      }
+    } else {
+      // ══════════════════════════════════════════════════════════════════════════
+      // ★ **THE BRANCH THAT DID NOT EXIST: A READER ALREADY IN THE STANDOFF.**
+      //
+      // The chain above is `target · not-in-it-and-far · not-in-it-and-here`, so `your_side ===
+      // 'RAIDER' | 'DEFENDER'` fell through **every** arm — no affordance, no `withheld` row, and no
+      // increment of any counter. A blind player that opened its own `demand` therefore stood at the
+      // stage holding two IDLE hands, read `force.raider: 1`, and got silence from the one surface
+      // that is supposed to say what was withheld and why. That is this project's signature defect
+      // landing on §9's own initiator: *"offence is priced in allies the reach rules forbid asking."*
+      //
+      // `join` is genuinely closed to it — `RaidBook.addParty` throws on a second row for one
+      // principal, deliberately, because `join` is a coalition verb and not a reinforcement verb. So
+      // the answer is not a `join` offer; it is `move`, which is now a real answer because
+      // `readForce` counts `min(hands standing here, sway here)` rather than one point per party.
+      // **The hands you have standing there are the force you have.**
+      // ══════════════════════════════════════════════════════════════════════════
+      const supplied = view.force.your_hands_here;
+      const room =
+        view.your_side === 'RAIDER'
+          ? Math.max(0, view.force.your_sway - supplied)
+          : Math.max(0, HANDS_PER_PRINCIPAL - supplied);
+      const march = view.march;
+      if (room > 0 && march !== null) {
+        eligible.push({
+          verb: 'move',
+          params: { hand: march.hand, to: march.next },
+          cost: 1,
+          max_direct_loss: 0,
+          max_contingent_liability: 0,
+          what_it_forecloses:
+            `you are ${String(view.your_side)} in ${view.raid} at ${view.stage}, and force is counted in HANDS ` +
+            `STANDING THERE when it resolves — never in how many principals took a side. It reads ` +
+            `${String(view.force.raider)} raider against ${String(view.force.defender_if_you_fight)} defender ` +
+            `(${view.force.verdict_if_resolved_now} as it stands, ties to the defender), and ${String(supplied)} ` +
+            `of those hands are yours. Hand ${march.hand} stands at ${march.from}, ${String(march.hops)} gate(s) ` +
+            `away: one \`move\` per gate, arriving tick ${String(march.arrives_tick)} against a window that ` +
+            `shuts at ${String(view.resolves_tick)}` +
+            `${march.in_time ? '' : ' — TOO LATE, and this walk would arrive at a resolved standoff'}. ` +
+            (view.your_side === 'RAIDER'
+              ? `Your SWAY at ${view.stage} is ${String(view.force.your_sway)} and that is the CAP on how many of ` +
+                `your hands count as force there, so ${String(room)} more would count and anything beyond that ` +
+                'would not. `join` cannot add one — one principal is one party row — so walking is the way.'
+              : `Up to ${String(HANDS_PER_PRINCIPAL)} of your hands count when you are defending and sway never ` +
+                `caps a defence, so ${String(room)} more would count.`),
+          expires_tick: view.resolves_tick,
+          quote_id: quoteId(principal, tick, 'move', { raid: view.raid, hand: march.hand, to: march.next }),
+        });
+      } else if (room > 0) {
+        reinforcementSilent.push(
+          `${view.raid} at ${view.stage}: ${String(room)} more of your hands would count as force there and you ` +
+            'have none that is IDLE, free and able to reach the stage before it resolves. Force is HANDS ' +
+            'STANDING THERE at resolution, `join` cannot add a second one (one principal is one party row), so ' +
+            'walking is the only way and there is nothing left to walk',
+        );
       }
     }
   }
@@ -3108,7 +3237,23 @@ function affordancesFor(
         `both standing at ${claim.system}. You become the claimant of ` +
         `record — AND you inherit its ${String(claim.arrears)} arrears and this Reckoning's ` +
         `${String(claim.owed)} still owed, which a transfer never resets. Your holding must already stand there ` +
-        `and you must have ${String(CLAIM_BOND_MINOR)} more bond posted per claim.`,
+        `and you must have ${String(CLAIM_BOND_MINOR)} more bond posted per claim. ` +
+        // ══════════════════════════════════════════════════════════════════════
+        // ★ **AND WHAT IT EARNS, WHICH THIS SENTENCE NAMED NOTHING OF.** The sweep that followed the
+        // graduation defect: does this observation publish the term that dominates the outcome?
+        //
+        // Every clause above is a COST — the price, the goods, the arrears, the bond, the Charge. The
+        // return on a claim is its RENT, and rent is `rent_bps` of everything **somebody else's** WORKS
+        // extracts here. So `tenants` is the term that decides whether the act pays at all: a claim
+        // over ground nobody else works earns **zero** for a recurring Charge in produced goods, which
+        // is strictly negative and reads identically to a good claim in this affordance. `ClaimView`
+        // has carried `tenants` and `rent_per_tick` the whole time; this string named neither.
+        // ══════════════════════════════════════════════════════════════════════
+        `WHAT IT EARNS: rent of ${String(claim.rent_bps)} bps on everything OTHER principals' WORKS ` +
+        `extract here, and ${String(claim.tenants)} such WORKS stand there now — worth ` +
+        `${String(claim.rent_per_tick)} of ${claim.good} per tick as it stands. A claimant never pays ` +
+        `itself rent, so your own WORKS here keeps its whole share instead. **At 0 tenants a claim ` +
+        `earns nothing and still owes its Charge every Reckoning**: read that number before the price.`,
       expires_tick: claim.vulnerability.open ? claim.vulnerability.closes_tick : claim.deadline_tick,
       quote_id: quoteId(principal, tick, 'build', { kind: 'ANCHOR', system: claim.system }),
     });
@@ -3587,6 +3732,9 @@ function affordancesFor(
   //     by instinct: a cleared delegate can hand your figures to anybody, the copy is permanent,
   //     and revoking the grant does not take it back.
   const grantShape = officeShape('treasury-hand');
+  let grantOffers = 0;
+  /** The `grant` withheld text, or null. Pushed below, where `reasons` exists. */
+  let grantSilent: string | null = null;
   for (const candidate of runtime.grantCandidates(principal, tick, MAX_GRANT_OFFERS)) {
     const fence = grantShape?.verbs ?? [];
     const rooms = grantShape?.clearance ?? [];
@@ -3633,6 +3781,55 @@ function affordancesFor(
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'grant', { to: candidate.to }),
     });
+    grantOffers += 1;
+  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★ **AND WHEN THERE ARE NONE, SAY SO — `grant` HAD AN AFFORDANCE AND NO ACCOUNTING.**
+  //
+  // The affordance above closed *"a core loop that had never run through the front door"*. It did not
+  // close the other half: a blind player went 21 observations with no `grant` offer and no `withheld`
+  // entry, sent it anyway on the strength of §10's *"all live now"*, and it WORKED. So the menu was
+  // silent about the game's core loop while the verb was reachable, which is the failure mode
+  // `withheld` exists for.
+  //
+  // `test/api/withheld-is-accountable.spec.ts` had already measured it — 45.7% silent — and filed it
+  // `OPEN` with the reason *"an office must EXIST before it can be granted, and offices are voted into
+  // being, so the row would have to explain a multi-step path"*. **That describes a gate the code does
+  // not have.** `grantCandidates` gates on three things and every one of them is one sentence:
+  // a free balance to cap against, a counterparty that has HONOURED an elective half TO you, and no
+  // live grant to that principal already. `officeShape('treasury-hand')` is a template constant — no
+  // vote, no multi-step path. A stale exception is worse than a missing one: it argued a limitation the
+  // engine never had, and the row it was blocking is four clauses long.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (grantOffers === 0) {
+    const cap = Math.trunc(free / 10);
+    const relations = runtime.relationsFor(principal, MAX_LIST_ROWS);
+    const withRecord = relations.filter((r) => r.kept > 0);
+    // The set `grantCandidates` itself drops for an existing office: it is the only reader of the
+    // grant book here, so this cannot disagree with the shortlist it is explaining.
+    const alreadyGranted = withRecord.filter(
+      (r) => !runtime.grantCandidates(principal, tick, MAX_LIST_ROWS).some((c) => c.to === r.other),
+    );
+    grantSilent =
+        'no `grant` is offered' +
+        (cap <= 0
+          ? ': a grant is capped at a tenth of your FREE balance and yours is ' +
+            `${String(free)}, so the cap would be 0 and an office worth nothing is not an office. ` +
+            'Earn or unlock currency and the offer appears'
+          : withRecord.length === 0
+            ? ': the shortlist is principals that have HONOURED an elective half TO you, and ' +
+              `${String(relations.length)} principal(s) have dealt with you with none of them having done ` +
+              'that yet. `counterparties[].with_me.kept_to_me` is the count this reads — a grant is the heaviest ' +
+              'thing you can hand out and the shortlist is the ones with a record with you'
+            : alreadyGranted.length >= withRecord.length
+              ? `: every principal with a record with you (${withRecord.map((r) => String(r.other)).sort(cmp).join(', ')}) ` +
+                'already holds a LIVE grant from you — one at a time per counterparty. `revoke` the ' +
+                'standing one first, or deal with somebody new'
+              : ': the shortlist came back empty this tick') +
+        '. **The shortlist is not the rule**: `grant {delegate, template, max_direct_loss, ' +
+        'max_contingent_liability, expires_tick}` accepts ANY enrolled principal, including one you ' +
+        'have never dealt with, and the engine will not refuse it. What is withheld here is the ' +
+        'recommendation, never the act — A6 is the core loop and nothing gates it on our advice';
   }
 
   // 5C-bis. ★ **THE DOSSIER, AND `audit` — the sight half of A6 made reachable.**
@@ -3836,7 +4033,29 @@ function affordancesFor(
         what_it_forecloses:
           `this hand cannot fill a role until it arrives, and it can be raided at ${lane} from the tick it ` +
           `does. This lane takes ${String(trip)} tick(s): a move resolving in tick R lands the hand on tick ` +
-          `R+${String(trip)} and it is PRESENT — able to fill a role, work or escort — on R+${String(trip + 1)}.`,
+          `R+${String(trip)} and it is PRESENT — able to fill a role, work or escort — on R+${String(trip + 1)}.` +
+          // ══════════════════════════════════════════════════════════════════════
+          // ★ **AND WHETHER THIS LANE IS A STRAIT, WHICH DECIDES IF THE WALK BUYS FORCE.**
+          //
+          // The same sweep question as `graduation.ground[]`: does the observation publish the term that
+          // dominates the outcome? `move` names the trip and the exposure and said nothing about the
+          // pinch — and at `RULES_VERSION` 35 that term became load-bearing, because raider force is
+          // now `min(hands standing there, SWAY there)` and a STRAIT you hold neither end of costs
+          // `SWAY_STRAIT_TOLL` of exactly that. So walking a hand across an unheld strait can put it
+          // somewhere it is *present and worth nothing offensively*, which is indistinguishable from a
+          // successful march in every other field on this affordance.
+          //
+          // `holding.sway.reaches[]` publishes the standing figure and `SWAY_STATEMENT` the rule; this
+          // is the one place the toll is about to be paid. Only said when it applies — a clause on
+          // every lane in the galaxy is a clause agents learn to skip.
+          // ══════════════════════════════════════════════════════════════════════
+          (isStrait(world.map, hand.location, lane)
+            ? ` ★ THIS LANE IS A STRAIT. Your SWAY at ${lane} is ${String(runtime.swayFor(principal, lane))} — ` +
+              `a strait whose ends you hold NEITHER of costs ${String(SWAY_STRAIT_TOLL)} of it, and SWAY is ` +
+              `how many of your hands count as FORCE at a place you are not defending. At 0 a hand that ` +
+              `arrives is present and counts for nothing on any offensive side. Defence is never capped ` +
+              `this way. holding.sway lists every place you do project into and which STRAITS you hold.`
+            : ''),
         expires_tick: tick + QUOTE_PIN_TICKS,
         quote_id: quoteId(principal, tick, 'move', { hand: hand.id, to: lane }),
       });
@@ -4223,6 +4442,19 @@ function affordancesFor(
         'into and which STRAITS you hold; take a CLAIM nearer, or one end of the STRAIT in the way',
     });
   }
+  // ── ★ A PARTY THAT COULD BRING MORE FORCE AND HAS NOTHING TO BRING ──────────
+  //
+  // `move` rather than `join`, because `join` is genuinely closed to a principal already in the
+  // standoff (one principal is one party row) and naming it here would send an agent at a refusal.
+  // The row exists because force stopped being a row count: *"more of your hands would count"* is now
+  // a true and actionable sentence, and a menu that goes quiet over it teaches the old rule.
+  if (grantSilent !== null) reasons.push({ verb: 'grant', text: grantSilent });
+  if (reinforcementSilent.length > 0) {
+    reasons.push({
+      verb: 'move',
+      text: `no reinforcement is offered for ${reinforcementSilent.join('; ')}`,
+    });
+  }
   if (parleyWithheldReason !== null) {
     // ── COUNTED, BECAUSE THREE DIFFERENT SILENCES READ IDENTICALLY ─────────────
     //
@@ -4426,6 +4658,9 @@ function affordancesFor(
         // ★ §16.12 #1. One per standoff whose RAIDER side was withheld, not one for the mechanic:
         // the thing withheld is an act at a place, and there is one of those per standoff.
         raiderJoinsBeyondSway +
+        (grantSilent === null ? 0 : 1) +
+        // ★ One per standoff the reader is a party to whose reinforcement route was empty.
+        reinforcementSilent.length +
         (demandCapacitySpent ? 1 : 0) +
         (demandSilent ? 1 : 0) +
         (tradeWhy.length > 0 ? 1 : 0) +
@@ -4748,7 +4983,9 @@ function ventureRow(
   // Once per row, not once per field: each `electiveCeilingOfRole` inside it runs
   // `computeProceeds` + `computeClaims`, and this row is emitted up to `MAX_LIST_ROWS`
   // times per observation (A4 — a bigger payload must not cost the server more per read
-  // than the information in it is worth).
+  // than the information in it is worth). It is also read three times below — the figure,
+  // the unelected remainder and the direction they decide — and three calls would be three
+  // chances to disagree about one obligation.
   const owedByMe = creatorElectiveOf(runtime, venture, principal);
   return {
     id: venture.id,
@@ -4798,12 +5035,47 @@ function ventureRow(
      */
     window_closes_tick: isLive(venture) ? venture.windowClosesTick : null,
     pinned_value: pinnedValue(venture),
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * ★ **`elective` IS THE PINNED PRICE AND IT IS NOT THE BILL. `elective_ceiling` IS THE BILL.**
+     *
+     * A blind player budgeted off this row and defaulted. The row said `elective: 2100`; the `elect`
+     * affordance for the same role said `max_direct_loss: 3360`. Second role: 900 here, 1,440 there.
+     * Both reproduce exactly, and neither figure was wrong — they answer different questions and
+     * only one of them had a name.
+     *
+     * `elective` is `RoleTerms.elective`, written once at creation by `pricedRoles` and never
+     * mutated: **the price the creator offered.** But a share role's due is a fraction of *proceeds*,
+     * so a venture that over-performs owes more than the pinned figure — §7.1's trap. The affordance
+     * publishes `electiveCeilingOf`, which draws proceeds at the **p90** residual and subtracts what
+     * has already settled, and `runtime.ts` says in as many words that `max_direct_loss` *"is exact,
+     * not an estimate, so this cannot be the pinned `role.terms.elective`"*.
+     *
+     * `venture/preview.ts` already had the vocabulary and the warning: *"One word per concept: that
+     * is the PRICE, this is the BOUND, and the whole defect was one standing in for the other."*
+     * The defect was that the BOUND had no field on the row an agent budgets from — so the row
+     * published the p50 and the affordance charged the p90, one method apart, which is the same shape
+     * as `elect`-charges-p90-while-`create`-quotes-p50. Both are here now, both named, and
+     * `test/api/observe-gate3.test.ts` pins the row's ceiling to the affordance's `max_direct_loss`
+     * so they can never drift again.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
     roles: venture.roles.map((r) => ({
       index: r.index,
       label: r.label,
       filled_by: r.filledByPrincipal,
       escrowed: r.terms.escrowed,
+      /** The PRICE, pinned at creation and never updated. Not what settlement can charge. */
       elective: r.terms.elective,
+      /**
+       * ★ **THE BOUND — the most this role's elective half can cost the creator, exact.**
+       *
+       * The SAME arithmetic as the `elect` affordance's `max_direct_loss` (`electiveCeilingOf`), net
+       * of {@link elective_settled}. **Budget from this, never from `elective`.**
+       */
+      elective_ceiling: runtime.electiveCeilingOf(venture, r.index),
+      /** Already paid on this role by a prior or deferred settlement. Deducted from the ceiling. */
+      elective_settled: r.settledElectiveMinor,
       // §7.5: "the escrow ratio is published on the venture card". It became worth publishing the
       // moment `create` took `elective_bps` — before that it was the same number on every venture in
       // the world, which is why nothing read it.
@@ -4812,6 +5084,8 @@ function ventureRow(
     my_role: role === null ? null : role.index,
     my_escrowed: role === null ? 0 : role.terms.escrowed,
     my_elective: role === null ? 0 : role.terms.elective,
+    /** The bound on the role YOU hold: at most this much can come TO you. Zero if you hold none. */
+    my_elective_ceiling: role === null ? 0 : runtime.electiveCeilingOf(venture, role.index),
     /**
      * Direction, because `my_elective` alone was read two opposite ways by capable
      * agents — one thought a filler *owes* it. The elective on a role YOU hold is paid
@@ -4833,6 +5107,18 @@ function ventureRow(
      * `SELF` still wins where the reader holds a role, because that is what `my_elective`
      * on this row describes and the two fields must agree. What the creator owes is
      * {@link my_elective_owed}, which is populated in both cases.
+     *
+     * ── WHY NOT "A LIABILITY OUTRANKS A RECEIVABLE" (RESOLVED AT MERGE) ────────
+     *
+     * Version 37's branch reached this same defect independently and fixed it by testing
+     * the liability **first**, so a creator that also holds a role of its own reads
+     * `OWED_BY_ME` rather than `SELF`. That ordering was not taken, for one reason: this
+     * field annotates {@link my_elective}, and on such a row `my_elective` is the reader's
+     * OWN self-paid share — so `OWED_BY_ME` there would describe a number that is not on
+     * the row, which is scar #1's shape in a direction field. The concern behind the flip
+     * — that the liability must not be hidden — is met by {@link my_elective_owed} and
+     * {@link my_elective_unelected}, which are populated in **every** case and which that
+     * branch did not have. One word per concept (§3): direction describes `my_elective`.
      */
     my_elective_direction:
       role === null
@@ -4922,20 +5208,74 @@ function counterpartiesFor(
 
   // The mail, indexed once so the map below stays linear over the ring.
   const inbound = new Map<PrincipalId, { readonly count: number; readonly last: ParleyRead }>();
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★ **AND THE OUTBOUND HALF, WHICH LEFT NO TRACE ANYWHERE.**
+  //
+  // A blind player sent a PARLEY and could find no evidence of it in its own observation:
+  // `last_parley` null, `parleys_received: 0`, nothing in `talks[]` (that ring is venture-scoped and a
+  // parley has no venture). The only signal was `header.parley.parleys_remaining` dropping 3 → 2 —
+  // *"wrong instrumentation for a 3-per-Reckoning resource that expires unspent."*
+  //
+  // `parleysVisibleTo` already returns both directions (`e.to === reader || e.from === reader`), and
+  // the line below discarded one of them. A sent parley is a spent, non-refundable action against a
+  // capped budget, and an agent that cannot see which ones it spent cannot tell "I already wrote to
+  // them" from "I meant to" — so it either doubles up and wastes the budget, or waits on a reply to a
+  // message it never actually sent. A9 is untouched: this is the reader's own outbox.
+  // ══════════════════════════════════════════════════════════════════════════
+  const outbound = new Map<PrincipalId, { readonly count: number; readonly last: ParleyRead }>();
   for (const entry of runtime.parleysVisible(principal, tick)) {
-    if (entry.to !== principal) continue;
-    const prior = inbound.get(entry.from);
-    inbound.set(entry.from, {
-      count: (prior?.count ?? 0) + 1,
-      last: { act: entry.act, text: entry.text, tick: entry.tick, publishes_at_tick: entry.revealsAtTick },
-    });
+    const read: ParleyRead = {
+      act: entry.act,
+      text: entry.text,
+      tick: entry.tick,
+      publishes_at_tick: entry.revealsAtTick,
+    };
+    if (entry.to === principal) {
+      const prior = inbound.get(entry.from);
+      inbound.set(entry.from, { count: (prior?.count ?? 0) + 1, last: read });
+    } else if (entry.from === principal) {
+      const prior = outbound.get(entry.to);
+      outbound.set(entry.to, { count: (prior?.count ?? 0) + 1, last: read });
+    }
   }
+
+  // The PAIRWISE record, indexed once. `standingRow` carries a principal's record with EVERYBODY;
+  // this is its record with YOU, and they are different facts that were reported as one.
+  const pairwise = new Map(runtime.relationsFor(principal, MAX_LIST_ROWS * 2).map((r) => [r.other, r]));
 
   return [...named].sort(cmp).map((other) => {
     const reachRow = reach.find((r) => r.principal === other);
     const mail = inbound.get(other);
+    const sent = outbound.get(other);
+    const pair = pairwise.get(other);
     return {
       ...standingRow(runtime, other),
+      /**
+       * ★ **ITS RECORD WITH *YOU*** — four counts, and the only ones `grant`'s shortlist reads.
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * `standing.*` above is this principal's record with EVERYBODY, and that is not the question an
+       * agent asks before it hands somebody an office. `Runtime.grantCandidates` gates the A6 core
+       * loop on `relation.kept > 0` — *has this principal honoured an elective half **to me*** — and
+       * that count was published **nowhere**. It appeared once, inside the `grant` affordance's own
+       * prose (*"They have kept N promise(s) to you"*), which is exactly the affordance the gate
+       * suppresses. So the input to the game's core loop was legible only in the offer it decided.
+       *
+       * A blind player went 21 observations with no `grant` offer and could not have worked out why
+       * from the payload; the `withheld` row now names the rule and this is the field it names.
+       * `PUBLIC` on the tier it already had — every term is a settled venture's `ELECTIVE_HONOURED`
+       * or `DEFAULTED` row, and the frame draws both.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      with_me: {
+        /** Elective halves IT honoured to YOU. `grant`'s shortlist is `kept_to_me > 0`. */
+        kept_to_me: pair?.kept ?? 0,
+        /** Elective halves it DECLINED to you. A default on the record, naming it. */
+        broke_to_me: pair?.broke ?? 0,
+        /** Elective halves YOU honoured to it — the same question, the other way. */
+        i_kept: pair?.youKept ?? 0,
+        i_broke: pair?.youBroke ?? 0,
+      },
       /**
        * Why this principal is addressable, or `null` when it is not (an ordinary counterparty from a
        * venture you share). Named rather than implied: "you may talk to it" and "you have dealt with
@@ -4953,6 +5293,16 @@ function counterpartiesFor(
        */
       parleys_received: mail?.count ?? 0,
       last_parley: mail?.last ?? null,
+      /**
+       * ★ **What YOU have said to IT** — the outbox, which did not exist.
+       *
+       * Present at zero for the same reason {@link parleys_received} is: an absent field and a field
+       * reading zero are the same thing to a reader that has never seen one, and *"I have not written
+       * to this one yet"* is the fact a capped budget is spent against. `header.parley` carries how
+       * many you have left; this carries where the spent ones went.
+       */
+      parleys_sent: sent?.count ?? 0,
+      last_parley_sent: sent?.last ?? null,
     };
   });
 }
@@ -5213,7 +5563,29 @@ function promptFor(
   if (war !== null) return war;
   const riding = electiveRiding(runtime, principal, mine, tick);
   if (riding !== null) return riding;
-  const unsigned = mine.filter((v) => v.state === 'FORMING' && !v.countersigned.has(principal));
+  // ★ A live standoff outranks the whole venture ladder — see {@link standoffPressure}.
+  const standoff = standoffPressure(runtime, principal, tick);
+  if (standoff !== null) return standoff;
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★ **AND SOMEBODY HAS TO BE WAITING ON IT.** `partiesOf(v).length > 0`.
+  //
+  // A blind player read *"v:265 is waiting on your countersignature"* while all four of its ventures
+  // showed `filled_by: null` in the same payload. The predicate was `FORMING && !countersigned` and
+  // nothing more, so it fired from tick 0 on every draft a principal had ever created — because
+  // `countersigned` is seeded only for a *delegated* create (`venture/create.ts:boundAtFormation`),
+  // so a self-created venture starts with an empty set by design.
+  //
+  // §7.3 is explicit that nothing binds until the PARTIES countersign, so a draft nobody has joined
+  // carries no obligation and there is nothing to sign for. `observe/catalogue.ts` had already made
+  // exactly this call one surface over — *"Mandatory only when somebody else is actually waiting on
+  // this signature… A venture nobody has joined is a draft"* — and gates on `partiesOf` there. Two
+  // surfaces, one rule, and only one of them had it: the affordance was honest and the sentence an
+  // agent reads FIRST was not, which sent it to sign an empty draft ahead of the open roles that
+  // were the actual next move.
+  // ══════════════════════════════════════════════════════════════════════════
+  const unsigned = mine.filter(
+    (v) => v.state === 'FORMING' && !v.countersigned.has(principal) && partiesOf(v).length > 0,
+  );
   if (unsigned.length > 0) {
     const first = unsigned[0];
     return first === undefined
@@ -5418,12 +5790,87 @@ function electiveRiding(
 }
 
 /**
+ * ★ **A LIVE STANDOFF — the war the dilemma field could not see** (A14).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **`briefing.prompt` TALKED ABOUT BOARD ROLES WHILE THE READER'S OWN RAID WAS RESOLVING.** Twice,
+ * in one session, and the second time with a battle in MUSTER. `campaignPressure` is the only war
+ * branch the ladder had, and a campaign is the *slowest* form of conflict in the game — a raid
+ * resolves inside 24 ticks, a MUSTER window inside 6, and neither had a branch at all.
+ *
+ * This sits above the venture ladder and below `electiveRiding` on the ladder's own stated rule
+ * (*"live liability, then permanence, then opportunity"*): a default is permanent and public and
+ * outranks everything, while a forfeited stake and a routed hand are losses you recover from. It
+ * sits above the ventures because a standoff has a **clock nobody can dodge** and a board role does
+ * not (A14).
+ *
+ * Both readings come from the same views the `obligations` key publishes — `raidsFor` and
+ * `engagementsFor` — never a second derivation, for the reason `campaignPressure` takes its views as
+ * an argument: two derivations of "how is my war going" is how the sentence and the block it points
+ * at come to disagree inside one payload.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function standoffPressure(runtime: Runtime, principal: PrincipalId, tick: number): string | null {
+  // Soonest first, then by id: a reader with two standoffs is told about the one that lands next,
+  // and the tie-break is canonical so two runs of one seed cannot disagree (DET-2).
+  const raids = [...runtime.raidsFor(principal, tick, MAX_LIST_ROWS)]
+    .filter((r) => r.state === 'DEMANDED' && r.your_side !== null)
+    .sort((a, b) => a.resolves_tick - b.resolves_tick || cmp(a.raid, b.raid));
+  const raid = raids[0];
+  if (raid !== undefined) {
+    const role =
+      raid.your_side === 'TARGET'
+        ? `You are the TARGET of ${raid.initiator === null ? 'a world raid' : `${raid.initiator}'s demand`}`
+        : `You are ${String(raid.your_side)} in ${raid.raid}`;
+    const answer =
+      raid.your_side === 'TARGET'
+        ? `Answer it — \`yield\` costs ${String(raid.costs.pay)} of ${raid.good} and \`fight\` risks the ` +
+          `whole ${String(raid.costs.if_you_do_nothing)}; silence IS the fight, without the defence.`
+        : `Your stake of ${String(raid.costs.join_stake)} is forfeit to the other side if it loses, and the ` +
+          'hand you put in is routed with it.';
+    return (
+      `${role} at ${raid.stage}, and it resolves at tick ${String(raid.resolves_tick)} — ` +
+      `${String(raid.ticks_left)} tick(s) from now, which is BEFORE the next Reckoning. Force stands at ` +
+      `${String(raid.force.raider)} raider against ${String(raid.force.defender_if_you_fight)} defender, so ` +
+      `it reads ${raid.force.verdict_if_resolved_now} if it resolved now. ${answer} ` +
+      '`obligations.raid[]` carries the whole arithmetic.'
+    );
+  }
+  const musters = [...runtime.engagementsFor(principal, tick, MAX_LIST_ROWS)]
+    .filter((e) => e.state === 'MUSTER')
+    .sort((a, b) => cmp(a.engagement, b.engagement));
+  const muster = musters[0];
+  if (muster !== undefined) {
+    return (
+      `Battle ${muster.engagement} over ${muster.stage} is in MUSTER, which is the ONLY window a hull may ` +
+      `be committed in, and it closes in ${String(muster.ticks_left)} tick(s). ${muster.if_you_do_nothing} ` +
+      '`obligations.battle[]` carries the force reading and what each side has already committed.'
+    );
+  }
+  return null;
+}
+
+/**
  * The concrete consequence at the next Reckoning if this principal does nothing.
  *
  * **Tested against reality** (PROP-O5), which is the reason it is computed from
  * the same rows settlement will read rather than written as reassuring prose. It
  * is High Water's `projectedDrown` generalised, and it is what lets a model
  * self-correct.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **AND IT SAID "NOTHING RESOLVES FOR YOU" OVER A LIVE WAR.** At tick 213 a blind player read
+ * *"Nothing resolves for you before tick 287… absence costs opportunity and nothing else."* A demand
+ * it had 500 staked in resolved at tick 231 reading `REPULSED`; doing nothing cost the stake and a
+ * hand. The field consulted ventures, the election book, hands in transit, the Levy and claims — and
+ * **no raid, no demand, no battle and no campaign.** `Runtime.liveRaidAgainst` even carries the
+ * docstring *"One home for 'is this agent under a demand', so the affordance layer, THE BRIEFING and
+ * the verb handler cannot disagree about it"*, and the briefing had never called it.
+ *
+ * A5′ in the forward direction: the field's whole contract is that absence is priced, and pricing it
+ * at zero over a scheduled loss is worse than saying nothing, because an agent that reads this and
+ * sleeps has been told a falsehood by the one field built to stop that.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 function ifYouDoNothing(
   runtime: Runtime,
@@ -5540,6 +5987,45 @@ function ifYouDoNothing(
           'cheaper than it',
       );
     }
+  }
+
+  // ── ★ AND A STANDOFF, WHICH RESOLVES BEFORE THE RECKONING DOES ──────────────
+  //
+  // FIRST in the sentence, ahead of the lapse and the Levy, and the ordering rule above is why: this
+  // one lands SOONEST. A demand resolves 24 ticks after it is opened and a MUSTER window shuts in 6,
+  // so a preview that leads with tick 287 while a stake burns at tick 231 is previewing the wrong
+  // world in the one way the reader cannot recover from — it has already happened by the time the
+  // sentence comes true.
+  //
+  // Read from the same views `obligations.raid[]` and `obligations.battle[]` publish, so the line and
+  // the block cannot disagree. `costs.if_you_do_nothing` is the raid view's OWN field of this name —
+  // the two were built independently and never once met.
+  for (const raid of [...runtime.raidsFor(principal, tick, MAX_LIST_ROWS)]
+    .filter((r) => r.state === 'DEMANDED' && r.your_side !== null)
+    .sort((a, b) => a.resolves_tick - b.resolves_tick || cmp(a.raid, b.raid))
+    .slice(0, 2)
+    .reverse()) {
+    parts.unshift(
+      raid.your_side === 'TARGET'
+        ? `${raid.raid} at ${raid.stage} resolves at tick ${String(raid.resolves_tick)} and an unanswered ` +
+            `demand musters NO defence, so it takes ${String(raid.costs.if_you_do_nothing)} of ${raid.good} ` +
+            `rather than the ${String(raid.costs.pay)} \`yield\` would cost — and this lands before tick ` +
+            `${String(settlement)}`
+        : `${raid.raid} at ${raid.stage} resolves at tick ${String(raid.resolves_tick)} with you on the ` +
+            `${String(raid.your_side)} side; it reads ${raid.force.verdict_if_resolved_now} as it stands, and ` +
+            `if your side loses your staked ${String(raid.costs.join_stake)} is forfeit and your hand is ` +
+            `routed — this lands before tick ${String(settlement)}`,
+    );
+  }
+  for (const battle of [...runtime.engagementsFor(principal, tick, MAX_LIST_ROWS)]
+    .filter((e) => e.state === 'MUSTER' || e.state === 'CONTACT' || e.state === 'CONTEST')
+    .sort((a, b) => cmp(a.engagement, b.engagement))
+    .slice(0, 2)
+    .reverse()) {
+    parts.unshift(
+      `battle ${battle.engagement} over ${battle.stage} is in ${battle.state} with ` +
+        `${String(battle.ticks_left)} tick(s) left in it: ${battle.if_you_do_nothing}`,
+    );
   }
 
   if (parts.length === 0) {

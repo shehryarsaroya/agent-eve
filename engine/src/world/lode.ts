@@ -470,6 +470,13 @@ export function assertLodes(map: WorldMap, bases: LodeBases, floor: LodeFloor): 
  * destinations *"with literally no information about either"* — the same sentence as this feature, one
  * surface out. An agent that believes the tier is the whole story will graduate onto the poorest
  * ground on the map and never know why its margin is thin.
+ *
+ * ⚑ **AND THEN A SECOND PLAYER READ THIS SENTENCE AND STILL PICKED THE WORST GROUND ON THE MAP** —
+ * because it named the lode as the reason two systems differ and the lode is the *smaller* reason.
+ * A tier's richest out-yields its poorest by about 15%; **occupancy divides it by up to 5.** So the
+ * last clause now names the crowding term and the field that carries it, and it says which of the two
+ * to sort on. A rules surface that ranks two terms in the wrong order is worse than one that omits
+ * both: it reads as complete.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const LODE_STATEMENT =
@@ -481,6 +488,13 @@ export const LODE_STATEMENT =
   '(A15). The COMMONS is the exception and is uniform everywhere, because its margin over the Levy ' +
   'is the thinnest that is still positive and a poorer civic system could not fund its own tribute. ' +
   'FUEL is distributed the same way and is still FRONTIER-only, so some frontier ground is worth ' +
-  'far more than the rest of it. Every figure is readable before you commit: `holding.graduation` ' +
-  'prices its destinations, `holding.works` prices where you stand, and the map on the published ' +
-  'frame carries the yield and the richness of every system in the galaxy.';
+  'far more than the rest of it. ' +
+  'THE LODE IS THE SMALLER TERM: it spreads a tier by about 15%, and how many WORKS already stand ' +
+  'on a system divides that system\'s yield among them, which spreads the same tier by more than ' +
+  '400%. An empty poor system pays better than a crowded rich one, every time. So read ' +
+  '`share_per_tick` — the yield divided by the occupants you would be joining, less any rent — and ' +
+  'never rank ground on `yield_per_tick` or `richness_bps` alone. ' +
+  'Every figure is readable before you commit: `holding.graduation.ground[]` prices its destinations ' +
+  'with the occupancy and the share you would get at each, `holding.works.here` prices where you ' +
+  'stand and names who else is on it, and the map on the published frame carries the yield and the ' +
+  'richness of every system in the galaxy.';

@@ -409,10 +409,23 @@ describe('★ a demand cannot MINT the world\'s protections — the exploit that
     act(runtime, raider, 'demand', { principal: target, system: stage, good: GOOD, qty: ASK });
     const raid = runtime.raids.live()[0];
     if (raid === undefined) throw new Error('fixture');
+    // ── ★ RECALIBRATED AT 35: FORCE IS HANDS, NOT PARTY ROWS ────────────────
+    //
+    // Every number in this block was a true statement about an arithmetic that said a raider party was
+    // worth 1 whatever it brought, while the TARGET's own hands were worth 1 EACH. `readForce` now
+    // scores both sides in hands (`min(present, sway)` on the raider's), so a seated principal with
+    // three IDLE hands at the stage supplies 3 — which is what `SWAY_STATEMENT` has always told agents
+    // and what `campaign/pulse.ts` already did. `predation/resolve.ts` carries the whole argument.
+    //
+    // The SUBJECT here is that a repulse writes no stage hold and no victim cooldown, so the fixture
+    // has to reach a repulse — and it now does it the way the game means one to happen: the target
+    // ANSWERS. Three defending hands plus the Marches' terrain against three supplied raider hands is
+    // 4 to 3. Before 35 the raider was worth 1 and silence was enough, which made the only test of the
+    // repulse path a test of an unanswered demand.
+    expect(act(runtime, target, 'fight', { raid: raid.id, system: stage })).toBeNull();
 
     runTo(runtime, raid.resolvesAtTick + 1);
     const done = runtime.raids.require(raid.id);
-    // One hand against the Marches' terrain: 1 vs 1, and ties go to the defender.
     expect(done.state).toBe('REPULSED');
     expect(done.forfeited).toBe(RAID_JOIN_STAKE_MINOR);
 
@@ -495,7 +508,19 @@ describe('★ a demand cannot MINT the world\'s protections — the exploit that
 });
 
 describe('how a demand resolves — hands, and nothing but hands', () => {
-  it('one hand against the policed Marches is REPULSED, and the stake goes to the target', () => {
+  it('★ AN ANSWERED demand on the policed Marches is REPULSED, and the stake goes to the target', () => {
+    // ── ★ RECALIBRATED AT 35: FORCE IS HANDS, NOT PARTY ROWS ────────────────
+    //
+    // Every number in this block was a true statement about an arithmetic that said a raider party was
+    // worth 1 whatever it brought, while the TARGET's own hands were worth 1 EACH. `readForce` now
+    // scores both sides in hands (`min(present, sway)` on the raider's), so a seated principal with
+    // three IDLE hands at the stage supplies 3 — which is what `SWAY_STATEMENT` has always told agents
+    // and what `campaign/pulse.ts` already did. `predation/resolve.ts` carries the whole argument.
+    //
+    // Renamed from *"one hand against the policed Marches"*: the raider no longer brings one hand, it
+    // brings every hand it has standing there. So the Marches' terrain alone no longer stops a demand
+    // and the defence has to be MUSTERED — which is the mechanic §9 wanted and the reason `fight` costs
+    // an action. The forfeiture, the RECOVERING hand and the untouched goods are unchanged.
     const { runtime, raider, target, stage } = demandWorld('demand-marches');
     const targetFreeBefore = runtime.ledger.freeBalance(storesAccount(target));
     const goodsBefore = goodsAt(runtime, target, stage);
@@ -503,12 +528,13 @@ describe('how a demand resolves — hands, and nothing but hands', () => {
     const raid = runtime.raids.live()[0];
     if (raid === undefined) throw new Error('fixture');
     const raiderHand = raid.parties[0]?.handId;
+    expect(act(runtime, target, 'fight', { raid: raid.id, system: stage })).toBeNull();
 
     runTo(runtime, raid.resolvesAtTick + 1);
     const done = runtime.raids.require(raid.id);
     expect(done.state).toBe('REPULSED');
-    expect(done.raiderForce).toBe(1);
-    expect(done.defenderForce).toBe(1); // terrain only: the target never answered
+    expect(done.raiderForce, 'three IDLE hands standing at the stage, within sway').toBe(3);
+    expect(done.defenderForce, 'three answered hands plus the Marches terrain').toBe(4);
     expect(goodsAt(runtime, target, stage)).toBe(goodsBefore);
     // Forfeiture to the COUNTERPARTY, never to a sink: an attack that fails is a transfer.
     expect(runtime.ledger.freeBalance(storesAccount(target))).toBe(targetFreeBefore + RAID_JOIN_STAKE_MINOR);
@@ -529,8 +555,15 @@ describe('how a demand resolves — hands, and nothing but hands', () => {
     runTo(runtime, raid.resolvesAtTick + 1);
     const done = runtime.raids.require(raid.id);
     expect(done.state).toBe('PLUNDERED');
-    expect(done.raiderForce).toBe(1);
-    expect(done.defenderForce).toBe(0);
+    // ── ★ RECALIBRATED AT 35: FORCE IS HANDS, NOT PARTY ROWS ────────────────
+    //
+    // Every number in this block was a true statement about an arithmetic that said a raider party was
+    // worth 1 whatever it brought, while the TARGET's own hands were worth 1 EACH. `readForce` now
+    // scores both sides in hands (`min(present, sway)` on the raider's), so a seated principal with
+    // three IDLE hands at the stage supplies 3 — which is what `SWAY_STATEMENT` has always told agents
+    // and what `campaign/pulse.ts` already did. `predation/resolve.ts` carries the whole argument.
+    expect(done.raiderForce, 'every idle hand standing there, within sway').toBe(3);
+    expect(done.defenderForce, 'the Frontier polices nothing and the target never answered').toBe(0);
     expect(done.lostQty).toBeGreaterThan(0);
     // Relocated, not destroyed: this is why a raider joins at all (§9).
     expect(goodsAt(runtime, target, stage)).toBe(targetBefore - done.lostQty);
@@ -558,10 +591,23 @@ describe('how a demand resolves — hands, and nothing but hands', () => {
     expect(done.forfeited).toBe(RAID_JOIN_STAKE_MINOR);
   });
 
-  it('an ally on the raider\'s side is what turns a Marches demand into a take', () => {
+  it('★ an ally on the raider\'s side adds ITS HANDS, not one point for being a principal', () => {
     // §9's escort market from the other side: a demand that needs help is a demand somebody has
     // to be persuaded to join, which is the judgement about other agents §1.1 wants decisions
     // to be made of.
+    // ── ★ RECALIBRATED AT 35: FORCE IS HANDS, NOT PARTY ROWS ────────────────
+    //
+    // Every number in this block was a true statement about an arithmetic that said a raider party was
+    // worth 1 whatever it brought, while the TARGET's own hands were worth 1 EACH. `readForce` now
+    // scores both sides in hands (`min(present, sway)` on the raider's), so a seated principal with
+    // three IDLE hands at the stage supplies 3 — which is what `SWAY_STATEMENT` has always told agents
+    // and what `campaign/pulse.ts` already did. `predation/resolve.ts` carries the whole argument.
+    //
+    // Renamed, because the old title is now false in an instructive way: an ally is no longer *what
+    // turns* a Marches demand into a take — the raider's own second and third hands do that. What an
+    // ally buys is its OWN hands, which is a bigger contribution than before (3, not 1) and a real
+    // negotiation rather than a token. `join` remains one row per principal; the escort market is
+    // still a market, and its unit is now the same one everything else is measured in.
     const { runtime, raider, target, others, stage } = demandWorld('demand-with-ally', 'MARCHES', 4);
     const ally = others[0];
     if (ally === undefined) throw new Error('fixture');
@@ -572,8 +618,8 @@ describe('how a demand resolves — hands, and nothing but hands', () => {
 
     runTo(runtime, raid.resolvesAtTick + 1);
     const done = runtime.raids.require(raid.id);
-    expect(done.raiderForce).toBe(2);
-    expect(done.defenderForce).toBe(1);
+    expect(done.raiderForce, 'two principals with three hands each, both within sway').toBe(6);
+    expect(done.defenderForce, 'terrain only: the target never answered').toBe(1);
     expect(done.state).toBe('PLUNDERED');
   });
 
@@ -1047,6 +1093,22 @@ describe('demandRefusal is one predicate, and every clause of it bites', () => {
     expect(DEMAND_RULE_STATEMENT).toContain('Marches (terrain 1)');
     expect(DEMAND_RULE_STATEMENT).toContain('Frontier, where terrain is 0');
     expect(DEMAND_OWN_FORCE).toBe(0);
+    // ── ★ 35: THE UNIT, WHICH THIS STATEMENT USED TO GET WRONG ────────────────
+    //
+    // It read *"one hand against the Marches ties … bring somebody"*, which was a true description of
+    // an arithmetic that scored a raider party at 1 whatever it brought. Force is hands now, so the
+    // corrective act is `move` and not recruitment — and a rules surface that sends an agent looking
+    // for an ally when its own second hand would do is scar #1 in the direction that costs an action.
+    expect(DEMAND_RULE_STATEMENT, 'the unit, stated').toContain('EVERY IDLE HAND YOU HAVE STANDING THERE');
+    expect(DEMAND_RULE_STATEMENT, 'and the cap on it').toContain('up to your SWAY');
+    expect(DEMAND_RULE_STATEMENT, 'and the act that adds one').toContain('`move` is the act that adds a hand');
+    expect(
+      DEMAND_RULE_STATEMENT,
+      'and why `join` is not that act — one principal is one party row',
+    ).toContain('one principal is one party row');
+    expect(DEMAND_RULE_STATEMENT, 'and that the hand cap is HANDS_PER_PRINCIPAL, from the constant').toContain(
+      `all ${String(SWAY_AT_SEAT)} of yours`,
+    );
   });
 
   it('the affordance list and the gate never disagree — swept across a whole Reckoning', () => {

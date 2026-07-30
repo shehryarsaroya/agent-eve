@@ -850,9 +850,33 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
     expect(riskWithheld, 'no FRONT is announced this early, so the COVER act is withheld and counted').toBe(
       1,
     );
+    // ── AND A SIXTH: `grant`, THE A6 CORE LOOP, WHICH WAS NEVER ACCOUNTED FOR ──
+    //
+    // The affordance existed and the ACCOUNTING did not: a blind player went 21 observations with no
+    // `grant` offer and no row, then sent it blind and it WORKED. `withheld-is-accountable.spec.ts`
+    // had measured the silence at 45.7% and filed it `OPEN` on a reason describing a gate the code
+    // does not have (*"offices are voted into being"* — `officeShape('treasury-hand')` is a constant).
+    //
+    // Recomputed from `grantCandidates`, the SAME function the observation calls, for the reason every
+    // other term here is: a literal count would be a second answer to a question the payload answered.
+    const grantWithheld =
+      h.runtime.grantCandidates(filler.principalId as never, h.runtime.engine.tick).length === 0 ? 1 : 0;
+    // Non-vacuity: the shortlist gates on a counterparty having HONOURED an elective half TO this
+    // principal, and nothing has settled this early — so it is empty and the row fires. If that ever
+    // becomes zero here the term stops proving anything and this says so.
+    expect(grantWithheld, 'no elective half has settled to this filler yet, so `grant` is withheld').toBe(1);
     expect(Number(withheld['count'])).toBe(
-      rows.length * (idle.length - 1) + boundLanes + worksWithheld + tradeWithheld + riskWithheld,
+      rows.length * (idle.length - 1) +
+        boundLanes +
+        worksWithheld +
+        tradeWithheld +
+        riskWithheld +
+        grantWithheld,
     );
+    expect(
+      (withheld['verbs'] ?? []) as string[],
+      'and the core loop is named machine-readably, not only in the prose',
+    ).toContain('grant');
     expect(String(withheld['reason']), 'and the row says which thing is missing').toContain('no trade is offered');
     expect((withheld['verbs'] ?? []) as string[], 'and names the verb, machine-readably').toContain('trade');
     expect(String(withheld['reason'])).toContain('further legal fill_role act(s) exist');
