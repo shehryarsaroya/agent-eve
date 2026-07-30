@@ -1374,6 +1374,17 @@ export interface RundownSegment {
    * content belongs to a separate replay artifact that does not exist yet.
    */
   readonly sealVerdict: SealVerdict | null;
+  /**
+   * ★ **WHO contradicted it, by handle.** Absent on `HONOURED`, on `null`, and on a non-venture beat.
+   *
+   * §14's subject is an agent. A `CONTRADICTED` flag on a two-party row is the say-do gap with the
+   * deed attributed and the word anonymous, which is half a story — and this field had no reader for
+   * the project's whole life because `sealVerdict` was structurally never `CONTRADICTED` (see
+   * `Runtime.reckoningFrame`). Optional rather than nullable everywhere: `undefined` is dropped by
+   * the canonical serialiser, so the other three beat kinds say nothing rather than asserting that
+   * nobody contradicted a seal that was never sealed.
+   */
+  readonly sealContradictedBy?: Handle;
   /** What it did. Ground truth. */
   readonly deed: string;
   /**
