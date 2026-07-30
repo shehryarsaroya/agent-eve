@@ -66,6 +66,18 @@ const SANCTIONED = new Map<string, string>([
   ['AssertScope.TICK', 'the tick horizon and an assertion scoped to tick close are the same tick'],
   ['AssertScope.RECKONING', 'the Reckoning horizon; a Reckoning-scoped assertion names that same horizon'],
   ['Visibility.SEALED', "the visibility tier that holds seals — §3's SEAL row now says so explicitly"],
+  // ★ 31's PARLEY. `ReachWhy` answers *why one principal is addressable*, and two of its three rungs
+  // name the thing that makes it so: the CAMPAIGN you both stand in, the GRANT one of you holds over
+  // the other. That is the canon concept **as the reason**, the same shape as `AssertScope.TICK` —
+  // "the tick horizon and an assertion scoped to tick close are the same tick".
+  //
+  // Renaming them was the alternative and it is strictly worse. `VIA_CAMPAIGN` would be a second word
+  // for one concept, which is HARD RULE 4's violation with the sign flipped: §3 forbids one word
+  // wearing two concepts, and the remedy for that must not be two words wearing one. The third rung,
+  // `REPLY`, needs no entry — it is not a canon term, and it is the rung that keeps a cold approach a
+  // channel rather than a megaphone.
+  ['ReachWhy.CAMPAIGN', 'the campaign you both stand in IS the reason you may address each other — the canon concept as a reason, not a second sense of the word'],
+  ['ReachWhy.GRANT', 'a live grant between two principals is what makes them addressable; the reach rung names the same grant §3 defines and nothing else'],
   // ★ Added when `haul` went live and the word entered §3, and it is RAID's entry with a different
   // noun: carrying goods yourself and hiring a CARRIER to carry them are ONE concept bought two ways,
   // which is what `venture/kinds.ts` means by calling `CARRIER` + `ESCORT` "the vertical slice's exact
