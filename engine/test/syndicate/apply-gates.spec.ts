@@ -28,6 +28,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { readIntOrFault, type IntRead } from '../../src/core/params.js';
 import type { PrincipalId } from '../../src/core/types.js';
 import { minor, type Minor } from '../../src/core/units.js';
 import { Book, type SyndicateId } from '../../src/syndicate/book.js';
@@ -71,10 +72,13 @@ function bookWith(charter: Charter): { readonly book: Book; readonly id: Syndica
 const req = (over: Partial<Parameters<typeof apply>[2]> = {}): Parameters<typeof apply>[2] => ({
   applicant: JOINER,
   syndicate: 'syn:x' as SyndicateId,
-  stake: null,
+  stake: { kind: 'ABSENT' },
   tick: 5,
   ...over,
 });
+
+/** A stake that parsed. */
+const paid = (value: number): IntRead => ({ kind: 'OK', value });
 
 describe('apply admits under OPEN', () => {
   it('seats the applicant and reports JOINED', () => {
@@ -127,7 +131,7 @@ describe('applying again is contributing, and it spends EARNINGS only', () => {
   it('pools the stake and reports POOLED with the amount', () => {
     const { book, id } = memberBook();
     const port = fakePort(minor(1_000));
-    const out = apply(port, book, req({ syndicate: id, stake: 600 }));
+    const out = apply(port, book, req({ syndicate: id, stake: paid(600) }));
 
     expect(out.ok, out.ok ? '' : out.hint).toBe(true);
     if (!out.ok) return;
@@ -138,11 +142,12 @@ describe('applying again is contributing, and it spends EARNINGS only', () => {
     expect(port.pools, 'the pool is opened before value moves into it').toEqual([id]);
   });
 
-  it.each([
-    ['absent', null],
-    ['zero', 0],
-    ['negative', -50],
-  ])('refuses a %s stake and moves nothing', (_label, stake) => {
+  const refused: readonly [string, IntRead][] = [
+    ['absent', { kind: 'ABSENT' }],
+    ['zero', paid(0)],
+    ['negative', paid(-50)],
+  ];
+  it.each(refused)('refuses a %s stake and moves nothing', (_label, stake) => {
     // ★ The real hole this file was written for. Without the gate a stake of 0 passes `spendable < 0`,
     // transfers nothing, and the caller publishes a PUBLIC `syndicate.pooled` row for a contribution
     // that never happened.
@@ -153,9 +158,54 @@ describe('applying again is contributing, and it spends EARNINGS only', () => {
     expect(out.ok).toBe(false);
     if (out.ok) return;
     expect(out.invariant).toBe('A2');
-    expect(out.hint, 'it says you are already in, and how to pool').toMatch(/already a member/);
-    expect(out.hint).toMatch(/a positive integer of currency/);
+    expect(out.hint, 'it says you are already in').toMatch(/already a member/);
+    expect(out.hint, 'and that the pooling terms are permanent').toMatch(/treasury_offices/);
     expect(port.moved, 'nothing moved').toEqual([]);
+  });
+
+  it('tells a member that sent a STRING that it sent a string, and shows it', () => {
+    // ★ The absent-vs-malformed split. Before this, `{"stake":"600"}` got the same sentence as sending
+    // no stake at all — *"send {"stake":N}"* — so an agent that believed it had done exactly that had no
+    // way to learn otherwise from the hint, and would resend identical JSON forever.
+    const { book, id } = memberBook();
+    const port = fakePort(minor(1_000));
+    const out = apply(port, book, {
+      ...req({ syndicate: id }),
+      stake: readIntOrFault({ stake: '600' }, ['stake', 'amount', 'contribute']),
+    });
+
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.hint, 'it names the offending key').toMatch(/`stake` has to be a JSON number/);
+    expect(out.hint, 'and quotes what arrived, so the agent can see its own mistake').toMatch(
+      /you sent the string "600"/,
+    );
+    expect(out.hint, 'and says how to fix it').toMatch(/unquoted and whole/);
+    expect(port.moved).toEqual([]);
+  });
+
+  it('names a fraction as a fraction rather than as a missing number', () => {
+    const { book, id } = memberBook();
+    const out = apply(fakePort(minor(1_000)), book, {
+      ...req({ syndicate: id }),
+      stake: readIntOrFault({ stake: 12.5 }, ['stake', 'amount', 'contribute']),
+    });
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.hint).toMatch(/you sent 12\.5, which is a fraction/);
+  });
+
+  it('accepts a good spelling even when a bad one is also present', () => {
+    // `{"stake":"600","amount":600}` plainly means 600. Refusing on the bad spelling when a good one
+    // parsed would be strictness with no safety in it.
+    const { book, id } = memberBook();
+    const port = fakePort(minor(1_000));
+    const out = apply(port, book, {
+      ...req({ syndicate: id }),
+      stake: readIntOrFault({ stake: '600', amount: 600 }, ['stake', 'amount', 'contribute']),
+    });
+    expect(out.ok, out.ok ? '' : out.hint).toBe(true);
+    expect(port.moved).toEqual([{ member: JOINER, amount: 600 }]);
   });
 
   it('refuses a stake beyond EARNINGS under A15 and names D7', () => {
@@ -164,7 +214,7 @@ describe('applying again is contributing, and it spends EARNINGS only', () => {
     // takes the office, and has every puppet pay in.
     const { book, id } = memberBook();
     const port = fakePort(minor(100));
-    const out = apply(port, book, req({ syndicate: id, stake: 101 }));
+    const out = apply(port, book, req({ syndicate: id, stake: paid(101) }));
 
     expect(out.ok).toBe(false);
     if (out.ok) return;
@@ -177,7 +227,7 @@ describe('applying again is contributing, and it spends EARNINGS only', () => {
   it('reports a failed transfer as INV-3, first line only, and pools nothing', () => {
     const { book, id } = memberBook();
     const port = fakePort(minor(1_000), { failTransfer: true });
-    const out = apply(port, book, req({ syndicate: id, stake: 600 }));
+    const out = apply(port, book, req({ syndicate: id, stake: paid(600) }));
 
     expect(out.ok).toBe(false);
     if (out.ok) return;
@@ -198,7 +248,7 @@ describe('the eight lines that were in the file twice', () => {
     const { book, id } = bookWith(OPEN);
     book.admit(id, JOINER, 2);
     const port = fakePort(minor(1_000));
-    const out = apply(port, book, req({ syndicate: id, stake: 250 }));
+    const out = apply(port, book, req({ syndicate: id, stake: paid(250) }));
 
     expect(out.ok).toBe(true);
     expect(port.moved.length, 'one contribution, not two').toBe(1);

@@ -173,7 +173,7 @@ import type { AuthorityDossier, AuthorityLine, AuthorityLineState, TributeLine, 
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
 import { hallOfFame, namesFor, ruinsFor } from '../frames/memory.js';
-import { readInt, readList, readString } from '../core/params.js';
+import { readInt, readIntOrFault, readList, readString } from '../core/params.js';
 import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
 import {
@@ -11455,7 +11455,9 @@ export class Runtime {
     const outcome = apply(this.applyPort(), this.syndicateBook, {
       applicant: req.principal,
       syndicate: id,
-      stake: readInt(req.params, ['stake', 'amount', 'contribute']),
+      // `readIntOrFault`, not `readInt`: a member that sent `{"stake":"600"}` must be told it sent a
+      // string rather than told to send a number it believes it already sent (A2).
+      stake: readIntOrFault(req.params, ['stake', 'amount', 'contribute']),
       tick: ctx.tick,
     });
     if (!outcome.ok) return outcome;

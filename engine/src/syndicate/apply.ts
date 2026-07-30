@@ -24,6 +24,7 @@
  * already at 40 of 40, so a second word was never available anyway.
  */
 
+import type { IntRead } from '../core/params.js';
 import type { EventId, PrincipalId } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
 import { reject, type WorldResult } from '../world/result.js';
@@ -63,8 +64,16 @@ export interface ApplyPort {
 export interface ApplyRequest {
   readonly applicant: PrincipalId;
   readonly syndicate: SyndicateId;
-  /** The contribution, or `null` when none was sent. Ignored unless the applicant is already a member. */
-  readonly stake: number | null;
+  /**
+   * The contribution as it was read off the params — including **why** it is not a number, when it is
+   * not one. Ignored entirely unless the applicant is already a member.
+   *
+   * An {@link IntRead} rather than `number | null` because `readInt`'s `null` answers two different
+   * mistakes and this refusal used to give one sentence for both: an agent that sent `{"stake": "600"}`
+   * was told to send `{"stake":N}`, did so again with the same JSON string, and was refused identically
+   * forever. See `core/params.ts:readIntOrFault`.
+   */
+  readonly stake: IntRead;
   readonly tick: number;
 }
 
@@ -155,14 +164,36 @@ export function contribute(
   row: SyndicateRecord,
   req: ApplyRequest,
 ): WorldResult<ApplyOutcome> {
-  const amount = req.stake;
-  if (amount === null || amount <= 0) {
+  // ── ABSENT, MALFORMED AND NON-POSITIVE ARE THREE DIFFERENT MISTAKES ─────────
+  //
+  // They used to be one sentence. The pooling terms are repeated in all three because they are what
+  // makes the refusal actionable — the clause that decides whether the pool can ever be spent is
+  // PERMANENT, so an agent must read it before pooling regardless of which mistake it made.
+  const POOL_TERMS =
+    'It leaves your stores and becomes the syndicate\'s, and ' +
+    'whether anyone can ever spend it is fixed by the charter clause `treasury_offices`, which ' +
+    'cannot change. Read it before you pool anything.';
+  if (req.stake.kind === 'MALFORMED') {
+    return reject(
+      'A2',
+      `you are already a member of ${row.id}, and \`${req.stake.key}\` has to be a JSON number — you sent ` +
+        `${req.stake.saw}. Send {"syndicate":"${row.id}","stake":N} with N a positive integer, unquoted ` +
+        `and whole. ${POOL_TERMS}`,
+    );
+  }
+  if (req.stake.kind === 'ABSENT') {
     return reject(
       'A2',
       `you are already a member of ${row.id}. To add to its pool send {"syndicate":"${row.id}","stake":N} — ` +
-        'a positive integer of currency. It leaves your stores and becomes the syndicate\'s, and ' +
-        'whether anyone can ever spend it is fixed by the charter clause `treasury_offices`, which ' +
-        'cannot change. Read it before you pool anything.',
+        `a positive integer of currency. ${POOL_TERMS}`,
+    );
+  }
+  const amount = req.stake.value;
+  if (amount <= 0) {
+    return reject(
+      'A2',
+      `you are already a member of ${row.id} and asked to pool ${String(amount)}. A contribution has to be ` +
+        `a POSITIVE integer — pooling nothing would publish a payment you did not make. ${POOL_TERMS}`,
     );
   }
   const spendable = port.freeCashOf(req.applicant);
