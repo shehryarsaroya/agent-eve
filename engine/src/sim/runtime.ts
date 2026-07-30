@@ -57,6 +57,7 @@ import { Rng } from '../core/rng.js';
 import {
   FREEZE_TICKS,
   TICKS_PER_RECKONING,
+  WAKES_PER_RECKONING,
   inFreeze,
   isSettlementTick,
   reckoningIndex,
@@ -1955,8 +1956,28 @@ import {
  * the FRONT's spare floor is per-good instead of one `ration`-derived 20,000 applied to four goods.
  *
  * The `RULES_VERSION` is 36 rather than 35 because 35 is the surface lode's, landing in parallel.
+ *
+ * ── 39: THE CREATOR IS TOLD IT HAS TO COUNTERSIGN, AND BY WHEN ──────────────
+ *
+ * **No rule moved, and that is the result rather than a shortfall.** The defect this lode was opened
+ * for — a play-tester creating eleven ventures over two Reckonings and abandoning all eleven with
+ * `i_have_signed: false` — was reproduced exactly (`created 16 · sign seen 0 · elect seen 0 ·
+ * ABANDONED 16/16` for an agent pacing its wakes evenly) and turned out to be an **affordance-text**
+ * defect, not an engine one: `sign` and `elect` were already offered, first in the list, with
+ * copy-pasteable params, and the act that opens the countersignature window never mentioned that a
+ * countersignature existed. Widening {@link FORMATION_WINDOW_TICKS} was tried at 24 and 18, worked,
+ * and was reverted — it is a world-shape change that costs the combat layer its free hands, and the
+ * wake budget is a pool rather than a rate, so the sentence buys the same outcome for nothing. See
+ * that constant's note for both measurements.
+ *
+ * The version is still spent, because three agent-visible surfaces changed shape: `create` carries a
+ * new clause, `my_elective_owed` reads 0 on terminal ventures where it used to publish a full
+ * elective ceiling, and `briefing.prompt` no longer tells a Marches-seated principal about the
+ * Commons. None of those move a ledger row, so a world adopting this needs no divergence at a tick.
+ *
+ * 37 and 38 belong to the branches landing in parallel; this lode owns 39.
  */
-export const RULES_VERSION = 36;
+export const RULES_VERSION = 39;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -2102,8 +2123,104 @@ export const MAX_RAID_TICKER_LINES = 32;
  * file imports the real one.
  */
 
-/** Ticks a formation window stays open by default. */
+/**
+ * Ticks a formation window stays open by default.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **★ IT WAS 12, WHICH IS SHORTER THAN THE GAP BETWEEN TWO WAKES, SO A CREATOR
+ * PLAYING INSIDE ITS OWN BUDGET COULD NEVER COUNTERSIGN ITS OWN VENTURE.**
+ *
+ * `WAKES_PER_RECKONING` is 16 over `TICKS_PER_RECKONING` 288, so an agent that
+ * spends its allowance evenly wakes **once every 18 ticks**. A venture created in
+ * one wake closed its window at `+12` (tick 13 inclusive) and was retired
+ * ABANDONED at 14 — six ticks before its creator could legally look at the world
+ * again. `sign` and `elect` were both built, both correct, both first in
+ * `affordances[]`, and both offered **only inside a window the one party that has
+ * to act is structurally never awake in.**
+ *
+ * Measured from outside, over the real HTTP surface, before the change:
+ * a creator pacing 16 wakes at 18-tick intervals for a whole Reckoning —
+ * **`created 16 · sign seen 0 · elect seen 0 · ABANDONED 16/16`.** Not a low rate:
+ * zero, deterministically, because 18 > 13 is arithmetic and not a race. A
+ * play-tester reported the same shape from four identities over two Reckonings
+ * (11 ventures, 9 of them fully staffed by real counterparties, all 11 abandoned
+ * with `i_have_signed: false`) and reasonably concluded the verb was missing from
+ * the menu. It was on the menu. The menu was never legible to it.
+ *
+ * That is **A4 inverted**: *"never let requests-per-second, uptime, or reaction
+ * speed be power."* The house cast decides about once per tick, so it filled every
+ * role and countersigned inside the window every time, while an agent obeying the
+ * published budget could not close a single deal. Tempo was not an edge; it was
+ * the entry fee.
+ *
+ * ── ★ AND THE FIX IS NOT THIS NUMBER. IT IS THE SENTENCE THAT NAMES IT. ─────
+ *
+ * The obvious repair is to widen the window past the wake gap, and it was tried
+ * first, at 24 and then at the minimum 18. **It works and it is not worth it.** A
+ * formation window is also how long a filled hand is committed before a venture
+ * binds, and through `resolvesAtTick = nextSettlementAtOrAfter(closes +
+ * DELIVERY_LEAD_TICKS)` it decides how many ventures created late in a Reckoning
+ * slip their resolution into the *next* one and hold their hands a whole extra
+ * cycle. The full suite priced both settings:
+ *
+ *   - at **24** — `test/combat/the-cast-goes-to-war.spec.ts` seed `g24` stopped
+ *     fielding a defence at all ("every battle line has one side only"), and
+ *     `test/levy/aged-solvency.spec.ts` kept `levyShort` clean while **not one unit
+ *     was carried by another principal's hand**, quietly retiring §5.2's carry
+ *     route on that seed. That test's own message had predicted exactly this
+ *     reading: *"a green `levyShort` with `paidOther` at zero would mean the
+ *     horizon or a constant moved."*
+ *   - at **18** — the Levy recovered and the combat sim got *worse*, three failures
+ *     instead of one, on different seeds (`fz-13`). `WAR_SEEDS` and `LINE_SEEDS`
+ *     are hand-picked worlds that produce a contested battle; any change to the
+ *     world's shape invalidates the picks.
+ *
+ * So the cost of the margin is paid in **free hands**, which is what defence,
+ * haulage and the Levy carry all draw on — and it buys something the surface can
+ * give away for nothing. **`WAKES_PER_RECKONING` is a POOL, not a rate**
+ * (`api/server.ts:spendWake` counts per Reckoning and imposes no minimum spacing),
+ * so a creator may legally observe on two consecutive ticks. The evenly-paced agent
+ * that measured `sign seen 0` was not *unable* to come back inside its window; it
+ * had never been told the window existed. `api/observe.ts:countersignWarning` tells
+ * it, in the affordance for the act that opens the window, naming the exact tick —
+ * and `test/api/the-creator-can-bind-its-own-venture.spec.ts` plays it through on
+ * the published budget and gets to a moved standing without this constant changing.
+ *
+ * **The relation is still worth knowing and is still exported** — see
+ * {@link formationWindowOutlastsAWake}. It is negative today (12 against a gap of
+ * 18), which is precisely why the sentence is load-bearing rather than a courtesy:
+ * an agent that paces itself evenly and reads nothing is still locked out. Widening
+ * the window is the alternative fix, it is a world-shape change with measured
+ * collateral in the combat layer, and it is the owner's call rather than a
+ * bugfix's.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
 export const FORMATION_WINDOW_TICKS = 12;
+
+/**
+ * **How much room an evenly-paced creator has inside its own formation window.** Negative today.
+ *
+ * A creator that spreads `WAKES_PER_RECKONING` evenly gets one wake every
+ * `TICKS_PER_RECKONING / WAKES_PER_RECKONING` ticks. When the formation window is shorter than that,
+ * an agent pacing itself and reading nothing **cannot be awake to countersign its own venture** — it
+ * is not refused, it is never asked, and the symptom is *"the verb is missing from the menu"* rather
+ * than a failure anywhere. That is A4 arriving through a clock: the in-process cast decides about
+ * once per tick and closes every deal, while a lawful HTTP agent closes none.
+ *
+ * This is **a measurement, not a gate**, and the difference is deliberate. The slack is `-6` as
+ * shipped, and the loop is nonetheless reachable because the budget is a pool rather than a rate and
+ * `api/observe.ts:countersignWarning` now names the deadline on the act that opens it — so an agent
+ * that reads its affordance can spend two wakes close together and bind. Making this a hard
+ * assertion would force {@link FORMATION_WINDOW_TICKS} wider, which was measured and costs the
+ * combat layer its free hands.
+ *
+ * Exported so the trade-off is countable rather than remembered: if the wake budget rises, the
+ * Reckoning shortens, or the window widens, this number says whether the surface still has to carry
+ * the warning or whether the clock finally does.
+ */
+export function formationWindowOutlastsAWake(windowTicks: number = FORMATION_WINDOW_TICKS): number {
+  return windowTicks - Math.ceil(TICKS_PER_RECKONING / WAKES_PER_RECKONING);
+}
 
 /** Bound on every agent-written text buffer (INV-26, scar #3). */
 export const MAX_TALK_ENTRIES = 512;
