@@ -354,6 +354,54 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // matches `/stock|reserve|held|cargo|hand|goods|stores|escrow|cover|remaining/i`, which is that
   // rule made executable rather than remembered — the same instrument as the claim line's.
   'swayLines',
+  // ── ★ THE CONVOY LINE (A13's sixth named example), AND IT IS THE CLAUSE ────
+  //    EVERY OTHER LINE IN THIS FILE ALREADY BORROWED.
+  //
+  // §11.2 gives `PUBLIC` to *"movement on public lanes — a convoy is visible to anyone, because it is
+  // the map's motion and the map is the show"*, and the sentence appears **five times in
+  // `contract.ts`** as the reason `raidLines`, `battleLines`, `map` and `swayLines` may be drawn. The
+  // convoy itself had no field, so the clause every other line was admitted on had no object.
+  //
+  // A9 holds by construction and the proof is a row rather than a review: `runtime.ts:vHaul` emits
+  // `haul.departed` with `isPublic: true, publicAt: ctx.tick, declassifyAt: ctx.tick` and
+  // `payload: { hand, from, to, arrivesAtTick, lots }`, under a comment stating that `good` and `qty`
+  // are *"deliberately ABSENT… putting them here would put a `SENSED` fact on a `PUBLIC` row"*. A
+  // `ConvoyLine` carries strictly FEWER fields than that payload — not the lot ids, not a count of
+  // them — so there is no fact on it an agent reading the public feed does not already hold.
+  //
+  // ★ **The filter is the argument, and this is the one thing to preserve if this ever changes.** Only
+  // hands that are CARRYING appear. A bare `move` emits **no event at all**
+  // (`tick/loop.ts:BUILT_IN_VERBS.move`), so publishing every in-transit hand would put fleet
+  // redeployments on a public screen that no agent's `observe` reports — A9 inverted, and exactly the
+  // leak `world/sway.ts` refuses by deriving borders from HOLDINGS *"and deliberately not from
+  // hands… a border drawn from live hand positions would put every fleet's location on a public
+  // screen and delete the intel market."* Sway avoided hands entirely; this admits the one subset
+  // §11.2 names by hand, and nothing else.
+  //
+  // Not admissible, each considered: the good, the quantity, the lot ids or their count (`SENSED`,
+  // and a count is manifest-shaped); the destination's stores; whether the cargo is pledged; any
+  // unladen hand's position. `contract.ts:assertFrameBudgets` refuses a convoy field whose name
+  // matches `/good|qty|quantity|lots|cargo|manifest|units|stock|held|value/i`.
+  'convoyLines',
+  // ── ★ THE COMPACT LINK (A13's second and third named examples) ─────────────
+  //
+  // *"A compact draws a link between two holdings · a broken compact snaps that link and scars both
+  // parties."* Two of A13's six, and the frame drew a ring at one system and nothing between the
+  // parties — so the object this game is NAMED after had no geometry, and a broken promise scarred a
+  // row in `standings` rather than the link A13 says it snaps.
+  //
+  // Every input is a key this list already admits or a `PUBLIC` row re-read. The venture's identity,
+  // kind, stage, state and elective proportion are on `venture.formed` / `venture.role_filled` /
+  // `venture.settled`, all `PUBLIC`, and `tomorrow` (the docket) already publishes the same set for a
+  // forming venture while `settled` does for a resolved one. The two **holding systems** are
+  // `handles`' own clause — *"a holding is rendered with its name on it"* — which is also the entire
+  // derivation `swayLines` is admitted on. `snapped` is A5.
+  //
+  // Not admissible, each considered: either party's stores at either end (`SENSED`); the per-role
+  // escrow split (`PARTIES` operational detail — the aggregate `electiveBps` is what the docket card
+  // already publishes); the negotiation (`PARTIES` until settlement, which is why the LIVE frame
+  // carries links and carries no reel); the seal. Refused by field name in `assertFrameBudgets`.
+  'compactLinks',
 ]);
 
 export class ProjectionError extends Error {}

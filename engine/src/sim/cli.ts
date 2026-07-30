@@ -27,11 +27,12 @@
  *     deciding to resume rather than during.
  */
 
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SPEEDS, isSpeedName, setSpeed, systemClock, type SpeedName } from '../core/time.js';
 import { Rng } from '../core/rng.js';
 import { HeuristicCast } from '../cast/index.js';
-import { publishFrame } from '../frames/write.js';
+import { archiveLiveFrame, publishFrame, publishLiveFrame, serialiseLiveFrame } from '../frames/write.js';
 import { Runtime, type LevySummary, type ReckoningSummary } from './runtime.js';
 
 export interface SimArgs {
@@ -47,6 +48,16 @@ export interface SimArgs {
   readonly quiet: boolean;
   /** Directory to write settled-Reckoning frames to, for the spectator client. */
   readonly framesDir: string | null;
+  /**
+   * ★ Also archive **every** live frame, one file per tick, under `framesDir/live/`.
+   *
+   * Off by default and it must stay off by default: production rewrites one `live.json` in place,
+   * because a mid-Reckoning tick is *motion* and its history is the ledger. A sim wants the opposite —
+   * a sequence it can diff tick against tick — which is the only way to demonstrate that `ticksLeft`
+   * counts DOWN and a `gap` MOVES rather than merely being non-zero once. The audit that found the
+   * post-mortem defect did it by reading 21 archived frames; this is that instrument for the live one.
+   */
+  readonly liveFrames: boolean;
 }
 
 export const DEFAULT_ARGS: SimArgs = {
@@ -60,6 +71,7 @@ export const DEFAULT_ARGS: SimArgs = {
   emitStateHash: true,
   quiet: false,
   framesDir: null,
+  liveFrames: false,
 };
 
 export class ArgError extends Error {}
@@ -85,6 +97,9 @@ export function parseArgs(argv: readonly string[]): SimArgs {
     switch (flag) {
       case '--frames':
         args = { ...args, framesDir: value() };
+        break;
+      case '--live-frames':
+        args = { ...args, liveFrames: true };
         break;
       case '--seed':
         args = { ...args, seed: value() };
@@ -137,7 +152,11 @@ export function parseArgs(argv: readonly string[]): SimArgs {
       default:
         throw new ArgError(
           `unknown flag ${flag}. Usage: sim --seed S --ticks N --speed instant|turbo|fast|rehearsal|prod ` +
-            '--cast heuristic|none --principals P --hazards on|off --assert-every-tick --emit state_hash',
+            '--cast heuristic|none --principals P --hazards on|off --assert-every-tick --emit state_hash ' +
+            // Named here as well as in `SimArgs`, because a flag the usage string does not mention is a
+            // flag nobody uses — and `--live-frames` is the only way to prove a countdown counts DOWN
+            // rather than merely being populated once.
+            '--frames DIR --live-frames --quiet',
         );
     }
   }
@@ -259,6 +278,18 @@ export interface SimResult {
    */
   readonly operatorFaults: readonly string[];
   readonly framesWritten: number;
+  /** ★ How many LIVE frames were published. Zero without `--frames`. */
+  readonly liveFramesWritten: number;
+  /**
+   * ★ How many of those live frames differed from the one before it.
+   *
+   * **The meter that makes the fix falsifiable.** `publishLiveFrame` skips an identical rewrite, so
+   * this counts the ticks on which something a viewer can see actually MOVED. A live frame published
+   * 1,734 times with `liveFramesMoved: 0` would be the post-mortem defect wearing a new file name —
+   * and this repo's own lesson is that when you land a mechanism you land the meter, because an
+   * unmeasured capability is the same defect one level up.
+   */
+  readonly liveFramesMoved: number;
 }
 
 /**
@@ -301,6 +332,9 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
   let haltedAtTick: number | null = null;
   let ticksRun = 0;
   let framesWritten = 0;
+  let liveFramesWritten = 0;
+  let liveFramesMoved = 0;
+  let lastLiveBody = '';
 
   for (let n = 0; n < args.ticks; n += 1) {
     // The world stops when it stops. A scheduler that keeps calling a PAUSED engine is
@@ -339,6 +373,29 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
       // Reckonings and a reader would have no way to tell that from a quiet season.
       const levied = runtime.levyReckonings().at(-1);
       if (levied !== undefined && levied.tick === report.tick) perLevy.push(levied);
+    }
+
+    // ── ★ THE LIVE FRAME, EVERY TICK — see `api/server.ts` for why it exists ───
+    //
+    // Published here as well as in the API server so a sim can MEASURE the motion, and `liveFramesMoved`
+    // is that meter: the count of ticks on which the bytes a viewer would fetch actually CHANGED. It is
+    // computed here rather than read off `rewritten` because the two modes would otherwise mean
+    // different things — an archived per-tick file is always new, so its `rewritten` is always true and
+    // the meter would report perfect motion over a frozen world. **A meter that cannot report zero is
+    // the defect it was written to detect.**
+    //
+    // Never on a halted tick: that tick was aborted and NOT published, and a frame rendered from a
+    // rolled-back world shows a state the record denies (A5′).
+    if (args.framesDir !== null && !report.halted) {
+      const live = runtime.liveFrame();
+      const body = serialiseLiveFrame(live);
+      if (body !== lastLiveBody) liveFramesMoved += 1;
+      lastLiveBody = body;
+      publishLiveFrame(args.framesDir, live);
+      // The archive form, behind a flag: one file per tick under `live/`, so an instrument can diff
+      // tick against tick. Production does not do this — see `frames/write.ts:archiveLiveFrame`.
+      if (args.liveFrames) archiveLiveFrame(join(args.framesDir, 'live'), live);
+      liveFramesWritten += 1;
     }
     if (report.clock.inFreeze) {
       tributeAtFreeze = { lines: 0, DASHED: 0, SOLID: 0, RED: 0, REVERSING: 0, owedMinor: 0 };
@@ -379,6 +436,8 @@ export function runSim(args: SimArgs, emit?: (line: SimLine) => void): SimResult
     tributeAtFreeze,
     operatorFaults: runtime.operatorFaults(),
     framesWritten,
+    liveFramesWritten,
+    liveFramesMoved,
   };
 }
 

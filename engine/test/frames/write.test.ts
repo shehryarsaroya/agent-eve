@@ -10,9 +10,14 @@ import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { emptyFrame } from '../../src/frames/render.js';
+import { renderLiveFrame } from '../../src/frames/live.js';
 import {
   FRAME_INDEX,
   LATEST,
+  LIVE,
+  archiveLiveFrame,
+  liveFrameFileName,
+  publishLiveFrame,
   frameFileName,
   frameIndexRow,
   publishFrame,
@@ -260,5 +265,65 @@ describe('publishReplayedFrame', () => {
     const latest = JSON.parse(readFileSync(join(d, LATEST), 'utf8')) as { reckoningIndex: number };
     expect(latest.reckoningIndex).toBe(2);
     expect(index(d).reckonings.map((r) => r.reckoning)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('★ the LIVE frame is published, and it never touches the Reckoning archive', () => {
+  const live = (tick: number, ticker: readonly string[] = []) =>
+    renderLiveFrame({ tick, stateHash: `h${String(tick)}`, lastReckoning: null, ventures: [], ticker });
+
+  it('writes one moving file and NO archive row', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // A live frame is not a Reckoning. `index.json` is what a scrubber is built from, so a
+    // mid-Reckoning tick in it would be a night that never happened — and an `r-NNNNNN.json` for a
+    // tick would claim A5's permanence for a projection whose history is the ledger.
+    //
+    // MUTATION: make `publishLiveFrame` call `publishIndex`. RED on the third assertion.
+    // ══════════════════════════════════════════════════════════════════════════
+    const d = dir();
+    const written = publishLiveFrame(d, live(7));
+    expect(written.tick).toBe(7);
+    expect(written.rewritten).toBe(true);
+    expect(readdirSync(d)).toEqual([LIVE]);
+    const onDisk = JSON.parse(readFileSync(join(d, LIVE), 'utf8')) as { tick: number; phase: string };
+    expect(onDisk.tick).toBe(7);
+    expect(onDisk.phase).toBe('EARLY');
+  });
+
+  it('skips an identical rewrite, which is what makes `liveFramesMoved` mean anything', () => {
+    // The meter the sim reports is "ticks on which the show actually changed". If an unchanged tick
+    // rewrote the file, the meter could not report zero — and a meter that cannot report zero is the
+    // defect it was written to detect.
+    //
+    // MUTATION: delete the `readFileSync(dest) === body` early return in `atomicWrite`. RED.
+    const d = dir();
+    expect(publishLiveFrame(d, live(7)).rewritten).toBe(true);
+    expect(publishLiveFrame(d, live(7)).rewritten).toBe(false);
+    expect(publishLiveFrame(d, live(7, ['t7 something happened'])).rewritten).toBe(true);
+  });
+
+  it('serialises through the canonical path, so a float cannot reach a viewer', () => {
+    // The same guarantee `serialiseFrame` carries: money is integer minor units everywhere else and a
+    // live frame is not an exception. Asserted rather than assumed, because this file is written 288
+    // times more often than the nightly one and would be 288 times as many broken parses.
+    const d = dir();
+    const bad = { ...live(7), meters: { ...live(7).meters, onAPromise: 1.5 } } as unknown as ReturnType<typeof live>;
+    expect(() => {
+      publishLiveFrame(d, bad);
+    }).toThrow(CanonicalError);
+  });
+
+  it('archives one file per tick under the instrument flag, seven-digit padded', () => {
+    // The measurement mode. Production does NOT do this — see `frames/write.ts:archiveLiveFrame`.
+    const d = dir();
+    for (const t of [8, 9, 10]) archiveLiveFrame(d, live(t));
+    expect(readdirSync(d).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([
+      't-0000008.json',
+      't-0000009.json',
+      't-0000010.json',
+    ]);
+    // Padded so a directory listing sorts the way a human reads it, exactly as `frameFileName` is.
+    expect(liveFrameFileName(10)).toBe('t-0000010.json');
+    expect(() => liveFrameFileName(-1)).toThrow();
   });
 });

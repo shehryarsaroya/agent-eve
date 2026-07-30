@@ -50,7 +50,7 @@ import {
   ticksToMs,
   type Clock,
 } from '../core/time.js';
-import { publishFrame, publishReplayedFrame } from '../frames/write.js';
+import { publishFrame, publishLiveFrame, publishReplayedFrame } from '../frames/write.js';
 import { costOf } from '../tick/index.js';
 import { createCast, type Cast } from '../cast/index.js';
 import { Runtime, RULES_VERSION } from '../sim/runtime.js';
@@ -1945,6 +1945,41 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
       } catch (error: unknown) {
         process.stderr.write(
           `frame publish failed at tick ${String(report.tick)} (non-fatal): ` +
+            `${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      }
+    }
+
+    // ── ★ AND THE LIVE FRAME, EVERY TICK ──────────────────────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE BRANCH ABOVE FIRES ONCE EVERY 288 TICKS.** At `SPEEDS.prod` that is once every 24 hours,
+    // against a client polling `latest.json` every 15 seconds — so 5,759 of every 5,760 polls returned
+    // the same bytes and a viewer arriving at an arbitrary moment saw a still image of yesterday. Every
+    // field designed to animate *within* a Reckoning had no frame to appear on: `ticksLeft` was 0 on
+    // 117 of 117 measured raid rows, `DEMANDED` never occurred, `FORMING` never occurred, and the
+    // battle `gap` never moved. §16's three-humans gate asks people to *watch*, and there was nothing
+    // to watch between appointments.
+    //
+    // **Every tick, and that is the finest cadence that can exist** — the world only changes on a
+    // tick, so this is the absence of a frequency choice rather than one. It stays a static file
+    // behind Cloudflare at `max-age=2` (§15.5: *not per-connection SSE, because the Reckoning is
+    // exactly when you have an audience*), so one origin fetch per two seconds serves any audience.
+    //
+    // **After the record and after the nightly frame**, in that order, for the reason the comment
+    // above gives: the record is sacred and the show is cosmetic. Wrapped in its own `try` rather than
+    // sharing one, so a budget violation in the live projection cannot cost the Reckoning frame its
+    // publish on the one night that has an audience (A14).
+    //
+    // **Not on a halted tick.** A halt means the tick was aborted and NOT published; a live frame
+    // rendered from a rolled-back world would show a state the record denies (A5′).
+    // ══════════════════════════════════════════════════════════════════════════
+    if (options.framesDir !== null && !report.halted) {
+      try {
+        publishLiveFrame(options.framesDir, runtime.liveFrame());
+      } catch (error: unknown) {
+        process.stderr.write(
+          `live frame publish failed at tick ${String(report.tick)} (non-fatal): ` +
             `${error instanceof Error ? error.message : String(error)}\n`,
         );
       }

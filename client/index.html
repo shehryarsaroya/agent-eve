@@ -147,6 +147,23 @@
   .row .bad{color:var(--red)}
   .row .note{color:var(--ink-soft);font-size:12.5px;font-style:italic}
 
+  /* ── ★ NOW: the live frame ────────────────────────────────────
+     Structural only, like the archive strip. This exists so the live data is DRAWN by
+     something rather than serialised into a file nothing reads, which is this project's
+     signature defect at the pixel layer. The renderer replaces it. */
+  .nowclock{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--ink-soft);
+    border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:2px}
+  .nowclock b{color:var(--ink);font-size:15px;font-variant-numeric:tabular-nums}
+  .nowrow{font-family:var(--mono);font-size:12px;color:var(--ink);padding:6px 0;
+    border-bottom:1px dotted var(--rule);font-variant-numeric:tabular-nums}
+  .nowrow.quiet{color:var(--ink-soft);font-style:italic}
+  .nowtag{display:inline-block;min-width:74px;font-size:9.5px;letter-spacing:.12em;
+    color:var(--ink-soft)}
+  .nowtag.red{color:var(--red)}
+  .nowfoot{display:flex;flex-wrap:wrap;gap:18px;padding-top:10px;font-family:var(--mono);
+    font-size:10.5px;letter-spacing:.06em;color:var(--ink-soft)}
+  .nowfoot b{color:var(--ink);font-size:13px;font-variant-numeric:tabular-nums}
+
   .empty{border:1px dashed var(--rule);padding:36px;text-align:center;color:var(--ink-soft);
     font-style:italic}
   .err{border-left:3px solid var(--red);background:#fbf1ee;padding:14px 16px;
@@ -171,6 +188,31 @@
     <span id="m-status">loading…</span>
   </div>
 </header>
+
+<!--
+  ★ NOW — THE LIVE FRAME. The motion BETWEEN appointments.
+
+  ══════════════════════════════════════════════════════════════════════════
+  Everything below this section is a POST-MORTEM. `latest.json` is published only on a
+  settlement tick, and at SPEEDS.prod that is 288 ticks x 300 s = ONCE EVERY 24 HOURS —
+  while this page polls every 15 seconds. Measured across 21 real frames: raid countdowns
+  were 0 on 117 of 117 rows, DEMANDED never occurred, FORMING never occurred, and the
+  battle gap never once moved. A viewer arriving at an arbitrary moment saw yesterday.
+
+  `frames/live.json` is rewritten every tick and carries only what MOVES: the clock, the
+  countdowns, the range race, the empty sockets, the convoys, and A6's authority being
+  drawn on. It is a static file at max-age=2, so an audience of any size costs one origin
+  fetch every two seconds — no socket (SPEC 15.5).
+
+  This strip is deliberately PLAIN. It is here so the data is drawn by something rather
+  than serialised into a file nothing reads — the defect this project keeps re-teaching —
+  and so the renderer that replaces it can be checked against a working baseline.
+  ══════════════════════════════════════════════════════════════════════════
+-->
+<section id="now-sec">
+  <h2 class="sec">Now &mdash; between the appointments</h2>
+  <div id="now"></div>
+</section>
 
 <!--
   THE ARCHIVE. Every settled Reckoning is written as its own immutable file and had no
@@ -809,17 +851,105 @@ async function load(file) {
   }
 }
 
+// ── ★ NOW: the live frame ──────────────────────────────────────────────────
+//
+// Drawn from `frames/live.json`, which is rewritten every tick. Kept deliberately plain —
+// see the section comment in the markup. What it must do is show that the numbers MOVE,
+// because that is the one thing 21 archived Reckoning frames could not.
+function renderNow(f) {
+  const el = $('now');
+  if (!f) {
+    el.innerHTML = '<div class="err">No live frame. The world publishes one every tick; ' +
+      'if this stays empty the sim is not running or `frames/live.json` is not served.</div>';
+    return;
+  }
+  const m = f.meters || {};
+  const phase = {
+    EARLY: 'the long stretch',
+    COMMITMENT: 'commitment window &mdash; new commitments are PARTIES-visible only',
+    FREEZE: 'FROZEN &mdash; nothing may touch the settlement set',
+    SETTLING: 'SETTLING &mdash; the Reckoning is closing now',
+  }[f.phase] || f.phase;
+
+  // The countdowns, which are the whole point. `ticksLeft` on a DEMANDED raid, the gap on a
+  // live battle, and the ticks until a convoy lands.
+  const raids = (f.raidLines || []).filter((r) => r.state === 'DEMANDED');
+  const battles = (f.battleLines || []).filter((b) => b.fieldControl === null);
+  const convoys = f.convoyLines || [];
+  const forming = (f.glyphs || []).filter((g) => g.state === 'FORMING');
+  const drawn = (f.authorityLines || []).filter((a) => a.state === 'DRAWN' || a.state === 'EXHAUSTED');
+
+  const rows = [];
+  rows.push('<div class="nowclock"><b>' + esc(String(f.ticksUntilReckoning)) + '</b> ticks to the Reckoning &middot; ' +
+    'tick ' + esc(String(f.tick)) + ' of Reckoning ' + esc(String(f.reckoningIndex)) + ' &middot; ' + phase + '</div>');
+
+  // One line per thing with a clock on it. Empty is an honest state and says so.
+  for (const r of raids) {
+    rows.push('<div class="nowrow"><span class="nowtag red">STANDOFF</span> ' +
+      esc(String(r.stage)) + ' &mdash; ' + esc(String(r.demand)) + ' demanded of ' + esc(String(r.target)) +
+      (r.initiator ? ' by ' + esc(String(r.initiator)) : ' by the world') +
+      ' &middot; <b>' + esc(String(r.ticksLeft)) + '</b> ticks left' +
+      ((r.defenders || []).length ? ' &middot; ' + esc(String(r.defenders.length)) + ' stood with the target' : '') +
+      '</div>');
+  }
+  for (const b of battles) {
+    rows.push('<div class="nowrow"><span class="nowtag red">BATTLE</span> ' +
+      esc(String(b.stage)) + ' &mdash; ' + esc(String(b.state)) + ' &middot; gap <b>' + esc(String(b.gap)) +
+      '</b> (' + esc(String(b.rangeName)) + ') &middot; ' + esc(String((b.formations || []).length)) + ' formations &middot; ' +
+      esc(String((b.wrecks || []).length)) + ' wrecks</div>');
+  }
+  for (const c of convoys) {
+    rows.push('<div class="nowrow"><span class="nowtag">CONVOY</span> ' + esc(String(c.legend)) + '</div>');
+  }
+  for (const s of (f.saps || [])) {
+    rows.push('<div class="nowrow"><span class="nowtag red">CAMPAIGN</span> ' + esc(String(s.depot)) +
+      ' &rarr; ' + esc(String(s.objective)) + ' &mdash; ' + esc(String(s.legend)) + '</div>');
+  }
+  if (!rows.length || rows.length === 1) {
+    rows.push('<div class="nowrow quiet">Nothing with a clock on it right now. That is an honest state, ' +
+      'not a missing frame &mdash; the counters below are still live.</div>');
+  }
+
+  rows.push('<div class="nowfoot">' +
+    '<span><b>' + esc(String(m.onAPromise ?? 0)) + '</b> riding on a word</span>' +
+    '<span><b>' + esc(String(forming.length)) + '</b> unfilled roles</span>' +
+    '<span><b>' + esc(String(m.live ?? 0)) + '</b> compacts running</span>' +
+    '<span><b>' + esc(String(drawn.length)) + '</b> grants being drawn on</span>' +
+    '<span><b>' + esc(String(m.convoys ?? 0)) + '</b> convoys in flight</span>' +
+    '</div>');
+  el.innerHTML = rows.join('');
+}
+
+async function loadNow() {
+  try {
+    // `no-store` for the same reason `latest.json` takes it: this file is a moving pointer at
+    // the current tick, and a cached one is the still image this artifact exists to replace.
+    const r = await fetch('frames/live.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('live.json -> HTTP ' + r.status);
+    renderNow(await r.json());
+  } catch {
+    renderNow(null);
+  }
+}
+
 function poll() {
   loadArchive();
+  loadNow();
   // Never yank a viewer off a night they scrubbed to. The archive keeps refreshing so a
   // new Reckoning appears in the strip either way.
   if (selected === null) load(null);
 }
 
 loadArchive();
+loadNow();
 load(null);
 // Poll-primary delivery, proven on the predecessor. Frames are immutable once
 // written, so this only ever fetches a new pointer.
+//
+// ★ 15 s is now a MEANINGFUL interval rather than a decoration. Against `latest.json` alone
+// it fetched a file that changes once every 24 hours at prod speed; `live.json` changes
+// every tick, so this is the cadence at which the show actually moves. Both files are
+// served max-age=2, so Cloudflare collapses any audience into one origin fetch per 2 s.
 setInterval(poll, 15000);
 </script>
 </body>

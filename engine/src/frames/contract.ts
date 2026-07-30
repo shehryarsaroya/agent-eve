@@ -27,6 +27,8 @@ import type {
   CampaignState,
   ClaimState,
   GoodId,
+  GrantId,
+  HandId,
   Handle,
   HoldingId,
   PrincipalId,
@@ -35,9 +37,11 @@ import type {
   ConstellationId,
   SystemId,
   VentureId,
+  VentureState,
   ZoneTier,
 } from '../core/types.js';
 import type { Minor, Qty } from '../core/units.js';
+import { TICKS_PER_RECKONING } from '../core/time.js';
 
 /** §17: labels rendered per frame. The legible maximum. */
 export const MAX_LABELS_PER_FRAME = 7;
@@ -230,7 +234,24 @@ export interface TributeLine {
  */
 // Its own vocabulary (SPEC §3, one word per concept): `IDLE` is a hand's physical state
 // and `SPENT` is an intent's, so an authority line — a different concept — gets its own.
-export type AuthorityLineState = 'UNUSED' | 'DRAWN' | 'EXHAUSTED' | 'REVOKED';
+//
+// ── ★ `EXPIRED` IS THE FIFTH, AND IT IS §14's REQUIREMENT RATHER THAN A NICETY ──
+//
+// The nightly frame filtered to grants LIVE at the settlement, so a grant drawn on at tick 120 and
+// expiring at tick 250 was gone by the time the Reckoning published the *deed* it authorised.
+// Measured: on seed `g01`, **38 of the 41 grants ever drawn on had expired before any frame was
+// written**. §14's strip needs *"the grant, the accepted warning, the seal, the deed and the
+// negotiation text on one strip"* — so a `RundownSegment.grant` naming a grant no authority line on
+// the same frame resolves is a **dangling pointer**, and the marquee artifact of this design cannot be
+// assembled from a published frame. `EXPIRED` is what lets the referential integrity hold.
+//
+// It is a fifth state and not a reuse of `EXHAUSTED`, which means *"no headroom left on either
+// limit"* — a grant with money still on it whose term simply ran out is a different fact, and
+// conflating them would tell a viewer a delegate had spent everything when it had spent nothing.
+// `OrderState` also has `EXPIRED`, and the vocabulary guard's `SHARED_MEMBERS` entry argues why they
+// are one concept: a term that ran out with nothing owed either way, which is `ClaimState +
+// CoverState.LAPSED`'s argument exactly.
+export type AuthorityLineState = 'UNUSED' | 'DRAWN' | 'EXHAUSTED' | 'REVOKED' | 'EXPIRED';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -248,6 +269,27 @@ export type AuthorityLineState = 'UNUSED' | 'DRAWN' | 'EXHAUSTED' | 'REVOKED';
  * ══════════════════════════════════════════════════════════════════════════
  */
 export interface AuthorityLine {
+  /**
+   * ★ **THE JOIN §14 REQUIRES, AND THE FRAME CARRIED NO KEY TO MAKE IT ON.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * §14's receipt reel is *"the grant, the accepted warning, the seal, the deed and the negotiation
+   * text on one strip"*. Four of those five reached the frame. The **grant** did not — this line was
+   * keyed `(grantor, delegate)` and `RundownSegment` named a venture, so a renderer holding a
+   * `SNAPPED_BLACK` segment had no key on which to find the authority that permitted the deed. Two
+   * pairs may hold several grants at once and a pair may hold none by the time a default settles, so
+   * `(grantor, delegate)` is neither unique nor sufficient. The strip could not be assembled from a
+   * published frame at all, which by A13 means the signature artifact of this design does not exist.
+   *
+   * **It publishes nothing new.** `grant.issued` is emitted `PUBLIC` at `publicAt: tick` carrying
+   * `payload.grant` — the id itself — and §11.2 D9a puts a grant's LIMITS and parties at `PUBLIC`
+   * (the *verbs*, selectors and approval chain are what stays `PARTIES`, and none of those is here).
+   * `venture.formed` carries the same id in its `grant_id` column on a `PUBLIC` row, which is the
+   * argument {@link boundVentures} is already admitted on one field down. So this is the id both
+   * ends of the join already publish, finally written on the same artifact.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly grant: GrantId;
   readonly grantor: PrincipalId;
   readonly delegate: PrincipalId;
   /** Thickness ∝ the authority granted. This half is its max_direct_loss. */
@@ -329,7 +371,8 @@ export interface AuthorityLine {
   readonly dossiers: readonly AuthorityDossier[];
   /**
    * UNUSED nothing drawn on EITHER limit · DRAWN some headroom used · EXHAUSTED no
-   * headroom left on either limit · REVOKED ending next tick.
+   * headroom left on either limit · REVOKED ending next tick · ★ EXPIRED the term ran out, and this
+   * line is on the frame only because something else on it names this grant.
    */
   readonly state: AuthorityLineState;
 }
@@ -708,6 +751,170 @@ export interface StraitEdge {
   /** Systems stranded if it is cut, smaller side. `0` unless `severs`. */
   readonly severed: number;
 }
+
+/**
+ * ★ **THE CONVOY LINE** — A13's own sixth named example, and it had no field for the layer's
+ * whole life (A13: *"a convoy is a line that can be severed"*).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE PHRASE APPEARS FIVE TIMES IN THIS FILE AS THE REASON *OTHER* FIELDS MAY BE PUBLIC.**
+ *
+ * `raidLines`, `battleLines`, `map` and `swayLines` each win their §11.2 argument by quoting
+ * §11.2's convoy clause — *"a convoy is visible to anyone, because it is the map's motion and the
+ * map is the show"* — and the convoy itself was not on the frame. Nothing drew the one object the
+ * whole tier argument is named after, so §11.2's most quotable asymmetry (**a ship at sea is
+ * visible; its manifest is not**) could not be drawn either: there was no ship on screen to
+ * withhold a manifest from.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## The §11.2 argument, and it is the tightest one in this file
+ *
+ * Every field here is a field of the `PUBLIC` `haul.departed` row, and *only* those fields.
+ * `runtime.ts:vHaul` emits it `isPublic: true, publicAt: ctx.tick, declassifyAt: ctx.tick` with
+ * `payload: { hand, from, to, arrivesAtTick, lots }`, under a comment that states the split this
+ * type honours: *"`good` and `qty` are deliberately ABSENT from this payload… putting them here
+ * would put a `SENSED` fact on a `PUBLIC` row."* So A9's parity is a theorem: an agent reading the
+ * public feed at this tick has the row this line is a re-read of.
+ *
+ * **What decides which hands appear is the thing that makes the argument hold.** Only hands
+ * carrying cargo — the ones a `haul.departed` row exists for. A bare `move` emits **no event at
+ * all** (`tick/loop.ts:BUILT_IN_VERBS.move`), so publishing every in-transit hand would put a
+ * fleet redeployment on a public screen that no agent's `observe` reports, which is A9 inverted and
+ * is the same defect `world/sway.ts` refuses by deriving borders from holdings rather than hands.
+ * An empty hand on a lane draws nothing here, exactly as it emits nothing there.
+ *
+ * **`lots` is deliberately not carried, not even as a count.** The row publishes lot *identifiers*
+ * and this line publishes none of them: a lot count is the shape of a manifest, and
+ * `assertFrameBudgets` refuses a field on this line whose name reads like cargo.
+ *
+ * ## What A13 promises that the engine does not yet do, stated rather than drawn
+ *
+ * *"A line that can be severed."* **It cannot be severed today**, and this type does not pretend
+ * otherwise — there is no `severable` field, because it would be identically `false` and a field
+ * that never discriminates is this repo's own named defect class. `PredationPort.routHand` returns
+ * false unless `hand.state === 'IDLE'` (`runtime.ts`), so an `IN_TRANSIT` hand is never routed;
+ * `predation/resolve.ts` records the same fact from the other side (*"`routHand` then found it
+ * `IN_TRANSIT` and declined to rout it"*). Meanwhile the `haul` affordance tells agents *"if the
+ * hand is routed on the way, the cargo is DESTROYED"* (`api/observe.ts`). The affordance and the
+ * engine disagree; that is a rules-surface discrepancy for the predation layer to settle, and the
+ * frame's job is to render what is true.
+ *
+ * What IS true and is here: {@link strait} says the lane is a chokepoint, which is where a severing
+ * would happen if it happened, and it is a pure function of the topology already on this frame.
+ */
+export interface ConvoyLine {
+  /** The carrier. Named on the `PUBLIC` `haul.departed` row as `payload.hand`. */
+  readonly hand: HandId;
+  readonly principal: PrincipalId;
+  /** Where it left from. One move is one lane, so this is adjacent to {@link to}. */
+  readonly from: SystemId;
+  readonly to: SystemId;
+  /** `payload.arrivesAtTick`, verbatim. */
+  readonly arrivesAtTick: number;
+  /** The countdown on the line. `arrivesAtTick − tick`, floored at zero. */
+  readonly ticksLeft: number;
+  /**
+   * Is this lane a STRAIT? **THE PINCH and THE CONVOY LINE, on one pixel.**
+   *
+   * A pure function of `map[].straits` — which is on the same frame and is itself a pure function
+   * of the topology — so it publishes nothing and any stranger holding this frame can recompute it.
+   * It is here because *which* convoys matter is decided by *where* they must pass, and a renderer
+   * would otherwise have to join two keys to draw the one thing §16.12 #1 says a viewer learns to
+   * watch.
+   */
+  readonly strait: boolean;
+  /** `HALCYON'S CONVOY · sys-04 → sys-11 · 6 TICKS` — the words a viewer reads. */
+  readonly legend: string;
+}
+
+/**
+ * ★ **THE COMPACT LINK** — A13's second and third named examples, which had no field either
+ * (*"a compact draws a link between two holdings · a broken compact snaps that link and scars
+ * both parties"*).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * A venture rendered as a **ring at one `stage` system** ({@link VentureGlyph}) and nothing at all
+ * between the parties. So the object the game is named after — a compact — had no geometry: two
+ * agents on opposite sides of the map with 40,000 riding on a promise drew two unconnected dots,
+ * and a broken promise scarred a *principal* row in `standings` rather than the *link*. A13 names
+ * the link twice in six examples and the frame drew it zero times.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## §11.2, field by field, and none of it is new
+ *
+ * `venture`, `stage`, `kind`, `state`, the two parties and `electiveBps` are all on the `PUBLIC`
+ * `venture.formed` / `venture.role_filled` / `venture.settled` rows, and the venture's terms are
+ * what a counterparty reads before it signs — the same set {@link DocketCard} already publishes for
+ * a forming venture and {@link RundownSegment} for a settled one. The two **holding systems** are
+ * `handles`' clause: *"a holding is rendered with its name on it"*, which is also what `swayLines`
+ * is derived from and `claimLines`/`worksLines` publish per row.
+ *
+ * `snapped` is A5 — *"loss is real, public, priceable"* — and it is the same bit `glyph.state`
+ * already carries as `SNAPPED_BLACK`; here it is on the link so the **scar has somewhere to sit**.
+ *
+ * **What a compact link may never carry:** the role terms' escrow split per party (that is the
+ * venture's `PARTIES` operational detail; the aggregate `electiveBps` is what the docket card
+ * already publishes), anybody's stores at either end, the negotiation text (`PARTIES` until
+ * settlement), or the seal. `assertFrameBudgets` refuses a field on this link whose name reads as
+ * a stockpile or a manifest, the same executable instrument the claim line and the sway line use.
+ */
+export interface CompactLink {
+  readonly venture: VentureId;
+  readonly kind: string;
+  /** Where the work happens. The ring sits here; the link runs through it. */
+  readonly stage: SystemId;
+  readonly state: VentureState;
+  /** The creator, and the system its holding sits at — one end of the link. */
+  readonly a: PrincipalId;
+  readonly aAt: SystemId;
+  /**
+   * The counterparty with the most riding on it, and its holding's system — the other end.
+   *
+   * `null` while no role is filled: a compact with one party is not a link yet, and drawing one to
+   * nowhere would assert a relationship that does not exist (A5′). That is also exactly what
+   * `glyph.state: FORMING` is for — an empty socket, not a line.
+   */
+  readonly b: PrincipalId | null;
+  readonly bAt: SystemId | null;
+  /** How many parties in total, so a renderer knows the link is a simplification of a web. */
+  readonly parties: number;
+  /** The unsecured proportion of the whole compact, in bps. The part riding on someone's word. */
+  readonly electiveBps: number;
+  /** Value on the elective half. What the link is worth breaking. */
+  readonly atStake: Minor;
+  /** **The snap.** True exactly when this compact ended in a default (A5). */
+  readonly snapped: boolean;
+  /**
+   * ★ The grant that bound this compact in someone else's name, or null.
+   *
+   * {@link AuthorityLine.grant}'s other end. A snapped link carrying a grant id is §14's strip with
+   * the geometry attached: the authority, the deed, and the two holdings it ran between.
+   */
+  readonly grant: GrantId | null;
+  /** `HAULED · 12K ON A WORD · SNAPPED` — the words a viewer reads. */
+  readonly legend: string;
+}
+
+/**
+ * Convoy lines a frame may draw. *(calibrate)*
+ *
+ * Sized like the works budget rather than like the label budget, because a convoy is a *line*
+ * rather than a name: §17's seven-label rule bites on `cast`, and a renderer draws these as motion
+ * on the map with a handle only on the ones a viewer is following. Overflow keeps the ones landing
+ * soonest — the ones about to become an arrival — because a cap that dropped those would hide the
+ * only moment a convoy is news.
+ */
+export const MAX_FRAME_CONVOY_LINES = 16;
+
+/**
+ * Compact links a frame may draw. *(calibrate)*
+ *
+ * Equal to `MAX_RUNDOWN_SEGMENTS`, deliberately: the rundown is what a night *narrates* and these
+ * are what it narrates *about*, so a night can never tell a story whose link is off the map.
+ * Overflow drops the smallest kept promise first and never a snap — a snapped link is the one
+ * A13 names, and a cap that dropped it would fail in the direction that hides.
+ */
+export const MAX_FRAME_COMPACT_LINKS = 12;
 
 /**
  * ★ **THE VERGE** — the projection signature (A13, §16.12 #1).
@@ -1095,6 +1302,14 @@ export interface DocketCard {
    */
   readonly electiveBps: number;
   readonly cast: readonly CastChip[];
+  /**
+   * ★ The grant a delegate bound this card under, or null.
+   *
+   * {@link RundownSegment.grant}'s forward-looking twin, and the reason it is a field rather than
+   * only a sentence: {@link tension} already *says* *"X committed Y to this under a grant"* in
+   * prose, which a human reads and a renderer cannot join on. §14's strip needs a key.
+   */
+  readonly grant: GrantId | null;
 }
 
 /**
@@ -1175,6 +1390,37 @@ export interface RundownSegment {
    * settlement. Nothing is authored — this is a query over PARTIES messages.
    */
   readonly receiptReel: readonly ReceiptLine[] | null;
+  /**
+   * ★ **THE GRANT THAT AUTHORISED THIS DEED**, or null when the promisor acted for itself.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **§14 NAMES FIVE ARTIFACTS AND THIS WAS THE MISSING KEY BETWEEN TWO OF THEM.**
+   *
+   * *"The grant, the accepted warning, the seal, the deed and the negotiation text on one strip."*
+   * The deed is {@link deed}; the accepted warning is `AuthorityLine.granted` /
+   * `.grantedContingent`; the negotiation is {@link receiptReel}; the verdict is
+   * {@link sealVerdict}. **The grant was on no frame field at all** — so a renderer holding a
+   * `SNAPPED_BLACK` segment had nothing to look the authority up by, and A6's *"the replay can
+   * point at the exact promotion and the risk warning someone accepted"* was not achievable from
+   * a published artifact. This is that pointer, and {@link AuthorityLine.grant} is what it points at.
+   *
+   * Publishes nothing new: `venture.formed`'s `grant_id` column is on a `PUBLIC` row, which is the
+   * argument `AuthorityLine.boundVentures` is already admitted on.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly grant: GrantId | null;
+  /**
+   * ★ Who actually acted, when a delegate acted in another principal's name.
+   *
+   * `VentureRecord.actedBy`, and it is the field A5′ was reopened over: the permanent public row
+   * named the grantor as the promisor and *did not name the delegate at all*. A rundown segment is
+   * the most-read public statement this engine makes about a broken promise, and it said the wrong
+   * name. Null on an ordinary venture, where the creator is the actor and repeating it would assert
+   * a delegation that did not happen.
+   */
+  readonly actedBy: PrincipalId | null;
+  /** The principal whose money was riding on it, when {@link actedBy} is set. Null otherwise. */
+  readonly onBehalfOf: PrincipalId | null;
 }
 
 export interface ReceiptLine {
@@ -1259,6 +1505,10 @@ export interface ReckoningFrame {
   readonly map: readonly MapSystem[];
   /** ★ §16.12 #1's signature: **THE VERGE** — where each bloc's force stops, which is a border. */
   readonly swayLines: readonly SwayLine[];
+  /** ★ A13's sixth named example: **THE CONVOY LINE** — the map's motion, without its manifest. */
+  readonly convoyLines: readonly ConvoyLine[];
+  /** ★ A13's second and third: **THE COMPACT LINK**, and the snap that scars both ends of it. */
+  readonly compactLinks: readonly CompactLink[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
@@ -1266,7 +1516,361 @@ export interface ReckoningFrame {
   readonly nextDocket: readonly DocketCard[];
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ THE LIVE FRAME — the artifact that makes the Reckoning frame watchable
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Where the world is in its day. Derived from `ReckoningClock`, never stored.
+ *
+ * `EARLY` the long stretch · `COMMITMENT` the last `COMMITMENT_WINDOW_TICKS` (§5.1) · `FREEZE` the
+ * single tick before settlement, where nothing may touch the settlement set · `SETTLING` the
+ * settlement tick itself, which is the one tick a {@link ReckoningFrame} is written on.
+ *
+ * Its own word set, not `RaidState`'s and not `VentureState`'s (hard rule 4): this names where the
+ * *clock* is, and no canon term already means that.
+ *
+ * **`EARLY` and not `OPEN`, and the repo-wide vocabulary guard is why.** The first spelling was `OPEN`
+ * and `vocabulary-repo.test.ts` refused it in one line: `IndemnityState` and `OrderState` already share
+ * `OPEN` with a sanctioned entry reading *"live and unresolved"*, and a *phase of the clock* is not
+ * that — an order is `OPEN` or it is not, while every tick of a Reckoning is "live". One word wearing
+ * two concepts is HARD RULE 4, and this is the guard doing exactly the job its own header describes.
+ */
+export type LivePhase = 'EARLY' | 'COMMITMENT' | 'FREEZE' | 'SETTLING';
+
+/**
+ * What moves between Reckonings. Cheap, and none of it is a whole-ledger read.
+ *
+ * Deliberately **not** {@link Meters}. `Meters.levyShort` is a per-Reckoning settlement result and
+ * `Meters.unrefined` sums every stored lot of every principal — the exact shape that took production
+ * down when `HAZARD` gained a subject and the step budget had no term for it. A meter that costs a
+ * ledger sweep belongs on the artifact written once a day, not on the one written every tick.
+ *
+ * Every field here is a **count over a bounded book** or a sum the glyph pass already computed.
+ */
+export interface LiveMeters {
+  /**
+   * Value riding on nothing but someone's word, **right now** — the elective half of every filled
+   * role in every live venture.
+   *
+   * The same quantity `Meters.onAPromise` reports for what *settled*, asked about what is *still
+   * open*. It is the one number that says whether tonight has anything at stake in it, and it is
+   * the reason a live frame is worth polling before the Reckoning rather than only after.
+   */
+  readonly onAPromise: Minor;
+  /** Ventures with an unfilled role. The empty sockets, counted. */
+  readonly forming: number;
+  /** Ventures fully crewed and running. */
+  readonly live: number;
+  /** Standoffs with the window still open — the arcs with a countdown on them. */
+  readonly raidsLive: number;
+  /** Engagements not yet resolved — the gaps still moving. */
+  readonly battlesLive: number;
+  /** Laden hands on a lane. Convoys in flight. */
+  readonly convoys: number;
+}
+
+/**
+ * ★ **THE LIVE FRAME — because the nightly frame is a post-mortem.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **MEASURED, AND IT INVALIDATES ABOUT A DOZEN FIELDS AT ONCE.**
+ *
+ * A {@link ReckoningFrame} is published only on `report.clock.isSettlementTick`. `SPEEDS.prod` is
+ * 300 s and `TICKS_PER_RECKONING` is 288, so in production that is **one frame per 24 hours** —
+ * while `latest.json` is served `max-age=2` and the client polls it every 15 seconds against a file
+ * whose content changes once a day. A viewer arriving at an arbitrary moment sees a still image of
+ * yesterday.
+ *
+ * The consequence is not a bug in any one field; it is that **every field designed to animate
+ * within a Reckoning had no frame to appear in.** Censused over 21 real frames across three seeds:
+ *
+ * | field | what it is for | measured |
+ * |---|---|---|
+ * | `raidLines.ticksLeft` | the countdown on the arc | **0 on 117 of 117 rows** |
+ * | `raidLines.state` | `DEMANDED` is the live standoff | **never once** |
+ * | `battleLines.gap` / `.rangeName` | *"the gap that narrows every tick"* — called the most legible thing on the board | never animates; both battles observed were `AFTERMATH` |
+ * | `VentureGlyph.state: FORMING` | *"an empty socket that pulses — that is what forming looks like"* | **never occurs** |
+ * | `SapLine.dashed` / `.nextPulseTick` | the published notice window | unreachable |
+ * | `ClaimLine.contestable` | the published vulnerability window | **0 of 24** |
+ * | `AuthorityLine.state` | A6, as it is being drawn on | `UNUSED` on every row of every frame |
+ *
+ * The sort functions in `render.ts` were written for a world that could not reach a frame:
+ * `raidLines` ranks `DEMANDED` first and `battleLines` ranks a running battle first, and neither
+ * state ever arrived.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **SO THIS IS A SECOND ARTIFACT, NOT A SECOND CEREMONY.** A14 makes the Reckoning the
+ * appointment and A5 makes it the record; nothing here changes either. This is the motion
+ * *between* appointments: the countdowns, the gap, the sockets, and the authority being spent.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * ## Delivery: still static, still cacheable, still no socket
+ *
+ * §15.5 is explicit that spectator frames are *"static cacheable frames behind Cloudflare — not
+ * per-connection SSE, because the Reckoning is exactly when you have an audience"*. A live frame
+ * changes that not at all: it is one small JSON file, rewritten once per tick, served with the same
+ * two-second cache `latest.json` uses. **One origin fetch per two seconds serves any audience**,
+ * which is the property SSE would have destroyed. A tick is the finest cadence that can exist —
+ * the world only changes on one — so publishing per tick is not a choice about frequency, it is
+ * the absence of one.
+ *
+ * ## The cost, measured rather than asserted
+ *
+ * Seed `g07`, 1,728 ticks, 16 members, ending with 226 ventures and 168 grants on the books:
+ *
+ * | | |
+ * |---|---|
+ * | the tick itself | **55.9 ms** |
+ * | `Runtime.liveFrame()` | **1.02 ms** — 2% of the tick |
+ * | `Runtime.reckoningFrame()` | 6.86 ms, once per 288 ticks |
+ * | `live.json` | **11.4 KB** mean |
+ *
+ * Against a 300-second production tick that is 0.0003% of the budget, and it is published outside the
+ * tick's own step budget (`api/server.ts` calls it after `runTick` returns) so it cannot reach `DET-9`.
+ * The figure holds because every read is bounded by a book and none of them walks the ledger — see the
+ * list below, and `frames/authority.ts` on the O(grants × spends) fold that had to be removed first.
+ *
+ * ## A9, and why it is a theorem rather than a review item
+ *
+ * A9 is absolute: *"the spectator client never shows a live fact an agent's own `observe` would not
+ * show."* Three properties make that structural here rather than careful:
+ *
+ *   1. **Every key on this frame is a key `PUBLIC_FACT_KEYS` already admits**, except
+ *      {@link ConvoyLine} and {@link CompactLink}, which carry their arguments on their own types.
+ *      `test/frames/live.spec.ts` asserts that containment, so a key added here without a §11.2
+ *      argument fails the build rather than reaching a screen.
+ *   2. **Each line set is built by the same module function the Reckoning frame calls**, with the
+ *      tick as its only difference — `raidLinesFor(book, tick, …)`, `battleLinesFor(book, fleet,
+ *      tick, …)`, `claimLinesFor`, `tributeLinesFor`, `sapLinesFor`, `frontBands`. There is no
+ *      reader argument and no second derivation, so *"could an agent see this now"* has the same
+ *      answer as *"does the module return it now"*.
+ *   3. **Nothing time-scoped is on it.** §11.2 has exactly three tiers whose clause is a clock —
+ *      `PARTIES` (declassifies at settlement), `SENSED` (at the Reckoning boundary), `SEALED` (the
+ *      season replay) — and publishing *earlier* is the only way a re-read of a `PUBLIC` fact can
+ *      become a leak. So this frame carries **no rundown at all**: no `receiptReel`, no
+ *      `publicLine`, no `sealVerdict`. It carries no `haul.landed` quantity. It carries a front's
+ *      **cone** and never its swath, which is the risk layer's own decision. It carries dossier
+ *      threads only from `revealsAtTick`, on the same clock the subject reads.
+ *      {@link assertLiveFrameBudgets} refuses the shapes by name.
+ *
+ * ## What is NOT here, and why each was left off
+ *
+ * `meters.unrefined` and `standings` — whole-ledger and whole-book reads; see {@link LiveMeters}.
+ * `map`, `swayLines` — fixed for the world's life, so repeating them every tick would multiply the
+ * file for zero motion; a client reads them once off `latest.json` and keys these lines to them
+ * (every `SystemId` here is guaranteed present in the newest Reckoning frame's `map`).
+ * `places`, `hallOfFame`, `ruins`, `worksLines`, `marketLines`, `syndicateLines`, `coverArcs`,
+ * `coverChains` — slow-moving; a Reckoning is the right cadence for a day's economic history.
+ * `docket`, `nextDocket`, `rundown` — settlement artifacts, and the second reason above.
+ *
+ * ## ★ AND `tributeLines`, WHICH IS THE ONE KEY A9 ACTUALLY REFUSED
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * It looked like the best live signal on this frame — §5.2's *"continuous off-peak motion from a
+ * source that cannot go quiet"*, with `DASHED → SOLID → RED` moving on 42 of 1,151 ticks in a
+ * measured world — and it is **not publishable at an arbitrary tick.**
+ *
+ * `levy/tribute.ts:tributeStateFor` returns `SOLID` from `carriageUnderway`, which is
+ * `hand.destination === place || (isPresent(hand) && hand.location === place)`. That is a **hand
+ * disposition**, and §11.2 puts one at `SENSED` by name: *a ship at sea is visible; its manifest is
+ * not* — and `world/sway.ts` refuses hands as an input for exactly this reason, in its own words,
+ * *"a border drawn from live hand positions would put every fleet's location on a public screen and
+ * delete the intel market."*
+ *
+ * The distinction from `raidLines` and `battleLines`, which ARE here: those publish hulls **standing
+ * on a field**, which §11.2 gives to `PUBLIC` as the map's motion, and `predation/view.ts` states the
+ * position outright — *"a live raid is `PUBLIC` … `raidLinesFor` has always published every one of
+ * them to the spectator frame, so by A9 an agent's own `observe` was already entitled to it. What was
+ * narrow was convenience."* A tribute carriage is not motion on a public lane; it is **one bit about
+ * where a specific principal has sent a hand**, and no agent's `observe` answers it about anybody but
+ * itself (`LevyBlock` is `my_assessment` / `paid` / `deliverable_to` and nothing about a counterparty).
+ *
+ * It reaches the **nightly** frame, at the settlement tick, and that is a pre-existing §11.2 question
+ * for the Levy layer rather than one this artifact may decide. What is decided here is that publishing
+ * it 288 times a day would make the question materially worse, so it is not published at all.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+export interface LiveFrame {
+  /** The tick this is a projection of. Strictly increasing across published live frames. */
+  readonly tick: number;
+  /** Which Reckoning is in progress — **not** which one settled. */
+  readonly reckoningIndex: number;
+  /** Ticks to the settlement that closes this Reckoning. The clock a viewer reads. */
+  readonly ticksUntilReckoning: number;
+  readonly phase: LivePhase;
+  /**
+   * The engine's own hash at this tick.
+   *
+   * On the frame for the reason it is on the Reckoning frame: it is what makes a published
+   * projection checkable against the record rather than trusted. It also gives a client a free
+   * change detector — two polls with the same hash are the same world.
+   */
+  readonly stateHash: string;
+  /** The Reckoning frame this live frame sits after, or null before the world's first settlement. */
+  readonly lastReckoning: number | null;
+  readonly meters: LiveMeters;
+  /** ★ THE RAID LINE, **with its countdown still running**. */
+  readonly raidLines: readonly RaidLine[];
+  /** ★ THE BATTLE LINE, **with the gap still moving**. */
+  readonly battleLines: readonly BattleLine[];
+  /** ★ THE VENTURE RING, including `FORMING` — the empty socket the nightly frame cannot show. */
+  readonly glyphs: readonly VentureGlyph[];
+  /** ★ THE COMPACT LINK, while it is still a promise rather than a result. */
+  readonly compactLinks: readonly CompactLink[];
+  /** ★ THE CONVOY LINE. The only place it can meaningfully live: a convoy is in flight or it is not. */
+  readonly convoyLines: readonly ConvoyLine[];
+  /** ★ THE AUTHORITY LINE, drawn on the tick the draw happens rather than after it expired. */
+  readonly authorityLines: readonly AuthorityLine[];
+  /** ★ THE CLAIM TINT, with `contestable` true while the published window is open. */
+  readonly claimLines: readonly ClaimLine[];
+  /** ★ THE SAP, dashed through its notice window and hollow when it is starving. */
+  readonly saps: readonly SapLine[];
+  /** ★ THE FRONT BAND — the cone, before landfall. */
+  readonly frontBands: readonly FrontBand[];
+  /** The export surface, 140-char bounded, exactly as on the Reckoning frame. */
+  readonly ticker: readonly string[];
+}
+
 export class FrameBudgetError extends Error {}
+
+/**
+ * ★ THE CONVOY LINE's refusals. Shared by both frames, because both draw the line.
+ *
+ * A convoy is the map's motion; its manifest is `SENSED`. The same executable instrument the claim,
+ * works, market and sway lines carry, aimed at the one line whose subject **is** a cargo hold — so
+ * it is the line where a field added for a good reason does the most damage.
+ */
+function convoyProblems(lines: readonly ConvoyLine[]): readonly string[] {
+  const problems: string[] = [];
+  for (const line of lines) {
+    for (const key of Object.keys(line)) {
+      if (/good|qty|quantity|lots|cargo|manifest|units|stock|held|value/i.test(key)) {
+        problems.push(
+          `convoy ${line.hand} carries "${key}". §11.2: a ship at sea is visible; its manifest is ` +
+            'not. `haul.departed` is PUBLIC precisely because it omits the good and the quantity, ' +
+            'and this line may carry no more than that row does',
+        );
+      }
+    }
+    if (line.from === line.to) {
+      problems.push(`convoy ${line.hand} is drawn from ${line.from} to itself; one move is one lane`);
+    }
+    if (line.ticksLeft < 0) {
+      problems.push(`convoy ${line.hand} renders a negative countdown (${String(line.ticksLeft)})`);
+    }
+  }
+  return problems;
+}
+
+/** ★ THE COMPACT LINK's refusals. Shared by both frames, for {@link convoyProblems}' reason. */
+function compactProblems(links: readonly CompactLink[]): readonly string[] {
+  const problems: string[] = [];
+  for (const link of links) {
+    for (const key of Object.keys(link)) {
+      if (/stock|reserve|stores|escrow|balance|holdings|inventory|seal|message/i.test(key)) {
+        problems.push(
+          `compact ${link.venture} carries "${key}"; a link publishes WHO it runs between and what ` +
+            "rides on it, never either end's stores (SENSED) or the negotiation (PARTIES)",
+        );
+      }
+    }
+    // A link with one end is not a link. Drawing one to nowhere asserts a relationship that does
+    // not exist, which is A5′ about two named agents.
+    if ((link.b === null) !== (link.bAt === null)) {
+      problems.push(`compact ${link.venture} names a counterparty at one field and not the other`);
+    }
+    // The snap is the pixel A13 names, and the state is the world's verdict. A link drawn snapped
+    // over a venture that settled is the picture contradicting the record (A5′).
+    if (link.snapped !== (link.state === 'DEFAULTED')) {
+      problems.push(
+        `compact ${link.venture} is ${link.state} and draws snapped=${String(link.snapped)}; only a ` +
+          'DEFAULTED compact snaps, and a snap that is not one is a permanent public accusation',
+      );
+    }
+    if (link.atStake < 0 || link.electiveBps < 0 || link.parties < 1) {
+      problems.push(`compact ${link.venture} renders a negative quantity or no parties at all`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * The A9 refusal for a live frame, as arithmetic.
+ *
+ * Two jobs, and they fail differently. The budgets are {@link assertFrameBudgets}' — the same
+ * caps, because a line set does not become more legible for being published more often. The
+ * **tier** check is this function's own and is the reason it exists: a live frame is published
+ * *before* settlement, so it is the one artifact on which a `PARTIES`, `SENSED` or `SEALED` field
+ * would be an early disclosure rather than a re-read.
+ *
+ * The check is by field NAME, which catches a known leak shape spelled a known way. That is
+ * deliberately the weaker half; the strong half is that this frame has no rundown to put one on and
+ * `test/frames/live.spec.ts` proves the key set is contained in `PUBLIC_FACT_KEYS`. A guard that
+ * could not fail would be worse than no guard — see the mutation cases in that file.
+ */
+export function assertLiveFrameBudgets(frame: LiveFrame): void {
+  const problems: string[] = [];
+
+  if (frame.raidLines.length > MAX_RAID_LINES) {
+    problems.push(`${frame.raidLines.length} raid lines, budget is ${MAX_RAID_LINES}`);
+  }
+  if (frame.battleLines.length > MAX_FRAME_BATTLE_LINES) {
+    problems.push(`${frame.battleLines.length} battle lines, budget is ${MAX_FRAME_BATTLE_LINES}`);
+  }
+  if (frame.authorityLines.length > MAX_AUTHORITY_LINES) {
+    problems.push(`${frame.authorityLines.length} authority lines, budget is ${MAX_AUTHORITY_LINES}`);
+  }
+  if (frame.claimLines.length > MAX_FRAME_CLAIM_LINES) {
+    problems.push(`${frame.claimLines.length} claim lines, budget is ${MAX_FRAME_CLAIM_LINES}`);
+  }
+  if (frame.saps.length > MAX_FRAME_SAP_LINES) {
+    problems.push(`${frame.saps.length} saps, budget is ${MAX_FRAME_SAP_LINES}`);
+  }
+  if (frame.frontBands.length > MAX_FRAME_FRONT_BANDS) {
+    problems.push(`${frame.frontBands.length} front band cells, budget is ${MAX_FRAME_FRONT_BANDS}`);
+  }
+  if (frame.convoyLines.length > MAX_FRAME_CONVOY_LINES) {
+    problems.push(`${frame.convoyLines.length} convoy lines, budget is ${MAX_FRAME_CONVOY_LINES}`);
+  }
+  if (frame.compactLinks.length > MAX_FRAME_COMPACT_LINKS) {
+    problems.push(`${frame.compactLinks.length} compact links, budget is ${MAX_FRAME_COMPACT_LINKS}`);
+  }
+  if (frame.ticker.some((t) => t.length > 140)) {
+    problems.push('a ticker line exceeds 140 characters');
+  }
+
+  // ── THE ONE REFUSAL THAT IS THIS FRAME'S OWN ─────────────────────────────
+  //
+  // §11.2's three time-scoped tiers, refused at the top level by the names their content would
+  // actually be spelled. A live frame publishes before the clock those tiers declassify on, so a
+  // field here is not a re-read of a public fact — it is the disclosure arriving early, which is
+  // A9 inverted and is the shape `roleTags` shipped in for the combat layer's whole life.
+  for (const key of Object.keys(frame)) {
+    if (/receipt|reel|publicLine|seal|negotiation|message|manifest|cargo|contents/i.test(key)) {
+      problems.push(
+        `a live frame carries "${key}". §11.2 declassifies PARTIES at settlement, SENSED at the ` +
+          'Reckoning boundary and SEALED in the season replay — a frame published mid-Reckoning is ' +
+          'the one artifact on which any of those is an early disclosure rather than a re-read (A9)',
+      );
+    }
+  }
+
+  problems.push(...convoyProblems(frame.convoyLines), ...compactProblems(frame.compactLinks));
+
+  if (frame.ticksUntilReckoning < 1 || frame.ticksUntilReckoning > TICKS_PER_RECKONING) {
+    problems.push(
+      `a live frame reports ${frame.ticksUntilReckoning} ticks to the Reckoning; the clock runs ` +
+        `1..${TICKS_PER_RECKONING}`,
+    );
+  }
+
+  if (problems.length > 0) {
+    throw new FrameBudgetError(
+      `live frame at tick ${frame.tick} violates the §17 budgets or the §11.2 ladder:\n  - ${problems.join('\n  - ')}`,
+    );
+  }
+}
 
 /**
  * Assert the legibility budgets. Called before a frame is written, so an
@@ -1957,6 +2561,72 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
           `${line.system}'s sway line carries "${key}"; a border is derived from HOLDINGS and CLAIMS, both ` +
             'PUBLIC, and never from hands or stores — §11.2 keeps a ship visible and its manifest not',
         );
+      }
+    }
+  }
+
+  // ── ★ THE CONVOY LINE AND THE COMPACT LINK ───────────────────────────────
+  //
+  // Budgeted and refused with the same instruments as every other line set, and with the same
+  // helpers the live frame uses — one set of rules, two artifacts, so a shape refused on one can
+  // never be publishable on the other.
+  if (frame.convoyLines.length > MAX_FRAME_CONVOY_LINES) {
+    problems.push(
+      `${frame.convoyLines.length} convoy lines, budget is ${MAX_FRAME_CONVOY_LINES} — motion a viewer ` +
+        'can follow, not a traffic map',
+    );
+  }
+  if (frame.compactLinks.length > MAX_FRAME_COMPACT_LINKS) {
+    problems.push(
+      `${frame.compactLinks.length} compact links, budget is ${MAX_FRAME_COMPACT_LINKS} — a night cannot ` +
+        'narrate more compacts than it can draw',
+    );
+  }
+  problems.push(...convoyProblems(frame.convoyLines), ...compactProblems(frame.compactLinks));
+
+  // ── ★ §14'S STRIP MUST BE ASSEMBLABLE FROM THE FRAME ALONE ────────────────
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // §14 requires *"the grant, the accepted warning, the seal, the deed and the negotiation text on one
+  // strip"*. The deed is a rundown segment; the accepted warning is an authority line's two LIMITS;
+  // and the pointer between them is a `GrantId`. **A published `grant` id that no line on the same
+  // frame resolves is a dangling pointer, and a strip that cannot be assembled is a signature that
+  // does not exist (A13).**
+  //
+  // This is the same rule `claimLines`, `worksLines` and `swayLines` are already checked against the
+  // frame's own `map` for, applied to the one pointer the marquee artifact depends on. It is exempt
+  // only when the twelve-line budget is genuinely full — `rankAuthorityLines` puts a named grant
+  // FIRST for that reason, so the exemption is reachable only when more than `MAX_AUTHORITY_LINES`
+  // distinct grants are named on one night, and refusing the whole frame over a legitimate
+  // truncation would be an agent-reachable outage in the show (AGT-X9's shape).
+  // ══════════════════════════════════════════════════════════════════════════
+  const resolvable = new Set<string>(frame.authorityLines.map((l) => String(l.grant)));
+  if (frame.authorityLines.length < MAX_AUTHORITY_LINES) {
+    const named: { readonly where: string; readonly grant: string }[] = [
+      ...frame.rundown.filter((s) => s.grant !== null).map((s) => ({ where: `rundown ${s.subject}`, grant: String(s.grant) })),
+      ...frame.docket.filter((c) => c.grant !== null).map((c) => ({ where: `docket ${String(c.venture)}`, grant: String(c.grant) })),
+      ...frame.compactLinks
+        .filter((l) => l.grant !== null)
+        .map((l) => ({ where: `compact ${String(l.venture)}`, grant: String(l.grant) })),
+    ];
+    for (const ref of named) {
+      if (!resolvable.has(ref.grant)) {
+        problems.push(
+          `${ref.where} names grant ${ref.grant}, and no authority line on this frame carries it. §14's ` +
+            'receipt reel puts the grant beside the deed on one strip, and a pointer into nothing is a ' +
+            'strip a renderer cannot assemble',
+        );
+      }
+    }
+  }
+
+  // A link, a convoy and a sway line all key to a system, and `claimLines`/`worksLines`/`marketLines`
+  // are already checked against the map for this reason: a renderer cannot place a line whose
+  // endpoint is not on the same frame's topology, and a silently unplaceable line reads as no line.
+  for (const line of frame.convoyLines) {
+    for (const at of [line.from, line.to]) {
+      if (frame.map.length > 0 && !mapById.has(at)) {
+        problems.push(`convoy ${line.hand} names ${at}, which is not on this frame's map`);
       }
     }
   }

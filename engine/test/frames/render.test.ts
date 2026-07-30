@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { minor } from '../../src/core/units.js';
-import type { Handle, PrincipalId, VentureId } from '../../src/core/types.js';
+import type { GrantId, Handle, PrincipalId, VentureId } from '../../src/core/types.js';
 import {
   MAX_AUTHORITY_LINES,
   MAX_LABELS_PER_FRAME,
@@ -63,6 +63,8 @@ function source(over: Partial<FrameSource> = {}): FrameSource {
 describe('authority lines — the A6 pixel signature (§8, §14)', () => {
   function line(over: Partial<AuthorityLine> = {}): AuthorityLine {
     return {
+      // ★ §14's join. `g:` + the pair, so a fixture's lines are distinguishable without a counter.
+      grant: `g:${String(over.grantor ?? P('halcyon'))}:${String(over.delegate ?? P('vex'))}` as GrantId,
       grantor: P('halcyon'),
       delegate: P('vex'),
       granted: minor(1_000),
