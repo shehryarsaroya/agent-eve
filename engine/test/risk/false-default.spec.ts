@@ -27,6 +27,25 @@
  * agreed to and make the payer short **through a price move it did not cause** — a false default with
  * no race, no stale read, and every individual settlement arithmetically correct. §15.4's third defence
  * is the valuation pinned in `terms_hash`, and this is the mode that checks it.
+ *
+ * ## ⚑ AND WHAT THIS FILE USED TO ASSERT ABOUT DEFENCES 2 AND 3 WAS NOT A TEST OF THEM
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * The block named *"§15.4 defence 3"* asserted the fields were **non-null**:
+ * `expect(cover.termsHash).not.toBeNull()` and `expect(cover.actedOnStateVersion).not.toBeNull()`. Both
+ * were true and neither was the defence. The defence is a *comparison*, and both comparisons could not
+ * fail:
+ *
+ *   - `runCohortPhase` built its "frozen" version map **from the live book** and `settleCohort` read it
+ *     back off the same objects, so `guardIndemnity` asserted `x !== x`;
+ *   - the `terms_hash` half was guarded by `if (liveTermsHash !== null && …)` and the only caller passed
+ *     the literal `null`.
+ *
+ * Measured before the fix: after landfall, setting `actedOnStateVersion = 999999` **and**
+ * `termsHash = 'tampered-hash'` on the live row still settled `PAID`. §15.4 calls the false default
+ * *"the top engineering risk in this design"* and `indemnity.ts` calls this check *"the single most
+ * important one here"*. `MODE D` below is the mutation that proves it now fires — and it is a mutation
+ * of the **row**, not of `src/`, so it stays in the suite as a regression rather than as a comment.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -259,10 +278,115 @@ describe('★ MODE C — the post-event price spike, which is this layer’s own
     // The valuation rule AND its as-of tick are inside the hash. `coverCanonical` writes both, so a
     // mark that moved after bind cannot change the hash without changing the terms — which is the
     // thing a counterparty correctly reads as reneging.
+    //
+    // ⚑ These four lines are all this block used to be, and *"the fields are non-null"* is not
+    // *"the comparison fires"*. `MODE D` is the half that was missing.
     expect(cover.termsHash, 'a hash exists').not.toBeNull();
     expect(cover.valuation.asOfTick, 'and it pinned an as-of tick').toBeGreaterThan(0);
     expect(cover.valuation.marks.length, 'and a mark for the good it covers').toBe(1);
     expect(cover.actedOnStateVersion, 'and the state version the freeze will compare').not.toBeNull();
+  });
+});
+
+describe('★★ MODE D — §15.4’s TWO ROW-LEVEL DEFENCES FIRE, mutation-proven', () => {
+  /** Landfall, an open INDEMNITY, and the payer electing to pay in full. The honest baseline. */
+  function struck(seed: string): Bound {
+    const b = bound(seed);
+    runTo(b.runtime, FIRST_LANDFALL_TICK);
+    tick(b.runtime);
+    const ind = b.runtime.risk.indemnityForCover(b.cover as never);
+    expect(ind, 'the cohort opened, or there is nothing to settle and nothing to tamper with').toBeDefined();
+    const elected = act(b.runtime, b.payer, 'elect', { cover: b.cover, election: 'IN_FULL' });
+    expect(elected, `the payer could not elect: ${elected?.hint ?? ''}`).toBeNull();
+    return b;
+  }
+
+  it('is not vacuous: UNTAMPERED, the same scenario settles PAID', () => {
+    const b = struck('mode-d-clean');
+    runTo(b.runtime, SETTLE_TICK);
+    tick(b.runtime);
+    // ★ THE CONTROL. Without it, "the tampered world halts" is indistinguishable from "this scenario
+    // halts", which is the same class of mistake as an invariant with no reachable subject.
+    expect(b.runtime.risk.indemnityForCover(b.cover as never)?.state, 'it pays').toBe('PAID');
+  });
+
+  it('★ the INDEMNITY captures the cover’s version and hash AT LANDFALL, not at settlement', () => {
+    const b = struck('mode-d-capture');
+    const ind = b.runtime.risk.indemnityForCover(b.cover as never);
+    const cover = b.runtime.risk.requireCover(b.cover as never);
+    if (ind === undefined) throw new Error('unreachable');
+    // ★ **TWO OBJECTS, WRITTEN AT TWO TICKS.** This is the whole fix: the earlier witness a settlement
+    // compares against is a *different record*, minted in `HAZARD` at `FREEZE_FIRST_PHASE - 70` by code
+    // the settlement cannot reach. A venture needs the Reckoning driver to carry a frozen capture from
+    // the freeze; a COVER does not, because the INDEMNITY already is one.
+    expect(ind.pinnedStateVersion, 'the version, captured').toBe(cover.actedOnStateVersion);
+    expect(ind.pinnedTermsHash, 'and the hash, captured').toBe(cover.termsHash);
+    expect(ind.openedTick, 'at landfall').toBe(FIRST_LANDFALL_TICK);
+    expect(ind.openedTick, 'which is strictly before the settlement that reads it').toBeLessThan(
+      SETTLE_TICK,
+    );
+  });
+
+  it('★★ MUTATION — `acted_on_state_version` rewritten after landfall HALTS the settlement', () => {
+    const b = struck('mode-d-version');
+    const cover = b.runtime.risk.requireCover(b.cover as never);
+    const was = cover.actedOnStateVersion;
+    // Scar #6's shape: the resolver reading a state the players never acted on. Before the fix this
+    // settled `PAID` — the map the guard compared against was rebuilt from this very field.
+    cover.actedOnStateVersion = 999_999;
+    expect(cover.actedOnStateVersion, 'the row really moved').not.toBe(was);
+
+    let halt = '';
+    try {
+      runTo(b.runtime, SETTLE_TICK);
+      tick(b.runtime);
+    } catch (error) {
+      halt = String(error);
+    }
+    expect(halt, 'the settlement refuses to run').toContain('INV-19');
+    expect(halt, 'and names both values').toContain('999999');
+    expect(halt, 'and says when the earlier one was taken').toContain('at landfall');
+  });
+
+  it('★★ MUTATION — `terms_hash` rewritten after landfall HALTS the settlement', () => {
+    const b = struck('mode-d-hash');
+    const cover = b.runtime.risk.requireCover(b.cover as never);
+    // The half that was a hard-coded `null`. §15.4: *"a `terms_hash` mismatch agents correctly read as a
+    // counterparty reneging"* — so the engine acting on a rewritten one would be the engine reneging.
+    cover.termsHash = 'tampered-hash';
+
+    let halt = '';
+    try {
+      runTo(b.runtime, SETTLE_TICK);
+      tick(b.runtime);
+    } catch (error) {
+      halt = String(error);
+    }
+    expect(halt, 'the settlement refuses to run').toContain('INV-19');
+    expect(halt, 'and quotes the tampered value').toContain('tampered-hash');
+    expect(halt, 'and names what moved under a bound promise').toContain('valuation or the limit moved');
+  });
+
+  it('★ and a settlement with NO earlier witness halts rather than checking a row against itself', () => {
+    const b = struck('mode-d-null');
+    const ind = b.runtime.risk.indemnityForCover(b.cover as never);
+    if (ind === undefined) throw new Error('unreachable');
+    // A row a pre-36 checkpoint restored carries `null` here. The honest answer is a halt: *"a
+    // settlement whose inputs nobody can prove is a settlement that can fabricate a default"* — and the
+    // alternative, falling back to the live row, is the tautology this whole block exists to close.
+    (ind as { pinnedStateVersion: number | null }).pinnedStateVersion = null;
+
+    let halt = '';
+    try {
+      runTo(b.runtime, SETTLE_TICK);
+      tick(b.runtime);
+    } catch (error) {
+      halt = String(error);
+    }
+    expect(halt, 'no witness, no settlement').toContain('INV-19');
+    expect(halt, 'and the message says exactly what is missing and why it matters').toContain(
+      'nothing earlier to compare',
+    );
   });
 });
 

@@ -1925,8 +1925,38 @@ import {
  * tail at merge* — and stacked rather than blended, because an operator reading a
  * `RULES_VERSION_MISMATCH` has to know which change moved which table. This is the fourth version
  * tonight to arrive out of order and the protocol has now paid for itself four times.
+ *
+ * ── 36 — THE RISK MARKET'S FIVE CRITICALS. `risk` IS A CAPTURED TABLE. ───────
+ *
+ * ★ **Three separate reasons the `risk` state table's bytes move, so an operator can tell which.**
+ *
+ *   1. **`covers[].offerExpiresTick` is now captured.** It was read by `restore` through a bare
+ *      `readInt` and never written by `capture`, so **a world holding one COVER could not boot** —
+ *      `risk.covers[0].offerExpiresTick: expected a safe integer`. It was also therefore outside
+ *      `state_hash`, so two replicas whose offers stood until different ticks agreed to the byte.
+ *      `rulesVersion`, the pinned `valuation` **with its marks**, `boundByGrant` and `actedBy` are
+ *      captured for the same reason: `restore` was rebuilding the valuation from
+ *      `pinnedAt(DEFAULT_VALUATION_RULE, …)`, which returns `marks: []`, and `pinnedMark` **throws**
+ *      rather than defaulting — so an adopted world halted inside `HAZARD` on its first covered
+ *      landfall, which is §15.4's third defence deleted by the boot path.
+ *   2. **`indemnities[].pinnedStateVersion` / `pinnedTermsHash` are new fields.** §15.4's second and
+ *      third defences were both comparisons that could not fail — one compared a field to itself, the
+ *      other was a hard-coded `null`. The INDEMNITY now carries the COVER's version and terms hash
+ *      **as of landfall**, seventy ticks and one phase before the freeze, and `guardIndemnity`
+ *      compares two objects instead of one twice.
+ *   3. **`indemnities[].state` can now be `DUE`.** It was in the union, tested by seven predicates,
+ *      and assigned by nothing. `markDue` is its writer.
+ *
+ * **And two rules changes that move outcomes rather than columns:** a cession is now subject to
+ * RSK1/CAT6 exclusivity and the limit ceiling (all three guards were inside `if (over.kind ===
+ * 'GOODS')`, so two reinsurers over one primary paid it **twice for one loss** — measured `+18,803`
+ * on an actual loss of `20,892`), and the SWATH and the CONE truncate by **distance from the eye**
+ * instead of by system id, so the published forecast is no longer anti-correlated with the loss and
+ * the FRONT's spare floor is per-good instead of one `ration`-derived 20,000 applied to four goods.
+ *
+ * The `RULES_VERSION` is 36 rather than 35 because 35 is the surface lode's, landing in parallel.
  */
-export const RULES_VERSION = 34;
+export const RULES_VERSION = 36;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -2027,9 +2057,11 @@ import {
   systemYield,
 } from '../works/params.js';
 import {
+  checkRiskInvariants,
   coverAffordances,
   coverArcs,
   coverChains,
+  COVER_OFFER_TTL_TICKS,
   riskViewFor,
   RiskBook,
   type CoverArc,
@@ -2057,13 +2089,18 @@ import {
 export const MAX_RAID_TICKER_LINES = 32;
 
 /**
- * How long a published COVER offer stands, in ticks.
+ * ⚑ **`COVER_OFFER_TERM_TICKS = 144` USED TO LIVE HERE, BESIDE `COVER_OFFER_TTL_TICKS = 144`.**
  *
- * Half a Reckoning. Long enough that a payee waking inside its wake budget can find it, short
- * enough that an offer's escrow is not locked across a whole front's life for nothing — an offer
- * escrows at publication (RSK2's firm capacity), so a term nobody can take is capital sterilised.
+ * Two independent constants deciding one published fact: `offerCover` stamped the row from the module's
+ * copy and `view.ts` published `expires_tick` on the affordance from this one. They agreed, so nothing
+ * broke — and the reason there were two is that neither `COVER_OFFER_TTL_TICKS` nor `COVER_TERM_TICKS`
+ * was exported from `src/risk/index.ts`, so this file could not import the one it wanted.
+ *
+ * The separation of the *offer* clock from the *term* clock is that module's headline scar — twenty
+ * lines of docblock on why one field for two lifetimes made every COVER lapse 431 ticks before its
+ * FRONT landed — and then the offer clock itself existed twice. Both are in the barrel now and this
+ * file imports the real one.
  */
-export const COVER_OFFER_TERM_TICKS = 144;
 
 /** Ticks a formation window stays open by default. */
 export const FORMATION_WINDOW_TICKS = 12;
@@ -2890,9 +2927,22 @@ export interface RuntimeOptions {
   readonly startTick?: number;
   readonly actionsPerTick?: number;
   /**
-   * Hazards on or off. Phase 0 has no hazard content yet, so this is recorded and
-   * reported rather than acted on — and it is recorded so that the false-default
-   * audit's two modes (§15.4) have a switch to read when the content lands.
+   * ⚑ **RECORDED BY THE AUDIT HARNESS AND NOT BY THIS CLASS — AND THE OLD DOCBLOCK WAS THREE
+   * VERSIONS STALE.**
+   *
+   * It said *"Phase 0 has no hazard content yet, so this is recorded and reported rather than acted
+   * on"*. Phase 3 gave `HAZARD` its content, `Runtime.hazards` went on being **assigned and never
+   * read**, and three docblocks — this one, the HAZARD handler's, and `risk/front.ts`'s header — kept
+   * citing the field as evidence the phase was empty. So `--hazards off` did not suppress anything.
+   *
+   * **The FRONT ignores it deliberately.** A14: a front *"is scheduled, announced, and undodgeable —
+   * the same lever as the Levy"*, so a switch that turns a scheduled catastrophe off would contradict
+   * the axiom the mechanic exists to serve. §15.4's two audit modes read their **own** `hazards`
+   * option on `runReckoningAudit`, which is live and unrelated to this one.
+   *
+   * The dead field is gone. This option survives because `sim/cli.ts` still parses `--hazards on|off`
+   * and passes it here; it is accepted and has no effect on the FRONT, which is now stated rather than
+   * implied. Whether that flag should mean something is a `src/sim/` call, not this module's.
    */
   readonly hazards?: boolean;
 }
@@ -3055,7 +3105,6 @@ export class Runtime {
   private worksBook = new WorksBook();
   /** The syndicate book. Swapped wholesale on restore, like every other hashed book. */
   private syndicateBook = new SyndicateBook();
-  readonly hazards: boolean;
 
   /**
    * The venture book, behind a getter because the rollback **replaces** it.
@@ -3292,7 +3341,6 @@ export class Runtime {
       ticksPerReckoning: TICKS_PER_RECKONING,
     });
     this.ledger = new Ledger();
-    this.hazards = options.hazards ?? false;
     // Attached in production, so `target` and `measure` are checked at the door and a
     // formatting slip costs one action instead of a permanent public mark (scar #8).
     this.seals = new SealBook(this.sealWorld());
@@ -3729,10 +3777,15 @@ export class Runtime {
         // ── ★ HAZARD, AND THE SLOT IS THE RULE — AND IT WAS EMPTY UNTIL NOW ─────
         //
         // §15.2's own note on this phase: *"Hazards roll against what is still standing. After
-        // VENTURES, so a hazard cannot pre-empt a settlement."* The phase has existed as an explicit
-        // no-op hook since commit #1 — `UNBUILT_PHASES` was emptied without it ever gaining
-        // content, `hazards` still defaults to **false**, and `GOODS_SINK.LOSS`'s own comment has
-        // named *"raids, **fronts** and `CARGO_LOST`"* for the whole project. This is the front.
+        // VENTURES, so a hazard cannot pre-empt a settlement."* The phase existed as an explicit
+        // no-op hook since commit #1 — `UNBUILT_PHASES` was emptied without it ever gaining content,
+        // and `GOODS_SINK.LOSS`'s own comment has named *"raids, **fronts** and `CARGO_LOST`"* for the
+        // whole project. This is the front.
+        //
+        // ⚑ It runs **unconditionally**, and `RuntimeOptions.hazards` is not consulted: A14 makes a
+        // scheduled front undodgeable, so a switch that suppressed it would contradict the axiom. The
+        // note that used to stand here cited `hazards` *"still defaults to false"* as evidence the
+        // phase was empty, a Reckoning after it stopped being.
         //
         // Registering here shifts nothing: `PhaseContext.rng` is already `derive(phase)`, so the
         // draws below come out of HAZARD's own sub-stream and no other phase's outcome moves.
@@ -3851,6 +3904,14 @@ export class Runtime {
         // reproducible from the delivery journal by a second road, or the tick halts.
         (tick) => this.sovereigntyViolations(tick),
         (tick) => this.campaignViolations(tick),
+        // ★ INV-R1..R9. **This entry did not exist**, and `assertRiskInvariants` had exactly one
+        // caller — inside `runCohortPhase`, which runs only on a settlement tick, only per struck
+        // FRONT, and only when that front's cohort is non-empty. So on every other tick of every
+        // Reckoning, and for every book a *restore* rebuilt, nothing checked a single one of them,
+        // while `params.ts` claimed a test asserted "an INV-R halt". An unregistered invariant cannot
+        // halt. INV-R3 and INV-R8 are A5′ (Σ indemnity across a chain may never exceed the real loss)
+        // and INV-R5 is INV-17's own standard applied to a risk default.
+        (tick) => this.riskViolations(tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     },
@@ -12917,7 +12978,9 @@ export class Runtime {
       map: this.world.map,
       rng: ctx.rng,
       tick: ctx.tick,
-      frozenStateVersion: ctx.frozenStateVersion,
+      // ⚑ `frozenStateVersion` used to be passed here and `src/risk/` never read it — the value that
+      // would have made §15.4's second defence real, populated and ignored. The port member is gone;
+      // the earlier witness a settlement compares against is the INDEMNITY's own landfall capture.
       emit: (draft) => {
         this.emitRow({
           tick: ctx.tick,
@@ -12968,8 +13031,29 @@ export class Runtime {
       freeCash: (principal) => freeCash(this.ledger, principal),
       markOf: (good) => this.markOf(good, ctx.tick),
       rulesVersion: RULES_VERSION,
-      offerTermTicks: COVER_OFFER_TERM_TICKS,
+      offerTermTicks: COVER_OFFER_TTL_TICKS,
     };
+  }
+
+  /**
+   * ★ **INV-R1…R9, in `ASSERT`, every tick — which is where they were not.**
+   *
+   * `assertRiskInvariants` had one caller, inside `runCohortPhase`: a settlement tick, per struck
+   * FRONT, only when its cohort was non-empty. Everything else went unchecked, including every book a
+   * **restore** rebuilt — and a restored risk book is the one that was provably broken (`capture` did
+   * not write `offerExpiresTick`, so a world holding one COVER could not boot at all).
+   *
+   * `HALT`, like every other module's entry here, and for INV-R3/R8's reason specifically: Σ indemnity
+   * exceeding the real loss leaves some payer unavoidably short, and the record calls that a default
+   * against a real agent. A5′ says that is worse than a crash.
+   */
+  private riskViolations(tick: number): readonly InvariantViolation[] {
+    return checkRiskInvariants(this.ledger, this.risk).map((v) => ({
+      id: v.invariant,
+      message: v.detail,
+      tick,
+      severity: 'HALT' as const,
+    }));
   }
 
   /** `HAZARD`. See `wire.ts:runFrontPhase` for the four-step order and why it is a rule. */
@@ -13073,7 +13157,7 @@ export class Runtime {
       holdings: this.riskHoldings(principal, tick),
       freeCash: freeCash(this.ledger, principal),
       frozen: inFreeze(tick),
-      offerTermTicks: COVER_OFFER_TERM_TICKS,
+      offerTermTicks: COVER_OFFER_TTL_TICKS,
       // A limit and a premium a blind copier can send verbatim. Scaled off the endowment rather than
       // hard-coded, so the suggestion stays sane if the stake moves.
       suggestedLimit: minor(Math.trunc(STARTER_STAKE / 10)),

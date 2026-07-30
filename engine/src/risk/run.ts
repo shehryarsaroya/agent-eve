@@ -46,7 +46,7 @@
  */
 
 import type { Rng } from '../core/rng.js';
-import { reckoningIndex } from '../core/time.js';
+import { FREEZE_FIRST_PHASE, phaseOfReckoning, reckoningIndex } from '../core/time.js';
 import type { AccountId, EventId, PrincipalId } from '../core/types.js';
 import { addMinor, minor, type Minor, type Qty } from '../core/units.js';
 import { GOODS_SINK, storesAccount } from '../ledger/accounts.js';
@@ -67,6 +67,7 @@ import {
 } from './front.js';
 import {
   assertIndemnityExact,
+  isSettleableIndemnity,
   openCession,
   openPrimary,
   settleIndemnity,
@@ -112,15 +113,38 @@ export interface StrikeOutcome {
   readonly naked: readonly PrincipalId[];
 }
 
-/** Announce the FRONT for this Reckoning, if this is its tick. Idempotent. */
+/**
+ * Announce the FRONT for this Reckoning, if this is its tick. Idempotent.
+ *
+ * ★ **The `MAX_LIVE_FRONTS` branch THROWS rather than skipping, and it used to skip silently.** A14:
+ * a front *"is scheduled, announced, and undodgeable"*, so quietly not announcing one is the single
+ * outcome that axiom forbids — and it would have left no row, no ticker and no fault. Meanwhile the
+ * schedule makes the count unreachable (see {@link MAX_LIVE_FRONTS} for the arithmetic), so the old
+ * `return null` was a guard whose subject cannot occur *guarding the wrong way*. `checkInvR9` carries
+ * the same bound as a measured invariant on every tick.
+ */
 export function announceIfDue(port: FrontPort, book: RiskBook, tick: number): FrontRecord | null {
   const reckoning = frontReckoningAnnouncedAt(tick);
   if (reckoning === null) return null;
-  if (book.liveFronts(tick).filter((f) => f.struckAtTick === null).length >= MAX_LIVE_FRONTS) {
-    return null;
-  }
+  // ★ **IDEMPOTENCE BEFORE THE CAP, AND THE ORDER IS THE WHOLE POINT OF PUTTING A THROW HERE.**
+  // `announceFront` is a pure function of the map, the reckoning and a `derive`d sub-stream, so calling
+  // it early consumes nothing. Checking the cap first would make a *second* call for the same tick —
+  // a retried tick, a re-entered phase — halt on the front it had itself just announced, which is a
+  // guard punishing its own success. The docblock the old silent skip carried said "Idempotent" and it
+  // was; a throw that broke that would be a worse bug than the one it replaced.
   const front = announceFront(port.map, port.rng, reckoning, tick);
   if (book.front(front.id) !== undefined) return null;
+  const unstruck = book.allFronts().filter((f) => f.struckAtTick === null);
+  if (unstruck.length >= MAX_LIVE_FRONTS) {
+    throw new RiskRunError(
+      `reckoning ${String(reckoning)} is due a FRONT and ${String(unstruck.length)} are still unstruck ` +
+        `at tick ${String(tick)}: ${unstruck.map((f) => `${f.id} lands at ${String(f.landfallTick)}`).join(', ')}` +
+        `, against a cap of ${String(MAX_LIVE_FRONTS)}. A scheduled front may not be skipped — A14 — so ` +
+        'the honest answer is to halt rather than to quietly not announce it. A landfall tick in the ' +
+        'FUTURE means the schedule overlaps (check FRONT_EVERY_RECKONINGS against ' +
+        'FRONT_CONE_RECKONINGS); one in the PAST means a world was adopted across a strike it never ran.',
+    );
+  }
   book.addFront(front);
   return front;
 }
@@ -154,6 +178,25 @@ export function strikeFront(
   }
 
   // ── 1. The goods die. ─────────────────────────────────────────────────────
+  //
+  // ★ **THE LOT INDEX IS BUILT ONCE, BEFORE ANYTHING IS DESTROYED, AND BOTH HALVES MATTER.**
+  //
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Step 2 used to call `port.lots().find((l) => l.id === loss.lotId)` **per destroyed lot**, and
+  // `port.lots()` is `ledger.allLots()`, which sorts every lot in the galaxy. Measured: **37 calls over
+  // 15,828 rows on a landfall tick** against 6 over 2,483 on a quiet one. It is unbudgeted work, so it
+  // shows up as latency rather than a halt — but it is the same shape as the O(lots²) in `riskHoldings`
+  // that *did* hold production for four minutes at tick 7,128, and `tick/loop.ts` asserts this phase is
+  // O(lots), which that loop made false.
+  //
+  // And the latent correctness bug underneath it: the `find` ran **after** `port.destroy`, so a lot
+  // taken in full could already be gone from `allLots()`. `lot === undefined` then hit `continue` and
+  // the loss silently left both `byPayee` and `stores` — a destroyed holding with **no INDEMNITY opened
+  // and no naked row either**, which is a payee that paid a premium, lost its goods and is recorded as
+  // having lost nothing. It needs intensity at 10,000 bps to fire, which `FRONTIER` reaches exactly.
+  // Indexing first removes the reachability and the cost in one line.
+  // ══════════════════════════════════════════════════════════════════════════════
+  const lotsBefore = new Map(port.lots().map((l) => [l.id, l]));
   const losses = destroySet(front, port.lots());
   let destroyed = 0;
   for (const [i, loss] of losses.entries()) {
@@ -174,10 +217,19 @@ export function strikeFront(
   const byPayee = new Map<string, number>();
   const stores = new Map<AccountId, PrincipalId>();
   for (const loss of losses) {
-    const lot = port.lots().find((l) => l.id === loss.lotId);
-    const owner = lot === undefined ? null : ownerOfStores(lot.account);
+    const lot = lotsBefore.get(loss.lotId);
+    if (lot === undefined) {
+      // `destroySet` draws from the same list this map was built from, so this is unreachable — and it
+      // throws rather than `continue`ing, because the old `continue` is precisely how a destroyed
+      // holding could vanish from the record with nothing failing.
+      throw new RiskRunError(
+        `front ${front.id} destroyed lot ${loss.lotId}, which was not in the pre-strike index; a loss ` +
+          'the record cannot attribute to an owner is a payee silently uninsured (A5′).',
+      );
+    }
+    const owner = ownerOfStores(lot.account);
     if (owner === null) continue;
-    stores.set(lot!.account, owner);
+    stores.set(lot.account, owner);
     const key = `${owner}::${loss.good}::${loss.system}`;
     byPayee.set(key, (byPayee.get(key) ?? 0) + loss.qty);
   }
@@ -270,8 +322,16 @@ export interface SettleCohortInput {
   readonly eventId: EventId;
   /** `cover → what its payer elected`. Absent pays nothing; silence is a default, not an escape. */
   readonly elections: ReadonlyMap<CoverId, Election>;
-  /** INV-19: per-cover, as the freeze captured it. */
-  readonly actedOnStateVersion: ReadonlyMap<CoverId, number>;
+  /**
+   * ⚑ **THERE IS NO `actedOnStateVersion` MAP HERE ANY MORE.**
+   *
+   * There was, and `runCohortPhase` filled it by walking `book.allCovers()` and reading
+   * `cover.actedOnStateVersion` — then `settleCohort` read the *same live objects* back out, so
+   * `guardIndemnity` compared one field to itself. A map whose only possible source is the row it is
+   * meant to check is not a freeze; it is a longer way of writing the same read. §15.4's second defence
+   * now lives on the INDEMNITY, captured at landfall — see
+   * {@link import('./indemnity.js').IndemnityRecord.pinnedStateVersion}.
+   */
   readonly storesOf?: (p: PrincipalId) => AccountId;
   /** True when the cascade hit the round limit. Only then may a funding shortfall defer. */
   readonly truncated?: boolean;
@@ -329,9 +389,8 @@ export function settleCohort(input: SettleCohortInput): CohortOutcome {
   let deepestFailure = 0;
 
   for (const ind of cohort) {
-    if (ind.state !== 'OPEN' && ind.state !== 'DUE' && ind.state !== 'DEFERRED') continue;
+    if (!isSettleableIndemnity(ind.state)) continue;
     const cover = input.book.requireCover(ind.cover);
-    const version = input.actedOnStateVersion.get(cover.id) ?? cover.actedOnStateVersion ?? 0;
 
     const settlement = settleIndemnity(
       input.ledger,
@@ -341,7 +400,6 @@ export function settleCohort(input: SettleCohortInput): CohortOutcome {
         tick: input.tick,
         eventId: `${input.eventId}#${ind.id}` as EventId,
         election: input.elections.get(cover.id),
-        actedOnStateVersion: version,
         truncated: input.truncated ?? false,
         // ★ The one line that makes a chain a chain.
         upstreamDefaultEventId: letDownBy.get(ind.payer) ?? null,
@@ -389,9 +447,44 @@ export function settleCohort(input: SettleCohortInput): CohortOutcome {
   };
 }
 
-/** The permanent row a downstream default cites. Content-derived, so a replay names it identically. */
-export function defaultEventId(batch: EventId, d: RiskDefault): EventId {
-  return `${batch}#default:${d.indemnity}` as EventId;
+// ── ⚑ `defaultEventId` USED TO LIVE HERE AND IT WAS A LOADED GUN ────────────
+//
+// It built `${batch}#default:${d.indemnity}` — a **content-derived** id for a default row — and it was
+// exported from the barrel with a docblock saying, in its own words, that using it reintroduces an
+// INV-17 halt. It was the module's first wiring of the propagation channel, replaced by
+// `SettleCohortInput.publishDefault` (read that field's docs) because INV-17 requires the cited cause to
+// be *"a row an auditor can open"* and a synthetic string satisfies the `letDownBy` map while failing
+// the invariant. It halted the world at tick 1151 exactly once, was fixed, and then **stayed exported**
+// — a superseded function whose only remaining property is that calling it breaks A5′.
+//
+// Deleted rather than made private. A dead export is an affordance: the next caller finds it by name,
+// the shape type-checks, and the failure is a top-severity halt two Reckonings later.
+
+// ── Marking due (the `DUE` state's only writer) ──────────────────────────────
+
+/**
+ * ★ **Promote OPEN indemnities to `DUE` once the freeze has taken them.**
+ *
+ * `'DUE'` was in {@link IndemnityState}'s union, tested by **seven** predicates, and **assigned by
+ * nothing** — see that type's docblock for the list. This is its writer, and the tick it fires on is
+ * what gives the state a meaning: at {@link FREEZE_FIRST_PHASE} the election that will settle an
+ * INDEMNITY stops being restatable in any way the settlement can see, so `OPEN` (you may still decide)
+ * and `DUE` (the decision is taken, the money has not moved) are genuinely different situations for a
+ * payer reading `obligations_due` — which is what RSK5 asks the field to publish.
+ *
+ * Idempotent and cheap: one pass, one comparison per open row, no ledger read and no RNG. Called from
+ * `HAZARD` beside `attachSeasoned`, which is the other pure-bookkeeping promotion in the phase and
+ * carries the same argument — *"pure bookkeeping, so the state means what it says."*
+ */
+export function markDue(book: RiskBook, tick: number): number {
+  if (phaseOfReckoning(tick) < FREEZE_FIRST_PHASE) return 0;
+  let marked = 0;
+  for (const ind of book.allIndemnities()) {
+    if (ind.state !== 'OPEN') continue;
+    ind.state = 'DUE';
+    marked += 1;
+  }
+  return marked;
 }
 
 // ── Lapsing ─────────────────────────────────────────────────────────────────
@@ -430,6 +523,16 @@ export function lapseExpired(
     // field for both is what made every COVER expire before its FRONT landed.
     const deadline = cover.state === 'OFFERED' ? cover.offerExpiresTick : cover.expiresTick;
     if (tick <= deadline) continue;
+    // ★ **THE REASON IS READ BEFORE THE STATE IS OVERWRITTEN, AND IT USED TO BE READ AFTER.**
+    //
+    // `resolveCover(cover, 'LAPSED', …)` sets `cover.state = 'LAPSED'`, and the `reason` below used to
+    // be computed from `cover.state` *after* that call — so the `'OFFERED' ? 'UNTAKEN'` test could
+    // never be true and **every** lapse was recorded as `NO_LOSS`. Since an offer nobody takes is by
+    // far the most frequent risk row a quiet world produces, the append-only record's most common
+    // statement about this market was *"the storm missed"* when the truth was *"nobody wanted it"* —
+    // two different facts about the payer's business, and the docblock above exists specifically to
+    // keep a viewer able to tell them apart. Scar #1's shape with no agent-facing string involved.
+    const reason: LapseOutcome['reason'] = cover.state === 'OFFERED' ? 'UNTAKEN' : 'NO_LOSS';
     const left = ledger.account(cover.escrow) === undefined ? minor(0) : ledger.freeBalance(cover.escrow);
     if (left > 0) {
       ledger.transferCurrency({
@@ -441,12 +544,7 @@ export function lapseExpired(
       });
     }
     book.resolveCover(cover, 'LAPSED', reckoning);
-    out.push({
-      cover: cover.id,
-      payer: cover.payer,
-      returned: left,
-      reason: cover.state === 'OFFERED' ? 'UNTAKEN' : 'NO_LOSS',
-    });
+    out.push({ cover: cover.id, payer: cover.payer, returned: left, reason });
   }
   return Object.freeze(out);
 }

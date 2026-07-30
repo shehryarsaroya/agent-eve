@@ -33,6 +33,7 @@ import {
   cycleInChain,
   fingerprintOf,
   halvesOf,
+  isLiveCover,
   offerCover,
   type CoverRecord,
   type CoverSubject,
@@ -42,6 +43,7 @@ import {
   attachSeasoned,
   FRONT_SINK,
   lapseExpired,
+  markDue,
   settleCohort,
   strikeFront,
   type FrontPort,
@@ -74,7 +76,12 @@ export interface RiskWirePort {
   /** This phase's own sub-stream. Never the tick's root (`tick/seed.ts`). */
   readonly rng: Rng;
   readonly tick: number;
-  readonly frozenStateVersion: number;
+  // ⚑ **`frozenStateVersion` USED TO BE HERE.** It was declared, populated from `ctx.frozenStateVersion`
+  // by the runtime, and **read by nothing in this file** — a reserved slot in a published contract that
+  // nothing filled, which is the fourth depth of this repo's signature defect. It was the value that
+  // would have made §15.4's second defence real, and instead the defence was wired to the live book. The
+  // slot is removed rather than filled: `signCover` already takes the version it needs as a parameter,
+  // and the settlement's earlier witness is the INDEMNITY (see `indemnity.ts`).
   /**
    * Pinned onto every COVER, because *"accepted obligations pin the version they quoted, or a balance
    * patch retroactively rewrites history"* (§15.1's event fields). Passed rather than imported so this
@@ -139,6 +146,21 @@ export interface RiskWirePort {
    * false default this layer is most exposed to.
    */
   readonly markOf: (good: GoodId) => Minor;
+  /**
+   * ⚑ **TWO INDEPENDENT `144`s USED TO DECIDE ONE PUBLISHED FACT.**
+   *
+   * `COVER_OFFER_TTL_TICKS` (this module, and the value `offerCover` actually stamps on the row) and
+   * `COVER_OFFER_TERM_TICKS` (a **private copy in `runtime.ts`**, and the value `view.ts` published as
+   * `expires_tick` on the affordance). Both were `144`, so nothing disagreed — yet — and the reason
+   * there were two is that neither `COVER_OFFER_TTL_TICKS` nor `COVER_TERM_TICKS` was exported from
+   * `src/risk/index.ts`, so the runtime could not import the one it wanted and declared its own.
+   *
+   * That is exactly the failure this module's headline scar is about: **two lifetimes in one concept.**
+   * `COVER_OFFER_TTL_TICKS`'s own docblock spends twenty lines on the offer clock and the term clock
+   * being separate on purpose — and then the *offer* clock existed twice, in two files, with the
+   * agent-facing number coming from the copy the engine does not read. Both constants are now in the
+   * barrel and the runtime imports the real one; this member survives so a test can still move it.
+   */
   readonly offerTermTicks: number;
 }
 
@@ -180,6 +202,10 @@ export function runFrontPhase(port: RiskWirePort): void {
   }
 
   attachSeasoned(port.book, port.tick);
+  // ★ `DUE`'s only writer. Beside `attachSeasoned` because it is the phase's other pure-bookkeeping
+  // promotion, and for the same stated reason: *"so the state means what it says."* Before this, `'DUE'`
+  // was a value in a union with seven readers and no writer.
+  markDue(port.book, port.tick);
 
   for (const front of port.book.liveFronts(port.tick)) {
     if (!isLandfallTick(front, port.tick)) continue;
@@ -345,10 +371,10 @@ export function runCohortPhase(port: RiskWirePort, elections: Map<CoverId, Elect
     if (port.book.cohortOf(front.id).length === 0) continue;
     report.fronts += 1;
 
-    const versions = new Map<CoverId, number>();
-    for (const cover of port.book.allCovers()) {
-      if (cover.actedOnStateVersion !== null) versions.set(cover.id, cover.actedOnStateVersion);
-    }
+    // ⚑ **THE "FROZEN" VERSION MAP WAS BUILT HERE, FROM THE LIVE BOOK, AND HANDED TO A GUARD THAT
+    // COMPARED IT BACK AGAINST THE SAME OBJECTS.** Twelve lines that read as §15.4's second defence and
+    // computed `x !== x`. It is gone; the INDEMNITY carries the landfall capture instead — see
+    // `indemnity.ts:guardIndemnity` and `IndemnityRecord.pinnedStateVersion`.
     const outcome = settleCohort({
       ledger: port.ledger,
       book: port.book,
@@ -356,7 +382,6 @@ export function runCohortPhase(port: RiskWirePort, elections: Map<CoverId, Elect
       tick: port.tick,
       eventId: `risk:cohort:${front.id}:${String(port.tick)}` as EventId,
       elections,
-      actedOnStateVersion: versions,
       // ── THE ACCUSATION IS PUBLISHED AND REGISTERED INSIDE THE WALK ──────────
       //
       // Not after it, and that is INV-17 rather than tidiness. The walk needs the **minted** id to put
@@ -663,6 +688,7 @@ export function signCover(
   }
 
   const held = interestOf(port, principal, cover);
+  const taken = takenOver(port, principal, cover);
   const bound = bindCover({
     cover,
     payee: principal,
@@ -671,9 +697,12 @@ export function signCover(
     stateVersion,
     interestQty: held.qty,
     unitPrice: held.unitPrice,
-    interestTaken:
-      cover.over.kind === 'GOODS' &&
-      port.book.interestTaken(principal, cover.over.system, cover.over.good),
+    // ★ **BOTH SHAPES HAVE AN EXCLUSIVE INTEREST NOW.** This used to be `kind === 'GOODS' && …`, so a
+    // cession was always `false` — the second half of what made being struck profitable. Over goods the
+    // subject is `(payee, system, good)`; over a COVER it is **the parent**, because `openCession` hands
+    // every cession the whole obligation below it and two of them therefore pay one loss twice.
+    interestTaken: taken !== null,
+    takenBy: taken,
     frontCoverFrozen: coverFrozenFor(port, cover),
   });
   if (!bound.ok) return bound;
@@ -831,9 +860,23 @@ export function interestOf(
   cover: CoverRecord,
 ): { readonly qty: number; readonly unitPrice: Minor } {
   if (cover.over.kind !== 'GOODS') {
-    // A cession's interest is the promise below it, which is money and not goods. `offerCover`'s
-    // depth rules bound it instead, so this returns a unit interest at the parent's own limit.
-    return { qty: 1, unitPrice: minor(cover.limit) };
+    // ── ★ THE PARENT'S LIMIT, NOT THIS COVER'S — AND ONE WORD MADE THE CEILING UNTESTABLE ──
+    //
+    // A cession's insurable interest is **the promise below it**: one indivisible obligation, worth at
+    // most what the layer below could ever owe. So the unit interest is the **parent's** limit.
+    //
+    // It used to return `minor(cover.limit)` — the *cession's own* limit — so `bindCover`'s RSK1 ceiling
+    // computed `interestValue = 1 × cover.limit`, `ceiling = cover.limit`, and then tested
+    // `cover.limit > cover.limit`. **A comparison of a field to itself**, which is the same defect shape
+    // as the two §15.4 tautologies one file over, arriving through a synthetic quantity rather than
+    // through a map. It could not refuse a cession of any size, at any depth, over any parent — and it
+    // did not matter *only* because the three guards that read it were all inside `if (GOODS)` anyway.
+    //
+    // `qty: 0` when the parent is missing or unbound, so the *first* guard has something honest to say
+    // as well: a cession over nothing is a cession with no insurable interest.
+    const parent = port.book.cover(cover.over.cover);
+    if (parent === undefined || parent.payee === null) return { qty: 0, unitPrice: minor(0) };
+    return { qty: 1, unitPrice: parent.limit };
   }
   const subject = cover.over;
   let qty = 0;
@@ -845,6 +888,32 @@ export function interestOf(
   }
   const pinned = cover.valuation.marks.find((m) => m.good === subject.good)?.unitPrice ?? minor(0);
   return { qty, unitPrice: pinned };
+}
+
+/**
+ * ★ **The live COVER already standing over this one's subject, or `null`. Both shapes.**
+ *
+ * This used to be an inline `cover.over.kind === 'GOODS' && port.book.interestTaken(…)`, so a cession
+ * was **always `false`** — half of what made being struck profitable. One function now, because the
+ * question is one question: *is somebody already covering exactly this?* Over goods the subject is
+ * `(payee, system, good)`; over a COVER it is the parent, since `openCession` hands every cession the
+ * whole obligation below it and two of them therefore pay one loss twice.
+ */
+export function takenOver(
+  port: RiskWirePort,
+  principal: PrincipalId,
+  cover: CoverRecord,
+): CoverId | null {
+  if (cover.over.kind === 'GOODS') {
+    if (!port.book.interestTaken(principal, cover.over.system, cover.over.good)) return null;
+    return port.book.interestOver(principal, cover.over.system, cover.over.good);
+  }
+  if (!port.book.cessionTaken(cover.over.cover, cover.id)) return null;
+  return (
+    port.book
+      .cessionsOver(cover.over.cover)
+      .find((c) => c.id !== cover.id && c.payee !== null && isLiveCover(c.state))?.id ?? null
+  );
 }
 
 /**

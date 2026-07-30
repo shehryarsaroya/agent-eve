@@ -107,6 +107,11 @@ function indemnity(c: CoverRecord, over: Partial<IndemnityRecord> = {}): Indemni
     depth: c.depth,
     state: 'OPEN',
     deferrals: 0,
+    // §15.4's two landfall captures. Taken off the cover here, exactly as `openPrimary` does at
+    // landfall — a fixture that left them `null` would build rows `guardIndemnity` correctly refuses to
+    // settle, which would make every block below about a shape the world cannot reach.
+    pinnedStateVersion: c.actedOnStateVersion,
+    pinnedTermsHash: c.termsHash,
     boundByGrant: null,
     actedBy: null,
     ...over,

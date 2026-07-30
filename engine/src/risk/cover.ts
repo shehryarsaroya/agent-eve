@@ -54,6 +54,14 @@
  * unavoidably short, and *the record calls it a default*. That is the false-default problem arriving
  * through an economic hole rather than a race, and §15.4's five defences would not catch it, because
  * every individual settlement would be arithmetically correct.
+ *
+ * ⚑ **AND FOR THIS MODULE'S FIRST LIFE ALL OF THAT WAS TRUE OF PRIMARIES ONLY.** All three guards sat
+ * inside `if (cover.over.kind === 'GOODS')`, so a **cession** was bound with no exclusivity and no
+ * ceiling — and `openCession` hands every cession `grossLoss = under.covered`, the whole obligation
+ * below it. Two reinsurers over one primary therefore paid it **twice for one loss**, measured at
+ * `+18,803` on an actual loss of `20,892`, with nothing red anywhere. The paragraph above described the
+ * defect the file shipped. {@link bindCover} now applies all three to both shapes and
+ * `checkInvR8` is the conservation road that does not depend on a gate being in the right `if`.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -448,12 +456,39 @@ export interface BindCoverInput {
   readonly tick: number;
   readonly echoedTermsHash: string;
   readonly stateVersion: number;
-  /** What the payee actually holds of the named good at the named system, right now. */
+  /**
+   * The **size of the insurable interest**, in units of {@link unitPrice}.
+   *
+   * ★ Two shapes, one field, and reading it as "goods held" is what broke it:
+   *
+   *   - over `GOODS` — what the payee actually holds of the named good at the named system, now;
+   *   - over `COVER` — **1**, because a cession's interest is one indivisible promise. Zero when the
+   *     parent is missing or unbound, which is a cession over nothing.
+   */
   readonly interestQty: number;
-  /** The pinned unit price of the named good, from the COVER's own valuation. */
+  /**
+   * The pinned unit value of one unit of the interest.
+   *
+   * ★ For a cession this is **the parent COVER's limit** — the most the layer below could ever owe,
+   * which is the whole of what a reinsurer's promise may stand behind. It used to be the *cession's
+   * own* limit, which made the ceiling test `limit > 1 × limit` and therefore never true.
+   */
   readonly unitPrice: Minor;
-  /** True when some other live COVER already stands over this `(payee, system, good)`. */
+  /**
+   * True when some other live COVER already stands over this same subject.
+   *
+   * Over `GOODS` that subject is `(payee, system, good)`; over `COVER` it is **the parent COVER**.
+   * Both are CAT6's conserved-interest registry; see the header for why the second one is A5′.
+   */
   readonly interestTaken: boolean;
+  /**
+   * The COVER already standing over this subject, when {@link interestTaken} is true.
+   *
+   * A2 rather than decoration: *"known arithmetic is exact and machine-readable"*, and a refusal that
+   * says *"something already covers this"* without naming it leaves a payee grepping its own book to
+   * find out what. `INV-R3`'s detail names both ids for the same reason.
+   */
+  readonly takenBy?: CoverId | null;
   readonly frontCoverFrozen: boolean;
 }
 
@@ -509,33 +544,69 @@ export function bindCover(input: BindCoverInput): WorldResult<CoverRecord> {
         'cancelling on bad news, which is the half that protects you (CAT12).',
     );
   }
-  if (cover.over.kind === 'GOODS') {
-    if (input.interestQty <= 0) {
-      return reject(
-        'PROP-R4',
-        `you hold none of ${cover.over.good} at ${cover.over.system}, so you have no insurable ` +
+  // ── ★ THE THREE RSK1/CAT6 GUARDS, AND A CESSION IS SUBJECT TO ALL THREE ────
+  //
+  // ══════════════════════════════════════════════════════════════════════════════
+  // **THESE WERE ALL THREE INSIDE `if (cover.over.kind === 'GOODS')` AND BEING STRUCK WAS PROFITABLE.**
+  //
+  // A cession got no exclusivity and no ceiling, so N reinsurers could each stand over one primary,
+  // `openCession` gave each of them `grossLoss = under.covered` — the *whole* obligation below — and the
+  // primary collected N times what it owed. Measured on a driven world (seed `dbl`, MARCHES,
+  // `front:r3:sys-17`): actual loss **20,892**, the primary recovered **18,803 + 18,803 = 37,606** from
+  // two reinsurers while paying out 18,803, and its stores rose by the difference. **Net +18,803 for
+  // being struck.** No halt, no fault, no red row anywhere — because every one of the three settlements
+  // was arithmetically correct on its own, which is verbatim what this file's header says exclusivity
+  // exists to prevent.
+  //
+  // The A5′ direction is the worse half. Once a payer is owed more than the loss, some payer in the
+  // chain is unavoidably short — and a short reinsurer produces a **full-sized `indemnity.default` row
+  // against a real agent** for a shortfall the engine manufactured. That is §15.4's false default
+  // arriving through an economic hole, which is the one road its five defences cannot see.
+  //
+  // The second road is {@link import('./invariants.js').checkInvR8}: Σ indemnity receivable ≤ the
+  // recipient's own loss, over the whole chain. This gate refuses the second cession; that invariant
+  // catches a book that got one anyway — a restore, a prune, or a future third shape of subject.
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (input.interestQty <= 0) {
+    return reject(
+      'PROP-R4',
+      cover.over.kind === 'GOODS'
+        ? `you hold none of ${cover.over.good} at ${cover.over.system}, so you have no insurable ` +
           'interest to cover. A COVER pays for goods you actually lose; it is not a bet on somebody ' +
-          "else's weather.",
-      );
-    }
-    const interestValue = minor(input.interestQty * input.unitPrice);
-    const ceiling = minor(Math.trunc((interestValue * COVER_LIMIT_CEILING_BPS) / BPS_ONE));
-    if (cover.limit > ceiling) {
-      return reject(
-        'PROP-R4',
-        `this cover's limit is ${String(cover.limit)} and your interest at the pinned mark is worth ` +
+          "else's weather."
+        : `cover ${cover.over.cover} is not a live bound promise, so there is nothing under this ` +
+          'cession to stand behind. A reinsurer covers an obligation somebody has actually taken on.',
+    );
+  }
+  const interestValue = minor(input.interestQty * input.unitPrice);
+  const ceiling = minor(Math.trunc((interestValue * COVER_LIMIT_CEILING_BPS) / BPS_ONE));
+  if (cover.limit > ceiling) {
+    return reject(
+      'PROP-R4',
+      cover.over.kind === 'GOODS'
+        ? `this cover's limit is ${String(cover.limit)} and your interest at the pinned mark is worth ` +
           `${String(ceiling)}. Cover may not exceed what you could lose, or being struck becomes ` +
-          'profitable and the loss sink dies (RSK1).',
-      );
-    }
-    if (input.interestTaken) {
-      return reject(
-        'PROP-R4',
-        `another live COVER already stands over your ${cover.over.good} at ${cover.over.system}. One ` +
+          'profitable and the loss sink dies (RSK1).'
+        : `this cession's limit is ${String(cover.limit)} and the cover it stands behind can never owe ` +
+          `more than ${String(ceiling)}. A reinsurer may not promise more than the layer below it could ` +
+          'lose, or the primary profits from its own claim (CAT6).',
+    );
+  }
+  if (input.interestTaken) {
+    const held = input.takenBy ?? null;
+    const named = held === null ? '' : ` — it is ${held}`;
+    return reject(
+      'PROP-R4',
+      cover.over.kind === 'GOODS'
+        ? `another live COVER already stands over your ${cover.over.good} at ${cover.over.system}${named}. One ` +
           'interest, one cover: two would make the total owed exceed the loss, one payer would be ' +
-          'short through nobody\'s fault, and the record would call that a default (A5′).',
-      );
-    }
+          "short through nobody's fault, and the record would call that a default (A5′)."
+        : `another live COVER already stands over ${cover.over.cover}${named}. One promise, one cession: two ` +
+          'reinsurers each stand over the WHOLE obligation below them (RE1 has no cut-through and no ' +
+          'quota share here), so binding both would pay you twice for one loss — being struck would ' +
+          'become profitable and some payer in the chain would be short through nobody’s fault (A5′). ' +
+          'RE2 quota share and RE3 towers are the shapes that split a layer, and neither is built.',
+    );
   }
 
   cover.payee = input.payee;

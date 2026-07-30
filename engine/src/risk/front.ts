@@ -11,8 +11,12 @@
  *
  *   - `tick/phases.ts` has a `HAZARD` phase whose note reads *"hazards roll against what is still
  *     standing"*, and `tick/loop.ts` runs nothing in it but a handler nobody registered;
- *   - `sim/runtime.ts` carries `hazards?: boolean` defaulting to **false**, with the comment
- *     *"Phase 0 has no hazard content yet"*;
+ *   - `sim/runtime.ts` carried `hazards?: boolean` defaulting to **false**, with the comment
+ *     *"Phase 0 has no hazard content yet"* — ⚑ and that flag was **assigned and never read**, so
+ *     `--hazards off` did not suppress anything and three docblocks went on citing it as evidence
+ *     the phase was empty for a Reckoning after it stopped being. A14 is why the FRONT ignores it:
+ *     a scheduled catastrophe that a switch can turn off is not undodgeable. The dead field is gone
+ *     and the option now says so;
  *   - `ledger/accounts.ts` says of `GOODS_SINK.LOSS`: *"raids, **fronts** and `CARGO_LOST` all
  *     charge it"*;
  *   - `ledger/cargoLost.ts` names the cause as *"the raid, **the front**, the interception"*;
@@ -65,7 +69,7 @@ import {
   FRONT_CONE_RECKONINGS,
   FRONT_EVERY_RECKONINGS,
   FRONT_LANDFALL_PHASE,
-  FRONT_SPARES_QTY,
+  frontSparesFor,
   INTENSITY_FALLOFF_BPS,
   INTENSITY_MAX_BPS,
   INTENSITY_MIN_BPS,
@@ -216,29 +220,124 @@ export function announceFront(map: WorldMap, rng: Rng, reckoning: number, tick: 
 }
 
 /**
+ * ★ **TRUNCATE BY DISTANCE, NEVER BY ID — AND THE FORECAST USED TO BE ANTI-CORRELATED WITH THE LOSS.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Both {@link swathOf} and {@link coneOf} draw more candidate systems than they publish and have to
+ * drop the surplus. Both used to do it with `if (cells.length >= N) break;` **while iterating a
+ * `compareIds`-sorted list** — so a SWATH was not *"the systems nearest the eye"* but
+ * *"the N alphabetically-lowest system ids within N hops of the eye"*, and the CONE was the same
+ * sentence with a different N. The eye of the storm was in its own swath **128 times in 500 draws**.
+ *
+ * Measured on one driven world (`front:r3:sys-17`): the CONE published `sys-17` at **9,209 bps** and
+ * `sys-18` at 6,837, and the SWATH struck `sys-01 · sys-02 · sys-04 · sys-05 · sys-06`. Four of the
+ * five struck systems appear **nowhere in the published cone**; the fifth appears at 1,868 bps, the
+ * *lowest* odds on the board. The forecast was not merely noisy, it was inverted — and `view.ts`'s
+ * `pickTarget` recommends the highest-odds cone cell, so `publish_offer {COVER}`'s suggested
+ * parameters steered an underwriter's capital at ground the storm would not touch.
+ *
+ * Nothing could catch it. Every cell was individually well-formed, the odds were monotone in hop, the
+ * cone and the swath still came off different sub-streams (CAT11's oracle is still CUT), and A2's
+ * *"genuine uncertainty stays uncertain and sourced"* was satisfied by a number that was sourced and
+ * uncertain and about the wrong system.
+ *
+ * So the order of the two operations is the fix: **rank, then truncate.**
+ *
+ *   - the SWATH ranks `(hop asc, intensity desc, id)` — nearest first, and within one ring the most
+ *     vulnerable tier first. The eye is hop 0, so **the eye is now always in its own swath**, which is
+ *     the one thing a storm model may not get wrong;
+ *   - the CONE ranks `(hop asc, id)` — nearest first, which is the order its own odds are already in.
+ *
+ * `id` survives as the final tiebreak in both, because a truncation has to be deterministic and a lot
+ * id is the only total order this engine trusts (DET-3).
+ *
+ * **What stays uncertain, and it is the interesting half.** `span` and `centre` are still drawn, so an
+ * agent reading the cone knows the eye will be struck and knows *nothing* about **how far the swath
+ * reaches (2–5 rings) or how hard it hits (3,000–9,000 bps at the centre)**. That is what a hurricane
+ * cone actually communicates, and it is why this is a repair rather than a relaxation: the odds now
+ * describe distance, and distance is the part of the model that was never random.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+function rankedByDistance(
+  hops: ReadonlyMap<SystemId, number>,
+  weight: (system: SystemId, hop: number) => number,
+): readonly { readonly system: SystemId; readonly hop: number; readonly weight: number }[] {
+  return [...hops.entries()]
+    .map(([system, hop]) => ({ system, hop, weight: weight(system, hop) }))
+    .sort((a, b) => a.hop - b.hop || b.weight - a.weight || compareIds(a.system, b.system));
+}
+
+/**
  * The SWATH — what the front will actually take.
  *
  * Its own sub-stream label, distinct from the cone's, so the published odds are not invertible.
+ * Truncated by **distance from the eye**, not by system id — see {@link rankedByDistance}.
  */
 export function swathOf(map: WorldMap, rng: Rng, id: FrontId, eye: SystemId): readonly SwathCell[] {
   const stream = rng.derive(`risk:front:swath:${id}`);
   const span = stream.range(SWATH_SYSTEMS_MIN, SWATH_SYSTEMS_MAX);
   const centre = stream.range(INTENSITY_MIN_BPS, INTENSITY_MAX_BPS);
+  // `span` is both the radius and the cell count, and with distance-first ranking that is coherent:
+  // the swath is the `span` systems nearest the eye, which can never reach past `span` hops.
   const hops = hopsFrom(map, eye, span);
 
-  const cells: SwathCell[] = [];
-  for (const [system, hop] of [...hops.entries()].sort((a, b) => compareIds(a[0], b[0]))) {
-    if (cells.length >= span) break;
+  const intensityAt = (system: SystemId, hop: number): number => {
     // Integer falloff, applied `hop` times. No `Math.pow`, no float: the result is hashed.
     let raw = centre;
     for (let i = 0; i < hop; i += 1) raw = Math.trunc((raw * INTENSITY_FALLOFF_BPS) / BPS_ONE);
     const vulnerability = VULNERABILITY_BY_TIER[tierOf(map, system)];
-    const intensity = Math.trunc((raw * vulnerability) / BPS_ONE);
-    if (intensity <= 0) continue;
-    cells.push({ system, intensityBps: bps(intensity) });
+    return Math.trunc((raw * vulnerability) / BPS_ONE);
+  };
+
+  const cells: SwathCell[] = [];
+  for (const cell of rankedByDistance(hops, intensityAt)) {
+    if (cells.length >= span) break;
+    if (cell.weight <= 0) continue;
+    cells.push({ system: cell.system, intensityBps: bps(cell.weight) });
   }
   return Object.freeze(cells);
 }
+
+/**
+ * The odds one CONE cell is published at, before the reader's own sharpening.
+ *
+ * Base falls {@link CONE_ODDS_PER_HOP_BPS} per hop and a bounded jitter is added. **The jitter really
+ * is symmetric now**, which the previous docblock asserted and the arithmetic did not deliver: the old
+ * expression was `max(100, min(BPS_ONE, base + jitter))` over a base that reached `BPS_ONE` at hop 0
+ * and `500` at hop 4, so the clamp ate the whole upper half of the draw at the eye and the whole lower
+ * half at the rim. A jitter clipped on one side is a bias, and it biased *toward publishing certainty
+ * about the eye* — the one cell that needs no help.
+ *
+ * The base is therefore clamped into `[100 + jitter, CONE_ODDS_MAX_BPS - jitter]` **before** the draw
+ * is added, so every cell gets the full ±{@link CONE_JITTER_BPS} and none of it is thrown away.
+ *
+ * ★ **And no cell is ever published at `BPS_ONE`.** A CONE is a *prediction*; 10,000 bps means
+ * certainty; a prediction that can be wrong and prints certainty is A2's *"never hand it a solved
+ * game"* failing in the direction that also libels the forecast. {@link coneAt} still reaches
+ * `BPS_ONE` as landfall arrives — that is the reader's own sharpening toward a fact, and it is
+ * published arithmetic an agent can reproduce.
+ */
+function coneOddsAt(hop: number, jitter: number): number {
+  const base = Math.max(
+    100 + CONE_JITTER_BPS,
+    Math.min(CONE_ODDS_MAX_BPS - CONE_JITTER_BPS, BPS_ONE - hop * CONE_ODDS_PER_HOP_BPS),
+  );
+  return Math.max(100, Math.min(CONE_ODDS_MAX_BPS, base + jitter));
+}
+
+/**
+ * How fast published odds fall per lane hop.
+ *
+ * ★ **Strictly greater than `2 × CONE_JITTER_BPS`, and that is load-bearing rather than tidy.** It
+ * makes the published ranking by odds *identical* to the ranking by distance, so `view.ts:pickTarget`
+ * — which recommends the highest-odds cell — can never recommend a farther system than a nearer one,
+ * and therefore always lands on the eye, which is always struck. The suggestion an agent copies
+ * verbatim is then aimed at ground that will actually burn.
+ */
+export const CONE_ODDS_PER_HOP_BPS = 2_500;
+export const CONE_JITTER_BPS = 800;
+/** The most a CONE may claim. Below `BPS_ONE`: see {@link coneOddsAt} on why a forecast may not print certainty. */
+export const CONE_ODDS_MAX_BPS = BPS_ONE - 100;
 
 /**
  * The CONE — the odds the server publishes, on its own sub-stream.
@@ -247,18 +346,18 @@ export function swathOf(map: WorldMap, rng: Rng, id: FrontId, eye: SystemId): re
  * *reader's* tick rather than of stored state: {@link coneAt} sharpens the same published cells as
  * landfall approaches. That keeps the record immutable (A5) while letting the picture tighten,
  * which is what CAT2's spectator line asks for.
+ *
+ * Truncated by **distance from the eye**, not by system id — see {@link rankedByDistance}.
  */
 export function coneOf(map: WorldMap, rng: Rng, id: FrontId, eye: SystemId): readonly ConeCell[] {
   const stream = rng.derive(`risk:front:cone:${id}`);
   const hops = hopsFrom(map, eye, 3);
   const cells: ConeCell[] = [];
-  for (const [system, hop] of [...hops.entries()].sort((a, b) => compareIds(a[0], b[0]))) {
+  // Ranked nearest-first with no secondary weight: the odds are already a function of the hop, so
+  // ranking on anything else would sort the cone by a quantity it does not publish.
+  for (const cell of rankedByDistance(hops, () => 0)) {
     if (cells.length >= CONE_SYSTEMS) break;
-    // Base odds fall with distance; a bounded jitter keeps the cone from being a ranked list of
-    // the swath. Integer arithmetic, and the jitter is symmetric so the cone is not biased.
-    const base = Math.max(500, BPS_ONE - hop * 2_500);
-    const jitter = stream.range(-800, 800);
-    cells.push({ system, oddsBps: bps(Math.max(100, Math.min(BPS_ONE, base + jitter))) });
+    cells.push({ system: cell.system, oddsBps: bps(coneOddsAt(cell.hop, stream.range(-CONE_JITTER_BPS, CONE_JITTER_BPS))) });
   }
   return Object.freeze(cells);
 }
@@ -317,8 +416,10 @@ export interface FrontLoss {
  *   2. **Pledged lots die.** PROP-L3, verbatim from `cargoLost.ts`: *"an encumbrance is a claim on
  *      a thing, not a shield over it"*. If a lien stopped a front, every agent would pledge
  *      everything and the sink would die.
- *   3. **{@link FRONT_SPARES_QTY} per (account, good) survives**, so a front can never leave a
- *      principal unable to pay an obligation that is only payable in goods. See the constant.
+ *   3. **{@link frontSparesFor} per (account, good) survives**, so a front can never leave a
+ *      principal unable to pay an obligation that is only payable in goods. **Per good, and that word
+ *      is the whole fix** — one flat 20,000 derived for `ration` used to floor `ore`, `alloy` and
+ *      `fuel` too, and made the front a `ration`-only sink. See the constant.
  *   4. **Escrow accounts are spared.** Escrow is A7's already-committed half. Taking it would make
  *      an escrowed promise short through no act of its payer, which is §15.4's false default
  *      arriving from the hazard rather than from a raid. The *goods* in a venture's escrow are
@@ -342,9 +443,11 @@ export function destroySet(front: FrontRecord, lots: readonly Lot[]): readonly F
     const intensity = struck.get(lot.location);
     if (intensity === undefined || intensity <= 0) continue;
 
+    // ★ The floor is a function of the GOOD. One number for four goods made this a ration-only sink.
     const key = `${lot.account}::${lot.good}`;
+    const floor = frontSparesFor(lot.good);
     const alreadySpared = spared.get(key) ?? 0;
-    const spareNow = Math.min(lot.qty, Math.max(0, FRONT_SPARES_QTY - alreadySpared));
+    const spareNow = Math.min(lot.qty, Math.max(0, floor - alreadySpared));
     spared.set(key, alreadySpared + spareNow);
     const exposed = lot.qty - spareNow;
     if (exposed <= 0) continue;

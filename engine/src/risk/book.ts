@@ -54,9 +54,7 @@ import {
 import type { GoodId, PrincipalId, SystemId } from '../core/types.js';
 import { addMinor, type Minor } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
-import { bps, minor } from '../core/units.js';
-import { DEFAULT_VALUATION_RULE } from '../ledger/valuation.js';
-import { pinnedAt } from '../venture/terms.js';
+import { bps, minor, qty } from '../core/units.js';
 import {
   coverEscrow,
   isLiveCover,
@@ -295,6 +293,31 @@ export class RiskBook {
     if (held === undefined) return false;
     const row = this.covers.get(held);
     return row !== undefined && isLiveCover(row.state) && row.payee === payee;
+  }
+
+  /** *Which* live COVER stands over this `(payee, system, good)`, for the refusal to name it (A2). */
+  interestOver(payee: PrincipalId, system: SystemId, good: GoodId): CoverId | null {
+    const held = this.interests.get(RiskBook.interestKey(payee, system, good));
+    if (held === undefined) return null;
+    const row = this.covers.get(held);
+    return row !== undefined && isLiveCover(row.state) && row.payee === payee ? held : null;
+  }
+
+  /**
+   * ★ **Is a live cession already standing over `parent`?** CAT6 for the layer above the goods.
+   *
+   * A scan rather than a registry entry, and the asymmetry is deliberate: `interests` is a map because
+   * the goods check runs on every bind and must not grow with the book, while a cession's parent is
+   * already in hand and {@link cessionsOver} is bounded by `MAX_COVERS_PER_PAYER`. One home for the
+   * question, so a caller cannot ask it two ways and get two answers.
+   *
+   * Excludes `candidate` so the check is idempotent: re-binding the same cession must not refuse
+   * itself, which is the property `venture.ts:countersign` established and every bind here inherits.
+   */
+  cessionTaken(parent: CoverId, candidate?: CoverId): boolean {
+    return this.cessionsOver(parent).some(
+      (c) => c.id !== candidate && c.payee !== null && isLiveCover(c.state),
+    );
   }
 
   claimInterest(cover: CoverRecord): void {
@@ -539,8 +562,11 @@ export class RiskBook {
       const attaches = o['attachesTick'];
       const hash = o['termsHash'];
       const version = o['actedOnStateVersion'];
+      const grant = o['boundByGrant'];
+      const acted = o['actedBy'];
       const id = readString(o, 'id', where) as CoverId;
       const payer = readString(o, 'payer', where) as PrincipalId;
+      const rule = readObject(o['valuationRule'] ?? {}, `${where}.valuationRule`);
       const row: CoverRecord = {
         id,
         payer,
@@ -561,14 +587,34 @@ export class RiskBook {
         actedOnStateVersion:
           version === null || version === undefined ? null : readInt(o, 'actedOnStateVersion', where),
         escrow: coverEscrow(id, payer),
-        valuation: pinnedAt(DEFAULT_VALUATION_RULE, readInt(o, 'offeredTick', where)),
-        rulesVersion: 0,
+        // ★ The pinned valuation comes back **with its marks**, because a COVER with no pinned mark is
+        // a COVER whose next landfall throws inside the HAZARD phase. See `capture`.
+        valuation: {
+          asOfTick: readInt(o, 'valuationAsOfTick', where),
+          rule: {
+            windowTicks: readInt(rule, 'windowTicks', `${where}.valuationRule`),
+            haircutBps: bps(readInt(rule, 'haircutBps', `${where}.valuationRule`)),
+            minIndependentQty: qty(readInt(rule, 'minIndependentQty', `${where}.valuationRule`)),
+            minIndependentPrints: readInt(rule, 'minIndependentPrints', `${where}.valuationRule`),
+            minDistinctPairs: readInt(rule, 'minDistinctPairs', `${where}.valuationRule`),
+          },
+          marks: Object.freeze(
+            readArray(o['valuationMarks'] ?? [], `${where}.valuationMarks`).map((raw2, j) => {
+              const m = readObject(raw2, `${where}.valuationMarks[${String(j)}]`);
+              return {
+                good: readString(m, 'good', `${where}.valuationMarks[${String(j)}]`) as GoodId,
+                unitPrice: minor(readInt(m, 'unitPrice', `${where}.valuationMarks[${String(j)}]`)),
+              };
+            }),
+          ),
+        },
+        rulesVersion: readInt(o, 'rulesVersion', where),
         depth: readInt(o, 'depth', where),
         fingerprint: readString(o, 'fingerprint', where),
         settledEscrowedMinor: minor(readInt(o, 'settledEscrowedMinor', where)),
         settledElectiveMinor: minor(readInt(o, 'settledElectiveMinor', where)),
-        boundByGrant: null,
-        actedBy: null,
+        boundByGrant: grant === null || grant === undefined ? null : (readString(o, 'boundByGrant', where) as never),
+        actedBy: acted === null || acted === undefined ? null : (readString(o, 'actedBy', where) as PrincipalId),
       };
       this.covers.set(id, row);
       if (isLiveCover(row.state)) this.claimInterest(row);
@@ -582,6 +628,10 @@ export class RiskBook {
         throw new SnapshotError(`${where}: unknown indemnity state ${state}`);
       }
       const id = readString(o, 'id', where) as IndemnityId;
+      const pinnedVersion = o['pinnedStateVersion'];
+      const pinnedHash = o['pinnedTermsHash'];
+      const indGrant = o['boundByGrant'];
+      const indActed = o['actedBy'];
       this.indemnities.set(id, {
         id,
         cover: readString(o, 'cover', where) as CoverId,
@@ -601,8 +651,18 @@ export class RiskBook {
         depth: readInt(o, 'depth', where),
         state: state as IndemnityState,
         deferrals: readInt(o, 'deferrals', where),
-        boundByGrant: null,
-        actedBy: null,
+        pinnedStateVersion:
+          pinnedVersion === null || pinnedVersion === undefined
+            ? null
+            : readInt(o, 'pinnedStateVersion', where),
+        pinnedTermsHash:
+          pinnedHash === null || pinnedHash === undefined ? null : readString(o, 'pinnedTermsHash', where),
+        boundByGrant:
+          indGrant === null || indGrant === undefined ? null : (readString(o, 'boundByGrant', where) as never),
+        actedBy:
+          indActed === null || indActed === undefined
+            ? null
+            : (readString(o, 'actedBy', where) as PrincipalId),
       });
     }
 
@@ -656,6 +716,16 @@ export class RiskBook {
         offeredTick: c.offeredTick,
         boundTick: c.boundTick,
         attachesTick: c.attachesTick,
+        // ★ **THE MISSING KEY THAT MADE A WORLD HOLDING ONE COVER UNBOOTABLE.** `restore` reads this
+        // through a bare `readInt` — correctly, because it is a `readonly number` and never null — and
+        // `capture` did not write it. One cover in the book and the boot died with
+        // *"risk.covers[0].offerExpiresTick: expected a safe integer"*, which is the same class as the
+        // ninety-minute outage this repo took from a boot that could not replay, at one key's cost.
+        //
+        // And the quieter half: a field absent from `capture` is absent from **`state_hash`**, so two
+        // replicas whose offers stood until different ticks agreed to the byte. A hash that cannot see
+        // a field is a hash that cannot detect a divergence in it (§15.5).
+        offerExpiresTick: c.offerExpiresTick,
         expiresTick: c.expiresTick,
         termsHash: c.termsHash,
         actedOnStateVersion: c.actedOnStateVersion,
@@ -663,6 +733,30 @@ export class RiskBook {
         fingerprint: c.fingerprint,
         settledEscrowedMinor: c.settledEscrowedMinor,
         settledElectiveMinor: c.settledElectiveMinor,
+        // ★ **THE PINNED VALUATION, INCLUDING ITS MARKS.** `restore` used to rebuild this as
+        // `pinnedAt(DEFAULT_VALUATION_RULE, offeredTick)`, and `pinnedAt` returns `marks: []` — so a
+        // restored COVER carried **no pinned mark at all** and `pinnedMark` *throws* rather than
+        // defaulting, inside `openPrimary`, inside `strikeFront`, inside the HAZARD phase. An adopted
+        // world would have halted on the first landfall that touched a covered holding, and the pinned
+        // mark is §15.4's third defence — *"the single most important one here"*.
+        rulesVersion: c.rulesVersion,
+        valuationAsOfTick: c.valuation.asOfTick,
+        valuationRule: {
+          windowTicks: c.valuation.rule.windowTicks,
+          haircutBps: c.valuation.rule.haircutBps,
+          minIndependentQty: c.valuation.rule.minIndependentQty,
+          minIndependentPrints: c.valuation.rule.minIndependentPrints,
+          minDistinctPairs: c.valuation.rule.minDistinctPairs,
+        },
+        valuationMarks: [...c.valuation.marks]
+          .sort((a, b) => compareIds(a.good, b.good))
+          .map((m) => ({ good: m.good, unitPrice: m.unitPrice })),
+        // A6's attribution. `null` on every row today because nothing delegates a COVER yet (see
+        // `wire.ts:electCover` on why that door is shut rather than half-wired) — captured anyway,
+        // because a field restored as a hard-coded `null` is a field that silently loses a delegate's
+        // name the day one exists, and that name is what a `RiskDefault` row accuses.
+        boundByGrant: c.boundByGrant,
+        actedBy: c.actedBy,
         over:
           c.over.kind === 'GOODS'
             ? { kind: 'GOODS', system: c.over.system, good: c.over.good, cover: null }
@@ -687,6 +781,13 @@ export class RiskBook {
         depth: i.depth,
         state: i.state,
         deferrals: i.deferrals,
+        // ★ §15.4's second and third defences, as data. Captured at landfall, compared at settlement —
+        // see `indemnity.ts:guardIndemnity`. A restore that dropped these would put the pair of
+        // tautologies back: the guard would have nothing earlier to compare the live row against.
+        pinnedStateVersion: i.pinnedStateVersion,
+        pinnedTermsHash: i.pinnedTermsHash,
+        boundByGrant: i.boundByGrant,
+        actedBy: i.actedBy,
       })),
       records: this.allRecords().map((r) => ({
         principal: r.principal,

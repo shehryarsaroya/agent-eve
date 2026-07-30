@@ -174,6 +174,16 @@ export const STEP_BUDGET = {
    * to total the group it had just keyed, which is what actually blew the cap. Both
    * halves are needed: the fix makes the work linear, this makes the budget know the
    * work exists.
+   *
+   * ⚑ **AND "O(lots)" WAS STILL FALSE WHEN THIS CLAIM WAS WRITTEN, ONE FUNCTION OVER.**
+   * `risk/run.ts:strikeFront` looked its destroyed lots' owners up with
+   * `port.lots().find(…)` **per destroyed lot**, and `port.lots()` is
+   * `ledger.allLots()`, which sorts the galaxy: **37 calls over 15,828 rows on a
+   * landfall tick** against 6 over 2,483 on a quiet one. Unbudgeted, so it surfaced as
+   * latency rather than a halt — but it is the same shape as the quadratic above, in
+   * the same phase, found by reading rather than by an outage. It indexes once now, so
+   * the sentence is true. **A performance claim in a docblock is a claim like any
+   * other: it needs a second road, and here the second road is the budget itself.**
    */
   perStoredLot: 2,
 } as const;
