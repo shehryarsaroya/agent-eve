@@ -12855,20 +12855,28 @@ export class Runtime {
 
   /** What a principal holds, in the shape `src/risk/view.ts` reads. */
   private riskHoldings(principal: PrincipalId, tick: number): readonly HoldingRead[] {
-    const out: HoldingRead[] = [];
-    const seen = new Set<string>();
+    // ── ONE PASS, NOT TWO — AND THE QUADRATIC HELD PRODUCTION DOWN FOR FOUR MINUTES ──
+    //
+    // This was `for (lot) { for (other) { … } }`: an inner rescan of the whole account to total the
+    // very group the outer loop had just keyed. O(lots²) per principal per tick, and the HAZARD
+    // phase runs it for everybody. It shipped green because **`HAZARD` had been an empty phase for
+    // the project's entire life**, so the cost had no subject until Phase 3 gave it one — and then
+    // `DET-9` halted the replay at tick 7,128 with the world already deployed.
+    //
+    // A totals map does the same job in one pass. Iteration order is preserved (first sighting of
+    // each `(location, good)` wins) so nothing hashed moves, which is why this is safe to land as a
+    // repair rather than a rules change.
+    const totals = new Map<string, { system: SystemId; good: GoodId; qty: number }>();
     for (const lot of this.ledger.lotsInAccount(storesAccount(principal))) {
       if (lot.state === 'IN_TRANSIT') continue;
       const key = `${lot.location}::${lot.good}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      let qty = 0;
-      for (const other of this.ledger.lotsInAccount(storesAccount(principal))) {
-        if (other.good === lot.good && other.location === lot.location && other.state !== 'IN_TRANSIT') {
-          qty += other.qty;
-        }
-      }
-      out.push({ system: lot.location, good: lot.good, qty: qty as Qty, unitPrice: this.markOf(lot.good, tick) });
+      const at = totals.get(key);
+      if (at === undefined) totals.set(key, { system: lot.location, good: lot.good, qty: lot.qty });
+      else at.qty += lot.qty;
+    }
+    const out: HoldingRead[] = [];
+    for (const t of totals.values()) {
+      out.push({ system: t.system, good: t.good, qty: t.qty as Qty, unitPrice: this.markOf(t.good, tick) });
     }
     return out;
   }

@@ -152,6 +152,29 @@ export const STEP_BUDGET = {
    * needs.
    */
   perRestingOrder: 4,
+  /**
+   * **The stored lot, and this is `perRestingOrder`'s defect a third time — the first
+   * one to take production down.**
+   *
+   * `HAZARD` reads every principal's holdings to decide what a front strikes, so its
+   * cost scales with the number of stored lots. That quantity, like the settlement set
+   * and the order book, is set by agents over many ticks and has no other term here.
+   *
+   * **What made this one different is that the phase was EMPTY.** `HAZARD` was an
+   * explicit no-op hook from commit #1 — the slot was left registered so that filling
+   * it would not shift any other phase's seeded sub-stream — so for the project's
+   * entire life the term was missing and could not be missed. Phase 3 gave it a
+   * subject and the very first deploy replayed into `DET-9` at tick 7,128 and HELD the
+   * world: every route 503 with the boot diagnosis. A budget whose subject cannot
+   * occur is untestable in exactly the way an invariant whose subject cannot occur is.
+   *
+   * Two per lot: the read and the mark lookup. `frontNow` is O(lots) after the
+   * quadratic in `riskHoldings` was removed — that rescanned the whole account per lot
+   * to total the group it had just keyed, which is what actually blew the cap. Both
+   * halves are needed: the fix makes the work linear, this makes the budget know the
+   * work exists.
+   */
+  perStoredLot: 2,
 } as const;
 
 export function stepBudgetFor(
@@ -160,6 +183,7 @@ export function stepBudgetFor(
   intents: number,
   obligations: number,
   restingOrders = 0,
+  storedLots = 0,
 ): number {
   if (STEP_BUDGET.perObligation < CASCADE_ROUND_LIMIT) {
     // A budget below the round limit makes a legitimate cascade unbudgetable, which
@@ -175,7 +199,8 @@ export function stepBudgetFor(
     STEP_BUDGET.perHand * hands +
     STEP_BUDGET.perIntent * intents +
     STEP_BUDGET.perObligation * obligations +
-    STEP_BUDGET.perRestingOrder * restingOrders
+    STEP_BUDGET.perRestingOrder * restingOrders +
+    STEP_BUDGET.perStoredLot * storedLots
   );
 }
 
