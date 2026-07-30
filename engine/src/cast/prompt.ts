@@ -250,6 +250,10 @@ const S11C = '## 11C. SYNDICATES — pooling, and the authority that comes with 
 const S11D = '## 11D. PREDATION — two kinds, and only one of them has a name';
 const S11E = '## 11E. CAMPAIGNS — the only way to take ground somebody is PAYING for';
 const S11F = "## 11F. THE FRONT, and COVER — insuring somebody else's loss";
+// ★ 33 takes 11G, not 11F: master's risk market landed 11F first and it is already published in
+// `agent.md`, the SPEC canon rows and `test/cast/prompt.test.ts`. Renumbering a section an agent has
+// already read is a rules-surface edit for a cosmetic ordering gain.
+const S11G = '## 11G. THE MAP HAS BORDERS — STRAITS, and how far your force reaches';
 const S12 = '## 12. Getting good';
 
 /**
@@ -303,7 +307,7 @@ const ACT_SUBJECT_KEYS: readonly string[] = Object.freeze([
  * ★ **The closed vocabulary of act tokens the catalog gates on.**
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * Twelve tokens, and the list is short **on purpose**: a token nothing gates on would be this
+ * Sixteen tokens, and the list is short **on purpose**: a token nothing gates on would be this
  * project's signature defect in the mechanism built to fix it — *a capability that exists and is
  * never exercised is indistinguishable from one that is missing.* So `prompt.test.ts` pins this
  * set against {@link CONTRACT_CATALOG} in both directions:
@@ -619,7 +623,7 @@ export function actTokensOf(verb: string, params: unknown): readonly string[] {
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of sixty could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of sixty-three could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -1372,6 +1376,68 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     because: 'you have no formation in a live battle to set a threshold on',
   },
 
+  // ── §11G · ★ §16.12 #1: STRAITS AND SWAY ──────────────────────────────────
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // **ACT-GATED, AND THE GATE IS THE WHOLE REASON THIS SECTION IS AFFORDABLE.** Every verb that
+  // reads sway — `demand`, `join`, `build` — is offered broadly, and `build` is offered on
+  // essentially every wake. §11E's own note records what gating on the bare verb cost once: a
+  // **campaign section in a newcomer's first wake, +3,543 characters** for a mechanic it could not
+  // reach. So these gate on the kind-qualified tokens and nothing else.
+  //
+  // Deliberately **not** `required` on any predicate, and that is the honest call rather than the
+  // cheap one. A reach limit is discovered by refusal — which is the shape `demand.ts` calls out
+  // about §9's aggression capacity, *"an agent learned the resource existed by exhausting it"* — but
+  // the refusal itself carries `SWAY_STATEMENT` verbatim, `holding.sway` publishes the standing
+  // figure to every principal on every wake regardless of this catalog, and the affordance's own
+  // `what_it_forecloses` states the reading. So a member that never sees this section is never
+  // refused for a rule it had no way to read; it is shown the rule at the moment it applies. What
+  // this section buys is planning it can do *before* walking, which is CONTEXT, not A5′.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    section: S11G,
+    block: null,
+    // `verbs: ['demand']` and not an act token: `demand` means exactly ONE thing however it is
+    // parameterised, so its verb gate is already as sharp as an act gate — `grant`'s row in
+    // CONTRACT_MULTI_MEANING_VERBS is the control case for exactly this, and `principal` is not an
+    // ACT_SUBJECT_KEY, so `demand{...}` is a token nothing could ever produce. `join` and `build`
+    // each carry a second meaning and are act-gated.
+    verbs: ['demand'],
+    acts: ['join{RAID}', 'join{CAMPAIGN}', 'build{CAMPAIGN}'],
+    because:
+      'no act of yours reads SWAY this wake — `holding.sway` still carries your reach and its rule ' +
+      'on every wake, so nothing here is a rule you could be refused for not knowing',
+  },
+  {
+    section: S11G,
+    // On the CAMPAIGN acts as well as the raid ones, and that pairing is load-bearing: a campaign's
+    // DEPOT is one lane from its OBJECTIVE, so whether that lane is a STRAIT is the difference
+    // between a war an attacker can reinforce and one it must fight alone.
+    block: '### STRAITS — the lanes the region cannot route around',
+    // `verbs: ['demand']` and not an act token: `demand` means exactly ONE thing however it is
+    // parameterised, so its verb gate is already as sharp as an act gate — `grant`'s row in
+    // CONTRACT_MULTI_MEANING_VERBS is the control case for exactly this, and `principal` is not an
+    // ACT_SUBJECT_KEY, so `demand{...}` is a token nothing could ever produce. `join` and `build`
+    // each carry a second meaning and are act-gated.
+    verbs: ['demand'],
+    acts: ['join{RAID}', 'join{CAMPAIGN}', 'build{CAMPAIGN}'],
+    because: 'no act of yours reads a STRAIT this wake',
+  },
+  {
+    section: S11G,
+    // The statement block. It carries `SWAY_STATEMENT`'s own words, so the document and the engine's
+    // refusal say the same thing — the surface scar #1 is about.
+    block: '### SWAY — how many hands count as force, and where',
+    // `verbs: ['demand']` and not an act token: `demand` means exactly ONE thing however it is
+    // parameterised, so its verb gate is already as sharp as an act gate — `grant`'s row in
+    // CONTRACT_MULTI_MEANING_VERBS is the control case for exactly this, and `principal` is not an
+    // ACT_SUBJECT_KEY, so `demand{...}` is a token nothing could ever produce. `join` and `build`
+    // each carry a second meaning and are act-gated.
+    verbs: ['demand'],
+    acts: ['join{RAID}', 'join{CAMPAIGN}', 'build{CAMPAIGN}'],
+    because: 'no act of yours is capped by SWAY this wake',
+  },
+
 
   // ── §12 ───────────────────────────────────────────────────────────────────
   { section: S12, block: null, floor: true, verbs: [], because: 'floor' },
@@ -1498,6 +1564,19 @@ const COMMONS_CANNOT_HOLD: ReadonlySet<string> = new Set([
   'post_bond', 'abandon{CLAIM}', 'deliver{CHARGE}', 'vote{CHARGE}',
   // §16.6 MUST-1, and only an attacker lifts its own war.
   'build{CAMPAIGN}', 'withdraw{CAMPAIGN}',
+  // ★ AND `join{CAMPAIGN}`, WHICH THIS SET KEPT AND THE ENGINE NOW REFUSES.
+  //
+  // 24's own open findings named it: *"`join {campaign, side}` has no tier gate — a Commons-seated
+  // principal is offered both sides of a war two tiers away, and its hands are Commons-bound so it
+  // can never reach the objective."* `campaign/roster.ts` refuses it outright as of `RULES_VERSION`
+  // 28, so keeping the token here would make this fixture assert something the engine cannot
+  // produce — the exact fault the docblock on `offeredExcept` warns about one screen down.
+  //
+  // The character consequence is the same one measured at 24 and it is the reason to check rather
+  // than assume: with the token still here, the Commons row grew a whole section of §11G for an
+  // act A8 and A15 jointly make impossible. That is §11E's defect, for the third time, inside the
+  // fixture built to measure §11E's defect.
+  'join{CAMPAIGN}',
 ]);
 
 /** Verbs and acts a **landless** holding is never offered: there is no claim to bill or cede. */
@@ -1556,7 +1635,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are sixty: 2^55 is not enumerable, and it
+ * was free. At `###` granularity there are sixty-three: 2^63 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -2282,7 +2361,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` — **or one of whose `acts`** — is offered in `affordances[]` is
  * `RULES`: checked before any per-unit predicate, and `RULES` is never dropped for any reason
  * including length. That ordering is the whole safety argument: an agent is refused for breaking
- * a rule it was given, never for one it was not. There are sixty units; put the same rule
+ * a rule it was given, never for one it was not. There are sixty-three units; put the same rule
  * inside each predicate and the forty-fifth will forget it.
  *
  * ── ★ `acts` IS A SECOND DISCRIMINATOR AT THE SAME PRECEDENCE, NOT A WEAKER ONE ──

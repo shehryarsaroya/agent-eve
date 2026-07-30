@@ -16,7 +16,7 @@
  */
 
 import type { CanonicalValue } from '../core/canonical.js';
-import type { PrincipalId, SystemId, ZoneTier } from '../core/types.js';
+import type { PrincipalId, SystemId } from '../core/types.js';
 import { qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import { largestRemainder } from '../levy/assessment.js';
@@ -28,12 +28,7 @@ import {
   SnapshotError,
   type StateTable,
 } from '../tick/snapshot.js';
-import {
-  FUEL_YIELD_PER_TICK,
-  WORKS_PER_PRINCIPAL_PER_SYSTEM,
-  WORKS_SPINUP_TICKS,
-  YIELD_PER_TICK,
-} from './params.js';
+import { WORKS_PER_PRINCIPAL_PER_SYSTEM, WORKS_SPINUP_TICKS } from './params.js';
 
 /** A WORKS id is content-derived from its place and the tick it was raised. */
 export type WorksId = string & { readonly __brand: 'WorksId' };
@@ -296,14 +291,20 @@ export class Book {
   }
 
   /**
-   * This tick's extraction, per WORKS, at one system — **summing to the tier yield exactly.**
+   * This tick's extraction, per WORKS, at one system — **summing to that SYSTEM's yield exactly.**
+   *
+   * ★ **THE TOTAL IS NOW AN ARGUMENT, AND THAT IS THE POINT.** It used to take a `ZoneTier` and look
+   * the figure up itself, which is how eighteen MARCHES systems came to yield an identical 110 (see
+   * `works/params.ts:systemYield`). A caller now has to *name* what this system produces, so there
+   * is no method left that could silently substitute a tier's flat figure for a system's real one —
+   * which is the same defect this project has shipped at four other depths.
    *
    * A WORKS still spinning up takes no share and, deliberately, **does not dilute** the
    * others: it is not yet extracting, so counting it would let a principal suppress a rival's
    * output by raising a structure it never finishes. The share is over the *online* set.
    */
-  sharesAt(system: SystemId, tier: ZoneTier, tick: number): ReadonlyMap<WorksId, Qty> {
-    return this.sharesOf(system, YIELD_PER_TICK[tier], tick);
+  sharesAt(system: SystemId, yieldPerTick: Qty, tick: number): ReadonlyMap<WorksId, Qty> {
+    return this.sharesOf(system, yieldPerTick, tick);
   }
 
   /**
@@ -314,8 +315,8 @@ export class Book {
    * different set — or rounded differently — would let one good's arithmetic drift from the
    * other's while both looked correct (scar #5 across two goods).
    */
-  fuelSharesAt(system: SystemId, tier: ZoneTier, tick: number): ReadonlyMap<WorksId, Qty> {
-    return this.sharesOf(system, FUEL_YIELD_PER_TICK[tier], tick);
+  fuelSharesAt(system: SystemId, fuelPerTick: Qty, tick: number): ReadonlyMap<WorksId, Qty> {
+    return this.sharesOf(system, fuelPerTick, tick);
   }
 
   /** Divide any total across the ONLINE WORKS at a system, summing to it exactly. */

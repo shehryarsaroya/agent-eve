@@ -18,6 +18,13 @@
  *     hand fills a role takes it as an argument.
  *   - **`commonsFloorRejection` is the A8 validator** and must run before an
  *     action is locked, charged or written.
+ *   - **★ A STRAIT is derived from the graph, never stored on a `Lane`** (`strait.ts`), because
+ *     `mapCanonical` feeds `mapHash` and `tick/snapshot.ts` compares that on restore — a field
+ *     there would make a live world refuse its own record over a topology that did not change.
+ *   - **★ SWAY caps OFFENSIVE force by distance and NEVER touches travel** (`sway.ts`). `move`,
+ *     `haul` and `deliver` do not read it and must not: two measured hazards live on that path
+ *     (goods and hands in different systems in 325 of 576 observations; `levyMove` once refusing a
+ *     member's only legal route to its own tribute) and gating travel would worsen both.
  */
 
 export {
@@ -79,6 +86,45 @@ export {
   type HandLoss,
   type HandRecord,
 } from './hands.js';
+
+export {
+  assertLodes,
+  lodeAt,
+  lodesOf,
+  LodeError,
+  LODE_STATEMENT,
+  LODE_TIERS,
+  LODE_WEIGHT,
+  tierHasLodes,
+  type Lode,
+  type LodeBases,
+} from './lode.js';
+
+export {
+  assertStraits,
+  isStrait,
+  straitAcross,
+  straitsAt,
+  straitsOf,
+  StraitError,
+  STRAIT_DETOUR_HOPS,
+  STRAIT_MIN_SEVERED,
+  STRAIT_STATEMENT,
+  type Strait,
+} from './strait.js';
+
+export {
+  straitsHeld,
+  swayAt,
+  swayNote,
+  swayReach,
+  swayShortfall,
+  SWAY_AT_SEAT,
+  SWAY_PER_HOP,
+  SWAY_STATEMENT,
+  SWAY_STRAIT_TOLL,
+  type SwaySeats,
+} from './sway.js';
 
 export {
   createHolding,

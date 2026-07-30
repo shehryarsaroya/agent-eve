@@ -273,7 +273,7 @@ describe('A15: world alloy output is bounded by the MAP, never by the population
     }
     let total = 0;
     for (let t = 0; t < ticks; t += 1) {
-      for (const share of rt.works.sharesAt(system, ALLOY_TIER, t).values()) total += share;
+      for (const share of rt.works.sharesAt(system, YIELD_PER_TICK[ALLOY_TIER], t).values()) total += share;
     }
     return total;
   }

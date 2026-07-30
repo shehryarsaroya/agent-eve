@@ -289,6 +289,13 @@ function resolveOne(
     // hulls are crewed by synthetic hands and this counts the ones still there — the same rule as
     // the line above, applied to the side that used to be exempt from it.
     raidForceLeft: (row) => port.raidForceLeft(row),
+    // ── ★ §16.12 #1, AND IT IS RE-READ HERE FOR THE SAME REASON EVERY OTHER TERM IS ──
+    //
+    // A raider party may have held ground when it joined and lost it before the window shut — a
+    // claim lapses at a settlement, a holding falls. `join` gates on sway at join time; only this
+    // reading can see a supply line cut during the window, which is the case a gate structurally
+    // cannot cover. Same shape as `handsAtStage` and `raidForceLeft`, same reason.
+    swayAt: (principal) => port.swayAt(principal, raid.stage),
   });
 
   if (force.verdict === 'REPULSED') {

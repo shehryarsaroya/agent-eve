@@ -225,6 +225,7 @@ import {
 import {
   commonsBoundRejection,
   GRADUATION_STATEMENT,
+  LODE_STATEMENT,
   handsOf,
   holdingOf,
   isPresent,
@@ -789,6 +790,29 @@ export function buildObservation(input: ObserveInput): Observation {
        */
       commons_bound: principalIsCommonsBound(world, principal),
       graduation: graduationBlock(runtime, principal),
+      /**
+       * ★ **SWAY — HOW FAR THIS BODY'S FORCE REACHES** (§16.12 #1, `world/sway.ts`).
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * **ON `holding` AND NOT A KEY OF ITS OWN, AND THAT IS THE CANON'S CALL RATHER THAN A
+       * BUDGET DODGE.** §12.1 is at ten of ten top-level keys and *"adding one means removing
+       * one"*. It is also the right home: §3 makes a HOLDING *"your named body on the map"*, and
+       * sway is exactly what that body can project — measured from it, and from the CLAIMS it has
+       * taken. `campaigns` landed in the reserved *"siege clock"* slot beside this for the same
+       * reason.
+       *
+       * **PUBLISHED STANDING, NOT ONLY ON REFUSAL.** `demand.ts` records the identical lesson
+       * about §9's aggression capacity — *"the only mention of the capacity in an observation was
+       * the `withheld` reason that fires when it hits zero, so an agent learned the resource
+       * existed by exhausting it"*. A reach limit is worse: by the time a refusal names it, the
+       * agent has already spent the moves that walked a hand somewhere it counts for nothing.
+       *
+       * Only places at 1 or more appear — 3–8 rows on the launch map, not 26 mostly-zero ones —
+       * and `straits_held` is the actionable half: it names the ground whose toll you do not pay,
+       * which is what turns *"I am fenced in"* into *"take that gate"*.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      sway: runtime.swayBlockFor(principal),
       /**
        * WORKS — the only reason goods enter the world (§10.2).
        *
@@ -1413,6 +1437,34 @@ function graduationBlock(
   return {
     /** Where `graduate` can put your body this tick. Empty is a real answer. */
     open: quote.open,
+    /**
+     * ★ **THE GROUND AT EACH DESTINATION** (§16.12 #1's resource-distinct clause, `world/lode.ts`).
+     *
+     * ══════════════════════════════════════════════════════════════════════
+     * **A PROBE REPORTED CHOOSING BETWEEN TWO SYSTEMS "WITH LITERALLY NO INFORMATION ABOUT
+     * EITHER"**, and it was right: `open` was a list of ids, and every system in a tier yielded the
+     * identical figure anyway, so there was nothing to know. Both halves are now false — the ground
+     * differs by about a third across a tier, and this is where an agent reads it **before** it
+     * spends a one-way, priced, irreversible act on the poorest system on the map.
+     *
+     * A2, in its own words: known arithmetic is exact and machine-readable. Every figure here is a
+     * pure function of the fixed map, so it is the same for every reader and cannot go stale.
+     * ══════════════════════════════════════════════════════════════════════
+     */
+    ground: quote.open.map((system) => {
+      const lode = runtime.lodeFor(system);
+      return {
+        system,
+        tier: lode.tier,
+        yield_per_tick: lode.yieldPerTick,
+        fuel_per_tick: lode.fuelPerTick,
+        /** Against the tier's flat figure, signed bps. The comparable number. */
+        richness_bps: lode.richnessBps,
+        /** Whether it is a STRAIT's endpoint — holding one waives that gate's SWAY toll. */
+        gate: lode.gate,
+      };
+    }),
+    lode_statement: LODE_STATEMENT,
     upkeep_minor: quote.upkeepMinor,
     upkeep_qty: quote.upkeepQty,
     upkeep_good: quote.good,
@@ -1675,6 +1727,17 @@ function affordancesFor(
   const carryBlockedWhy = new Set<string>();
   /** `audit` withheld: grants are out, but none of them carries a CLEARANCE, so the log is empty. */
   let auditNoClearance = 0;
+  /**
+   * ★ §16.12 #1: RAIDER `join`s withheld because this principal's SWAY at the stage is 0.
+   *
+   * Counted rather than silent, because a menu that shrinks without saying why teaches the wrong
+   * rule — the agent concludes predation is unreliable rather than that its reach is finite, and
+   * the corrective act (take ground nearer, or a STRAIT) is one it will never look for. The
+   * DEFENDER side of the same standoff is still offered, so this is a **narrowed** menu rather than
+   * an absent one, and the row has to say which half went.
+   */
+  let raiderJoinsBeyondSway = 0;
+  const raiderJoinSwayWhy = new Set<string>();
   /** Reachable principals `MAX_PARLEY_AFFORDANCES` dropped, and who they were. */
   let parleyReachDropped = 0;
   let parleyReachDroppedNames: readonly string[] = [];
@@ -1830,7 +1893,19 @@ function affordancesFor(
         expires_tick: view.resolves_tick,
         quote_id: quoteId(principal, tick, 'join', { raid: view.raid, side: 'DEFENDER' }),
       });
-      if (free >= RAID_JOIN_STAKE_MINOR) {
+      // ── ★ §16.12 #1: THE RAIDER SIDE IS OFFERED ONLY WITHIN YOUR SWAY ─────
+      //
+      // `vJoin` refuses a RAIDER join at sway 0 and `readForce` would count its hand as nothing
+      // anyway, so offering it here would be a move the handler refuses — AGT-S2, costing an agent
+      // an action and its trust in the menu, for a side that could not have helped.
+      //
+      // The DEFENDER offer above is deliberately NOT gated: defence is never capped by sway, which
+      // is the asymmetry `world/sway.ts` owns. So a principal fenced out of the raider's side is
+      // still offered the other one, and the withheld row below says which and why.
+      if (view.force.your_sway <= 0) {
+        raiderJoinsBeyondSway += 1;
+        raiderJoinSwayWhy.add(view.stage);
+      } else if (free >= RAID_JOIN_STAKE_MINOR) {
         eligible.push({
           verb: 'join',
           // `principal` for the same reason `fight` carries `system`: joining the raider's
@@ -1843,7 +1918,10 @@ function affordancesFor(
             `joining the raid locks ${String(RAID_JOIN_STAKE_MINOR)} of your stores and puts one IDLE hand in. ` +
             `If the raid is REPULSED the stake goes to ${view.target} and your hand goes RECOVERING; if it takes ` +
             `the goods, the raiders split them and your stake comes back. This is a hostile act and is INVALID ` +
-            `against anything in the Commons (A8).`,
+            `against anything in the Commons (A8). Your SWAY at ${view.stage} is ` +
+            `${String(view.force.your_sway)}, so your hand counts as force there — a RAIDER's does only within ` +
+            `its reach, and ${String(view.force.raiders_out_of_sway)} hand(s) already standing on that side ` +
+            `count for nothing.`,
           expires_tick: view.resolves_tick,
           quote_id: quoteId(principal, tick, 'join', { raid: view.raid, side: 'RAIDER', principal: view.target }),
         });
@@ -4084,6 +4162,23 @@ function affordancesFor(
         `${clearanceOffersDroppedSubjects.join(', ')} — read them off \`grants.held[].clearance\``,
     });
   }
+  if (raiderJoinsBeyondSway > 0) {
+    // ── ★ §16.12 #1, COUNTED FOR `demandCapacitySpent`'s REASON AND ONE MORE ──
+    //
+    // A reach limit is the most silent thing this build has added: nothing about the observation
+    // changes when a hand walks past the edge of its principal's sway, and the hand still stands
+    // there looking useful. `holding.sway` publishes the standing figure, `force.your_sway`
+    // publishes it per standoff, and this says out loud that the offer was narrowed and by what.
+    reasons.push({
+      verb: 'join',
+      text:
+        `${String(raiderJoinsBeyondSway)} standoff(s) are offered to you on the DEFENDER side only: your ` +
+        `SWAY at ${[...raiderJoinSwayWhy].sort(cmp).join(', ')} is 0, and a RAIDER's hands count as force ` +
+        'only within its reach (§16.12) — so joining that side would buy the raid nothing and `join` would ' +
+        'refuse it. Defending is never capped this way. `holding.sway` lists every place you do project ' +
+        'into and which STRAITS you hold; take a CLAIM nearer, or one end of the STRAIT in the way',
+    });
+  }
   if (parleyWithheldReason !== null) {
     // ── COUNTED, BECAUSE THREE DIFFERENT SILENCES READ IDENTICALLY ─────────────
     //
@@ -4284,6 +4379,9 @@ function affordancesFor(
         auditNoClearance +
         clearanceOffersDropped +
         commonsBoundLanes +
+        // ★ §16.12 #1. One per standoff whose RAIDER side was withheld, not one for the mechanic:
+        // the thing withheld is an act at a place, and there is one of those per standoff.
+        raiderJoinsBeyondSway +
         (demandCapacitySpent ? 1 : 0) +
         (demandSilent ? 1 : 0) +
         (tradeWhy.length > 0 ? 1 : 0) +

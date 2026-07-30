@@ -190,8 +190,8 @@ describe('the frame carries the MAP, or nothing downstream can draw one', () => 
     const frame = renderFrame(
       source({
         map: [
-          { id: 'sys-01' as SystemId, name: 'Hearth', tier: 'COMMONS', constellation: 'con-1' as never, lanes: ['sys-02' as SystemId] },
-          { id: 'sys-02' as SystemId, name: 'Verge', tier: 'MARCHES', constellation: 'con-1' as never, lanes: ['sys-01' as SystemId] },
+          { id: 'sys-01' as SystemId, name: 'Hearth', tier: 'COMMONS', constellation: 'con-1' as never, lanes: ['sys-02' as SystemId], straits: [], yieldPerTick: 110 as never, fuelPerTick: 0 as never, richnessBps: 0 },
+          { id: 'sys-02' as SystemId, name: 'Verge', tier: 'MARCHES', constellation: 'con-1' as never, lanes: ['sys-01' as SystemId], straits: [], yieldPerTick: 110 as never, fuelPerTick: 0 as never, richnessBps: 0 },
         ],
       }),
     );
@@ -206,7 +206,7 @@ describe('the frame carries the MAP, or nothing downstream can draw one', () => 
     // them later has to argue for it.
     const frame = renderFrame(
       source({
-        map: [{ id: 'sys-01' as SystemId, name: 'Hearth', tier: 'COMMONS', constellation: 'con-1' as never, lanes: [] }],
+        map: [{ id: 'sys-01' as SystemId, name: 'Hearth', tier: 'COMMONS', constellation: 'con-1' as never, lanes: [], straits: [], yieldPerTick: 110 as never, fuelPerTick: 0 as never, richnessBps: 0 }],
       }),
     );
     const keys = Object.keys(frame.map[0] ?? {});
@@ -214,10 +214,20 @@ describe('the frame carries the MAP, or nothing downstream can draw one', () => 
     // Explicit comparator: DET-1 bans a bare .sort() even on a key list. Sixth time tonight.
     expect(keys.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([
       'constellation',
+      'fuelPerTick',
       'id',
       'lanes',
       'name',
+      'richnessBps',
+      // ★ §16.12 #1's THE PINCH. A subset of `lanes`, so it is topology and not geometry — and it
+      // belongs on this list precisely because the assertion is that NOTHING here is a coordinate.
+      // ★ §16.12 #1's THE LODE. A property of the ground and not of a viewer's layout — which is
+      // exactly why it belongs in an assertion whose whole subject is that nothing here is a
+      // coordinate. Sorted by the explicit comparator above, so 'fuelPerTick' sits after
+      // 'constellation' and before 'id'.
+      'straits',
       'tier',
+      'yieldPerTick',
     ]);
   });
 
@@ -231,6 +241,10 @@ describe('the frame carries the MAP, or nothing downstream can draw one', () => 
       tier: 'FRONTIER' as const,
       constellation: 'con-1' as never,
       lanes: [] as SystemId[],
+      straits: [],
+      yieldPerTick: 150 as never,
+      fuelPerTick: 10 as never,
+      richnessBps: 0,
     }));
     expect(renderFrame(source({ map: many })).map.length).toBe(64);
   });

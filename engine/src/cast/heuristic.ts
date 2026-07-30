@@ -698,6 +698,37 @@ export const CAST_ARMS_RESERVE_MULTIPLE = 2;
  * Reckonings and +59% at six.** The shortfall was escrowable, the constellation was holding thirty
  * times it, and what closed the line was the goods moving.
  *
+ * ── ★ RE-MEASURED AT 33, AND THE OPTIMUM MOVED FROM ONE TO ZERO ───────────
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **§16.12 #1's LODE made the constellation ~1% poorer where it stands, and that moved this
+ * constant.** A tier's total is conserved exactly; the total of the systems a cast actually STANDS
+ * on is conserved by nothing, and it measures **−1,692 a Reckoning, negative on seven seeds of
+ * eight** (`scripts/lode-residue.ts`). That is small, it compounds into the stock buffer, and at
+ * nine Reckonings it put `p:halcyon` **3,241 short on `g07` R8** — every unit of it in the
+ * **escrowable** bucket, while its constellation held **87,609 unpledged units above their own
+ * outstanding duty**. Twenty-seven times the shortfall, the verb legal, the bucket open, and
+ * `surplus - reserve` negative for every possible carrier. The same failure as version 26's, one
+ * feature later, and `the-constellation-closes-ranks.spec.ts` named it in its own message.
+ *
+ * | change | levyShort | red | CARRIED |
+ * |---|---|---|---|
+ * | reserve **1** on the merged tree | **3,241** | **1/576** | 530,861 |
+ * | **reserve 0 (shipped at 33)** | **0** | **0/576** | **748,220** |
+ *
+ * **Zero is now where the meters are clean, and that is the same claim the table above makes for
+ * one — re-taken rather than inherited.** The reduction is safe for the reason the code says at the
+ * call site: `surplus` is already net of the carrier's OWN outstanding duty (`carryableOf`), so the
+ * reserve is purely forward-looking. At zero a member gives away what it does not owe *this*
+ * Reckoning and keeps nothing against the *next* one — and its ground keeps producing in the
+ * meantime. It can never fund somebody else's bill out of its own.
+ *
+ * ⚑ **The 957 in the table above was NOT evidence against zero**, and that paragraph says so
+ * already: it was traced to `p:sable`'s own **non-escrowable presence share**, the one bucket no
+ * carry may ever fill, arriving through a changed trajectory rather than through goods it gave
+ * away. So zero was never measured to be *worse* for the reason it looked worse, and the merged
+ * tree is where that shows.
+ *
  * ── ⚑ AND IT DOES NOT REPEAL `aged-solvency.spec.ts`, WHICH WAS CHECKED ────
  *
  * That file pins a **structural** residue as a §10 calibration decision the owner holds: `g07`'s
@@ -709,7 +740,7 @@ export const CAST_ARMS_RESERVE_MULTIPLE = 2;
  * not a new one. Nine Reckonings is where the gate looks; twelve is where §10 is still owed an answer.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const CAST_CARRY_RESERVE_RECKONINGS = 1;
+export const CAST_CARRY_RESERVE_RECKONINGS = 0;
 
 /**
  * How much stronger than the other side the cast's committed hulls must be. *(calibrate)*
@@ -2212,7 +2243,29 @@ export class HeuristicCast {
       // because members that keep moving never settle next to each other. So the rule earns its place
       // twice, and the second reason is the better one: territory is worth holding only if somebody
       // else is standing on it.
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // ⚑ **33 POINTED THIS LINE AT `systemYield` AND LEFT THE COMMENT SAYING IT FORBADE LATERAL
+      // HOPS. IT NO LONGER DID.** With per-system yield the test `richer MARCHES <= this MARCHES` is
+      // FALSE, so every lateral hop the paragraph above was written to forbid became legal again —
+      // and the three measurements in it came back, on a tree where nothing else had changed:
+      // `g07` spread from 5 occupied systems to 6, `g01` took a **150** `levyShort` in Reckoning 2
+      // where master and the strait/sway half were both spotless, `g24` stopped publishing a battle
+      // line, and the coalition file's two PROPERTY assertions broke — `doubleMarches` 0 → **5** and
+      // one pledged hand of five walking off its stage. Five of the seven failures on that branch
+      // were this line, and it read as a §16.12 improvement in the diff.
+      //
+      // **The tier gate stays, and §16.12 #1 loses nothing by it.** The resource-distinct clause is
+      // about *choosing ground*, and the choice is already made one line down: `sharePerTick` comes
+      // from `worksQuote`, which is per-system (`quotedGross` divides `systemYield`), so among the
+      // destinations a tier crossing admits the cast now picks the RICHEST rather than an arbitrary
+      // one — which it could not do before, because all eighteen MARCHES quotes were equal on yield
+      // and differed only by occupancy. The gate answers *whether* to cross; the lode answers
+      // *where to*. `test/world/the-ground-is-not-uniform.spec.ts` asserts both halves.
+      // ══════════════════════════════════════════════════════════════════════════
       if (YIELD_PER_TICK[tierOf(runtime.world.map, to)] <= hereTier) continue;
+      // ★ §16.12 #1: per-system, via the engine's own quote. Never a recomputation — `worksQuote`
+      // is the number the affordance publishes and the one the PRODUCE phase pays out.
       const share = runtime.worksQuote(member.principal, to).sharePerTick;
       if (share <= hereShare) continue;
       const there = bodies.get(to) ?? 0;

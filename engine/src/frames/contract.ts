@@ -106,6 +106,18 @@ export const MAX_FRAME_COVER_ARCS = 8;
 export const MAX_FRAME_COVER_CHAINS = 4;
 
 /**
+ * ★ THE VERGE's cap (A13, §16.12 #1) — and it is the one budget here that is **not** a selection.
+ *
+ * Every other line budget picks the readable members of a set larger than a viewer can follow.
+ * A border cannot be sampled: drop one system and the fence has a hole in it, and a hole reads as
+ * *"nobody reaches here"* — which is a specific, false, and load-bearing claim, since bare ground is
+ * exactly where §16.12 #1 says a small holder can live. So this is a **ceiling on the map**, checked
+ * against `LAUNCH_SYSTEM_BOUNDS.max`, and the day the region grows past it the assertion fires and
+ * the renderer's aggregation gets designed rather than discovered.
+ */
+export const MAX_FRAME_SWAY_LINES = 32;
+
+/**
  * Formation bars one battle line may carry. Both sides, both caps.
  *
  * `MAX_FORMATIONS_PER_SIDE` is 6, so twelve is the honest ceiling. Not independently tunable: a
@@ -610,6 +622,152 @@ export interface MapSystem {
   readonly constellation: ConstellationId;
   /** Adjacent systems. A graph, never a geometry. */
   readonly lanes: readonly SystemId[];
+  /**
+   * ★ **THE PINCH** — the chokepoint signature (A13, §16.12 #1, §16.1 MUST-3).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE SIGNATURE, NAMED.** A claim **tints** a system · a compact draws a **link** · a venture is
+   * a **ring** · a siege **closes** one · a convoy is a **line that can be severed** · THE SAP is a
+   * **notched band** · THE PRINT puts a **price** on a place. **THE PINCH draws a lane narrowed at
+   * its waist**, notched with the number of lanes the region would have to go around if it were
+   * cut — or filled solid, with the count of systems stranded, when there is no way around at all.
+   *
+   * A viewer learns in one glance which four or five lanes the whole map must pass through, and
+   * then learns to watch them: `map.ts` has said since commit #1 that the inter-constellation gate
+   * *"is what a viewer learns to watch"*, and until now nothing drew it, so it was not.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * **A subset of {@link lanes}, so it publishes nothing new.** Every strait is a lane already on
+   * this row, and its classification is a pure function of the topology already here — any stranger
+   * holding this frame could compute the same set. Derived at read time rather than stored on a
+   * `Lane`, because `mapCanonical` feeds `mapHash` and `tick/snapshot.ts` compares that on restore.
+   *
+   * **Both ends appear.** The two rows for one strait carry the same numbers and name each other,
+   * which is what lets a renderer draw the pinch from either endpoint without a second lookup —
+   * and `assertFrameBudgets` checks the symmetry, because a one-sided strait would draw a pinch on
+   * one half of a lane.
+   */
+  readonly straits: readonly StraitEdge[];
+  /**
+   * ★ **THE LODE** — the resource-distinct signature (A13, §16.12 #1, §16.1 MUST-4).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE SIGNATURE, NAMED.** A claim **tints** a system · THE PINCH narrows a lane · THE VERGE
+   * fences a bloc · a WORKS **marks** a system · THE PRINT puts a **price** on it. **THE LODE sizes
+   * the node**: a system's dot is drawn in proportion to what its ground yields, so the map's rich
+   * ground is visibly big and its poor ground visibly small, and a viewer can see *why* a war is
+   * happening where it is happening.
+   *
+   * Before this the frame published `worksLines.yieldPerTick` as a **tier constant**, so every one of
+   * the eighteen MARCHES systems drew identically and the map was — in §16.1 MUST-4's own words —
+   * *"coloured copies"*. Nothing on any screen could distinguish the ground worth taking from the
+   * ground beside it, because nothing in the engine did either.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * `PUBLIC`, and it publishes nothing new: it is a pure function of the fixed map and two published
+   * constants (`YIELD_PER_TICK`, `FUEL_YIELD_PER_TICK`), both of which `agent.md` states and every
+   * relevant observation carries. Any stranger holding this frame can recompute it. It is **not** a
+   * stockpile and not an extraction total — `worksLines.extracted` is the cumulative handed-over
+   * figure and stays where it is; this is what the ground *can* do, which is a property of the place.
+   */
+  readonly yieldPerTick: Qty;
+  /** The same for FUEL. Zero outside the FRONTIER at every weight. */
+  readonly fuelPerTick: Qty;
+  /** Against the tier's flat figure, signed bps — the comparable number a renderer sizes on. */
+  readonly richnessBps: number;
+}
+
+/**
+ * One STRAIT, from one of its ends. See {@link MapSystem.straits} for the signature.
+ *
+ * `detourHops` and `severed` are the two different reasons a lane matters and a renderer draws them
+ * differently: a **detour** strait is narrowed and notched with the number, a **severing** one is
+ * drawn as a door with the count of systems behind it. Integers, both, because a float may not
+ * reach a hashed structure and this frame is canonicalised.
+ */
+export interface StraitEdge {
+  /** The system at the other end. Always present in the same frame's `map`. */
+  readonly to: SystemId;
+  /** Lanes in the cheapest way around, or `0` when there is none — then `severs` is true. */
+  readonly detourHops: number;
+  readonly severs: boolean;
+  /** Systems stranded if it is cut, smaller side. `0` unless `severs`. */
+  readonly severed: number;
+}
+
+/**
+ * ★ **THE VERGE** — the projection signature (A13, §16.12 #1).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SIGNATURE, NAMED.** THE PINCH draws the lanes; THE VERGE draws the **borders**. One row per
+ * system outside the Commons, naming whose force reaches it hardest and by how much. A renderer
+ * groups the rows by principal and draws **one closed fence per group** — so a bloc is a shape
+ * rather than a list, the seam where two fences meet is a contested border, and a system nobody
+ * reaches is drawn **bare**: no man's ground, which the launch map has plenty of.
+ *
+ * This is the field §16.12 #1's second clause is about. *"This creates local power, supply lines,
+ * borders, markets, and a real place for smaller groups to exist"* — and none of those five were
+ * drawable before, because the frame had no way to say where anybody's power stopped. A tint said
+ * who owned a system; nothing said who could **reach** one.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ## §11.2, and why this adds no disclosure at all
+ *
+ * Every input is `PUBLIC` and already on this frame:
+ *
+ *   - **the topology** — `map`, admitted with the argument that *"a lane an agent could not see is a
+ *     lane it could not have moved along"*;
+ *   - **holdings** — `handles`, admitted because *"a holding is rendered with its name on it"*;
+ *   - **claims** — `claimLines`, whose own argument is that *"territory nobody can see is not
+ *     territory"* and that a claim is A13's named signature;
+ *   - **the published constants** `SWAY_AT_SEAT`, `SWAY_PER_HOP`, `SWAY_STRAIT_TOLL`, which
+ *     `agent.md` states and `SWAY_STATEMENT` carries verbatim into every relevant observation.
+ *
+ * So a `SwayLine` is **integer arithmetic over facts already on the screen**, which A2 requires be
+ * exact and machine-readable, and A9's parity holds by construction: every agent's own `observe`
+ * carries `holding.sway` for itself and can compute any other principal's from `map` plus the
+ * public holding and claim rows. There is no live fact here an `observe` would not answer.
+ *
+ * ## What it may never carry, and each was considered
+ *
+ * **Where anybody's hands are.** `sway.ts` derives the reading from holdings and claims and
+ * deliberately not from hands, precisely so this line can exist: hand disposition is `SENSED` — *"a
+ * ship at sea is visible; its manifest is not"* — and a border drawn from live hand positions would
+ * put a fleet's location on a public screen and delete the intel market. The comment on
+ * `SwaySeats` states that as the reason for the input choice, not as a filter applied afterwards.
+ *
+ * **Anybody's stores, at the system or anywhere.** Sway reads no quantity of anything.
+ *
+ * **A second-place holder, or the full per-principal table.** Only the strongest reading per system
+ * is published. A full table would be 26 × N rows and would let a reader infer, for every
+ * principal, the exact set of ground it holds — which is public, but publishing the *derivation*
+ * rather than the *border* would make this a targeting service rather than a picture. The border is
+ * what renders; the rest an agent computes itself.
+ */
+export interface SwayLine {
+  readonly system: SystemId;
+  /**
+   * Whoever projects hardest here, or `null` when nobody reaches at all.
+   *
+   * `null` rather than an omitted row, for `standings`' reason inverted: an absent row and an empty
+   * one read the same to a client, and *"nobody's force reaches this place"* is a fact this frame
+   * must be able to state — it is where a small holder can live, which is §16.12 #1's own last
+   * clause.
+   */
+  readonly principal: PrincipalId | null;
+  /** That principal's SWAY here, `1..SWAY_AT_SEAT`. `0` exactly when `principal` is null. */
+  readonly sway: number;
+  /**
+   * How many principals reach this system at all — **the field that says whether the name beside
+   * it means anything.**
+   *
+   * `MarketLine.venues`' argument, in the political register: with one reacher a border is a
+   * frontier with empty space behind it, and with three it is contested ground. Without this, a
+   * lone reacher and a three-way standoff draw identically.
+   */
+  readonly reachers: number;
+  /** True when this system is a STRAIT's endpoint — the ground whose toll its holder waives. */
+  readonly gate: boolean;
 }
 
 export interface SyndicateLine {
@@ -1064,14 +1222,20 @@ export interface ReckoningFrame {
   readonly places: readonly PlaceName[];
   readonly hallOfFame: readonly HallOfFameRow[];
   readonly syndicateLines: readonly SyndicateLine[];
-  /** The topology, so the map can be drawn at all (A13). Fixed per world. */
   /** ★ A13's first Phase 3 signature: THE FRONT BAND. A swept band of tinted systems. */
   readonly frontBands: readonly FrontBand[];
   /** ★ A13's second: THE COVER ARC. Filled for the escrowed half, hollow for the elective. */
   readonly coverArcs: readonly CoverArc[];
   /** ★ A13's third: THE COVER CHAIN. Snaps at the link that broke; every link inward greys. */
   readonly coverChains: readonly CoverChain[];
+  /**
+   * The topology, so the map can be drawn at all (A13). Fixed per world — including
+   * `MapSystem.straits`, which is a function of the topology and moves only when the region grows,
+   * and `MapSystem.yieldPerTick`/`richnessBps`, which are a function of the map's own seed.
+   */
   readonly map: readonly MapSystem[];
+  /** ★ §16.12 #1's signature: **THE VERGE** — where each bloc's force stops, which is a border. */
+  readonly swayLines: readonly SwayLine[];
   readonly glyphs: readonly VentureGlyph[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
@@ -1640,6 +1804,109 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
           `${line.good} at ${line.venue} carries "${key}", which reads as a resting order rather than a ` +
             'completed fill — §11.2 gates the book to venues the reader has a hand at, and a galaxy-wide ' +
             'ladder on a frame is both A9 inverted and the manifest a raid is supposed to have to scout for',
+        );
+      }
+    }
+  }
+
+  // ── ★ THE PINCH: A STRAIT MUST BE A LANE, AND MUST HAVE TWO ENDS ─────────
+  //
+  // A pinch drawn on a lane that is not there, or on one half of a lane, is a border a viewer
+  // learns and an agent cannot plan against — and `world/sway.ts` charges a real toll at exactly
+  // these edges, so a frame that disagreed with the engine here would be scar #1 with territory on
+  // it. Both checks are cheap and both have a failure that renders as something plausible.
+  const mapById = new Map(frame.map.map((sys) => [sys.id, sys] as const));
+  for (const sys of frame.map) {
+    for (const edge of sys.straits) {
+      if (!sys.lanes.includes(edge.to)) {
+        problems.push(
+          `${sys.id} draws a STRAIT to ${edge.to} with no lane between them — a pinch is a property of a ` +
+            'lane and cannot exist without one',
+        );
+        continue;
+      }
+      const other = mapById.get(edge.to);
+      if (other === undefined) {
+        problems.push(`${sys.id} draws a STRAIT to ${edge.to}, which is not on this frame's map`);
+        continue;
+      }
+      const back = other.straits.find((e) => e.to === sys.id);
+      if (back === undefined) {
+        problems.push(
+          `${sys.id}~${edge.to} is a STRAIT from one end only; a renderer drawing the pinch from ${edge.to} ` +
+            'would draw an ordinary lane over the same gate',
+        );
+      } else if (back.detourHops !== edge.detourHops || back.severs !== edge.severs || back.severed !== edge.severed) {
+        problems.push(
+          `${sys.id}~${edge.to} reports different numbers at each end (${edge.detourHops}/${edge.severed} vs ` +
+            `${back.detourHops}/${back.severed}); one lane is one fact`,
+        );
+      }
+      if (edge.severs !== (edge.detourHops === 0)) {
+        problems.push(
+          `${sys.id}~${edge.to} reports severs=${String(edge.severs)} with detourHops=${edge.detourHops}; a ` +
+            'lane either has a way around it or it does not',
+        );
+      }
+      // A8, on the surface a viewer reads. The engine refuses this at map construction
+      // (`assertStraits`), and it is checked again here because the frame is a second rules
+      // surface: a pinch drawn on a civic route teaches a viewer that the Commons can be
+      // blockaded, which §16.1 MUST-3 promises it cannot.
+      if (sys.tier === 'COMMONS' || other.tier === 'COMMONS') {
+        problems.push(
+          `${sys.id}~${edge.to} draws a STRAIT touching the COMMONS (${sys.tier}/${other.tier}); the Commons ` +
+            'keeps a protected civic route and A8 is a floor, not a default',
+        );
+      }
+    }
+  }
+
+  // ── ★ THE VERGE: A FENCE WITH NO HOLES IN IT ─────────────────────────────
+  //
+  // The budget is a ceiling on the map rather than a selection (see `MAX_FRAME_SWAY_LINES`), and
+  // the rest of these guards exist because every one of them has a failure that renders as a
+  // *plausible* border: a named principal at sway 0 draws a fence around ground it cannot reach,
+  // and an unnamed one at sway 3 draws bare ground somebody owns.
+  if (frame.swayLines.length > MAX_FRAME_SWAY_LINES) {
+    problems.push(
+      `${frame.swayLines.length} sway lines, budget is ${MAX_FRAME_SWAY_LINES} — THE VERGE is a fence and a ` +
+        'fence cannot be sampled; a dropped system reads as ground nobody reaches',
+    );
+  }
+  for (const line of frame.swayLines) {
+    if (!mapById.has(line.system)) {
+      problems.push(`a sway line names ${line.system}, which is not on this frame's map`);
+      continue;
+    }
+    if (mapById.get(line.system)?.tier === 'COMMONS') {
+      problems.push(
+        `${line.system} is COMMONS and carries a sway line; hostile action there is INVALID rather than ` +
+          'contested, so drawing a border across it would teach a viewer the floor is negotiable (A8)',
+      );
+    }
+    if ((line.principal === null) !== (line.sway === 0)) {
+      problems.push(
+        `${line.system} names ${String(line.principal)} at sway ${line.sway}; a named reacher has 1 or more ` +
+          'and bare ground has exactly 0 — the two fields are one fact',
+      );
+    }
+    if (line.sway < 0 || line.reachers < 0) {
+      problems.push(`${line.system} renders a negative sway (${line.sway}) or reacher count (${line.reachers})`);
+    }
+    if ((line.reachers === 0) !== (line.principal === null)) {
+      problems.push(
+        `${line.system} reports ${line.reachers} reacher(s) and ${String(line.principal)} as the strongest; ` +
+          'a system with a strongest reacher has at least one, and one with none has no strongest',
+      );
+    }
+    // The stockpile refusal, the third layer to carry it. A border is the most tempting place to
+    // hang "and this is what they have there", which is precisely the `SENSED` quantity the claim
+    // line's own guard refuses — and hand positions, which sway is deliberately not derived from.
+    for (const key of Object.keys(line)) {
+      if (/stock|reserve|held|cargo|hand|goods|stores|escrow|cover|remaining/i.test(key)) {
+        problems.push(
+          `${line.system}'s sway line carries "${key}"; a border is derived from HOLDINGS and CLAIMS, both ` +
+            'PUBLIC, and never from hands or stores — §11.2 keeps a ship visible and its manifest not',
         );
       }
     }

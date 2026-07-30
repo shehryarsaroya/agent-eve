@@ -117,6 +117,22 @@ export interface CampaignView {
     readonly terrain: number;
     readonly attacker_hands: number;
     readonly defender_hands: number;
+    /**
+     * ★ §16.12 #1: the attacker's SWAY at the OBJECTIVE — the cap `attacker_hands` was counted under.
+     *
+     * Published because a force reading that silently dropped a hand is the worst kind of A2 failure:
+     * the attacker can see three hands standing at the objective and read a force of one, with
+     * nothing in the payload explaining the gap. `world/sway.ts` is the rule; this is the number.
+     */
+    readonly attacker_sway: number;
+    /**
+     * ★ Hands standing on the ATTACKER's side that SWAY did not let count — its own and its allies'.
+     *
+     * The mechanic's meter on the agent-facing surface, and the field that tells an attacker its war
+     * is failing to **distance** rather than to a defence. Positive here means take ground nearer or
+     * take the STRAIT in the way; it does not mean bring more hands.
+     */
+    readonly attacker_unsupplied: number;
     readonly outcome_if_pulsed_now: 'BREACH' | 'REBUFF';
   };
   readonly bond: Minor;
@@ -224,6 +240,8 @@ function viewOf(
       terrain: reading.terrain,
       attacker_hands: reading.attackerHands + reading.attackerAllies,
       defender_hands: reading.defenderHands + reading.defenderAllies,
+      attacker_sway: reading.attackerSway,
+      attacker_unsupplied: reading.attackerUnsupplied,
       outcome_if_pulsed_now: reading.attackerForce > reading.defenderForce ? 'BREACH' : 'REBUFF',
     },
     bond: campaign.bond,

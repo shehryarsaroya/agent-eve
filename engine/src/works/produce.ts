@@ -62,9 +62,9 @@ import type { EventId, PrincipalId, SystemId } from '../core/types.js';
 import { qty, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import { GOODS_FAUCET, storesAccount, type Ledger } from '../ledger/index.js';
-import { tierOf, type WorldMap } from '../world/map.js';
+import { type WorldMap } from '../world/map.js';
 import type { Book, WorksId } from './book.js';
-import { FUEL_GOOD, WORKS_YIELD_GOOD } from './params.js';
+import { FUEL_GOOD, systemFuelYield, systemYield, WORKS_YIELD_GOOD } from './params.js';
 import { rentApplies, rentOn, type RentTerms } from './rent.js';
 
 export interface ExtractionRow {
@@ -126,9 +126,10 @@ export function produce(args: {
   const out: ExtractionRow[] = [];
 
   for (const system of [...book.workedSystems()].sort(compareIds)) {
-    const tier = tierOf(map, system);
-    const shares = book.sharesAt(system, tier, tick);
-    const fuelShares = book.fuelSharesAt(system, tier, tick);
+    // ★ §16.12 #1: this SYSTEM's yield, not its tier's flat figure. `systemYield` conserves the
+    // tier total exactly, so the population-independence this loop rests on is unchanged.
+    const shares = book.sharesAt(system, systemYield(map, system), tick);
+    const fuelShares = book.fuelSharesAt(system, systemFuelYield(map, system), tick);
     // Read ONCE per system, not once per WORKS: the terms are a property of the ground, and
     // asking twice inside a loop is how two tenants at one system could ever be quoted
     // different rates by the same tick.

@@ -138,6 +138,7 @@ import {
   type LevySettlement,
   type LevySubject,
   type SweepPort,
+  LEVY_DUTY_PER_PRINCIPAL,
 } from '../levy/index.js';
 import {
   DefaultRegister,
@@ -472,6 +473,7 @@ import {
   MAX_RAID_LINES,
   type ClaimLine,
   type MarketLine,
+  type SwayLine,
   type WorksLine,
   type SyndicateLine,
 } from '../frames/contract.js';
@@ -481,6 +483,7 @@ import {
   Book as SovereigntyBook,
   CESSION_SALVAGE_BPS,
   CHARGE_BALLOT,
+  CHARGE_BY_TIER,
   CHARGE_GOOD,
   CHARGE_MISSES_TO_LAPSE,
   CHARGE_STATEMENT,
@@ -545,12 +548,21 @@ import {
   reject,
   releaseHand,
   route,
+  straitsAt,
+  straitsHeld,
+  swayAt,
+  swayNote,
+  swayReach,
+  swayShortfall,
+  SWAY_AT_SEAT,
+  SWAY_STATEMENT,
   systemOf,
   tierOf,
   type Enrolment,
   type HaulPort,
   type HaulQuote,
   type Rejection,
+  type SwaySeats,
   type TransitLot,
   type WorldResult,
   type WorldState,
@@ -1765,11 +1777,58 @@ import {
  * check** here rather than evidence — they must be unchanged from master, and a move in either
  * direction would mean this touched the economy, which it must not.
  *
+ * ── 28 · ★ THE MAP GETS BORDERS: STRAITS AND SWAY (§16.12 #1) ────────────────
+ *
+ * **Stacked on 27, not blended**, for 23/24/27's reason: an operator reading a
+ * `RULES_VERSION_MISMATCH` has to know which change moved which table.
+ *
+ * `PASS-TERRITORY-POLITICS` §16.12's **first-ranked** feature, above stewardship sovereignty and
+ * above campaigns, both of which shipped before it: *"a fixed, resource-distinct graph with
+ * chokepoints and capacity-limited projection … this creates local power, supply lines, borders,
+ * markets, and a real place for smaller groups to exist."* Before this, no lane was more important
+ * than another to any mechanic and force had unlimited reach.
+ *
+ * **Two new nouns, both canon (§3), both derived and neither stored:**
+ *
+ *   1. **STRAIT** (`world/strait.ts`) — a lane the region cannot cheaply route around. **Ten of the
+ *      launch map's thirty-five**, including all four constellation gates. Derived from the graph on
+ *      purpose: a field on `Lane` would move `mapCanonical` and therefore `mapHash`, which every
+ *      snapshot carries and `tick/snapshot.ts` compares on restore — a live world would refuse its
+ *      own record over a topology that had not changed by one lane.
+ *   2. **SWAY** (`world/sway.ts`) — how many HANDS a principal may count as force where it is not
+ *      defending its own ground: `SWAY_AT_SEAT` (3) at each place it holds, −1 per lane, and
+ *      −`SWAY_STRAIT_TOLL` (2) per STRAIT it holds neither end of.
+ *
+ * ── WHAT DIVERGES, AND WHY EACH ─────────────────────────────────────────────
+ *
+ *   1. **`readForce` drops a RAIDER party whose sway at the stage is 0.** Every world raid with an
+ *      out-of-reach raider joiner resolves differently, so the divergence is from the first such
+ *      standoff — and it moves goods, so it moves the ledger.
+ *   2. **`readCampaignForce` caps the attacker's and each ATTACKER ally's hands at their sway.** A
+ *      pulse whose attacker had more hands standing than reach recomputes, and a BREACH can become
+ *      a REBUFF, which changes who holds territory and therefore who pays a Charge and collects
+ *      Rent.
+ *   3. **`demand`, `join {raid, RAIDER}` and `join {campaign}` refuse where sway is 0** — and
+ *      `join {campaign}` additionally refuses a Commons-bound principal outright, which closes
+ *      24's own open finding (AGT-S2: *"offered both sides of a war its hands can never reach"*).
+ *      A journalled action that used to land now refuses; since a venture id is a hash over a
+ *      world-global counter, one refusal renames everything minted after it.
+ *
+ * **What deliberately does NOT diverge: travel.** `move`, `haul` and `deliver` do not read sway and
+ * must never. Two hazards live on that path — a member's goods and hands in different systems in 325
+ * of 576 observations, and `levyMove` once refusing a member's only legal route to its own tribute —
+ * and gating travel would worsen both while breaking §5.2's promise that the Levy is payable.
+ *
+ * **What the balance gate sees**, 8 seeds × 3 · 6 · 9 Reckonings: every effect of this change points
+ * at *less* predation and *no* weaker defence, so the gate is a safety check rather than evidence.
+ * The figures are in `TRACKER.md`; `levyShort` 0 and red lines 0/192 · 0/384 · 0/576 all three
+ * horizons, matching master.
+ *
  * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
  * prints the exact string, and a bare tick is refused.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 31;
+export const RULES_VERSION = 33;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -1856,7 +1915,6 @@ import {
   ALLOY_STATEMENT,
   ALLOY_TIER,
   FUEL_GOOD,
-  FUEL_YIELD_PER_TICK,
   REFINE_IN_QTY,
   REFINE_OUT_QTY,
   WORKS_BUILD_QTY,
@@ -1865,7 +1923,10 @@ import {
   WORKS_GOODS_IN_CURRENCY_MINOR,
   WORKS_YIELD_GOOD,
   WORKS_SPINUP_TICKS,
-  YIELD_PER_TICK,
+  assertMapLodes,
+  systemFuelYield,
+  systemLode,
+  systemYield,
 } from '../works/params.js';
 import {
   coverAffordances,
@@ -3117,6 +3178,21 @@ export class Runtime {
     // at construction, rather than discovered on the fifth Reckoning of somebody's war.
     assertCampaignSchedule();
     this.world = createWorld(launchMap());
+    // ── ★ §16.12 #1: THE GROUND, CHECKED AT CONSTRUCTION ──────────────────
+    //
+    // `assertMapStructure` cannot call this: the tier bases live in `works/params.ts`, which depends
+    // on `world/`, so the check belongs where both are already in scope. Two clauses, and both fail
+    // in a direction nothing downstream could diagnose — a tier whose shares over-sum breaks A15's
+    // map-bounded-output proof and starts INV-W1 halting worlds for an invisible reason; a tier
+    // whose shares are all equal is `premiumBps`-structurally-zero with more code behind it.
+    // The floor figures come from HERE and not from `works/params.ts`, because that edge closes a
+    // module cycle into `sovereignty/params.ts`'s top-level initialisation — `tsc` accepts it and the
+    // engine does not start. `LodeFloor`'s docblock records the exact ReferenceError.
+    assertMapLodes(this.world.map, {
+      dutyPerReckoning: Number(LEVY_DUTY_PER_PRINCIPAL),
+      chargeByTier: CHARGE_BY_TIER,
+      ticksPerReckoning: TICKS_PER_RECKONING,
+    });
     this.ledger = new Ledger();
     this.hazards = options.hazards ?? false;
     // Attached in production, so `target` and `measure` are checked at the door and a
@@ -4017,7 +4093,7 @@ export class Runtime {
    */
   rentReadAt(system: SystemId, claimant: PrincipalId, tick = this.engine.tick): RentRead {
     const terms = this.rentTermsAt(system);
-    const shares = this.worksBook.sharesAt(system, tierOf(this.world.map, system), tick);
+    const shares = this.worksBook.sharesAt(system, systemYield(this.world.map, system), tick);
     let perTick = 0;
     for (const [id, amount] of shares.entries()) {
       const works = this.worksBook.at(id);
@@ -4626,6 +4702,11 @@ export class Runtime {
       tierOf: (system) => port.tierOf(system),
       handsDefending: (principal, stage) => port.handsDefending(principal, stage),
       isSeated: (principal) => port.isSeated(principal),
+      // ★ §16.12 #1. Through `swayFor`, which is also what `readForce` reads at resolution, so the
+      // gate that refuses a demand and the arithmetic that would have scored it are one number.
+      swayAt: (principal, stage) => this.swayFor(principal, stage),
+      swayShortfall: (principal, stage) => this.swayShortfallFor(principal, stage),
+      isCommonsBound: (principal) => principalIsCommonsBound(this.world, principal),
       freeStoresOf: (principal) => freeStores(this.ledger, principal),
       lockStake: (args) => {
         try {
@@ -4781,6 +4862,9 @@ export class Runtime {
         if (holdingId === undefined) return false;
         return world.holdings.get(holdingId)?.state === 'INTACT';
       },
+      // ★ §16.12 #1. Through `swayFor` so the demand gate, the raid view, the resolver and the
+      // observation all read one implementation over one definition of "ground you hold".
+      swayAt: (principal, stage) => this.swayFor(principal, stage),
 
       seize: (args) => {
         const account = storesAccount(args.from);
@@ -5366,6 +5450,27 @@ export class Runtime {
     let stake = minor(0);
     let encumbranceId: string | null = null;
     if (rawSide === 'RAIDER') {
+      // ── ★ §16.12 #1: A RAIDER JOINER MUST BE SUPPLIED; A DEFENDER JOINER NEED NOT BE ──
+      //
+      // Inside the `RAIDER` branch on purpose, and it is the same asymmetry `readForce` applies to
+      // the sum it is the gate for. §16.1 MUST-3 built chokepoints to *"let a smaller defender
+      // exploit interior lines"*, so the side that is standing on the ground being fought over is
+      // never read this way — and a DEFENDER joiner walked a hand to somebody else's stage to hold
+      // it, which is presence already paid for in moves.
+      //
+      // Before the stake, because the stake is recoverable and an action is not: a joiner refused
+      // after a lock would have to have it released, and `readForce` would have counted a party
+      // whose hands buy nothing anyway.
+      const sway = this.swayFor(req.principal, raid.stage);
+      if (sway <= 0) {
+        return reject(
+          'A4',
+          `${swayNote(0, raid.stage, this.swayShortfallFor(req.principal, raid.stage))} A RAIDER's hands ` +
+            `count as force only within its SWAY, so joining ${raid.id} on that side would buy the raid ` +
+            `nothing. Joining as ${DEFENDER_SIDE} reads none of this — defending ground somebody is ` +
+            `standing on is never capped. ${SWAY_STATEMENT}`,
+        );
+      }
       const free = freeStores(this.ledger, req.principal);
       if (free < RAID_JOIN_STAKE_MINOR) {
         return reject(
@@ -10525,7 +10630,6 @@ export class Runtime {
   worksLines(tick: number): readonly WorksLine[] {
     const out: WorksLine[] = [];
     for (const works of this.worksBook.liveInOrder()) {
-      const tier = tierOf(this.world.map, works.system);
       const occupants = this.worksBook.liveAt(works.system).length;
       const online = tick >= works.onlineAtTick;
       const terms = this.rentTermsAt(works.system);
@@ -10533,7 +10637,7 @@ export class Runtime {
       // quoting a share the engine does not pay would be the frame contradicting the ledger.
       const gross = online
         ? Math.trunc(
-            YIELD_PER_TICK[tier] /
+            systemYield(this.world.map, works.system) /
               Math.max(1, this.worksBook.liveAt(works.system).filter((w) => tick >= w.onlineAtTick).length),
           )
         : 0;
@@ -10544,7 +10648,9 @@ export class Runtime {
         works: works.id,
         system: works.system,
         holder: works.holder,
-        yieldPerTick: YIELD_PER_TICK[tier],
+        // ★ §16.12 #1: this SYSTEM's yield. The frame drew every MARCHES mark at 110 before this,
+        // so a viewer could not see which ground was worth taking — and neither could an agent.
+        yieldPerTick: systemYield(this.world.map, works.system),
         occupants,
         sharePerTick: split.net,
         legend: online ? 'EXTRACTING' : `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`,
@@ -10555,9 +10661,12 @@ export class Runtime {
         rentBps: rentApplies(terms, works.holder) ? (terms?.bps ?? 0) : 0,
         rentPerTick: split.rent,
         rentPaid: works.rentPaid,
-        // The second good. A property of the tier divided by the online count, exactly like the
-        // first — so the map, and not a stockpile, is what a viewer reads (§11.2).
-        fuelPerTick: online ? (this.worksBook.fuelSharesAt(works.system, tier, tick).get(works.id) ?? 0) : 0,
+        // The second good. A property of the **system** divided by the online count, exactly like
+        // the first — so the map, and not a stockpile, is what a viewer reads (§11.2). Per-system
+        // since §16.12 #1: some frontier ground makes far more fuel than the rest of it.
+        fuelPerTick: online
+          ? (this.worksBook.fuelSharesAt(works.system, systemFuelYield(this.world.map, works.system), tick).get(works.id) ?? 0)
+          : 0,
         fuelExtracted: works.fuelExtracted,
       });
     }
@@ -11580,7 +11689,7 @@ export class Runtime {
     // occupancy bug this comment records.
     const held = this.worksBook.ofPrincipal(principal).length > 0;
     const quotedGross = Math.trunc(
-      YIELD_PER_TICK[tier] / (held ? Math.max(1, occupants) : occupants + 1),
+      systemYield(this.world.map, system) / (held ? Math.max(1, occupants) : occupants + 1),
     );
     const quotedTerms = this.rentTermsAt(system);
     const quotedSplit = rentOn({ terms: quotedTerms, extractor: principal, gross: qty(quotedGross) });
@@ -11638,7 +11747,7 @@ export class Runtime {
       // `costQty`/`availableQty` below are the COST side and stay in `WORKS_GOOD`
       // (`chargeGoodAt` measures that good). The two were only ever equal by accident.
       good: WORKS_YIELD_GOOD,
-      yieldPerTick: YIELD_PER_TICK[tier],
+      yieldPerTick: systemYield(this.world.map, system),
       occupants,
       // ── THE CROWDING DIVISION IS ABOVE; THE RENT COMES OFF IT HERE ──────────
       //
@@ -11674,12 +11783,15 @@ export class Runtime {
       // the whole of it, so this stays a two-clause test rather than a four-clause one.
       affordable: free >= totalMinor && (!goodsShort || payingGoodsInCurrency),
       fuelGood: FUEL_GOOD,
-      fuelYieldPerTick: FUEL_YIELD_PER_TICK[tier],
+      // ★ §16.12 #1: this SYSTEM's fuel, not its tier's. A `worksQuote` is the figure an agent reads
+      // BEFORE it spends a one-way priced act, so a tier constant here is the A2 failure at the exact
+      // moment it costs most — and it is what `a-good-only-the-frontier-makes.spec.ts` caught.
+      fuelYieldPerTick: systemFuelYield(this.world.map, system),
       // Divided the same way the ore share is — `occupants + 1` for a prospective build, the live
       // occupancy once you already hold one — because two divisions of the same occupancy is how
       // one number ends up telling an agent two things.
       fuelSharePerTick: Math.trunc(
-        FUEL_YIELD_PER_TICK[tier] / (held ? Math.max(1, occupants) : occupants + 1),
+        systemFuelYield(this.world.map, system) / (held ? Math.max(1, occupants) : occupants + 1),
       ),
     };
   }
@@ -13051,6 +13163,152 @@ export class Runtime {
   }
 
   /**
+   * ★ **THE GROUND A PRINCIPAL PROJECTS FROM — §16.12 #1's one home in the runtime.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * Its HOLDING's system plus every live CLAIM. **Five ports read sway and every one of them
+   * reads it through here**, which is the whole reason this method exists rather than each port
+   * assembling its own list: the demand gate, the raid force reading, the campaign roster gate,
+   * the pulse force reading and the observation must agree about what counts as ground, or an
+   * agent is admitted to a war whose pulses then count nothing it brings (scar #5, and the exact
+   * shape of the AGT-S2 defect this feature closes).
+   *
+   * A **Commons** holding contributes nothing: `sway.ts` filters it, so a nursery-seated principal
+   * has no seats at all and reads 0 everywhere abroad — which is A15's outbound half arriving as
+   * arithmetic instead of as a second predicate.
+   *
+   * Both halves are `PUBLIC` (§11.2): a holding is drawn on the map with its name on it and a
+   * claim tints a system. Nothing here reads a hand's position, which is `SENSED` — that is what
+   * lets the frame publish a sway border at all (`frames/projection.ts`).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private swaySeatsOf(principal: PrincipalId): SwaySeats {
+    const systems: SystemId[] = [];
+    const holding = this.world.holdingByPrincipal.get(principal);
+    const row = holding === undefined ? undefined : this.world.holdings.get(holding);
+    // A FALLEN holding is a ruin, not a base. It projects nothing, and the row survives on purpose
+    // (`holding.ts`: "the ruin is a permanent projection the world remembers").
+    if (row !== undefined && row.state === 'INTACT') systems.push(row.system);
+    for (const claim of this.sovereignty.claimsOf(principal)) systems.push(claim.system);
+    return { principal, systems };
+  }
+
+  /**
+   * ★ **THIS SYSTEM'S GROUND** (§16.12 #1's resource-distinct clause) — with `gate` folded in, so the
+   * two halves of the feature arrive together at every reader.
+   *
+   * The pairing is the feature rather than a convenience: a rich system behind a STRAIT you do not
+   * hold is a prize you cannot take, and a poor one on a gate is a toll booth. Publishing yield
+   * without the gate, or the gate without the yield, gives an agent half of one decision.
+   */
+  lodeFor(system: SystemId): {
+    readonly tier: ZoneTier;
+    readonly weight: number;
+    readonly yieldPerTick: Qty;
+    readonly fuelPerTick: Qty;
+    readonly richnessBps: number;
+    readonly gate: boolean;
+  } {
+    const lode = systemLode(this.world.map, system);
+    return { ...lode, gate: straitsAt(this.world.map, system).length > 0 };
+  }
+
+  /** Hands `principal` may project at `system`. The one reading every caller shares. */
+  swayFor(principal: PrincipalId, system: SystemId): number {
+    return swayAt(this.world.map, this.swaySeatsOf(principal), system);
+  }
+
+  /**
+   * ★ **THE VERGE** (A13, §16.12 #1) — one row per non-Commons system, naming whose force reaches it
+   * hardest, so a renderer can draw a closed fence per bloc and a border where two fences meet.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **PUBLIC, AND IT IS THE ENGINE'S INPUT CHOICE THAT MAKES IT SO.** Every reading here comes from
+   * HOLDINGS and CLAIMS — both `PUBLIC` and both already on this frame — and never from where a hand
+   * is standing, which is `SENSED`. `frames/projection.ts` carries the full §11.2 argument.
+   *
+   * Public and complete rather than per-reader: A9's parity is satisfied because any agent can
+   * compute the identical table from `map` plus the public holding and claim rows, so nothing here
+   * is a live fact an `observe` would not answer.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Ties go to the lower principal id, which is DET-2's rule and the same tie-break `map.route`
+   * uses. A contested system therefore renders **stably** across Reckonings while it stays tied,
+   * rather than flickering between two blocs on iteration order — a spectator reads position as
+   * meaning, so a border that swims destroys the meaning.
+   */
+  private swayLines(): readonly SwayLine[] {
+    const out: SwayLine[] = [];
+    // Canonical principal order, so the tie-break below is the roster's rather than a Map's.
+    const principals = [...this.world.holdingByPrincipal.keys()].sort(compareIds);
+    for (const system of this.world.map.systemOrder) {
+      if (tierOf(this.world.map, system) === 'COMMONS') continue;
+      let best: PrincipalId | null = null;
+      let bestSway = 0;
+      let reachers = 0;
+      for (const who of principals) {
+        const sway = this.swayFor(who, system);
+        if (sway <= 0) continue;
+        reachers += 1;
+        if (sway > bestSway) {
+          best = who;
+          bestSway = sway;
+        }
+      }
+      out.push({
+        system,
+        principal: best,
+        sway: bestSway,
+        reachers,
+        // Whether this is a STRAIT's endpoint — the ground whose toll its holder stops paying, and
+        // the reason a fence has a shape rather than a radius.
+        gate: straitsAt(this.world.map, system).length > 0,
+      });
+    }
+    return out;
+  }
+
+  /** How far short a zero reading fell, for the refusal's explanation. `null` = nothing reaches. */
+  swayShortfallFor(principal: PrincipalId, system: SystemId): number | null {
+    return swayShortfall(this.world.map, this.swaySeatsOf(principal), system);
+  }
+
+  /**
+   * The standing `holding.sway` block: every place this principal projects into, and the STRAITS
+   * whose toll it does not pay.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE MECHANIC HAS TO BE VISIBLE BEFORE IT BITES, NOT ONLY WHEN IT REFUSES.** `demand.ts`
+   * records the identical lesson about §9's aggression capacity — *"the only mention of the
+   * capacity in an observation was the `withheld` reason that fires when it hits zero, so an agent
+   * learned the resource existed by exhausting it."* A reach limit discovered through a refusal is
+   * the same defect: the agent has already spent the move that walked its hand into a place where
+   * the hand counts for nothing.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Only systems at 1 or more appear, so the block is 3–8 rows on the launch map rather than 26
+   * mostly-zero ones. `swayFor` answers a specific system for free at any time.
+   */
+  swayBlockFor(principal: PrincipalId): {
+    readonly at_seat: number;
+    readonly reaches: readonly { readonly system: SystemId; readonly hands: number }[];
+    readonly straits_held: readonly SystemId[];
+    readonly rule: string;
+  } {
+    const seats = this.swaySeatsOf(principal);
+    const reaches: { readonly system: SystemId; readonly hands: number }[] = [];
+    // `swayReach` iterates `map.systemOrder`, which is canonical, so this array is already in one
+    // order on every host without a sort (DET-2).
+    for (const [system, hands] of swayReach(this.world.map, seats)) reaches.push({ system, hands });
+    return {
+      at_seat: SWAY_AT_SEAT,
+      reaches,
+      straits_held: straitsHeld(this.world.map, seats),
+      rule: SWAY_STATEMENT,
+    };
+  }
+
+  /**
    * Everything a PULSE reads. Four methods, and two of them are shared with §9 on purpose.
    *
    * `handsAt` is `predationPort`'s `handsDefending` — the same predicate, not a second copy, because
@@ -13066,6 +13324,9 @@ export class Runtime {
         return claim === null ? null : { claimant: claim.claimant, state: claim.state };
       },
       handsAt: (principal, system) => port.handsDefending(principal, system),
+      // ★ §16.12 #1: the same reading `joinRefusal` admitted the roster on, so an ally that was
+      // allowed in is an ally whose hands can count.
+      swayAt: (principal, system) => this.swayFor(principal, system),
       materielLotsAt: (principal, system) => this.goodLotsAt(principal, system, MATERIEL_GOOD),
     };
   }
@@ -13212,6 +13473,9 @@ export class Runtime {
     }
     const port: RosterPort = {
       isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
+      swayAt: (principal, objective) => this.swayFor(principal, objective),
+      swayShortfall: (principal, objective) => this.swayShortfallFor(principal, objective),
+      isCommonsBound: (principal) => principalIsCommonsBound(this.world, principal),
       freeStoresOf: (principal) => freeStores(this.ledger, principal),
       lockStake: (args) =>
         this.lockCampaignCapital(args.campaign, args.principal, args.amount, args.tick, 'stake'),
@@ -13607,6 +13871,9 @@ export class Runtime {
     return joinRefusal(
       {
         isSeated: (who) => this.world.holdingByPrincipal.get(who) !== undefined,
+        swayAt: (who, objective) => this.swayFor(who, objective),
+        swayShortfall: (who, objective) => this.swayShortfallFor(who, objective),
+        isCommonsBound: (who) => principalIsCommonsBound(this.world, who),
         freeStoresOf: (who) => freeStores(this.ledger, who),
         // Never called from the affordance path — `joinRefusal` only reads — and supplied rather than
         // stubbed so the port is the same object the verb builds. A port with a different shape here
@@ -15141,13 +15408,35 @@ export class Runtime {
       // Passed straight through from `world.map` — no coordinates, because position is presentation
       // and x/y on a system would put presentation inside `state_hash`, where a layout tweak becomes
       // a replay divergence. `lanes` is a graph and a graph is enough.
+      //
+      // ★ `straits` is **THE PINCH** (§16.12 #1, §16.1 MUST-3): the subset of `lanes` the region
+      // cannot cheaply route around, with the detour a renderer notches the waist with. A pure
+      // function of the topology already on this row, so it publishes nothing new — and derived
+      // rather than stored for `world/strait.ts`'s reason: a field on `Lane` would move `mapHash`,
+      // which every snapshot carries and compares on restore.
       map: [...this.world.map.systems.values()].map((sys) => ({
         id: sys.id,
         name: sys.name,
         tier: sys.tier,
         constellation: sys.constellation,
         lanes: [...sys.lanes],
+        // ★ THE LODE (§16.12 #1's resource-distinct clause). A pure function of the fixed map and
+        // two published constants, so it adds no disclosure — and it is what lets a renderer size a
+        // node by what its ground is worth instead of drawing eighteen identical Marches dots.
+        yieldPerTick: systemYield(this.world.map, sys.id),
+        fuelPerTick: systemFuelYield(this.world.map, sys.id),
+        richnessBps: systemLode(this.world.map, sys.id).richnessBps,
+        straits: straitsAt(this.world.map, sys.id).map((strait) => ({
+          // The other end, from this row's point of view. Both rows of a strait carry the same
+          // numbers and name each other; `assertFrameBudgets` checks that, because a one-sided
+          // strait would draw a pinch on one half of a lane.
+          to: strait.a === sys.id ? strait.b : strait.a,
+          detourHops: strait.detourHops,
+          severs: strait.severs,
+          severed: strait.severed,
+        })),
       })),
+      swayLines: this.swayLines(),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

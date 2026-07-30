@@ -81,6 +81,16 @@ export interface PulsePort {
   handsAt(principal: PrincipalId, system: SystemId): readonly HandId[];
   /** Unpledged lots of MATERIEL standing at `system`, canonical order. */
   materielLotsAt(principal: PrincipalId, system: SystemId): readonly { readonly id: string; readonly qty: number }[];
+  /**
+   * ★ How many hands this principal may **project** at `system` — §16.12 #1's capacity-limited
+   * projection (`world/sway.ts`). A cap on hands, not a multiplier: `FORCE_PER_HAND` is 1 and a
+   * fraction of one hand floors to nothing.
+   *
+   * A port for `handsAt`'s reason — sway lives in `world/` and `campaign` may not import it
+   * without a cycle — and it is the same call `roster.ts`'s `joinRefusal` makes, so an ally that
+   * was *admitted* to a roster is an ally whose hands can *count*.
+   */
+  swayAt(principal: PrincipalId, system: SystemId): number;
 }
 
 /**
@@ -294,6 +304,22 @@ export interface CampaignForceReading {
   readonly defenderHands: number;
   readonly attackerAllies: number;
   readonly defenderAllies: number;
+  /**
+   * ★ The attacker's SWAY at the OBJECTIVE — the cap its own hands were counted under (§16.12 #1).
+   *
+   * Published because it is the number that decides whether pressing the war is possible at all,
+   * and because a force reading that silently dropped a hand would be the worst kind of A2 failure:
+   * the attacker can see three hands standing there and read a force of one.
+   */
+  readonly attackerSway: number;
+  /**
+   * ★ Hands standing at the objective on the ATTACKER's side that SWAY did not let count.
+   *
+   * The mechanic's meter, for `ForceReading.raidersOutOfSway`'s reason: a capacity limit that never
+   * binds cannot be told apart from one that is missing. Counts the attacker's own surplus hands
+   * plus every ATTACKER ally's, so a war being lost to distance rather than to a defence says so.
+   */
+  readonly attackerUnsupplied: number;
 }
 
 /**
@@ -311,8 +337,25 @@ export function readCampaignForce(port: PulsePort, campaign: CampaignRecord): Ca
   // `?? 0` for `readForce`'s reason: a missing key would read `undefined` and propagate `NaN` into a
   // published force, and a `NaN` comparison is silently always a REBUFF — a defender winning for free.
   const terrain = FORCE_BY_TIER[port.tierOf(campaign.objective)] ?? 0;
-  const attackerHands = port.handsAt(campaign.attacker, campaign.objective).length;
+  const standing = port.handsAt(campaign.attacker, campaign.objective).length;
   const defenderHands = port.handsAt(campaign.defender, campaign.objective).length;
+
+  // ── ★ §16.12 #1: THE ATTACKER'S SIDE IS CAPPED BY SWAY; THE DEFENDER'S IS NOT ──
+  //
+  // The attacker's DEPOT sits one lane from the OBJECTIVE by rule, so its own sway here is
+  // normally `SWAY_AT_SEAT - SWAY_PER_HOP` — and if that lane is a STRAIT, the depot is one of its
+  // ends, so the toll is waived and the reading is the same. What a STRAIT does bite is the
+  // **roster**: an ally supplying the war from its own ground two lanes and a strait away reads 0,
+  // and this is where that stops being force. §16.12 #1's *"supply lines"*, as arithmetic.
+  //
+  // The defender is not read this way at all. A claim IS a seat, so a holder standing on the claim
+  // under attack reads `SWAY_AT_SEAT` by construction — but the rule is stronger than that
+  // coincidence and does not depend on it: the defender's hands are never passed through sway,
+  // because §16.1 MUST-3 built chokepoints to favour the interior line. `world/sway.ts` is the one
+  // home of that sentence and neither this file nor `predation/resolve.ts` may re-decide it.
+  const attackerSway = port.swayAt(campaign.attacker, campaign.objective);
+  const attackerHands = Math.min(standing, attackerSway);
+  let attackerUnsupplied = standing - attackerHands;
 
   let attackerAllies = 0;
   let defenderAllies = 0;
@@ -322,8 +365,11 @@ export function readCampaignForce(port: PulsePort, campaign: CampaignRecord): Ca
     // round, where joining and marching away paid a force nobody provided.
     const present = port.handsAt(party.principal, campaign.objective).length;
     if (present <= 0) continue;
-    if (party.side === 'ATTACKER') attackerAllies += present;
-    else defenderAllies += present;
+    if (party.side === 'ATTACKER') {
+      const supplied = Math.min(present, port.swayAt(party.principal, campaign.objective));
+      attackerAllies += supplied;
+      attackerUnsupplied += present - supplied;
+    } else defenderAllies += present;
   }
 
   return {
@@ -334,6 +380,8 @@ export function readCampaignForce(port: PulsePort, campaign: CampaignRecord): Ca
     defenderHands,
     attackerAllies,
     defenderAllies,
+    attackerSway,
+    attackerUnsupplied,
   };
 }
 

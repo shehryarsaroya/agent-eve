@@ -81,6 +81,7 @@ import { phaseOfReckoning, reckoningIndex, TICKS_PER_RECKONING, WINDOW_FIRST_PHA
 import type { GoodId, HandId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { reject, type Rejection, type WorldResult } from '../world/result.js';
+import { swayNote, SWAY_AT_SEAT, SWAY_STATEMENT } from '../world/sway.js';
 import {
   aggressionNote,
   aggressionRemaining,
@@ -126,7 +127,11 @@ export const DEMAND_RULE_STATEMENT =
   'you the stake goes to it and the hand goes RECOVERING. Nothing tells you what the target holds ' +
   'before you commit: guess wrong and you hit ballast (MISSED) having paid in full. Beating a demand ' +
   'buys the defender the stake and nothing else — a demand writes no stage hold and no victim ' +
-  'cooldown, so nobody can arrange to be attacked in order to be left alone by the world.';
+  'cooldown, so nobody can arrange to be attacked in order to be left alone by the world. ' +
+  `AND YOUR REACH IS FINITE: a demand is legal only where your SWAY is 1 or more of ${String(SWAY_AT_SEAT)}. ` +
+  'SWAY is measured in lanes from ground you hold, and a STRAIT you hold neither end of costs extra, so ' +
+  'marching hands somewhere your SWAY is 0 buys nothing — they stand there and count for nothing, ' +
+  'because offence has to be supplied from somewhere. Defending your own place reads none of this.';
 
 /**
  * Everything `demand` touches. Nothing else is reachable from here, which is the point.
@@ -143,6 +148,22 @@ export interface DemandPort {
   handsDefending(principal: PrincipalId, stage: SystemId): readonly HandId[];
   /** Is this principal enrolled with a standing holding? A demand on a ghost is nothing. */
   isSeated(principal: PrincipalId): boolean;
+  /**
+   * ★ §16.12 #1: how many hands this principal may **project** at `stage` — `world/sway.ts`.
+   *
+   * The same call `readForce` makes at resolution, so the gate that refuses a demand and the
+   * arithmetic that would have scored it read one number from one implementation (scar #1).
+   */
+  swayAt(principal: PrincipalId, stage: SystemId): number;
+  /**
+   * How much sway-cost the cheapest route to `stage` consumed, or `null` when nothing this
+   * principal holds reaches it at any cost. Only for the refusal's explanation — `swayNote` needs
+   * to say *how far short* rather than just "no", because "no" with no distance in it is a
+   * refusal an agent cannot plan against (A2).
+   */
+  swayShortfall(principal: PrincipalId, stage: SystemId): number | null;
+  /** Is this principal's holding civic-leased in the COMMONS? A15's outbound half. */
+  isCommonsBound(principal: PrincipalId): boolean;
   /** Unencumbered currency in the principal's stores. What the stake has to come out of. */
   freeStoresOf(principal: PrincipalId): Minor;
   /**
@@ -224,6 +245,37 @@ export function demandRefusal(port: DemandPort, book: Book, req: DemandRequest):
       `${req.stage} is in the Commons, where hostile action is INVALID rather than punished. Nothing ` +
         'there can be demanded from, by you or by the world, and nothing you do will make it legal. ' +
         'Aim at the Marches or the Frontier.',
+    );
+  }
+
+  // ── 3b. ★ §16.12 #1: SWAY — CAN YOUR FORCE EVEN GET THERE? ────────────────
+  //
+  // Third, right after the Commons floor, and **before** anything that spends a resource: a
+  // capacity limit that fired after the aggression capacity was checked would let an agent learn
+  // its reach by burning the scarcest thing it has. `readForce` re-reads the same number at
+  // resolution, so this gate is the affordance's half of one rule rather than a second rule.
+  //
+  // **Commons-bound is reported as Commons-bound, never as beyond-sway**, even though the sway
+  // reading is 0 for both. The two carry different corrections — buy a holding outside the
+  // Commons, versus take ground nearer the stage — and `withheld.ts` already draws exactly this
+  // distinction for `move`, with the reason: *"an agent told the wrong one would take the wrong
+  // corrective action"*. Its hands cannot legally be at a non-Commons stage anyway (A15), so this
+  // branch is the honest explanation of a refusal it would meet twice.
+  if (port.isCommonsBound(req.initiator)) {
+    return reject(
+      'A15',
+      `your holding is civic-leased in the COMMONS, so your hands are Commons-bound and none of them ` +
+        `can stand at ${req.stage} at all — and a principal that holds no ground outside the Commons ` +
+        'projects no FORCE anywhere outside it either (§16.12). `graduate` moves your holding one lane ' +
+        'outward, at a price in currency and produced goods; that is what buys a body the Marches can ' +
+        'see. Nothing was spent.',
+    );
+  }
+  const sway = port.swayAt(req.initiator, req.stage);
+  if (sway <= 0) {
+    return reject(
+      'A4',
+      `${swayNote(0, req.stage, port.swayShortfall(req.initiator, req.stage))} ${SWAY_STATEMENT}`,
     );
   }
 

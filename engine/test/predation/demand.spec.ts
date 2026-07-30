@@ -60,6 +60,7 @@ import { MAX_RAID_LINES } from '../../src/frames/contract.js';
 import { renderFrame } from '../../src/frames/render.js';
 import type { Runtime } from '../../src/sim/runtime.js';
 import { GOOD, act, attempt, commonsWorld, eventsOfKind, raidRow, raidWorld, runTo, tick } from './fixture.js';
+import { SWAY_AT_SEAT } from '../../src/world/index.js';
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -948,6 +949,11 @@ describe('demandRefusal is one predicate, and every clause of it bites', () => {
       // testing the clause it means to rather than tripping over the hand gate.
       handsDefending: (p) => (p === TARGET ? [] : (['h:r1'] as never)),
       isSeated: () => true,
+      // ★ §16.12 #1: full reach and not Commons-bound by default, so a case that changes another
+      // clause is testing that clause. The sway clauses have their own cases below.
+      swayAt: () => SWAY_AT_SEAT,
+      swayShortfall: () => 0,
+      isCommonsBound: () => false,
       freeStoresOf: () => (RAID_JOIN_STAKE_MINOR * 10) as never,
       lockStake: () => 'enc:1',
       ...over,

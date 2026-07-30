@@ -9,7 +9,7 @@
  *                   + FORCE_BY_TIER[tier of the stage]
  *
  *     raiderForce   = the raid's OWN force still on the field  (see below)
- *                   + FORCE_PER_JOINER x (joiners on the RAIDER side)
+ *                   + FORCE_PER_JOINER x (joiners on the RAIDER side WITH SWAY >= 1 here)
  *
  *     defenderForce >= raiderForce  ->  REPULSED       (ties go to the defender)
  *     otherwise                     ->  PLUNDERED
@@ -25,6 +25,13 @@
  * **Ties go to the defender**, deliberately: a defender that has done the arithmetic and
  * matched the raid should not lose to a rounding convention, and the direction is
  * published so it is a rule rather than an accident.
+ *
+ * **And the raider's sum has one term the defender's does not: SWAY** (§16.12 #1, `world/sway.ts`).
+ * A raider party's hand counts only where its principal can supply it — within
+ * `SWAY_AT_SEAT` hops of ground it holds, less `SWAY_STRAIT_TOLL` for every STRAIT in the way it
+ * holds neither end of. The defender's hands are never read that way, and `ForceArgs.swayAt`
+ * carries the argument in full: a chokepoint exists to favour the interior line, so a reach limit
+ * that thinned the defence would invert the mechanic it came from.
  * ══════════════════════════════════════════════════════════════════════════
  *
  * ══════════════════════════════════════════════════════════════════════════
@@ -112,6 +119,25 @@ export interface ForceReading {
     /** What the raid was given at spawn, inside `RAID_FORCE`'s published band. Never moves. */
     readonly raidForceAtSpawn: number;
     readonly raiderJoiners: number;
+    /**
+     * ★ Raider parties still standing at the stage whose SWAY there is **0**, so their hands
+     * bought nothing (§16.12 #1).
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * **THIS FIELD IS THE MECHANIC'S METER, AND IT IS HERE BECAUSE OF THE PROJECT'S DEFECT.**
+     * A capacity limit that never binds is indistinguishable from one that is missing, in every
+     * report and to every reader. `raiderJoiners` counts what was *bought*; this counts what was
+     * *refused for being out of reach*, and the two are different findings that a single number
+     * reports identically. If this is 0 in every world forever, the reach half of §16.12 #1 is a
+     * label and this field is what says so.
+     * ══════════════════════════════════════════════════════════════════════════
+     *
+     * Normally 0 on the demand path, because `demandRefusal` and the `join` gate both refuse a
+     * zero-sway raider before a party row exists. It goes positive when reach is **lost during
+     * the window** — a claim lapses at a settlement, a holding falls — which is exactly the case
+     * a gate at join time cannot cover and the reason the reading is taken again here.
+     */
+    readonly raidersOutOfSway: number;
   };
 }
 
@@ -176,13 +202,41 @@ export interface ForceArgs {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly raidForceLeft: (raid: RaidRecord) => number | null;
+  /**
+   * ★ How many hands this principal may project **at this raid's stage** — §16.12 #1's
+   * capacity-limited projection, read at resolution like every other term in this sum.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **ONLY THE RAIDER SIDE READS IT, AND THAT ASYMMETRY IS THE DESIGN.**
+   *
+   * §16.1 MUST-3's entire argument for chokepoints is that they *"let a smaller defender exploit
+   * interior lines"*. A reach limit that also thinned the defence would be the mechanic inverted:
+   * the large distant bloc would keep its advantage and the local holder would lose the one it was
+   * supposed to gain. So the target's own hands, and every DEFENDER joiner standing at the stage,
+   * are counted exactly as they were before this existed.
+   *
+   * Stated as the rule the two callers must not re-decide: **offence is projected and must be
+   * supplied from ground you hold; defence is present.** `world/sway.ts` is its one home.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * A port rather than a lookup because sway lives in `world/` and `predation` may not import it
+   * without a cycle — the same reason `RaidViewPort.marchTo` is a port.
+   */
+  readonly swayAt: (principal: PrincipalId) => number;
 }
 
 export function readForce(args: ForceArgs): ForceReading {
   const stillThere = (party: RaidParty): boolean =>
     args.handsAtStage(party.principal).some((id) => id === party.handId);
   const defenderJoiners = args.raid.parties.filter((p) => p.side === 'DEFENDER' && stillThere(p)).length;
-  const raiderJoiners = args.raid.parties.filter((p) => p.side === 'RAIDER' && stillThere(p)).length;
+  // ── ★ §16.12 #1: A RAIDER'S HANDS COUNT ONLY WITHIN ITS SWAY ──────────────
+  //
+  // `stillThere` is presence — the hand is standing at the stage. Sway is *supply*: whether that
+  // hand is close enough to ground its principal holds to be force rather than a tourist. Both are
+  // required on the raider's side and only presence is required on the defender's, for the reason
+  // written out on `ForceArgs.swayAt`.
+  const raidersPresent = args.raid.parties.filter((p) => p.side === 'RAIDER' && stillThere(p));
+  const raiderJoiners = raidersPresent.filter((p) => args.swayAt(p.principal) >= 1).length;
   const terrain = FORCE_BY_TIER[args.tier] ?? 0;
 
   // The raid's own force, re-measured — capped at what it was given, so a battle can only ever
@@ -206,6 +260,7 @@ export function readForce(args: ForceArgs): ForceReading {
       raidForce,
       raidForceAtSpawn: args.raid.force,
       raiderJoiners,
+      raidersOutOfSway: raidersPresent.length - raiderJoiners,
     },
   };
 }

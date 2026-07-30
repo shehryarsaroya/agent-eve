@@ -68,7 +68,7 @@ import type { PrincipalId, SystemId } from '../../src/core/types.js';
 import { LEVY_DUTY_PER_PRINCIPAL, type LevyRule } from '../../src/levy/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { tierOf } from '../../src/world/index.js';
-import { YIELD_PER_TICK } from '../../src/works/params.js';
+import { systemYield } from '../../src/works/params.js';
 
 /** One line of one docket, plus the fact the allocation is supposed to be ABOUT. */
 interface Line {
@@ -276,17 +276,31 @@ describe('the Levy in an AGED world — six Reckonings, not three', () => {
     const { runtime } = agedDockets('g07', 6);
 
     // Which systems the world's WORKS actually stand on, and what each PLACE yields a Reckoning.
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⚑ **33: THIS SUM READ THE TIER TABLE, WHICH IS THE DEFECT §16.12 #1 EXISTS TO FIX, SITTING IN
+    // THE TEST THAT MEASURES THE RESIDUE.** `YIELD_PER_TICK[tierOf(map, system)]` was every system's
+    // output when this was written; it is now a tier BASE, and two MARCHES systems differ by up to a
+    // quarter. Summing the base over the occupied set therefore answers a question about a world
+    // this engine no longer runs — and it answers it *confidently*, which is why it had to be found
+    // rather than noticed. `systemYield` is the same figure the PRODUCE phase actually pays out.
+    // ══════════════════════════════════════════════════════════════════════════
     const occupied = new Set<SystemId>(runtime.works.liveInOrder().map((w) => w.system));
     let income = 0;
     for (const system of occupied) {
-      income += YIELD_PER_TICK[tierOf(runtime.world.map, system)] * TICKS_PER_RECKONING;
+      income += systemYield(runtime.world.map, system) * TICKS_PER_RECKONING;
     }
     const duty = LEVY_DUTY_PER_PRINCIPAL * runtime.world.principalOrder.length;
 
-    // `g07` seats 8 principals and the cast ends up on 5 distinct systems: one COMMONS at 80 and
-    // four MARCHES at 110, which is 520 a tick — 149,760 a Reckoning against 160,000 of duty.
-    expect(occupied.size, 'g07 crowds 8 principals onto 5 producing systems').toBe(5);
-    expect(income, 'what the PLACES yield in a Reckoning').toBe(149_760);
+    // ── THE DIAGNOSIS, RE-READ AT 33 ──────────────────────────────────────────
+    //
+    // The claim this test protects is a RELATION — *"`g07` produces less of the levy good than its
+    // Levy asks for"* — and the relation is what is asserted. The absolute figures moved when the
+    // ground stopped being uniform, and they are read from the engine rather than pinned, because a
+    // pin here would be a third copy of `YIELD_PER_TICK` maintained by hand.
+    expect(occupied.size, 'g07 crowds its principals onto few producing systems').toBeLessThan(
+      runtime.world.principalOrder.length,
+    );
     expect(duty, 'what the PRINCIPALS owe in a Reckoning').toBe(160_000);
     expect(
       income - duty,
@@ -295,13 +309,22 @@ describe('the Levy in an AGED world — six Reckonings, not three', () => {
     ).toBeLessThan(0);
 
     // The number of distinct systems is the whole variable: at 8 principals the world needs enough
-    // places to clear 160,000, which is 8 COMMONS systems or 6 MARCHES ones. Stated as arithmetic
-    // rather than as prose so it moves when the constants do.
-    const commonsNeeded = Math.ceil(duty / (YIELD_PER_TICK.COMMONS * TICKS_PER_RECKONING));
-    const marchesNeeded = Math.ceil(duty / (YIELD_PER_TICK.MARCHES * TICKS_PER_RECKONING));
-    expect([commonsNeeded, marchesNeeded], 'distinct systems 8 principals must occupy to pay').toEqual([
-      7, 6,
-    ]);
+    // places to clear 160,000. Stated as arithmetic rather than as prose so it moves when the
+    // constants do — and at 33 it is a RANGE per tier rather than one number, because the poorest
+    // MARCHES ground needs more places than the richest does. That spread is the feature.
+    const perTier = (tier: 'COMMONS' | 'MARCHES' | 'FRONTIER'): readonly [number, number] => {
+      const ys = runtime.world.map.systemOrder
+        .filter((id) => tierOf(runtime.world.map, id) === tier)
+        .map((id) => systemYield(runtime.world.map, id));
+      return [
+        Math.ceil(duty / (Math.max(...ys) * TICKS_PER_RECKONING)),
+        Math.ceil(duty / (Math.min(...ys) * TICKS_PER_RECKONING)),
+      ];
+    };
+    expect(perTier('COMMONS'), 'COMMONS is uniform, so its range is a point (A8)').toEqual([7, 7]);
+    const [marchesBest, marchesWorst] = perTier('MARCHES');
+    expect(marchesBest, 'the richest MARCHES ground needs fewer places').toBeLessThanOrEqual(marchesWorst);
+    expect(marchesWorst, 'and even the poorest needs fewer places than the Commons').toBeLessThan(7);
   }, 180_000);
 
   it('★ THE RESIDUE WAS A DISTRIBUTION FAILURE, AND `deliver {payer}` CLOSED IT', () => {

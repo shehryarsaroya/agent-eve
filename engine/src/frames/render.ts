@@ -50,6 +50,7 @@ import {
   MAX_FRAME_MARKET_LINES,
   MAX_FRAME_SYNDICATE_LINES,
   type MapSystem,
+  type SwayLine,
   type MarketLine,
   type WorksLine,
   type SyndicateLine,
@@ -159,6 +160,8 @@ export interface FrameSource {
   readonly coverArcs?: readonly CoverArc[];
   readonly coverChains?: readonly CoverChain[];
   readonly map?: readonly MapSystem[];
+  /** ★ §16.12 #1's border signature. Optional so `emptyFrame` and older fixtures stay valid. */
+  readonly swayLines?: readonly SwayLine[];
 }
 
 export interface SettledView {
@@ -682,6 +685,13 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     coverArcs: src.coverArcs ?? [],
     coverChains: src.coverChains ?? [],
     map: [...(src.map ?? [])].sort((a, b) => compareIds(a.id, b.id)),
+    // ── ★ THE VERGE, SORTED AND NEVER TRUNCATED — FOR THE MAP'S OWN REASON ──
+    //
+    // A border with a system missing from it draws a hole, and a hole reads as "nobody's force
+    // reaches here" — which is a specific claim, and the one that says where a small holder can
+    // live. `assertFrameBudgets` refuses an over-long list rather than this slicing it, so growth
+    // past `MAX_FRAME_SWAY_LINES` is a designed aggregation instead of a silently gappy fence.
+    swayLines: [...(src.swayLines ?? [])].sort((a, b) => compareIds(a.system, b.system)),
     syndicateLines: (src.syndicateLines ?? [])
       .slice()
       .sort(
@@ -793,6 +803,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     coverArcs: [],
     coverChains: [],
     map: [],
+    swayLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],

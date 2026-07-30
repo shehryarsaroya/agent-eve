@@ -36,6 +36,19 @@ import type { HandId, PrincipalId, SystemId } from '../../src/core/types.js';
 import { readForce } from '../../src/predation/index.js';
 import type { Runtime } from '../../src/sim/runtime.js';
 import { raidRow, raidWorld, runToFirstRaid, submit, tick } from './fixture.js';
+import { SWAY_AT_SEAT } from '../../src/world/index.js';
+
+/**
+ * ★ §16.12 #1's SWAY term, held at full for every arithmetic test in this file.
+ *
+ * `noBattle`'s reason, applied to the other new term: these tests measure hands, joiners and
+ * terrain, so the capacity limit is pinned open and they measure what they always measured. The
+ * cap's own arithmetic — including that a raider at 0 contributes nothing and shows up in
+ * `raidersOutOfSway` — is asserted in `test/world/the-map-has-borders.spec.ts` against the
+ * engine's own reading rather than against a fixture built beside the assertion.
+ */
+const fullSway = () => SWAY_AT_SEAT;
+
 
 /** The longest lane out of `stage`, so a departure can outlast the window's last tick. */
 function laneOut(runtime: Runtime, stage: SystemId): { to: SystemId; transit: number } {
@@ -192,7 +205,7 @@ describe('a joiner counts only while its hand is standing at the stage', () => {
       defenderHands: 0,
       handsAtStage: (p) => (p === here ? (['h:here'] as HandId[]) : []),
       // No battle over this standoff, so the raid's own force is the drawn scalar.
-      raidForceLeft: () => null,
+      raidForceLeft: () => null, swayAt: fullSway,
     });
     expect(reading.terms.defenderJoiners).toBe(1);
     expect(reading.terms.raiderJoiners).toBe(0);
@@ -215,7 +228,7 @@ describe('a joiner counts only while its hand is standing at the stage', () => {
       defenderHands: 0,
       // The principal has a hand here — but not the one it put in.
       handsAtStage: () => ['h:2'] as HandId[],
-      raidForceLeft: () => null,
+      raidForceLeft: () => null, swayAt: fullSway,
     });
     expect(reading.terms.raiderJoiners).toBe(0);
   });

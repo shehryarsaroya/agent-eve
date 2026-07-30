@@ -103,6 +103,24 @@ export interface RaidView {
     readonly raider_joiners: number;
     readonly terrain: number;
     readonly verdict_if_resolved_now: 'REPULSED' | 'PLUNDERED';
+    /**
+     * ★ §16.12 #1: how many of the READER's own hands would count as force at this stage.
+     *
+     * A term of {@link raider} for anybody on the raider's side, and **not** a term of
+     * {@link defender_if_you_fight} for anybody on the defender's — offence is projected and must
+     * be supplied from ground you hold; defence is present. `world/sway.ts` carries the argument
+     * and `predation/resolve.ts`'s `ForceArgs.swayAt` carries the reason a chokepoint that thinned
+     * the defence would invert the mechanic it came from.
+     */
+    readonly your_sway: number;
+    /**
+     * ★ Raider hands standing here that SWAY did not let count — the mechanic's meter.
+     *
+     * Published rather than left implicit because `raider` alone cannot distinguish *"nobody
+     * came"* from *"three came and none of them could be supplied"*, and those are the two
+     * different stories §16.12 #1 exists to make possible.
+     */
+    readonly raiders_out_of_sway: number;
   };
   /** Exact, never an estimate (A2). What each branch costs the target. */
   readonly costs: {
@@ -218,6 +236,16 @@ export interface RaidViewPort {
    * because routing lives in `world/` and predation may not import it without a cycle.
    */
   marchTo(principal: PrincipalId, stage: SystemId, tick: number): MarchRoute | null;
+  /**
+   * ★ §16.12 #1: hands this principal may **project** at `stage` (`world/sway.ts`).
+   *
+   * On the **view** port and not only on the resolver's, for `raidForceLeft`'s reason and more
+   * sharply: `RaidView.march` publishes a route to a standoff, and a march that arrives somewhere
+   * the walker's force counts for nothing is the AGT-S2 defect with a hand spent on it. The view
+   * now states the reading beside the route, so *"can I get there in time"* and *"will it matter
+   * when I do"* are answered together.
+   */
+  swayAt(principal: PrincipalId, stage: SystemId): number;
 }
 
 /** One home for "would that hand get there before the window shuts". */
@@ -315,6 +343,8 @@ function viewOf(
     handsAtStage: (principal) => port.handsDefending(principal, raid.stage),
     // And the same for the raid's own side. One call, one number, both readers.
     raidForceLeft: (row) => port.raidForceLeft(row),
+    // ★ §16.12 #1, and the same call at the same moment as the resolver's.
+    swayAt: (principal) => port.swayAt(principal, raid.stage),
   });
 
   return {
@@ -339,6 +369,17 @@ function viewOf(
       raider_joiners: reading.terms.raiderJoiners,
       terrain: reading.terms.terrain,
       verdict_if_resolved_now: reading.verdict,
+      /**
+       * ★ §16.12 #1: hands of the READER's that would count as force here, of `SWAY_AT_SEAT`.
+       *
+       * Beside the force sum rather than in a block of its own, because it is a **term of that
+       * sum** for anybody on the raider's side — and because a reader that sees `raider_joiners`
+       * without it cannot tell a coalition that did not turn up from one whose hands did not
+       * reach. Zero, with `march` non-null, is the honest reading of *"you can get there and it
+       * will not matter"*, which is what makes the route above safe to publish.
+       */
+      your_sway: port.swayAt(reader, raid.stage),
+      raiders_out_of_sway: reading.terms.raidersOutOfSway,
     },
     costs: {
       pay: payFor(raid.demandQty, standing),

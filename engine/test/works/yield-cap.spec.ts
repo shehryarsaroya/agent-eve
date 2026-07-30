@@ -28,7 +28,7 @@ function crowd(n: number): Book {
 
 function totalAt(book: Book, tick: number): number {
   let total = 0;
-  for (const amount of book.sharesAt(SYS, 'COMMONS', tick).values()) total += amount;
+  for (const amount of book.sharesAt(SYS, YIELD_PER_TICK['COMMONS'], tick).values()) total += amount;
   return total;
 }
 
@@ -54,7 +54,7 @@ describe('a system yields what its tier allows, however many are working it (A15
     // remainder must land exactly, because the error is per system per tick — at 288 ticks a
     // Reckoning it is not a rounding difference, it is an income stream.
     const book = crowd(3);
-    const shares = [...book.sharesAt(SYS, 'COMMONS', WORKS_SPINUP_TICKS + 1).values()];
+    const shares = [...book.sharesAt(SYS, YIELD_PER_TICK['COMMONS'], WORKS_SPINUP_TICKS + 1).values()];
     expect(shares.length).toBe(3);
     expect(shares.reduce((a, b) => a + b, 0)).toBe(YIELD_PER_TICK.COMMONS);
     // Fair to within one unit, and the remainder goes by canonical order, not insertion.
@@ -90,7 +90,7 @@ describe('spin-up is a commitment, not a purchase', () => {
     expect(totalAt(book, online)).toBe(YIELD_PER_TICK.COMMONS);
     book.raise({ system: SYS, holder: p(1), tick: online });
     expect(
-      book.sharesAt(SYS, 'COMMONS', online).size,
+      book.sharesAt(SYS, YIELD_PER_TICK['COMMONS'], online).size,
       'the newcomer is not yet a claimant on the yield',
     ).toBe(1);
     expect(totalAt(book, online), 'so the incumbent keeps the whole share').toBe(
@@ -103,10 +103,10 @@ describe('a razed WORKS stops extracting and stays in the record (A5)', () => {
   it('drops out of the split but not out of the book', () => {
     const book = crowd(2);
     const online = WORKS_SPINUP_TICKS + 10;
-    expect(book.sharesAt(SYS, 'COMMONS', online).size).toBe(2);
+    expect(book.sharesAt(SYS, YIELD_PER_TICK['COMMONS'], online).size).toBe(2);
     const first = book.liveAt(SYS)[0];
     book.raze(first?.id ?? ('x' as never), online);
-    expect(book.sharesAt(SYS, 'COMMONS', online).size, 'no longer extracting').toBe(1);
+    expect(book.sharesAt(SYS, YIELD_PER_TICK['COMMONS'], online).size, 'no longer extracting').toBe(1);
     expect(totalAt(book, online), 'and the survivor takes the whole yield').toBe(
       YIELD_PER_TICK.COMMONS,
     );
@@ -122,8 +122,8 @@ describe('the book survives a snapshot round-trip', () => {
     const fresh = new Book();
     fresh.restore(captured);
     expect(fresh.size).toBe(book.size);
-    expect([...fresh.sharesAt(SYS, 'COMMONS', WORKS_SPINUP_TICKS + 5).values()]).toEqual(
-      [...book.sharesAt(SYS, 'COMMONS', WORKS_SPINUP_TICKS + 5).values()],
+    expect([...fresh.sharesAt(SYS, YIELD_PER_TICK['COMMONS'], WORKS_SPINUP_TICKS + 5).values()]).toEqual(
+      [...book.sharesAt(SYS, YIELD_PER_TICK['COMMONS'], WORKS_SPINUP_TICKS + 5).values()],
     );
     expect(fresh.liveAt(SYS)[0]?.extracted, 'the extraction counter is not lost').toBe(123);
   });
