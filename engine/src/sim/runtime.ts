@@ -1978,6 +1978,7 @@ import {
   syndicateStateTable,
   type SyndicateId,
 } from '../syndicate/book.js';
+import { admit, type AdmitPort } from '../syndicate/admit.js';
 import { CHARTER_STATEMENT, parseCharter } from '../syndicate/charter.js';
 import { form, type FormPort } from '../syndicate/form.js';
 // `MAX_SYNDICATES_PER_PRINCIPAL` left with the gate that reads it, in `syndicate/form.ts`.
@@ -11566,10 +11567,20 @@ export class Runtime {
   }
 
   /**
+   * The port {@link admit} reads through. One member, and `admit` calls it.
+   *
+   * `holdingByPrincipal` is the enrolment test the rest of the runtime uses, so this is the same
+   * question asked in the same way rather than a second definition of "has enrolled".
+   */
+  private admitPort(): AdmitPort {
+    return { isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined };
+  }
+
+  /**
    * `admit` — a sitting member brings somebody in under an INVITE charter.
    *
    * The counterpart to `join`'s refusal, and the reason that refusal can name a concrete next
-   * step instead of an apology.
+   * step instead of an apology. Gates in `syndicate/admit.ts`.
    */
   private vAdmit(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const named = readString(req.params, ['syndicate']);
@@ -11581,29 +11592,16 @@ export class Runtime {
           "charter's admission rule decides whether you may bring anyone in at all.",
       );
     }
-    const id = named as unknown as SyndicateId;
-    const row = this.syndicateBook.at(id);
-    if (row === null) return reject('A2', `there is no syndicate ${named}.`);
-    if (!this.syndicateBook.isMember(id, req.principal, ctx.tick)) {
-      return reject('A2', `you are not a sitting member of ${named}, so you cannot admit anyone to it.`);
-    }
-    if (row.charter.admission === 'CLOSED') {
-      return reject(
-        'A2',
-        `${named}'s charter is CLOSED: its founding membership is final and nobody may ever be admitted. ` +
-          'That clause is permanent and no vote changes it.',
-      );
-    }
-    if (this.world.holdingByPrincipal.get(who) === undefined) {
-      return reject('A2', `there is no principal ${who} to admit; name one that has enrolled.`);
-    }
-    const fault = this.syndicateBook.admissionFault(id, who, ctx.tick);
-    if (fault !== null) return reject('A2', fault);
-    try {
-      this.syndicateBook.admit(id, who, ctx.tick);
-    } catch (error: unknown) {
-      return reject('A2', describeError(error));
-    }
+    const outcome = admit(this.admitPort(), this.syndicateBook, {
+      member: req.principal,
+      syndicate: named as unknown as SyndicateId,
+      who,
+      tick: ctx.tick,
+    });
+    if (!outcome.ok) return outcome;
+    const row = outcome.value;
+    const id = row.id;
+
     this.emitRow({
       tick: ctx.tick,
       kind: 'syndicate.joined',
