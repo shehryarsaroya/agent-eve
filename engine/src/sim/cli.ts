@@ -152,7 +152,11 @@ export function parseArgs(argv: readonly string[]): SimArgs {
       default:
         throw new ArgError(
           `unknown flag ${flag}. Usage: sim --seed S --ticks N --speed instant|turbo|fast|rehearsal|prod ` +
-            '--cast heuristic|none --principals P --hazards on|off --assert-every-tick --emit state_hash',
+            '--cast heuristic|none --principals P --hazards on|off --assert-every-tick --emit state_hash ' +
+            // Named here as well as in `SimArgs`, because a flag the usage string does not mention is a
+            // flag nobody uses — and `--live-frames` is the only way to prove a countdown counts DOWN
+            // rather than merely being populated once.
+            '--frames DIR --live-frames --quiet',
         );
     }
   }
