@@ -2873,9 +2873,28 @@ export interface RuntimeOptions {
   readonly startTick?: number;
   readonly actionsPerTick?: number;
   /**
-   * Hazards on or off. Phase 0 has no hazard content yet, so this is recorded and
-   * reported rather than acted on — and it is recorded so that the false-default
-   * audit's two modes (§15.4) have a switch to read when the content lands.
+   * ⚠ **ACCEPTED AND INERT. Nothing in this class reads it.** `sim --hazards on|off` changes nothing.
+   *
+   * The old note here said hazards were *"recorded and reported rather than acted on"* because Phase 0
+   * had no hazard content, and that they were recorded *"so that the false-default audit's two modes
+   * (§15.4) have a switch to read when the content lands"*. **Both halves are now false**, in opposite
+   * directions, which is why the flag is worse than either a working switch or no switch at all:
+   *
+   *   - the content landed. `HAZARD` runs {@link Runtime.frontNow} — but **unconditionally**, so the
+   *     flag does not gate it. `--hazards off` does not turn fronts off, and `--hazards on` does not
+   *     turn anything on;
+   *   - the audit's two modes never read this. `invariants/audit.ts` and `reckoning/audit.ts` each
+   *     carry their own `options.hazards` and their own hazard firing, so §15.4 Mode A / Mode B work
+   *     and are entirely independent of this field.
+   *
+   * The field this used to be assigned to is deleted, because a value nothing reads is
+   * indistinguishable from one that is missing and this repo has now paid for that lesson at six
+   * depths. The **option** is kept only so `sim/cli.ts` — owned elsewhere — still compiles.
+   *
+   * Whether `frontNow` should be behind this switch is a DESIGN call, not a cleanup: gating it would
+   * stop every front in every default run and move `state_hash` for the whole world, so it is left for
+   * whoever owns the hazard roadmap. Until then this docblock is the only thing standing between the
+   * flag and a reader who believes it works.
    */
   readonly hazards?: boolean;
 }
@@ -3038,7 +3057,6 @@ export class Runtime {
   private worksBook = new WorksBook();
   /** The syndicate book. Swapped wholesale on restore, like every other hashed book. */
   private syndicateBook = new SyndicateBook();
-  readonly hazards: boolean;
 
   /**
    * The venture book, behind a getter because the rollback **replaces** it.
@@ -3275,7 +3293,8 @@ export class Runtime {
       ticksPerReckoning: TICKS_PER_RECKONING,
     });
     this.ledger = new Ledger();
-    this.hazards = options.hazards ?? false;
+    // `options.hazards` is deliberately NOT stored — see `RuntimeOptions.hazards`. It had no reader for
+    // the project's whole life, and the `HAZARD` phase it claimed to gate now runs unconditionally.
     // Attached in production, so `target` and `measure` are checked at the door and a
     // formatting slip costs one action instead of a permanent public mark (scar #8).
     this.seals = new SealBook(this.sealWorld());
@@ -3714,11 +3733,16 @@ export class Runtime {
         // §15.2's own note on this phase: *"Hazards roll against what is still standing. After
         // VENTURES, so a hazard cannot pre-empt a settlement."* The phase has existed as an explicit
         // no-op hook since commit #1 — `UNBUILT_PHASES` was emptied without it ever gaining
-        // content, `hazards` still defaults to **false**, and `GOODS_SINK.LOSS`'s own comment has
-        // named *"raids, **fronts** and `CARGO_LOST`"* for the whole project. This is the front.
+        // content — and `GOODS_SINK.LOSS`'s own comment has named *"raids, **fronts** and
+        // `CARGO_LOST`"* for the whole project. This is the front.
         //
         // Registering here shifts nothing: `PhaseContext.rng` is already `derive(phase)`, so the
         // draws below come out of HAZARD's own sub-stream and no other phase's outcome moves.
+        //
+        // ⚠ **UNCONDITIONAL, and `RuntimeOptions.hazards` does not gate it.** This clause used to cite
+        // that flag defaulting to false as part of the argument that the phase was empty; the flag has
+        // never had a reader, so it was evidence of nothing. Whether the front belongs behind a switch
+        // is a design call recorded on the option itself, not something this line should imply.
         HAZARD: (ctx) => {
           this.frontNow(ctx);
         },
