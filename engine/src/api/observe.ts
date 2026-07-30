@@ -66,6 +66,7 @@ import {
 } from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
+  creatorElective,
   escrowRatioBps,
   escrowRequired,
   IN_FULL,
@@ -77,6 +78,7 @@ import {
   pinnedValue,
   roleOfPrincipal,
   yourTakeAtP50,
+  type CreatorElective,
   type VentureRecord,
 } from '../venture/index.js';
 /**
@@ -2298,11 +2300,28 @@ function affordancesFor(
       },
       cost: 1,
       max_direct_loss: owed,
-      max_contingent_liability: electiveOwed(venture, principal),
+      // ── ★ THE CONTINGENT COLUMN WAS 0 ON THE VERB A6 IS NAMED AFTER ───────────
+      //
+      // It was `electiveOwed(venture, principal)` — Σ of the **pinned** elective over roles
+      // ALREADY held by somebody else. A creator countersigns its own venture a tick or two
+      // after `create`, when no role is filled, so that expression is 0 by construction for
+      // exactly the party that carries the whole contingency. `create` had just quoted the
+      // same liability honestly one affordance earlier; the act that BINDS the creator to
+      // those terms then quoted it as nothing.
+      //
+      // `creatorElective().ceiling` is the worst case and carries the argument for counting
+      // open roles: `venture/preview.ts` owns it, `elect`'s own `max_direct_loss` is the same
+      // per-role expression, and the delegated-`create` gate charges the same bound — so the
+      // three published figures for one obligation are now one arithmetic.
+      max_contingent_liability: creatorElectiveOf(runtime, venture, principal).ceiling,
       what_it_forecloses: payer
         ? 'signing binds you to these terms; the terms_hash cannot be amended afterwards. It does NOT decide ' +
           'what you pay — that is `elect`, one role at a time, restatable every tick until the freeze. Sign ' +
-          'and never elect and you pay nothing, which is a decline and a default on the record.'
+          'and never elect and you pay nothing, which is a decline and a default on the record. ' +
+          'max_contingent_liability above is the WORST CASE: every role that is open today going to a ' +
+          'stranger, at the top of the band this kind can deliver in. ventures.mine[].my_elective_owed is ' +
+          'what is already owed on the roles somebody holds now, and my_elective_unelected is how much of ' +
+          'that still has no election on it.'
         : 'signing binds you to these terms; the terms_hash cannot be amended afterwards.',
       expires_tick: venture.windowClosesTick,
       quote_id: quoteId(principal, tick, 'sign', { venture: venture.id }),
@@ -4726,6 +4745,11 @@ function ventureRow(
   principal: PrincipalId,
 ): Readonly<Record<string, unknown>> {
   const role = roleOfPrincipal(venture, principal);
+  // Once per row, not once per field: each `electiveCeilingOfRole` inside it runs
+  // `computeProceeds` + `computeClaims`, and this row is emitted up to `MAX_LIST_ROWS`
+  // times per observation (A4 — a bigger payload must not cost the server more per read
+  // than the information in it is worth).
+  const owedByMe = creatorElectiveOf(runtime, venture, principal);
   return {
     id: venture.id,
     kind: venture.kind,
@@ -4794,11 +4818,51 @@ function ventureRow(
      * TO you by the venture's **creator** (the payer), if the creator honours it; you
      * never elect it, the creator does. So it is `OWED_TO_ME` when you filled someone
      * else's venture. On your OWN venture your own role is self-paid and can never be a
-     * breach (scar #9), so it is `SELF`. What YOU owe as a creator is never here — it is
-     * the `elect` affordances, one per role somebody else holds in your venture.
+     * breach (scar #9), so it is `SELF`.
+     *
+     * ── ★ AND `OWED_BY_ME`, WHICH USED TO BE `null` ────────────────────────────
+     *
+     * This docstring used to end *"What YOU owe as a creator is never here — it is the
+     * `elect` affordances."* The consequence, measured from a real signed seat: a creator
+     * that filled none of its own roles — the ordinary case — read `my_elective: 0` and
+     * `my_elective_direction: null` on the venture whose entire elective half it was about
+     * to be judged on. The row that names every other party's stake in the promise named
+     * the promisor's as *nothing*, and `null` reads as "no elective relationship here"
+     * rather than as "the field does not cover your case".
+     *
+     * `SELF` still wins where the reader holds a role, because that is what `my_elective`
+     * on this row describes and the two fields must agree. What the creator owes is
+     * {@link my_elective_owed}, which is populated in both cases.
      */
     my_elective_direction:
-      role === null ? null : venture.creator === principal ? 'SELF' : 'OWED_TO_ME',
+      role === null
+        ? owedByMe.owed > 0
+          ? 'OWED_BY_ME'
+          : null
+        : venture.creator === principal
+          ? 'SELF'
+          : 'OWED_TO_ME',
+    /**
+     * ★ **What THIS venture can ask YOU for on the elective half** (A7's paying side).
+     *
+     * Zero unless you created it. See `venture/preview.ts:creatorElective` for why it is
+     * the **charge** (`electiveCeilingOfRole`, summed over roles somebody else holds) and
+     * not the pinned `roles[].elective`: those two differ by ~60% on a live world, and
+     * `elect`'s own `max_direct_loss` is computed from the former. This field is Σ of the
+     * `max_direct_loss` on this venture's `elect` affordances, by construction — so an
+     * agent that reads the row and an agent that reads the affordances are quoted one
+     * number, and a freeze or a wakeless snapshot no longer hides it.
+     */
+    my_elective_owed: owedByMe.owed,
+    /**
+     * ★ **How much of {@link my_elective_owed} you have not elected yet** — the part that
+     * becomes a permanent public default if this settles unchanged.
+     *
+     * The same arithmetic `briefing.prompt` and `if_you_do_nothing` publish in aggregate
+     * (`unelectedElective` is now a projection of the same call), narrowed to this row so
+     * a creator with several live ventures can tell **which** one still needs an `elect`.
+     */
+    my_elective_unelected: owedByMe.unelected,
     countersigned: [...venture.countersigned].sort(cmp),
     i_have_signed: venture.countersigned.has(principal),
     /**
@@ -5486,36 +5550,39 @@ function ifYouDoNothing(
 
 // ── Small derivations ───────────────────────────────────────────────────────
 
-function electiveOwed(venture: VentureRecord, principal: PrincipalId): number {
-  // What the *creator* owes: the elective halves of every role it did not fill.
-  if (venture.creator !== principal) return 0;
-  let total = 0;
-  for (const role of venture.roles) {
-    if (role.filledByPrincipal === null) continue;
-    if (role.filledByPrincipal === principal) continue;
-    total += role.terms.elective - role.settledElectiveMinor;
-  }
-  return total;
-}
-
-/** What this payer has NOT elected on, netted against what it has. */
+/**
+ * What this payer has NOT elected on, netted against what it has.
+ *
+ * ── ★ ONE HOME, BECAUSE THIS ARITHMETIC NOW HAS THREE READERS ──────────────
+ *
+ * The body used to live here, and it was the *only* place a creator's liability was
+ * computed — so `ventureRow` could not publish the figure without copying it, and a copy
+ * is how one obligation acquires two numbers. It moved to
+ * `venture/preview.ts:creatorElective`, beside `electiveCeilingOfRole` whose charge it
+ * sums, and this function is now a projection of that one result. `briefing.prompt`,
+ * `if_you_do_nothing` and `ventures.mine[].my_elective_unelected` therefore read the same
+ * arithmetic by construction rather than by review.
+ */
 function unelectedElective(
   runtime: Runtime,
   venture: VentureRecord,
   principal: PrincipalId,
 ): number {
-  if (venture.creator !== principal) return 0;
-  let total = 0;
-  for (const role of venture.roles) {
-    if (role.filledByPrincipal === null) continue;
-    if (role.filledByPrincipal === principal) continue;
-    const stated = runtime.electionOn(venture.id, role.index);
-    // `IN_FULL` covers whatever the due turns out to be, so nothing is left unelected.
-    if (stated === IN_FULL) continue;
-    const owed = runtime.electiveCeilingOf(venture, role.index);
-    total += Math.max(0, owed - (stated ?? 0));
-  }
-  return total;
+  return creatorElectiveOf(runtime, venture, principal).unelected;
+}
+
+/**
+ * {@link creatorElective} bound to the runtime's election book.
+ *
+ * The lookup is passed rather than the book, so `preview.ts` stays free of `Runtime` — the
+ * same reason `stageBps` is a parameter there.
+ */
+function creatorElectiveOf(
+  runtime: Runtime,
+  venture: VentureRecord,
+  principal: PrincipalId,
+): CreatorElective {
+  return creatorElective(venture, principal, (id, roleIndex) => runtime.electionOn(id, roleIndex));
 }
 
 function nextSettlement(tick: number): number {
