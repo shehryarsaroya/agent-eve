@@ -44,7 +44,7 @@ import type {
   VentureRole,
   VentureState,
 } from '../core/types.js';
-import { addMinor, minor, type Minor } from '../core/units.js';
+import { addMinor, BPS_ONE, minor, type Minor } from '../core/units.js';
 import { accept, isPresent, reject, type HandRecord, type WorldResult } from '../world/index.js';
 import { boundAtFormation } from './create.js';
 import {
@@ -317,10 +317,14 @@ export function createVenture(input: CreateVentureInput): WorldResult<VentureRec
     }
     shareTotal += terms.share ?? 0;
   }
-  if (shareTotal > 10_000) {
+  // `BPS_ONE`, not `10_000` twice — once in the comparison and once in the sentence an agent reads.
+  // `settlement.ts:526` makes the identical check and calls itself "the independent check on that
+  // refusal", which it was not: the same threshold from a differently-sourced constant is one home
+  // pretending to be two, and the hint text drifting from the comparison is scar #1's exact shape.
+  if (shareTotal > BPS_ONE) {
     return reject(
       'INV-6',
-      `the roles' shares add to ${shareTotal} bps, more than the 10000 bps of residual there is to ` +
+      `the roles' shares add to ${shareTotal} bps, more than the ${String(BPS_ONE)} bps of residual there is to ` +
         'divide. The remainder above the roles is the creator’s; it cannot be negative.',
     );
   }

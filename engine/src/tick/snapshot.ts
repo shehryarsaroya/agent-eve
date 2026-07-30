@@ -220,8 +220,64 @@ function strOrNull(
   return str(o, key, where);
 }
 
+function bool(o: { readonly [k: string]: CanonicalValue }, key: string, where: string): boolean {
+  const v = o[key];
+  if (typeof v !== 'boolean') throw new SnapshotError(`${where}.${key}: expected a boolean`);
+  return v;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE `OrAbsent` PAIR EXISTS BECAUSE FOUR BOOKS HAD ALREADY WRITTEN IT, EACH PRIVATELY, AND TWO OF
+ * THEM UNDER THE NAME OF THE STRICT ONE ABOVE.**
+ *
+ * At `RULES_VERSION` 38 this family had eight private copies across four modules:
+ *
+ *   | copy                          | name it used         | treats a MISSING key as |
+ *   |-------------------------------|----------------------|-------------------------|
+ *   | `tick/snapshot.ts` (here)     | `readStringOrNull`   | **a throw**             |
+ *   | `levy/book.ts`                | `readStringOrNull`   | **null**                |
+ *   | `sovereignty/book.ts`         | `readStringOrNull`   | **null**                |
+ *   | `levy` / `sovereignty` / `predation` | `readIntOrNullAt` | **null**            |
+ *
+ * So `readStringOrNull` named two different rules in one codebase — the exact "one word, two
+ * concepts" failure HARD RULE 4 forbids, and the more dangerous half was the tolerant one: on a
+ * hydrate, a *missing* field became `null` **silently** instead of halting, which is a row quietly
+ * losing data on the one path where A5 forbids a wrong record.
+ *
+ * Both rules are kept because changing which one a hydrate applies is not a refactor — a snapshot
+ * written by an older build may genuinely lack a key, and turning that into a boot halt is a
+ * production outage, not a fix. What is removed is the *ambiguity*: the strict pair keeps the plain
+ * name, the tolerant pair is named for what it tolerates, and there is one copy of each.
+ *
+ * **Which to use:** `readIntOrNull` when `capture` provably writes the key — a shape error is then a
+ * bug in this file, and it must throw. `readIntOrAbsent` only where a key is genuinely optional
+ * across snapshot versions, and say which version at the call site.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function intOrAbsent(
+  o: { readonly [k: string]: CanonicalValue },
+  key: string,
+  where: string,
+): number | null {
+  const v = o[key];
+  if (v === null || v === undefined) return null;
+  return int(o, key, where);
+}
+
+function strOrAbsent(
+  o: { readonly [k: string]: CanonicalValue },
+  key: string,
+  where: string,
+): string | null {
+  const v = o[key];
+  if (v === null || v === undefined) return null;
+  return str(o, key, where);
+}
+
 export { asObject as readObject, asArray as readArray, str as readString, int as readInt };
-export { intOrNull as readIntOrNull, strOrNull as readStringOrNull };
+export { intOrNull as readIntOrNull, strOrNull as readStringOrNull, bool as readBool };
+export { intOrAbsent as readIntOrAbsent, strOrAbsent as readStringOrAbsent };
 
 /**
  * Validate action parameters as canonical, and return them as such.

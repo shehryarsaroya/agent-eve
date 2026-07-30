@@ -35,6 +35,7 @@
  * a phase later would shift every seeded draw and every golden file.
  */
 
+import { readInt, readString } from '../core/params.js';
 import type { Rng } from '../core/rng.js';
 import {
   inCommitmentWindow,
@@ -1400,26 +1401,19 @@ function unknownVerb(verb: string): Rejection {
 // only §12.2 verb whose entire semantics is "make a durable intent" (A3). Both are
 // overridable through `EngineOptions.verbs`, so neither is a monopoly.
 
-function readParam(params: ActionParams, keys: readonly string[]): string | null {
-  for (const key of keys) {
-    const value = params[key];
-    if (typeof value === 'string' && value.length > 0) return value;
-  }
-  return null;
-}
-
-function readInt(params: ActionParams, keys: readonly string[]): number | null {
-  for (const key of keys) {
-    const value = params[key];
-    if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
-  }
-  return null;
-}
+// `readParam` and `readInt` were declared here — bodies byte-identical to `core/params.ts`'s
+// `readString` and `readInt`, which exist precisely so that they are not. That file's own header says
+// it: *"copying them would be scar #5 — one rule, two homes, free to disagree about what counts as a
+// value."* This file held the copy, and `readParam` held it under a second name, so a grep for
+// `readString` could not find it.
+//
+// Removed at `RULES_VERSION` 38. `readString` is imported above; the two call sites below now read
+// the same tolerance rules as every other verb in the engine.
 
 const BUILT_IN_VERBS: Readonly<Record<string, VerbHandler>> = {
   move: (ctx, request): WorldResult<null> => {
-    const hand = readParam(request.params, ['hand', 'hand_id', 'handId']);
-    const to = readParam(request.params, ['to', 'destination', 'system', 'system_id']);
+    const hand = readString(request.params, ['hand', 'hand_id', 'handId']);
+    const to = readString(request.params, ['to', 'destination', 'system', 'system_id']);
     if (hand === null || to === null) {
       return reject(
         'A2',

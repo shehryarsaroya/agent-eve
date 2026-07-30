@@ -29,6 +29,7 @@
 import { readString } from '../core/params.js';
 import type { HandId, PrincipalId, VentureId } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
+import { largestRemainder } from '../core/allocate.js';
 import { compareIds } from '../ledger/order.js';
 import { reject, type WorldResult } from '../world/result.js';
 import { roleOfPrincipal, vacateRole, type VentureRecord } from './venture.js';
@@ -81,13 +82,16 @@ export function forfeitShares(
   }
   const payees = [...others].sort(compareIds);
   if (payees.length === 0) return [];
-  const each = Math.trunc(amount / payees.length);
-  let remainder = amount - each * payees.length;
+  // `largestRemainder` over equal weights, not a private `trunc` + hand-dealt remainder
+  // (`RULES_VERSION` 38). Provably the same vector — equal weights make the allocator's tie-break the
+  // index order, which is what the hand-rolled loop was doing by walking `payees` in `compareIds`
+  // order — and the reason to swap is that this is a forfeit being split between real principals, so
+  // the allocator that asserts Σ === amount is the one that should compute it. The old loop asserted
+  // nothing; a remainder it failed to deal would have vanished silently.
+  const shares = largestRemainder(amount, payees.map(() => 1));
   const out: (readonly [PrincipalId, Minor])[] = [];
-  for (const payee of payees) {
-    const extra = remainder > 0 ? 1 : 0;
-    remainder -= extra;
-    const share = minor(each + extra);
+  for (const [i, payee] of payees.entries()) {
+    const share = shares[i] ?? minor(0);
     if (share > 0) out.push([payee, share]);
   }
   return out;

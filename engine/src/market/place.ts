@@ -27,6 +27,7 @@
  * contest in polling frequency, i.e. A4 violated through the order book.
  */
 
+import { TICKS_PER_RECKONING } from '../core/time.js';
 import type { GoodId, PrincipalId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import type { Ledger } from '../ledger/index.js';
@@ -68,7 +69,7 @@ export const MAX_UNIT_PRICE = 1_000_000_000;
  * was placed for, short enough that the book cannot silently fill with the orders
  * of principals that stopped playing.
  */
-export const MAX_DURATION_TICKS = 288;
+export const MAX_DURATION_TICKS = TICKS_PER_RECKONING;
 
 export interface TradeRequest {
   readonly operation: string;
@@ -180,7 +181,9 @@ function planOrder(ctx: PlaceContext, req: TradeRequest, replacing: Order | null
 
   const wanted = qty(amount);
   const unitPrice = minor(price);
-  const required = side === 'BID' ? multiplyPrice(unitPrice, wanted) : minor(0);
+  // `escrowFor` is exactly this ternary and had no caller. One home for "what a fresh BID must
+  // escrow", so the gate below and anything that previews it cannot disagree.
+  const required = escrowFor(side, unitPrice, wanted);
 
   if (side === 'BID') {
     // What the cancel is about to hand back is spendable by the replacement.

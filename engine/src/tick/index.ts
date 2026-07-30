@@ -132,4 +132,29 @@ export {
   type StateTable,
 } from './snapshot.js';
 
+/**
+ * The canonical snapshot readers. **Omitted from this barrel until `RULES_VERSION` 38.**
+ *
+ * Every book in the engine hydrates through these, and because the barrel did not carry them, every
+ * book reached past it into `./snapshot.js` — which is how eight private copies of this family came to
+ * exist across four modules, two of them re-using the name `readStringOrNull` for a *different* rule
+ * about a missing key. A barrel that hides the shared reader is the reason a shared reader gets
+ * re-typed locally, and `snapshot.ts`'s own docblock now carries the table of what that cost.
+ *
+ * `readBool`, `readIntOrAbsent` and `readStringOrAbsent` are new here in the same change: the first
+ * because three books had written it privately and identically, the other two because that is where
+ * the tolerant rule now lives under a name that says it is tolerant.
+ */
+export {
+  readArray,
+  readBool,
+  readInt,
+  readIntOrAbsent,
+  readIntOrNull,
+  readObject,
+  readString,
+  readStringOrAbsent,
+  readStringOrNull,
+} from './snapshot.js';
+
 export { WakeBook, wakeStateTable, type WakeCause, type WakeOffer, type WakeOutcome } from './wake.js';

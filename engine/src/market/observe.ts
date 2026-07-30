@@ -44,7 +44,15 @@ import type { MarketLine } from '../frames/contract.js';
 import { compareIds } from '../ledger/index.js';
 import type { Fill, MarketBook } from './book.js';
 import { topOfBook } from './match.js';
-import { bookKey, comparePriority, remainingOf, type Order, type Side, type VenueId } from './order.js';
+import {
+  bookKey,
+  cashRequired,
+  comparePriority,
+  remainingOf,
+  type Order,
+  type Side,
+  type VenueId,
+} from './order.js';
 
 /** Price levels published per side. Enough to read the shape; bounded (INV-26). */
 export const PUBLISHED_LEVELS = 5;
@@ -439,7 +447,11 @@ function ownOrder(order: Order): OwnOrder {
     time_in_force: order.timeInForce,
     placed_tick: order.placedTick,
     expires_tick: order.expiresTick,
-    escrowed_minor: order.side === 'BID' ? minor(order.limitPrice * remainingOf(order)) : minor(0),
+    // `cashRequired`, not a raw `limitPrice * remainingOf` — this was the sixth home for the BID
+    // escrow and the only one that skipped `multiplyPrice`'s safe-integer check, on the one path that
+    // publishes the number to an agent. `cashRequired` already returns 0 for an ASK, so the ternary
+    // went with it.
+    escrowed_minor: cashRequired(order),
     escrowed_qty: order.side === 'ASK' ? remainingOf(order) : qty(0),
   };
 }

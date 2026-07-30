@@ -18,7 +18,7 @@
  * Numbers marked *(calibrate)* are simulation starting points, not claims.
  */
 
-import { TICKS_PER_RECKONING } from '../core/time.js';
+import { TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
 import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
 
 /**
@@ -241,7 +241,14 @@ export function assertRaidSchedule(): void {
   // The window opens at WINDOW_FIRST_PHASE; a raid must resolve strictly before it, so
   // that no raid resolution, hand commitment or seizure ever lands in the commitment
   // window, the freeze, or the settlement tick.
-  const lastResolvable = TICKS_PER_RECKONING - 1 - 1 - 24;
+  //
+  // Read from `core/time.ts` since `RULES_VERSION` 38. It was `TICKS_PER_RECKONING - 1 - 1 - 24` —
+  // a hand-inlined copy of `WINDOW_FIRST_PHASE`'s own definition, in a comment that names the
+  // constant it declined to import. Both were 262, and the `24` was the most dangerous character in
+  // this file: it is `COMMITMENT_WINDOW_TICKS`, but `DEMAND_WINDOW_TICKS` two hundred lines up is
+  // ALSO 24 and is used eight lines below, so the literal read as either constant and the schedule
+  // guard was one edit from passing a raid that resolves inside §5.1's hard freeze.
+  const lastResolvable = WINDOW_FIRST_PHASE;
   let previous = -1;
   for (const phase of RAID_SPAWN_PHASES) {
     if (!Number.isSafeInteger(phase) || phase < 0 || phase >= TICKS_PER_RECKONING) {

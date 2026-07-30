@@ -48,7 +48,7 @@ import type { Book, CessionOffer, ClaimRecord, ClaimState } from './book.js';
 import { chargeOf } from './charge.js';
 import { claimRouteFor, type ClaimRoute } from './claim.js';
 import { vulnerabilityViewAt, type VulnerabilityView } from './cycle.js';
-import { CHARGE_GOOD, CHARGE_MISSES_TO_LAPSE, MAX_CLAIM_LINES } from './params.js';
+import { CHARGE_GOOD, CHARGE_MISSES_TO_CONTEST, CHARGE_MISSES_TO_LAPSE, MAX_CLAIM_LINES } from './params.js';
 // The FUEL good's name has one home, and it is the module that yields it — importing the constant
 // keeps `fuel_good` from becoming a second literal that could drift from the extraction that makes
 // it (the exact shape `test/core/goods-are-independent.test.ts` exists to forbid).
@@ -61,8 +61,14 @@ import { FUEL_GOOD } from '../works/params.js';
  * raising {@link CHARGE_MISSES_TO_LAPSE} changes both, and a hard-coded `2` would leave the
  * label saying "1 of 2" while the third miss no longer lapsed. That is scar #1's shape in a
  * string a viewer reads.
+ *
+ * **Now an alias of {@link CHARGE_MISSES_TO_CONTEST} rather than a second copy of its expression**
+ * (`RULES_VERSION` 38). The two are the same number for a stateable reason — the last arrears step
+ * *is* the contested one — and re-deriving `CHARGE_MISSES_TO_LAPSE - 1` here was the same defect this
+ * docstring warns about, one level up: the label and the threshold agreed by coincidence of
+ * arithmetic rather than by construction.
  */
-export const ARREARS_STEPS = CHARGE_MISSES_TO_LAPSE - 1;
+export const ARREARS_STEPS = CHARGE_MISSES_TO_CONTEST;
 
 /**
  * The label, and it is a rules surface: it is what a viewer believes and what an agent reads.
@@ -101,7 +107,7 @@ export function claimDoNothing(owed: Qty, misses: number): ClaimDoNothing {
   if (owed <= 0) return 'STAYS_SUPPLIED';
   const next = misses + 1;
   if (next >= CHARGE_MISSES_TO_LAPSE) return 'LAPSES';
-  if (next >= 2) return 'BECOMES_CONTESTABLE';
+  if (next >= CHARGE_MISSES_TO_CONTEST) return 'BECOMES_CONTESTABLE';
   return 'ENTERS_ARREARS';
 }
 

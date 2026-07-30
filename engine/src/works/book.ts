@@ -4,7 +4,7 @@
  * ## Two rules hold this together, and both are about the yield cap
  *
  * 1. **A system's yield is divided, never multiplied.** {@link Book.sharesAt} splits
- *    `YIELD_PER_TICK[tier]` across the live WORKS at that system with the Levy's own
+ *    `YIELD_PER_TICK[tier]` across the live WORKS at that system with `core/allocate.ts`'s
  *    `largestRemainder`, so Σ shares === the tier yield *exactly*. A split that rounded up
  *    would mint goods out of arithmetic, which is the A15 hole this design exists to close —
  *    and it would do it invisibly, a unit at a time, at every system, every tick.
@@ -17,11 +17,12 @@
 
 import type { CanonicalValue } from '../core/canonical.js';
 import type { PrincipalId, SystemId } from '../core/types.js';
-import { qty, type Minor, type Qty } from '../core/units.js';
+import { qty, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
-import { largestRemainder } from '../levy/assessment.js';
+import { largestRemainder } from '../core/allocate.js';
 import {
   readArray,
+  readBool,
   readInt,
   readObject,
   readString,
@@ -108,18 +109,14 @@ export class WorksError extends Error {}
 /**
  * Split a quantity into `n` equal-as-possible parts summing to it exactly.
  *
- * `largestRemainder` lives in the Levy and is typed in `Minor`, because that is what the Levy
- * divides. The algorithm itself is unit-agnostic integer arithmetic — it is the *sum-exactly*
- * property this module needs, and reimplementing it here to satisfy the type would mean two
- * copies of the one piece of arithmetic that must never round in our favour.
- *
- * So the units are laundered **once, here, with the reason**, rather than at each call site
- * where the cast would look like carelessness. `Qty` and `Minor` are branded apart on purpose
- * and that is worth keeping; this is the single crossing.
+ * This was `largestRemainder(total as unknown as Minor, …)` until `RULES_VERSION` 38, with a
+ * paragraph here explaining that the units were being "laundered once, with the reason" because the
+ * allocator lived in `levy/` and was typed in `Minor`. The allocator now lives in `core/allocate.ts`
+ * and is generic over the brand, so there is no crossing to justify: `Qty` goes in and `Qty` comes
+ * out, and `works/` no longer imports from `levy/` at all.
  */
 function splitQty(total: Qty, parts: number): readonly Qty[] {
-  const shares = largestRemainder(total as unknown as Minor, Array.from({ length: parts }, () => 1));
-  return shares.map((n) => qty(Number(n)));
+  return largestRemainder(total, Array.from({ length: parts }, () => 1));
 }
 
 export class Book {
@@ -630,8 +627,3 @@ export function worksStateTable(getBook: () => Book, setBook: (book: Book) => vo
 }
 
 /** Local, like `sovereignty/book.ts`'s: the shared readers have no boolean. */
-function readBool(o: Readonly<Record<string, CanonicalValue>>, key: string, where: string): boolean {
-  const value = o[key];
-  if (typeof value !== 'boolean') throw new SnapshotError(`${where}.${key} must be a boolean`);
-  return value;
-}

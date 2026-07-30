@@ -36,7 +36,7 @@ import { compareIds } from '../ledger/index.js';
 import { halt } from '../invariants/registry.js';
 import { MarketBook, type ClosedOrder, type Fill } from './book.js';
 import { cashLegEvent, escrowedGoods, goodsLegEvent, marketEscrowAccount } from './escrow.js';
-import { multiplyPrice, remainingOf, type Order, type OrderId, type VenueId } from './order.js';
+import { cashRequired, multiplyPrice, remainingOf, type Order, type OrderId, type VenueId } from './order.js';
 import { storesAccount } from '../ledger/index.js';
 import { selfCrossing } from './place.js';
 
@@ -130,7 +130,10 @@ export function checkMkt2(input: MarketInvariantInputs): readonly InvariantViola
     const row = ledger.encumbrances.get(id);
     if (row === undefined) continue;
     if (!ledger.encumbrances.isOpen(id)) continue;
-    const cap = multiplyPrice(order.limitPrice, remainingOf(order));
+    // `cashRequired(order)` is exactly this expression and existed with no caller; MKT-2's cap and
+    // the order's own stated requirement must be one number, or the invariant is checking a second
+    // opinion about what the order needs.
+    const cap = cashRequired(order);
     if (row.amountMinor > cap) {
       out.push(
         halt(

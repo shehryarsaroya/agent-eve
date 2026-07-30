@@ -91,7 +91,6 @@ export {
 export {
   Book,
   LevyBookError,
-  levyReckoningOf,
   levyStateTable,
   type ChronicRow,
   type LevyPlan,

@@ -150,7 +150,6 @@ import type { GoodId } from '../core/types.js';
 
 import type { PrincipalId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
-import { LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
 import { compareIds } from './order.js';
 
 /**
@@ -195,6 +194,34 @@ export const ENDOWMENT_FLOOR_MINOR: Minor = STARTER_STAKE;
 export const ENDOWMENT_GOOD = 'ration' as GoodId;
 
 /**
+ * The goods minted to each principal at enrolment (§6.1).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS DECLARATION MOVED HERE FROM `levy/params.ts` AT `RULES_VERSION` 38, AND THE MOVE IS THE
+ * SECOND HALF OF A FIX WHOSE FIRST HALF SHIPPED AT 20.**
+ *
+ * The header above records why `ENDOWMENT_GOOD` stopped being an alias of `LEVY_GOOD`: *"it also
+ * forced `ledger/` and `works/` to import from `levy/`, inverting the layering — the ledger has no
+ * business depending on the Levy for the name of a good."* `test/core/goods-are-independent.test.ts`
+ * then made that permanent for the four **good ids** and stopped there. The **quantity** was left in
+ * `levy/params.ts`, so `ledger/endowment.ts` kept importing from `levy/` anyway — for the size of the
+ * enrolment grant instead of the name of the good, which is the same inversion one field over, and it
+ * was the last edge closing the `ledger → levy → ledger` cycle.
+ *
+ * The ledger is where it belongs on the same argument `STARTER_STAKE` makes directly above: the
+ * enrolment mint and the withheld floor must be one number, and this is the module that mints.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * §6.1 mints "a starter stake of **bound goods**"; the build had issued that stake as currency only,
+ * so there was nothing located anywhere for a goods-only obligation to be paid in. Two and a half
+ * Reckonings' worth of Levy duty: enough that a newcomer can pay, and *not* enough that anybody can
+ * pay forever without production. That second clause is the point — a principal that only ever
+ * delivers from stock runs dry, and `LEVY SHORT` starts to rise on its own. Which is the meter
+ * working, not the model failing.
+ */
+export const STARTER_ALLOTMENT: Qty = qty(50_000);
+
+/**
  * A principal's withheld allotment of {@link ENDOWMENT_GOOD} **on the day it enrols** — the
  * starting value of {@link EndowmentBook}'s per-principal goods counter, not a constant every
  * principal carries forever.
@@ -205,11 +232,11 @@ export const ENDOWMENT_GOOD = 'ration' as GoodId;
  * Reckoning endowment window was having 50,000 units withheld against a stake it had already
  * delivered. The number is unchanged; what changed is that it is now a starting point.
  *
- * Still declared as an alias of {@link LEVY_STARTER_ALLOTMENT} rather than as its own literal,
+ * Still declared as an alias of {@link STARTER_ALLOTMENT} rather than as its own literal,
  * for {@link ENDOWMENT_FLOOR_MINOR}'s reason: the allotment granted and the allotment withheld
  * must be the same quantity, and two homes for one number is scar #5.
  */
-export const ENDOWMENT_GOOD_FLOOR_QTY: Qty = LEVY_STARTER_ALLOTMENT;
+export const ENDOWMENT_GOOD_FLOOR_QTY: Qty = STARTER_ALLOTMENT;
 
 /**
  * One principal's row. Both counters are monotone non-increasing and neither is ever

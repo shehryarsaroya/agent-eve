@@ -70,8 +70,8 @@
 
 import { Rng } from '../core/rng.js';
 import type { SystemId, ZoneTier } from '../core/types.js';
-import { qty, type Qty } from '../core/units.js';
-import { largestRemainder } from '../levy/assessment.js';
+import { BPS_ONE, qty, type Qty } from '../core/units.js';
+import { largestRemainder } from '../core/allocate.js';
 import { type WorldMap } from './map.js';
 
 export class LodeError extends Error {}
@@ -292,14 +292,16 @@ export function lodesOf(map: WorldMap, bases: LodeBases): ReadonlyMap<SystemId, 
     const w = ids.map((id) => weights.get(id) ?? LODE_WEIGHT.min);
     const base = bases.yield[tier];
     const fuelBase = bases.fuel[tier];
-    // `largestRemainder` over `base × count` is what makes the tier total exact. Its return type is
-    // `Minor` because the Levy is its first caller; these are quantities of a good, and the brand is
-    // a compile-time label over the same integer.
-    const shares = largestRemainder((base * ids.length) as never, w) as readonly number[];
-    const fuelShares =
-      fuelBase === 0
-        ? ids.map(() => 0)
-        : (largestRemainder((fuelBase * ids.length) as never, w) as readonly number[]);
+    // `largestRemainder` over `base × count` is what makes the tier total exact.
+    //
+    // These were `largestRemainder((base * ids.length) as never, w) as readonly number[]` until
+    // `RULES_VERSION` 38, when the allocator moved from `levy/assessment.ts` to `core/allocate.ts`
+    // and became generic over the brand. The casts were not cosmetic: `as never` is assignable to
+    // every parameter type, so it did not launder `number` into `Minor` — it **disabled argument
+    // checking on the one call in this file whose integer-ness INV-W1 rests on.** A `string` would
+    // have compiled.
+    const shares = largestRemainder(base * ids.length, w);
+    const fuelShares = fuelBase === 0 ? ids.map(() => 0) : largestRemainder(fuelBase * ids.length, w);
     for (let i = 0; i < ids.length; i += 1) {
       const id = ids[i];
       const share = shares[i];
@@ -311,7 +313,7 @@ export function lodesOf(map: WorldMap, bases: LodeBases): ReadonlyMap<SystemId, 
         yieldPerTick: qty(share),
         fuelPerTick: qty(fuelShares[i] ?? 0),
         // Integer bps against the tier figure. `base` is never 0 for a lode tier (asserted below).
-        richnessBps: Math.trunc(((share - base) * 10_000) / base),
+        richnessBps: Math.trunc(((share - base) * BPS_ONE) / base),
       });
     }
   }

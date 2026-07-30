@@ -27,6 +27,7 @@
  * collapsing them.
  */
 
+import { readString } from '../core/params.js';
 import type { HandId, HoldingId, PrincipalId, SystemId, VentureKind } from '../core/types.js';
 import { isOnLane } from './hands.js';
 import { tierOf } from './map.js';
@@ -177,13 +178,11 @@ export const TARGET_KEYS = {
 
 export type ActionParams = Readonly<Record<string, unknown>>;
 
-function readString(params: ActionParams, keys: readonly string[]): string | null {
-  for (const key of keys) {
-    const value = params[key];
-    if (typeof value === 'string' && value.length > 0) return value;
-  }
-  return null;
-}
+// `readString` was declared here with a body byte-identical to `core/params.ts`'s, which is the file
+// that exists so it is not copied — *"one rule, two homes, free to disagree about what counts as a
+// value."* Removed at `RULES_VERSION` 38; the canonical one is imported above. The tolerance rule it
+// carries (an empty string is ABSENT, never `""`) is now stated in exactly one place, which matters
+// here because `resolveTarget` below reads five different key families through it.
 
 // ── Targets ─────────────────────────────────────────────────────────────────
 

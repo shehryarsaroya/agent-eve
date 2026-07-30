@@ -50,7 +50,7 @@ import type {
   SystemId,
   ZoneTier,
 } from '../core/types.js';
-import { minor, qty, type Minor, type Qty } from '../core/units.js';
+import { BPS_ONE, minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 // §9's published force constants. Imported, never restated: the whole claim of this module is that
 // a campaign is fought by the same arithmetic as a standoff, and two spellings of `FORCE_PER_HAND`
@@ -485,7 +485,7 @@ function takeMateriel(
  * never one minor unit generous at the defender's expense.
  */
 export function liftEnding(campaign: CampaignRecord, tick: number): CampaignEnding {
-  const returned = minor(Math.floor((campaign.bond * CAMPAIGN_SALVAGE_BPS) / 10_000));
+  const returned = minor(Math.floor((campaign.bond * CAMPAIGN_SALVAGE_BPS) / BPS_ONE));
   return {
     state: 'LIFTED',
     tick,

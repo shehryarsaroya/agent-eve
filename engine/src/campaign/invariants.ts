@@ -27,6 +27,7 @@
  * every tick and asserts by name that the row is still there at the verdict.
  */
 
+import { phaseOfReckoning } from '../core/time.js';
 import type { InvariantViolation, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
 import type { Minor, Qty } from '../core/units.js';
 import { halt } from '../invariants/registry.js';
@@ -352,7 +353,11 @@ export function checkCmp6(input: CampaignInvariantInputs): readonly InvariantVio
       );
     }
     const next = nextPulseTickOf(c);
-    if (next !== null && ((next % 288) + 288) % 288 !== CAMPAIGN_PULSE_PHASE) {
+    // `phaseOfReckoning`, not a hand-inlined copy of its body with the cycle length written three
+    // times (`RULES_VERSION` 38). This is the A14 halt for "a scheduled decision at an unpublished
+    // tick"; a guard that computes the phase differently from the clock it guards is the defect it
+    // was written to catch.
+    if (next !== null && phaseOfReckoning(next) !== CAMPAIGN_PULSE_PHASE) {
       out.push(
         halt(
           'A14',

@@ -33,15 +33,17 @@
  */
 
 import type { CanonicalValue } from '../core/canonical.js';
-import { reckoningIndex } from '../core/time.js';
 import type { ClaimState, ConstellationId, PrincipalId, SystemId } from '../core/types.js';
 import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
   readArray,
+  readBool,
   readInt,
+  readIntOrAbsent,
   readObject,
   readString,
+  readStringOrAbsent,
   SnapshotError,
   type StateTable,
 } from '../tick/snapshot.js';
@@ -906,10 +908,10 @@ export class Book {
         // world across the deploy that introduces the field, which is a worse failure than a
         // documented default — and every claim raised after this lands writes the field.
         rentBps: o['rentBps'] === undefined ? CLAIM_RENT_BPS : bps(readInt(o, 'rentBps', where)),
-        bondEncumbranceId: readStringOrNull(o, 'bondEncumbranceId', where),
+        bondEncumbranceId: readStringOrAbsent(o, 'bondEncumbranceId', where),
         state,
-        endedAtReckoning: readIntOrNullAt(o, 'endedAtReckoning', where),
-        succeededBy: readStringOrNull(o, 'succeededBy', where) as PrincipalId | null,
+        endedAtReckoning: readIntOrAbsent(o, 'endedAtReckoning', where),
+        succeededBy: readStringOrAbsent(o, 'succeededBy', where) as PrincipalId | null,
       };
       this.claims.set(record.system, record);
     }
@@ -920,7 +922,7 @@ export class Book {
       const row: DelinquencyRow = {
         system: readString(o, 'system', where) as SystemId,
         misses: readInt(o, 'misses', where),
-        lastShortReckoning: readIntOrNullAt(o, 'lastShortReckoning', where),
+        lastShortReckoning: readIntOrAbsent(o, 'lastShortReckoning', where),
         lapses: readInt(o, 'lapses', where),
       };
       this.delinquency.set(row.system, row);
@@ -951,7 +953,7 @@ export class Book {
         constellation: readString(o, 'constellation', where) as ConstellationId,
         total: qty(readInt(o, 'total', where)),
         rule,
-        spared: readStringOrNull(o, 'spared', where) as PrincipalId | null,
+        spared: readStringOrAbsent(o, 'spared', where) as PrincipalId | null,
         byDefault: readBool(o, 'byDefault', where),
         lines,
         assessedAtTick: readInt(o, 'assessedAtTick', where),
@@ -981,7 +983,7 @@ export class Book {
         constellation: readString(o, 'constellation', where) as ConstellationId,
         forReckoning: readInt(o, 'forReckoning', where),
         rule,
-        spare: readStringOrNull(o, 'spare', where) as PrincipalId | null,
+        spare: readStringOrAbsent(o, 'spare', where) as PrincipalId | null,
         tick: readInt(o, 'tick', where),
       };
       this.ballots.set(pairKey(ballot.forReckoning, ballot.principal), ballot);
@@ -1055,35 +1057,8 @@ function pairKey(reckoning: number, id: string): string {
   return `${String(reckoning)}${SEP}${id}`;
 }
 
-function readBool(o: Readonly<Record<string, CanonicalValue>>, key: string, where: string): boolean {
-  const value = o[key];
-  if (typeof value !== 'boolean') throw new SnapshotError(`${where}.${key} must be a boolean`);
-  return value;
-}
 
-function readStringOrNull(
-  o: Readonly<Record<string, CanonicalValue>>,
-  key: string,
-  where: string,
-): string | null {
-  const value = o[key];
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw new SnapshotError(`${where}.${key} must be a string or null`);
-  return value;
-}
 
-function readIntOrNullAt(
-  o: Readonly<Record<string, CanonicalValue>>,
-  key: string,
-  where: string,
-): number | null {
-  const value = o[key];
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-    throw new SnapshotError(`${where}.${key} must be an integer or null`);
-  }
-  return value;
-}
 
 /**
  * Sovereignty as a state table.
@@ -1116,9 +1091,4 @@ export function sovereigntyStateTable(getBook: () => Book, setBook: (book: Book)
       setBook(fresh);
     },
   };
-}
-
-/** The Reckoning index a tick sits in. One home, so the book and the clock agree. */
-export function chargeReckoningOf(tick: number): number {
-  return reckoningIndex(tick);
 }

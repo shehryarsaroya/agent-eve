@@ -36,6 +36,7 @@ import type { Book } from './book.js';
 import { isTerminal } from './book.js';
 import { inVulnerabilityWindow } from './cycle.js';
 import {
+  CHARGE_MISSES_TO_CONTEST,
   CHARGE_MISSES_TO_LAPSE,
   MAX_CLAIMS,
   SOVEREIGNTY_RETAINED_RECKONINGS,
@@ -269,7 +270,7 @@ export function checkSov7(input: SovereigntyInvariantInputs): readonly Invariant
   }
   for (const claim of input.book.liveClaims()) {
     if (claim.state !== 'CONTESTED') continue;
-    if (input.book.missesAt(claim.system) >= 2) continue;
+    if (input.book.missesAt(claim.system) >= CHARGE_MISSES_TO_CONTEST) continue;
     out.push(
       halt(
         'A5-PRIME',

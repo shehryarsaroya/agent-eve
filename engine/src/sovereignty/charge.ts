@@ -36,16 +36,16 @@
  * ## SOV-4 is arithmetic, not intention: Σ lines === total, EXACTLY
  *
  * Every allocation goes through {@link allocateCharge}'s largest-remainder pass, and the
- * pass is **the Levy's own** {@link largestRemainder} rather than a second copy. An
+ * pass is **`core/allocate.ts`'s** {@link largestRemainder} rather than a second copy. An
  * allocation summing to one unit more than the total would put a claim into arrears for a
  * debt the rule never created — a fabricated debt is the A5′ shape wearing arithmetic, and
  * this repo has shipped eight bugs of that shape.
  */
 
 import type { ConstellationId, PrincipalId, ZoneTier } from '../core/types.js';
-import { BPS_ONE, minor, qty, type Qty } from '../core/units.js';
+import { BPS_ONE, qty, type Qty } from '../core/units.js';
+import { largestRemainder } from '../core/allocate.js';
 import { compareIds } from '../ledger/order.js';
-import { largestRemainder } from '../levy/assessment.js';
 import type { ClaimId, ChargeLine, ChargeRule } from './book.js';
 import {
   CHARGE_ARREARS_SURCHARGE_BPS,
@@ -57,15 +57,15 @@ export class ChargeArithmeticError extends Error {}
 /**
  * Distribute a quantity across integer weights, exactly.
  *
- * **The Levy's `largestRemainder`, not a second copy**, and the two-line adapter is the
- * whole reason: a second largest-remainder implementation is scar #5 applied to an
- * algorithm, and the failure mode is a total that is off by one unit in one of the two
- * mechanics — which is a fabricated debt in whichever one drifted. `Minor` and `Qty` are
- * both branded integers, so the conversion is a rename and not a unit change; the caller
- * decides what the numbers mean.
+ * **`core/allocate.ts`'s `largestRemainder`, not a second copy** — a second largest-remainder
+ * implementation is scar #5 applied to an algorithm, and the failure mode is a total off by one unit
+ * in one of the two mechanics, which is a fabricated debt in whichever one drifted.
+ *
+ * The `minor()`/`qty()` round trip this used to make is gone as of `RULES_VERSION` 38: the allocator
+ * moved out of `levy/` and is generic over the brand, so the Charge's `Qty` stays `Qty` end to end.
  */
 function shareOut(amount: Qty, weights: readonly number[]): readonly Qty[] {
-  return largestRemainder(minor(amount), weights).map((m) => qty(m));
+  return largestRemainder(amount, weights);
 }
 
 /**

@@ -42,6 +42,8 @@ import type { AggressionSpend } from './aggression.js';
 import {
   readArray,
   readInt,
+  readIntOrAbsent,
+  readStringOrAbsent,
   readObject,
   readString,
   SnapshotError,
@@ -492,7 +494,7 @@ export class Book {
           side,
           handId: readString(p, 'handId', pWhere) as HandId,
           stake: minor(readInt(p, 'stake', pWhere)),
-          encumbranceId: readStringOrNullAt(p, 'encumbranceId', pWhere),
+          encumbranceId: readStringOrAbsent(p, 'encumbranceId', pWhere),
           joinedAtTick: readInt(p, 'joinedAtTick', pWhere),
         };
         return party;
@@ -502,7 +504,7 @@ export class Book {
         // Absent reads as `null` — a world raid — because that is what every row written
         // before RULES_VERSION 7 actually was. A default that guessed a principal would
         // attribute the weather to a named agent, permanently (A5′).
-        initiator: readStringOrNullAt(o, 'initiator', where) as PrincipalId | null,
+        initiator: readStringOrAbsent(o, 'initiator', where) as PrincipalId | null,
         target: readString(o, 'target', where) as PrincipalId,
         stage: readString(o, 'stage', where) as SystemId,
         good: readString(o, 'good', where) as GoodId,
@@ -512,9 +514,9 @@ export class Book {
         resolvesAtTick: readInt(o, 'resolvesAtTick', where),
         state,
         answer,
-        answeredAtTick: readIntOrNullAt(o, 'answeredAtTick', where),
+        answeredAtTick: readIntOrAbsent(o, 'answeredAtTick', where),
         parties,
-        resolvedAtTick: readIntOrNullAt(o, 'resolvedAtTick', where),
+        resolvedAtTick: readIntOrAbsent(o, 'resolvedAtTick', where),
         lostQty: qty(readInt(o, 'lostQty', where)),
         forfeited: minor(readInt(o, 'forfeited', where)),
         defenderForce: readInt(o, 'defenderForce', where),
@@ -558,29 +560,14 @@ export function isRaidAnswer(s: string): s is RaidAnswer {
   return RAID_ANSWERS.has(s);
 }
 
-function readStringOrNullAt(
-  o: Readonly<Record<string, CanonicalValue>>,
-  key: string,
-  where: string,
-): string | null {
-  const value = o[key];
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw new SnapshotError(`${where}.${key} must be a string or null`);
-  return value;
-}
+// `readStringOrNullAt` was declared here — the NINTH private copy of the canonical snapshot reader
+// family, and the one that proves the point `HIGH-WATER-LESSONS.md` makes about grep spellings: the
+// audit that collapsed the other eight searched `readStringOrNull` and `readIntOrNullAt`, and this
+// one is spelled with BOTH suffixes, so it survived the sweep that existed to remove it. It was
+// `test/core/one-home-per-number.spec.ts`'s structural scan — which matches the declaration form
+// rather than a name — that found it. Removed at `RULES_VERSION` 38; `readStringOrAbsent` is imported
+// above and has identical semantics.
 
-function readIntOrNullAt(
-  o: Readonly<Record<string, CanonicalValue>>,
-  key: string,
-  where: string,
-): number | null {
-  const value = o[key];
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-    throw new SnapshotError(`${where}.${key} must be an integer or null`);
-  }
-  return value;
-}
 
 function readEnumOrNull<T extends string>(
   o: Readonly<Record<string, CanonicalValue>>,
@@ -588,7 +575,7 @@ function readEnumOrNull<T extends string>(
   where: string,
   guard: (s: string) => s is T,
 ): T | null {
-  const value = readStringOrNullAt(o, key, where);
+  const value = readStringOrAbsent(o, key, where);
   if (value === null) return null;
   if (!guard(value)) throw new SnapshotError(`${where}.${key}: unknown value ${value}`);
   return value;

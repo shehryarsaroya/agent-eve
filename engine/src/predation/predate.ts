@@ -39,6 +39,7 @@
 
 import type { GoodId, HandId, PrincipalId, SystemId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
+import { largestRemainder } from '../core/allocate.js';
 import { compareIds } from '../ledger/order.js';
 import type { Rng } from '../core/rng.js';
 import { Book, raidIdFor, type RaidId, type RaidRecord, type RaidState } from './book.js';
@@ -407,11 +408,17 @@ function resolveOne(
       // Relocated, in equal shares with the remainder to the lowest id — deterministic,
       // and the reason a raider joins at all. `seize` returns what actually moved, so a
       // short pile shorts the last shares rather than inventing goods.
+      //
+      // `largestRemainder` over equal weights since `RULES_VERSION` 38, replacing a private
+      // `floor(want / n)` + `i < remainder` split. Provably the same vector for every equal-weight
+      // input — `want` 10 over 3 gives `[4,3,3]` either way — and the reason to make the swap is
+      // what the private version did *not* do: assert its own sum, refuse a negative total, or
+      // refuse a product past 2^53. This is a value path that moves seized goods between real
+      // principals, so the allocator that asserts Σ is the one it should have been using.
       const ordered = [...raiders].sort((a, b) => compareIds(a.principal, b.principal));
-      const share = Math.floor(want / ordered.length);
-      const remainder = want - share * ordered.length;
+      const portions = largestRemainder(want, ordered.map(() => 1));
       for (const [i, party] of ordered.entries()) {
-        const portion = share + (i < remainder ? 1 : 0);
+        const portion = portions[i] ?? 0;
         if (portion <= 0) continue;
         const moved = port.seize({
           from: raid.target,

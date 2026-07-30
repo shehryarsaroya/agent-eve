@@ -18,6 +18,7 @@
 
 import type { HandId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
 import type { Minor, Qty } from '../core/units.js';
+import { compareIds } from '../ledger/order.js';
 // The frame contract owns the line's shape, and this module fills it. One home per
 // rules surface: a second `RaidLine` declared here would be the same pixel signature
 // described twice, and the two would drift the first time a field was added.
@@ -346,10 +347,35 @@ export function raidViewsFor(args: {
     const march = marchFor(args.port.marchTo(args.principal, raid.stage, args.tick), raid.resolvesAtTick);
     if (march !== null && march.in_time) reachable.push(raid);
   }
-  // Own rows first and never truncated: the reader's own deadline outranks somebody else's,
-  // and a widened radius that pushed a target's own standoff off the end of the list would be
-  // a regression dressed as a feature.
-  return [...own, ...reachable]
+  // Own rows first: the reader's own deadline outranks somebody else's, and a widened radius that
+  // pushed a target's own standoff off the end of the list would be a regression dressed as a
+  // feature.
+  //
+  // ══════════════════════════════════════════════════════════════════════════
+  // **AND SORTED WITHIN EACH GROUP BEFORE THE SLICE, WHICH IT WAS NOT UNTIL `RULES_VERSION` 38.**
+  //
+  // This comment used to read *"Own rows first **and never truncated**"*. The second half was false
+  // above `limit`: `own` is built from `Book.forPrincipal`, which returns rows in **every** state, the
+  // book retains up to `MAX_RAID_ROWS` (96) of them, and `limit` is 24 — so a principal party to more
+  // than 24 standoffs silently lost **its own**, and the sentence promising otherwise was sitting
+  // three lines above the slice that did it.
+  //
+  // Worse than the truncation was the *order*. There was no comparator at all — the only view slice
+  // in the module without one — so the drop fell in `Book.all()` order, which is `compareIds` over
+  // `raid:{tick}:{index}`: **lexicographic on a stringified tick**, where `raid:1000:0` sorts before
+  // `raid:99:0`. The rows dropped were therefore neither the oldest nor the newest nor the least
+  // urgent; they were arbitrary, and a dropped own-row is a demand with a countdown against the
+  // reader that the reader is never shown.
+  //
+  // The comparator is `raidLinesFor`'s, one function down, adapted: live first (a countdown is the
+  // thing to look at), then **soonest to resolve** (this is a deadline list, so the nearest deadline
+  // is the most load-bearing row), then id to keep it total and host-independent.
+  // ══════════════════════════════════════════════════════════════════════════
+  const byUrgency = (a: RaidRecord, b: RaidRecord): number =>
+    Number(b.state === 'DEMANDED') - Number(a.state === 'DEMANDED') ||
+    a.resolvesAtTick - b.resolvesAtTick ||
+    compareIds(a.id, b.id);
+  return [...own.sort(byUrgency), ...reachable.sort(byUrgency)]
     .slice(0, Math.max(0, args.limit))
     .map((raid) => viewOf(raid, args.port, args.principal, args.tick));
 }

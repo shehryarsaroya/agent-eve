@@ -27,7 +27,7 @@
  * owns *when*; this module owns *what*.
  */
 
-import { phaseOfReckoning, reckoningIndex } from '../core/time.js';
+import { phaseOfReckoning, reckoningIndex, TICKS_PER_RECKONING } from '../core/time.js';
 import type { ConstellationId, SystemId, ZoneTier } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 import type { PrincipalId } from '../core/types.js';
@@ -84,8 +84,13 @@ export function vulnerabilityViewAt(tick: number): VulnerabilityView {
   const open = inVulnerabilityWindow(tick);
   // `atOrAfter`, for `predation/schedule.ts:nextSpawnTick`'s reason: an agent observing at
   // the opening tick is looking at a window that is open now, and telling it the next one
-  // is 288 ticks away would be a true sentence about the wrong window.
-  const nextOpen = phase <= VULNERABILITY_WINDOW.lastPhase ? opensThisCycle : opensThisCycle + 288;
+  // is one Reckoning away would be a true sentence about the wrong window.
+  //
+  // `TICKS_PER_RECKONING`, not `288`: this publishes `opens_tick`, the countdown an agent plans a
+  // takeover around, and the cycle length is a runtime setting (`setSpeed`). A literal here would
+  // publish a confidently wrong tick on any world not running the default clock.
+  const nextOpen =
+    phase <= VULNERABILITY_WINDOW.lastPhase ? opensThisCycle : opensThisCycle + TICKS_PER_RECKONING;
   return {
     open,
     first_phase: VULNERABILITY_WINDOW.firstPhase,
