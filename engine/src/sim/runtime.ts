@@ -1979,6 +1979,7 @@ import {
   type SyndicateId,
 } from '../syndicate/book.js';
 import { admit, type AdmitPort } from '../syndicate/admit.js';
+import { apply, type ApplyPort } from '../syndicate/apply.js';
 import { CHARTER_STATEMENT, parseCharter } from '../syndicate/charter.js';
 import { form, type FormPort } from '../syndicate/form.js';
 // `MAX_SYNDICATES_PER_PRINCIPAL` left with the gate that reads it, in `syndicate/form.ts`.
@@ -11368,75 +11369,32 @@ export class Runtime {
    * draws and the reason the cession price draws it too.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  private contributeToSyndicate(
-    ctx: PhaseContext,
-    req: ActionRequest,
-    id: SyndicateId,
-  ): WorldResult<null> {
-    const amount = readInt(req.params, ['stake', 'amount', 'contribute']);
-    if (amount === null || amount <= 0) {
-      return reject(
-        'A2',
-        `you are already a member of ${id}. To add to its pool send {"syndicate":"${id}","stake":N} — ` +
-          'a positive integer of currency. It leaves your stores and becomes the syndicate\'s, and ' +
-          'whether anyone can ever spend it is fixed by the charter clause `treasury_offices`, which ' +
-          'cannot change. Read it before you pool anything.',
-      );
-    }
-    const spendable = freeCash(this.ledger, req.principal);
-    if (spendable < amount) {
-      return reject(
-        'A15',
-        `you can pool ${String(spendable)} and asked to pool ${String(amount)}. That figure is your ` +
-          'EARNINGS: locked stores do not count, and neither does the starter stake — a pooled treasury ' +
-          'can be spent by an office-holder, so letting the grant reach it would make free enrolment into ' +
-          'somebody else\'s capital (D7/A15). Earn it by hauling, trading or completing ventures.',
-      );
-    }
-    const pooled = syndicateAsPrincipal(id);
-    const account = storesAccount(pooled);
-    if (this.ledger.account(account) === undefined) {
-      this.ledger.openAccount(account, 'STORES', pooled);
-    }
-    try {
-      this.ledger.transferCurrency({
-        eventId: `syndicate.pool:${id}:${req.principal}:${String(ctx.tick)}` as EventId,
-        tick: ctx.tick,
-        from: storesAccount(req.principal),
-        to: account,
-        amount: minor(amount),
-      });
-    } catch (error: unknown) {
-      return reject('INV-3', `the stake could not be pooled (${describeError(error)}); nothing moved.`);
-    }
-    this.emitRow({
-      tick: ctx.tick,
-      kind: 'syndicate.pooled',
-      rulesVersion: RULES_VERSION,
-      actorPrincipalId: req.principal,
-      onBehalfOfPrincipalId: null,
-      grantId: null,
-      eventFamilyId: `syndicate::${id}`,
-      parentEventId: null,
-      // A pooled treasury is PUBLIC on §6.4's precedent — bond is "public, and any amount — it is
-      // your credit rating" — and a contribution is what moves it. Hiding the inflow while
-      // publishing the total would make the balance unexplainable.
-      visibility: 'PUBLIC',
-      audience: [],
-      isPublic: true,
-      publicAt: ctx.tick,
-      declassifyAt: ctx.tick,
-      provenanceClass: 'FACT',
-      actedOnStateVersion: ctx.frozenStateVersion,
-      decisionSource: req.decisionSource ?? null,
-      payload: {
-        syndicate: id,
-        member: req.principal,
-        staked: amount,
-        treasury: this.ledger.balance(account),
+  /**
+   * The port {@link apply} reads and writes through. Three members, all called.
+   *
+   * `openPool` duplicates `formPort`'s member rather than sharing it, deliberately: each port names its
+   * own operation's reach, and one merged "syndicate ledger port" would be a surface no single verb
+   * calls in full — which is the defect this project has now found at six depths.
+   */
+  private applyPort(): ApplyPort {
+    return {
+      freeCashOf: (principal) => freeCash(this.ledger, principal),
+      openPool: (id) => {
+        const pooled = syndicateAsPrincipal(id);
+        if (this.ledger.account(storesAccount(pooled)) === undefined) {
+          this.ledger.openAccount(storesAccount(pooled), 'STORES', pooled);
+        }
       },
-    });
-    return { ok: true, value: null };
+      transferToPool: (args) => {
+        this.ledger.transferCurrency({
+          eventId: args.eventId,
+          tick: args.tick,
+          from: storesAccount(args.member),
+          to: storesAccount(syndicateAsPrincipal(args.syndicate)),
+          amount: args.amount,
+        });
+      },
+    };
   }
 
   /**
@@ -11470,73 +11428,54 @@ export class Runtime {
       );
     }
     const id = named as unknown as SyndicateId;
-    const row = this.syndicateBook.at(id);
-    // ── AN ALREADY-MEMBER APPLYING AGAIN IS CONTRIBUTING ──────────────────────
-    //
-    // **The syndicate treasury could hold value and nothing could put value in it.** Measured:
-    // `syndicateAsPrincipal` appeared at exactly two call sites — one read the balance for the
-    // frame, one opened the account at `form` — so every pool was permanently empty and every
-    // office was standing authority over nothing. A6 at org scale had no stakes in it at all,
-    // which is the same inertness as an unoffered verb, one layer deeper.
-    //
-    // Pooling is what membership MEANS (§365's "pooled stores"), so it rides on `apply` rather
-    // than spending one of the 40 verb slots: applying puts you in, applying again deepens the
-    // commitment. One concept, not two.
-    //
-    // **This block first landed in `officeGrantorFault` by accident**, because the three-line
-    // `readString → SyndicateId → at(id)` shape appears in three methods and my edit matched the
-    // first one. Every office appointment then routed into the contribution path and eight tests
-    // went red. Anchored on `apply`'s own rejection text now, which is unique to this method.
-    if (row !== null && this.syndicateBook.isMember(id, req.principal, ctx.tick)) {
-      return this.contributeToSyndicate(ctx, req, id);
-    }
-    // ── AN ALREADY-MEMBER APPLYING AGAIN IS CONTRIBUTING ──────────────────────
-    //
-    // **The syndicate treasury could hold value and nothing could put value in it.** Measured:
-    // `syndicateAsPrincipal` appeared at exactly two call sites — one reads the balance for the
-    // frame, one opens the account at `form` — so every pool was permanently empty and every
-    // office was standing authority over nothing. A6 at org scale had no stakes in it at all,
-    // which makes the whole mechanic inert in the same way an unoffered verb is.
-    //
-    // Pooling is what membership MEANS (§365's "pooled stores"), so it rides on `apply` rather
-    // than spending one of the 40 verb slots: applying puts you in, and applying again deepens
-    // the commitment. One concept, not two.
-    if (row !== null && this.syndicateBook.isMember(id, req.principal, ctx.tick)) {
-      return this.contributeToSyndicate(ctx, req, id);
-    }
-    if (row === null) {
-      return reject(
-        'A2',
-        `there is no syndicate ${named}. Syndicates and their charters are PUBLIC — read them off the ` +
-          'feed before you ask to join one, because the terms cannot change after you are inside.',
-      );
-    }
-    const fault = this.syndicateBook.admissionFault(id, req.principal, ctx.tick);
-    if (fault !== null) return reject('A2', fault);
+    const outcome = apply(this.applyPort(), this.syndicateBook, {
+      applicant: req.principal,
+      syndicate: id,
+      stake: readInt(req.params, ['stake', 'amount', 'contribute']),
+      tick: ctx.tick,
+    });
+    if (!outcome.ok) return outcome;
+    const row = outcome.value.row;
 
-    // ── OPEN admits; INVITE records nothing and says who can answer ───────────
+    // ── TWO ACTS, TWO ROWS ──────────────────────────────────────────────────
     //
-    // Under INVITE the request is deliberately NOT stored. A pending-application queue is a
-    // buffer that grows with enrolments, which is scar #3's shape, and it would need its own cap,
-    // its own place in the hash and its own expiry. The `message` channel already exists for
-    // asking — it is free, it is PARTIES-visible, and it declassifies at settlement, so an
-    // approach and its answer end up in the record where a viewer can read them.
-    if (row.charter.admission === 'INVITE') {
-      return reject(
-        'A2',
-        `${named}'s charter is INVITE: a sitting member has to bring you in, and there is no ` +
-          'application queue for me to put you in. Its members are ' +
-          `${this.syndicateBook.sittingMembers(id, ctx.tick).join(' · ')} — \`message\` one of them, which ` +
-          'costs no action, and it will admit you by naming you itself. What you say there becomes ' +
-          'public at settlement, so it is also how you build the case.',
-      );
+    // The branch is on what `apply` DID, not on what was asked for, so the row can never describe an
+    // outcome the function did not reach. `syndicate.pooled` and `syndicate.joined` are different kinds
+    // rather than one kind with a nullable amount: a reader that had to check a field to know whether
+    // value moved would be one bad null-check away from publishing a contribution nobody made.
+    if (outcome.value.kind === 'POOLED') {
+      this.emitRow({
+        tick: ctx.tick,
+        kind: 'syndicate.pooled',
+        rulesVersion: RULES_VERSION,
+        actorPrincipalId: req.principal,
+        onBehalfOfPrincipalId: null,
+        grantId: null,
+        eventFamilyId: `syndicate::${id}`,
+        parentEventId: null,
+        // A pooled treasury is PUBLIC on §6.4's precedent — bond is "public, and any amount — it is
+        // your credit rating" — and a contribution is what moves it. Hiding the inflow while
+        // publishing the total would make the balance unexplainable.
+        visibility: 'PUBLIC',
+        audience: [],
+        isPublic: true,
+        publicAt: ctx.tick,
+        declassifyAt: ctx.tick,
+        provenanceClass: 'FACT',
+        actedOnStateVersion: ctx.frozenStateVersion,
+        decisionSource: req.decisionSource ?? null,
+        payload: {
+          syndicate: id,
+          member: req.principal,
+          staked: outcome.value.staked,
+          // Read AFTER the transfer, as it always was: the figure published is the treasury a reader
+          // would see, not the one it held before this contribution landed.
+          treasury: this.ledger.balance(storesAccount(syndicateAsPrincipal(id))),
+        },
+      });
+      return { ok: true, value: null };
     }
 
-    try {
-      this.syndicateBook.admit(id, req.principal, ctx.tick);
-    } catch (error: unknown) {
-      return reject('A2', describeError(error));
-    }
     this.emitRow({
       tick: ctx.tick,
       kind: 'syndicate.joined',
