@@ -318,3 +318,60 @@ worse than an unmerged branch. `git merge --abort` left the tree clean.
 - `grant`'s absence was **not** an unfixed affordance. The 5C fix added the affordance; the *accounting*
   was never added, and `withheld-is-accountable.spec.ts` had already **measured** 45.7% silence and
   filed it `OPEN` against a reason describing a gate the code does not have.
+
+## ⚠️ A SECOND BRANCH LEFT UNMERGED — `lode-39` (the monolith extraction)
+
+Same call and the same reason as `lode-35-surface`: green on its own, one conflict in `runtime.ts`
+where **ours is 26,282 characters against theirs at 353** (the risk market's block against the
+extraction's), and I was out of context. `git merge --abort` left the tree clean. Branch `lode-39`,
+five commits, worktree `.claude/worktrees/lode-39-runtime`. `RULES_VERSION` unspent — nothing in it
+changes legality, so no operator door is needed.
+
+**Its `state_hash` evidence is the model to copy:** per-tick streams, not just final hashes,
+byte-identical against a detached master worktree across four 900-tick seeds plus one at 1,800 ticks ×
+16 principals. And it stated its own non-vacuity honestly: the cast applies `form` 12× (real evidence)
+but **never issues `admit` or `apply` in 900 ticks**, so hash equality there is necessary and *vacuous*
+— it proves nothing else broke, and those two rest on tests plus mutation instead.
+
+**It also reported line counts against itself, as asked:** `runtime.ts` 16,075 → 16,021 (**−54**) while
+new production code is **+631**, so **net +577**. The coupling argument is the real one: `vForm` no
+longer touches `this.ledger`, `vAdmit` no longer touches `this.world`, and `test/syndicate` went 4
+files/37 tests → 7/67.
+
+### ★ THE FINDING THAT MATTERS MORE THAN THE REFACTOR
+
+**`form-through-the-front-door`'s `act()` helper asserts only HTTP 200 — and in this engine an illegal
+move IS a 200 carrying `{ok:false, hint}`.** So it cannot distinguish success from refusal, and every
+widening mutation passed it. **All 5 of `admit`'s gates and 3 of `form`'s were untested.** 19 previously
+surviving mutations now fail.
+
+This is the vacuous-guard defect in the *test harness* rather than in a guard, so it silently weakens
+every test built on that helper. **Whoever continues must fix `act()` to assert on the refusal rather
+than the status code**, or the same survivals recur in every syndicate-adjacent extraction.
+
+### Also found by reading
+
+- **A fourth mis-landed edit in `runtime.ts`**, after the three D21 was written to explain: the
+  `isMember → contribute` block is present **twice** in `vApply`, the second copy unreachable, each
+  under its own near-duplicate comment. It compiled and passed everything.
+- **`sim --hazards on|off` is inert** — proven with identical 300-tick hash streams, not argued.
+  `Runtime.hazards` never had a reader and `HAZARD` now runs `frontNow` unconditionally. Field deleted,
+  option kept so `cli.ts` compiles. *Whether `frontNow` should be behind that switch is a design call.*
+- **`api/observe.ts:3755` duplicates both `form` gates**, and `formRefusal` is exported and shaped to
+  replace them — left unwired because that file was another lane.
+
+### Next three, re-measured (D21's table predates 6,300 lines of growth — 39 handlers now, not 27)
+
+1. **`vApprove` + `proposeOffice` + `carryOffice`** — finishes the syndicate cluster; the module, port
+   convention and fixtures now exist. Wrinkle: `carryOffice` re-enters `vGrant`, so the port needs a
+   callback member.
+2. **`vSeal`** — heuristic-exercised at 110 seals/900 ticks, so the last big handler where `state_hash`
+   gives *non-vacuous* evidence, and the largest line win at low coupling.
+3. **`vRevoke`** — establishes the grant-book port that `vGrant`, A6's core loop, will reuse.
+
+### One process note it disclosed itself
+
+It ran `pkill -f vitest` to relieve load at 250 — which matched **every** agent's vitest, not just its
+own — and saw `lode-37-frames` re-running specs afterward. Disclosed rather than hidden, which is why
+it is written down. A shared box needs a shared convention for this; killing by worktree path is the
+obvious one.
