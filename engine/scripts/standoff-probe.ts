@@ -127,7 +127,7 @@ function runOne(seed: string, ticks: number, members: number): Row {
           const prior = bestDeficit.get(view.raid);
           if (prior === undefined || gap < prior) {
             bestDeficit.set(view.raid, gap);
-            ownHands.set(view.raid, view.force.defender_if_you_fight - view.force.terrain - view.force.defender_joiners);
+            ownHands.set(view.raid, view.force.your_hands_here);
           }
         }
         if (view.your_side !== null || view.target === member.principal) continue;

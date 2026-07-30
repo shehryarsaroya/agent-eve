@@ -159,7 +159,7 @@ describe('a target can send for its own hands', () => {
           .raidsFor(raid.target, runtime.engine.tick, 20)
           .find((v) => v.raid === raid.id);
         if (view === undefined) continue;
-        ownHandTicks += view.force.defender_if_you_fight - view.force.terrain - view.force.defender_joiners;
+        ownHandTicks += view.force.your_hands_here;
       }
       for (const action of cast.decide(at, 'muster-count')) runtime.engine.submit(action);
       if (runtime.runTick().halted) throw new Error('halted');

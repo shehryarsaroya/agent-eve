@@ -1195,6 +1195,65 @@ export class HeuristicCast {
    * red tribute line. Hands already crewing a hull are excluded because `engage` holds them; hands
    * pledged to a standoff are **not**, because that is exactly what a muster is spending.
    */
+  /**
+   * One hand, held back for a standoff this member is the **target** of and cannot yet answer.
+   *
+   * The three conditions are each doing work, and together they keep the subject rare:
+   *
+   *   - **live and unanswered** — a resolved or answered standoff has nothing left to reserve for;
+   *   - **nothing of its own standing there** — if a hand is already at the stage the muster branch
+   *     has what it needs and a second reservation would be a tax on a defence already mounted;
+   *   - **and the reading is short** — a standoff this member would already win needs no hand, and
+   *     reserving against it would be `CAST_COALITION_SPARE_HANDS`' first version repeated: a price
+   *     charged where no decision hangs on it.
+   *
+   * Capped at 1 by construction, whatever the number of standoffs: this is the difference between
+   * keeping a hand free and refusing to work.
+   */
+  private standoffNeeded(member: CastMember, tick: number): number {
+    for (const view of this.runtime.raidsFor(member.principal, tick, MAX_CAST)) {
+      if (view.your_side !== 'TARGET' || view.state !== 'DEMANDED') continue;
+      if (view.force.your_hands_here > 0) continue;
+      if (view.force.verdict_if_resolved_now === 'REPULSED') continue;
+      return 1;
+    }
+    // ── ★ AND BEFORE ONE EXISTS, BECAUSE BY THE TIME IT DOES IT IS ALWAYS TOO LATE ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE REACTIVE CLAUSE ABOVE FIRED ON 180 OF 180 STANDOFF TICKS AND CHANGED NOTHING**, and the
+    // reason is the sharpest measurement in this pass. Seed `g01`, every tick of every live
+    // standoff, counting the TARGET's own three hands by state:
+    //
+    //     IDLE 0.00 · COMMITTED 3.00 · IN_TRANSIT 0.00 · RECOVERING 0.00
+    //
+    // All three, every tick, in venture roles — with 0.78 hands *standing at the stage* that could
+    // not defend it, because `handsDefending` counts IDLE and a committed hand is not. A role holds
+    // its hand until a Reckoning boundary (measured median 11 ticks, p90 **276** against a 288-tick
+    // cycle) and a demand window is 24. So a reservation that waits for the demand is reserving
+    // something that was spent one to two hundred ticks earlier, and no action-priority ordering can
+    // recover it: `raidAnswerFor` is the first rung of the ladder and had nothing left to send.
+    //
+    // That is the real reason yielding looked dominant, and it is not about yield at all — **the
+    // target had no second option to weigh**, so `costs.pay` was compared against nothing.
+    //
+    // ── WHY THE SCHEDULE IS THE RIGHT SIGNAL ──────────────────────────────────
+    //
+    // `RAID_SPAWN_PHASES` is `[48, 120, 192]` and its docblock says exactly what it is for:
+    // *"Published so an agent can plan a convoy around them — which is the point: A14 says drama
+    // runs on a clock, and a clock nobody can read is just weather."* Nothing had ever read it. A
+    // standing reservation against a published clock is the intended use of that constant, and it
+    // is a **cast policy** priced in the member's own opportunity cost — not an engine rule — so it
+    // costs nothing anyone else has to know.
+    //
+    // Gated on being raidable at all: A8 makes hostile action in the Commons *invalid*, so a
+    // Commons-bound member can never be a target and reserving there would be a pure loss. That
+    // keeps the subject to the members the world can actually reach, which at the sweep's seating
+    // is a minority of the cast — the reason this costs formation far less than it buys defence.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (principalIsCommonsBound(this.runtime.world, member.principal)) return 0;
+    return tierOf(this.runtime.world.map, this.bodyOf(member)) === 'COMMONS' ? 0 : 1;
+  }
+
   private spareHands(member: CastMember, tick: number): number {
     const crewed = this.runtime.battles.committedHands(member.principal);
     const idle = handsOf(this.runtime.world, member.principal).filter(
@@ -1818,7 +1877,34 @@ export class HeuristicCast {
     // A subtraction rather than a separate branch, because the *decision* is not "walk a hand"
     // (that is `levyMove`'s, further down) — it is "do not spend this one". Those are different
     // acts and only the first costs an action.
-    const spendable = idle.length - this.carriageNeeded(member, tick);
+    // ── ★ AND ONE FOR A STANDOFF YOU ARE THE TARGET OF ────────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE MUSTER BRANCH AND THE FILL BRANCH COMPETE FOR ONE SCARCE THING, AND THE FILL BRANCH
+    // WAS WINNING BEFORE THE STANDOFF EXISTED.**
+    //
+    // Measured, and it is the most useful thing this pass found. Adding
+    // {@link HeuristicCast.raidAnswerFor}'s muster clause took the targets' own hands at their own
+    // stages from ~0 to real and `REPULSED` from 6 to 17 over 8 seeds. Then `openSlotFor` started
+    // filling roles that had been going unfilled — 4-role formation 8 → 19, two-role abandonment
+    // 520 → 241 — and the muster branch went back to **zero**: `marchTo` returned null on
+    // **180 of 180** target-ticks, because a role holds a hand until a Reckoning boundary (measured
+    // median 11 ticks, p90 276) and there was no longer an IDLE hand left to send.
+    //
+    // Action priority cannot fix that and it is worth being precise about why: `raidAnswerFor` is
+    // the FIRST rung of this ladder, so it always got first refusal on the *action*. What it did
+    // not have was a **hand** — those were committed ticks or Reckonings earlier, by a branch that
+    // could not see a standoff that had not spawned yet. A durable commitment beats a priority
+    // order every time, which is the general form of this and the reason the reservation has to sit
+    // *here*, in front of the spender, rather than as another gate on the muster.
+    //
+    // So it is exactly {@link carriageNeeded}'s shape and it sits beside it: **a bill you owe and a
+    // raid aimed at you both outrank a role you merely might fill.** One hand, only while a live
+    // standoff names this member and it has nothing standing there — the case where the reservation
+    // changes an outcome — and never more, because a member that reserved against every standoff it
+    // could see would stop working entirely.
+    // ══════════════════════════════════════════════════════════════════════════
+    const spendable = idle.length - this.carriageNeeded(member, tick) - this.standoffNeeded(member, tick);
 
     if (spendable > 0) {
       const slot = this.openSlotFor(member, tick);

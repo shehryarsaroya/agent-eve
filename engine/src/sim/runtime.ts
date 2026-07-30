@@ -2008,9 +2008,43 @@ import {
  * renumber to the tail at merge* — and **stacked rather than blended**, because an operator reading a
  * `RULES_VERSION_MISMATCH` has to know which change moved which table. 36 moved `risk`; 37 moves
  * `raid`. This is the fifth version to arrive out of order.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ## 38 — THE CONFLICT LAYER GETS AN OCCASION, AND `per_reckoning` STARTS MEANING IT
+ *
+ * Three changes, all found by playing and each measured before it was touched. **No captured table
+ * changes and no verb is spent** (40/40 stands); what moves is what agents are *offered* and what
+ * the cast *selects*, which is enough to change every world line after the cutover.
+ *
+ *   1. **`RaidView.if_repulsed`** — a new published block. §9 says world raids exist partly to give
+ *      escorts a guaranteed market, and the market had no price: `predate.ts` forfeits raider
+ *      stakes to the *target*, and a world raid has no raider stakes, so a DEFENDER joiner
+ *      collected nothing. The payment was already in the engine — a repulsed world raid holds the
+ *      stage against the world for a whole Reckoning, for **everyone** standing there — and
+ *      nothing rendered it. Additive to the observation; no existing field changes meaning.
+ *   2. **`ParleyEntitlementBook`** — `earned_minor` becomes the Reckoning's high-water mark instead
+ *      of a live `freeCash` read, so an ordinary escrow can no longer revoke the right to speak
+ *      from a field called `per_reckoning`. Sampled once a tick for every principal, from the
+ *      clock rather than on `observe`. `parleys_sent_this_reckoning` and `parleyed_this_reckoning`
+ *      join the capacity block, because the sender previously had no record of its own sends at
+ *      all. **The A15 price is arithmetically unchanged**: a maximum over a set of zeros is zero.
+ *   3. **`cast/heuristic.ts`** — the target may now `move` a hand to its own standoff (measured: 6
+ *      hands at 72 stages before it), the coalition signal admits ground of your own as well as a
+ *      friend, and `openSlotFor` sorts by urgency and spreads bidders across open roles instead of
+ *      every member naming `open[0]` of an id-ordered board.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * `SNAPSHOT_HASH_MISMATCH` at the **first tick any cast member takes a different action**, which
+ * for a live world is essentially the cutover tick — the heuristic's decision ladder moved, so the
+ * action log diverges before any table does. That is a wider signature than 37's and it is stated
+ * plainly rather than discovered: there is no quiet cutover for a cast change.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
+ * prints the exact string, and a bare tick is refused.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 37;
+export const RULES_VERSION = 38;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
