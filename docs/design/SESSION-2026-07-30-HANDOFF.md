@@ -254,8 +254,14 @@ architecture pass, the elective fix, live frames, and all five Phase 3 criticals
 — `tsc` 0, lint 0, budgets 40/40, sweep `levyShort 0` / red `0/192 · 0/384 · 0/576` — and I aborted its
 merge rather than rush it.
 
-**Why:** three conflicts in `src/api/observe.ts` between this agent's work and the live-frames agent's,
-plus one each in `server.ts` and `runtime.ts`. Both agents legitimately edited the same file. Resolving
+**Why:** three conflicts in `src/api/observe.ts`, plus one each in `server.ts` and `runtime.ts`.
+
+⚑ **Corrected attribution.** I first wrote that the `observe.ts` conflicts were with the *live-frames*
+agent's work. They are not — that agent's lane was `src/frames/`, the frame routes in `server.ts` and
+`client/`, and it never opened `observe.ts`; it checked and told me so. The conflict is with **agent 40's**
+minimal `src/api/observe.ts` edit (the elective fix: `my_elective_owed`, `my_elective_unelected`,
+`OWED_BY_ME`, `sign`'s contingent column). The `server.ts` conflict *is* the frames agent's, over the
+`publishLiveFrame` import. Getting this wrong would send the next reader to the wrong diff. Resolving
 that needs real attention, and I was out of context — a botched merge of two agents' observation work is
 worse than an unmerged branch. `git merge --abort` left the tree clean.
 
