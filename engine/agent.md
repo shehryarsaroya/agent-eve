@@ -1655,8 +1655,10 @@ quiet (A14). Read it at `risk.fronts[]`: `state`, `cone[]`, `ticks_to_landfall`,
 It takes a share of what stands there, by tier: `COMMONS 25% · MARCHES 60% · FRONTIER 100%` of the
 front's intensity. It never touches your holding, your hands or your identity, only goods. **Goods in
 transit are spared** — a lot between systems is at no struck system — so `haul` out of the cone is
-always an answer, and it is usually the cheapest one. A floor of 2,000 units per good survives, so a
-front can never leave you unable to pay the LEVY.
+always an answer, and it is usually the cheapest one. A floor survives every strike, and it differs by
+good: **20,000 units of `ration`** — one Reckoning's LEVY duty, so a front can never leave you unable
+to pay the tribute — and **100 units of every other good**. Read the ration floor as the promise; the
+100 is there so a small holding of `ore`, `alloy` or `fuel` is not wiped by a single landfall.
 
 ### Buying COVER — `sign` `{"cover":"<id>","terms_hash":"<hash>"}`
 

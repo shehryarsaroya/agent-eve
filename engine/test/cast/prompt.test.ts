@@ -1004,7 +1004,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_266);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_517);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1015,7 +1015,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 95,760 = **24,240**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 89,241 — leaving **30,759**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_266);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(100_517);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1079,7 +1079,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // is exactly the principal §11A's destruction rules are written for.
     // Margin 120,000 − 89,241 = **30,759** against a required 4,000 — the number to quote about
     // SAFETY and never the number to quote about ROOM.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(93_747);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(93_998);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2630,9 +2630,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       52_415, // mid-game in the Commons                 (+1,615)
       62_118, // about to take territory        (+4,506 LODE/§11G, +2,384 RAZE — it holds works to lose)
       65_260, // at war: party to a live campaign        (+4,506, +2,384)
-      92_238, // a claimant in trouble                   (+4,506, +2,384)
-      74_108, // the Commons at its fullest              (+1,173; +0 for RAZE — A8, nothing to fear)
-      93_747, // outside the Commons and landless, at its fullest: the largest REACHABLE (+4,506, +2,384)
+      92_489, // a claimant in trouble                   (+4,506, +2,384)
+      74_359, // the Commons at its fullest              (+1,173; +0 for RAZE — A8, nothing to fear)
+      93_998, // outside the Commons and landless, at its fullest: the largest REACHABLE (+4,506, +2,384)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -2807,7 +2807,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      100_266,
+      100_517,
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
