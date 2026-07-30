@@ -156,6 +156,64 @@ export async function replayCheck(opts: ReplayCheckOptions): Promise<ReplayCheck
   // adopts, so `identity` here is always the first divergence in the whole record and the
   // refusal is always the actionable one.
   const refusal = describeAcceptanceRefusal(acceptance, identity);
+
+  // ── ★ THE TAIL, WHICH NOTHING USED TO CHECK — AND IT COST AN OUTAGE ────────
+  //
+  // When the operator has ALREADY declared this divergence, the check above has replayed only as
+  // far as the declared tick and stopped. The refusal text below says the declaration "authorises
+  // this one and nothing after it" — true of the ACCEPTANCE, and for the life of this file nothing
+  // verified that nothing after it had broken. So a deploy with a matching declaration restarted
+  // the service having replayed 287 of 9,000 ticks, and **the restart was the first thing that ever
+  // executed the other 8,700.**
+  //
+  // Measured, on 2026-07-30: Phase 3 filled the `HAZARD` phase, whose step budget had no term for
+  // stored lots because the phase had been an empty hook since commit #1. The preflight said "this
+  // build reproduces the record", the restart raised `DET-9` at tick 7,128, and every route served
+  // 503 for about ninety minutes. The gate that was supposed to be the last line before a restart
+  // had answered a narrower question than the one it appears to answer.
+  //
+  // So: if the door is already open, WALK THROUGH IT and replay to head. A failure past the
+  // declared tick is not a rules change and no acceptance covers it — it is this build being unable
+  // to compute the record, which is the one thing this check exists to find.
+  if (preAccepted) {
+    // A FRESH runtime: the one above has replayed as far as the divergence and is not clean.
+    const tail = await bootWorld(opts.buildRuntime(persistedSeed), store, {
+      seed: persistedSeed,
+      acceptDivergence: opts.acceptDivergence ?? null,
+      checkpoint: { disabled: true },
+      ...(opts.onProgress === undefined ? {} : { onProgress: opts.onProgress }),
+    });
+    if (tail.status !== 'READY') {
+      return {
+        reproduces: false,
+        diagnosis: tail.diagnosis,
+        boot: null,
+        // NOT pre-accepted: the standing declaration does not authorise this, and reporting it as
+        // authorised is what would let the deploy through a second time.
+        preAccepted: false,
+        report:
+          `replay-check: THE DECLARED DIVERGENCE IS ACCEPTED, AND THIS BUILD STILL CANNOT ` +
+          `REPRODUCE THE RECORD PAST IT (head tick ${String(head)}).\n\n` +
+          describeDiagnosis(tail.diagnosis) +
+          `\n\n  This is NOT a rules change and no acceptance covers it. The declaration at the ` +
+          `earlier tick is honoured; the failure above is later, and a restart would HOLD the ` +
+          `world on every route. Fix the build.\n`,
+      };
+    }
+    const r = tail.result;
+    return {
+      reproduces: true,
+      diagnosis: null,
+      boot: r,
+      preAccepted: true,
+      report:
+        `replay-check: OK THROUGH THE DECLARED DOOR. The divergence at tick ` +
+        `${String(identity.tick)} is already declared, and replaying THROUGH it reached head ` +
+        `${String(r.headTick)} — ${String(r.ticksReplayed)} ticks, ${String(r.tripwiresChecked)} ` +
+        `snapshot tripwires matched. The tail is what a restart will execute, and it is sound.`,
+    };
+  }
+
   return {
     reproduces: false,
     diagnosis: outcome.diagnosis,
@@ -204,7 +262,22 @@ function readOnly(inner: JournalStore): JournalStore {
     // check that failed on it would cry wolf on every journal written before it.
     recordRulesVersion: (): Promise<void> => Promise.resolve(),
     journalledRulesVersion: () => inner.journalledRulesVersion(),
-    recordDivergence: (): Promise<void> => refuse('recordDivergence'),
+    // ── A NO-OP FOR THE TAIL PASS, AND THE GUARD ABOVE IS WHY IT IS SAFE ──────
+    //
+    // This refused, and it caught the tail check on its first run: replaying THROUGH a declared
+    // divergence is what a real boot does, and a real boot annotates the record when it does. The
+    // preflight must not.
+    //
+    // A no-op rather than a refusal, for `recordRulesVersion`'s reason exactly: the annotation is
+    // metadata ABOUT a divergence, not part of the computation being checked, and the boot that
+    // follows the deploy writes it for real. Refusing here would make the tail check impossible —
+    // and the tail check is the thing that would have caught the outage this file's own header
+    // promises to prevent (*"before the service is restarted, with the old process still serving"*),
+    // which it had never actually done for a pre-accepted deploy.
+    //
+    // A5 is untouched: the permanent record still gains exactly one annotation, written by the boot
+    // that resumes the world, never by a throwaway process that only asks a question.
+    recordDivergence: (): Promise<void> => Promise.resolve(),
     divergences: (): Promise<readonly DivergenceRecord[]> => inner.divergences(),
     recordEnrollment: (): Promise<void> => refuse('recordEnrollment'),
     enrollments: (): Promise<readonly EnrollmentRecord[]> => inner.enrollments(),

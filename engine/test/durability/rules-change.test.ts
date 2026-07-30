@@ -398,6 +398,61 @@ describe('the deploy preflight answers the question before the restart', () => {
     expect((await live.store.divergences()).length).toBe(0);
   }, 120_000);
 
+  it('★ THE OUTAGE: the preflight now replays THROUGH a declared door, to head', async () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The gap that held production for about ninety minutes on 2026-07-30.
+    //
+    // The preflight replayed only as far as the declared divergence and stopped. Its own report said
+    // the declaration "authorises this one and nothing after it" — true of the ACCEPTANCE, while
+    // nothing verified that nothing after it had broken. A deploy whose declaration matched restarted
+    // the service having replayed 287 of ~9,000 ticks, and the RESTART was the first thing that ever
+    // executed the other 8,700. It raised `DET-9` at tick 7,128 — Phase 3 filled the `HAZARD` phase,
+    // whose step budget had no term for the stored lots it reads — and every route served 503.
+    //
+    // WHAT THIS ASSERTS, AND WHAT IT DELIBERATELY DOES NOT. The fix is that a pre-accepted check now
+    // runs a SECOND boot with the acceptance and replays to head, so a build that cannot *execute*
+    // the tail — a halt, a step-budget abort, a thrown phase — is caught with the old process still
+    // serving. That is the outage's actual failure mode, and `bootWorld` returns non-READY for it.
+    //
+    // It does NOT claim to catch a later *hash* divergence. Once a divergence is accepted the world
+    // is knowingly forked from its own journal, so downstream snapshot tripwires no longer describe
+    // this world and boot stops treating them as authority. An earlier revision of this test asserted
+    // exactly that and passed a build straight through — the honest reading is that acceptance ends
+    // hash comparison by design, and the tail check's subject is EXECUTION, not agreement.
+    // ══════════════════════════════════════════════════════════════════════════
+    const live = await runLive(200);
+    const build = (): Runtime => {
+      const runtime = seatedRuntime();
+      refuseAfter(runtime, victim(runtime), 100);
+      return runtime;
+    };
+    const first = await replayCheck({ store: live.store, seed: SEED, buildRuntime: build });
+    if (first.diagnosis === null) throw new Error('the injected rule must diverge');
+    const declaredAt = first.diagnosis.tick;
+    // Before the fix this call replayed to tick 100 of 200 and returned. It must now reach head.
+    expect(first.boot, 'the FIRST pass stops at the divergence and reports no boot').toBeNull();
+
+    const checked = await replayCheck({
+      store: live.store,
+      seed: SEED,
+      buildRuntime: build,
+      acceptDivergence: acceptanceStringForDiagnosis(first.diagnosis),
+    });
+    expect(checked.reproduces).toBe(true);
+    expect(checked.preAccepted).toBe(true);
+    expect(checked.report).toContain('OK THROUGH THE DECLARED DOOR');
+    // The assertion that would have caught the outage: the tail was actually EXECUTED, past the
+    // declared tick, all the way to the head a restart will have to reach.
+    const boot = checked.boot;
+    expect(boot, 'a pre-accepted pass must report a real boot, not just a verdict').not.toBeNull();
+    expect(
+      boot?.headTick ?? -1,
+      `the tail pass must reach head ${String(live.headTick)}, not stop at the declared tick ` +
+        `${String(declaredAt)} — replaying only to the door is what shipped the outage`,
+    ).toBe(live.headTick);
+    expect(boot?.ticksReplayed ?? 0).toBeGreaterThan(declaredAt);
+  }, 180_000);
+
   it('passes when the operator has already declared that exact divergence', async () => {
     const live = await runLive(200);
     const build = (): Runtime => {
@@ -418,7 +473,12 @@ describe('the deploy preflight answers the question before the restart', () => {
       acceptDivergence: key,
     });
     expect(declared.preAccepted).toBe(true);
-    expect(declared.report).toContain('ALREADY declared this exact divergence');
+    // ★ The wording changed when the preflight started replaying THROUGH the declared door. It used
+    // to stop at the divergence and say "an operator has ALREADY declared this", having verified
+    // nothing after it; it now reaches head and says so. See the tail-check note in `replayCheck.ts`
+    // — that gap restarted a service having replayed 287 of 9,000 ticks and held the world.
+    expect(declared.report).toContain('OK THROUGH THE DECLARED DOOR');
+    expect(declared.boot, 'the tail pass must report a real boot, not just a verdict').not.toBeNull();
 
     const wrong = await replayCheck({
       store: live.store,
