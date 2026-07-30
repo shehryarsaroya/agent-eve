@@ -243,3 +243,72 @@ The player's verdict: *"That landed."* And: *"I would keep playing one more sess
 of the grant. I would not keep playing past that if the record still refused to remember it."*
 
 **That is the honest state of this project. A6 works and lands. The ledger beneath it does not.**
+
+---
+
+## ⚠️ ONE BRANCH LEFT UNMERGED — `lode-35-surface`
+
+**Everything else landed.** Master is `RULES_VERSION` **36** at `1467566`, with the five features, the
+architecture pass, the elective fix, live frames, and all five Phase 3 criticals in. `lode-35-surface`
+(commit `c9f8a3e`, worktree `.claude/worktrees/lode-35-surface`) is **fully gated and green on its own**
+— `tsc` 0, lint 0, budgets 40/40, sweep `levyShort 0` / red `0/192 · 0/384 · 0/576` — and I aborted its
+merge rather than rush it.
+
+**Why:** three conflicts in `src/api/observe.ts` between this agent's work and the live-frames agent's,
+plus one each in `server.ts` and `runtime.ts`. Both agents legitimately edited the same file. Resolving
+that needs real attention, and I was out of context — a botched merge of two agents' observation work is
+worse than an unmerged branch. `git merge --abort` left the tree clean.
+
+**How to finish it:**
+
+1. `git merge lode-35-surface`
+2. **`server.ts`** — union the imports. Ours has `publishLiveFrame` (frames agent); theirs adds `join`
+   from `node:path` plus `FRAME_INDEX`, `frameFileName`, `LATEST`. Both are needed.
+3. **`runtime.ts`** — union the version notes, then **renumber 35 → 37** (master took 36 for the risk
+   market). Protocol: *pre-assign to avoid the collision, renumber to the tail at merge*, stacked not
+   blended.
+4. **`observe.ts`** — the three real ones. Read both sides; they are additive in intent (new published
+   fields on one side, new affordance text on the other), but check by hand rather than unioning: a
+   union cut a docblock in half earlier tonight and duplicated a declaration twice.
+5. **Re-measure the contract pins, do not adjust them.** This branch reports analytic max **101,273**
+   and worst reachable **94,754** — but master has moved twice since, so both are stale. The re-measure
+   rule earned itself again inside this very branch: its own first reading was 101,272 and its second
+   101,273, *because reflowing one pinned sentence added a newline*.
+
+### What is in it, and why it is worth finishing
+
+- **The occupancy field**, measured over 516 crossing decisions across 8 worlds: ranking by the old
+  row's only signal lands on mean `share_per_tick` **40.06**; ranking by the new field lands on
+  **47.72**, and in **242 of 516 (47%)** the old row picks strictly worse ground. Launch map: the
+  richest MARCHES system with four occupants pays an arriving fifth **23**; the poorest empty one pays
+  **100** — a **4.35×** spread against the lode's 15%.
+- **★ And the honest finding that resolves the whole "nobody competes" question:** the heuristic cast's
+  destination choice **does not move**, because `graduateFor` reads `worksQuote(...).sharePerTick`
+  directly off the engine rather than through the observation. *The cast was never blind — only agents
+  were.* So the field changes nothing for the cast and everything for a real player, which is exactly
+  why three separate measurements read "the cast never competes for rich ground."
+- Underneath it: `worksQuote`'s `held` asked a **global** question (`ofPrincipal`), so a principal
+  holding a WORKS anywhere was quoted `yield / occupants` for every *other* system — 22% high at four
+  occupants — while `alreadyHeld`, two dozen lines away, was already per-system.
+- **`sealVerdict` printed `HONOURED` over a contradiction standing had already been charged for.**
+  `if (rec.role === null) continue` dropped the seal `SealBook.resolve` had charged, and the map keyed
+  on `rec.role.venture` (the free *slot*) instead of `intent.target` (what was promised).
+  `test/frames/` had **zero** `CONTRADICTED` assertions before this.
+- **Hands on your own demand.** `readForce` scored the raider one point per *principal* with sway read
+  as a boolean, while the target's own hands counted one each — contradicting `SWAY_STATEMENT`, which
+  ships verbatim, and `campaign/pulse.ts`, which already computes `min(present, sway)`. No verb spent;
+  `move` is the act. And the `your_side !== null` arm of the raid affordance chain **did not exist**:
+  an initiator got no offer, no withheld row, and no counter.
+- `build {ANCHOR}` named every cost except **rent**, so a claim over ground nobody works read identically
+  to a good one. `move` said nothing about a **STRAIT**, which at 35 decides whether the walk buys force.
+
+### Three claims it proved FALSE, worth keeping
+
+- `sealVerdict` was **not** hardcoded — there is a live `CONTRADICTED` branch. The symptom was real and
+  the cause was two filters.
+- `join {campaign}` offering a Commons-seated principal both sides **was fixed at 24**. One live
+  instance of that shape remained, and it is not keyed on tier at all: it fires on `targets.length === 0`
+  — a *missing param* — and then prints a sentence about the Commons.
+- `grant`'s absence was **not** an unfixed affordance. The 5C fix added the affordance; the *accounting*
+  was never added, and `withheld-is-accountable.spec.ts` had already **measured** 45.7% silence and
+  filed it `OPEN` against a reason describing a gate the code does not have.
