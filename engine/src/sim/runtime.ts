@@ -1979,11 +1979,9 @@ import {
   type SyndicateId,
 } from '../syndicate/book.js';
 import { CHARTER_STATEMENT, parseCharter } from '../syndicate/charter.js';
-import {
-  FOUNDING_COST_MINOR,
-  MAX_SYNDICATES_PER_PRINCIPAL,
-  PROPOSAL_TTL_TICKS,
-} from '../syndicate/params.js';
+import { form, type FormPort } from '../syndicate/form.js';
+// `MAX_SYNDICATES_PER_PRINCIPAL` left with the gate that reads it, in `syndicate/form.ts`.
+import { FOUNDING_COST_MINOR, PROPOSAL_TTL_TICKS } from '../syndicate/params.js';
 import { Book as WorksBook, worksStateTable, type WorksId } from '../works/book.js';
 import { produce as produceNow } from '../works/produce.js';
 import { checkWorks } from '../works/invariants.js';
@@ -11079,6 +11077,38 @@ export class Runtime {
    * call sites that agree today is a rule that lapses on the fourth.
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * The port {@link form} reads and writes through. Three members, all of them called.
+   *
+   * A method rather than a field so it is built per call with the tick already bound, which is the
+   * shape `demandPort` established: a port that had to be handed a tick at every call site is a port
+   * whose members can disagree about which tick they are on.
+   */
+  private formPort(): FormPort {
+    return {
+      freeStoresOf: (principal) => {
+        const account = storesAccount(principal);
+        return this.ledger.account(account) === undefined ? minor(0) : this.ledger.freeBalance(account);
+      },
+      retireFoundingCost: (args) => {
+        this.ledger.retireCurrency({
+          eventId: args.eventId,
+          tick: args.tick,
+          from: storesAccount(args.principal),
+          amount: FOUNDING_COST_MINOR,
+          sink: CURRENCY_SINK.UPKEEP,
+        });
+      },
+      openPool: (id) => {
+        // NOT registered as a principal — see `syndicate/form.ts:FormPort.openPool`.
+        const pooled = syndicateAsPrincipal(id);
+        if (this.ledger.account(storesAccount(pooled)) === undefined) {
+          this.ledger.openAccount(storesAccount(pooled), 'STORES', pooled);
+        }
+      },
+    };
+  }
+
   private vForm(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const name = readString(req.params, ['name', 'syndicate', 'title']);
     if (name === null || name.trim().length === 0) {
@@ -11088,64 +11118,17 @@ export class Runtime {
           `under a charter — and costs ${String(FOUNDING_COST_MINOR)}. ${CHARTER_STATEMENT}`,
       );
     }
-    if (name.length > 48) {
-      return reject('A2', `a syndicate name is at most 48 characters; yours is ${String(name.length)}.`);
-    }
-    const already = this.syndicateBook.of(req.principal, ctx.tick).length;
-    if (already >= MAX_SYNDICATES_PER_PRINCIPAL) {
-      return reject(
-        'A15',
-        `you already sit in ${String(already)} syndicates, which is the cap of ` +
-          `${String(MAX_SYNDICATES_PER_PRINCIPAL)}. Divided loyalty is interesting; unlimited is noise. ` +
-          'Give notice on one first.',
-      );
-    }
-    const charter = parseCharter(req.params);
-    if ('fault' in charter) {
-      // Refused rather than defaulted. Silently defaulting a constitutional clause would be the
-      // worst failure available here: permanent, invisible, and not what was asked for.
-      return reject('A2', `${charter.fault} ${CHARTER_STATEMENT}`);
-    }
-
-    const account = storesAccount(req.principal);
-    const free = this.ledger.account(account) === undefined ? minor(0) : this.ledger.freeBalance(account);
-    if (free < FOUNDING_COST_MINOR) {
-      return reject(
-        'A15',
-        `founding a syndicate costs ${String(FOUNDING_COST_MINOR)} and you have ${String(free)} free ` +
-          '(locked stores do not count). The money is RETIRED, not paid to anybody, so your starter stake ' +
-          'can cover it — this gate is priced in capital and never in identities.',
-      );
-    }
-    try {
-      this.ledger.retireCurrency({
-        eventId: `syndicate.form:${req.principal}:${String(ctx.tick)}` as EventId,
-        tick: ctx.tick,
-        from: account,
-        amount: FOUNDING_COST_MINOR,
-        sink: CURRENCY_SINK.UPKEEP,
-      });
-    } catch (error: unknown) {
-      return reject('INV-3', `the founding cost could not be paid (${describeError(error)}); nothing was founded.`);
-    }
-
-    let row;
-    try {
-      row = this.syndicateBook.form({
-        founder: req.principal,
-        name: name.trim(),
-        charter,
-        tick: ctx.tick,
-      });
-    } catch (error: unknown) {
-      return reject('INV-26', describeError(error));
-    }
-
-    // The pool. Opened here and NOT registered as a principal — see the header.
-    const pooled = syndicateAsPrincipal(row.id);
-    if (this.ledger.account(storesAccount(pooled)) === undefined) {
-      this.ledger.openAccount(storesAccount(pooled), 'STORES', pooled);
-    }
+    const outcome = form(this.formPort(), this.syndicateBook, {
+      founder: req.principal,
+      name,
+      // The parse fault rides in rather than being resolved here: the membership cap is checked
+      // first, so a founder already at the cap reads about the cap even when its charter is junk too.
+      charter: parseCharter(req.params),
+      tick: ctx.tick,
+    });
+    if (!outcome.ok) return outcome;
+    const row = outcome.value;
+    const charter = row.charter;
 
     this.emitRow({
       tick: ctx.tick,
