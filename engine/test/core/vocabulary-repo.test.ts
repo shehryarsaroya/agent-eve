@@ -162,6 +162,22 @@ const SHARED_MEMBERS = new Map<string, string>([
     'the FRONT landed. A front that has STRUCK and a COVER that has been STRUCK are the same instant seen from the peril and from the promise: one event, and the COVER row exists precisely to say "this front reached me". Two words would let the record date the same moment twice'],
   ['ChainLinkState+HoldingState.INTACT',
     '"not destroyed" — a holding that has not fallen, and a chain link whose promise has not snapped. The `ChainLinkState` member was `STANDING` in its first draft and this guard refused it in one line, correctly: §3 gives STANDING to the public factual vectors. See `risk/lines.ts` for the note'],
+  // ── ★ 37's FIFTH AUTHORITY-LINE STATE. `ClaimState+CoverState.LAPSED`'s argument, one subject over. ──
+  //
+  // *"An obligation whose clock ran out with nothing owed either way"* is that entry's own wording, and
+  // it is exactly what both of these are: a resting order that reached its `expires_tick` unfilled, and
+  // a GRANT that reached its `expiresTick`. Neither is a breach and neither is a revocation — the
+  // distinction from `DEFAULTED` on one side and from `REVOKED` on the other is the whole content of
+  // the word, and it is the distinction A5′ most depends on here: a grant that *ran out* and a grant
+  // somebody *took back* are two different things to say about a real agent, permanently, on a frame.
+  //
+  // A second word for it was the alternative and it is strictly worse — HARD RULE 4's violation with
+  // the sign flipped, since §3 forbids one word wearing two concepts and the remedy must not be two
+  // words wearing one. `EXHAUSTED` was the other candidate and it is simply false: it means *no headroom
+  // left on either limit*, so using it for a lapsed term would tell a viewer a delegate had spent
+  // everything when it had spent nothing.
+  ['AuthorityLineState+OrderState.EXPIRED',
+    "a term that ran out with nothing owed either way — a resting order that was never filled, and a GRANT whose clock ran. `ClaimState+CoverState.LAPSED`'s entry argues the identical shape; the distinction from DEFAULTED and from REVOKED is the whole content of the word"],
   ['ChargeRule+LevyRule.EVEN',
     'ONE allocation rule — "every subject on the roll bears the same share" — offered on two ballots, the Levy\'s over principals and the Charge\'s over claims. Renaming either would be the mirror of the §3 error: two words for one concept, so an agent reading EVEN on one ballot and FLAT on the other would learn a distinction that does not exist. The two are also computed by the same weight of 1, in the same largest-remainder pass'],
 ]);

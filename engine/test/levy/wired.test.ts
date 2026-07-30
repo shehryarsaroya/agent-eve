@@ -30,6 +30,7 @@ const ARGS: SimArgs = {
   emitStateHash: true,
   quiet: true,
   framesDir: null,
+  liveFrames: false,
 };
 
 describe('the verbs are reachable, and neither of them is new', () => {

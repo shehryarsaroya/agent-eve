@@ -45,12 +45,37 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize, type CanonicalValue } from '../core/canonical.js';
 import { isSettlementTick } from '../core/time.js';
-import { assertFrameBudgets, type ReckoningFrame } from './contract.js';
+import { assertFrameBudgets, assertLiveFrameBudgets, type LiveFrame, type ReckoningFrame } from './contract.js';
 
 export class FrameWriteError extends Error {}
 
 /** Where the client looks. Matched by `deploy/nginx-compact.conf`. */
 export const LATEST = 'latest.json';
+
+/**
+ * ★ Where the client looks **between** Reckonings. Matched by `deploy/nginx-compact.conf`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE THIRD MOVING FILE, AND THE ONLY ONE THAT CHANGES WHILE ANYONE IS WATCHING.**
+ *
+ * {@link LATEST} is `max-age=2` against a file that, at `SPEEDS.prod`, changes **once every 24
+ * hours** — 288 ticks × 300 s. The client polls it every 15 seconds, so 5,759 of every 5,760 polls
+ * return the same bytes and a viewer arriving at an arbitrary moment sees a still image of yesterday.
+ *
+ * This file is the same shape and the same cache policy over a value that moves every tick. Nothing
+ * about §15.5's delivery design changes: it is a **static file behind Cloudflare**, not a socket, and
+ * the two-second cache means one origin fetch every two seconds serves any audience at all — which
+ * is the exact property per-connection SSE would have destroyed *"because the Reckoning is exactly
+ * when you have an audience"*.
+ *
+ * Rewritten in place rather than archived, and that is the one asymmetry with the Reckoning frame:
+ * a settled Reckoning is A5's permanent record and gets an immutable file forever, while a
+ * mid-Reckoning tick is *motion* and its history is the record, not this. An archive of 288 live
+ * frames a day would be 105,000 files a year that nothing can be derived from that the ledger cannot
+ * derive better.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const LIVE = 'live.json';
 
 /**
  * The archive's table of contents. Matched by `deploy/nginx-compact.conf`.
@@ -81,6 +106,20 @@ export function frameFileName(reckoning: number): string {
  */
 export function serialiseFrame(frame: ReckoningFrame): string {
   assertFrameBudgets(frame);
+  return asJson(frame);
+}
+
+/**
+ * Serialise a live frame. Same serialiser, same two guarantees, same reasons.
+ *
+ * Through {@link asJson} rather than `JSON.stringify` deliberately: a float in a money field cannot
+ * reach a viewer, and the same tick serialises byte-identically on every host — which is what makes
+ * {@link atomicWrite}'s no-op-on-identical path meaningful here. A tick in which nothing a viewer can
+ * see changed writes **nothing**, so `live.json`'s mtime is an honest signal of the last time the
+ * show moved.
+ */
+export function serialiseLiveFrame(frame: LiveFrame): string {
+  assertLiveFrameBudgets(frame);
   return asJson(frame);
 }
 
@@ -277,6 +316,74 @@ export function publishFrame(dir: string, frame: ReckoningFrame): WrittenFrame {
   publishIndex(dir, frame);
 
   return { reckoning: frame.reckoningIndex, file: name, bytes: Buffer.byteLength(body, 'utf8'), rewritten };
+}
+
+/** What one live publish did. `rewritten: false` means the bytes on disk already matched. */
+export interface WrittenLiveFrame {
+  readonly tick: number;
+  readonly bytes: number;
+  readonly rewritten: boolean;
+}
+
+/**
+ * ★ Publish the live frame — the motion between appointments.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE ORDERING RULE {@link publishFrame} HAS DOES NOT APPLY, AND THE REASON MATTERS.**
+ *
+ * `publishFrame` writes the immutable file first and the pointer second, so a viewer that reads the
+ * pointer always finds the file it names. There is nothing here for a pointer to name: one file, one
+ * atomic rename, and a reader either gets the previous tick whole or this one whole. That is the
+ * whole delivery contract for this artifact and it is why it can be this small.
+ *
+ * **It never touches the Reckoning archive.** A live frame is not a Reckoning, so it writes no
+ * `r-NNNNNN.json` and no row into `index.json` — a mid-Reckoning tick in the archive's table of
+ * contents would be a night that never happened, and `index.json` is what a scrubber is built from.
+ *
+ * **Failure is the caller's to swallow**, exactly as it is for the nightly frame: *a frame is a read
+ * model over a committed outcome*, and a full disk or a budget violation must drop a frame rather
+ * than stop the world. `server.ts` wraps this for that reason and this function does not, so a caller
+ * that wants to know it failed can find out — the nightly path learned that lesson the other way
+ * round when a halt had no `else` branch and the world stopped dead in silence.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function publishLiveFrame(dir: string, frame: LiveFrame): WrittenLiveFrame {
+  mkdirSync(dir, { recursive: true });
+  const body = serialiseLiveFrame(frame);
+  const rewritten = atomicWrite(dir, LIVE, body);
+  return { tick: frame.tick, bytes: Buffer.byteLength(body, 'utf8'), rewritten };
+}
+
+export function liveFrameFileName(tick: number): string {
+  if (!Number.isSafeInteger(tick) || tick < 0) {
+    throw new FrameWriteError(`a tick must be a non-negative integer, got ${String(tick)}`);
+  }
+  // Seven digits, so a directory listing sorts the way a human reads it up to ten million ticks —
+  // `frameFileName`'s rule with one more digit, because there are 288 of these per Reckoning.
+  return `t-${String(tick).padStart(7, '0')}.json`;
+}
+
+/**
+ * ★ Archive one live frame per tick, for an instrument rather than for a viewer.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **A FIELD THAT IS NON-ZERO ONCE AND A FIELD THAT COUNTS DOWN ARE DIFFERENT CLAIMS**, and only a
+ * sequence can tell them apart. The audit that found the nightly frame to be a post-mortem did it by
+ * reading 21 archived Reckoning frames and censusing every field; the same method needs consecutive
+ * live frames, because *"`ticksLeft` is 6"* proves nothing and *"6, then 5, then 4"* proves the fix.
+ *
+ * Deliberately **not** what production does. `live.json` is rewritten in place there because a
+ * mid-Reckoning tick is motion and its history is the ledger — 288 files a day that nothing can be
+ * derived from that the record cannot derive better. This is a measurement mode behind
+ * `--live-frames`, and `rewritten` is reported `true` only when the bytes moved, so the meter means
+ * the same thing in both modes.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function archiveLiveFrame(dir: string, frame: LiveFrame): WrittenLiveFrame {
+  mkdirSync(dir, { recursive: true });
+  const body = serialiseLiveFrame(frame);
+  const rewritten = atomicWrite(dir, liveFrameFileName(frame.tick), body);
+  return { tick: frame.tick, bytes: Buffer.byteLength(body, 'utf8'), rewritten };
 }
 
 /**

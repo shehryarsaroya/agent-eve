@@ -47,7 +47,20 @@ describe('sim --flags', () => {
       emitStateHash: true,
       quiet: false,
       framesDir: '/tmp/x',
+      // ★ Off unless asked. Production rewrites one `live.json` in place, because a mid-Reckoning tick
+      // is motion and its history is the ledger; `--live-frames` is a measurement mode that archives
+      // one file per tick so an instrument can diff consecutive frames. A default that archived 288
+      // files a Reckoning would be the cap-that-hides in reverse — noise nobody asked for.
+      liveFrames: false,
     });
+  });
+
+  it('takes --live-frames, and it is off by default', () => {
+    // The flag exists so `scripts/frame-census.ts` can prove that `ticksLeft` counts DOWN rather than
+    // merely being populated once. Asserted as a PAIR — present when asked, absent otherwise — because
+    // a flag that is silently always on is a different experiment from the one the caller ran.
+    expect(DEFAULT_ARGS.liveFrames).toBe(false);
+    expect(parseArgs(['--live-frames']).liveFrames).toBe(true);
   });
 
   it('asserts every tick by default, so the default run is not the one that proves nothing', () => {

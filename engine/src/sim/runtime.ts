@@ -169,9 +169,25 @@ import {
 // The Levy's pixel signature (§5.2, A13). Imported as a *type only*: this runtime
 // populates `TributeLine`, it does not define it — `frames/contract.ts` owns the shape and
 // the client already draws that one.
-import type { AuthorityDossier, AuthorityLine, AuthorityLineState, TributeLine, ReckoningFrame } from '../frames/contract.js';
+import type {
+  AuthorityDossier,
+  AuthorityLine,
+  CompactLink,
+  ConvoyLine,
+  LiveFrame,
+  TributeLine,
+  ReckoningFrame,
+} from '../frames/contract.js';
+import { authorityLinesFor } from '../frames/authority.js';
+import {
+  compactLinksFor,
+  convoyLinesFor,
+  type CompactVentureRead,
+  type ConvoyHandRead,
+} from '../frames/motion.js';
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
+import { assertInertLiveFacts, renderLiveFrame, type LiveSource, type LiveVentureView } from '../frames/live.js';
 import { hallOfFame, namesFor, ruinsFor } from '../frames/memory.js';
 import { readInt, readList, readString } from '../core/params.js';
 import { publishOffer } from '../say/offer.js';
@@ -470,7 +486,6 @@ import {
   MAX_FRAME_CLAIM_LINES,
   MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
-  MAX_LINE_DOSSIERS,
   MAX_RAID_LINES,
   type ClaimLine,
   type MarketLine,
@@ -549,6 +564,8 @@ import {
   reject,
   releaseHand,
   route,
+  inTransitEta,
+  isStrait,
   straitsAt,
   straitsHeld,
   swayAt,
@@ -15239,6 +15256,213 @@ export class Runtime {
     return this.outcome;
   }
 
+  /** Handle per principal, off the holding names. A frame never shows a raw id. */
+  private frameHandles(): ReadonlyMap<PrincipalId, Handle> {
+    const handles = new Map<PrincipalId, Handle>();
+    for (const h of this.world.holdings.values()) handles.set(h.principal, h.name as unknown as Handle);
+    return handles;
+  }
+
+  /**
+   * Everything THE AUTHORITY LINE is built from, at one tick. Shared by both frames.
+   *
+   * One source for the nightly and the live artifact, deliberately: two would be two answers to
+   * *"has this delegate used its authority"*, which is exactly how the answer came to be computed
+   * correctly in `runtime.ts` and thrown away by a sort in `render.ts`.
+   */
+  private authoritySource(tick: number, retain: ReadonlySet<GrantId> = new Set()): Parameters<typeof authorityLinesFor>[0] {
+    // How many ventures each grant has BOUND in its grantor's name. Counted once over the book
+    // rather than per grant, so the frame stays linear in the book rather than quadratic in
+    // grants × ventures — INV-7 was pulled off that same shape.
+    const boundVentures = new Map<GrantId, number>();
+    for (const v of this.ventures.all()) {
+      if (v.boundByGrant === null) continue;
+      boundVentures.set(v.boundByGrant, (boundVentures.get(v.boundByGrant) ?? 0) + 1);
+    }
+    // ★ The dossier threads, indexed by the grant each custody chain ROOTS at. Built once over the
+    // book for `boundVentures`' reason.
+    const dossiers = new Map<GrantId, AuthorityDossier[]>();
+    for (const d of this.dossierBook.all()) {
+      // The reveal clock, and it is the ONLY gate. Publishing a thread before `revealsAtTick` would
+      // put a leak on screen that the victim's own `observe` cannot yet answer — A9's exact
+      // prohibition, and the shape of four separate visibility leaks found in this codebase in one
+      // week. It matters MORE on the live frame: that artifact is published every tick, so a gate
+      // read against the wrong clock would disclose on the tick of the cut rather than the reveal.
+      if (tick < d.revealsAtTick) continue;
+      const root = this.dossierBook.rootOf(d);
+      if (root === null) continue;
+      const rows = dossiers.get(root) ?? [];
+      rows.push({ to: d.toWhom, compartment: d.compartment, cutAtTick: d.cutAtTick, copied: d.parent !== null });
+      dossiers.set(root, rows);
+    }
+    return {
+      grants: this.grantBook.all(),
+      draws: this.grantBook.allSpends(),
+      headroom: (id) => this.grantBook.headroom(id),
+      boundVentures,
+      dossiers,
+      tick,
+      retain,
+    };
+  }
+
+  /**
+   * ★ **THE CONVOY LINE** (A13's sixth named example), at one tick.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`laden` IS THE §11.2 ARGUMENT AND IT IS ONE BIT.**
+   *
+   * Only hands that are carrying appear, because only a laden hand emits a `PUBLIC` `haul.departed`
+   * row — a bare `move` emits nothing at all. Read off `hand.cargo.size`, which is the MANIFEST and
+   * is O(1); `INV-W7` halts the tick when the manifest and the in-transit lot total disagree, so it
+   * is the cheap read that cannot be wrong. Never the lot list, never a quantity: *a ship at sea is
+   * visible; its manifest is not*, and `assertFrameBudgets` refuses a convoy field named like cargo.
+   *
+   * Bounded by `MAX_PRINCIPALS × HANDS_PER_PRINCIPAL` and nothing else — one O(1) test per hand, no
+   * ledger read, no lot walk. That last clause is not decoration: a phase that read every stored lot
+   * held production down for an hour, and this artifact is published every tick.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  convoyLines(tick = this.engine.tick): readonly ConvoyLine[] {
+    const handles = this.frameHandles();
+    const hands: ConvoyHandRead[] = [];
+    for (const h of this.world.hands.values()) {
+      hands.push({
+        hand: h.id,
+        principal: h.principal,
+        from: h.location,
+        to: h.destination,
+        arrivesAtTick: inTransitEta(h),
+        laden: h.cargo.size > 0,
+      });
+    }
+    return convoyLinesFor({
+      hands,
+      isStrait: (a, b) => isStrait(this.world.map, a, b),
+      handleOf: (p) => String(handles.get(p) ?? p),
+      tick,
+    });
+  }
+
+  /**
+   * ★ **THE COMPACT LINK** (A13's second and third named examples), at one tick.
+   *
+   * `extra` carries the Reckoning's settlements so the nightly frame can draw the SNAP — A13's own
+   * third example, *"a broken compact snaps that link and scars both parties"* — while the live frame
+   * passes nothing and draws only what is still open. The live set is the venture book's `live()`,
+   * which is one pass over a bounded book.
+   *
+   * A principal with no holding draws no end: `compactLinksFor` drops the row rather than inventing a
+   * position, because a link to nowhere asserts a relationship that does not exist (A5′).
+   */
+  compactLinks(extra: readonly VentureRecord[] = []): readonly CompactLink[] {
+    const seen = new Set<string>();
+    const rows: CompactVentureRead[] = [];
+    for (const v of [...this.ventures.live(), ...extra]) {
+      if (seen.has(String(v.id))) continue;
+      seen.add(String(v.id));
+      rows.push({
+        venture: v.id,
+        kind: v.kind,
+        stage: v.stage,
+        state: v.state,
+        creator: v.creator,
+        filled: v.roles
+          .filter((r) => r.filledByPrincipal !== null)
+          .map((r) => ({ principal: r.filledByPrincipal as PrincipalId, elective: r.terms.elective })),
+        // A7's unsecured share of the whole compact, read off the venture module's own function so
+        // the arc on the glyph and the proportion on the link are one number (scar #1).
+        electiveBps: BPS_ONE - ventureEscrowRatioBps(v),
+        grant: v.boundByGrant,
+      });
+    }
+    return compactLinksFor({
+      ventures: rows,
+      holdingAt: (p) => this.world.holdingByPrincipal.get(p) === undefined ? null : holdingOf(this.world, p).system,
+    });
+  }
+
+  /**
+   * ★ **THE LIVE FRAME** — the motion between appointments (A13, A14, §14.1).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE NIGHTLY FRAME IS A POST-MORTEM, AND THAT INVALIDATED ABOUT A DOZEN FIELDS AT ONCE.**
+   *
+   * {@link reckoningFrame} is published on `isSettlementTick` alone — at `SPEEDS.prod`, **once every
+   * 24 hours** — while the client polls every 15 seconds. So `raidLines.ticksLeft` was 0 on 117 of
+   * 117 measured rows, `DEMANDED` never occurred on any frame, `VentureGlyph.state: FORMING` never
+   * occurred, and the battle `gap` that `contract.ts` calls the most legible thing on the board never
+   * once moved. None of that was a bug in any one field: there was no frame for them to appear on.
+   *
+   * This returns the same line sets from the same builders at an **arbitrary** tick. `null` never —
+   * a world with nothing happening publishes an honest quiet frame, because an absent artifact and an
+   * empty one read the same to a client and *"nothing is happening right now"* is a fact the show has
+   * to be able to state.
+   *
+   * **The cost is the design constraint, not an afterthought.** This runs once per tick, outside the
+   * tick's own step budget but inside its wall clock, so every read here is bounded by a book:
+   * raids ≤ `MAX_RAID_ROWS`, engagements ≤ `MAX_ENGAGEMENT_ROWS`, campaigns ≤ `MAX_LIVE_CAMPAIGNS`,
+   * one pass over the venture book, one O(1) test per hand, one fold of the grant journal, claims by
+   * system and tribute by principal. **`Meters.unrefined` is deliberately absent**: it sums every
+   * stored lot of every principal, which is precisely the shape that took production down when
+   * `HAZARD` gained a subject the step budget had no term for.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  liveFrame(): LiveFrame {
+    const tick = this.engine.tick;
+    const ventures: LiveVentureView[] = this.ventures.live().map((v) => ({
+      venture: v.id,
+      stage: v.stage,
+      // Off the venture's own state machine, never re-derived from `rolesFilled < rolesTotal`: that
+      // fact has one home (`venture/venture.ts:LIVE_STATES`) and a second derivation could disagree
+      // with the engine about whether a compact is crewed.
+      state: v.state === 'FORMING' ? 'FORMING' : 'LIVE',
+      rolesFilled: v.roles.filter((r) => r.filledByPrincipal !== null).length,
+      rolesTotal: v.roles.length,
+      electiveBps: BPS_ONE - ventureEscrowRatioBps(v),
+      // Only FILLED roles: an unfilled role is nobody's promise yet, which is the same rule the
+      // docket's `atStake` is built on.
+      atStake: sumMinor(v.roles.map((r) => (r.filledByPrincipal === null ? minor(0) : r.terms.elective))),
+    }));
+
+    const source: LiveSource = {
+      tick,
+      stateHash: this.engine.stateHash,
+      lastReckoning: this.outcome?.reckoning ?? null,
+      ventures,
+      raidLines: raidLinesFor(this.raids, tick, MAX_RAID_LINES),
+      battleLines: battleLinesFor(this.battles, this.fleet, tick, MAX_FRAME_BATTLE_LINES),
+      convoyLines: this.convoyLines(tick),
+      compactLinks: this.compactLinks(),
+      // ★ `retain` for `reckoningFrame`'s reason, one step earlier: a grant can expire while the
+      // venture it bound is still LIVE, so a compact link would publish a pointer the same frame
+      // could not resolve. Live ventures only — the live frame has no settled set.
+      authorityLines: authorityLinesFor(
+        this.authoritySource(
+          tick,
+          new Set(
+            this.ventures
+              .live()
+              .map((v) => v.boundByGrant)
+              .filter((g): g is GrantId => g !== null),
+          ),
+        ),
+      ),
+      // NO `tributeLines`. `tributeStateFor` derives `SOLID` from `carriageUnderway`, which reads a
+      // hand's destination — a `SENSED` disposition (§11.2), and the one key A9 refused on this
+      // artifact. The argument is on `LiveFrame` in `frames/contract.ts`.
+      claimLines: this.claimLines(tick).slice(0, MAX_FRAME_CLAIM_LINES),
+      saps: this.sapLines(tick),
+      frontBands: this.frontBandLines(tick),
+      ticker: this.raidTicker.all,
+    };
+    // The same boundary `reckoningFrame` crosses, with one clause of its own: a live frame is
+    // published BEFORE settlement, so it is the one artifact on which a `PARTIES`, `SENSED` or
+    // `SEALED` field would be an early disclosure rather than a re-read of a public fact.
+    assertInertLiveFacts(source);
+    return renderLiveFrame(source);
+  }
+
   /**
    * The last settled Reckoning, rendered for the spectator client — or null before any
    * Reckoning has settled.
@@ -15260,10 +15484,7 @@ export class Runtime {
     const outcome = this.outcome;
     if (outcome === null) return null;
 
-    const handles = new Map<PrincipalId, Handle>();
-    for (const h of this.world.holdings.values()) {
-      handles.set(h.principal, h.name as unknown as Handle);
-    }
+    const handles = this.frameHandles();
 
     // The vectors behind each name's one clause. Only principals the book actually HOLDS: an absent
     // row renders as "day one", never as a row of zeros, because a fabricated clean record is a claim
@@ -15301,9 +15522,14 @@ export class Runtime {
     }
 
     const settled: SettledView[] = [];
+    // The venture ROWS behind this Reckoning's settlements, kept because three projections need them:
+    // the settled views, the compact links (so a SNAP is drawn at all — a defaulted venture has left
+    // `live()` by now), and `retain` (so §14's grant pointer resolves). One walk, three readers.
+    const settledRecords: VentureRecord[] = [];
     for (const st of outcome.settlements) {
       const v = this.ventures.get(st.venture);
       if (v === undefined) continue;
+      settledRecords.push(v);
       const filled = v.roles.filter((r) => r.filledByPrincipal !== null).length;
       const electiveDue = sumMinor(st.payouts.map((pp) => pp.electiveDue));
       settled.push({
@@ -15340,6 +15566,20 @@ export class Runtime {
                 text: t.text,
               }))
             : [],
+        // ── ★ §14'S FIFTH ARTIFACT, AND THE KEY THAT JOINS IT TO THE OTHER FOUR ──
+        //
+        // The reel needs *the grant, the accepted warning, the seal, the deed and the negotiation*
+        // on one strip. Four were already here and the GRANT was on no frame field at all, so a
+        // renderer holding a broken promise had nothing to look the authority up by — §14's own
+        // requirement was unachievable from a published artifact. `AuthorityLine.grant` is the other
+        // end of this key.
+        //
+        // Off the VENTURE row, not through `grantBook.get(...)`: the grant table is mutable and
+        // capped, and A5' is about the permanent row. `actedBy` rides along for the same reason —
+        // it is the field a blind probe found the record getting WRONG, naming the grantor as the
+        // promisor of a default its delegate created.
+        grant: v.boundByGrant,
+        actedBy: v.actedBy,
       });
     }
 
@@ -15350,91 +15590,28 @@ export class Runtime {
     const broken = summaries.reduce((a, r) => a + r.defaults, 0);
     const onAPromise = sumMinor(settled.map((v) => v.atStake));
 
-    // A6's authority signature (§8, §14): who holds standing power over whom at this
-    // settlement, and how much of it has been drawn. Dead-expired grants are dropped;
-    // live and revoked ones render (a revocation is drama). renderFrame sorts by the most
-    // authority and caps to the budget — convergence is the signature, a hairball is not.
-    // How many ventures each grant has BOUND in its grantor's name (`AuthorityLine.boundVentures`).
-    // Counted once over the book rather than per grant, so the frame stays linear in the book rather
-    // than quadratic in grants × ventures — INV-7 was pulled off that same shape.
-    const boundByGrant = new Map<GrantId, number>();
-    for (const v of this.ventures.all()) {
-      if (v.boundByGrant === null) continue;
-      boundByGrant.set(v.boundByGrant, (boundByGrant.get(v.boundByGrant) ?? 0) + 1);
+    // ── A6's AUTHORITY SIGNATURE (§8, §14), NOW BUILT IN ONE REVIEWABLE PLACE ──
+    //
+    // Moved to `frames/authority.ts` and shared with the LIVE frame. Three things it fixes that this
+    // inline version could not: the gross-draw journal is folded ONCE rather than rescanned per grant
+    // (it was O(grants × spends), which is unaffordable on an artifact published every tick); the
+    // ranking finally has a term for whether the authority was USED — the omission that made A6 render
+    // `UNUSED` on 21 of 21 measured frames while 98 draws sat in the journal; and an EXPIRED grant is
+    // retained when something else on this frame names it.
+    //
+    // ★ `retain` is §14's join made whole. A grant lives 592–1,959 ticks and the deed it authorised
+    // settles at a Reckoning, so **38 of the 41 grants ever drawn on had expired before any frame was
+    // written** — and every one of those is a `RundownSegment.grant` pointing at a line the frame did
+    // not carry. Collected from the ventures whose grant this frame will actually publish (the settled
+    // set, the live set behind the docket and the compact links), so the pointer and the target are
+    // decided by one pass rather than by two guesses. `assertFrameBudgets` refuses a dangling pointer.
+    const retain = new Set<GrantId>();
+    for (const v of [...this.ventures.live(), ...settledRecords]) {
+      if (v.boundByGrant !== null) retain.add(v.boundByGrant);
     }
-    // ★ The dossier threads, indexed by the grant each custody chain ROOTS at. Built once over
-    // the book for `boundByGrant`'s reason — the frame stays linear in the books rather than
-    // quadratic in grants × dossiers, which is the shape INV-7 was pulled off.
-    const threadsByGrant = new Map<GrantId, AuthorityDossier[]>();
-    for (const d of this.dossierBook.all()) {
-      // The reveal clock, and it is the ONLY gate. Publishing a thread before `revealsAtTick`
-      // would put a leak on screen that the victim's own `observe` cannot yet answer — A9's
-      // exact prohibition, and the shape of four separate visibility leaks found in this
-      // codebase in one week.
-      if (outcome.tick < d.revealsAtTick) continue;
-      const root = this.dossierBook.rootOf(d);
-      if (root === null) continue;
-      const rows = threadsByGrant.get(root) ?? [];
-      rows.push({ to: d.toWhom, compartment: d.compartment, cutAtTick: d.cutAtTick, copied: d.parent !== null });
-      threadsByGrant.set(root, rows);
-    }
-    const authorityLines: AuthorityLine[] = this.grantBook
-      .all()
-      .filter((g) => g.expiresTick >= outcome.tick)
-      .map((g) => {
-        // BOTH limits decide the state. Reading `spentDirect` alone rendered the A6
-        // attack as `UNUSED`: an un-escrowable venture created on a grantor's behalf
-        // moves no escrow, so the direct counter never leaves zero while the grantor
-        // carries the whole elective tail. Nothing drawn on either limit is UNUSED;
-        // no headroom left on either is EXHAUSTED; anything between is DRAWN.
-        const headroom = this.grantBook.headroom(g.id);
-        // ── ★ GROSS DRAWS FROM THE JOURNAL, NOT THE LIVE ROW CACHE ──────────────
-        //
-        // The row cache is *outstanding* charge, and since `RULES_VERSION` 26 it FALLS when an
-        // abandoned venture returns its draw. Reading it here put the A13 defect straight back: a
-        // delegate that opened three ventures in its grantor's name and let their windows close
-        // rendered `UNUSED`, on a frame, with a grant it had spent all cycle drawing on. That is
-        // the same error as the Levy's instantaneous EXPOSURE reading — measuring the right
-        // quantity at the wrong moment — and the line's question is *"what has this delegate
-        // done"*, which only the journal can answer. Headroom below stays live, because that is a
-        // different question and the grantor needs the current answer to it.
-        const gross = ((): { readonly direct: number; readonly contingent: number } => {
-          let direct = 0;
-          let contingent = 0;
-          for (const s of this.grantBook.allSpends()) {
-            if (s.grant !== g.id) continue;
-            direct += s.direct;
-            contingent += s.contingent;
-          }
-          return { direct, contingent };
-        })();
-        const drawn = gross.direct > 0 || gross.contingent > 0;
-        const state: AuthorityLineState =
-          g.revokedAtTick !== null
-            ? 'REVOKED'
-            : !drawn
-              ? 'UNUSED'
-              : headroom.direct <= 0 && headroom.contingent <= 0
-                ? 'EXHAUSTED'
-                : 'DRAWN';
-        return {
-          grantor: g.grantor,
-          delegate: g.delegate,
-          granted: g.maxDirectLoss,
-          spent: minor(gross.direct),
-          grantedContingent: g.maxContingentLiability,
-          spentContingent: minor(gross.contingent),
-          boundVentures: boundByGrant.get(g.id) ?? 0,
-          // ★ THE CLEARANCE PIPS and THE DOSSIER THREADS (A13, §16.12 #3).
-          clearance: [...g.clearance],
-          // ★ Only revealed rows, and only rows whose custody chain ROOTS at this grant — so a
-          // dossier re-handed twice still points at the promotion that made it possible, and no
-          // thread is ever drawn before the subject has learned of it (A9 by construction; the
-          // frame and the subject read one clock).
-          dossiers: threadsByGrant.get(g.id)?.slice(0, MAX_LINE_DOSSIERS) ?? [],
-          state,
-        };
-      });
+    const authorityLines: readonly AuthorityLine[] = authorityLinesFor(
+      this.authoritySource(outcome.tick, retain),
+    );
 
     const source: FrameSource = {
       reckoning: outcome.reckoning,
@@ -15515,6 +15692,9 @@ export class Runtime {
           // one.
           boundGrantor: v.actedBy === null ? null : v.creator,
           boundBy: v.actedBy,
+          // ★ §14's join on the forward view. `tension` already says it in prose; a renderer needs
+          // the key, and `DocketCard.tension` is a sentence nobody can join on.
+          grant: v.boundByGrant,
           // The creator's OFFER, as one bps figure over the whole venture: A7's unsecured share. Read
           // off `ventureEscrowRatioBps`, the venture module's own function, so the arc a viewer sees
           // and the ratio §7.5 puts on the card are one number.
@@ -15609,6 +15789,19 @@ export class Runtime {
         })),
       })),
       swayLines: this.swayLines(),
+      // ── ★ A13's TWO REMAINING NAMED EXAMPLES, FINALLY ON THE FRAME ────────────
+      //
+      // *"A convoy is a line that can be severed"* and *"a compact draws a link between two holdings
+      // — a broken compact snaps that link and scars both parties."* Both were named in A13 and had
+      // no field, and the convoy's clause is quoted five times in `contract.ts` as the reason OTHER
+      // fields may be published. The arguments are on their types and in `frames/projection.ts`.
+      //
+      // `outcome.settlements` is passed to the links so the nightly frame can draw the SNAP: a
+      // settled default has dropped out of `ventures.live()` by now, and a link that vanished is
+      // indistinguishable from one that was never there — which is the same reason `ruins` is a key
+      // of its own rather than an absence in `worksLines`.
+      convoyLines: this.convoyLines(outcome.tick),
+      compactLinks: this.compactLinks(settledRecords),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

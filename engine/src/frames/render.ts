@@ -25,14 +25,19 @@ import type { HallOfFameRow, PlaceName, Ruin } from './memory.js';
  * Legible scored lowest precisely because bolted-on mechanics got prose and no pixels.
  */
 
-import type { Handle, PrincipalId, VentureId,
+import type { GrantId, Handle, PrincipalId, VentureId,
   Standing,
 } from '../core/types.js';
-import { addMinor, minor, qty, type Minor, type Qty } from '../core/units.js';
+import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
+import { rankAuthorityLines } from './authority.js';
 import {
   MAX_AUTHORITY_LINES,
   MAX_DOCKET_CARDS,
+  MAX_FRAME_COMPACT_LINKS,
+  MAX_FRAME_CONVOY_LINES,
+  type CompactLink,
+  type ConvoyLine,
   MAX_RAID_LINES,
   MAX_FRAME_BATTLE_LINES,
   MAX_LABELS_PER_FRAME,
@@ -164,6 +169,17 @@ export interface FrameSource {
   readonly map?: readonly MapSystem[];
   /** ★ §16.12 #1's border signature. Optional so `emptyFrame` and older fixtures stay valid. */
   readonly swayLines?: readonly SwayLine[];
+  /**
+   * ★ A13's sixth named example: THE CONVOY LINE. Supplied by `frames/motion.ts`, never derived here.
+   *
+   * Passed in for the reason every other line set is, with one specific to this one: the filter that
+   * decides *which* hands appear is the §11.2 argument itself — only laden hands, because only a laden
+   * hand emits a `PUBLIC` `haul.departed` row. A renderer that walked hands itself would put every
+   * fleet redeployment on screen, which no agent's `observe` reports (A9 inverted).
+   */
+  readonly convoyLines?: readonly ConvoyLine[];
+  /** ★ A13's second and third: THE COMPACT LINK, and the snap. Supplied by `frames/motion.ts`. */
+  readonly compactLinks?: readonly CompactLink[];
 }
 
 export interface SettledView {
@@ -184,6 +200,15 @@ export interface SettledView {
   readonly sealVerdict: 'HONOURED' | 'CONTRADICTED' | null;
   /** Declassified negotiation, present only when an elective promise broke. */
   readonly messages: readonly { readonly tick: number; readonly from: PrincipalId; readonly text: string }[];
+  /**
+   * ★ **The grant that authorised this deed** — §14's missing join. Optional so `emptyFrame` and the
+   * existing fixtures stay valid; a caller that does not know says `null` rather than asserting the
+   * promisor acted for itself, which for a delegated venture would be false and A5′ is about the
+   * record being wrong.
+   */
+  readonly grant?: GrantId | null;
+  /** `VentureRecord.actedBy` — who actually acted, when a delegate did. */
+  readonly actedBy?: PrincipalId | null;
 }
 
 export interface UpcomingView {
@@ -211,20 +236,17 @@ export interface UpcomingView {
    * are passed in. Zero draws no arc, which is honest for a caller that does not know.
    */
   readonly electiveBps?: number;
+  /**
+   * ★ The grant a delegate bound this card under, or null.
+   *
+   * {@link tensionFor} already *says* *"X committed Y to this under a grant"* in prose. A human reads
+   * a sentence; a renderer assembling §14's strip needs a key, and this is it.
+   */
+  readonly grant?: GrantId | null;
 }
 
 function handleOf(src: FrameSource, p: PrincipalId): Handle {
   return src.handles.get(p) ?? (p as unknown as Handle);
-}
-
-/**
- * How much authority a line represents, for ranking into the frame budget: BOTH of
- * §8.1 #2's LIMITS, because either one alone is a partial account of what a delegate
- * may cost its grantor. Summed with the checked helper, not `+`, so a pair that leaves
- * the safe range throws rather than silently ranking a huge grant as a small one.
- */
-function authorityWeight(line: AuthorityLine): Minor {
-  return addMinor(line.granted, line.grantedContingent);
 }
 
 /**
@@ -470,6 +492,20 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
         v.defaulted && v.messages.length > 0
           ? v.messages.map((m) => ({ tick: m.tick, from: handleOf(src, m.from), text: m.text }))
           : null,
+      // ── ★ §14'S MISSING JOIN, AND THE NAME THE RECORD USED TO GET WRONG ─────
+      //
+      // The reel needs *the grant, the accepted warning, the seal, the deed and the negotiation* on
+      // one strip. Four of the five were here; the grant was on no frame field at all, so a renderer
+      // holding a `SNAPPED_BLACK` segment could not find the authority that permitted the deed and
+      // A6's *"the replay can point at the exact promotion"* was unachievable from a published
+      // artifact. `AuthorityLine.grant` is the other end of this key.
+      //
+      // `actedBy` is beside it because a delegated default is the one case where the promisor named
+      // on the row and the principal that made the promise are different agents — the A5′ defect a
+      // blind probe found by running a real betrayal and reading back a record that named its victim.
+      grant: v.grant ?? null,
+      actedBy: v.actedBy ?? null,
+      onBehalfOf: v.actedBy === null || v.actedBy === undefined ? null : v.creator,
     }));
 
   // ── THE OTHER SYSTEMS GET BEATS, NOT JUST PANELS (§14.3) ──────────────────
@@ -498,6 +534,13 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       glyph: null,
       consequence: `${String(c.slashed)} of posted bond taken; the system is open to any claimant`,
       receiptReel: null,
+      // A lapse is the territorial layer's own act. No grant authorised it, nobody acted for anybody:
+      // `null` on all three, rather than a plausible-looking id, because a frame that named a grant
+      // here would attribute a real agent's permanent territorial loss to an authority that had
+      // nothing to do with it (A5′).
+      grant: null,
+      actedBy: null,
+      onBehalfOf: null,
     }));
 
   const raidBeats = (src.raidLines ?? [])
@@ -545,6 +588,12 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
             : 'the defender keeps everything and takes the raider’s stake; the stage stays open'
           : `${String(r.lost)} taken, and A5 makes the loss permanent`,
       receiptReel: null,
+      // A plunder has no say-do gap at all — `publicLine`, `sealVerdict` and `cast` are null and empty
+      // by construction — and no grant behind it either: a world raid has no author, and a demand's
+      // initiator is on `RaidLine.initiator` where it belongs.
+      grant: null,
+      actedBy: null,
+      onBehalfOf: null,
       };
     });
 
@@ -614,6 +663,9 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       atStake: u.atStake,
       electiveBps: u.electiveBps ?? 0,
       cast: chipsFor(src, u.parties),
+      // ★ §14's join, on the forward view too. `tension` says it in prose; this is what a renderer
+      // joins on. See `DocketCard.grant`.
+      grant: u.grant ?? null,
     }));
 
   const frame: ReckoningFrame = {
@@ -635,15 +687,16 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // written `max_direct_loss: 0, max_contingent_liability: 900000` authorises the
     // largest exposure on the map and used to sort dead last, so the twelve-line budget
     // cut the one line the audience most needed (A13, §8.1 #2).
-    authorityLines: (src.authorityLines ?? [])
-      .slice()
-      .sort(
-        (a, b) =>
-          authorityWeight(b) - authorityWeight(a) ||
-          compareIds(a.grantor, b.grantor) ||
-          compareIds(a.delegate, b.delegate),
-      )
-      .slice(0, MAX_AUTHORITY_LINES),
+    // ── ★ AND THE TERM THAT WAS MISSING: HAS ANYTHING HAPPENED ────────────────
+    //
+    // `rankAuthorityLines` (`frames/authority.ts`) is now the one home for this order, and it puts a
+    // DRAWN grant ahead of an untouched one at any size. This comparator had **no term at all** for
+    // whether authority had been used, and it was the only line set in this file without one — so on
+    // seed `g01`, 3 live-drawn grants lost the twelve-line budget to bigger untouched ones and A6 —
+    // the core loop — rendered `UNUSED` on 21 of 21 measured frames while 98 draws sat in the journal.
+    // Restated here for `marketLines`' reason: the frame's budget is the renderer's to enforce, and a
+    // caller that supplied an unsorted list must still get a legible frame.
+    authorityLines: rankAuthorityLines(src.authorityLines ?? []).slice(0, MAX_AUTHORITY_LINES),
     // Live raids first — a countdown is what a viewer looks at — then by the size of
     // the demand, then by id. Same argument as the authority lines: if the budget bites,
     // what survives is what the audience most needs, and the order is arithmetic.
@@ -694,6 +747,14 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // live. `assertFrameBudgets` refuses an over-long list rather than this slicing it, so growth
     // past `MAX_FRAME_SWAY_LINES` is a designed aggregation instead of a silently gappy fence.
     swayLines: [...(src.swayLines ?? [])].sort((a, b) => compareIds(a.system, b.system)),
+    // ── ★ A13's THREE UNRENDERED NAMED EXAMPLES, TWO OF THEM NOW DRAWABLE ─────
+    //
+    // Selected and ordered by `frames/motion.ts`, which owns the significance rule for each — landings
+    // soonest for a convoy, snaps first for a link — so these are pass-throughs. The caps are restated
+    // because the frame's budget is the renderer's to enforce; the ORDER is not, because two orderings
+    // of one line set is scar #5 and the module that knows which snap is news is the one that made it.
+    convoyLines: (src.convoyLines ?? []).slice(0, MAX_FRAME_CONVOY_LINES),
+    compactLinks: (src.compactLinks ?? []).slice(0, MAX_FRAME_COMPACT_LINKS),
     syndicateLines: (src.syndicateLines ?? [])
       .slice()
       .sort(
@@ -817,6 +878,8 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     coverChains: [],
     map: [],
     swayLines: [],
+    convoyLines: [],
+    compactLinks: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],
