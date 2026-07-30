@@ -79,7 +79,7 @@
  */
 
 import type { HandId, PrincipalId, RaidState, ZoneTier } from '../core/types.js';
-import { qty, type Qty } from '../core/units.js';
+import { BPS_ONE, qty, type Qty } from '../core/units.js';
 import type { RaidParty, RaidRecord } from './book.js';
 import {
   FORCE_BY_TIER,
@@ -294,7 +294,7 @@ export function demandFor(draw: number): Qty {
 export function takeFor(demand: Qty, standingNow: Qty): Qty {
   if (standingNow <= 0) return qty(0);
   const byMultiple = demand * RAID_TAKE_MULTIPLE;
-  const byCap = Math.floor((standingNow * RAID_MAX_TAKE_BPS) / 10_000);
+  const byCap = Math.floor((standingNow * RAID_MAX_TAKE_BPS) / BPS_ONE);
   return qty(Math.max(0, Math.min(byMultiple, byCap, standingNow)));
 }
 

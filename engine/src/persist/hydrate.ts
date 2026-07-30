@@ -50,6 +50,7 @@
  */
 
 import type { CanonicalValue } from '../core/canonical.js';
+import { TICKS_PER_RECKONING } from '../core/time.js';
 import type { EventId, Posting, PrincipalId } from '../core/types.js';
 import { minor } from '../core/units.js';
 import type { AudienceAdmission, AudienceBasis, EventLedger } from '../events/index.js';
@@ -604,7 +605,7 @@ export async function planCheckpoint(
  * comfortably enough — a world that emitted nothing for 288 consecutive ticks has no record to
  * lose.
  */
-const EVENT_PROBE_WINDOW = 288;
+const EVENT_PROBE_WINDOW = TICKS_PER_RECKONING;
 
 /** The event count in a snapshot's `event` capture, or 0 when it has none. */
 function eventCountOf(snapshot: SnapshotRecord): number {

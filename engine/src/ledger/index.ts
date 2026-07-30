@@ -114,5 +114,26 @@ export {
   type ValuationRule,
 } from './valuation.js';
 
+/**
+ * The endowment — §12.5's enrolment mint and the withheld floor over it.
+ *
+ * **The barrel exported none of this until `RULES_VERSION` 38**, which is why five modules
+ * (`levy/params`, `sovereignty/params`, `market/standing`, `market/escrow`, `risk/view`) and
+ * `sim/runtime.ts` all reach past it into `./endowment.js` — and why `runtime.ts` carries its own
+ * `export { STARTER_STAKE } from '../ledger/endowment.js'` re-export, a second door onto a constant
+ * whose whole docstring is about having one home. A barrel that omits the module every other module
+ * needs is not a smaller surface; it is the same surface with the front door locked.
+ */
+export {
+  ENDOWMENT_FLOOR_MINOR,
+  ENDOWMENT_GOOD,
+  ENDOWMENT_GOOD_FLOOR_QTY,
+  EndowmentBook,
+  STARTER_ALLOTMENT,
+  STARTER_STAKE,
+  type EndowmentRow,
+  type EndowmentRowIn,
+} from './endowment.js';
+
 export { ledgerStateTable, LedgerRestoreError } from './stateTable.js';
 export type { LedgerRestore, LedgerAccountRow } from './stateTable.js';

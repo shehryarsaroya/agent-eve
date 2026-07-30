@@ -380,9 +380,30 @@ describe('the door, against a journal this build cannot reproduce', () => {
     expect(wedged.report).toContain('THE DEPLOY MUST STOP HERE');
 
     // The bound form passes it, and says what it authorised.
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS ASSERTION WENT STALE WHEN THE PREFLIGHT GOT BETTER, AND IT WAS RED ON MASTER.**
+    //
+    // It used to expect `'ALREADY declared this exact divergence'`, which is `replayCheck`'s
+    // **`reproduces: false`** branch — the report you get when the build still cannot reproduce the
+    // record and an acceptance merely permits the deploy. `949c0ed` ("the preflight never walked
+    // through the door it was checking") added the branch above it: given a bound key, the check now
+    // replays *through* the declared divergence and reports on the tail. So a valid key on a build
+    // that does reproduce past the door lands on `reproduces: true` and prints
+    // `OK THROUGH THE DECLARED DOOR` — a strictly more useful answer, and the one this case should
+    // have been asserting.
+    //
+    // Pinned to the new branch rather than widened to accept either. Accepting both would make the
+    // assertion pass whether or not the preflight walked through the door, which is the exact
+    // capability `949c0ed` added and the exact defect it was named for.
+    // ══════════════════════════════════════════════════════════════════════════
     const bound = await replayCheck({ store, seed: SEED, buildRuntime: build, acceptDivergence: key });
     expect(bound.preAccepted).toBe(true);
-    expect(bound.report).toContain('ALREADY declared this exact divergence');
+    expect(bound.reproduces, 'a bound key must make the check replay THROUGH the door').toBe(true);
+    expect(bound.report).toContain('OK THROUGH THE DECLARED DOOR');
+    expect(bound.report).toContain('is already declared');
+    // And it says what it authorised: the tail past the door is what a restart will execute.
+    expect(bound.report).toContain('snapshot tripwires matched');
 
     // The check is still read-only: asking wrote nothing either way.
     expect((await store.divergences()).length).toBe(0);

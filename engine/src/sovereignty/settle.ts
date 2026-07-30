@@ -41,7 +41,7 @@ import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { halt } from '../invariants/registry.js';
 import { compareIds } from '../ledger/order.js';
 import type { Book, ChargeShortfallRow, ClaimState } from './book.js';
-import { CHARGE_MISSES_TO_LAPSE } from './params.js';
+import { CHARGE_MISSES_TO_CONTEST, CHARGE_MISSES_TO_LAPSE } from './params.js';
 
 /**
  * The one thing a lapse may reach for: **posted bond, and the anchor that stands with it.**
@@ -182,7 +182,7 @@ export function settleCharge(args: {
         book.end(line.system, 'LAPSED', reckoning, null);
         book.recordLapse(line.system);
         lapsed.push({ system: line.system, claimant: claim.claimant, slashed });
-      } else if (misses >= 2) {
+      } else if (misses >= CHARGE_MISSES_TO_CONTEST) {
         state = 'CONTESTED';
         book.setState(line.system, state);
         contested.push(line.system);

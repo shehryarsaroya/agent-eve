@@ -26,7 +26,10 @@
 import { TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
 import type { GoodId, ZoneTier } from '../core/types.js';
 import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
-import { LEVY_STARTER_ALLOTMENT } from '../levy/params.js';
+// The enrolment allotment, read from the module that mints it rather than through the Levy's alias
+// for it (`RULES_VERSION` 38). Both names are the same number by construction; this one does not make
+// `sovereignty/` depend on `levy/`, which it otherwise would for a quantity that is not the Levy's.
+import { STARTER_ALLOTMENT } from '../ledger/endowment.js';
 // The anchor's manufactured half. `CHARGE_GOOD` below stays declared with its own literal —
 // `test/core/goods-are-independent.test.ts` forbids a goods constant defined in terms of another, and
 // these are a QUANTITY and a TIER, not a redefinition of which good the Charge is payable in.
@@ -75,7 +78,7 @@ export const CHARGE_GOOD = 'ration' as GoodId;
  * §6.3 makes this "the anti-Sybil price of projecting force (A15) and the economy's
  * primary sink", so the Frontier costs more than the Marches: the further out the claim,
  * the more the world must physically supply to keep it. Both are a fraction of
- * `LEVY_STARTER_ALLOTMENT` (50,000), so a newcomer's endowment cannot pre-fund a season
+ * `STARTER_ALLOTMENT` (50,000), so a newcomer's endowment cannot pre-fund a season
  * of sovereignty — which is A15 arithmetic, not flavour.
  *
  * COMMONS is present and **zero**, and it is not dead code: `chargeOf` is called for
@@ -126,6 +129,36 @@ export const CHARGE_ARREARS_SURCHARGE_BPS: Bps = bps(2_500);
 export const CHARGE_MISSES_TO_LAPSE = 3;
 
 /**
+ * The miss count at which a claim becomes **CONTESTED** — and therefore takeable.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **DERIVED, BECAUSE THIS NUMBER WAS WRITTEN AS A BARE `2` IN THREE PLACES AND DERIVED IN A FOURTH,
+ * AND THE FOURTH HAS A DOCSTRING WARNING ABOUT EXACTLY THAT.**
+ *
+ * `view.ts:ARREARS_STEPS` already said it, thirty-nine lines above one of the literals: *"Derived
+ * rather than written as `2`, so the legend and the threshold can never disagree … a hard-coded `2`
+ * would leave the label saying '1 of 2' while the third miss no longer lapsed. That is scar #1's shape
+ * in a string a viewer reads."* The label was derived; the **threshold it labels** was not.
+ *
+ * What the three literals decided, at `RULES_VERSION` 34, with `CHARGE_MISSES_TO_LAPSE` raised to 4:
+ *
+ *   - `view.ts:claimDoNothing` would still promise `BECOMES_CONTESTABLE` at miss 2,
+ *   - `settle.ts:settleCharge` would still **open the vulnerability window** at miss 2 — so anyone
+ *     could take the claim a full Reckoning before the legend said it was takeable (A14),
+ *   - `invariants.ts` would still accept CONTESTED-at-2, so the A5′ guard written to catch a
+ *     mislabelled claim would wave the mislabelling through.
+ *
+ * A published clock that disagrees with the engine is the clock a defender planned around being
+ * wrong, which is the sentence `invariants.ts` uses for the sibling defect it *does* catch.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `CHARGE_MISSES_TO_LAPSE - 1` and not a level of its own: the state before the terminal one is the
+ * contested one by definition, and the guard below forbids fewer than three misses to lapse, so this
+ * is always ≥ 2 and there is always at least one non-terminal arrears step behind it.
+ */
+export const CHARGE_MISSES_TO_CONTEST = CHARGE_MISSES_TO_LAPSE - 1;
+
+/**
  * The bond a claim requires, **continuously** *(calibrate)*.
  *
  * §3: BOND is *"posted slashable capital, continuous"* and never *"a claim deposit"* —
@@ -150,7 +183,7 @@ export const CLAIM_BOND_MINOR: Minor = minor(50_000);
  * deliberately not ruinous, because A15's requirement is that the gate cost *produced
  * goods* rather than that it hurt.
  */
-export const ANCHOR_QTY: Qty = qty(Math.trunc(LEVY_STARTER_ALLOTMENT / 10));
+export const ANCHOR_QTY: Qty = qty(Math.trunc(STARTER_ALLOTMENT / 10));
 
 /**
  * **THE RENT: the share of a system's extraction its claim-holder takes.** *(calibrate)*

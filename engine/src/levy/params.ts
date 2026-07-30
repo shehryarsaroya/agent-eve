@@ -22,7 +22,8 @@
 
 import { MAX_PRINCIPALS, TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
 import type { GoodId } from '../core/types.js';
-import { minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
+import { minor, type Bps, type Minor, type Qty } from '../core/units.js';
+import { STARTER_ALLOTMENT } from '../ledger/endowment.js';
 
 /**
  * The good the Levy is payable in.
@@ -159,15 +160,19 @@ export const LEVY_MIN_COMMONS_CAPACITY = 1;
 /**
  * The starter allotment of the levy good, sourced at enrolment.
  *
- * §6.1 mints "a starter stake of **bound goods**"; the build had issued that stake as
- * currency only, so there was nothing located anywhere for a goods-only obligation to
- * be paid in. Two and a half Reckonings' worth of duty: enough that a newcomer can
- * pay, and *not* enough that anybody can pay forever without production. That second
- * clause is the point — Phase 0 has no `PRODUCE` phase behind it, so a principal that
- * only ever delivers from stock runs dry, and `LEVY SHORT` starts to rise on its own.
- * Which is the meter working, not the model failing.
+ * **The declaration lives in `ledger/endowment.ts` as of `RULES_VERSION` 38** — read
+ * {@link STARTER_ALLOTMENT} there for why. In one line: the ledger mints it and the ledger withholds
+ * it, and having the Levy own the number meant `ledger/endowment.ts` imported from `levy/`, which is
+ * the layering inversion `test/core/goods-are-independent.test.ts` already forbids for the *name* of
+ * the good while leaving the *quantity* free to do it.
+ *
+ * Kept here under its Levy name because that is what §5.2's prose, six tests and `sovereignty/params.ts`
+ * call it, and because the Levy is where the number's *meaning* is set: it is two and a half
+ * Reckonings of {@link LEVY_DUTY_PER_PRINCIPAL}. An alias rather than a second literal — the allotment
+ * minted and the allotment the Levy expects to be paid out of must be one number, and two homes for
+ * one number is scar #5.
  */
-export const LEVY_STARTER_ALLOTMENT: Qty = qty(50_000);
+export const LEVY_STARTER_ALLOTMENT: Qty = STARTER_ALLOTMENT;
 
 /**
  * How many Reckonings {@link LEVY_STARTER_ALLOTMENT} covers — and therefore **how long any

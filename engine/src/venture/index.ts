@@ -154,6 +154,23 @@ export {
 
 export { BookError, VentureBook, type RoleRef } from './book.js';
 
+/**
+ * Three canon verbs, each extracted to its own file under `D21` — and **omitted from this barrel
+ * until `RULES_VERSION` 38**, so `sim/runtime.ts` imported all three past it:
+ *
+ *     import { sign } from '../venture/sign.js';
+ *     import { abandon } from '../venture/abandon.js';
+ *     import { withdraw } from '../venture/withdraw.js';
+ *
+ * That is the barrel hiding the thing the extraction was *for*. The port-and-adapter shape means the
+ * operation is meant to be reachable as `venture/`'s published surface, not as a path into it; a
+ * caller that must know which file a verb lives in is coupled to the layout the extraction was
+ * supposed to free it from — and the next extraction moves the file and breaks the import.
+ */
+export { electionOnSign, sign, type SignPort } from './sign.js';
+export { abandon, type AbandonPort } from './abandon.js';
+export { forfeitShares, withdraw, type WithdrawPort } from './withdraw.js';
+
 export {
   allocateFills,
   canonicalRequestOrder,

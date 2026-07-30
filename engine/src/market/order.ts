@@ -142,10 +142,24 @@ export function cashRequired(order: Order): Minor {
 /**
  * `unitPrice × quantity`, checked.
  *
- * Not inlined anywhere: a product that silently leaves the safe-integer range is
- * how a ledger stops balancing, and `minor()` would happily accept the wrong
- * answer because the wrong answer is itself an integer (the same trap
- * `sumMinor` was hardened against).
+ * A product that silently leaves the safe-integer range is how a ledger stops balancing, and
+ * `minor()` would happily accept the wrong answer because the wrong answer is itself an integer (the
+ * same trap `sumMinor` was hardened against).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THIS DOCSTRING SAID "NOT INLINED ANYWHERE" AND THAT WAS FALSE IN THREE PLACES.**
+ *
+ * At `RULES_VERSION` 34 the BID escrow — one quantity — had **six** homes: this helper, the two
+ * wrappers {@link cashRequired} and `place.ts:escrowFor` (both of which had *no caller at all*), two
+ * inlined copies of the wrappers' exact bodies in `place.ts:planOrder` and `market/invariants.ts`,
+ * and a raw `order.limitPrice * remainingOf(order)` in `market/observe.ts` with **no overflow check**.
+ *
+ * So the module had written the checked helper, written two named wrappers around it, called neither,
+ * and then re-inlined both — while the one path that skipped the check was the one publishing a
+ * number to agents. At 38 the two wrappers have their callers back and the raw multiplication is
+ * gone; this note stays because "not inlined anywhere" is a claim a docstring cannot enforce, and
+ * `test/market/one-escrow-one-home.spec.ts` now can.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 export function multiplyPrice(unitPrice: Minor, amount: Qty): Minor {
   const product = unitPrice * amount;

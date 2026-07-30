@@ -25,6 +25,10 @@
  * formula computed independently").
  */
 
+import {
+  AllocationError,
+  largestRemainder as coreLargestRemainder,
+} from '../core/allocate.js';
 import type { ConstellationId, PrincipalId } from '../core/types.js';
 import { minor, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
@@ -307,7 +311,15 @@ export interface AllocationPlan {
   readonly byDefault: boolean;
 }
 
-export class LevyArithmeticError extends Error {}
+/**
+ * A Levy allocation that could not be made exactly.
+ *
+ * Extends {@link AllocationError} since `RULES_VERSION` 38, when the allocator moved to `core/`: a
+ * caller that catches the general shape now catches the Levy's too, and a caller that names the Levy
+ * specifically — every test in `test/levy/` does — is unaffected. {@link largestRemainder} below
+ * translates, so the class a Levy allocation throws is unchanged.
+ */
+export class LevyArithmeticError extends AllocationError {}
 
 /**
  * Allocate a total across subjects under a rule, exactly.
@@ -436,58 +448,31 @@ export function relievedTotal(
 }
 
 /**
- * Distribute `amount` across `weights` so that the sum is `amount`, exactly.
+ * Distribute `amount` across `weights` so that the sum is `amount`, exactly — **in `Minor`**.
  *
- * Largest remainder, with the index order as the tie-break — so callers must pass
- * weights in canonical principal order, which {@link allocate} does. `splitByBps`
- * cannot be used here: its weights must sum to 10 000 bps, and converting arbitrary
- * integer weights to bps first is the rounding step this method exists to avoid.
+ * The arithmetic is {@link coreLargestRemainder} in `core/allocate.ts` and has been since
+ * `RULES_VERSION` 38; this is the Levy's typed door onto it. Two reasons the door exists rather than
+ * every caller importing `core/` directly:
+ *
+ *   1. **The error class.** A Levy allocation that cannot be made exactly has thrown
+ *      {@link LevyArithmeticError} since the first Reckoning, `test/levy/` names it four times, and
+ *      changing which class a halt throws is not a refactor. So the general error is translated here
+ *      and the message is passed through verbatim.
+ *   2. **The unit.** Everything the Levy divides is `Minor`. Stating that once here is what lets
+ *      `allocate` below stay free of brand noise.
+ *
+ * Callers that are *not* the Levy — `world/lode.ts`, `works/book.ts`, `sovereignty/charge.ts` — now
+ * import `core/allocate.js` directly and keep their own unit. They used to come through this function
+ * and pay for it with `as never`, `as unknown as Minor`, or a `minor()`/`qty()` round trip.
  */
 export function largestRemainder(amount: Minor, weights: readonly number[]): readonly Minor[] {
-  if (weights.length === 0) {
-    if (amount !== 0) {
-      throw new LevyArithmeticError(`cannot allocate ${amount} across zero weights`);
-    }
-    return [];
+  try {
+    return coreLargestRemainder(amount, weights);
+  } catch (cause) {
+    // Narrow, not blanket: an `AllocationError` is the allocator refusing, and the Levy has always
+    // reported that refusal under its own name. Anything else is a bug in `core/` and must not be
+    // relabelled as a Levy arithmetic fault.
+    if (cause instanceof AllocationError) throw new LevyArithmeticError(cause.message);
+    throw cause;
   }
-  if (amount < 0) throw new LevyArithmeticError(`cannot allocate a negative total (${amount})`);
-
-  const totalWeight = weights.reduce<number>((a, b) => a + b, 0);
-  if (totalWeight <= 0) throw new LevyArithmeticError('weights must sum to a positive number');
-
-  const scaled = weights.map((w) => {
-    const product = amount * w;
-    if (!Number.isSafeInteger(product)) {
-      // Loud rather than silently imprecise: past 2^53 the division below stops being
-      // integer arithmetic, and a value path that has stopped being integral cannot be
-      // reconciled at all.
-      throw new LevyArithmeticError(`allocation overflow: ${amount} x ${w} leaves safe integer range`);
-    }
-    return product;
-  });
-
-  const base = scaled.map((p) => Math.trunc(p / totalWeight));
-  let left = amount - base.reduce<number>((a, b) => a + b, 0);
-  const order = scaled
-    .map((p, i) => ({ i, remainder: p - Math.trunc(p / totalWeight) * totalWeight }))
-    .sort((a, b) => b.remainder - a.remainder || a.i - b.i);
-
-  const out = [...base];
-  let cursor = 0;
-  while (left > 0) {
-    const pick = order[cursor % order.length];
-    if (pick === undefined) throw new LevyArithmeticError('unreachable: empty remainder order');
-    out[pick.i] = (out[pick.i] ?? 0) + 1;
-    left -= 1;
-    cursor += 1;
-    if (cursor > order.length * 2) {
-      throw new LevyArithmeticError('unreachable: remainder distribution failed to converge');
-    }
-  }
-
-  const check = out.reduce<number>((a, b) => a + b, 0);
-  if (check !== amount) {
-    throw new LevyArithmeticError(`allocation lost value: allocated ${check}, expected ${amount}`);
-  }
-  return out.map((n) => minor(n));
 }

@@ -27,15 +27,17 @@
  */
 
 import type { CanonicalValue } from '../core/canonical.js';
-import { reckoningIndex } from '../core/time.js';
 import type { ConstellationId, PrincipalId, SystemId } from '../core/types.js';
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import {
   readArray,
+  readBool,
   readInt,
+  readIntOrAbsent,
   readObject,
   readString,
+  readStringOrAbsent,
   SnapshotError,
   type StateTable,
 } from '../tick/snapshot.js';
@@ -827,7 +829,7 @@ export class Book {
         constellation: readString(o, 'constellation', where) as ConstellationId,
         total: minor(readInt(o, 'total', where)),
         rule,
-        spared: readStringOrNull(o, 'spared', where) as PrincipalId | null,
+        spared: readStringOrAbsent(o, 'spared', where) as PrincipalId | null,
         byDefault: readBool(o, 'byDefault', where),
         deliverableTo: readString(o, 'deliverableTo', where) as SystemId,
         lines,
@@ -860,7 +862,7 @@ export class Book {
         constellation: readString(o, 'constellation', where) as ConstellationId,
         forReckoning: readInt(o, 'forReckoning', where),
         rule,
-        spare: readStringOrNull(o, 'spare', where) as PrincipalId | null,
+        spare: readStringOrAbsent(o, 'spare', where) as PrincipalId | null,
         tick: readInt(o, 'tick', where),
       };
       this.ballots.set(principalKey(ballot.forReckoning, ballot.principal), ballot);
@@ -873,7 +875,7 @@ export class Book {
         principal: readString(o, 'principal', where) as PrincipalId,
         strikes: readInt(o, 'strikes', where),
         capacity: readInt(o, 'capacity', where),
-        lastShortReckoning: readIntOrNullAt(o, 'lastShortReckoning', where),
+        lastShortReckoning: readIntOrAbsent(o, 'lastShortReckoning', where),
         demotions: readInt(o, 'demotions', where),
       };
       this.chronic.set(row.principal, row);
@@ -930,35 +932,8 @@ export class Book {
   }
 }
 
-function readBool(o: Readonly<Record<string, CanonicalValue>>, key: string, where: string): boolean {
-  const value = o[key];
-  if (typeof value !== 'boolean') throw new SnapshotError(`${where}.${key} must be a boolean`);
-  return value;
-}
 
-function readStringOrNull(
-  o: Readonly<Record<string, CanonicalValue>>,
-  key: string,
-  where: string,
-): string | null {
-  const value = o[key];
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw new SnapshotError(`${where}.${key} must be a string or null`);
-  return value;
-}
 
-function readIntOrNullAt(
-  o: Readonly<Record<string, CanonicalValue>>,
-  key: string,
-  where: string,
-): number | null {
-  const value = o[key];
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-    throw new SnapshotError(`${where}.${key} must be an integer or null`);
-  }
-  return value;
-}
 
 /**
  * The Levy as a state table.
@@ -987,11 +962,6 @@ export function levyStateTable(getBook: () => Book, setBook: (book: Book) => voi
       setBook(fresh);
     },
   };
-}
-
-/** The Reckoning index a tick sits in. One home, so the book and the clock agree. */
-export function levyReckoningOf(tick: number): number {
-  return reckoningIndex(tick);
 }
 
 export type { AllocationPlan };
