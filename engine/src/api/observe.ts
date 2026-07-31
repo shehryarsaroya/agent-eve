@@ -247,6 +247,7 @@ import {
   DELIVERY_MEASURE,
   DELIVERY_VERB,
   ELECTABLE_VENTURE_STATES,
+  FORMATION_WINDOW_TICKS,
   type PendingCorrection,
   type Runtime,
   MAX_GRANT_OFFERS,
@@ -2822,7 +2823,8 @@ function affordancesFor(
       what_it_forecloses:
         `${String(probe)} of your stores is locked in escrow until this settles or is abandoned, and ` +
         `${String(probeElective(kind))} stays elective — you are asked for it at the Reckoning and ` +
-        `staying silent is a permanent public default. ${probeRoles(kind)}${roleRule} ${band}`,
+        `staying silent is a permanent public default. ${probeRoles(kind)}${roleRule} ${band} ` +
+        countersignWarning(tick),
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'create', { kind, stage: seat }),
     });
@@ -4754,6 +4756,54 @@ const CREATE_ROLE_RULE =
   'every escrowed figure there is locked by THIS act and every elective figure there is one YOU are ' +
   'asked for at the Reckoning — one venture, several promises.';
 
+/**
+ * **`create` DOES NOT BIND, AND IT NEVER SAID SO.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * A play-tester ran four identities for two Reckonings, created eleven ventures, had nine of them
+ * fully staffed by real counterparties, and watched all eleven die ABANDONED with
+ * `i_have_signed: false`. Its conclusion was that `sign` is missing from the menu. **`sign` is on the
+ * menu** — it is the FIRST row of the very next observation, with copy-pasteable params. What was
+ * missing is *this sentence*: the act that creates the obligation to countersign never mentioned that
+ * a countersignature exists, was required, or had a deadline.
+ *
+ * A creator therefore had to already know the rule to keep its own venture alive, and `agent.md` is
+ * not an interface — HIGH-WATER scar #1 is that the affordance strings ARE the rules surface. Every
+ * word an agent needs to not lose a venture has to be reachable from the act it is about to take.
+ *
+ * The deadline is arithmetic and therefore exact (A2): the action lands next tick, and the window is
+ * {@link FORMATION_WINDOW_TICKS} from there. It is stated as an absolute tick because a relative one
+ * is a subtraction the agent has to get right against a clock it reads separately.
+ *
+ * **This one is on EVERY create row, unlike {@link CREATE_ROLE_RULE} two lines up, and the deviation
+ * is deliberate.** That convention exists to keep a kilobyte of identical prose out of a payload the
+ * owner pays for, and it is right for a rule you can still recover from. This is not that: an agent
+ * that copies the third `create` row and never reads the first loses the venture, and the loss is
+ * silent — the window simply closes. The prioritiser only guarantees the FIRST offer of each verb
+ * survives truncation, so first-row-only would put the one sentence that prevents the defect on the
+ * one row a truncated list might be the last to carry. PROP-O2's cap is asserted over a busy world
+ * in `test/observe/tokens.test.ts` and holds with this on all five rows.
+ *
+ * **And it is not a substitute for the clock.** Widening `FORMATION_WINDOW_TICKS` past the wake gap
+ * would make the deadline reachable by an agent that reads nothing; it was measured at 24 and 18 and
+ * reverted for what it costs the combat layer in free hands. What makes this sentence sufficient
+ * rather than merely kind is that `WAKES_PER_RECKONING` is a **pool, not a rate** — a creator told
+ * the deadline can legally come back on the very next tick. See that constant's note.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function countersignWarning(tick: number): string {
+  // `create` resolves at tick+1 and the window opens there — `Runtime.vCreate`'s `opens = ctx.tick`.
+  const closes = tick + 1 + FORMATION_WINDOW_TICKS;
+  return (
+    '★ THIS DOES NOT BIND ANYONE YET. A venture goes live only when every party has countersigned the ' +
+    'same terms_hash, and that includes YOU: `sign` will be the first row of your next observation, ' +
+    `carrying this venture's id and hash ready to send. Countersign by tick ${String(closes)} or the ` +
+    'window closes and it is retired ABANDONED — your escrow comes back and no default is recorded, ' +
+    'but the deal, the counterparties who filled its roles and the standing you would have earned are ' +
+    'all gone. Observe again before then; that is what the wake is for.'
+  );
+}
+
 // ── Rows ────────────────────────────────────────────────────────────────────
 
 /**
@@ -4986,7 +5036,29 @@ function ventureRow(
   // than the information in it is worth). It is also read three times below — the figure,
   // the unelected remainder and the direction they decide — and three calls would be three
   // chances to disagree about one obligation.
-  const owedByMe = creatorElectiveOf(runtime, venture, principal);
+  //
+  // ── ★ A TERMINAL VENTURE OWES NOTHING, AND THIS ROW USED TO SAY IT DID ──────
+  //
+  // `creatorElective` never reads `venture.state` — its only filters are "am I the creator" and
+  // "is this role mine". So on an ABANDONED venture, where `settledElectiveMinor` is still 0
+  // because nothing ever settled, it returns the **full p90 ceiling** as if it were live debt.
+  //
+  // Measured by a play-tester: one identity finished a Reckoning with 11/11 ventures ABANDONED and
+  // `my_elective_owed` totalling **49,920 it does not owe**; another read 26,400 on an abandoned
+  // BUILD a full Reckoning after it died. Standing correctly recorded **0 defaults** — the engine
+  // was right and only the surface lied, which is the worst version of this because the number is
+  // exactly the shape of a real obligation and a creator cannot budget by summing the field.
+  //
+  // The gate is `ELECTABLE_VENTURE_STATES` and not a hand-written state list on purpose: it is the
+  // SAME constant the `elect` affordance loop reads. This field's own docstring promises it is
+  // *"Σ of the `max_direct_loss` on this venture's `elect` affordances, by construction"* — a
+  // promise that was false on precisely the terminal states, since the affordance loop skips them
+  // and this did not. Two builders, one question, two answers (`sign`'s `max_direct_loss` had the
+  // same shape). Sharing the constant is what makes the sentence structurally true rather than
+  // true-until-someone-edits-one-of-them.
+  const owedByMe = ELECTABLE_VENTURE_STATES.includes(venture.state)
+    ? creatorElectiveOf(runtime, venture, principal)
+    : { owed: minor(0), unelected: minor(0), ceiling: minor(0) };
   return {
     id: venture.id,
     kind: venture.kind,
@@ -5648,7 +5720,22 @@ function promptFor(
     );
   }
   const idle = handsOf(runtime.world, principal).filter((h) => h.state === 'IDLE').length;
-  return `Nothing is waiting on you and ${String(idle)} of your hands are idle; an idle hand earns nothing, and the Commons is safe but poor.`;
+  // ── ★ THE TAIL SENTENCE NAMED A TIER THE READER MAY HAVE LEFT ──────────────
+  //
+  // *"the Commons is safe but poor"* was emitted unconditionally, so a principal that had already
+  // paid to cross into the Marches — the one irreversible act in the game — was told about the place
+  // it is no longer in, as advice, on the wake after it got there. Three separate reports have now
+  // hit this line; the earlier repair reordered the ladder above so it is *reached* less often and
+  // left the sentence itself alone, which fixed the frequency and not the claim.
+  //
+  // The payload already knows: `holding.commons_bound` is published from the same predicate two
+  // hundred lines up. The branch costs one call and the sentence is now true of whoever reads it.
+  const inCommons = principalIsCommonsBound(runtime.world, principal);
+  const where = inCommons
+    ? 'the Commons is safe but poor, and `graduate` is the way out.'
+    : 'you are outside the Commons, where an idle hand is also an exposed one — it can be raided ' +
+      'where it stands, and nothing out here makes hostile action invalid.';
+  return `Nothing is waiting on you and ${String(idle)} of your hands are idle; an idle hand earns nothing, and ${where}`;
 }
 
 /**
