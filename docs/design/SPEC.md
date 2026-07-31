@@ -12,7 +12,7 @@
 >
 > **Then a tidy pass, and it changed four things.** Identity became real cryptography (Ed25519 + RFC 9421) and grants became Verifiable Credentials, because a public record of who kept their word cannot rest on *trust our server*. Negotiation became a hosted private **message** channel (§7.3) — a version that pushed it off our servers "for realism" was **reversed**, since a conversation we cannot see is one the audience can never be shown, and undoing it produced **THE RECEIPT REEL** (§14). Visibility became one explicit **five-tier ladder** (§11.2), because a drift toward publishing everything is a world with no strategy in it. And the **owner** came back as a served audience (§13B) under a rule that costs the goals nothing: *narrative and status, never control.*
 >
-> **Budgets, verified:** 15 axioms · 40 of 40 verbs · 10 of 10 `observe` keys · 8 venture kinds (§17). Axioms and observe keys are **at** the ceiling — adding one means removing one.
+> **Budgets, verified:** 15 axioms · 40 of 40 verbs · 11 of 11 `observe` keys · 8 venture kinds (§17). Axioms and observe keys are **at** the ceiling — adding one means removing one. The observe ceiling was **10 and was raised to 11 by owner decision on 2026-07-30** so that `risk` could be added rather than a key traded away; it is the only budget in §17 that has ever moved, and it moved because the alternative was an A9 violation. §12.1 states the reason in full.
 
 **Document set.** This spec is canon and wins all conflicts. Depth lives in `eve-passes/`, phase-tagged:
 

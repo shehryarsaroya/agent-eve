@@ -2,7 +2,7 @@
 /**
  * PROP-O3 — the rules-budget audit.
  *
- * SPEC §17: "<=15 axioms, <=40 verbs, <=10 top-level observe keys, <=8 venture
+ * SPEC §17: "<=15 axioms, <=40 verbs, <=11 top-level observe keys, <=8 venture
  * kinds ... every addition was individually justified by a critic, which is
  * exactly why the drift is invisible. Adding one means removing one. Enforced by
  * a test that counts them, not by good intentions."

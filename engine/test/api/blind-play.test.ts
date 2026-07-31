@@ -6,7 +6,7 @@
  * **The scripted agent below is written from `agent.md` and nothing else.**
  *
  * That constraint is the whole test. It follows §1's loop, signs the way §2
- * describes, reads the ten keys §6 names, and only ever submits affordances copied
+ * describes, reads the eleven keys §6 names, and only ever submits affordances copied
  * out of `affordances[]` as §12's advice tells it to. It never reads SPEC.md, never
  * guesses a param name, and never uses a verb it was not offered.
  *

@@ -38,18 +38,27 @@
  * | drop `VULNERABILITY_BY_TIER` from `stakeInCone` | the tier case |
  * | `INTENSITY_MAX_BPS` → `3000` (the band's floor) | the bound, and the tier case |
  * | `spare = 0` — ignore the per-good floor | the bound, and the tier case |
+ * | spare the floor at the DEAREST system instead of the cheapest | the floor-placement case |
+ * | sort the floor by system id (the shipped-then-fixed defect) | the floor-placement case |
  * | `ticks_to_announce: 0` always | both schedule cases |
  * | `affordable = offers` — offer `sign` unfunded | the `sign` gate's *offering* half |
  * | `tooDear = []` — drop the row | the `sign` gate's *accounting* half |
  *
- * The last two are listed separately on purpose: they are the two halves of
+ * The last two `sign` rows are listed separately on purpose: they are the two halves of
  * `test/api/withheld-is-accountable.spec.ts`'s standard — *offered, or counted with a reason* —
  * and a guard that killed only one of them would let the other ship.
+ *
+ * ⚑ **The two floor-placement rows are here because the first pass SURVIVED them.** The bound
+ * case holds at one system, where the floor's placement cannot matter, so it was green over a
+ * property it could not observe — this file's own header, one screen up, as a live example. The
+ * fix was a second fixture holding at two coned systems of different tiers, not a stronger
+ * assertion on the first.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
 import { describe, expect, it } from 'vitest';
 import { buildObservation } from '../../src/api/observe.js';
+import { Rng } from '../../src/core/rng.js';
 import type { PrincipalId, SystemId } from '../../src/core/types.js';
 import { minor, qty } from '../../src/core/units.js';
 import { LEVY_GOOD } from '../../src/levy/index.js';
@@ -57,6 +66,7 @@ import { freeCash } from '../../src/market/escrow.js';
 import {
   COVER_ELECTIVE_BPS_FLOOR,
   FRONT_EVERY_RECKONINGS,
+  announceFront,
   INTENSITY_MAX_BPS,
   VULNERABILITY_BY_TIER,
   landfallTickOf,
@@ -264,16 +274,118 @@ describe('★ `at_stake` — the "how hard" answer, and it is a BOUND rather tha
     ).toBeLessThan(Number(row?.['qty_in_cone']));
 
     // ── THE PROPERTY: run it to landfall and compare. ────────────────────────
-    const before = qtyHeld(world.runtime, holder, LEVY_GOOD);
+    //
+    // Measured **at the systems the CONE named**, which is exactly the claim the field makes and
+    // not a convenient narrowing: `coneOf` publishes 8 cells and `swathOf` draws 2–5 from its own
+    // sub-stream, so over 500 fronts three of them struck one system the cone did not name. The
+    // block's `rule` and `agent.md` §11F both say so. Comparing against total holdings would be
+    // asserting a promise the payload does not make — and would flake on 0.6% of seeds.
+    const coned = new Set((read?.['your_systems_in_cone'] as string[]) ?? []);
+    const before = qtyHeldAt(world.runtime, holder, LEVY_GOOD, coned);
     runTo(world.runtime, FIRST_LANDFALL_TICK + 1);
-    const after = qtyHeld(world.runtime, holder, LEVY_GOOD);
+    const after = qtyHeldAt(world.runtime, holder, LEVY_GOOD, coned);
     const taken = before - after;
     expect(taken, 'the front must actually strike this holder, or the comparison is empty').toBeGreaterThan(0);
-    // MUTATION: use `INTENSITY_MIN_BPS` in `stakeInCone`, or drop the `VULNERABILITY_BY_TIER`
-    // factor entirely (making it larger, which still passes) — the first fails here immediately.
+    // MUTATION: use `INTENSITY_MIN_BPS` in `stakeInCone`, or spare the per-good floor at the
+    // system with the HIGHEST worst-intensity rather than the lowest — both make the bound too
+    // small and both fail here.
     expect(taken, 'a published bound the strike exceeds is a lie in the direction that hurts').toBeLessThanOrEqual(
       Number(row?.['worst_case_qty']),
     );
+  });
+
+  it('★ spends the per-good floor where it SAVES THE LEAST, which is what makes the number a bound', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // `destroySet` charges the floor **once across every struck system**, in its own lot order, so
+    // which system gets the spare depends on where the SWATH actually landed — a fact sealed until
+    // landfall. A preview that assumed the floor protects the *dearest* goods would publish a
+    // figure the real strike can EXCEED, by `floor × (dearest − cheapest intensity)`, and it would
+    // do so silently: every individual term still correct, the total quietly short.
+    //
+    // The first version of `stakeInCone` sorted by system id, which is arbitrary with respect to
+    // tier and therefore wrong roughly half the time. **The mutation that catches it is reversing
+    // this comparator**, and it survived the fixture above because that holder stood at ONE system
+    // — a guard that cannot see the property it is written for, which is this file's own header.
+    // ══════════════════════════════════════════════════════════════════════════
+    const world = riskWorld('observable:floor', 2, 'MARCHES');
+    const [holder] = seatsFor(world, 0);
+    runTo(world.runtime, FIRST_ANNOUNCE_TICK + 1);
+    const front = world.runtime.risk.liveFronts(world.runtime.engine.tick)[0];
+    expect(front).toBeDefined();
+
+    // Two systems the CONE names, so both are in scope, and the same good in both.
+    const cells = [...(front?.cone ?? [])].map((c) => c.system);
+    expect(cells.length, 'the cone must name at least two systems for this to mean anything').toBeGreaterThan(1);
+    const [cheapAt, dearAt] = [cells[0] as SystemId, cells[1] as SystemId];
+    const each = 60_000;
+    const read: RiskViewInput = {
+      book: world.runtime.risk,
+      principal: holder,
+      tick: world.runtime.engine.tick,
+      holdings: [
+        { system: cheapAt, good: LEVY_GOOD, qty: qty(each), unitPrice: minor(1) },
+        { system: dearAt, good: LEVY_GOOD, qty: qty(each), unitPrice: minor(1) },
+      ],
+      freeCash: minor(0),
+    };
+    // COMMONS at 2,500 bps against FRONTIER at 10,000 — the widest spread the tier table allows,
+    // so the two placements are as far apart as they can be and the assertion is not a rounding
+    // artefact.
+    const tierRead = (s: SystemId): 'COMMONS' | 'FRONTIER' => (s === cheapAt ? 'COMMONS' : 'FRONTIER');
+    const bound = Number(
+      stakeInCone(read, tierRead).get(String(front?.id))?.goods[0]?.worst_case_qty ?? -1,
+    );
+
+    const worstAt = (tier: 'COMMONS' | 'FRONTIER'): number =>
+      Math.trunc((Number(INTENSITY_MAX_BPS) * Number(VULNERABILITY_BY_TIER[tier])) / 10_000);
+    const floor = 20_000;
+    const floorOnTheCheap =
+      Math.trunc(((each - floor) * worstAt('COMMONS')) / 10_000) +
+      Math.trunc((each * worstAt('FRONTIER')) / 10_000);
+    const floorOnTheDear =
+      Math.trunc((each * worstAt('COMMONS')) / 10_000) +
+      Math.trunc(((each - floor) * worstAt('FRONTIER')) / 10_000);
+
+    // ── NON-VACUITY, FIRST: the two placements really do differ, so there is a choice to get
+    //    wrong. Without this the equality below would pass for any comparator at all.
+    expect(floorOnTheCheap, 'the two placements must differ, or this test decides nothing').toBeGreaterThan(
+      floorOnTheDear,
+    );
+    // MUTATION: reverse the comparator in `stakeInCone` and `bound` becomes `floorOnTheDear`.
+    expect(bound, 'the floor is assumed to protect the CHEAPEST goods — every other placement takes less').toBe(
+      floorOnTheCheap,
+    );
+  });
+
+  it('★ the CONE/SWATH gap the bound is qualified by is REAL, and it is the size the docs claim', () => {
+    // ══════════════════════════════════════════════════════════════════════════
+    // The qualifier *"over the systems the CONE names"* is either an honest limit or a hedge, and
+    // the difference is whether anybody measured it. This is the measurement: over 500 fronts on
+    // the launch map, **4 have one struck system the cone did not publish** — and an independent
+    // sweep on a different seed family read **3**, which is why `risk.rule` and `agent.md` §11F
+    // quote it as *3–4 in 500* rather than as a constant. It is a rate, not a fact about a world.
+    //
+    // The per-sweep count is exact and deterministic, so it is pinned; the CELL count is the
+    // structural claim and is pinned at 1. A `front.ts` change that made the SWATH a strict subset
+    // of the CONE should make this test say so out loud rather than pass silently — at which point
+    // the qualifier can be deleted from three documents, which is a finding worth being told about.
+    // ══════════════════════════════════════════════════════════════════════════
+    const world = riskWorld('observable:conegap', 2, 'MARCHES');
+    const map = world.runtime.world.map;
+    let outside = 0;
+    let worstCells = 0;
+    for (let i = 0; i < 500; i += 1) {
+      const reckoning = 3 * (i + 1);
+      const front = announceFront(map, Rng.fromSeed(`conegap:${String(i)}`), reckoning, reckoning * 288);
+      const cone = new Set(front.cone.map((c) => c.system));
+      const missed = front.swath.filter((c) => !cone.has(c.system)).length;
+      if (missed > 0) outside += 1;
+      worstCells = Math.max(worstCells, missed);
+    }
+    // Non-vacuity in both directions: the sweep really ran, and the gap is small rather than absent
+    // — if it were zero the qualifier could be deleted, and that is a finding, not a pass.
+    expect(outside, 'measured 4/500 here — the qualifier in `risk.rule` is about a real case').toBe(4);
+    expect(worstCells, 'and never more than one cell').toBe(1);
   });
 
   it('applies the tier, so identical goods on Commons ground are bounded lower than on the Marches', () => {
@@ -383,11 +495,16 @@ describe('★ `sign` is offered only when the premium can actually be paid — a
   });
 });
 
-/** Located goods of one kind in a principal's stores. */
-function qtyHeld(runtime: Runtime, principal: PrincipalId, good: string): number {
+/** Located goods of one kind in a principal's stores, at a named set of systems. */
+function qtyHeldAt(
+  runtime: Runtime,
+  principal: PrincipalId,
+  good: string,
+  systems: ReadonlySet<string>,
+): number {
   let total = 0;
   for (const lot of runtime.ledger.lotsInAccount(`stores:${principal}` as never)) {
-    if (String(lot.good) === good) total += lot.qty;
+    if (String(lot.good) === good && systems.has(String(lot.location))) total += lot.qty;
   }
   return total;
 }

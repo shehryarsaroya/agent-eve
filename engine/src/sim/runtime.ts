@@ -2115,7 +2115,6 @@ import {
   coverChains,
   COVER_OFFER_TTL_TICKS,
   riskBlock,
-  riskViewFor,
   RiskBook,
   type CoverArc,
   type CoverChain,
@@ -2123,7 +2122,6 @@ import {
   type FrontBand,
   type HoldingRead,
   type RiskAffordance,
-  type RiskView,
   type RiskViewInput,
   type WithheldRisk,
 } from '../risk/index.js';
@@ -13171,20 +13169,21 @@ export class Runtime {
     };
   }
 
-  /** Everything a principal reads about risk. §12.1: a decision document, not telemetry. */
-  riskView(principal: PrincipalId, tick: number = this.engine.tick): RiskView {
-    return riskViewFor(this.riskRead(principal, tick));
-  }
-
   /**
    * ★ **`observe.risk` — the eleventh key** (A9, §12.1).
    *
    * ══════════════════════════════════════════════════════════════════════════
-   * **`riskView` above had ZERO CALLERS for this layer's whole life**, and the consequence was a
-   * live A9 breach rather than merely dead code: the spectator frame carried `frontBands` —
-   * a viewer read `front:r3:sys-20 · sys-20 96% · lands in 555` off the feed — while the agents
-   * in that storm had **no `risk` key in the observation at all**, and the three risk acts were
-   * on their menus with nothing to price them from.
+   * **This replaces a `riskView` that had ZERO CALLERS for the layer's whole life**, and the
+   * consequence of that was a live A9 breach rather than merely dead code: the spectator frame
+   * carried `frontBands` — a viewer read `front:r3:sys-20 · sys-20 96% · lands in 555` off the
+   * feed — while the agents in that storm had **no `risk` key in the observation at all**, and
+   * the three risk acts were on their menus with nothing to price them from.
+   *
+   * The old method is **deleted rather than kept beside this one**. It returned the typed
+   * {@link RiskView}, which `riskBlock` builds internally from the same read, so keeping it would
+   * have left a second wrapper with no caller — the exact defect one level down, in the commit
+   * that fixes it. `riskViewFor` is still exported and still directly tested; what is gone is a
+   * runtime method nothing invoked.
    *
    * Shaped here for `marketView`'s reason: this is where every other block a projection publishes
    * is assembled from one read, so the affordances and the block cannot come off two different

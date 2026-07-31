@@ -1004,7 +1004,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(104_307);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(104_647);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1035,16 +1035,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 101,524 = **18,476**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 95,005 — leaving **24,995**, against a required 4,000.
-    // ── ★ AND AT 40, +2,783: §12.1's ELEVENTH KEY, `risk` ───────────────────
+    // ── ★ AND AT 40, +3,123: §12.1's ELEVENTH KEY, `risk` ───────────────────
     //
     // `agent.md` §6 gained the key's line (+460, FLOOR) and §11F gained the schedule, `at_stake`
-    // and the four fields it had never named (+2,323, act-gated on the three COVER acts). The two
+    // and the four fields it had never named (+2,663, act-gated on the three COVER acts). The two
     // sum to the whole file's delta, so both land whole and nothing was displaced — which is the
     // only thing reading this cell can tell you that arithmetic cannot.
     //
-    // Analytic margin 120,000 − 104,307 = **15,693**. The reachable maximum is `outside the Commons
-    // and landless, at its fullest` at 97,788 — leaving **22,212**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(104_307);
+    // Analytic margin 120,000 − 104,647 = **15,353**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 98,128 — leaving **21,872**, against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(104_647);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1112,9 +1112,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // on the merged tree rather than carried over: the branch read 94,754 against a tree missing the
     // strike-floor correction's +251. Margin 120,000 − 95,005 = **24,995** against a required 4,000
     // — the number to quote about SAFETY and never the number to quote about ROOM.
-    // ★ RE-MEASURED at 40: +2,783 — §6's `risk` key line (+460, FLOOR) and §11F's schedule,
-    // `at_stake` and four previously-unnamed fields (+2,323, act-gated). Read, not added.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(97_788);
+    // ★ RE-MEASURED at 40: +3,123 — §6's `risk` key line (+460, FLOOR) and §11F's schedule,
+    // `at_stake` and four previously-unnamed fields (+2,663, act-gated). Read, not added.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(98_128);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2695,7 +2695,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     //   +460    §6's observe block — one key line and its five continuation lines. **FLOOR**, so
     //           every position pays it. It is the payload's shape and an agent reads that once.
-    //   +2,323  §11F — the `schedule{}` sentence (a front is on a calendar, so a world between
+    //   +2,663  §11F — the `schedule{}` sentence (a front is on a calendar, so a world between
     //           fronts still has a countdown), `at_stake` as a BOUND rather than a forecast, and
     //           `covered[]` / `owed_to_you[]` / `your_record` / `terms`, none of which the section
     //           had ever named. **Act-gated** on `publish_offer{COVER}` · `sign{COVER}` ·
@@ -2706,12 +2706,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //   53,422  53,882   +460   mid-game in the Commons
     //   63,125  63,585   +460   about to take territory
     //   66,267  66,727   +460   at war: party to a live campaign
-    //   93,496  96,279 +2,783   a claimant in trouble
-    //   75,366  78,149 +2,783   the Commons at its fullest
-    //   95,005  97,788 +2,783   outside the Commons and landless
-    //  101,524 104,307 +2,783   the analytic ceiling
+    //   93,496  96,619 +3,123   a claimant in trouble
+    //   75,366  78,489 +3,123   the Commons at its fullest
+    //   95,005  98,128 +3,123   outside the Commons and landless
+    //  101,524 104,647 +3,123   the analytic ceiling
     //
-    // **460 + 2,323 = 2,783 is `agent.md`'s whole delta**, so both edits land whole and nothing was
+    // **460 + 2,663 = 3,123 is `agent.md`'s whole delta**, so both edits land whole and nothing was
     // trimmed to fit either. The four +460 rows are the `acts` gate for the seventh time: a newcomer
     // is never offered a COVER act, so it pays for the key's *shape* and not for the section's rules
     // — and it still reads `risk.rule` and `risk.schedule` on every wake, because those travel with
@@ -2725,9 +2725,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       53_882, // mid-game in the Commons                 (+460)
       63_585, // about to take territory                 (+460)
       66_727, // at war: party to a live campaign        (+460)
-      96_279, // a claimant in trouble                   (+2,783)
-      78_149, // the Commons at its fullest              (+2,783)
-      97_788, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,783)
+      96_619, // a claimant in trouble                   (+3,123)
+      78_489, // the Commons at its fullest              (+3,123)
+      98_128, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,123)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -2902,7 +2902,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      104_307, // the analytic ceiling                    (+2,783 at 40)
+      104_647, // the analytic ceiling                    (+3,123 at 40)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

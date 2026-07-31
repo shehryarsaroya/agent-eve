@@ -18,7 +18,7 @@
 > |---|---|
 > | `tsc` · lint | 0 · 0 |
 > | vitest | **308 files, 3,868 passed, 1 skipped** |
-> | budgets | verbs **40/40** · axioms 15/15 · observe keys 10/10 · kinds 8/8 |
+> | budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** (ceiling raised from 10 for `risk`; SPEC §12.1) · kinds 8/8 |
 > | balance gate 3R · 6R · 9R, 8 seeds | `levyShort 0` every horizon · red **0/192 · 0/384 · 0/576** · `halted 0` · `trapped 0` |
 >
 > **35 renumbered to 37** — 36 was the risk market's, so the notes are STACKED and not blended: 36

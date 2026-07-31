@@ -1692,11 +1692,17 @@ there so a small holding of `ore`, `alloy` or `fuel` is not wiped by a single la
 
 Every row of `risk.fronts[]` carries **`at_stake`**: one entry per good you hold anywhere in that
 front's CONE, with `qty_in_cone`, the `spared` floor, `worst_case_qty` and `worst_case_minor`, plus a
-total. **It is an upper bound and never a forecast** — it assumes every system of yours in the cone is
-struck, at the maximum intensity its tier allows. Three things can only make the real loss smaller: the
-SWATH is narrower than the CONE and may miss you entirely, intensity falls off per lane from the eye,
-and the centre is a draw. **The SWATH is sealed until landfall** — fixed at announcement and published
-to nobody, including the spectator feed. Price the bound; do not treat it as the bill.
+total. **It is an upper bound over the systems the CONE names, and never a forecast** — it assumes
+every one of them is struck, at the maximum intensity its tier allows. Three things can only make the
+real loss smaller: the SWATH is narrower than the CONE and may miss you entirely, intensity falls off
+per lane from the eye, and the centre is a draw. **The SWATH is sealed until landfall** — fixed at
+announcement and published to nobody, including the spectator feed. Price the bound; do not treat it
+as the bill.
+
+One caveat, stated rather than hidden: the CONE and the SWATH are drawn from **different sub-streams**,
+so rarely — measured at 3–4 fronts in 500, never more than one system — the storm reaches a system the
+cone did not name. Goods there are outside `at_stake`. It is not an error in the number; it is what a
+forecast is.
 
 ### Buying COVER — `sign` `{"cover":"<id>","terms_hash":"<hash>"}`
 

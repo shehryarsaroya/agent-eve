@@ -370,6 +370,12 @@ export function riskViewFor(input: RiskViewInput): RiskView {
  *     {@link frontViewFor} publishes it only once struck and this block copies that gate rather
  *     than re-deciding it. Publishing it early would hand every reader a solved game and would be
  *     a fact the frame does not carry either.
+ *   - **`offers[]` is `PUBLIC` state read through a filter, never a private view.** Every event
+ *     this layer emits is appended at `visibility: 'PUBLIC'` (`runtime.ts:riskPort`), `cover.offered`
+ *     included, so an open offer with its payer, limit, premium and `termsHash` is already on the
+ *     feed the moment it is written. What the block does is *narrow* that to the offers this reader
+ *     could actually bind (RSK1's insurable interest), which is the direction §12.1's eligibility
+ *     filtering is allowed to move in — less than public, never more.
  *   - **No other principal's holdings.** `your_systems_in_cone` and {@link stakeInCone} are
  *     computed from the *reader's* lots. A "who else is exposed" list would be §11.2's `SENSED`
  *     tier published as `PUBLIC` — the same call that kept `tributeLines` off the live frame,
@@ -463,16 +469,33 @@ export type TierRead = (system: SystemId) => ZoneTier;
  *
  * Every term is published: `agent.md` §11F already states the tier shares and the floors, and this
  * is those numbers applied to the reader's own lots so it does not have to. It is an **upper
- * bound**, exactly, and never a prediction — three things can only make it smaller. The SWATH is
- * `span` systems wide and may not include yours; intensity falls off per hop from the eye; and the
- * centre is drawn in `[INTENSITY_MIN_BPS, INTENSITY_MAX_BPS]` from a seed nobody may read before
- * landfall. A2 wants genuine uncertainty left uncertain *and sourced*, so the number is the bound
- * and `note` says which way it can only move.
+ * bound over the systems the CONE names**, exactly, and never a prediction — three things can only
+ * make it smaller. The SWATH is `span` systems wide and may not include yours; intensity falls off
+ * per hop from the eye; and the centre is drawn in `[INTENSITY_MIN_BPS, INTENSITY_MAX_BPS]` from a
+ * seed nobody may read before landfall. A2 wants genuine uncertainty left uncertain *and sourced*,
+ * so the number is the bound and `note` says which way it can only move.
+ *
+ * ⚑ **"OVER THE SYSTEMS THE CONE NAMES" IS A REAL QUALIFIER AND IT IS MEASURED, NOT HEDGING.**
+ * `coneOf` publishes {@link CONE_SYSTEMS} = 8 cells and `swathOf` draws `span` ∈ [2, 5], both
+ * ranked nearest-first from the same eye — but from **different sub-streams**, so their tie-breaks
+ * at equal distance can disagree. Swept over 500 fronts on the launch map twice, on two seed
+ * families, **3 and 4 fronts (0.6–0.8%) had one struck system the cone did not name**, never more
+ * than one cell in either sweep. So a reader holding at that
+ * cell can lose more than this figure, and the honest statement is the one this function makes:
+ * the bound is over the published cone. Widening it would mean publishing systems the CONE does
+ * not — an oracle CAT11 CUTS by name — and narrowing the SWATH is a `front.ts` rules change with a
+ * `state_hash` behind it. Stated here, in `rule`, and in `agent.md` §11F rather than left for a
+ * reader to discover from a shortfall.
  *
  * The floor is charged **once per good across the whole cone**, in `compareIds` order over systems,
  * which is `destroySet`'s own rule and its own ordering — a second, prettier rule here would be a
  * preview that disagrees with the settlement it previews (scar #1, with goods attached).
  */
+/** The hardest a FRONT may hit ground of this tier: the band's ceiling, times the tier's share. */
+function worstIntensityAt(tier: ZoneTier): number {
+  return Math.trunc((INTENSITY_MAX_BPS * VULNERABILITY_BY_TIER[tier]) / BPS_ONE);
+}
+
 export function stakeInCone(
   input: RiskViewInput,
   tierOf: TierRead,
@@ -492,7 +515,20 @@ export function stakeInCone(
     const goods: StakeRow[] = [];
     let total = 0;
     for (const good of [...byGood.keys()].sort(compareIds)) {
-      const rows = [...(byGood.get(good) ?? [])].sort((a, b) => compareIds(a.system, b.system));
+      // ★ **THE FLOOR IS SPENT WHERE IT SAVES THE LEAST, AND THAT IS WHAT MAKES THIS A BOUND.**
+      //
+      // `destroySet` charges the per-good floor **once across every struck system**, in its own lot
+      // order — so which system gets the spare depends on which ones the SWATH actually hit, and
+      // nothing here can know that. Sorting by system id (the first version) therefore produced a
+      // number the real strike could *exceed*: spare the floor at a COMMONS cell at 2,250 bps while
+      // the storm spares it at a FRONTIER cell at 9,000, and the bound is short by the difference.
+      //
+      // Ascending worst-intensity is the safe assignment: the floor is assumed to protect the
+      // cheapest goods, so every other placement can only take less. Ties by system id, so the
+      // ordering is total and the number is the same on replay (DET-1).
+      const rows = [...(byGood.get(good) ?? [])].sort(
+        (a, b) => worstIntensityAt(tierOf(a.system)) - worstIntensityAt(tierOf(b.system)) || compareIds(a.system, b.system),
+      );
       let floorLeft = frontSparesFor(good);
       let inCone = 0;
       let spared = 0;
@@ -502,10 +538,7 @@ export function stakeInCone(
         floorLeft -= spare;
         spared += spare;
         inCone += row.qty;
-        const worstIntensity = Math.trunc(
-          (INTENSITY_MAX_BPS * VULNERABILITY_BY_TIER[tierOf(row.system)]) / BPS_ONE,
-        );
-        taken += Math.trunc(((row.qty - spare) * worstIntensity) / BPS_ONE);
+        taken += Math.trunc(((row.qty - spare) * worstIntensityAt(tierOf(row.system))) / BPS_ONE);
       }
       // One mark per good (`Runtime.markOf`), so any row's price is the good's price.
       const unitPrice = rows[0]?.unitPrice ?? 0;
@@ -534,9 +567,11 @@ export function stakeInCone(
 const RISK_RULE =
   'A FRONT is weather on a clock: announced, then it lands and destroys located goods in the ' +
   'systems it actually hit. Goods IN TRANSIT are spared, so `haul` out of the CONE is always an ' +
-  'answer. `at_stake.worst_case_minor` is an upper bound — every system of yours in the CONE ' +
-  'struck at its tier\'s maximum INTENSITY, the per-good floor charged once — and the SWATH ' +
-  'itself is sealed until landfall, so nobody can read it early, including us.';
+  'answer. `at_stake.worst_case_minor` bounds what it can take FROM THE SYSTEMS THIS CONE NAMES — ' +
+  "every one of them struck at its tier's maximum INTENSITY, the per-good floor charged once. The " +
+  'SWATH is sealed until landfall so nobody reads it early, including us, and it is drawn ' +
+  'separately from the CONE: rarely (measured 3-4 of 500 fronts) it reaches one system the cone ' +
+  'does not name, and goods there are outside this figure.';
 
 /** The published terms every COVER is written on. Constants, so a price is checkable without a wiki. */
 function coverTerms(): Readonly<Record<string, unknown>> {
