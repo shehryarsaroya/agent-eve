@@ -68,3 +68,66 @@ show you the previous build.
 5. **THE VERGE is one continuous solid outline.** No dash, no gap, no hole — a hole is a false claim
    about a real principal.
 6. **No score, no grade, no gauge on STANDINGS.** Raw counts; the judging is the show.
+
+---
+
+## Where it ended (2026-07-31)
+
+**Deployed and live at `https://agentinsurance.io/compact/`.** Eight screens, drawing the production
+world, which settled its first Reckoning at tick 287 while this was being built.
+
+`docs/design/graphics-2026-07-30/built/*.webp` are the eight deployed screens as shipped — the
+reference for whether a later change is an improvement or a regression.
+
+### ★ THE RECEIPT REEL FIRED, on production, for the first time
+
+`VISUAL-READINESS-2026-07-30.md` §5 measured `rundown[].receiptReel` as **null on all 180 segments
+across three seeds**, and recorded that no cast in this repo had ever produced one. On the production
+frame for Reckoning 0 it is populated, and §14's signature artifact renders with real content:
+
+```
+2  THE WORDS   PARTIES · DECLASSIFIED AT SETTLEMENT
+   t37   vex   "I will pay my elective share IN_FULL at settlement;
+                protection is a contract, not a sentiment."
+   t127  vex   "I will pay my elective share in full on every role I hold."
+4  THE DEED
+   vex's 2K was riding on halcyon's escort. vex walked away from 566 of
+   the 2K it had promised.
+```
+
+The LLM cast talks, and the say-do gap is on screen. Two of the four acts are still empty on that
+beat — no grant bound it, and the seal was HONOURED — and both say so in one line each.
+
+### Frame fields the client wants and the engine does not publish
+
+| Field | Why |
+|---|---|
+| `map[].constellationName` | The frame publishes `con-1`…`con-4`. The mock series invented HEARTH / THRESHOLD / MARROW / VANE and `MARROW` collides with the live handle `p:marrow`. The map draws the ids and the legend says the counts exclude the Commons. |
+| a hand roster on any principal | The mocks show a HANDS strip (IDLE · IN TRANSIT · COMMITTED · RECOVERING). No key carries one, so the dossier cannot draw it. |
+| a principal-scoped read | Every key is a world-scoped array capped for broadcast. A quiet principal simply is not on tonight's frame, which is not the same as never having dealt — the dossier says so rather than implying zero. |
+| `StandingRow.storesByGood` | THE GOODS on MARKET can show what the world traded, never what a principal holds. |
+| a crest / sigil per principal | Assigned client-side by hashing into a generated 16-tile plate. Deterministic, but it is the client's choice, not the world's. |
+
+### ⚑ One engine discrepancy the client surfaced
+
+On the dense fixture, `meters.kept` / `meters.broken` equal `sum(standings[])` **exactly on eight of
+nine frames** — 25/13 · 65/17 · 101/23 · 140/24 · 182/26 · 217/29 · 256/32 · 299/33 — and part company
+on the ninth: **318/20 against 343/33**. So `meters.broken` goes 33 → 20 between R7 and R8, a
+cumulative counter running backwards on a published frame. Not diagnosed. The client draws both
+sources and prints a line saying they disagree rather than picking one.
+
+### The critic loop
+
+Four rounds, each against the mock PNGs at matched width with numeric deltas demanded. Round 4's
+verdict was still STRUCTURAL; everything it named is fixed. The three findings worth remembering
+because they were *correctness*, not taste:
+
+1. **THE VERGE, three times.** Labels over the fence punched holes in it; the fence over the labels
+   struck 12 of 30 names through. Neither paint order was the answer — a label on a bloc member is
+   always inside its own fence, so the label has to move past `VERGE_R`.
+2. **THE FREEZE read 91% elapsed at tick 7 of 288**, because the current phase and the elapsed
+   portion were two indistinguishable alphas and EARLY is 262 of 288 ticks. It had also been wrong
+   about the phase boundaries entirely (0/144/240/276 against the real 0/262/286/287).
+3. **`flex: 0 0 208px` meant 745px**, because a flex item defaults to `min-height: auto`. Fixing that
+   globally then removed the floor under the tile strip and cut every headline number in half. Both
+   are in `app.css` with the reasoning at the call site.
