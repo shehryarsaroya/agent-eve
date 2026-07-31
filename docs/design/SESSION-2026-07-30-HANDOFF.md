@@ -432,3 +432,88 @@ the window existed. The world does not move, and the balance gate reads identica
 Widening the window to 18 or 24 was measured and **reverted**: at 24 a war seed stopped fielding a
 defence, at 18 combat got worse. `formationWindowOutlastsAWake()` is pinned at **−6** as a standing
 measurement so the day it goes non-negative somebody notices.
+
+---
+
+## VISUAL LAYER — in progress, autonomous (2026-07-31)
+
+The engine is done: `RULES_VERSION` 40, 312 test files, 3,889 tests, production re-seeded and healthy,
+**the core loop closing from the front door for a signed identity** for the first time in the project's
+life. What remains is the browser.
+
+### The owner's direction, and the standing goal
+
+> *"complete the game visual — use the image model to help you design details in eve style and use the
+> reference styles — and like use 3js or whatever — to match the style and the quality (use a critic to
+> check) — iterate until all the visual aspects of the game are complete"*
+
+They then went to sleep with: *"finish everything off and continue working and don't stop… you'll have
+to just work everything out and get it all done."* **Full autonomy is granted to whoever holds this.**
+
+### The chosen style
+
+The **EVE-inspired console**, from `docs/design/graphics-2026-07-30/samples/profile-e-evenative.png`.
+Charcoal, cyan for the honest principal, red for the defaulter, hairline tables, a tab bar, per-principal
+voronoi territory. The variants split it into a pair rather than a single screen: **E1 TERMINAL** at
+operator density for `live.json` (288 writes a day) and **E6 BROADCAST** at poster scale for the
+Reckoning (one). Same colour coding and crest — the transition is an animation, not a second design.
+
+Assets to work from, all in `docs/design/graphics-2026-07-30/`:
+`VISUAL-ASSET-BIBLE.md` (77pp, the specification) · `samples/gallery.html` (21 style images) ·
+`samples/gallery-screens.html` (12 EVE screens) · `samples/render.py` and `render_screens.py` (every
+prompt, with the ban list and canon whitelist that took vocabulary leaks from ~20 to zero).
+
+### What the client is today
+
+`engine/client/index.html` — **48 KB of vanilla DOM and CSS, no canvas, no SVG, no build step, and it
+renders no map at all.** Its palette is cream/ink/gold/red serif, a paper almanac. So this is a full
+re-skin plus a map layer that has never existed.
+
+**★ The highest-value work: `map`, `swayLines` and `compactLinks` are among the best-populated keys on
+the frame and have never had a single pixel drawn from them.** THE PINCH, THE LODE and THE VERGE are
+pure drawing against live data. Nine of the frame's 29 keys are drawn by nothing.
+
+### Rules for this work
+
+- **Client only.** Never touch `engine/src/`; never restart the API. `./deploy/deploy.sh client` is
+  static files plus an nginx reload and is safe to run often. An API restart replays from genesis.
+- **Draw only what the frame carries.** If a screen needs a field that does not exist, stub it and
+  record the gap. Fabricated numbers on a public record are the one failure worse than a crash here.
+- **A9:** never show a live fact an agent's own `observe` would not.
+- **Sparse and dense both.** The world re-seeded at tick 0 and its first Reckoning is tick 287, so most
+  arrays are near-empty. An empty panel must read as *"nothing yet"*, never as a broken layout.
+
+### Three traps already paid for
+
+1. **A banned word in the *style block* beats a ban list in the *prompt*.** The first sweep leaked ~20
+   EVE terms because `render.py`'s own direction-E block named **zKillboard** as a density reference —
+   which is how `TOP KILLS` ended up beside the receipt reel. Scrubbed; the explicit ban **plus a
+   positive whitelist of legal nouns** then held for eighteen straight images.
+2. **A prohibition does not work on the image model; a positive phrasing does.** Every mock drew the
+   VERGE dashed despite being told not to. *"One continuous solid outline"* is the fix — a hole in a
+   reach fence reads as a false claim.
+3. **The model invents canon collisions.** `morrow` as a handle against the constellation MARROW,
+   `warden` against the WARDEN hull — §3's oldest scar, arriving from an image model rather than a
+   person. Whitelist handles in every prompt.
+
+### What the mock series found that the docs do not contain
+
+- **The docs plan three screens; the product needs twelve.** §12's three are *artifacts* — two JSON
+  files and a component. **There is no navigation model written down anywhere.** The tab bar
+  (`OVERVIEW · PRINCIPALS · VENTURES · GRANTS · MARKET · MAP · STANDINGS · RECKONING`) was invented by
+  the sweep and is the most reusable thing it produced.
+- **There is no principal-scoped read, and four screens need one.** Every frame key is a world-scoped
+  array capped for broadcast (7 labels, 7 docket rows, 12 authority lines), so `sable`'s character
+  sheet **cannot be built from `latest.json`** because sable may not be on it. *A broadcast budget is
+  being asked to serve as a database.* This is the largest open product gap.
+- **Time is the primary sort key, because space has no metric** — §6.2 removes coordinates by decision,
+  so every screen sorts by ticks, and the Reckoning countdown is the only element all twelve share.
+- **The market is not a market.** No order book, no depth, by rule: a fill is a deed and a resting order
+  is a manifest. It is a price observatory, and the one screen where borrowing EVE's language misleads.
+
+### Done when
+
+Every screen the frame can feed is built and deployed; every one of the asset bible's 22 named
+signatures either draws or is explicitly listed as having no data; the critic's remaining notes are
+taste rather than defects. Then the two things that were always the owner's: **the design polish, and
+three humans watching one Reckoning.**
