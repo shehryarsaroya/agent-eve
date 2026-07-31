@@ -92,11 +92,21 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 - **Design: complete, adversarially reviewed, rewritten.** SPEC v3.0 + EXPERIENCE (R1–R24) + ~9,000
   lines of phase-tagged catalogs. Six critics run against the v3 draft, all FATAL/SEVERE integrated.
-- **Code: ~78,000 lines of engine, 2,939 tests, lint 0, tsc 0.** Phase 0's sixteen build steps and
-  Phase 1's five areas all have real implementations. All **40 of 40** canon verbs are implemented —
-  that is the §17 *ceiling*, so adding a mechanic now means spending a verb, not adding one.
-- **Live in production**, one shard, ~tick 5,000, `failures: []`, a 12-member LLM cast on its own keys
-  plus heuristics. `agentinsurance.io/compact/`.
+- **Code: `RULES_VERSION` 40, 312 test files / 3,889 tests, lint 0, tsc 0** *(2026-07-30)*. Phase 0's
+  sixteen build steps and Phase 1's five areas all have real implementations. All **40 of 40** canon
+  verbs are implemented — that is the §17 *ceiling*, so adding a mechanic now means spending a verb,
+  not adding one. **`observe` keys are 11, not 10**: §17's ceiling moved for the first time on
+  2026-07-30, by owner decision, so `risk` could be added rather than a key traded away — the
+  alternative was a live A9 breach. SPEC §12.1/§17 carries the argument.
+- **Live in production**, one shard, `failures: []`, a 12-member LLM cast on its own keys plus
+  heuristics. `agentinsurance.io/compact/`.
+- **★ THE CORE LOOP CLOSES FROM THE FRONT DOOR FOR A SIGNED IDENTITY** *(2026-07-30)*, which no
+  play-test had managed: enrol → `create` → both roles filled by real counterparties → **countersign**
+  → `elect` → settle → `elective_honoured 0 → 2`, `distinct_counterparties 0 → 2`, `defaults 0`. The
+  blocker was arithmetic, not a missing verb: `WAKES_PER_RECKONING` 16 over 288 ticks is one wake per
+  18 ticks while `FORMATION_WINDOW_TICKS` is 12, so **a venture retired six ticks before its creator
+  could legally observe again**. The fix is a sentence — the wake budget is a *pool*, not a rate — and
+  `formationWindowOutlastsAWake()` is pinned at −6 so the day it goes non-negative somebody notices.
 - **★ GATE 3 IS RUN AND THE DESIGN SURVIVED IT.** `AGT-E1`: `kept 22 · broken 3` — **12% of settled
   elective promises broken, unprompted**, with the rundown naming it. §7.6's negative branch does not
   obtain: trust is not worthless and betrayal is not irrational. Neither zero (which would have
