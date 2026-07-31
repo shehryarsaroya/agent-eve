@@ -1716,7 +1716,7 @@ var Screens = (function () {
     var lp = el('div', { class: 'rows', style: 'min-height:0' });
     lp.appendChild(panel('THE LEVY', {
       sub: tl.length + ' lines · ' +
-        Object.keys(byState).sort().map(function (k2) { return byState[k2] + ' ' + k2; }).join(' · '),
+        Object.keys(byState).sort().map(function (k2) { return byState[k2] + ' ' + k2; }).join(' '),
       right: (M.levyShort || 0)
         ? el('span', { style: 'color:var(--amber)' }, 'SHORT ' + U.n(M.levyShort))
         : el('span', { style: 'color:var(--cyan)' }, 'NO SHORTFALL'),

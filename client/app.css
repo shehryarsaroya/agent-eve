@@ -230,7 +230,10 @@ nav#tabs button[aria-current="true"] .fk { color: rgba(0, 6, 10, 0.55); }
 .panel > h2 .sub {
   color: var(--dim); font-weight: 400; letter-spacing: var(--track);
   text-transform: none; font-size: var(--fs-micro);
-  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  /* GROW as well as shrink: with `flex: 0 1 auto` the subtitle never took
+     the slack, so `.right`'s `margin-left: auto` had no free space to push
+     into and the right slot was what got clipped instead. */
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
 /* the title and the right slot never shrink; only the subtitle does, and it
    ellipsizes rather than hard-cutting a number mid-digit */
