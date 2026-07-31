@@ -80,6 +80,7 @@ import {
   partiesOf,
   pinnedValue,
   roleOfPrincipal,
+  projectedSettlement,
   yourTakeAtP50,
   type CreatorElective,
   type VentureRecord,
@@ -1994,6 +1995,56 @@ function affordancesFor(
         expires_tick: view.resolves_tick,
         quote_id: quoteId(principal, tick, 'fight', { raid: view.raid }),
       });
+      // ── ★ AND THE TARGET'S OWN MARCH, WHICH ONLY A BYSTANDER WAS EVER OFFERED ──
+      //
+      // ══════════════════════════════════════════════════════════════════════════
+      // **A STRANGER GOT A ROUTE TO THIS STANDOFF AND THE PERSON BEING ROBBED DID NOT.**
+      //
+      // The march affordance below is gated on `your_side === null`, so for the whole of this
+      // mechanic's life the one principal with the most at stake was the one principal never told
+      // it could send for its own hands. `RaidView.march` was computed for it — the view has never
+      // filtered by side — and no branch on either surface read it: not this menu, and not
+      // `cast/heuristic.ts`, whose `raidAnswerFor` only ever emitted `fight` or `yield`.
+      //
+      // Measured with `scripts/standoff-probe.ts`, 8 seeds × 3 Reckonings: across **72 standoffs
+      // the targets had 6 hands at their own stages between them**, 0.08 each. The defence was
+      // terrain and nothing else, 69 of 72 readings were short, and 65 resolved `PAID`. That is
+      // what made yielding look like a dominant strategy — not that paying is cheap, but that the
+      // only alternative was unreachable. A target with no hand at the stage was not choosing
+      // between two options; it had one.
+      //
+      // It is offered **beside** `fight` rather than instead of it, because they are not
+      // alternatives: `vFight`'s own docstring says *"hands can still march to the stage during the
+      // window, so an agent that answers early and reinforces late gets both"*.
+      // ══════════════════════════════════════════════════════════════════════════
+      const muster = view.march;
+      if (muster !== null) {
+        eligible.push({
+          verb: 'move',
+          params: { hand: muster.hand, to: muster.next },
+          cost: 1,
+          max_direct_loss: 0,
+          max_contingent_liability: 0,
+          what_it_forecloses:
+            `you are the target at ${view.stage} and your force there is ` +
+            `${String(view.force.defender_if_you_fight)} against ${String(view.force.raider)}. Your hand ` +
+            `${muster.hand} stands at ${muster.from}, ${String(muster.hops)} gate(s) away: one \`move\` per ` +
+            `gate, arriving tick ${String(muster.arrives_tick)} against a window that shuts at ` +
+            `${String(view.resolves_tick)} — ` +
+            `${muster.in_time ? 'in time' : 'TOO LATE, and this walk would arrive at a resolved standoff'}. ` +
+            `Each of your own hands standing there is worth 1, and ties go to you, so ` +
+            `${String(Math.max(0, view.force.raider - view.force.defender_if_you_fight))} more would flip the ` +
+            `verdict. Answering \`fight\` does not close the door: hands may keep arriving until the window ` +
+            `shuts. What the walk costs is the hand — it is not filling a role or carrying tribute while it ` +
+            `stands there, and if the defence still loses it goes RECOVERING.`,
+          expires_tick: view.resolves_tick,
+          quote_id: quoteId(principal, tick, 'move', {
+            raid: view.raid,
+            hand: muster.hand,
+            to: muster.next,
+          }),
+        });
+      }
     } else if (view.your_side === null && view.force.your_hands_here <= 0 && view.march !== null) {
       // `your_hands_here <= 0` used to be implicit in `march !== null` — the view nulled the route the
       // moment a hand of the reader's stood at the stage. It does not any more (a second hand is worth a
@@ -5302,7 +5353,26 @@ function ventureRow(
      * is the product; it named the wrong principal.
      */
     acted_by: venture.actedBy,
-    projected_settlement: yourTakeAtP50(venture, principal),
+    /**
+     * ★ What resolving now would pay **you** — role take *plus* creator residual.
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * **IT WAS `yourTakeAtP50` ALONE, WHICH IS ZERO FOR A CREATOR THAT HOLDS NO ROLE — AND THAT IS
+     * THE ORDINARY CASE.** A principal that authored a venture and filled none of its slots read
+     * `projected_settlement: 0` through FORMING, LIVE and SETTLED alike, on the one field named for
+     * the question *"what do I get out of this"*. Verified by a player, and it is the same defect
+     * `your_take_at_p50` on the board row already carries a paragraph about: a figure that is
+     * correct-by-construction for one readership and silently zero for another.
+     *
+     * `projectedSettlement().creatorResidualAtP50` is *"what the creator keeps at p50 after every
+     * claim"* — the figure this field was always meant to be for that reader. Added rather than
+     * substituted, because a creator that also holds a role is owed both and a conditional would
+     * have made the field mean two different things depending on who read it.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    projected_settlement:
+      yourTakeAtP50(venture, principal) +
+      (venture.creator === principal ? projectedSettlement(venture, runtime.engine.tick).creatorResidualAtP50 : 0),
     talks: runtime.talksFor(principal).filter((t) => t.venture === venture.id).length,
   };
 }

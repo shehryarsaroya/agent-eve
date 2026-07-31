@@ -51,7 +51,13 @@ import {
   weightOf,
   type LevyRule,
 } from '../levy/index.js';
-import { IN_FULL, kindSpec, openIndices, roleOfPrincipal, type Election } from '../venture/index.js';
+import {
+  IN_FULL,
+  kindSpec,
+  openIndices,
+  roleOfPrincipal,
+  type Election,
+} from '../venture/index.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
 import {
@@ -1180,6 +1186,181 @@ export class HeuristicCast {
    * three hands is never fully reserved.
    * ══════════════════════════════════════════════════════════════════════════
    */
+  /**
+   * IDLE hands this member could send anywhere, after the world's bill has taken its share.
+   *
+   * `carriageNeeded` subtracted for the reason it is subtracted everywhere else in this file: a
+   * tribute is owed and a defence is chosen, so a favour — or a muster — must never be what makes a
+   * red tribute line. Hands already crewing a hull are excluded because `engage` holds them; hands
+   * pledged to a standoff are **not**, because that is exactly what a muster is spending.
+   */
+  /**
+   * One hand, held back for a standoff this member is the **target** of and cannot yet answer.
+   *
+   * The three conditions are each doing work, and together they keep the subject rare:
+   *
+   *   - **live and unanswered** — a resolved or answered standoff has nothing left to reserve for;
+   *   - **nothing of its own standing there** — if a hand is already at the stage the muster branch
+   *     has what it needs and a second reservation would be a tax on a defence already mounted;
+   *   - **and the reading is short** — a standoff this member would already win needs no hand, and
+   *     reserving against it would be `CAST_COALITION_SPARE_HANDS`' first version repeated: a price
+   *     charged where no decision hangs on it.
+   *
+   * Capped at 1 by construction, whatever the number of standoffs: this is the difference between
+   * keeping a hand free and refusing to work.
+   */
+  /**
+   * Walk one hand toward a standoff this member is the TARGET of, or null.
+   *
+   * Extracted out of `raidAnswerFor` and placed below `engageFor` in the ladder; the measurement
+   * that forced the move is at the call site.
+   */
+  private musterFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    for (const view of this.runtime.raidsFor(member.principal, tick, MAX_CAST)) {
+      if (view.your_side !== 'TARGET' || view.state !== 'DEMANDED') continue;
+      if (view.force.verdict_if_resolved_now === 'REPULSED') continue;
+    // ── ★ 1B. MUSTER: WALK A HAND TO YOUR OWN STANDOFF ────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════
+    // **A STRANGER COULD MARCH TO THIS STANDOFF AND THE TARGET COULD NOT, WHICH IS THE EXACT
+    // ASYMMETRY THAT MADE PAYING THE ONLY ANSWER.**
+    //
+    // `RaidView.march` is computed for *any* reader with no hand at the stage — the target
+    // included — and it exists because a `join` affordance for a hand that is not there would be
+    // a move the handler refuses. {@link coalitionFor} reads it and walks a hand to somebody
+    // else's standoff. Nothing read it for the reader's **own**: `coalitionFor` skips every row
+    // where `your_side !== null`, and `TARGET` is a side, while this function only ever emitted
+    // `fight` or `yield`. So the one principal with the most at stake was the one principal that
+    // could not send for help, and its defence was whatever happened to be standing there.
+    //
+    // Measured, `scripts/standoff-probe.ts`, 8 seeds × 3 Reckonings: across **72 standoffs the
+    // targets had 6 hands at their own stages between them** — 0.08 each. The defence was terrain
+    // and nothing else, so 69 of 72 readings were short (18 by one, 27 by two, 18 by three), and
+    // 65 resolved `PAID`. Yielding was not dominant because paying is cheap; it was dominant
+    // because **mustering was unimplemented**, and a target with no hand at the stage has no
+    // second option to weigh. That is this project's signature defect — a published affordance
+    // (`march`) that nothing selects — sitting underneath what read as a balance problem.
+    //
+    // It is placed *above* the `initiator` gate because mustering is right against either form of
+    // predation, and *below* clause 1 because a target that can already win should answer rather
+    // than walk. `carriageNeeded` is subtracted for {@link coalitionFor}'s reason — the world's
+    // bill outranks your own defence, since a routed hand cannot carry a tribute — and
+    // {@link marchUnderwayTo} stops the branch re-sending every tick, which cost 252 wasted
+    // actions the last time it was omitted.
+    // ══════════════════════════════════════════════════════════════════════
+      const muster = view.march;
+      if (
+        muster !== null &&
+        muster.in_time &&
+        view.ticks_left > CAST_ANSWER_GRACE_TICKS &&
+        this.spareHands(member, tick) > 0 &&
+        !this.marchUnderwayTo(member, view.stage, tick) &&
+        // ── ★ AND NOT WHILE **ANY** HAND OF THIS MEMBER IS ALREADY WALKING ──────
+        //
+        // Stricter than {@link marchUnderwayTo}, which asks only whether a hand is heading to THIS
+        // stage, and it has to be. Measured with the guard at `marchUnderwayTo` alone:
+        // `doubleMarches` **5** over 7 seeds — the counter
+        // `the-cast-forms-a-coalition.spec.ts` keeps at zero, whose block comment records the 252
+        // wasted actions that put it there.
+        //
+        // The doubles are not a cascade inside this branch; they are this branch and `levyMove`
+        // aiming at the same system for two different, individually-correct reasons — a tribute is
+        // payable where the goods are, and the goods are what the raid came for, so the raid stage
+        // and the carriage stage are routinely the same place. `carriageUnderwayTo`'s strict
+        // `destination === place` test cannot see a hand mid-route, so the second sender does not
+        // know the first exists.
+        //
+        // ⚑ **THAT DIAGNOSIS IS UNPROVEN AND THE RESIDUAL IT WAS WRITTEN FOR WAS SOMETHING ELSE.**
+        // The 15 this counter still read after all three guards were in place were instrumented at
+        // every `{verb:'move'}` return in this file: **every one came from the aimless walk in
+        // `decideOne`**, and `levyMove` — which has read {@link marchUnderwayTo} since it was
+        // written — emitted none of them. The walk's own rule now excludes a live stage and the
+        // counter is 0. These two guards are kept because the 5 → 1 measurement below was taken and
+        // removing them is a behaviour change with its own price, but the sentence above should be
+        // read as the hypothesis it was, not as a finding.
+        //
+        // A member has three hands and a standoff needs one. Refusing to start a second walk while
+        // any walk is in progress costs at most a tick of latency on a 24-tick window and removes
+        // the whole class, which is the trade `marchUnderwayTo` already made one scope smaller.
+        !handsOf(this.runtime.world, member.principal).some((h) => h.state === 'IN_TRANSIT') &&
+        // ── AND NOT WHILE THE WORLD'S BILL STILL NEEDS A CARRIER ────────────────
+        //
+        // The guard above took `doubleMarches` from 5 to 1, and the last one was believed to be the
+        // case it cannot see: this branch walks FIRST, `levyMove` walks second on a later tick, and
+        // the tribute is payable where the goods are — which is the place the raid came for. Two
+        // hands aimed at one system for two individually-correct reasons. **Instrumenting every
+        // emitter showed that class never occurred**; see the guard above.
+        //
+        // `spareHands` already subtracts {@link carriageNeeded}, so the muster never takes the
+        // carrier's hand; what it cannot do is stop the carrier being sent to the same place
+        // afterwards. This is the file's own ordering stated one branch further out — *"a favour
+        // yields to a bill"*, and a defensive walk is not more urgent than a tribute that is owed
+        // and payable. It also costs the muster very little: `carriageNeeded` is 0 for a member
+        // with nothing outstanding, which is most of them most of the time.
+        this.carriageNeeded(member, tick) === 0 &&
+        this.mayEnter(member, muster.next)
+      ) {
+        return { verb: 'move', params: { hand: muster.hand, to: muster.next } };
+      }
+    }
+    return null;
+  }
+
+  private standoffNeeded(member: CastMember, tick: number): number {
+    for (const view of this.runtime.raidsFor(member.principal, tick, MAX_CAST)) {
+      if (view.your_side !== 'TARGET' || view.state !== 'DEMANDED') continue;
+      if (view.force.your_hands_here > 0) continue;
+      if (view.force.verdict_if_resolved_now === 'REPULSED') continue;
+      return 1;
+    }
+    // ── ★ AND BEFORE ONE EXISTS, BECAUSE BY THE TIME IT DOES IT IS ALWAYS TOO LATE ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE REACTIVE CLAUSE ABOVE FIRED ON 180 OF 180 STANDOFF TICKS AND CHANGED NOTHING**, and the
+    // reason is the sharpest measurement in this pass. Seed `g01`, every tick of every live
+    // standoff, counting the TARGET's own three hands by state:
+    //
+    //     IDLE 0.00 · COMMITTED 3.00 · IN_TRANSIT 0.00 · RECOVERING 0.00
+    //
+    // All three, every tick, in venture roles — with 0.78 hands *standing at the stage* that could
+    // not defend it, because `handsDefending` counts IDLE and a committed hand is not. A role holds
+    // its hand until a Reckoning boundary (measured median 11 ticks, p90 **276** against a 288-tick
+    // cycle) and a demand window is 24. So a reservation that waits for the demand is reserving
+    // something that was spent one to two hundred ticks earlier, and no action-priority ordering can
+    // recover it: `raidAnswerFor` is the first rung of the ladder and had nothing left to send.
+    //
+    // That is the real reason yielding looked dominant, and it is not about yield at all — **the
+    // target had no second option to weigh**, so `costs.pay` was compared against nothing.
+    //
+    // ── WHY THE SCHEDULE IS THE RIGHT SIGNAL ──────────────────────────────────
+    //
+    // `RAID_SPAWN_PHASES` is `[48, 120, 192]` and its docblock says exactly what it is for:
+    // *"Published so an agent can plan a convoy around them — which is the point: A14 says drama
+    // runs on a clock, and a clock nobody can read is just weather."* Nothing had ever read it. A
+    // standing reservation against a published clock is the intended use of that constant, and it
+    // is a **cast policy** priced in the member's own opportunity cost — not an engine rule — so it
+    // costs nothing anyone else has to know.
+    //
+    // Gated on being raidable at all: A8 makes hostile action in the Commons *invalid*, so a
+    // Commons-bound member can never be a target and reserving there would be a pure loss. That
+    // keeps the subject to the members the world can actually reach, which at the sweep's seating
+    // is a minority of the cast — the reason this costs formation far less than it buys defence.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (principalIsCommonsBound(this.runtime.world, member.principal)) return 0;
+    return tierOf(this.runtime.world.map, this.bodyOf(member)) === 'COMMONS' ? 0 : 1;
+  }
+
+  private spareHands(member: CastMember, tick: number): number {
+    const crewed = this.runtime.battles.committedHands(member.principal);
+    const idle = handsOf(this.runtime.world, member.principal).filter(
+      (hand) => hand.state === 'IDLE' && isPresent(hand, tick) && !crewed.has(hand.id),
+    ).length;
+    return Math.max(0, idle - this.carriageNeeded(member, tick));
+  }
+
   private carriageNeeded(member: CastMember, tick: number): number {
     const runtime = this.runtime;
     if (inFreeze(tick) || isSettlementTick(tick)) return 0;
@@ -1548,6 +1729,31 @@ export class HeuristicCast {
     const committing = this.engageFor(member, tick);
     if (committing !== null) return { ...base, ...committing };
 
+    // ── ★ THEN SEND FOR YOUR OWN HANDS, AND **BELOW** `engage` FOR A MEASURED REASON ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THIS CLAUSE SAT INSIDE `raidAnswerFor` — THE FIRST RUNG — AND IT DELETED THE COMBAT LAYER.**
+    //
+    // `scripts/war-seed-scan.ts`, the tool that pins `LINE_SEEDS` and exists for exactly this
+    // question, before and after: master reaches a two-sided CONTEST with wrecks on **3 of 12**
+    // seeds and commits up to 4 hulls; with the muster at rung 1 it was **0 of 24** and `engage`
+    // was **0 on every seed**. The scan's own instruction is *"do not widen the pool"* — and it was
+    // right that no seed was the answer, because the cause was not the seeds.
+    //
+    // A member gets **one action a tick**. `raidAnswerFor` returning a `move` is a return, so
+    // `engageFor` one rung below never ran — and MUSTER is a six-tick window that is *"the only
+    // window in which a hull may be committed"*. The muster branch was spending, on walking, the
+    // exact ticks the fleet needed to be committed in. Both branches are about the same standoff
+    // and the same shortage; the ordering is the whole of which one gets it.
+    //
+    // `fight` and `yield` stay at rung 1 and must: the block above them carries the measurement
+    // that a FIGHT answered later than two ticks after the spawn is a standoff with no battle in it
+    // at all. Those two are also **free** — no hand, no capital. Walking is not free, it is the
+    // hand, so it belongs with the other branches that spend one.
+    // ══════════════════════════════════════════════════════════════════════════
+    const muster = this.musterFor(member, tick);
+    if (muster !== null) return { ...base, ...muster };
+
     for (const venture of runtime.ventures.forPrincipal(member.principal)) {
       if (venture.state !== 'FORMING') continue;
       if (venture.termsHash === null) continue;
@@ -1795,7 +2001,34 @@ export class HeuristicCast {
     // A subtraction rather than a separate branch, because the *decision* is not "walk a hand"
     // (that is `levyMove`'s, further down) — it is "do not spend this one". Those are different
     // acts and only the first costs an action.
-    const spendable = idle.length - this.carriageNeeded(member, tick);
+    // ── ★ AND ONE FOR A STANDOFF YOU ARE THE TARGET OF ────────────────────────
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE MUSTER BRANCH AND THE FILL BRANCH COMPETE FOR ONE SCARCE THING, AND THE FILL BRANCH
+    // WAS WINNING BEFORE THE STANDOFF EXISTED.**
+    //
+    // Measured, and it is the most useful thing this pass found. Adding
+    // {@link HeuristicCast.raidAnswerFor}'s muster clause took the targets' own hands at their own
+    // stages from ~0 to real and `REPULSED` from 6 to 17 over 8 seeds. Then `openSlotFor` started
+    // filling roles that had been going unfilled — 4-role formation 8 → 19, two-role abandonment
+    // 520 → 241 — and the muster branch went back to **zero**: `marchTo` returned null on
+    // **180 of 180** target-ticks, because a role holds a hand until a Reckoning boundary (measured
+    // median 11 ticks, p90 276) and there was no longer an IDLE hand left to send.
+    //
+    // Action priority cannot fix that and it is worth being precise about why: `raidAnswerFor` is
+    // the FIRST rung of this ladder, so it always got first refusal on the *action*. What it did
+    // not have was a **hand** — those were committed ticks or Reckonings earlier, by a branch that
+    // could not see a standoff that had not spawned yet. A durable commitment beats a priority
+    // order every time, which is the general form of this and the reason the reservation has to sit
+    // *here*, in front of the spender, rather than as another gate on the muster.
+    //
+    // So it is exactly {@link carriageNeeded}'s shape and it sits beside it: **a bill you owe and a
+    // raid aimed at you both outrank a role you merely might fill.** One hand, only while a live
+    // standoff names this member and it has nothing standing there — the case where the reservation
+    // changes an outcome — and never more, because a member that reserved against every standoff it
+    // could see would stop working entirely.
+    // ══════════════════════════════════════════════════════════════════════════
+    const spendable = idle.length - this.carriageNeeded(member, tick) - this.standoffNeeded(member, tick);
 
     if (spendable > 0) {
       const slot = this.openSlotFor(member, tick);
@@ -1829,11 +2062,36 @@ export class HeuristicCast {
       }
     }
 
-    // Not `spendable`: `create` only READS a hand's location for the stage and commits nothing,
-    // so the reservation has no business narrowing it. The distinction matters — gating it here
-    // as well was the first version of this change and it cost creates for no benefit at all.
+    // ── ★ `spendable`, AND THE NOTE THIS REPLACES WAS RIGHT UNTIL IT WASN'T ───
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // It used to read: *"Not `spendable`: `create` only READS a hand's location for the stage and
+    // commits nothing, so the reservation has no business narrowing it. The distinction matters —
+    // gating it here as well was the first version of this change and it cost creates for no
+    // benefit at all."*
+    //
+    // Correct on its own terms and correct for the regime it was written in, where `spendable` and
+    // `idle.length` differed only by {@link carriageNeeded} — one hand, rarely, for a member with a
+    // payable tribute. {@link standoffNeeded} changed the size of that gap: a member the world can
+    // reach now holds one hand back for the whole cycle, so `spendable` is **0** for it most of the
+    // time while `idle.length` is not.
+    //
+    // The consequence is measured and it is the shape the old note could not have anticipated.
+    // `fill_role` above is gated on `spendable` and this was gated on `idle.length`, so every tick a
+    // member could no longer FILL, it fell through here and CREATED instead. Over 8 seeds ×
+    // 3 Reckonings, two-role ventures abandoned unfilled went **520 → 2,653** and total ventures
+    // 766 → 2,866: a board flooded with slots nobody had a hand left to take, authored by the very
+    // members that had just discovered they had no hand left to take one.
+    //
+    // Nothing is harmed in the ledger — `retireFormation` refunds in full and it is *"not a
+    // settlement and not a default"* — which is exactly why no gate caught it. What it costs is the
+    // board, which is a rules surface an agent reads and a panel a viewer watches (A13).
+    //
+    // So the two branches now read the same budget, and the rule is the honest one: **do not offer
+    // work you have no hand to do, and do not commission work you have no hand to fill.**
+    // ══════════════════════════════════════════════════════════════════════════
     const appetite = this.options.createChanceBps ?? DEFAULT_CREATE_CHANCE_BPS;
-    if (idle.length > 0 && rng.chance(appetite, 10_000)) {
+    if (spendable > 0 && idle.length > 0 && rng.chance(appetite, 10_000)) {
       const hand = idle[0];
       if (hand !== undefined && this.canPromiseOneMore(member, CREATES[member.role])) {
         const kind = CREATES[member.role];
@@ -2005,8 +2263,57 @@ export class HeuristicCast {
           // it then created would be refused by the floor — one refusal per tick, which is
           // exactly the AGT-S3 noise the whole file is arranged to avoid.
           const home = tierOf(runtime.world.map, this.bodyOf(member));
+          // ── ★ AND NEVER **INTO** A LIVE STANDOFF ────────────────────────────
+          //
+          // ══════════════════════════════════════════════════════════════════
+          // **THE WALK WAS DECIDING STANDOFFS BY DICE, AND IT IS THE WHOLE OF
+          // `doubleMarches`.**
+          //
+          // The rule three lines up already forbids wandering *off* a stage this
+          // member has answered FIGHT at, on the stated ground that *"the force
+          // reading is taken again at resolution, so a hand that wanders off
+          // during it un-answers the raid."* The inverse was never written and is
+          // the same fact: `readForce` counts IDLE hands standing at the stage, so
+          // a hand that wanders **in** answers a raid nobody chose to answer —
+          // adding `FORCE_PER_HAND` to a reading, or standing in a place a
+          // `PLUNDERED` verdict empties, on the strength of `rng.int(legal.length)`.
+          //
+          // Two branches are allowed to put a hand on a stage and both are above
+          // this one in the ladder: {@link musterFor} for your own standoff and
+          // {@link coalitionFor} for somebody else's. Both are gated on
+          // `march.in_time`, on {@link marchUnderwayTo}, on {@link spareHands} and
+          // on {@link carriageNeeded}. The aimless walk is gated on none of them
+          // because it is not *for* anything — its whole job is §5.2's *"continuous
+          // off-peak motion"*, and a standoff is the one place where motion is not
+          // neutral.
+          //
+          // ── MEASURED, AND THE ATTRIBUTION IS THE FINDING ───────────────────
+          //
+          // `the-cast-forms-a-coalition.spec.ts`'s `doubleMarches` read **15** over
+          // 7 seeds and the counter's own block comment names four suspects —
+          // `levyMove`, `chargeMove`, `crewMove`, `alloyErrandFor` — and dismisses
+          // them as *"traffic, not a cascade"* on the strength of its
+          // `destination === stage` discriminator being *"the last hop of a walk
+          // somebody chose to make TO that place."* Every emitter was instrumented
+          // and every one of the 15 came from **here**, and from nothing else:
+          // three members (`p:tolen` g01, `p:cassian` g06, `p:vex` g08), each with
+          // two hands oscillating across one lane. The discriminator is exact for a
+          // routed march and wrong for a **one-hop** walk, where `destination` is a
+          // lane the RNG picked and not a place anybody chose.
+          //
+          // So the previously stated repair — teach `levyMove`/`chargeMove` the
+          // {@link marchUnderwayTo} predicate — would have moved the number without
+          // touching the cause: `levyMove` has read that predicate since it was
+          // written (`heuristic.ts:levyMove`), and neither branch emitted a single
+          // one of the 15.
+          //
+          // The counter reaching 0 is a **consequence** of this rule and not its
+          // purpose. The purpose is that a standoff's force reading is decided by
+          // branches that know a standoff is there.
+          // ══════════════════════════════════════════════════════════════════
+          const staged = new Set<SystemId>(runtime.raids.live().map((r) => r.stage));
           const legal = [...system.lanes]
-            .filter((lane) => tierOf(runtime.world.map, lane) === home)
+            .filter((lane) => tierOf(runtime.world.map, lane) === home && !staged.has(lane))
             .sort(compareIds);
           const lane = legal.length === 0 ? undefined : legal[rng.int(legal.length)];
           if (lane !== undefined) {
@@ -2900,6 +3207,7 @@ export class HeuristicCast {
       if (view.state !== 'DEMANDED' || view.answer !== null) continue;
       const fight = { verb: 'fight', params: { raid: view.raid, system: view.stage } };
       if (view.force.verdict_if_resolved_now === 'REPULSED') return fight;
+
       // 2. Only against the world, whose composition is published, and only while the extra take
       //    still leaves the tribute covered. `if_you_do_nothing` is charged in full against the
       //    Levy's own good — the pessimistic reading, because `raid.good` need not be that good and
@@ -3357,7 +3665,6 @@ export class HeuristicCast {
     for (const relation of runtime.relationsFor(member.principal)) {
       if (relation.kept > 0 || relation.youKept > 0) settled.add(relation.other);
     }
-    if (settled.size === 0) return null;
 
     // Gate 3's denominator: hands this member may lend at all, before any particular standoff.
     // `musteredAt` is keyed by stage and is asked per row below; everything else is global.
@@ -3388,8 +3695,48 @@ export class HeuristicCast {
       // refusal text is correct and the cast could see it coming, which makes it the cast's to avoid.
       // `+ 1` for the landing tick, so the last useful join is one the target has not yet answered.
       if (view.ticks_left <= CAST_ANSWER_GRACE_TICKS + 1) continue;
-      // 1. The signal.
-      if (!settled.has(view.target)) continue;
+      // ── ★ 1. THE SIGNAL: A FRIEND, **OR** GROUND OF ITS OWN THAT A REPULSE WOULD PROTECT ──
+      //
+      // ══════════════════════════════════════════════════════════════════════
+      // **A SETTLED PROMISE WAS THE ONLY SIGNAL, AND IT REFUSED 40 OF 52 CHANCES — THE ONE GATE
+      // THAT DECIDES WHETHER THIS BRANCH FIRES AT ALL.**
+      //
+      // Measured with `scripts/standoff-probe.ts`, 8 seeds × 3 Reckonings, attributing every
+      // (standoff, bystander) pair to the first gate that refused it: `stranger` **40**, everything
+      // else **0**, joined 12. Not the window, not the gap, not a hand, not the road — the branch
+      // was almost never asking the question, because it only ever helped a principal it had
+      // already settled a promise with, and in a world where ventures form slowly most pairs never
+      // have. 65 of 72 standoffs resolved `PAID` in consequence.
+      //
+      // The old gate was also **self-extinguishing**: it sat behind an early
+      // `if (settled.size === 0) return null`, so a member with no settled relation never looked at
+      // a standoff at all — and a member that never helps is a member nobody settles with.
+      //
+      // ── AND THE FIX IS A PRICE, NOT A LOOSER FAVOUR ──────────────────────────
+      //
+      // The reason a relationship was the only signal is that **defending somebody else pays
+      // nothing**. `predate.ts`'s REPULSED branch forfeits raider stakes to the *target*, and a
+      // world raid has no raider stakes at all, so a DEFENDER joiner risks a hand for the window
+      // and `HAND_RECOVERY_TICKS` (12–48) more on a loss, and collects exactly zero. Under that
+      // arithmetic altruism is the only motive available, and §9's claim that world raids *"give
+      // escorts a guaranteed market"* is a label on an unpriced mechanic.
+      //
+      // Except it is not unpriced — the price was already in the engine and nothing read it. A
+      // repulsed **world** raid calls `book.holdStage(stage, tick + RAID_STAGE_HELD_TICKS)`, and
+      // `target.ts` skips *every* candidate row at a held stage, not just the target's. So beating
+      // a raid buys one whole Reckoning in which the world cannot raid **anyone** at that system.
+      // A member with a WORKS there, or with its own holding there, is buying protection for its
+      // own structure and its own stock. That is self-interest priced in produced goods and
+      // position — A15-clean, since it costs a hand and an asset to be protected rather than an
+      // identity — and it is why this reads `view.initiator === null`: an agent's demand grants no
+      // hold (`grantWorldProtections` returns early on one), so there is nothing to buy and the
+      // friendship signal is correctly the only one left.
+      //
+      // `RaidView.if_repulsed` publishes the same three figures to every agent reading the
+      // standoff, so this is a bot selecting an offered mechanism rather than a bot with private
+      // knowledge (scar #1).
+      // ══════════════════════════════════════════════════════════════════════
+      if (!settled.has(view.target) && !view.if_repulsed.protects_you) continue;
       // 2. A gap that exists and is reachable. Read off the published view, never recomputed — the
       //    same figures `raidAnswerFor` answers from and the resolver resolves on (scar #1).
       const deficit = view.force.raider - view.force.defender_if_you_fight;

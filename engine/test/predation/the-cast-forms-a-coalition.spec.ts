@@ -88,6 +88,25 @@ interface Coalition {
    */
   readonly joinsWithSignal: number;
   /**
+   * ★ Of those, the ones justified by the **priced** arm rather than by the friendship arm.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE SIGNAL BECAME A DISJUNCTION, AND WITHOUT THIS COLUMN THE NEW HALF COULD BE DEAD.**
+   *
+   * `coalitionFor`'s gate 1 was `settled.has(target)` alone, which refused **40 of 52** chances
+   * measured over 8 seeds — a favour was the only motive the cast had, because a DEFENDER joiner
+   * collects nothing (`predate.ts` forfeits raider stakes to the *target*, and a world raid has no
+   * raider stakes at all). It is now `settled OR view.if_repulsed.protects_you`: a repulsed world
+   * raid holds the stage against the world for a whole Reckoning, for **everyone** standing there,
+   * so a member with a WORKS or stock at the stage is buying its own protection.
+   *
+   * Counting only the disjunction would let the priced arm be satisfied zero times forever while
+   * the test stayed green on the friendship arm — this project's signature defect, inside the test
+   * written to prevent it. So the arm is counted separately and asserted non-empty.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly joinsPriced: number;
+  /**
    * ★ Joins whose hand was still standing at the stage on the tick before the standoff resolved.
    *
    * `readForce` counts joiners *"only while its hand is still standing there"*, so a coalition that
@@ -108,8 +127,29 @@ interface Coalition {
    * Must be zero. `hand.destination` is the next GATE, so a march longer than one hop is invisible to
    * a `destination === stage` test and the branch sends a second hand, then a third — measured at 252
    * wasted actions on one member of one seed. See `carriageUnderwayTo`.
+   *
+   * ⚑ **AND THE ONE-HOP CASE, WHICH THIS COUNTER READ AS A MARCH FOR ITS WHOLE LIFE.** The
+   * discriminator below is `destination === stage`, justified as *"the last hop of a walk somebody
+   * chose to make TO that place"*. That is exact for a routed march and **false for a one-hop
+   * aimless walk**, whose `destination` is a lane `rng.int(legal.length)` picked. Every emitter was
+   * instrumented at the point of return: **15 of 15 doubles came from the aimless walk** and none
+   * from `musterFor`, `coalitionFor`, `levyMove` or `chargeMove`. See {@link roamersBesideAStage}.
    */
   readonly doubleMarches: number;
+  /**
+   * ★ The DENOMINATOR for {@link doubleMarches} — ticks on which the rule had something to refuse.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`doubleMarches === 0` is a fact about an idle cast unless a stage was ever within reach.** An
+   * idle hand standing one lane from a live standoff is the whole subject of the aimless walk's
+   * *"never **into** a live standoff"* rule (`heuristic.ts`, the roamer block): that hand is exactly
+   * the one the RNG could have walked onto the stage, and with the rule in place it never does.
+   *
+   * Counted from the map and the raid book, never from the cast — a denominator recomputed out of
+   * the thing it is auditing is scar #5.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly roamersBesideAStage: number;
   readonly halted: boolean;
 }
 
@@ -122,9 +162,11 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
   const refusals: string[] = [];
   const partiesOf = new Map<string, number>();
   let joinsWithSignal = 0;
+  let joinsPriced = 0;
   let joinsStillStanding = 0;
   let pledgesThatMattered = 0;
   let doubleMarches = 0;
+  let roamersBesideAStage = 0;
   /** raid -> the (principal, hand) pairs that joined it. Checked on the tick before it resolves. */
   const pledged = new Map<string, { principal: PrincipalId; hand: HandId }[]>();
   let frameDefenders: readonly PrincipalId[] = [];
@@ -141,7 +183,19 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
         const settled = runtime
           .relationsFor(action.principal)
           .some((r) => r.other === target && (r.kept > 0 || r.youKept > 0));
-        if (settled) joinsWithSignal += 1;
+        // The priced arm, read off the published view the cast itself gated on — never recomputed
+        // here, or the test would assert its own copy of the rule rather than the rule (scar #5).
+        //
+        // ⚑ **At `at`, not at `runtime.engine.tick`, and the difference is two joins.** `decide` is
+        // called with `at = tick + 1` and `coalitionFor` passes that straight to `raidsFor`, so a
+        // view read at the *current* tick is one tick behind the one the gate saw. The first
+        // version of this line read 3 of 5 joins as unmotivated and the gate was fine — the test
+        // was interrogating a different snapshot from the decision it was auditing.
+        const priced =
+          runtime.raidsFor(action.principal, at, 20).find((v) => v.raid === raid)?.if_repulsed
+            .protects_you ?? false;
+        if (settled || priced) joinsWithSignal += 1;
+        if (!settled && priced) joinsPriced += 1;
         const hand = action.params['hand'];
         if (typeof hand === 'string') {
           pledged.set(raid, [
@@ -171,6 +225,16 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
         // two hands of one member aimed exactly there is the duplication and nothing else.
         const aimed = inTransit.filter((h) => h.destination === raid.stage);
         if (aimed.length > 1) doubleMarches += 1;
+        // ── AND THE DENOMINATOR: WAS THE RULE EVER ASKED? ─────────────────────
+        //
+        // An IDLE hand one lane from a live stage is the aimless walk's whole opportunity to put a
+        // hand on a standoff by dice. Read off the map and the raid book — never off the cast.
+        const besideIt = handsOf(runtime.world, member.principal).some(
+          (h) =>
+            h.state === 'IDLE' &&
+            (runtime.world.map.systems.get(h.location)?.lanes ?? []).includes(raid.stage),
+        );
+        if (besideIt) roamersBesideAStage += 1;
       }
     }
     // ── A PLEDGED HAND IS STILL STANDING THERE WHEN IT MATTERS ─────────────────
@@ -234,9 +298,11 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
     outcomes,
     frameDefenders,
     joinsWithSignal,
+    joinsPriced,
     joinsStillStanding,
     pledgesThatMattered,
     doubleMarches,
+    roamersBesideAStage,
     halted,
   };
 }
@@ -461,16 +527,27 @@ describe('a coalition is priced, not free', () => {
    * fails — 30 of 38 reachable standoffs clear every other gate, so unsignalled joins arrive at once.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  it('joins only a principal it has settled an elective half with', () => {
+  it('joins only where it has a settled half OR ground of its own a repulse would hold', () => {
     let joins = 0;
     let withSignal = 0;
+    let priced = 0;
     for (const seed of SEEDS) {
       const out = play(seed, TICKS);
       joins += out.joins.length;
       withSignal += out.joinsWithSignal;
+      priced += out.joinsPriced;
     }
+    // Non-vacuity first: the branch fired at all.
     expect(joins).toBeGreaterThan(0);
+    // The gate holds — no join is unmotivated. This is the guard, and it is the same disjunction
+    // `coalitionFor` asks, read off the published view rather than re-derived here.
     expect(withSignal).toBe(joins);
+    // ── AND THE NEW ARM IS NOT DECORATION ──────────────────────────────────────
+    //
+    // `withSignal === joins` passes identically if the priced arm never once decided anything —
+    // the friendship arm alone would carry it, and the widening would be a comment. This project
+    // has shipped that exact shape seventeen times, so the arm gets its own denominator.
+    expect(priced).toBeGreaterThan(0);
   });
 
   /**
@@ -532,18 +609,46 @@ describe('a coalition is priced, not free', () => {
    * than one: point `carriageNeeded` at the LOOSE test and seed `g06` goes `levyShort` **0 → 7,615**
    * with a red line, because it stops reserving a carrier on the strength of a hand three gates out
    * that any later branch can divert. `carriageUnderwayTo`'s own note carries the argument.
+   *
+   * ── ★ AND THE 15 THAT WERE LEFT CAME FROM A BRANCH NOBODY SUSPECTED ─────────
+   *
+   * This counter read **15** after the muster branch landed, and the three guards written to chase
+   * it took it 5 → 1 → 15 across configurations without ever naming a cause. Every emitter of
+   * `{verb:'move'}` in `heuristic.ts` was then wrapped at the point of return and the run repeated:
+   * **all 15 came from the aimless random walk inside `decideOne`, and none from `musterFor`,
+   * `coalitionFor`, `levyMove` or `chargeMove`** — three members over three seeds (`p:tolen` g01,
+   * `p:cassian` g06, `p:vex` g08), each with two hands oscillating across one lane beside a stage.
+   *
+   * The block comment above dismisses those four branches as *"traffic, not a cascade"* and it was
+   * right to; what it missed is that its own discriminator cannot see a **one-hop** walk, where
+   * `destination === stage` means the RNG picked that lane and not that anybody chose the place.
+   *
+   * The repair is in the walk and is stated as a rule rather than as a guard: **the aimless walk may
+   * not choose a live standoff's stage.** Its neighbour three lines up already forbids wandering
+   * *off* a stage this member answered FIGHT at, because *"a hand that wanders off un-answers the
+   * raid"*; a hand that wanders **in** answers one nobody chose to answer, which is the same fact
+   * with the sign flipped. 15 → 0, and the zero is a consequence rather than the objective —
+   * which is why {@link Coalition.roamersBesideAStage} is asserted first.
    * ══════════════════════════════════════════════════════════════════════════
    */
   it('never sends two hands of one member toward one standoff', () => {
     let doubles = 0;
     let joins = 0;
+    let beside = 0;
     for (const seed of SEEDS) {
       const out = play(seed, TICKS);
       doubles += out.doubleMarches;
       joins += out.joins.length;
+      beside += out.roamersBesideAStage;
     }
     // Non-vacuity: marches happened at all, or "zero doubles" is a fact about an idle cast.
     expect(joins).toBeGreaterThan(0);
+    // ── AND THE SECOND DENOMINATOR, FOR THE RULE THAT TOOK THIS TO ZERO ────────
+    //
+    // The aimless walk's *"never into a live standoff"* rule can only bind where an idle hand stands
+    // one lane from a live stage. If that never happened the zero below would be about a map, not
+    // about a rule — the exact shape this file's header opens by refusing.
+    expect(beside).toBeGreaterThan(0);
     expect(doubles).toBe(0);
   });
 });

@@ -119,7 +119,7 @@
 
 import { readString } from '../core/params.js';
 import type { PrincipalId } from '../core/types.js';
-import type { Minor } from '../core/units.js';
+import { minor, type Minor } from '../core/units.js';
 import { reject, type Rejection, type WorldResult } from '../world/result.js';
 import { reachTo, type ReachRow, type ReachWhy } from './reach.js';
 
@@ -206,7 +206,47 @@ export const MAX_PARLEY_ENTRIES = 512;
 export interface ParleyEntitlement {
   /** `standing.distinctCounterparties` — elective promises honoured with somebody new. */
   readonly distinctCounterparties: number;
-  /** `freeCash` — balance less every lock, less the endowment still unspent. */
+  /**
+   * `freeCash` — balance less every lock, less the endowment still unspent — **at its high-water
+   * mark for the Reckoning containing this tick**, never as it stands this instant.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A FIELD CALLED `per_reckoning` MUST MEAN PER RECKONING, AND THIS ONE DID NOT.**
+   *
+   * Measured by a player driving a real identity: `earned_minor` fell **1,629 → 0** and
+   * `parleys_per_reckoning` fell **3 → 0** *between two reads*, because the principal escrowed
+   * 12,000 into a venture in between. Both sends after it were refused under A15. Nothing was
+   * wrong with the price; the **evaluation** was wrong. `freeCash` is
+   * `max(0, freeBalance − endowmentRemaining)` and `vCreate` moves the escrow out of `stores` with
+   * a `transferCurrency`, so an ordinary, legal, entirely intended act revoked the right to speak
+   * mid-Reckoning, unannounced, from a field whose own name promised it would not.
+   *
+   * Note the company it kept: {@link inboundParleys} one field down already carried the note
+   * *"Monotone within a Reckoning: it only ever rises, so it is a denominator rather than a
+   * balance."* The file knew the distinction and this term was on the wrong side of it.
+   *
+   * ── WHY A HIGH-WATER MARK RATHER THAN A BOUNDARY SNAPSHOT ─────────────────
+   *
+   * A snapshot taken at the Reckoning boundary would mute a principal that earns its first
+   * currency mid-cycle until the next one — a newcomer tax, and A15 says enrolment is free and
+   * must stay free. The high-water mark opens the channel the moment the principal qualifies and
+   * never closes it inside the cycle it opened in, which is the only reading under which the
+   * published `refreshes_at_tick` is true.
+   *
+   * ── AND THE PRICE IS EXACTLY UNCHANGED, WHICH IS THE POINT ────────────────
+   *
+   * A maximum over a set of values that are all zero is zero. A free identity never holds free
+   * cash at any tick of any Reckoning, so it never latches, and `reach 0 · allowance 0 · accepted
+   * 0` still holds by hand and past the menu. The latch can only ever preserve an entitlement the
+   * principal genuinely had — it cannot mint one.
+   *
+   * **Sampled once per tick for every principal**, in `Runtime.runTick`, and never lazily on read.
+   * `WakeBook.rollTo` states the reason in as many words: *"a budget that rolled on first use would
+   * give an agent that acted early in a Reckoning a different allowance from one that acted late,
+   * which is A4 through a side door."* Latching on `observe` would be that with the axis changed
+   * from *when you acted* to *how often you looked*, which is A4 through the same door.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
   readonly earnedMinor: Minor;
   /**
    * **Parleys** received this Reckoning. The third term, and it is not an entitlement — it is
@@ -222,6 +262,70 @@ export interface ParleyEntitlement {
    * Monotone within a Reckoning: it only ever rises, so it is a denominator rather than a balance.
    */
   readonly inboundParleys: number;
+}
+
+/**
+ * The high-water mark of {@link ParleyEntitlement.earnedMinor}, per principal, per Reckoning.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SMALLEST THING THAT MAKES `per_reckoning` TRUE.** The argument for its existence is on
+ * {@link ParleyEntitlement.earnedMinor}; this is the mechanism.
+ *
+ * Shaped on `tick/wake.ts`'s {@link import('../tick/wake.js').WakeBook} — a map cleared on the
+ * Reckoning boundary, rolled from a **write** the world performs on a schedule rather than from a
+ * read an agent chooses to make. That is the whole of its A4 safety and it is why {@link sample}
+ * is separate from {@link highWater} instead of one lazily-latching accessor.
+ *
+ * ## Not captured, deliberately, and that is a smaller claim than it looks
+ *
+ * `Runtime.parleys` is a `Ring` that is itself neither captured nor persisted (`RULES_VERSION` 31
+ * declared exactly that), so `parleysRemaining`'s `used` count already restarts at a restore and
+ * the allowance is already restore-sensitive in the *generous* direction. A latch that restarts
+ * with it is consistent with that treatment, degrades to the old live reading rather than to
+ * something wrong, and is fully rebuilt within one tick of the next sample. Buying a captured
+ * table for it would be a larger change than the defect, and A5 has nothing to say here: no row of
+ * the permanent record is derived from this.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export class ParleyEntitlementBook {
+  private readonly peak = new Map<PrincipalId, Minor>();
+  private reckoning = -1;
+
+  /**
+   * Record what this principal holds now, if it is more than it has held before this Reckoning.
+   *
+   * Called for **every** principal once a tick, from the world's own clock. Callers pass
+   * `reckoningOf` rather than importing it so this module stays free of the clock, which is the
+   * same shape {@link parleysRemaining} uses.
+   */
+  sample(principal: PrincipalId, tick: number, earnedNow: Minor, reckoningOf: (t: number) => number): void {
+    const here = reckoningOf(tick);
+    if (here !== this.reckoning) {
+      this.reckoning = here;
+      this.peak.clear();
+    }
+    const seen = this.peak.get(principal) ?? 0;
+    if (earnedNow > seen) this.peak.set(principal, earnedNow);
+  }
+
+  /**
+   * The most this principal has held free this Reckoning, or `live` when nothing has been sampled.
+   *
+   * The fallback is the **live** figure and not zero, for A5′-adjacent reasons one layer down: a
+   * book that answered 0 for an unsampled principal would revoke an entitlement the principal
+   * demonstrably has, which is the defect this class exists to remove, reintroduced as its own
+   * cold-start. `Math.max` against `live` also means a sample that has not landed yet can never
+   * make the answer worse than the old behaviour.
+   */
+  highWater(principal: PrincipalId, tick: number, live: Minor, reckoningOf: (t: number) => number): Minor {
+    if (reckoningOf(tick) !== this.reckoning) return live;
+    return minor(Math.max(Number(live), Number(this.peak.get(principal) ?? 0)));
+  }
+
+  /** Principals latched this Reckoning. The meter, so "this never fires" is answerable. */
+  get size(): number {
+    return this.peak.size;
+  }
 }
 
 /**
@@ -279,14 +383,32 @@ export function parleysRemaining(
   reckoningOf: (t: number) => number,
   allowance: number,
 ): number {
+  return Math.max(0, allowance - parleysSent(entries, from, tick, reckoningOf).length);
+}
+
+/**
+ * The sends themselves, in canonical recipient order — what {@link parleysRemaining} counts.
+ *
+ * Extracted rather than duplicated so the published `parleys_sent_this_reckoning` and the
+ * allowance arithmetic cannot disagree about which rows are in the Reckoning (scar #5). Returns
+ * recipients rather than entries: the *text* declassifies on `AUDIT_LAG_TICKS` and this block is
+ * read by the sender at `sent_tick`, so handing back the row would put a tier decision in a
+ * caller's hands.
+ */
+export function parleysSent(
+  entries: readonly ParleyEntry[],
+  from: PrincipalId,
+  tick: number,
+  reckoningOf: (t: number) => number,
+): readonly PrincipalId[] {
   const here = reckoningOf(tick);
-  let used = 0;
+  const out: PrincipalId[] = [];
   for (const entry of entries) {
     if (entry.from !== from) continue;
     if (reckoningOf(entry.tick) !== here) continue;
-    used += 1;
+    out.push(entry.to);
   }
-  return Math.max(0, allowance - used);
+  return out;
 }
 
 /**
@@ -386,6 +508,34 @@ export interface ParleyCapacity {
    * allowance, and you may start nothing.
    */
   readonly parleys_received_this_reckoning: number;
+  /**
+   * ★ Parleys **you** sent this Reckoning, and who to. The sender's own record of its own acts.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A SENT PARLEY LEFT NO TRACE ANYWHERE IN THE SENDER'S VIEW, WHICH IS THE WRONG
+   * INSTRUMENTATION FOR A THREE-PER-RECKONING RESOURCE THAT EXPIRES UNSPENT.**
+   *
+   * Measured by a player: after sending, `last_parley` read `null`, `parleys_received` read `0` and
+   * `talks[]` was empty — all three correct, because all three are about **inbound** mail
+   * (`talks` is the venture MESSAGE ring and can never hold a parley at all). The only evidence
+   * that an act had occurred was `parleys_remaining` dropping 3 → 2.
+   *
+   * `parleysVisibleTo` already returns the sender's own rows — `e.to === reader || e.from ===
+   * reader` — and the observation layer discarded the outbound half with a single `continue`. So
+   * this is not new data and not a new visibility tier: it is the half of a PARTIES-tier record
+   * that its own author could not read. An agent budgeting a scarce, expiring, non-bankable
+   * allowance has to be able to see what it spent it on, or the budget is a number that moves for
+   * reasons it cannot reconstruct — A2's "never make an agent need a wiki", applied to its own
+   * history.
+   *
+   * Deliberately on the **capacity block** rather than on the counterparty rows: this is the
+   * denominator's other half and it belongs next to `parleys_remaining`, where
+   * `remaining + sent === per_reckoning` is checkable by eye.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly parleys_sent_this_reckoning: number;
+  /** Who you addressed this Reckoning, in canonical order. Empty is a fact, not an omission. */
+  readonly parleyed_this_reckoning: readonly PrincipalId[];
   /** When the allowance resets. Absolute, so it compares directly against `header.tick`. */
   readonly refreshes_at_tick: number;
   /** Ticks a parley stays PARTIES-private before it publishes to everyone at once. */

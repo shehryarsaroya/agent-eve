@@ -200,7 +200,9 @@ import {
   parleyNote,
   parleyRefusal,
   parleysRemaining,
+  parleysSent,
   parleysVisibleTo,
+  ParleyEntitlementBook,
   type ParleyCapacity,
   type ParleyEntitlement,
   type ParleyEntry,
@@ -2104,7 +2106,65 @@ import {
  * `hydrate.ts` still refuses on `RULES_VERSION_MISMATCH` first, which is the cheap door.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 39;
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **40 — THE CONFLICT LAYER GETS AN OCCASION, AND `per_reckoning` STARTS MEANING IT.**
+ *
+ * Three changes, all found by playing and each measured before it was touched. **No captured table
+ * changes and no verb is spent** (40/40 stands); what moves is what agents are *offered* and what
+ * the cast *selects*, which is enough to change every world line after the cutover.
+ *
+ *   1. **`RaidView.if_repulsed`** — a new published block. §9 says world raids exist partly to give
+ *      escorts a guaranteed market, and the market had no price: `predate.ts` forfeits raider
+ *      stakes to the *target*, and a world raid has no raider stakes, so a DEFENDER joiner
+ *      collected nothing. The payment was already in the engine — a repulsed world raid holds the
+ *      stage against the world for a whole Reckoning, for **everyone** standing there — and
+ *      nothing rendered it. Additive to the observation; no existing field changes meaning.
+ *   2. **`ParleyEntitlementBook`** — `earned_minor` becomes the Reckoning's high-water mark instead
+ *      of a live `freeCash` read, so an ordinary escrow can no longer revoke the right to speak
+ *      from a field called `per_reckoning`. Sampled once a tick for every principal, from the
+ *      clock rather than on `observe`. `parleys_sent_this_reckoning` and `parleyed_this_reckoning`
+ *      join the capacity block, because the sender previously had no record of its own sends at
+ *      all. **The A15 price is arithmetically unchanged**: a maximum over a set of zeros is zero.
+ *   3. **`cast/heuristic.ts`** — the target may now `move` a hand to its own standoff (measured: 6
+ *      hands at 72 stages before it), the coalition signal admits ground of your own as well as a
+ *      friend, and `openSlotFor` sorts by urgency and spreads bidders across open roles instead of
+ *      every member naming `open[0]` of an id-ordered board. **Coalitions 6 → 25 over 8 seeds**
+ *      without touching yield's price or its timing: yielding is still chosen 46 of 72 times.
+ *
+ * ── AND THE MARCH GUARD THAT HAD TO COME WITH THEM ───────────────────────────
+ *
+ * Sending the target's own hands to its own standoff put two aimers on one system for two
+ * individually-correct reasons — a tribute is payable where the goods are, and the goods are what
+ * the raid came for — so `musterFor` and `levyMove`/`chargeMove` could each dispatch a *different*
+ * hand of one member to one place in one tick. `coalitionFor` already refused that through
+ * `marchUnderwayTo`; the two Levy movers did not, because before this version they were the only
+ * movers and had nothing to collide with. They now read the same predicate. See
+ * {@link Runtime.marchUnderwayTo}'s callers — three, not one, and the count is asserted.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * `SNAPSHOT_HASH_MISMATCH` at the **first tick any cast member takes a different action**, which
+ * for a live world is essentially the cutover tick — the heuristic's decision ladder moved, so the
+ * action log diverges before any table does. That is a wider signature than 37's and it is stated
+ * plainly rather than discovered: there is no quiet cutover for a cast change.
+ *
+ * The deploy carries `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>` (`D37`); the preflight
+ * prints the exact string, and a bare tick is refused.
+ *
+ * ── RENUMBERED 38 → 40 AT MERGE ──────────────────────────────────────────────
+ *
+ * 38 was pre-assigned while three lanes were in flight; the countersignature lode landed first and
+ * took 38, the eleventh observe key took 39. Renumbered to the tail per 24's protocol — *pre-assign
+ * to avoid the collision, renumber to the tail at merge* — and **stacked rather than blended**. It
+ * arrived blended into 37's block, which is the failure mode the protocol exists to prevent: an
+ * operator reading a `RULES_VERSION_MISMATCH` has to be able to find *one* block per number. 37
+ * moved `raid`; 38 moved nothing; 39 added an observe key; **40 moves the cast.** This is the sixth
+ * version to arrive out of order and the protocol has now paid for itself six times.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const RULES_VERSION = 40;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -3408,6 +3468,12 @@ export class Runtime {
    * drift, and this is the same class of object `talk` has always been.
    */
   private readonly parleys = new Ring<ParleyEntry>(MAX_PARLEY_ENTRIES);
+  /**
+   * The per-Reckoning high-water mark of every principal's free cash — what makes
+   * `parleys_per_reckoning` a figure for the Reckoning rather than for the instant it was read.
+   * Filled by {@link sampleParleyEntitlements}, read by {@link parleyEntitlementOf}.
+   */
+  private readonly parleyEntitlement = new ParleyEntitlementBook();
   private readonly offers = new Ring<OfferEntry>(MAX_OFFER_ENTRIES);
   private readonly claims = new Ring<ClaimEntry>(MAX_CLAIM_ENTRIES);
 
@@ -6735,6 +6801,9 @@ export class Runtime {
     }
     const report = this.engine.runTick();
     if (!report.halted) {
+      // Before any correction is filed, because this is a fact about the tick that just closed and
+      // an agent's next `observe` must not be able to precede it. See `sampleParleyEntitlements`.
+      this.sampleParleyEntitlements(report.tick);
       for (const entry of this.engine.log.forTick(report.tick)) {
         this.census.record(report.tick, entry.decisionSource);
         if (entry.outcome === 'REFUSED' && entry.rejection !== null) {
@@ -9253,9 +9322,41 @@ export class Runtime {
   private parleyEntitlementOf(principal: PrincipalId, tick: number): ParleyEntitlement {
     return {
       distinctCounterparties: this.standing.row(principal).distinctCounterparties,
-      earnedMinor: freeCash(this.ledger, principal),
+      // ── ★ THE HIGH-WATER MARK FOR THIS RECKONING, NOT THE BALANCE THIS INSTANT ──
+      //
+      // The full argument is on `ParleyEntitlement.earnedMinor`. In one line: this used to be the
+      // bare `freeCash`, so escrowing into a venture revoked the right to speak mid-Reckoning from
+      // a field called `per_reckoning`. The book can only ever return a figure this principal
+      // genuinely held at some tick of this cycle, so A15's price is unchanged and a free identity
+      // still reads 0.
+      earnedMinor: this.parleyEntitlement.highWater(
+        principal,
+        tick,
+        freeCash(this.ledger, principal),
+        reckoningIndex,
+      ),
       inboundParleys: this.approachesTo(principal, tick).received,
     };
+  }
+
+  /**
+   * Sample every principal's free cash into the parley high-water book. Once a tick, from the
+   * clock, for everybody — never on `observe`.
+   *
+   * `WakeBook.rollTo`'s note is the reason it is here rather than folded into
+   * {@link parleyEntitlementOf}: *"a budget that rolled on first use would give an agent that acted
+   * early in a Reckoning a different allowance from one that acted late, which is A4 through a side
+   * door."* Latching on read would be the same door with *how often you looked* as the key. A
+   * principal's free cash can only change when a tick applies actions, so a per-tick sample sees
+   * every value any observer could ever have seen.
+   *
+   * O(principals) with one ledger read each, against a measured 7.7 ms tick at 20 principals and a
+   * projected 82 ms at 300. Bounded by enrolment, which is itself capped at seats.
+   */
+  private sampleParleyEntitlements(tick: number): void {
+    for (const principal of [...this.world.holdingByPrincipal.keys()].sort(compareIds)) {
+      this.parleyEntitlement.sample(principal, tick, freeCash(this.ledger, principal), reckoningIndex);
+    }
   }
 
   /**
@@ -9369,6 +9470,7 @@ export class Runtime {
     const entitlement = this.parleyEntitlementOf(principal, tick);
     const allowance = parleyAllowanceFor(entitlement);
     const remaining = parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, allowance);
+    const sent = parleysSent(this.parleys.all, principal, tick, reckoningIndex);
     const reachable = this.reachFor(principal, tick).length;
     return {
       parleys_remaining: remaining,
@@ -9378,6 +9480,10 @@ export class Runtime {
       earned_minor: entitlement.earnedMinor,
       principals_awaiting_your_reply: this.approachesTo(principal, tick).awaiting,
       parleys_received_this_reckoning: entitlement.inboundParleys,
+      parleys_sent_this_reckoning: sent.length,
+      // Deduplicated and canonically ordered: two parleys to one principal is one conversation,
+      // and `compareIds` is the repo's one ordering for principal ids (never a bare `.sort()`).
+      parleyed_this_reckoning: [...new Set(sent)].sort(compareIds),
       refreshes_at_tick: tick - (tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING,
       declassifies_after_ticks: AUDIT_LAG_TICKS,
       reading_costs_parleys: 0,
