@@ -81,6 +81,31 @@
 > **2 of 24 qualify** where it was 3 of 10 — thinner, said out loud, and the next author should expect
 > to re-pin.
 >
+> ### ★★★ THE CORE LOOP CLOSES FOR A SIGNED IDENTITY, FROM THE FRONT DOOR
+>
+> **The thing no play-test had ever managed.** One real Ed25519 + RFC 9421 identity
+> (`scripts/probe.ts`, `PROBE_FULL=1`) on a `turbo` world, playing only from what the payload offered
+> and pasting affordances verbatim:
+>
+> | | |
+> |---|---|
+> | `enroll` | `p:turbo-vela`, seated `sys-04`, three hands |
+> | `create` | `{kind:DIG, stage:sys-04, elective_bps:2000}` at tick 16 — and the row said **★ THIS DOES NOT BIND ANYONE YET … Countersign by tick 29** |
+> | filled | both roles taken by real counterparties (`p:varrow` DIGGER, `p:sable` TALLYMAN), both countersigned |
+> | **`sign`** | first row of the next observation, sent verbatim → **state FORMING → LIVE**, `i_have_signed: true` |
+> | `elect` | `IN_FULL` on both roles |
+> | settled | tick 287, `SETTLED` |
+> | **standing** | `elective_honoured` **0 → 2** · value **209** · `distinct_counterparties` **0 → 2** · `defaults` **0** |
+>
+> **38 is what made it reachable.** The creator observed at 16, was told the deadline was 29, came
+> back at 33 and signed — spending two wakes 17 ticks apart, which the budget permits because it is a
+> **pool**. An evenly-paced agent reading nothing would have next woken at 34 and found the venture
+> ABANDONED, which is `created 16 · sign seen 0 · ABANDONED 16/16`, exactly as reported twice.
+>
+> `my_elective_owed` read **2,400** on the payer's own row throughout — 39's fix facing the payer
+> rather than the party being paid — and the settled elective was **209**, which is the slice above
+> escrow and the reason a play-test reading the ceiling reported a magnitude error.
+>
 > ### The contract pins, RE-MEASURED
 >
 > `test/cast/prompt.test.ts` is 55 assertions and every figure in it is an equality, so a green run
