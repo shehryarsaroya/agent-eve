@@ -375,3 +375,60 @@ It ran `pkill -f vitest` to relieve load at 250 — which matched **every** agen
 own — and saw `lode-37-frames` re-running specs afterward. Disclosed rather than hidden, which is why
 it is written down. A shared box needs a shared convention for this; killing by worktree path is the
 obvious one.
+
+---
+
+## ★ OWNER AUTHORISATION — RE-SEED APPROVED (2026-07-30)
+
+**The owner has explicitly authorised re-seeding production**, in these words: *"feel free to reseed when
+done etc"*, following *"get everything finished please and then yeah ping when its all done and ready
+for the graphics design and then the humans watching gameplay."*
+
+This matters because a re-seed **destroys a permanent public record**, which A5 and A10 otherwise treat
+as inviolable. It was flagged to the owner three separate times as their decision and is now granted.
+**Do it only after everything else is green and deployed**, and say plainly in the announcement that the
+prior world's record ended.
+
+### Why the live shard has to go — three independent readings, none of them a crash
+
+1. **`kept: 0, broken: 0`** across all 14 cast members after **thirty Reckonings**. A fresh world on the
+   same code does `kept: 51, broken: 11` in two.
+2. **16 of 16 WORKS in the Commons.** One claim in the whole galaxy, eight grants all `UNUSED`,
+   `coverArcs: []`, `levyShort: 710,152`.
+3. **The cast stopped deciding.** `/health` reports `unhealthy` while `world: RUNNING`:
+   *"1469 decisions in the last 288 ticks and NOT ONE came from LIVE, INTENT or DELEGATE. The heuristic
+   is holding the stage by itself, which means the expensive path is not being taken at all."*
+
+Every "the cast never competes" measurement in this document came from that shard. Treat conclusions
+drawn from it as suspect until re-measured on the new world.
+
+### The finish sequence
+
+1. Land the three in-flight branches (merge/deploy, conflict mechanics, the `risk` observation key).
+2. **Merge `sign-the-menu`** — the wake-window fix, and the one that unlocks the core loop.
+3. Full gate: `tsc` · `lint` · `vitest run --minWorkers=1 --maxWorkers=6` · `audit:scale` ·
+   `audit:budgets` · `balance-gate.ts` at 3/6/9 across 8 seeds.
+4. Deploy. Expect the operator door to refuse once and print the key to sign; that is correct.
+5. **Re-seed**, then verify `/health` is `healthy` **and** that `LIVE` decisions appear within a
+   Reckoning — the third reading above is the one that must not come back.
+6. Ping the owner with the deployed version, production health, and what the graphics layer can draw.
+
+### ★ The fix that unlocks the game, for whoever finishes this
+
+Two play-tests could not reach the core loop, and the cause was arithmetic rather than a missing verb:
+
+```
+WAKES_PER_RECKONING  16 over 288 ticks  =  one wake per 18 ticks
+FORMATION_WINDOW_TICKS                  =  12
+```
+
+**A venture is retired six ticks before its creator may legally observe again.** An evenly-pacing agent
+reads `created 16 · sign seen 0 · elect seen 0 · ABANDONED 16/16`, deterministically. `sign` and `elect`
+were on the menu the whole time.
+
+The fix is **a sentence, not a constant**: `WAKES_PER_RECKONING` is a *pool*, not a rate — `spendWake`
+imposes no spacing — so the agent was never unable to return inside its window, it had never been told
+the window existed. The world does not move, and the balance gate reads identical to master.
+Widening the window to 18 or 24 was measured and **reverted**: at 24 a war seed stopped fielding a
+defence, at 18 combat got worse. `formationWindowOutlastsAWake()` is pinned at **−6** as a standing
+measurement so the day it goes non-negative somebody notices.
