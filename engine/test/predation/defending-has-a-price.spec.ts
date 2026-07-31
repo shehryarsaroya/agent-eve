@@ -141,28 +141,38 @@ describe('a target can send for its own hands', () => {
   });
 
   it('a world nobody steers now puts the targets own hands on their own stages', () => {
-    // The behavioural claim, as a number rather than as a branch: run the cast and count the
-    // hands standing at a stage that belong to the principal being raided there. This was 6
-    // across 72 standoffs before the muster branch existed; a single seed is enough to show the
-    // subject is no longer empty, and `scripts/standoff-probe.ts` carries the 8-seed figure.
+    // The behavioural claim as a number rather than as a branch: run worlds nobody steers and
+    // count the hands standing at a stage that belong to the principal being raided there. It was
+    // **1 across 72 standoffs** before the reservation existed and 26 after
+    // (`scripts/standoff-probe.ts`, 8 seeds × 3 Reckonings).
+    //
+    // ── THREE SEEDS, BECAUSE ONE WAS A FLAKE AND SAID SO ──────────────────────
+    //
+    // The first version of this ran one seed for 600 ticks and read **0** — while the same branch
+    // measured 26 over the eight-seed sweep. Both numbers are correct: a world produces ~9
+    // standoffs per 864 ticks, the reservation only bites for members the world can reach, and
+    // whether any of them is raided inside 600 ticks is a coin-flip of the seed. A single-seed
+    // denominator that small cannot distinguish "the branch is dead" from "this seed had no
+    // occasion", which is the distinction the whole file is about. Summed across seeds, and
+    // asserted on the sum.
     setSpeed('instant');
-    const runtime = new Runtime({ seed: 'muster-count' });
-    const cast = new HeuristicCast(runtime, { size: 8 });
-    cast.seat('muster-count');
     let ownHandTicks = 0;
     let standoffTicks = 0;
-    for (let n = 0; n < 600; n += 1) {
-      const at = runtime.engine.tick + 1;
-      for (const raid of runtime.raids.live()) {
-        standoffTicks += 1;
-        const view = runtime
-          .raidsFor(raid.target, runtime.engine.tick, 20)
-          .find((v) => v.raid === raid.id);
-        if (view === undefined) continue;
-        ownHandTicks += view.force.your_hands_here;
+    for (const seed of ['muster-count', 'g01', 'g05']) {
+      const runtime = new Runtime({ seed });
+      const cast = new HeuristicCast(runtime, { size: 8 });
+      cast.seat(seed);
+      for (let n = 0; n < 864; n += 1) {
+        const at = runtime.engine.tick + 1;
+        for (const raid of runtime.raids.live()) {
+          standoffTicks += 1;
+          const view = runtime.raidsFor(raid.target, at, 20).find((v) => v.raid === raid.id);
+          if (view === undefined) continue;
+          ownHandTicks += view.force.your_hands_here;
+        }
+        for (const action of cast.decide(at, seed)) runtime.engine.submit(action);
+        if (runtime.runTick().halted) throw new Error('halted');
       }
-      for (const action of cast.decide(at, 'muster-count')) runtime.engine.submit(action);
-      if (runtime.runTick().halted) throw new Error('halted');
     }
     expect(standoffTicks).toBeGreaterThan(0);
     expect(ownHandTicks).toBeGreaterThan(0);

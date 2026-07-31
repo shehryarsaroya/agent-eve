@@ -163,10 +163,15 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
           .some((r) => r.other === target && (r.kept > 0 || r.youKept > 0));
         // The priced arm, read off the published view the cast itself gated on — never recomputed
         // here, or the test would assert its own copy of the rule rather than the rule (scar #5).
+        //
+        // ⚑ **At `at`, not at `runtime.engine.tick`, and the difference is two joins.** `decide` is
+        // called with `at = tick + 1` and `coalitionFor` passes that straight to `raidsFor`, so a
+        // view read at the *current* tick is one tick behind the one the gate saw. The first
+        // version of this line read 3 of 5 joins as unmotivated and the gate was fine — the test
+        // was interrogating a different snapshot from the decision it was auditing.
         const priced =
-          runtime
-            .raidsFor(action.principal, runtime.engine.tick, 20)
-            .find((v) => v.raid === raid)?.if_repulsed.protects_you ?? false;
+          runtime.raidsFor(action.principal, at, 20).find((v) => v.raid === raid)?.if_repulsed
+            .protects_you ?? false;
         if (settled || priced) joinsWithSignal += 1;
         if (!settled && priced) joinsPriced += 1;
         const hand = action.params['hand'];
