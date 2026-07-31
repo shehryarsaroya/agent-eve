@@ -31,12 +31,12 @@ import { WITHHELD_FIELDS, WITHHELD_GROUNDS } from './withheld.js';
 export class ObservationFault extends Error {}
 
 /**
- * PROP-O3 — **exactly** ten top-level keys, in order.
+ * PROP-O3 — **exactly** eleven top-level keys, in order.
  *
- * Order as well as count, because the ten keys are read top to bottom by a model and
+ * Order as well as count, because the eleven keys are read top to bottom by a model and
  * §12.1 lists them in decision order: the clock, then your body, then your
  * obligations, then what you can do about them. A payload that carried them in a
- * different order would still be ten keys and would still be worse.
+ * different order would still be eleven keys and would still be worse.
  */
 export function keyFaults(observation: Observation): string[] {
   const keys = Object.keys(observation);

@@ -1,8 +1,8 @@
 /**
  * `observe` — a decision document, not telemetry (SPEC §12.1).
  *
- * **Exactly ten top-level keys, in this order:** `header · hands · holding ·
- * obligations · ventures · counterparties · grants · market · affordances ·
+ * **Exactly eleven top-level keys, in this order:** `header · hands · holding ·
+ * obligations · ventures · counterparties · grants · market · risk · affordances ·
  * briefing`. §17's rules budget is *at* its ceiling for observe keys, so adding one
  * means removing one, and `assertObservation` counts them rather than trusting this
  * comment.
@@ -60,6 +60,7 @@ import type {
 import { minor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
 import { isRevokedAt } from '../identity/index.js';
+import { riskBlock } from '../risk/view.js';
 import {
   filledIndices,
   isLive,
@@ -101,7 +102,17 @@ import {
   type WithheldRow,
 } from './withheld.js';
 
-/** The ten keys, in order. `assertObservation` compares against this exactly. */
+/**
+ * The eleven keys, in order. `assertObservation` compares against this exactly.
+ *
+ * **This list and `api/observe.ts`'s must stay identical, and that is not a convention — it is
+ * HARD RULE 4.** Two homes for one rules surface is scar #1's shape, and it has already been paid
+ * for here: `test/observe/promise.test.ts` deliberately checks `agent.md` §6 against the *served*
+ * list, because this module's builder is not the payload an agent receives. So the list is canon
+ * and the builder follows it; the eleventh key arrived with `risk` when the owner raised §17's
+ * ceiling rather than let the spectator frame carry a front the agent could not read (A9). The
+ * argument in full is on `api/observe.ts:OBSERVE_KEYS`.
+ */
 export const OBSERVE_KEYS: readonly string[] = Object.freeze([
   'header',
   'hands',
@@ -111,6 +122,7 @@ export const OBSERVE_KEYS: readonly string[] = Object.freeze([
   'counterparties',
   'grants',
   'market',
+  'risk',
   'affordances',
   'briefing',
 ]);
@@ -153,8 +165,8 @@ export interface Header {
    * Every omission, with its ground.
    *
    * Lives on `header` rather than beside `affordances` because §17 caps the payload
-   * at ten top-level keys and it is *at* the ceiling: a sibling of `affordances`
-   * would be an eleventh key. `agent.md` §6 promises "a `withheld` count and a
+   * at eleven top-level keys and it is *at* the ceiling: a sibling of `affordances`
+   * would be a twelfth key. `agent.md` §6 promises "a `withheld` count and a
    * reason" without naming a home; the spelling `ground` rather than `reason` is
    * §3's doing and is reported as a documentation delta.
    */
@@ -315,7 +327,7 @@ export interface Market {
   readonly books: readonly BookRow[];
 }
 
-/** The ten keys. Structurally a {@link CanonicalValue}, so it hashes and measures. */
+/** The eleven keys. Structurally a {@link CanonicalValue}, so it hashes and measures. */
 export interface Observation {
   readonly header: Header;
   readonly hands: readonly HandLine[];
@@ -325,6 +337,13 @@ export interface Observation {
   readonly counterparties: readonly CounterpartyLine[];
   readonly grants: Grants;
   readonly market: Market;
+  /**
+   * §12.1's eleventh key (A9). Typed loosely here because this builder carries **no `RiskBook`**
+   * and never will: `riskBlock({ read: null })` is the one honest thing it can say, and inventing
+   * a `FrontView[]` out of a book that does not exist is how a projection starts reporting facts
+   * nobody computed. The served shape is `src/risk/view.ts:riskBlock`.
+   */
+  readonly risk: Readonly<Record<string, unknown>>;
   readonly affordances: readonly Affordance[];
   readonly briefing: Briefing;
 }
@@ -565,6 +584,10 @@ function atRung(
     counterparties: Object.freeze(counterparties),
     grants: grantBlock.grants,
     market: { at: Object.freeze(presentSystems(sources, principal)), books: Object.freeze(books) },
+    // `read: null` — this fixture builder holds no `RiskBook`. The schedule inside is pure
+    // arithmetic on the tick and is therefore true in any world; everything else is empty and says
+    // so, rather than being fabricated from a book that was never opened.
+    risk: riskBlock({ tick: sources.tick, read: null }),
     affordances: Object.freeze(affordances.map((c) => c.affordance)),
     briefing,
   };
@@ -734,6 +757,10 @@ export function staleProjection(
     counterparties: body.counterparties,
     grants: body.grants,
     market: body.market,
+    // Carried verbatim from the cached body, like every other key: a stale read is the same
+    // snapshot with the affordances removed, and re-deriving one key would make the payload a
+    // mixture of two ticks (PROP-O8's countdown-jump shape, scar #14d).
+    risk: body.risk,
     affordances: Object.freeze([]),
     briefing: body.briefing,
   };
@@ -779,6 +806,10 @@ export function darkObservation(
     counterparties: Object.freeze([]),
     grants,
     market: { at: Object.freeze([]), books: Object.freeze([]) },
+    // The public clock and nothing else — which is exactly what `riskBlock({read: null})` is:
+    // `schedule` is arithmetic on the tick and is public in every world, and every list is empty
+    // because a dark read may not carry this principal's own risk state (§12.4's leak).
+    risk: riskBlock({ tick: sources.tick, read: null }),
     affordances: Object.freeze([]),
     briefing,
   };

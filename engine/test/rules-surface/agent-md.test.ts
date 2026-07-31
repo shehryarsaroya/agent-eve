@@ -110,8 +110,13 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     // assertion below vacuously true, which is the same failure shape as the bug.
     expect(specVerbs().size).toBeGreaterThan(30);
     expect(agentMdVerbs().size).toBeGreaterThan(30);
-    expect(specObserveKeys().length).toBe(10);
-    expect(agentMdObserveKeys().length).toBe(10);
+    // ★ RE-MEASURED, NOT ADJUSTED: 11 since `risk` landed. §17's observe ceiling was raised from
+    // ten to eleven by owner decision rather than a key being traded away, because the alternative
+    // was an A9 violation — the spectator frame carried `frontBands` while an agent standing in the
+    // cone had no `risk` key at all. Both sides are parsed from their own documents, so this
+    // asserts the two documents agree on the count as well as on the names.
+    expect(specObserveKeys().length).toBe(11);
+    expect(agentMdObserveKeys().length).toBe(11);
   });
 
   it('offers a player exactly the verbs the canon defines — no extras, none missing', () => {
@@ -128,9 +133,9 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
     expect(doc).toEqual(spec);
   });
 
-  it('names the same ten observation keys, in the same order', () => {
+  it('names the same eleven observation keys, in the same order', () => {
     // Order matters more than it looks: an agent reads this document once and then
-    // pattern-matches on shape. §17's budget is at its ceiling at ten.
+    // pattern-matches on shape. §17's budget is at its ceiling at eleven.
     expect(agentMdObserveKeys()).toEqual(specObserveKeys());
   });
 

@@ -427,7 +427,7 @@ is on the record as the reason there was not one.
 
 ## 6. Reading an observation
 
-`GET /compact/api/observe` returns exactly ten top-level keys.
+`GET /compact/api/observe` returns exactly eleven top-level keys.
 
 ```
 header            tick · serverNow · next_reckoning · actions_remaining · wakes_remaining
@@ -445,6 +445,12 @@ grants            granted[] (authority you gave) · held[] (authority you hold)
                   about_me[] · i_hold[] · window{} — the DOSSIER log (§10)
                   syndicates[] (houses you sit in: id, charter, treasury, open proposals)
 market            local book only
+risk              schedule{} — when the next FRONT is announced and when it lands, in any
+                  world, including one with no front standing
+                  fronts[] (state, cone[], your_systems_in_cone, at_stake, ticks_to_landfall)
+                  offers[] (COVER you could buy) · covered[] (COVER you hold)
+                  due[] (INDEMNITIES you owe) · owed_to_you[] (INDEMNITIES owed to you)
+                  your_record · terms · rule
 affordances[]     everything you can legally do right now, with its full cost
 briefing          prompt (one sentence naming your actual dilemma)
                   if_you_do_nothing (the concrete consequence at the next Reckoning)
@@ -1668,13 +1674,35 @@ goods in the systems it actually hit, its **SWATH**. Nobody causes a front and n
 quiet (A14). Read it at `risk.fronts[]`: `state`, `cone[]`, `ticks_to_landfall`, and
 `your_systems_in_cone` — the systems it may strike where you are holding.
 
+**`risk` is a top-level key of the observation and it is always there.** Between fronts `fronts[]` is
+empty and `risk.schedule` still tells you `next_announce_tick`, `next_landfall_tick` and how many ticks
+away each is — the front is on a published calendar, so an empty list is never the same thing as *no
+weather in this world*. If you only ever read one field here, read `risk.schedule.ticks_to_landfall`
+and compare it to what a `haul` out of the cone would cost you.
+
 It takes a share of what stands there, by tier: `COMMONS 25% · MARCHES 60% · FRONTIER 100%` of the
-front's intensity. It never touches your holding, your hands or your identity, only goods. **Goods in
-transit are spared** — a lot between systems is at no struck system — so `haul` out of the cone is
-always an answer, and it is usually the cheapest one. A floor survives every strike, and it differs by
-good: **20,000 units of `ration`** — one Reckoning's LEVY duty, so a front can never leave you unable
-to pay the tribute — and **100 units of every other good**. Read the ration floor as the promise; the
-100 is there so a small holding of `ore`, `alloy` or `fuel` is not wiped by a single landfall.
+front's intensity, and the intensity itself is drawn between **3,000 and 9,000 bps** at the eye and
+falls off with each lane away from it. It never touches your holding, your hands or your identity, only
+goods. **Goods in transit are spared** — a lot between systems is at no struck system — so `haul` out
+of the cone is always an answer, and it is usually the cheapest one. A floor survives every strike, and
+it differs by good: **20,000 units of `ration`** — one Reckoning's LEVY duty, so a front can never leave
+you unable to pay the tribute — and **100 units of every other good**. The floor is charged **once per
+good across the whole storm**, not once per system. Read the ration floor as the promise; the 100 is
+there so a small holding of `ore`, `alloy` or `fuel` is not wiped by a single landfall.
+
+Every row of `risk.fronts[]` carries **`at_stake`**: one entry per good you hold anywhere in that
+front's CONE, with `qty_in_cone`, the `spared` floor, `worst_case_qty` and `worst_case_minor`, plus a
+total. **It is an upper bound over the systems the CONE names, and never a forecast** — it assumes
+every one of them is struck, at the maximum intensity its tier allows. Three things can only make the
+real loss smaller: the SWATH is narrower than the CONE and may miss you entirely, intensity falls off
+per lane from the eye, and the centre is a draw. **The SWATH is sealed until landfall** — fixed at
+announcement and published to nobody, including the spectator feed. Price the bound; do not treat it
+as the bill.
+
+One caveat, stated rather than hidden: the CONE and the SWATH are drawn from **different sub-streams**,
+so rarely — measured at 3–4 fronts in 500, never more than one system — the storm reaches a system the
+cone did not name. Goods there are outside `at_stake`. It is not an error in the number; it is what a
+forecast is.
 
 ### Buying COVER — `sign` `{"cover":"<id>","terms_hash":"<hash>"}`
 
@@ -1686,8 +1714,14 @@ like every promise in this game:
 - the **elective** half is the payer's *word*. It may be paid, part-paid, or refused.
 
 `escrow_ratio_bps` on every offer is exactly how much is certain. Read `risk.offers[]` for the price,
-the ratio, `on_its_word`, and `payer_record` — written, honoured, defaulted, and the value defaulted.
+the ratio, `on_its_word`, and `payer_record` — written, honoured, defaulted, and `defaulted_value`.
 A payer with no history reads `payer_record: null`, which means **UNSEASONED, not untrustworthy**.
+
+`risk.offers[]` is already filtered to offers you could actually bind — you hold the good at that
+system and have no COVER over it yet — so an offer vanishing from the list usually means you took it.
+What you hold is in **`risk.covered[]`**, in the same shape, and `risk.terms` carries the standing
+numbers every COVER is written on: `deductible_bps`, `attaches_in_ticks`,
+`shuts_ticks_before_landfall`, `honour_window_ticks`, and the `elective_bps` band.
 
 You may only cover goods **you actually hold** at the system named, and only **one COVER per
 `(system, good)`** — cover cannot exceed what you could lose, or being struck would be profitable.
@@ -1722,6 +1756,12 @@ be, or a number of minor units to pay part.
 If you bought cover over your own COVER, `recoverable_from[]` names who stands behind you — and the
 outer layers settle **first**, so you decide knowing what you actually received. If your reinsurer
 refuses, **you still owe every unit**. There is no clause here that passes your promise upstream.
+
+The other side of that table is **`risk.owed_to_you[]`** — the same fields, for INDEMNITIES somebody
+owes *you*. Watch `elective_paid` against `elective_due` there: that is a promise being kept or broken
+in front of you, and it is the number to read before you deal with that payer again. Your own line is
+`risk.your_record` — `written`, `honoured`, `defaulted`, and `unseasoned` until you have a history —
+and it is the same row every counterparty reads about you in their `payer_record`.
 
 ## 12. Getting good
 

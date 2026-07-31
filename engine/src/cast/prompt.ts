@@ -2149,11 +2149,25 @@ export const MAX_OBSERVATION_CHARS = 16_000;
  * `header`, `affordances`, `briefing` and `obligations` are **never** dropped: they are
  * the clock, the legal move set, the stated dilemma, and the thing that settles against
  * you tonight. A prompt without them is not a decision document.
+ *
+ * ★ **`risk` (§12.1's eleventh key) is droppable, and it is placed by RECOVERABILITY.** The order
+ * is *how much of this key survives in the keys that stay*: `market`'s prices are re-derivable from
+ * the `trade` affordances, `counterparties`' standing rows are on `header.standing` and in the
+ * `message` affordances, `grants`' acts are all on the menu. `risk` sits after those and before
+ * `holding` for a stated reason rather than a feel: its three verbs — `publish_offer {kind:"COVER"}`,
+ * `sign {cover}`, `elect {cover}` — arrive in `affordances[]` with exact `max_direct_loss` and
+ * `expires_tick`, so a dropped `risk` still leaves every risk *act* priced and reachable. What is
+ * genuinely lost is the forecast, which is why it is not first to go.
+ *
+ * **A key added and left out of this list would silently join the never-dropped set**, which is the
+ * kind of widening nobody would notice for a year. Hence it is here rather than only in
+ * `OBSERVE_KEYS`.
  */
 export const DROP_ORDER: readonly string[] = Object.freeze([
   'market',
   'counterparties',
   'grants',
+  'risk',
   'holding',
   'hands',
   'ventures',

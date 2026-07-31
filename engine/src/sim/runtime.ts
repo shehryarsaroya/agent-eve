@@ -2059,7 +2059,52 @@ import {
  * the only one in this changelog that says *none*.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 38;
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **39 — `observe` GETS AN ELEVENTH KEY, AND THE §17 CEILING MOVES FOR THE FIRST TIME.**
+ *
+ * **The spectator could see the storm and the agent could not.** The public frame carried
+ * `frontBands`, `coverArcs` and `coverChains` from the day Phase 3 landed — a viewer read
+ * `front:r3:sys-20 · sys-20 96% · lands in 555` off the feed — while a principal standing inside
+ * that cone had **no `risk` key in its observation at all**, and `publish_offer {kind:"COVER"}`,
+ * `sign {cover}` and `elect {cover}` sat on its menu with nothing to price them from. A9: *"the
+ * spectator client never shows a live fact an agent's own `observe` wouldn't."* That is a live
+ * breach of an axiom, not a missing convenience.
+ *
+ * Underneath it, this project's defining defect at the depth it likes best: `Runtime.riskView`
+ * existed, was correct, was tested — and had **zero callers** for the layer's whole life. It is
+ * deleted rather than kept beside the new `riskBlockFor`, because keeping it would have left a
+ * second wrapper with no caller in the commit that fixes the first.
+ *
+ * ── WHY THE CEILING MOVED INSTEAD OF A KEY BEING TRADED AWAY ─────────────────
+ *
+ * §17's budget stood at **10 of 10** for the whole build and *"adding one means removing one"* did
+ * real work: ten mechanics were folded onto existing keys rather than given one — `raid_schedule`,
+ * `aggression`, `parley`, `campaign_clock` and the reader's own `standing` onto `header`;
+ * `campaigns` and `sway` onto `holding`; `syndicates` and the DOSSIER log into `grants`; `talks`
+ * into `ventures`; `corrections` into `briefing`. Every one is a better payload for having been
+ * argued.
+ *
+ * **`risk` is the case where no trade existed, because the alternative was breaking A9.** The
+ * ceiling is a guideline; the axiom is a rule; where they collide the guideline moves and writes
+ * down why. **Raised to 11 by owner decision on 2026-07-30**, with the reasoning in SPEC §12.1 and
+ * §17, `TESTING.md` PROP-O3 and `scripts/budget-audit.mjs` — which counts the block against the
+ * engine's own list and now fails on twelve. `risk` is the only key whose absence has ever broken
+ * an axiom, and that is the bar a twelfth has to clear.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * **None from the engine.** No ledger row, no state table and no hashed structure moves; the change
+ * is one additional projection assembled from a read that already existed. What *does* change is
+ * the payload every LLM cast member reads, so a live world's action log diverges from the first
+ * tick a member decides differently — the same class of signature as 38's, and for the same reason:
+ * a rules surface moved even though no rule did.
+ *
+ * `hydrate.ts` still refuses on `RULES_VERSION_MISMATCH` first, which is the cheap door.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const RULES_VERSION = 39;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -2165,7 +2210,7 @@ import {
   coverArcs,
   coverChains,
   COVER_OFFER_TTL_TICKS,
-  riskViewFor,
+  riskBlock,
   RiskBook,
   type CoverArc,
   type CoverChain,
@@ -2173,7 +2218,7 @@ import {
   type FrontBand,
   type HoldingRead,
   type RiskAffordance,
-  type RiskView,
+  type RiskViewInput,
   type WithheldRisk,
 } from '../risk/index.js';
 import { frontBands } from '../risk/lines.js';
@@ -13305,14 +13350,43 @@ export class Runtime {
     return LEVY_UNIT_MINOR;
   }
 
-  /** Everything a principal reads about risk. §12.1: a decision document, not telemetry. */
-  riskView(principal: PrincipalId, tick: number = this.engine.tick): RiskView {
-    return riskViewFor({
+  /** One read of this principal's lots and cash, shared by every risk projection. */
+  private riskRead(principal: PrincipalId, tick: number): RiskViewInput {
+    return {
       book: this.risk,
       principal,
       tick,
       holdings: this.riskHoldings(principal, tick),
       freeCash: freeCash(this.ledger, principal),
+    };
+  }
+
+  /**
+   * ★ **`observe.risk` — the eleventh key** (A9, §12.1).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **This replaces a `riskView` that had ZERO CALLERS for the layer's whole life**, and the
+   * consequence of that was a live A9 breach rather than merely dead code: the spectator frame
+   * carried `frontBands` — a viewer read `front:r3:sys-20 · sys-20 96% · lands in 555` off the
+   * feed — while the agents in that storm had **no `risk` key in the observation at all**, and
+   * the three risk acts were on their menus with nothing to price them from.
+   *
+   * The old method is **deleted rather than kept beside this one**. It returned the typed
+   * {@link RiskView}, which `riskBlock` builds internally from the same read, so keeping it would
+   * have left a second wrapper with no caller — the exact defect one level down, in the commit
+   * that fixes it. `riskViewFor` is still exported and still directly tested; what is gone is a
+   * runtime method nothing invoked.
+   *
+   * Shaped here for `marketView`'s reason: this is where every other block a projection publishes
+   * is assembled from one read, so the affordances and the block cannot come off two different
+   * readings of the same book inside one payload (scar #5's shape, with weather).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  riskBlockFor(principal: PrincipalId, tick: number = this.engine.tick): Readonly<Record<string, unknown>> {
+    const map = this.world.map;
+    return riskBlock({
+      tick,
+      read: { input: this.riskRead(principal, tick), tierOf: (system) => tierOf(map, system) },
     });
   }
 

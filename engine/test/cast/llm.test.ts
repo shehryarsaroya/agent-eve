@@ -314,7 +314,7 @@ describe('the wake budget is spent like any other principal’s', () => {
     const first = transport.calls[0];
     expect(first).toBeDefined();
     const body = first?.request.messages[2]?.content ?? '';
-    // The ten keys, verbatim, in `agent.md` §6's order — not a private projection.
+    // The eleven keys, verbatim, in `agent.md` §6's order — not a private projection.
     expect(body).toContain('{"header"');
     expect(body).toContain('"affordances"');
     expect(body).toContain('"briefing"');

@@ -227,7 +227,7 @@ describe('a contested fill refusal arrives in GET /observe corrections[]', () =>
     if (loser === undefined) throw new Error('both bids were granted');
 
     // THE ASSERTION. Not `takeCorrections` — the payload an agent reads. It sits inside
-    // `briefing` rather than at the top level because §17 caps the observation at ten keys.
+    // `briefing` rather than at the top level because §17 caps the observation at eleven keys.
     const delivered = ((await observe(loser))['briefing'] as Row)['corrections'] as Row[];
     const refusal = delivered.find((c) => c['verb'] === 'fill_role');
     expect(refusal, `nothing reached the loser: ${JSON.stringify(delivered)}`).toBeDefined();

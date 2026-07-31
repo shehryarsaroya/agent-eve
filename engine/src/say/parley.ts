@@ -354,7 +354,7 @@ export function parleyNote(
 /**
  * §2's price as a standing block on `header`, present at zero, at full, and at not-entitled alike.
  *
- * On `header` for `aggression`'s reason and it is the same one: §17's observe budget is at ten of ten
+ * On `header` for `aggression`'s reason and it is the same one: §17's observe budget is at eleven of eleven
  * (`OBSERVE_KEYS` is counted, not trusted), and `header` is where the payload keeps the facts about
  * the reader that hold regardless of what it is doing this tick — its clock, its budgets, its record.
  * A per-Reckoning allowance is a budget.

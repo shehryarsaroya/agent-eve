@@ -18,8 +18,13 @@
  * | act | trigger | if absent |
  * |---|---|---|
  * | `publish_offer {kind:"COVER"}` | `freeCash > 0` and a live FRONT is in `FORECAST` | must be named |
- * | `sign {cover}` | an open offer exists **and** the reader holds goods at its system | must be named |
+ * | `sign {cover}` | an open offer exists, the reader holds goods at its system, **and `freeCash` covers the premium** | must be named |
  * | `elect {cover}` | an INDEMNITY this reader owes is open | must be named |
+ *
+ * The third clause on `sign` was added after a play-test: the affordance was offered to a principal
+ * with `freeCash` of 0, which spent its action on a `PROP-R1` refusal the payload could have
+ * predicted. `publish_offer` had checked the same thing since it was written, and the asymmetry
+ * survived because both halves were individually correct — the shape this repo keeps finding.
  *
  * ## The withheld grounds, and why no new one was added
  *
@@ -40,7 +45,8 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { GoodId, PrincipalId, SystemId } from '../core/types.js';
+import type { GoodId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
+import { reckoningIndex } from '../core/time.js';
 import { BPS_ONE, bps, minor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { ENDOWMENT_GOOD } from '../ledger/endowment.js';
 import { compareIds } from '../ledger/order.js';
@@ -53,15 +59,20 @@ import {
   type CoverId,
   type CoverRecord,
 } from './cover.js';
-import { coneAt, stateAt, type FrontState } from './front.js';
+import { announceTickOf, coneAt, isFrontReckoning, landfallTickOf, stateAt, type FrontState } from './front.js';
 import { electiveOwed, outstandingOf, type IndemnityRecord } from './indemnity.js';
 import {
   COVER_DEDUCTIBLE_BPS,
   COVER_ELECTIVE_BPS_CEILING,
   COVER_ELECTIVE_BPS_FLOOR,
   COVER_WAIT_TICKS,
+  FRONT_CONE_RECKONINGS,
   FRONT_COVER_FREEZE_TICKS,
+  FRONT_EVERY_RECKONINGS,
   HONOUR_WINDOW_TICKS,
+  INTENSITY_MAX_BPS,
+  VULNERABILITY_BY_TIER,
+  frontSparesFor,
 } from './params.js';
 
 // ── What an agent reads ─────────────────────────────────────────────────────
@@ -325,6 +336,374 @@ export function riskViewFor(input: RiskViewInput): RiskView {
   };
 }
 
+// ── The `risk` observe key ──────────────────────────────────────────────────
+
+/**
+ * ★ **THE ELEVENTH OBSERVE KEY, AND THE A9 VIOLATION IT CLOSES.**
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * A9: *"the spectator client never shows a live fact an agent's own `observe` wouldn't."*
+ *
+ * For this layer's whole life it did. The public frame carried `frontBands` — a player watched
+ * `front:r3:sys-20 · sys-20 96% · lands in 555` scroll past on the spectator feed — while
+ * `observe.risk` was **not a key at all**: `OBSERVE_KEYS` was a closed list of ten, and
+ * {@link riskViewFor} above, complete and unit-tested since Phase 3 landed, had **zero callers**.
+ * Two independent play-tests found it the same way, from opposite ends: one could not price a
+ * COVER, one could not tell that a storm was coming.
+ *
+ * It also stranded the acts. `publish_offer {kind:"COVER"}`, `sign {cover}` and `elect {cover}`
+ * were all on the menu, correctly priced, with **no block to price them from** — the
+ * affordance-with-no-state shape this repo has now found at five depths.
+ *
+ * ## A9 in the OTHER direction, which is the half that constrains this function
+ *
+ * *Whatever the frame shows, an agent may see — and nothing more.* The frame carries
+ * `frontBands` (front · state · eye · system · tint · ticksToLandfall · took), `coverArcs`
+ * (cover · payer · payee · system · good · limit · filledBps · onItsWord · struck) and
+ * `coverChains` (every link's payer, payee, depth, limit, state and what broke). So every field
+ * below is either **already on that frame**, or **the reader's own state**, or **published
+ * arithmetic the reader can reproduce**. Three consequences worth naming, because each was a
+ * candidate field that did not survive:
+ *
+ *   - **The SWATH stays sealed until landfall.** `FrontRecord.swath` is drawn at *announcement*
+ *     and withheld — *"which is what SEALED means everywhere else in this engine"* — so
+ *     {@link frontViewFor} publishes it only once struck and this block copies that gate rather
+ *     than re-deciding it. Publishing it early would hand every reader a solved game and would be
+ *     a fact the frame does not carry either.
+ *   - **`offers[]` is `PUBLIC` state read through a filter, never a private view.** Every event
+ *     this layer emits is appended at `visibility: 'PUBLIC'` (`runtime.ts:riskPort`), `cover.offered`
+ *     included, so an open offer with its payer, limit, premium and `termsHash` is already on the
+ *     feed the moment it is written. What the block does is *narrow* that to the offers this reader
+ *     could actually bind (RSK1's insurable interest), which is the direction §12.1's eligibility
+ *     filtering is allowed to move in — less than public, never more.
+ *   - **No other principal's holdings.** `your_systems_in_cone` and {@link stakeInCone} are
+ *     computed from the *reader's* lots. A "who else is exposed" list would be §11.2's `SENSED`
+ *     tier published as `PUBLIC` — the same call that kept `tributeLines` off the live frame,
+ *     because its state derived from `hand.destination`.
+ *   - **`payer_record` is `null` for an UNSEASONED payer, never zeros.** A fabricated clean record
+ *     is a claim about a real agent that nothing supports (A5′).
+ *
+ * ## What it must let an agent answer, without a wiki (A2)
+ *
+ * *Is a front coming · will it reach ground I hold · how hard · when · what would cover cost me.*
+ * In order: {@link riskScheduleAt} answers the first **even when there is no front** — the front
+ * is scheduled (A14), so its next announcement is arithmetic, and an empty `fronts[]` beside a
+ * live countdown is honest where a bare `[]` would read as *"this world has no weather"*.
+ * `your_systems_in_cone` answers the second, {@link stakeInCone} the third, `ticks_to_landfall`
+ * the fourth, and `offers[]` + `terms` the fifth.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+export interface RiskSchedule {
+  readonly every_reckonings: number;
+  readonly cone_reckonings: number;
+  /** The RECKONING the next unlanded FRONT belongs to. */
+  readonly next_reckoning: number;
+  readonly next_announce_tick: number;
+  readonly next_landfall_tick: number;
+  /** Zero once it is announced — at which point it is a row in `fronts[]`. */
+  readonly ticks_to_announce: number;
+  readonly ticks_to_landfall: number;
+  readonly announced: boolean;
+}
+
+/**
+ * The next FRONT the calendar will produce, announced or not.
+ *
+ * **Pure arithmetic on the tick**, which is the point: `raid_schedule`'s argument
+ * (*"a raid an agent could not see coming is a dice roll"*) applies to weather with more force,
+ * because the only cheap answer to a front is to `haul` out of the cone and that takes ticks. A
+ * world between fronts must still be able to say when the next one lands.
+ *
+ * The scan is bounded by {@link FRONT_EVERY_RECKONINGS} + 1 candidates: every `FRONT_EVERY_RECKONINGS`th
+ * reckoning has one, so one full period always contains a hit.
+ */
+export function riskScheduleAt(tick: number): RiskSchedule {
+  const from = reckoningIndex(tick);
+  for (let r = from; r <= from + FRONT_EVERY_RECKONINGS + FRONT_CONE_RECKONINGS + 1; r += 1) {
+    if (!isFrontReckoning(r)) continue;
+    const landfall = landfallTickOf(r);
+    if (landfall < tick) continue;
+    const announce = announceTickOf(r);
+    return {
+      every_reckonings: FRONT_EVERY_RECKONINGS,
+      cone_reckonings: FRONT_CONE_RECKONINGS,
+      next_reckoning: r,
+      next_announce_tick: announce,
+      next_landfall_tick: landfall,
+      ticks_to_announce: Math.max(0, announce - tick),
+      ticks_to_landfall: landfall - tick,
+      announced: announce <= tick,
+    };
+  }
+  // Unreachable while `FRONT_EVERY_RECKONINGS` is finite and positive; thrown rather than
+  // returned as a zero, because a schedule reading 0/0 is exactly the fabricated-fact shape
+  // this block exists to remove.
+  throw new Error(`no FRONT reckoning within one period of tick ${String(tick)}`);
+}
+
+/** One good's worst case at one FRONT, over the reader's own lots. */
+export interface StakeRow {
+  readonly good: GoodId;
+  readonly qty_in_cone: number;
+  /** The per-good floor, charged **once** across every struck system (`front.ts:destroySet`). */
+  readonly spared: number;
+  readonly worst_case_qty: number;
+  readonly worst_case_minor: number;
+}
+
+export interface FrontStake {
+  readonly goods: readonly StakeRow[];
+  readonly worst_case_minor: number;
+}
+
+/** Reads a system's tier. Supplied by the caller — this module never opens the map. */
+export type TierRead = (system: SystemId) => ZoneTier;
+
+/**
+ * ★ **"HOW HARD", AS A BOUND RATHER THAN A FORECAST** — the `projectedDrown` pattern, over weather.
+ *
+ * The reader's own goods standing in a live CONE, per good, priced at the marks the block already
+ * carries, at the **worst intensity the tier allows**:
+ *
+ *   `taken(system) = trunc(exposed × trunc(INTENSITY_MAX_BPS × VULNERABILITY_BY_TIER[tier] / 10⁴) / 10⁴)`
+ *
+ * Every term is published: `agent.md` §11F already states the tier shares and the floors, and this
+ * is those numbers applied to the reader's own lots so it does not have to. It is an **upper
+ * bound over the systems the CONE names**, exactly, and never a prediction — three things can only
+ * make it smaller. The SWATH is `span` systems wide and may not include yours; intensity falls off
+ * per hop from the eye; and the centre is drawn in `[INTENSITY_MIN_BPS, INTENSITY_MAX_BPS]` from a
+ * seed nobody may read before landfall. A2 wants genuine uncertainty left uncertain *and sourced*,
+ * so the number is the bound and `note` says which way it can only move.
+ *
+ * ⚑ **"OVER THE SYSTEMS THE CONE NAMES" IS A REAL QUALIFIER AND IT IS MEASURED, NOT HEDGING.**
+ * `coneOf` publishes {@link CONE_SYSTEMS} = 8 cells and `swathOf` draws `span` ∈ [2, 5], both
+ * ranked nearest-first from the same eye — but from **different sub-streams**, so their tie-breaks
+ * at equal distance can disagree. Swept over 500 fronts on the launch map twice, on two seed
+ * families, **3 and 4 fronts (0.6–0.8%) had one struck system the cone did not name**, never more
+ * than one cell in either sweep. So a reader holding at that
+ * cell can lose more than this figure, and the honest statement is the one this function makes:
+ * the bound is over the published cone. Widening it would mean publishing systems the CONE does
+ * not — an oracle CAT11 CUTS by name — and narrowing the SWATH is a `front.ts` rules change with a
+ * `state_hash` behind it. Stated here, in `rule`, and in `agent.md` §11F rather than left for a
+ * reader to discover from a shortfall.
+ *
+ * The floor is charged **once per good across the whole cone**, in `compareIds` order over systems,
+ * which is `destroySet`'s own rule and its own ordering — a second, prettier rule here would be a
+ * preview that disagrees with the settlement it previews (scar #1, with goods attached).
+ */
+/** The hardest a FRONT may hit ground of this tier: the band's ceiling, times the tier's share. */
+function worstIntensityAt(tier: ZoneTier): number {
+  return Math.trunc((INTENSITY_MAX_BPS * VULNERABILITY_BY_TIER[tier]) / BPS_ONE);
+}
+
+export function stakeInCone(
+  input: RiskViewInput,
+  tierOf: TierRead,
+): ReadonlyMap<string, FrontStake> {
+  const out = new Map<string, FrontStake>();
+  for (const front of input.book.liveFronts(input.tick)) {
+    if (stateAt(front, input.tick, FRONT_COVER_FREEZE_TICKS) === 'PASSED') continue;
+    const coned = new Set(coneAt(front, input.tick).map((c) => c.system));
+    const byGood = new Map<GoodId, HoldingRead[]>();
+    for (const held of input.holdings) {
+      if (held.qty <= 0 || !coned.has(held.system)) continue;
+      const rows = byGood.get(held.good);
+      if (rows === undefined) byGood.set(held.good, [held]);
+      else rows.push(held);
+    }
+
+    const goods: StakeRow[] = [];
+    let total = 0;
+    for (const good of [...byGood.keys()].sort(compareIds)) {
+      // ★ **THE FLOOR IS SPENT WHERE IT SAVES THE LEAST, AND THAT IS WHAT MAKES THIS A BOUND.**
+      //
+      // `destroySet` charges the per-good floor **once across every struck system**, in its own lot
+      // order — so which system gets the spare depends on which ones the SWATH actually hit, and
+      // nothing here can know that. Sorting by system id (the first version) therefore produced a
+      // number the real strike could *exceed*: spare the floor at a COMMONS cell at 2,250 bps while
+      // the storm spares it at a FRONTIER cell at 9,000, and the bound is short by the difference.
+      //
+      // Ascending worst-intensity is the safe assignment: the floor is assumed to protect the
+      // cheapest goods, so every other placement can only take less. Ties by system id, so the
+      // ordering is total and the number is the same on replay (DET-1).
+      const rows = [...(byGood.get(good) ?? [])].sort(
+        (a, b) => worstIntensityAt(tierOf(a.system)) - worstIntensityAt(tierOf(b.system)) || compareIds(a.system, b.system),
+      );
+      let floorLeft = frontSparesFor(good);
+      let inCone = 0;
+      let spared = 0;
+      let taken = 0;
+      for (const row of rows) {
+        const spare = Math.min(row.qty, floorLeft);
+        floorLeft -= spare;
+        spared += spare;
+        inCone += row.qty;
+        taken += Math.trunc(((row.qty - spare) * worstIntensityAt(tierOf(row.system))) / BPS_ONE);
+      }
+      // One mark per good (`Runtime.markOf`), so any row's price is the good's price.
+      const unitPrice = rows[0]?.unitPrice ?? 0;
+      const worth = taken * unitPrice;
+      total += worth;
+      goods.push({
+        good,
+        qty_in_cone: inCone,
+        spared,
+        worst_case_qty: taken,
+        worst_case_minor: worth,
+      });
+    }
+    out.set(front.id, { goods: Object.freeze(goods), worst_case_minor: total });
+  }
+  return out;
+}
+
+/**
+ * What the reader may be told about a FRONT it can still act on, and the one rule behind it.
+ *
+ * One short sentence rather than the three-paragraph statement `holding.sovereignty` used to be:
+ * *"static prose crowded out the agent's own choices"* cost a twelve-member cast 20 LIVE decisions
+ * in one Reckoning, and this block is published on every wake in every world.
+ */
+const RISK_RULE =
+  'A FRONT is weather on a clock: announced, then it lands and destroys located goods in the ' +
+  'systems it actually hit. Goods IN TRANSIT are spared, so `haul` out of the CONE is always an ' +
+  'answer. `at_stake.worst_case_minor` bounds what it can take FROM THE SYSTEMS THIS CONE NAMES — ' +
+  "every one of them struck at its tier's maximum INTENSITY, the per-good floor charged once. The " +
+  'SWATH is sealed until landfall so nobody reads it early, including us, and it is drawn ' +
+  'separately from the CONE: rarely (measured 3-4 of 500 fronts) it reaches one system the cone ' +
+  'does not name, and goods there are outside this figure.';
+
+/** The published terms every COVER is written on. Constants, so a price is checkable without a wiki. */
+function coverTerms(): Readonly<Record<string, unknown>> {
+  return {
+    deductible_bps: COVER_DEDUCTIBLE_BPS,
+    attaches_in_ticks: COVER_WAIT_TICKS,
+    shuts_ticks_before_landfall: FRONT_COVER_FREEZE_TICKS,
+    honour_window_ticks: HONOUR_WINDOW_TICKS,
+    elective_bps_floor: COVER_ELECTIVE_BPS_FLOOR,
+    elective_bps_ceiling: COVER_ELECTIVE_BPS_CEILING,
+  };
+}
+
+export interface RiskBlockInput {
+  readonly tick: number;
+  /**
+   * The reader's risk state, or `null` in a world with **no risk layer at all**.
+   *
+   * `null` is not "nothing is happening" — that is `fronts: []` beside a live
+   * {@link riskScheduleAt} countdown. It exists for the fixture builder in `src/observe/`, which
+   * carries no `RiskBook`, and it is the only caller that may pass it: fabricating an empty view
+   * out of a missing book is how a projection starts reporting facts nobody computed.
+   */
+  readonly read: { readonly input: RiskViewInput; readonly tierOf: TierRead } | null;
+}
+
+/**
+ * The `risk` key, wire-shaped.
+ *
+ * snake_case here and camelCase in {@link RiskView}, deliberately: the wire is `agent.md`'s
+ * surface and every other block in the payload is snake_case, so a `ticksToLandfall` arriving in
+ * one key of eleven is a second convention an agent has to learn. `agent.md` §11F already
+ * documented the snake spelling for three years' worth of fields that were never serialised;
+ * this is that document being satisfied rather than corrected.
+ */
+export function riskBlock(input: RiskBlockInput): Readonly<Record<string, unknown>> {
+  const schedule = riskScheduleAt(input.tick);
+  if (input.read === null) {
+    return Object.freeze({
+      schedule,
+      fronts: [],
+      offers: [],
+      covered: [],
+      due: [],
+      owed_to_you: [],
+      your_record: { written: 0, honoured: 0, defaulted: 0, unseasoned: true },
+      terms: coverTerms(),
+      rule: RISK_RULE,
+    });
+  }
+
+  const view = riskViewFor(input.read.input);
+  const stakes = stakeInCone(input.read.input, input.read.tierOf);
+  return Object.freeze({
+    schedule,
+    fronts: view.fronts.map((f) => ({
+      front: f.front,
+      state: f.state,
+      eye: f.eye,
+      landfall_tick: f.landfallTick,
+      ticks_to_landfall: f.ticksToLandfall,
+      cone: f.cone.map((c) => ({ system: c.system, odds_bps: c.oddsBps })),
+      // Empty until it has struck. `frontViewFor` owns that gate; copying the condition here
+      // would be a second place for the SEALED rule to be got wrong.
+      swath: f.swath.map((c) => ({ system: c.system, intensity_bps: c.intensityBps })),
+      your_systems_in_cone: f.yourSystemsInCone,
+      at_stake: stakes.get(f.front) ?? { goods: [], worst_case_minor: 0 },
+      cover_open: f.coverOpen,
+      note: f.note,
+    })),
+    offers: view.offers.map(offerWire),
+    covered: view.covered.map(offerWire),
+    due: view.due.map(dueWire),
+    owed_to_you: view.owedToYou.map(dueWire),
+    your_record: {
+      written: view.yourRecord.written,
+      honoured: view.yourRecord.honoured,
+      defaulted: view.yourRecord.defaulted,
+      unseasoned: view.yourRecord.unseasoned,
+    },
+    terms: coverTerms(),
+    rule: RISK_RULE,
+  });
+}
+
+function offerWire(o: CoverOfferView): Readonly<Record<string, unknown>> {
+  return {
+    cover: o.cover,
+    payer: o.payer,
+    system: o.system,
+    good: o.good,
+    limit: o.limit,
+    premium: o.premium,
+    escrow_ratio_bps: o.escrowRatioBps,
+    escrowed: o.escrowed,
+    on_its_word: o.onItsWord,
+    expires_tick: o.expiresTick,
+    attaches_in_ticks: o.attachesInTicks,
+    deductible_bps: o.deductibleBps,
+    payer_record:
+      o.payerRecord === null
+        ? null
+        : {
+            written: o.payerRecord.written,
+            honoured: o.payerRecord.honoured,
+            defaulted: o.payerRecord.defaulted,
+            defaulted_value: o.payerRecord.defaultedValue,
+          },
+    terms_hash: o.termsHash,
+    note: o.note,
+  };
+}
+
+function dueWire(d: ObligationDueView): Readonly<Record<string, unknown>> {
+  return {
+    indemnity: d.indemnity,
+    cover: d.cover,
+    front: d.front,
+    payee: d.payee,
+    covered: d.covered,
+    escrowed_due: d.escrowedDue,
+    elective_due: d.electiveDue,
+    elective_paid: d.electivePaid,
+    outstanding: d.outstanding,
+    due_tick: d.dueTick,
+    ticks_to_decide: d.ticksToDecide,
+    depth: d.depth,
+    recoverable_from: d.recoverableFrom,
+    note: d.note,
+  };
+}
+
 // ── Affordances ─────────────────────────────────────────────────────────────
 
 /** One offerable act, in the shape `api/observe.ts` needs to publish it. */
@@ -401,8 +780,24 @@ export function coverAffordances(input: CoverAffordanceInput): {
   }
 
   // ── sign: take an offer. ──
+  //
+  // ★ **THE PREMIUM IS CHECKED AGAINST `freeCash` HERE, AND A PLAY-TEST IS WHY.**
+  //
+  // A probe read a well-formed offer, copied the `sign` affordance verbatim — `max_direct_loss:
+  // 1250`, `expires_tick`, a real `terms_hash` — sent it, and got `PROP-R1: the premium is 1250 and
+  // your free cash is 0. **Nothing was bound.**` The refusal was correct and the *menu* was the lie:
+  // §12.1 says `affordances[]` is *"everything you can legally do right now"*, and an act the tick
+  // will refuse on arrival is not that. It cost the probe an action to learn a number the payload
+  // already knew.
+  //
+  // `publish_offer` below has had this branch since the module was written; `sign` did not, and the
+  // asymmetry survived because both halves were individually correct. Same ground (`SHORT_FUNDS`),
+  // same sentence shape, and **counted as one row for the ACT** rather than one per offer — the
+  // rule `demand` and `trade` already follow, because the thing withheld is the verb.
   const offers = coverOffersFor(input);
-  for (const offer of offers) {
+  const affordable = offers.filter((o) => o.premium <= input.freeCash);
+  const tooDear = offers.filter((o) => o.premium > input.freeCash);
+  for (const offer of affordable) {
     if (input.frozen) continue;
     offered.push({
       verb: 'sign',
@@ -414,6 +809,19 @@ export function coverAffordances(input: CoverAffordanceInput): {
         `no second COVER over ${offer.good} at ${offer.system}`,
       ],
       expiresTick: offer.expiresTick,
+    });
+  }
+  if (tooDear.length > 0 && !input.frozen) {
+    const cheapest = tooDear.reduce((a, b) => (b.premium < a.premium ? b : a));
+    withheld.push({
+      verb: 'sign',
+      ground: 'SHORT_FUNDS',
+      text:
+        `\`sign {cover}\` is withheld on ${String(tooDear.length)} open COVER offer(s) over goods you ` +
+        `hold: the cheapest premium is ${String(cheapest.premium)} and your free cash is ` +
+        `${String(input.freeCash)}. A premium is paid on the tick it binds, so nothing binds — and ` +
+        'your starter stake is withheld from it (A15). They are still in `risk.offers[]` with their ' +
+        'prices, so you can see what being covered would cost before you can afford it.',
     });
   }
 
