@@ -2477,6 +2477,25 @@
 
 ## 🎯 NEXT ACTION
 
+> ### ⚑ **`agent.md` NEVER MENTIONS THE FORMATION WINDOW — found 2026-07-30, deliberately not fixed yet.**
+>
+> The published rulebook contains **no occurrence of `ABANDONED`, `FORMING` or `window_closes_tick`**.
+> It says *"Nothing binds until both parties countersign the same `terms_hash`"* and stops there: it
+> never says the countersignature has a **deadline**, that the creator is one of the parties who must
+> send one, or that missing it retires the venture. That is a rules surface omitting the rule that
+> cost two play-tests the entire core loop (`RULES_VERSION` 38).
+>
+> **The affordance now carries it** — `create`'s `what_it_forecloses` names the exact tick, and a
+> signed identity played the whole loop on that sentence alone — so the defect is closed where an
+> agent actually reads. The rulebook is the second surface and should say it too.
+>
+> **Why it is left open rather than done now:** `agent.md` IS the contract catalog. Any block added to
+> it moves all eight `CONTRACT_POSITIONS` cells plus the analytic ceiling and the reachable maximum,
+> and those must be **re-measured, never adjusted** — the last time an array was adjusted its first
+> four cells were right to the character and its last four were 251 low. Doing it properly is one
+> edit, one `prompt.test.ts` run, eight readings and a deploy. It is the cheapest real item on this
+> list and it should be the next one taken.
+
 > ### ⚑ **TWO OWNER CALLS LEFT ON THE LEVY, both measured and neither taken (2026-07-27).**
 >
 > 1. **The §10 income/duty mismatch, with a horizon.** Goods income is Σ over **occupied systems**,
