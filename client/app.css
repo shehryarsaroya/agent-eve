@@ -222,6 +222,10 @@ nav#tabs button[aria-current="true"] .fk { color: rgba(0, 6, 10, 0.55); }
   color: var(--cyan-mid); background: var(--panel-2);
   border-bottom: var(--hair) solid var(--rule);
   display: flex; align-items: center; gap: var(--pad); white-space: nowrap;
+  /* the header itself must clip, or nothing inside it is constrained and the
+     subtitle's `text-overflow: ellipsis` never fires — the whole row just
+     overflows the panel and the right slot gets cut instead. */
+  overflow: hidden;
 }
 .panel > h2 .sub {
   color: var(--dim); font-weight: 400; letter-spacing: var(--track);
