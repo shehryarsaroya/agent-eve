@@ -226,9 +226,11 @@ nav#tabs button[aria-current="true"] .fk { color: rgba(0, 6, 10, 0.55); }
 .panel > h2 .sub {
   color: var(--dim); font-weight: 400; letter-spacing: var(--track);
   text-transform: none; font-size: var(--fs-micro);
-  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
-.panel > h2 > :first-child { flex: 0 0 auto; }
+/* the title and the right slot never shrink; only the subtitle does, and it
+   ellipsizes rather than hard-cutting a number mid-digit */
+.panel > h2 > :first-child, .panel > h2 .right { flex: 0 0 auto; }
 .panel > h2 .right { margin-left: auto; color: var(--dim); font-weight: 400; }
 .panel > h2.alarm { color: var(--red-text); }
 .panel .body { flex: 1 1 auto; min-height: 0; overflow: auto; }
