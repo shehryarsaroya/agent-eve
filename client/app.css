@@ -76,7 +76,7 @@
   --fs-micro: 10px;
   --fs-base: 12px;
   --fs-lg: 15px;
-  --fs-xl: 28px;
+  --fs-xl: 30px;
   --fs-2xl: 46px;
   /* aliases kept so a caller reads as its role, not as a number */
   --fs-sm: var(--fs-micro);
@@ -139,7 +139,7 @@ body {
   user-select: none;
 }
 #brand {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; gap: 7px; white-space: nowrap;
   padding: 0 14px 0 10px; color: var(--text);
   letter-spacing: var(--track-wide);
   border-right: var(--hair) solid var(--rule);
@@ -150,7 +150,7 @@ nav#tabs { display: flex; }
    terminates the strip in an empty cell; that cell structure is most of why
    its chrome reads as an application rather than as a web page. */
 nav#tabs button {
-  appearance: none; background: var(--panel); border: 0;
+  appearance: none; background: var(--panel); border: 0; white-space: nowrap;
   border-right: var(--hair) solid var(--rule);
   color: var(--dim); padding: 0 13px; cursor: pointer;
   font: inherit; letter-spacing: var(--track);
@@ -405,10 +405,10 @@ table.t.click tbody tr { cursor: pointer; }
    nothing. The FRONTIER band was originally #010c12, one value off the panel
    fill, which meant the outer band was invisible and the map looked like two
    tiers and a blank. */
-.band-fill-COMMONS { fill: #14424f; }
-.band-fill-MARCHES { fill: #0a2c38; }
-.band-fill-FRONTIER { fill: #041a22; }
-.band-edge { fill: none; stroke: #2a5f6b; stroke-width: 1.4; }
+/* The fills are written inline from `MapView.BAND_FILL`. There is no CSS class
+   for them ON PURPOSE: a second set of literals here is exactly the bug the JS
+   comment says it fixed, and it survived one file over for a whole round. */
+.band-edge { fill: none; stroke-width: 3; }
 /* THE COMMONS is drawn CATEGORICALLY differently, not merely lighter: a
    neutral dotted edge, no bloc colour, and no fence ever crosses it. A8 makes
    hostile action there INVALID rather than punished, and the drawing says so. */
@@ -426,12 +426,17 @@ table.t.click tbody tr { cursor: pointer; }
 
 .lane { stroke: #17414c; stroke-width: 1; fill: none; }
 .lane.strait { stroke: #2a5f6b; }
-.lane.severed { stroke: #6b3540; }
+.lane.severed { stroke: #4a6068; stroke-dasharray: 6 4; }
 .waist { stroke: var(--cyan-deep); stroke-width: 1.4; fill: none; }
 .notch { fill: #06171d; stroke: var(--cyan-deep); stroke-width: 1; }
-.notch-t { fill: var(--cyan-mid); font: 8px var(--mono); text-anchor: middle; pointer-events: none; }
-.door { fill: #180a10; stroke: var(--red); stroke-width: 1.2; }
-.door-t { fill: var(--red-text); font: 8px var(--mono); text-anchor: middle; pointer-events: none; }
+.notch-t { fill: var(--cyan); font: 9px var(--mono); text-anchor: middle; pointer-events: none; }
+/* a severing strait is GEOGRAPHY. It was the single largest red region on
+   the map, and nobody lied. Solid, bright, unmistakable — and not red. */
+.door { fill: #cfdadd; stroke: #00060a; stroke-width: 1; }
+.door-t {
+  fill: #cfdadd; font: 9px var(--mono); text-anchor: middle; pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+}
 
 .node { stroke-width: 1; cursor: pointer; }
 .node-COMMONS { fill: #0a2c34; stroke: #7f9296; }
@@ -446,14 +451,20 @@ table.t.click tbody tr { cursor: pointer; }
   paint-order: stroke; stroke: #00060a; stroke-width: 3.2px; stroke-linejoin: round;
 }
 .node-id {
-  fill: #5d787f; font: 8px var(--mono); pointer-events: none;
+  fill: #7d979e; font: 9px var(--mono); pointer-events: none;
   paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
 }
 .fuel-ring { fill: none; stroke: var(--amber); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.8; }
 
 /* THE VERGE — one continuous solid outline. Never dashed: a dash is a hole,
    and a hole in a fence reads as a claim that is not there. */
-.verge { fill-opacity: 0.1; stroke-width: 1.6; stroke-linejoin: round; fill-rule: nonzero; }
+/* painted last so no label halo can punch a hole in it, and therefore
+   deliberately quiet: at full weight on top of everything the fences read
+   as bright bubbles competing with the nodes they enclose. */
+.verge {
+  fill-opacity: 0.085; stroke-width: 1.5; stroke-opacity: 0.8;
+  stroke-linejoin: round; fill-rule: nonzero;
+}
 .verge-lab {
   font: 600 10px var(--cond); letter-spacing: 0.18em; text-transform: lowercase;
   pointer-events: none;
@@ -461,17 +472,20 @@ table.t.click tbody tr { cursor: pointer; }
 
 .claim-tint { stroke-width: 1.2; fill-opacity: 0.22; }
 .works-mk { fill: none; stroke: var(--cyan-mid); stroke-width: 1; opacity: 0.9; }
-.ruin-mk { fill: #140609; stroke: var(--red); stroke-width: 1.4; }
+.ruin-mk { fill: none; stroke: #8a969a; stroke-width: 2; }
+.ruin-ring { fill: #05090c; stroke: #6f8288; stroke-width: 1.4; stroke-dasharray: 3 3; }
 
-.raid-arc { fill: none; stroke: var(--red); stroke-width: 1.6; }
-.raid-halo { fill: none; stroke: var(--red); stroke-width: 1; opacity: 0.5; animation: pulse 1.6s ease-out infinite; }
+/* a raid is a LOSS, not a betrayal. Amber. */
+.raid-arc { fill: none; stroke: var(--amber); stroke-width: 1.6; }
+.raid-halo { fill: none; stroke: var(--amber); stroke-width: 1; opacity: 0.5; animation: pulse 1.6s ease-out infinite; }
 @keyframes pulse { 0% { r: 12px; opacity: 0.55; } 100% { r: 30px; opacity: 0; } }
 
 .compact-arc { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: 0.55; }
 .compact-arc.snapped { stroke: var(--red); stroke-dasharray: 5 4; opacity: 0.85; }
 .convoy-path { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: 0.4; stroke-dasharray: 4 4; }
 .convoy-dot { fill: var(--cyan); }
-.front-cone { fill: var(--amber); fill-opacity: 0.09; stroke: var(--amber); stroke-opacity: 0.4; stroke-width: 1; }
+/* the FRONT was the biggest object on the map and it was in no legend line */
+.front-cone { fill: var(--amber); fill-opacity: 0.06; stroke: var(--amber); stroke-opacity: 0.32; stroke-width: 1; stroke-dasharray: 3 4; }
 
 /* All three map controls are DOCKED in the side column, never floating over
    the canvas. An overlay legend covered a live FRONTIER system in the first
@@ -528,9 +542,12 @@ label.lyr input { accent-color: var(--cyan); margin: 0; width: 10px; height: 10p
   text-transform: uppercase; color: var(--dim);
 }
 
+/* 48px and filling the bar. At 35px in a 1220px strip with a 240px label the
+   banner read as an alert rather than as a headline; the mock fills 49% of its
+   bar and this is the poster half of an E1/E6 pair. */
 .banner {
-  padding: 10px 16px; display: flex; align-items: baseline; gap: 16px;
-  font: 600 var(--fs-2xl)/1 var(--cond); letter-spacing: 0.02em;
+  padding: 11px 18px 13px; display: flex; align-items: baseline; gap: 20px;
+  font: 700 48px/1 var(--cond); letter-spacing: 0.01em;
   text-transform: uppercase;
 }
 .banner.good { background: var(--cyan); color: var(--void); }
@@ -573,7 +590,7 @@ label.lyr input { accent-color: var(--cyan); margin: 0; width: 10px; height: 10p
 
 .kv2 { display: flex; padding: 2.5px var(--pad); border-bottom: var(--hair) solid var(--rule-dim); }
 .kv2 > span:first-child {
-  flex: 0 0 128px; color: var(--dim); font-family: var(--cond);
+  flex: 0 0 152px; color: var(--dim); font-family: var(--cond);
   letter-spacing: var(--track); text-transform: uppercase; font-size: var(--fs-sm);
 }
 .kv2 > span:last-child { color: var(--text); text-align: right; margin-left: auto; font-variant-numeric: tabular-nums; }
@@ -712,6 +729,7 @@ hr.rule { border: 0; border-top: var(--hair) solid var(--rule-dim); margin: var(
 .callout .bad { color: var(--red-text); }
 
 /* a window-chrome cell at the end of the tab strip, as the mock has */
+nav#tabs { flex: 1 1 auto; }
 #chrome .fillcell { flex: 1 1 auto; border-right: var(--hair) solid var(--rule); background: var(--panel); }
 #chrome .wc {
   display: flex; align-items: center; gap: 13px; padding: 0 12px;
@@ -753,5 +771,19 @@ hr.rule { border: 0; border-top: var(--hair) solid var(--rule-dim); margin: var(
 
 /* The reel fills its panel: four bands sharing the height rather than four
    fixed bands and 230px of nothing underneath them. */
+/* Only THE DEED grows. THE GRANT, THE WORDS and THE SEAL are each one fact,
+   and giving them equal height to the thing that actually happened is how the
+   ceremony ended up 78% one colour. */
 .reel { height: 100%; }
-.reel .band { flex: 1 1 0; min-height: 76px; }
+.reel .band { flex: 0 0 auto; min-height: 0; }
+.reel .band:last-child { flex: 1 1 auto; }
+
+/* A null act of the reel keeps its number and its title and gives its height
+   back. Half a ceremony at equal billing with the other half is not honesty,
+   it is padding that happens to be true. */
+.reel .band.nul { flex: 0 0 auto; min-height: 0; }
+.reel .band.nul .bd { padding: 6px 14px 7px; }
+.reel .band.nul .bt { margin-bottom: 4px; }
+
+label.lyr.off { opacity: 0.4; cursor: default; }
+label.lyr.off:hover { color: var(--dim); background: none; }

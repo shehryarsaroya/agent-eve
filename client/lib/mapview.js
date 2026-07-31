@@ -71,8 +71,8 @@ var MapView = (function () {
    * 1.12:1 contrast step is not a boundary a stranger can find. Lightest at
    * the core: the Commons is settled ground, the Frontier is raw.
    */
-  var BAND_FILL = { COMMONS: '#16505f', MARCHES: '#0a3040', FRONTIER: '#031820' };
-  var BAND_EDGE = { COMMONS: '#a8bcc0', MARCHES: '#3f8496', FRONTIER: '#2a6070' };
+  var BAND_FILL = { COMMONS: '#1a5c6d', MARCHES: '#0c3a4b', FRONTIER: '#02141c' };
+  var BAND_EDGE = { COMMONS: '#b4c6ca', MARCHES: '#4e9db2', FRONTIER: '#31768a' };
 
   /**
    * Lay the 30 systems out. Angular relaxation inside a fixed radial band:
@@ -362,10 +362,37 @@ var MapView = (function () {
     var o = opts || {};
     var W = host.clientWidth || 1200, H = host.clientHeight || 700;
     if (!R || !R.map || !R.map.length) {
-      U.clear(host).appendChild(U.empty('no map yet',
-        'The lane graph lives on the <b>Reckoning</b> frame (<code>latest.json → map[]</code>), which is ' +
-        'published once per Reckoning — 288 ticks. This world has not settled its first one yet, so there ' +
-        'is nothing to draw. The live frame carries motion, not topology.'));
+      // ★ THE REASON IS DRAWN, NOT HIDDEN IN A TOOLTIP. Everywhere else a
+      // one-line strip with the argument on hover is the right trade, because
+      // the panel around it is full of other things. Here the panel IS the
+      // empty thing — 1110x798 of it — and nobody hovers a blank canvas.
+      var W0 = host.clientWidth || 900, H0 = host.clientHeight || 600;
+      var cx0 = W0 / 2, cy0 = H0 / 2, r0 = Math.min(W0, H0) * 0.3;
+      U.clear(host).appendChild(S('svg', {
+        viewBox: '0 0 ' + W0 + ' ' + H0, style: 'width:100%;height:100%;display:block',
+      }, [
+        // the three bands, empty, so the shape of the thing that is coming is
+        // on screen while it is not here yet
+        S('ellipse', { cx: cx0, cy: cy0, rx: r0 * 3.2, ry: r0 * 2.2, fill: 'none', stroke: '#0d2830', 'stroke-width': 2 }),
+        S('ellipse', { cx: cx0, cy: cy0, rx: r0 * 2.1, ry: r0 * 1.45, fill: 'none', stroke: '#0d2830', 'stroke-width': 2 }),
+        S('ellipse', { cx: cx0, cy: cy0, rx: r0 * 0.72, ry: r0 * 0.5, fill: 'none', stroke: '#20363c', 'stroke-width': 2, 'stroke-dasharray': '5 6' }),
+        S('text', {
+          x: cx0, y: cy0 - 14, 'text-anchor': 'middle', fill: '#4e9db2',
+          style: 'font:600 15px "Roboto Condensed",sans-serif;letter-spacing:.24em',
+          text: 'NO MAP UNTIL THE FIRST RECKONING',
+        }),
+        S('text', {
+          x: cx0, y: cy0 + 12, 'text-anchor': 'middle', fill: '#6f8288',
+          style: 'font:12px ui-monospace,monospace',
+          text: 'the lane graph is published at settlement, once per 288 ticks',
+        }),
+        S('text', {
+          x: cx0, y: cy0 + 32, 'text-anchor': 'middle', fill: '#3f5158',
+          style: 'font:11px ui-monospace,monospace',
+          text: 'the live frame carries motion, not topology' +
+            (L ? '  \u00b7  ' + L.ticksUntilReckoning + ' ticks to go' : ''),
+        }),
+      ]));
       return;
     }
     var key = R.stateHash + ':' + W + ':' + H;
@@ -463,7 +490,7 @@ var MapView = (function () {
       var mid = Math.atan2(sy, sx), half = 0;
       a.ths.forEach(function (t) { half = Math.max(half, Math.abs(norm(t - mid))); });
       half = Math.min(half + 0.08, Math.PI * 0.92);
-      var rr = a.tier === 'FRONTIER' ? 1.02 : 0.712;
+      var rr = 0.712;   // the MARCHES/FRONTIER gap: no node can be here, and it is inside the world
       var steps = 30, d = '';
       for (var i = 0; i <= steps; i++) {
         var t = mid - half + (2 * half * i) / steps, q = proj(lay, rr, t);
@@ -521,7 +548,7 @@ var MapView = (function () {
               'L' + (wx + px * hw + ux * th) + ' ' + (wy + py * hw + uy * th) + 'Z',
           }));
           gLanes.appendChild(S('text', {
-            class: 'door-t', x: (wx + px * 17).toFixed(1), y: (wy + py * 17 + 3).toFixed(1),
+            class: 'door-t', x: (wx + px * 18).toFixed(1), y: (wy + py * 18 + 3).toFixed(1),
             text: st.severed > 0 ? 'STRANDS ' + st.severed : 'SEVERS',
           }));
         } else {
@@ -603,9 +630,15 @@ var MapView = (function () {
       });
       (R.ruins || []).forEach(function (r) {
         var p = P[r.system]; if (!p) return;
+        // THE RUIN is a heavy dark blot with a broken ring, not a red cross:
+        // destruction is permanent and it is not a lie, so it does not get the
+        // one colour reserved for a broken word.
+        gClaims.appendChild(S('circle', {
+          class: 'ruin-ring', cx: p.x, cy: p.y, r: nodeR(idx[r.system] || { yieldPerTick: minY }, minY, maxY) + 5,
+        }));
         gClaims.appendChild(S('path', {
           class: 'ruin-mk',
-          d: 'M' + (p.x - 7) + ' ' + (p.y - 7) + 'l14 14M' + (p.x + 7) + ' ' + (p.y - 7) + 'l-14 14',
+          d: 'M' + (p.x - 6) + ' ' + (p.y - 6) + 'l12 12M' + (p.x + 6) + ' ' + (p.y - 6) + 'l-12 12',
         }, S('title', { text: 'RUIN · ' + (r.legend || '') })));
       });
     }
@@ -695,23 +728,40 @@ var MapView = (function () {
         var right = Math.cos(p.th) > 0.24, left = Math.cos(p.th) < -0.24;
         var anchor = right ? 'start' : left ? 'end' : 'middle';
         var dy = Math.abs(Math.cos(p.th)) > 0.24 ? 3 : (Math.sin(p.th) > 0 ? 10 : -4);
+        var halo = BAND_FILL[s.tier];
         gLabels.appendChild(S('text', {
-          class: 'node-lab', x: lx.toFixed(1), y: (ly + dy).toFixed(1), 'text-anchor': anchor, text: s.name,
+          class: 'node-lab', x: lx.toFixed(1), y: (ly + dy).toFixed(1), 'text-anchor': anchor,
+          stroke: halo, text: s.name,
         }));
         gLabels.appendChild(S('text', {
-          class: 'node-id', x: lx.toFixed(1), y: (ly + dy + 9).toFixed(1), 'text-anchor': anchor, text: s.id,
+          class: 'node-id', x: lx.toFixed(1), y: (ly + dy + 9).toFixed(1), 'text-anchor': anchor,
+          stroke: halo, text: s.id,
         }));
       }
     });
 
+    // ★ THE FENCE IS PAINTED LAST, AND THAT IS A CORRECTNESS FIX.
+    //
+    // `gLabels` used to be the final group, and every node label carries a
+    // 3.2px halo. So a label crossing a VERGE stamped a hole straight through
+    // it — Orison's fence vanished for ~25 px behind the "sys-05" plate, and
+    // `marrow`'s was cut twice. The 4.4 px dark backing stroke defended it from
+    // nothing, because the thing eating it was painted afterwards.
+    //
+    // A gap in a fence reads as ground the bloc does not hold. That is a false
+    // claim about a real principal, published every frame, and it is the one
+    // class of bug this file's header says it exists to prevent. Verge over
+    // labels, and the labels halo in the BAND FILL rather than in the void so
+    // they stop being the highest-contrast edge on a map whose subject is a
+    // 1.3:1 tier boundary.
     var root = S('svg', {
       id: 'mapsvg', viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet',
-    }, [gBands, gCon, gLanes, gVerge, gClaims, gMotion, gNodes, gLabels]);
+    }, [gBands, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge]);
 
     // pan + zoom, on the root group so the layout never recomputes
     var view = state.view || (state.view = { k: 1, x: 0, y: 0 });
     var wrap = S('g', { transform: 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')' });
-    [gBands, gCon, gLanes, gVerge, gClaims, gMotion, gNodes, gLabels].forEach(function (g) { wrap.appendChild(g); });
+    [gBands, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge].forEach(function (g) { wrap.appendChild(g); });
     U.clear(root); root.appendChild(wrap);
     root.addEventListener('wheel', function (ev) {
       ev.preventDefault();

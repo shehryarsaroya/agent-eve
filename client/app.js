@@ -125,6 +125,10 @@ var App = (function () {
           'data-t': t[0], on: { click: function () { location.hash = '#/' + t[0]; } },
         }, [el('span', { class: 'fk', text: t[2] }), t[1]]));
       });
+      // the mock terminates its tab strip in one empty bordered cell rather
+      // than in nothing; that cell is most of why its chrome reads as an
+      // application window and not as a web page
+      tabs.appendChild(el('span', { class: 'fillcell' }));
     }
     Array.prototype.forEach.call(tabs.childNodes, function (b) {
       if (b.getAttribute) b.setAttribute('aria-current', b.getAttribute('data-t') === S.screen ? 'true' : 'false');
@@ -157,6 +161,9 @@ var App = (function () {
     }
     c.appendChild(el('div', { class: 'seg' + (stale ? ' stale' : '') }, [
       stale ? el('b', { text: 'STALE' }) : el('i', { class: 'pip' }),
+    ]));
+    c.appendChild(el('div', { class: 'wc' }, [
+      el('span', { text: '\u2500' }), el('span', { text: '\u25a2' }), el('span', { text: '\u2715' }),
     ]));
   }
 

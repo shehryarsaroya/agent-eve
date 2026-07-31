@@ -201,14 +201,21 @@ var Screens = (function () {
     var stack = el('div', { class: 'rows fill', style: 'height:100%' });
 
     stack.appendChild(el('div', { class: 'tiles' }, [
-      tile('TICK', L ? String(L.tick) : '—', { note: L ? 'phase ' + L.phase : 'live frame not read' }),
-      tile('UNTIL THE RECKONING', L ? String(L.ticksUntilReckoning) : '—',
-        { note: L ? U.clock(L.ticksUntilReckoning) + ' at 300s/tick' : null, dim: !L }),
+      // TICK and the countdown are already in the chrome 12px above; a tile
+      // that restates the header is 200px of nothing.
+      tile('LIVE COMPACTS', String((L && L.meters ? L.meters.live : 0) + (L && L.meters ? L.meters.forming : 0)),
+        { note: (L && L.meters ? L.meters.forming : 0) + ' still forming' }),
+      tile('SYSTEMS', String((R.map || []).length || 0),
+        { note: D.laneCount + ' lanes · ' + D.straitCount + ' straits', dim: !(R.map || []).length }),
       tile('ON A PROMISE', U.n((L && L.meters ? L.meters.onAPromise : M.onAPromise)),
         { note: 'riding on nothing but a word' }),
-      tile('KEPT', U.n(M.kept), { note: 'elective halves honoured' }),
-      // The ONE red tile. `broken` is the only meter that counts a broken word.
-      tile('BROKEN', U.n(M.broken), { bad: (M.broken || 0) > 0, note: 'defaults on the record' }),
+      // ★ SCOPE IN THE LABEL. `meters.kept`/`broken` count ELECTIVE HALVES at
+      // settlement; `standings[].defaults` counts DEFAULT EVENTS per principal.
+      // Different subjects, and both were captioned "on the record" — so
+      // OVERVIEW said 20 and STANDINGS said 33 for what read as one number.
+      tile('HALVES KEPT', U.n(M.kept), { note: 'elective halves paid at settlement' }),
+      tile('HALVES BROKEN', U.n(M.broken),
+        { bad: (M.broken || 0) > 0, note: 'elective halves not paid' }),
       // Amber, not red: a shortfall is value at risk, and nobody has lied yet.
       tile('LEVY SHORT', U.n(M.levyShort),
         { warn: (M.levyShort || 0) > 0, note: 'nobody can lower this alone' }),
@@ -248,17 +255,27 @@ var Screens = (function () {
       { k: 'ticks', t: 'ticks', w: '58px', num: true, cell: function (r) { return r.ticks ? String(r.ticks) : '—'; } },
       { k: 'stake', t: 'at stake', w: '86px', num: true, cell: function (r) { return r.stake ? U.n(r.stake) : '—'; } },
       { k: 'party', t: 'party', w: '104px', cell: function (r) { return r.party ? hOf(D, r.party) : el('span', { class: 'dim', text: 'the world' }); } },
+      {
+        // the default order: what is happening, then how much is on it
+        k: 'motion', t: '·', w: '18px', num: true,
+        cell: function () { return ''; },
+        sort: function (r) {
+          var rank = { battle: 9, raid: 8, sap: 7, convoy: 6, venture: 5, front: 4, tribute: 3, claim: 2, works: 1, grant: 0 };
+          return (rank[r.kind] || 0) * 1e9 + Math.min(1e8, r.stake || 0);
+        },
+      },
     ];
     main.appendChild(panel('THE WORLD, RIGHT NOW', {
       sub: rows.length + ' live rows · click a column to sort',
       right: L ? el('span', null, [el('i', { class: 'pip' }), ' tick ' + L.tick]) : null,
     }, rows.length ? el('div', null, [sliceBar, table('ov', cols, rows, {
-      sort: 'stake', dir: -1, rerender: D.rerender,
+      // ★ MOTION FIRST, then stake. Sorting the world by AT STAKE opened
+      // "THE WORLD, RIGHT NOW" on eleven identical UNUSED grants and two paid
+      // claims — no venture, no raid, nothing moving above the fold.
+      sort: 'motion', dir: -1, rerender: D.rerender,
       rowClass: function (r) { return r.alert === 'red' ? 'bad' : r.alert === 'amber' ? 'warn' : ''; },
     })])
-      : el('div', null, [sliceBar, U.skeleton(9, 6), empty('nothing live at this tick',
-        'Ventures, raids, convoys and claims all appear here the moment they exist. If this stays ' +
-        'empty across several ticks the sim is not running.')]),
+      : el('div', null, [sliceBar, U.skeleton(9, 6)]),
     ));
 
     var side = el('div', { class: 'rows', style: 'min-height:0' });
@@ -314,9 +331,8 @@ var Screens = (function () {
     var R = D.R, list = (R.standings || []).slice();
     if (!list.length) {
       var w = el('div', { class: 'grid', style: 'grid-template-columns:214px 1fr;height:100%' });
-      w.appendChild(panel('PRINCIPALS', { sub: 'awaiting the first Reckoning' },
-        el('div', null, [U.skeleton(10, 2), empty('no principal has a record yet',
-          'standings[] is published at settlement, and nothing has settled.')])));
+      w.appendChild(panel('PRINCIPALS', { sub: 'awaiting the first Reckoning' }, U.skeleton(10, 2),
+        { foot: 'standings[] is published at settlement' }));
       var d = el('div', { class: 'rows', style: 'min-height:0' });
       d.appendChild(panel('THE DOSSIER', { sub: 'a principal\u2019s whole public record' },
         el('div', null, [
@@ -326,9 +342,7 @@ var Screens = (function () {
               return tile(t, '—', { dim: true });
             })),
           U.skeleton(9, 4),
-          empty('nothing to show until the first settlement',
-            'Every key on this screen comes off the Reckoning frame.'),
-        ])));
+        ]), { foot: 'every key on this screen comes off the Reckoning frame' }));
       w.appendChild(d);
       U.clear(host).appendChild(w);
       return;
@@ -337,7 +351,7 @@ var Screens = (function () {
     var cur = list.filter(function (r) { return U.handleOf(r.principal) === sel; })[0] || list[0];
 
     var wrap = el('div', { class: 'grid', style: 'grid-template-columns:196px 1fr;height:100%' });
-    var lst = panel('PRINCIPALS', { sub: list.length + ' on the record' },
+    var lst = panel('PRINCIPALS', { sub: list.length + ' \u00b7 by value honoured' },
       el('div', null, list.map(function (r) {
         var on = r.principal === cur.principal;
         return el('div', {
@@ -380,7 +394,10 @@ var Screens = (function () {
         U.crest(pid, 'lg'),
         el('div', null, [
           el('div', {
-            style: 'font:400 44px/1 var(--mono);letter-spacing:-.02em;color:' + (bad ? 'var(--red-text)' : 'var(--text)'),
+            // 68px, not 44. Measured against the mock at the same effective width
+            // the whole hero stack was running 18-28% small, and E6 is the POSTER
+            // half of the pair -- the size IS the design.
+            style: 'font:400 68px/1 var(--mono);letter-spacing:-.03em;color:' + (bad ? 'var(--red-text)' : 'var(--text)'),
             text: r.handle,
           }),
           el('div', { style: 'font-size:10px;color:var(--dim);margin-top:6px' }, r.handle + '@agenttransfer.dev'),
@@ -491,6 +508,29 @@ var Screens = (function () {
         '. The all-time figure is the record; the rest is this Reckoning only.'),
     ])));
     stack.appendChild(g3);
+
+    // AUTHORITY, on the page of the principal it belongs to. A6 is the core
+    // loop, and `quill` appeared as a delegate holding MAX DIRECT LOSS 27,242
+    // on the GRANTS screen and nowhere at all on quill's own page.
+    var held = (D.authority || []).filter(function (a) { return a.delegate === pid; });
+    var issued = (D.authority || []).filter(function (a) { return a.grantor === pid; });
+    var auth = held.concat(issued);
+    stack.appendChild(panel('AUTHORITY', {
+      sub: issued.length + ' handed out - ' + held.length + ' held',
+      foot: 'The worst case was shown before it was signed: a grant serialises as a signed credential.',
+    }, auth.length ? table('dos-a', [
+      { k: 'side', t: 'side', w: '80px', cell: function (a) { return U.tag(a.grantor === pid ? 'ISSUED' : 'HELD', a.grantor === pid ? 'cy' : 'solid'); }, sort: function (a) { return a.grantor === pid ? 1 : 0; } },
+      { k: 'other', t: 'counterparty', w: '108px', cell: function (a) { return hOf(D, a.grantor === pid ? a.delegate : a.grantor); }, sort: function (a) { return U.handleOf(a.grantor === pid ? a.delegate : a.grantor); } },
+      { k: 'grant', t: 'grant', w: '116px', cell: function (a) { return el('span', { class: 'dim', text: a.grant }); } },
+      { k: 'granted', t: 'max direct loss', w: '112px', num: true, cell: function (a) { return U.n(a.granted); } },
+      { k: 'grantedContingent', t: 'max contingent', w: '112px', num: true, cell: function (a) { return U.n(a.grantedContingent); } },
+      { k: 'spent', t: 'drawn', w: '68px', num: true, cell: function (a) { return a.spent ? U.n(a.spent) : el('span', { class: 'dim', text: '0' }); } },
+      { k: 'clearance', t: 'clearance', w: '74px', cell: function (a) { return U.pips(a.clearance); } },
+      { k: 'state', t: 'state', cell: function (a) { return U.tag(a.state, a.state === 'DRAWN' ? 'solid' : a.state === 'REVOKED' ? 'am' : 'cy'); } },
+    ], auth, { sort: 'granted', dir: -1, rerender: D.rerender })
+      : empty('no grant on this frame names them',
+        'authorityLines[] is capped at 12 for broadcast and sorted by size, so a small or an expired ' +
+        'grant does not appear. A6 fires far more often than a nightly frame can show.')));
 
     // the rundown beats about them
     var beats = (R.rundown || []).filter(function (s) {
@@ -780,11 +820,35 @@ var Screens = (function () {
       if (nodes.indexOf(a.delegate) < 0) nodes.push(a.delegate);
     });
     nodes.sort();
-    var N = nodes.length || 1, RX = W * 0.36, RY = H * 0.37;
+    // ★ LAYERED, NOT A RING. On a ring, twelve edges all route through the
+    // centre and you cannot trace one arrow without hovering — on the panel
+    // named after the core loop. Three columns by role — issues only, does
+    // both, holds only — puts every edge left-to-right, keeps ONE node per
+    // principal so a delegation CHAIN still renders as a path you can follow,
+    // and drops the crossings to near zero.
+    var outDeg = {}, inDeg = {};
+    lines.forEach(function (a) {
+      outDeg[a.grantor] = (outDeg[a.grantor] || 0) + 1;
+      inDeg[a.delegate] = (inDeg[a.delegate] || 0) + 1;
+    });
+    var cols = [[], [], []];
+    nodes.forEach(function (p) {
+      cols[!inDeg[p] ? 0 : (outDeg[p] ? 1 : 2)].push(p);
+    });
+    // biggest exposure at the top of each column, so the eye starts on the risk
+    var expo = {};
+    lines.forEach(function (a) {
+      expo[a.grantor] = (expo[a.grantor] || 0) + a.granted + a.grantedContingent;
+      expo[a.delegate] = (expo[a.delegate] || 0) + a.granted + a.grantedContingent;
+    });
+    cols.forEach(function (c) { c.sort(function (a, b) { return (expo[b] || 0) - (expo[a] || 0); }); });
+    var used = cols.filter(function (c) { return c.length; });
     var at = {};
-    nodes.forEach(function (p, i) {
-      var th = -Math.PI / 2 + (2 * Math.PI * i) / N;
-      at[p] = { x: cx + RX * Math.cos(th), y: cy + RY * Math.sin(th), th: th };
+    used.forEach(function (c, ci) {
+      var x = used.length === 1 ? cx : 96 + ((W - 192) * ci) / (used.length - 1);
+      c.forEach(function (p, i) {
+        at[p] = { x: x, y: 30 + (H - 62) * (c.length > 1 ? i / (c.length - 1) : 0.5), col: ci, last: ci === used.length - 1 };
+      });
     });
     var maxL = lines.reduce(function (m, a) { return Math.max(m, a.granted + a.grantedContingent); }, 1);
     var kids = [S('defs', null, [
@@ -805,9 +869,9 @@ var Screens = (function () {
       // stop short of the target node so the arrowhead lands on its edge
       var ex = q.x - (dx / len) * 9, ey = q.y - (dy / len) * 9;
       var sx = p.x + (dx / len) * 6, sy = p.y + (dy / len) * 6;
-      // bow toward the centre, so opposite edges do not overlap
+      // a shallow S rather than a chord through the middle
       var mx = (sx + ex) / 2, my = (sy + ey) / 2;
-      var bx = mx + (cx - mx) * 0.34, by = my + (cy - my) * 0.34;
+      var bx = mx, by = my + (p.col === q.col ? (p.y < q.y ? 26 : -26) : 0);
       var w = 0.7 + 3.1 * ((a.granted + a.grantedContingent) / maxL);
       var drawn = a.state === 'DRAWN' || a.spent > 0 || a.spentContingent > 0;
       var revoked = a.state === 'REVOKED';
@@ -836,7 +900,8 @@ var Screens = (function () {
       }
     });
     nodes.forEach(function (p) {
-      var n = at[p], right = Math.cos(n.th) > -0.15;
+      var n = at[p]; if (!n) return;
+      var right = !n.last;
       var out = lines.filter(function (a) { return a.grantor === p; }).length;
       var inn = lines.filter(function (a) { return a.delegate === p; }).length;
       kids.push(S('circle', { cx: n.x, cy: n.y, r: 5, fill: '#00060a', stroke: '#19d7f2', 'stroke-width': 1.3 }));
@@ -846,9 +911,18 @@ var Screens = (function () {
         text: U.handleOf(p),
       }, S('title', { text: U.handleOf(p) + ' · issues ' + out + ' · holds ' + inn })));
     });
+    ['ISSUES ONLY', 'ISSUES AND HOLDS', 'HOLDS ONLY'].forEach(function (t, i) {
+      if (!cols[i].length) return;
+      var any = at[cols[i][0]]; if (!any) return;
+      kids.push(S('text', {
+        x: any.x, y: 14, 'text-anchor': i === 0 ? 'start' : i === 2 ? 'end' : 'middle',
+        fill: '#3f5158', style: 'font:10px sans-serif;letter-spacing:.16em', text: t,
+      }));
+    });
     kids.push(S('text', {
-      x: cx, y: 14, 'text-anchor': 'middle', fill: '#3f5158',
-      style: 'font:10px sans-serif;letter-spacing:.16em', text: 'AN ARROW POINTS AT WHO MAY ACT',
+      x: cx, y: H - 6, 'text-anchor': 'middle', fill: '#2c4750',
+      style: 'font:10px sans-serif;letter-spacing:.16em',
+      text: 'AN ARROW POINTS AT WHO MAY ACT \u00b7 WEIGHT IS THE WORST CASE',
     }));
     return S('svg', { viewBox: '0 0 ' + W + ' ' + H, style: 'width:100%;height:100%;display:block' }, kids);
   }
@@ -868,9 +942,8 @@ var Screens = (function () {
       tile('PRINTS', U.n(ml.reduce(function (a, m) { return a + (m.prints || 0); }, 0)), { note: 'trades on the record' }),
     ]));
 
-    var g2 = el('div', { class: 'grid g-2', style: 'flex:1 1 auto;min-height:0' });
-    var left = el('div', { class: 'rows', style: 'min-height:0' });
-    left.appendChild(panel('★ THE PRINT', {
+    var g2 = el('div', { class: 'grid g-2', style: 'flex:0 0 244px' });
+    g2.appendChild(panel('★ THE PRINT', {
       sub: 'a price on a place, and the gap to everywhere else',
       foot: 'PREMIUM is the gap between this venue and every venue — the number the signature exists for',
     }, ml.length ? table('mk', [
@@ -894,7 +967,7 @@ var Screens = (function () {
       : empty('nothing has printed',
         'marketLines[] is empty. A print appears when two principals trade at a venue; the measured ' +
         'reading in a heuristic world is 7 rows across 9 frames, alloy only, with premiumBps zero on all seven.'),
-    { style: 'flex:0 0 auto;max-height:230px' }));
+    { style: 'flex:1 1 auto;min-height:0' }));
 
     // ★ THE FOUR GOODS. §10 specifies four and the chain is ore → refine →
     // ration/alloy/fuel. A good with no print says "no print", because that is
@@ -909,7 +982,7 @@ var Screens = (function () {
       e.last = m.lastPrice; e.premium = Math.max(e.premium, Math.abs(m.premiumBps || 0));
     });
     var maxVol = Math.max(1, GOODS.reduce(function (a, g) { return Math.max(a, (byGood[g] || {}).volume || 0); }, 0));
-    left.appendChild(panel('THE GOODS', {
+    g2.appendChild(panel('THE GOODS', {
       sub: 'ore is dug · refine makes it payable · a debt settles in the rest',
       foot: 'A good with no print has never been traded on a venue in this world. That is a fact about the world, not a gap in the frame.',
     }, el('div', { style: 'padding:4px 0' }, GOODS.map(function (gd) {
@@ -929,10 +1002,12 @@ var Screens = (function () {
           text: e ? 'last ' + U.n(e.last) : '—',
         }),
       ]);
-    }))));
-    g2.appendChild(left);
+    })), { style: 'min-height:0' }));
+    stack.appendChild(g2);
 
-    g2.appendChild(panel('WORKS · what the ground yields', {
+    // WORKS is 16 rows and the only full table on this screen. It was boxed
+    // into a column beside a panel with 295px of blank; now it spans.
+    stack.appendChild(panel('WORKS · what the ground yields', {
       sub: wl.length + ' rows · ★ a WORKS marks a system',
     }, wl.length ? table('wk', [
       { k: 'system', t: 'at', w: '116px', cell: function (w) { return U.sysLink(w.system, w.system + ' ' + sysName(D, w.system)); } },
@@ -943,8 +1018,7 @@ var Screens = (function () {
       { k: 'extracted', t: 'extracted', w: '82px', num: true, cell: function (w) { return U.n(w.extracted); } },
       { k: 'legend', t: 'state', w: '92px', cell: function (w) { return U.tag(w.legend, 'cy'); } },
     ], wl, { sort: 'yieldPerTick', dir: -1, rerender: D.rerender })
-      : empty('nobody is extracting', 'No <code>worksLines[]</code> row on this frame.')));
-    stack.appendChild(g2);
+      : U.skeleton(8, 6), { style: 'flex:1 1 auto;min-height:0' }));
 
     // the hull ladder — the generated plate, used as itself
     stack.appendChild(panel('THE HULL LADDER', {
@@ -955,7 +1029,7 @@ var Screens = (function () {
         src: 'assets/hulls.webp', alt: 'the five hulls',
         style: 'max-width:100%;max-height:100%;object-fit:contain;display:block',
       })),
-    { style: 'flex:0 0 214px' }));
+    { style: 'flex:0 0 158px' }));
     U.clear(host).appendChild(stack);
   }
 
@@ -1016,20 +1090,47 @@ var Screens = (function () {
       ]));
     });
     legend.appendChild(el('hr'));
+    // Every mark the canvas can draw has a line here. The previous key covered
+    // ten of about twenty, and the one it missed was the LARGEST object on the
+    // map — an amber FRONT disc up to 78px across, 3x the biggest node.
     [['◯', 'var(--cyan)', 'node size = THE LODE'],
-     ['≻≺', 'var(--cyan-deep)', 'waist = a strait, notched with its detour'],
-     ['▮', 'var(--red-text)', 'door = a SEVERING strait'],
+     ['◍', 'var(--cyan-deep)', 'brighter node = rich ground'],
+     ['≻≺', 'var(--cyan)', 'waist = a STRAIT, notched with its detour'],
+     ['▮', '#cfdadd', 'solid door = a SEVERING strait'],
      ['◠', 'var(--cyan)', 'one continuous outline = THE VERGE'],
      ['◌', 'var(--amber)', 'dashed ring = the ground yields fuel'],
-     ['✕', 'var(--red-text)', 'THE RUIN — permanent'],
-     ['△', 'var(--cyan-mid)', 'a WORKS marks the system']].forEach(function (r) {
+     ['△', 'var(--cyan-mid)', 'a WORKS marks the system'],
+     ['◦', 'var(--cyan)', 'tinted node = a CLAIM, in its holder\u2019s colour'],
+     ['◦', 'var(--amber)', 'amber claim = in ARREARS'],
+     ['◦', 'var(--red-text)', 'red claim = the next miss LAPSES it'],
+     ['◜', 'var(--amber)', 'faint dashed disc = a FRONT, before landfall'],
+     ['◜', 'var(--amber)', 'ring + countdown = a RAID demanding'],
+     ['⌇', 'var(--cyan)', 'thin arc = a COMPACT between two holdings'],
+     ['⌇', 'var(--red-text)', 'broken arc = the compact SNAPPED'],
+     ['✕', '#8a969a', 'THE RUIN — permanent'],
+     ['⌒', '#1c3b44', 'outer arc + name = a CONSTELLATION']].forEach(function (r) {
       legend.appendChild(el('div', { class: 'row' }, [
         el('b', { style: 'color:' + r[1] + ';display:inline-block;width:16px', text: r[0] }), r[2],
       ]));
     });
     legend.appendChild(el('hr'));
     legend.appendChild(el('div', { class: 'row', style: 'color:var(--dimmer);white-space:normal;line-height:1.6' },
-      'A handle on a VERGE is drawn red when that principal has a default on the record.'));
+      'Red on this map means one thing: a promise was broken. A severing strait, a raid and a ruin are ' +
+      'losses, not lies, and they are not drawn in it.'));
+    // the blocs actually on screen, in their own colours — colour was the first
+    // thing the eye read and the key never mentioned it
+    var bl = MapView.blocs();
+    if (bl.length) {
+      legend.appendChild(el('hr'));
+      legend.appendChild(el('div', { class: 'row', style: 'color:var(--dim)', text: 'THE VERGES ON SCREEN' }));
+      bl.slice().sort(function (a, b) { return b.systems - a.systems; }).forEach(function (b) {
+        legend.appendChild(el('div', { class: 'row' }, [
+          el('i', { class: 'sw', style: 'background:' + b.colour }),
+          el('span', { style: 'color:' + (b.defaults ? 'var(--red-text)' : 'var(--text-2)'), text: U.handleOf(b.principal) }),
+          el('span', { style: 'color:var(--dimmer)', text: ' · ' + b.systems + (b.defaults ? ' · ▲' + b.defaults : '') }),
+        ]));
+      });
+    }
 
     var inspect = el('div', { class: 'inspect' });
 
@@ -1107,8 +1208,11 @@ var Screens = (function () {
         onRow: function (s) { MapView.select(s.id); draw(); },
       }) : empty('no topology on the frame',
         'The lane graph is on the Reckoning frame only. Nothing to lay out until the first settlement.')));
-    side.appendChild(panel('INSPECT', null, inspect, { style: 'flex:0 0 auto;max-height:290px' }));
-    side.appendChild(panel('LEGEND', null, legend, { style: 'flex:0 0 auto' }));
+    side.appendChild(panel('INSPECT', null, inspect, { style: 'flex:0 0 auto;max-height:260px' }));
+    // the legend is 16 keyed marks plus the blocs on screen; it scrolls rather
+    // than squeezing SYSTEMS down to a single row, which is what it did
+    side.appendChild(panel('LEGEND', { sub: 'every mark the canvas draws' }, legend,
+      { style: 'flex:0 1 300px;min-height:120px' }));
     wrap.appendChild(side);
     U.clear(host).appendChild(wrap);
     if (sel) MapView.select(sel);
@@ -1136,13 +1240,11 @@ var Screens = (function () {
            'counterparties', 'last default', 'holding'].map(function (t) {
             return el('th', { class: /honoured|default|counter/.test(t) ? 'num' : null, text: t });
           })))),
-        U.skeleton(12, 6),
-        empty('no principal has a public record yet',
-          'standings[] is published at settlement. This world has not settled a Reckoning.'),
-      ])));
+        U.skeleton(16, 6),
+      ]), { foot: 'standings[] is published at settlement \u00b7 this world has not settled a Reckoning' }));
       var sk = el('div', { class: 'rows', style: 'min-height:0' });
       sk.appendChild(panel('THE HALL OF FAME', { sub: 'over the world\u2019s whole life' },
-        el('div', null, [U.skeleton(4, 3), empty('no titles yet', 'Nothing has been ranked.')])));
+        U.skeleton(4, 3), { foot: 'four titles, awarded over the world\u2019s whole life' }));
       sk.appendChild(panel('THE SHAPE OF IT', { sub: 'this frame' }, el('div', null, [
         U.kv('PRINCIPALS', U.nul()), U.kv('NEVER BROKEN', U.nul()),
         U.kv('WITH A DEFAULT', U.nul()), U.kv('ELECTIVE HALVES KEPT', U.nul()),
@@ -1150,6 +1252,14 @@ var Screens = (function () {
       ])));
       g.appendChild(sk);
       stack.appendChild(g);
+      var sb = el('div', { class: 'grid g-3', style: 'flex:0 0 176px' });
+      [['RECENT ACTIVITY', 'this Reckoning\u2019s beats'],
+       ['THE SEAL', 'a sealed intention reveals one Reckoning later'],
+       ['HOLDING SNAPSHOT', 'who works which ground']].forEach(function (t) {
+        sb.appendChild(panel(t[0], { sub: t[1] }, U.skeleton(5, 3),
+          { foot: 'nothing until the first settlement' }));
+      });
+      stack.appendChild(sb);
       U.clear(host).appendChild(stack);
       return;
     }
@@ -1250,12 +1360,22 @@ var Screens = (function () {
     var kept = rows.reduce(function (a, r) { return a + r.electiveHonoured; }, 0);
     var broke = rows.reduce(function (a, r) { return a + r.defaults; }, 0);
     var clean = rows.filter(function (r) { return !r.defaults; }).length;
+    // A three-step row wash needs a three-step key. The mock ships one; the
+    // build introduced the grading and shipped no key for it, so the middle
+    // step was an unexplained tint.
+    side.appendChild(panel('THE KEY', { sub: 'what a row tint means' }, el('div', { class: 'legend' }, [
+      el('div', { class: 'row' }, [el('i', { class: 'sw', style: 'background:#0a1c22;border:1px solid var(--rule)' }), 'no default \u00b7 a clean record']),
+      el('div', { class: 'row' }, [el('i', { class: 'sw', style: 'background:rgba(216,156,66,.16);border:1px solid rgba(216,156,66,.45)' }), '1\u20132 defaults']),
+      el('div', { class: 'row' }, [el('i', { class: 'sw', style: 'background:rgba(202,1,15,.18);border:1px solid rgba(202,1,15,.55)' }), '3 or more defaults']),
+      el('div', { class: 'row', style: 'color:var(--dimmer);white-space:normal;line-height:1.6;padding-top:4px' },
+        'A DEFAULT is an elective half a principal could have paid and did not. The escrowed half auto-executes and cannot be broken.'),
+    ]), { style: 'flex:0 0 auto' }));
     side.appendChild(panel('THE SHAPE OF IT', { sub: 'this frame' }, el('div', null, [
       U.kv('PRINCIPALS', String(rows.length)),
       U.kv('NEVER BROKEN', String(clean)),
       U.kv('WITH A DEFAULT', String(rows.length - clean), rows.length - clean > 0),
-      U.kv('ELECTIVE HALVES KEPT', U.n(kept)),
-      U.kv('DEFAULTS ON THE RECORD', U.n(broke), broke > 0),
+      U.kv('ELECTIVE PROMISES KEPT', U.n(kept)),
+      U.kv('DEFAULTS, ALL TIME', U.n(broke), broke > 0),
       el('div', { class: 'note-line' },
         'Gate 3 measured 12% of settled elective promises broken, unprompted. Neither zero — which would have ' +
         'made trust worthless — nor universal, which would make the elective half a fee.'),
@@ -1306,7 +1426,18 @@ var Screens = (function () {
         { k: 'tier', t: 'tier', w: '76px', cell: function (x) { return el('span', { class: 'dim', text: (D.sysIndex[x.system] || {}).tier || '—' }); }, sort: function (x) { return (D.sysIndex[x.system] || {}).tier || ''; } },
         { k: 'works', t: 'works', w: '54px', num: true },
         { k: 'yield', t: 'ore/tick', w: '64px', num: true },
-        { k: 'holders', t: 'held by', cell: function (x) { return el('span', null, x.holders.map(function (h2, i) { return el('span', null, [i ? ' · ' : '', hOf(D, h2)]); })); }, sort: function (x) { return x.holders.length; } },
+        {
+          // one holder plus a +N pill: five of eight rows were cut mid-glyph at
+          // the panel border with no ellipsis
+          k: 'holders', t: 'held by',
+          cell: function (x) {
+            return el('span', { title: x.holders.map(U.handleOf).join(' \u00b7 ') }, [
+              hOf(D, x.holders[0]),
+              x.holders.length > 1 ? el('span', { class: 'pill', style: 'margin-left:6px', text: '+' + (x.holders.length - 1) }) : null,
+            ]);
+          },
+          sort: function (x) { return x.holders.length; },
+        },
       ], hl, { sort: 'yield', dir: -1, rerender: D.rerender })
         : empty('nobody is working the ground', 'No WORKS row on this frame.')));
     stack.appendChild(bottom);
@@ -1325,15 +1456,17 @@ var Screens = (function () {
       var L0 = D.L;
       var waiting = el('div', { class: 'rows fill', style: 'height:100%' });
       waiting.appendChild(el('div', { class: 'hero' }, [
-        el('div', null, [el('div', { class: 'big', style: 'color:var(--dimmer)', text: '—' }), el('div', { class: 'lab', text: 'LEVY SHORT' })]),
+        el('div', null, [el('div', { class: 'big', style: 'color:var(--dimmer)', text: '·' }), el('div', { class: 'lab', text: 'LEVY SHORT' })]),
         el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
         el('div', null, [
           el('div', { class: 'big', text: L0 ? U.n(L0.meters && L0.meters.onAPromise) : '—' }),
           el('div', { class: 'lab', text: 'ON A PROMISE' }),
         ]),
         el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
-        el('div', null, [el('div', { class: 'big', style: 'color:var(--dimmer)', text: '— – —' }), el('div', { class: 'lab', text: 'KEPT — BROKEN' })]),
-        el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
+        el('div', null, [
+          el('div', { class: 'big', style: 'color:var(--dimmer)', text: '· / ·' }),
+          el('div', { class: 'lab', text: 'HALVES KEPT / BROKEN' }),
+        ]),
         el('div', { style: 'margin-left:auto;text-align:right' }, [
           el('div', { style: 'font:600 13px var(--cond);letter-spacing:.16em;color:var(--cyan)' },
             L0 ? 'RECKONING ' + L0.reckoningIndex + ' SETTLES IN ' + L0.ticksUntilReckoning + ' TICKS' : 'AWAITING THE FIRST RECKONING'),
@@ -1343,21 +1476,25 @@ var Screens = (function () {
       ]));
       var wg = el('div', { class: 'grid', style: 'grid-template-columns:330px 320px 1fr;flex:1 1 auto;min-height:0' });
       wg.appendChild(panel('THE RUNDOWN', { sub: 'the night\u2019s beats, largest say-do delta last' },
-        el('div', null, [U.skeleton(10, 3), empty('the night has not been read',
-          'The rundown is written at settlement. Nothing has settled.')])));
+        U.skeleton(10, 3), { foot: 'the night is written at settlement \u00b7 nothing has settled' }));
       var wl = el('div', { class: 'rows', style: 'min-height:0' });
-      wl.appendChild(panel('THE LEVY', { sub: 'tribute lines' },
-        el('div', null, [U.skeleton(7, 3), empty('no tribute is due yet', 'The Levy falls at settlement.')])));
-      wl.appendChild(panel('THE HALL OF FAME', { sub: '4 titles' },
-        el('div', null, [U.skeleton(4, 2), empty('nothing ranked yet', 'Titles are awarded over the world\u2019s life.')])));
+      wl.appendChild(panel('THE LEVY', { sub: 'tribute lines' }, U.skeleton(7, 3),
+        { foot: 'the Levy falls at settlement' }));
+      wl.appendChild(panel('THE HALL OF FAME', { sub: '4 titles' }, U.skeleton(4, 2),
+        { foot: 'titles are awarded over the world\u2019s whole life' }));
       wg.appendChild(wl);
       wg.appendChild(panel('★ THE RECEIPT REEL', { sub: 'the grant · the words · the seal · the deed' },
-        el('div', { class: 'reel' }, ['1', '2', '3', '4'].map(function (no, i) {
-          return el('div', { class: 'band' }, [
-            el('div', { class: 'no', text: no }),
+        el('div', { class: 'reel' }, [
+          ['THE GRANT', 'the authority the deed was done under'],
+          ['THE WORDS', 'what its author said while doing it'],
+          ['THE SEAL', 'the intention it declared beforehand'],
+          ['THE DEED', 'what it actually did, and what that cost'],
+        ].map(function (t, i) {
+          return el('div', { class: 'band nul' }, [
+            el('div', { class: 'no', text: String(i + 1) }),
             el('div', { class: 'bd' }, [
-              el('div', { class: 'bt', text: ['THE GRANT', 'THE WORDS', 'THE SEAL', 'THE DEED'][i] }),
-              U.skeleton(2, 3),
+              el('div', { class: 'bt' }, [t[0], el('span', { class: 'q', text: '  ' + t[1] })]),
+              empty('nothing until the first settlement'),
             ]),
           ]);
         }))));
@@ -1386,7 +1523,7 @@ var Screens = (function () {
           el('span', { style: 'color:var(--dimmer)', text: ' – ' }),
           el('span', { style: 'color:' + (M.broken ? 'var(--red-text)' : 'var(--cyan)'), text: String(M.broken) }),
         ]),
-        el('div', { class: 'lab', text: 'KEPT — BROKEN' }),
+        el('div', { class: 'lab', text: 'HALVES KEPT / BROKEN' }),
       ]),
       el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
       el('div', null, [el('div', { class: 'big', text: U.n(M.unrefined) }), el('div', { class: 'lab', text: 'UNREFINED' })]),
@@ -1520,8 +1657,8 @@ var Screens = (function () {
         el('div', { style: 'font-size:10px;color:var(--dimmer);margin-top:7px', text: 'the worst case, shown before it was signed' }),
       ])
       : miss('no grant bound this deed',
-        'The frame carries <code>rundown[].grant</code>, and it is <code>null</code> here. Either no delegated ' +
-        'authority was used, or the venture was not bound to a grant.')));
+        'The frame carries rundown[].grant and it is null here. Either no delegated authority was used, ' +
+        'or the venture was not bound to a grant.'), null, !s.grant));
 
     // 2 — THE WORDS
     reel.appendChild(band('2', 'THE WORDS', (s.receiptReel || []).length
@@ -1532,10 +1669,10 @@ var Screens = (function () {
         ]);
       }))
       : miss('nobody spoke',
-        '<code>receiptReel[]</code> is <code>null</code>. The reel is assembled from <b>PARTIES</b>-tier ' +
-        'negotiation, declassified at settlement — and no cast in this repo has ever produced one. ' +
-        'The path is real and tested; the words are simply not there, and inventing one would be a libel.'),
-      'PARTIES · DECLASSIFIED AT SETTLEMENT'));
+        'receiptReel[] is null. The reel is assembled from PARTIES-tier negotiation, declassified at ' +
+        'settlement, and no cast in this repo has ever produced one. The path is real and tested; the ' +
+        'words are simply not there, and inventing one would be a libel.'),
+      'PARTIES · DECLASSIFIED AT SETTLEMENT', !(s.receiptReel || []).length));
 
     // 3 — THE SEAL
     var v = s.sealVerdict;
@@ -1547,7 +1684,7 @@ var Screens = (function () {
       ])
       : miss('no seal on this beat',
         'A sealed intention reveals one Reckoning later. This beat carries no verdict, which means no ' +
-        'intention was sealed against it.')));
+        'intention was sealed against it.'), null, !v));
 
     // 4 — THE DEED
     reel.appendChild(band('4', 'THE DEED', el('div', { style: 'display:flex;gap:18px;align-items:center' }, [
@@ -1570,8 +1707,17 @@ var Screens = (function () {
     ])));
     return reel;
 
-    function band(no, title, body, q) {
-      return el('div', { class: 'band' }, [
+    /**
+     * `band(no, title, body, q, null)` — a null act collapses.
+     *
+     * THE GRANT and THE WORDS are `null` on every segment of every world this
+     * repo has produced, and at equal billing they took 350 of the reel's
+     * 780px: half the ceremony was an apology, at the same size as the deed.
+     * The honesty is not negotiable — but a one-line strip is as honest as a
+     * paragraph and it gives the space back to the thing that actually happened.
+     */
+    function band(no, title, body, q, isNull) {
+      return el('div', { class: 'band' + (isNull ? ' nul' : '') }, [
         el('div', { class: 'no', text: no }),
         el('div', { class: 'bd' }, [
           el('div', { class: 'bt' }, [title, q ? el('span', { class: 'q', text: '  ' + q }) : null]),

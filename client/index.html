@@ -35,7 +35,20 @@
   art and the CSS are one product rather than two.
 -->
 
-<link rel="stylesheet" href="app.css">
+<!--
+  ★ ?v=N ON EVERY ASSET, AND BUMP IT ON EVERY DEPLOY.
+
+  nginx serves index.html at `max-age=2` and everything else at `max-age=14400`,
+  so a client deploy that changes only the CSS and the JS reaches the server and
+  never reaches a viewer: their browser holds the old copies for four hours
+  against an index.html that did not change and therefore never re-requested
+  them. Verified live — the correct `screens.js` was on the wire and the page
+  was still drawing the previous build.
+
+  There is no build step to hash filenames with, so the version is a literal.
+  Bump it in the same commit as any change under app.css / app.js / lib/.
+-->
+<link rel="stylesheet" href="app.css?v=3">
 </head>
 <body>
 
@@ -64,9 +77,9 @@
 
 <div id="boot">reading the record…</div>
 
-<script src="lib/ui.js"></script>
-<script src="lib/mapview.js"></script>
-<script src="lib/screens.js"></script>
-<script src="app.js"></script>
+<script src="lib/ui.js?v=3"></script>
+<script src="lib/mapview.js?v=3"></script>
+<script src="lib/screens.js?v=3"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
