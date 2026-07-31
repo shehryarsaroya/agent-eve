@@ -226,7 +226,9 @@ nav#tabs button[aria-current="true"] .fk { color: rgba(0, 6, 10, 0.55); }
 .panel > h2 .sub {
   color: var(--dim); font-weight: 400; letter-spacing: var(--track);
   text-transform: none; font-size: var(--fs-micro);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
+.panel > h2 > :first-child { flex: 0 0 auto; }
 .panel > h2 .right { margin-left: auto; color: var(--dim); font-weight: 400; }
 .panel > h2.alarm { color: var(--red-text); }
 .panel .body { flex: 1 1 auto; min-height: 0; overflow: auto; }
@@ -301,7 +303,11 @@ table.t.click tbody tr { cursor: pointer; }
 
 /* ══════════════════════════════════════════════════════════ stat tiles ══ */
 
-.tiles { display: flex; gap: var(--gap); }
+/* `flex: 0 0 auto` is load-bearing. Round 3's `.rows > * { min-height: 0 }`
+   removed the floor under this strip, and on the one screen that
+   over-constrains — OVERVIEW in a mature world — the tile box collapsed
+   from 76px to 36px and cut every headline number in half. */
+.tiles { display: flex; gap: var(--gap); flex: 0 0 auto; }
 .tile {
   flex: 1 1 0; min-width: 0; background: var(--panel);
   border: var(--hair) solid var(--rule); padding: 7px var(--pad) 8px;

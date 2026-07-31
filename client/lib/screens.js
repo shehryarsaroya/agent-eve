@@ -97,7 +97,18 @@ var Screens = (function () {
     phases.forEach(function (p, i2) {
       var on = L && L.phase === p[0];
       var y0 = yOf(p[2]), y1 = yOf(p[1]);
-      if (on) kids.push(S('rect', { x: X, y: y0, width: BAR, height: Math.max(1.5, y1 - y0), fill: 'rgba(25,215,242,.16)' }));
+      // ★ THE PHASE IS AN OUTLINE, THE ELAPSED PART IS THE FILL, AND THEY MAY
+      // NOT BOTH BE A WASH. EARLY spans 262 of 288 ticks, so painting the
+      // current phase as `rgba(25,215,242,.16)` filled 91% of the column at
+      // tick 7 while the elapsed marker at `.20` was 5px tall — the widget
+      // answered "how much of the day is left" backwards, and did it in
+      // exactly the same hue in both directions.
+      if (on) {
+        kids.push(S('rect', {
+          x: X - 2, y: y0, width: BAR + 4, height: Math.max(2, y1 - y0),
+          fill: 'none', stroke: '#19d7f2', 'stroke-width': 1, 'stroke-dasharray': '3 3',
+        }));
+      }
       kids.push(S('line', { x1: X, y1: y0, x2: X + BAR, y2: y0, stroke: '#2a5f6b' }));
       kids.push(S('path', {
         d: 'M' + (X + BAR) + ' ' + y0.toFixed(1) + 'L' + (X + BAR + 6) + ' ' + place[i2].toFixed(1) +
@@ -119,7 +130,7 @@ var Screens = (function () {
     });
     if (L) {
       var done = TOTAL - (L.ticksUntilReckoning || 0), y = yOf(done);
-      kids.push(S('rect', { x: X, y: y, width: BAR, height: Math.max(0, H - TOP - y), fill: 'rgba(25,215,242,.20)' }));
+      kids.push(S('rect', { x: X, y: y, width: BAR, height: Math.max(0, H - TOP - y), fill: 'rgba(25,215,242,.32)' }));
       kids.push(S('line', { x1: X - 5, y1: y, x2: X + BAR + 5, y2: y, stroke: '#19d7f2', 'stroke-width': 2 }));
       kids.push(S('text', {
         x: X + BAR / 2, y: Math.max(TOP + 10, y - 6), 'text-anchor': 'middle', fill: '#19d7f2',
@@ -219,9 +230,9 @@ var Screens = (function () {
       // settlement; `standings[].defaults` counts DEFAULT EVENTS per principal.
       // Different subjects, and both were captioned "on the record" — so
       // OVERVIEW said 20 and STANDINGS said 33 for what read as one number.
-      tile('HALVES KEPT', U.n(M.kept), { note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · elective halves paid' : 'awaiting the first settlement') }),
+      tile('HALVES KEPT', U.n(M.kept), { note: (R.reckoningIndex !== undefined ? 'all time · elective halves paid' : 'awaiting the first settlement') }),
       tile('HALVES BROKEN', U.n(M.broken),
-        { bad: (M.broken || 0) > 0, note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · not paid' : 'awaiting the first settlement') }),
+        { bad: (M.broken || 0) > 0, note: (R.reckoningIndex !== undefined ? 'all time · elective halves not paid' : 'awaiting the first settlement') }),
       // Amber, not red: a shortfall is value at risk, and nobody has lied yet.
       tile('LEVY SHORT', U.n(M.levyShort),
         { warn: (M.levyShort || 0) > 0, note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · nobody lowers this alone' : 'awaiting the first settlement') }),
@@ -461,9 +472,19 @@ var Screens = (function () {
         : empty('holds nothing on this frame',
           'A principal with no WORKS, CLAIM or sway row this Reckoning holds no ground the frame reports.')));
 
-    // ventures they are party to
-    var mine = (D.links || []).filter(function (c) { return c.a === pid || c.b === pid; });
-    g2.appendChild(panel('VENTURES', { sub: mine.length + ' with this principal as a party' },
+    // ★ BOTH FRAMES. `D.links` prefers the live list, which is the right
+    // default for a world in motion and the wrong one for a dossier: live
+    // covers ten of sixteen principals and the settled frame covers eleven,
+    // and the union covers fifteen. Picking one showed VENTURES 0 for a
+    // principal who was party to four of the night's twelve settled compacts.
+    var seenV = {}, allLinks = [];
+    (D.links || []).concat(R.compactLinks || []).forEach(function (c) {
+      if (seenV[c.venture]) return; seenV[c.venture] = 1; allLinks.push(c);
+    });
+    var mine = allLinks.filter(function (c) { return c.a === pid || c.b === pid; });
+    g2.appendChild(panel('VENTURES', {
+      sub: mine.length + ' name them · live and settled',
+    },
       mine.length ? table('dos-v', [
         { k: 'glyph', t: '', w: '30px', cell: function (c) { return U.glyph(D.glyphIndex[c.venture] || { electiveBps: c.electiveBps, state: c.snapped ? 'SNAPPED_BLACK' : 'LIVE' }, 20); } },
         { k: 'kind', t: 'kind', w: '66px' },
@@ -489,7 +510,7 @@ var Screens = (function () {
     });
     var cpl = Object.keys(cps).map(function (k2) { return cps[k2]; });
     g3.appendChild(panel('COUNTERPARTIES', {
-      sub: r.distinctCounterparties + ' distinct over the whole record · ' + cpl.length + ' on this frame',
+      sub: r.distinctCounterparties + ' over the whole record · ' + cpl.length + ' on these frames',
     }, cpl.length ? table('dos-c', [
       { k: 'p', t: 'handle', w: '108px', cell: function (x) { return el('span', { style: 'display:inline-flex;align-items:center;gap:7px' }, [U.crest(x.p, 15), hOf(D, x.p)]); }, sort: function (x) { return U.handleOf(x.p); } },
       { k: 'n', t: 'compacts', w: '74px', num: true },
@@ -575,7 +596,14 @@ var Screens = (function () {
 
   // ═══════════════════════════════════════════════════════════ VENTURES ══
   function ventures(host, D) {
-    var links = D.links, glyphs = D.glyphs, R = D.R;
+    var R = D.R, glyphs = D.glyphs;
+    // live AND settled. A mature world has ten live compacts and twelve that
+    // settled tonight; showing one of the two lists left 1000x280 of void
+    // inside the panel and hid the half of the night that actually resolved.
+    var seenL = {}, links = [];
+    (D.links || []).concat(R.compactLinks || []).forEach(function (c) {
+      if (seenL[c.venture]) return; seenL[c.venture] = 1; links.push(c);
+    });
     var stack = el('div', { class: 'rows fill', style: 'height:100%' });
     var byState = {};
     glyphs.forEach(function (g) { byState[g.state] = (byState[g.state] || 0) + 1; });
@@ -591,7 +619,7 @@ var Screens = (function () {
 
     var g2 = el('div', { class: 'grid', style: 'grid-template-columns:1fr 392px;flex:1 1 auto;min-height:0' });
     g2.appendChild(panel('COMPACTS', {
-      sub: links.length + ' links · ★ THE COMPACT LINK joins two holdings and snaps when the word breaks',
+      sub: links.length + ' · live and settled · a link joins two holdings and snaps when the word breaks',
     }, links.length ? table('vt', [
       { k: 'g', t: '', w: '34px', cell: function (c) { return U.glyph(D.glyphIndex[c.venture] || { electiveBps: c.electiveBps, state: c.snapped ? 'SNAPPED_BLACK' : c.state }, 22); } },
       { k: 'kind', t: 'kind', w: '66px', cell: function (c) { return el('span', { class: 'k', text: c.kind }); } },
@@ -689,7 +717,7 @@ var Screens = (function () {
       ]);
     }))));
 
-    bot.appendChild(panel('THE DOCKET', { sub: 'tonight\'s cards, stakes descending · cap 7' },
+    bot.appendChild(panel('THE DOCKET', { sub: 'cards still live at settlement · cap 7' },
       docket.length ? el('div', { style: 'display:flex;gap:6px;padding:6px;overflow:auto' }, docket.map(function (c) {
         return el('div', { style: 'flex:0 0 236px;border:1px solid var(--rule);background:var(--panel-2);padding:8px' }, [
           el('div', { style: 'display:flex;gap:8px;align-items:flex-start' }, [
@@ -722,8 +750,12 @@ var Screens = (function () {
       tile('DRAWN ON', String(drawn.length), { note: 'acted in a grantor\u2019s name' }),
       tile('MAX DIRECT LOSS', U.n(lines.reduce(function (a, x) { return Math.max(a, x.granted || 0); }, 0)),
         { note: 'the largest single LIMIT on screen' }),
-      tile('MAX CONTINGENT', U.n(lines.reduce(function (a, x) { return Math.max(a, x.grantedContingent || 0); }, 0)),
-        { note: 'the worst case, shown before it was signed' }),
+      // the two LIMITS are equal on every row of every world measured, so the
+      // second tile printed the first one's number at 30px beside it
+      lines.length && lines.every(function (x) { return x.granted === x.grantedContingent; })
+        ? tile('CONTINGENT', 'SAME', { dim: true, note: 'every grant sets both LIMITS equal' })
+        : tile('MAX CONTINGENT', U.n(lines.reduce(function (a, x) { return Math.max(a, x.grantedContingent || 0); }, 0)),
+          { note: 'the worst case, shown before it was signed' }),
       tile('DOSSIER THREADS', String(lines.reduce(function (a, x) { return a + (x.dossiers || []).length; }, 0)),
         { note: 'authority handed downstream' }),
     ]));
@@ -826,10 +858,12 @@ var Screens = (function () {
       U.kv('BOTH', String(clr.both)),
     ])));
     var byDel = {};
-    lines.forEach(function (a) { byDel[a.delegate] = Math.max(byDel[a.delegate] || 0, a.granted); });
+    // SUMMED, not maxed. "The most a delegate could lose you" is every grant
+    // they hold; halcyon holds two and the panel printed the bigger one.
+    lines.forEach(function (a) { byDel[a.delegate] = (byDel[a.delegate] || 0) + a.granted; });
     var top = Object.keys(byDel).map(function (p) { return { p: p, v: byDel[p] }; })
       .sort(function (a, b) { return b.v - a.v; }).slice(0, 5);
-    strip.appendChild(panel('TOP DIRECT EXPOSURE', { sub: 'the most a delegate could lose you' },
+    strip.appendChild(panel('TOP DIRECT EXPOSURE', { sub: 'every grant they hold, summed' },
       top.length ? el('div', null, top.map(function (t) {
         return el('div', { style: 'display:flex;align-items:center;gap:8px;padding:3px 8px' }, [
           el('span', { style: 'flex:0 0 82px' }, hOf(D, t.p)),
@@ -1077,12 +1111,26 @@ var Screens = (function () {
     stack.appendChild(panel('THE HULL LADDER', {
       sub: 'PIKE · LANCE · WARDEN · BULWARK · CITADEL',
       right: el('span', { class: 'pill', title: 'No frame key publishes a hull inventory, so nothing here is a claim about this world.', text: 'reference · not on the frame' }),
-    }, el('div', { style: 'height:100%;background:var(--void);display:flex;align-items:center;justify-content:center' },
-      el('img', {
-        src: 'assets/hulls.webp', alt: 'the five hulls',
-        style: 'max-width:100%;max-height:100%;object-fit:contain;display:block',
+    }, el('div', { style: 'height:100%;background:var(--void);display:flex;flex-direction:column' }, [
+      el('div', { style: 'flex:1 1 auto;min-height:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center' },
+        el('img', {
+          src: 'assets/hulls.webp', alt: 'the five hulls',
+          // the plate's own captions land at ~5px at this height and are
+          // illegible, so the bottom 13% is cropped away and the names are set
+          // in HTML underneath at a size somebody can read
+          style: 'width:min(100%,860px);display:block;margin-bottom:-13%',
+        })),
+      el('div', {
+        style: 'flex:0 0 auto;display:flex;justify-content:center;gap:0;border-top:1px solid var(--rule-dim)',
+      }, ['PIKE', 'LANCE', 'WARDEN', 'BULWARK', 'CITADEL'].map(function (n2) {
+        return el('span', {
+          style: 'width:min(20%,172px);text-align:center;padding:4px 0;font:10px var(--cond);' +
+            'letter-spacing:.2em;color:var(--dim)',
+          text: n2,
+        });
       })),
-    { style: 'flex:0 0 158px' }));
+    ]),
+    { style: 'flex:0 0 132px' }));
     U.clear(host).appendChild(stack);
   }
 
@@ -1167,6 +1215,9 @@ var Screens = (function () {
       ]));
     });
     legend.appendChild(el('hr'));
+    legend.appendChild(el('div', { class: 'row', style: 'color:var(--dimmer);white-space:normal;line-height:1.6' },
+      'A CONSTELLATION\u2019s count is its members OUTSIDE the Commons, so the four of them sum to ' +
+      'fewer than 30. The frame publishes ids, not names.'));
     legend.appendChild(el('div', { class: 'row', style: 'color:var(--dimmer);white-space:normal;line-height:1.6' },
       'Red on this map means one thing: a promise was broken. A severing strait, a raid and a ruin are ' +
       'losses, not lies, and they are not drawn in it.'));
@@ -1440,6 +1491,16 @@ var Screens = (function () {
       // the degree sum, named as one: it counts each relationship from both
       // ends, so it is not an edge count and must not be labelled as one
       U.kv('COUNTERPARTY TIES, SUMMED', U.n(totalCp)),
+      ((R.meters || {}).kept !== kept || (R.meters || {}).broken !== broke)
+        ? el('div', { class: 'note-line', style: 'color:var(--amber)', title:
+            'Measured across nine frames of a heuristic world, meters.kept/broken equal the standings ' +
+            'sums exactly on eight of them and part company on the ninth. Both are published, both are ' +
+            'cumulative, and the client draws both — so it can see the divergence. Hiding it would be ' +
+            'the renderer keeping the engine\u2019s secret.',
+          }, 'THE FRAME DISAGREES WITH ITSELF: meters say ' + U.n((R.meters || {}).kept) + ' kept / ' +
+             U.n((R.meters || {}).broken) + ' broken; the standings rows above sum to ' + U.n(kept) +
+             ' / ' + U.n(broke) + '. Hover for what is known.')
+        : null,
       el('div', { class: 'note-line' },
         'Gate 3 measured 12% of settled elective promises broken, unprompted. Neither zero — which would have ' +
         'made trust worthless — nor universal, which would make the elective half a fee.'),
@@ -1492,12 +1553,12 @@ var Screens = (function () {
     // reason to leave the key unread.
     var syn = (R.syndicateLines || []).slice();
     bottom.appendChild(panel('SYNDICATES', {
-      sub: syn.length + ' chartered · ' + syn.filter(function (x) { return x.members > 1; }).length + ' pooled',
+      sub: syn.length + ' chartered · ' + syn.filter(function (x) { return x.members > 1; }).length + ' with more than one member',
       foot: 'A STRONGBOX with one member and no treasury is a charter nobody has joined.',
     }, syn.length ? table('st-s', [
       { k: 'name', t: 'name', w: '116px', cell: function (x) { return el('span', { class: 'k', text: x.name }); } },
       { k: 'founder', t: 'founder', w: '92px', cell: function (x) { return hOf(D, x.founder); } },
-      { k: 'members', t: 'pooled', w: '58px', num: true, cell: function (x) { return x.members > 1 ? String(x.members) : el('span', { class: 'dim', text: '1' }); } },
+      { k: 'members', t: 'members', w: '66px', num: true, cell: function (x) { return x.members > 1 ? String(x.members) : el('span', { class: 'dim', text: '1' }); } },
       { k: 'treasuryMinor', t: 'box', w: '64px', num: true, cell: function (x) { return x.treasuryMinor ? U.n(x.treasuryMinor) : el('span', { class: 'dim', text: 'empty' }); } },
       { k: 'officeHolders', t: 'offices', w: '62px', num: true, cell: function (x) { return x.officeHolders || el('span', { class: 'dim', text: '0' }); } },
       { k: 'admission', t: 'entry', w: '68px', cell: function (x) { return U.tag(x.admission, 'cy'); } },
@@ -1507,10 +1568,10 @@ var Screens = (function () {
 
     bottom.appendChild(panel('HOLDING SNAPSHOT', { sub: hl.length + ' systems worked' },
       hl.length ? table('st-h', [
-        { k: 'system', t: 'at', w: '112px', cell: function (x) { return U.sysLink(x.system, sysName(D, x.system) + ' · ' + x.system); } },
-        { k: 'tier', t: 'tier', w: '76px', cell: function (x) { return el('span', { class: 'dim', text: (D.sysIndex[x.system] || {}).tier || '—' }); }, sort: function (x) { return (D.sysIndex[x.system] || {}).tier || ''; } },
-        { k: 'works', t: 'works', w: '54px', num: true },
-        { k: 'yield', t: 'ore/tick', w: '64px', num: true },
+        { k: 'system', t: 'at', w: '104px', cell: function (x) { return U.sysLink(x.system, sysName(D, x.system)); } },
+        { k: 'tier', t: 'tier', w: '68px', cell: function (x) { return el('span', { class: 'dim', text: (D.sysIndex[x.system] || {}).tier || '—' }); }, sort: function (x) { return (D.sysIndex[x.system] || {}).tier || ''; } },
+        { k: 'works', t: 'wks', w: '42px', num: true },
+        { k: 'yield', t: 'ore', w: '48px', num: true },
         {
           // one holder plus a +N pill: five of eight rows were cut mid-glyph at
           // the panel border with no ellipsis
@@ -1550,7 +1611,7 @@ var Screens = (function () {
         el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
         el('div', null, [
           el('div', { class: 'big', style: 'color:var(--dimmer)', text: '· / ·' }),
-          el('div', { class: 'lab', text: 'HALVES KEPT / BROKEN' }),
+          el('div', { class: 'lab', text: 'HALVES KEPT / BROKEN · ALL TIME' }),
         ]),
         el('div', { style: 'margin-left:auto;text-align:right' }, [
           el('div', { style: 'font:600 13px var(--cond);letter-spacing:.16em;color:var(--cyan)' },
@@ -1608,7 +1669,7 @@ var Screens = (function () {
           el('span', { style: 'color:var(--dimmer)', text: ' – ' }),
           el('span', { style: 'color:' + (M.broken ? 'var(--red-text)' : 'var(--cyan)'), text: String(M.broken) }),
         ]),
-        el('div', { class: 'lab', text: 'HALVES KEPT / BROKEN' }),
+        el('div', { class: 'lab', text: 'HALVES KEPT / BROKEN · ALL TIME' }),
       ]),
       el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
       el('div', null, [el('div', { class: 'big', text: U.n(M.unrefined) }), el('div', { class: 'lab', text: 'UNREFINED' })]),
@@ -1654,19 +1715,23 @@ var Screens = (function () {
     tl.forEach(function (t) { byState[t.state] = (byState[t.state] || 0) + 1; });
     var lp = el('div', { class: 'rows', style: 'min-height:0' });
     lp.appendChild(panel('THE LEVY', {
-      sub: tl.length + ' tribute lines · ' +
-        Object.keys(byState).sort().map(function (k2) { return byState[k2] + ' ' + k2; }).join(' · ') +
-        ((M.levyShort || 0) ? ' · SHORT ' + U.n(M.levyShort) : ''),
-      alarm: (M.levyShort || 0) > 0,
+      sub: tl.length + ' lines · ' +
+        Object.keys(byState).sort().map(function (k2) { return byState[k2] + ' ' + k2; }).join(' · '),
+      right: (M.levyShort || 0)
+        ? el('span', { style: 'color:var(--amber)' }, 'SHORT ' + U.n(M.levyShort))
+        : el('span', { style: 'color:var(--cyan)' }, 'NO SHORTFALL'),
       // the legend now describes what is DRAWN. It used to describe the mock's
       // Sankey — three of its four entries named marks this panel never makes.
-      foot: 'line length is what is owed · RED unpaid at the freeze · a full dim line is a tribute clear',
+      foot: 'line length is what is owed · the RED state is an unpaid tribute at the freeze · a full dim line is clear',
     }, tl.length ? el('div', null, tl.map(function (t) {
       // ★ THE LINE LENGTH IS THE DEBT. Every one of the sixteen used to be
       // exactly 120px, so the only variable in the chart was its hue — a chart
       // that encoded nothing sitting under a headline number it was supposed
       // to decompose.
-      var col = t.state === 'RED' ? 'var(--red)' : t.state === 'DASHED' ? 'var(--dim)' : t.state === 'REVERSING' ? 'var(--amber)' : 'var(--cyan-deep)';
+      // AMBER for an unpaid tribute. It is a debt at the freeze, not a broken
+      // word — and it is the same shortfall the headline renders in amber
+      // sixty pixels above. `RED` stays as the state's NAME in the legend.
+      var col = t.state === 'RED' ? 'var(--amber)' : t.state === 'DASHED' ? 'var(--dim)' : t.state === 'REVERSING' ? '#d4644f' : 'var(--cyan-deep)';
       var frac = maxOwed ? (t.owed || 0) / maxOwed : 0;
       return el('div', { style: 'display:flex;align-items:center;gap:8px;padding:2.5px 8px;border-bottom:1px solid var(--rule-dim)' }, [
         el('span', { style: 'width:78px;flex:0 0 78px' }, hOf(D, t.principal)),
@@ -1678,7 +1743,7 @@ var Screens = (function () {
           })),
         el('span', {
           style: 'width:88px;flex:0 0 88px;text-align:right;font-variant-numeric:tabular-nums;color:' +
-            (t.owed ? 'var(--red-text)' : 'var(--dimmer)'),
+            (t.owed ? 'var(--amber)' : 'var(--dimmer)'),
           title: 'tribute flows to ' + t.to,
           text: t.owed ? U.n(t.owed) : 'clear',
         }),

@@ -63,7 +63,10 @@ var U = (function () {
   // make the record wrong on screen while right on the wire.
   function n(v) {
     if (v === null || v === undefined) return '—';
-    return Number(v).toLocaleString('en-US');
+    // `minor` is an integer unit. A tile that computes a share of it (elective
+    // halves are `atStake * electiveBps / 10000`) was printing 13,276.75, and
+    // a currency with a fractional part is a currency this world does not have.
+    return Math.round(Number(v)).toLocaleString('en-US');
   }
   function k(v) {
     if (v === null || v === undefined) return '—';

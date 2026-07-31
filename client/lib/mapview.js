@@ -52,7 +52,31 @@ var MapView = (function () {
      to red would tell a lie about its holder every single frame. */
   var BLOC = ['#19d7f2', '#3f9ad6', '#7f6fd8', '#2fb89a', '#5cc0e8', '#9a72b8',
     '#2f8fb0', '#54d1a8', '#8896d8', '#3fc2c8', '#6f8fd0', '#40a8c0'];
-  function blocColour(pid) { return BLOC[Math.floor(h01(String(pid)) * BLOC.length) % BLOC.length]; }
+  /**
+   * ★ BY POSITION, NOT BY HASH.
+   *
+   * Hashing a principal id into a 12-entry palette used only 8 of the 12
+   * across 16 principals and put FOUR of them on `#2fb89a` — so two blocs were
+   * fenced in the same green, and since one of them is a defaulter whose
+   * handle is red-overridden, the only green label on the map named the other.
+   *
+   * Assigning by index in the frame's own sorted `standings[]` is just as
+   * deterministic, is derived from the frame rather than from a hash function,
+   * and is collision-free up to twelve blocs. Past twelve it wraps, which is
+   * honest and is also more blocs than the sway data has ever carried.
+   */
+  var blocOrder = {};
+  function setBlocOrder(standings) {
+    blocOrder = {};
+    (standings || []).slice().sort(function (a, b) {
+      return String(a.principal).localeCompare(String(b.principal));
+    }).forEach(function (r, i) { blocOrder[r.principal] = i; });
+  }
+  function blocColour(pid) {
+    var i = blocOrder[pid];
+    if (i === undefined) i = Math.floor(h01(String(pid)) * BLOC.length);
+    return BLOC[i % BLOC.length];
+  }
 
   var TIERS = ['COMMONS', 'MARCHES', 'FRONTIER'];
   // band radii as a fraction of R. The gaps between them are the boundary the
@@ -404,6 +428,7 @@ var MapView = (function () {
     }
     var lay = state.cache.lay, P = lay.pos, cx = lay.cx, cy = lay.cy, RX = lay.RX, RY = lay.RY;
     var idx = {}; R.map.forEach(function (s) { idx[s.id] = s; });
+    setBlocOrder(R.standings);
     var minY = Infinity, maxY = -Infinity;
     R.map.forEach(function (s) { minY = Math.min(minY, s.yieldPerTick); maxY = Math.max(maxY, s.yieldPerTick); });
 
@@ -512,6 +537,9 @@ var MapView = (function () {
       var m = proj(lay, rr, lab);
       gCon.appendChild(S('text', {
         class: 'con-label', x: m.x.toFixed(1), y: (m.y + 4).toFixed(1),
+        // the count excludes COMMONS members (con-1 has 7 systems, 4 of them
+        // in the Commons), and a bare number summing to 26 beside a header
+        // saying 30 is a discrepancy nobody can resolve from the screen
         text: c.toUpperCase().replace('CON-', 'CON ') + ' · ' + a.n,
       }));
     });
@@ -599,6 +627,28 @@ var MapView = (function () {
         var d = loops.map(smooth).join(' ');
         if (!d) return;
         state.blocs.push({ principal: pid, colour: col, systems: pts.length, defaults: defaulters[pid] || 0 });
+        // ★ AT MOST TWO HANDLES PER BLOC, AND NEVER TWICE IN THE SAME PLACE.
+        //
+        // One label per bloc left three of brannock's four rings anonymous,
+        // including the two carrying its claim and its raid. One label per
+        // LOOP printed `brannock ▲3` three times in one corner. The middle
+        // answer: the two largest loops get the handle, and the second only if
+        // it is far enough from the first to be telling a viewer something new.
+        // Every other loop is still unmistakably the same bloc — it is drawn
+        // in the bloc's own colour, which is now collision-free.
+        var ranked = loops.slice().sort(function (a, b) { return b.length - a.length; }).slice(0, 2);
+        var placed = [];
+        ranked.forEach(function (lp) {
+          var t2 = lp.reduce(function (a, b) { return b[1] < a[1] ? b : a; }, lp[0]);
+          var far = placed.every(function (q) { return Math.hypot(q[0] - t2[0], q[1] - t2[1]) > 130; });
+          if (!far) return;
+          placed.push(t2);
+          gLabels.appendChild(S('text', {
+            class: 'verge-lab', x: t2[0].toFixed(1), y: (t2[1] - 11).toFixed(1), 'text-anchor': 'middle',
+            fill: defaulters[pid] ? '#e34a3f' : col,
+            text: U.handleOf(pid) + (defaulters[pid] ? ' \u25b2' + defaulters[pid] : ''),
+          }));
+        });
         // a dark backing stroke under the fence, so a label halo crossing it
         // cannot punch a hole through the one line that must never have one
         gVerge.appendChild(S('path', {
@@ -608,14 +658,7 @@ var MapView = (function () {
         // the handle sits on the fence. It is drawn RED when that principal has
         // a default on the record — the map answering the only question that
         // matters in three seconds.
-        // clear of the fence for the same reason the node labels are: the
-        // handle used to sit exactly ON the outline it names
-        var top = pts.reduce(function (a, b) { return b.y < a.y ? b : a; }, pts[0]);
-        gLabels.appendChild(S('text', {
-          class: 'verge-lab', x: top.x.toFixed(1), y: (top.y - VERGE_R - 11).toFixed(1), 'text-anchor': 'middle',
-          fill: defaulters[pid] ? '#e34a3f' : col,
-          text: U.handleOf(pid) + (defaulters[pid] ? ' ▲' + defaulters[pid] : ''),
-        }));
+
       });
     }
 
@@ -738,8 +781,24 @@ var MapView = (function () {
         // nodes, so a label on a bloc member at `rr + 7` is always inside it.
         // Pushing that label past VERGE_R puts it OUTSIDE its own fence, and
         // then the paint order stops mattering at all.
-        var off = blocOf[s.id] ? VERGE_R + 9 : rr + 7;
-        var lx = p.x + off * Math.cos(p.th), ly = p.y + off * Math.sin(p.th);
+        // …and clear EVERY fence, not just its own: the verge is painted last,
+        // so a neighbouring bloc's outline drew straight over `kestrel`'s
+        // final glyph. Walk outwards until the label origin is clear of every
+        // bloc's disc, capped so a label can never fly off the map.
+        var lx, ly, off = blocOf[s.id] ? VERGE_R + 9 : rr + 7;
+        for (var att = 0; att < 5; att++) {
+          lx = p.x + off * Math.cos(p.th); ly = p.y + off * Math.sin(p.th);
+          var clash = false;
+          for (var bp in blocs) {
+            for (var bi = 0; bi < blocs[bp].length; bi++) {
+              var q0 = blocs[bp][bi];
+              if (Math.hypot(lx - q0.x, ly - q0.y) < VERGE_R + 5) { clash = true; break; }
+            }
+            if (clash) break;
+          }
+          if (!clash) break;
+          off += 13;
+        }
         var right = Math.cos(p.th) > 0.24, left = Math.cos(p.th) < -0.24;
         var anchor = right ? 'start' : left ? 'end' : 'middle';
         var dy = Math.abs(Math.cos(p.th)) > 0.24 ? 3 : (Math.sin(p.th) > 0 ? 10 : -4);
