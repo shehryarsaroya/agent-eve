@@ -1,0 +1,2158 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>THE COMPACT - style directions</title><style>
+:root { --bg:#0c0d10; --panel:#15171c; --line:#272a33; --ink:#e6e8ee; --dim:#8b90a0; --acc:#7fd4ff; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:14px/1.55 ui-sans-serif,-apple-system,"Helvetica Neue",Arial,sans-serif; }
+a { color:var(--acc); }
+header { padding:44px 40px 12px; max-width:1100px; }
+h1 { font-size:19px; letter-spacing:.14em; text-transform:uppercase; margin:0 0 14px; font-weight:600; }
+header p { color:var(--dim); max-width:70ch; margin:0 0 10px; }
+header p.rec { color:var(--ink); border-left:2px solid var(--acc); padding-left:14px; }
+nav { position:sticky; top:0; z-index:5; background:rgba(12,13,16,.94);
+  backdrop-filter:blur(6px); border-bottom:1px solid var(--line); padding:12px 40px; margin-top:22px; }
+nav label { display:inline-block; padding:6px 14px; margin-right:8px; border:1px solid var(--line);
+  border-radius:3px; cursor:pointer; color:var(--dim); font-size:12px; letter-spacing:.1em;
+  text-transform:uppercase; user-select:none; }
+nav label:hover { color:var(--ink); }
+input[name=view] { position:absolute; opacity:0; pointer-events:none; }
+#v-subject:checked ~ nav label[for=v-subject],
+#v-style:checked   ~ nav label[for=v-style] { background:var(--acc); color:#08131a; border-color:var(--acc); }
+#v-subject:checked ~ main .by-style,
+#v-style:checked   ~ main .by-subject { display:none; }
+main { padding:8px 40px 120px; }
+section { margin:38px 0 0; }
+h2 { font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim);
+  border-bottom:1px solid var(--line); padding-bottom:8px; margin:0 0 4px; font-weight:600; }
+h2 span { color:var(--ink); }
+.sub { color:var(--dim); font-size:12px; margin:8px 0 18px; max-width:80ch; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:22px; }
+@media (min-width:1380px) {
+  .by-subject .grid { grid-template-columns:repeat(5,1fr); }
+  .by-style   .grid { grid-template-columns:repeat(3,1fr); }
+}
+figure { margin:0; }
+figure img { width:100%; display:block; background:#000; border:1px solid var(--line); border-radius:3px; }
+figure a:hover img { border-color:var(--acc); }
+figcaption { margin-top:9px; font-size:12px; }
+figcaption b { display:block; letter-spacing:.09em; text-transform:uppercase; font-size:11px; }
+figcaption em { color:var(--dim); font-style:normal; display:block; margin-top:2px; }
+details { margin-top:8px; }
+summary { cursor:pointer; color:var(--dim); font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; outline:none; }
+details pre { white-space:pre-wrap; font:11px/1.5 ui-monospace,Menlo,monospace; color:#9aa0b2;
+  background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:12px;
+  max-height:340px; overflow:auto; margin:8px 0 0; }
+.missing { width:100%; aspect-ratio:16/9; border:1px dashed #6b2b2b; border-radius:3px;
+  background:repeating-linear-gradient(45deg,#151013,#151013 10px,#191013 10px,#191013 20px);
+  display:flex; align-items:center; justify-content:center; text-align:center; color:#c2707a;
+  font:11px/1.6 ui-monospace,monospace; letter-spacing:.1em; padding:20px; }
+.lb { display:none; position:fixed; inset:0; z-index:40; background:rgba(6,7,9,.98);
+  align-items:center; justify-content:center; padding:26px; }
+.lb:target { display:flex; }
+.lb .sheet { display:flex; align-items:center; justify-content:center;
+  width:100%; height:100%; text-decoration:none; }
+.lb img { max-width:100%; max-height:100%; object-fit:contain; }
+.lb .cap { position:fixed; bottom:16px; left:26px; color:var(--dim); font-size:11px;
+  letter-spacing:.12em; text-transform:uppercase; }
+.lb .close { position:fixed; top:18px; right:26px; font-size:12px; letter-spacing:.12em;
+  text-transform:uppercase; text-decoration:none; z-index:1; }
+footer { color:var(--dim); font-size:11px; padding:0 40px 60px; max-width:80ch; }
+</style></head><body>
+<header>
+  <h1>THE COMPACT &middot; five art directions</h1>
+  <p class="rec"><b>Recommendation: C &middot; HARD SF OPERATING SYSTEM as the working language,
+D &middot; THE STAR CATALOGUE as the ceremonial one.</b> C is the only direction that carried all three
+screens &mdash; its one-accent rule means the eye lands on exactly the three orange marks that
+<em>are</em> the betrayal, and it is the only one buildable as a CSS re-skin of the client that already
+exists. D cannot tick 288 times a day, but it wins the record outright: it is the only direction where
+the villain&rsquo;s card is printed in the ink of loss. If only one gets built, build C.</p>
+  <p>Fifteen drafts: five science-fiction directions across the three screens that decide the product &mdash;
+  the map, a character profile, and the receipt reel. Every string in every image is real data out of
+  <code>VISUAL-ASSET-BIBLE.md</code>. Click any image for full size. Reasoning lives in
+  <code>STYLE-DIRECTIONS.md</code>.</p>
+</header>
+<input type="radio" name="view" id="v-subject" checked><input type="radio" name="view" id="v-style">
+<nav><label for="v-subject">compare by subject</label><label for="v-style">compare by style</label></nav>
+<main>
+<section class="by-subject"><h2><span>THE MAP</span> &middot; five directions</h2><p class="sub">Can one node carry five signals at once &mdash; tier, richness, a strait, a reach fence and a claim tint? Hardest ask in the game.</p><div class="grid">
+    <figure>
+      <a href="#lb-map-a"><img loading="lazy" src="map-a-holotable.png" alt="THE HOLOTABLE - THE MAP"></a>
+      <figcaption>
+        <b>THE HOLOTABLE</b>
+        <em>bets on live tactical drama — the map as a war room</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction A: THE HOLOTABLE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A VOLUMETRIC HOLOGRAPHIC PROJECTION standing above a dark tactical table.
+Art direction: the tactical displays in THE EXPANSE, the Scarif battle projection in ROGUE ONE, the
+battle room in ENDER&#x27;S GAME. Cyan and pale blue emitted light against near-black; depth read through
+transparency and overlapping translucent planes; thin glowing vectors; faint volumetric haze and a
+scan-plane sweep; edge-lit wireframes; subtle bloom on the brightest elements; nearer elements brighter,
+further ones dimmer. A single warm amber-red is the ONLY non-blue colour and it is reserved strictly for
+alarm. Slight three-quarter perspective, as if seen from across the table, with the dark table edge and
+faint reflected light at the bottom of the frame. Labels float as flat billboarded panels facing the
+viewer so they stay perfectly legible.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-map-b"><img loading="lazy" src="map-b-nostromo.png" alt="THE NOSTROMO - THE MAP"></a>
+      <figcaption>
+        <b>THE NOSTROMO</b>
+        <em>bets on diegesis — you are reading the system's own feed, and it is old and industrial</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction B: THE NOSTROMO.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN AMBER PHOSPHOR CRT TERMINAL bolted into worn industrial hardware.
+Art direction: the MU/TH/UR and navigation screens in ALIEN (1979), the game DUSKERS, the MOTHERSHIP
+RPG rulebook. Amber-on-near-black phosphor, chunky monospace bitmap type with visible pixel steps,
+heavy horizontal scanlines, phosphor bloom and smear on bright glyphs, faint barrel distortion at the
+corners, dust and fine scratches on the glass, strong vignetting. EVERY diagram is drawn out of ASCII and
+box-drawing characters, not vector shapes. Around the glass: worn beige-grey plastic bezel, stencilled
+industrial markings, a dymo label, one chunky physical switch. The machine is old, industrial, and does
+not care about you.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-map-c"><img loading="lazy" src="map-c-hardsf.png" alt="HARD SF OPERATING SYSTEM - THE MAP"></a>
+      <figcaption>
+        <b>HARD SF OPERATING SYSTEM</b>
+        <em>bets on corporate hard-sci-fi legibility — a real instrument, not a game HUD</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction C: HARD SF OPERATING SYSTEM.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A CLEAN HARD-SCIENCE-FICTION INSTRUMENT PANEL.
+Art direction: the ship interfaces in THE EXPANSE at their cleanest, the base interface in MOON (2009),
+the TARS panels in INTERSTELLAR, Swiss International Style. Near-white or very pale cool-grey ground,
+thin precise hairlines, a strict modular grid with generous whitespace, tight tabular numerals, small-caps
+labels in a neutral grotesque (Helvetica / Univers / Suisse). NO gradients, NO glow, NO drop shadows, NO
+ornament, NO skeuomorphism, no rounded chrome. EXACTLY ONE accent colour — a saturated instrument orange
+— used only where something is wrong or overdue; everything else is black, grey and white. It must read as
+a certified instrument that a working crew depends on, not as a game HUD.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-map-d"><img loading="lazy" src="map-d-catalogue.png" alt="THE STAR CATALOGUE - THE MAP"></a>
+      <figcaption>
+        <b>THE STAR CATALOGUE</b>
+        <em>bets on permanence and gravity — a printed record of a galaxy, never revised</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction D: THE STAR CATALOGUE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN ENGRAVED ASTRONOMICAL CHART, printed once and never revised.
+Art direction: 19th-century celestial atlases (Bode, Burritt), the VOYAGER GOLDEN RECORD cover plaque,
+a modern engraved star chart. Deep midnight-navy ground with aged gold and pale bone inks. Fine
+copperplate hatching and stipple for every tone — no gradients, no glow, no photographic effects beyond
+a faint paper tooth. Hairline rules, engraved cartouches, a decorative ruled border frame, a compass rose
+or scale bar in one corner. Letterpress serif with small caps and swash capitals. A single oxidised
+vermilion is the second ink and it marks ONLY what has been lost or broken. Solemn, permanent,
+archival.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-map-e"><img loading="lazy" src="map-e-evenative.png" alt="EVE NATIVE - THE MAP"></a>
+      <figcaption>
+        <b>EVE NATIVE</b>
+        <em>bets on speaking the audience's existing language — information first, tool not poster</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction E: EVE NATIVE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+zKillboard, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="by-subject"><h2><span>A CHARACTER PROFILE</span> &middot; five directions</h2><p class="sub">Does it make you care about <b>sable</b> (14 honoured, zero defaults) against <b>vex</b> (3 defaults, the last at tick 287)? The gate this project rests on.</p><div class="grid">
+    <figure>
+      <a href="#lb-profile-a"><img loading="lazy" src="profile-a-holotable.png" alt="THE HOLOTABLE - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>THE HOLOTABLE</b>
+        <em>bets on live tactical drama — the map as a war room</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction A: THE HOLOTABLE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A VOLUMETRIC HOLOGRAPHIC PROJECTION standing above a dark tactical table.
+Art direction: the tactical displays in THE EXPANSE, the Scarif battle projection in ROGUE ONE, the
+battle room in ENDER&#x27;S GAME. Cyan and pale blue emitted light against near-black; depth read through
+transparency and overlapping translucent planes; thin glowing vectors; faint volumetric haze and a
+scan-plane sweep; edge-lit wireframes; subtle bloom on the brightest elements; nearer elements brighter,
+further ones dimmer. A single warm amber-red is the ONLY non-blue colour and it is reserved strictly for
+alarm. Slight three-quarter perspective, as if seen from across the table, with the dark table edge and
+faint reflected light at the bottom of the frame. Labels float as flat billboarded panels facing the
+viewer so they stay perfectly legible.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-b"><img loading="lazy" src="profile-b-nostromo.png" alt="THE NOSTROMO - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>THE NOSTROMO</b>
+        <em>bets on diegesis — you are reading the system's own feed, and it is old and industrial</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction B: THE NOSTROMO.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN AMBER PHOSPHOR CRT TERMINAL bolted into worn industrial hardware.
+Art direction: the MU/TH/UR and navigation screens in ALIEN (1979), the game DUSKERS, the MOTHERSHIP
+RPG rulebook. Amber-on-near-black phosphor, chunky monospace bitmap type with visible pixel steps,
+heavy horizontal scanlines, phosphor bloom and smear on bright glyphs, faint barrel distortion at the
+corners, dust and fine scratches on the glass, strong vignetting. EVERY diagram is drawn out of ASCII and
+box-drawing characters, not vector shapes. Around the glass: worn beige-grey plastic bezel, stencilled
+industrial markings, a dymo label, one chunky physical switch. The machine is old, industrial, and does
+not care about you.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-c"><img loading="lazy" src="profile-c-hardsf.png" alt="HARD SF OPERATING SYSTEM - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>HARD SF OPERATING SYSTEM</b>
+        <em>bets on corporate hard-sci-fi legibility — a real instrument, not a game HUD</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction C: HARD SF OPERATING SYSTEM.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A CLEAN HARD-SCIENCE-FICTION INSTRUMENT PANEL.
+Art direction: the ship interfaces in THE EXPANSE at their cleanest, the base interface in MOON (2009),
+the TARS panels in INTERSTELLAR, Swiss International Style. Near-white or very pale cool-grey ground,
+thin precise hairlines, a strict modular grid with generous whitespace, tight tabular numerals, small-caps
+labels in a neutral grotesque (Helvetica / Univers / Suisse). NO gradients, NO glow, NO drop shadows, NO
+ornament, NO skeuomorphism, no rounded chrome. EXACTLY ONE accent colour — a saturated instrument orange
+— used only where something is wrong or overdue; everything else is black, grey and white. It must read as
+a certified instrument that a working crew depends on, not as a game HUD.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-d"><img loading="lazy" src="profile-d-catalogue.png" alt="THE STAR CATALOGUE - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>THE STAR CATALOGUE</b>
+        <em>bets on permanence and gravity — a printed record of a galaxy, never revised</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction D: THE STAR CATALOGUE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN ENGRAVED ASTRONOMICAL CHART, printed once and never revised.
+Art direction: 19th-century celestial atlases (Bode, Burritt), the VOYAGER GOLDEN RECORD cover plaque,
+a modern engraved star chart. Deep midnight-navy ground with aged gold and pale bone inks. Fine
+copperplate hatching and stipple for every tone — no gradients, no glow, no photographic effects beyond
+a faint paper tooth. Hairline rules, engraved cartouches, a decorative ruled border frame, a compass rose
+or scale bar in one corner. Letterpress serif with small caps and swash capitals. A single oxidised
+vermilion is the second ink and it marks ONLY what has been lost or broken. Solemn, permanent,
+archival.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-e"><img loading="lazy" src="profile-e-evenative.png" alt="EVE NATIVE - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>EVE NATIVE</b>
+        <em>bets on speaking the audience's existing language — information first, tool not poster</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction E: EVE NATIVE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+zKillboard, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="by-subject"><h2><span>THE RECEIPT REEL</span> &middot; five directions</h2><p class="sub">Can it hold a lie next to its consequence? Part ledger, part transcript, part accusation.</p><div class="grid">
+    <figure>
+      <a href="#lb-reel-a"><img loading="lazy" src="reel-a-holotable.png" alt="THE HOLOTABLE - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE HOLOTABLE</b>
+        <em>bets on live tactical drama — the map as a war room</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction A: THE HOLOTABLE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A VOLUMETRIC HOLOGRAPHIC PROJECTION standing above a dark tactical table.
+Art direction: the tactical displays in THE EXPANSE, the Scarif battle projection in ROGUE ONE, the
+battle room in ENDER&#x27;S GAME. Cyan and pale blue emitted light against near-black; depth read through
+transparency and overlapping translucent planes; thin glowing vectors; faint volumetric haze and a
+scan-plane sweep; edge-lit wireframes; subtle bloom on the brightest elements; nearer elements brighter,
+further ones dimmer. A single warm amber-red is the ONLY non-blue colour and it is reserved strictly for
+alarm. Slight three-quarter perspective, as if seen from across the table, with the dark table edge and
+faint reflected light at the bottom of the frame. Labels float as flat billboarded panels facing the
+viewer so they stay perfectly legible.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-b"><img loading="lazy" src="reel-b-nostromo.png" alt="THE NOSTROMO - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE NOSTROMO</b>
+        <em>bets on diegesis — you are reading the system's own feed, and it is old and industrial</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction B: THE NOSTROMO.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN AMBER PHOSPHOR CRT TERMINAL bolted into worn industrial hardware.
+Art direction: the MU/TH/UR and navigation screens in ALIEN (1979), the game DUSKERS, the MOTHERSHIP
+RPG rulebook. Amber-on-near-black phosphor, chunky monospace bitmap type with visible pixel steps,
+heavy horizontal scanlines, phosphor bloom and smear on bright glyphs, faint barrel distortion at the
+corners, dust and fine scratches on the glass, strong vignetting. EVERY diagram is drawn out of ASCII and
+box-drawing characters, not vector shapes. Around the glass: worn beige-grey plastic bezel, stencilled
+industrial markings, a dymo label, one chunky physical switch. The machine is old, industrial, and does
+not care about you.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-c"><img loading="lazy" src="reel-c-hardsf.png" alt="HARD SF OPERATING SYSTEM - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>HARD SF OPERATING SYSTEM</b>
+        <em>bets on corporate hard-sci-fi legibility — a real instrument, not a game HUD</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction C: HARD SF OPERATING SYSTEM.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A CLEAN HARD-SCIENCE-FICTION INSTRUMENT PANEL.
+Art direction: the ship interfaces in THE EXPANSE at their cleanest, the base interface in MOON (2009),
+the TARS panels in INTERSTELLAR, Swiss International Style. Near-white or very pale cool-grey ground,
+thin precise hairlines, a strict modular grid with generous whitespace, tight tabular numerals, small-caps
+labels in a neutral grotesque (Helvetica / Univers / Suisse). NO gradients, NO glow, NO drop shadows, NO
+ornament, NO skeuomorphism, no rounded chrome. EXACTLY ONE accent colour — a saturated instrument orange
+— used only where something is wrong or overdue; everything else is black, grey and white. It must read as
+a certified instrument that a working crew depends on, not as a game HUD.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-d"><img loading="lazy" src="reel-d-catalogue.png" alt="THE STAR CATALOGUE - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE STAR CATALOGUE</b>
+        <em>bets on permanence and gravity — a printed record of a galaxy, never revised</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction D: THE STAR CATALOGUE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN ENGRAVED ASTRONOMICAL CHART, printed once and never revised.
+Art direction: 19th-century celestial atlases (Bode, Burritt), the VOYAGER GOLDEN RECORD cover plaque,
+a modern engraved star chart. Deep midnight-navy ground with aged gold and pale bone inks. Fine
+copperplate hatching and stipple for every tone — no gradients, no glow, no photographic effects beyond
+a faint paper tooth. Hairline rules, engraved cartouches, a decorative ruled border frame, a compass rose
+or scale bar in one corner. Letterpress serif with small caps and swash capitals. A single oxidised
+vermilion is the second ink and it marks ONLY what has been lost or broken. Solemn, permanent,
+archival.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-e"><img loading="lazy" src="reel-e-evenative.png" alt="EVE NATIVE - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>EVE NATIVE</b>
+        <em>bets on speaking the audience's existing language — information first, tool not poster</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction E: EVE NATIVE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+zKillboard, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="by-style"><h2>A &middot; <span>THE HOLOTABLE</span></h2><p class="sub">bets on live tactical drama — the map as a war room. <em style="color:#6f7484">References: The Expanse tactical displays, Rogue One&#x27;s Scarif projection, Ender&#x27;s Game.</em> Does one language hold across all three screens?</p><div class="grid">
+    <figure>
+      <a href="#lb-map-a"><img loading="lazy" src="map-a-holotable.png" alt="THE HOLOTABLE - THE MAP"></a>
+      <figcaption>
+        <b>THE MAP</b>
+        <em>five signals on one node: tier, richness, a strait, a reach fence, a claim tint</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction A: THE HOLOTABLE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A VOLUMETRIC HOLOGRAPHIC PROJECTION standing above a dark tactical table.
+Art direction: the tactical displays in THE EXPANSE, the Scarif battle projection in ROGUE ONE, the
+battle room in ENDER&#x27;S GAME. Cyan and pale blue emitted light against near-black; depth read through
+transparency and overlapping translucent planes; thin glowing vectors; faint volumetric haze and a
+scan-plane sweep; edge-lit wireframes; subtle bloom on the brightest elements; nearer elements brighter,
+further ones dimmer. A single warm amber-red is the ONLY non-blue colour and it is reserved strictly for
+alarm. Slight three-quarter perspective, as if seen from across the table, with the dark table edge and
+faint reflected light at the bottom of the frame. Labels float as flat billboarded panels facing the
+viewer so they stay perfectly legible.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-a"><img loading="lazy" src="profile-a-holotable.png" alt="THE HOLOTABLE - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>A CHARACTER PROFILE</b>
+        <em>make me care about sable, and against vex</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction A: THE HOLOTABLE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A VOLUMETRIC HOLOGRAPHIC PROJECTION standing above a dark tactical table.
+Art direction: the tactical displays in THE EXPANSE, the Scarif battle projection in ROGUE ONE, the
+battle room in ENDER&#x27;S GAME. Cyan and pale blue emitted light against near-black; depth read through
+transparency and overlapping translucent planes; thin glowing vectors; faint volumetric haze and a
+scan-plane sweep; edge-lit wireframes; subtle bloom on the brightest elements; nearer elements brighter,
+further ones dimmer. A single warm amber-red is the ONLY non-blue colour and it is reserved strictly for
+alarm. Slight three-quarter perspective, as if seen from across the table, with the dark table edge and
+faint reflected light at the bottom of the frame. Labels float as flat billboarded panels facing the
+viewer so they stay perfectly legible.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-a"><img loading="lazy" src="reel-a-holotable.png" alt="THE HOLOTABLE - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE RECEIPT REEL</b>
+        <em>hold a lie next to its consequence</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction A: THE HOLOTABLE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A VOLUMETRIC HOLOGRAPHIC PROJECTION standing above a dark tactical table.
+Art direction: the tactical displays in THE EXPANSE, the Scarif battle projection in ROGUE ONE, the
+battle room in ENDER&#x27;S GAME. Cyan and pale blue emitted light against near-black; depth read through
+transparency and overlapping translucent planes; thin glowing vectors; faint volumetric haze and a
+scan-plane sweep; edge-lit wireframes; subtle bloom on the brightest elements; nearer elements brighter,
+further ones dimmer. A single warm amber-red is the ONLY non-blue colour and it is reserved strictly for
+alarm. Slight three-quarter perspective, as if seen from across the table, with the dark table edge and
+faint reflected light at the bottom of the frame. Labels float as flat billboarded panels facing the
+viewer so they stay perfectly legible.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="by-style"><h2>B &middot; <span>THE NOSTROMO</span></h2><p class="sub">bets on diegesis — you are reading the system's own feed, and it is old and industrial. <em style="color:#6f7484">References: Alien (1979), Duskers, Mothership RPG.</em> Does one language hold across all three screens?</p><div class="grid">
+    <figure>
+      <a href="#lb-map-b"><img loading="lazy" src="map-b-nostromo.png" alt="THE NOSTROMO - THE MAP"></a>
+      <figcaption>
+        <b>THE MAP</b>
+        <em>five signals on one node: tier, richness, a strait, a reach fence, a claim tint</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction B: THE NOSTROMO.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN AMBER PHOSPHOR CRT TERMINAL bolted into worn industrial hardware.
+Art direction: the MU/TH/UR and navigation screens in ALIEN (1979), the game DUSKERS, the MOTHERSHIP
+RPG rulebook. Amber-on-near-black phosphor, chunky monospace bitmap type with visible pixel steps,
+heavy horizontal scanlines, phosphor bloom and smear on bright glyphs, faint barrel distortion at the
+corners, dust and fine scratches on the glass, strong vignetting. EVERY diagram is drawn out of ASCII and
+box-drawing characters, not vector shapes. Around the glass: worn beige-grey plastic bezel, stencilled
+industrial markings, a dymo label, one chunky physical switch. The machine is old, industrial, and does
+not care about you.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-b"><img loading="lazy" src="profile-b-nostromo.png" alt="THE NOSTROMO - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>A CHARACTER PROFILE</b>
+        <em>make me care about sable, and against vex</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction B: THE NOSTROMO.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN AMBER PHOSPHOR CRT TERMINAL bolted into worn industrial hardware.
+Art direction: the MU/TH/UR and navigation screens in ALIEN (1979), the game DUSKERS, the MOTHERSHIP
+RPG rulebook. Amber-on-near-black phosphor, chunky monospace bitmap type with visible pixel steps,
+heavy horizontal scanlines, phosphor bloom and smear on bright glyphs, faint barrel distortion at the
+corners, dust and fine scratches on the glass, strong vignetting. EVERY diagram is drawn out of ASCII and
+box-drawing characters, not vector shapes. Around the glass: worn beige-grey plastic bezel, stencilled
+industrial markings, a dymo label, one chunky physical switch. The machine is old, industrial, and does
+not care about you.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-b"><img loading="lazy" src="reel-b-nostromo.png" alt="THE NOSTROMO - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE RECEIPT REEL</b>
+        <em>hold a lie next to its consequence</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction B: THE NOSTROMO.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN AMBER PHOSPHOR CRT TERMINAL bolted into worn industrial hardware.
+Art direction: the MU/TH/UR and navigation screens in ALIEN (1979), the game DUSKERS, the MOTHERSHIP
+RPG rulebook. Amber-on-near-black phosphor, chunky monospace bitmap type with visible pixel steps,
+heavy horizontal scanlines, phosphor bloom and smear on bright glyphs, faint barrel distortion at the
+corners, dust and fine scratches on the glass, strong vignetting. EVERY diagram is drawn out of ASCII and
+box-drawing characters, not vector shapes. Around the glass: worn beige-grey plastic bezel, stencilled
+industrial markings, a dymo label, one chunky physical switch. The machine is old, industrial, and does
+not care about you.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="by-style"><h2>C &middot; <span>HARD SF OPERATING SYSTEM</span></h2><p class="sub">bets on corporate hard-sci-fi legibility — a real instrument, not a game HUD. <em style="color:#6f7484">References: The Expanse&#x27;s cleanest ship UI, Moon (2009), Interstellar&#x27;s TARS panels, Swiss grid.</em> Does one language hold across all three screens?</p><div class="grid">
+    <figure>
+      <a href="#lb-map-c"><img loading="lazy" src="map-c-hardsf.png" alt="HARD SF OPERATING SYSTEM - THE MAP"></a>
+      <figcaption>
+        <b>THE MAP</b>
+        <em>five signals on one node: tier, richness, a strait, a reach fence, a claim tint</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction C: HARD SF OPERATING SYSTEM.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A CLEAN HARD-SCIENCE-FICTION INSTRUMENT PANEL.
+Art direction: the ship interfaces in THE EXPANSE at their cleanest, the base interface in MOON (2009),
+the TARS panels in INTERSTELLAR, Swiss International Style. Near-white or very pale cool-grey ground,
+thin precise hairlines, a strict modular grid with generous whitespace, tight tabular numerals, small-caps
+labels in a neutral grotesque (Helvetica / Univers / Suisse). NO gradients, NO glow, NO drop shadows, NO
+ornament, NO skeuomorphism, no rounded chrome. EXACTLY ONE accent colour — a saturated instrument orange
+— used only where something is wrong or overdue; everything else is black, grey and white. It must read as
+a certified instrument that a working crew depends on, not as a game HUD.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-c"><img loading="lazy" src="profile-c-hardsf.png" alt="HARD SF OPERATING SYSTEM - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>A CHARACTER PROFILE</b>
+        <em>make me care about sable, and against vex</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction C: HARD SF OPERATING SYSTEM.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A CLEAN HARD-SCIENCE-FICTION INSTRUMENT PANEL.
+Art direction: the ship interfaces in THE EXPANSE at their cleanest, the base interface in MOON (2009),
+the TARS panels in INTERSTELLAR, Swiss International Style. Near-white or very pale cool-grey ground,
+thin precise hairlines, a strict modular grid with generous whitespace, tight tabular numerals, small-caps
+labels in a neutral grotesque (Helvetica / Univers / Suisse). NO gradients, NO glow, NO drop shadows, NO
+ornament, NO skeuomorphism, no rounded chrome. EXACTLY ONE accent colour — a saturated instrument orange
+— used only where something is wrong or overdue; everything else is black, grey and white. It must read as
+a certified instrument that a working crew depends on, not as a game HUD.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-c"><img loading="lazy" src="reel-c-hardsf.png" alt="HARD SF OPERATING SYSTEM - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE RECEIPT REEL</b>
+        <em>hold a lie next to its consequence</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction C: HARD SF OPERATING SYSTEM.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A CLEAN HARD-SCIENCE-FICTION INSTRUMENT PANEL.
+Art direction: the ship interfaces in THE EXPANSE at their cleanest, the base interface in MOON (2009),
+the TARS panels in INTERSTELLAR, Swiss International Style. Near-white or very pale cool-grey ground,
+thin precise hairlines, a strict modular grid with generous whitespace, tight tabular numerals, small-caps
+labels in a neutral grotesque (Helvetica / Univers / Suisse). NO gradients, NO glow, NO drop shadows, NO
+ornament, NO skeuomorphism, no rounded chrome. EXACTLY ONE accent colour — a saturated instrument orange
+— used only where something is wrong or overdue; everything else is black, grey and white. It must read as
+a certified instrument that a working crew depends on, not as a game HUD.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="by-style"><h2>D &middot; <span>THE STAR CATALOGUE</span></h2><p class="sub">bets on permanence and gravity — a printed record of a galaxy, never revised. <em style="color:#6f7484">References: 19th-c celestial atlases, the Voyager Golden Record plaque, modern star charts.</em> Does one language hold across all three screens?</p><div class="grid">
+    <figure>
+      <a href="#lb-map-d"><img loading="lazy" src="map-d-catalogue.png" alt="THE STAR CATALOGUE - THE MAP"></a>
+      <figcaption>
+        <b>THE MAP</b>
+        <em>five signals on one node: tier, richness, a strait, a reach fence, a claim tint</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction D: THE STAR CATALOGUE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN ENGRAVED ASTRONOMICAL CHART, printed once and never revised.
+Art direction: 19th-century celestial atlases (Bode, Burritt), the VOYAGER GOLDEN RECORD cover plaque,
+a modern engraved star chart. Deep midnight-navy ground with aged gold and pale bone inks. Fine
+copperplate hatching and stipple for every tone — no gradients, no glow, no photographic effects beyond
+a faint paper tooth. Hairline rules, engraved cartouches, a decorative ruled border frame, a compass rose
+or scale bar in one corner. Letterpress serif with small caps and swash capitals. A single oxidised
+vermilion is the second ink and it marks ONLY what has been lost or broken. Solemn, permanent,
+archival.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-d"><img loading="lazy" src="profile-d-catalogue.png" alt="THE STAR CATALOGUE - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>A CHARACTER PROFILE</b>
+        <em>make me care about sable, and against vex</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction D: THE STAR CATALOGUE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN ENGRAVED ASTRONOMICAL CHART, printed once and never revised.
+Art direction: 19th-century celestial atlases (Bode, Burritt), the VOYAGER GOLDEN RECORD cover plaque,
+a modern engraved star chart. Deep midnight-navy ground with aged gold and pale bone inks. Fine
+copperplate hatching and stipple for every tone — no gradients, no glow, no photographic effects beyond
+a faint paper tooth. Hairline rules, engraved cartouches, a decorative ruled border frame, a compass rose
+or scale bar in one corner. Letterpress serif with small caps and swash capitals. A single oxidised
+vermilion is the second ink and it marks ONLY what has been lost or broken. Solemn, permanent,
+archival.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-d"><img loading="lazy" src="reel-d-catalogue.png" alt="THE STAR CATALOGUE - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE RECEIPT REEL</b>
+        <em>hold a lie next to its consequence</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction D: THE STAR CATALOGUE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS AN ENGRAVED ASTRONOMICAL CHART, printed once and never revised.
+Art direction: 19th-century celestial atlases (Bode, Burritt), the VOYAGER GOLDEN RECORD cover plaque,
+a modern engraved star chart. Deep midnight-navy ground with aged gold and pale bone inks. Fine
+copperplate hatching and stipple for every tone — no gradients, no glow, no photographic effects beyond
+a faint paper tooth. Hairline rules, engraved cartouches, a decorative ruled border frame, a compass rose
+or scale bar in one corner. Letterpress serif with small caps and swash capitals. A single oxidised
+vermilion is the second ink and it marks ONLY what has been lost or broken. Solemn, permanent,
+archival.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="by-style"><h2>E &middot; <span>EVE NATIVE</span></h2><p class="sub">bets on speaking the audience's existing language — information first, tool not poster. <em style="color:#6f7484">References: EVE&#x27;s sovereignty map, DOTLAN, zKillboard, Aurora 4X, Stellaris.</em> Does one language hold across all three screens?</p><div class="grid">
+    <figure>
+      <a href="#lb-map-e"><img loading="lazy" src="map-e-evenative.png" alt="EVE NATIVE - THE MAP"></a>
+      <figcaption>
+        <b>THE MAP</b>
+        <em>five signals on one node: tier, richness, a strait, a reach fence, a claim tint</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction E: EVE NATIVE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+zKillboard, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+SUBJECT: THE MAP - the game&#x27;s only agreed representation of itself. A node-and-lane graph of 30 star
+systems, 35 lanes, 4 constellations. There are deliberately NO coordinates in the data, so this is a
+graph laid out for meaning, not an astronomical position plot.
+
+THE LAYOUT, which encodes the risk gradient and must be felt as distance:
+- DEAD CENTRE: a tight inner cluster of exactly 4 small nodes, ringed and set apart - THE COMMONS, where
+  hostile action is not punished but INVALID. It must look CATEGORICALLY DIFFERENT, not merely safer:
+  nothing crosses it, no border touches it, no fence encloses it.
+- A MIDDLE BAND around it: eighteen nodes in two flanking clusters - the contested middle ground.
+- THE OUTER RIM: an arc of eight nodes at the edge - the lawless frontier, the prize.
+- 35 lanes join them. The four clusters form a diamond: the centre hubs to both flanks, and both flanks
+  reach the rim.
+
+FIVE SIGNALS MUST BE READABLE OFF THE MAP WITHOUT A LEGEND, and each needs its own distinct treatment:
+1. THE LODE - NODE SIZE is how rich that ground is. A visible 58 percent spread between the map&#x27;s best
+   and worst ground. The single LARGEST node sits on the outer rim; the smallest sits in the middle band.
+2. THE PINCH - a strait, and only 10 of the 35 lanes are one. EIGHT of them are DETOUR straits: draw the
+   lane NARROWED TO A WAIST at its midpoint with a small number &quot;10&quot; notched beside the waist. TWO of
+   them are SEVERING straits: draw a solid filled DOOR block across the lane&#x27;s midpoint with the count of
+   systems stranded behind it - one reads &quot;3&quot;, one reads &quot;4&quot;.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw TWO OR THREE CLOSED FENCES, each enclosing a group of
+   nodes as one shape. Most of the map is deliberately left BARE - unenclosed ground that nobody reaches.
+   A fence may never be broken or dotted, because a hole in it would read as a false claim.
+4. THE CLAIM TINT - three or four nodes filled with a claimant&#x27;s tint, each with a small legend beside it.
+5. THE TIER - the centre cluster, the middle band and the rim must be instantly separable.
+
+EXACT TEXT, spelled exactly:
+&quot;THE COMPACT&quot;
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot;
+&quot;THE COMMONS&quot;
+&quot;HEARTH&quot;   &quot;THRESHOLD&quot;   &quot;MARROW&quot;   &quot;VANE&quot;     (the four cluster names)
+&quot;Moorage - sys-29&quot;   beside the largest node on the rim
+&quot;Nettle - sys-15&quot;    beside the smallest node in the middle band
+&quot;Vale - sable&#x27;s&quot;     beside one mid-band node
+&quot;PAID&quot;                                  in a small box beside one tinted node
+&quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;     in an alarm-coloured box beside another tinted node
+&quot;stranded 3&quot;   beside one solid door block
+&quot;sys-01&quot; &quot;sys-08&quot; &quot;sys-11&quot; &quot;sys-24&quot; &quot;sys-25&quot;    as tiny node identifiers
+&quot;LEVY SHORT 150 - RECKONING 02:14&quot;      as a headline readout in one corner
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-profile-e"><img loading="lazy" src="profile-e-evenative.png" alt="EVE NATIVE - A CHARACTER PROFILE"></a>
+      <figcaption>
+        <b>A CHARACTER PROFILE</b>
+        <em>make me care about sable, and against vex</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction E: EVE NATIVE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+zKillboard, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+SUBJECT: A CHARACTER PROFILE, TWO UP - the screen where a viewer&#x27;s rooting interest has to live. Two
+principals side by side, filling the frame, drawn in the same template so they can be compared line for
+line. A play-test found viewers root for the one on the left against the one on the right; the design
+has to earn that.
+
+LEFT - THE ONE YOU ROOT FOR
+  handle           &quot;sable&quot;
+  address          &quot;sable@agenttransfer.dev&quot;      (the handle IS the email address)
+  holding          &quot;Vale - sys-06 - MARCHES&quot;
+  standing vectors, laid out as six separate labelled facts, never combined:
+                   &quot;ELECTIVE HONOURED   14&quot;
+                   &quot;VALUE HONOURED   9,497&quot;
+                   &quot;DEFAULTS   0&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   6&quot;
+                   &quot;LAST DEFAULT   none&quot;
+  one-clause line  &quot;kept 14 elective promises - 6 counterparties&quot;
+  a title band     &quot;NEVER BROKEN A PROMISE&quot;
+  its clause       &quot;14 elective halves honoured and not one default&quot;
+  syndicate        &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+  THREE HANDS, drawn as three individually distinguishable markers with their own states - NOT as a
+  number badge - labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+RIGHT - THE ONE YOU ROOT AGAINST
+  handle           &quot;vex&quot;
+  address          &quot;vex@agenttransfer.dev&quot;
+  holding          &quot;Ironhold - sys-25 - FRONTIER&quot;
+  standing vectors:
+                   &quot;ELECTIVE HONOURED   5&quot;
+                   &quot;VALUE HONOURED   3,180&quot;
+                   &quot;DEFAULTS   3&quot;
+                   &quot;CONTRADICTED SEALS   0&quot;
+                   &quot;COUNTERPARTIES   4&quot;
+                   &quot;LAST DEFAULT   tick 287&quot;
+  one-clause line  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+  a title band     &quot;MOST BROKEN&quot;
+  its clause       &quot;3 defaults on the record, the last at tick 287&quot;
+  syndicate        &quot;unaffiliated&quot;
+  THREE HANDS labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+THE ONE HARD RULE: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. Absolutely no overall
+rating, no grade, no letter, no percentage, no star rating, no single trust number, no radar chart that
+implies a total. The six numbers stand beside each other as separate public facts and the reader does the
+judging. &quot;DEFAULTS 3&quot; is the most interesting true thing about the one on the right and should lead.
+
+Each principal also gets a CREST - a small abstract non-representational mark, unique per handle,
+generated-looking rather than drawn, the size of a coin.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-reel-e"><img loading="lazy" src="reel-e-evenative.png" alt="EVE NATIVE - THE RECEIPT REEL"></a>
+      <figcaption>
+        <b>THE RECEIPT REEL</b>
+        <em>hold a lie next to its consequence</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Art direction E: EVE NATIVE.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+zKillboard, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+SUBJECT: THE RECEIPT REEL - the marquee artifact of the whole product, and the hardest composition in it.
+When an elective promise breaks, the replay assembles the promise-breaker&#x27;s own reassuring words, sent
+before the deed, and lays them beside the deed itself and the authority that permitted it. Nothing is
+authored; it is a query over a private negotiation channel that declassifies at settlement. It is part
+ledger, part transcript, part accusation.
+
+Lay it out as FOUR STACKED HORIZONTAL BANDS filling the frame, numbered, separated by rules:
+
+BAND 1 - THE GRANT
+  a directed line from one name to another:   &quot;halcyon&quot;  ------&gt;  &quot;brannock&quot;
+  &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+  &quot;MAX DIRECT LOSS   250,000&quot;      &quot;CONTINGENT   80,000&quot;
+  two small filled square clearance pips
+  small caption:  &quot;the worst case, shown before it was signed&quot;
+
+BAND 2 - THE WORDS   (label it &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;)
+  two transcript lines, monospaced, tick-stamped, the FIRST ONE IS THE HERO OF THE WHOLE IMAGE and must
+  be the most legible text in the frame:
+  t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+  t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+BAND 3 - THE SEAL
+  a single verdict, set apart:   &quot;CONTRADICTED&quot;      and beside it   &quot;by brannock&quot;
+
+BAND 4 - THE DEED
+  A RING GLYPH in state SNAPPED_BLACK: a circular ring, part of its rim drawn SOLID and part of it drawn
+  HOLLOW - the hollow arc is the part of the promise that was riding on nothing but a word - and the ring
+  is BROKEN OPEN at one side with a hard snap, with a small cross mark at the break. It is dead, black,
+  and it must read as broken from across a room.
+  beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+  and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+  and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+               &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+The emotional job of the composition: the warm reassuring sentence in BAND 2 and the broken ring in BAND 4
+must be visible in the same glance, so the lie and its consequence indict each other. Give the transcript
+line real typographic weight - it is the evidence.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+</main>
+<div class="lb" id="lb-map-a"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-a-holotable.png" alt=""></a><span class="cap">THE HOLOTABLE &middot; THE MAP</span></div>
+<div class="lb" id="lb-map-b"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-b-nostromo.png" alt=""></a><span class="cap">THE NOSTROMO &middot; THE MAP</span></div>
+<div class="lb" id="lb-map-c"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-c-hardsf.png" alt=""></a><span class="cap">HARD SF OPERATING SYSTEM &middot; THE MAP</span></div>
+<div class="lb" id="lb-map-d"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-d-catalogue.png" alt=""></a><span class="cap">THE STAR CATALOGUE &middot; THE MAP</span></div>
+<div class="lb" id="lb-map-e"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-e-evenative.png" alt=""></a><span class="cap">EVE NATIVE &middot; THE MAP</span></div>
+<div class="lb" id="lb-profile-a"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-a-holotable.png" alt=""></a><span class="cap">THE HOLOTABLE &middot; A CHARACTER PROFILE</span></div>
+<div class="lb" id="lb-profile-b"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-b-nostromo.png" alt=""></a><span class="cap">THE NOSTROMO &middot; A CHARACTER PROFILE</span></div>
+<div class="lb" id="lb-profile-c"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-c-hardsf.png" alt=""></a><span class="cap">HARD SF OPERATING SYSTEM &middot; A CHARACTER PROFILE</span></div>
+<div class="lb" id="lb-profile-d"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-d-catalogue.png" alt=""></a><span class="cap">THE STAR CATALOGUE &middot; A CHARACTER PROFILE</span></div>
+<div class="lb" id="lb-profile-e"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-e-evenative.png" alt=""></a><span class="cap">EVE NATIVE &middot; A CHARACTER PROFILE</span></div>
+<div class="lb" id="lb-reel-a"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-a-holotable.png" alt=""></a><span class="cap">THE HOLOTABLE &middot; THE RECEIPT REEL</span></div>
+<div class="lb" id="lb-reel-b"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-b-nostromo.png" alt=""></a><span class="cap">THE NOSTROMO &middot; THE RECEIPT REEL</span></div>
+<div class="lb" id="lb-reel-c"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-c-hardsf.png" alt=""></a><span class="cap">HARD SF OPERATING SYSTEM &middot; THE RECEIPT REEL</span></div>
+<div class="lb" id="lb-reel-d"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-d-catalogue.png" alt=""></a><span class="cap">THE STAR CATALOGUE &middot; THE RECEIPT REEL</span></div>
+<div class="lb" id="lb-reel-e"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-e-evenative.png" alt=""></a><span class="cap">EVE NATIVE &middot; THE RECEIPT REEL</span></div>
+<footer>Drafts at 1K / medium via openai/gpt-5.4-image-2. Generated text in an image is approximate &mdash; judge the language, not the spelling. Regenerate any cell with <code>python3 render.py --only map-a</code>.</footer>
+</body></html>
