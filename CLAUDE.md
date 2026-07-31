@@ -114,10 +114,17 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
   id is `hash(tick, principal, ordinal)` over a *world-global* counter, one action refused under changed
   rules renames every venture minted after it forever. The `posting`/`event` tables therefore hold rows
   from nine worlds; the refusal was **correct**, and the account check was the only thing standing between
-  production and a 503-on-every-route outage (the counts disagree by ~4,000 rows). Boot stays at 170 s and
-  **no code may fix that for this world** — A5 forbids rewriting a past row. The open item is a *record
+  production and a 503-on-every-route outage (the counts disagree by ~4,000 rows).
+  **No code may fix that for this world** — A5 forbids rewriting a past row. The open item is a *record
   epoch*, or a world that never forked. The three theories this cost — a closed escrow account, world
   length, enrolment re-seating — were each killed by one database query.
+- ⚑ **"Boot stays at 170 s" was true when it was written and stopped being true.** Every accepted
+  divergence refuses adoption, so **every boot replays from genesis and boot is O(history)**: measured
+  **~37 minutes at tick 10,136** with 25 declared discontinuities on the record, and the deploy's own
+  wait loop had to go from a 600 s bound to 3600 s because of it. **A re-seeded world has none of them
+  and boots in seconds** — which is the availability half of the re-seed decision, and the reason a
+  record epoch is an availability item rather than a tidiness one. Re-measure this figure before
+  quoting it; it grows with the season.
 
 ### ★ THE GOAL, restated 2026-07-28 — COMPLETE IT, AND PROVE IT BY PLAYING IT
 

@@ -10,6 +10,34 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
+## ⏱ 2026-07-30 — `RULES_VERSION` 40, 312 files / 3,889 tests, and a re-seeded world
+
+*The rest of this file predates the three merges of 2026-07-30 and its version numbers, test counts
+and boot figure are stale wherever they disagree with this block. `TRACKER.md`'s STATUS carries the
+full account of the merges.*
+
+| | reading, 2026-07-30 |
+|---|---|
+| `RULES_VERSION` | **40** (38 the countersignature window, 39 `observe`'s eleventh key, 40 the conflict layer) |
+| `tsc` · lint | 0 · 0 |
+| vitest | **312 files, 3,889 passed, 1 skipped** |
+| budgets | verbs **40/40** · axioms 15/15 · **observe keys 11/11** · venture kinds 8/8 |
+| balance gate 3R · 6R · 9R, 8 seeds | `levyShort` **0** at every horizon · red **0/192 · 0/384 · 0/576** · `halted 0` · `trapped 0` |
+| contract | analytic ceiling **104,647** of 120,000 · largest reachable **98,128** (margin 21,872) |
+| market | **19 fills** over 7 seeds at 6 Reckonings, **no seed silent** |
+
+⚑ **§17's observe-key ceiling moved for the first time**, 10 → 11, by owner decision, so `risk` could
+be added rather than a key traded away — the alternative was a live A9 breach (the spectator frame
+carried a FRONT the agent's own `observe` could not read). SPEC §12.1/§17, `TESTING.md` PROP-O3 and
+`scripts/budget-audit.mjs` all carry the reason; the audit now fails on twelve.
+
+⚑ **BOOT IS NOT 170 SECONDS.** Every accepted divergence refuses checkpoint adoption, so a boot
+replays from genesis and is O(history): **~37 minutes at tick 10,136** with 25 discontinuities on the
+record. §"Boot time: 170 s → 170 s" below is stale as a *current* figure and correct only as history.
+A world with no discontinuities boots in seconds, which is the availability half of the re-seed.
+
+---
+
 ## The one-paragraph answer
 
 **The machine is built and correct, the core loop closes without a human in it, and 12 of 13 show
