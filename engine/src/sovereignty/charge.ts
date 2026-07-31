@@ -61,7 +61,7 @@ export class ChargeArithmeticError extends Error {}
  * implementation is scar #5 applied to an algorithm, and the failure mode is a total off by one unit
  * in one of the two mechanics, which is a fabricated debt in whichever one drifted.
  *
- * The `minor()`/`qty()` round trip this used to make is gone as of `RULES_VERSION` 38: the allocator
+ * The `minor()`/`qty()` round trip this used to make is gone as of the ONE-HOME sweep: the allocator
  * moved out of `levy/` and is generic over the brand, so the Charge's `Qty` stays `Qty` end to end.
  */
 function shareOut(amount: Qty, weights: readonly number[]): readonly Qty[] {

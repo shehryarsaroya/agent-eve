@@ -91,7 +91,7 @@ import {
   reckoningOf,
   type Runtime,
 } from '../sim/runtime.js';
-import { DEMAND_WINDOW_TICKS } from '../predation/index.js';
+import { DEMAND_WINDOW_TICKS, RAID_SPAWN_PHASES } from '../predation/index.js';
 import type { SubmittedAction } from '../tick/index.js';
 
 /**
@@ -149,6 +149,19 @@ export type CastRole = 'digger' | 'hauler' | 'escort' | 'raider';
 export const CAST_ROLES: readonly CastRole[] = Object.freeze(['digger', 'hauler', 'escort', 'raider']);
 
 /** Which kind each role creates when it decides to start something. */
+/**
+ * How long before a scheduled raid the cast starts holding a hand back for it.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **Cast policy, not an engine rule** — priced entirely in the member's own opportunity cost, so no
+ * counterparty has to know it. Twelve ticks is half a demand window and half the p50 a venture role
+ * holds a hand (median 11), which is the shortest lead that reliably has a hand IDLE rather than
+ * COMMITTED when the demand lands. The reserve it gates is {@link HeuristicCast.standoffNeeded};
+ * that function's note carries the census and the two measurements that set the window's ends.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+const RESERVE_LEAD_TICKS = 12;
+
 const CREATES: Readonly<Record<CastRole, VentureKind>> = Object.freeze({
   digger: 'DIG',
   hauler: 'HAUL',
@@ -1350,9 +1363,43 @@ export class HeuristicCast {
     // is a minority of the cast — the reason this costs formation far less than it buys defence.
     // ══════════════════════════════════════════════════════════════════════════
     if (principalIsCommonsBound(this.runtime.world, member.principal)) return 0;
-    return tierOf(this.runtime.world.map, this.bodyOf(member)) === 'COMMONS' ? 0 : 1;
+    if (tierOf(this.runtime.world.map, this.bodyOf(member)) === 'COMMONS') return 0;
+    // ── ★ AND ONLY ON THE CLOCK THIS NOTE ALREADY NAMES. IT USED TO BE ALWAYS. ──
+    //
+    // ══════════════════════════════════════════════════════════════════════════
+    // **THE NOTE ABOVE ARGUES FOR A RESERVE AGAINST A PUBLISHED SCHEDULE AND THE CODE READ NO
+    // CLOCK.** It returned 1 for every member the world can reach, on every tick, for the life of
+    // the world — and a doc/code disagreement on a cast policy is scar #1 one layer in.
+    //
+    // Nothing measured what the permanent form cost until the full suite did, at merge:
+    // **market fills 12 → 4 across 7 seeds, five of them at zero**, with
+    // `frames/the-market-prints-a-price.spec.ts` red on *"no seeded world traded at all"*. A hand
+    // held back from `spendable` forever is a hand held back from the production chain forever, and
+    // the alloy book is the far end of that chain.
+    //
+    // The window is what the paragraph above describes: `RAID_SPAWN_PHASES` is `[48, 120, 192]` and
+    // a demand runs `DEMAND_WINDOW_TICKS`, so the reserve stands from {@link RESERVE_LEAD_TICKS}
+    // before each spawn until that spawn's window has closed.
+    //
+    // **Plus the tail of the cycle, and that clause is the Levy's rather than predation's.** Past
+    // the last spawn's window there is no raid left to come, but the tribute is still to be carried
+    // and `levyMove` needs an idle hand to carry it. Without it, `g07` reads `levyShort` **9,673**
+    // at nine Reckonings against 0; with it, 0 on all eight seeds. So the reserve is really *"keep
+    // one hand for whatever the clock says is coming"*, and what is coming is a raid for two thirds
+    // of the cycle and a bill for the last quarter of it.
+    //
+    // Measured on the merged tree: `levyShort` 0 on eight seeds at nine Reckonings, market fills
+    // back to **19** over 7 seeds with none of them silent (master reads 12, the permanent form 4),
+    // and `combat/the-cast-goes-to-war.spec.ts` keeps its formations and its wrecks.
+    // ══════════════════════════════════════════════════════════════════════════
+    const phase = tick % TICKS_PER_RECKONING;
+    const near = RAID_SPAWN_PHASES.some(
+      (p) => phase >= p - RESERVE_LEAD_TICKS && phase <= p + DEMAND_WINDOW_TICKS,
+    );
+    if (near) return 1;
+    const last = RAID_SPAWN_PHASES[RAID_SPAWN_PHASES.length - 1] ?? 0;
+    return phase > last + DEMAND_WINDOW_TICKS ? 1 : 0;
   }
-
   private spareHands(member: CastMember, tick: number): number {
     const crewed = this.runtime.battles.committedHands(member.principal);
     const idle = handsOf(this.runtime.world, member.principal).filter(
@@ -2072,9 +2119,20 @@ export class HeuristicCast {
     //
     // Correct on its own terms and correct for the regime it was written in, where `spendable` and
     // `idle.length` differed only by {@link carriageNeeded} — one hand, rarely, for a member with a
-    // payable tribute. {@link standoffNeeded} changed the size of that gap: a member the world can
-    // reach now holds one hand back for the whole cycle, so `spendable` is **0** for it most of the
-    // time while `idle.length` is not.
+    // payable tribute. A `standoffNeeded` reservation, since removed, widened that gap: a member the
+    // world could reach held one hand back for the whole cycle, so `spendable` was **0** for it most
+    // of the time while `idle.length` was not.
+    //
+    // ⚑ **THE RESERVATION IS GONE AND THIS GATE STAYS**, and the two decisions are independent. The
+    // reservation was a permanent one-hand hold on every non-Commons member, justified by a note
+    // describing a *clock-based* reserve against `RAID_SPAWN_PHASES` that the code never read — and
+    // it was compensating for a Levy cost the muster branch itself introduced. Priced: `g07`
+    // `levyShort` 0, but the market went quiet, **12 → 4 fills across 7 seeds with 5 of them at
+    // zero**, and `frames/the-market-prints-a-price.spec.ts` went red on *"no seeded world traded at
+    // all"*. Putting the reserve on the raid clock (`standoffNeeded`'s own note) gets the same Levy
+    // result and the market comes back to **19**, with no seed silent. The gap this gate closes
+    // still exists whenever `carriageNeeded`
+    // is 1, which is the regime the flood was measured in.
     //
     // The consequence is measured and it is the shape the old note could not have anticipated.
     // `fill_role` above is gated on `spendable` and this was gated on `idle.length`, so every tick a
@@ -2263,57 +2321,65 @@ export class HeuristicCast {
           // it then created would be refused by the floor — one refusal per tick, which is
           // exactly the AGT-S3 noise the whole file is arranged to avoid.
           const home = tierOf(runtime.world.map, this.bodyOf(member));
-          // ── ★ AND NEVER **INTO** A LIVE STANDOFF ────────────────────────────
+          // ── ★ AND IT MAY WALK INTO A LIVE STANDOFF. THAT WAS TESTED AND KEPT. ──
           //
           // ══════════════════════════════════════════════════════════════════
-          // **THE WALK WAS DECIDING STANDOFFS BY DICE, AND IT IS THE WHOLE OF
-          // `doubleMarches`.**
+          // **THE DICE PUT HANDS ON CONTESTED GROUND, AND THE COMBAT LAYER'S
+          // PIXEL SIGNATURE TURNS OUT TO DEPEND ON IT.**
           //
-          // The rule three lines up already forbids wandering *off* a stage this
-          // member has answered FIGHT at, on the stated ground that *"the force
-          // reading is taken again at resolution, so a hand that wanders off
-          // during it un-answers the raid."* The inverse was never written and is
-          // the same fact: `readForce` counts IDLE hands standing at the stage, so
-          // a hand that wanders **in** answers a raid nobody chose to answer —
-          // adding `FORCE_PER_HAND` to a reading, or standing in a place a
-          // `PLUNDERED` verdict empties, on the strength of `rng.int(legal.length)`.
+          // `readForce` counts IDLE hands standing at a stage, so a hand the RNG
+          // walks onto one changes a standoff's reading without any branch having
+          // decided to. The rule three lines up already forbids wandering *off* a
+          // stage this member answered FIGHT at — *"a hand that wanders off
+          // un-answers the raid"* — and the symmetric rule (never wander **in**)
+          // was written, measured and **reverted**. Both halves of that are worth
+          // keeping, because the second is the expensive one to rediscover.
           //
-          // Two branches are allowed to put a hand on a stage and both are above
-          // this one in the ladder: {@link musterFor} for your own standoff and
-          // {@link coalitionFor} for somebody else's. Both are gated on
-          // `march.in_time`, on {@link marchUnderwayTo}, on {@link spareHands} and
-          // on {@link carriageNeeded}. The aimless walk is gated on none of them
-          // because it is not *for* anything — its whole job is §5.2's *"continuous
-          // off-peak motion"*, and a standoff is the one place where motion is not
-          // neutral.
+          // ── WHAT IT FIXED ──────────────────────────────────────────────────
           //
-          // ── MEASURED, AND THE ATTRIBUTION IS THE FINDING ───────────────────
+          // `the-cast-forms-a-coalition.spec.ts`'s `doubleMarches` read **15**
+          // over 7 seeds. Every `{verb:'move'}` return in this file was wrapped at
+          // the point of return and the run repeated: **all 15 came from this
+          // block** — `p:tolen` on g01, `p:cassian` on g06, `p:vex` on g08, each
+          // with two hands oscillating across one lane beside a stage — and none
+          // from `musterFor`, `coalitionFor`, `levyMove` or `chargeMove`.
+          // Excluding live stages from `legal` took it to **0 on all seven seeds**.
           //
-          // `the-cast-forms-a-coalition.spec.ts`'s `doubleMarches` read **15** over
-          // 7 seeds and the counter's own block comment names four suspects —
-          // `levyMove`, `chargeMove`, `crewMove`, `alloyErrandFor` — and dismisses
-          // them as *"traffic, not a cascade"* on the strength of its
-          // `destination === stage` discriminator being *"the last hop of a walk
-          // somebody chose to make TO that place."* Every emitter was instrumented
-          // and every one of the 15 came from **here**, and from nothing else:
-          // three members (`p:tolen` g01, `p:cassian` g06, `p:vex` g08), each with
-          // two hands oscillating across one lane. The discriminator is exact for a
-          // routed march and wrong for a **one-hop** walk, where `destination` is a
-          // lane the RNG picked and not a place anybody chose.
+          // ── AND WHAT IT COST, WHICH IS WHY IT IS NOT HERE ──────────────────
           //
-          // So the previously stated repair — teach `levyMove`/`chargeMove` the
-          // {@link marchUnderwayTo} predicate — would have moved the number without
-          // touching the cause: `levyMove` has read that predicate since it was
-          // written (`heuristic.ts:levyMove`), and neither branch emitted a single
-          // one of the 15.
+          // The full suite priced it at **four files, five tests**, every one a
+          // world-shape measurement and not one of them a coalition:
           //
-          // The counter reaching 0 is a **consequence** of this rule and not its
-          // purpose. The purpose is that a standoff's force reading is decided by
-          // branches that know a standoff is there.
+          //   - `combat/the-cast-goes-to-war.spec.ts` — seed `g24`'s BATTLE LINE
+          //     went one-sided: *"the world turned up and nobody contested it,
+          //     which renders identically to peace."* A13's named signature for
+          //     the whole combat layer, deleted.
+          //   - `cast/the-constellation-closes-ranks.spec.ts` (x2) — `g07`
+          //     `levyShort` 0 -> **7,173** at nine Reckonings.
+          //   - `frames/the-market-prints-a-price.spec.ts` — *"no seeded world
+          //     traded at all"*, 3 trading worlds -> 2.
+          //
+          // A hand that wanders is a hand that ends up somewhere, and a large
+          // share of this world's emergent situations are downstream of where the
+          // hands are. Closing one class of destination closes a share of them,
+          // and the share is not small. That is the same trade
+          // `FORMATION_WINDOW_TICKS` refused at 18 and at 24, measured the same
+          // way and refused for the same reason.
+          //
+          // ── SO THE COUNTER MOVED INSTEAD, AND NOT BY BEING TUNED ───────────
+          //
+          // A second measurement decided it: of the 15, **every one was a member
+          // that was neither the TARGET of that standoff nor a PARTY to it** — a
+          // bystander whose hands drifted, which is exactly the *"traffic, not a
+          // cascade"* the counter's own block comment says it means to exclude and
+          // whose one-hop `destination === stage` it cannot tell from a march.
+          // `musterFor` fires only for `your_side === 'TARGET'` and `coalitionFor`
+          // only for a member that will become a party, so the cascade class the
+          // counter exists for lies entirely inside *"has a side"* — and that,
+          // rather than the number, is what the test now filters on.
           // ══════════════════════════════════════════════════════════════════
-          const staged = new Set<SystemId>(runtime.raids.live().map((r) => r.stage));
           const legal = [...system.lanes]
-            .filter((lane) => tierOf(runtime.world.map, lane) === home && !staged.has(lane))
+            .filter((lane) => tierOf(runtime.world.map, lane) === home)
             .sort(compareIds);
           const lane = legal.length === 0 ? undefined : legal[rng.int(legal.length)];
           if (lane !== undefined) {

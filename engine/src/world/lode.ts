@@ -295,7 +295,7 @@ export function lodesOf(map: WorldMap, bases: LodeBases): ReadonlyMap<SystemId, 
     // `largestRemainder` over `base × count` is what makes the tier total exact.
     //
     // These were `largestRemainder((base * ids.length) as never, w) as readonly number[]` until
-    // `RULES_VERSION` 38, when the allocator moved from `levy/assessment.ts` to `core/allocate.ts`
+    // the ONE-HOME sweep, when the allocator moved from `levy/assessment.ts` to `core/allocate.ts`
     // and became generic over the brand. The casts were not cosmetic: `as never` is assignable to
     // every parameter type, so it did not launder `number` into `Minor` — it **disabled argument
     // checking on the one call in this file whose integer-ness INV-W1 rests on.** A `string` would

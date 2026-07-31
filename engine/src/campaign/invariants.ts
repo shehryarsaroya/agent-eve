@@ -354,7 +354,7 @@ export function checkCmp6(input: CampaignInvariantInputs): readonly InvariantVio
     }
     const next = nextPulseTickOf(c);
     // `phaseOfReckoning`, not a hand-inlined copy of its body with the cycle length written three
-    // times (`RULES_VERSION` 38). This is the A14 halt for "a scheduled decision at an unpublished
+    // times (the ONE-HOME sweep). This is the A14 halt for "a scheduled decision at an unpublished
     // tick"; a guard that computes the phase differently from the clock it guards is the defect it
     // was written to catch.
     if (next !== null && phaseOfReckoning(next) !== CAMPAIGN_PULSE_PHASE) {

@@ -440,7 +440,7 @@ export function raidViewsFor(args: {
   // feature.
   //
   // ══════════════════════════════════════════════════════════════════════════
-  // **AND SORTED WITHIN EACH GROUP BEFORE THE SLICE, WHICH IT WAS NOT UNTIL `RULES_VERSION` 38.**
+  // **AND SORTED WITHIN EACH GROUP BEFORE THE SLICE, WHICH IT WAS NOT UNTIL THE ONE-HOME SWEEP.**
   //
   // This comment used to read *"Own rows first **and never truncated**"*. The second half was false
   // above `limit`: `own` is built from `Book.forPrincipal`, which returns rows in **every** state, the

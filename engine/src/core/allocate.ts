@@ -4,8 +4,18 @@
  * ══════════════════════════════════════════════════════════════════════════
  * **ONE ALLOCATOR, AND IT LIVES BELOW EVERYTHING THAT ALLOCATES.**
  *
- * This is `levy/assessment.ts:largestRemainder` moved down a layer at `RULES_VERSION` 38, unchanged
+ * This is `levy/assessment.ts:largestRemainder` moved down a layer in the ONE-HOME sweep, unchanged
  * line for line. It moved because four modules allocate and only one of them is the Levy:
+ *
+ * > ⚑ **"THE ONE-HOME SWEEP" IS A NAME AND NOT A `RULES_VERSION`, AND THAT IS A CORRECTION.**
+ * > Twenty-two comments across `src/` and `test/` said this move landed *"at `RULES_VERSION` 38"*.
+ * > It did not: the pass was pre-assigned lane 38 while three other lanes were in flight, and it
+ * > **spent no version at all** — it changes no rule, so there was nothing to spend one on. The tree
+ * > read 34 when it merged. On 2026-07-30 a different change took 38 for real, which would have sent
+ * > an operator reading a `RULES_VERSION_MISMATCH` to this file for an answer that is not here. The
+ * > references now name the pass instead of a number, because a name cannot go stale behind a
+ * > renumber. `test/core/one-home-per-number.spec.ts` is the audit; that is where the name comes
+ * > from. **A version number is only a legitimate cross-reference once the version is spent.**
  *
  *   | caller                    | what it splits                        | what the old import cost it |
  *   |---------------------------|---------------------------------------|-----------------------------|

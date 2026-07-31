@@ -231,7 +231,7 @@ function bool(o: { readonly [k: string]: CanonicalValue }, key: string, where: s
  * **THE `OrAbsent` PAIR EXISTS BECAUSE FOUR BOOKS HAD ALREADY WRITTEN IT, EACH PRIVATELY, AND TWO OF
  * THEM UNDER THE NAME OF THE STRICT ONE ABOVE.**
  *
- * At `RULES_VERSION` 38 this family had eight private copies across four modules:
+ * In the ONE-HOME sweep this family had eight private copies across four modules:
  *
  *   | copy                          | name it used         | treats a MISSING key as |
  *   |-------------------------------|----------------------|-------------------------|

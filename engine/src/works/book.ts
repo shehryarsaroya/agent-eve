@@ -109,7 +109,7 @@ export class WorksError extends Error {}
 /**
  * Split a quantity into `n` equal-as-possible parts summing to it exactly.
  *
- * This was `largestRemainder(total as unknown as Minor, …)` until `RULES_VERSION` 38, with a
+ * This was `largestRemainder(total as unknown as Minor, …)` until the ONE-HOME sweep, with a
  * paragraph here explaining that the units were being "laundered once, with the reason" because the
  * allocator lived in `levy/` and was typed in `Minor`. The allocator now lives in `core/allocate.ts`
  * and is generic over the brand, so there is no crossing to justify: `Qty` goes in and `Qty` comes

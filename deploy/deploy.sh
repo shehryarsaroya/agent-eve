@@ -301,27 +301,60 @@ ok "the new build booted (boot line present)"
 # so "not ready yet" and "held" and "dead" are three different things and the deploy
 # must wait for the first to resolve rather than reading a mid-replay 503 as failure.
 log "waiting for the replay to finish"
+# ── THE LOOP WAITS FOR A **POSITIVE** SIGNAL, AND THAT IS THE WHOLE FIX ──────
+#
+# This has now been wrong twice, in opposite directions, and both times it was the same mistake:
+# the loop's exit condition was "the thing I am waiting for is ABSENT."
+#
+#   v1  `curl … | grep -q BOOTING`  — exited when CURL failed, because grep then saw no input.
+#       So it declared the replay finished within seconds of a restart, while the socket was still
+#       not accepting.
+#   v2  the `[[ -z "$BODY" ]] && exit 0` / `grep -q BOOTING` pair — correct about those two states
+#       and silent about every other one. On 2026-07-30 it printed *"the replay finished (waited
+#       45s)"* while `/health` read `BOOTING, replayed_tick 4607 of 10136`, and the next check
+#       failed the deploy on `world is not RUNNING`. **A healthy deploy reported as broken, which
+#       trains an operator to ignore every check in this file.**
+#
+# Both versions enumerate the states that mean KEEP WAITING and treat the rest — an ssh blip
+# (255), a body of an unexpected shape, a half-second where the old process is still answering
+# RUNNING before systemd kills it, a wrong `COMPACT_PORT`, a proxy error page — as "done". That is
+# a check that fails in the direction that hides, which is the one direction this repo has decided
+# is never acceptable.
+#
+# Inverted: the loop ends only when the body affirmatively says `"world":"RUNNING"` **or** the world
+# is `HELD` (an honest refusal the block below diagnoses). Everything else keeps waiting, and the
+# timeout is the backstop. A hung deploy is a visible, bounded, diagnosable failure; a false
+# "finished" is not.
+#
+# ── AND THE TIMEOUT IS 3600s, NOT 600 ───────────────────────────────────────
+#
+# Boot is O(entire history) and adoption is refused while the record carries declared
+# discontinuities, so **this world replayed from genesis in ~37 minutes at tick 10,136** — six
+# times the old bound. 600s would now fail every deploy of a mature shard on the clock alone. The
+# real fix is a record epoch (or a world that never forked); until then the bound has to be honest
+# about what boot costs.
 WAITED=0
-# `curl | grep -q BOOTING` exits the loop when curl FAILS, because grep then sees no
-# input — and curl fails for the first few seconds after a restart, while the socket is
-# not yet accepting. So the loop declared the replay finished about as fast as it could
-# be asked, twice tonight, and the post-deploy check then read a genuine BOOTING and
-# called a healthy deploy failed. "Not answering yet" and "answering BOOTING" are the
-# same state to this loop and must both keep it waiting; only a real answer that is not
-# BOOTING may end it.
-while $SSH "set -a && . /etc/compact/env && set +a
-      BODY=\$(curl -s --max-time 5 http://127.0.0.1:\${COMPACT_PORT:-8787}/health || true)
-      [[ -z \"\$BODY\" ]] && exit 0            # not answering yet: keep waiting
-      grep -q BOOTING <<<\"\$BODY\"            # answering BOOTING: keep waiting
-      "; do
+until $SSH "set -a && . /etc/compact/env && set +a
+      BODY=\$(curl -s --max-time 10 http://127.0.0.1:\${COMPACT_PORT:-8787}/health || true)
+      case \"\$BODY\" in
+        *'\"world\":\"RUNNING\"'*) exit 0 ;;   # up: the only clean way out
+        *'\"world\":\"HELD\"'*)    exit 0 ;;   # refused on purpose: diagnosed just below
+        *)                            exit 1 ;;   # anything else at all: keep waiting
+      esac"; do
   WAITED=$((WAITED + 5))
-  [[ $WAITED -lt 600 ]] || fail "still replaying after 600s. The world is not lost — the process is up and
-     answering 503 BOOTING — but boot is O(entire history) and has outgrown this timeout.
-     Checkpoint adoption is the fix; until then, expect this to grow every season."
-  printf '  replaying… %ss\n' "$WAITED"
+  [[ $WAITED -lt 3600 ]] || fail "still not RUNNING after ${WAITED}s. The world is probably not lost — the
+     process is up and answering 503 BOOTING — but boot is O(entire history) and has outgrown even
+     this bound. Check /health for replayed_tick against head_tick before doing anything: if it is
+     still climbing, the deploy is fine and only this timeout is wrong. A record epoch is the fix."
+  # Print the replay's own progress rather than only the clock, so "still going" and "wedged" are
+  # different pictures to whoever is watching. An unmoving replayed_tick is the thing to act on.
+  PROGRESS=$($SSH "set -a && . /etc/compact/env && set +a
+      curl -s --max-time 10 http://127.0.0.1:\${COMPACT_PORT:-8787}/health 2>/dev/null \
+        | tr ',' '\n' | grep -E 'replayed_tick|head_tick|world' | tr '\n' ' '" 2>/dev/null || true)
+  printf '  replaying… %ss  %s\n' "$WAITED" "${PROGRESS:-(no answer yet)}"
   sleep 5
 done
-ok "the replay finished (waited ${WAITED}s)"
+ok "the world answered RUNNING or HELD (waited ${WAITED}s)"
 
 # HELD is the honest refusal, not a crash — the process is up and serving 503 with a
 # diagnosis rather than looping. It is still a failed deploy, and the message has to say

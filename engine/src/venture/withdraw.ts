@@ -83,7 +83,7 @@ export function forfeitShares(
   const payees = [...others].sort(compareIds);
   if (payees.length === 0) return [];
   // `largestRemainder` over equal weights, not a private `trunc` + hand-dealt remainder
-  // (`RULES_VERSION` 38). Provably the same vector — equal weights make the allocator's tie-break the
+  // (the ONE-HOME sweep). Provably the same vector — equal weights make the allocator's tie-break the
   // index order, which is what the hand-rolled loop was doing by walking `payees` in `compareIds`
   // order — and the reason to swap is that this is a forfeit being split between real principals, so
   // the allocator that asserts Σ === amount is the one that should compute it. The old loop asserted

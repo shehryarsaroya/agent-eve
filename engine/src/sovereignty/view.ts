@@ -63,7 +63,7 @@ import { FUEL_GOOD } from '../works/params.js';
  * string a viewer reads.
  *
  * **Now an alias of {@link CHARGE_MISSES_TO_CONTEST} rather than a second copy of its expression**
- * (`RULES_VERSION` 38). The two are the same number for a stateable reason — the last arrears step
+ * (the ONE-HOME sweep). The two are the same number for a stateable reason — the last arrears step
  * *is* the contested one — and re-deriving `CHARGE_MISSES_TO_LAPSE - 1` here was the same defect this
  * docstring warns about, one level up: the label and the threshold agreed by coincidence of
  * arithmetic rather than by construction.

@@ -197,7 +197,7 @@ export const ENDOWMENT_GOOD = 'ration' as GoodId;
  * The goods minted to each principal at enrolment (§6.1).
  *
  * ══════════════════════════════════════════════════════════════════════════
- * **THIS DECLARATION MOVED HERE FROM `levy/params.ts` AT `RULES_VERSION` 38, AND THE MOVE IS THE
+ * **THIS DECLARATION MOVED HERE FROM `levy/params.ts` IN THE ONE-HOME SWEEP, AND THE MOVE IS THE
  * SECOND HALF OF A FIX WHOSE FIRST HALF SHIPPED AT 20.**
  *
  * The header above records why `ENDOWMENT_GOOD` stopped being an alias of `LEVY_GOOD`: *"it also

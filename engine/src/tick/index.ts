@@ -133,7 +133,7 @@ export {
 } from './snapshot.js';
 
 /**
- * The canonical snapshot readers. **Omitted from this barrel until `RULES_VERSION` 38.**
+ * The canonical snapshot readers. **Omitted from this barrel until the ONE-HOME sweep.**
  *
  * Every book in the engine hydrates through these, and because the barrel did not carry them, every
  * book reached past it into `./snapshot.js` — which is how eight private copies of this family came to

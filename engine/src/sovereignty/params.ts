@@ -27,7 +27,7 @@ import { TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
 import type { GoodId, ZoneTier } from '../core/types.js';
 import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
 // The enrolment allotment, read from the module that mints it rather than through the Levy's alias
-// for it (`RULES_VERSION` 38). Both names are the same number by construction; this one does not make
+// for it (the ONE-HOME sweep). Both names are the same number by construction; this one does not make
 // `sovereignty/` depend on `levy/`, which it otherwise would for a quantity that is not the Levy's.
 import { STARTER_ALLOTMENT } from '../ledger/endowment.js';
 // The anchor's manufactured half. `CHARGE_GOOD` below stays declared with its own literal —

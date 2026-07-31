@@ -1,5 +1,8 @@
 /**
- * ★ **`RULES_VERSION` 35 — A RAIDER'S FORCE IS HANDS, NOT PARTY ROWS**, and the briefing can see a war.
+ * ★ **`RULES_VERSION` 37 — A RAIDER'S FORCE IS HANDS, NOT PARTY ROWS**, and the briefing can see a war.
+ *
+ * *(35 was the pre-assigned lane; the surface lode renumbered to 37 at merge. This file said 35 for
+ * two versions afterwards, which is the cross-reference class `core/allocate.ts`'s note is about.)*
  *
  * ══════════════════════════════════════════════════════════════════════════
  * **A BLIND PLAYER STOOD AT ITS OWN DEMAND'S STAGE WITH THREE HANDS AND READ `force.raider: 1`.**
@@ -61,7 +64,7 @@ function look(runtime: ReturnType<typeof raidWorld>['runtime'], who: PrincipalId
   }) as unknown as Row;
 }
 
-describe('★ the raider\'s force is counted in HANDS (RULES_VERSION 35)', () => {
+describe('★ the raider\'s force is counted in HANDS (RULES_VERSION 37)', () => {
   it('★ NON-VACUITY, then the claim: three hands from ONE principal are worth three, not one', () => {
     // The unit change, isolated from the world. `handsAtStage` answers three hands for the raider and
     // one for the target, so the OLD arithmetic reads 1 raider against 1 + terrain and the NEW one

@@ -175,9 +175,35 @@ const GATE_SEEDS = ['gate-a', 'gate-b', 'gate-c', 'gate-d'] as const;
  * ten satisfies is a coincidence and would need an assertion instead, the way {@link CREW_MOVE_FLOOR}
  * replaced a seed that no longer went silent. `g05` is the spare, and it is already a `WAR_SEEDS`
  * member — so if `LINE_SEEDS` ever does have to move, it moves there and the scan says why.
+ *
+ * ── ★ IT MOVED, AT `RULES_VERSION` 40, AND THE SCAN SAYS WHY ────────────────
+ *
+ * `g24` stopped qualifying. `scripts/war-seed-scan.ts`, 24 seeds × 900 ticks × 8 members, on the
+ * merged tree:
+ *
+ * | seed | CONTEST | wrecks | lines | two-sided | engage | qualifies |
+ * |---|---|---|---|---|---|---|
+ * | `fz-13` | yes | 3 | 2 | **1** | 1 | ★ |
+ * | `g05` | yes | 6 | 1 | **1** | 2 | ★ |
+ * | `g24` | yes | 0 | 1 | 0 | 0 | — |
+ * | `w-2` `w-3` `w-5` `w-6` `w-7` | yes | 0 | 1–2 | 0 | 0 | — |
+ * | `w-12` | yes | 3 | 1 | 0 | 1 | — |
+ * | the other 14 | no | 0 | 0 | 0 | 0 | — |
+ *
+ * **2 of 24.** The move is the one this block pre-authorised: to `g05`, with the scan's table
+ * pasted rather than described. What changed the world was 40's `standoffNeeded` reserve — the cast
+ * now keeps a hand back on the raid schedule instead of permanently, which is what took the market
+ * from 4 fills back to 17, and `g24` still reaches CONTEST but no longer gets a hull to the field
+ * (`engage` 1 → 0). The block above says it plainly: *"any change to the world's shape invalidates
+ * the picks."*
+ *
+ * ⚑ **And 2 of 24 is thinner than 3 of 10, which is worth saying rather than burying.** The
+ * property still has two independent carriers, so the two-seed pin stands — but the next author to
+ * move the world's shape should run the scan expecting to re-pin, and if it ever reads 1, this test
+ * has to become an assertion about the mechanism rather than a pin on a seed.
  * ══════════════════════════════════════════════════════════════════════════
  */
-const LINE_SEEDS = ['fz-13', 'g24'] as const;
+const LINE_SEEDS = ['fz-13', 'g05'] as const;
 
 interface Wreck {
   readonly battle: string;

@@ -4148,7 +4148,7 @@ function affordancesFor(
           //
           // The same sweep question as `graduation.ground[]`: does the observation publish the term that
           // dominates the outcome? `move` names the trip and the exposure and said nothing about the
-          // pinch — and at `RULES_VERSION` 35 that term became load-bearing, because raider force is
+          // pinch — and at `RULES_VERSION` 37 that term became load-bearing, because raider force is
           // now `min(hands standing there, SWAY there)` and a STRAIT you hold neither end of costs
           // `SWAY_STRAIT_TOLL` of exactly that. So walking a hand across an unheld strait can put it
           // somewhere it is *present and worth nothing offensively*, which is indistinguishable from a

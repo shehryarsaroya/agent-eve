@@ -1417,7 +1417,7 @@ function unknownVerb(verb: string): Rejection {
 // value."* This file held the copy, and `readParam` held it under a second name, so a grep for
 // `readString` could not find it.
 //
-// Removed at `RULES_VERSION` 38. `readString` is imported above; the two call sites below now read
+// Removed in the ONE-HOME sweep. `readString` is imported above; the two call sites below now read
 // the same tolerance rules as every other verb in the engine.
 
 const BUILT_IN_VERBS: Readonly<Record<string, VerbHandler>> = {

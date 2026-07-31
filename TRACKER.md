@@ -6,59 +6,110 @@
 
 ## ⏱ STATUS
 
-> ### ★★★ **BOTH REMAINING BRANCHES ARE LANDED AND PRODUCTION IS SERVING `RULES_VERSION` 37.**
+> ### ★★★ **THREE BRANCHES LANDED — `RULES_VERSION` 40, AND ONE OF THEM WAS RE-PRICED AT MERGE.**
 >
-> `lode-35-surface` (`dd5fc77`) and `lode-39` (`adb11e7`) merged into master on 2026-07-30. Deployed
-> to `agentinsurance.io/compact/` — `world: RUNNING`, `failures: []`, `rollback_gaps: []`, tick
-> 10,136, `ok: true`. The operator door was signed once, at
-> `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=287:115326b86d5a81ab`, and the record now carries a **declared
-> discontinuity at tick 287, `rules_version 1 -> 37`**.
+> `sign-the-menu` (**38**), `lode-40-risk-observe` (**39**) and `lode-38-conflict` (**40**) merged into
+> master on 2026-07-30, in that order, each renumbered to the tail per 24's protocol and **stacked, not
+> blended** — 40 arrived blended into 37's block and was extracted, which is the failure mode the
+> protocol exists to prevent.
 >
-> | gate | reading on the merged tree |
-> |---|---|
-> | `tsc` · lint | 0 · 0 |
-> | vitest | **308 files, 3,868 passed, 1 skipped** |
-> | budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** (ceiling raised from 10 for `risk`; SPEC §12.1) · kinds 8/8 |
-> | balance gate 3R · 6R · 9R, 8 seeds | `levyShort 0` every horizon · red **0/192 · 0/384 · 0/576** · `halted 0` · `trapped 0` |
+> | version | what it moves | divergence signature |
+> |---|---|---|
+> | **38** | the creator is told it has to countersign, and by when | **none** — no table moves |
+> | **39** | `observe`'s eleventh key, `risk`; §17's ceiling 10 → 11 | none from the engine; the cast's payload changes |
+> | **40** | the conflict layer's occasion, `per_reckoning`, and the cast | `SNAPSHOT_HASH_MISMATCH` at the cutover tick |
 >
-> **35 renumbered to 37** — 36 was the risk market's, so the notes are STACKED and not blended: 36
-> moved the `risk` table, 37 moves `raid`. `lode-39` spends no version.
+> **38 — the wake window.** `WAKES_PER_RECKONING` 16 over 288 ticks is one wake per 18 ticks and
+> `FORMATION_WINDOW_TICKS` is 12, so **a venture was retired six ticks before its creator could legally
+> observe again**. Two play-tests read that as *"`sign` is missing from the menu"*; it was the first row
+> of the menu. The fix is a sentence, not a constant — the wake budget is a **pool**, not a rate — and
+> `formationWindowOutlastsAWake()` is pinned at **−6** as a standing measurement.
 >
-> **The one conflict that was a real disagreement rather than a merge artifact.** Both branches
-> independently found that every published elective figure faced the party being PAID and never the
-> payer, and they fixed `my_elective_direction` with opposite precedence for a creator that also holds
-> a role of its own: master says `SELF`, the branch says `OWED_BY_ME`. Master's is kept, because the
-> field annotates `my_elective` and on such a row `my_elective` IS the reader's own self-paid share —
-> so `OWED_BY_ME` there describes a number that is not on the row. The concern behind the flip is met
-> by `my_elective_owed` / `my_elective_unelected`, populated in every case. Both sides' tests pass
-> unchanged. Reasoning is written at the call site in `src/api/observe.ts`.
+> **39 — a live A9 breach.** The spectator frame carried `frontBands`/`coverArcs`/`coverChains` while an
+> agent inside the cone had **no `risk` key at all** and three COVER acts on its menu with nothing to
+> price them from. `Runtime.riskView` had existed, correct and tested, with **zero callers** for the
+> layer's whole life; it is deleted rather than left beside its replacement. §17's observe ceiling moves
+> **10 → 11 by owner decision** — the first budget in that table ever to move — with the reason in SPEC
+> §12.1/§17, `TESTING.md` PROP-O3 and `scripts/budget-audit.mjs`, which now fails on twelve.
 >
-> **`lode-39`'s acceptance test, re-run on the merged tree** — per-tick `state_hash` streams, not just
-> final hashes, against a detached worktree at `dd5fc77`: `lode39-a` 900×12, `lode39-b` 900×12 and
-> `lode39-c` **1800×16** all byte-identical. And its **non-vacuity re-established by counting**: the
-> heuristic cast submits `form` **12×** per 900 ticks and `admit`/`apply` **0×**, so the equality is
-> real evidence for `vForm` and vacuous for the other two, which rest on 30 new gate tests instead.
+> ### ★ 40's KNOWN FAILING TEST: THE STATED FIX WAS WRONG, AND THE BRANCH HAD A SECOND BILL
 >
-> ★ **THE PINS WERE RE-MEASURED AND FOUR OF EIGHT WOULD HAVE BEEN WRONG IF ADJUSTED.** The branch
-> pinned analytic max 101,273 / worst reachable 94,754. The merged tree reads **101,524 / 95,005**.
-> Its first four positions agreed to the character and its last four were 251 low — the strike-floor
-> correction lands only on the positions that can be struck. Half right is what makes an adjusted
-> array look verified.
+> **`doubleMarches 15`.** The stated repair was to teach `levyMove`/`chargeMove` the `marchUnderwayTo`
+> predicate. **`levyMove` has read that predicate since it was written**, so it would have been a
+> fourth guard against a cause nobody had established — the shape three of this repo's worst bugs
+> share. Established instead, twice, by instrumenting every `{verb:'move'}` return in `heuristic.ts`:
 >
-> ⚑ **TWO OPERATIONAL FINDINGS FROM THIS DEPLOY, BOTH UNFIXED.**
+>   1. **All 15 came from the aimless random walk** in `decideOne`, and none from `musterFor`,
+>      `coalitionFor`, `levyMove` or `chargeMove`. The counter's discriminator is `destination ===
+>      stage`, exact for a routed march and **false for a one-hop walk**, where `destination` is a lane
+>      the RNG picked.
+>   2. **Every one of the 15 was a member with no side in that standoff** — a bystander, which is the
+>      *"traffic, not a cascade"* the counter's own comment says it means to exclude.
 >
->   1. **`deploy.sh`'s "waiting for the replay to finish" loop exits early.** It reported *"the replay
->      finished (waited 45s)"* and then failed on `world is not RUNNING`, while `/health` said
->      `BOOTING, replayed_tick 4607 of 10136`. Nothing was broken by it — the restart had already
->      happened and the world came up on its own — but the loop's answer and the world's state
->      disagreed, and an operator reading the exit code would roll back a healthy deploy. The
->      difference between the loop's probe (`http://127.0.0.1:$COMPACT_PORT/health`, `--max-time 5`)
->      and the check that followed it (the public URL) is the place to look.
->   2. **Boot is now ~37 minutes, not 170 seconds.** 03:05:08 to 03:41:44 at tick 10,136, and the
->      preflight's two boots took ~35 more. The cause is named by the boot itself: checkpoint adoption
->      is refused because the record carries **24 declared discontinuities**, so every boot replays
->      from genesis and is O(history). §3's "boot stays at 170 s" is stale. The record epoch is now
->      an availability item, not only a tidiness one.
+> Forbidding the walk to enter a live stage takes it to 0 on all seven seeds and was **built and
+> reverted**: it costs `g24`'s BATTLE LINE, `g07`'s `levyShort` 0 → 7,173 and a third of the worlds
+> that trade at all. **The counter was wrong; the world was not.** It is now scoped to a member with a
+> side, and the excluded class is *reported, never asserted*, so it cannot silently become everything.
+>
+> ### ★★ AND THE FULL SUITE FOUND WHAT THE BRANCH HAD NOT MEASURED
+>
+> 40 shipped a **permanent one-hand reserve** on every member the world can reach (`standoffNeeded`,
+> subtracted from `spendable`), because the new muster branch walks out the hand the Levy needed:
+> without the reserve `g07` reads `levyShort` **2,339** at nine Reckonings. Its own docblock argued for
+> a reserve against the **published raid schedule**; the code read no clock and reserved *always*.
+>
+> Nothing measured the other side. The suite did: **market fills 12 → 4 across 7 seeds, five of them at
+> zero**, and `frames/the-market-prints-a-price.spec.ts` red on *"no seeded world traded at all"*. Six
+> configurations were built and measured before one held:
+>
+> | | market | Levy | combat | delegate | coalition |
+> |---|---|---|---|---|---|
+> | master | ✓ 12 fills | ✓ | ✓ | ✓ | 6 joins |
+> | 40 as authored | ✗ 4 fills | ✓ | ✓ | ✓ | ✓ 25 joins |
+> | no muster, no reserve | ✓ | ✓ | ✗✗✗ | ✓ | — |
+> | muster keeps a hand home | ✓ | ✓ | ✗ | ✗ | ✗ |
+> | reserve on `fill_role` only | ✓ | ✗ | ✗✗✗ | ✓ | — |
+> | **reserve on the CLOCK (shipped)** | **✓ 19, none silent** | **✓** | **✓** | **✓** | **✓** |
+>
+> The shipped form is the mechanism the docblock already described: the reserve stands from
+> `RESERVE_LEAD_TICKS` (12) before each `RAID_SPAWN_PHASES` entry until that demand window closes —
+> **plus the tail of the cycle**, which is the Levy's clause rather than predation's, because past the
+> last spawn there is no raid left to come and the tribute is still to be carried.
+>
+> **`LINE_SEEDS` re-pinned `g24` → `g05`**, which is the move that block pre-authorised (*"`g05` is the
+> spare … and the scan says why"*). `scripts/war-seed-scan.ts`'s table is pasted into the test.
+> **2 of 24 qualify** where it was 3 of 10 — thinner, said out loud, and the next author should expect
+> to re-pin.
+>
+> ### The contract pins, RE-MEASURED
+>
+> `test/cast/prompt.test.ts` is 55 assertions and every figure in it is an equality, so a green run
+> **is** the measurement. On the merged tree: analytic ceiling **104,647** of `MAX_CONTRACT_CHARS`
+> 120,000 (margin 15,353), largest reachable position **98,128** (margin 21,872 against a required
+> 4,000), and the eight-cell per-position array unchanged — `45,143 · 53,882 · 63,585 · 66,727 ·
+> 96,619 · 78,489 · 98,128 · 104,647`. **Unchanged is a reading here, not an assumption**: none of the
+> three merges touched `agent.md` or `CONTRACT_CATALOG` past what 39 already pinned, and the last time
+> an array was *adjusted* rather than read its first four cells were right to the character and its
+> last four were 251 low.
+>
+> ### Stale cross-references, swept
+>
+> **Twenty-two comments across `src/` and `test/` said the allocator moved *"at `RULES_VERSION` 38"*.**
+> It never did: that pass was pre-assigned lane 38, **spent no version**, and merged while the tree read
+> 34. On 2026-07-30 a different change took 38 for real. They now name **the ONE-HOME sweep**, because a
+> name cannot go stale behind a renumber; `src/core/allocate.ts` carries the correction. Also fixed:
+> `force-is-hands.spec.ts` and one `api/observe.ts` comment still said 35 after that lode renumbered to
+> 37. **A version number is only a legitimate cross-reference once the version is spent.**
+>
+> ### `deploy.sh`'s replay-wait loop, fixed
+>
+> It has been wrong twice in opposite directions and both times the exit condition was *"the thing I am
+> waiting for is ABSENT"* — so an ssh blip, an unexpected body or the old process answering RUNNING for
+> half a second all read as *done*. It printed *"the replay finished (waited 45s)"* while `/health` said
+> `BOOTING, replayed_tick 4607 of 10136`. It now exits **only** on `"world":"RUNNING"` or `"world":
+> "HELD"`, prints `replayed_tick` against `head_tick` each poll so a wedge and a slow replay look
+> different, and the bound is **3600s** rather than 600 — boot is O(history) and took ~37 minutes at
+> tick 10,136.
 
 ---
 

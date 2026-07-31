@@ -242,7 +242,7 @@ export function assertRaidSchedule(): void {
   // that no raid resolution, hand commitment or seizure ever lands in the commitment
   // window, the freeze, or the settlement tick.
   //
-  // Read from `core/time.ts` since `RULES_VERSION` 38. It was `TICKS_PER_RECKONING - 1 - 1 - 24` —
+  // Read from `core/time.ts` since the ONE-HOME sweep. It was `TICKS_PER_RECKONING - 1 - 1 - 24` —
   // a hand-inlined copy of `WINDOW_FIRST_PHASE`'s own definition, in a comment that names the
   // constant it declined to import. Both were 262, and the `24` was the most dangerous character in
   // this file: it is `COMMITMENT_WINDOW_TICKS`, but `DEMAND_WINDOW_TICKS` two hundred lines up is

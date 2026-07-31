@@ -314,7 +314,7 @@ export interface AllocationPlan {
 /**
  * A Levy allocation that could not be made exactly.
  *
- * Extends {@link AllocationError} since `RULES_VERSION` 38, when the allocator moved to `core/`: a
+ * Extends {@link AllocationError} since the ONE-HOME sweep, when the allocator moved to `core/`: a
  * caller that catches the general shape now catches the Levy's too, and a caller that names the Levy
  * specifically — every test in `test/levy/` does — is unaffected. {@link largestRemainder} below
  * translates, so the class a Levy allocation throws is unchanged.
@@ -451,7 +451,7 @@ export function relievedTotal(
  * Distribute `amount` across `weights` so that the sum is `amount`, exactly — **in `Minor`**.
  *
  * The arithmetic is {@link coreLargestRemainder} in `core/allocate.ts` and has been since
- * `RULES_VERSION` 38; this is the Levy's typed door onto it. Two reasons the door exists rather than
+ * the ONE-HOME sweep; this is the Levy's typed door onto it. Two reasons the door exists rather than
  * every caller importing `core/` directly:
  *
  *   1. **The error class.** A Levy allocation that cannot be made exactly has thrown

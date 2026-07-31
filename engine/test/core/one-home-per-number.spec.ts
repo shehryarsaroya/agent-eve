@@ -83,7 +83,7 @@ function codeOf(rel: string): string {
 }
 
 /**
- * The lanes this audit actually cleaned at `RULES_VERSION` 38.
+ * The lanes this audit actually cleaned in the ONE-HOME sweep.
  *
  * The bare-literal scan is scoped to these rather than to all of `src/`, and the exclusion is
  * **recorded rather than silent**: `combat/`, `api/`, `sim/`, `syndicate/` and `frames/` hold 22 more
@@ -380,7 +380,7 @@ describe('one cycle length and one bps scale', () => {
 describe('the debt outside the cleaned lanes is counted, not hidden', () => {
   it('records how many bare cycle-length and bps literals remain, and refuses to let it grow', () => {
     // ══════════════════════════════════════════════════════════════════════════
-    // The instrument for the part of the sweep that did not happen. `RULES_VERSION` 38 cleaned the
+    // The instrument for the part of the sweep that did not happen. The ONE-HOME sweep cleaned the
     // fourteen lanes in `CLEANED_LANES`; `combat/`, `api/`, `sim/`, `syndicate/` and `frames/` were
     // other agents' live files that round and were left alone.
     //

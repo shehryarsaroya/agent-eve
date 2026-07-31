@@ -409,7 +409,7 @@ function resolveOne(
       // and the reason a raider joins at all. `seize` returns what actually moved, so a
       // short pile shorts the last shares rather than inventing goods.
       //
-      // `largestRemainder` over equal weights since `RULES_VERSION` 38, replacing a private
+      // `largestRemainder` over equal weights since the ONE-HOME sweep, replacing a private
       // `floor(want / n)` + `i < remainder` split. Provably the same vector for every equal-weight
       // input — `want` 10 over 3 gives `[4,3,3]` either way — and the reason to make the swap is
       // what the private version did *not* do: assert its own sum, refuse a negative total, or

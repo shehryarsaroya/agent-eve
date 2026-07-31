@@ -160,7 +160,7 @@ export const LEVY_MIN_COMMONS_CAPACITY = 1;
 /**
  * The starter allotment of the levy good, sourced at enrolment.
  *
- * **The declaration lives in `ledger/endowment.ts` as of `RULES_VERSION` 38** — read
+ * **The declaration lives in `ledger/endowment.ts` as of the ONE-HOME sweep** — read
  * {@link STARTER_ALLOTMENT} there for why. In one line: the ledger mints it and the ledger withholds
  * it, and having the Levy own the number meant `ledger/endowment.ts` imported from `levy/`, which is
  * the layering inversion `test/core/goods-are-independent.test.ts` already forbids for the *name* of

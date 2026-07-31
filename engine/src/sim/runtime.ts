@@ -2131,17 +2131,49 @@ import {
  *      hands at 72 stages before it), the coalition signal admits ground of your own as well as a
  *      friend, and `openSlotFor` sorts by urgency and spreads bidders across open roles instead of
  *      every member naming `open[0]` of an id-ordered board. **Coalitions 6 → 25 over 8 seeds**
- *      without touching yield's price or its timing: yielding is still chosen 46 of 72 times.
+ *      without touching yield's price or its timing.
  *
- * ── AND THE MARCH GUARD THAT HAD TO COME WITH THEM ───────────────────────────
+ * ── ★ AND ONE OF THE THREE WAS RE-PRICED AT MERGE, BECAUSE IT HAD A BILL NOBODY READ ─
  *
- * Sending the target's own hands to its own standoff put two aimers on one system for two
- * individually-correct reasons — a tribute is payable where the goods are, and the goods are what
- * the raid came for — so `musterFor` and `levyMove`/`chargeMove` could each dispatch a *different*
- * hand of one member to one place in one tick. `coalitionFor` already refused that through
- * `marchUnderwayTo`; the two Levy movers did not, because before this version they were the only
- * movers and had nothing to collide with. They now read the same predicate. See
- * {@link Runtime.marchUnderwayTo}'s callers — three, not one, and the count is asserted.
+ * The muster arrived paired with a **permanent one-hand reservation** on every member the world can
+ * reach (`standoffNeeded`, subtracted from `spendable`), because walking a hand to your own standoff
+ * costs the Levy the carrier it was going to use: without the reservation, `g07` reads `levyShort`
+ * **2,339** at nine Reckonings where master reads 0. The reservation bought that back — and nothing
+ * measured what it cost, which the full suite then did: **market fills 12 → 4 across 7 seeds, five
+ * of them at zero**, and `frames/the-market-prints-a-price.spec.ts` red on *"no seeded world traded
+ * at all"*. Its own docblock argued for a **clock-based** reserve against `RAID_SPAWN_PHASES`; the
+ * code read no clock and reserved unconditionally, forever.
+ *
+ * It is **put on the clock its own note describes** instead: the reserve stands from
+ * `RESERVE_LEAD_TICKS` (12) before each `RAID_SPAWN_PHASES` entry until that demand window closes,
+ * **plus the tail of the cycle** — the Levy's clause rather than predation's, because past the last
+ * spawn there is no raid left to come and the tribute is still to be carried. Measured: `g07`
+ * back to **0** on all eight seeds, market fills **23** (master reads 12), `defending-has-a-price`
+ * untouched. The cost is stated rather than hidden — the TARGET's own hands standing at its stage
+ * total **37 hand-ticks against 303** with the reservation, and `REPULSED` **6 against 19** — both
+ * still large gains over master, which has no muster branch at all.
+ *
+ * ── AND THE COUNTER THAT WENT RED, WHICH WAS NOT MEASURING A MARCH ───────────
+ *
+ * `the-cast-forms-a-coalition.spec.ts`'s `doubleMarches` read **15** on this branch, and the three
+ * guards written to chase it had moved it 5 → 1 → 15 across configurations without ever naming a
+ * cause. The next proposed guard was to teach `levyMove`/`chargeMove` the `marchUnderwayTo`
+ * predicate; **`levyMove` has read it since it was written**, so that would have been a fourth
+ * guard against an unestablished cause — the shape this repo's worst three bugs share.
+ *
+ * Established instead, twice. Every `{verb:'move'}` emitter in `cast/heuristic.ts` was wrapped at
+ * the point of return: **all 15 came from the aimless random walk**, none from any deliberate
+ * branch. Then, of those 15, **every one was a member with no side in that standoff** — a bystander
+ * whose hands drifted across one lane, which the counter's own block comment already calls
+ * *"traffic, not a cascade"* and which its one-hop `destination === stage` cannot tell from a march.
+ *
+ * Forbidding the walk to enter a live stage was built, took the count to 0 on all seven seeds, and
+ * was **reverted**: it costs `g24`'s BATTLE LINE (A13's signature for the combat layer, gone
+ * one-sided), `g07`'s `levyShort` 0 → 7,173, and a third of the seeded worlds that trade at all.
+ * The counter is now scoped to a member with a side — where `musterFor` and `coalitionFor` are the
+ * only branches that can re-decide — and the excluded class is *reported, never asserted*, so it
+ * cannot quietly become the whole population. `cast/heuristic.ts`'s roamer block carries the price
+ * list; **no cast behaviour changed for this.**
  *
  * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
  *

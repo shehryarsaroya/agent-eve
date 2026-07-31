@@ -156,7 +156,7 @@ export { BookError, VentureBook, type RoleRef } from './book.js';
 
 /**
  * Three canon verbs, each extracted to its own file under `D21` — and **omitted from this barrel
- * until `RULES_VERSION` 38**, so `sim/runtime.ts` imported all three past it:
+ * until the ONE-HOME sweep**, so `sim/runtime.ts` imported all three past it:
  *
  *     import { sign } from '../venture/sign.js';
  *     import { abandon } from '../venture/abandon.js';

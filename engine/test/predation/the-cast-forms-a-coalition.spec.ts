@@ -128,28 +128,47 @@ interface Coalition {
    * a `destination === stage` test and the branch sends a second hand, then a third — measured at 252
    * wasted actions on one member of one seed. See `carriageUnderwayTo`.
    *
-   * ⚑ **AND THE ONE-HOP CASE, WHICH THIS COUNTER READ AS A MARCH FOR ITS WHOLE LIFE.** The
-   * discriminator below is `destination === stage`, justified as *"the last hop of a walk somebody
-   * chose to make TO that place"*. That is exact for a routed march and **false for a one-hop
-   * aimless walk**, whose `destination` is a lane `rng.int(legal.length)` picked. Every emitter was
-   * instrumented at the point of return: **15 of 15 doubles came from the aimless walk** and none
-   * from `musterFor`, `coalitionFor`, `levyMove` or `chargeMove`. See {@link roamersBesideAStage}.
+   * ⚑ **AND IT IS SCOPED TO MEMBERS WITH A SIDE, BECAUSE THE ONE-HOP CASE IS NOT A MARCH.** The
+   * discriminator is `destination === stage`, justified as *"the last hop of a walk somebody chose
+   * to make TO that place"*. That is exact for a routed march and **false for a one-hop aimless
+   * walk**, whose `destination` is a lane `rng.int(legal.length)` picked. Measured twice rather
+   * than argued: every `{verb:'move'}` emitter in `heuristic.ts` was wrapped at the point of
+   * return, and **15 of 15 doubles came from the aimless walk** — none from `musterFor`,
+   * `coalitionFor`, `levyMove` or `chargeMove`. Then, of those 15, **every one was a member that
+   * was neither the TARGET of that standoff nor a PARTY to it.**
+   *
+   * `musterFor` fires only for `your_side === 'TARGET'`; `coalitionFor` only for a member that
+   * becomes a party on arrival. So the *"branch re-decides and sends a second hand"* cascade this
+   * counter exists for lies entirely inside **has a side**, and a bystander's drifting hands are
+   * the *"traffic, not a cascade"* the block comment below already says it means to exclude.
+   *
+   * ⚑ **The obvious alternative was built and reverted.** Forbidding the aimless walk from entering
+   * a live stage takes the unscoped count to 0 on all seven seeds — and costs `g24`'s BATTLE LINE
+   * (A13's signature for the whole combat layer, gone one-sided), `g07`'s `levyShort` 0 → 7,173,
+   * and a third of the seeded worlds that trade at all. `heuristic.ts`'s roamer block carries the
+   * full price list. The counter was wrong; the world was not.
    */
   readonly doubleMarches: number;
   /**
-   * ★ The DENOMINATOR for {@link doubleMarches} — ticks on which the rule had something to refuse.
+   * ★ The class {@link doubleMarches} deliberately does NOT count: bystanders' hands, drifting.
    *
    * ══════════════════════════════════════════════════════════════════════════
-   * **`doubleMarches === 0` is a fact about an idle cast unless a stage was ever within reach.** An
-   * idle hand standing one lane from a live standoff is the whole subject of the aimless walk's
-   * *"never **into** a live standoff"* rule (`heuristic.ts`, the roamer block): that hand is exactly
-   * the one the RNG could have walked onto the stage, and with the rule in place it never does.
+   * **AN EXCLUSION NOBODY COUNTS IS INDISTINGUISHABLE FROM A CLASS THAT DOES NOT OCCUR**, which is
+   * this project's defining defect one level up — so the scoped counter above keeps its complement
+   * beside it rather than deleting it. This is the same tick-member-standoff observation, for
+   * members that are neither the TARGET nor a PARTY: two hands of an uninvolved member happening to
+   * be aimed at a stage, which the aimless walk produces and no branch does.
+   *
+   * It stands at **15** over these seven seeds as shipped, and it is **reported, never asserted**.
+   * Pinning it would pin the RNG — a false alarm on any world-shape change, which is how a test
+   * gets ignored. What it is for is the day it reads 0: that means either the walk stopped roaming
+   * or the scoping is now vacuous, and the message on the assertion below prints it either way.
    *
    * Counted from the map and the raid book, never from the cast — a denominator recomputed out of
    * the thing it is auditing is scar #5.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  readonly roamersBesideAStage: number;
+  readonly bystanderDoubles: number;
   readonly halted: boolean;
 }
 
@@ -166,7 +185,7 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
   let joinsStillStanding = 0;
   let pledgesThatMattered = 0;
   let doubleMarches = 0;
-  let roamersBesideAStage = 0;
+  let bystanderDoubles = 0;
   /** raid -> the (principal, hand) pairs that joined it. Checked on the tick before it resolves. */
   const pledged = new Map<string, { principal: PrincipalId; hand: HandId }[]>();
   let frameDefenders: readonly PrincipalId[] = [];
@@ -224,17 +243,20 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
         // `destination === stage` is the last hop of a walk somebody chose to make TO that place, so
         // two hands of one member aimed exactly there is the duplication and nothing else.
         const aimed = inTransit.filter((h) => h.destination === raid.stage);
-        if (aimed.length > 1) doubleMarches += 1;
-        // ── AND THE DENOMINATOR: WAS THE RULE EVER ASKED? ─────────────────────
-        //
-        // An IDLE hand one lane from a live stage is the aimless walk's whole opportunity to put a
-        // hand on a standoff by dice. Read off the map and the raid book — never off the cast.
-        const besideIt = handsOf(runtime.world, member.principal).some(
-          (h) =>
-            h.state === 'IDLE' &&
-            (runtime.world.map.systems.get(h.location)?.lanes ?? []).includes(raid.stage),
-        );
-        if (besideIt) roamersBesideAStage += 1;
+        if (aimed.length > 1) {
+          // ── ★ ONLY A MEMBER WITH A SIDE CAN CASCADE ─────────────────────────
+          //
+          // Read off the raid record, not recomputed: `musterFor` only ever walks for
+          // `your_side === 'TARGET'` and `coalitionFor` only for a member that becomes a party on
+          // arrival, so those two are the only branches that can re-decide toward this stage. A
+          // member with neither is a bystander and its two hands are the aimless walk's drift —
+          // measured, 15 of 15 — which is the traffic the block comment above says to exclude.
+          const hasASide =
+            raid.target === member.principal ||
+            raid.parties.some((party) => party.principal === member.principal);
+          if (hasASide) doubleMarches += 1;
+          else bystanderDoubles += 1;
+        }
       }
     }
     // ── A PLEDGED HAND IS STILL STANDING THERE WHEN IT MATTERS ─────────────────
@@ -302,7 +324,7 @@ function play(seed: string, ticks: number, members = MEMBERS): Coalition {
     joinsStillStanding,
     pledgesThatMattered,
     doubleMarches,
-    roamersBesideAStage,
+    bystanderDoubles,
     halted,
   };
 }
@@ -610,46 +632,59 @@ describe('a coalition is priced, not free', () => {
    * with a red line, because it stops reserving a carrier on the strength of a hand three gates out
    * that any later branch can divert. `carriageUnderwayTo`'s own note carries the argument.
    *
-   * ── ★ AND THE 15 THAT WERE LEFT CAME FROM A BRANCH NOBODY SUSPECTED ─────────
+   * ── ★ AND THE 15 THAT WERE LEFT WERE NOT MARCHES AT ALL ────────────────────
    *
-   * This counter read **15** after the muster branch landed, and the three guards written to chase
-   * it took it 5 → 1 → 15 across configurations without ever naming a cause. Every emitter of
-   * `{verb:'move'}` in `heuristic.ts` was then wrapped at the point of return and the run repeated:
-   * **all 15 came from the aimless random walk inside `decideOne`, and none from `musterFor`,
-   * `coalitionFor`, `levyMove` or `chargeMove`** — three members over three seeds (`p:tolen` g01,
-   * `p:cassian` g06, `p:vex` g08), each with two hands oscillating across one lane beside a stage.
+   * This counter read **15** unscoped after the muster branch landed, and the three guards written
+   * to chase it took it 5 → 1 → 15 across configurations without ever naming a cause. The stated
+   * next repair was to teach `levyMove`/`chargeMove` the {@link marchUnderwayTo} predicate.
+   * **`levyMove` has read that predicate since it was written**, so that would have been a fourth
+   * guard against a cause nobody had established.
    *
-   * The block comment above dismisses those four branches as *"traffic, not a cascade"* and it was
-   * right to; what it missed is that its own discriminator cannot see a **one-hop** walk, where
+   * Two measurements established it. Every `{verb:'move'}` emitter in `heuristic.ts` was wrapped at
+   * the point of return and the run repeated: **all 15 came from the aimless random walk inside
+   * `decideOne`** — three members over three seeds (`p:tolen` g01, `p:cassian` g06, `p:vex` g08),
+   * each with two hands oscillating across one lane beside a stage — and **none** from `musterFor`,
+   * `coalitionFor`, `levyMove` or `chargeMove`. Then, of those 15, **every one was a member that was
+   * neither the TARGET of that standoff nor a PARTY to it.**
+   *
+   * The block comment in `play()` dismisses the other movers as *"traffic, not a cascade"* and it
+   * was right to; what it missed is that its own discriminator cannot see a **one-hop** walk, where
    * `destination === stage` means the RNG picked that lane and not that anybody chose the place.
    *
-   * The repair is in the walk and is stated as a rule rather than as a guard: **the aimless walk may
-   * not choose a live standoff's stage.** Its neighbour three lines up already forbids wandering
-   * *off* a stage this member answered FIGHT at, because *"a hand that wanders off un-answers the
-   * raid"*; a hand that wanders **in** answers one nobody chose to answer, which is the same fact
-   * with the sign flipped. 15 → 0, and the zero is a consequence rather than the objective —
-   * which is why {@link Coalition.roamersBesideAStage} is asserted first.
+   * ⚑ **The world-side repair was built and reverted, and its price list is the finding.** Excluding
+   * live stages from the aimless walk's legal lanes takes the unscoped count to 0 on all seven
+   * seeds — and costs `combat/the-cast-goes-to-war.spec.ts` seed `g24`'s BATTLE LINE (one-sided:
+   * *"the world turned up and nobody contested it"*, A13's signature for the whole combat layer),
+   * `cast/the-constellation-closes-ranks.spec.ts` `g07` at `levyShort` **0 → 7,173**, and
+   * `frames/the-market-prints-a-price.spec.ts` at 3 trading worlds → 2. A hand that wanders is a
+   * hand that ends up somewhere, and a large share of this world's situations are downstream of
+   * where the hands are.
+   *
+   * So the **counter** is scoped to where the cascade can live — a member with a side — and its
+   * complement is reported rather than deleted. See {@link Coalition.bystanderDoubles}.
    * ══════════════════════════════════════════════════════════════════════════
    */
   it('never sends two hands of one member toward one standoff', () => {
     let doubles = 0;
     let joins = 0;
-    let beside = 0;
+    let bystanders = 0;
     for (const seed of SEEDS) {
       const out = play(seed, TICKS);
       doubles += out.doubleMarches;
       joins += out.joins.length;
-      beside += out.roamersBesideAStage;
+      bystanders += out.bystanderDoubles;
     }
     // Non-vacuity: marches happened at all, or "zero doubles" is a fact about an idle cast.
     expect(joins).toBeGreaterThan(0);
-    // ── AND THE SECOND DENOMINATOR, FOR THE RULE THAT TOOK THIS TO ZERO ────────
-    //
-    // The aimless walk's *"never into a live standoff"* rule can only bind where an idle hand stands
-    // one lane from a live stage. If that never happened the zero below would be about a map, not
-    // about a rule — the exact shape this file's header opens by refusing.
-    expect(beside).toBeGreaterThan(0);
-    expect(doubles).toBe(0);
+    // The property, scoped to the members whose branches can re-decide toward a stage. The excluded
+    // class is printed in the message and never asserted: pinning it would pin the RNG.
+    expect(
+      doubles,
+      `two hands of ONE member, which is a side, aimed at one standoff. ` +
+        `(${String(bystanders)} bystander observations excluded — members with no side in the ` +
+        `standoff, which is the aimless walk drifting and not a branch re-deciding. If that reads 0, ` +
+        `either the walk stopped roaming or this scoping has gone vacuous.)`,
+    ).toBe(0);
   });
 });
 

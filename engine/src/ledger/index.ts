@@ -117,7 +117,7 @@ export {
 /**
  * The endowment — §12.5's enrolment mint and the withheld floor over it.
  *
- * **The barrel exported none of this until `RULES_VERSION` 38**, which is why five modules
+ * **The barrel exported none of this until the ONE-HOME sweep**, which is why five modules
  * (`levy/params`, `sovereignty/params`, `market/standing`, `market/escrow`, `risk/view`) and
  * `sim/runtime.ts` all reach past it into `./endowment.js` — and why `runtime.ts` carries its own
  * `export { STARTER_STAKE } from '../ledger/endowment.js'` re-export, a second door onto a constant

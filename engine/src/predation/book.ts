@@ -565,7 +565,7 @@ export function isRaidAnswer(s: string): s is RaidAnswer {
 // audit that collapsed the other eight searched `readStringOrNull` and `readIntOrNullAt`, and this
 // one is spelled with BOTH suffixes, so it survived the sweep that existed to remove it. It was
 // `test/core/one-home-per-number.spec.ts`'s structural scan — which matches the declaration form
-// rather than a name — that found it. Removed at `RULES_VERSION` 38; `readStringOrAbsent` is imported
+// rather than a name — that found it. Removed in the ONE-HOME sweep; `readStringOrAbsent` is imported
 // above and has identical semantics.
 
 
