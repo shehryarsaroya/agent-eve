@@ -4775,9 +4775,20 @@ const CREATE_ROLE_RULE =
  * {@link FORMATION_WINDOW_TICKS} from there. It is stated as an absolute tick because a relative one
  * is a subtraction the agent has to get right against a clock it reads separately.
  *
- * Paired with, and NOT a substitute for, `FORMATION_WINDOW_TICKS` 12 → 24. Telling an agent about a
- * deadline it cannot be awake for is a better error message, not a fix; the constant is what makes
- * the sentence actionable, and this is what makes the constant discoverable.
+ * **This one is on EVERY create row, unlike {@link CREATE_ROLE_RULE} two lines up, and the deviation
+ * is deliberate.** That convention exists to keep a kilobyte of identical prose out of a payload the
+ * owner pays for, and it is right for a rule you can still recover from. This is not that: an agent
+ * that copies the third `create` row and never reads the first loses the venture, and the loss is
+ * silent — the window simply closes. The prioritiser only guarantees the FIRST offer of each verb
+ * survives truncation, so first-row-only would put the one sentence that prevents the defect on the
+ * one row a truncated list might be the last to carry. PROP-O2's cap is asserted over a busy world
+ * in `test/observe/tokens.test.ts` and holds with this on all five rows.
+ *
+ * **And it is not a substitute for the clock.** Widening `FORMATION_WINDOW_TICKS` past the wake gap
+ * would make the deadline reachable by an agent that reads nothing; it was measured at 24 and 18 and
+ * reverted for what it costs the combat layer in free hands. What makes this sentence sufficient
+ * rather than merely kind is that `WAKES_PER_RECKONING` is a **pool, not a rate** — a creator told
+ * the deadline can legally come back on the very next tick. See that constant's note.
  * ══════════════════════════════════════════════════════════════════════════
  */
 function countersignWarning(tick: number): string {
