@@ -58,6 +58,9 @@ var MapView = (function () {
   // band radii as a fraction of R. The gaps between them are the boundary the
   // prompt says a stranger must be able to put a finger on.
   var BAND = { COMMONS: [0.00, 0.235], MARCHES: [0.325, 0.665], FRONTIER: [0.755, 0.985] };
+  /** the metaball radius a VERGE is built from, and therefore the distance a
+      label on a bloc member must clear to be outside its own fence. */
+  var VERGE_R = 30;
 
   /**
    * ★ THE ONE SOURCE OF THE BAND COLOURS.
@@ -71,7 +74,7 @@ var MapView = (function () {
    * 1.12:1 contrast step is not a boundary a stranger can find. Lightest at
    * the core: the Commons is settled ground, the Frontier is raw.
    */
-  var BAND_FILL = { COMMONS: '#1a5c6d', MARCHES: '#0c3a4b', FRONTIER: '#02141c' };
+  var BAND_FILL = { COMMONS: '#1a5c6d', MARCHES: '#0c3a4b', FRONTIER: '#06222c' };
   var BAND_EDGE = { COMMONS: '#b4c6ca', MARCHES: '#4e9db2', FRONTIER: '#31768a' };
 
   /**
@@ -577,20 +580,21 @@ var MapView = (function () {
     });
 
     // ── ★ THE VERGE ─────────────────────────────────────────────────────
+    var blocs = {}, blocOf = {};
     if (state.layers.verge && R.swayLines && R.swayLines.length) {
-      var blocs = {};
       R.swayLines.forEach(function (s) {
         if (!s.principal) return;                       // bare ground is drawn bare
         var p = P[s.system]; if (!p) return;
         if (idx[s.system] && idx[s.system].tier === 'COMMONS') return;  // A8: no fence crosses the Commons
         (blocs[s.principal] || (blocs[s.principal] = [])).push({ x: p.x, y: p.y, sway: s.sway });
+        blocOf[s.system] = s.principal;
       });
       var defaulters = {};
       (R.standings || []).forEach(function (r) { if (r.defaults > 0) defaulters[r.principal] = r.defaults; });
       state.blocs = [];
       Object.keys(blocs).sort().forEach(function (pid) {
         var pts = blocs[pid], col = blocColour(pid);
-        var loops = contours(pts, 30, 7);
+        var loops = contours(pts, VERGE_R, 7);
         if (!loops.length) return;
         var d = loops.map(smooth).join(' ');
         if (!d) return;
@@ -604,9 +608,11 @@ var MapView = (function () {
         // the handle sits on the fence. It is drawn RED when that principal has
         // a default on the record — the map answering the only question that
         // matters in three seconds.
+        // clear of the fence for the same reason the node labels are: the
+        // handle used to sit exactly ON the outline it names
         var top = pts.reduce(function (a, b) { return b.y < a.y ? b : a; }, pts[0]);
         gLabels.appendChild(S('text', {
-          class: 'verge-lab', x: top.x.toFixed(1), y: (top.y - 24).toFixed(1), 'text-anchor': 'middle',
+          class: 'verge-lab', x: top.x.toFixed(1), y: (top.y - VERGE_R - 11).toFixed(1), 'text-anchor': 'middle',
           fill: defaulters[pid] ? '#e34a3f' : col,
           text: U.handleOf(pid) + (defaulters[pid] ? ' ▲' + defaulters[pid] : ''),
         }));
@@ -720,11 +726,20 @@ var MapView = (function () {
       g.appendChild(c);
       gNodes.appendChild(g);
       if (state.layers.labels) {
-        // Labels fan RADIALLY OUTWARD. Placing every label directly under its
-        // node made neighbouring names collide the moment two nodes sat at a
-        // similar angle; pushing each one along its own radius spreads them the
-        // same way the nodes are spread.
-        var lx = p.x + (rr + 7) * Math.cos(p.th), ly = p.y + (rr + 7) * Math.sin(p.th);
+        // ★ LABELS FAN RADIALLY OUTWARD, AND CLEAR THEIR OWN FENCE.
+        //
+        // Round 1 painted labels over the VERGE and their halos punched holes
+        // in it — a false claim about a real principal. Round 2 painted the
+        // VERGE over the labels and struck 12 of 30 system names through.
+        // Neither paint order is the answer, because the two objects were
+        // occupying the same pixels.
+        //
+        // A fence is a union of discs of radius VERGE_R around the bloc's
+        // nodes, so a label on a bloc member at `rr + 7` is always inside it.
+        // Pushing that label past VERGE_R puts it OUTSIDE its own fence, and
+        // then the paint order stops mattering at all.
+        var off = blocOf[s.id] ? VERGE_R + 9 : rr + 7;
+        var lx = p.x + off * Math.cos(p.th), ly = p.y + off * Math.sin(p.th);
         var right = Math.cos(p.th) > 0.24, left = Math.cos(p.th) < -0.24;
         var anchor = right ? 'start' : left ? 'end' : 'middle';
         var dy = Math.abs(Math.cos(p.th)) > 0.24 ? 3 : (Math.sin(p.th) > 0 ? 10 : -4);

@@ -787,3 +787,17 @@ nav#tabs { flex: 1 1 auto; }
 
 label.lyr.off { opacity: 0.4; cursor: default; }
 label.lyr.off:hover { color: var(--dim); background: none; }
+
+/* ★ `min-height: 0` ON EVERY FLEX CHILD, AND IT IS NOT COSMETIC.
+   A flex item defaults to `min-height: auto`, which means its CONTENT can push
+   it past its own `flex-basis`. So `flex: 0 0 208px` on a row holding an
+   eight-row table silently became 745px and ate the panel above it — the
+   STANDINGS table vanished entirely and the page looked like a render failure.
+   Every fixed-height row in this client is a flex child, so this rule is the
+   difference between the declared layout and the one that renders. */
+.rows > *, .grid > * { min-height: 0; }
+
+/* The Hall of Fame's fourth clause and THE KEY's paragraph were being sliced
+   through the x-height by a fixed panel height. Both panels size to content
+   and the rail scrolls if the three together do not fit. */
+.fame .cl, .legend .row { overflow-wrap: anywhere; }
