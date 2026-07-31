@@ -1,0 +1,1722 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>THE COMPACT - the twelve screens</title><style>
+:root { --bg:#0c0d10; --panel:#15171c; --line:#272a33; --ink:#e6e8ee; --dim:#8b90a0; --acc:#7fd4ff; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:14px/1.55 ui-sans-serif,-apple-system,"Helvetica Neue",Arial,sans-serif; }
+a { color:var(--acc); }
+header { padding:44px 40px 12px; max-width:1100px; }
+h1 { font-size:19px; letter-spacing:.14em; text-transform:uppercase; margin:0 0 14px; font-weight:600; }
+header p { color:var(--dim); max-width:70ch; margin:0 0 10px; }
+header p.rec { color:var(--ink); border-left:2px solid var(--acc); padding-left:14px; }
+nav { position:sticky; top:0; z-index:5; background:rgba(12,13,16,.94);
+  backdrop-filter:blur(6px); border-bottom:1px solid var(--line); padding:12px 40px; margin-top:22px; }
+nav label { display:inline-block; padding:6px 14px; margin-right:8px; border:1px solid var(--line);
+  border-radius:3px; cursor:pointer; color:var(--dim); font-size:12px; letter-spacing:.1em;
+  text-transform:uppercase; user-select:none; }
+nav label:hover { color:var(--ink); }
+input[name=view] { position:absolute; opacity:0; pointer-events:none; }
+#v-subject:checked ~ nav label[for=v-subject],
+#v-style:checked   ~ nav label[for=v-style] { background:var(--acc); color:#08131a; border-color:var(--acc); }
+#v-subject:checked ~ main .by-style,
+#v-style:checked   ~ main .by-subject { display:none; }
+main { padding:8px 40px 120px; }
+section { margin:38px 0 0; }
+h2 { font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim);
+  border-bottom:1px solid var(--line); padding-bottom:8px; margin:0 0 4px; font-weight:600; }
+h2 span { color:var(--ink); }
+.sub { color:var(--dim); font-size:12px; margin:8px 0 18px; max-width:80ch; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:22px; }
+@media (min-width:1380px) {
+  .by-subject .grid { grid-template-columns:repeat(5,1fr); }
+  .by-style   .grid { grid-template-columns:repeat(3,1fr); }
+  .variants   .grid { grid-template-columns:repeat(3,1fr); }
+}
+section.variants { margin-top:30px; }
+section.variants h2 { color:var(--acc); border-bottom-color:var(--acc); }
+figure { margin:0; }
+figure img { width:100%; display:block; background:#000; border:1px solid var(--line); border-radius:3px; }
+figure a:hover img { border-color:var(--acc); }
+figcaption { margin-top:9px; font-size:12px; }
+figcaption b { display:block; letter-spacing:.09em; text-transform:uppercase; font-size:11px; }
+figcaption em { color:var(--dim); font-style:normal; display:block; margin-top:2px; }
+details { margin-top:8px; }
+summary { cursor:pointer; color:var(--dim); font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; outline:none; }
+details pre { white-space:pre-wrap; font:11px/1.5 ui-monospace,Menlo,monospace; color:#9aa0b2;
+  background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:12px;
+  max-height:340px; overflow:auto; margin:8px 0 0; }
+.missing { width:100%; aspect-ratio:16/9; border:1px dashed #6b2b2b; border-radius:3px;
+  background:repeating-linear-gradient(45deg,#151013,#151013 10px,#191013 10px,#191013 20px);
+  display:flex; align-items:center; justify-content:center; text-align:center; color:#c2707a;
+  font:11px/1.6 ui-monospace,monospace; letter-spacing:.1em; padding:20px; }
+.lb { display:none; position:fixed; inset:0; z-index:40; background:rgba(6,7,9,.98);
+  align-items:center; justify-content:center; padding:26px; }
+.lb:target { display:flex; }
+.lb .sheet { display:flex; align-items:center; justify-content:center;
+  width:100%; height:100%; text-decoration:none; }
+.lb img { max-width:100%; max-height:100%; object-fit:contain; }
+.lb .cap { position:fixed; bottom:16px; left:26px; color:var(--dim); font-size:11px;
+  letter-spacing:.12em; text-transform:uppercase; }
+.lb .close { position:fixed; top:18px; right:26px; font-size:12px; letter-spacing:.12em;
+  text-transform:uppercase; text-decoration:none; z-index:1; }
+footer { color:var(--dim); font-size:11px; padding:0 40px 60px; max-width:80ch; }
+
+.two { display:grid; grid-template-columns:repeat(auto-fill,minmax(440px,1fr)); gap:26px; }
+@media (min-width:1500px) { .two { grid-template-columns:repeat(3,1fr); } }
+figcaption .eve { color:#6f7484; font-size:11px; display:block; margin-top:3px; }
+figcaption .n { color:#4d5260; font-variant-numeric:tabular-nums; margin-right:8px; }
+.ban { border-left:2px solid #b4553f; padding-left:14px; color:var(--dim); font-size:12px;
+  max-width:78ch; margin:14px 0 0; }
+.ban code { color:#e0977f; }
+</style></head><body>
+<header>
+  <h1>THE COMPACT &middot; the screen series</h1>
+  <p class="rec"><b>Twelve screens, one product.</b> Each maps a window an EVE player already knows onto one
+of ours &mdash; the star map, the Overview, the character sheet, standings, the market, contracts, the
+corporation window, the fleet window, the probe scanner &mdash; plus two that EVE has no equivalent
+for, which is the point: <b>AUTHORITY</b> and <b>THE RECKONING</b>. Every string is real data out of
+<code>VISUAL-ASSET-BIBLE.md</code>. All twelve were generated against
+<code>profile-e-evenative.png</code> as a style reference so the series holds one identity.</p>
+  <p class="ban"><b>EVE&rsquo;s look, our words.</b> &sect;3&rsquo;s vocabulary is a rules surface in
+  this project and one word wearing two concepts is its oldest scar, so every prompt in this series
+  carries an explicit ban list &mdash; <code>ISK</code>, <code>Fortizar</code>, <code>Rorqual</code>,
+  <code>entosis</code>, <code>ADM</code>, <code>nullsec</code>, <code>corporation</code>,
+  <code>killboard</code> and eighty more &mdash; and supplies the canon instead. The scoreboard of this
+  game is promises kept and broken; a kill list would be the wrong drama entirely.</p>
+  <p>Click any image for full size. Regenerate one cell with
+  <code>python3 render_screens.py --only reckoning</code>.</p>
+</header>
+<main>
+<section><div class="grid two">
+    <figure>
+      <a href="#lbs-map-sov"><img loading="lazy" src="screen-map-sov.png" alt="THE MAP"></a>
+      <figcaption>
+        <b><span class="n">01</span>THE MAP &middot; <code>screen-map-sov</code></b>
+        <em>can one map carry the tier, the lode, the pinch, the verge and the claim at once</em>
+        <span class="eve">references EVE&rsquo;s the star map / sovereignty overlay, and DOTLAN EveMaps</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 1 of a twelve-screen series and they must all look like one product. SCREEN: THE MAP. It maps onto EVE ONLINE&#x27;s the star map / sovereignty overlay, and DOTLAN EveMaps - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: THE MAP. The game&#x27;s only agreed representation of itself, drawn the way an EVE player expects
+a region map to look - a node-and-lane graph with a docked side panel and a legend box, NOT an
+astronomical plot. There are deliberately no coordinates in the data; this graph is laid out for
+meaning.
+
+★★★ THE ONE THING THIS IMAGE MUST GET RIGHT, AND FIVE PREVIOUS ATTEMPTS DID NOT:
+THE THREE TIERS MUST READ AS THREE CONCENTRIC BANDS OF DIFFERENT GROUND. Not three node colours -
+three BANDS. Draw the background itself in three distinct values with a visible boundary edge between
+each, like three shades of paper laid on top of each other, each band labelled once at its edge in
+small caps. A stranger must be able to put a finger on the line between the middle band and the outer
+band without reading a single word.
+
+  - DEAD CENTRE, inside the innermost band: exactly 4 small nodes - THE COMMONS. It must look
+    CATEGORICALLY DIFFERENT rather than merely safer: no fence encloses it, no coloured claim touches
+    it, no lane narrows inside it, nothing crosses it. Hostile action there is not punished, it is
+    INVALID, and the drawing has to say so. Label the band &quot;THE COMMONS - 4 SYSTEMS - HOSTILE ACTION
+    IS INVALID&quot;. The 4 nodes are &quot;Salt Ward sys-01&quot;, &quot;Low Ferry sys-02&quot;, &quot;Candle sys-03&quot;,
+    &quot;Tallow sys-04&quot;.
+  - THE MIDDLE BAND: 18 nodes, the contested ground. Label the band edge &quot;THE MARCHES - 18 SYSTEMS&quot;.
+  - THE OUTER BAND: an arc of 8 nodes at the rim, the prize. Label the band edge
+    &quot;THE FRONTIER - 8 SYSTEMS&quot;.
+  - 35 lanes join them. Four constellations cluster inside the bands and are named on the map:
+    &quot;HEARTH&quot; (7) - &quot;THRESHOLD&quot; (8) - &quot;MARROW&quot; (7) - &quot;VANE&quot; (8).
+
+FOUR MORE SIGNALS, each with its own distinct treatment, all readable without the legend:
+
+1. THE LODE - NODE SIZE is how rich that ground is, a 58 percent spread between best and worst. The
+   single LARGEST node is on the rim, labelled &quot;Moorage - sys-29 - 158/tick&quot;. The smallest node in the
+   middle band is labelled &quot;Nettle - sys-15 - 100/tick&quot;. Also label &quot;Vale - sys-06 - 115/tick&quot; and
+   &quot;Pale Reach - sys-10 - 115/tick&quot;.
+2. THE PINCH - a STRAIT, and only 10 of the 35 lanes are one. EIGHT are DETOUR straits: draw the lane
+   NARROWED TO A WAIST at its midpoint with a small &quot;10&quot; notched beside the waist. TWO are SEVERING
+   straits: a solid filled DOOR block across the lane&#x27;s midpoint with the count of stranded systems
+   on it. One reads &quot;STRANDED 3&quot; and sits on the lane between sys-08 and sys-11. The other reads
+   &quot;STRANDED 4&quot; and sits on the lane between sys-24 and sys-25.
+3. THE VERGE - how far a bloc&#x27;s force reaches. Draw THREE CLOSED FENCES, each enclosing a group of
+   nodes as one continuous shape, each with a small handle beside it: &quot;sable&quot;, &quot;vex&quot;, &quot;halcyon&quot;. A
+   fence may NEVER be broken, dotted or open, because a hole in it would read as a false claim. Most
+   of the map is deliberately left BARE - unenclosed ground nobody reaches - and one node carries the
+   small note &quot;reachers 8&quot;.
+4. THE CLAIM TINT - four nodes filled with a claimant&#x27;s flat semi-transparent tint, each with a small
+   legend box beside it. One reads &quot;PAID&quot;. One reads &quot;ARREARS 1 of 2&quot;. One reads in alarm red
+   &quot;ARREARS 2 of 2 - NEXT MISS LAPSES&quot;. One reads &quot;CEDED&quot;.
+
+CHROME: a docked right-hand panel titled &quot;SYSTEMS (30)&quot; with a small sortable table -
+columns &quot;SYS - NAME - TIER - ORE/TICK - LANES - STRAITS&quot; and about ten rows of real values
+(sys-01 Salt Ward COMMONS 80 4 -, sys-06 Vale MARCHES 115 3 1, sys-15 Nettle MARCHES 100 2 2,
+sys-25 Ironhold FRONTIER 151 4 3, sys-29 Moorage FRONTIER 158 2 -). A legend box bottom-left keyed
+to the tints and the two strait shapes. A headline readout in the top-left of the map area:
+&quot;REGION 1 - 30 SYSTEMS - 35 LANES - 10 STRAITS&quot; and beside it &quot;LEVY SHORT 150 - RECKONING 02:14&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-overview"><img loading="lazy" src="screen-overview.png" alt="THE OVERVIEW"></a>
+      <figcaption>
+        <b><span class="n">02</span>THE OVERVIEW &middot; <code>screen-overview</code></b>
+        <em>everything in reach on one sortable table, with the clock running</em>
+        <span class="eve">references EVE&rsquo;s the Overview panel - the sortable table of everything near you</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 2 of a twelve-screen series and they must all look like one product. SCREEN: THE OVERVIEW. It maps onto EVE ONLINE&#x27;s the Overview panel - the sortable table of everything near you - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: THE OVERVIEW - our answer to EVE&#x27;s Overview panel, and the same idea: ONE dense sortable table
+that is the player&#x27;s whole situational awareness, docked and filling most of the frame, with a
+filter-preset row of tabs above it and a small readout strip below.
+
+It is a LIVE screen: it is rewritten every tick, so everything on it is either moving or counting down.
+
+THE FILTER TABS above the table, one of them active:
+&quot;ALL&quot;  &quot;HANDS&quot;  &quot;HOLDINGS&quot;  &quot;VENTURES&quot;  &quot;STANDOFFS&quot;  &quot;CONVOYS&quot;  &quot;TRIBUTE&quot;
+
+THE TABLE. Columns, exactly, left to right:
+&quot;TYPE - NAME - AT - TIER - LANES - STATE - TICKS - AT STAKE - PARTY&quot;
+Row heights tiny, hairline rules, alternating row tint, a sort arrow on the &quot;TICKS&quot; header. About
+twenty rows. Type is shown as a small square swatch plus a word. Use these real rows:
+
+  HAND      sable&#x27;s first hand      sys-06 Vale        MARCHES   -   IDLE          -     -        sable
+  HAND      sable&#x27;s second hand     sys-06 -&gt; sys-20   MARCHES   1   IN TRANSIT    6     -        sable
+  HAND      sable&#x27;s third hand      sys-06 Vale        MARCHES   -   COMMITTED     -     1,200    sable
+  HAND      vex&#x27;s second hand       sys-25 Ironhold    FRONTIER  -   RECOVERING    31    -        vex
+  HOLDING   Vale                    sys-06             MARCHES   3   PAID          -     -        sable
+  HOLDING   Ironhold                sys-25             FRONTIER  4   ARREARS 2of2  1     50,000   vex
+  WORKS     works sys-05            sys-05 Orison      MARCHES   3   EXTRACTING    -     -        thessaly
+  WORKS     works sys-16            sys-16 Wither      MARCHES   4   SPINNING UP   6     -        orrin
+  VENTURE   HAUL v:315:b7cbd496     sys-06             MARCHES   -   LIVE 2/2      74    5,251    brannock
+  VENTURE   ESCORT v:318:a41f0c22   sys-20             MARCHES   -   FORMING 1/2   12    2,000    thessaly
+  VENTURE   DIG v:321:9de2117a      sys-25             FRONTIER  -   FORMING 0/2   24    7,400    corvid
+  STANDOFF  raid:120:0              sys-20             MARCHES   -   DEMANDED      11    5,826    kestrel
+  STANDOFF  raid:122:1              sys-25             FRONTIER  -   DEMANDED      19    4,126    corvid
+  CONVOY    brannock&#x27;s convoy       sys-04 -&gt; sys-11   MARCHES   2   IN TRANSIT    6     -        brannock
+  TRIBUTE   halcyon                 sys-01             COMMONS   -   SOLID         -     900      halcyon
+  TRIBUTE   vex                     sys-01             COMMONS   -   RED           -     150      vex
+  FRONT     front:r3:sys-20         sys-20             MARCHES   -   FORECAST 96%  505   -        the world
+  GRANT     g:432:37b6249b          -                  -         -   DRAWN         -     250,000  halcyon
+
+TWO ROWS MUST BE VISUALLY LOUDER THAN THE REST, in red: the &quot;ARREARS 2of2&quot; holding and the &quot;RED&quot;
+tribute line. That is the fourth thing a viewer must read without a legend - who is about to lose
+something.
+
+THE READOUT STRIP below the table, one line of large tabular numerals with small caps labels:
+&quot;TICK 607 - PHASE EARLY - 257 TICKS UNTIL THE RECKONING&quot;
+and a second line of meters:
+&quot;ON A PROMISE 30,751 - FORMING 7 - LIVE 10 - STANDOFFS 2 - BATTLES 1 - CONVOYS 4&quot;
+
+A narrow right-hand rail titled &quot;THE FREEZE&quot; showing a vertical progress column of 288 ticks with the
+current position marked and the four phase names down it: &quot;EARLY&quot; &quot;COMMITMENT&quot; &quot;FREEZE&quot; &quot;SETTLING&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-character"><img loading="lazy" src="screen-character.png" alt="THE PRINCIPAL"></a>
+      <figcaption>
+        <b><span class="n">03</span>THE PRINCIPAL &middot; <code>screen-character</code></b>
+        <em>one principal in full, and you should want them to win</em>
+        <span class="eve">references EVE&rsquo;s the Character Sheet window with its left-hand tab column</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 3 of a twelve-screen series and they must all look like one product. SCREEN: THE PRINCIPAL. It maps onto EVE ONLINE&#x27;s the Character Sheet window with its left-hand tab column - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: A PRINCIPAL&#x27;S FULL SHEET - one character, all of them, filling the frame. Our answer to EVE&#x27;s
+Character Sheet: a tall left-hand column of section tabs, a portrait block at the top, and the selected
+section&#x27;s dense panels filling the rest.
+
+THE LEFT TAB COLUMN, in order, with &quot;STANDING&quot; active:
+&quot;DOSSIER&quot;  &quot;STANDING&quot;  &quot;HANDS&quot;  &quot;HOLDING&quot;  &quot;SYNDICATE&quot;  &quot;GRANTS&quot;  &quot;RECORD&quot;  &quot;OWNER&quot;
+
+THE PORTRAIT BLOCK, top left, large:
+  a CREST - a small abstract non-representational generated-looking mark, unique, the size of a coin,
+    in cyan on dark. NOT a face, NOT a portrait, NOT a person.
+  handle    &quot;sable&quot;                   set large, in cyan, the biggest word on the screen
+  address   &quot;sable@agenttransfer.dev&quot; small, beneath it - the handle IS the email address
+  holding   &quot;Vale - sys-06 - MARCHES&quot;
+  a small title band across the block reading &quot;NEVER BROKEN A PROMISE&quot;
+  and beneath it its clause &quot;14 elective halves honoured and not one default&quot;
+  one grey line &quot;day 40 - enrolled at tick 4&quot;
+
+THE STANDING PANEL - six separate labelled facts in a tight table, and THE ONE HARD RULE OF THIS
+PRODUCT: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE. No overall rating, no grade,
+no letter, no percentage, no stars, no single trust number, no gauge, no radar chart that implies a
+total. Six numbers stand beside each other as separate public facts and the reader does the judging.
+  &quot;ELECTIVE HONOURED    14&quot;
+  &quot;VALUE HONOURED    9,497&quot;
+  &quot;DEFAULTS    0&quot;
+  &quot;CONTRADICTED SEALS    0&quot;
+  &quot;COUNTERPARTIES    6&quot;
+  &quot;LAST DEFAULT    none&quot;
+and one generated clause beneath: &quot;kept 14 elective promises - 6 counterparties&quot;
+
+THE HANDS PANEL - THREE HANDS drawn as three individually distinguishable rows with their own small
+state glyphs, NOT as a number badge, because the feed has to be able to say &quot;Vale&#x27;s second hand fell
+at Orison&quot;:
+  &quot;FIRST HAND    IDLE          sys-06 Vale&quot;
+  &quot;SECOND HAND   IN TRANSIT    sys-06 -&gt; sys-20 - free at tick 613&quot;
+  &quot;THIRD HAND    COMMITTED     v:315:b7cbd496 - HAUL&quot;
+with a small note &quot;3 of 3 - one free&quot;. A hand is never destroyed; there is no death state here.
+
+THE HOLDING PANEL - a small inset lane-graph of the neighbourhood with sys-06 highlighted, and beneath:
+  &quot;Vale - sys-06 - MARCHES - Hearth&quot;
+  &quot;ORE 115/TICK - RICHNESS +454 bps - LANES 3 - 1 STRAIT&quot;
+  &quot;CLAIM  PAID - CHARGE 4,000 ration - BOND 50,000 - ANCHOR HOT&quot;
+  &quot;named for sable since tick 4&quot;
+
+THE SYNDICATE PANEL:  &quot;ashlin-house&quot;  &quot;STRONGBOX - 1 POOLED&quot;  &quot;ADMISSION INVITE - DECISION MAJORITY&quot;
+  &quot;TREASURY 0 minor - OFFICE HOLDERS 0&quot;
+
+THE RECORD PANEL, bottom, a scrolling log pane with a tick column, monospaced, about twelve rows:
+  &quot;295  PROMISE KEPT     with n0ra        paid 1,200 it could have kept&quot;
+  &quot;293  TRANSFER IN      from ashlin-house  released 1,500 - escrow release&quot;
+  &quot;290  PROMISE MADE     with pietas      elective promise - deliver 800 - due tick 320&quot;
+  &quot;287  PROMISE KEPT     with warden      delivered 900 units ahead of schedule&quot;
+  &quot;284  TRANSFER OUT     to gravel        1,000 units - partial fulfilment&quot;
+  &quot;281  ESCROW CREATED   with j4m3s       escrow 700 units - arb none&quot;
+and a small &quot;VALUE FLOW (LAST 30 TICKS)  IN 18 / 9,497   OUT 12 / 7,214   NET +6 / +2,283&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-standings"><img loading="lazy" src="screen-standings.png" alt="STANDINGS"></a>
+      <figcaption>
+        <b><span class="n">04</span>STANDINGS &middot; <code>screen-standings</code></b>
+        <em>the scoreboard of a game whose sport is keeping your word</em>
+        <span class="eve">references EVE&rsquo;s the Standings window - but ours is the moral scoreboard</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 4 of a twelve-screen series and they must all look like one product. SCREEN: STANDINGS. It maps onto EVE ONLINE&#x27;s the Standings window - but ours is the moral scoreboard - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: STANDINGS - the public directory of who has kept their word and who has not. This is the
+game&#x27;s whole scoreboard and it replaces the kill leaderboard an EVE player would expect. There are no
+kills in this product. THE SPORT IS PROMISES.
+
+★ THE CRITICAL DEPARTURE FROM THE WINDOW YOU ARE REFERENCING. EVE&#x27;s standings window reduces a
+relationship to ONE number between -10 and +10. OURS MUST NOT. There is no aggregate column, no
+composite, no letter, no percentage, no grade, no gauge, no radar, no trust score, no stars, and no
+sortable &quot;total&quot;. Six separate factual columns stand beside each other and the reader does the judging,
+because underwriters of trust weight them privately and disagree. If you draw a single score column
+the image is wrong.
+
+THE TABLE fills the frame. Columns, exactly:
+&quot;HANDLE - ELECTIVE HONOURED - VALUE HONOURED - DEFAULTS - CONTRADICTED SEALS - COUNTERPARTIES -
+LAST DEFAULT - HOLDING&quot;
+Sorted with the cleanest record at the top and the worst at the bottom. Hairline rules, tiny condensed
+type, tabular numerals right-aligned, a sort arrow on &quot;DEFAULTS&quot;. THE DEFAULTS COLUMN IS THE ONE THAT
+CARRIES COLOUR: zero is quiet, any non-zero is red, and the red intensifies down the table.
+
+The rows, top to bottom, exactly:
+  sable      14   9,497   0   0   6   none        Vale - sys-06
+  halcyon    11   7,240   0   0   5   none        Low Ferry - sys-02
+  orrin       9   6,015   0   0   4   none        Orison - sys-05
+  thessaly    8   5,380   0   0   5   none        Wither - sys-16
+  wren        7   4,120   0   0   3   none        Kiln - sys-14
+  ashlin      6   3,905   0   0   3   none        Bright Ash - sys-07
+  brannock    4   2,610   1   0   2   tick 188    Coldwater - sys-11
+  corvid      5   3,004   1   0   3   tick 204    Jetsam - sys-26
+  quill       3   1,880   1   0   2   tick 233    Stint - sys-12
+  kestrel     1     640   1   0   1   tick 251    Gallow Green - sys-13
+  severin     2   1,110   2   0   2   tick 266    Halyard - sys-24
+  vex         5   3,180   3   0   4   tick 287    Ironhold - sys-25
+  pt-corr     0       0   0   0   0   none        Salt Ward - sys-01
+The last row&#x27;s generated clause reads &quot;day one&quot; rather than a row of zeros, because a principal with
+no history has honoured nothing and broken nothing, and the honest way to say that is that it is new.
+
+THE TOP ROW AND THE BOTTOM ROW ARE THE STORY. Give sable&#x27;s row a quiet cyan left edge and vex&#x27;s row a
+red one, and set beneath the table two generated clauses in a slightly larger face:
+  &quot;sable    kept 14 elective promises - 6 counterparties&quot;
+  &quot;vex      defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+
+A DOCKED RIGHT PANEL titled &quot;THE HALL OF FAME - over the world&#x27;s whole life&quot;, four rows, each a title
+in small caps with its clause beneath in sentence case:
+  &quot;MOST KEPT, BY VALUE&quot;        &quot;paid 9497 across 6 elective halves it could have kept&quot;
+  &quot;MOST BROKEN&quot;                &quot;3 defaults on the record, the last at tick 287&quot;
+  &quot;NEVER BROKEN A PROMISE&quot;     &quot;14 elective halves honoured and not one default&quot;
+  &quot;WIDEST CIRCLE&quot;              &quot;dealt with 6 independently-capitalised counterparties&quot;
+
+A SMALL FOOTER STRIP: &quot;KEPT 55 - BROKEN 7 - 13 PRINCIPALS - RECKONING 40&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-market"><img loading="lazy" src="screen-market.png" alt="THE MARKET"></a>
+      <figcaption>
+        <b><span class="n">05</span>THE MARKET &middot; <code>screen-market</code></b>
+        <em>four goods, one currency, and a table that refuses to show you a resting order</em>
+        <span class="eve">references EVE&rsquo;s the regional Market window - group tree, price history graph, table</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 5 of a twelve-screen series and they must all look like one product. SCREEN: THE MARKET. It maps onto EVE ONLINE&#x27;s the regional Market window - group tree, price history graph, table - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: THE MARKET. Laid out exactly like the regional market window an EVE player knows - a market
+group tree docked on the left, a price history graph across the top right, and a big data table filling
+the bottom right - but the content is ours and one part of it is deliberately, visibly missing.
+
+★ THE THING THIS SCREEN IS ABOUT, AND IT MUST BE STATED ON THE SCREEN: THERE IS NO ORDER BOOK. A
+completed fill is a deed and it is public; a resting order is a manifest, and publishing one would let
+a raider read what somebody is holding without ever scouting for it. So there is no bid column, no ask
+column, no depth ladder, no spread, no quantity-outstanding, no owner. Draw the table of COMPLETED
+PRINTS and put a small hairline banner above it reading:
+&quot;FILLS ONLY - COMPLETED PRINTS - A RESTING ORDER IS A MANIFEST&quot;
+
+THE GROUP TREE, left, a small indented list with disclosure triangles. FOUR GOODS AND NO MORE:
+  &quot;GOODS&quot;
+    &quot;ore&quot;      &quot;raw - settles nothing&quot;
+    &quot;ration&quot;   &quot;every obligation is priced in this&quot;
+    &quot;alloy&quot;    &quot;payable against no obligation at all&quot;
+    &quot;fuel&quot;     &quot;Frontier only&quot;
+  &quot;VENUES&quot;
+    &quot;sys-06 Vale&quot;   &quot;sys-25 Ironhold&quot;   &quot;sys-01 Salt Ward&quot;   &quot;sys-16 Wither&quot;
+with &quot;ore&quot; selected and highlighted.
+
+THE PRICE GRAPH, top right, titled &quot;ore - LAST 9 RECKONINGS - minor&quot;. A stepped line chart with a
+faint dotted grid, tick marks along the bottom labelled &quot;R32&quot; through &quot;R40&quot;, the y-axis in tabular
+numerals from 900 to 1,400. TWO lines: a bright cyan one labelled &quot;sys-06 VWAP&quot; and a dimmer grey one
+labelled &quot;GALAXY VWAP&quot;, with the gap between them shaded - that gap IS the drama and it should be the
+most visible thing in the chart. A small callout on the widest part of the gap reading &quot;+812 bps DEAR&quot;.
+Small volume bars along the bottom of the plot.
+
+THE FILLS TABLE, bottom right. Columns, exactly:
+&quot;VENUE - GOOD - LAST - LAST TICK - FIRST TICK - PRINTS - VOLUME - VWAP - GALAXY VWAP - PREMIUM -
+VENUES - LEGEND&quot;
+About ten rows, tiny type, tabular numerals, the PREMIUM column signed and coloured - positive is dear
+here and warm, negative is cheap here and cool:
+  sys-06  ore     1,240  t.4102  t.3814   38   47,900  1,238  1,146  +812 bps   4  &quot;ORE - 1240 - +812 bps DEAR&quot;
+  sys-25  ore     1,051  t.4096  t.3820   22   28,400  1,061  1,146  -742 bps   4  &quot;ORE - 1051 - -742 bps CHEAP&quot;
+  sys-01  ore     1,150  t.4088  t.3822   14   11,200  1,149  1,146    +26 bps  4  &quot;ORE - 1150 - +26 bps&quot;
+  sys-16  ore     1,163  t.4090  t.3830    9    7,050  1,160  1,146   +122 bps  4  &quot;ORE - 1163 - +122 bps&quot;
+  sys-06  ration  2,404  t.4100  t.3811   41   19,600  2,398  2,377    +88 bps  3
+  sys-25  ration  2,512  t.4094  t.3818   17    8,300  2,504  2,377   +534 bps  3
+  sys-25  alloy  11,800  t.4081  t.3902    6    1,140 11,760 11,760      0 bps  1  &quot;ONLY MARKET&quot;
+  sys-29  fuel    4,900  t.4077  t.3915    4      620  4,880  4,880      0 bps  1  &quot;ONLY MARKET&quot;
+★ THE TWO SINGLE-VENUE ROWS MUST SAY &quot;ONLY MARKET&quot; IN THEIR LEGEND. A zero premium beside a sole market
+reads as &quot;fairly priced&quot; when the truth is &quot;nothing to price it against&quot;, and the screen is wrong
+without those two words.
+
+A NARROW STRIP under the table with the conversion rules, because the whole tension of this economy is
+that raw yield cannot pay a debt:
+&quot;ore -&gt; ration - ore -&gt; alloy    REFINE RATE  COMMONS 8:1 - MARCHES 32:1 - FRONTIER 64:1&quot;
+and a meter set large at the right end:  &quot;UNREFINED 66,130 - wealth that cannot pay a debt&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-ventures"><img loading="lazy" src="screen-ventures.png" alt="THE VENTURE BOARD"></a>
+      <figcaption>
+        <b><span class="n">06</span>THE VENTURE BOARD &middot; <code>screen-ventures</code></b>
+        <em>the board where a promise is offered, priced, and half of it left on a word</em>
+        <span class="eve">references EVE&rsquo;s the Contracts window - the searchable board of open work</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 6 of a twelve-screen series and they must all look like one product. SCREEN: THE VENTURE BOARD. It maps onto EVE ONLINE&#x27;s the Contracts window - the searchable board of open work - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: THE VENTURE BOARD - our answer to EVE&#x27;s contracts window. A filter rail on the left, a big
+sortable table of open ventures filling the frame, and a small detail preview pane at the bottom.
+
+A VENTURE is the single joint-act object: two or more principals agree to do a thing together, each
+takes a ROLE, and each role&#x27;s pay has two halves. The ESCROWED half auto-executes at settlement and
+nobody can stop it; it earns a performance record and ZERO trust. The ELECTIVE half never
+auto-executes - somebody has to CHOOSE to pay it - and it is where all of the standing there is comes
+from. That split is the whole game.
+
+THE FILTER RAIL, left, small checkboxes and radio rows:
+  &quot;KIND&quot;      HAUL - DIG - ESCORT - RAID - BUILD - SURVEY - SIEGE - LEVY      (all eight, HAUL ticked)
+  &quot;STATE&quot;     FORMING - LIVE - DEFERRED
+  &quot;TIER&quot;      COMMONS - MARCHES - FRONTIER
+  &quot;ROLES&quot;     &quot;open roles only&quot; ticked
+  &quot;ELECTIVE&quot;  a small min/max pair of fields reading &quot;25%&quot; and &quot;75%&quot;
+
+THE TABLE. Columns, exactly:
+&quot;VENTURE - KIND - STAGE - ROLES - AT STAKE - SPLIT - ELECTIVE - CLOSES - MAX DIRECT LOSS - CREATOR&quot;
+The SPLIT column is not a number: it is a small TWO-TONE HORIZONTAL BAR per row, SOLID for the escrowed
+part and HOLLOW OUTLINE for the elective part. THE HOLLOW WIDTH IS THE DRAMA AND NEEDS NO LEGEND - make
+the hollow parts unmistakable at a glance and make them differ visibly row to row.
+
+★★★ THE ROLES COLUMN IS THE MOST IMPORTANT COLUMN ON THIS SCREEN AND IT MUST NOT BE LEFT BLANK. A
+previous attempt at this image drew the header and left every cell in it empty, which deleted the whole
+point of the board. EVERY SINGLE ROW MUST HAVE VISIBLE CONTENT IN THE ROLES CELL, and that content is
+TWO THINGS TOGETHER: the fraction as text, AND a row of small circular pips - one pip per role.
+  A FILLED role is a SMALL SOLID FILLED CIRCLE.
+  AN OPEN role is a HOLLOW RING WITH A SOFT GLOWING HALO AROUND IT, visibly larger and brighter than a
+  filled pip, drawn as if it were pulsing. THIS IS THE EMPTY SOCKET AND IT IS A NAMED SIGNATURE OF THE
+  PRODUCT - an unfilled role pulses, and that is what FORMING looks like.
+Draw the ROLES cells exactly like this, text then pips:
+
+  v:315:b7cbd496  HAUL    sys-06  &quot;2/2  [filled][filled]&quot;                   5,251   [bar 77/23]  2334 bps  t.4180   4,000   brannock
+  v:318:a41f0c22  ESCORT  sys-20  &quot;1/2  [filled][SOCKET]&quot;                   2,000   [bar 60/40]  4000 bps  t.4152   1,600   thessaly
+  v:321:9de2117a  DIG     sys-25  &quot;0/2  [SOCKET][SOCKET]&quot;                   7,400   [bar 50/50]  5000 bps  t.4166   6,200   corvid
+  v:322:c108ee4b  BUILD   sys-16  &quot;2/3  [filled][filled][SOCKET]&quot;          25,000   [bar 75/25]  2500 bps  t.4201  18,000   orrin
+  v:324:41ba7702  SURVEY  sys-10  &quot;1/2  [filled][SOCKET]&quot;                   1,150   [bar 65/35]  3501 bps  t.4144     900   wren
+  v:327:2f9d6c15  RAID    sys-20  &quot;3/3  [filled][filled][filled]&quot;           5,826   [bar 45/55]  5500 bps  t.4149   5,826   vex
+  v:329:88e0a3d1  LEVY    sys-01  &quot;1/2  [filled][SOCKET]&quot;                     900   [bar 70/30]  3000 bps  t.4160     640   halcyon
+  v:331:5c72b0af  HAUL    sys-29  &quot;0/2  [SOCKET][SOCKET]&quot;                   4,800   [bar 55/45]  4500 bps  t.4172   3,900   ysolde
+  v:333:d90114ac  SIEGE   sys-25  &quot;0/4  [SOCKET][SOCKET][SOCKET][SOCKET]&quot;  40,000   [bar 40/60]  6000 bps  t.4230  31,000   severin
+
+The rows full of sockets - the DIG, the second HAUL and the SIEGE - should be the ones a viewer&#x27;s eye
+lands on first, because those are the deals still looking for somebody to trust.
+
+Each row also carries a tiny KIND GLYPH beside its kind word - eight distinct simple marks, legible at
+9px.
+
+THE PREVIEW PANE at the bottom, for the selected row v:315:b7cbd496:
+  &quot;HAUL - sys-06 Vale - closes at tick 4180 - 74 ticks&quot;
+  &quot;ROLE 1  CARRIER   filled by brannock&#x27;s third hand      1,200 escrowed - 400 elective&quot;
+  &quot;ROLE 2  PAYER     filled by kestrel                    2,800 escrowed - 851 elective&quot;
+  &quot;MAX DIRECT LOSS 4,000 - MAX CONTINGENT LIABILITY 1,300 - the worst case, shown before you sign&quot;
+  &quot;COMPACT LINK  brannock sys-25 &lt;-&gt; kestrel sys-13   legend: HAUL - 5K ON A WORD - LIVE&quot;
+
+A FOOTER STRIP: &quot;PHASE COMMITMENT - 21 TICKS TO THE FREEZE - late commitments go dark -
+ON A PROMISE 30,751&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-venture-detail"><img loading="lazy" src="screen-venture-detail.png" alt="THE VENTURE"></a>
+      <figcaption>
+        <b><span class="n">07</span>THE VENTURE &middot; <code>screen-venture-detail</code></b>
+        <em>the ring, its hollow arc, and what happens if the clock stops right now</em>
+        <span class="eve">references EVE&rsquo;s the contract detail / confirm window, blown up to a full screen</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 7 of a twelve-screen series and they must all look like one product. SCREEN: THE VENTURE. It maps onto EVE ONLINE&#x27;s the contract detail / confirm window, blown up to a full screen - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: ONE VENTURE, OPEN. The detail screen for a single joint act, and the object at the centre of
+it is THE VENTURE RING.
+
+★ THE RING, drawn large and centred in the upper half of the frame, the biggest object on the screen:
+a circular ring whose rim is drawn PART SOLID AND PART HOLLOW. The solid part of the rim is the
+ESCROWED half, which auto-executes at settlement and which nobody can stop. THE HOLLOW ARC IS THE PART
+RIDING ON SOMEBODY&#x27;S WORD - it will only be paid if a principal chooses to pay it. Here the hollow arc
+is 2334 basis points of the rim - a little under a quarter - and the number &quot;23.34% ON A WORD&quot; is set
+beside the hollow arc&#x27;s opening, large. Two small FILLED PIPS sit on the rim where the two roles are,
+because both roles are filled. Inside the ring, small: &quot;HAUL&quot; and &quot;5,251&quot;. The ring is in state LIVE:
+closed rim, arc still hollow, not yet gold and not yet black.
+
+IDENTITY BLOCK, top left:
+  &quot;v:315:b7cbd496&quot;   &quot;HAUL&quot;   &quot;STAGE sys-06 Vale - MARCHES&quot;
+  &quot;CREATED t.4106 by brannock - COUNTERSIGNED t.4109 by kestrel&quot;
+  &quot;SETTLES AT THE FREEZE - t.4180 - 74 TICKS&quot;
+
+TWO ROLE PANELS side by side beneath the ring, drawn in the same template so they compare line for
+line, each headed by a small crest and a handle:
+
+  LEFT   ROLE 1 - CARRIER - &quot;brannock&quot;
+         &quot;brannock@agenttransfer.dev&quot;    &quot;Coldwater - sys-11 - MARCHES&quot;
+         &quot;FILLED BY  brannock&#x27;s third hand - COMMITTED at sys-06&quot;
+         &quot;ESCROWED  1,200 - locked, auto-executes&quot;
+         &quot;ELECTIVE    400 - on its word&quot;
+         &quot;STANDING  kept 4 elective promises - 2 counterparties - 1 default, tick 188&quot;
+         &quot;SEAL  SEALED, face down - reveals one Reckoning later&quot;
+
+  RIGHT  ROLE 2 - PAYER - &quot;kestrel&quot;
+         &quot;kestrel@agenttransfer.dev&quot;     &quot;Gallow Green - sys-13 - MARCHES&quot;
+         &quot;FILLED BY  kestrel - COUNTERSIGNED&quot;
+         &quot;ESCROWED  2,800 - locked, auto-executes&quot;
+         &quot;ELECTIVE    851 - on its word&quot;
+         &quot;STANDING  defaulted once - kept 1 elective promise - 1 counterparties&quot;
+         &quot;SEAL  SEALED, face down - reveals one Reckoning later&quot;
+
+Draw each principal&#x27;s SEAL as a small CARD LYING FACE DOWN with a hatched back and the word &quot;SEALED&quot;
+on it - the pre-committed intention, whose content nobody may see until the Reckoning after this one.
+
+A CENTRE STRIP between the two role panels:
+  &quot;MAX DIRECT LOSS  4,000&quot;      &quot;MAX CONTINGENT LIABILITY  1,300&quot;
+  &quot;TERMS HASH  3f9c...b71a&quot;     &quot;ACTED ON STATE VERSION  40&quot;
+  &quot;TENSION  They have dealt before, and a promise between them was broken.&quot;
+
+★ A CONSEQUENCE PREVIEW PANEL, bottom right, boxed and set apart with a heavier border, headed
+&quot;VERDICT IF RESOLVED NOW&quot;:
+  &quot;ESCROWED HALVES EXECUTE     4,000 moves&quot;
+  &quot;ELECTIVE HALVES             1,251 elective - neither party has paid&quot;
+  &quot;brannock       WOULD DEFAULT   400 withheld   defaults 1 -&gt; 2&quot;
+  &quot;kestrel        WOULD DEFAULT   851 withheld   defaults 1 -&gt; 2&quot;
+  &quot;THE RING WOULD SNAP BLACK - the link scars both parties&quot;
+  &quot;THIS IS A PREVIEW OF THE RULES, NOT A PREDICTION OF ANYBODY&#x27;S CHOICE&quot;
+
+A BOTTOM STRIP: the COMPACT LINK drawn as an actual line between two named places -
+&quot;brannock  sys-11&quot; ------------- &quot;kestrel  sys-13&quot; - unbroken, with the legend
+&quot;HAUL - 5K ON A WORD - LIVE&quot; beneath it, and a note &quot;parties 3&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-syndicate"><img loading="lazy" src="screen-syndicate.png" alt="THE SYNDICATE"></a>
+      <figcaption>
+        <b><span class="n">08</span>THE SYNDICATE &middot; <code>screen-syndicate</code></b>
+        <em>an org with no place, so its picture is the shape of who can spend</em>
+        <span class="eve">references EVE&rsquo;s the Corporation window - members, wallet, roles, description</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 8 of a twelve-screen series and they must all look like one product. SCREEN: THE SYNDICATE. It maps onto EVE ONLINE&#x27;s the Corporation window - members, wallet, roles, description - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: THE SYNDICATE - the only org container in the game, and our answer to EVE&#x27;s corporation
+window. Same shape: a tab strip across the top of the panel, a members table, a treasury block, an
+offices table and the charter text.
+
+A SYNDICATE HAS NO PLACE - it is an authority structure - so its signature is THE SHAPE OF THE
+AUTHORITY, and the number an audience should feel is how many individuals could legally empty the
+treasury today without breaking any rule.
+
+THE HEADER BLOCK:
+  a CREST, coin-sized, abstract, generated-looking
+  &quot;ashlin-house&quot;                            set large
+  &quot;syn:p:ashlin:16&quot;                         small, monospaced
+  &quot;FOUNDED BY ashlin at tick 16 - RECKONING 40&quot;
+  and the engine&#x27;s own legend, set apart in a small box: &quot;STRONGBOX - 4 POOLED - 1 CAN SPEND&quot;
+
+THE PANEL TABS: &quot;MEMBERS&quot;  &quot;TREASURY&quot;  &quot;OFFICES&quot;  &quot;CHARTER&quot;  &quot;STORES&quot;  &quot;STANDING&quot;
+
+THE MEMBERS TABLE. Columns &quot;HANDLE - HOLDING - JOINED - HANDS - ELECTIVE HONOURED - DEFAULTS - POOLED&quot;:
+  ashlin    Bright Ash - sys-07   t.16    3   6   0   14,000 minor
+  sable     Vale - sys-06         t.204   3  14   0    9,000 minor
+  wren      Kiln - sys-14         t.238   3   7   0    5,500 minor
+  quill     Stint - sys-12        t.291   2   3   1    2,000 minor
+Four rows, and one of them - quill - has a red 1 in the DEFAULTS column.
+
+THE TREASURY BLOCK, set large:
+  &quot;TREASURY  30,500 minor&quot;    and beneath, small: &quot;public, because this is the org&#x27;s credit rating&quot;
+  &quot;POOLED STORES   ore 12,400 - ration 8,900 - alloy 640 - fuel 0&quot;
+  a small four-bar horizontal chart of those four goods
+
+★ THE OFFICES TABLE, and it is the alarming one. Head it
+&quot;OFFICES OVER THE POOL - any one of these could empty the treasury today without breaking a rule&quot;:
+  &quot;OFFICE - HOLDER - GRANTED BY - CLEARANCE - MAX DIRECT LOSS - MAX CONTINGENT - STATE - HELD SINCE&quot;
+  QUARTERMASTER  sable   ashlin   [pips: filled, filled]   30,500   12,000   DRAWN    t.240
+and beneath the single row, in a heavier face: &quot;OFFICE HOLDERS 1&quot;.
+The CLEARANCE column is drawn as TWO SMALL SQUARE PIPS, filled or hollow - one pip per compartment the
+office opens. Two filled pips means it reads the balance sheet AND the position of every hand. Add a
+tiny key beside the column: &quot;STORES - HANDS&quot;.
+
+THE CHARTER PANEL, set as a short document with hairline rules:
+  &quot;ADMISSION       INVITE&quot;
+  &quot;DECISION        MAJORITY&quot;
+  &quot;TREASURY OFFICES PERMITTED   yes - 1 live&quot;
+  &quot;DISSOLUTION     MAJORITY, stores returned pro rata&quot;
+  &quot;STRONGBOX CLAUSE  a constitution that forbade treasury offices would say STRONGBOX and mean it -
+   that clause is the whole reason a member pools&quot;
+
+A RIGHT RAIL: a small ledger pane titled &quot;POOL FLOW (LAST 9 RECKONINGS)&quot; with tick-stamped rows -
+&quot;R39  POOLED     wren      +5,500&quot;, &quot;R38  SPENT      sable     -4,000  works sys-07&quot;,
+&quot;R37  POOLED     quill     +2,000&quot;, &quot;R36  RETURNED   ashlin     -1,200&quot; - and beneath it
+&quot;MEMBERS 4 - OFFICE HOLDERS 1 - VENTURES BOUND IN THE SYNDICATE&#x27;S NAME 0&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-grants"><img loading="lazy" src="screen-grants.png" alt="AUTHORITY"></a>
+      <figcaption>
+        <b><span class="n">09</span>AUTHORITY &middot; <code>screen-grants</code></b>
+        <em>the core loop, drawn: who can act in whose name, and how much of it they have used</em>
+        <span class="eve">references EVE&rsquo;s no EVE window does this - the nearest is Roles, and that is the point</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 9 of a twelve-screen series and they must all look like one product. SCREEN: AUTHORITY. It maps onto EVE ONLINE&#x27;s no EVE window does this - the nearest is Roles, and that is the point - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: AUTHORITY - the screen with no real equivalent in the game you are borrowing from, which is
+exactly why it matters. This is the core loop of THE COMPACT: you cannot run an empire alone, so you
+GRANT other principals scoped authority over your stores, your hands and your promises - with the
+worst case shown to you before you sign. Months later it may be used against you. There is no betrayal
+button and no hidden loyalty meter; betrayal happens through ordinary legitimate actions, and the
+record can point at the exact promotion and the risk warning somebody accepted.
+
+TWO TABLES SIDE BY SIDE, each dense and sortable, and a diagram between or above them.
+
+LEFT TABLE - &quot;GRANTS ISSUED - authority I have handed out&quot;. Columns:
+&quot;GRANT - DELEGATE - GRANTED - SPENT - CONTINGENT - SPENT - CLEARANCE - BOUND - DOSSIERS - STATE - EXPIRES&quot;
+  g:432:37b6249b  brannock  250,000  61,000   80,000  12,000  [pip filled][pip filled]  2  1  DRAWN      t.4402
+  g:418:0ac71d29  wren       40,000       0   20,000       0  [pip filled][pip hollow]  0  0  UNUSED     t.4380
+  g:407:9b13ff64  vex        90,000  90,000   30,000  30,000  [pip filled][pip filled]  4  2  EXHAUSTED  t.4361
+  g:399:5e28c0aa  corvid     15,000   3,400        0       0  [pip hollow][pip hollow]  0  0  REVOKED    t.4344
+  g:388:c7710b3e  quill      25,000  25,000   10,000   1,200  [pip filled][pip hollow]  1  0  EXPIRED    t.4310
+
+RIGHT TABLE - &quot;GRANTS HELD - authority handed to me&quot;. Same columns, GRANTOR instead of DELEGATE:
+  g:441:22ce90d7  halcyon    120,000  18,000  40,000       0  [pip filled][pip hollow]  1  0  DRAWN   t.4419
+  g:436:71a4dd05  thessaly    60,000       0  25,000       0  [pip hollow][pip hollow]  0  0  UNUSED  t.4400
+
+★ THE FIVE STATES MUST BE FIVE DIFFERENT LOOKS, keyed in a small legend box:
+  &quot;UNUSED     authority nobody has drawn on&quot;        quiet, low contrast
+  &quot;DRAWN      some headroom used&quot;                   live, and the proportion shows
+  &quot;EXHAUSTED  no headroom left on either limit&quot;     spent out
+  &quot;REVOKED    ending next tick&quot;                     snapping, red
+  &quot;EXPIRED    the term ran out&quot;                     ghosted, but still present
+On DRAWN and EXHAUSTED rows the GRANTED and CONTINGENT cells are small inline proportion bars with the
+spent fraction filled, so the headroom is visible without arithmetic.
+
+★ THE CLEARANCE PIPS get their own callout, because they are how much the delegate can SEE, and there
+are exactly two compartments and no more. A tiny key box:
+  &quot;[hollow][hollow]  act-only - authority to act is not authority to see&quot;
+  &quot;[filled][hollow]  it can read the books - STORES&quot;
+  &quot;[filled][filled]  it reads the balance sheet AND the position of every hand - STORES, HANDS&quot;
+
+★ THE AUTHORITY DIAGRAM, occupying the middle band of the frame: DIRECTED LINES from grantors to
+delegates, arrowheads on the delegate end, LINE THICKNESS PROPORTIONAL TO THE DIRECT WORST CASE. Seven
+or eight named principals as small nodes. The composition must show CONVERGENCE - two or three
+delegates with several thick lines arriving at them, which is a forming power bloc watchable before it
+acts - and not a hairball. Clearance pips sit on each line&#x27;s arrowhead. Hanging off two delegate ends,
+THIN DASHED THREADS running to other named principals, tinted by compartment: these are DOSSIER
+THREADS, one signed dated extract of one compartment handed to one named principal. They are the only
+dashed element on the screen, because a dossier is a COPY rather than a transfer and a solid line would
+read as value moving. Label two of them &quot;STORES - cut t.468&quot; and &quot;HANDS - cut t.502&quot;, and mark one
+&quot;COPIED&quot;. ★ A REVOCATION SNAPS THE LINE AND THE THREADS STAY - draw the corvid line snapped with a
+small break mark, and its dossier thread still intact and still connected. Revoking stops the next read
+and takes back nothing already taken.
+
+A BOTTOM STRIP, one line, set apart:
+&quot;g:432:37b6249b - halcyon -&gt; brannock - MAX DIRECT LOSS 250,000 - MAX CONTINGENT 80,000 - ISSUED R12 -
+the worst case, shown before it was signed&quot;
+and a small note beneath: &quot;a grant serialises as a signed credential, so this warning is provable
+rather than asserted&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-standoff"><img loading="lazy" src="screen-standoff.png" alt="THE STANDOFF"></a>
+      <figcaption>
+        <b><span class="n">10</span>THE STANDOFF &middot; <code>screen-standoff</code></b>
+        <em>two lines of bars across a gap that moves every tick</em>
+        <span class="eve">references EVE&rsquo;s the fleet window and the combat overview, together</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 10 of a twelve-screen series and they must all look like one product. SCREEN: THE STANDOFF. It maps onto EVE ONLINE&#x27;s the fleet window and the combat overview, together - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: A LIVE STANDOFF. A demand was thrown at a principal at a place with a window to pay, the
+target refused, and the standoff has become an ENGAGEMENT. This screen is our answer to the fleet
+window plus the combat overview, and it is the one screen with genuine tick-by-tick motion.
+
+THE HEADER STRIP:
+  &quot;raid:120:0 - sys-20 Ashen Ford - MARCHES&quot;
+  &quot;vex DEMANDED 5,826 ration OF kestrel&quot;      set large
+  &quot;WINDOW 24 TICKS - 11 LEFT&quot;                 a countdown, the largest number on the strip
+  &quot;ENGAGEMENT e:120:0 - STATE CONTEST - 7 TICKS LEFT IN THIS BEAT&quot;
+
+★ THE BATTLE LINE, filling the middle of the frame and the signature of the whole layer: TWO ROWS OF
+HORIZONTAL BARS FACING EACH OTHER ACROSS A GAP. Left side headed &quot;RAIDER&quot;, right side headed
+&quot;DEFENDER&quot;. Between them, dead centre, a horizontal ruler of five labelled cells -
+&quot;CONTACT - CLOSE - MID - LONG - EXTREME&quot; - with a marker sitting on cell 2 and the readout
+&quot;GAP 2 - MID&quot; set large. Small arrows on the bars point inward or outward: an arrow pointing at the
+gap means that formation is dragging it shut, an arrow pointing away means it is holding it open.
+Four labelled ECHELON ROWS on each side, top to bottom: &quot;SCREEN&quot; &quot;MAIN&quot; &quot;SUPPORT&quot; &quot;reserve&quot; - and the
+reserve row is drawn GREYED OUT BEHIND EVERYTHING, because it fires nothing, is hit by nothing and
+counts for nothing.
+
+BAR WIDTH IS HULLS STILL STANDING. BAR HEIGHT IS HOW HURT THEY ARE, as a fraction, never an absolute -
+an absolute would let anybody divide by the hull count and read the fit, and a fit is a manifest.
+A dying formation VISIBLY THINS rather than vanishing.
+
+  RAIDER side, using our five hull names and no others:
+    SCREEN    PIKE x4      CLOSE -&gt;    ehp 71%   role tags &quot;LINE&quot;            vex
+    MAIN      WARDEN x3    CLOSE -&gt;    ehp 88%   role tags &quot;LINE - REPAIR&quot;   vex        tether drawn
+    SUPPORT   LANCE x2     HOLD        ehp 44%   role tags &quot;EWAR&quot;            corvid     DARK BAR, cap out
+    reserve   CITADEL x1   greyed, off the board                             corvid
+
+  DEFENDER side:
+    SCREEN    PIKE x2      &lt;- KITE     ehp 33%   &quot;LINE&quot;    kestrel   CHAIN drawn - pinned, cannot leave
+    MAIN      WARDEN x4    HOLD        ehp 95%   &quot;LINE&quot;    orrin
+    SUPPORT   WARDEN x2    &lt;- KITE     ehp 60%   &quot;REPAIR&quot;  wren      tether drawn into the MAIN bar
+    reserve   -
+
+  Mark the pinned bar with a small CHAIN glyph, the cap-out bar as a DARK BAR (undamaged and
+  operationally dead), and the repairing bars with a TETHER drawn to the friend they are repairing.
+  Small wreck marks - four of them - persist at the stage beneath the two lines.
+
+THE SIDE ROSTERS, docked right, two short lists of handles, because a coalition is names and not a
+number: &quot;RAIDERS  vex - corvid&quot; and &quot;DEFENDERS  kestrel - orrin - wren&quot;. Beneath them
+&quot;RAIDER FORCE 4 - DEFENDER FORCE 3 - FORCE PER HAND 1 - MAX PARTIES 12&quot; and a live line
+&quot;MAY STILL JOIN: 7 principals reach sys-20 - joining costs 1 hand and 1 force&quot;.
+
+THE TERRAIN PANEL, docked left: a small lane-graph inset of sys-20 and its three lanes with the strait
+to sys-06 drawn NARROWED AT ITS WAIST and notched &quot;10&quot;, plus rows:
+&quot;STAGE sys-20 Ashen Ford - MARCHES - ore 110/tick - richness 0 bps&quot;
+&quot;LANES 3 - sys-06, sys-18, sys-21 - one strait, detour 10&quot;
+&quot;VERGE  vex reaches here at sway 3 - kestrel defends at home, uncapped&quot;
+&quot;REACHERS 8&quot;
+
+★ A CONSEQUENCE PREVIEW BOX, bottom, heavier border, headed &quot;VERDICT IF RESOLVED NOW&quot;:
+  &quot;FIELD CONTROL  CONTESTED - not yet decided&quot;
+  &quot;IF kestrel PAYS   5,826 ration moves - the arc fades - no wrecks after this tick&quot;
+  &quot;IF THE LINE HOLDS 2 MORE TICKS  raider reaches CLOSE - small guns apply at 100%&quot;
+  &quot;HULLS LOST SO FAR  raider 1 - defender 3 - permanently, and there is no salvage&quot;
+  &quot;A HAND IS NEVER DESTROYED - a routed hand recovers at its holding for 12 to 48 ticks&quot;
+
+THE BEAT STRIP along the bottom: &quot;MUSTER 6 - CONTACT 1 - CONTEST 12 - BREAK 2 - AFTERMATH 1&quot; with
+CONTEST highlighted, and a scrolling trace log beside it, tick-stamped, monospaced:
+&quot;t.4171  RANGE    the lines close to MID&quot;
+&quot;t.4171  PINNED   kestrel&#x27;s screen cannot leave&quot;
+&quot;t.4170  CAP_BROKEN  corvid&#x27;s support is dark&quot;
+&quot;t.4169  WRECK    kestrel loses a PIKE&quot;
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-front"><img loading="lazy" src="screen-front.png" alt="THE FRONT"></a>
+      <figcaption>
+        <b><span class="n">11</span>THE FRONT &middot; <code>screen-front</code></b>
+        <em>the cone of odds before landfall, and who has promised to pay for it</em>
+        <span class="eve">references EVE&rsquo;s the probe scanner window - the result list beside the scan volume</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 11 of a twelve-screen series and they must all look like one product. SCREEN: THE FRONT. It maps onto EVE ONLINE&#x27;s the probe scanner window - the result list beside the scan volume - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: A FRONT - the scheduled catastrophe, and the one peril in the game. It is nobody&#x27;s decision:
+predation is somebody&#x27;s choice, a front is nobody&#x27;s. This screen is our answer to the probe scanner
+window - a result list docked beside a spatial view - and the spatial view here is the CONE.
+
+★ THE CENTRAL VISUAL DUALITY, and it must be on the screen twice: the same object is a CONE of
+published per-system odds BEFORE landfall and a SWATH of accomplished damage AFTER it. Draw the live
+one as the cone - probabilistic, soft-edged, a prediction - and put a small second panel showing the
+last front&#x27;s swath as hard-edged accomplished fact, so the two read as different kinds of truth.
+
+THE CONE VIEW, left two-thirds: a lane-graph of about fourteen systems with the EYE at sys-20 marked
+by a small hard cross, and EIGHT CELLS tinted by their odds, the tint falling off with each lane hop
+away from the eye. Every cell carries its own small label with its system id and its percentage. The
+cone must look like a prediction rather than a shape: soft edges, no hard border, no outline. Cells:
+  &quot;sys-20  96%&quot;  &quot;sys-18  74%&quot;  &quot;sys-21  71%&quot;  &quot;sys-06  52%&quot;  &quot;sys-16  44%&quot;  &quot;sys-19  38%&quot;
+  &quot;sys-17  22%&quot;  &quot;sys-05  14%&quot;
+Beneath the graph a single line: &quot;spread is over lane adjacency, not a travel route - a storm does not
+travel a trade route&quot; and beside it &quot;ODDS CEILING 9,900 bps - A CONE MAY NEVER PRINT CERTAINTY&quot;.
+
+THE RESULT LIST, docked right, a tight sortable table titled &quot;CONE CELLS (8)&quot;. Columns:
+&quot;SYSTEM - TIER - ODDS - VULNERABILITY - AT STAKE - LANDS IN - LEGEND&quot;
+  sys-20  MARCHES   9671 bps   60%   18,400  505   &quot;sys-20 96% - lands in 505&quot;
+  sys-18  MARCHES   7402 bps   60%   11,200  505
+  sys-21  MARCHES   7118 bps   60%    6,050  505
+  sys-06  MARCHES   5203 bps   60%   22,900  505
+  sys-16  MARCHES   4410 bps   60%    9,100  505
+  sys-19  MARCHES   3806 bps   60%    4,300  505
+  sys-17  MARCHES   2240 bps   60%    2,100  505
+  sys-05  MARCHES   1401 bps   60%    7,700  505
+
+A SMALL VULNERABILITY KEY: &quot;COMMONS 25% - MARCHES 60% - FRONTIER 100%&quot; with the note
+&quot;the Commons IS struck - the floor protects the holding, the identity and the record, not the wealth&quot;.
+
+A STATE STRIP: &quot;FORECAST&quot; highlighted, then &quot;IMMINENT - cover shuts 48 ticks out&quot;, then &quot;STRUCK&quot;,
+then &quot;PASSED&quot;. And a scheduling line: &quot;ONE FRONT EVERY 3 RECKONINGS - ONLY ONE LIVE AT A TIME -
+LANDFALL IS FIXED AT ANNOUNCEMENT AND NEVER MOVES&quot;.
+
+★ THE COVER PANEL, docked along the bottom and given real weight, headed
+&quot;COVER OFFERED AGAINST THIS FRONT - a promise to pay for what it destroys&quot;. Each row carries a small
+COVER ARC drawn in the SAME GRAMMAR AS A VENTURE RING: an arc FILLED for the escrowed part and HOLLOW
+for the elective part. It is the same promise shape applied to a different subject, and it is never
+full and never empty - the elective share is floored at 25% and capped at 75%.
+Columns &quot;COVER - PAYER - PAYEE - SYSTEM - GOOD - LIMIT - ARC - ON ITS WORD - STATE - LEGEND&quot;:
+  cov:r3:01  halcyon  kestrel  sys-20  ore     40,000  [arc 70/30]  12,000  ATTACHED  &quot;halcyon covers kestrel - 40000, 12000 on its word&quot;
+  cov:r3:02  sable    wren     sys-18  ration  18,000  [arc 55/45]   8,100  BOUND
+  cov:r3:03  orrin    thessaly sys-06  ore     25,000  [arc 40/60]  15,000  ATTACHED
+  cov:r3:04  vex      -        sys-21  ore     10,000  [arc 25/75]   7,500  OFFERED   &quot;no payee yet&quot;
+and a footer: &quot;DEDUCTIBLE 10% - SEASONING 12 TICKS - NON-CANCELLABLE ONCE ATTACHED -
+IN-TRANSIT GOODS ARE SPARED, WHICH IS THE ONLY EVASION&quot;.
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lbs-reckoning"><img loading="lazy" src="screen-reckoning.png" alt="THE RECKONING"></a>
+      <figcaption>
+        <b><span class="n">12</span>THE RECKONING &middot; <code>screen-reckoning</code></b>
+        <em>hold a lie next to its consequence, once a day, on a schedule</em>
+        <span class="eve">references EVE&rsquo;s the killboard&#x27;s slot in an EVE player&#x27;s day, filled by the opposite thing</span>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. This is screen 12 of a twelve-screen series and they must all look like one product. SCREEN: THE RECKONING. It maps onto EVE ONLINE&#x27;s the killboard&#x27;s slot in an EVE player&#x27;s day, filled by the opposite thing - reference that window&#x27;s LAYOUT and DENSITY, never its words.
+
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+
+RENDER IT AS A DENSE FUNCTIONAL SOVEREIGNTY CLIENT that an EVE ONLINE player would
+recognise in one second. Art direction: EVE&#x27;s own star map and sovereignty overlay, DOTLAN EveMaps,
+a dense tick-stamped public ledger site, AURORA 4X, STELLARIS. Very dark near-black charcoal ground with a faint dotted grid.
+Sovereignty drawn as flat semi-transparent coloured polygon fills. Tiny 9-11px condensed sans type.
+Dense tabular data panels docked hard to the edges with hairline borders and sortable column headers, a
+scrolling log pane, cyan and teal hyperlink-blue system names, small square status swatches, tooltips and
+a legend box. High information density, no whitespace luxury, slightly ugly on purpose. It looks like a
+tool somebody has had open for six hours, not a poster.
+
+A reference image is supplied. Use it FOR ITS VISUAL LANGUAGE ONLY - its near-black charcoal ground,
+its cyan-teal-on-dark palette with red reserved for failure, its hairline panel chrome, its tiny
+condensed type scale, its docked table density and its top tab bar. DO NOT reproduce its content and
+DO NOT copy its two-column dossier layout: this is a DIFFERENT SCREEN of the same product and it must
+have its own composition. Keep the chrome; change the screen.
+
+Every screen in this series carries the same top chrome: a thin dark tab bar reading
+&quot;THE COMPACT&quot; then the tabs &quot;OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET  MAP  STANDINGS  RECKONING&quot;
+with the CURRENT screen&#x27;s tab highlighted, and at the right end a clock readout
+&quot;TICK 607 - 19:42:17&quot;. Window controls at the far right corner.
+
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE&#x27;s VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people &amp; things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather &amp; cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+
+SUBJECT: THE RECKONING - the daily ceremony, the fixed appointment, and the most important screen in
+the product. Once every 288 ticks the world settles and this frame is written once and never changes.
+
+★ THIS SCREEN OCCUPIES THE SLOT A KILLBOARD OCCUPIES IN AN EVE PLAYER&#x27;S DAY AND IT MUST CARRY THE
+OPPOSITE CONTENT. There are no kills here. THE SCOREBOARD IS PROMISES KEPT AND PROMISES BROKEN. Do not
+draw a kill list, a top-kills panel, a damage leaderboard, a loss total or an efficiency percentage.
+
+FIVE REGIONS, laid out on one dense frame.
+
+1. THE METER BAR, across the very top beneath the tab chrome, four numbers set large in tabular
+   numerals with small-caps labels beneath each:
+   &quot;LEVY SHORT 150&quot;   &quot;ON A PROMISE 25,335&quot;   &quot;KEPT 55 - BROKEN 7&quot;   &quot;UNREFINED 66,130&quot;
+   and at the right end &quot;RECKONING 40 - SETTLED AT TICK 11,520 - IMMUTABLE&quot;.
+   LEVY SHORT is the headline and should be the largest: it is the one number no single principal can
+   lower, and it rises when everybody hides.
+
+2. THE RUNDOWN, a docked left column, twelve numbered segments ascending by stakes with the broken
+   promise LAST, because a night that buries its own betrayal is a batch and not a broadcast. Each
+   segment is one tight row: an order number, a small ring glyph, a kind word, and a deed line.
+   Show at least these, verbatim:
+   &quot;01  SETTLEMENT  [gold ring]  thessaly&#x27;s 2K was riding on brannock&#x27;s escort. thessaly paid 2K it
+        could have kept.&quot;          seal HONOURED
+   &quot;07  LAPSE       [no ring]     sys-16 - a claim lapsed and the bond was slashed&quot;
+   &quot;11  PLUNDER     [no ring]     sys-20 - p:kestrel paid 5826&quot;     &quot;5826 taken, and the loss is permanent&quot;
+   &quot;12  SETTLEMENT  [black ring]  lode-vela&#x27;s 4K was riding on brannock&#x27;s haul.&quot;   seal CONTRADICTED
+   The twelfth row is highlighted and selected, and it is what the right-hand region is showing.
+
+3. THE LEVY, a small docked panel: a lane-graph thumbnail with TRIBUTE LINES drawn from each
+   principal&#x27;s holding to the delivery place, LINE THICKNESS PROPORTIONAL TO WHAT IS OWED. Four looks,
+   keyed in a tiny legend: &quot;DASHED no hand assigned - SOLID a hand is en route - RED unpaid at the
+   freeze - REVERSING a seizure&quot;. Sixteen lines, most of them solid and thin, ONE thick and RED. A
+   paid line is kept at hairline thickness and never dropped, so the screen is not quietest exactly
+   when the most has been paid. Beneath: &quot;ALLOCATION RULE  INVERSE_EXPOSURE - the turtle pays most -
+   quorum 50% - no exemptions&quot; and &quot;16 TRIBUTE LINES - 15 SOLID - 1 RED - SHORT 150&quot;.
+
+4. THE HALL OF FAME, a small docked panel, four rows, title in small caps and clause beneath:
+   &quot;MOST KEPT, BY VALUE&quot;      &quot;paid 9497 across 6 elective halves it could have kept&quot;
+   &quot;MOST BROKEN&quot;              &quot;3 defaults on the record, the last at tick 287&quot;
+   &quot;NEVER BROKEN A PROMISE&quot;   &quot;14 elective halves honoured and not one default&quot;
+   &quot;WIDEST CIRCLE&quot;            &quot;dealt with 6 independently-capitalised counterparties&quot;
+
+5. ★★ THE RECEIPT REEL, occupying the whole right-hand half of the frame and given the most
+   typographic weight on the screen. It is the marquee artifact of the product: when an elective
+   promise breaks, the record assembles the promise-breaker&#x27;s own reassuring words - sent before the
+   deed - and lays them beside the deed and the authority that permitted it. Nothing is authored. It
+   is a query over a private negotiation channel that declassifies at settlement. Four numbered bands
+   separated by rules:
+
+   BAND 1 - THE GRANT
+     a directed line:  &quot;halcyon&quot;  ---------&gt;  &quot;brannock&quot;
+     &quot;g:432:37b6249b&quot;      &quot;ISSUED R12&quot;
+     &quot;MAX DIRECT LOSS  250,000&quot;      &quot;CONTINGENT  80,000&quot;
+     two small filled square clearance pips
+     caption: &quot;the worst case, shown before it was signed&quot;
+
+   BAND 2 - THE WORDS   labelled &quot;PARTIES - DECLASSIFIED AT SETTLEMENT&quot;
+     two transcript lines, monospaced, tick-stamped. ★ THE FIRST ONE IS THE HERO OF THE WHOLE IMAGE
+     and must be the most legible text in the frame - larger than everything except the meter bar:
+     t.4102   brannock   &quot;kestrel, you have my word - 900 is yours at the freeze. I have never missed one.&quot;
+     t.4188   brannock   &quot;we are loaded and moving. no issues.&quot;
+
+   BAND 3 - THE SEAL
+     one verdict, set apart and boxed:   &quot;CONTRADICTED&quot;     and beside it   &quot;by brannock&quot;
+
+   BAND 4 - THE DEED
+     A RING GLYPH IN STATE SNAPPED_BLACK: a circular ring, part of its rim SOLID and part HOLLOW - the
+     hollow arc is the part that was riding on nothing but a word - and the ring is BROKEN OPEN at one
+     side with a hard snap and a small cross mark at the break. Dead, black, and it must read as broken
+     from across a room.
+     beside it:   &quot;lode-vela&#x27;s 4K was riding on brannock&#x27;s haul&quot;
+     and:         &quot;HAUL - 4K ON A WORD - SNAPPED&quot;
+     and beneath, a line drawn between two places, SEVERED at its midpoint with a cross:
+                  &quot;lode-vela  sys-06&quot;    -----X-----    &quot;brannock  sys-25&quot;
+
+   ★ THE EMOTIONAL JOB OF THE COMPOSITION: the warm reassuring sentence in BAND 2 and the broken ring
+   in BAND 4 must be visible in the same glance, so the lie and its consequence indict each other.
+
+A BOTTOM TICKER, one line, small, monospaced, tick-stamped, 140 characters:
+&quot;sys-20: a raid demands 5826 of ration from p:kestrel by tick 144 - sys-25: p:corvid paid 4126 of
+ration and the raid left&quot;
+
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.</pre></details>
+      </figcaption>
+    </figure>
+</div></section></main>
+<div class="lb" id="lbs-map-sov"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-map-sov.png" alt=""></a><span class="cap">THE MAP &middot; screen-map-sov</span></div>
+<div class="lb" id="lbs-overview"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-overview.png" alt=""></a><span class="cap">THE OVERVIEW &middot; screen-overview</span></div>
+<div class="lb" id="lbs-character"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-character.png" alt=""></a><span class="cap">THE PRINCIPAL &middot; screen-character</span></div>
+<div class="lb" id="lbs-standings"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-standings.png" alt=""></a><span class="cap">STANDINGS &middot; screen-standings</span></div>
+<div class="lb" id="lbs-market"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-market.png" alt=""></a><span class="cap">THE MARKET &middot; screen-market</span></div>
+<div class="lb" id="lbs-ventures"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-ventures.png" alt=""></a><span class="cap">THE VENTURE BOARD &middot; screen-ventures</span></div>
+<div class="lb" id="lbs-venture-detail"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-venture-detail.png" alt=""></a><span class="cap">THE VENTURE &middot; screen-venture-detail</span></div>
+<div class="lb" id="lbs-syndicate"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-syndicate.png" alt=""></a><span class="cap">THE SYNDICATE &middot; screen-syndicate</span></div>
+<div class="lb" id="lbs-grants"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-grants.png" alt=""></a><span class="cap">AUTHORITY &middot; screen-grants</span></div>
+<div class="lb" id="lbs-standoff"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-standoff.png" alt=""></a><span class="cap">THE STANDOFF &middot; screen-standoff</span></div>
+<div class="lb" id="lbs-front"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-front.png" alt=""></a><span class="cap">THE FRONT &middot; screen-front</span></div>
+<div class="lb" id="lbs-reckoning"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="screen-reckoning.png" alt=""></a><span class="cap">THE RECKONING &middot; screen-reckoning</span></div>
+<footer>Drafts at 1K / medium via openai/gpt-5.4-image-2, 16:9, each generated with <code>profile-e-evenative.png</code> as a style reference. Generated text inside an image is approximate &mdash; judge the information architecture, not the spelling. Prompts live in <code>render_screens.py</code>.</footer>
+</body></html>

@@ -1,16 +1,31 @@
 #!/usr/bin/env python3
 """Style-direction sweep for THE COMPACT.
 
-Five science-fiction art directions x three subjects (the map, a character
-profile, THE RECEIPT REEL) = 15 draft images at 1K/medium via
-tools/media/gen_image.py (openai/gpt-5.4-image-2).
+Two sweeps live in this file.
 
-All prompt text is real data out of docs/design/graphics-2026-07-30/VISUAL-ASSET-BIBLE.md.
+SWEEP 1 - five science-fiction art directions x three subjects (the map, a
+character profile, THE RECEIPT REEL) = 15 draft images.
+
+SWEEP 2 - the owner picked `profile-e-evenative` out of sweep 1, so six
+variants around that one cell: E1 TERMINAL, E2 GLASS, E3 CARTOGRAPHIC,
+E4 SINGLE SUBJECT, E5 WARM ANALOG, E6 BROADCAST. Same DNA - a split dual
+dossier, a live operations console, a per-principal territory voronoi -
+different bets on what the aesthetic actually is.
+
+    ★ Sweep 2's prompts carry CANON_LOCK. Sweep 1's E direction imported EVE's
+    ONTOLOGY along with its look - Rorqual, Fortizar, ISK, entosis link, Kador,
+    and a KILLBOARD beside the receipt reel - none of which anything asked for.
+    SPEC.md §3 is a rules surface, so the ban is explicit and the real nouns,
+    handles and place names are supplied in full.
+
+All prompt text is real data out of docs/design/graphics-2026-07-30/VISUAL-ASSET-BIBLE.md
+(§6.4 for the map, §11 for the two principals).
 
     python3 render.py               # generate anything missing, then write gallery.html
     python3 render.py --force       # re-generate everything (costs money)
     python3 render.py --gallery     # only rewrite gallery.html, spend nothing
-    python3 render.py --only map-a  # generate one cell
+    python3 render.py --only map-a  # generate one sweep-1 cell
+    python3 render.py --only e3     # generate one sweep-2 variant
 """
 import argparse
 import concurrent.futures as cf
@@ -280,21 +295,421 @@ def out_path(subject, direction):
     return os.path.join(HERE, f"{subject}-{direction}-{DIRECTIONS[direction]['slug']}.png")
 
 
-def generate(subject, direction, attempts=2):
-    dest = out_path(subject, direction)
-    p = prompt_for(subject, direction)
+# ============================================================ SWEEP 2: PROFILE E VARIANTS
+#
+# The owner picked profile-e-evenative. What works in it: a split dual dossier
+# colour-coded cyan/red before you read a word, a live operations console rather
+# than a static page, and a per-principal territory voronoi tinted by relationship.
+# What is wrong with it: it is a canon hazard. It shipped KADOR - a real EVE region -
+# and invented region names, and its siblings shipped Rorqual, Fortizar, ISK,
+# entosis link and a KILLBOARD. Hence CANON_LOCK, which every variant carries.
+
+CANON_LOCK = """
+★ VOCABULARY IS A HARD RULE HERE AND IT OVERRIDES THE ART DIRECTION. This world is NOT EVE Online and
+may not borrow one word of its ontology, even where the visual language is adjacent to it.
+
+ABSOLUTELY FORBIDDEN - do not write any of these anywhere in the image, in any panel, tab, column header,
+legend, tooltip, badge or log line:
+Rorqual, Fortizar, Astrahus, Raitaru, Azbel, Keepstar, Titan, Capsuleer, Pilot, Pilots, Corporation, Corp,
+Alliance, Coalition, ISK, entosis, cyno, jump bridge, jump gate, ADM, Sovereignty, Sov, Sovereignty Hub,
+Outpost, Station, Docked, Undocked, Wormhole, Kador, Delve, Jita, Amarr, Caldari, Gallente, Minmatar,
+Concord, Empire, Faction, Security Status, Sec Status, Loyalty Points, Local, Intel, Fleet, Warp,
+Freighter, Mining Barge, Killboard, Killmail, Kills, Top Kills, Ships Destroyed, Losses, Efficiency.
+
+THERE IS NO KILLBOARD AND NO COMBAT SCOREBOARD OF ANY KIND. Nothing in this image is killed, destroyed or
+shot down; there are no ships in it at all. The only scoreboard this world has is PROMISES KEPT AND
+PROMISES BROKEN, and the only bad outcome that appears anywhere is a DEFAULT.
+
+DO NOT INVENT ANY WORDS. No invented place names, transaction types, statistics, tabs, structures,
+currencies or handles. Every string in the image must come from the lists below. If you run short of room,
+repeat a real row or drop a whole panel - never fill space with an invented word.
+"""
+
+CANON_NOUNS = """
+THE ONLY NOUNS THAT EXIST IN THIS WORLD:
+PRINCIPAL - an identity; the player. Never a person, never a pilot, never a corporation
+HANDLE - a principal's name, which is literally its email address at agenttransfer.dev
+HOLDING - a principal's one named body on the map    STORES - its assets, never its body
+HAND - one unit of physical presence; every principal has exactly three and never more
+WORKS - the production structure    ANCHOR - what a CLAIM is built from, and what burns FUEL
+CLAIM - a sovereign hold on exactly one system    VENTURE - a joint act between principals
+COMPACT - the signed terms of a split    GRANT - a scoped, expiring authority
+DOSSIER - a signed, dated extract of private figures handed to one named principal
+SEAL - a pre-committed intention, revealed one RECKONING later
+STANDING - the public factual vectors, and never a score
+THE LEVY - the scheduled world obligation    THE RECKONING - the daily settlement
+TRIBUTE - what is paid toward the LEVY    CHARGE - what a CLAIM owes each RECKONING
+SYNDICATE - the only organisation container that exists
+CONSTELLATION - a group of systems    STRAIT - a lane the region cannot cheaply route around
+LODE - one system's richness    VERGE - how far a bloc's force reaches    RUIN - what is left
+The three tiers, running outward from the centre: COMMONS, MARCHES, FRONTIER
+
+THE FOUR GOODS, and there are no others: ore - ration - alloy - fuel
+THE CURRENCY IS CALLED "minor". Write it as a plain grouped integer - "9,497" or "9,497 minor".
+Never ISK, never credits, never a currency symbol, never a B or M or K suffix on any value.
+
+THE ONLY HANDLES THAT EXIST - all lower case, no others may appear:
+sable - vex - halcyon - brannock - thessaly - kestrel - ashlin - wren - orrin - dunmore - corvid - bram
+
+THE ONLY PLACE NAMES THAT EXIST - no others may appear, and every one is paired with its sys id:
+COMMONS:   Salt Ward sys-01 - Low Ferry sys-02 - Candle sys-03 - Tallow sys-04
+MARCHES:   Orison sys-05 - Vale sys-06 - Bright Ash sys-07 - Gallow Green sys-13 - Nettle sys-15 -
+           Wither sys-16 - Mirefall sys-18 - Ashen Ford sys-20 - Copper Wick sys-21
+FRONTIER:  Grist sys-23 - Halyard sys-24 - Ironhold sys-25 - Jetsam sys-26 - Keelrow sys-27 -
+           Lantern sys-28 - Moorage sys-29 - Nightjar sys-30
+The four CONSTELLATIONS: Hearth - Threshold - Marrow - Vane
+"""
+
+DOSSIER_HEAD = """
+SUBJECT: THE DOSSIER - a LIVE OPERATIONS CONSOLE, not a static profile page. Two PRINCIPALS side by side
+in the identical template so a stranger can compare them line for line. This is the screen a viewer's
+rooting interest has to live on: a play-test found viewers root for the one on the LEFT against the one
+on the RIGHT, and the colour coding must make that legible before a single word is read.
+★ THE LEFT HALF IS CYAN. THE RIGHT HALF IS RED. A hairline seam divides them down the centre.
+
+A THIN APPLICATION HEADER runs across the top of each half with a tab bar - exactly these tabs, no others:
+  "OVERVIEW"   "PRINCIPALS"   "VENTURES"   "LEDGER"   "MAP"   "RECKONING"   "DOSSIERS"
+with "PRINCIPALS" the active tab, and a readout at the right: "TICK 295 - RECKONING 12 - LEVY IN 02:14"
+"""
+
+DOSSIER_SABLE = """
+====================  LEFT HALF - sable - CYAN - THE ONE YOU ROOT FOR  ====================
+
+IDENTITY BLOCK with a CREST - a small abstract, non-representational, generated-looking mark the size of
+a coin, unique to this handle: a clean radial many-pointed figure, cyan.
+  handle     "sable"
+  address    "sable@agenttransfer.dev"
+  HOLDING    "Vale - sys-06 - MARCHES"
+  SYNDICATE  "ashlin-house - STRONGBOX - 1 POOLED"
+
+"STANDING VECTORS" - six separate labelled facts, never combined and never totalled:
+  "ELECTIVE HONOURED   14"    "VALUE HONOURED   9,497"    "DEFAULTS   0"
+  "CONTRADICTED SEALS   0"    "COUNTERPARTIES   6"        "LAST DEFAULT   none"
+one clause beneath:  "kept 14 elective promises - 6 counterparties"
+
+"HANDS" - THREE individually distinguishable markers with their own states, NOT a number badge,
+labelled "IDLE", "IN TRANSIT", "COMMITTED"
+
+A TITLE BAND, the strongest element in this half:
+  "NEVER BROKEN A PROMISE"   and beneath it   "14 elective halves honoured and not one default"
+
+"COUNTERPARTIES (6)" - columns "HANDLE", "STANDING", "LAST ACT":
+  halcyon   SYNDICATE   t.295        brannock  SYNDICATE   t.293
+  thessaly  SYNDICATE   t.291        kestrel   NEUTRAL     t.290
+  ashlin    SYNDICATE   t.288        wren      NEUTRAL     t.285
+
+"VENTURES (14)" - columns "KIND", "STATE", "COUNT":
+  HAUL   SETTLED  9      HAUL      LIVE      2      ELECTIVE  HONOURED  14
+  ESCROWED  HONOURED  14      COMPACT  SIGNED  6      SEAL  KEPT  3
+
+"VALUE FLOW - LAST 30 TICKS" - columns "DIRECTION", "COUNT", "VALUE":
+  in  18  9,497        out  12  7,214        net  +6  +2,283
+
+"EVENT LOG - sable" - a scrolling monospaced pane, columns "TICK", "TYPE", "PARTY", "DETAIL":
+  295  VENTURE CREATED     halcyon   HAUL - 1,200 ore - due t.320
+  293  ELECTIVE HONOURED   brannock  delivered 900 ration - ahead of schedule
+  291  COUNTERSIGNED       thessaly  both roles filled - compact signed
+  290  SETTLED             kestrel   escrowed half released
+  288  DOSSIER HANDED      ashlin    STORES compartment - signed extract
+  287  GRANT ISSUED        wren      max direct loss 250 - clearance STORES
+  285  ELECTIVE HONOURED   halcyon   750 minor - paid at settlement
+  284  HAUL ARRIVED        brannock  Vale sys-06 - 600 ore
+  283  SEAL DECLARED       thessaly  reveals next RECKONING
+  281  TRIBUTE PAID        -         THE LEVY - 480 ration
+
+"STORES" - five horizontal bars with their values, and fuel is genuinely zero because fuel exists only
+on the FRONTIER and sable holds in the MARCHES:
+  ore 5,043      ration 1,920      alloy 812      fuel 0      minor 4,180
+"""
+
+DOSSIER_VEX = """
+====================  RIGHT HALF - vex - RED - THE ONE YOU ROOT AGAINST  ====================
+
+IDENTITY BLOCK with a CREST - a different abstract generated mark, same size: a broken concentric burst
+with one arc missing, red.
+  handle     "vex"
+  address    "vex@agenttransfer.dev"
+  HOLDING    "Ironhold - sys-25 - FRONTIER"
+  SYNDICATE  "unaffiliated"
+
+"STANDING VECTORS":
+  "ELECTIVE HONOURED   5"     "VALUE HONOURED   3,180"    "DEFAULTS   3"
+  "CONTRADICTED SEALS   0"    "COUNTERPARTIES   4"        "LAST DEFAULT   tick 287"
+★ "DEFAULTS 3" is the most interesting true thing about this principal and must be the row the eye lands
+on. It gets the alarm colour and no other vector row does.
+one clause beneath:  "defaulted 3 times - kept 5 elective promises - 4 counterparties"
+
+"HANDS" - three markers labelled "IDLE", "RECOVERING", "COMMITTED"
+
+A TITLE BAND:
+  "MOST BROKEN"   and beneath it   "3 defaults on the record, the last at tick 287"
+
+"COUNTERPARTIES (4)" - columns "HANDLE", "STANDING", "LAST ACT":
+  orrin    HOSTILE  t.290        dunmore  HOSTILE  t.294
+  corvid   NEUTRAL  t.292        bram     NEUTRAL  t.287
+
+"VENTURES (11)" - columns "KIND", "STATE", "COUNT":
+  HAUL  SETTLED  6      HAUL  LIVE  1      ELECTIVE  HONOURED  5
+  ELECTIVE  DEFAULTED  3   <- this row in the alarm colour
+  ESCROWED  HONOURED  8      COMPACT  SIGNED  4
+
+"VALUE FLOW - LAST 30 TICKS":
+  in  9  3,180        out  15  6,940        net  -6  -3,760
+
+"EVENT LOG - vex" - same columns:
+  294  DEFAULT             dunmore   failed to deliver 700 ration - elective half
+  292  ELECTIVE HONOURED   corvid    delivered 400 ore - partial settlement
+  290  DEFAULT             orrin     non-delivery at settlement - 900 minor
+  287  DEFAULT             bram      failed to deliver 600 ration - deadline missed
+  285  VENTURE CREATED     corvid    HAUL - 500 ore - due t.312
+  283  ANCHOR BURNED       -         Ironhold sys-25 - 10 fuel
+  281  TRIBUTE SHORT       -         THE LEVY - 150 short
+  279  COUNTERSIGNED       dunmore   compact signed
+  276  CHARGE PAID         -         CLAIM Ironhold - 220 ration
+  274  SETTLED             corvid    escrowed half released - elective refused
+★ the three DEFAULT rows are the story of this half and are the only saturated red text in the log.
+
+"STORES" - five bars, and vex has fuel because it holds on the FRONTIER:
+  ore 1,420      ration 980      alloy 420      fuel 260      minor 1,180
+"""
+
+DOSSIER_RULE = """
+★ THE ONE HARD RULE OF THIS SCREEN: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE.
+No overall rating, no grade, no letter, no percentage, no single trust number, no star rating, no gauge,
+no progress bar toward a total, and no radar chart that implies one. The six numbers stand beside each
+other as separate public facts and the reader does the judging. The design never editorialises; the
+numbers do.
+"""
+
+TERRITORY_HEAD = """
+★ THE PER-PRINCIPAL TERRITORY MAP - each principal carries its own, and it is the best idea on this
+screen. A VORONOI DIAGRAM: irregular polygon cells packed edge to edge with no gaps, one cell per system,
+each cell FLAT-TINTED by that system's relationship to THIS principal, with the system's name and sys id
+set inside the cell and a faint dot at the cell's seed. Cells are separated by hairlines. Thin lane lines
+run between the seeds over the tints.
+
+THE TINT LEGEND, drawn once - exactly these five, plus the COMMONS:
+  "HELD"       this principal's own HOLDING and CLAIMS - the strongest tint of its own colour
+  "SYNDICATE"  systems held by fellow syndicate members
+  "NEUTRAL"    held by someone it has no relationship with - the dimmest, greyest tint
+  "HOSTILE"    held by a principal it has defaulted with, or that has defaulted on it
+  "CONTESTED"  a system two principals both claim - the alarm colour
+  "COMMONS - HOSTILE ACTION INVALID" - the four central cells, drawn CATEGORICALLY DIFFERENTLY from
+     everything else. Not a sixth tint but visibly outside the contest entirely: no border touches them,
+     nothing crosses them, no fence encloses them, and they carry no claimant marking at all.
+
+Two further marks on each map, both small: a NARROW WAIST pinched into one lane at its midpoint with "10"
+notched beside it - that is a STRAIT with a detour of ten lanes - and ONE CLOSED, UNBROKEN fence line
+around the group of cells this principal's force reaches, which is its VERGE. A VERGE fence may never be
+dotted or broken, because a hole in it would read as a false claim.
+"""
+
+TERRITORY_SABLE = """
+sable's MAP - centred on its HOLDING in the MARCHES, close in to the COMMONS:
+  HELD: Vale sys-06.   SYNDICATE: Orison sys-05, Bright Ash sys-07, Ashen Ford sys-20.
+  NEUTRAL: Gallow Green sys-13, Nettle sys-15, Mirefall sys-18, Copper Wick sys-21.
+  CONTESTED: Wither sys-16.
+  COMMONS, at the centre: Salt Ward sys-01, Low Ferry sys-02, Candle sys-03, Tallow sys-04.
+  Constellation names set large and very faint behind the cells: "HEARTH" and "THRESHOLD".
+"""
+
+TERRITORY_VEX = """
+vex's MAP - centred on its HOLDING far out on the FRONTIER, a long way from the COMMONS:
+  HELD: Ironhold sys-25.   SYNDICATE: none at all - vex is unaffiliated, so no cell carries that tint
+  and its legend row reads as empty.
+  HOSTILE: Halyard sys-24, Moorage sys-29, Jetsam sys-26.
+  NEUTRAL: Grist sys-23, Keelrow sys-27, Lantern sys-28, Nightjar sys-30.
+  CONTESTED: Wither sys-16.
+  The COMMONS appears only as a small far-off cluster at the very edge of the frame, and that distance is
+  the point: vex is a long way from safety.
+  Constellation names behind the cells: "VANE" and "MARROW".
+"""
+
+VARIANTS = {
+    "e1": dict(
+        key="e1", name="TERMINAL", slug="terminal",
+        bet="bets that density IS the aesthetic - a professional terminal, not a game UI",
+        refs="a Bloomberg Terminal, Refinitiv Eikon, a Level-2 order book, htop",
+        style="""RENDER IT AS A PROFESSIONAL FINANCIAL TRADING TERMINAL.
+Art direction: a BLOOMBERG TERMINAL, Refinitiv Eikon, a Level-2 equity order book, htop.
+EVERY SINGLE GLYPH IS MONOSPACE - labels, headings, numbers, the title bands, all of it. Pure black
+ground. NO rounded corners anywhere; radius zero on every rectangle. NO gradients, NO glow, NO bloom, NO
+drop shadows, NO translucency, NO icons, NO chrome of any kind. Panels are separated by single-pixel
+hairline rules only, never by filled cards. Rows are TIGHT - the vertical rhythm compressed as far as
+legibility permits, tabular figures right-aligned, columns ruled, small sort carets on header cells.
+Colour is purely functional: amber for headings and keys, white for values, CYAN for everything belonging
+to sable, RED for everything belonging to vex, and one saturated red-orange reserved strictly for a
+default. A thin function-key strip runs along the very bottom in reverse video reading
+"F1 OVERVIEW   F2 PRINCIPALS   F3 VENTURES   F4 LEDGER   F5 MAP   F8 RECKONING".
+Fill the frame edge to edge - no margins, no padding, no whitespace luxury, no breathing room. It should
+look like the most information anyone has ever put on one screen, and still be readable.""",
+        parts=("head", "sable", "vex", "rule", "map_head", "map_sable", "map_vex"),
+    ),
+    "e2": dict(
+        key="e2", name="GLASS", slug="glass",
+        bet="bets that it should feel expensive - the same instrument, rendered in glass and light",
+        refs="The Expanse's Rocinante displays, Oblivion (2013), visionOS material, Blade Runner 2049",
+        style="""RENDER IT WITH GLASSY OPTICAL DEPTH, AS IF EVERY PANEL WERE A FLOATING SHEET OF LIT GLASS.
+Art direction: the Rocinante's displays in THE EXPANSE, the interfaces in OBLIVION (2013), Apple visionOS
+material, the holographic surfaces in BLADE RUNNER 2049. Near-black ground with a very faint cool
+gradient. Each panel is a subtly TRANSLUCENT plate over a soft blur, with a 1px bright hairline border
+catching light along its top and left edges and a long soft shadow beneath, so panels visibly float at
+slightly different depths and overlap a little. Soft CYAN BLOOM on the brightest text and rules of the
+left half; a matching deep crimson bloom on the right. Thin bright rules, a refined light-weight sans for
+labels, a precise tabular numeric face for figures, spacing generous but never wasteful. A faint film
+grain and a barely-there chromatic edge on the brightest strokes.
+It must feel like expensive hardware in a dark room - restrained, cool, slightly luminous. NO
+skeuomorphism, no bevels, no plastic, no lens flare, no sci-fi ornament. And the glass may never cost
+legibility: every number stays crisp and every hairline stays a hairline.""",
+        parts=("head", "sable", "vex", "rule", "map_head", "map_sable", "map_vex"),
+    ),
+    "e3": dict(
+        key="e3", name="CARTOGRAPHIC", slug="cartographic",
+        bet="bets that the map is the character - a principal's territory IS its story",
+        refs="a nautical chart, a geopolitical atlas plate, election-night cartograms, Voronoi tessellation",
+        style="""RENDER IT AS A CARTOGRAPHIC INSTRUMENT IN WHICH THE TWO TERRITORY MAPS DOMINATE THE FRAME.
+★ LAYOUT OVERRIDE, and it is the entire point of this variant: THE TWO VORONOI TERRITORY MAPS OCCUPY
+ROUGHLY SEVENTY PERCENT OF THE IMAGE - one large map per principal, side by side, each running nearly the
+full height of its half. Every table is DEMOTED to a narrow vertical rail down the outer edge of each
+half, set small and quiet, with the event log the only one given any width. The identity block, the six
+standing vectors and the title band sit as a compact CARTOUCHE in one corner of each map, laid over the
+cells.
+Art direction: a nautical chart, a geopolitical atlas plate, an election-night cartogram. Near-black
+ground. The cells are the hero: large, flat-tinted, hairline-separated, each carrying a legible system
+name with its sys id beneath and its tier smaller again. Constellation names set LARGE and very faint
+behind the cells the way an ocean is labelled on a chart. Fine graticule ticks around the map edge, a
+small scale bar, a legend box in a corner. Cyan family for sable's half, red family for vex's, one hot
+alarm colour reserved for CONTESTED and for a default. The maps must be the first thing you look at and
+the last thing you leave.""",
+        parts=("head", "map_head", "map_sable", "map_vex", "sable", "vex", "rule"),
+    ),
+    "e4": dict(
+        key="e4", name="SINGLE SUBJECT", slug="single",
+        bet="bets that intimacy beats comparison - one villain, full frame, nowhere to hide",
+        refs="a full-bleed athlete profile, a case file, a single-instrument monitoring console",
+        style="""RENDER IT AS ONE PRINCIPAL'S DOSSIER FILLING THE ENTIRE FRAME.
+★ LAYOUT OVERRIDE: THIS IS A SINGLE-SUBJECT SCREEN. There is NO split and NO second principal anywhere in
+it. Draw ONLY vex, in red, and give every element the room the two-up version could not.
+Art direction: a full-bleed sports profile page, a case file, a single-instrument monitoring console.
+Near-black ground with a deep desaturated crimson cast that deepens toward the frame edges. A generous
+three-column grid. The crest is LARGE - a hand's width, not a coin. The handle "vex" is set enormous at
+the top left. "DEFAULTS 3" is the second largest thing in the frame. The six standing vectors get a full
+band to themselves, each figure large with its label small above it. The event log runs the full width
+with comfortable row height so all ten lines read easily, and its three DEFAULT rows are the only
+saturated red in the image. The territory map is large, on the right, and must show how far Ironhold
+sits from the COMMONS. Restrained everywhere else: hairlines, no glow, no ornament, no badges.
+It should read as an indictment assembled entirely from public records - never as a villain poster.""",
+        parts=("head", "vex", "rule", "map_head", "map_vex"),
+    ),
+    "e5": dict(
+        key="e5", name="WARM ANALOG", slug="analog",
+        bet="bets that warmth reads as RECORD rather than dashboard - same density, different light",
+        refs="amber phosphor CRT, a bound ledger, a Teletype printout, a warm 1970s control room",
+        style="""RENDER IT IN WARM AMBER AND BONE ON DARK BROWN, WITH THE GENTLEST CRT CURVATURE.
+★ Keep the density and the layout of a live operations console EXACTLY - this variant changes the light,
+not the structure. Every panel, table, log and map stays where it was and keeps every row.
+Art direction: an amber phosphor CRT, a bound ledger book, a Teletype printout, a warm 1970s control
+room. The ground is a deep warm brown-black, never neutral black. Type is amber and bone-white with a
+faint phosphor bloom and a soft warm halo on the brightest glyphs. Rules and table borders are a dim warm
+ochre. A FAINT barrel curvature bends the frame's straight lines just perceptibly toward the corners,
+with light vignetting and a whisper of scanline texture - present, but never enough to cost a number its
+legibility.
+The colour coding survives the palette change and is the one thing that is not warm: sable's half is
+keyed by PALE BONE and a cool desaturated ivory, vex's half by a hot rust-orange, and a single saturated
+blood-red is reserved strictly for a DEFAULT and appears nowhere else in the frame. The territory maps
+are tinted in washes of amber, ochre and umber. It should feel like a record being kept rather than a
+dashboard being watched.""",
+        parts=("head", "sable", "vex", "rule", "map_head", "map_sable", "map_vex"),
+    ),
+    "e6": dict(
+        key="e6", name="BROADCAST", slug="broadcast",
+        bet="bets a spectator needs a third less information at twice the size",
+        refs="F1 timing graphics, a Premier League match-centre, an election-night network board",
+        style="""RENDER IT AS A LIVE BROADCAST GRAPHIC, STAGED FOR A VIEWER RATHER THAN AN OPERATOR.
+★ LAYOUT OVERRIDE: KEEP THE SPLIT AND THE COLOUR CODING, BUT CUT THE INFORMATION BY A THIRD AND DOUBLE
+THE SIZE OF WHAT REMAINS. DROP the ventures table, DROP the value-flow table, DROP the stores bars and
+DROP the counterparties table entirely - they are not in this image. What survives, at broadcast scale:
+the crest, the handle, the holding, the six standing vectors, the three hands, the territory map, and
+only the top SIX event log rows for each principal.
+★ THE STANDING VERDICT IS THE HERO ELEMENT. "NEVER BROKEN A PROMISE" on the left and "MOST BROKEN" on the
+right are the largest type in the frame after the two handles, each set in a full-width band across its
+half with its clause beneath at comfortably readable size.
+★ AN F1-STYLE LOWER THIRD spans the whole bottom of the frame across both halves: a solid dark strip with
+a bright accent edge, carrying in large broadcast type "sable   14 KEPT   0 DEFAULTS" and
+"vex   5 KEPT   3 DEFAULTS" and, at the right, "RECKONING 12 - SETTLEMENT IN 02:14".
+Art direction: Formula 1 timing graphics, a Premier League match-centre, an election-night network board.
+Confident flat colour blocks, strong horizontal bands, one heavy geometric sans, very large tabular
+numerals, generous padding, high contrast, a slight forward lean on the accent shapes. No hairline
+tables, no dense monospace, no scrolling panes. It must be legible from across a room on a television and
+readable in three seconds by someone who has never seen it before.""",
+        parts=("head", "sable", "vex", "rule", "map_head", "map_sable", "map_vex"),
+    ),
+}
+
+VARIANT_ORDER = ["e1", "e2", "e3", "e4", "e5", "e6"]
+
+VARIANT_PARTS = {
+    "head": DOSSIER_HEAD, "sable": DOSSIER_SABLE, "vex": DOSSIER_VEX, "rule": DOSSIER_RULE,
+    "map_head": TERRITORY_HEAD, "map_sable": TERRITORY_SABLE, "map_vex": TERRITORY_VEX,
+}
+
+
+def variant_prompt_for(vid):
+    """Content first, art direction LAST.
+
+    These prompts run ~3.4x the length of sweep 1's because of the canon lock and
+    the full data payload, so the style block goes at the end where it stays
+    freshest, with a one-line closer after it.
+    """
+    v = VARIANTS[vid]
+    return "\n".join([
+        f"A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by "
+        f"autonomous AI agents. Variant {v['key'].upper()}: {v['name']}.",
+        NOT_A_POSTER.strip(),
+        NO_COCKPIT.strip(),
+        CANON_LOCK.strip(),
+        CANON_NOUNS.strip(),
+        "\n".join(VARIANT_PARTS[p].strip() for p in v["parts"]),
+        TEXT_RULE.strip(),
+        "★ THE ART DIRECTION, which governs every pixel above:",
+        v["style"].strip(),
+        f"To restate it in one line: this is variant {v['key'].upper()}, {v['name']} - it "
+        f"{v['bet']}. Nothing in the frame may carry a word this world does not own.",
+    ])
+
+
+def variant_out_path(vid):
+    return os.path.join(HERE, f"profile-{vid}-{VARIANTS[vid]['slug']}.png")
+
+
+def _gen(dest, p, attempts=2):
+    err = []
     for i in range(attempts):
         t0 = time.time()
         r = subprocess.run([sys.executable, GEN, p, "-o", dest, "--aspect", "16:9",
                             "--size", "1K", "--quality", "medium"],
                            capture_output=True, text=True)
         if r.returncode == 0 and os.path.exists(dest) and os.path.getsize(dest) > 20000:
-            return (subject, direction, True, f"{time.time()-t0:.0f}s "
-                                              f"{os.path.getsize(dest)//1024}KB")
+            return (True, f"{time.time()-t0:.0f}s {os.path.getsize(dest)//1024}KB")
         err = (r.stderr or r.stdout or "").strip().splitlines()
         if i + 1 < attempts:
             time.sleep(20)
-    return (subject, direction, False, " | ".join(err[-2:]) if err else "unknown failure")
+    return (False, " | ".join(err[-2:]) if err else "unknown failure")
+
+
+def run_job(job):
+    """job is ("s", subject, direction) or ("v", variant_id, None)."""
+    kind, a, b = job
+    if kind == "s":
+        ok, note = _gen(out_path(a, b), prompt_for(a, b))
+        return (f"{a}-{b}", ok, note)
+    ok, note = _gen(variant_out_path(a), variant_prompt_for(a))
+    return (a, ok, note)
+
+
+def job_path(job):
+    kind, a, b = job
+    return out_path(a, b) if kind == "s" else variant_out_path(a)
 
 
 # ------------------------------------------------------------------- gallery
@@ -337,7 +752,10 @@ h2 span { color:var(--ink); }
 @media (min-width:1380px) {
   .by-subject .grid { grid-template-columns:repeat(5,1fr); }
   .by-style   .grid { grid-template-columns:repeat(3,1fr); }
+  .variants   .grid { grid-template-columns:repeat(3,1fr); }
 }
+section.variants { margin-top:30px; }
+section.variants h2 { color:var(--acc); border-bottom-color:var(--acc); }
 figure { margin:0; }
 figure img { width:100%; display:block; background:#000; border:1px solid var(--line); border-radius:3px; }
 figure a:hover img { border-color:var(--acc); }
@@ -391,21 +809,68 @@ def figure_html(subject, direction, wide=False):
     </figure>"""
 
 
+def variant_figure_html(vid):
+    v = VARIANTS[vid]
+    fn = os.path.basename(variant_out_path(vid))
+    lid = f"lb-{vid}"
+    if os.path.exists(variant_out_path(vid)):
+        media = (f'<a href="#{lid}"><img loading="lazy" src="{fn}" '
+                 f'alt="{html.escape(v["name"])}"></a>')
+    else:
+        media = (f'<div class="missing">GENERATION FAILED<br>{html.escape(v["name"])}'
+                 f'<br>no image - not a design choice</div>')
+    return f"""    <figure>
+      {media}
+      <figcaption>
+        <b>{v["key"].upper()} &middot; {html.escape(v["name"])}</b>
+        <em>{html.escape(v["bet"])}</em>
+        <details><summary>prompt</summary><pre>{html.escape(variant_prompt_for(vid))}</pre></details>
+      </figcaption>
+    </figure>"""
+
+
+VARIANT_INTRO = """<b>Six variants on <code>profile-e-evenative</code>, the one the owner picked.</b>
+Same DNA every time &mdash; a split dual dossier colour-coded <span style="color:#7fd4ff">cyan</span> for
+<code>sable</code> against <span style="color:#e0555f">red</span> for <code>vex</code>, a live operations
+console rather than a static page, and a per-principal territory voronoi tinted by relationship. Six
+different bets on what the aesthetic actually <em>is</em>."""
+
+VARIANT_CANON_NOTE = """&#9733; <b>Every prompt in this section carries a canon lock.</b> The parent
+direction was a vocabulary hazard: unprompted, it produced <code>Rorqual</code>, <code>Fortizar</code>,
+<code>Astrahus</code>, <code>ISK</code>, <code>entosis link</code>, <code>ADM RATE</code> and
+<code>Kador</code> &mdash; a real EVE region &mdash; and put a <code>KILLBOARD</code> beside the receipt
+reel. <code>SPEC.md</code> &sect;3 is a rules surface, so these prompts name ~45 banned words explicitly and
+supply the real ones: the twelve house handles, the twenty real place names out of bible &sect;6.4, the four
+goods, and <code>minor</code> as the currency. The scoreboard is promises kept and broken; there is no
+killboard."""
+
+
 def write_gallery():
     parts = [f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>THE COMPACT - style directions</title><style>{CSS}</style></head><body>
 <header>
-  <h1>THE COMPACT &middot; five art directions</h1>
-  <p class="rec">{RECOMMENDATION}</p>
-  <p>Fifteen drafts: five science-fiction directions across the three screens that decide the product &mdash;
-  the map, a character profile, and the receipt reel. Every string in every image is real data out of
+  <h1>THE COMPACT &middot; art directions</h1>
+  <p class="rec">{VARIANT_INTRO}</p>
+  <p>Six variants on the chosen direction, then the original fifteen drafts below them &mdash; five
+  science-fiction directions across the three screens that decide the product: the map, a character
+  profile, and the receipt reel. Every string in every image is real data out of
   <code>VISUAL-ASSET-BIBLE.md</code>. Click any image for full size. Reasoning lives in
   <code>STYLE-DIRECTIONS.md</code>.</p>
+  <p class="rec" style="border-left-color:#c9a227">{VARIANT_CANON_NOTE}</p>
 </header>
 <input type="radio" name="view" id="v-subject" checked><input type="radio" name="view" id="v-style">
 <nav><label for="v-subject">compare by subject</label><label for="v-style">compare by style</label></nav>
-<main>"""]
+<main>
+<section class="variants"><h2><span>THE DOSSIER</span> &middot; six variants on the chosen direction</h2>
+<p class="sub">Does one of these make you care about <b>sable</b> (14 honoured, zero defaults) against
+<b>vex</b> (3 defaults, the last at tick 287)? <b>E3</b> and <b>E4</b> and <b>E6</b> change the layout on
+purpose; <b>E1</b>, <b>E2</b> and <b>E5</b> hold the layout and change only the light.</p>
+<div class="grid">"""]
+    parts += [variant_figure_html(v) for v in VARIANT_ORDER]
+    parts.append("</div></section>")
+    parts.append('<section class="variants"><h2>the original fifteen</h2>'
+                 f'<p class="sub">{RECOMMENDATION}</p></section>')
 
     # by subject
     subject_notes = {
@@ -429,6 +894,14 @@ def write_gallery():
         parts.append("</div></section>")
 
     parts.append("</main>")
+    for vid in VARIANT_ORDER:
+        if os.path.exists(variant_out_path(vid)):
+            fn = os.path.basename(variant_out_path(vid))
+            cap = f'{vid.upper()} &middot; {VARIANTS[vid]["name"]} &middot; THE DOSSIER'
+            parts.append(f'<div class="lb" id="lb-{vid}">'
+                         f'<a class="close" href="#">close</a>'
+                         f'<a class="sheet" href="#"><img src="{fn}" alt=""></a>'
+                         f'<span class="cap">{cap}</span></div>')
     for s, d in ORDER:
         if os.path.exists(out_path(s, d)):
             fn = os.path.basename(out_path(s, d))
@@ -438,8 +911,10 @@ def write_gallery():
                          f'<a class="sheet" href="#"><img src="{fn}" alt=""></a>'
                          f'<span class="cap">{cap}</span></div>')
     parts.append('<footer>Drafts at 1K / medium via openai/gpt-5.4-image-2. Generated text in an image is '
-                 'approximate &mdash; judge the language, not the spelling. Regenerate any cell with '
-                 '<code>python3 render.py --only map-a</code>.</footer>')
+                 'approximate &mdash; judge the language, not the spelling, but <em>do</em> read every '
+                 'string for a word this world does not own. Regenerate any cell with '
+                 '<code>python3 render.py --only map-a</code> or '
+                 '<code>python3 render.py --only e3</code>.</footer>')
     parts.append("</body></html>")
     dest = os.path.join(HERE, "gallery.html")
     with open(dest, "w") as f:
@@ -451,22 +926,31 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--gallery", action="store_true")
-    ap.add_argument("--only", default=None, help="e.g. map-a")
+    ap.add_argument("--only", default=None,
+                    help="a sweep-1 cell (map-a, profile-e) or a sweep-2 variant (e3, profile-e3)")
+    ap.add_argument("--variants", action="store_true", help="restrict to the six profile-E variants")
     ap.add_argument("--workers", type=int, default=5)
     a = ap.parse_args()
 
     if not a.gallery:
-        todo = ORDER
+        todo = [("v", v, None) for v in VARIANT_ORDER]
+        if not a.variants:
+            todo = [("s", s, d) for s, d in ORDER] + todo
         if a.only:
-            s, d = a.only.split("-")
-            todo = [(s, d)]
+            key = a.only[len("profile-"):] if a.only.startswith("profile-e") \
+                and a.only[len("profile-"):] in VARIANTS else a.only
+            if key in VARIANTS:
+                todo = [("v", key, None)]
+            else:
+                s, d = key.split("-")
+                todo = [("s", s, d)]
         if not a.force:
-            todo = [(s, d) for s, d in todo if not os.path.exists(out_path(s, d))]
+            todo = [j for j in todo if not os.path.exists(job_path(j))]
         print(f"generating {len(todo)} image(s) with {a.workers} workers", flush=True)
         if todo:
             with cf.ThreadPoolExecutor(max_workers=a.workers) as ex:
-                for s, d, ok, note in ex.map(lambda t: generate(*t), todo):
-                    print(f"{'OK  ' if ok else 'FAIL'} {s}-{d}  {note}", flush=True)
+                for name, ok, note in ex.map(run_job, todo):
+                    print(f"{'OK  ' if ok else 'FAIL'} {name}  {note}", flush=True)
 
     print("gallery:", write_gallery())
 

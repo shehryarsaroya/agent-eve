@@ -31,7 +31,10 @@ h2 span { color:var(--ink); }
 @media (min-width:1380px) {
   .by-subject .grid { grid-template-columns:repeat(5,1fr); }
   .by-style   .grid { grid-template-columns:repeat(3,1fr); }
+  .variants   .grid { grid-template-columns:repeat(3,1fr); }
 }
+section.variants { margin-top:30px; }
+section.variants h2 { color:var(--acc); border-bottom-color:var(--acc); }
 figure { margin:0; }
 figure img { width:100%; display:block; background:#000; border:1px solid var(--line); border-radius:3px; }
 figure a:hover img { border-color:var(--acc); }
@@ -61,21 +64,1360 @@ details pre { white-space:pre-wrap; font:11px/1.5 ui-monospace,Menlo,monospace; 
 footer { color:var(--dim); font-size:11px; padding:0 40px 60px; max-width:80ch; }
 </style></head><body>
 <header>
-  <h1>THE COMPACT &middot; five art directions</h1>
-  <p class="rec"><b>Recommendation: C &middot; HARD SF OPERATING SYSTEM as the working language,
-D &middot; THE STAR CATALOGUE as the ceremonial one.</b> C is the only direction that carried all three
-screens &mdash; its one-accent rule means the eye lands on exactly the three orange marks that
-<em>are</em> the betrayal, and it is the only one buildable as a CSS re-skin of the client that already
-exists. D cannot tick 288 times a day, but it wins the record outright: it is the only direction where
-the villain&rsquo;s card is printed in the ink of loss. If only one gets built, build C.</p>
-  <p>Fifteen drafts: five science-fiction directions across the three screens that decide the product &mdash;
-  the map, a character profile, and the receipt reel. Every string in every image is real data out of
+  <h1>THE COMPACT &middot; art directions</h1>
+  <p class="rec"><b>Six variants on <code>profile-e-evenative</code>, the one the owner picked.</b>
+Same DNA every time &mdash; a split dual dossier colour-coded <span style="color:#7fd4ff">cyan</span> for
+<code>sable</code> against <span style="color:#e0555f">red</span> for <code>vex</code>, a live operations
+console rather than a static page, and a per-principal territory voronoi tinted by relationship. Six
+different bets on what the aesthetic actually <em>is</em>.</p>
+  <p>Six variants on the chosen direction, then the original fifteen drafts below them &mdash; five
+  science-fiction directions across the three screens that decide the product: the map, a character
+  profile, and the receipt reel. Every string in every image is real data out of
   <code>VISUAL-ASSET-BIBLE.md</code>. Click any image for full size. Reasoning lives in
   <code>STYLE-DIRECTIONS.md</code>.</p>
+  <p class="rec" style="border-left-color:#c9a227">&#9733; <b>Every prompt in this section carries a canon lock.</b> The parent
+direction was a vocabulary hazard: unprompted, it produced <code>Rorqual</code>, <code>Fortizar</code>,
+<code>Astrahus</code>, <code>ISK</code>, <code>entosis link</code>, <code>ADM RATE</code> and
+<code>Kador</code> &mdash; a real EVE region &mdash; and put a <code>KILLBOARD</code> beside the receipt
+reel. <code>SPEC.md</code> &sect;3 is a rules surface, so these prompts name ~45 banned words explicitly and
+supply the real ones: the twelve house handles, the twenty real place names out of bible &sect;6.4, the four
+goods, and <code>minor</code> as the currency. The scoreboard is promises kept and broken; there is no
+killboard.</p>
 </header>
 <input type="radio" name="view" id="v-subject" checked><input type="radio" name="view" id="v-style">
 <nav><label for="v-subject">compare by subject</label><label for="v-style">compare by style</label></nav>
 <main>
+<section class="variants"><h2><span>THE DOSSIER</span> &middot; six variants on the chosen direction</h2>
+<p class="sub">Does one of these make you care about <b>sable</b> (14 honoured, zero defaults) against
+<b>vex</b> (3 defaults, the last at tick 287)? <b>E3</b> and <b>E4</b> and <b>E6</b> change the layout on
+purpose; <b>E1</b>, <b>E2</b> and <b>E5</b> hold the layout and change only the light.</p>
+<div class="grid">
+    <figure>
+      <a href="#lb-e1"><img loading="lazy" src="profile-e1-terminal.png" alt="TERMINAL"></a>
+      <figcaption>
+        <b>E1 &middot; TERMINAL</b>
+        <em>bets that density IS the aesthetic - a professional terminal, not a game UI</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Variant E1: TERMINAL.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+★ VOCABULARY IS A HARD RULE HERE AND IT OVERRIDES THE ART DIRECTION. This world is NOT EVE Online and
+may not borrow one word of its ontology, even where the visual language is adjacent to it.
+
+ABSOLUTELY FORBIDDEN - do not write any of these anywhere in the image, in any panel, tab, column header,
+legend, tooltip, badge or log line:
+Rorqual, Fortizar, Astrahus, Raitaru, Azbel, Keepstar, Titan, Capsuleer, Pilot, Pilots, Corporation, Corp,
+Alliance, Coalition, ISK, entosis, cyno, jump bridge, jump gate, ADM, Sovereignty, Sov, Sovereignty Hub,
+Outpost, Station, Docked, Undocked, Wormhole, Kador, Delve, Jita, Amarr, Caldari, Gallente, Minmatar,
+Concord, Empire, Faction, Security Status, Sec Status, Loyalty Points, Local, Intel, Fleet, Warp,
+Freighter, Mining Barge, Killboard, Killmail, Kills, Top Kills, Ships Destroyed, Losses, Efficiency.
+
+THERE IS NO KILLBOARD AND NO COMBAT SCOREBOARD OF ANY KIND. Nothing in this image is killed, destroyed or
+shot down; there are no ships in it at all. The only scoreboard this world has is PROMISES KEPT AND
+PROMISES BROKEN, and the only bad outcome that appears anywhere is a DEFAULT.
+
+DO NOT INVENT ANY WORDS. No invented place names, transaction types, statistics, tabs, structures,
+currencies or handles. Every string in the image must come from the lists below. If you run short of room,
+repeat a real row or drop a whole panel - never fill space with an invented word.
+THE ONLY NOUNS THAT EXIST IN THIS WORLD:
+PRINCIPAL - an identity; the player. Never a person, never a pilot, never a corporation
+HANDLE - a principal&#x27;s name, which is literally its email address at agenttransfer.dev
+HOLDING - a principal&#x27;s one named body on the map    STORES - its assets, never its body
+HAND - one unit of physical presence; every principal has exactly three and never more
+WORKS - the production structure    ANCHOR - what a CLAIM is built from, and what burns FUEL
+CLAIM - a sovereign hold on exactly one system    VENTURE - a joint act between principals
+COMPACT - the signed terms of a split    GRANT - a scoped, expiring authority
+DOSSIER - a signed, dated extract of private figures handed to one named principal
+SEAL - a pre-committed intention, revealed one RECKONING later
+STANDING - the public factual vectors, and never a score
+THE LEVY - the scheduled world obligation    THE RECKONING - the daily settlement
+TRIBUTE - what is paid toward the LEVY    CHARGE - what a CLAIM owes each RECKONING
+SYNDICATE - the only organisation container that exists
+CONSTELLATION - a group of systems    STRAIT - a lane the region cannot cheaply route around
+LODE - one system&#x27;s richness    VERGE - how far a bloc&#x27;s force reaches    RUIN - what is left
+The three tiers, running outward from the centre: COMMONS, MARCHES, FRONTIER
+
+THE FOUR GOODS, and there are no others: ore - ration - alloy - fuel
+THE CURRENCY IS CALLED &quot;minor&quot;. Write it as a plain grouped integer - &quot;9,497&quot; or &quot;9,497 minor&quot;.
+Never ISK, never credits, never a currency symbol, never a B or M or K suffix on any value.
+
+THE ONLY HANDLES THAT EXIST - all lower case, no others may appear:
+sable - vex - halcyon - brannock - thessaly - kestrel - ashlin - wren - orrin - dunmore - corvid - bram
+
+THE ONLY PLACE NAMES THAT EXIST - no others may appear, and every one is paired with its sys id:
+COMMONS:   Salt Ward sys-01 - Low Ferry sys-02 - Candle sys-03 - Tallow sys-04
+MARCHES:   Orison sys-05 - Vale sys-06 - Bright Ash sys-07 - Gallow Green sys-13 - Nettle sys-15 -
+           Wither sys-16 - Mirefall sys-18 - Ashen Ford sys-20 - Copper Wick sys-21
+FRONTIER:  Grist sys-23 - Halyard sys-24 - Ironhold sys-25 - Jetsam sys-26 - Keelrow sys-27 -
+           Lantern sys-28 - Moorage sys-29 - Nightjar sys-30
+The four CONSTELLATIONS: Hearth - Threshold - Marrow - Vane
+SUBJECT: THE DOSSIER - a LIVE OPERATIONS CONSOLE, not a static profile page. Two PRINCIPALS side by side
+in the identical template so a stranger can compare them line for line. This is the screen a viewer&#x27;s
+rooting interest has to live on: a play-test found viewers root for the one on the LEFT against the one
+on the RIGHT, and the colour coding must make that legible before a single word is read.
+★ THE LEFT HALF IS CYAN. THE RIGHT HALF IS RED. A hairline seam divides them down the centre.
+
+A THIN APPLICATION HEADER runs across the top of each half with a tab bar - exactly these tabs, no others:
+  &quot;OVERVIEW&quot;   &quot;PRINCIPALS&quot;   &quot;VENTURES&quot;   &quot;LEDGER&quot;   &quot;MAP&quot;   &quot;RECKONING&quot;   &quot;DOSSIERS&quot;
+with &quot;PRINCIPALS&quot; the active tab, and a readout at the right: &quot;TICK 295 - RECKONING 12 - LEVY IN 02:14&quot;
+====================  LEFT HALF - sable - CYAN - THE ONE YOU ROOT FOR  ====================
+
+IDENTITY BLOCK with a CREST - a small abstract, non-representational, generated-looking mark the size of
+a coin, unique to this handle: a clean radial many-pointed figure, cyan.
+  handle     &quot;sable&quot;
+  address    &quot;sable@agenttransfer.dev&quot;
+  HOLDING    &quot;Vale - sys-06 - MARCHES&quot;
+  SYNDICATE  &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+
+&quot;STANDING VECTORS&quot; - six separate labelled facts, never combined and never totalled:
+  &quot;ELECTIVE HONOURED   14&quot;    &quot;VALUE HONOURED   9,497&quot;    &quot;DEFAULTS   0&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   6&quot;        &quot;LAST DEFAULT   none&quot;
+one clause beneath:  &quot;kept 14 elective promises - 6 counterparties&quot;
+
+&quot;HANDS&quot; - THREE individually distinguishable markers with their own states, NOT a number badge,
+labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND, the strongest element in this half:
+  &quot;NEVER BROKEN A PROMISE&quot;   and beneath it   &quot;14 elective halves honoured and not one default&quot;
+
+&quot;COUNTERPARTIES (6)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  halcyon   SYNDICATE   t.295        brannock  SYNDICATE   t.293
+  thessaly  SYNDICATE   t.291        kestrel   NEUTRAL     t.290
+  ashlin    SYNDICATE   t.288        wren      NEUTRAL     t.285
+
+&quot;VENTURES (14)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL   SETTLED  9      HAUL      LIVE      2      ELECTIVE  HONOURED  14
+  ESCROWED  HONOURED  14      COMPACT  SIGNED  6      SEAL  KEPT  3
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot; - columns &quot;DIRECTION&quot;, &quot;COUNT&quot;, &quot;VALUE&quot;:
+  in  18  9,497        out  12  7,214        net  +6  +2,283
+
+&quot;EVENT LOG - sable&quot; - a scrolling monospaced pane, columns &quot;TICK&quot;, &quot;TYPE&quot;, &quot;PARTY&quot;, &quot;DETAIL&quot;:
+  295  VENTURE CREATED     halcyon   HAUL - 1,200 ore - due t.320
+  293  ELECTIVE HONOURED   brannock  delivered 900 ration - ahead of schedule
+  291  COUNTERSIGNED       thessaly  both roles filled - compact signed
+  290  SETTLED             kestrel   escrowed half released
+  288  DOSSIER HANDED      ashlin    STORES compartment - signed extract
+  287  GRANT ISSUED        wren      max direct loss 250 - clearance STORES
+  285  ELECTIVE HONOURED   halcyon   750 minor - paid at settlement
+  284  HAUL ARRIVED        brannock  Vale sys-06 - 600 ore
+  283  SEAL DECLARED       thessaly  reveals next RECKONING
+  281  TRIBUTE PAID        -         THE LEVY - 480 ration
+
+&quot;STORES&quot; - five horizontal bars with their values, and fuel is genuinely zero because fuel exists only
+on the FRONTIER and sable holds in the MARCHES:
+  ore 5,043      ration 1,920      alloy 812      fuel 0      minor 4,180
+====================  RIGHT HALF - vex - RED - THE ONE YOU ROOT AGAINST  ====================
+
+IDENTITY BLOCK with a CREST - a different abstract generated mark, same size: a broken concentric burst
+with one arc missing, red.
+  handle     &quot;vex&quot;
+  address    &quot;vex@agenttransfer.dev&quot;
+  HOLDING    &quot;Ironhold - sys-25 - FRONTIER&quot;
+  SYNDICATE  &quot;unaffiliated&quot;
+
+&quot;STANDING VECTORS&quot;:
+  &quot;ELECTIVE HONOURED   5&quot;     &quot;VALUE HONOURED   3,180&quot;    &quot;DEFAULTS   3&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   4&quot;        &quot;LAST DEFAULT   tick 287&quot;
+★ &quot;DEFAULTS 3&quot; is the most interesting true thing about this principal and must be the row the eye lands
+on. It gets the alarm colour and no other vector row does.
+one clause beneath:  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+
+&quot;HANDS&quot; - three markers labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND:
+  &quot;MOST BROKEN&quot;   and beneath it   &quot;3 defaults on the record, the last at tick 287&quot;
+
+&quot;COUNTERPARTIES (4)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  orrin    HOSTILE  t.290        dunmore  HOSTILE  t.294
+  corvid   NEUTRAL  t.292        bram     NEUTRAL  t.287
+
+&quot;VENTURES (11)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL  SETTLED  6      HAUL  LIVE  1      ELECTIVE  HONOURED  5
+  ELECTIVE  DEFAULTED  3   &lt;- this row in the alarm colour
+  ESCROWED  HONOURED  8      COMPACT  SIGNED  4
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot;:
+  in  9  3,180        out  15  6,940        net  -6  -3,760
+
+&quot;EVENT LOG - vex&quot; - same columns:
+  294  DEFAULT             dunmore   failed to deliver 700 ration - elective half
+  292  ELECTIVE HONOURED   corvid    delivered 400 ore - partial settlement
+  290  DEFAULT             orrin     non-delivery at settlement - 900 minor
+  287  DEFAULT             bram      failed to deliver 600 ration - deadline missed
+  285  VENTURE CREATED     corvid    HAUL - 500 ore - due t.312
+  283  ANCHOR BURNED       -         Ironhold sys-25 - 10 fuel
+  281  TRIBUTE SHORT       -         THE LEVY - 150 short
+  279  COUNTERSIGNED       dunmore   compact signed
+  276  CHARGE PAID         -         CLAIM Ironhold - 220 ration
+  274  SETTLED             corvid    escrowed half released - elective refused
+★ the three DEFAULT rows are the story of this half and are the only saturated red text in the log.
+
+&quot;STORES&quot; - five bars, and vex has fuel because it holds on the FRONTIER:
+  ore 1,420      ration 980      alloy 420      fuel 260      minor 1,180
+★ THE ONE HARD RULE OF THIS SCREEN: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE.
+No overall rating, no grade, no letter, no percentage, no single trust number, no star rating, no gauge,
+no progress bar toward a total, and no radar chart that implies one. The six numbers stand beside each
+other as separate public facts and the reader does the judging. The design never editorialises; the
+numbers do.
+★ THE PER-PRINCIPAL TERRITORY MAP - each principal carries its own, and it is the best idea on this
+screen. A VORONOI DIAGRAM: irregular polygon cells packed edge to edge with no gaps, one cell per system,
+each cell FLAT-TINTED by that system&#x27;s relationship to THIS principal, with the system&#x27;s name and sys id
+set inside the cell and a faint dot at the cell&#x27;s seed. Cells are separated by hairlines. Thin lane lines
+run between the seeds over the tints.
+
+THE TINT LEGEND, drawn once - exactly these five, plus the COMMONS:
+  &quot;HELD&quot;       this principal&#x27;s own HOLDING and CLAIMS - the strongest tint of its own colour
+  &quot;SYNDICATE&quot;  systems held by fellow syndicate members
+  &quot;NEUTRAL&quot;    held by someone it has no relationship with - the dimmest, greyest tint
+  &quot;HOSTILE&quot;    held by a principal it has defaulted with, or that has defaulted on it
+  &quot;CONTESTED&quot;  a system two principals both claim - the alarm colour
+  &quot;COMMONS - HOSTILE ACTION INVALID&quot; - the four central cells, drawn CATEGORICALLY DIFFERENTLY from
+     everything else. Not a sixth tint but visibly outside the contest entirely: no border touches them,
+     nothing crosses them, no fence encloses them, and they carry no claimant marking at all.
+
+Two further marks on each map, both small: a NARROW WAIST pinched into one lane at its midpoint with &quot;10&quot;
+notched beside it - that is a STRAIT with a detour of ten lanes - and ONE CLOSED, UNBROKEN fence line
+around the group of cells this principal&#x27;s force reaches, which is its VERGE. A VERGE fence may never be
+dotted or broken, because a hole in it would read as a false claim.
+sable&#x27;s MAP - centred on its HOLDING in the MARCHES, close in to the COMMONS:
+  HELD: Vale sys-06.   SYNDICATE: Orison sys-05, Bright Ash sys-07, Ashen Ford sys-20.
+  NEUTRAL: Gallow Green sys-13, Nettle sys-15, Mirefall sys-18, Copper Wick sys-21.
+  CONTESTED: Wither sys-16.
+  COMMONS, at the centre: Salt Ward sys-01, Low Ferry sys-02, Candle sys-03, Tallow sys-04.
+  Constellation names set large and very faint behind the cells: &quot;HEARTH&quot; and &quot;THRESHOLD&quot;.
+vex&#x27;s MAP - centred on its HOLDING far out on the FRONTIER, a long way from the COMMONS:
+  HELD: Ironhold sys-25.   SYNDICATE: none at all - vex is unaffiliated, so no cell carries that tint
+  and its legend row reads as empty.
+  HOSTILE: Halyard sys-24, Moorage sys-29, Jetsam sys-26.
+  NEUTRAL: Grist sys-23, Keelrow sys-27, Lantern sys-28, Nightjar sys-30.
+  CONTESTED: Wither sys-16.
+  The COMMONS appears only as a small far-off cluster at the very edge of the frame, and that distance is
+  the point: vex is a long way from safety.
+  Constellation names behind the cells: &quot;VANE&quot; and &quot;MARROW&quot;.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.
+★ THE ART DIRECTION, which governs every pixel above:
+RENDER IT AS A PROFESSIONAL FINANCIAL TRADING TERMINAL.
+Art direction: a BLOOMBERG TERMINAL, Refinitiv Eikon, a Level-2 equity order book, htop.
+EVERY SINGLE GLYPH IS MONOSPACE - labels, headings, numbers, the title bands, all of it. Pure black
+ground. NO rounded corners anywhere; radius zero on every rectangle. NO gradients, NO glow, NO bloom, NO
+drop shadows, NO translucency, NO icons, NO chrome of any kind. Panels are separated by single-pixel
+hairline rules only, never by filled cards. Rows are TIGHT - the vertical rhythm compressed as far as
+legibility permits, tabular figures right-aligned, columns ruled, small sort carets on header cells.
+Colour is purely functional: amber for headings and keys, white for values, CYAN for everything belonging
+to sable, RED for everything belonging to vex, and one saturated red-orange reserved strictly for a
+default. A thin function-key strip runs along the very bottom in reverse video reading
+&quot;F1 OVERVIEW   F2 PRINCIPALS   F3 VENTURES   F4 LEDGER   F5 MAP   F8 RECKONING&quot;.
+Fill the frame edge to edge - no margins, no padding, no whitespace luxury, no breathing room. It should
+look like the most information anyone has ever put on one screen, and still be readable.
+To restate it in one line: this is variant E1, TERMINAL - it bets that density IS the aesthetic - a professional terminal, not a game UI. Nothing in the frame may carry a word this world does not own.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-e2"><img loading="lazy" src="profile-e2-glass.png" alt="GLASS"></a>
+      <figcaption>
+        <b>E2 &middot; GLASS</b>
+        <em>bets that it should feel expensive - the same instrument, rendered in glass and light</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Variant E2: GLASS.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+★ VOCABULARY IS A HARD RULE HERE AND IT OVERRIDES THE ART DIRECTION. This world is NOT EVE Online and
+may not borrow one word of its ontology, even where the visual language is adjacent to it.
+
+ABSOLUTELY FORBIDDEN - do not write any of these anywhere in the image, in any panel, tab, column header,
+legend, tooltip, badge or log line:
+Rorqual, Fortizar, Astrahus, Raitaru, Azbel, Keepstar, Titan, Capsuleer, Pilot, Pilots, Corporation, Corp,
+Alliance, Coalition, ISK, entosis, cyno, jump bridge, jump gate, ADM, Sovereignty, Sov, Sovereignty Hub,
+Outpost, Station, Docked, Undocked, Wormhole, Kador, Delve, Jita, Amarr, Caldari, Gallente, Minmatar,
+Concord, Empire, Faction, Security Status, Sec Status, Loyalty Points, Local, Intel, Fleet, Warp,
+Freighter, Mining Barge, Killboard, Killmail, Kills, Top Kills, Ships Destroyed, Losses, Efficiency.
+
+THERE IS NO KILLBOARD AND NO COMBAT SCOREBOARD OF ANY KIND. Nothing in this image is killed, destroyed or
+shot down; there are no ships in it at all. The only scoreboard this world has is PROMISES KEPT AND
+PROMISES BROKEN, and the only bad outcome that appears anywhere is a DEFAULT.
+
+DO NOT INVENT ANY WORDS. No invented place names, transaction types, statistics, tabs, structures,
+currencies or handles. Every string in the image must come from the lists below. If you run short of room,
+repeat a real row or drop a whole panel - never fill space with an invented word.
+THE ONLY NOUNS THAT EXIST IN THIS WORLD:
+PRINCIPAL - an identity; the player. Never a person, never a pilot, never a corporation
+HANDLE - a principal&#x27;s name, which is literally its email address at agenttransfer.dev
+HOLDING - a principal&#x27;s one named body on the map    STORES - its assets, never its body
+HAND - one unit of physical presence; every principal has exactly three and never more
+WORKS - the production structure    ANCHOR - what a CLAIM is built from, and what burns FUEL
+CLAIM - a sovereign hold on exactly one system    VENTURE - a joint act between principals
+COMPACT - the signed terms of a split    GRANT - a scoped, expiring authority
+DOSSIER - a signed, dated extract of private figures handed to one named principal
+SEAL - a pre-committed intention, revealed one RECKONING later
+STANDING - the public factual vectors, and never a score
+THE LEVY - the scheduled world obligation    THE RECKONING - the daily settlement
+TRIBUTE - what is paid toward the LEVY    CHARGE - what a CLAIM owes each RECKONING
+SYNDICATE - the only organisation container that exists
+CONSTELLATION - a group of systems    STRAIT - a lane the region cannot cheaply route around
+LODE - one system&#x27;s richness    VERGE - how far a bloc&#x27;s force reaches    RUIN - what is left
+The three tiers, running outward from the centre: COMMONS, MARCHES, FRONTIER
+
+THE FOUR GOODS, and there are no others: ore - ration - alloy - fuel
+THE CURRENCY IS CALLED &quot;minor&quot;. Write it as a plain grouped integer - &quot;9,497&quot; or &quot;9,497 minor&quot;.
+Never ISK, never credits, never a currency symbol, never a B or M or K suffix on any value.
+
+THE ONLY HANDLES THAT EXIST - all lower case, no others may appear:
+sable - vex - halcyon - brannock - thessaly - kestrel - ashlin - wren - orrin - dunmore - corvid - bram
+
+THE ONLY PLACE NAMES THAT EXIST - no others may appear, and every one is paired with its sys id:
+COMMONS:   Salt Ward sys-01 - Low Ferry sys-02 - Candle sys-03 - Tallow sys-04
+MARCHES:   Orison sys-05 - Vale sys-06 - Bright Ash sys-07 - Gallow Green sys-13 - Nettle sys-15 -
+           Wither sys-16 - Mirefall sys-18 - Ashen Ford sys-20 - Copper Wick sys-21
+FRONTIER:  Grist sys-23 - Halyard sys-24 - Ironhold sys-25 - Jetsam sys-26 - Keelrow sys-27 -
+           Lantern sys-28 - Moorage sys-29 - Nightjar sys-30
+The four CONSTELLATIONS: Hearth - Threshold - Marrow - Vane
+SUBJECT: THE DOSSIER - a LIVE OPERATIONS CONSOLE, not a static profile page. Two PRINCIPALS side by side
+in the identical template so a stranger can compare them line for line. This is the screen a viewer&#x27;s
+rooting interest has to live on: a play-test found viewers root for the one on the LEFT against the one
+on the RIGHT, and the colour coding must make that legible before a single word is read.
+★ THE LEFT HALF IS CYAN. THE RIGHT HALF IS RED. A hairline seam divides them down the centre.
+
+A THIN APPLICATION HEADER runs across the top of each half with a tab bar - exactly these tabs, no others:
+  &quot;OVERVIEW&quot;   &quot;PRINCIPALS&quot;   &quot;VENTURES&quot;   &quot;LEDGER&quot;   &quot;MAP&quot;   &quot;RECKONING&quot;   &quot;DOSSIERS&quot;
+with &quot;PRINCIPALS&quot; the active tab, and a readout at the right: &quot;TICK 295 - RECKONING 12 - LEVY IN 02:14&quot;
+====================  LEFT HALF - sable - CYAN - THE ONE YOU ROOT FOR  ====================
+
+IDENTITY BLOCK with a CREST - a small abstract, non-representational, generated-looking mark the size of
+a coin, unique to this handle: a clean radial many-pointed figure, cyan.
+  handle     &quot;sable&quot;
+  address    &quot;sable@agenttransfer.dev&quot;
+  HOLDING    &quot;Vale - sys-06 - MARCHES&quot;
+  SYNDICATE  &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+
+&quot;STANDING VECTORS&quot; - six separate labelled facts, never combined and never totalled:
+  &quot;ELECTIVE HONOURED   14&quot;    &quot;VALUE HONOURED   9,497&quot;    &quot;DEFAULTS   0&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   6&quot;        &quot;LAST DEFAULT   none&quot;
+one clause beneath:  &quot;kept 14 elective promises - 6 counterparties&quot;
+
+&quot;HANDS&quot; - THREE individually distinguishable markers with their own states, NOT a number badge,
+labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND, the strongest element in this half:
+  &quot;NEVER BROKEN A PROMISE&quot;   and beneath it   &quot;14 elective halves honoured and not one default&quot;
+
+&quot;COUNTERPARTIES (6)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  halcyon   SYNDICATE   t.295        brannock  SYNDICATE   t.293
+  thessaly  SYNDICATE   t.291        kestrel   NEUTRAL     t.290
+  ashlin    SYNDICATE   t.288        wren      NEUTRAL     t.285
+
+&quot;VENTURES (14)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL   SETTLED  9      HAUL      LIVE      2      ELECTIVE  HONOURED  14
+  ESCROWED  HONOURED  14      COMPACT  SIGNED  6      SEAL  KEPT  3
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot; - columns &quot;DIRECTION&quot;, &quot;COUNT&quot;, &quot;VALUE&quot;:
+  in  18  9,497        out  12  7,214        net  +6  +2,283
+
+&quot;EVENT LOG - sable&quot; - a scrolling monospaced pane, columns &quot;TICK&quot;, &quot;TYPE&quot;, &quot;PARTY&quot;, &quot;DETAIL&quot;:
+  295  VENTURE CREATED     halcyon   HAUL - 1,200 ore - due t.320
+  293  ELECTIVE HONOURED   brannock  delivered 900 ration - ahead of schedule
+  291  COUNTERSIGNED       thessaly  both roles filled - compact signed
+  290  SETTLED             kestrel   escrowed half released
+  288  DOSSIER HANDED      ashlin    STORES compartment - signed extract
+  287  GRANT ISSUED        wren      max direct loss 250 - clearance STORES
+  285  ELECTIVE HONOURED   halcyon   750 minor - paid at settlement
+  284  HAUL ARRIVED        brannock  Vale sys-06 - 600 ore
+  283  SEAL DECLARED       thessaly  reveals next RECKONING
+  281  TRIBUTE PAID        -         THE LEVY - 480 ration
+
+&quot;STORES&quot; - five horizontal bars with their values, and fuel is genuinely zero because fuel exists only
+on the FRONTIER and sable holds in the MARCHES:
+  ore 5,043      ration 1,920      alloy 812      fuel 0      minor 4,180
+====================  RIGHT HALF - vex - RED - THE ONE YOU ROOT AGAINST  ====================
+
+IDENTITY BLOCK with a CREST - a different abstract generated mark, same size: a broken concentric burst
+with one arc missing, red.
+  handle     &quot;vex&quot;
+  address    &quot;vex@agenttransfer.dev&quot;
+  HOLDING    &quot;Ironhold - sys-25 - FRONTIER&quot;
+  SYNDICATE  &quot;unaffiliated&quot;
+
+&quot;STANDING VECTORS&quot;:
+  &quot;ELECTIVE HONOURED   5&quot;     &quot;VALUE HONOURED   3,180&quot;    &quot;DEFAULTS   3&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   4&quot;        &quot;LAST DEFAULT   tick 287&quot;
+★ &quot;DEFAULTS 3&quot; is the most interesting true thing about this principal and must be the row the eye lands
+on. It gets the alarm colour and no other vector row does.
+one clause beneath:  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+
+&quot;HANDS&quot; - three markers labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND:
+  &quot;MOST BROKEN&quot;   and beneath it   &quot;3 defaults on the record, the last at tick 287&quot;
+
+&quot;COUNTERPARTIES (4)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  orrin    HOSTILE  t.290        dunmore  HOSTILE  t.294
+  corvid   NEUTRAL  t.292        bram     NEUTRAL  t.287
+
+&quot;VENTURES (11)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL  SETTLED  6      HAUL  LIVE  1      ELECTIVE  HONOURED  5
+  ELECTIVE  DEFAULTED  3   &lt;- this row in the alarm colour
+  ESCROWED  HONOURED  8      COMPACT  SIGNED  4
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot;:
+  in  9  3,180        out  15  6,940        net  -6  -3,760
+
+&quot;EVENT LOG - vex&quot; - same columns:
+  294  DEFAULT             dunmore   failed to deliver 700 ration - elective half
+  292  ELECTIVE HONOURED   corvid    delivered 400 ore - partial settlement
+  290  DEFAULT             orrin     non-delivery at settlement - 900 minor
+  287  DEFAULT             bram      failed to deliver 600 ration - deadline missed
+  285  VENTURE CREATED     corvid    HAUL - 500 ore - due t.312
+  283  ANCHOR BURNED       -         Ironhold sys-25 - 10 fuel
+  281  TRIBUTE SHORT       -         THE LEVY - 150 short
+  279  COUNTERSIGNED       dunmore   compact signed
+  276  CHARGE PAID         -         CLAIM Ironhold - 220 ration
+  274  SETTLED             corvid    escrowed half released - elective refused
+★ the three DEFAULT rows are the story of this half and are the only saturated red text in the log.
+
+&quot;STORES&quot; - five bars, and vex has fuel because it holds on the FRONTIER:
+  ore 1,420      ration 980      alloy 420      fuel 260      minor 1,180
+★ THE ONE HARD RULE OF THIS SCREEN: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE.
+No overall rating, no grade, no letter, no percentage, no single trust number, no star rating, no gauge,
+no progress bar toward a total, and no radar chart that implies one. The six numbers stand beside each
+other as separate public facts and the reader does the judging. The design never editorialises; the
+numbers do.
+★ THE PER-PRINCIPAL TERRITORY MAP - each principal carries its own, and it is the best idea on this
+screen. A VORONOI DIAGRAM: irregular polygon cells packed edge to edge with no gaps, one cell per system,
+each cell FLAT-TINTED by that system&#x27;s relationship to THIS principal, with the system&#x27;s name and sys id
+set inside the cell and a faint dot at the cell&#x27;s seed. Cells are separated by hairlines. Thin lane lines
+run between the seeds over the tints.
+
+THE TINT LEGEND, drawn once - exactly these five, plus the COMMONS:
+  &quot;HELD&quot;       this principal&#x27;s own HOLDING and CLAIMS - the strongest tint of its own colour
+  &quot;SYNDICATE&quot;  systems held by fellow syndicate members
+  &quot;NEUTRAL&quot;    held by someone it has no relationship with - the dimmest, greyest tint
+  &quot;HOSTILE&quot;    held by a principal it has defaulted with, or that has defaulted on it
+  &quot;CONTESTED&quot;  a system two principals both claim - the alarm colour
+  &quot;COMMONS - HOSTILE ACTION INVALID&quot; - the four central cells, drawn CATEGORICALLY DIFFERENTLY from
+     everything else. Not a sixth tint but visibly outside the contest entirely: no border touches them,
+     nothing crosses them, no fence encloses them, and they carry no claimant marking at all.
+
+Two further marks on each map, both small: a NARROW WAIST pinched into one lane at its midpoint with &quot;10&quot;
+notched beside it - that is a STRAIT with a detour of ten lanes - and ONE CLOSED, UNBROKEN fence line
+around the group of cells this principal&#x27;s force reaches, which is its VERGE. A VERGE fence may never be
+dotted or broken, because a hole in it would read as a false claim.
+sable&#x27;s MAP - centred on its HOLDING in the MARCHES, close in to the COMMONS:
+  HELD: Vale sys-06.   SYNDICATE: Orison sys-05, Bright Ash sys-07, Ashen Ford sys-20.
+  NEUTRAL: Gallow Green sys-13, Nettle sys-15, Mirefall sys-18, Copper Wick sys-21.
+  CONTESTED: Wither sys-16.
+  COMMONS, at the centre: Salt Ward sys-01, Low Ferry sys-02, Candle sys-03, Tallow sys-04.
+  Constellation names set large and very faint behind the cells: &quot;HEARTH&quot; and &quot;THRESHOLD&quot;.
+vex&#x27;s MAP - centred on its HOLDING far out on the FRONTIER, a long way from the COMMONS:
+  HELD: Ironhold sys-25.   SYNDICATE: none at all - vex is unaffiliated, so no cell carries that tint
+  and its legend row reads as empty.
+  HOSTILE: Halyard sys-24, Moorage sys-29, Jetsam sys-26.
+  NEUTRAL: Grist sys-23, Keelrow sys-27, Lantern sys-28, Nightjar sys-30.
+  CONTESTED: Wither sys-16.
+  The COMMONS appears only as a small far-off cluster at the very edge of the frame, and that distance is
+  the point: vex is a long way from safety.
+  Constellation names behind the cells: &quot;VANE&quot; and &quot;MARROW&quot;.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.
+★ THE ART DIRECTION, which governs every pixel above:
+RENDER IT WITH GLASSY OPTICAL DEPTH, AS IF EVERY PANEL WERE A FLOATING SHEET OF LIT GLASS.
+Art direction: the Rocinante&#x27;s displays in THE EXPANSE, the interfaces in OBLIVION (2013), Apple visionOS
+material, the holographic surfaces in BLADE RUNNER 2049. Near-black ground with a very faint cool
+gradient. Each panel is a subtly TRANSLUCENT plate over a soft blur, with a 1px bright hairline border
+catching light along its top and left edges and a long soft shadow beneath, so panels visibly float at
+slightly different depths and overlap a little. Soft CYAN BLOOM on the brightest text and rules of the
+left half; a matching deep crimson bloom on the right. Thin bright rules, a refined light-weight sans for
+labels, a precise tabular numeric face for figures, spacing generous but never wasteful. A faint film
+grain and a barely-there chromatic edge on the brightest strokes.
+It must feel like expensive hardware in a dark room - restrained, cool, slightly luminous. NO
+skeuomorphism, no bevels, no plastic, no lens flare, no sci-fi ornament. And the glass may never cost
+legibility: every number stays crisp and every hairline stays a hairline.
+To restate it in one line: this is variant E2, GLASS - it bets that it should feel expensive - the same instrument, rendered in glass and light. Nothing in the frame may carry a word this world does not own.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-e3"><img loading="lazy" src="profile-e3-cartographic.png" alt="CARTOGRAPHIC"></a>
+      <figcaption>
+        <b>E3 &middot; CARTOGRAPHIC</b>
+        <em>bets that the map is the character - a principal&#x27;s territory IS its story</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Variant E3: CARTOGRAPHIC.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+★ VOCABULARY IS A HARD RULE HERE AND IT OVERRIDES THE ART DIRECTION. This world is NOT EVE Online and
+may not borrow one word of its ontology, even where the visual language is adjacent to it.
+
+ABSOLUTELY FORBIDDEN - do not write any of these anywhere in the image, in any panel, tab, column header,
+legend, tooltip, badge or log line:
+Rorqual, Fortizar, Astrahus, Raitaru, Azbel, Keepstar, Titan, Capsuleer, Pilot, Pilots, Corporation, Corp,
+Alliance, Coalition, ISK, entosis, cyno, jump bridge, jump gate, ADM, Sovereignty, Sov, Sovereignty Hub,
+Outpost, Station, Docked, Undocked, Wormhole, Kador, Delve, Jita, Amarr, Caldari, Gallente, Minmatar,
+Concord, Empire, Faction, Security Status, Sec Status, Loyalty Points, Local, Intel, Fleet, Warp,
+Freighter, Mining Barge, Killboard, Killmail, Kills, Top Kills, Ships Destroyed, Losses, Efficiency.
+
+THERE IS NO KILLBOARD AND NO COMBAT SCOREBOARD OF ANY KIND. Nothing in this image is killed, destroyed or
+shot down; there are no ships in it at all. The only scoreboard this world has is PROMISES KEPT AND
+PROMISES BROKEN, and the only bad outcome that appears anywhere is a DEFAULT.
+
+DO NOT INVENT ANY WORDS. No invented place names, transaction types, statistics, tabs, structures,
+currencies or handles. Every string in the image must come from the lists below. If you run short of room,
+repeat a real row or drop a whole panel - never fill space with an invented word.
+THE ONLY NOUNS THAT EXIST IN THIS WORLD:
+PRINCIPAL - an identity; the player. Never a person, never a pilot, never a corporation
+HANDLE - a principal&#x27;s name, which is literally its email address at agenttransfer.dev
+HOLDING - a principal&#x27;s one named body on the map    STORES - its assets, never its body
+HAND - one unit of physical presence; every principal has exactly three and never more
+WORKS - the production structure    ANCHOR - what a CLAIM is built from, and what burns FUEL
+CLAIM - a sovereign hold on exactly one system    VENTURE - a joint act between principals
+COMPACT - the signed terms of a split    GRANT - a scoped, expiring authority
+DOSSIER - a signed, dated extract of private figures handed to one named principal
+SEAL - a pre-committed intention, revealed one RECKONING later
+STANDING - the public factual vectors, and never a score
+THE LEVY - the scheduled world obligation    THE RECKONING - the daily settlement
+TRIBUTE - what is paid toward the LEVY    CHARGE - what a CLAIM owes each RECKONING
+SYNDICATE - the only organisation container that exists
+CONSTELLATION - a group of systems    STRAIT - a lane the region cannot cheaply route around
+LODE - one system&#x27;s richness    VERGE - how far a bloc&#x27;s force reaches    RUIN - what is left
+The three tiers, running outward from the centre: COMMONS, MARCHES, FRONTIER
+
+THE FOUR GOODS, and there are no others: ore - ration - alloy - fuel
+THE CURRENCY IS CALLED &quot;minor&quot;. Write it as a plain grouped integer - &quot;9,497&quot; or &quot;9,497 minor&quot;.
+Never ISK, never credits, never a currency symbol, never a B or M or K suffix on any value.
+
+THE ONLY HANDLES THAT EXIST - all lower case, no others may appear:
+sable - vex - halcyon - brannock - thessaly - kestrel - ashlin - wren - orrin - dunmore - corvid - bram
+
+THE ONLY PLACE NAMES THAT EXIST - no others may appear, and every one is paired with its sys id:
+COMMONS:   Salt Ward sys-01 - Low Ferry sys-02 - Candle sys-03 - Tallow sys-04
+MARCHES:   Orison sys-05 - Vale sys-06 - Bright Ash sys-07 - Gallow Green sys-13 - Nettle sys-15 -
+           Wither sys-16 - Mirefall sys-18 - Ashen Ford sys-20 - Copper Wick sys-21
+FRONTIER:  Grist sys-23 - Halyard sys-24 - Ironhold sys-25 - Jetsam sys-26 - Keelrow sys-27 -
+           Lantern sys-28 - Moorage sys-29 - Nightjar sys-30
+The four CONSTELLATIONS: Hearth - Threshold - Marrow - Vane
+SUBJECT: THE DOSSIER - a LIVE OPERATIONS CONSOLE, not a static profile page. Two PRINCIPALS side by side
+in the identical template so a stranger can compare them line for line. This is the screen a viewer&#x27;s
+rooting interest has to live on: a play-test found viewers root for the one on the LEFT against the one
+on the RIGHT, and the colour coding must make that legible before a single word is read.
+★ THE LEFT HALF IS CYAN. THE RIGHT HALF IS RED. A hairline seam divides them down the centre.
+
+A THIN APPLICATION HEADER runs across the top of each half with a tab bar - exactly these tabs, no others:
+  &quot;OVERVIEW&quot;   &quot;PRINCIPALS&quot;   &quot;VENTURES&quot;   &quot;LEDGER&quot;   &quot;MAP&quot;   &quot;RECKONING&quot;   &quot;DOSSIERS&quot;
+with &quot;PRINCIPALS&quot; the active tab, and a readout at the right: &quot;TICK 295 - RECKONING 12 - LEVY IN 02:14&quot;
+★ THE PER-PRINCIPAL TERRITORY MAP - each principal carries its own, and it is the best idea on this
+screen. A VORONOI DIAGRAM: irregular polygon cells packed edge to edge with no gaps, one cell per system,
+each cell FLAT-TINTED by that system&#x27;s relationship to THIS principal, with the system&#x27;s name and sys id
+set inside the cell and a faint dot at the cell&#x27;s seed. Cells are separated by hairlines. Thin lane lines
+run between the seeds over the tints.
+
+THE TINT LEGEND, drawn once - exactly these five, plus the COMMONS:
+  &quot;HELD&quot;       this principal&#x27;s own HOLDING and CLAIMS - the strongest tint of its own colour
+  &quot;SYNDICATE&quot;  systems held by fellow syndicate members
+  &quot;NEUTRAL&quot;    held by someone it has no relationship with - the dimmest, greyest tint
+  &quot;HOSTILE&quot;    held by a principal it has defaulted with, or that has defaulted on it
+  &quot;CONTESTED&quot;  a system two principals both claim - the alarm colour
+  &quot;COMMONS - HOSTILE ACTION INVALID&quot; - the four central cells, drawn CATEGORICALLY DIFFERENTLY from
+     everything else. Not a sixth tint but visibly outside the contest entirely: no border touches them,
+     nothing crosses them, no fence encloses them, and they carry no claimant marking at all.
+
+Two further marks on each map, both small: a NARROW WAIST pinched into one lane at its midpoint with &quot;10&quot;
+notched beside it - that is a STRAIT with a detour of ten lanes - and ONE CLOSED, UNBROKEN fence line
+around the group of cells this principal&#x27;s force reaches, which is its VERGE. A VERGE fence may never be
+dotted or broken, because a hole in it would read as a false claim.
+sable&#x27;s MAP - centred on its HOLDING in the MARCHES, close in to the COMMONS:
+  HELD: Vale sys-06.   SYNDICATE: Orison sys-05, Bright Ash sys-07, Ashen Ford sys-20.
+  NEUTRAL: Gallow Green sys-13, Nettle sys-15, Mirefall sys-18, Copper Wick sys-21.
+  CONTESTED: Wither sys-16.
+  COMMONS, at the centre: Salt Ward sys-01, Low Ferry sys-02, Candle sys-03, Tallow sys-04.
+  Constellation names set large and very faint behind the cells: &quot;HEARTH&quot; and &quot;THRESHOLD&quot;.
+vex&#x27;s MAP - centred on its HOLDING far out on the FRONTIER, a long way from the COMMONS:
+  HELD: Ironhold sys-25.   SYNDICATE: none at all - vex is unaffiliated, so no cell carries that tint
+  and its legend row reads as empty.
+  HOSTILE: Halyard sys-24, Moorage sys-29, Jetsam sys-26.
+  NEUTRAL: Grist sys-23, Keelrow sys-27, Lantern sys-28, Nightjar sys-30.
+  CONTESTED: Wither sys-16.
+  The COMMONS appears only as a small far-off cluster at the very edge of the frame, and that distance is
+  the point: vex is a long way from safety.
+  Constellation names behind the cells: &quot;VANE&quot; and &quot;MARROW&quot;.
+====================  LEFT HALF - sable - CYAN - THE ONE YOU ROOT FOR  ====================
+
+IDENTITY BLOCK with a CREST - a small abstract, non-representational, generated-looking mark the size of
+a coin, unique to this handle: a clean radial many-pointed figure, cyan.
+  handle     &quot;sable&quot;
+  address    &quot;sable@agenttransfer.dev&quot;
+  HOLDING    &quot;Vale - sys-06 - MARCHES&quot;
+  SYNDICATE  &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+
+&quot;STANDING VECTORS&quot; - six separate labelled facts, never combined and never totalled:
+  &quot;ELECTIVE HONOURED   14&quot;    &quot;VALUE HONOURED   9,497&quot;    &quot;DEFAULTS   0&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   6&quot;        &quot;LAST DEFAULT   none&quot;
+one clause beneath:  &quot;kept 14 elective promises - 6 counterparties&quot;
+
+&quot;HANDS&quot; - THREE individually distinguishable markers with their own states, NOT a number badge,
+labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND, the strongest element in this half:
+  &quot;NEVER BROKEN A PROMISE&quot;   and beneath it   &quot;14 elective halves honoured and not one default&quot;
+
+&quot;COUNTERPARTIES (6)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  halcyon   SYNDICATE   t.295        brannock  SYNDICATE   t.293
+  thessaly  SYNDICATE   t.291        kestrel   NEUTRAL     t.290
+  ashlin    SYNDICATE   t.288        wren      NEUTRAL     t.285
+
+&quot;VENTURES (14)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL   SETTLED  9      HAUL      LIVE      2      ELECTIVE  HONOURED  14
+  ESCROWED  HONOURED  14      COMPACT  SIGNED  6      SEAL  KEPT  3
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot; - columns &quot;DIRECTION&quot;, &quot;COUNT&quot;, &quot;VALUE&quot;:
+  in  18  9,497        out  12  7,214        net  +6  +2,283
+
+&quot;EVENT LOG - sable&quot; - a scrolling monospaced pane, columns &quot;TICK&quot;, &quot;TYPE&quot;, &quot;PARTY&quot;, &quot;DETAIL&quot;:
+  295  VENTURE CREATED     halcyon   HAUL - 1,200 ore - due t.320
+  293  ELECTIVE HONOURED   brannock  delivered 900 ration - ahead of schedule
+  291  COUNTERSIGNED       thessaly  both roles filled - compact signed
+  290  SETTLED             kestrel   escrowed half released
+  288  DOSSIER HANDED      ashlin    STORES compartment - signed extract
+  287  GRANT ISSUED        wren      max direct loss 250 - clearance STORES
+  285  ELECTIVE HONOURED   halcyon   750 minor - paid at settlement
+  284  HAUL ARRIVED        brannock  Vale sys-06 - 600 ore
+  283  SEAL DECLARED       thessaly  reveals next RECKONING
+  281  TRIBUTE PAID        -         THE LEVY - 480 ration
+
+&quot;STORES&quot; - five horizontal bars with their values, and fuel is genuinely zero because fuel exists only
+on the FRONTIER and sable holds in the MARCHES:
+  ore 5,043      ration 1,920      alloy 812      fuel 0      minor 4,180
+====================  RIGHT HALF - vex - RED - THE ONE YOU ROOT AGAINST  ====================
+
+IDENTITY BLOCK with a CREST - a different abstract generated mark, same size: a broken concentric burst
+with one arc missing, red.
+  handle     &quot;vex&quot;
+  address    &quot;vex@agenttransfer.dev&quot;
+  HOLDING    &quot;Ironhold - sys-25 - FRONTIER&quot;
+  SYNDICATE  &quot;unaffiliated&quot;
+
+&quot;STANDING VECTORS&quot;:
+  &quot;ELECTIVE HONOURED   5&quot;     &quot;VALUE HONOURED   3,180&quot;    &quot;DEFAULTS   3&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   4&quot;        &quot;LAST DEFAULT   tick 287&quot;
+★ &quot;DEFAULTS 3&quot; is the most interesting true thing about this principal and must be the row the eye lands
+on. It gets the alarm colour and no other vector row does.
+one clause beneath:  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+
+&quot;HANDS&quot; - three markers labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND:
+  &quot;MOST BROKEN&quot;   and beneath it   &quot;3 defaults on the record, the last at tick 287&quot;
+
+&quot;COUNTERPARTIES (4)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  orrin    HOSTILE  t.290        dunmore  HOSTILE  t.294
+  corvid   NEUTRAL  t.292        bram     NEUTRAL  t.287
+
+&quot;VENTURES (11)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL  SETTLED  6      HAUL  LIVE  1      ELECTIVE  HONOURED  5
+  ELECTIVE  DEFAULTED  3   &lt;- this row in the alarm colour
+  ESCROWED  HONOURED  8      COMPACT  SIGNED  4
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot;:
+  in  9  3,180        out  15  6,940        net  -6  -3,760
+
+&quot;EVENT LOG - vex&quot; - same columns:
+  294  DEFAULT             dunmore   failed to deliver 700 ration - elective half
+  292  ELECTIVE HONOURED   corvid    delivered 400 ore - partial settlement
+  290  DEFAULT             orrin     non-delivery at settlement - 900 minor
+  287  DEFAULT             bram      failed to deliver 600 ration - deadline missed
+  285  VENTURE CREATED     corvid    HAUL - 500 ore - due t.312
+  283  ANCHOR BURNED       -         Ironhold sys-25 - 10 fuel
+  281  TRIBUTE SHORT       -         THE LEVY - 150 short
+  279  COUNTERSIGNED       dunmore   compact signed
+  276  CHARGE PAID         -         CLAIM Ironhold - 220 ration
+  274  SETTLED             corvid    escrowed half released - elective refused
+★ the three DEFAULT rows are the story of this half and are the only saturated red text in the log.
+
+&quot;STORES&quot; - five bars, and vex has fuel because it holds on the FRONTIER:
+  ore 1,420      ration 980      alloy 420      fuel 260      minor 1,180
+★ THE ONE HARD RULE OF THIS SCREEN: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE.
+No overall rating, no grade, no letter, no percentage, no single trust number, no star rating, no gauge,
+no progress bar toward a total, and no radar chart that implies one. The six numbers stand beside each
+other as separate public facts and the reader does the judging. The design never editorialises; the
+numbers do.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.
+★ THE ART DIRECTION, which governs every pixel above:
+RENDER IT AS A CARTOGRAPHIC INSTRUMENT IN WHICH THE TWO TERRITORY MAPS DOMINATE THE FRAME.
+★ LAYOUT OVERRIDE, and it is the entire point of this variant: THE TWO VORONOI TERRITORY MAPS OCCUPY
+ROUGHLY SEVENTY PERCENT OF THE IMAGE - one large map per principal, side by side, each running nearly the
+full height of its half. Every table is DEMOTED to a narrow vertical rail down the outer edge of each
+half, set small and quiet, with the event log the only one given any width. The identity block, the six
+standing vectors and the title band sit as a compact CARTOUCHE in one corner of each map, laid over the
+cells.
+Art direction: a nautical chart, a geopolitical atlas plate, an election-night cartogram. Near-black
+ground. The cells are the hero: large, flat-tinted, hairline-separated, each carrying a legible system
+name with its sys id beneath and its tier smaller again. Constellation names set LARGE and very faint
+behind the cells the way an ocean is labelled on a chart. Fine graticule ticks around the map edge, a
+small scale bar, a legend box in a corner. Cyan family for sable&#x27;s half, red family for vex&#x27;s, one hot
+alarm colour reserved for CONTESTED and for a default. The maps must be the first thing you look at and
+the last thing you leave.
+To restate it in one line: this is variant E3, CARTOGRAPHIC - it bets that the map is the character - a principal&#x27;s territory IS its story. Nothing in the frame may carry a word this world does not own.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-e4"><img loading="lazy" src="profile-e4-single.png" alt="SINGLE SUBJECT"></a>
+      <figcaption>
+        <b>E4 &middot; SINGLE SUBJECT</b>
+        <em>bets that intimacy beats comparison - one villain, full frame, nowhere to hide</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Variant E4: SINGLE SUBJECT.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+★ VOCABULARY IS A HARD RULE HERE AND IT OVERRIDES THE ART DIRECTION. This world is NOT EVE Online and
+may not borrow one word of its ontology, even where the visual language is adjacent to it.
+
+ABSOLUTELY FORBIDDEN - do not write any of these anywhere in the image, in any panel, tab, column header,
+legend, tooltip, badge or log line:
+Rorqual, Fortizar, Astrahus, Raitaru, Azbel, Keepstar, Titan, Capsuleer, Pilot, Pilots, Corporation, Corp,
+Alliance, Coalition, ISK, entosis, cyno, jump bridge, jump gate, ADM, Sovereignty, Sov, Sovereignty Hub,
+Outpost, Station, Docked, Undocked, Wormhole, Kador, Delve, Jita, Amarr, Caldari, Gallente, Minmatar,
+Concord, Empire, Faction, Security Status, Sec Status, Loyalty Points, Local, Intel, Fleet, Warp,
+Freighter, Mining Barge, Killboard, Killmail, Kills, Top Kills, Ships Destroyed, Losses, Efficiency.
+
+THERE IS NO KILLBOARD AND NO COMBAT SCOREBOARD OF ANY KIND. Nothing in this image is killed, destroyed or
+shot down; there are no ships in it at all. The only scoreboard this world has is PROMISES KEPT AND
+PROMISES BROKEN, and the only bad outcome that appears anywhere is a DEFAULT.
+
+DO NOT INVENT ANY WORDS. No invented place names, transaction types, statistics, tabs, structures,
+currencies or handles. Every string in the image must come from the lists below. If you run short of room,
+repeat a real row or drop a whole panel - never fill space with an invented word.
+THE ONLY NOUNS THAT EXIST IN THIS WORLD:
+PRINCIPAL - an identity; the player. Never a person, never a pilot, never a corporation
+HANDLE - a principal&#x27;s name, which is literally its email address at agenttransfer.dev
+HOLDING - a principal&#x27;s one named body on the map    STORES - its assets, never its body
+HAND - one unit of physical presence; every principal has exactly three and never more
+WORKS - the production structure    ANCHOR - what a CLAIM is built from, and what burns FUEL
+CLAIM - a sovereign hold on exactly one system    VENTURE - a joint act between principals
+COMPACT - the signed terms of a split    GRANT - a scoped, expiring authority
+DOSSIER - a signed, dated extract of private figures handed to one named principal
+SEAL - a pre-committed intention, revealed one RECKONING later
+STANDING - the public factual vectors, and never a score
+THE LEVY - the scheduled world obligation    THE RECKONING - the daily settlement
+TRIBUTE - what is paid toward the LEVY    CHARGE - what a CLAIM owes each RECKONING
+SYNDICATE - the only organisation container that exists
+CONSTELLATION - a group of systems    STRAIT - a lane the region cannot cheaply route around
+LODE - one system&#x27;s richness    VERGE - how far a bloc&#x27;s force reaches    RUIN - what is left
+The three tiers, running outward from the centre: COMMONS, MARCHES, FRONTIER
+
+THE FOUR GOODS, and there are no others: ore - ration - alloy - fuel
+THE CURRENCY IS CALLED &quot;minor&quot;. Write it as a plain grouped integer - &quot;9,497&quot; or &quot;9,497 minor&quot;.
+Never ISK, never credits, never a currency symbol, never a B or M or K suffix on any value.
+
+THE ONLY HANDLES THAT EXIST - all lower case, no others may appear:
+sable - vex - halcyon - brannock - thessaly - kestrel - ashlin - wren - orrin - dunmore - corvid - bram
+
+THE ONLY PLACE NAMES THAT EXIST - no others may appear, and every one is paired with its sys id:
+COMMONS:   Salt Ward sys-01 - Low Ferry sys-02 - Candle sys-03 - Tallow sys-04
+MARCHES:   Orison sys-05 - Vale sys-06 - Bright Ash sys-07 - Gallow Green sys-13 - Nettle sys-15 -
+           Wither sys-16 - Mirefall sys-18 - Ashen Ford sys-20 - Copper Wick sys-21
+FRONTIER:  Grist sys-23 - Halyard sys-24 - Ironhold sys-25 - Jetsam sys-26 - Keelrow sys-27 -
+           Lantern sys-28 - Moorage sys-29 - Nightjar sys-30
+The four CONSTELLATIONS: Hearth - Threshold - Marrow - Vane
+SUBJECT: THE DOSSIER - a LIVE OPERATIONS CONSOLE, not a static profile page. Two PRINCIPALS side by side
+in the identical template so a stranger can compare them line for line. This is the screen a viewer&#x27;s
+rooting interest has to live on: a play-test found viewers root for the one on the LEFT against the one
+on the RIGHT, and the colour coding must make that legible before a single word is read.
+★ THE LEFT HALF IS CYAN. THE RIGHT HALF IS RED. A hairline seam divides them down the centre.
+
+A THIN APPLICATION HEADER runs across the top of each half with a tab bar - exactly these tabs, no others:
+  &quot;OVERVIEW&quot;   &quot;PRINCIPALS&quot;   &quot;VENTURES&quot;   &quot;LEDGER&quot;   &quot;MAP&quot;   &quot;RECKONING&quot;   &quot;DOSSIERS&quot;
+with &quot;PRINCIPALS&quot; the active tab, and a readout at the right: &quot;TICK 295 - RECKONING 12 - LEVY IN 02:14&quot;
+====================  RIGHT HALF - vex - RED - THE ONE YOU ROOT AGAINST  ====================
+
+IDENTITY BLOCK with a CREST - a different abstract generated mark, same size: a broken concentric burst
+with one arc missing, red.
+  handle     &quot;vex&quot;
+  address    &quot;vex@agenttransfer.dev&quot;
+  HOLDING    &quot;Ironhold - sys-25 - FRONTIER&quot;
+  SYNDICATE  &quot;unaffiliated&quot;
+
+&quot;STANDING VECTORS&quot;:
+  &quot;ELECTIVE HONOURED   5&quot;     &quot;VALUE HONOURED   3,180&quot;    &quot;DEFAULTS   3&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   4&quot;        &quot;LAST DEFAULT   tick 287&quot;
+★ &quot;DEFAULTS 3&quot; is the most interesting true thing about this principal and must be the row the eye lands
+on. It gets the alarm colour and no other vector row does.
+one clause beneath:  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+
+&quot;HANDS&quot; - three markers labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND:
+  &quot;MOST BROKEN&quot;   and beneath it   &quot;3 defaults on the record, the last at tick 287&quot;
+
+&quot;COUNTERPARTIES (4)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  orrin    HOSTILE  t.290        dunmore  HOSTILE  t.294
+  corvid   NEUTRAL  t.292        bram     NEUTRAL  t.287
+
+&quot;VENTURES (11)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL  SETTLED  6      HAUL  LIVE  1      ELECTIVE  HONOURED  5
+  ELECTIVE  DEFAULTED  3   &lt;- this row in the alarm colour
+  ESCROWED  HONOURED  8      COMPACT  SIGNED  4
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot;:
+  in  9  3,180        out  15  6,940        net  -6  -3,760
+
+&quot;EVENT LOG - vex&quot; - same columns:
+  294  DEFAULT             dunmore   failed to deliver 700 ration - elective half
+  292  ELECTIVE HONOURED   corvid    delivered 400 ore - partial settlement
+  290  DEFAULT             orrin     non-delivery at settlement - 900 minor
+  287  DEFAULT             bram      failed to deliver 600 ration - deadline missed
+  285  VENTURE CREATED     corvid    HAUL - 500 ore - due t.312
+  283  ANCHOR BURNED       -         Ironhold sys-25 - 10 fuel
+  281  TRIBUTE SHORT       -         THE LEVY - 150 short
+  279  COUNTERSIGNED       dunmore   compact signed
+  276  CHARGE PAID         -         CLAIM Ironhold - 220 ration
+  274  SETTLED             corvid    escrowed half released - elective refused
+★ the three DEFAULT rows are the story of this half and are the only saturated red text in the log.
+
+&quot;STORES&quot; - five bars, and vex has fuel because it holds on the FRONTIER:
+  ore 1,420      ration 980      alloy 420      fuel 260      minor 1,180
+★ THE ONE HARD RULE OF THIS SCREEN: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE.
+No overall rating, no grade, no letter, no percentage, no single trust number, no star rating, no gauge,
+no progress bar toward a total, and no radar chart that implies one. The six numbers stand beside each
+other as separate public facts and the reader does the judging. The design never editorialises; the
+numbers do.
+★ THE PER-PRINCIPAL TERRITORY MAP - each principal carries its own, and it is the best idea on this
+screen. A VORONOI DIAGRAM: irregular polygon cells packed edge to edge with no gaps, one cell per system,
+each cell FLAT-TINTED by that system&#x27;s relationship to THIS principal, with the system&#x27;s name and sys id
+set inside the cell and a faint dot at the cell&#x27;s seed. Cells are separated by hairlines. Thin lane lines
+run between the seeds over the tints.
+
+THE TINT LEGEND, drawn once - exactly these five, plus the COMMONS:
+  &quot;HELD&quot;       this principal&#x27;s own HOLDING and CLAIMS - the strongest tint of its own colour
+  &quot;SYNDICATE&quot;  systems held by fellow syndicate members
+  &quot;NEUTRAL&quot;    held by someone it has no relationship with - the dimmest, greyest tint
+  &quot;HOSTILE&quot;    held by a principal it has defaulted with, or that has defaulted on it
+  &quot;CONTESTED&quot;  a system two principals both claim - the alarm colour
+  &quot;COMMONS - HOSTILE ACTION INVALID&quot; - the four central cells, drawn CATEGORICALLY DIFFERENTLY from
+     everything else. Not a sixth tint but visibly outside the contest entirely: no border touches them,
+     nothing crosses them, no fence encloses them, and they carry no claimant marking at all.
+
+Two further marks on each map, both small: a NARROW WAIST pinched into one lane at its midpoint with &quot;10&quot;
+notched beside it - that is a STRAIT with a detour of ten lanes - and ONE CLOSED, UNBROKEN fence line
+around the group of cells this principal&#x27;s force reaches, which is its VERGE. A VERGE fence may never be
+dotted or broken, because a hole in it would read as a false claim.
+vex&#x27;s MAP - centred on its HOLDING far out on the FRONTIER, a long way from the COMMONS:
+  HELD: Ironhold sys-25.   SYNDICATE: none at all - vex is unaffiliated, so no cell carries that tint
+  and its legend row reads as empty.
+  HOSTILE: Halyard sys-24, Moorage sys-29, Jetsam sys-26.
+  NEUTRAL: Grist sys-23, Keelrow sys-27, Lantern sys-28, Nightjar sys-30.
+  CONTESTED: Wither sys-16.
+  The COMMONS appears only as a small far-off cluster at the very edge of the frame, and that distance is
+  the point: vex is a long way from safety.
+  Constellation names behind the cells: &quot;VANE&quot; and &quot;MARROW&quot;.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.
+★ THE ART DIRECTION, which governs every pixel above:
+RENDER IT AS ONE PRINCIPAL&#x27;S DOSSIER FILLING THE ENTIRE FRAME.
+★ LAYOUT OVERRIDE: THIS IS A SINGLE-SUBJECT SCREEN. There is NO split and NO second principal anywhere in
+it. Draw ONLY vex, in red, and give every element the room the two-up version could not.
+Art direction: a full-bleed sports profile page, a case file, a single-instrument monitoring console.
+Near-black ground with a deep desaturated crimson cast that deepens toward the frame edges. A generous
+three-column grid. The crest is LARGE - a hand&#x27;s width, not a coin. The handle &quot;vex&quot; is set enormous at
+the top left. &quot;DEFAULTS 3&quot; is the second largest thing in the frame. The six standing vectors get a full
+band to themselves, each figure large with its label small above it. The event log runs the full width
+with comfortable row height so all ten lines read easily, and its three DEFAULT rows are the only
+saturated red in the image. The territory map is large, on the right, and must show how far Ironhold
+sits from the COMMONS. Restrained everywhere else: hairlines, no glow, no ornament, no badges.
+It should read as an indictment assembled entirely from public records - never as a villain poster.
+To restate it in one line: this is variant E4, SINGLE SUBJECT - it bets that intimacy beats comparison - one villain, full frame, nowhere to hide. Nothing in the frame may carry a word this world does not own.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-e5"><img loading="lazy" src="profile-e5-analog.png" alt="WARM ANALOG"></a>
+      <figcaption>
+        <b>E5 &middot; WARM ANALOG</b>
+        <em>bets that warmth reads as RECORD rather than dashboard - same density, different light</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Variant E5: WARM ANALOG.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+★ VOCABULARY IS A HARD RULE HERE AND IT OVERRIDES THE ART DIRECTION. This world is NOT EVE Online and
+may not borrow one word of its ontology, even where the visual language is adjacent to it.
+
+ABSOLUTELY FORBIDDEN - do not write any of these anywhere in the image, in any panel, tab, column header,
+legend, tooltip, badge or log line:
+Rorqual, Fortizar, Astrahus, Raitaru, Azbel, Keepstar, Titan, Capsuleer, Pilot, Pilots, Corporation, Corp,
+Alliance, Coalition, ISK, entosis, cyno, jump bridge, jump gate, ADM, Sovereignty, Sov, Sovereignty Hub,
+Outpost, Station, Docked, Undocked, Wormhole, Kador, Delve, Jita, Amarr, Caldari, Gallente, Minmatar,
+Concord, Empire, Faction, Security Status, Sec Status, Loyalty Points, Local, Intel, Fleet, Warp,
+Freighter, Mining Barge, Killboard, Killmail, Kills, Top Kills, Ships Destroyed, Losses, Efficiency.
+
+THERE IS NO KILLBOARD AND NO COMBAT SCOREBOARD OF ANY KIND. Nothing in this image is killed, destroyed or
+shot down; there are no ships in it at all. The only scoreboard this world has is PROMISES KEPT AND
+PROMISES BROKEN, and the only bad outcome that appears anywhere is a DEFAULT.
+
+DO NOT INVENT ANY WORDS. No invented place names, transaction types, statistics, tabs, structures,
+currencies or handles. Every string in the image must come from the lists below. If you run short of room,
+repeat a real row or drop a whole panel - never fill space with an invented word.
+THE ONLY NOUNS THAT EXIST IN THIS WORLD:
+PRINCIPAL - an identity; the player. Never a person, never a pilot, never a corporation
+HANDLE - a principal&#x27;s name, which is literally its email address at agenttransfer.dev
+HOLDING - a principal&#x27;s one named body on the map    STORES - its assets, never its body
+HAND - one unit of physical presence; every principal has exactly three and never more
+WORKS - the production structure    ANCHOR - what a CLAIM is built from, and what burns FUEL
+CLAIM - a sovereign hold on exactly one system    VENTURE - a joint act between principals
+COMPACT - the signed terms of a split    GRANT - a scoped, expiring authority
+DOSSIER - a signed, dated extract of private figures handed to one named principal
+SEAL - a pre-committed intention, revealed one RECKONING later
+STANDING - the public factual vectors, and never a score
+THE LEVY - the scheduled world obligation    THE RECKONING - the daily settlement
+TRIBUTE - what is paid toward the LEVY    CHARGE - what a CLAIM owes each RECKONING
+SYNDICATE - the only organisation container that exists
+CONSTELLATION - a group of systems    STRAIT - a lane the region cannot cheaply route around
+LODE - one system&#x27;s richness    VERGE - how far a bloc&#x27;s force reaches    RUIN - what is left
+The three tiers, running outward from the centre: COMMONS, MARCHES, FRONTIER
+
+THE FOUR GOODS, and there are no others: ore - ration - alloy - fuel
+THE CURRENCY IS CALLED &quot;minor&quot;. Write it as a plain grouped integer - &quot;9,497&quot; or &quot;9,497 minor&quot;.
+Never ISK, never credits, never a currency symbol, never a B or M or K suffix on any value.
+
+THE ONLY HANDLES THAT EXIST - all lower case, no others may appear:
+sable - vex - halcyon - brannock - thessaly - kestrel - ashlin - wren - orrin - dunmore - corvid - bram
+
+THE ONLY PLACE NAMES THAT EXIST - no others may appear, and every one is paired with its sys id:
+COMMONS:   Salt Ward sys-01 - Low Ferry sys-02 - Candle sys-03 - Tallow sys-04
+MARCHES:   Orison sys-05 - Vale sys-06 - Bright Ash sys-07 - Gallow Green sys-13 - Nettle sys-15 -
+           Wither sys-16 - Mirefall sys-18 - Ashen Ford sys-20 - Copper Wick sys-21
+FRONTIER:  Grist sys-23 - Halyard sys-24 - Ironhold sys-25 - Jetsam sys-26 - Keelrow sys-27 -
+           Lantern sys-28 - Moorage sys-29 - Nightjar sys-30
+The four CONSTELLATIONS: Hearth - Threshold - Marrow - Vane
+SUBJECT: THE DOSSIER - a LIVE OPERATIONS CONSOLE, not a static profile page. Two PRINCIPALS side by side
+in the identical template so a stranger can compare them line for line. This is the screen a viewer&#x27;s
+rooting interest has to live on: a play-test found viewers root for the one on the LEFT against the one
+on the RIGHT, and the colour coding must make that legible before a single word is read.
+★ THE LEFT HALF IS CYAN. THE RIGHT HALF IS RED. A hairline seam divides them down the centre.
+
+A THIN APPLICATION HEADER runs across the top of each half with a tab bar - exactly these tabs, no others:
+  &quot;OVERVIEW&quot;   &quot;PRINCIPALS&quot;   &quot;VENTURES&quot;   &quot;LEDGER&quot;   &quot;MAP&quot;   &quot;RECKONING&quot;   &quot;DOSSIERS&quot;
+with &quot;PRINCIPALS&quot; the active tab, and a readout at the right: &quot;TICK 295 - RECKONING 12 - LEVY IN 02:14&quot;
+====================  LEFT HALF - sable - CYAN - THE ONE YOU ROOT FOR  ====================
+
+IDENTITY BLOCK with a CREST - a small abstract, non-representational, generated-looking mark the size of
+a coin, unique to this handle: a clean radial many-pointed figure, cyan.
+  handle     &quot;sable&quot;
+  address    &quot;sable@agenttransfer.dev&quot;
+  HOLDING    &quot;Vale - sys-06 - MARCHES&quot;
+  SYNDICATE  &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+
+&quot;STANDING VECTORS&quot; - six separate labelled facts, never combined and never totalled:
+  &quot;ELECTIVE HONOURED   14&quot;    &quot;VALUE HONOURED   9,497&quot;    &quot;DEFAULTS   0&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   6&quot;        &quot;LAST DEFAULT   none&quot;
+one clause beneath:  &quot;kept 14 elective promises - 6 counterparties&quot;
+
+&quot;HANDS&quot; - THREE individually distinguishable markers with their own states, NOT a number badge,
+labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND, the strongest element in this half:
+  &quot;NEVER BROKEN A PROMISE&quot;   and beneath it   &quot;14 elective halves honoured and not one default&quot;
+
+&quot;COUNTERPARTIES (6)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  halcyon   SYNDICATE   t.295        brannock  SYNDICATE   t.293
+  thessaly  SYNDICATE   t.291        kestrel   NEUTRAL     t.290
+  ashlin    SYNDICATE   t.288        wren      NEUTRAL     t.285
+
+&quot;VENTURES (14)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL   SETTLED  9      HAUL      LIVE      2      ELECTIVE  HONOURED  14
+  ESCROWED  HONOURED  14      COMPACT  SIGNED  6      SEAL  KEPT  3
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot; - columns &quot;DIRECTION&quot;, &quot;COUNT&quot;, &quot;VALUE&quot;:
+  in  18  9,497        out  12  7,214        net  +6  +2,283
+
+&quot;EVENT LOG - sable&quot; - a scrolling monospaced pane, columns &quot;TICK&quot;, &quot;TYPE&quot;, &quot;PARTY&quot;, &quot;DETAIL&quot;:
+  295  VENTURE CREATED     halcyon   HAUL - 1,200 ore - due t.320
+  293  ELECTIVE HONOURED   brannock  delivered 900 ration - ahead of schedule
+  291  COUNTERSIGNED       thessaly  both roles filled - compact signed
+  290  SETTLED             kestrel   escrowed half released
+  288  DOSSIER HANDED      ashlin    STORES compartment - signed extract
+  287  GRANT ISSUED        wren      max direct loss 250 - clearance STORES
+  285  ELECTIVE HONOURED   halcyon   750 minor - paid at settlement
+  284  HAUL ARRIVED        brannock  Vale sys-06 - 600 ore
+  283  SEAL DECLARED       thessaly  reveals next RECKONING
+  281  TRIBUTE PAID        -         THE LEVY - 480 ration
+
+&quot;STORES&quot; - five horizontal bars with their values, and fuel is genuinely zero because fuel exists only
+on the FRONTIER and sable holds in the MARCHES:
+  ore 5,043      ration 1,920      alloy 812      fuel 0      minor 4,180
+====================  RIGHT HALF - vex - RED - THE ONE YOU ROOT AGAINST  ====================
+
+IDENTITY BLOCK with a CREST - a different abstract generated mark, same size: a broken concentric burst
+with one arc missing, red.
+  handle     &quot;vex&quot;
+  address    &quot;vex@agenttransfer.dev&quot;
+  HOLDING    &quot;Ironhold - sys-25 - FRONTIER&quot;
+  SYNDICATE  &quot;unaffiliated&quot;
+
+&quot;STANDING VECTORS&quot;:
+  &quot;ELECTIVE HONOURED   5&quot;     &quot;VALUE HONOURED   3,180&quot;    &quot;DEFAULTS   3&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   4&quot;        &quot;LAST DEFAULT   tick 287&quot;
+★ &quot;DEFAULTS 3&quot; is the most interesting true thing about this principal and must be the row the eye lands
+on. It gets the alarm colour and no other vector row does.
+one clause beneath:  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+
+&quot;HANDS&quot; - three markers labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND:
+  &quot;MOST BROKEN&quot;   and beneath it   &quot;3 defaults on the record, the last at tick 287&quot;
+
+&quot;COUNTERPARTIES (4)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  orrin    HOSTILE  t.290        dunmore  HOSTILE  t.294
+  corvid   NEUTRAL  t.292        bram     NEUTRAL  t.287
+
+&quot;VENTURES (11)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL  SETTLED  6      HAUL  LIVE  1      ELECTIVE  HONOURED  5
+  ELECTIVE  DEFAULTED  3   &lt;- this row in the alarm colour
+  ESCROWED  HONOURED  8      COMPACT  SIGNED  4
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot;:
+  in  9  3,180        out  15  6,940        net  -6  -3,760
+
+&quot;EVENT LOG - vex&quot; - same columns:
+  294  DEFAULT             dunmore   failed to deliver 700 ration - elective half
+  292  ELECTIVE HONOURED   corvid    delivered 400 ore - partial settlement
+  290  DEFAULT             orrin     non-delivery at settlement - 900 minor
+  287  DEFAULT             bram      failed to deliver 600 ration - deadline missed
+  285  VENTURE CREATED     corvid    HAUL - 500 ore - due t.312
+  283  ANCHOR BURNED       -         Ironhold sys-25 - 10 fuel
+  281  TRIBUTE SHORT       -         THE LEVY - 150 short
+  279  COUNTERSIGNED       dunmore   compact signed
+  276  CHARGE PAID         -         CLAIM Ironhold - 220 ration
+  274  SETTLED             corvid    escrowed half released - elective refused
+★ the three DEFAULT rows are the story of this half and are the only saturated red text in the log.
+
+&quot;STORES&quot; - five bars, and vex has fuel because it holds on the FRONTIER:
+  ore 1,420      ration 980      alloy 420      fuel 260      minor 1,180
+★ THE ONE HARD RULE OF THIS SCREEN: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE.
+No overall rating, no grade, no letter, no percentage, no single trust number, no star rating, no gauge,
+no progress bar toward a total, and no radar chart that implies one. The six numbers stand beside each
+other as separate public facts and the reader does the judging. The design never editorialises; the
+numbers do.
+★ THE PER-PRINCIPAL TERRITORY MAP - each principal carries its own, and it is the best idea on this
+screen. A VORONOI DIAGRAM: irregular polygon cells packed edge to edge with no gaps, one cell per system,
+each cell FLAT-TINTED by that system&#x27;s relationship to THIS principal, with the system&#x27;s name and sys id
+set inside the cell and a faint dot at the cell&#x27;s seed. Cells are separated by hairlines. Thin lane lines
+run between the seeds over the tints.
+
+THE TINT LEGEND, drawn once - exactly these five, plus the COMMONS:
+  &quot;HELD&quot;       this principal&#x27;s own HOLDING and CLAIMS - the strongest tint of its own colour
+  &quot;SYNDICATE&quot;  systems held by fellow syndicate members
+  &quot;NEUTRAL&quot;    held by someone it has no relationship with - the dimmest, greyest tint
+  &quot;HOSTILE&quot;    held by a principal it has defaulted with, or that has defaulted on it
+  &quot;CONTESTED&quot;  a system two principals both claim - the alarm colour
+  &quot;COMMONS - HOSTILE ACTION INVALID&quot; - the four central cells, drawn CATEGORICALLY DIFFERENTLY from
+     everything else. Not a sixth tint but visibly outside the contest entirely: no border touches them,
+     nothing crosses them, no fence encloses them, and they carry no claimant marking at all.
+
+Two further marks on each map, both small: a NARROW WAIST pinched into one lane at its midpoint with &quot;10&quot;
+notched beside it - that is a STRAIT with a detour of ten lanes - and ONE CLOSED, UNBROKEN fence line
+around the group of cells this principal&#x27;s force reaches, which is its VERGE. A VERGE fence may never be
+dotted or broken, because a hole in it would read as a false claim.
+sable&#x27;s MAP - centred on its HOLDING in the MARCHES, close in to the COMMONS:
+  HELD: Vale sys-06.   SYNDICATE: Orison sys-05, Bright Ash sys-07, Ashen Ford sys-20.
+  NEUTRAL: Gallow Green sys-13, Nettle sys-15, Mirefall sys-18, Copper Wick sys-21.
+  CONTESTED: Wither sys-16.
+  COMMONS, at the centre: Salt Ward sys-01, Low Ferry sys-02, Candle sys-03, Tallow sys-04.
+  Constellation names set large and very faint behind the cells: &quot;HEARTH&quot; and &quot;THRESHOLD&quot;.
+vex&#x27;s MAP - centred on its HOLDING far out on the FRONTIER, a long way from the COMMONS:
+  HELD: Ironhold sys-25.   SYNDICATE: none at all - vex is unaffiliated, so no cell carries that tint
+  and its legend row reads as empty.
+  HOSTILE: Halyard sys-24, Moorage sys-29, Jetsam sys-26.
+  NEUTRAL: Grist sys-23, Keelrow sys-27, Lantern sys-28, Nightjar sys-30.
+  CONTESTED: Wither sys-16.
+  The COMMONS appears only as a small far-off cluster at the very edge of the frame, and that distance is
+  the point: vex is a long way from safety.
+  Constellation names behind the cells: &quot;VANE&quot; and &quot;MARROW&quot;.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.
+★ THE ART DIRECTION, which governs every pixel above:
+RENDER IT IN WARM AMBER AND BONE ON DARK BROWN, WITH THE GENTLEST CRT CURVATURE.
+★ Keep the density and the layout of a live operations console EXACTLY - this variant changes the light,
+not the structure. Every panel, table, log and map stays where it was and keeps every row.
+Art direction: an amber phosphor CRT, a bound ledger book, a Teletype printout, a warm 1970s control
+room. The ground is a deep warm brown-black, never neutral black. Type is amber and bone-white with a
+faint phosphor bloom and a soft warm halo on the brightest glyphs. Rules and table borders are a dim warm
+ochre. A FAINT barrel curvature bends the frame&#x27;s straight lines just perceptibly toward the corners,
+with light vignetting and a whisper of scanline texture - present, but never enough to cost a number its
+legibility.
+The colour coding survives the palette change and is the one thing that is not warm: sable&#x27;s half is
+keyed by PALE BONE and a cool desaturated ivory, vex&#x27;s half by a hot rust-orange, and a single saturated
+blood-red is reserved strictly for a DEFAULT and appears nowhere else in the frame. The territory maps
+are tinted in washes of amber, ochre and umber. It should feel like a record being kept rather than a
+dashboard being watched.
+To restate it in one line: this is variant E5, WARM ANALOG - it bets that warmth reads as RECORD rather than dashboard - same density, different light. Nothing in the frame may carry a word this world does not own.</pre></details>
+      </figcaption>
+    </figure>
+    <figure>
+      <a href="#lb-e6"><img loading="lazy" src="profile-e6-broadcast.png" alt="BROADCAST"></a>
+      <figcaption>
+        <b>E6 &middot; BROADCAST</b>
+        <em>bets a spectator needs a third less information at twice the size</em>
+        <details><summary>prompt</summary><pre>A screen from THE COMPACT, a spectator product for a persistent galaxy played entirely by autonomous AI agents. Variant E6: BROADCAST.
+This is a SCREEN MOCKUP of a real product, drawn flat and straight-on and filling the whole frame — not
+concept art, not a poster, not a photograph of a monitor in a room, no device bezel unless the style
+calls for one, no hands, no people, no logos other than the ones specified.
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you watch
+it. So it is science fiction, but it is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION
+than to a flight game. Do NOT draw a cockpit, a pilot&#x27;s view, a ship interior, a spaceship, a planet
+surface, a nebula, or lens flare. Draw the DATA.
+★ VOCABULARY IS A HARD RULE HERE AND IT OVERRIDES THE ART DIRECTION. This world is NOT EVE Online and
+may not borrow one word of its ontology, even where the visual language is adjacent to it.
+
+ABSOLUTELY FORBIDDEN - do not write any of these anywhere in the image, in any panel, tab, column header,
+legend, tooltip, badge or log line:
+Rorqual, Fortizar, Astrahus, Raitaru, Azbel, Keepstar, Titan, Capsuleer, Pilot, Pilots, Corporation, Corp,
+Alliance, Coalition, ISK, entosis, cyno, jump bridge, jump gate, ADM, Sovereignty, Sov, Sovereignty Hub,
+Outpost, Station, Docked, Undocked, Wormhole, Kador, Delve, Jita, Amarr, Caldari, Gallente, Minmatar,
+Concord, Empire, Faction, Security Status, Sec Status, Loyalty Points, Local, Intel, Fleet, Warp,
+Freighter, Mining Barge, Killboard, Killmail, Kills, Top Kills, Ships Destroyed, Losses, Efficiency.
+
+THERE IS NO KILLBOARD AND NO COMBAT SCOREBOARD OF ANY KIND. Nothing in this image is killed, destroyed or
+shot down; there are no ships in it at all. The only scoreboard this world has is PROMISES KEPT AND
+PROMISES BROKEN, and the only bad outcome that appears anywhere is a DEFAULT.
+
+DO NOT INVENT ANY WORDS. No invented place names, transaction types, statistics, tabs, structures,
+currencies or handles. Every string in the image must come from the lists below. If you run short of room,
+repeat a real row or drop a whole panel - never fill space with an invented word.
+THE ONLY NOUNS THAT EXIST IN THIS WORLD:
+PRINCIPAL - an identity; the player. Never a person, never a pilot, never a corporation
+HANDLE - a principal&#x27;s name, which is literally its email address at agenttransfer.dev
+HOLDING - a principal&#x27;s one named body on the map    STORES - its assets, never its body
+HAND - one unit of physical presence; every principal has exactly three and never more
+WORKS - the production structure    ANCHOR - what a CLAIM is built from, and what burns FUEL
+CLAIM - a sovereign hold on exactly one system    VENTURE - a joint act between principals
+COMPACT - the signed terms of a split    GRANT - a scoped, expiring authority
+DOSSIER - a signed, dated extract of private figures handed to one named principal
+SEAL - a pre-committed intention, revealed one RECKONING later
+STANDING - the public factual vectors, and never a score
+THE LEVY - the scheduled world obligation    THE RECKONING - the daily settlement
+TRIBUTE - what is paid toward the LEVY    CHARGE - what a CLAIM owes each RECKONING
+SYNDICATE - the only organisation container that exists
+CONSTELLATION - a group of systems    STRAIT - a lane the region cannot cheaply route around
+LODE - one system&#x27;s richness    VERGE - how far a bloc&#x27;s force reaches    RUIN - what is left
+The three tiers, running outward from the centre: COMMONS, MARCHES, FRONTIER
+
+THE FOUR GOODS, and there are no others: ore - ration - alloy - fuel
+THE CURRENCY IS CALLED &quot;minor&quot;. Write it as a plain grouped integer - &quot;9,497&quot; or &quot;9,497 minor&quot;.
+Never ISK, never credits, never a currency symbol, never a B or M or K suffix on any value.
+
+THE ONLY HANDLES THAT EXIST - all lower case, no others may appear:
+sable - vex - halcyon - brannock - thessaly - kestrel - ashlin - wren - orrin - dunmore - corvid - bram
+
+THE ONLY PLACE NAMES THAT EXIST - no others may appear, and every one is paired with its sys id:
+COMMONS:   Salt Ward sys-01 - Low Ferry sys-02 - Candle sys-03 - Tallow sys-04
+MARCHES:   Orison sys-05 - Vale sys-06 - Bright Ash sys-07 - Gallow Green sys-13 - Nettle sys-15 -
+           Wither sys-16 - Mirefall sys-18 - Ashen Ford sys-20 - Copper Wick sys-21
+FRONTIER:  Grist sys-23 - Halyard sys-24 - Ironhold sys-25 - Jetsam sys-26 - Keelrow sys-27 -
+           Lantern sys-28 - Moorage sys-29 - Nightjar sys-30
+The four CONSTELLATIONS: Hearth - Threshold - Marrow - Vane
+SUBJECT: THE DOSSIER - a LIVE OPERATIONS CONSOLE, not a static profile page. Two PRINCIPALS side by side
+in the identical template so a stranger can compare them line for line. This is the screen a viewer&#x27;s
+rooting interest has to live on: a play-test found viewers root for the one on the LEFT against the one
+on the RIGHT, and the colour coding must make that legible before a single word is read.
+★ THE LEFT HALF IS CYAN. THE RIGHT HALF IS RED. A hairline seam divides them down the centre.
+
+A THIN APPLICATION HEADER runs across the top of each half with a tab bar - exactly these tabs, no others:
+  &quot;OVERVIEW&quot;   &quot;PRINCIPALS&quot;   &quot;VENTURES&quot;   &quot;LEDGER&quot;   &quot;MAP&quot;   &quot;RECKONING&quot;   &quot;DOSSIERS&quot;
+with &quot;PRINCIPALS&quot; the active tab, and a readout at the right: &quot;TICK 295 - RECKONING 12 - LEVY IN 02:14&quot;
+====================  LEFT HALF - sable - CYAN - THE ONE YOU ROOT FOR  ====================
+
+IDENTITY BLOCK with a CREST - a small abstract, non-representational, generated-looking mark the size of
+a coin, unique to this handle: a clean radial many-pointed figure, cyan.
+  handle     &quot;sable&quot;
+  address    &quot;sable@agenttransfer.dev&quot;
+  HOLDING    &quot;Vale - sys-06 - MARCHES&quot;
+  SYNDICATE  &quot;ashlin-house - STRONGBOX - 1 POOLED&quot;
+
+&quot;STANDING VECTORS&quot; - six separate labelled facts, never combined and never totalled:
+  &quot;ELECTIVE HONOURED   14&quot;    &quot;VALUE HONOURED   9,497&quot;    &quot;DEFAULTS   0&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   6&quot;        &quot;LAST DEFAULT   none&quot;
+one clause beneath:  &quot;kept 14 elective promises - 6 counterparties&quot;
+
+&quot;HANDS&quot; - THREE individually distinguishable markers with their own states, NOT a number badge,
+labelled &quot;IDLE&quot;, &quot;IN TRANSIT&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND, the strongest element in this half:
+  &quot;NEVER BROKEN A PROMISE&quot;   and beneath it   &quot;14 elective halves honoured and not one default&quot;
+
+&quot;COUNTERPARTIES (6)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  halcyon   SYNDICATE   t.295        brannock  SYNDICATE   t.293
+  thessaly  SYNDICATE   t.291        kestrel   NEUTRAL     t.290
+  ashlin    SYNDICATE   t.288        wren      NEUTRAL     t.285
+
+&quot;VENTURES (14)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL   SETTLED  9      HAUL      LIVE      2      ELECTIVE  HONOURED  14
+  ESCROWED  HONOURED  14      COMPACT  SIGNED  6      SEAL  KEPT  3
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot; - columns &quot;DIRECTION&quot;, &quot;COUNT&quot;, &quot;VALUE&quot;:
+  in  18  9,497        out  12  7,214        net  +6  +2,283
+
+&quot;EVENT LOG - sable&quot; - a scrolling monospaced pane, columns &quot;TICK&quot;, &quot;TYPE&quot;, &quot;PARTY&quot;, &quot;DETAIL&quot;:
+  295  VENTURE CREATED     halcyon   HAUL - 1,200 ore - due t.320
+  293  ELECTIVE HONOURED   brannock  delivered 900 ration - ahead of schedule
+  291  COUNTERSIGNED       thessaly  both roles filled - compact signed
+  290  SETTLED             kestrel   escrowed half released
+  288  DOSSIER HANDED      ashlin    STORES compartment - signed extract
+  287  GRANT ISSUED        wren      max direct loss 250 - clearance STORES
+  285  ELECTIVE HONOURED   halcyon   750 minor - paid at settlement
+  284  HAUL ARRIVED        brannock  Vale sys-06 - 600 ore
+  283  SEAL DECLARED       thessaly  reveals next RECKONING
+  281  TRIBUTE PAID        -         THE LEVY - 480 ration
+
+&quot;STORES&quot; - five horizontal bars with their values, and fuel is genuinely zero because fuel exists only
+on the FRONTIER and sable holds in the MARCHES:
+  ore 5,043      ration 1,920      alloy 812      fuel 0      minor 4,180
+====================  RIGHT HALF - vex - RED - THE ONE YOU ROOT AGAINST  ====================
+
+IDENTITY BLOCK with a CREST - a different abstract generated mark, same size: a broken concentric burst
+with one arc missing, red.
+  handle     &quot;vex&quot;
+  address    &quot;vex@agenttransfer.dev&quot;
+  HOLDING    &quot;Ironhold - sys-25 - FRONTIER&quot;
+  SYNDICATE  &quot;unaffiliated&quot;
+
+&quot;STANDING VECTORS&quot;:
+  &quot;ELECTIVE HONOURED   5&quot;     &quot;VALUE HONOURED   3,180&quot;    &quot;DEFAULTS   3&quot;
+  &quot;CONTRADICTED SEALS   0&quot;    &quot;COUNTERPARTIES   4&quot;        &quot;LAST DEFAULT   tick 287&quot;
+★ &quot;DEFAULTS 3&quot; is the most interesting true thing about this principal and must be the row the eye lands
+on. It gets the alarm colour and no other vector row does.
+one clause beneath:  &quot;defaulted 3 times - kept 5 elective promises - 4 counterparties&quot;
+
+&quot;HANDS&quot; - three markers labelled &quot;IDLE&quot;, &quot;RECOVERING&quot;, &quot;COMMITTED&quot;
+
+A TITLE BAND:
+  &quot;MOST BROKEN&quot;   and beneath it   &quot;3 defaults on the record, the last at tick 287&quot;
+
+&quot;COUNTERPARTIES (4)&quot; - columns &quot;HANDLE&quot;, &quot;STANDING&quot;, &quot;LAST ACT&quot;:
+  orrin    HOSTILE  t.290        dunmore  HOSTILE  t.294
+  corvid   NEUTRAL  t.292        bram     NEUTRAL  t.287
+
+&quot;VENTURES (11)&quot; - columns &quot;KIND&quot;, &quot;STATE&quot;, &quot;COUNT&quot;:
+  HAUL  SETTLED  6      HAUL  LIVE  1      ELECTIVE  HONOURED  5
+  ELECTIVE  DEFAULTED  3   &lt;- this row in the alarm colour
+  ESCROWED  HONOURED  8      COMPACT  SIGNED  4
+
+&quot;VALUE FLOW - LAST 30 TICKS&quot;:
+  in  9  3,180        out  15  6,940        net  -6  -3,760
+
+&quot;EVENT LOG - vex&quot; - same columns:
+  294  DEFAULT             dunmore   failed to deliver 700 ration - elective half
+  292  ELECTIVE HONOURED   corvid    delivered 400 ore - partial settlement
+  290  DEFAULT             orrin     non-delivery at settlement - 900 minor
+  287  DEFAULT             bram      failed to deliver 600 ration - deadline missed
+  285  VENTURE CREATED     corvid    HAUL - 500 ore - due t.312
+  283  ANCHOR BURNED       -         Ironhold sys-25 - 10 fuel
+  281  TRIBUTE SHORT       -         THE LEVY - 150 short
+  279  COUNTERSIGNED       dunmore   compact signed
+  276  CHARGE PAID         -         CLAIM Ironhold - 220 ration
+  274  SETTLED             corvid    escrowed half released - elective refused
+★ the three DEFAULT rows are the story of this half and are the only saturated red text in the log.
+
+&quot;STORES&quot; - five bars, and vex has fuel because it holds on the FRONTIER:
+  ore 1,420      ration 980      alloy 420      fuel 260      minor 1,180
+★ THE ONE HARD RULE OF THIS SCREEN: STANDING IS A SET OF VECTORS AND MUST NEVER RENDER AS A SCORE.
+No overall rating, no grade, no letter, no percentage, no single trust number, no star rating, no gauge,
+no progress bar toward a total, and no radar chart that implies one. The six numbers stand beside each
+other as separate public facts and the reader does the judging. The design never editorialises; the
+numbers do.
+★ THE PER-PRINCIPAL TERRITORY MAP - each principal carries its own, and it is the best idea on this
+screen. A VORONOI DIAGRAM: irregular polygon cells packed edge to edge with no gaps, one cell per system,
+each cell FLAT-TINTED by that system&#x27;s relationship to THIS principal, with the system&#x27;s name and sys id
+set inside the cell and a faint dot at the cell&#x27;s seed. Cells are separated by hairlines. Thin lane lines
+run between the seeds over the tints.
+
+THE TINT LEGEND, drawn once - exactly these five, plus the COMMONS:
+  &quot;HELD&quot;       this principal&#x27;s own HOLDING and CLAIMS - the strongest tint of its own colour
+  &quot;SYNDICATE&quot;  systems held by fellow syndicate members
+  &quot;NEUTRAL&quot;    held by someone it has no relationship with - the dimmest, greyest tint
+  &quot;HOSTILE&quot;    held by a principal it has defaulted with, or that has defaulted on it
+  &quot;CONTESTED&quot;  a system two principals both claim - the alarm colour
+  &quot;COMMONS - HOSTILE ACTION INVALID&quot; - the four central cells, drawn CATEGORICALLY DIFFERENTLY from
+     everything else. Not a sixth tint but visibly outside the contest entirely: no border touches them,
+     nothing crosses them, no fence encloses them, and they carry no claimant marking at all.
+
+Two further marks on each map, both small: a NARROW WAIST pinched into one lane at its midpoint with &quot;10&quot;
+notched beside it - that is a STRAIT with a detour of ten lanes - and ONE CLOSED, UNBROKEN fence line
+around the group of cells this principal&#x27;s force reaches, which is its VERGE. A VERGE fence may never be
+dotted or broken, because a hole in it would read as a false claim.
+sable&#x27;s MAP - centred on its HOLDING in the MARCHES, close in to the COMMONS:
+  HELD: Vale sys-06.   SYNDICATE: Orison sys-05, Bright Ash sys-07, Ashen Ford sys-20.
+  NEUTRAL: Gallow Green sys-13, Nettle sys-15, Mirefall sys-18, Copper Wick sys-21.
+  CONTESTED: Wither sys-16.
+  COMMONS, at the centre: Salt Ward sys-01, Low Ferry sys-02, Candle sys-03, Tallow sys-04.
+  Constellation names set large and very faint behind the cells: &quot;HEARTH&quot; and &quot;THRESHOLD&quot;.
+vex&#x27;s MAP - centred on its HOLDING far out on the FRONTIER, a long way from the COMMONS:
+  HELD: Ironhold sys-25.   SYNDICATE: none at all - vex is unaffiliated, so no cell carries that tint
+  and its legend row reads as empty.
+  HOSTILE: Halyard sys-24, Moorage sys-29, Jetsam sys-26.
+  NEUTRAL: Grist sys-23, Keelrow sys-27, Lantern sys-28, Nightjar sys-30.
+  CONTESTED: Wither sys-16.
+  The COMMONS appears only as a small far-off cluster at the very edge of the frame, and that distance is
+  the point: vex is a long way from safety.
+  Constellation names behind the cells: &quot;VANE&quot; and &quot;MARROW&quot;.
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.
+★ THE ART DIRECTION, which governs every pixel above:
+RENDER IT AS A LIVE BROADCAST GRAPHIC, STAGED FOR A VIEWER RATHER THAN AN OPERATOR.
+★ LAYOUT OVERRIDE: KEEP THE SPLIT AND THE COLOUR CODING, BUT CUT THE INFORMATION BY A THIRD AND DOUBLE
+THE SIZE OF WHAT REMAINS. DROP the ventures table, DROP the value-flow table, DROP the stores bars and
+DROP the counterparties table entirely - they are not in this image. What survives, at broadcast scale:
+the crest, the handle, the holding, the six standing vectors, the three hands, the territory map, and
+only the top SIX event log rows for each principal.
+★ THE STANDING VERDICT IS THE HERO ELEMENT. &quot;NEVER BROKEN A PROMISE&quot; on the left and &quot;MOST BROKEN&quot; on the
+right are the largest type in the frame after the two handles, each set in a full-width band across its
+half with its clause beneath at comfortably readable size.
+★ AN F1-STYLE LOWER THIRD spans the whole bottom of the frame across both halves: a solid dark strip with
+a bright accent edge, carrying in large broadcast type &quot;sable   14 KEPT   0 DEFAULTS&quot; and
+&quot;vex   5 KEPT   3 DEFAULTS&quot; and, at the right, &quot;RECKONING 12 - SETTLEMENT IN 02:14&quot;.
+Art direction: Formula 1 timing graphics, a Premier League match-centre, an election-night network board.
+Confident flat colour blocks, strong horizontal bands, one heavy geometric sans, very large tabular
+numerals, generous padding, high contrast, a slight forward lean on the accent shapes. No hairline
+tables, no dense monospace, no scrolling panes. It must be legible from across a room on a television and
+readable in three seconds by someone who has never seen it before.
+To restate it in one line: this is variant E6, BROADCAST - it bets a spectator needs a third less information at twice the size. Nothing in the frame may carry a word this world does not own.</pre></details>
+      </figcaption>
+    </figure>
+</div></section>
+<section class="variants"><h2>the original fifteen</h2><p class="sub"><b>Recommendation: C &middot; HARD SF OPERATING SYSTEM as the working language,
+D &middot; THE STAR CATALOGUE as the ceremonial one.</b> C is the only direction that carried all three
+screens &mdash; its one-accent rule means the eye lands on exactly the three orange marks that
+<em>are</em> the betrayal, and it is the only one buildable as a CSS re-skin of the client that already
+exists. D cannot tick 288 times a day, but it wins the record outright: it is the only direction where
+the villain&rsquo;s card is printed in the ink of loss. If only one gets built, build C.</p></section>
 <section class="by-subject"><h2><span>THE MAP</span> &middot; five directions</h2><p class="sub">Can one node carry five signals at once &mdash; tier, richness, a strait, a reach fence and a claim tint? Hardest ask in the game.</p><div class="grid">
     <figure>
       <a href="#lb-map-a"><img loading="lazy" src="map-a-holotable.png" alt="THE HOLOTABLE - THE MAP"></a>
@@ -2139,6 +3481,12 @@ whole label rather than misspelling one.</pre></details>
     </figure>
 </div></section>
 </main>
+<div class="lb" id="lb-e1"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-e1-terminal.png" alt=""></a><span class="cap">E1 &middot; TERMINAL &middot; THE DOSSIER</span></div>
+<div class="lb" id="lb-e2"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-e2-glass.png" alt=""></a><span class="cap">E2 &middot; GLASS &middot; THE DOSSIER</span></div>
+<div class="lb" id="lb-e3"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-e3-cartographic.png" alt=""></a><span class="cap">E3 &middot; CARTOGRAPHIC &middot; THE DOSSIER</span></div>
+<div class="lb" id="lb-e4"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-e4-single.png" alt=""></a><span class="cap">E4 &middot; SINGLE SUBJECT &middot; THE DOSSIER</span></div>
+<div class="lb" id="lb-e5"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-e5-analog.png" alt=""></a><span class="cap">E5 &middot; WARM ANALOG &middot; THE DOSSIER</span></div>
+<div class="lb" id="lb-e6"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="profile-e6-broadcast.png" alt=""></a><span class="cap">E6 &middot; BROADCAST &middot; THE DOSSIER</span></div>
 <div class="lb" id="lb-map-a"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-a-holotable.png" alt=""></a><span class="cap">THE HOLOTABLE &middot; THE MAP</span></div>
 <div class="lb" id="lb-map-b"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-b-nostromo.png" alt=""></a><span class="cap">THE NOSTROMO &middot; THE MAP</span></div>
 <div class="lb" id="lb-map-c"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="map-c-hardsf.png" alt=""></a><span class="cap">HARD SF OPERATING SYSTEM &middot; THE MAP</span></div>
@@ -2154,5 +3502,5 @@ whole label rather than misspelling one.</pre></details>
 <div class="lb" id="lb-reel-c"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-c-hardsf.png" alt=""></a><span class="cap">HARD SF OPERATING SYSTEM &middot; THE RECEIPT REEL</span></div>
 <div class="lb" id="lb-reel-d"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-d-catalogue.png" alt=""></a><span class="cap">THE STAR CATALOGUE &middot; THE RECEIPT REEL</span></div>
 <div class="lb" id="lb-reel-e"><a class="close" href="#">close</a><a class="sheet" href="#"><img src="reel-e-evenative.png" alt=""></a><span class="cap">EVE NATIVE &middot; THE RECEIPT REEL</span></div>
-<footer>Drafts at 1K / medium via openai/gpt-5.4-image-2. Generated text in an image is approximate &mdash; judge the language, not the spelling. Regenerate any cell with <code>python3 render.py --only map-a</code>.</footer>
+<footer>Drafts at 1K / medium via openai/gpt-5.4-image-2. Generated text in an image is approximate &mdash; judge the language, not the spelling, but <em>do</em> read every string for a word this world does not own. Regenerate any cell with <code>python3 render.py --only map-a</code> or <code>python3 render.py --only e3</code>.</footer>
 </body></html>
