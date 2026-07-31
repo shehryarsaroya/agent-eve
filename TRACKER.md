@@ -6,6 +6,62 @@
 
 ## ⏱ STATUS
 
+> ### ★★★ **BOTH REMAINING BRANCHES ARE LANDED AND PRODUCTION IS SERVING `RULES_VERSION` 37.**
+>
+> `lode-35-surface` (`dd5fc77`) and `lode-39` (`adb11e7`) merged into master on 2026-07-30. Deployed
+> to `agentinsurance.io/compact/` — `world: RUNNING`, `failures: []`, `rollback_gaps: []`, tick
+> 10,136, `ok: true`. The operator door was signed once, at
+> `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=287:115326b86d5a81ab`, and the record now carries a **declared
+> discontinuity at tick 287, `rules_version 1 -> 37`**.
+>
+> | gate | reading on the merged tree |
+> |---|---|
+> | `tsc` · lint | 0 · 0 |
+> | vitest | **308 files, 3,868 passed, 1 skipped** |
+> | budgets | verbs **40/40** · axioms 15/15 · observe keys 10/10 · kinds 8/8 |
+> | balance gate 3R · 6R · 9R, 8 seeds | `levyShort 0` every horizon · red **0/192 · 0/384 · 0/576** · `halted 0` · `trapped 0` |
+>
+> **35 renumbered to 37** — 36 was the risk market's, so the notes are STACKED and not blended: 36
+> moved the `risk` table, 37 moves `raid`. `lode-39` spends no version.
+>
+> **The one conflict that was a real disagreement rather than a merge artifact.** Both branches
+> independently found that every published elective figure faced the party being PAID and never the
+> payer, and they fixed `my_elective_direction` with opposite precedence for a creator that also holds
+> a role of its own: master says `SELF`, the branch says `OWED_BY_ME`. Master's is kept, because the
+> field annotates `my_elective` and on such a row `my_elective` IS the reader's own self-paid share —
+> so `OWED_BY_ME` there describes a number that is not on the row. The concern behind the flip is met
+> by `my_elective_owed` / `my_elective_unelected`, populated in every case. Both sides' tests pass
+> unchanged. Reasoning is written at the call site in `src/api/observe.ts`.
+>
+> **`lode-39`'s acceptance test, re-run on the merged tree** — per-tick `state_hash` streams, not just
+> final hashes, against a detached worktree at `dd5fc77`: `lode39-a` 900×12, `lode39-b` 900×12 and
+> `lode39-c` **1800×16** all byte-identical. And its **non-vacuity re-established by counting**: the
+> heuristic cast submits `form` **12×** per 900 ticks and `admit`/`apply` **0×**, so the equality is
+> real evidence for `vForm` and vacuous for the other two, which rest on 30 new gate tests instead.
+>
+> ★ **THE PINS WERE RE-MEASURED AND FOUR OF EIGHT WOULD HAVE BEEN WRONG IF ADJUSTED.** The branch
+> pinned analytic max 101,273 / worst reachable 94,754. The merged tree reads **101,524 / 95,005**.
+> Its first four positions agreed to the character and its last four were 251 low — the strike-floor
+> correction lands only on the positions that can be struck. Half right is what makes an adjusted
+> array look verified.
+>
+> ⚑ **TWO OPERATIONAL FINDINGS FROM THIS DEPLOY, BOTH UNFIXED.**
+>
+>   1. **`deploy.sh`'s "waiting for the replay to finish" loop exits early.** It reported *"the replay
+>      finished (waited 45s)"* and then failed on `world is not RUNNING`, while `/health` said
+>      `BOOTING, replayed_tick 4607 of 10136`. Nothing was broken by it — the restart had already
+>      happened and the world came up on its own — but the loop's answer and the world's state
+>      disagreed, and an operator reading the exit code would roll back a healthy deploy. The
+>      difference between the loop's probe (`http://127.0.0.1:$COMPACT_PORT/health`, `--max-time 5`)
+>      and the check that followed it (the public URL) is the place to look.
+>   2. **Boot is now ~37 minutes, not 170 seconds.** 03:05:08 to 03:41:44 at tick 10,136, and the
+>      preflight's two boots took ~35 more. The cause is named by the boot itself: checkpoint adoption
+>      is refused because the record carries **24 declared discontinuities**, so every boot replays
+>      from genesis and is O(history). §3's "boot stays at 170 s" is stale. The record epoch is now
+>      an availability item, not only a tidiness one.
+
+---
+
 > ### ★★★ **THE MAP HAS BORDERS AND ITS GROUND IS NO LONGER UNIFORM. `PASS-TERRITORY-POLITICS` §16.12's FIRST-RANKED FEATURE, ALL THREE CLAUSES. `RULES_VERSION` 33.**
 >
 > ⚑ **READ THE 33 SECTION BELOW THIS ONE FIRST.** What follows was written for the STRAIT/SWAY half at
