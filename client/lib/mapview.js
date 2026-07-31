@@ -60,6 +60,21 @@ var MapView = (function () {
   var BAND = { COMMONS: [0.00, 0.235], MARCHES: [0.325, 0.665], FRONTIER: [0.755, 0.985] };
 
   /**
+   * ★ THE ONE SOURCE OF THE BAND COLOURS.
+   *
+   * The map fills, the map legend and the SYSTEMS table's tier swatch all read
+   * from here. They were three separate literals before, and they disagreed:
+   * the legend drew MARCHES darker than FRONTIER while the map drew it
+   * brighter, so the key was a lie about the picture it keyed.
+   *
+   * The steps are a real value ramp — 0x12 → 0x30 → 0x50 luminance — because a
+   * 1.12:1 contrast step is not a boundary a stranger can find. Lightest at
+   * the core: the Commons is settled ground, the Frontier is raw.
+   */
+  var BAND_FILL = { COMMONS: '#16505f', MARCHES: '#0a3040', FRONTIER: '#031820' };
+  var BAND_EDGE = { COMMONS: '#a8bcc0', MARCHES: '#3f8496', FRONTIER: '#2a6070' };
+
+  /**
    * Lay the 30 systems out. Angular relaxation inside a fixed radial band:
    * the band is a hard constraint (so the tiers always read as tiers) and the
    * lane graph only gets to choose the angle (so constellations cluster and
@@ -169,6 +184,21 @@ var MapView = (function () {
   }
   function norm(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
 
+  /** The middle of the widest node-free arc in a tier — where a band label goes. */
+  function emptiestAngle(P, tier) {
+    var ths = [];
+    for (var id in P) if (P[id].tier === tier) ths.push(P[id].th);
+    if (!ths.length) return -Math.PI / 2;
+    ths.sort(function (a, b) { return a - b; });
+    var best = -1, at = -Math.PI / 2;
+    for (var i = 0; i < ths.length; i++) {
+      var a = ths[i], b = ths[(i + 1) % ths.length];
+      var gap = norm(b - a); if (gap < 0) gap += 2 * Math.PI;
+      if (gap > best) { best = gap; at = a + gap / 2; }
+    }
+    return at;
+  }
+
   /* ════════════════════════════════════════════════════════ THE VERGE ════
    *
    * Marching squares over a union-of-discs scalar field, contours linked into
@@ -269,11 +299,38 @@ var MapView = (function () {
     });
   }
 
-  /** Catmull-Rom through a closed loop → one smooth `d`. Solid, never dashed. */
+  /** Walk a closed polyline at a fixed arc-length step. */
+  function resample(loop, step) {
+    var pts = [], acc = 0, prev = loop[0];
+    if (!prev) return pts;
+    pts.push(prev);
+    for (var i = 1; i < loop.length; i++) {
+      var p = loop[i], d = Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+      acc += d;
+      if (acc >= step) { pts.push(p); acc = 0; }
+      prev = p;
+    }
+    // drop a final vertex that sits on top of the first, or the spline kinks
+    if (pts.length > 3) {
+      var a = pts[0], b = pts[pts.length - 1];
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) < step * 0.6) pts.pop();
+    }
+    return pts;
+  }
+
+  /**
+   * Catmull-Rom through a closed loop → one smooth `d`. Solid, never dashed.
+   *
+   * ★ RESAMPLED TO UNIFORM ARC LENGTH FIRST. Taking every other raw vertex off
+   * a 7 px marching-squares grid preserves the grid's axis-aligned staircase,
+   * and Catmull-Rom through a staircase produces a hard right-angled notch —
+   * one appeared on `sable`'s fence at (672,600) and bit a 20×22 px square out
+   * of an outline whose whole promise is that it has no bites in it. Walking
+   * the loop at a fixed arc-length step throws the staircase away before the
+   * spline ever sees it.
+   */
   function smooth(loop) {
-    var pts = [];
-    for (var i = 0; i < loop.length - 1; i += 2) pts.push(loop[i]);
-    if (pts.length < 3) pts = loop.slice(0, -1);
+    var pts = resample(loop, 13);
     if (pts.length < 3) return '';
     var d = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1);
     var n = pts.length;
@@ -289,12 +346,16 @@ var MapView = (function () {
   // ── the renderer ───────────────────────────────────────────────────────
   var state = {
     layers: { verge: true, lode: true, pinch: true, claims: true, works: true, motion: true, labels: true },
-    sel: null, view: null, cache: null,
+    sel: null, view: null, cache: null, blocs: [],
   };
 
+  /* THE LODE is node size, but the range is 6→12 rather than 5→14: at 3× the
+     biggest discs merged into each other and swallowed their own labels, and
+     the verge fill is drawn concentric with the node, so an oversized node and
+     a territory blob become one visual channel. 2× still reads as a ladder. */
   function nodeR(sys, minY, maxY) {
     var t = maxY > minY ? (sys.yieldPerTick - minY) / (maxY - minY) : 0.5;
-    return 5.2 + 8.4 * t;
+    return 6 + 6 * t;
   }
 
   function render(host, R, L, opts) {
@@ -327,36 +388,55 @@ var MapView = (function () {
     function ell(r) { return { rx: (r * RX).toFixed(1), ry: (r * RY).toFixed(1) }; }
     [['FRONTIER', 0.985], ['MARCHES', 0.665], ['COMMONS', 0.235]].forEach(function (b) {
       var e = ell(b[1]);
-      gBands.appendChild(S('ellipse', { class: 'band-fill-' + b[0], cx: cx, cy: cy, rx: e.rx, ry: e.ry }));
+      gBands.appendChild(S('ellipse', {
+        cx: cx, cy: cy, rx: e.rx, ry: e.ry, fill: BAND_FILL[b[0]], stroke: 'none',
+      }));
       gBands.appendChild(S('ellipse', {
         class: 'band-edge' + (b[0] === 'COMMONS' ? ' commons' : ''),
-        cx: cx, cy: cy, rx: e.rx, ry: e.ry,
+        cx: cx, cy: cy, rx: e.rx, ry: e.ry, stroke: BAND_EDGE[b[0]],
       }));
     });
     var counts = { COMMONS: 0, MARCHES: 0, FRONTIER: 0 };
     R.map.forEach(function (s) { counts[s.tier] = (counts[s.tier] || 0) + 1; });
 
-    // ★ Band labels live in the RADIAL GAPS — 0.28, 0.71, 1.02 — and the gaps
-    // are the point: no node can ever occupy them, because the bands are
-    // 0…0.235, 0.325…0.665 and 0.755…0.985. So this is collision-free by
-    // construction rather than by luck, which the first build was not: it put
-    // the labels inside the bands and they landed on top of four system names.
-    [['FRONTIER', 1.085], ['MARCHES', 0.712], ['COMMONS', 0.281]].forEach(function (b) {
-      var p = proj(lay, b[1], -Math.PI / 2);
+    // ★ A BAND LABEL NAMES THE GROUND IT SITS ON.
+    //
+    // The first build put all three in the radial GAPS — 0.281 / 0.712 / 1.085
+    // — reasoning that no node can occupy a gap, so the labels were
+    // collision-free by construction. They were, and they were also all
+    // outside the band they named: "THE FRONTIER" floated in the void beyond
+    // the outermost fill, and a stranger reading top-to-bottom mislabelled
+    // every tier. Collision-free and wrong is worse than crowded and right.
+    //
+    // So they go back INSIDE, at each band's radial midpoint, drawn as the
+    // mock draws its own — large, ghosted, well behind the data — and placed
+    // at the angle with the widest node-free arc so they still rarely collide.
+    [['FRONTIER', 0.87], ['MARCHES', 0.50]].forEach(function (b) {
+      var p = proj(lay, b[1], emptiestAngle(P, b[0]));
       gBands.appendChild(S('text', {
-        class: 'band-label' + (b[0] === 'COMMONS' ? ' commons' : ''),
-        x: p.x.toFixed(1), y: (p.y + 4).toFixed(1), 'text-anchor': 'middle',
-        text: 'THE ' + b[0] + ' · ' + counts[b[0]] + ' SYSTEMS',
+        class: 'band-label', x: p.x.toFixed(1), y: (p.y + 5).toFixed(1), 'text-anchor': 'middle',
+        text: 'THE ' + b[0] + ' · ' + counts[b[0]],
       }));
     });
-    // A8 spelled out INSIDE the Commons rather than on its rim: the sentence is
-    // long, and on the rim it reached across two systems' names. It also
-    // belongs to the ground rather than to the boundary.
-    var cLab = proj(lay, 0.17, Math.PI / 2);
-    gBands.appendChild(S('text', {
-      class: 'band-label commons', x: cLab.x.toFixed(1), y: cLab.y.toFixed(1), 'text-anchor': 'middle',
-      text: 'HOSTILE ACTION IS INVALID',
-    }));
+    // ★ The COMMONS is the one band whose label goes just OUTSIDE it, at 12 and
+    // 6 o'clock in the gap ring. Four systems in a disc leaves no interior a
+    // 120px line can sit in — the first version put the name on Candle and A8's
+    // one on-map sentence on Salt Ward. A label immediately against the dotted
+    // boundary, with a leader tick to it, is unambiguous in a way that the
+    // FRONTIER and MARCHES labels were not, because the Commons is the
+    // innermost region and there is nothing else the label could belong to.
+    [[-Math.PI / 2, 'THE COMMONS · ' + counts.COMMONS], [Math.PI / 2, 'HOSTILE ACTION IS INVALID']]
+      .forEach(function (t) {
+        var p = proj(lay, 0.288, t[0]), e = proj(lay, 0.238, t[0]);
+        gBands.appendChild(S('line', {
+          x1: p.x, y1: p.y + (t[0] < 0 ? 3 : -3), x2: e.x, y2: e.y,
+          stroke: '#93a6aa', 'stroke-opacity': 0.5,
+        }));
+        gBands.appendChild(S('text', {
+          class: 'band-label commons', x: p.x.toFixed(1),
+          y: (p.y + (t[0] < 0 ? -3 : 11)).toFixed(1), 'text-anchor': 'middle', text: t[1],
+        }));
+      });
 
     // ── CONSTELLATIONS, drawn as arcs rather than watermarks ────────────
     // The frame publishes ids (`con-1`), not names. The mocks invented HEARTH /
@@ -480,12 +560,19 @@ var MapView = (function () {
       });
       var defaulters = {};
       (R.standings || []).forEach(function (r) { if (r.defaults > 0) defaulters[r.principal] = r.defaults; });
+      state.blocs = [];
       Object.keys(blocs).sort().forEach(function (pid) {
         var pts = blocs[pid], col = blocColour(pid);
         var loops = contours(pts, 30, 7);
         if (!loops.length) return;
         var d = loops.map(smooth).join(' ');
         if (!d) return;
+        state.blocs.push({ principal: pid, colour: col, systems: pts.length, defaults: defaulters[pid] || 0 });
+        // a dark backing stroke under the fence, so a label halo crossing it
+        // cannot punch a hole through the one line that must never have one
+        gVerge.appendChild(S('path', {
+          d: d, fill: 'none', stroke: '#00060a', 'stroke-width': 4.4, 'stroke-linejoin': 'round',
+        }));
         gVerge.appendChild(S('path', { class: 'verge', d: d, stroke: col, fill: col }));
         // the handle sits on the fence. It is drawn RED when that principal has
         // a default on the record — the map answering the only question that
@@ -503,11 +590,15 @@ var MapView = (function () {
     if (state.layers.claims) {
       (R.claimLines || []).forEach(function (c) {
         var p = P[c.system]; if (!p) return;
-        var bad = c.state === 'LAPSED' || c.arrears > 0;
+        // ★ THE CLAIM RAMP, three steps, matching the mock's own legend:
+        //   held/supplied  bloc colour · one miss  amber · last miss  red
+        // The first build fired full red on the first miss, which spends the
+        // alarm colour on a claim that is still standing.
+        var last = c.state === 'LAPSED' || (c.arrearsOf > 0 && c.arrears >= c.arrearsOf);
+        var col = last ? '#ca010f' : c.arrears > 0 ? '#d89c42' : blocColour(c.claimant);
         gClaims.appendChild(S('circle', {
           class: 'claim-tint', cx: p.x, cy: p.y, r: nodeR(idx[c.system], minY, maxY) + 6.5,
-          fill: bad ? '#ca010f' : blocColour(c.claimant),
-          stroke: bad ? '#ca010f' : blocColour(c.claimant),
+          fill: col, stroke: col,
         }, S('title', { text: c.legend || c.state })));
       });
       (R.ruins || []).forEach(function (r) {
@@ -651,6 +742,10 @@ var MapView = (function () {
 
   return {
     render: render, layers: state.layers, blocColour: blocColour,
+    // exported so the legend and the SYSTEMS swatch read the SAME constants the
+    // map fills from — three literals that disagreed is what made the key lie
+    BAND_FILL: BAND_FILL, BAND_EDGE: BAND_EDGE,
+    blocs: function () { return state.blocs || []; },
     select: function (id) { state.sel = id; },
     selected: function () { return state.sel; },
     reset: function () { state.view = { k: 1, x: 0, y: 0 }; },

@@ -110,20 +110,51 @@ var U = (function () {
   function sw(cls) { return el('i', { class: 'sw ' + cls }); }
 
   /**
-   * The empty state.
+   * The empty state — ONE DIM LINE, and the reasoning goes in the tooltip.
    *
-   * `key` is the frame key that is empty, `say` is what a viewer should
-   * conclude, `why` is the honest reason. Never a blank box: this repo's oldest
-   * defect is a capability nobody can tell from a missing one, and a blank
-   * panel is that defect drawn at 1:1.
+   * Two constraints pull against each other here and the resolution matters.
+   * A blank panel is this repo's oldest defect drawn at 1:1: a capability
+   * nobody can tell from a missing one. So an empty panel has to SAY it is
+   * empty. But the first build answered that with a centred five-sentence
+   * paragraph quoting frame keys — `compactLinks[]`, `dossierBook`,
+   * `receiptReel[]` — at the audience, on ten of twelve screens. The viewer is
+   * not the API consumer, and a product whose most repeated element is an
+   * apology written in JSON is not the product in the mocks.
+   *
+   * So: the viewer gets one short sentence in plain words. The engineer gets
+   * the whole argument on hover, where it costs no pixels. Honest, and dense.
    */
   function empty(say, why) {
-    return el('div', { class: 'empty' }, [
-      el('div', { class: 'mark' }),
-      el('div', { class: 'say', text: say }),
-      why ? el('div', { class: 'why', html: why }) : null,
+    var strip = el('div', { class: 'empty' }, [
+      el('span', { class: 'mark' }),
+      el('span', { class: 'say', text: say }),
     ]);
+    if (why) strip.setAttribute('title', String(why).replace(/<[^>]+>/g, ''));
+    return strip;
   }
+
+  /**
+   * The SPARSE state — an empty panel that keeps its structure.
+   *
+   * A page with nothing on it reads as a failed render; a page whose frames,
+   * column headers and tiles are all present but blank reads as *not yet*. The
+   * live world spends its first 288 ticks with no Reckoning frame at all, and
+   * that is a normal state that must not look like an outage.
+   */
+  function skeleton(rows, cols) {
+    var body = el('div', { class: 'skel' });
+    for (var r = 0; r < (rows || 6); r++) {
+      var line = el('div', { class: 'skel-row' });
+      for (var c = 0; c < (cols || 4); c++) {
+        line.appendChild(el('i', { style: 'flex:' + (c === 0 ? 2 : 1) }));
+      }
+      body.appendChild(line);
+    }
+    return body;
+  }
+
+  /** The one null token. A missing number is dim; it is never accent-bright. */
+  function nul() { return el('span', { class: 'nul', text: '—' }); }
 
   // ── tables ─────────────────────────────────────────────────────────────
   /**
@@ -175,8 +206,19 @@ var U = (function () {
     return el('table', { class: 't' + (o.onRow ? ' click' : '') }, [thead, tbody]);
   }
 
-  function panel(title, opts, body) {
+  /**
+   * `panel(title, opts, body, extra)`.
+   *
+   * ★ `extra` exists because a dozen call sites were already passing a fourth
+   * argument — `{ style: 'flex:0 0 214px' }` and friends — and the signature
+   * took three, so every one of those sizing hints was silently dropped. The
+   * hull ladder took 450 px of a screen it was told to take 214, and the map's
+   * LAYERS panel was squeezed until its last row clipped. A silently ignored
+   * argument is the quietest kind of bug there is.
+   */
+  function panel(title, opts, body, extra) {
     var o = opts || {};
+    if (extra) { for (var xk in extra) if (o[xk] === undefined) o[xk] = extra[xk]; }
     var head = el('h2', { class: o.alarm ? 'alarm' : null }, [
       title,
       o.sub ? el('span', { class: 'sub', text: o.sub }) : null,
@@ -197,7 +239,7 @@ var U = (function () {
   }
 
   function bar(frac, cls) {
-    return el('div', { class: 'bar' }, el('i', {
+    return el('div', { class: 'bar', style: 'flex:1 1 auto;min-width:0' }, el('i', {
       class: cls || null,
       style: 'width:' + Math.max(0, Math.min(100, frac * 100)).toFixed(1) + '%',
     }));
@@ -233,6 +275,11 @@ var U = (function () {
     var snapped = g && g.state === 'SNAPPED_BLACK';
     var forming = g && g.state === 'FORMING';
     var kids = [];
+    // A faint full track first, so the ring is legible as a RING even when one
+    // of its two arcs is short.
+    kids.push(svg('circle', {
+      cx: cx, cy: cy, r: r, fill: 'none', stroke: '#0a1c22', 'stroke-width': sw,
+    }));
     // escrowed arc: starts at 12 o'clock, runs clockwise for (1-e)
     kids.push(svg('circle', {
       class: 'g-escrow', cx: cx, cy: cy, r: r, 'stroke-width': sw,
@@ -263,6 +310,21 @@ var U = (function () {
       }));
       kids.push(svg('line', {
         class: 'g-break', x1: cx + r * 1.05, y1: cy - r * 0.62, x2: cx + r * 0.62, y2: cy - r * 1.05,
+      }));
+    }
+    // ★ A TICK AT THE SPLIT. The two arcs are correct arithmetic — measured
+    // 35.25 escrow against 18.60 elective on a 65/35 venture — and they still
+    // did not READ, because a dark teal arc and a bright cyan arc at 6 px on a
+    // near-black panel are not two things to the eye. A hard radial mark at the
+    // boundary makes the split a fact rather than a shade.
+    if (e > 0.01 && e < 0.99) {
+      var ba = -Math.PI / 2 + 2 * Math.PI * (1 - e);
+      kids.push(svg('line', {
+        x1: (cx + (r - sw / 2 - 1) * Math.cos(ba)).toFixed(2),
+        y1: (cy + (r - sw / 2 - 1) * Math.sin(ba)).toFixed(2),
+        x2: (cx + (r + sw / 2 + 1) * Math.cos(ba)).toFixed(2),
+        y2: (cy + (r + sw / 2 + 1) * Math.sin(ba)).toFixed(2),
+        stroke: '#00060a', 'stroke-width': 1.6,
       }));
     }
     var title = g ? (g.state + ' · ' + bps(g.electiveBps) + ' elective · ' +
@@ -319,7 +381,7 @@ var U = (function () {
   return {
     el: el, svg: svg, clear: clear, add: add,
     n: n, k: k, bps: bps, pct: pct, clock: clock, handleOf: handleOf,
-    h: h, sysLink: sysLink, tag: tag, sw: sw, empty: empty,
+    h: h, sysLink: sysLink, tag: tag, sw: sw, empty: empty, skeleton: skeleton, nul: nul,
     table: table, panel: panel, tile: tile, bar: bar, kv: kv, pips: pips,
     glyph: glyph, crest: crest, goodIcon: goodIcon, mark: mark, plateTile: plateTile,
     MARK: MARK,

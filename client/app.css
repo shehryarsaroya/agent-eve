@@ -60,20 +60,27 @@
   --amber-wash: rgba(216, 156, 66, 0.13);
 
   /* ── the measured geometry ────────────────────────────────────────────── */
-  --row-h: 22px;
+  --row-h: 24px;   /* the mock is 22px at 1280 = 24.8px at 1440 */
   --hair: 1px;
   --pad: 8px;
   --pad-tight: 5px;
   --gap: 6px;
 
-  --fs-micro: 9px;
-  --fs-sm: 10px;
-  --fs-base: 11px;
-  --fs-md: 12px;
+  /* FIVE STEPS, and the ladder is the whole ladder. The first build declared
+     nine and rendered six on one screen; the mocks resolve to four visible
+     sizes — micro label / body / section head / hero number. `--fs-micro` was
+     9px and carried six different roles at the smallest size in the system,
+     which is how the tile notes, the badges and the legend all ended up
+     borderline at 1440. Measured against the mocks at the same effective
+     width, body was ~11% small. */
+  --fs-micro: 10px;
+  --fs-base: 12px;
   --fs-lg: 15px;
-  --fs-xl: 27px;
-  --fs-2xl: 44px;
-  --fs-3xl: 66px;
+  --fs-xl: 28px;
+  --fs-2xl: 46px;
+  /* aliases kept so a caller reads as its role, not as a number */
+  --fs-sm: var(--fs-micro);
+  --fs-md: var(--fs-base);
 
   --track: 0.09em;
   --track-wide: 0.16em;
@@ -100,7 +107,8 @@ body {
    everything, and neither ever carries data. */
 #backdrop {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background: var(--void);
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 42%, #01161e 0%, #000a10 46%, #00060a 100%);
 }
 #backdrop img {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -111,6 +119,13 @@ body {
 #shell {
   position: relative; z-index: 1;
   display: flex; flex-direction: column; height: 100%;
+}
+/* A 1px dot grid at 2% over everything. It is the single cheapest thing that
+   moves the modal-colour share off 79% and it is in every one of the mocks. */
+#stage::before {
+  content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, rgba(79, 185, 204, 0.05) 1px, transparent 0);
+  background-size: 5px 5px;
 }
 
 /* ══════════════════════════════════════════════════ chrome: the tab bar ══ */
@@ -131,9 +146,12 @@ body {
 }
 #brand .mk { width: 11px; height: 11px; opacity: 0.85; }
 nav#tabs { display: flex; }
+/* A STRIP OF BORDERED CELLS, not bare text. The mock boxes every tab and
+   terminates the strip in an empty cell; that cell structure is most of why
+   its chrome reads as an application rather than as a web page. */
 nav#tabs button {
-  appearance: none; background: none; border: 0;
-  border-right: var(--hair) solid var(--rule-dim);
+  appearance: none; background: var(--panel); border: 0;
+  border-right: var(--hair) solid var(--rule);
   color: var(--dim); padding: 0 13px; cursor: pointer;
   font: inherit; letter-spacing: var(--track);
   position: relative;
@@ -194,7 +212,8 @@ nav#tabs button[aria-current="true"] .fk { color: rgba(0, 6, 10, 0.55); }
 /* ══════════════════════════════════════════════════════════════ panels ══ */
 
 .panel {
-  background: var(--panel); border: var(--hair) solid var(--rule);
+  background: linear-gradient(180deg, #01131a 0%, var(--panel) 70px);
+  border: var(--hair) solid var(--rule);
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
 }
 .panel > h2 {
@@ -320,39 +339,43 @@ table.t.click tbody tr { cursor: pointer; }
    WHICH key is empty and WHAT would fill it.
 */
 .empty {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 6px; padding: 22px 18px; text-align: center; min-height: 74px; height: 100%;
-  color: var(--dimmer);
-  background:
-    repeating-linear-gradient(-45deg, transparent 0 7px, rgba(18, 48, 56, 0.14) 7px 8px);
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px var(--pad); cursor: help;
+  border-bottom: var(--hair) solid var(--rule-dim);
 }
 .empty .mark {
-  width: 15px; height: 15px; border: var(--hair) solid var(--rule-bright);
-  position: relative;
-}
-.empty .mark::after {
-  content: ""; position: absolute; inset: 5px; background: var(--rule-bright);
+  width: 8px; height: 8px; flex: 0 0 8px;
+  border: var(--hair) solid var(--rule-bright);
 }
 .empty .say {
-  font: 400 var(--fs-sm)/1.5 var(--cond); letter-spacing: var(--track);
-  text-transform: uppercase; color: var(--dim);
+  font: 400 var(--fs-micro)/1.5 var(--cond); letter-spacing: var(--track);
+  text-transform: uppercase; color: var(--dimmer); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
-.empty .why {
-  font-size: var(--fs-micro); color: var(--dimmer); max-width: 46ch; line-height: 1.6;
-  font-family: var(--mono); text-transform: none; letter-spacing: 0;
+
+/* the sparse skeleton — structure without content */
+.skel { padding: 3px 0; }
+.skel-row {
+  display: flex; gap: var(--pad); height: var(--row-h); align-items: center;
+  padding: 0 var(--pad); border-bottom: var(--hair) solid var(--rule-dim);
 }
-.empty .why code { color: var(--cyan-deep); }
+.skel-row i { display: block; height: 5px; background: rgba(18, 48, 56, 0.5); }
+.skel-row:nth-child(2n) i { opacity: 0.55; }
+.skel-row:nth-child(3n) i { opacity: 0.35; }
+.nul { color: var(--dimmer); }
 
 /* ═══════════════════════════════════════════════════════════ the ticker ══ */
 
 #ticker {
   flex: 0 0 auto; height: 24px; display: flex; align-items: center;
   background: var(--panel-2); border-top: var(--hair) solid var(--rule);
-  overflow: hidden; font-size: var(--fs-sm); color: var(--dim);
-  white-space: nowrap;
+  font-size: var(--fs-micro); color: var(--dim); white-space: nowrap;
 }
+/* The marquee gets its OWN clipped track. It used to run underneath the lead
+   chip — the strip named after A5, visibly broken on every frame. */
+#ticker .track { flex: 1 1 auto; overflow: hidden; min-width: 0; }
 #ticker .lead {
-  flex: 0 0 auto; padding: 0 10px; height: 100%; display: flex; align-items: center;
+  flex: 0 0 auto; z-index: 1; padding: 0 10px; height: 100%; display: flex; align-items: center;
   background: var(--cyan); color: var(--void);
   font: 600 var(--fs-micro)/1 var(--cond); letter-spacing: var(--track-wide);
 }
@@ -480,7 +503,9 @@ label.lyr input { accent-color: var(--cyan); margin: 0; width: 10px; height: 10p
    word. An unfilled role is an empty socket that pulses.
 */
 .glyph { display: block; }
-.glyph .g-escrow { fill: none; stroke: var(--cyan-deep); }
+/* the escrowed half is a REAL colour, not a shade of the ground: at
+   --cyan-deep on --panel the 65% arc was invisible next to the 35% one. */
+.glyph .g-escrow { fill: none; stroke: #17798d; }
 .glyph .g-elective { fill: none; stroke: var(--cyan); stroke-linecap: butt; }
 .glyph .g-elective.snap { stroke: var(--red); }
 .glyph .g-socket { fill: none; stroke: var(--dim); stroke-dasharray: 2 3; animation: socket 1.7s ease-in-out infinite; }
@@ -638,3 +663,95 @@ hr.rule { border: 0; border-top: var(--hair) solid var(--rule-dim); margin: var(
   text-transform: uppercase; font-size: var(--fs-sm);
 }
 #boot.gone { display: none; }
+
+/* ══════════════════════════════════════════ additions after critic round 1 ══ */
+
+/* the three-step alarm ramp. RED is a broken word; the two steps below it are
+   value at risk, and they exist so red does not have to carry everything. */
+.hero .big.warn { color: var(--amber); }
+.tag.rd2 { color: #fff; background: #8f2118; border-color: #8f2118; }
+.log .ln.warn .de { color: var(--amber); }
+.log .ln.warn .ty { color: var(--amber); }
+
+/* THE STATE STATUS strip — the mock keeps a permanent key of every state a
+   badge can read. Without it a stranger meets LIVE / PAID / UNUSED / DRAWN /
+   RED with nothing on screen defining any of them. It costs 26px. */
+.states {
+  display: flex; flex-wrap: wrap; gap: 0 18px; padding: 5px var(--pad);
+  font: var(--fs-micro)/1.6 var(--cond); letter-spacing: var(--track);
+  text-transform: uppercase; color: var(--dim);
+}
+.states span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.states i { width: 7px; height: 7px; display: block; }
+
+/* second-level slicing, as the mock has it. Sorting is not slicing. */
+.slices {
+  display: flex; gap: 0; border-bottom: var(--hair) solid var(--rule);
+  background: var(--panel-2);
+}
+.slices button {
+  appearance: none; background: none; border: 0;
+  border-right: var(--hair) solid var(--rule-dim);
+  padding: 4px 12px; cursor: pointer; color: var(--dim);
+  font: var(--fs-micro)/1.5 var(--cond); letter-spacing: var(--track-wide);
+  text-transform: uppercase;
+}
+.slices button:hover { color: var(--text-2); background: var(--panel-3); }
+.slices button[aria-current="true"] { color: var(--void); background: var(--cyan); font-weight: 600; }
+.slices .count { color: var(--dimmer); margin-left: 6px; }
+.slices button[aria-current="true"] .count { color: rgba(0, 6, 10, 0.6); }
+
+/* the standings callout — the three-second answer, written in words. The mock
+   puts it directly under the table and it is the thing a stranger reads. */
+.callout { padding: 7px var(--pad); border-top: var(--hair) solid var(--rule); }
+.callout div { display: flex; gap: 14px; align-items: baseline; padding: 2px 0; font-size: var(--fs-base); }
+.callout .who { flex: 0 0 96px; font-size: var(--fs-lg); }
+.callout .good .who { color: var(--cyan); }
+.callout .bad .who { color: var(--red-text); }
+.callout .good { color: var(--cyan-mid); }
+.callout .bad { color: var(--red-text); }
+
+/* a window-chrome cell at the end of the tab strip, as the mock has */
+#chrome .fillcell { flex: 1 1 auto; border-right: var(--hair) solid var(--rule); background: var(--panel); }
+#chrome .wc {
+  display: flex; align-items: center; gap: 13px; padding: 0 12px;
+  color: var(--dimmer); letter-spacing: 0.2em; border-left: var(--hair) solid var(--rule);
+}
+
+/* THE HALL OF FAME entry: an icon cell divided by a vertical hairline, as the
+   mock draws it, rather than a bare horizontal rule. */
+.fame { display: flex; border-bottom: var(--hair) solid var(--rule-dim); }
+.fame .ic {
+  flex: 0 0 52px; display: flex; align-items: center; justify-content: center;
+  border-right: var(--hair) solid var(--rule-dim); background: var(--panel-2);
+}
+.fame .tx { padding: 7px 10px; min-width: 0; }
+.fame .ti { font: 600 var(--fs-micro)/1 var(--cond); letter-spacing: var(--track-wide); }
+.fame .cl { font-size: var(--fs-micro); color: var(--dim); margin-top: 4px; line-height: 1.55; }
+.title-ico { width: 30px; height: 30px; display: block; background-repeat: no-repeat; }
+
+/* ★ THE PROVABLE WARNING. The mock's full-width A6 callout: the worst case, the
+   two LIMITS, and the one sentence that makes it provable rather than asserted. */
+.warncall {
+  flex: 0 0 auto; border: var(--hair) solid var(--rule-bright);
+  background: linear-gradient(90deg, rgba(25, 215, 242, 0.07), transparent 62%);
+  padding: 8px var(--pad) 9px;
+}
+.warncall .l1 {
+  font-size: var(--fs-base); color: var(--text-2);
+  display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap;
+}
+.warncall .l1 b { color: var(--cyan); font-weight: 500; font-variant-numeric: tabular-nums; }
+.warncall .gid { color: var(--dim); }
+.warncall .arrow { color: var(--cyan-deep); }
+.warncall .st {
+  font: var(--fs-micro) var(--cond); letter-spacing: var(--track);
+  border: var(--hair) solid var(--cyan-deep); color: var(--cyan); padding: 1px 6px;
+}
+.warncall .tail { margin-left: auto; color: var(--dim); font-size: var(--fs-micro); }
+.warncall .l2 { margin-top: 5px; font-size: var(--fs-micro); color: var(--dimmer); }
+
+/* The reel fills its panel: four bands sharing the height rather than four
+   fixed bands and 230px of nothing underneath them. */
+.reel { height: 100%; }
+.reel .band { flex: 1 1 0; min-height: 76px; }

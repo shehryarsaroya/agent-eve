@@ -32,6 +32,7 @@ var App = (function () {
     pinned: null,       // a Reckoning the viewer scrubbed to, if any
     screen: 'overview',
     arg: null,
+    slice: 'ALL',   // OVERVIEW's second-level filter
     lastLiveAt: 0,
     liveFail: 0,
     derived: null,
@@ -111,6 +112,7 @@ var App = (function () {
       glyphs: glyphs, glyphIndex: glyphIndex, links: links, authority: authority, ticker: ticker,
       laneCount: laneCount / 2, straitCount: straitCount / 2, severCount: severCount / 2,
       rerender: render, loadReckoning: loadReckoning,
+      slice: S.slice, setSlice: function (v) { S.slice = v; render(); },
     };
   }
 
@@ -125,7 +127,7 @@ var App = (function () {
       });
     }
     Array.prototype.forEach.call(tabs.childNodes, function (b) {
-      b.setAttribute('aria-current', b.getAttribute('data-t') === S.screen ? 'true' : 'false');
+      if (b.getAttribute) b.setAttribute('aria-current', b.getAttribute('data-t') === S.screen ? 'true' : 'false');
     });
 
     var c = U.clear(document.getElementById('clock'));
@@ -194,7 +196,8 @@ var App = (function () {
       U.clear(t);
       t.appendChild(el('div', { class: 'lead', text: 'THE RECORD' }));
       run = el('div', { class: 'run' });
-      t.appendChild(run);
+      // the marquee gets its own clipped track so it cannot run under the chip
+      t.appendChild(el('div', { class: 'track' }, run));
     }
     if (run.getAttribute('data-t') !== text) {
       run.setAttribute('data-t', text);

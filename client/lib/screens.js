@@ -71,19 +71,43 @@ var Screens = (function () {
   function freezeColumn(L) {
     var S = U.svg;
     var TOTAL = 288, W = 210, H = 250, BAR = 40, X = 12, TOP = 12;
+    // ★ THE REAL BOUNDARIES, out of engine/src/core/time.ts. The first build
+    // guessed 0/144/240/276 and every one of them was wrong, so the gauge put
+    // the tick marker in COMMITMENT while the chrome next to it said EARLY.
+    // A clock that lies is worse than no clock:
+    //   SETTLEMENT_PHASE   = 287        the settling tick
+    //   FREEZE_FIRST_PHASE = 286        FREEZE_TICKS = 1
+    //   WINDOW_FIRST_PHASE = 262        COMMITMENT_WINDOW_TICKS = 24
     var phases = [
-      ['EARLY', 0, 144], ['COMMITMENT', 144, 240], ['FREEZE', 240, 276], ['SETTLING', 276, 288],
+      ['EARLY', 0, 262], ['COMMITMENT', 262, 286], ['FREEZE', 286, 287], ['SETTLING', 287, 288],
     ];
     function yOf(t) { return TOP + (1 - t / TOTAL) * (H - TOP * 2); }
     var kids = [S('rect', { x: X, y: TOP, width: BAR, height: H - TOP * 2, fill: '#00090e', stroke: '#123038' })];
-    phases.forEach(function (p) {
+    // EARLY is 262 of the 288 ticks and SETTLING is one, so three of the four
+    // labels want the same 3 px of column. Stack them downward with a hard
+    // minimum gap and run a leader back to the true boundary: the BAR stays
+    // proportional and truthful, and the LABELS stay readable.
+    var want = phases.map(function (p) { return (yOf(p[1]) + yOf(p[2])) / 2; });
+    var place = want.slice();
+    for (var i = 1; i < place.length; i++) {
+      if (place[i] - place[i - 1] < 13) place[i] = place[i - 1] + 13;
+    }
+    var over = place[place.length - 1] - (H - TOP);
+    if (over > 0) for (var j = 0; j < place.length; j++) place[j] -= over;
+    phases.forEach(function (p, i2) {
       var on = L && L.phase === p[0];
       var y0 = yOf(p[2]), y1 = yOf(p[1]);
-      if (on) kids.push(S('rect', { x: X, y: y0, width: BAR, height: y1 - y0, fill: 'rgba(25,215,242,.16)' }));
-      kids.push(S('line', { x1: X, y1: y0, x2: X + BAR + 6, y2: y0, stroke: '#123038' }));
+      if (on) kids.push(S('rect', { x: X, y: y0, width: BAR, height: Math.max(1.5, y1 - y0), fill: 'rgba(25,215,242,.16)' }));
+      kids.push(S('line', { x1: X, y1: y0, x2: X + BAR, y2: y0, stroke: '#2a5f6b' }));
+      kids.push(S('path', {
+        d: 'M' + (X + BAR) + ' ' + y0.toFixed(1) + 'L' + (X + BAR + 6) + ' ' + place[i2].toFixed(1) +
+          'L' + (X + BAR + 10) + ' ' + place[i2].toFixed(1),
+        fill: 'none', stroke: on ? '#19d7f2' : '#1d4a56',
+      }));
       kids.push(S('text', {
-        x: X + BAR + 11, y: (y0 + y1) / 2 + 3, fill: on ? '#19d7f2' : '#3f5158',
-        style: 'font:9px "Roboto Condensed",sans-serif;letter-spacing:.16em', text: p[0],
+        x: X + BAR + 14, y: place[i2] + 3, fill: on ? '#19d7f2' : '#3f5158',
+        style: 'font:9px "Roboto Condensed",sans-serif;letter-spacing:.16em',
+        text: p[0] + (p[2] - p[1] <= 2 ? ' ' + p[1] : ''),
       }));
     });
     // axis ticks, so the column is a scale rather than a picture
@@ -181,17 +205,37 @@ var Screens = (function () {
       tile('UNTIL THE RECKONING', L ? String(L.ticksUntilReckoning) : '—',
         { note: L ? U.clock(L.ticksUntilReckoning) + ' at 300s/tick' : null, dim: !L }),
       tile('ON A PROMISE', U.n((L && L.meters ? L.meters.onAPromise : M.onAPromise)),
-        { note: 'minor riding on nothing but a word' }),
-      tile('KEPT', U.n(M.kept), { note: 'settled elective halves honoured' }),
+        { note: 'riding on nothing but a word' }),
+      tile('KEPT', U.n(M.kept), { note: 'elective halves honoured' }),
       // The ONE red tile. `broken` is the only meter that counts a broken word.
       tile('BROKEN', U.n(M.broken), { bad: (M.broken || 0) > 0, note: 'defaults on the record' }),
       // Amber, not red: a shortfall is value at risk, and nobody has lied yet.
       tile('LEVY SHORT', U.n(M.levyShort),
-        { warn: (M.levyShort || 0) > 0, note: 'no single principal can lower this' }),
-      tile('UNREFINED', U.n(M.unrefined), { note: 'yield nobody has made payable', neutral: true }),
+        { warn: (M.levyShort || 0) > 0, note: 'nobody can lower this alone' }),
+      tile('UNREFINED', U.n(M.unrefined), { note: 'yield not yet made payable', neutral: true }),
     ]));
 
     var main = el('div', { class: 'grid', style: 'grid-template-columns:1fr 250px;flex:1 1 auto;min-height:0' });
+    // ★ SLICING, not just sorting. The mock's second-level strip is
+    // ALL · HANDS · HOLDINGS · VENTURES · STANDOFFS · CONVOYS · TRIBUTE and it
+    // is how a viewer gets from 70 rows to the seven they care about. A sort
+    // header reorders; it never removes.
+    var SLICES = [
+      ['ALL', null], ['VENTURES', 'venture'], ['STANDOFFS', 'raid'], ['CONVOYS', 'convoy'],
+      ['HOLDINGS', 'claim'], ['WORKS', 'works'], ['GRANTS', 'grant'], ['TRIBUTE', 'tribute'],
+      ['WEATHER', 'front'],
+    ];
+    var slice = D.slice || 'ALL';
+    var sliceBar = el('div', { class: 'slices' }, SLICES.map(function (sl) {
+      var n = sl[1] ? rows.filter(function (r) { return r.kind === sl[1]; }).length : rows.length;
+      return el('button', {
+        'aria-current': slice === sl[0] ? 'true' : null,
+        on: { click: function () { D.setSlice(sl[0]); } },
+      }, [sl[0], el('span', { class: 'count', text: String(n) })]);
+    }));
+    var kindOf = {};
+    SLICES.forEach(function (sl) { kindOf[sl[0]] = sl[1]; });
+    if (kindOf[slice]) rows = rows.filter(function (r) { return r.kind === kindOf[slice]; });
     var cols = [
       { k: 'type', t: 'type', w: '86px', cell: function (r) { return el('span', null, [U.sw(KIND_SW[r.kind] || 'gy'), r.type]); } },
       { k: 'name', t: 'name', cell: function (r) { return el('span', { class: 'k', text: r.name }); } },
@@ -208,13 +252,14 @@ var Screens = (function () {
     main.appendChild(panel('THE WORLD, RIGHT NOW', {
       sub: rows.length + ' live rows · click a column to sort',
       right: L ? el('span', null, [el('i', { class: 'pip' }), ' tick ' + L.tick]) : null,
-    }, rows.length ? table('ov', cols, rows, {
+    }, rows.length ? el('div', null, [sliceBar, table('ov', cols, rows, {
       sort: 'stake', dir: -1, rerender: D.rerender,
       rowClass: function (r) { return r.alert === 'red' ? 'bad' : r.alert === 'amber' ? 'warn' : ''; },
-    })
-      : empty('the world is quiet',
-        'Nothing is live at this tick. Ventures, raids, convoys and claims all appear here the moment ' +
-        'they exist. If this stays empty across several ticks the sim is not running.')));
+    })])
+      : el('div', null, [sliceBar, U.skeleton(9, 6), empty('nothing live at this tick',
+        'Ventures, raids, convoys and claims all appear here the moment they exist. If this stays ' +
+        'empty across several ticks the sim is not running.')]),
+    ));
 
     var side = el('div', { class: 'rows', style: 'min-height:0' });
     side.appendChild(panel('THE FREEZE', { sub: '288 ticks · one Reckoning' }, freezeColumn(L)));
@@ -229,13 +274,37 @@ var Screens = (function () {
     main.appendChild(side);
     stack.appendChild(main);
 
-    stack.appendChild(panel('THE TICKER', { sub: 'the export surface · 140 chars, bounded' },
-      (D.ticker.length ? el('div', { class: 'log' }, D.ticker.slice(0, 60).map(function (t) {
-        return el('div', { class: 'ln' + (/default|failed|raid|arrears/i.test(t) ? ' bad' : '') }, [
-          el('span', { class: 'tk', text: 't' + (L ? L.tick : R.tick) }),
+    // ★ THE STATE KEY, permanent, as in the mock. Without it a stranger meets
+    // LIVE / PAID / UNUSED / DRAWN / RED with nothing on screen defining any of
+    // them — and `RED` is a state NAME as well as the alarm colour, which is
+    // exactly the collision a key exists to resolve. It costs 26 px.
+    stack.appendChild(el('div', { class: 'panel', style: 'flex:0 0 auto' },
+      el('div', { class: 'states' }, [
+        ['LIVE', 'var(--cyan)'], ['FORMING', 'var(--cyan-deep)'], ['SETTLED', 'var(--cyan-mid)'],
+        ['IN TRANSIT', 'var(--cyan-deep)'], ['EXTRACTING', 'var(--cyan-mid)'],
+        ['DRAWN', 'var(--cyan)'], ['UNUSED', 'var(--dim)'],
+        ['DEMANDED', 'var(--amber)'], ['ARREARS', 'var(--amber)'], ['PAID', 'var(--amber)'],
+        ['FORECAST', 'var(--amber)'],
+        ['SNAPPED', 'var(--red)'], ['LAPSED', 'var(--red)'], ['RED · unpaid at the freeze', 'var(--red)'],
+      ].map(function (t) {
+        return el('span', null, [el('i', { style: 'background:' + t[1] }), t[0]]);
+      }))));
+
+    stack.appendChild(panel('THE RECORD', {
+      sub: 'the export surface · 140 chars, bounded',
+      right: 'tick ' + (L ? L.tick : R.tick),
+    },
+      (D.ticker.length ? el('div', { class: 'log' }, D.ticker.slice(0, 60).map(function (t, i) {
+        // RED ONLY FOR A BROKEN WORD. `raid` was in this regex and 7 of 10
+        // lines came out red without one of them being a default — including
+        // "p:brannock paid 5252 and the raid left", which is a promise KEPT.
+        var broke = /\bdefault|failed to|walked away|contradicted|snapped|lapsed\b/i.test(t);
+        var risk = /\braid|demand|arrears|short\b/i.test(t);
+        return el('div', { class: 'ln' + (broke ? ' bad' : risk ? ' warn' : '') }, [
+          el('span', { class: 'tk', text: String(i + 1).padStart(2, '0') }),
           el('span', { class: 'de', text: t }),
         ]);
-      })) : empty('no ticker lines', 'The ticker is empty on both frames.'))
+      })) : empty('the record is quiet', 'The ticker is empty on both frames.'))
     , { style: 'flex:0 0 168px' }));
     U.clear(host).appendChild(stack);
   }
@@ -244,15 +313,30 @@ var Screens = (function () {
   function principals(host, D, sel) {
     var R = D.R, list = (R.standings || []).slice();
     if (!list.length) {
-      U.clear(host).appendChild(panel('PRINCIPALS', { sub: 'standings[]' }, empty('no standings yet',
-        '<code>standings[]</code> is published on the <b>Reckoning</b> frame. This world has not settled ' +
-        'a Reckoning, so no principal has a public record to show.')));
+      var w = el('div', { class: 'grid', style: 'grid-template-columns:214px 1fr;height:100%' });
+      w.appendChild(panel('PRINCIPALS', { sub: 'awaiting the first Reckoning' },
+        el('div', null, [U.skeleton(10, 2), empty('no principal has a record yet',
+          'standings[] is published at settlement, and nothing has settled.')])));
+      var d = el('div', { class: 'rows', style: 'min-height:0' });
+      d.appendChild(panel('THE DOSSIER', { sub: 'a principal\u2019s whole public record' },
+        el('div', null, [
+          el('div', { class: 'tiles', style: 'padding:8px' },
+            ['ELECTIVE HONOURED', 'VALUE HONOURED', 'DEFAULTS', 'CONTRADICTED SEALS',
+             'COUNTERPARTIES', 'LAST DEFAULT'].map(function (t) {
+              return tile(t, '—', { dim: true });
+            })),
+          U.skeleton(9, 4),
+          empty('nothing to show until the first settlement',
+            'Every key on this screen comes off the Reckoning frame.'),
+        ])));
+      w.appendChild(d);
+      U.clear(host).appendChild(w);
       return;
     }
     list.sort(function (a, b) { return b.electiveHonouredValue - a.electiveHonouredValue; });
     var cur = list.filter(function (r) { return U.handleOf(r.principal) === sel; })[0] || list[0];
 
-    var wrap = el('div', { class: 'grid', style: 'grid-template-columns:214px 1fr;height:100%' });
+    var wrap = el('div', { class: 'grid', style: 'grid-template-columns:196px 1fr;height:100%' });
     var lst = panel('PRINCIPALS', { sub: list.length + ' on the record' },
       el('div', null, list.map(function (r) {
         var on = r.principal === cur.principal;
@@ -263,14 +347,18 @@ var Screens = (function () {
         }, [
           U.crest(r.principal, 22),
           el('div', { style: 'min-width:0;flex:1' }, [
+            el('div', { style: 'color:var(--text);font-size:12px', text: r.handle }),
             el('div', {
-              style: 'color:' + (r.defaults ? 'var(--red-text)' : 'var(--cyan)') + ';font-size:12px',
-              text: r.handle,
+              style: 'font-size:10px;color:var(--dim);white-space:nowrap',
+              title: r.electiveHonoured + ' elective promises kept across ' +
+                r.distinctCounterparties + ' counterparties',
+              text: r.electiveHonoured + ' kept · ' + r.distinctCounterparties + ' cp',
             }),
-            el('div', { style: 'font-size:9px;color:var(--dim)' },
-              r.electiveHonoured + ' kept · ' + r.defaults + ' broken'),
           ]),
-          r.defaults ? el('span', { class: 'tag rd', text: String(r.defaults) }) : null,
+          // graded, like the mock's own standings legend: 1 amber · 2 mid · 3+ red
+          r.defaults
+            ? el('span', { class: 'tag ' + (r.defaults >= 3 ? 'rd' : r.defaults === 2 ? 'rd2' : 'am'), text: String(r.defaults) })
+            : el('span', { class: 'tag', style: 'color:var(--dimmer);border-color:var(--rule-dim)', text: '0' }),
         ]);
       })));
     wrap.appendChild(lst);
@@ -359,6 +447,51 @@ var Screens = (function () {
           'This is <b>not</b> the same as "has never dealt".')));
     stack.appendChild(g2);
 
+    // ★ COUNTERPARTIES and VALUE FLOW — two of the mock's blocks, both
+    // derivable from `compactLinks[]` alone. The dossier used to end here with
+    // half a page of nothing under it.
+    var g3 = el('div', { class: 'grid g-2' });
+    var cps = {};
+    mine.forEach(function (c) {
+      var o = c.a === pid ? c.b : c.a; if (!o) return;
+      var e = cps[o] || (cps[o] = { p: o, n: 0, stake: 0, snapped: 0 });
+      e.n++; e.stake += c.atStake || 0; if (c.snapped) e.snapped++;
+    });
+    var cpl = Object.keys(cps).map(function (k2) { return cps[k2]; });
+    g3.appendChild(panel('COUNTERPARTIES', {
+      sub: r.distinctCounterparties + ' distinct over the whole record · ' + cpl.length + ' on this frame',
+    }, cpl.length ? table('dos-c', [
+      { k: 'p', t: 'handle', w: '108px', cell: function (x) { return el('span', { style: 'display:inline-flex;align-items:center;gap:7px' }, [U.crest(x.p, 15), hOf(D, x.p)]); }, sort: function (x) { return U.handleOf(x.p); } },
+      { k: 'n', t: 'compacts', w: '74px', num: true },
+      { k: 'stake', t: 'at stake', w: '86px', num: true, cell: function (x) { return U.n(x.stake); } },
+      { k: 'standing', t: 'their record', cell: function (x) {
+        var o = D.byPrincipal[x.p];
+        return o ? el('span', { class: 'dim', text: o.electiveHonoured + ' kept · ' + o.defaults + ' broken' }) : U.nul();
+      }, sort: function (x) { return (D.byPrincipal[x.p] || {}).defaults || 0; } },
+    ], cpl, { sort: 'stake', dir: -1, rerender: D.rerender, rowClass: function (x) { return x.snapped ? 'bad' : ''; } })
+      : empty('no counterparty on this frame · 8 over the whole record'.replace('8', String(r.distinctCounterparties)),
+        'The frame caps compactLinks[] for broadcast, so a principal who was quiet this Reckoning ' +
+        'simply does not appear. That is not the same as having never dealt.')));
+
+    var vin = 0, vout = 0, nin = 0, nout = 0;
+    mine.forEach(function (c) {
+      if (c.a === pid) { vout += c.atStake || 0; nout++; } else { vin += c.atStake || 0; nin++; }
+    });
+    var onWord = mine.reduce(function (a, c) { return a + (c.atStake || 0) * (c.electiveBps || 0) / 10000; }, 0);
+    g3.appendChild(panel('VALUE FLOW', { sub: 'across the compacts on this frame' }, el('div', null, [
+      el('div', { class: 'meter' }, [el('span', { class: 'nm', text: 'OUT' }), U.bar(vout / Math.max(1, vin + vout)), el('span', { class: 'qt', text: U.n(vout) })]),
+      el('div', { class: 'meter' }, [el('span', { class: 'nm', text: 'IN' }), U.bar(vin / Math.max(1, vin + vout)), el('span', { class: 'qt', text: U.n(vin) })]),
+      U.kv('COMPACTS INITIATED', String(nout)),
+      U.kv('COMPACTS JOINED', String(nin)),
+      U.kv('NET', (vin - vout >= 0 ? '+' : '') + U.n(vin - vout)),
+      U.kv('RIDING ON A WORD', U.n(Math.round(onWord))),
+      U.kv('VALUE HONOURED, ALL TIME', U.n(r.electiveHonouredValue)),
+      mine.length ? null : el('div', { class: 'note-line' },
+        'Every flow above is zero because no compact on tonight\u2019s frame names ' + r.handle +
+        '. The all-time figure is the record; the rest is this Reckoning only.'),
+    ])));
+    stack.appendChild(g3);
+
     // the rundown beats about them
     var beats = (R.rundown || []).filter(function (s) {
       return (s.cast || []).some(function (c) { return c.principal === pid; }) ||
@@ -374,12 +507,16 @@ var Screens = (function () {
       })) : empty('nothing this Reckoning',
         'No rundown segment names this principal. The rundown is capped at 12 segments, largest say-do delta last.')));
 
-    var missing = el('div', { class: 'note-line' });
-    missing.innerHTML = '<b>What the frame cannot tell you about ' + r.handle + ':</b> hands and their states, ' +
-      'STORES balances, syndicate membership, and the full venture history. There is <b>no principal-scoped read</b> — ' +
-      'every key is a world-scoped array capped for broadcast, so this page shows the rows that happened to be ' +
-      'selected, not the character sheet.';
-    stack.appendChild(missing);
+    // The honest caveat, as one dim line with the argument on hover. It used to
+    // be a four-line paragraph occupying the slot where the mock puts HANDS,
+    // STORES, COUNTERPARTIES and VALUE FLOW — the page apologised for its data
+    // in the space the data belongs in.
+    stack.appendChild(el('div', { class: 'note-line', title:
+      'There is no principal-scoped read. Every frame key is a world-scoped array capped for ' +
+      'broadcast (7 docket cards, 12 authority lines, 12 rundown segments), so this page shows ' +
+      'the rows that happened to be selected for tonight\u2019s frame, not a character sheet. ' +
+      'Hands and their states, STORES balances and syndicate membership have no frame field at all.',
+    }, 'The frame carries no hand roster, no STORES balance and no syndicate membership — hover for why.'));
     return stack;
   }
 
@@ -440,9 +577,48 @@ var Screens = (function () {
     stack.appendChild(g2);
 
     var docket = R.docket || [];
-    stack.appendChild(panel('THE DOCKET', { sub: 'tonight\'s cards, stakes descending · cap 7' },
+    // ★ THE SHAPE OF THE NIGHT. `dense-ventures` was 65% blank body rows; these
+    // three are all counts over `compactLinks[]`, which is already on screen.
+    var bot = el('div', { class: 'grid g-3', style: 'flex:0 0 178px' });
+    var byKind = {};
+    links.forEach(function (c) {
+      var e = byKind[c.kind] || (byKind[c.kind] = { kind: c.kind, n: 0, stake: 0, snapped: 0, elective: 0 });
+      e.n++; e.stake += c.atStake || 0; e.elective += c.electiveBps || 0;
+      if (c.snapped) e.snapped++;
+    });
+    var kl = Object.keys(byKind).map(function (k2) { return byKind[k2]; });
+    bot.appendChild(panel('BY KIND', { sub: kl.length + ' kinds of compact live' },
+      kl.length ? table('vt-k', [
+        { k: 'kind', t: 'kind', w: '78px', cell: function (x) { return el('span', { class: 'k', text: x.kind }); } },
+        { k: 'n', t: 'count', w: '54px', num: true },
+        { k: 'stake', t: 'at stake', w: '82px', num: true, cell: function (x) { return U.n(x.stake); } },
+        { k: 'elective', t: 'mean elective', w: '96px', num: true, cell: function (x) { return U.bps(Math.round(x.elective / x.n)); }, sort: function (x) { return x.elective / x.n; } },
+        { k: 'snapped', t: 'snapped', w: '72px', num: true, cell: function (x) { return x.snapped ? el('span', { style: 'color:var(--red-text)', text: String(x.snapped) }) : el('span', { class: 'dim', text: '0' }); } },
+      ], kl, { sort: 'stake', dir: -1, rerender: D.rerender })
+        : empty('no compact is live', 'compactLinks[] is empty on both frames.')));
+
+    // the elective spread — how much of the world is riding on a word rather
+    // than on escrow, drawn as a histogram because one mean hides the shape
+    var buckets = [0, 0, 0, 0, 0];
+    links.forEach(function (c) {
+      var b = Math.min(4, Math.floor((c.electiveBps || 0) / 2000));
+      buckets[b]++;
+    });
+    var maxB = Math.max(1, Math.max.apply(null, buckets));
+    bot.appendChild(panel('ELECTIVE SPREAD', {
+      sub: 'how much of a compact rides on a word',
+      foot: 'A7: full escrow deletes the betrayal · zero escrow enables fake counterparties.',
+    }, el('div', { style: 'padding:6px 0' }, buckets.map(function (n2, i) {
+      return el('div', { class: 'meter' }, [
+        el('span', { class: 'nm', text: (i * 20) + '–' + ((i + 1) * 20) + '%' }),
+        U.bar(n2 / maxB),
+        el('span', { class: 'qt', text: String(n2) }),
+      ]);
+    }))));
+
+    bot.appendChild(panel('THE DOCKET', { sub: 'tonight\'s cards, stakes descending · cap 7' },
       docket.length ? el('div', { style: 'display:flex;gap:6px;padding:6px;overflow:auto' }, docket.map(function (c) {
-        return el('div', { style: 'flex:0 0 260px;border:1px solid var(--rule);background:var(--panel-2);padding:8px' }, [
+        return el('div', { style: 'flex:0 0 236px;border:1px solid var(--rule);background:var(--panel-2);padding:8px' }, [
           el('div', { style: 'display:flex;gap:8px;align-items:flex-start' }, [
             U.glyph({ electiveBps: c.electiveBps, state: 'LIVE', rolesFilled: 2, rolesTotal: 2 }, 30),
             el('div', { style: 'min-width:0' }, [
@@ -457,8 +633,9 @@ var Screens = (function () {
         ]);
       })) : empty('the docket is empty',
         'The docket is built from ventures still LIVE at the settlement tick, and almost everything has already ' +
-        'settled by then. Measured at <b>2 cards across 9 frames</b> against a budget of 7.')
-    , { style: 'flex:0 0 150px' }));
+        'The docket is built from ventures still LIVE at the settlement tick, and almost everything has ' +
+        'already settled by then. Measured at 2 cards across 9 frames against a budget of 7.')));
+    stack.appendChild(bot);
     U.clear(host).appendChild(stack);
   }
 
@@ -468,15 +645,36 @@ var Screens = (function () {
     var stack = el('div', { class: 'rows fill', style: 'height:100%' });
     var drawn = lines.filter(function (a) { return a.state === 'DRAWN' || a.spent > 0 || a.spentContingent > 0; });
     stack.appendChild(el('div', { class: 'tiles' }, [
-      tile('GRANTS ON FRAME', String(lines.length), { note: 'cap 12 — the frame shows the biggest, not all' }),
-      tile('DRAWN ON', String(drawn.length), { note: 'a delegate has acted in its grantor\'s name' }),
+      tile('GRANTS ON FRAME', String(lines.length), { note: 'cap 12 · the biggest, not all' }),
+      tile('DRAWN ON', String(drawn.length), { note: 'acted in a grantor\u2019s name' }),
       tile('MAX DIRECT LOSS', U.n(lines.reduce(function (a, x) { return Math.max(a, x.granted || 0); }, 0)),
         { note: 'the largest single LIMIT on screen' }),
       tile('MAX CONTINGENT', U.n(lines.reduce(function (a, x) { return Math.max(a, x.grantedContingent || 0); }, 0)),
         { note: 'the worst case, shown before it was signed' }),
       tile('DOSSIER THREADS', String(lines.reduce(function (a, x) { return a + (x.dossiers || []).length; }, 0)),
-        { note: 'compartmented authority handed downstream' }),
+        { note: 'authority handed downstream' }),
     ]));
+
+    // ★ THE PROVABLE WARNING — the single line the mock series called the best
+    // thing in it. A grant serialises as a signed W3C credential, so "the worst
+    // case was shown before it was signed" is provable rather than asserted,
+    // and that sentence IS A6. The build had no equivalent anywhere.
+    var big = lines.slice().sort(function (a, b) {
+      return (b.granted + b.grantedContingent) - (a.granted + a.grantedContingent);
+    })[0];
+    if (big) {
+      stack.appendChild(el('div', { class: 'warncall' }, [
+        el('div', { class: 'l1' }, [
+          el('span', { class: 'gid', text: big.grant }), ' · ',
+          hOf(D, big.grantor), el('span', { class: 'arrow', text: ' ⟶ ' }), hOf(D, big.delegate),
+          ' · MAX DIRECT LOSS ', el('b', { text: U.n(big.granted) }),
+          ' · MAX CONTINGENT ', el('b', { text: U.n(big.grantedContingent) }),
+          ' · ', el('span', { class: 'st', text: big.state }),
+          el('span', { class: 'tail', text: 'the worst case, shown before it was signed' }),
+        ]),
+        el('div', { class: 'l2', text: 'a grant serialises as a signed credential, so this warning is provable rather than asserted' }),
+      ]));
+    }
 
     var g2 = el('div', { class: 'grid', style: 'grid-template-columns:1fr 1fr;flex:1 1 auto;min-height:0' });
     var cols = [
@@ -487,7 +685,6 @@ var Screens = (function () {
       { k: 'spent', t: 'spent', w: '72px', num: true, cell: function (a) { return a.spent ? U.n(a.spent) : el('span', { class: 'dim', text: '0' }); } },
       { k: 'grantedContingent', t: 'contingent', w: '84px', num: true, cell: function (a) { return U.n(a.grantedContingent); } },
       { k: 'clearance', t: 'clearance', w: '68px', cell: function (a) { return U.pips(a.clearance); } },
-      { k: 'boundVentures', t: 'bound', w: '54px', num: true },
       { k: 'dossiers', t: 'threads', w: '58px', num: true, cell: function (a) { return String((a.dossiers || []).length); }, sort: function (a) { return (a.dossiers || []).length; } },
       { k: 'state', t: 'state', w: '82px', cell: function (a) { return U.tag(a.state, a.state === 'DRAWN' ? 'solid' : a.state === 'REVOKED' ? 'rd' : 'cy'); } },
     ];
@@ -563,51 +760,96 @@ var Screens = (function () {
     U.clear(host).appendChild(stack);
   }
 
-  /** grantor → delegate, laid out in two columns. The mock's centre panel. */
+  /**
+   * ★ WHO CAN ACT FOR WHOM — one node per principal, directed.
+   *
+   * The first build was bipartite: grantors down the left, delegates down the
+   * right. `ashlin` therefore appeared as TWO UNLINKED DOTS, once in each
+   * column, with no edge between its own two instances — so the diagram
+   * structurally could not draw a delegation CHAIN, which is A6. It also spent
+   * 34,800 px per edge against the mock's 6,435.
+   *
+   * One node per principal on a ring, arrowheads on every edge, and a chain is
+   * now just a path you can follow with a finger.
+   */
   function authorityGraph(D, lines) {
-    var W = 520, H = 300, S = U.svg;
-    var grantors = [], delegates = [];
+    var W = 520, H = 330, S = U.svg, cx = W / 2, cy = H / 2 + 6;
+    var nodes = [];
     lines.forEach(function (a) {
-      if (grantors.indexOf(a.grantor) < 0) grantors.push(a.grantor);
-      if (delegates.indexOf(a.delegate) < 0) delegates.push(a.delegate);
+      if (nodes.indexOf(a.grantor) < 0) nodes.push(a.grantor);
+      if (nodes.indexOf(a.delegate) < 0) nodes.push(a.delegate);
     });
-    grantors.sort(); delegates.sort();
+    nodes.sort();
+    var N = nodes.length || 1, RX = W * 0.36, RY = H * 0.37;
+    var at = {};
+    nodes.forEach(function (p, i) {
+      var th = -Math.PI / 2 + (2 * Math.PI * i) / N;
+      at[p] = { x: cx + RX * Math.cos(th), y: cy + RY * Math.sin(th), th: th };
+    });
     var maxL = lines.reduce(function (m, a) { return Math.max(m, a.granted + a.grantedContingent); }, 1);
-    function y(i, n) { return 26 + (H - 52) * (n > 1 ? i / (n - 1) : 0.5); }
-    var kids = [];
+    var kids = [S('defs', null, [
+      S('marker', {
+        id: 'ah', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 5, markerHeight: 5, orient: 'auto',
+      }, S('path', { d: 'M0 0L8 4L0 8Z', fill: '#19d7f2' })),
+      S('marker', {
+        id: 'ahd', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 5, markerHeight: 5, orient: 'auto',
+      }, S('path', { d: 'M0 0L8 4L0 8Z', fill: '#0a6a7d' })),
+      S('marker', {
+        id: 'ahr', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 5, markerHeight: 5, orient: 'auto',
+      }, S('path', { d: 'M0 0L8 4L0 8Z', fill: '#ca010f' })),
+    ])];
     lines.forEach(function (a) {
-      var x1 = 96, y1 = y(grantors.indexOf(a.grantor), grantors.length);
-      var x2 = W - 96, y2 = y(delegates.indexOf(a.delegate), delegates.length);
-      var w = 0.6 + 3.4 * ((a.granted + a.grantedContingent) / maxL);
-      var drawn = a.state === 'DRAWN';
+      var p = at[a.grantor], q = at[a.delegate];
+      if (!p || !q) return;
+      var dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      // stop short of the target node so the arrowhead lands on its edge
+      var ex = q.x - (dx / len) * 9, ey = q.y - (dy / len) * 9;
+      var sx = p.x + (dx / len) * 6, sy = p.y + (dy / len) * 6;
+      // bow toward the centre, so opposite edges do not overlap
+      var mx = (sx + ex) / 2, my = (sy + ey) / 2;
+      var bx = mx + (cx - mx) * 0.34, by = my + (cy - my) * 0.34;
+      var w = 0.7 + 3.1 * ((a.granted + a.grantedContingent) / maxL);
+      var drawn = a.state === 'DRAWN' || a.spent > 0 || a.spentContingent > 0;
+      var revoked = a.state === 'REVOKED';
       kids.push(S('path', {
-        d: 'M' + x1 + ' ' + y1 + 'C' + (x1 + 90) + ' ' + y1 + ',' + (x2 - 90) + ' ' + y2 + ',' + x2 + ' ' + y2,
+        d: 'M' + sx.toFixed(1) + ' ' + sy.toFixed(1) + 'Q' + bx.toFixed(1) + ' ' + by.toFixed(1) +
+          ' ' + ex.toFixed(1) + ' ' + ey.toFixed(1),
         fill: 'none', 'stroke-width': w.toFixed(2),
-        stroke: a.state === 'REVOKED' ? '#ca010f' : drawn ? '#19d7f2' : '#0a6a7d',
-        'stroke-opacity': drawn ? 1 : 0.55,
+        stroke: revoked ? '#ca010f' : drawn ? '#19d7f2' : '#0a6a7d',
+        'stroke-opacity': drawn ? 1 : 0.6,
+        'marker-end': 'url(#' + (revoked ? 'ahr' : drawn ? 'ah' : 'ahd') + ')',
       }, S('title', {
         text: U.handleOf(a.grantor) + ' → ' + U.handleOf(a.delegate) + ' · MAX DIRECT LOSS ' +
-          U.n(a.granted) + ' · MAX CONTINGENT ' + U.n(a.grantedContingent) + ' · ' + a.state,
+          U.n(a.granted) + ' · MAX CONTINGENT ' + U.n(a.grantedContingent) + ' · ' + a.state +
+          (a.spent ? ' · spent ' + U.n(a.spent) : ''),
       })));
+      if (revoked) {
+        // the mock's double-slash across a revoked edge
+        var nx = -(ey - sy) / len, ny = (ex - sx) / len;
+        [-2.5, 2.5].forEach(function (o) {
+          kids.push(S('line', {
+            x1: bx + nx * 5 + (dx / len) * o, y1: by + ny * 5 + (dy / len) * o,
+            x2: bx - nx * 5 + (dx / len) * o, y2: by - ny * 5 + (dy / len) * o,
+            stroke: '#ca010f', 'stroke-width': 1.4,
+          }));
+        });
+      }
     });
-    grantors.forEach(function (p, i) {
-      var yy = y(i, grantors.length);
-      kids.push(S('circle', { cx: 96, cy: yy, r: 4, fill: '#00060a', stroke: '#19d7f2', 'stroke-width': 1.2 }));
+    nodes.forEach(function (p) {
+      var n = at[p], right = Math.cos(n.th) > -0.15;
+      var out = lines.filter(function (a) { return a.grantor === p; }).length;
+      var inn = lines.filter(function (a) { return a.delegate === p; }).length;
+      kids.push(S('circle', { cx: n.x, cy: n.y, r: 5, fill: '#00060a', stroke: '#19d7f2', 'stroke-width': 1.3 }));
       kids.push(S('text', {
-        x: 86, y: yy + 3.5, 'text-anchor': 'end', fill: '#cfdadd',
-        style: 'font:10px ui-monospace,monospace', text: U.handleOf(p),
-      }));
+        x: n.x + (right ? 10 : -10), y: n.y + 3.5, 'text-anchor': right ? 'start' : 'end',
+        fill: '#cfdadd', style: 'font:11px ui-monospace,monospace',
+        text: U.handleOf(p),
+      }, S('title', { text: U.handleOf(p) + ' · issues ' + out + ' · holds ' + inn })));
     });
-    delegates.forEach(function (p, i) {
-      var yy = y(i, delegates.length);
-      kids.push(S('circle', { cx: W - 96, cy: yy, r: 4, fill: '#00060a', stroke: '#19d7f2', 'stroke-width': 1.2 }));
-      kids.push(S('text', {
-        x: W - 86, y: yy + 3.5, fill: '#cfdadd',
-        style: 'font:10px ui-monospace,monospace', text: U.handleOf(p),
-      }));
-    });
-    kids.push(S('text', { x: 96, y: 13, 'text-anchor': 'end', fill: '#3f5158', style: 'font:9px sans-serif;letter-spacing:.16em', text: 'GRANTOR' }));
-    kids.push(S('text', { x: W - 96, y: 13, fill: '#3f5158', style: 'font:9px sans-serif;letter-spacing:.16em', text: 'DELEGATE' }));
+    kids.push(S('text', {
+      x: cx, y: 14, 'text-anchor': 'middle', fill: '#3f5158',
+      style: 'font:10px sans-serif;letter-spacing:.16em', text: 'AN ARROW POINTS AT WHO MAY ACT',
+    }));
     return S('svg', { viewBox: '0 0 ' + W + ' ' + H, style: 'width:100%;height:100%;display:block' }, kids);
   }
 
@@ -627,15 +869,16 @@ var Screens = (function () {
     ]));
 
     var g2 = el('div', { class: 'grid g-2', style: 'flex:1 1 auto;min-height:0' });
-    g2.appendChild(panel('★ THE PRINT', {
+    var left = el('div', { class: 'rows', style: 'min-height:0' });
+    left.appendChild(panel('★ THE PRINT', {
       sub: 'a price on a place, and the gap to everywhere else',
-      foot: 'premium is the gap to the galaxy VWAP — the field the signature exists for',
+      foot: 'PREMIUM is the gap between this venue and every venue — the number the signature exists for',
     }, ml.length ? table('mk', [
       { k: 'good', t: 'good', w: '92px', cell: function (m) { return el('span', null, [U.goodIcon(m.good), m.good]); } },
       { k: 'venue', t: 'venue', w: '120px', cell: function (m) { return U.sysLink(m.venue, m.venue + ' ' + sysName(D, m.venue)); } },
       { k: 'lastPrice', t: 'last', w: '60px', num: true },
       { k: 'vwap', t: 'vwap', w: '60px', num: true },
-      { k: 'galaxyVwap', t: 'galaxy', w: '64px', num: true },
+      { k: 'galaxyVwap', t: 'all venues', w: '74px', num: true },
       {
         k: 'premiumBps', t: 'premium', w: '76px', num: true,
         cell: function (m) {
@@ -649,21 +892,56 @@ var Screens = (function () {
       { k: 'legend', t: 'legend' },
     ], ml, { sort: 'volume', dir: -1, rerender: D.rerender })
       : empty('nothing has printed',
-        '<code>marketLines[]</code> is empty. A print appears when two principals trade at a venue; the measured ' +
-        'reading in a heuristic world is <b>7 rows across 9 frames, <code>alloy</code> only</b>, with ' +
-        '<code>premiumBps</code> zero on all seven.')));
+        'marketLines[] is empty. A print appears when two principals trade at a venue; the measured ' +
+        'reading in a heuristic world is 7 rows across 9 frames, alloy only, with premiumBps zero on all seven.'),
+    { style: 'flex:0 0 auto;max-height:230px' }));
+
+    // ★ THE FOUR GOODS. §10 specifies four and the chain is ore → refine →
+    // ration/alloy/fuel. A good with no print says "no print", because that is
+    // the fact, and a market screen that only shows the one good that traded
+    // hides three quarters of the economy behind an absence.
+    var GOODS = ['ore', 'ration', 'alloy', 'fuel'];
+    var byGood = {};
+    ml.forEach(function (m) {
+      var e = byGood[m.good] || (byGood[m.good] = { prints: 0, volume: 0, venues: 0, last: null, premium: 0 });
+      e.prints += m.prints || 0; e.volume += m.volume || 0;
+      e.venues = Math.max(e.venues, m.venues || 0);
+      e.last = m.lastPrice; e.premium = Math.max(e.premium, Math.abs(m.premiumBps || 0));
+    });
+    var maxVol = Math.max(1, GOODS.reduce(function (a, g) { return Math.max(a, (byGood[g] || {}).volume || 0); }, 0));
+    left.appendChild(panel('THE GOODS', {
+      sub: 'ore is dug · refine makes it payable · a debt settles in the rest',
+      foot: 'A good with no print has never been traded on a venue in this world. That is a fact about the world, not a gap in the frame.',
+    }, el('div', { style: 'padding:4px 0' }, GOODS.map(function (gd) {
+      var e = byGood[gd];
+      return el('div', { style: 'display:flex;align-items:center;gap:10px;padding:5px 8px;border-bottom:1px solid var(--rule-dim)' }, [
+        U.goodIcon(gd),
+        el('span', { style: 'flex:0 0 58px;color:var(--text)', text: gd }),
+        U.bar(e ? e.volume / maxVol : 0),
+        el('span', {
+          style: 'flex:0 0 92px;text-align:right;font-variant-numeric:tabular-nums;color:' +
+            (e ? 'var(--text-2)' : 'var(--dimmer)'),
+          text: e ? U.n(e.volume) + ' vol' : 'no print',
+        }),
+        el('span', {
+          style: 'flex:0 0 78px;text-align:right;font-variant-numeric:tabular-nums;color:' +
+            (e ? 'var(--cyan)' : 'var(--dimmer)'),
+          text: e ? 'last ' + U.n(e.last) : '—',
+        }),
+      ]);
+    }))));
+    g2.appendChild(left);
 
     g2.appendChild(panel('WORKS · what the ground yields', {
       sub: wl.length + ' rows · ★ a WORKS marks a system',
     }, wl.length ? table('wk', [
       { k: 'system', t: 'at', w: '116px', cell: function (w) { return U.sysLink(w.system, w.system + ' ' + sysName(D, w.system)); } },
-      { k: 'holder', t: 'holder', w: '92px', cell: function (w) { return hOf(D, w.holder); } },
-      { k: 'yieldPerTick', t: 'yield/tick', w: '74px', num: true },
-      { k: 'sharePerTick', t: 'share/tick', w: '78px', num: true },
-      { k: 'occupants', t: 'occupants', w: '74px', num: true },
+      { k: 'holder', t: 'holder', w: '86px', cell: function (w) { return hOf(D, w.holder); } },
+      { k: 'yieldPerTick', t: 'yield', w: '54px', num: true },
+      { k: 'sharePerTick', t: 'share', w: '58px', num: true },
+      { k: 'occupants', t: 'occ', w: '44px', num: true },
       { k: 'extracted', t: 'extracted', w: '82px', num: true, cell: function (w) { return U.n(w.extracted); } },
-      { k: 'rentPaid', t: 'rent paid', w: '76px', num: true, cell: function (w) { return w.rentPaid ? U.n(w.rentPaid) : el('span', { class: 'dim', text: '0' }); } },
-      { k: 'legend', t: 'state', w: '96px', cell: function (w) { return U.tag(w.legend, 'cy'); } },
+      { k: 'legend', t: 'state', w: '92px', cell: function (w) { return U.tag(w.legend, 'cy'); } },
     ], wl, { sort: 'yieldPerTick', dir: -1, rerender: D.rerender })
       : empty('nobody is extracting', 'No <code>worksLines[]</code> row on this frame.')));
     stack.appendChild(g2);
@@ -671,11 +949,13 @@ var Screens = (function () {
     // the hull ladder — the generated plate, used as itself
     stack.appendChild(panel('THE HULL LADDER', {
       sub: 'PIKE · LANCE · WARDEN · BULWARK · CITADEL',
-      right: el('span', { class: 'pill', text: 'not on the frame' }),
-      foot: 'Reference art. No frame key publishes a hull inventory, so nothing here is a claim about this world.',
-    }, el('div', { style: 'padding:6px;background:var(--void)' },
-      el('img', { src: 'assets/hulls.webp', class: 'plate', alt: 'the five hulls' })),
-    { style: 'flex:0 0 220px' }));
+      right: el('span', { class: 'pill', title: 'No frame key publishes a hull inventory, so nothing here is a claim about this world.', text: 'reference · not on the frame' }),
+    }, el('div', { style: 'height:100%;background:var(--void);display:flex;align-items:center;justify-content:center' },
+      el('img', {
+        src: 'assets/hulls.webp', alt: 'the five hulls',
+        style: 'max-width:100%;max-height:100%;object-fit:contain;display:block',
+      })),
+    { style: 'flex:0 0 214px' }));
     U.clear(host).appendChild(stack);
   }
 
@@ -719,13 +999,20 @@ var Screens = (function () {
           return el('label', { class: 'lyr' }, [cb, t[1]]);
         }));
 
+    // ★ THE SWATCHES ARE THE BAND FILLS. Not a second set of literals: the
+    // first build hand-picked legend colours and they ended up 2.6x brighter
+    // than the map and in the WRONG ORDER — the key lied about the picture.
     var legend = el('div', { class: 'legend' });
-    [['#93a6aa', 'THE COMMONS', 'hostile action is INVALID'],
-     ['#2c6b78', 'THE MARCHES', 'contested ground'],
-     ['#35808f', 'THE FRONTIER', 'the rim, the prize']].forEach(function (r) {
+    [['COMMONS', 'hostile action is INVALID'],
+     ['MARCHES', 'contested ground'],
+     ['FRONTIER', 'the rim, the prize']].forEach(function (r) {
       legend.appendChild(el('div', { class: 'row' }, [
-        el('i', { class: 'sw', style: 'background:' + r[0] }), r[1],
-        el('span', { style: 'color:var(--dimmer);margin-left:6px', text: r[2] }),
+        el('i', {
+          class: 'sw',
+          style: 'background:' + MapView.BAND_FILL[r[0]] + ';border:1px solid ' + MapView.BAND_EDGE[r[0]],
+        }),
+        'THE ' + r[0],
+        el('span', { style: 'color:var(--dimmer);margin-left:6px', text: r[1] }),
       ]));
     });
     legend.appendChild(el('hr'));
@@ -801,7 +1088,8 @@ var Screens = (function () {
           cell: function (s) {
             return el('i', {
               class: 'sw', title: s.tier,
-              style: 'margin:0;background:' + ({ COMMONS: '#93a6aa', MARCHES: '#2c6b78', FRONTIER: '#35808f' })[s.tier],
+              style: 'margin:0;background:' + MapView.BAND_FILL[s.tier] +
+                ';border:1px solid ' + MapView.BAND_EDGE[s.tier],
             });
           },
           sort: function (s) { return s.tier; },
@@ -832,14 +1120,39 @@ var Screens = (function () {
   function standings(host, D) {
     var R = D.R, rows = (R.standings || []).slice();
     var stack = el('div', { class: 'rows fill', style: 'height:100%' });
+    var g = el('div', { class: 'grid', style: 'grid-template-columns:1fr 340px;flex:1 1 auto;min-height:0' });
+    // ★ SPARSE KEEPS ITS STRUCTURE. A page with one card floating in black
+    // reads as a failed render; a page whose frames, headers and rails are all
+    // present but blank reads as NOT YET. The live world spends its first 288
+    // ticks with no Reckoning frame at all and that is a normal state.
     if (!rows.length) {
-      stack.appendChild(panel('STANDINGS', { sub: 'standings[]' }, empty('no standings yet',
-        'The public directory a counterparty is priced from is published at settlement. ' +
-        'This world has not settled a Reckoning.')));
+      g.appendChild(panel('THE STANDING', {
+        sub: 'the public directory a counterparty is priced from',
+        right: el('span', { class: 'pill', text: 'awaiting the first Reckoning' }),
+        foot: 'There is deliberately no rating here. A composite would do the judging for you, and the judging is the show.',
+      }, el('div', null, [
+        el('table', { class: 't' }, el('thead', null, el('tr', null,
+          ['handle', 'elective honoured', 'value honoured', 'defaults', 'contradicted seals',
+           'counterparties', 'last default', 'holding'].map(function (t) {
+            return el('th', { class: /honoured|default|counter/.test(t) ? 'num' : null, text: t });
+          })))),
+        U.skeleton(12, 6),
+        empty('no principal has a public record yet',
+          'standings[] is published at settlement. This world has not settled a Reckoning.'),
+      ])));
+      var sk = el('div', { class: 'rows', style: 'min-height:0' });
+      sk.appendChild(panel('THE HALL OF FAME', { sub: 'over the world\u2019s whole life' },
+        el('div', null, [U.skeleton(4, 3), empty('no titles yet', 'Nothing has been ranked.')])));
+      sk.appendChild(panel('THE SHAPE OF IT', { sub: 'this frame' }, el('div', null, [
+        U.kv('PRINCIPALS', U.nul()), U.kv('NEVER BROKEN', U.nul()),
+        U.kv('WITH A DEFAULT', U.nul()), U.kv('ELECTIVE HALVES KEPT', U.nul()),
+        U.kv('DEFAULTS ON THE RECORD', U.nul()),
+      ])));
+      g.appendChild(sk);
+      stack.appendChild(g);
       U.clear(host).appendChild(stack);
       return;
     }
-    var g = el('div', { class: 'grid', style: 'grid-template-columns:1fr 340px;flex:1 1 auto;min-height:0' });
     // ★ NO SCORE COLUMN, NO GRADE, NO GAUGE. Raw counts only — the moment a
     // number is composited into a rating the viewer stops judging and starts
     // reading the rating, and the judging is the product.
@@ -859,11 +1172,13 @@ var Screens = (function () {
       { k: 'electiveHonoured', t: 'elective honoured', w: '128px', num: true },
       { k: 'electiveHonouredValue', t: 'value honoured', w: '118px', num: true, cell: function (r) { return U.n(r.electiveHonouredValue); } },
       {
+        // GRADED, three steps, exactly as the mock's own legend grades it.
+        // A binary wash says 1 default and 5 defaults are the same thing.
         k: 'defaults', t: 'defaults', w: '86px', num: true,
         cell: function (r) {
-          return r.defaults
-            ? el('span', { style: 'color:var(--red-text);font-weight:600', text: String(r.defaults) })
-            : el('span', { class: 'dim', text: '0' });
+          if (!r.defaults) return el('span', { class: 'dim', text: '0' });
+          var c = r.defaults >= 3 ? 'var(--red-text)' : r.defaults === 2 ? '#d4644f' : 'var(--amber)';
+          return el('span', { style: 'color:' + c + ';font-weight:600', text: String(r.defaults) });
         },
       },
       { k: 'contradictedSeals', t: 'contradicted seals', w: '128px', num: true },
@@ -884,15 +1199,40 @@ var Screens = (function () {
       },
     ], rows, {
       sort: 'defaults', dir: -1, rerender: D.rerender,
-      rowClass: function (r) { return r.defaults > 0 ? 'bad' : ''; },
+      rowClass: function (r) { return r.defaults >= 3 ? 'bad' : r.defaults > 0 ? 'warn' : ''; },
       onRow: function (r) { location.hash = '#/principals/' + U.handleOf(r.principal); },
     })));
+    // ★ THE THREE-SECOND ANSWER, IN WORDS. The mock puts exactly this under
+    // its table — the cleanest record in cyan over the worst in red — and it is
+    // the line a stranger actually reads. A table alone makes them scan.
+    var best = rows.slice().sort(function (a, b) {
+      return (a.defaults - b.defaults) || (b.electiveHonouredValue - a.electiveHonouredValue);
+    })[0];
+    var worst = rows.slice().sort(function (a, b) {
+      return (b.defaults - a.defaults) || ((b.lastDefaultTick || 0) - (a.lastDefaultTick || 0));
+    })[0];
+    var callout = el('div', { class: 'callout' }, [
+      el('div', { class: 'good' }, [
+        el('span', { class: 'who', text: best.handle }),
+        'kept ' + best.electiveHonoured + ' elective promises across ' +
+          best.distinctCounterparties + ' counterparties' +
+          (best.defaults ? ' · ' + best.defaults + ' defaults' : ' · not one default'),
+      ]),
+      worst.defaults ? el('div', { class: 'bad' }, [
+        el('span', { class: 'who', text: worst.handle }),
+        'defaulted ' + worst.defaults + (worst.defaults === 1 ? ' time' : ' times') +
+          ' · kept ' + worst.electiveHonoured + ' · ' + worst.distinctCounterparties +
+          ' counterparties' + (worst.lastDefaultTick ? ' · last at tick ' + worst.lastDefaultTick : ''),
+      ]) : null,
+    ]);
+    // sits between the table body and the panel's own footnote
+    g.firstChild.insertBefore(callout, g.firstChild.lastChild);
 
     var side = el('div', { class: 'rows', style: 'min-height:0' });
     side.appendChild(panel('THE HALL OF FAME', { sub: 'over the world\'s whole life' },
       (R.hallOfFame || []).length
         ? el('div', null, (R.hallOfFame || []).map(function (f) {
-          var bad = /BROKEN/.test(f.title);
+          var bad = /^MOST BROKEN/.test(f.title);
           return el('div', { style: 'display:flex;gap:10px;padding:8px;border-bottom:1px solid var(--rule-dim)' }, [
             U.crest(f.principal, 22),
             el('div', { style: 'min-width:0' }, [
@@ -922,6 +1262,54 @@ var Screens = (function () {
     ])));
     g.appendChild(side);
     stack.appendChild(g);
+
+    // ★ THE BOTTOM ROW. `dense-standings` was 68% blank body rows against the
+    // mocks' worst of 33%, and the mock fits seven more panels at a narrower
+    // width. These three are the ones this frame can actually feed.
+    var bottom = el('div', { class: 'grid g-3', style: 'flex:0 0 196px' });
+
+    var beatsAll = (R.rundown || []).slice().sort(function (a, b) { return b.order - a.order; });
+    bottom.appendChild(panel('RECENT ACTIVITY', { sub: 'this Reckoning\u2019s beats, newest first' },
+      beatsAll.length ? el('div', { class: 'log' }, beatsAll.map(function (b) {
+        return el('div', { class: 'ln' + (b.defaulted ? ' bad' : '') }, [
+          el('span', { class: 'tk', text: '#' + String(b.order).padStart(2, '0') }),
+          el('span', { class: 'ty', text: b.kind }),
+          el('span', { class: 'de', text: b.deed }),
+        ]);
+      })) : empty('no beats', 'The rundown is empty on this frame.')));
+
+    var seals = { HONOURED: 0, CONTRADICTED: 0, none: 0 };
+    (R.rundown || []).forEach(function (b) { seals[b.sealVerdict || 'none']++; });
+    var totalCp = rows.reduce(function (a, r) { return a + r.distinctCounterparties; }, 0);
+    bottom.appendChild(panel('THE SEAL', { sub: 'a sealed intention reveals one Reckoning later' }, el('div', null, [
+      U.kv('HONOURED', String(seals.HONOURED)),
+      U.kv('CONTRADICTED', String(seals.CONTRADICTED), seals.CONTRADICTED > 0),
+      U.kv('NO SEAL ON THE BEAT', String(seals.none)),
+      U.kv('CONTRADICTED, ALL TIME', String(rows.reduce(function (a, r) { return a + r.contradictedSeals; }, 0))),
+      U.kv('COUNTERPARTY EDGES', String(totalCp)),
+      el('div', { class: 'note-line', title:
+        'A CONTRADICTED seal is the say-do gap caught in the act: an agent sealed one intention and did ' +
+        'another, and the record can prove it. It has never once occurred in any world this repo has run.',
+      }, 'CONTRADICTED has never occurred in any world measured — hover for what it would mean.'),
+    ])));
+
+    var holds = {};
+    (R.worksLines || []).forEach(function (w) {
+      var e = holds[w.system] || (holds[w.system] = { system: w.system, works: 0, yield: 0, holders: [] });
+      e.works++; e.yield += w.yieldPerTick || 0;
+      if (e.holders.indexOf(w.holder) < 0) e.holders.push(w.holder);
+    });
+    var hl = Object.keys(holds).map(function (k2) { return holds[k2]; });
+    bottom.appendChild(panel('HOLDING SNAPSHOT', { sub: hl.length + ' systems worked' },
+      hl.length ? table('st-h', [
+        { k: 'system', t: 'at', w: '112px', cell: function (x) { return U.sysLink(x.system, sysName(D, x.system) + ' · ' + x.system); } },
+        { k: 'tier', t: 'tier', w: '76px', cell: function (x) { return el('span', { class: 'dim', text: (D.sysIndex[x.system] || {}).tier || '—' }); }, sort: function (x) { return (D.sysIndex[x.system] || {}).tier || ''; } },
+        { k: 'works', t: 'works', w: '54px', num: true },
+        { k: 'yield', t: 'ore/tick', w: '64px', num: true },
+        { k: 'holders', t: 'held by', cell: function (x) { return el('span', null, x.holders.map(function (h2, i) { return el('span', null, [i ? ' · ' : '', hOf(D, h2)]); })); }, sort: function (x) { return x.holders.length; } },
+      ], hl, { sort: 'yield', dir: -1, rerender: D.rerender })
+        : empty('nobody is working the ground', 'No WORKS row on this frame.')));
+    stack.appendChild(bottom);
     U.clear(host).appendChild(stack);
   }
 
@@ -929,11 +1317,52 @@ var Screens = (function () {
   function reckoning(host, D, sel) {
     var R = D.R;
     if (!R || R.reckoningIndex === undefined || !(R.rundown || []).length) {
-      U.clear(host).appendChild(panel('THE RECKONING', { sub: 'the ceremony' }, empty('the first Reckoning has not happened',
-        'A Reckoning frame is published once per <b>288 ticks</b>. ' +
-        (D.L ? 'This world is at tick <b>' + D.L.tick + '</b> and settles in <b>' + D.L.ticksUntilReckoning +
-          '</b> ticks — about ' + U.clock(D.L.ticksUntilReckoning) + ' at 300 s a tick.' : '') +
-        ' Until then there is no rundown, no Levy and no hall of fame, and drawing one would be a fabrication.')));
+      // The ceremony's frame, standing empty and counting down. Every hero
+      // tile, every panel and the reel's four bands are present with no
+      // content, because an empty STRUCTURE reads as *not yet* while an empty
+      // PAGE reads as an outage — and this is the state the live world is in
+      // for the first 288 ticks of its life.
+      var L0 = D.L;
+      var waiting = el('div', { class: 'rows fill', style: 'height:100%' });
+      waiting.appendChild(el('div', { class: 'hero' }, [
+        el('div', null, [el('div', { class: 'big', style: 'color:var(--dimmer)', text: '—' }), el('div', { class: 'lab', text: 'LEVY SHORT' })]),
+        el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
+        el('div', null, [
+          el('div', { class: 'big', text: L0 ? U.n(L0.meters && L0.meters.onAPromise) : '—' }),
+          el('div', { class: 'lab', text: 'ON A PROMISE' }),
+        ]),
+        el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
+        el('div', null, [el('div', { class: 'big', style: 'color:var(--dimmer)', text: '— – —' }), el('div', { class: 'lab', text: 'KEPT — BROKEN' })]),
+        el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
+        el('div', { style: 'margin-left:auto;text-align:right' }, [
+          el('div', { style: 'font:600 13px var(--cond);letter-spacing:.16em;color:var(--cyan)' },
+            L0 ? 'RECKONING ' + L0.reckoningIndex + ' SETTLES IN ' + L0.ticksUntilReckoning + ' TICKS' : 'AWAITING THE FIRST RECKONING'),
+          el('div', { style: 'font-size:11px;color:var(--dim);margin-top:5px' },
+            L0 ? 'about ' + U.clock(L0.ticksUntilReckoning) + ' at 300 s a tick · phase ' + L0.phase : ''),
+        ]),
+      ]));
+      var wg = el('div', { class: 'grid', style: 'grid-template-columns:330px 320px 1fr;flex:1 1 auto;min-height:0' });
+      wg.appendChild(panel('THE RUNDOWN', { sub: 'the night\u2019s beats, largest say-do delta last' },
+        el('div', null, [U.skeleton(10, 3), empty('the night has not been read',
+          'The rundown is written at settlement. Nothing has settled.')])));
+      var wl = el('div', { class: 'rows', style: 'min-height:0' });
+      wl.appendChild(panel('THE LEVY', { sub: 'tribute lines' },
+        el('div', null, [U.skeleton(7, 3), empty('no tribute is due yet', 'The Levy falls at settlement.')])));
+      wl.appendChild(panel('THE HALL OF FAME', { sub: '4 titles' },
+        el('div', null, [U.skeleton(4, 2), empty('nothing ranked yet', 'Titles are awarded over the world\u2019s life.')])));
+      wg.appendChild(wl);
+      wg.appendChild(panel('★ THE RECEIPT REEL', { sub: 'the grant · the words · the seal · the deed' },
+        el('div', { class: 'reel' }, ['1', '2', '3', '4'].map(function (no, i) {
+          return el('div', { class: 'band' }, [
+            el('div', { class: 'no', text: no }),
+            el('div', { class: 'bd' }, [
+              el('div', { class: 'bt', text: ['THE GRANT', 'THE WORDS', 'THE SEAL', 'THE DEED'][i] }),
+              U.skeleton(2, 3),
+            ]),
+          ]);
+        }))));
+      waiting.appendChild(wg);
+      U.clear(host).appendChild(waiting);
       return;
     }
     var M = R.meters || {}, rd = (R.rundown || []).slice().sort(function (a, b) { return a.order - b.order; });
@@ -944,7 +1373,10 @@ var Screens = (function () {
 
     // E6 broadcast scale — the ceremony's headline row
     stack.appendChild(el('div', { class: 'hero' }, [
-      el('div', null, [el('div', { class: 'big' + ((M.levyShort || 0) > 0 ? ' bad' : ''), text: U.n(M.levyShort) }), el('div', { class: 'lab', text: 'LEVY SHORT' })]),
+      el('div', null, [
+        el('div', { class: 'big' + ((M.levyShort || 0) > 0 ? ' warn' : ''), text: U.n(M.levyShort) }),
+        el('div', { class: 'lab', text: 'LEVY SHORT' }),
+      ]),
       el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
       el('div', null, [el('div', { class: 'big', text: U.n(M.onAPromise) }), el('div', { class: 'lab', text: 'ON A PROMISE' })]),
       el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
@@ -1008,17 +1440,17 @@ var Screens = (function () {
           style: 'flex:1 1 auto;height:1px;background:' + (t.state === 'DASHED'
             ? 'repeating-linear-gradient(90deg,' + col + ' 0 4px,transparent 4px 8px)' : col),
         }),
-        el('span', { style: 'font-size:9px;color:var(--dim);width:52px;text-align:right', text: t.to }),
         el('span', {
-          style: 'width:70px;text-align:right;font-variant-numeric:tabular-nums;color:' +
-            (t.owed ? 'var(--red-text)' : 'var(--dim)'),
-          text: t.owed ? U.n(t.owed) + ' owed' : 'clear',
+          style: 'width:88px;flex:0 0 88px;text-align:right;font-variant-numeric:tabular-nums;color:' +
+            (t.owed ? 'var(--red-text)' : 'var(--dimmer)'),
+          title: 'tribute flows to ' + t.to,
+          text: t.owed ? U.n(t.owed) : 'clear',
         }),
       ]);
     })) : empty('no tribute line', 'Nobody owes the Levy on this frame.')));
     lp.appendChild(panel('THE HALL OF FAME', { sub: '4 titles' },
       (R.hallOfFame || []).length ? el('div', null, (R.hallOfFame || []).map(function (f) {
-        var bad = /BROKEN/.test(f.title);
+        var bad = /^MOST BROKEN/.test(f.title);
         return el('div', { style: 'display:flex;gap:9px;padding:7px 8px;border-bottom:1px solid var(--rule-dim)' }, [
           U.crest(f.principal, 22),
           el('div', { style: 'min-width:0' }, [
