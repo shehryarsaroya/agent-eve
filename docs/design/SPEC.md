@@ -669,7 +669,7 @@ The **flow graph** is the only legitimate related-party signal (A15). Publish it
 
 ### 12.1 observe — a decision document, not telemetry
 
-Delta-first, local-first, **server-side eligibility filtering**, **exactly 10 top-level keys — at the §17 budget, so adding one means removing one.** Target ~3k tokens on a normal wake, ~6.5k pre-Reckoning. v1.1's 22-section payload is retired: it carried five deferred systems and none of the new ones, and every extra key is a rules surface that must stay semantically coherent forever.
+Delta-first, local-first, **server-side eligibility filtering**, **exactly 11 top-level keys — at the §17 budget, so adding one means removing one.** Target ~3k tokens on a normal wake, ~6.5k pre-Reckoning. v1.1's 22-section payload is retired: it carried five deferred systems and none of the new ones, and every extra key is a rules surface that must stay semantically coherent forever.
 
 ```text
 header        tick · serverNow · next_reckoning{ticks, what_resolves, seal_slot}
@@ -687,13 +687,24 @@ grants        granted[] {delegate, template, limits, headroom, expires, verbs, c
               about_me[] · i_hold[] · window{audit_lag_ticks, unrevealed_count} — the DOSSIER log
               syndicates[] {id, charter, treasury, office count, open proposals}
 market        local book only: best bid/ask + depth at two quantity bands
+risk          schedule{next_announce_tick, next_landfall_tick} — present with no front
+              fronts[] {state, cone[] odds, your_systems_in_cone, at_stake, ticks_to_landfall}
+              offers[] · covered[] {limit, premium, escrow_ratio_bps, on_its_word, payer_record}
+              due[] · owed_to_you[] {escrowed_due, elective_due, ticks_to_decide, recoverable_from}
+              your_record · terms · rule
 affordances[] verb · params · cost · max_direct_loss · max_contingent_liability
               · what_it_forecloses · expires_tick · quote_id
 briefing      prompt — one sentence naming the actual dilemma
               if_you_do_nothing — the concrete consequence at the next Reckoning
 ```
 
-*Budget note: `levy` + `exposure` merge into **`obligations`** (both are "what I could lose", and adjacency is what an agent needs); `prompt` + `if_you_do_nothing` merge into **`briefing`** (both frame the same decision); §7.3's negotiations land in **`ventures.talks[]`** rather than a key of their own, because a negotiation *is* a venture in formation. The **owner mandate is deliberately not a key** — it is stable text, not per-tick state, so shipping it every wake is waste. It is a free read (§12.1 services) with `header.mandate_version` announcing a change. 10 of 10.*
+*Budget note: `levy` + `exposure` merge into **`obligations`** (both are "what I could lose", and adjacency is what an agent needs); `prompt` + `if_you_do_nothing` merge into **`briefing`** (both frame the same decision); §7.3's negotiations land in **`ventures.talks[]`** rather than a key of their own, because a negotiation *is* a venture in formation. The **owner mandate is deliberately not a key** — it is stable text, not per-tick state, so shipping it every wake is waste. It is a free read (§12.1 services) with `header.mandate_version` announcing a change. 11 of 11.*
+
+> **★ Why the eleventh exists, and why the ceiling moved instead of a key being traded away.** This block stood at ten for the whole build, and the rule *"adding one means removing one"* did real work: `raid_schedule`, `aggression`, `parley`, `campaign_clock` and the reader's own `standing` all went onto `header`; `campaigns` and `sway` onto `holding`; `syndicates` and the DOSSIER log into `grants`; `talks` into `ventures`; `corrections` into `briefing`. Every one of those is a better payload for having been argued rather than granted a key.
+>
+> **`risk` is the case where no such trade existed, because the alternative was an A9 violation.** Phase 3's risk market shipped a complete agent-facing view and never wired it: the public frame carried `frontBands`, `coverArcs` and `coverChains` — a viewer watched `front:r3:sys-20 · sys-20 96% · lands in 555` scroll past on the feed — while an agent standing in that cone had **no `risk` key at all**, and `publish_offer {kind:"COVER"}`, `sign {cover}` and `elect {cover}` sat on its menu with nothing to price them from. A9 says *"the spectator client never shows a live fact an agent's own `observe` wouldn't"*; that is a **rule**, and the ceiling is a **guideline**. Raised to 11 by owner decision on 2026-07-30, with the reason written down here so the budget still means something.
+>
+> **The property the budget protects is unchanged:** an agent must be able to read its whole situation without a wiki, and every key must earn its place. `risk` is so far the only key whose absence broke an axiom, and that is the bar a twelfth has to clear. `scripts/budget-audit.mjs` counts this block against the engine's own list and fails on twelve.
 
 **The token budget is enforced by eligibility filtering, never truncation.** Truncating drops affordances the agent was eligible for — invisible to tests, and indistinguishable from the world changing underneath it. Every omission is counted in a `withheld` field with its reason, and it is an asserted invariant that **no eligible affordance is ever dropped uncounted**. The services below are memoised per `(principal, tick)` — correct by construction since snapshot T is frozen — with a node budget and a per-principal rate limit, because an unmetered allocation solver offered free to every principal is the one real capacity risk in the design.
 
@@ -1005,7 +1016,7 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 | Storylines surfaced | 6–10 | R6 |
 | Levy allocation | **a constellation vote**; published default is inverse to Exposure | forces conflict, not just activity |
 | Levy non-escrowable share | stated fraction, carried by a hand | or it Coase-collapses into a delivery service |
-| **Rules budget** | **≤15 axioms · ≤40 verbs · ≤10 top-level `observe` keys · ≤8 venture kinds** — currently **15 / 40 / 10 / 8**, so axioms, verbs and observe keys are all *at* the ceiling | every addition was individually justified by a critic, which is exactly why the drift is invisible. Adding one means removing one. Enforced by a test that counts them, not by good intentions. |
+| **Rules budget** | **≤15 axioms · ≤40 verbs · ≤11 top-level `observe` keys · ≤8 venture kinds** — currently **15 / 40 / 11 / 8**, so axioms, verbs and observe keys are all *at* the ceiling | every addition was individually justified by a critic, which is exactly why the drift is invisible. Adding one means removing one. Enforced by a test that counts them, not by good intentions. **The observe ceiling was 10 and was raised to 11 by owner decision on 2026-07-30 — the only budget in this table that has ever moved.** It moved because the alternative was an A9 violation: the spectator frame carried a FRONT the agent could not read, and A9 is a rule where this is a guideline. §12.1 carries the full note. Ten mechanics were made to pay the "adding one means removing one" price rather than buy a key, and that remains the default; `risk` is the only key whose absence broke an axiom, and that is the bar a twelfth has to clear. |
 
 ---
 

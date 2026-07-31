@@ -3,8 +3,8 @@
  *
  * What the rest of the engine needs to know about this module:
  *
- *   - **Exactly ten top-level keys, in order** — `header · hands · holding ·
- *     obligations · ventures · counterparties · grants · market · affordances ·
+ *   - **Exactly eleven top-level keys, in order** — `header · hands · holding ·
+ *     obligations · ventures · counterparties · grants · market · risk · affordances ·
  *     briefing`. §17's budget is *at* its ceiling, so adding one means removing one,
  *     and `assertObservation` counts them.
  *   - **The budget is met by eligibility filtering, never truncation** (PROP-O1).

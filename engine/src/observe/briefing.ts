@@ -479,7 +479,7 @@ function roleIsWage(venture: VentureRecord, roleIndex: number): boolean {
  * is the one comparison that is unit-safe by construction — and it stays unit-safe if a future
  * kind arrives in a new unit, because a new kind needs a `GRAVITY` entry and gets its own bucket.
  *
- * No `withheld` field is added: the schema is ten top-level keys and this is a presentation
+ * No `withheld` field is added: the schema is eleven top-level keys and this is a presentation
  * order, not a missing fact. Severity-first is what makes the absent count harmless.
  * ══════════════════════════════════════════════════════════════════════════
  */

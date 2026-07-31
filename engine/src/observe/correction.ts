@@ -59,7 +59,7 @@ export interface Correction {
 }
 
 /**
- * Which of the ten keys differ between two observations.
+ * Which of the eleven keys differ between two observations.
  *
  * Compared through `canonicalize` rather than by reference or by `JSON.stringify`:
  * canonical form sorts keys, so two payloads that differ only in property order are

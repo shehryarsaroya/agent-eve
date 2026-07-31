@@ -2114,6 +2114,7 @@ import {
   coverArcs,
   coverChains,
   COVER_OFFER_TTL_TICKS,
+  riskBlock,
   riskViewFor,
   RiskBook,
   type CoverArc,
@@ -2123,6 +2124,7 @@ import {
   type HoldingRead,
   type RiskAffordance,
   type RiskView,
+  type RiskViewInput,
   type WithheldRisk,
 } from '../risk/index.js';
 import { frontBands } from '../risk/lines.js';
@@ -13158,14 +13160,42 @@ export class Runtime {
     return LEVY_UNIT_MINOR;
   }
 
-  /** Everything a principal reads about risk. §12.1: a decision document, not telemetry. */
-  riskView(principal: PrincipalId, tick: number = this.engine.tick): RiskView {
-    return riskViewFor({
+  /** One read of this principal's lots and cash, shared by every risk projection. */
+  private riskRead(principal: PrincipalId, tick: number): RiskViewInput {
+    return {
       book: this.risk,
       principal,
       tick,
       holdings: this.riskHoldings(principal, tick),
       freeCash: freeCash(this.ledger, principal),
+    };
+  }
+
+  /** Everything a principal reads about risk. §12.1: a decision document, not telemetry. */
+  riskView(principal: PrincipalId, tick: number = this.engine.tick): RiskView {
+    return riskViewFor(this.riskRead(principal, tick));
+  }
+
+  /**
+   * ★ **`observe.risk` — the eleventh key** (A9, §12.1).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **`riskView` above had ZERO CALLERS for this layer's whole life**, and the consequence was a
+   * live A9 breach rather than merely dead code: the spectator frame carried `frontBands` —
+   * a viewer read `front:r3:sys-20 · sys-20 96% · lands in 555` off the feed — while the agents
+   * in that storm had **no `risk` key in the observation at all**, and the three risk acts were
+   * on their menus with nothing to price them from.
+   *
+   * Shaped here for `marketView`'s reason: this is where every other block a projection publishes
+   * is assembled from one read, so the affordances and the block cannot come off two different
+   * readings of the same book inside one payload (scar #5's shape, with weather).
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  riskBlockFor(principal: PrincipalId, tick: number = this.engine.tick): Readonly<Record<string, unknown>> {
+    const map = this.world.map;
+    return riskBlock({
+      tick,
+      read: { input: this.riskRead(principal, tick), tierOf: (system) => tierOf(map, system) },
     });
   }
 

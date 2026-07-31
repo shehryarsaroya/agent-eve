@@ -36,8 +36,15 @@ import {
 } from './fixture.js';
 import { minor } from '../../src/core/units.js';
 
-describe('PROP-O3 — exactly ten top-level keys, in order', () => {
+describe('PROP-O3 — exactly eleven top-level keys, in order', () => {
   it('names them in §12.1’s order and no others', () => {
+    // ★ **RE-MEASURED, NOT ADJUSTED.** This list was ten for the project's whole life and the
+    // §17 rule — *"adding one means removing one"* — did real work: ten mechanics were pushed
+    // onto `header`, `holding`, `grants`, `ventures` and `briefing` rather than buy a key.
+    // `risk` is the one case where that trade was not available, because the alternative was an
+    // **A9 violation**: the spectator frame carried `frontBands` while an agent standing in the
+    // cone had no `risk` key at all. Raised to eleven by owner decision; the full note is on
+    // `api/observe.ts:OBSERVE_KEYS`, in SPEC §12.1 and in `scripts/budget-audit.mjs`.
     expect(OBSERVE_KEYS).toEqual([
       'header',
       'hands',
@@ -47,10 +54,11 @@ describe('PROP-O3 — exactly ten top-level keys, in order', () => {
       'counterparties',
       'grants',
       'market',
+      'risk',
       'affordances',
       'briefing',
     ]);
-    expect(OBSERVE_KEYS.length).toBe(10);
+    expect(OBSERVE_KEYS.length).toBe(11);
   });
 
   it('a built observation has exactly those keys, in that order', () => {
@@ -60,7 +68,7 @@ describe('PROP-O3 — exactly ten top-level keys, in order', () => {
     assertObservation(built.observation);
   });
 
-  it('a fully loaded observation still has ten keys — the budget is at its ceiling', () => {
+  it('a fully loaded observation still has eleven keys — the budget is at its ceiling', () => {
     const f = fixture();
     const haul = makeHaul(f);
     goLive(f, haul, [BRAM, CASS], minor(12_000));
@@ -80,11 +88,11 @@ describe('PROP-O3 — exactly ten top-level keys, in order', () => {
       talks: [{ venture: haul.id, counterparty: BRAM, unread: 2, last_tick: 1 }],
     });
     const built = buildObservation(sources, ALICE);
-    expect(Object.keys(built.observation).length).toBe(10);
+    expect(Object.keys(built.observation).length).toBe(11);
     expect(checkObservation(built.observation)).toEqual([]);
   });
 
-  it('detects an eleventh key rather than tolerating it', () => {
+  it('detects a twelfth key rather than tolerating it', () => {
     const f = fixture();
     const built = buildObservation(sourcesFor(f), ALICE);
     const mutant = { ...built.observation, extra: 1 } as unknown as typeof built.observation;

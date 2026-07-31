@@ -18,7 +18,29 @@ import { readFileSync } from 'node:fs';
 const SPEC = new URL('../../docs/design/SPEC.md', import.meta.url).pathname;
 const TYPES = new URL('../src/core/types.ts', import.meta.url).pathname;
 
-const BUDGETS = { axioms: 15, verbs: 40, observeKeys: 10, ventureKinds: 8 };
+/**
+ * ★ **`observeKeys` WAS 10 AND IS NOW 11, BY OWNER DECISION, AND THAT IS THE POINT OF THIS NOTE.**
+ *
+ * A ceiling raised silently is not a budget. This one was raised on 2026-07-30 because the
+ * alternative was an **A9 violation**: the spectator frame carried `frontBands`, `coverArcs` and
+ * `coverChains` — a player watched `front:r3:sys-20 · sys-20 96% · lands in 555` scroll past —
+ * while the agents standing in that cone had no `risk` key in `observe` at all, and the three risk
+ * acts were on their menus with no state to price them from. A9 is an axiom; the ceiling is a
+ * guideline; where they collide the guideline moves and writes down why.
+ *
+ * **What the eleventh key buys:** the front, its cone, what it would take from ground the reader
+ * actually holds, the COVER market's prices, and the INDEMNITIES it owes and is owed. It is the
+ * one key whose absence broke an axiom, and that is the bar a twelfth has to clear.
+ *
+ * **The property the budget exists for is unchanged**: an agent must be able to read its whole
+ * situation without a wiki, and every key must earn its place. Ten separate mechanics were made to
+ * pay for that rule rather than buy a key — `raid_schedule`, `aggression`, `parley`,
+ * `campaign_clock` and the reader's own `standing` onto `header`; `campaigns` and `sway` onto
+ * `holding`; `syndicates` and the DOSSIER log into `grants`; `talks` into `ventures`;
+ * `corrections` into `briefing` — and every one of them is a better payload for it. That trade is
+ * still the default, and adding a twelfth still means removing one.
+ */
+const BUDGETS = { axioms: 15, verbs: 40, observeKeys: 11, ventureKinds: 8 };
 
 const spec = readFileSync(SPEC, 'utf8');
 const types = readFileSync(TYPES, 'utf8');
@@ -76,9 +98,9 @@ for (const [k, limit] of Object.entries(BUDGETS)) {
 if (counts.axioms !== 15) {
   problems.push(`axioms: expected exactly 15, found ${counts.axioms}`);
 }
-if (counts.observeKeys !== 10) {
+if (counts.observeKeys !== BUDGETS.observeKeys) {
   problems.push(
-    `observe keys: expected exactly 10 (the budget is at its ceiling), found ${counts.observeKeys}: ${observeKeys.join(' ')}`,
+    `observe keys: expected exactly ${BUDGETS.observeKeys} (the budget is at its ceiling), found ${counts.observeKeys}: ${observeKeys.join(' ')}`,
   );
 }
 
@@ -100,7 +122,7 @@ if (kindRow) {
 console.log('Rules budget (§17):');
 console.log(`  axioms         ${counts.axioms}/15`);
 console.log(`  verbs          ${counts.verbs}/40`);
-console.log(`  observe keys   ${counts.observeKeys}/10`);
+console.log(`  observe keys   ${counts.observeKeys}/${BUDGETS.observeKeys}`);
 console.log(`  venture kinds  ${counts.ventureKinds}/8   [${engineKindList.join(' ')}]`);
 
 if (problems.length > 0) {

@@ -61,13 +61,18 @@ describe('the schedule reaches the agent before the first raid does', () => {
     expect(runtime.raids.all()).toEqual([]);
   });
 
-  it('the observation is still exactly ten top-level keys — §17\'s budget is at its ceiling', () => {
+  it('the observation is still exactly eleven top-level keys — §17\'s budget is at its ceiling', () => {
     const { runtime, principals } = raidWorld('obs-budget', 3);
     const me = principals[0];
     if (me === undefined) throw new Error('fixture');
     tick(runtime);
     expect(Object.keys(observe(runtime, me)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))).toEqual([...OBSERVE_KEYS].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
-    expect(OBSERVE_KEYS).toHaveLength(10);
+    // ★ RE-MEASURED, NOT ADJUSTED. It was 10 for the project's whole life and is 11 because
+    // `risk` landed: §12.1's eleventh key, added by raising §17's ceiling rather than trading a
+    // key away, because the alternative was an A9 violation (`api/observe.ts:OBSERVE_KEYS` has the
+    // note). The number is read off the served list, and the list is checked against `agent.md`
+    // §6 and SPEC §12.1 by `test/observe/promise.test.ts` and `scripts/budget-audit.mjs`.
+    expect(OBSERVE_KEYS).toHaveLength(11);
   });
 });
 

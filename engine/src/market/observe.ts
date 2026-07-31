@@ -227,7 +227,7 @@ export function publicBook(
  * The `observe/sources.ts:BookRow` shape — the second observation implementation's
  * input port.
  *
- * `src/observe/` is a complete parallel build of the same ten keys with no
+ * `src/observe/` is a complete parallel build of the same eleven keys with no
  * transport wired to it, so nothing in production constructs its sources today.
  * This adapter exists so that when it does get a transport it reads the same book
  * rather than growing its own — two homes for the price an agent trades on is

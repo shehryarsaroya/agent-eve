@@ -1,10 +1,12 @@
 /**
  * `observe` — a decision document, not telemetry (SPEC §12.1).
  *
- * **Exactly ten top-level keys, and the budget is at its ceiling** (§17): adding
+ * **Exactly eleven top-level keys, and the budget is at its ceiling** (§17): adding
  * one means removing one, and `test/api/observe.test.ts` counts them rather than
  * trusting anybody's intentions. The names and their order are `agent.md` §6's,
- * because a player reads that document once and then pattern-matches on shape.
+ * because a player reads that document once and then pattern-matches on shape. It
+ * stood at ten until `risk`; {@link OBSERVE_KEYS} records why that one was bought by
+ * raising the ceiling rather than by spending a key, and what the ceiling still means.
  *
  * Three properties this file exists to hold:
  *
@@ -30,7 +32,7 @@
  * **THIS FILE HAS A RIVAL AND ONE OF THEM MUST GO.**
  *
  * `src/observe/` landed in parallel and is a second, independent implementation of
- * the same ten keys — affordances, corrections, withheld, briefing, quote — with its
+ * the same eleven keys — affordances, corrections, withheld, briefing, quote — with its
  * own tests and no transport wired to it. This one is what the server serves.
  *
  * Two homes for the observation is two homes for the *rules surface an agent plays
@@ -431,11 +433,40 @@ export interface Observation {
   readonly counterparties: readonly Readonly<Record<string, unknown>>[];
   readonly grants: Readonly<Record<string, unknown>>;
   readonly market: Readonly<Record<string, unknown>>;
+  readonly risk: Readonly<Record<string, unknown>>;
   readonly affordances: readonly Affordance[];
   readonly briefing: Readonly<Record<string, unknown>>;
 }
 
-/** The ten keys, in `agent.md` §6's order. Asserted, not assumed. */
+/**
+ * The eleven keys, in `agent.md` §6's order. Asserted, not assumed.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ★ **THE ELEVENTH WAS ADDED BY RAISING §17's CEILING, AND THAT IS WRITTEN DOWN ON PURPOSE.**
+ *
+ * This list sat at ten for the project's whole life, and §17's rule was *"adding one means
+ * removing one"* — a real budget, and it worked: `raid_schedule`, `aggression`, `parley`,
+ * `campaign_clock` and the reader's own `standing` all went onto `header` rather than buying a
+ * key, `campaigns` and `sway` went onto `holding`, `syndicates` and the DOSSIER log went into
+ * `grants`, `talks` into `ventures` and `corrections` into `briefing`. Every one of those is a
+ * better payload for having been argued.
+ *
+ * `risk` is the case where that trade was **not available**, and the owner raised the ceiling to
+ * eleven rather than take it. The alternative was not a tidier payload; it was an **A9 violation**
+ * — the spectator frame carried `frontBands`, `coverArcs` and `coverChains`, and an agent standing
+ * in the cone of the front the viewer was watching could read **nothing**: `Runtime.riskView` had
+ * zero callers, and `publish_offer {kind:"COVER"}` · `sign {cover}` · `elect {cover}` were on the
+ * menu with no state to price them from. A9 is a rule; the ceiling is a guideline; where they
+ * collide the guideline moves and says why.
+ *
+ * **The budget still binds, and it still means the same thing.** The property it exists to protect
+ * is that *an agent can read its whole situation without a wiki, and every key earns its place*.
+ * So the test is unchanged in kind — `scripts/budget-audit.mjs` counts eleven against SPEC.md's own
+ * §12.1 block and fails on twelve, and the next key costs a removal exactly as the tenth did.
+ * There is one difference worth stating: **`risk` is the only key whose absence broke an axiom**,
+ * and that is the bar a twelfth has to clear.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
 export const OBSERVE_KEYS: readonly string[] = Object.freeze([
   'header',
   'hands',
@@ -445,6 +476,7 @@ export const OBSERVE_KEYS: readonly string[] = Object.freeze([
   'counterparties',
   'grants',
   'market',
+  'risk',
   'affordances',
   'briefing',
 ]);
@@ -593,8 +625,8 @@ export function buildObservation(input: ObserveInput): Observation {
       /**
        * **Your own record — the same row `counterparties[]` carries about everybody else.**
        *
-       * It lives on `header` rather than as an eleventh top-level key because §17's observe
-       * budget is *at* its ceiling at ten (`OBSERVE_KEYS` is counted, not trusted), and
+       * It lives on `header` rather than as a top-level key of its own because §17's observe
+       * budget is *at* its ceiling at eleven (`OBSERVE_KEYS` is counted, not trusted), and
        * `header` is where the payload already keeps the facts about the reader that are
        * true regardless of what it is doing this tick — its clock, its budgets, its
        * mandate version. Its record belongs in exactly that set.
@@ -619,8 +651,8 @@ export function buildObservation(input: ObserveInput): Observation {
        * are all here — before the first raid of the season, and in every observation
        * after it.
        *
-       * It lives on `header` rather than as an eleventh top-level key because §17's
-       * observe budget is *at* its ceiling at ten (`OBSERVE_KEYS` is counted, not
+       * It lives on `header` rather than as a top-level key of its own because §17's
+       * observe budget is *at* its ceiling at eleven (`OBSERVE_KEYS` is counted, not
        * trusted), and `header` is where the payload already keeps the clock. A schedule
        * is a clock.
        */
@@ -645,7 +677,7 @@ export function buildObservation(input: ObserveInput): Observation {
        * ══════════════════════════════════════════════════════════════════════
        *
        * On `header` for `raid_schedule`'s reason, and it is the same reason: §17's observe budget
-       * is *at* its ceiling at ten top-level keys (`OBSERVE_KEYS` is counted, not trusted), and
+       * is *at* its ceiling at eleven top-level keys (`OBSERVE_KEYS` is counted, not trusted), and
        * `header` is where the payload keeps the facts about the reader that hold regardless of
        * what it is doing this tick — its clock, its budgets, its record. A per-Reckoning allowance
        * is a budget.
@@ -679,7 +711,7 @@ export function buildObservation(input: ObserveInput): Observation {
        * ══════════════════════════════════════════════════════════════════════
        *
        * On `header` for `aggression`'s reason, and it is the same one: §17's observe budget is at
-       * ten of ten (`OBSERVE_KEYS` is counted, not trusted), and `header` is where the payload keeps
+       * eleven of eleven (`OBSERVE_KEYS` is counted, not trusted), and `header` is where the payload keeps
        * the reader's clocks, budgets and record. A per-Reckoning allowance is a budget.
        *
        * **A9 by construction.** Every input is the reader's own or already `PUBLIC`: its standing
@@ -690,7 +722,7 @@ export function buildObservation(input: ObserveInput): Observation {
       // ── THE CAMPAIGN CLOCK (§16.6 MUST-8), PRESENT AT ZERO CAMPAIGNS AND AT FOUR ──
       //
       // On `header` for `raid_schedule`'s and `aggression`'s reason, and it is the same one:
-      // §17's observe budget is at ten of ten, `header` is where a world-wide published clock
+      // §17's observe budget is at eleven of eleven, `header` is where a world-wide published clock
       // belongs, and a clock nobody can read is not a published clock. `aggressionFor`'s docblock
       // records what the alternative cost — until §9's capacity became a standing block, the only
       // mention of it in an observation was the `withheld` line that fires when it hits zero, so an
@@ -761,8 +793,8 @@ export function buildObservation(input: ObserveInput): Observation {
       //
       // §12.1 lists `holding` as `state · threats · siege clock · upkeep_due`. The third of those
       // had never been built, and campaigns are exactly it: a multi-Reckoning clock running against
-      // (or from) a principal's territory. So this spends **no** top-level key — the budget is at ten
-      // of ten and *"adding one means removing one"* — and it lands where the canon already put it.
+      // (or from) a principal's territory. So this spends **no** top-level key — the budget is at
+      // eleven of eleven and *"adding one means removing one"* — and it lands where the canon put it.
       campaigns: myCampaigns,
       campaign_rules: runtime.campaignStatementFor(principal, tick),
       /**
@@ -801,7 +833,7 @@ export function buildObservation(input: ObserveInput): Observation {
        *
        * ══════════════════════════════════════════════════════════════════════
        * **ON `holding` AND NOT A KEY OF ITS OWN, AND THAT IS THE CANON'S CALL RATHER THAN A
-       * BUDGET DODGE.** §12.1 is at ten of ten top-level keys and *"adding one means removing
+       * BUDGET DODGE.** §12.1 is at eleven of eleven top-level keys and *"adding one means removing
        * one"*. It is also the right home: §3 makes a HOLDING *"your named body on the map"*, and
        * sway is exactly what that body can project — measured from it, and from the CLAIMS it has
        * taken. `campaigns` landed in the reserved *"siege clock"* slot beside this for the same
@@ -893,7 +925,7 @@ export function buildObservation(input: ObserveInput): Observation {
        *
        * ══════════════════════════════════════════════════════════════════════
        * **It goes inside `obligations`, beside the raid row, and NOT in a key of its own.** §12.1's
-       * budget is *"exactly 10 top-level keys — at the §17 budget, so adding one means removing
+       * budget is *"exactly 11 top-level keys — at the §17 budget, so adding one means removing
        * one"*, and combat does not get to spend that: an engagement is what a `raid` row becomes
        * when its target answers FIGHT, so it belongs adjacent to the thing it is a consequence of,
        * which is the same argument that put `levy` and `exposure` together in the first place
@@ -992,7 +1024,7 @@ export function buildObservation(input: ObserveInput): Observation {
        *
        * A grant now delegates *sight*, and a delegate that can see something can hand it on.
        * This is where that shows up, and it is deliberately in `grants` rather than as an
-       * eleventh top-level key: §17's observe budget is at its ceiling at ten, and a DOSSIER is
+       * twelfth top-level key: §17's observe budget is at its ceiling at eleven, and a DOSSIER is
        * *what a grant was used for*, so the key that publishes grants is its home.
        *
        *   - `about_me[]`  — cuts on YOUR compartments, once revealed (or once you `audit`).
@@ -1050,7 +1082,7 @@ export function buildObservation(input: ObserveInput): Observation {
        * agent need a wiki"* with the wiki being the repository.
        *
        * **Nested under `grants` rather than given its own top-level key**, because SPEC §17's
-       * rules budget is `≤10 top-level observe keys` and it is AT ten: *"adding one means removing
+       * rules budget is `≤11 top-level observe keys` and it is AT eleven: *"adding one means removing
        * one, enforced by a test that counts them, not by good intentions."* The test caught this
        * exactly as designed. `grants` is the right home anyway — it is the authority block, and
        * after the office-grantor fix above the offices a syndicate issued already appear in
@@ -1130,6 +1162,30 @@ export function buildObservation(input: ObserveInput): Observation {
         .map((o) => ({ by: o.by, text: o.text, tick: o.tick })),
     },
 
+    /**
+     * ★ **§12.1's ELEVENTH KEY — PHASE 3'S RISK MARKET, AND THE A9 BREACH IT CLOSES.**
+     *
+     * ══════════════════════════════════════════════════════════════════════════
+     * A9: *"the spectator client never shows a live fact an agent's own `observe` wouldn't."*
+     * The public frame carries `frontBands`, `coverArcs` and `coverChains`; a player watched
+     * `front:r3:sys-20 · sys-20 96% · lands in 555` scroll past on the feed while every one of
+     * that world's agents had **no `risk` key at all** — `Runtime.riskView` had zero callers and
+     * `agent.md` §11F documented three fields nothing serialised. This is that closed.
+     *
+     * **Adjacent to `market` on purpose.** They are the two prices in the game: what a good sells
+     * for, and what it costs to be made whole when a front takes it. An agent deciding whether to
+     * `haul` out of a cone or buy a COVER is reading one number against the other, and adjacency
+     * is what the `levy`/`exposure` merge already argued for.
+     *
+     * **The A9 argument runs field by field and is written out over `riskBlock` in
+     * `src/risk/view.ts`.** Its shape: every field here is on the frame already, or is the
+     * reader's own state, or is arithmetic the reader can reproduce — and the SWATH stays sealed
+     * until landfall, exactly as `frontBands` keeps it sealed, so parity holds in **both**
+     * directions rather than only the generous one.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    risk: runtime.riskBlockFor(principal, tick),
+
     affordances: affordanceSet.list,
 
     briefing: {
@@ -1143,8 +1199,8 @@ export function buildObservation(input: ObserveInput): Observation {
        * running the handler at submit would be an action reacting to a within-tick
        * decision (§15.2). So those arrive here, on the next read, drained on delivery.
        *
-       * It lives inside `briefing` rather than as an eleventh top-level key because
-       * §17's budget is at its ceiling at ten — and because "the last thing you tried
+       * It lives inside `briefing` rather than as a twelfth top-level key because
+       * §17's budget is at its ceiling at eleven — and because "the last thing you tried
        * was refused, and here is the nearest legal alternative" is exactly the framing
        * of the decision in front of the agent, which is what `briefing` is for.
        *
@@ -1293,8 +1349,8 @@ interface AffordanceSet {
  * and because a principal with one holding should not have to scan `books[]` to
  * answer "what is it worth here". When more than one good trades at that system the
  * summary names the first in canonical order and `books[]` carries them all — an
- * ambiguity worth having, because the alternative is an eleventh top-level key and
- * §17's budget is at ten.
+ * ambiguity worth having, because the alternative is a twelfth top-level key and
+ * §17's budget is at eleven.
  */
 /**
  * The exit, as state rather than as an offer — `holding.graduation`.

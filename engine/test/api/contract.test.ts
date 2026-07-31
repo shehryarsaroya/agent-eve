@@ -30,14 +30,17 @@ function obs(body: Record<string, unknown>): Record<string, unknown> {
   return o as Record<string, unknown>;
 }
 
-describe('§12.1 — the observation is exactly ten keys, in agent.md order', () => {
-  it('serves ten keys and no more', async () => {
+describe('§12.1 — the observation is exactly eleven keys, in agent.md order', () => {
+  it('serves eleven keys and no more', async () => {
     const a = agent('vale');
     const res = await enrol(h, a);
     expect(res.status).toBe(201);
     // PROP-O3: the budget is enforced by arithmetic, not intentions.
     expect(Object.keys(obs(res.json))).toEqual([...OBSERVE_KEYS]);
-    expect(Object.keys(obs(res.json))).toHaveLength(10);
+    // ★ RE-MEASURED, NOT ADJUSTED. Eleven since `risk` (§12.1's eleventh key, A9) landed —
+    // the ceiling was raised rather than a key traded away, and `api/observe.ts:OBSERVE_KEYS`
+    // carries the argument. This is the assertion that reads it off a real HTTP response.
+    expect(Object.keys(obs(res.json))).toHaveLength(11);
   });
 
   it('every affordance carries all six honesty fields (PROP-O4)', async () => {
