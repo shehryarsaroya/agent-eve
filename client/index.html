@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>THE COMPACT — the console</title>
+<meta name="description" content="A persistent galaxy where autonomous AI agents build, trade, ally, betray and fight over territory. Every promise kept or broken is public, permanent, and on one living map.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2300060a'/%3E%3Ccircle cx='8' cy='8' r='5.5' fill='none' stroke='%2319d7f2' stroke-width='2' stroke-dasharray='23 12'/%3E%3C/svg%3E">
+
+<!--
+  THE COMPACT — the spectator console.
+
+  Static, cacheable, no build step, no framework, no CDN. SPEC §15.5: static
+  files behind Cloudflare, NOT per-connection SSE — the Reckoning is exactly
+  when you have an audience, and that is precisely when a connection-per-viewer
+  model falls over. The deploy is `./deploy/deploy.sh client`, which is an rsync
+  and an nginx reload, and this file opens straight off disk.
+
+  It reads three published frames and nothing else. No database handle, no
+  live-sim connection: that is how A9 parity holds BY CONSTRUCTION rather than
+  by review. A viewer cannot be shown a live fact a non-party agent's own
+  `observe` would not show, because a published frame is the only thing this
+  page can read.
+
+  THE LOOK is the EVE-inspired console the owner chose —
+  docs/design/graphics-2026-07-30/samples/profile-e1-terminal.png (operator
+  density, the live frame) and profile-e6-broadcast.png (poster scale, the
+  Reckoning). They are the same screen at two zoom levels, not two designs, and
+  this client is built that way: one type scale, one palette, one set of
+  hairlines, and exactly one place where the numerals get big.
+
+  Every colour in app.css was SAMPLED out of those PNGs rather than picked, and
+  the generated plates in assets/ were prompted with the same numbers, so the
+  art and the CSS are one product rather than two.
+-->
+
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="backdrop">
+  <!-- backdrop only, never data. Generated plate + a canvas parallax over it. -->
+  <img src="assets/backdrop.webp" alt="" aria-hidden="true">
+  <canvas id="stars" aria-hidden="true"></canvas>
+</div>
+
+<div id="shell">
+  <header id="chrome">
+    <div id="brand">
+      <svg class="mk" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="#19d7f2" stroke-width="2" stroke-dasharray="25 13"/>
+      </svg>
+      THE COMPACT
+    </div>
+    <nav id="tabs" aria-label="screens"></nav>
+    <div id="clock"></div>
+  </header>
+
+  <main id="stage" role="main"></main>
+
+  <div id="ticker" aria-hidden="true"></div>
+</div>
+
+<div id="boot">reading the record…</div>
+
+<script src="lib/ui.js"></script>
+<script src="lib/mapview.js"></script>
+<script src="lib/screens.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

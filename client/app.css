@@ -1,0 +1,640 @@
+/* ============================================================================
+   THE COMPACT — the spectator console.
+
+   The palette and the geometry below are MEASURED, not chosen. Every colour in
+   `:root` was sampled out of the chosen mocks rather than picked by eye:
+
+     docs/design/graphics-2026-07-30/samples/profile-e6-broadcast.png
+     docs/design/graphics-2026-07-30/samples/screen-grants.png
+     docs/design/graphics-2026-07-30/samples/profile-e-evenative.png
+
+   That matters because the generated art in client/assets/ was prompted with
+   the same six numbers. An interface that is 80% hand-written CSS and 20%
+   generated PNG reads as two products unless the CSS is DERIVED FROM the art
+   rather than merely adjacent to it.
+
+     accent cyan  #19d7f2  — the single largest cyan block in profile-e6
+     failure red  #ca010f  — the single largest red block in profile-e6
+     panel fill   #000d12  — the modal pixel of screen-grants
+     ground       #00060a  — the modal pixel of the e-evenative chrome
+     dim text     #6f8288  — the modal low-saturation text pixel
+     hairline     #123038  — the panel border value
+
+   Geometry measured off screen-overview.png at 1280 wide: table row pitch
+   22.2px, hairlines at 1px, panel padding 8px, corner radius ZERO. The radius
+   is load-bearing — the terminal variant reads as credible partly because
+   nothing on it is rounded.
+
+   ONE ALARM COLOUR, USED SPARINGLY. Red means a promise was broken, and it
+   means nothing else. If red appears on a screen for any other reason that is
+   a bug, not a style choice.
+   ========================================================================= */
+
+:root {
+  /* ── the measured palette ─────────────────────────────────────────────── */
+  --void: #00060a;
+  --panel: #000d12;
+  --panel-2: #00090e;
+  --panel-3: #011016;
+  --rule: #123038;
+  --rule-dim: #0a1c22;
+  --rule-bright: #1d4a56;
+
+  --text: #cfdadd;
+  --text-2: #9aa9ad;
+  --dim: #6f8288;
+  --dimmer: #3f5158;
+
+  --cyan: #19d7f2;
+  --cyan-mid: #4fb9cc;
+  --cyan-deep: #0a6a7d;
+  --cyan-wash: rgba(25, 215, 242, 0.09);
+  --cyan-wash-2: rgba(25, 215, 242, 0.16);
+
+  --red: #ca010f;
+  --red-text: #e34a3f;
+  --red-wash: rgba(202, 1, 15, 0.15);
+  --red-wash-2: rgba(202, 1, 15, 0.3);
+
+  --amber: #d89c42;
+  --amber-wash: rgba(216, 156, 66, 0.13);
+
+  /* ── the measured geometry ────────────────────────────────────────────── */
+  --row-h: 22px;
+  --hair: 1px;
+  --pad: 8px;
+  --pad-tight: 5px;
+  --gap: 6px;
+
+  --fs-micro: 9px;
+  --fs-sm: 10px;
+  --fs-base: 11px;
+  --fs-md: 12px;
+  --fs-lg: 15px;
+  --fs-xl: 27px;
+  --fs-2xl: 44px;
+  --fs-3xl: 66px;
+
+  --track: 0.09em;
+  --track-wide: 0.16em;
+
+  /* System stacks only. No CDN, no webfont, no build step — the deploy is an
+     rsync of static files, and one missing font request is one more way for
+     the Reckoning to look broken to an audience. */
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --cond: "Roboto Condensed", "Helvetica Neue", "Arial Narrow", Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+
+body {
+  background: var(--void);
+  color: var(--text-2);
+  font: var(--fs-base)/1.35 var(--mono);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* The backdrop plate + the procedural starfield both live here, behind
+   everything, and neither ever carries data. */
+#backdrop {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: var(--void);
+}
+#backdrop img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0.5;
+}
+#stars { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+#shell {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; height: 100%;
+}
+
+/* ══════════════════════════════════════════════════ chrome: the tab bar ══ */
+
+#chrome {
+  display: flex; align-items: stretch; flex: 0 0 auto;
+  height: 28px; background: var(--panel-2);
+  border-bottom: var(--hair) solid var(--rule);
+  font-family: var(--cond); font-size: var(--fs-sm);
+  letter-spacing: var(--track); text-transform: uppercase;
+  user-select: none;
+}
+#brand {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 14px 0 10px; color: var(--text);
+  letter-spacing: var(--track-wide);
+  border-right: var(--hair) solid var(--rule);
+}
+#brand .mk { width: 11px; height: 11px; opacity: 0.85; }
+nav#tabs { display: flex; }
+nav#tabs button {
+  appearance: none; background: none; border: 0;
+  border-right: var(--hair) solid var(--rule-dim);
+  color: var(--dim); padding: 0 13px; cursor: pointer;
+  font: inherit; letter-spacing: var(--track);
+  position: relative;
+}
+nav#tabs button:hover { color: var(--text-2); background: var(--panel-3); }
+nav#tabs button[aria-current="true"] {
+  color: var(--void); background: var(--cyan);
+  font-weight: 600;
+}
+nav#tabs button .fk {
+  font-size: 8px; color: var(--dimmer); margin-right: 5px; letter-spacing: 0;
+}
+nav#tabs button[aria-current="true"] .fk { color: rgba(0, 6, 10, 0.55); }
+
+#clock {
+  margin-left: auto; display: flex; align-items: center; gap: 0;
+  border-left: var(--hair) solid var(--rule);
+}
+#clock .seg {
+  padding: 0 11px; display: flex; align-items: center; gap: 6px; height: 100%;
+  border-left: var(--hair) solid var(--rule-dim); color: var(--dim);
+  font-family: var(--mono); letter-spacing: 0.04em; white-space: nowrap;
+}
+#clock .seg:first-child { border-left: 0; }
+#clock .seg b { color: var(--cyan); font-weight: 500; }
+#clock .seg.warn b { color: var(--amber); }
+#clock .seg.stale { color: var(--red-text); }
+#clock .seg em {
+  font-style: normal; font-size: var(--fs-micro); color: var(--dimmer);
+  font-family: var(--cond); letter-spacing: var(--track);
+}
+
+/* the freeze pip — the one thing on the chrome that moves every tick */
+.pip {
+  width: 6px; height: 6px; background: var(--cyan); display: inline-block;
+  animation: beat 2s steps(1, end) infinite;
+}
+@keyframes beat { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.15; } }
+
+/* ═══════════════════════════════════════════════════════════ the stage ══ */
+
+#stage { flex: 1 1 auto; overflow: hidden; position: relative; }
+.screen {
+  position: absolute; inset: 0; overflow: auto;
+  padding: var(--gap); display: none;
+}
+.screen[data-on="1"] { display: block; }
+.screen.nogrow { display: none; }
+
+/* the layout primitives — everything is a grid of hairline panels */
+.grid { display: grid; gap: var(--gap); }
+.g-2 { grid-template-columns: 1fr 1fr; }
+.g-3 { grid-template-columns: 1fr 1fr 1fr; }
+.g-4 { grid-template-columns: repeat(4, 1fr); }
+.rows { display: flex; flex-direction: column; gap: var(--gap); }
+.fill { height: 100%; }
+
+/* ══════════════════════════════════════════════════════════════ panels ══ */
+
+.panel {
+  background: var(--panel); border: var(--hair) solid var(--rule);
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+}
+.panel > h2 {
+  flex: 0 0 auto; margin: 0; padding: var(--pad-tight) var(--pad);
+  font: 600 var(--fs-sm)/1 var(--cond);
+  letter-spacing: var(--track-wide); text-transform: uppercase;
+  color: var(--cyan-mid); background: var(--panel-2);
+  border-bottom: var(--hair) solid var(--rule);
+  display: flex; align-items: center; gap: var(--pad); white-space: nowrap;
+}
+.panel > h2 .sub {
+  color: var(--dim); font-weight: 400; letter-spacing: var(--track);
+  text-transform: none; font-size: var(--fs-micro);
+}
+.panel > h2 .right { margin-left: auto; color: var(--dim); font-weight: 400; }
+.panel > h2.alarm { color: var(--red-text); }
+.panel .body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.panel .body.pad { padding: var(--pad); }
+.panel .foot {
+  flex: 0 0 auto; padding: 4px var(--pad); border-top: var(--hair) solid var(--rule-dim);
+  color: var(--dimmer); font-size: var(--fs-micro); font-family: var(--cond);
+  letter-spacing: var(--track); text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════════════════════ tables ══ */
+
+table.t { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
+table.t thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--panel-2); color: var(--dim);
+  font: 400 var(--fs-micro)/1 var(--cond);
+  letter-spacing: var(--track-wide); text-transform: uppercase;
+  text-align: left; padding: 6px var(--pad); white-space: nowrap;
+  border-bottom: var(--hair) solid var(--rule);
+  cursor: pointer; user-select: none;
+}
+table.t thead th:hover { color: var(--cyan-mid); }
+table.t thead th.num, table.t td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.t thead th .ar { color: var(--dimmer); margin-left: 3px; }
+table.t thead th[data-sorted] { color: var(--cyan); }
+table.t tbody tr { height: var(--row-h); border-bottom: var(--hair) solid var(--rule-dim); }
+table.t tbody tr:hover { background: var(--cyan-wash); }
+table.t tbody tr.sel { background: var(--cyan-wash-2); }
+/* RED = a promise broke. AMBER = value at risk or taken. Nothing else tints. */
+table.t tbody tr.bad { background: var(--red-wash); }
+table.t tbody tr.bad:hover { background: var(--red-wash-2); }
+table.t tbody tr.warn { background: rgba(216, 156, 66, 0.055); }
+table.t tbody tr.warn:hover { background: var(--amber-wash); }
+table.t td {
+  padding: 0 var(--pad); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; color: var(--text-2);
+}
+table.t td.k { color: var(--text); }
+table.t td.dim { color: var(--dim); }
+table.t.click tbody tr { cursor: pointer; }
+
+/* the handle chip — a principal is always drawn the same way, everywhere */
+.h {
+  color: var(--cyan); text-decoration: none; cursor: pointer;
+  border-bottom: var(--hair) dotted var(--cyan-deep);
+}
+.h:hover { color: #fff; border-bottom-color: var(--cyan); }
+.h.bad { color: var(--red-text); border-bottom-color: rgba(202, 1, 15, 0.5); }
+.sysl { color: var(--cyan-mid); cursor: pointer; text-decoration: none; }
+.sysl:hover { color: var(--cyan); }
+
+/* small square status swatch — the mocks lean on these hard */
+.sw { display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: -1px; }
+.sw.cy { background: var(--cyan); }
+.sw.cyd { background: var(--cyan-deep); }
+.sw.rd { background: var(--red); }
+.sw.am { background: var(--amber); }
+.sw.gy { background: #35464b; }
+.sw.hollow { background: none; border: var(--hair) solid var(--dim); }
+
+/* state tags */
+.tag {
+  display: inline-block; padding: 1px 5px; font-size: var(--fs-micro);
+  font-family: var(--cond); letter-spacing: var(--track); text-transform: uppercase;
+  border: var(--hair) solid var(--rule-bright); color: var(--dim);
+}
+.tag.cy { color: var(--cyan); border-color: var(--cyan-deep); }
+.tag.rd { color: #fff; background: var(--red); border-color: var(--red); }
+.tag.am { color: var(--amber); border-color: rgba(216, 156, 66, 0.45); }
+.tag.solid { color: var(--void); background: var(--cyan); border-color: var(--cyan); }
+
+/* ══════════════════════════════════════════════════════════ stat tiles ══ */
+
+.tiles { display: flex; gap: var(--gap); }
+.tile {
+  flex: 1 1 0; min-width: 0; background: var(--panel);
+  border: var(--hair) solid var(--rule); padding: 7px var(--pad) 8px;
+}
+.tile .lab {
+  font: 400 var(--fs-micro)/1 var(--cond); letter-spacing: var(--track-wide);
+  text-transform: uppercase; color: var(--dim); margin-bottom: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tile .val {
+  font: 400 var(--fs-xl)/1 var(--mono); color: var(--cyan);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.tile .val.sm { font-size: var(--fs-lg); }
+.tile .val.neutral { color: var(--text); }
+.tile .val.dimval { color: var(--dim); }
+.tile.bad { border-color: rgba(202, 1, 15, 0.55); background: var(--red-wash); }
+.tile.bad .val { color: var(--red-text); }
+.tile.bad .lab { color: var(--red-text); }
+.tile.warn { border-color: rgba(216, 156, 66, 0.45); }
+.tile.warn .val { color: var(--amber); }
+.tile.warn .lab { color: var(--amber); }
+.tile .note {
+  font-size: var(--fs-micro); color: var(--dimmer); margin-top: 4px;
+  line-height: 1.45; overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
+/* ═════════════════════════════════════════════════════════ empty state ══ */
+/*
+   An empty panel must read as "nothing yet", never as a broken layout. This
+   project's oldest defect is a capability nobody can tell from a missing one;
+   reproducing it in the renderer would be a poor joke. So an empty panel says
+   WHICH key is empty and WHAT would fill it.
+*/
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 22px 18px; text-align: center; min-height: 74px; height: 100%;
+  color: var(--dimmer);
+  background:
+    repeating-linear-gradient(-45deg, transparent 0 7px, rgba(18, 48, 56, 0.14) 7px 8px);
+}
+.empty .mark {
+  width: 15px; height: 15px; border: var(--hair) solid var(--rule-bright);
+  position: relative;
+}
+.empty .mark::after {
+  content: ""; position: absolute; inset: 5px; background: var(--rule-bright);
+}
+.empty .say {
+  font: 400 var(--fs-sm)/1.5 var(--cond); letter-spacing: var(--track);
+  text-transform: uppercase; color: var(--dim);
+}
+.empty .why {
+  font-size: var(--fs-micro); color: var(--dimmer); max-width: 46ch; line-height: 1.6;
+  font-family: var(--mono); text-transform: none; letter-spacing: 0;
+}
+.empty .why code { color: var(--cyan-deep); }
+
+/* ═══════════════════════════════════════════════════════════ the ticker ══ */
+
+#ticker {
+  flex: 0 0 auto; height: 24px; display: flex; align-items: center;
+  background: var(--panel-2); border-top: var(--hair) solid var(--rule);
+  overflow: hidden; font-size: var(--fs-sm); color: var(--dim);
+  white-space: nowrap;
+}
+#ticker .lead {
+  flex: 0 0 auto; padding: 0 10px; height: 100%; display: flex; align-items: center;
+  background: var(--cyan); color: var(--void);
+  font: 600 var(--fs-micro)/1 var(--cond); letter-spacing: var(--track-wide);
+}
+/* The marquee starts at the left edge, not off-screen: a viewer who lands on
+   the page during the 90 s of empty lead-in concludes the ticker is broken. */
+#ticker .run { display: inline-block; white-space: nowrap; animation: run 70s linear infinite; }
+#ticker .run i { font-style: normal; padding: 0 24px; }
+#ticker .run i::before { content: "◇"; color: var(--cyan-deep); padding-right: 10px; }
+#ticker:hover .run { animation-play-state: paused; }
+@keyframes run { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* ══════════════════════════════════════════════════════════════ the map ══ */
+
+/* The map's own ground is --void, DARKER than the outermost band, so the
+   FRONTIER boundary reads as an edge instead of dissolving into the panel. */
+#mapwrap { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--void); }
+#mapsvg { display: block; width: 100%; height: 100%; cursor: grab; }
+#mapsvg.drag { cursor: grabbing; }
+
+/* ★ THREE BANDS OF DIFFERENT GROUND, not three node colours. Every generated
+   map in the sweep failed this. The three fills are three real steps of value
+   with a lit boundary between each, and they run LIGHTEST AT THE CORE: the
+   Commons is settled and safe, the Frontier is raw. A stranger has to be able
+   to put a finger on the line between two bands without reading a word. */
+/* Monotonic toward the core, and the panel behind them (#000d12) is darker
+   than all three — so the outermost boundary reads as an edge rather than as
+   nothing. The FRONTIER band was originally #010c12, one value off the panel
+   fill, which meant the outer band was invisible and the map looked like two
+   tiers and a blank. */
+.band-fill-COMMONS { fill: #14424f; }
+.band-fill-MARCHES { fill: #0a2c38; }
+.band-fill-FRONTIER { fill: #041a22; }
+.band-edge { fill: none; stroke: #2a5f6b; stroke-width: 1.4; }
+/* THE COMMONS is drawn CATEGORICALLY differently, not merely lighter: a
+   neutral dotted edge, no bloc colour, and no fence ever crosses it. A8 makes
+   hostile action there INVALID rather than punished, and the drawing says so. */
+.band-edge.commons { stroke: #93a6aa; stroke-dasharray: 4 5; stroke-width: 1.3; }
+.band-label {
+  fill: #3a5c66; font: 600 12px var(--cond); letter-spacing: 0.34em;
+  text-transform: uppercase; pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+}
+.band-label.commons { fill: #93a6aa; font-size: 9px; letter-spacing: 0.2em; }
+.con-label {
+  fill: #1c3b44; font: 600 15px var(--cond); letter-spacing: 0.34em;
+  pointer-events: none; text-anchor: middle;
+}
+
+.lane { stroke: #17414c; stroke-width: 1; fill: none; }
+.lane.strait { stroke: #2a5f6b; }
+.lane.severed { stroke: #6b3540; }
+.waist { stroke: var(--cyan-deep); stroke-width: 1.4; fill: none; }
+.notch { fill: #06171d; stroke: var(--cyan-deep); stroke-width: 1; }
+.notch-t { fill: var(--cyan-mid); font: 8px var(--mono); text-anchor: middle; pointer-events: none; }
+.door { fill: #180a10; stroke: var(--red); stroke-width: 1.2; }
+.door-t { fill: var(--red-text); font: 8px var(--mono); text-anchor: middle; pointer-events: none; }
+
+.node { stroke-width: 1; cursor: pointer; }
+.node-COMMONS { fill: #0a2c34; stroke: #7f9296; }
+.node-MARCHES { fill: #08313b; stroke: #2c6b78; }
+.node-FRONTIER { fill: #0a3540; stroke: #35808f; }
+.node:hover { stroke: var(--cyan); stroke-width: 1.8; }
+.node.sel { stroke: #fff; stroke-width: 2; }
+/* Halos, because 30 labels on a 30-node graph WILL collide somewhere and an
+   unreadable name is worse than a name overlapping a lane. */
+.node-lab {
+  fill: #b7c5c9; font: 9px var(--mono); pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3.2px; stroke-linejoin: round;
+}
+.node-id {
+  fill: #5d787f; font: 8px var(--mono); pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+}
+.fuel-ring { fill: none; stroke: var(--amber); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.8; }
+
+/* THE VERGE — one continuous solid outline. Never dashed: a dash is a hole,
+   and a hole in a fence reads as a claim that is not there. */
+.verge { fill-opacity: 0.1; stroke-width: 1.6; stroke-linejoin: round; fill-rule: nonzero; }
+.verge-lab {
+  font: 600 10px var(--cond); letter-spacing: 0.18em; text-transform: lowercase;
+  pointer-events: none;
+}
+
+.claim-tint { stroke-width: 1.2; fill-opacity: 0.22; }
+.works-mk { fill: none; stroke: var(--cyan-mid); stroke-width: 1; opacity: 0.9; }
+.ruin-mk { fill: #140609; stroke: var(--red); stroke-width: 1.4; }
+
+.raid-arc { fill: none; stroke: var(--red); stroke-width: 1.6; }
+.raid-halo { fill: none; stroke: var(--red); stroke-width: 1; opacity: 0.5; animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { 0% { r: 12px; opacity: 0.55; } 100% { r: 30px; opacity: 0; } }
+
+.compact-arc { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: 0.55; }
+.compact-arc.snapped { stroke: var(--red); stroke-dasharray: 5 4; opacity: 0.85; }
+.convoy-path { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: 0.4; stroke-dasharray: 4 4; }
+.convoy-dot { fill: var(--cyan); }
+.front-cone { fill: var(--amber); fill-opacity: 0.09; stroke: var(--amber); stroke-opacity: 0.4; stroke-width: 1; }
+
+/* All three map controls are DOCKED in the side column, never floating over
+   the canvas. An overlay legend covered a live FRONTIER system in the first
+   build; the mock docks hard to the edge for exactly this reason. */
+.legend { padding: 7px 9px; font-size: var(--fs-micro); line-height: 1.8; }
+.legend .row { color: var(--dim); white-space: nowrap; }
+.legend hr { border: 0; border-top: var(--hair) solid var(--rule-dim); margin: 6px 0; }
+
+label.lyr {
+  display: flex; align-items: center; gap: 6px; padding: 4px 9px;
+  font: var(--fs-micro)/1.4 var(--cond); letter-spacing: var(--track);
+  text-transform: uppercase; color: var(--dim); cursor: pointer; white-space: nowrap;
+  border-bottom: var(--hair) solid var(--rule-dim);
+}
+label.lyr:hover { color: var(--text-2); background: var(--panel-3); }
+label.lyr input { accent-color: var(--cyan); margin: 0; width: 10px; height: 10px; }
+
+.inspect { font-size: var(--fs-micro); }
+.inspect .kv { display: flex; padding: 2.5px var(--pad); border-bottom: var(--hair) solid var(--rule-dim); }
+.inspect .kv span:first-child {
+  width: 94px; flex: 0 0 94px; color: var(--dimmer);
+  font-family: var(--cond); letter-spacing: var(--track); text-transform: uppercase;
+}
+.inspect .kv span:last-child { color: var(--text-2); }
+
+/* ══════════════════════════════════════════════════ the venture glyph ══ */
+/*
+   §A13: a venture is a ring whose hollow arc is the part riding on someone's
+   word. An unfilled role is an empty socket that pulses.
+*/
+.glyph { display: block; }
+.glyph .g-escrow { fill: none; stroke: var(--cyan-deep); }
+.glyph .g-elective { fill: none; stroke: var(--cyan); stroke-linecap: butt; }
+.glyph .g-elective.snap { stroke: var(--red); }
+.glyph .g-socket { fill: none; stroke: var(--dim); stroke-dasharray: 2 3; animation: socket 1.7s ease-in-out infinite; }
+@keyframes socket { 0%, 100% { opacity: 0.28; } 50% { opacity: 0.95; } }
+.glyph .g-break { stroke: var(--red); stroke-width: 1.6; }
+
+/* ═══════════════════════════════════════════════ the E6 broadcast scale ══ */
+
+.hero {
+  border: var(--hair) solid var(--rule); background: var(--panel);
+  padding: 14px var(--pad) 16px; display: flex; align-items: baseline; gap: 18px;
+}
+.hero .big {
+  font: 400 var(--fs-2xl)/0.95 var(--mono); color: var(--cyan);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.03em;
+}
+.hero .big.bad { color: var(--red-text); }
+.hero .lab {
+  font: 600 var(--fs-sm)/1 var(--cond); letter-spacing: var(--track-wide);
+  text-transform: uppercase; color: var(--dim);
+}
+
+.banner {
+  padding: 10px 16px; display: flex; align-items: baseline; gap: 16px;
+  font: 600 var(--fs-2xl)/1 var(--cond); letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.banner.good { background: var(--cyan); color: var(--void); }
+.banner.bad { background: var(--red); color: #fff; }
+.banner .clause {
+  font: 400 var(--fs-md)/1.3 var(--mono); letter-spacing: 0;
+  text-transform: none; opacity: 0.82; margin-left: auto; text-align: right;
+}
+
+/* ═══════════════════════════════════════════════════════ the event log ══ */
+
+.log { font-size: var(--fs-base); }
+.log .ln {
+  display: flex; gap: var(--pad); padding: 2px var(--pad);
+  border-bottom: var(--hair) solid var(--rule-dim); white-space: nowrap;
+}
+.log .ln:hover { background: var(--cyan-wash); }
+.log .tk { color: var(--dimmer); width: 46px; flex: 0 0 46px; font-variant-numeric: tabular-nums; }
+.log .ty {
+  color: var(--dim); width: 118px; flex: 0 0 118px; font-family: var(--cond);
+  letter-spacing: var(--track); text-transform: uppercase; font-size: var(--fs-sm);
+}
+.log .de { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
+.log .ln.bad .ty, .log .ln.bad .de { color: var(--red-text); }
+
+/* ══════════════════════════════════════════════════════ misc utilities ══ */
+
+.bar { height: 7px; background: var(--panel-2); border: var(--hair) solid var(--rule-dim); position: relative; }
+.bar i { display: block; height: 100%; background: var(--cyan-deep); }
+.bar i.hot { background: var(--red); }
+.bar i.warm { background: var(--amber); }
+
+.meter { display: flex; align-items: center; gap: var(--pad); padding: 3px var(--pad); }
+.meter .nm {
+  width: 62px; flex: 0 0 62px; color: var(--dim); font-family: var(--cond);
+  letter-spacing: var(--track); text-transform: uppercase; font-size: var(--fs-sm);
+}
+.meter .bar { flex: 1 1 auto; }
+.meter .qt { width: 62px; flex: 0 0 62px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); }
+
+.kv2 { display: flex; padding: 2.5px var(--pad); border-bottom: var(--hair) solid var(--rule-dim); }
+.kv2 > span:first-child {
+  flex: 0 0 128px; color: var(--dim); font-family: var(--cond);
+  letter-spacing: var(--track); text-transform: uppercase; font-size: var(--fs-sm);
+}
+.kv2 > span:last-child { color: var(--text); text-align: right; margin-left: auto; font-variant-numeric: tabular-nums; }
+.kv2 > span:last-child.bad { color: var(--red-text); }
+
+.pips { display: inline-flex; gap: 3px; vertical-align: -1px; }
+.pips i { width: 8px; height: 8px; border: var(--hair) solid var(--cyan-deep); display: block; }
+.pips i.on { background: var(--cyan); border-color: var(--cyan); }
+
+.note-line {
+  padding: 5px var(--pad); font-size: var(--fs-micro); color: var(--dimmer);
+  border-top: var(--hair) solid var(--rule-dim); line-height: 1.6;
+}
+.note-line code { color: var(--cyan-deep); }
+
+.scroller { display: flex; gap: 4px; align-items: center; padding: 4px var(--pad); flex-wrap: wrap; }
+.scroller button {
+  appearance: none; background: var(--panel-2); border: var(--hair) solid var(--rule);
+  color: var(--dim); font: var(--fs-micro) var(--mono); padding: 2px 7px; cursor: pointer;
+}
+.scroller button:hover { color: var(--cyan); border-color: var(--cyan-deep); }
+.scroller button[aria-current="true"] { background: var(--cyan); color: var(--void); border-color: var(--cyan); }
+
+.plate { display: block; max-width: 100%; }
+/* inline-block, never block: a block crest wraps the handle onto its own line
+   and turns a 22px row into a 50px one. */
+.crest { display: inline-block; vertical-align: -3px; background-repeat: no-repeat; }
+
+.good-ico { width: 15px; height: 15px; vertical-align: -3px; margin-right: 5px; }
+
+.mark-ico { width: 15px; height: 15px; vertical-align: -3px; }
+.mark-ico.lg { width: 26px; height: 26px; vertical-align: -7px; }
+
+/* the reel */
+.reel { display: flex; flex-direction: column; }
+.reel .band {
+  display: flex; border-bottom: var(--hair) solid var(--rule);
+  min-height: 76px;
+}
+.reel .band:last-child { border-bottom: 0; }
+.reel .no {
+  flex: 0 0 44px; display: flex; align-items: center; justify-content: center;
+  font: 400 var(--fs-xl)/1 var(--mono); color: var(--rule-bright);
+  border-right: var(--hair) solid var(--rule);
+}
+.reel .bd { flex: 1 1 auto; padding: 9px 14px; min-width: 0; }
+.reel .bt {
+  font: 600 var(--fs-sm)/1 var(--cond); letter-spacing: var(--track-wide);
+  text-transform: uppercase; color: var(--cyan-mid); margin-bottom: 8px;
+}
+.reel .bt .q { color: var(--dimmer); font-weight: 400; letter-spacing: var(--track); }
+.reel .said {
+  color: var(--text); font-size: var(--fs-md); line-height: 1.55; margin: 3px 0;
+  display: flex; gap: 12px;
+}
+.reel .said .who { color: var(--dim); flex: 0 0 118px; }
+/* The big treatment is reserved for CONTRADICTED. An HONOURED seal is the
+   normal outcome and shouting it spends the emphasis that the one real
+   betrayal on the night needs. */
+.reel .verdict {
+  display: inline-block; padding: 6px 16px; border: 1.4px solid var(--red);
+  color: var(--red-text); font: 600 var(--fs-xl)/1 var(--cond);
+  letter-spacing: var(--track); text-transform: uppercase;
+}
+.reel .verdict.ok {
+  border: var(--hair) solid var(--cyan-deep); color: var(--cyan);
+  font-size: var(--fs-md); padding: 3px 11px; letter-spacing: var(--track-wide);
+}
+
+hr.rule { border: 0; border-top: var(--hair) solid var(--rule-dim); margin: var(--gap) 0; }
+
+.pill {
+  font: var(--fs-micro) var(--cond); letter-spacing: var(--track);
+  text-transform: uppercase; color: var(--dim);
+  border: var(--hair) solid var(--rule); padding: 1px 6px;
+}
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--panel-2); }
+::-webkit-scrollbar-thumb { background: #17414c; }
+::-webkit-scrollbar-thumb:hover { background: var(--cyan-deep); }
+
+#boot {
+  position: fixed; inset: 0; z-index: 99; display: flex;
+  align-items: center; justify-content: center; background: var(--void);
+  color: var(--dim); font-family: var(--cond); letter-spacing: var(--track-wide);
+  text-transform: uppercase; font-size: var(--fs-sm);
+}
+#boot.gone { display: none; }
