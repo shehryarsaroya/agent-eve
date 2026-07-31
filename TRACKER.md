@@ -106,6 +106,43 @@
 > rather than the party being paid — and the settled elective was **209**, which is the slice above
 > escrow and the reason a play-test reading the ceiling reported a magnitude error.
 >
+> ### ★★★ DEPLOYED AND RE-SEEDED — `RULES_VERSION` 40 IS LIVE ON A WORLD THAT STARTED AT TICK 0
+>
+> **Deploy.** Gate 0 green on the box (312 files, 3,889 tests), the operator door refused once and
+> printed `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=287:c9e9e3601b2cdd05` — naming the standing declaration
+> as **inert against this change**, which is the binding working — signed, re-run, and *"this build
+> reproduces the record"*: **10,400 ticks replayed from genesis under version 40** and again through
+> the door to head. Every post-deploy check passed, including the served rulebook (1,847 lines).
+>
+> ⚑ **The rewritten wait loop earned itself on its first run.** It printed `replaying… 5s "world":
+> "BOOTING" "replayed_tick": 1535 "head_tick": 10440` and then kept waiting through **90 consecutive
+> polls that got no answer at all** — the replay blocks the event loop, and one ssh poll timed out
+> entirely. The old loop treated every one of those as *"finished"*. It came up at **450s**.
+>
+> **Re-seed** (`deploy/reseed.sh`, owner-authorised). The prior world ENDED at **tick 10,442** with 26
+> declared discontinuities, backed up to `/var/lib/compact/backups/pre-reseed-20260731T072920Z.sql.gz`
+> (11.5 MB) — *ended, not deleted.* Four verifications:
+>
+> | | |
+> |---|---|
+> | 1. `/health` | `healthy` · `world: RUNNING` · `failures: []` · `rollback_gaps: []` |
+> | 2. boot | **0 seconds**, against ~37 minutes on the record it replaced |
+> | 3. **LIVE decisions** | **24 LIVE by tick 5**, `deciding_share_bps` 3,333 over a 2,500 floor — the reading that must not come back, and it did not |
+> | 4. frames | `live.json` advances one tick per minute with a moving `stateHash`; the Reckoning frame publishes at tick 287 and the mechanism is verified on a turbo world (`r-000000.json` written, `latest.json` updated) |
+>
+> ### ★★ AND THE LOOP CLOSES ON PRODUCTION, NOT ONLY IN A TURBO WORLD
+>
+> A second signed identity (`p:vela-40`) on the fresh shard, playing only the payload:
+> **11 observe keys with `risk` among them**, `create` at tick 10 carrying *"Countersign by tick 23"*,
+> `sign` the first row at tick 11 and sent → `i_have_signed: true` at 12 → both roles taken by
+> `p:ashlin` and `p:halcyon` → **`LIVE` at tick 14** with all three countersignatures → `elect
+> IN_FULL` on both roles → **`my_elective_unelected` 2,400 → 0**. Settlement is tick 287, ~4.5 hours
+> out at `rehearsal`, so the standing half of the chain is the turbo measurement above.
+>
+> *Observation for the next reader, not chased: `elect` is still offered on a role whose election is
+> already stated and whose `unelected` reads 0. Either re-election is legal and the row should say
+> so, or the affordance is inviting an act that changes nothing.*
+>
 > ### The contract pins, RE-MEASURED
 >
 > `test/cast/prompt.test.ts` is 55 assertions and every figure in it is an equality, so a green run
