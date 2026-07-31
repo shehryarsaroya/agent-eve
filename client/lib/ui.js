@@ -377,13 +377,30 @@ var U = (function () {
     IDLE: 8, TRANSIT: 9, COMMITTED: 10, RECOVERING: 11,
   };
   function mark(name, big) { return plateTile('assets/marks.webp', 4, 3, MARK[name] || 0, 'mark-ico' + (big ? ' lg' : '')); }
+  /**
+   * A HALL OF FAME title's own pictogram, out of a generated 2x2 plate.
+   *
+   * The build reused the principal-crest family here, so the icon beside
+   * "MOST BROKEN" was a randomly-hashed starburst and carried no meaning at
+   * all. These four mean their titles: a rising bar chart, a snapped chain in
+   * red, an unbroken shield, a hub with six spokes.
+   */
+  var TITLE_IDX = {
+    'MOST KEPT, BY VALUE': 0, 'MOST BROKEN': 1,
+    'NEVER BROKEN A PROMISE': 2, 'WIDEST CIRCLE': 3,
+  };
+  function titleIcon(title) {
+    var i = TITLE_IDX[String(title || '').toUpperCase()];
+    if (i === undefined) return null;
+    return plateTile('assets/titles.webp', 2, 2, i, 'title-ico');
+  }
 
   return {
     el: el, svg: svg, clear: clear, add: add,
     n: n, k: k, bps: bps, pct: pct, clock: clock, handleOf: handleOf,
     h: h, sysLink: sysLink, tag: tag, sw: sw, empty: empty, skeleton: skeleton, nul: nul,
     table: table, panel: panel, tile: tile, bar: bar, kv: kv, pips: pips,
-    glyph: glyph, crest: crest, goodIcon: goodIcon, mark: mark, plateTile: plateTile,
+    glyph: glyph, crest: crest, goodIcon: goodIcon, mark: mark, titleIcon: titleIcon, plateTile: plateTile,
     MARK: MARK,
   };
 })();

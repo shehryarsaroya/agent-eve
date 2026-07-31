@@ -219,14 +219,14 @@ var Screens = (function () {
       // settlement; `standings[].defaults` counts DEFAULT EVENTS per principal.
       // Different subjects, and both were captioned "on the record" — so
       // OVERVIEW said 20 and STANDINGS said 33 for what read as one number.
-      tile('HALVES KEPT', U.n(M.kept), { note: 'at R' + (R.reckoningIndex !== undefined ? R.reckoningIndex : '—') + ' · elective halves paid' }),
+      tile('HALVES KEPT', U.n(M.kept), { note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · elective halves paid' : 'awaiting the first settlement') }),
       tile('HALVES BROKEN', U.n(M.broken),
-        { bad: (M.broken || 0) > 0, note: 'at R' + (R.reckoningIndex !== undefined ? R.reckoningIndex : '—') + ' · not paid' }),
+        { bad: (M.broken || 0) > 0, note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · not paid' : 'awaiting the first settlement') }),
       // Amber, not red: a shortfall is value at risk, and nobody has lied yet.
       tile('LEVY SHORT', U.n(M.levyShort),
-        { warn: (M.levyShort || 0) > 0, note: 'at R' + (R.reckoningIndex !== undefined ? R.reckoningIndex : '—') + ' · nobody lowers this alone' }),
+        { warn: (M.levyShort || 0) > 0, note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · nobody lowers this alone' : 'awaiting the first settlement') }),
       tile('UNREFINED', U.n(M.unrefined),
-        { note: 'at R' + (R.reckoningIndex !== undefined ? R.reckoningIndex : '—') + ' · not yet payable', neutral: true }),
+        { note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · not yet payable' : 'awaiting the first settlement'), neutral: true }),
     ]));
 
     var main = el('div', { class: 'grid', style: 'grid-template-columns:1fr 250px;flex:1 1 auto;min-height:0' });
@@ -338,7 +338,7 @@ var Screens = (function () {
     var R = D.R, list = (R.standings || []).slice();
     if (!list.length) {
       var w = el('div', { class: 'grid', style: 'grid-template-columns:214px 1fr;height:100%' });
-      w.appendChild(panel('PRINCIPALS', { sub: 'awaiting the first Reckoning' }, U.skeleton(10, 2),
+      w.appendChild(panel('PRINCIPALS', { sub: 'awaiting settlement' }, U.skeleton(10, 2),
         { foot: 'the public record is written at settlement' }));
       var d = el('div', { class: 'rows', style: 'min-height:0' });
       d.appendChild(panel('THE DOSSIER', { sub: 'a principal\u2019s whole public record' },
@@ -349,7 +349,7 @@ var Screens = (function () {
               return tile(t, '—', { dim: true });
             })),
           U.skeleton(9, 4),
-        ]), { foot: 'everything on this page is written at settlement' }));
+        ]), { foot: 'everything on this page is written at settlement', style: 'flex:1 1 auto' }));
       w.appendChild(d);
       U.clear(host).appendChild(w);
       return;
@@ -1403,15 +1403,13 @@ var Screens = (function () {
       (R.hallOfFame || []).length
         ? el('div', null, (R.hallOfFame || []).map(function (f) {
           var bad = /^MOST BROKEN/.test(f.title);
-          return el('div', { style: 'display:flex;gap:10px;padding:8px;border-bottom:1px solid var(--rule-dim)' }, [
-            U.crest(f.principal, 22),
-            el('div', { style: 'min-width:0' }, [
-              el('div', {
-                style: 'font:600 10px var(--cond);letter-spacing:.16em;color:' + (bad ? 'var(--red-text)' : 'var(--cyan)'),
-                text: f.title,
-              }),
-              el('div', { style: 'font-size:10px;color:var(--dim);margin-top:3px;white-space:normal;line-height:1.5' },
-                f.handle + ' — ' + f.clause),
+          return el('div', { class: 'fame' }, [
+            el('div', { class: 'ic' }, U.titleIcon(f.title) || U.crest(f.principal, 24)),
+            el('div', { class: 'tx' }, [
+              el('div', { class: 'ti', style: 'color:' + (bad ? 'var(--red-text)' : 'var(--cyan)'), text: f.title }),
+              el('div', { class: 'cl' }, [
+                el('b', { style: 'color:var(--text)', text: f.handle }), ' — ' + f.clause,
+              ]),
             ]),
           ]);
         }))
@@ -1689,11 +1687,11 @@ var Screens = (function () {
     lp.appendChild(panel('THE HALL OF FAME', { sub: '4 titles' },
       (R.hallOfFame || []).length ? el('div', null, (R.hallOfFame || []).map(function (f) {
         var bad = /^MOST BROKEN/.test(f.title);
-        return el('div', { style: 'display:flex;gap:9px;padding:7px 8px;border-bottom:1px solid var(--rule-dim)' }, [
-          U.crest(f.principal, 22),
-          el('div', { style: 'min-width:0' }, [
-            el('div', { style: 'font:600 9px var(--cond);letter-spacing:.16em;color:' + (bad ? 'var(--red-text)' : 'var(--cyan)'), text: f.title }),
-            el('div', { style: 'font-size:10px;color:var(--dim);white-space:normal;line-height:1.5', text: f.clause }),
+        return el('div', { class: 'fame' }, [
+          el('div', { class: 'ic' }, U.titleIcon(f.title) || U.crest(f.principal, 24)),
+          el('div', { class: 'tx' }, [
+            el('div', { class: 'ti', style: 'color:' + (bad ? 'var(--red-text)' : 'var(--cyan)'), text: f.title }),
+            el('div', { class: 'cl' }, [el('b', { style: 'color:var(--text)', text: f.handle }), ' — ' + f.clause]),
           ]),
         ]);
       })) : empty('no titles', 'Nothing ranked yet.')));

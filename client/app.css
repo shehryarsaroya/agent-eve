@@ -193,11 +193,10 @@ nav#tabs button[aria-current="true"] .fk { color: rgba(0, 6, 10, 0.55); }
 
 /* ═══════════════════════════════════════════════════════════ the stage ══ */
 
-#stage { flex: 1 1 auto; overflow: hidden; position: relative; }
-.screen {
-  position: absolute; inset: 0; overflow: auto;
-  padding: var(--gap); display: none;
-}
+/* one gutter, as the mock has. Panels docked hard to the window edge with
+   no margin read as a web page that ran out of room, not as an application. */
+#stage { flex: 1 1 auto; overflow: hidden; position: relative; padding: var(--gap); }
+.screen { position: absolute; inset: 0; overflow: auto; display: none; }
 .screen[data-on="1"] { display: block; }
 .screen.nogrow { display: none; }
 
