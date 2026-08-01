@@ -101,21 +101,76 @@ var MapView = (function () {
   var BAND_FILL = { COMMONS: '#1a5c6d', MARCHES: '#0c3a4b', FRONTIER: '#06222c' };
   var BAND_EDGE = { COMMONS: '#b4c6ca', MARCHES: '#4e9db2', FRONTIER: '#31768a' };
 
+  /* ════════════════════════════════════════════════ ★ THE STAR FIELD ════
+   *
+   * ⚑ **SEEDED OFF STABLE SYSTEM IDS, AND THAT IS A RULES CONSTRAINT, NOT A
+   * PERFORMANCE ONE.** §6.2 pins layout so a position keeps its meaning
+   * between Reckonings — a viewer who learns "the trouble is bottom-right"
+   * must still be right tomorrow. 390 background stars that reshuffle on every
+   * five-second poll break exactly that rule with thirteen times more pixels
+   * than the thing it protects.
+   *
+   * So every star is a pure function of one charted system's id: thirteen per
+   * system, `h01(id + '#sx' + i)`. Same 30 ids in, same sky out, forever — and
+   * the field re-derives only when the panel is resized.
+   *
+   * **AND THEY MUST READ AS DECORATION.** A background star is a 1 px square
+   * at ≤0.30 opacity with no name, no title, no hit area and `pointer-events:
+   * none`. A charted system is a 6–12 px stroked disc carrying its name AND
+   * its id AND a click target. The two are four opacity steps and an order of
+   * magnitude of area apart; nothing in between is ever drawn.
+   *
+   * Four `<path>`s of 1 px squares rather than 390 `<rect>`s — the field is
+   * static, so this costs one string build per resize and nothing per frame.
+   */
+  var STAR_BUCKETS = ['sf-a', 'sf-b', 'sf-c', 'sf-d'];
+  function starField(systems, W, H) {
+    var d = ['', '', '', ''];
+    systems.forEach(function (s) {
+      for (var i = 0; i < 13; i++) {
+        var x = h01(s.id + '#sx' + i) * W;
+        var y = h01(s.id + '#sy' + i) * H;
+        var v = h01(s.id + '#sv' + i);
+        // bucket 3 is the rare cyan one, ~4% of the field
+        var b = v > 0.96 ? 3 : v > 0.80 ? 2 : v > 0.44 ? 1 : 0;
+        /* ⚑ **1 px WAS INVISIBLE, AND "IN THE DOM" IS NOT "ON SCREEN".**
+         * Round 1 drew 1.0/1.7 px squares at 0.13–0.42. `querySelectorAll`
+         * found all four paths and 390 squares and a viewer found no sky at
+         * all — the field was there and it was, in this repo's own phrase,
+         * indistinguishable from missing. 1.6–2.6 px reads; a charted node is
+         * still 6–12 px WITH a 1 px stroke, a name, an id and a hit area, so
+         * the two channels stay unmistakable. */
+        var w = b === 3 ? 2.6 : b === 2 ? 2.2 : b === 1 ? 1.8 : 1.6;
+        d[b] += 'M' + x.toFixed(1) + ' ' + y.toFixed(1) + 'h' + w + 'v' + w + 'h-' + w + 'Z';
+      }
+    });
+    return d;
+  }
+
   /**
    * Lay the 30 systems out. Angular relaxation inside a fixed radial band:
    * the band is a hard constraint (so the tiers always read as tiers) and the
    * lane graph only gets to choose the angle (so constellations cluster and
    * lanes stay short).
+   *
+   * `inset` reserves the edges the FLOATING PANELS cover. The tactical layout
+   * puts the SYSTEMS rail and the legend ON TOP of the galaxy rather than
+   * beside it, so without this the outermost FRONTIER systems lay out
+   * underneath the rail and a third of the map is unreadable — the exact
+   * failure the docked build existed to avoid, reintroduced by going
+   * full-bleed. The ellipse is centred in the FREE area, not in the panel.
    */
-  function layout(systems, W, H) {
+  function layout(systems, W, H, inset) {
     // ELLIPTICAL, not circular. A circle inscribed in a 1160×830 panel wastes
     // ~35% of the width, and the map is the one screen that should use every
     // pixel it is given. The layout still reasons in polar coordinates on a
     // unit circle; only the projection to screen is stretched.
-    var R = 1, cx = W / 2, cy = H / 2;
+    var ins = inset || { l: 0, r: 0, t: 0, b: 0 };
+    var FW = Math.max(240, W - ins.l - ins.r), FH = Math.max(200, H - ins.t - ins.b);
+    var R = 1, cx = ins.l + FW / 2, cy = ins.t + FH / 2;
     // 0.425 rather than 0.48 so the FRONTIER band label at unit radius 1.08
     // still lands inside the panel rather than clipping against its top edge.
-    var RX = W * 0.435, RY = H * 0.425;
+    var RX = FW * 0.435, RY = FH * 0.425;
     var by = {}, cons = [];
     systems.forEach(function (s) {
       (by[s.tier] || (by[s.tier] = [])).push(s);
@@ -422,9 +477,10 @@ var MapView = (function () {
       ]));
       return;
     }
-    var key = R.stateHash + ':' + W + ':' + H;
+    var ins = o.inset || { l: 0, r: 0, t: 0, b: 0 };
+    var key = R.stateHash + ':' + W + ':' + H + ':' + ins.l + ',' + ins.r + ',' + ins.t + ',' + ins.b;
     if (!state.cache || state.cache.key !== key) {
-      state.cache = { key: key, lay: layout(R.map, W, H) };
+      state.cache = { key: key, lay: layout(R.map, W, H, ins), stars: starField(R.map, W, H) };
     }
     var lay = state.cache.lay, P = lay.pos, cx = lay.cx, cy = lay.cy, RX = lay.RX, RY = lay.RY;
     var idx = {}; R.map.forEach(function (s) { idx[s.id] = s; });
@@ -433,7 +489,13 @@ var MapView = (function () {
     R.map.forEach(function (s) { minY = Math.min(minY, s.yieldPerTick); maxY = Math.max(maxY, s.yieldPerTick); });
 
     var gBands = S('g'), gLanes = S('g'), gVerge = S('g'), gClaims = S('g'),
-      gMotion = S('g'), gNodes = S('g'), gLabels = S('g'), gCon = S('g');
+      gMotion = S('g'), gNodes = S('g'), gLabels = S('g'), gCon = S('g'),
+      gStars = S('g', { class: 'starfield' }), gSel = S('g', { class: 'selg' });
+
+    // ── ★ THE STAR FIELD, first and furthest back ───────────────────────
+    state.cache.stars.forEach(function (d, i) {
+      if (d) gStars.appendChild(S('path', { class: STAR_BUCKETS[i], d: d }));
+    });
 
     // ── ★ THE THREE BANDS ────────────────────────────────────────────────
     // Drawn outermost-first so they stack into three real values of ground
@@ -535,13 +597,17 @@ var MapView = (function () {
         lab = Math.abs(norm(a1 + Math.PI / 2)) > Math.abs(norm(a2 + Math.PI / 2)) ? a1 : a2;
       }
       var m = proj(lay, rr, lab);
-      gCon.appendChild(S('text', {
-        class: 'con-label', x: m.x.toFixed(1), y: (m.y + 4).toFixed(1),
+      var clab = S('text', {
+        class: 'con-label' + (o.onZoom ? ' go' : ''), x: m.x.toFixed(1), y: (m.y + 4).toFixed(1),
         // the count excludes COMMONS members (con-1 has 7 systems, 4 of them
         // in the Commons), and a bare number summing to 26 beside a header
         // saying 30 is a discrepancy nobody can resolve from the screen
         text: c.toUpperCase().replace('CON-', 'CON ') + ' · ' + a.n,
-      }));
+      }, S('title', { text: 'drill into ' + c }));
+      if (o.onZoom) {
+        clab.addEventListener('click', function (ev) { ev.stopPropagation(); o.onZoom(c, null); });
+      }
+      gCon.appendChild(clab);
     });
 
     // ── lanes, and THE PINCH ────────────────────────────────────────────
@@ -766,6 +832,9 @@ var MapView = (function () {
       if (s.richnessBps > 0) c.setAttribute('fill', '#0d4a54');
       else if (s.richnessBps < -400) c.setAttribute('fill', '#0a1e24');
       c.addEventListener('click', function (ev) { ev.stopPropagation(); if (o.onSelect) o.onSelect(s.id); });
+      c.addEventListener('dblclick', function (ev) {
+        ev.stopPropagation(); if (o.onZoom) o.onZoom(s.constellation, s.id);
+      });
       g.appendChild(c);
       gNodes.appendChild(g);
       if (state.layers.labels) {
@@ -814,6 +883,176 @@ var MapView = (function () {
       }
     });
 
+    /* ═══════════════════════════════════ ★ THE RETICLE AND THE CALLOUT ════
+     *
+     * The tactical concept's one genuinely new INTERACTION: a selected system
+     * is ringed by a reticle and answered by a callout beside it, so the
+     * three-second question — *what is this place and is anything wrong with
+     * it* — is answered on the map instead of in a rail 900 px away.
+     *
+     * The docked build already had every one of these facts. It had them in a
+     * side panel the eye never travelled to while it was reading the graph,
+     * which is A2's failure mode with the data technically present.
+     *
+     * THE LAST LINE IS THE ONLY ONE ALLOWED TO BE RED, and only for a claim in
+     * its final arrears — red on this map means a promise broke, and a callout
+     * that spends it on "3 straits" spends the one alarm colour on geography.
+     */
+    if (state.sel && P[state.sel]) {
+      var ss = idx[state.sel], sp = P[state.sel];
+      var srr = state.layers.lode ? nodeR(ss, minY, maxY) : 7;
+      var RR = srr + 13;
+      // two opposing arcs + four ticks: a ring alone reads as another claim
+      // tint, and the claim tint is a real mark this map already draws.
+      [0, 180].forEach(function (a0) {
+        var a1 = (a0 - 52) * Math.PI / 180, a2 = (a0 + 52) * Math.PI / 180;
+        gSel.appendChild(S('path', {
+          class: 'ret-arc',
+          d: 'M' + (sp.x + RR * Math.cos(a1)).toFixed(1) + ' ' + (sp.y + RR * Math.sin(a1)).toFixed(1) +
+            'A' + RR + ' ' + RR + ' 0 0 1 ' +
+            (sp.x + RR * Math.cos(a2)).toFixed(1) + ' ' + (sp.y + RR * Math.sin(a2)).toFixed(1),
+        }));
+      });
+      [-90, 90].forEach(function (a0) {
+        var a = a0 * Math.PI / 180;
+        gSel.appendChild(S('line', {
+          class: 'ret-tick',
+          x1: (sp.x + (RR - 5) * Math.cos(a)).toFixed(1), y1: (sp.y + (RR - 5) * Math.sin(a)).toFixed(1),
+          x2: (sp.x + (RR + 5) * Math.cos(a)).toFixed(1), y2: (sp.y + (RR + 5) * Math.sin(a)).toFixed(1),
+        }));
+      });
+
+      // ── the lines, and every one of them comes off this frame ──────────
+      var cl = (R.claimLines || []).filter(function (c) { return c.system === state.sel; })[0];
+      var wk = (R.worksLines || []).filter(function (w) { return w.system === state.sel; });
+      var sw = (R.swayLines || []).filter(function (w) { return w.system === state.sel; })[0];
+      var rn = (R.ruins || []).filter(function (r) { return r.system === state.sel; })[0];
+      var lines = [
+        { t: ss.name.toUpperCase() + '  ·  ' + ss.id + '  ·  ' + ss.tier, c: 'co-h' },
+        {
+          t: ss.yieldPerTick + ' ore/tick' + (ss.fuelPerTick ? '  ·  ' + ss.fuelPerTick + ' fuel/tick' : '') +
+            (ss.richnessBps ? '  ·  ' + (ss.richnessBps > 0 ? '+' : '') + ss.richnessBps + ' bps' : ''),
+          c: 'co-b',
+        },
+        {
+          t: (ss.lanes || []).length + ' LANES  ·  ' + (ss.straits || []).length + ' STRAITS' +
+            (sw && sw.reachers ? '  ·  reachers ' + sw.reachers : ''),
+          c: 'co-b',
+        },
+      ];
+      // ★ THE PINCH, NAMED ON THE CALLOUT. §16.12 ranks the chokepoint FIRST
+      // and the map draws it as a waist on a lane with a bare number beside
+      // it. A viewer who selects the system it gates is owed the sentence.
+      (ss.straits || []).slice(0, 3).forEach(function (st) {
+        lines.push({
+          t: st.severs
+            ? 'SEVERS ' + st.to + '  ·  strands ' + st.severed
+            : 'STRAIT ' + st.to + '  ·  detour ' + st.detourHops + ' hops',
+          c: 'co-b',
+        });
+      });
+      if (wk.length) {
+        lines.push({
+          t: 'WORKS ' + wk.length + '  ·  ' + wk[0].legend +
+            (wk[0].sharePerTick ? '  ·  ' + wk[0].sharePerTick + '/tick each' : ''),
+          c: 'co-b',
+        });
+      }
+      var pl = (R.places || []).filter(function (p) { return p.system === state.sel; })[0];
+      if (pl) lines.push({ t: 'NAMED FOR ' + pl.handle + '  ·  since t' + pl.sinceTick, c: 'co-d' });
+      if (sw && sw.principal) {
+        lines.push({ t: 'SWAY ' + U.handleOf(sw.principal) + ' ' + sw.sway + (sw.gate ? '  ·  STRAIT GATE' : ''), c: 'co-d' });
+      }
+      if (rn) lines.push({ t: (rn.legend || 'RUIN').toUpperCase(), c: 'co-d' });
+      if (cl) {
+        var last = cl.state === 'LAPSED' || (cl.arrearsOf > 0 && cl.arrears >= cl.arrearsOf);
+        lines.push({
+          t: 'CLAIM ' + U.handleOf(cl.claimant) + '  ·  ' + (cl.legend || cl.state) +
+            (cl.anchorHot === false ? '  ·  ANCHOR COLD' : ''),
+          c: last ? 'co-r' : cl.arrears > 0 ? 'co-a' : 'co-c',
+        });
+      }
+
+      // ★ THE DRILL AFFORDANCE LIVES ON THE CALLOUT.
+      //
+      // The zoomed screen is reachable by double-clicking a node and by
+      // clicking a constellation arc, and NEITHER of those is discoverable —
+      // this repo's own refrain is that a capability nobody exercises is
+      // indistinguishable from one that is missing, and an undiscoverable
+      // affordance is that defect with a keyboard shortcut.
+      lines.push({
+        t: '▸ DRILL INTO ' + String(ss.constellation).toUpperCase() + '  ·  ' +
+          R.map.filter(function (m) { return m.constellation === ss.constellation; }).length + ' SYSTEMS',
+        c: 'co-go', go: true,
+      });
+
+      // 6.05 px per char at 10 px in the mono stack, measured rather than
+      // guessed — a box sized off `length * 6` clipped its own last glyph.
+      var wmax = 0;
+      lines.forEach(function (l) { wmax = Math.max(wmax, l.t.length); });
+      var BW = Math.round(wmax * 6.05) + 20, BH = lines.length * 14 + 12;
+      var by = Math.max(ins.t + 6, Math.min(H - ins.b - BH - 6, sp.y - BH / 2));
+      /* ★ THE SIDE THAT COVERS FEWER SYSTEMS WINS.
+       *
+       * Round 1 chose "right unless it would run off the canvas", which put
+       * Ironhold's callout — Ironhold sits at the far LEFT of the ring — face
+       * down on Coldwater and Pale Reach. A2 says legibility is the interface,
+       * and an overlay that answers one system by hiding two is a net loss of
+       * one system.
+       *
+       * So both candidate boxes are built, clamped into the viewport, and
+       * scored by how many node CENTRES they cover. Fewest wins; a tie goes
+       * outward from the middle of the map, which is where the empty margin
+       * is. Thirty nodes × two boxes, once per selection. */
+      function clampX(x) { return Math.max(ins.l + 4, Math.min(W - ins.r - BW - 4, x)); }
+      function covers(x) {
+        var n2 = 0;
+        for (var k2 in P) {
+          var q = P[k2];
+          if (q.x > x - 6 && q.x < x + BW + 6 && q.y > by - 8 && q.y < by + BH + 8) n2++;
+        }
+        return n2;
+      }
+      var xR = clampX(sp.x + RR + 34), xL = clampX(sp.x - RR - 34 - BW);
+      var cR = covers(xR), cL = covers(xL);
+      var right = cR !== cL ? cR < cL : sp.x < cx;
+      var bx = right ? xR : xL;
+      // ...and if the clamp pushed the box back over its own node — Ironhold
+      // sits 250 px from the left edge and a 268 px box clamped to x=4 landed
+      // face down on the very system it was describing — step it clear
+      // vertically instead. Above if there is room, otherwise below.
+      if (bx < sp.x + RR && bx + BW > sp.x - RR) {
+        var above = sp.y - RR - 10 - BH;
+        by = above > ins.t + 6 ? above : Math.min(H - ins.b - BH - 6, sp.y + RR + 10);
+      }
+      gSel.appendChild(S('path', {
+        class: 'ret-lead',
+        d: 'M' + (sp.x + (right ? RR + 2 : -RR - 2)) + ' ' + sp.y.toFixed(1) +
+          'L' + (right ? bx - 8 : bx + BW + 8) + ' ' + sp.y.toFixed(1) +
+          'L' + (right ? bx : bx + BW) + ' ' + (by + 11).toFixed(1),
+      }));
+      gSel.appendChild(S('rect', { class: 'co-box', x: bx, y: by, width: BW, height: BH }));
+      lines.forEach(function (l, i) {
+        var ty = by + 16 + i * 14;
+        if (l.go) {
+          var hit = S('rect', {
+            class: 'co-go-hit', x: bx + 1, y: ty - 11, width: BW - 2, height: 15,
+          });
+          hit.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            if (o.onZoom) o.onZoom(ss.constellation, ss.id);
+          });
+          gSel.appendChild(hit);
+          gSel.appendChild(S('line', {
+            class: 'co-rule', x1: bx + 1, y1: ty - 11, x2: bx + BW - 1, y2: ty - 11,
+          }));
+        }
+        gSel.appendChild(S('text', {
+          class: 'co-t ' + l.c, x: bx + 10, y: ty, text: l.t,
+        }));
+      });
+    }
+
     // ★ THE FENCE IS PAINTED LAST, AND THAT IS A CORRECTNESS FIX.
     //
     // `gLabels` used to be the final group, and every node label carries a
@@ -828,14 +1067,29 @@ var MapView = (function () {
     // labels, and the labels halo in the BAND FILL rather than in the void so
     // they stop being the highest-contrast edge on a map whose subject is a
     // 1.3:1 tier boundary.
+    /* ★ THE STARS GO INSIDE THE PAN/ZOOM WRAP, AND THE SELECTION GOES ON TOP.
+     *
+     * A field that does not move with the graph reads as a wallpaper the map
+     * is printed on; a field that does reads as the space the map is IN, which
+     * is the whole reason the concept has one.
+     *
+     * ⚑ **AND THE FIELD IS PAINTED OVER THE BANDS, NOT UNDER THEM.** Under
+     * them it was invisible: the three band fills are opaque and cover ~92% of
+     * the canvas, so a field seeded off thirty system ids showed up in four
+     * corners and nowhere else — 390 stars, ~30 of them on screen. Over them
+     * the tint reads as what it is (a marked REGION of space) and the sky
+     * reads as sky. The reticle is painted after the fence for the same reason
+     * the fence is painted after the labels: it is the one mark that must
+     * never be cut by anything. */
+    var ORDER = [gBands, gStars, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge, gSel];
     var root = S('svg', {
       id: 'mapsvg', viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet',
-    }, [gBands, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge]);
+    }, ORDER);
 
     // pan + zoom, on the root group so the layout never recomputes
     var view = state.view || (state.view = { k: 1, x: 0, y: 0 });
     var wrap = S('g', { transform: 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')' });
-    [gBands, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge].forEach(function (g) { wrap.appendChild(g); });
+    ORDER.forEach(function (g) { wrap.appendChild(g); });
     U.clear(root); root.appendChild(wrap);
     root.addEventListener('wheel', function (ev) {
       ev.preventDefault();
@@ -848,16 +1102,22 @@ var MapView = (function () {
     }, { passive: false });
     var drag = null;
     root.addEventListener('pointerdown', function (ev) {
-      drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y };
+      drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y, moved: 0 };
       root.classList.add('drag'); root.setPointerCapture(ev.pointerId);
     });
     root.addEventListener('pointermove', function (ev) {
       if (!drag) return;
       var rect = root.getBoundingClientRect(), sc = W / rect.width;
+      drag.moved = Math.max(drag.moved, Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y));
       view.x = drag.vx + (ev.clientX - drag.x) * sc; view.y = drag.vy + (ev.clientY - drag.y) * sc;
       wrap.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
     });
-    root.addEventListener('pointerup', function () { drag = null; root.classList.remove('drag'); });
+    // ★ EMPTY SPACE CLEARS THE SELECTION. A reticle with no way off it is a
+    // mode, and the callout covers real ground while it is up.
+    root.addEventListener('pointerup', function () {
+      if (drag && drag.moved < 4 && state.sel && o.onSelect) o.onSelect(null);
+      drag = null; root.classList.remove('drag');
+    });
     root.addEventListener('pointerleave', function () { drag = null; root.classList.remove('drag'); });
 
     U.clear(host).appendChild(root);
@@ -873,5 +1133,11 @@ var MapView = (function () {
     select: function (id) { state.sel = id; },
     selected: function () { return state.sel; },
     reset: function () { state.view = { k: 1, x: 0, y: 0 }; },
+    // ★ THE ZOOM VIEW READS THE GALAXY LAYOUT FROM HERE rather than
+    // reimplementing it. The locator inset's whole job is to say WHERE in the
+    // galaxy you are, and a second layout function would answer that with a
+    // second galaxy — a picture that disagrees with the map it is a key to.
+    layout: layout, starField: starField, h01: h01, setBlocOrder: setBlocOrder,
+    STAR_BUCKETS: STAR_BUCKETS,
   };
 })();

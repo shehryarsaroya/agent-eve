@@ -433,8 +433,13 @@ table.t.click tbody tr { cursor: pointer; }
   paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
 }
 .band-label.commons { fill: #93a6aa; font-size: 9px; letter-spacing: 0.2em; }
+/* ★ BRIGHTER, BECAUSE IT IS NOW AN AFFORDANCE AND NOT A WATERMARK.
+   At #1c3b44 the constellation arcs were 1.15:1 against the band they ride
+   and read as texture. They are now the click target for the drill-down, and
+   an invisible affordance is this project's own named defect: a capability
+   nobody exercises is indistinguishable from one that is missing. */
 .con-label {
-  fill: #1c3b44; font: 600 15px var(--cond); letter-spacing: 0.34em;
+  fill: #2e5c69; font: 600 15px var(--cond); letter-spacing: 0.34em;
   pointer-events: none; text-anchor: middle;
 }
 
@@ -500,6 +505,315 @@ table.t.click tbody tr { cursor: pointer; }
 .convoy-dot { fill: var(--cyan); }
 /* the FRONT was the biggest object on the map and it was in no legend line */
 .front-cone { fill: var(--amber); fill-opacity: 0.06; stroke: var(--amber); stroke-opacity: 0.32; stroke-width: 1; stroke-dasharray: 3 4; }
+
+/* ════════════════════════════════════════════ ★ THE STAR FIELD (tactical) ══
+ *
+ * DECORATION, AND IT HAS TO BE UNMISTAKABLE ABOUT IT. Four buckets, top out at
+ * 0.30 — a charted node is a 6–12 px stroked disc at full opacity carrying a
+ * NAME and an ID, so the two channels are ~4 opacity steps and ~50× the area
+ * apart. `pointer-events: none` on the group, so a star can never eat a click
+ * meant for the graph underneath it, and no star carries a <title>.
+ *
+ * The deep-cyan bucket is 4% of the field and exists only so the sky is not one
+ * flat grey; it is still dimmer than the dimmest lane (#17414c). */
+.starfield { pointer-events: none; }
+.sf-a { fill: #7d9197; fill-opacity: 0.22; }
+.sf-b { fill: #9db0b5; fill-opacity: 0.34; }
+.sf-c { fill: #ccd8db; fill-opacity: 0.52; }
+.sf-d { fill: #19d7f2; fill-opacity: 0.30; }
+
+/* ═══════════════════════════════════ ★ THE RETICLE AND THE CALLOUT ══ */
+.selg { pointer-events: none; }
+.ret-arc { fill: none; stroke: var(--cyan); stroke-width: 1.4; opacity: 0.95; }
+.ret-tick { stroke: var(--cyan); stroke-width: 1.4; opacity: 0.95; }
+.ret-lead { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: 0.6; }
+.co-box {
+  fill: rgba(0, 9, 14, 0.88); stroke: var(--cyan-deep); stroke-width: 1;
+}
+.co-t { font: 10px var(--mono); pointer-events: none; }
+.co-h {
+  font: 600 10px var(--cond); letter-spacing: 0.16em; fill: var(--cyan);
+}
+.co-b { fill: var(--text-2); }
+.co-c { fill: var(--cyan-mid); }
+.co-a { fill: var(--amber); }
+.co-r { fill: var(--red-text); }
+.co-d { fill: var(--dim); }
+.co-go { fill: var(--cyan-deep); font-size: 9px; letter-spacing: 0.08em; }
+.co-rule { stroke: var(--rule); stroke-width: 1; }
+.co-go-hit { fill: transparent; pointer-events: all; cursor: pointer; }
+.co-go-hit:hover { fill: var(--cyan-wash); }
+.co-go-hit:hover + .co-rule { stroke: var(--cyan-deep); }
+.con-label.go { pointer-events: all; cursor: pointer; }
+.con-label.go:hover { fill: var(--cyan-deep); }
+
+/* ══════════════════════════════════════ ★ TACTICAL: THE FLOATING PANELS ══
+ *
+ * The concept's value is a LAYOUT change, not a rendering one: the galaxy goes
+ * full-bleed and the panels stop taking grid space. The docked build spent
+ * 322 px of a 1788 px stage on a rail, which is 18% of the map's width, and
+ * then squeezed the galaxy into an ellipse inside what was left.
+ *
+ * ⚑ **THE THING THAT MAKES FLOATING SAFE IS `MapView` s `inset`, NOT THE
+ * ALPHA.** The first build of the docked map overlaid its legend on a live
+ * FRONTIER system and that is why everything got docked in the first place.
+ * Going back to floats is only legitimate because the LAYOUT now reserves the
+ * covered edges — the galaxy is centred in the free area and no node is ever
+ * laid out under a panel. Translucency is then a bonus (you can see the star
+ * field and the odd lane continue behind a rail), never the mitigation.
+ *
+ * 0.72, not 0.70: measured against the concept the panel interiors read at
+ * roughly 28% of the ground behind them, and at 0.70 flat the 10 px table text
+ * lost enough contrast against a passing lane to fail a squint test. */
+/* ⚑ **OPAQUE GROUND, AND THAT IS A DETERMINISM FIX, NOT A STYLE CALL.**
+   `#backdrop` runs an ANIMATED canvas star field behind the whole app — it
+   drifts and twinkles by design, which is right for a page and wrong for a
+   map. Left transparent, the map screens showed TWO skies at once and the
+   brighter of the two was the one that moves, which is exactly what hard rule
+   #1 forbids: 400 background stars that reshuffle break §6.2's pinned layout
+   with more pixels than the layout it protects. */
+#mapfull { position: absolute; inset: 0; overflow: hidden; background: #00060a; }
+#mapfull #mapwrap { position: absolute; inset: 0; background: transparent; }
+/* NO `position` HERE ON PURPOSE — `.mfloat` is the translucent treatment and
+   nothing else. Two of the three floats live inside an absolutely-positioned
+   rail and would collapse if the class positioned them itself. */
+.mfloat {
+  background: rgba(0, 9, 14, 0.72);
+  border: var(--hair) solid var(--rule);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  display: flex; flex-direction: column; min-height: 0;
+  box-shadow: 0 0 0 1px rgba(0, 6, 10, 0.55);
+}
+.mfloat.at { position: absolute; z-index: 3; }
+.mfloat > h2 { background: rgba(0, 6, 10, 0.62); }
+.mfloat .body { overflow: auto; }
+/* the header strip — the concept's one-line world summary, top-left */
+.mstrip {
+  position: absolute; z-index: 3; left: 0; top: 0;
+  display: flex; align-items: center; height: 25px;
+  background: rgba(0, 9, 14, 0.72); border: var(--hair) solid var(--rule);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  font: var(--fs-micro)/1 var(--cond); letter-spacing: var(--track-wide);
+  text-transform: uppercase; color: var(--dim); white-space: nowrap;
+}
+.mstrip .seg { padding: 0 11px; border-right: var(--hair) solid var(--rule-dim); }
+.mstrip .seg:last-child { border-right: 0; }
+.mstrip b { color: var(--text-2); font-weight: 400; }
+.mstrip .hot { color: var(--amber); }
+.mstrip button {
+  appearance: none; background: none; border: 0; border-left: var(--hair) solid var(--rule-dim);
+  color: var(--dim); font: inherit; letter-spacing: var(--track-wide);
+  text-transform: uppercase; padding: 0 10px; height: 100%; cursor: pointer;
+}
+.mstrip button:hover { color: var(--cyan); background: var(--cyan-wash); }
+.mstrip button[aria-pressed="true"] { color: var(--void); background: var(--cyan-deep); }
+
+/* the layer chips, top-right of the free area — one row, not a 2-col grid of
+   checkbox labels, because at 7 rows that widget was 100 px of chrome */
+.mchips {
+  position: absolute; z-index: 3; display: flex; height: 21px;
+  background: rgba(0, 9, 14, 0.72); border: var(--hair) solid var(--rule);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.mchips button {
+  appearance: none; background: none; border: 0;
+  border-right: var(--hair) solid var(--rule-dim);
+  font: 9px var(--cond); letter-spacing: var(--track); text-transform: uppercase;
+  color: var(--dimmer); padding: 0 8px; cursor: pointer;
+}
+.mchips button:last-child { border-right: 0; }
+.mchips button[aria-pressed="true"] { color: var(--cyan-mid); }
+.mchips button:hover { background: var(--cyan-wash); }
+
+/* ★ THE PROMISES RAIL — stolen from mapconcept-terrace.
+ *
+ * The first time the game's own SCOREBOARD has appeared on the map at all. The
+ * map drew territory, ground and motion and never once drew a promise, which
+ * is the thing the product is named after. It is a table and it costs 4 rows
+ * of the rail. */
+.prom { font-size: var(--fs-micro); }
+.prom .r {
+  display: flex; align-items: center; gap: 7px; height: 21px; padding: 0 8px;
+  border-bottom: var(--hair) solid var(--rule-dim); white-space: nowrap; cursor: pointer;
+}
+.prom .r:hover { background: var(--cyan-wash); }
+.prom .r.sel { background: var(--cyan-wash-2); }
+.prom .kd {
+  flex: 0 0 52px; color: var(--dimmer); font-family: var(--cond);
+  letter-spacing: var(--track); text-transform: uppercase;
+}
+.prom .fr, .prom .to { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.prom .ar { flex: 0 0 auto; color: var(--dimmer); }
+.prom .st {
+  flex: 0 0 68px; text-align: right; color: var(--cyan-mid);
+  font-family: var(--cond); letter-spacing: var(--track); text-transform: uppercase;
+}
+.prom .r.bad .st { color: var(--red-text); }
+.prom .r.bad .fr, .prom .r.bad .to { color: var(--red-text); }
+.prom .r.warn .st { color: var(--amber); }
+.prom .hd {
+  display: flex; gap: 7px; padding: 3px 8px; color: var(--dimmer);
+  font: 9px var(--cond); letter-spacing: var(--track); text-transform: uppercase;
+  border-bottom: var(--hair) solid var(--rule);
+}
+.prom .hd .kd { flex: 0 0 52px; }
+.prom .hd .fr, .prom .hd .to { flex: 1 1 0; }
+.prom .hd .st { flex: 0 0 68px; text-align: right; }
+
+/* ══════════════════════════════════ ★ THE CONSTELLATION (the drill-down) ══
+ *
+ * One constellation at ~5× the map's node size, so that every field the frame
+ * carries per system has somewhere to be drawn. The map's own channels are
+ * kept IDENTICAL — THE LODE still sizes, the tier still fills, the claim ramp
+ * is still bloc → amber → red, THE VERGE is still one continuous outline — so
+ * this is the same map further in, not a second visual language. */
+#zoomwrap { position: absolute; inset: 0; overflow: hidden; }
+#zoomsvg { display: block; width: 100%; height: 100%; }
+
+.zdisc { stroke-width: 1.4; }
+.zdisc.t-COMMONS { fill: #0a2c34; stroke: #7f9296; }
+.zdisc.t-MARCHES { fill: #08313b; stroke: #2c6b78; }
+.zdisc.t-FRONTIER { fill: #0a3540; stroke: #35808f; }
+/* the claim ring, over the tier fill — the SAME three-step ramp as the map's
+   claim tint, because a viewer who learned it there must not relearn it. */
+.zclaim { fill-opacity: 0.14; stroke-width: 2.2; }
+.zclaim.hot { stroke-width: 3; fill-opacity: 0.2; }
+.zfuel { fill: none; stroke: var(--amber); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.75; }
+.zhit { fill: transparent; cursor: pointer; }
+.zsys .zhit:hover ~ * { pointer-events: none; }
+.zsys:hover .zdisc { stroke: var(--cyan); }
+
+/* ★ ONE SQUARE PER WORKS. Filled = taking a share; hollow = SPINNING UP and
+   taking nothing yet. A viewer counting productive ground can count. */
+.zworks { fill: #12525f; stroke: #4fb9cc; stroke-width: 1; }
+.zworks.up { fill: none; stroke: var(--amber); stroke-dasharray: 3 2; }
+.zruin { fill: #06111a; stroke: #6f8288; stroke-width: 1; }
+.zruin-x { stroke: #8a969a; stroke-width: 1.4; fill: none; }
+.zmore { fill: var(--dim); font: 9px var(--mono); }
+.zbare {
+  fill: var(--dimmer); font: 9px var(--cond); letter-spacing: 0.22em;
+}
+
+/* THE ANCHOR. `anchorHot` has been on every claim line since the field was
+   written and no pixel has ever depended on it: a cold claim collects nothing
+   and, on the map, is tinted exactly like one collecting from seven tenants. */
+.zanchor { fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.zanchor.hot { stroke: var(--cyan); }
+.zanchor.cold { stroke: #4a5c62; stroke-dasharray: 3 2.5; }
+.zanchor-h.hot { fill: none; stroke: var(--cyan); stroke-width: 1.8; }
+.zanchor-h.cold { fill: none; stroke: #4a5c62; stroke-width: 1.5; }
+
+.zlane { stroke: #1d5462; stroke-width: 1.4; }
+.zlane.strait { stroke: #2f7686; }
+.zlane.severed { stroke: #4a6068; stroke-dasharray: 7 5; }
+.zlane.exit { stroke: #17414c; stroke-dasharray: 4 4; }
+.zwaist { stroke: var(--cyan-deep); stroke-width: 1.6; fill: none; }
+.zdoor { fill: #cfdadd; stroke: #00060a; stroke-width: 1; }
+.zpinch-t {
+  fill: var(--cyan); font: 10px var(--mono); text-anchor: middle; pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+}
+.zpinch-t.rd { fill: var(--red-text); font-size: 9px; }
+.zexit { cursor: pointer; }
+.zexit-t, .zexit-n {
+  paint-order: stroke; stroke: #00060a; stroke-width: 3.4px; stroke-linejoin: round;
+}
+.zexit-t { fill: var(--cyan-mid); font: 10px var(--mono); }
+.zexit-n { fill: var(--dimmer); font: 9px var(--mono); }
+.zexit:hover .zexit-t { fill: var(--cyan); }
+.zexit:hover .zexit-n { fill: var(--dim); }
+
+/* the COLLAR — a per-system tag in the holder's colour, not a fence. See the
+   argument in zoomview.js: at this zoom a bloc's ground is genuinely a set of
+   separate places, and a fence made of gaps is a false claim. */
+.zcollar { fill: none; stroke-width: 3.2; stroke-linecap: round; stroke-opacity: 0.9; }
+.zverge-lab {
+  font: 600 11px var(--cond); letter-spacing: 0.2em; text-transform: lowercase;
+  pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+}
+
+/* the label stack. Halos on every one of them — at this size the discs are
+   large enough that a name WILL cross a neighbour's verge or lane. */
+.zid, .zname, .zyield, .zstate, .zhold {
+  pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3.4px; stroke-linejoin: round;
+}
+.zid { fill: var(--dim); font: 9px var(--mono); }
+.zname { fill: var(--text); font: 600 14px var(--cond); letter-spacing: 0.14em; }
+.zyield { fill: var(--cyan); font: 400 15px var(--mono); }
+.zstate { font: 9px var(--cond); letter-spacing: 0.13em; }
+.zstate.cy { fill: var(--cyan-mid); }
+.zstate.am { fill: var(--amber); }
+.zstate.rd { fill: var(--red-text); }
+.zstate.ce { fill: #8496c4; }
+.zstate.dm { fill: var(--dimmer); }
+.zhold { fill: var(--dim); font: 9px var(--mono); }
+.zhold.tr { fill: var(--cyan-deep); }
+
+/* what is HAPPENING here, over what is standing here. Same marks as the map:
+   the venture ring is A13's glyph, and a raid is amber because it is a LOSS
+   and not a lie. */
+.zglyph { overflow: visible; }
+.zraid { fill: none; stroke: var(--amber); stroke-width: 1.6; opacity: 0.55; }
+.zraid.live { opacity: 1; stroke-dasharray: 7 4; }
+.zfront {
+  fill: var(--amber); fill-opacity: 0.05; stroke: var(--amber);
+  stroke-opacity: 0.3; stroke-width: 1; stroke-dasharray: 3 4;
+}
+
+/* the locator inset */
+.locsvg { background: rgba(0, 6, 10, 0.5); }
+.loc-lane { stroke: #10333c; stroke-width: 0.8; }
+.loc-n { fill: #2b555f; }
+.loc-n.on { fill: var(--cyan); }
+.loc-box { fill: none; stroke: var(--cyan); stroke-width: 1; stroke-opacity: 0.8; }
+.loc-t { fill: var(--cyan); font: 9px var(--cond); letter-spacing: 0.2em; }
+
+/* the selected system's name, big, at the top of the rail */
+.zhead {
+  display: flex; align-items: baseline; gap: 9px; padding: 7px 9px 6px;
+  border-bottom: var(--hair) solid var(--rule);
+}
+.zhead .nm { font: 400 22px/1 var(--mono); color: var(--cyan); letter-spacing: -0.01em; }
+.zhead .sid { font-size: var(--fs-micro); color: var(--dim); }
+
+.ruinstrip { border-top: var(--hair) solid var(--rule); }
+.ruinstrip .r {
+  display: flex; gap: 8px; align-items: center; padding: 4px 8px;
+  font-size: var(--fs-micro); color: var(--dim);
+}
+.ruinstrip .x { color: #8a969a; }
+.ruinstrip .e { margin-left: auto; color: var(--dimmer); }
+
+/* the record strip along the bottom, as the concept has it */
+.zlog {
+  position: absolute; z-index: 3; bottom: 0; height: 62px; overflow: hidden;
+  background: rgba(0, 9, 14, 0.72); border: var(--hair) solid var(--rule);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 19px;
+  padding: 2px 0;
+}
+.zlog .ln {
+  display: flex; gap: 8px; padding: 0 10px; align-items: center;
+  font-size: var(--fs-micro); color: var(--dim); white-space: nowrap; overflow: hidden;
+}
+.zlog .ln .tk { color: var(--dimmer); flex: 0 0 auto; }
+.zlog .ln .de { overflow: hidden; text-overflow: ellipsis; }
+.zlog .ln.bad .de { color: var(--red-text); }
+.zlog .ln.warn .de { color: var(--amber); }
+
+/* the collapsed key — the two COLOUR ramps, always on screen. The shape marks
+   fold away because a shape has a <title> on the canvas and a colour does not. */
+.keybar { padding: 5px 8px 6px; }
+.keybar .kb {
+  display: flex; flex-wrap: wrap; gap: 3px 11px; align-items: center;
+  font: 9px var(--cond); letter-spacing: var(--track); text-transform: uppercase;
+  color: var(--dim); line-height: 1.5;
+}
+.keybar .kb + .kb { margin-top: 4px; padding-top: 4px; border-top: var(--hair) solid var(--rule-dim); }
+.keybar .kb span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.keybar .kb.dim { color: var(--dimmer); }
 
 /* All three map controls are DOCKED in the side column, never floating over
    the canvas. An overlay legend covered a live FRONTIER system in the first

@@ -1135,44 +1135,66 @@ var Screens = (function () {
   }
 
   // ════════════════════════════════════════════════════════════════ MAP ══
-  function mapScreen(host, D, sel) {
-    var R = D.R;
-    var wrap = el('div', { class: 'grid', style: 'grid-template-columns:1fr 322px;height:100%' });
-    var mapPanel = el('section', { class: 'panel' });
-    mapPanel.appendChild(el('h2', null, [
-      'THE MAP',
-      el('span', { class: 'sub' },
-        R.map ? (R.map.length + ' systems · ' + D.laneCount + ' lanes · ' + D.straitCount + ' straits, ' + D.severCount + ' severing') : 'no topology'),
-      el('span', { class: 'right' }, [
-        R.meters ? 'LEVY SHORT ' + U.n(R.meters.levyShort) : '',
-        el('button', {
-          style: 'margin-left:10px;background:var(--panel-2);border:1px solid var(--rule);color:var(--dim);' +
-            'font:9px var(--cond);letter-spacing:.16em;padding:2px 8px;cursor:pointer', text: 'RESET VIEW',
-          on: { click: function () { MapView.reset(); D.rerender(); } },
-        }),
-      ]),
-    ]));
-    var body = el('div', { class: 'body', style: 'position:relative;overflow:hidden' });
-    var host2 = el('div', { id: 'mapwrap' });
-    body.appendChild(host2);
-    mapPanel.appendChild(body);
-    wrap.appendChild(mapPanel);
+  /**
+   * ★ TACTICAL. The galaxy is FULL-BLEED and the panels float over it.
+   *
+   * The change the concept is actually worth is a LAYOUT change, not a
+   * rendering one. The docked build spent 322 px of a 1788 px stage on a rail
+   * and another 26 px on a panel header, then drew the galaxy into an ellipse
+   * inside what was left — so the map, which A13 calls *"the game's only
+   * agreed representation"*, got 78% of the screen it is the subject of.
+   *
+   * ⚑ **AND FLOATING IS ONLY LEGITIMATE BECAUSE THE LAYOUT KNOWS WHERE THE
+   * PANELS ARE.** The very first map build floated its legend and put it on
+   * top of a live FRONTIER system, which is why everything got docked. What
+   * makes the return safe is `MapView`'s `inset`: the galaxy is centred in the
+   * FREE area and no node is ever laid out under a panel. Alpha is a bonus —
+   * you can watch a lane run behind the rail — and never the mitigation.
+   *
+   * The rail carries SYSTEMS and, for the first time, PROMISES.
+   */
+  var LAYER_CHIPS = [
+    ['verge', 'VERGE'], ['lode', 'LODE'], ['pinch', 'PINCH'],
+    ['claims', 'CLAIMS'], ['works', 'WORKS'], ['motion', 'MOTION'], ['labels', 'LABELS'],
+  ];
+  /** the rail and the legend, in px. The layout reserves exactly this. */
+  var RAIL_W = 336, LEG_W = 268, STRIP_H = 25;
 
-    // ★ EVERY CONTROL IS DOCKED IN THE SIDE COLUMN, none of it floats over the
-    // canvas. The first build overlaid the legend, the layer toggles and the
-    // inspector on the map, and the legend sat squarely on top of a FRONTIER
-    // system. The mock docks its panels hard to the edge for exactly this
-    // reason: the map is data, and nothing that is not data may cover it.
-    var tools = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr' },
-      [['verge', 'THE VERGE'], ['lode', 'THE LODE'], ['pinch', 'THE PINCH'],
-       ['claims', 'CLAIMS · RUINS'], ['works', 'WORKS'], ['motion', 'MOTION'],
-       ['labels', 'LABELS']]
-        .map(function (t) {
-          var cb = el('input', { type: 'checkbox' });
-          cb.checked = MapView.layers[t[0]];
-          cb.addEventListener('change', function () { MapView.layers[t[0]] = cb.checked; draw(); });
-          return el('label', { class: 'lyr' }, [cb, t[1]]);
-        }));
+  function mapScreen(host, D, sel) {
+    var R = D.R, L = D.L;
+    var wrap = el('div', { id: 'mapfull' });
+    var host2 = el('div', { id: 'mapwrap' });
+    wrap.appendChild(host2);
+
+    // ── the world summary strip, top-left, as the concept has it ────────
+    var strip = el('div', { class: 'mstrip' }, [
+      el('span', { class: 'seg' }, [
+        'REGION 1 · ', el('b', { text: String((R.map || []).length) }), ' CHARTED SYSTEMS · ',
+        el('b', { text: String(D.laneCount) }), ' LANES · ',
+        el('b', { text: String(D.straitCount) }), ' STRAITS',
+      ]),
+      R.meters ? el('span', { class: 'seg' }, [
+        'LEVY SHORT ', el('b', { class: (R.meters.levyShort || 0) > 0 ? 'hot' : null, text: U.n(R.meters.levyShort) }),
+        L ? el('span', null, [' · RECKONING ', el('b', { text: U.clock(L.ticksUntilReckoning) })]) : null,
+      ]) : null,
+      el('button', {
+        text: 'RESET VIEW', on: { click: function () { MapView.reset(); D.rerender(); } },
+      }),
+    ]);
+    wrap.appendChild(strip);
+
+    // ── the layer chips — one 21px row, not a 100px grid of checkboxes ──
+    var chips = el('div', {
+      class: 'mchips', style: 'top:0;right:' + (RAIL_W + 6) + 'px',
+    }, LAYER_CHIPS.map(function (t) {
+      return el('button', {
+        'aria-pressed': MapView.layers[t[0]] ? 'true' : 'false',
+        title: 'toggle ' + t[1],
+        text: t[1],
+        on: { click: function () { MapView.layers[t[0]] = !MapView.layers[t[0]]; D.rerender(); } },
+      });
+    }));
+    wrap.appendChild(chips);
 
     // ★ THE SWATCHES ARE THE BAND FILLS. Not a second set of literals: the
     // first build hand-picked legend colours and they ended up 2.6x brighter
@@ -1236,60 +1258,24 @@ var Screens = (function () {
       });
     }
 
-    var inspect = el('div', { class: 'inspect' });
-
-    function drawInspect(id) {
-      U.clear(inspect);
-      var s = D.sysIndex[id];
-      if (!s) {
-        inspect.appendChild(el('div', { style: 'padding:9px;color:var(--dimmer);line-height:1.7' },
-          'Click a node to inspect it. Scroll to zoom, drag to pan.'));
-        return;
-      }
-      inspect.appendChild(el('div', {
-        style: 'padding:5px 8px;background:var(--panel-2);border-bottom:1px solid var(--rule);' +
-          'font:600 11px var(--cond);letter-spacing:.16em;color:var(--cyan);text-transform:uppercase',
-        text: s.name + ' · ' + s.id,
-      }));
-      var kids = [
-        ['TIER', s.tier], ['CONSTELLATION', s.constellation],
-        ['ORE / TICK', String(s.yieldPerTick)],
-        ['FUEL / TICK', s.fuelPerTick ? String(s.fuelPerTick) : '—'],
-        ['RICHNESS', s.richnessBps + ' bps'],
-        ['LANES', String((s.lanes || []).length)],
-        ['STRAITS', String((s.straits || []).length)],
-      ];
-      (s.straits || []).forEach(function (st) {
-        kids.push([st.severs ? 'SEVERS' : 'DETOUR', st.to + (st.severs ? ' · strands ' + st.severed : ' · ' + st.detourHops + ' hops')]);
-      });
-      (D.R.swayLines || []).filter(function (w) { return w.system === id; }).forEach(function (w) {
-        kids.push(['SWAY', (w.principal ? U.handleOf(w.principal) : 'bare ground') + ' · ' + w.sway +
-          ' · ' + w.reachers + ' can reach' + (w.gate ? ' · GATE' : '')]);
-      });
-      (D.R.worksLines || []).filter(function (w) { return w.system === id; }).forEach(function (w) {
-        kids.push(['WORKS', U.handleOf(w.holder) + ' · ' + w.yieldPerTick + '/tick']);
-      });
-      (D.R.places || []).filter(function (p) { return p.system === id; }).forEach(function (p) {
-        kids.push(['NAMED FOR', p.handle + ' since t' + p.sinceTick]);
-      });
-      kids.forEach(function (kv) {
-        inspect.appendChild(el('div', { class: 'kv' }, [el('span', { text: kv[0] }), el('span', { text: kv[1] })]));
-      });
-    }
-
     function draw() {
-      MapView.render(host2, R, D.L, { onSelect: function (id) { MapView.select(id); draw(); drawInspect(id); } });
-      drawInspect(MapView.selected());
+      MapView.render(host2, R, D.L, {
+        inset: { l: 0, r: RAIL_W + 12, t: STRIP_H + 8, b: 30 },
+        onSelect: function (id) { MapView.select(id); draw(); markRail(); },
+        onZoom: function (con, sys) { location.hash = '#/zoom/' + (sys || con); },
+      });
     }
 
-    var side = el('div', { class: 'rows', style: 'min-height:0' });
-    side.appendChild(panel('LAYERS', { sub: 'what the map is drawing' }, tools, { style: 'flex:0 0 auto' }));
-    side.appendChild(panel('SYSTEMS', { sub: (R.map || []).length + ' · sortable' },
+    // ── the rail: SYSTEMS over PROMISES ──────────────────────────────────
+    var rail = el('div', {
+      class: 'rows', style: 'position:absolute;z-index:3;top:0;right:0;bottom:0;width:' + RAIL_W + 'px;gap:6px',
+    });
+    var sysPanel = panel('SYSTEMS', { sub: (R.map || []).length + ' · sortable', cls: 'mfloat' },
       (R.map || []).length ? table('sys', [
-        { k: 'id', t: 'sys', w: '48px', cell: function (s) { return el('span', { class: 'dim', text: s.id.replace('sys-', '') }); } },
+        { k: 'id', t: 'sys', w: '42px', cell: function (s) { return el('span', { class: 'dim', text: s.id.replace('sys-', '') }); } },
         { k: 'name', t: 'name', w: '104px', cell: function (s) { return U.sysLink(s.id, s.name); } },
         {
-          k: 'tier', t: 'tier', w: '32px',
+          k: 'tier', t: 'tier', w: '30px',
           cell: function (s) {
             return el('i', {
               class: 'sw', title: s.tier,
@@ -1299,29 +1285,415 @@ var Screens = (function () {
           },
           sort: function (s) { return s.tier; },
         },
-        { k: 'yieldPerTick', t: 'ore', w: '42px', num: true },
-        { k: 'lanes', t: 'ln', w: '30px', num: true, cell: function (s) { return String((s.lanes || []).length); }, sort: function (s) { return (s.lanes || []).length; } },
+        { k: 'yieldPerTick', t: 'ore', w: '40px', num: true },
+        { k: 'lanes', t: 'ln', w: '28px', num: true, cell: function (s) { return String((s.lanes || []).length); }, sort: function (s) { return (s.lanes || []).length; } },
         {
-          k: 'straits', t: 'st', w: '30px', num: true,
+          k: 'straits', t: 'st', w: '28px', num: true,
           cell: function (s) { return (s.straits || []).length || el('span', { class: 'dim', text: '—' }); },
           sort: function (s) { return (s.straits || []).length; },
         },
       ], R.map, {
         sort: 'id', dir: 1, rerender: D.rerender,
         sel: function (s) { return s.id === MapView.selected(); },
-        onRow: function (s) { MapView.select(s.id); draw(); },
+        onRow: function (s) { MapView.select(s.id); draw(); markRail(); },
       }) : empty('no topology on the frame',
-        'The lane graph is on the Reckoning frame only. Nothing to lay out until the first settlement.')));
-    side.appendChild(panel('INSPECT', null, inspect, { style: 'flex:0 0 auto;max-height:260px' }));
-    // the legend is 16 keyed marks plus the blocs on screen; it scrolls rather
-    // than squeezing SYSTEMS down to a single row, which is what it did
-    side.appendChild(panel('LEGEND', { sub: 'every mark the canvas draws' }, legend,
-      { style: 'flex:0 1 300px;min-height:120px' }));
-    wrap.appendChild(side);
+        'The lane graph is on the Reckoning frame only. Nothing to lay out until the first settlement.'),
+      { style: 'flex:1 1 58%;min-height:0' });
+    rail.appendChild(sysPanel);
+    rail.appendChild(promisesRail(D, function (s) { MapView.select(s); draw(); markRail(); }));
+    wrap.appendChild(rail);
+
+    /** keep the two rails' highlight in step with the reticle without a full
+        re-render — a `D.rerender()` per click rebuilt the whole SVG. */
+    function markRail() {
+      var id = MapView.selected();
+      Array.prototype.forEach.call(wrap.querySelectorAll('table.t tbody tr'), function (tr) {
+        var a = tr.querySelector('a.sysl');
+        if (a) tr.classList.toggle('sel', !!id && a.getAttribute('href') === '#/map/' + id);
+      });
+      Array.prototype.forEach.call(wrap.querySelectorAll('.prom .r'), function (r) {
+        r.classList.toggle('sel', !!id && (r.getAttribute('data-at') || '').split(' ').indexOf(id) >= 0);
+      });
+    }
+
+    /* ── the key, floating bottom-left ──────────────────────────────────
+     *
+     * ⚑ **COLLAPSED BY DEFAULT, AND THE ARITHMETIC IS THE REASON.** The
+     * ellipse is centred in the free area, so reserving 268 px on the left for
+     * an open key drops RX from 626 to 513 — a 1026×778 galaxy against the
+     * docked build's 1264×700. Full-bleed with an open key on the left is
+     * *smaller than what it replaced*, which would make the whole change a
+     * downgrade dressed as a concept.
+     *
+     * But a key that has to be opened is a key a stranger never reads, and A2
+     * says legibility is the interface. So THE COLLAPSED BAR CARRIES BOTH
+     * COLOUR CHANNELS — the three tier swatches and every bloc on screen in
+     * its own colour — because colour is the first thing the eye resolves and
+     * the two ramps are the only marks a viewer cannot guess. The sixteen
+     * SHAPE marks (waist, door, ring, arc, cross) are one click away, and
+     * every one of them also carries a `<title>` on the canvas itself.
+     *
+     * Collapsed it is ~46 px tall in a corner the ellipse's lower-left arc
+     * clears by ~55 px, so it reserves nothing. Open it overlaps, and that is
+     * a choice a viewer made.
+     */
+    var legPanel = el('section', {
+      class: 'panel mfloat at',
+      style: 'left:0;bottom:0;width:' + (mapLegendOpen ? LEG_W : 306) + 'px;max-height:52%',
+    });
+    var legOpen = mapLegendOpen;
+    legPanel.appendChild(el('h2', {
+      style: 'cursor:pointer', title: legOpen ? 'collapse the key' : 'show all 16 marks',
+      on: { click: function () { mapLegendOpen = !mapLegendOpen; D.rerender(); } },
+    }, [
+      'KEY',
+      el('span', { class: 'sub', text: legOpen ? 'every mark the canvas draws' : '16 marks' }),
+      el('span', { class: 'right', text: legOpen ? '–' : '+' }),
+    ]));
+    var blocSlot = null;
+    if (legOpen) {
+      legPanel.appendChild(el('div', { class: 'body' }, legend));
+    } else {
+      var bar = el('div', { class: 'keybar' });
+      bar.appendChild(el('div', { class: 'kb' }, ['COMMONS', 'MARCHES', 'FRONTIER'].map(function (t) {
+        return el('span', { title: t }, [
+          el('i', {
+            class: 'sw',
+            style: 'background:' + MapView.BAND_FILL[t] + ';border:1px solid ' + MapView.BAND_EDGE[t],
+          }), t,
+        ]);
+      })));
+      blocSlot = el('div', { class: 'kb' });
+      bar.appendChild(blocSlot);
+      legPanel.appendChild(bar);
+    }
+    wrap.appendChild(legPanel);
+
+    /* ⚑ **THE BLOC KEY IS FILLED AFTER THE DRAW, AND THAT IS A REAL BUG FIXED.**
+     * `MapView.blocs()` is populated BY `render()` — it is the list of fences
+     * the canvas actually managed to trace. Reading it while building the
+     * chrome reads the PREVIOUS screen's list, and on a cold load reads an
+     * empty one: the first paint printed "no VERGE on this frame" underneath a
+     * map showing five of them. Same defect as the legend colours that
+     * disagreed with the map, one loop earlier in the render. */
+    function fillBlocKey() {
+      if (!blocSlot) return;
+      var bl2 = MapView.blocs().slice().sort(function (a, b) { return b.systems - a.systems; });
+      U.clear(blocSlot);
+      if (!bl2.length) {
+        blocSlot.className = 'kb dim';
+        blocSlot.textContent = 'no VERGE on this frame';
+        return;
+      }
+      blocSlot.className = 'kb';
+      bl2.forEach(function (b) {
+        blocSlot.appendChild(el('span', { title: b.systems + ' systems inside this VERGE' }, [
+          el('i', { class: 'sw', style: 'background:' + b.colour }),
+          el('span', {
+            style: 'color:' + (b.defaults ? 'var(--red-text)' : 'var(--text-2)'),
+            text: U.handleOf(b.principal) + (b.defaults ? ' ▲' + b.defaults : ''),
+          }),
+        ]));
+      });
+    }
+
     U.clear(host).appendChild(wrap);
     if (sel) MapView.select(sel);
     // one frame later, so clientWidth is real
-    requestAnimationFrame(draw);
+    requestAnimationFrame(function () { draw(); markRail(); fillBlocKey(); });
+  }
+
+  /**
+   * ★ THE PROMISES RAIL — stolen from `mapconcept-terrace`, and the first time
+   * the game's own scoreboard has appeared on the map at all.
+   *
+   * The map drew ground, territory and motion. It never drew a PROMISE, which
+   * is the object the product is named after and the only thing A6 says the
+   * core loop is made of. A viewer could watch the whole screen and not learn
+   * that anybody had agreed to anything.
+   *
+   * Two kinds, one table, because that is the point: a COMPACT and a GRANT are
+   * both *"X gave Y something on X's word"*, and the terrace concept is right
+   * that they belong in one list sorted by whether the word held. Defaults
+   * first and in red, which is the ONE place on this screen red is spent.
+   */
+  function promisesRail(D, onPick) {
+    var R = D.R;
+    var seen = {}, rows = [];
+    (D.links || []).concat(R.compactLinks || []).forEach(function (c) {
+      if (seen[c.venture]) return; seen[c.venture] = 1;
+      rows.push({
+        kind: 'COMPACT', from: c.a, to: c.b, at: [c.aAt, c.bAt, c.stage],
+        state: c.snapped ? 'DEFAULTED' : c.state,
+        bad: !!c.snapped, warn: c.state === 'FORMING',
+        rank: c.snapped ? 0 : c.state === 'LIVE' ? 1 : 2,
+        stake: c.atStake || 0,
+      });
+    });
+    (D.authority || []).forEach(function (a) {
+      rows.push({
+        kind: 'GRANT', from: a.grantor, to: a.delegate, at: [],
+        state: a.state, bad: false, warn: a.state === 'REVOKED',
+        rank: a.state === 'DRAWN' ? 1 : 3, stake: a.granted || 0,
+      });
+    });
+    rows.sort(function (a, b) { return a.rank - b.rank || b.stake - a.stake; });
+    var broke = rows.filter(function (r) { return r.bad; }).length;
+
+    var body = el('div', { class: 'prom' });
+    if (!rows.length) {
+      body.appendChild(empty('nobody has promised anything',
+        'compactLinks[] and authorityLines[] are both empty on both frames.'));
+    } else {
+      body.appendChild(el('div', { class: 'hd' }, [
+        el('span', { class: 'kd', text: 'kind' }), el('span', { class: 'fr', text: 'from' }),
+        el('span', { class: 'ar', text: '→' }), el('span', { class: 'to', text: 'to' }),
+        el('span', { class: 'st', text: 'state' }),
+      ]));
+      rows.forEach(function (r) {
+        var row = el('div', {
+          class: 'r' + (r.bad ? ' bad' : r.warn ? ' warn' : ''),
+          'data-at': r.at.filter(Boolean).join(' '),
+          title: r.kind + ' · ' + U.handleOf(r.from) + ' → ' + (r.to ? U.handleOf(r.to) : 'unfilled') +
+            ' · ' + r.state + ' · ' + U.n(r.stake),
+        }, [
+          el('span', { class: 'kd', text: r.kind }),
+          el('span', { class: 'fr' }, hOf(D, r.from)),
+          el('span', { class: 'ar', text: '→' }),
+          r.to ? el('span', { class: 'to' }, hOf(D, r.to))
+            : el('span', { class: 'to dim', text: 'unfilled' }),
+          el('span', { class: 'st', text: r.state }),
+        ]);
+        var at = r.at.filter(Boolean)[0];
+        if (at && onPick) row.addEventListener('click', function () { onPick(at); });
+        body.appendChild(row);
+      });
+    }
+    return panel('PROMISES', {
+      cls: 'mfloat',
+      sub: rows.length + ' on the frame' + (broke ? ' · ' + broke + ' broken' : ''),
+      alarm: broke > 0,
+      foot: 'a COMPACT is a word between two principals; a GRANT is authority handed over. ' +
+        'Both can be broken and only one of them moves a ship.',
+    }, body, { style: 'flex:1 1 42%;min-height:0' });
+  }
+  /** collapsed state for the floating key, module-level so a poll keeps it. */
+  var mapLegendOpen = false;
+
+  // ═══════════════════════════════════════════════ MAP · THE DRILL-DOWN ══
+  /**
+   * ★ THE CONSTELLATION. `#/zoom/con-4` or `#/zoom/sys-25`.
+   *
+   * A DRILL-DOWN, NOT A REPLACEMENT — the tactical map still answers *where*,
+   * and this answers *what is happening on this ground and to whom*. It is the
+   * one screen in the concept round that adds information rather than mood,
+   * and every field it draws was already on the frame with no pixel depending
+   * on it. `ZoomView`'s header lists them.
+   */
+  function zoomScreen(host, D, arg) {
+    var R = D.R, map = R.map || [];
+    var wrap = el('div', { id: 'mapfull' });
+    if (!map.length) {
+      U.clear(host).appendChild(el('div', { class: 'panel', style: 'height:100%' },
+        el('div', { class: 'body' }, empty('no topology on the frame',
+          'The lane graph is published at settlement. There is no constellation to drill into yet.'))));
+      return;
+    }
+    // the argument is a system or a constellation; a system also selects itself
+    var byId = D.sysIndex;
+    var con = arg, selId = null;
+    if (arg && byId[arg]) { con = byId[arg].constellation; selId = arg; }
+    if (!con || !map.some(function (m) { return m.constellation === con; })) {
+      con = map[0].constellation;
+    }
+    var members = map.filter(function (m) { return m.constellation === con; });
+    if (!selId || !byId[selId] || byId[selId].constellation !== con) selId = members[0].id;
+    var cons = [];
+    map.forEach(function (m) { if (cons.indexOf(m.constellation) < 0) cons.push(m.constellation); });
+    cons.sort();
+
+    var stage = el('div', { id: 'zoomwrap' });
+    wrap.appendChild(stage);
+
+    // ── the strip: where you are, and the way back ──────────────────────
+    var tierCount = {};
+    members.forEach(function (m) { tierCount[m.tier] = (tierCount[m.tier] || 0) + 1; });
+    var strip = el('div', { class: 'mstrip' }, [
+      el('button', {
+        text: '← THE MAP', title: 'back to the whole galaxy',
+        on: { click: function () { location.hash = '#/map/' + selId; } },
+      }),
+      el('span', { class: 'seg' }, [
+        'REGION 1 · ', el('b', { text: String(con).toUpperCase().replace('CON-', 'CON ') }), ' · ',
+        el('b', { text: String(members.length) }), ' SYSTEMS · ',
+        Object.keys(tierCount).sort().map(function (t) { return tierCount[t] + ' ' + t; }).join(' · '),
+      ]),
+      el('span', { class: 'seg' }, cons.map(function (c) {
+        return el('button', {
+          'aria-pressed': c === con ? 'true' : 'false',
+          text: String(c).toUpperCase().replace('CON-', 'CON '),
+          on: { click: function () { location.hash = '#/zoom/' + c; } },
+        });
+      })),
+    ]);
+    wrap.appendChild(strip);
+
+    // ── the locator, bottom-left ────────────────────────────────────────
+    var loc = el('section', {
+      class: 'panel mfloat at', style: 'left:0;bottom:0;width:314px',
+    }, [
+      el('h2', null, ['LOCATOR', el('span', { class: 'sub', text: 'region 1 · ' + map.length + ' systems' })]),
+      el('div', { class: 'body', style: 'overflow:hidden' }, ZoomView.locator(map, con, 312, 178)),
+    ]);
+    wrap.appendChild(loc);
+
+    // ── the rail ────────────────────────────────────────────────────────
+    var rail = el('div', {
+      class: 'rows', style: 'position:absolute;z-index:3;top:0;right:0;bottom:0;width:' + RAIL_W + 'px;gap:6px',
+    });
+    rail.appendChild(sysDetail(D, selId));
+    rail.appendChild(worksTable(D, selId));
+    wrap.appendChild(rail);
+
+    // ── the record strip along the bottom, as the concept has it ────────
+    var lines = (D.ticker || []).slice(0, 6);
+    wrap.appendChild(el('div', {
+      class: 'zlog', style: 'left:320px;right:' + (RAIL_W + 6) + 'px',
+    }, lines.length ? lines.map(function (t, i) {
+      var broke = /\bdefault|failed to|walked away|contradicted|snapped|lapsed\b/i.test(t);
+      var risk = /\braid|demand|arrears|short\b/i.test(t);
+      return el('div', { class: 'ln' + (broke ? ' bad' : risk ? ' warn' : '') }, [
+        el('span', { class: 'tk', text: String(i + 1).padStart(2, '0') }),
+        el('span', { class: 'de', text: t }),
+      ]);
+    }) : [el('div', { class: 'ln' }, el('span', { class: 'de', text: 'the record is quiet' }))]));
+
+    U.clear(host).appendChild(wrap);
+    requestAnimationFrame(function () {
+      ZoomView.render(stage, D, con, selId, {
+        // the layout knows where every float is. Same principle as the map's
+        // `inset`: translucency is not a licence to cover a system.
+        inset: { l: 0, r: RAIL_W + 12, t: 33, b: 0 },
+        avoid: [
+          { x: 0, y: stage.clientHeight - 214, w: 320, h: 214 },              // LOCATOR
+          { x: 320, y: stage.clientHeight - 68, w: stage.clientWidth, h: 68 }, // the record strip
+        ],
+        // the live frame wins where both carry a key — a raid's countdown is
+        // the most legible thing this world publishes and it is per-tick.
+        glyphs: D.glyphs,
+        raids: (D.L && D.L.raidLines) || R.raidLines || [],
+        fronts: (D.L && D.L.frontBands) || R.frontBands || [],
+        onSelect: function (id) { location.hash = '#/zoom/' + id; },
+        onExit: function (s) { location.hash = '#/zoom/' + s.id; },
+      });
+    });
+  }
+
+  /** the selected system's header block — the concept's top-right panel. */
+  function sysDetail(D, id) {
+    var R = D.R, s = D.sysIndex[id];
+    if (!s) return panel('SYSTEM', { cls: 'mfloat' }, empty('nothing selected', ''), { style: 'flex:0 0 auto' });
+    var cl = (R.claimLines || []).filter(function (c) { return c.system === id; })[0];
+    var wk = (R.worksLines || []).filter(function (w) { return w.system === id; });
+    var sw = (R.swayLines || []).filter(function (w) { return w.system === id; })[0];
+    var pl = (R.places || []).filter(function (p) { return p.system === id; })[0];
+    var rows = [];
+    rows.push(['TIER', s.tier + ' · ' + s.yieldPerTick + ' ore/tick' +
+      (s.fuelPerTick ? ' · ' + s.fuelPerTick + ' fuel/tick' : '')]);
+    rows.push(['LODE', (s.richnessBps > 0 ? '+' : '') + s.richnessBps + ' bps · ' +
+      (s.lanes || []).length + ' lanes · ' + (s.straits || []).length + ' straits']);
+    (s.straits || []).forEach(function (st) {
+      rows.push([st.severs ? 'SEVERS' : 'STRAIT',
+        st.to + (st.severs ? ' · strands ' + st.severed : ' · detour ' + st.detourHops + ' hops')]);
+    });
+    if (cl) {
+      rows.push(['CLAIM', U.handleOf(cl.claimant) + ' · ' + (cl.anchorHot ? 'ANCHOR HOT' : 'ANCHOR COLD') +
+        ' · works ' + wk.length + ' · rent ' + U.bps(cl.rentBps)]);
+      rows.push(['STANDING', (cl.legend || cl.state) +
+        (cl.arrearsOf ? ' · arrears ' + cl.arrears + ' of ' + cl.arrearsOf : '') +
+        ' · bond ' + U.n(cl.bondAtRisk)]);
+      // ★ tenants is the field that says whether a landlord is a landlord.
+      rows.push(['TENANTS', cl.tenants + (cl.tenants ? ' · rent taken ' + U.n(cl.rentTaken) : ' · nobody pays rent here')]);
+    } else {
+      rows.push(['CLAIM', 'unclaimed ground']);
+    }
+    if (sw) {
+      // "nobody reaches · 0 can reach" said the same thing twice and made the
+      // one interesting case — ground nobody can project force onto, which is
+      // where a small holder can live — read as a formatting bug.
+      rows.push(['SWAY', (sw.principal
+        ? U.handleOf(sw.principal) + ' ' + sw.sway + ' · ' + sw.reachers + ' can reach'
+        : 'nobody’s force reaches this place') + (sw.gate ? ' · STRAIT GATE' : '')]);
+    }
+    var here = (D.glyphs || []).filter(function (g) { return g.stage === id; });
+    var rds = ((D.L && D.L.raidLines) || R.raidLines || []).filter(function (x) { return x.stage === id; });
+    if (here.length) rows.push(['VENTURES', here.length + ' staged here']);
+    rds.forEach(function (x) {
+      rows.push(['RAID', x.state + ' · demands ' + U.n(x.demand) + ' of ' + U.handleOf(x.target) +
+        (x.lost ? ' · took ' + U.n(x.lost) : '')]);
+    });
+    if (pl) rows.push(['NAMED FOR', pl.handle + ' · since t' + pl.sinceTick + (pl.founderStillThere ? '' : ' · gone')]);
+
+    var body = el('div', { class: 'inspect' }, rows.map(function (kv) {
+      return el('div', { class: 'kv' }, [el('span', { text: kv[0] }), el('span', { text: kv[1] })]);
+    }));
+    var head = el('div', { class: 'zhead' }, [
+      el('span', { class: 'nm', text: s.name.toUpperCase() }),
+      el('span', { class: 'sid', text: s.id }),
+    ]);
+    return panel('SYSTEM', {
+      cls: 'mfloat', sub: s.constellation,
+      right: U.sysLink(s.id, 'ON THE MAP'),
+    }, el('div', null, [head, body]), { style: 'flex:0 0 auto' });
+  }
+
+  /**
+   * ★ WORKS AT sys-XX — the table the whole drill-down exists for.
+   *
+   * `sys-05` carries SEVEN holders at 15/tick each with extraction totals from
+   * 13,696 to 20,249. Every one of those numbers has been on the frame since
+   * `worksLines` was written, and the only thing that has ever drawn any of
+   * them is a single 8 px triangle beside the node — for all seven at once.
+   */
+  function worksTable(D, id) {
+    var R = D.R;
+    var wk = (R.worksLines || []).filter(function (w) { return w.system === id; });
+    var rn = (R.ruins || []).filter(function (r) { return r.system === id; });
+    var body;
+    if (wk.length) {
+      body = table('zwk', [
+        { k: 'holder', t: 'holder', w: '76px', cell: function (w) { return hOf(D, w.holder); }, sort: function (w) { return U.handleOf(w.holder); } },
+        { k: 'sharePerTick', t: 'share', w: '48px', num: true },
+        { k: 'extracted', t: 'extracted', w: '74px', num: true, cell: function (w) { return U.n(w.extracted); } },
+        {
+          // 106px, not 96: `SPINNING UP 9 ticks` is 19 characters inside a tag
+          // with 12px of padding, and at 96 the last glyph fell off the panel.
+          k: 'legend', t: 'state', w: '106px',
+          cell: function (w) { return U.tag(w.legend, /SPINNING/.test(w.legend) ? 'am' : 'cy'); },
+        },
+      ], wk, { sort: 'extracted', dir: -1, rerender: D.rerender });
+    } else {
+      body = empty('no WORKS stands here',
+        'worksLines[] carries no row for this system on the settled frame. The ground is bare, or its ' +
+        'holder fell out of the frame’s broadcast cap.');
+    }
+    var kids = [body];
+    if (rn.length) {
+      kids.push(el('div', { class: 'ruinstrip' }, rn.map(function (r) {
+        return el('div', { class: 'r' }, [
+          el('span', { class: 'x', text: '✕' }),
+          el('span', { class: 'l', text: r.legend }),
+          el('span', { class: 'e', text: U.n(r.extracted) + ' taken before it fell' }),
+        ]);
+      })));
+    }
+    var occ = wk.length ? (wk[0].occupants || wk.length) : 0;
+    return panel('WORKS AT ' + (id || '—'), {
+      cls: 'mfloat',
+      sub: occ ? occ + ' occupants · ' + U.n(wk.reduce(function (a, w) { return a + w.extracted; }, 0)) + ' handed over'
+        : 'nothing extracting',
+      foot: rn.length ? 'A RUIN never leaves. What extracts, beside what stopped.' : null,
+    }, el('div', null, kids), { style: 'flex:1 1 auto;min-height:0' });
   }
 
   // ══════════════════════════════════════════════════════════ STANDINGS ══
@@ -1954,7 +2326,7 @@ var Screens = (function () {
 
   return {
     overview: overview, principals: principals, ventures: ventures, grants: grants,
-    market: market, map: mapScreen, standings: standings, reckoning: reckoning,
+    market: market, map: mapScreen, zoom: zoomScreen, standings: standings, reckoning: reckoning,
     MISSING: MISSING,
   };
 })();

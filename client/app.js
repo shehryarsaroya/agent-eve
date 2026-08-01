@@ -130,8 +130,12 @@ var App = (function () {
       // application window and not as a web page
       tabs.appendChild(el('span', { class: 'fillcell' }));
     }
+    // `zoom` is a drill-down of MAP, not a ninth tab: it has no F-key, it is
+    // only reachable from the map, and the tab strip must not go blank while
+    // you are inside it.
+    var lit = S.screen === 'zoom' ? 'map' : S.screen;
     Array.prototype.forEach.call(tabs.childNodes, function (b) {
-      if (b.getAttribute) b.setAttribute('aria-current', b.getAttribute('data-t') === S.screen ? 'true' : 'false');
+      if (b.getAttribute) b.setAttribute('aria-current', b.getAttribute('data-t') === lit ? 'true' : 'false');
     });
 
     var c = U.clear(document.getElementById('clock'));
