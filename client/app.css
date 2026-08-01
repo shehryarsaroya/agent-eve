@@ -550,7 +550,7 @@ table.t.click tbody tr { cursor: pointer; }
 .seat-hit { fill: none; stroke: none; pointer-events: all; }
 .seat-t {
   fill: #cfe3e7; font: 9px var(--mono); text-anchor: middle; pointer-events: none;
-  paint-order: stroke; stroke: #00060a; stroke-width: 3.6px; stroke-linejoin: round;
+  paint-order: stroke; stroke: #00060a; stroke-width: 4.4px; stroke-linejoin: round;
 }
 .seat-t.hot { fill: var(--amber); }
 /* RED is unpaid at the freeze, which is a word broken. The round-2 build

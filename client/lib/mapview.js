@@ -1075,24 +1075,45 @@ var MapView = (function () {
             (e.owed ? ' · ' + U.n(e.owed) + ' owed' : '') +
             (e.hot ? ' · ' + e.hot + ' not moving' : ''),
         })));
-        /* \u2691 OPPOSITE THE NODE'S OWN NAME \u2014 AND ASKED, NOT INFERRED.
+        /* ⚑ OPPOSITE THE NODE'S OWN NAME — AND ASKED, NOT INFERRED.
          *
-         * A fixed `+rr+21` put `\u25c8 11 \u00b7 31K OWED` straight through
+         * A fixed `+rr+21` put `◈ 11 · 31K OWED` straight through
          * `Salt Ward / sys-01`, which is the busiest seat on the map (ten of
          * the eleven tribute lines land there) and therefore the one caption
          * that had to be readable. Inferring the free side from `sin(th)` got
          * it backwards for the Commons ring, which is exactly where those ten
-         * are. `nodeLabelAt` already knows where the name went \u2014 five branches
-         * of radial offset, halo and anchor \u2014 so ask it rather than
+         * are. `nodeLabelAt` already knows where the name went — five branches
+         * of radial offset, halo and anchor — so ask it rather than
          * re-deriving a rule it owns.
+         *
+         * ★ AND IT CLEARS THE OUTERMOST DRAWN RADIUS, NOT THE YIELD ONE.
+         * `rr3` is THE LODE's radius. Wither's yield disc is r≈11 and its
+         * CLAIM ring is r≈30, so a caption at `rr3 + 22` sat under the claim
+         * ring and 80% of it was destroyed — two 3 px fragments left on the
+         * map, reading as dirt.
+         *
+         * ★ AND IT GOES IN `gLabels`. `gMotion` is painted before the nodes
+         * and before every other label, so on `sys-08` the caption came out as
+         * `◈ TRIB TE`. A seat caption is a LABEL; it belongs in the group
+         * that wins.
          */
         var la = nodeLabelAt(idx[sid], p, rr3, blocs, blocOf);
-        gMotion.appendChild(S('text', {
-          class: 'seat-t' + (e.red || e.hot ? ' hot' : ''),
-          x: p.x, y: (la.y > p.y ? p.y - rr3 - 13 : p.y + rr3 + 22).toFixed(1),
-          // "◈ 1" alone communicated nothing: an unexplained count badge in a
-          // field that already has `▲N`. The noun costs eight characters.
-          text: '\u25c8 ' + e.n + ' TRIBUTE' + (e.owed ? ' \u00b7 ' + U.k(e.owed) + ' OWED' : ''),
+        var outer = rr3 + 15;
+        (R.claimLines || []).forEach(function (c2) {
+          if (c2.system === sid) outer = Math.max(outer, rr3 + 13);
+        });
+        ((L && L.frontBands) || R.frontBands || []).forEach(function (f2) {
+          if (f2.system === sid) outer = Math.max(outer, 17 + 22 * ((f2.tintBps || 0) / 10000));
+        });
+        gLabels.appendChild(S('text', {
+          // RED is unpaid at the freeze, which is a word broken; REVERSING and
+          // DASHED are value at risk, which is amber. Binding both to `hot`
+          // was an invariant whose subject cannot occur, written in CSS.
+          class: 'seat-t' + (e.red ? ' red' : e.hot ? ' hot' : ''),
+          x: p.x, y: (la.y > p.y ? p.y - outer - 9 : p.y + outer + 17).toFixed(1),
+          // `◈ 1` alone communicated nothing: an unexplained count badge in
+          // a field that already carries `▲N`. The noun costs eight chars.
+          text: '◈ ' + e.n + ' TRIBUTE' + (e.owed ? ' · ' + U.k(e.owed) + ' OWED' : ''),
         }));
       });
 
