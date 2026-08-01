@@ -149,9 +149,14 @@ var App = (function () {
         el('b', { text: L.ticksUntilReckoning + 't · ' + U.clock(L.ticksUntilReckoning) }),
       ]));
       if ((L.meters || {}).raidsLive) {
+        // ⚑ AMBER. `app.css` writes the rule down twice — *"a raid is a LOSS,
+        // not a betrayal"* — and the chrome broke it on every screen. On the
+        // `con-4` drill-down, where nobody holds anything and nobody has
+        // broken anything, this was the ONLY red mark on the frame: one
+        // accusation, and a false one.
         c.appendChild(el('div', { class: 'seg' }, [
           el('em', { text: 'RAIDS' }),
-          el('b', { style: 'color:var(--red-text)', text: String(L.meters.raidsLive) }),
+          el('b', { style: 'color:var(--amber)', text: String(L.meters.raidsLive) }),
         ]));
       }
     } else {

@@ -150,6 +150,68 @@ var MapView = (function () {
    * Four `<path>`s of 1 px squares rather than 390 `<rect>`s — the field is
    * static, so this costs one string build per resize and nothing per frame.
    */
+  /**
+   * ⚑ **CANVAS, NOT SVG — AND THAT IS WHAT LETS THE DENSITY BE RIGHT.**
+   *
+   * Three rounds of this field were measured against the concept and the size
+   * and the brightness converged while the DENSITY never moved: 11.5 → 12.5
+   * blobs per 10k px against the concept's **160.7**. Thirteen times short,
+   * twice in a row, because the whole field was four `<path>`s of 1 px
+   * subpaths inside the pan/zoom group — so every star cost DOM, cost a
+   * ~22-character subpath in an attribute string, and cost a re-rasterise on
+   * every pan. At the concept's density that is a 600 KB attribute and a
+   * 28,000-subpath re-raster per drag frame, and 60 fps is a hard requirement.
+   *
+   * The right split was in the brief all along: *canvas 2D for the star field,
+   * SVG for the data.* On a canvas the field is ~28,000 `fillRect`s ONCE per
+   * layout and exactly zero per frame — panning moves it with a CSS
+   * `transform`, which is GPU-composited and never re-rasterises. Density
+   * stops being a cost decision and goes back to being a design one.
+   *
+   * The seeding rule is unchanged and is the point: every star is still a pure
+   * function of a stable system id, so the same thirty ids produce the same
+   * sky forever. §6.2 pins layout; a field that reshuffles every poll breaks
+   * the same rule with 28,000 more pixels than the layout it protects.
+   */
+  function paintStars(cv, systems, W, H) {
+    if (!cv || !W || !H) return;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.max(1, Math.round(W * dpr));
+    cv.height = Math.max(1, Math.round(H * dpr));
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    var ctx = cv.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    /* THE FOUR BUCKETS, and every number here is a measurement.
+     *
+     * Sizes match the concept exactly (median blob 2 px, median max dimension
+     * 2 px — verified). The alphas are capped so that the BRIGHTEST possible
+     * background star stays under the DIMMEST charted system: at round 3 the
+     * brightest star hit L=98.2 while nine of thirty nodes peaked at 94–98,
+     * so 30% of the map had a dim unnamed decoration out-punching a labelled
+     * clickable place. The hard rule says that distinction must be
+     * unmistakable, so the ceiling comes down here and the node strokes go up
+     * in `app.css`. Both halves, because one alone leaves it marginal. */
+    var BUCK = [
+      { c: '125,145,151', a: 0.26, w: 1 },
+      { c: '147,167,172', a: 0.34, w: 1 },
+      { c: '180,194,198', a: 0.44, w: 2 },
+      { c: '25,215,242', a: 0.30, w: 2 },
+    ];
+    var per = Math.max(1, Math.ceil(starCount(W, H) / Math.max(1, (systems || []).length)));
+    (systems || []).forEach(function (s) {
+      for (var i = 0; i < per; i++) {
+        var x = h01(s.id + '#sx' + i) * W;
+        var y = h01(s.id + '#sy' + i) * H;
+        var v = h01(s.id + '#sv' + i);
+        var b = BUCK[v > 0.965 ? 3 : v > 0.86 ? 2 : v > 0.48 ? 1 : 0];
+        ctx.fillStyle = 'rgba(' + b.c + ',' + b.a.toFixed(2) + ')';
+        ctx.fillRect(x | 0, y | 0, b.w, b.w);
+      }
+    });
+  }
+
   var STAR_BUCKETS = ['sf-a', 'sf-b', 'sf-c', 'sf-d'];
   /* ⚑ **70, NOT 13.** Counted against the concept in an identical empty
    * 290×190 patch of sky: concept 272 legible blobs, this field 8. Full-screen
@@ -171,7 +233,7 @@ var MapView = (function () {
    * and it is unchanged — but the COUNT is now what the canvas can hold, so
    * the ids just get more draws each.
    */
-  function starCount(W, H) { return Math.max(24, Math.round((W * H) / 760)); }
+  function starCount(W, H) { return Math.max(64, Math.round((W * H) / 62)); }
   function starField(systems, W, H) {
     var d = ['', '', '', ''];
     var per = Math.max(1, Math.ceil(starCount(W, H) / Math.max(1, systems.length)));
@@ -586,7 +648,7 @@ var MapView = (function () {
     var ins = o.inset || { l: 0, r: 0, t: 0, b: 0 };
     var key = R.stateHash + ':' + W + ':' + H + ':' + ins.l + ',' + ins.r + ',' + ins.t + ',' + ins.b;
     if (!state.cache || state.cache.key !== key) {
-      state.cache = { key: key, lay: layout(R.map, W, H, ins), stars: starField(R.map, W, H) };
+      state.cache = { key: key, lay: layout(R.map, W, H, ins) };
     }
     var lay = state.cache.lay, P = lay.pos, cx = lay.cx, cy = lay.cy, RX = lay.RX, RY = lay.RY;
     var idx = {}; R.map.forEach(function (s) { idx[s.id] = s; });
@@ -596,12 +658,7 @@ var MapView = (function () {
 
     var gBands = S('g'), gLanes = S('g'), gVerge = S('g'), gClaims = S('g'),
       gMotion = S('g'), gNodes = S('g'), gLabels = S('g'), gCon = S('g'),
-      gStars = S('g', { class: 'starfield' }), gSel = S('g', { class: 'selg' });
-
-    // ── ★ THE STAR FIELD, first and furthest back ───────────────────────
-    state.cache.stars.forEach(function (d, i) {
-      if (d) gStars.appendChild(S('path', { class: STAR_BUCKETS[i], d: d }));
-    });
+      gSel = S('g', { class: 'selg' });
 
     // ── ★ THE THREE BANDS ────────────────────────────────────────────────
     // Drawn outermost-first so they stack into three real values of ground
@@ -988,8 +1045,31 @@ var MapView = (function () {
       Object.keys(seats).sort().forEach(function (sid) {
         var p = P[sid]; if (!p) return;
         var e = seats[sid], rr3 = nodeR(idx[sid] || { yieldPerTick: minY }, minY, maxY);
+        /* ⚑ **SPOKES, NOT A DOTTED RING.**
+         *
+         * A dotted white ring around a node was, by count, the FOURTH thing
+         * on these screens drawn as a dotted ring — the COMMONS boundary, the
+         * fuel ring, an arrears outline, and now this — and it was the same
+         * hue and pitch as the COMMONS. A clustering pass literally merged
+         * the Salt Ward seat ring into the Commons ellipse; a viewer has no
+         * better tools. HARD RULE 4 is one word per concept, and it has a
+         * pixel counterpart: one MARK per concept.
+         *
+         * Six short spokes pointing INWARD is the convergence this key
+         * renders — the contract's own word for it — and nothing else on
+         * either screen is drawn as spokes. */
+        for (var sp2 = 0; sp2 < 6; sp2++) {
+          var sa = -Math.PI / 2 + sp2 * Math.PI / 3;
+          gMotion.appendChild(S('line', {
+            class: 'seat-spoke' + (e.red ? ' red' : e.hot ? ' hot' : ''),
+            x1: (p.x + (rr3 + 15) * Math.cos(sa)).toFixed(1),
+            y1: (p.y + (rr3 + 15) * Math.sin(sa)).toFixed(1),
+            x2: (p.x + (rr3 + 6) * Math.cos(sa)).toFixed(1),
+            y2: (p.y + (rr3 + 6) * Math.sin(sa)).toFixed(1),
+          }));
+        }
         gMotion.appendChild(S('circle', {
-          class: 'seat-ring', cx: p.x, cy: p.y, r: (rr3 + 9).toFixed(1),
+          class: 'seat-hit', cx: p.x, cy: p.y, r: (rr3 + 15).toFixed(1),
         }, S('title', {
           text: 'THE SEAT · ' + e.n + ' tribute lines converge here' +
             (e.owed ? ' · ' + U.n(e.owed) + ' owed' : '') +
@@ -1010,7 +1090,9 @@ var MapView = (function () {
         gMotion.appendChild(S('text', {
           class: 'seat-t' + (e.red || e.hot ? ' hot' : ''),
           x: p.x, y: (la.y > p.y ? p.y - rr3 - 13 : p.y + rr3 + 22).toFixed(1),
-          text: '\u25c8 ' + e.n + (e.owed ? ' \u00b7 ' + U.k(e.owed) + ' OWED' : ''),
+          // "◈ 1" alone communicated nothing: an unexplained count badge in a
+          // field that already has `▲N`. The noun costs eight characters.
+          text: '\u25c8 ' + e.n + ' TRIBUTE' + (e.owed ? ' \u00b7 ' + U.k(e.owed) + ' OWED' : ''),
         }));
       });
 
@@ -1303,7 +1385,7 @@ var MapView = (function () {
      * reads as sky. The reticle is painted after the fence for the same reason
      * the fence is painted after the labels: it is the one mark that must
      * never be cut by anything. */
-    var ORDER = [gBands, gStars, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge, gSel];
+    var ORDER = [gBands, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge, gSel];
     var root = S('svg', {
       id: 'mapsvg', viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet',
     }, ORDER);
@@ -1321,6 +1403,7 @@ var MapView = (function () {
       view.x = mx - (mx - view.x) * (nk / view.k); view.y = my - (my - view.y) * (nk / view.k);
       view.k = nk;
       wrap.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
+      moveStars();
     }, { passive: false });
     var drag = null;
     root.addEventListener('pointerdown', function (ev) {
@@ -1333,6 +1416,7 @@ var MapView = (function () {
       drag.moved = Math.max(drag.moved, Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y));
       view.x = drag.vx + (ev.clientX - drag.x) * sc; view.y = drag.vy + (ev.clientY - drag.y) * sc;
       wrap.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
+      moveStars();
     });
     // ★ EMPTY SPACE CLEARS THE SELECTION. A reticle with no way off it is a
     // mode, and the callout covers real ground while it is up.
@@ -1342,7 +1426,19 @@ var MapView = (function () {
     });
     root.addEventListener('pointerleave', function () { drag = null; root.classList.remove('drag'); });
 
-    U.clear(host).appendChild(root);
+    /* THE FIELD IS A SIBLING CANVAS UNDER THE SVG, and it is moved by the
+       SAME numbers the SVG group is — as a CSS transform, so a pan is a
+       composite rather than a 28,000-rect repaint. */
+    U.clear(host);
+    var cv = document.createElement('canvas');
+    cv.className = 'starcv';
+    host.appendChild(cv);
+    host.appendChild(root);
+    paintStars(cv, R.map, W, H);
+    function moveStars() {
+      cv.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')';
+    }
+    moveStars();
     return { pos: P, colour: blocColour };
   }
 
@@ -1359,7 +1455,6 @@ var MapView = (function () {
     // reimplementing it. The locator inset's whole job is to say WHERE in the
     // galaxy you are, and a second layout function would answer that with a
     // second galaxy — a picture that disagrees with the map it is a key to.
-    layout: layout, starField: starField, h01: h01, setBlocOrder: setBlocOrder,
-    STAR_BUCKETS: STAR_BUCKETS,
+    layout: layout, paintStars: paintStars, h01: h01, setBlocOrder: setBlocOrder,
   };
 })();

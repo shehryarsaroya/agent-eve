@@ -268,13 +268,8 @@ var ZoomView = (function () {
       (convoys[c.to] || (convoys[c.to] = [])).push(c);
     });
 
-    var gStars = S('g', { class: 'starfield' }), gVerge = S('g'), gLanes = S('g'),
+    var gVerge = S('g'), gLanes = S('g'),
       gDisc = S('g'), gLab = S('g'), gSel = S('g');
-
-    // the same seeded field, derived from the same ids
-    MapView.starField(members, W, H).forEach(function (d, i) {
-      if (d) gStars.appendChild(S('path', { class: MapView.STAR_BUCKETS[i], d: d }));
-    });
 
     /* ══════════════════════════════════════════════ ★ WHO HOLDS THIS ════
      *
@@ -667,16 +662,23 @@ var ZoomView = (function () {
         }));
       }
 
-      // ── the label stack above ─────────────────────────────────────────
+      /* ── the label stack above ────────────────────────────────────────
+       *
+       * ⚑ **+16 WHEN SELECTED.** The reticle's upper tick spans r+8 … r+18
+       * and the yield line sits at r+5, so selecting GRIST printed a bright
+       * cyan bar between its two numbers and `155 · 10f` came out as
+       * `155 | 10f` — the tick did not merely cross the label, it inserted a
+       * plausible glyph. The map fixed the same collision the same way. */
+      var up = selId === s.id ? 16 : 0;
       gLab.appendChild(S('text', {
-        class: 'zid', x: p.x.toFixed(1), y: (p.y - r - 33).toFixed(1), 'text-anchor': 'middle', text: s.id,
+        class: 'zid', x: p.x.toFixed(1), y: (p.y - r - 33 - up).toFixed(1), 'text-anchor': 'middle', text: s.id,
       }));
       gLab.appendChild(S('text', {
-        class: 'zname', x: p.x.toFixed(1), y: (p.y - r - 19).toFixed(1), 'text-anchor': 'middle',
+        class: 'zname', x: p.x.toFixed(1), y: (p.y - r - 19 - up).toFixed(1), 'text-anchor': 'middle',
         text: s.name.toUpperCase(),
       }));
       gLab.appendChild(S('text', {
-        class: 'zyield', x: p.x.toFixed(1), y: (p.y - r - 5).toFixed(1), 'text-anchor': 'middle',
+        class: 'zyield', x: p.x.toFixed(1), y: (p.y - r - 5 - up).toFixed(1), 'text-anchor': 'middle',
         text: String(s.yieldPerTick) + (s.fuelPerTick ? ' · ' + s.fuelPerTick + 'f' : ''),
       }));
 
@@ -885,8 +887,14 @@ var ZoomView = (function () {
 
     var root = S('svg', {
       id: 'zoomsvg', viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet',
-    }, [gStars, gVerge, gLanes, gDisc, gLab, gSel]);
-    U.clear(host).appendChild(root);
+    }, [gVerge, gLanes, gDisc, gLab, gSel]);
+    // the same seeded field off the same ids, on a canvas for the same reason
+    U.clear(host);
+    var cv = document.createElement('canvas');
+    cv.className = 'starcv';
+    host.appendChild(cv);
+    host.appendChild(root);
+    MapView.paintStars(cv, members, W, H);
   }
 
   return { render: render, locator: locator };

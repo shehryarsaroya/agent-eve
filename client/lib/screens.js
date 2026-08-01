@@ -1344,7 +1344,7 @@ var Screens = (function () {
         // `sys-25` lit a row nine rows below the fold: measured, zero pixels
         // changed in the SYSTEMS table when the reticle moved. A highlight
         // nobody can see is the same defect as no highlight.
-        if (on && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
+        if (on && tr.scrollIntoView) tr.scrollIntoView({ block: 'center' });
       });
       Array.prototype.forEach.call(wrap.querySelectorAll('.prom .r'), function (r) {
         r.classList.toggle('sel', !!id && (r.getAttribute('data-at') || '').split(' ').indexOf(id) >= 0);
@@ -1422,12 +1422,16 @@ var Screens = (function () {
       }
       blocSlot.className = 'kb';
       bl2.forEach(function (b) {
+        // ⚑ THE FOURTH SITE OF THE SAME RULE. `mapview.js`, `zoomview.js` and
+        // the expanded legend all split the handle from the badge; the
+        // COLLAPSED bar — the one that is on screen by default, and therefore
+        // the only key most viewers will ever see — still reddened the whole
+        // handle. The map drew `ashlin` cyan with a red `▲2` and the key
+        // directly under it drew `ASHLIN ▲2` entirely red.
         blocSlot.appendChild(el('span', { title: b.systems + ' systems inside this VERGE' }, [
           el('i', { class: 'sw', style: 'background:' + b.colour }),
-          el('span', {
-            style: 'color:' + (b.defaults ? 'var(--red-text)' : 'var(--text-2)'),
-            text: U.handleOf(b.principal) + (b.defaults ? ' ▲' + b.defaults : ''),
-          }),
+          el('span', { style: 'color:' + b.colour, text: U.handleOf(b.principal) }),
+          b.defaults ? el('span', { style: 'color:var(--red-text)', text: '▲' + b.defaults }) : null,
         ]));
       });
     }

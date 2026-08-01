@@ -474,10 +474,17 @@ table.t.click tbody tr { cursor: pointer; }
   paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
 }
 
-.node { stroke-width: 1; cursor: pointer; }
-.node-COMMONS { fill: #0a2c34; stroke: #7f9296; }
-.node-MARCHES { fill: #08313b; stroke: #2c6b78; }
-.node-FRONTIER { fill: #0a3540; stroke: #35808f; }
+/* ⚑ **THE STROKES CAME UP, AND THAT IS THE OTHER HALF OF THE STAR RULE.**
+   A node's visible PEAK is its 1 px stroke, and at #2c6b78 that peaked at
+   L≈95 — under the brightest background star (L≈98). Nine of thirty charted
+   systems were dimmer than a dim unnamed decoration, which is the hard rule
+   failing on 30% of the map. Capping the stars alone left it marginal; the
+   fills are now dark enough that the strokes can afford this, and it buys
+   node-against-ground contrast at the same time. */
+.node { stroke-width: 1.2; cursor: pointer; }
+.node-COMMONS { fill: #0a2c34; stroke: #a8bcc0; }
+.node-MARCHES { fill: #08313b; stroke: #4592a3; }
+.node-FRONTIER { fill: #0a3540; stroke: #52a8b8; }
 .node:hover { stroke: var(--cyan); stroke-width: 1.8; }
 .node.sel { stroke: #fff; stroke-width: 2; }
 /* Halos, because 30 labels on a 30-node graph WILL collide somewhere and an
@@ -533,12 +540,23 @@ table.t.click tbody tr { cursor: pointer; }
 .convoy-dot { fill: var(--cyan); }
 /* ★ THE SEAT — where the Levy's tribute converges. `tributeLines[]` has
    carried 13 rows all along and the map drew none of them. */
-.seat-ring { fill: none; stroke: #cfe3e7; stroke-width: 1.2; stroke-dasharray: 1 3; opacity: 0.8; }
+/* SIX SPOKES POINTING IN — the convergence the contract names, and the only
+   mark on either screen drawn as spokes. It replaced a dotted white ring that
+   was the FOURTH dotted ring in the vocabulary and the same hue and pitch as
+   the COMMONS boundary. */
+.seat-spoke { stroke: #cfe3e7; stroke-width: 1.4; opacity: 0.75; }
+.seat-spoke.hot { stroke: var(--amber); opacity: 0.95; }
+.seat-spoke.red { stroke: var(--red-text); opacity: 1; }
+.seat-hit { fill: none; stroke: none; pointer-events: all; }
 .seat-t {
   fill: #cfe3e7; font: 9px var(--mono); text-anchor: middle; pointer-events: none;
-  paint-order: stroke; stroke: #00060a; stroke-width: 3.4px; stroke-linejoin: round;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3.6px; stroke-linejoin: round;
 }
 .seat-t.hot { fill: var(--amber); }
+/* RED is unpaid at the freeze, which is a word broken. The round-2 build
+   mapped `e.red` to the AMBER class — an invariant whose subject cannot occur,
+   written in CSS: invisible only because no frame carries RED yet. */
+.seat-t.red { fill: var(--red-text); }
 
 /* the FRONT was the biggest object on the map and it was in no legend line */
 .front-cone { fill: var(--amber); fill-opacity: 0.06; stroke: var(--amber); stroke-opacity: 0.32; stroke-width: 1; stroke-dasharray: 3 4; }
@@ -553,11 +571,12 @@ table.t.click tbody tr { cursor: pointer; }
  *
  * The deep-cyan bucket is 4% of the field and exists only so the sky is not one
  * flat grey; it is still dimmer than the dimmest lane (#17414c). */
-.starfield { pointer-events: none; }
-.sf-a { fill: #7d9197; fill-opacity: 0.26; }
-.sf-b { fill: #93a7ac; fill-opacity: 0.36; }
-.sf-c { fill: #b4c2c6; fill-opacity: 0.50; }
-.sf-d { fill: #19d7f2; fill-opacity: 0.34; }
+/* the field is a CANVAS sibling under the SVG. It rides the same pan/zoom as a
+   CSS transform, so a drag composites instead of repainting 28,000 rects. */
+.starcv {
+  position: absolute; left: 0; top: 0; pointer-events: none;
+  transform-origin: 0 0; will-change: transform;
+}
 
 /* ═══════════════════════════════════ ★ THE RETICLE AND THE CALLOUT ══ */
 .selg { pointer-events: none; }
@@ -581,7 +600,11 @@ table.t.click tbody tr { cursor: pointer; }
 .co-a { fill: var(--amber); }
 .co-r { fill: var(--red-text); }
 .co-d { fill: var(--dim); }
-.co-go { fill: var(--cyan-deep); font-size: 9px; letter-spacing: 0.08em; }
+/* peak L 75.5 against a 152–176 body — the only CLICKABLE element in the
+   concept's signature component, and the dimmest thing in it. The callout was
+   made opaque specifically so this line would read; that fixed the
+   bleed-through and left the contrast. */
+.co-go { fill: var(--cyan-mid); font-size: 10px; letter-spacing: 0.08em; }
 .co-rule { stroke: var(--rule); stroke-width: 1; }
 .co-go-hit { fill: transparent; pointer-events: all; cursor: pointer; }
 .co-go-hit:hover { fill: var(--cyan-wash); }
@@ -742,7 +765,13 @@ table.t.click tbody tr { cursor: pointer; }
 .zbare { fill: var(--dim); font: 400 13px var(--mono); }
 .zbare.up { fill: var(--cyan-mid); }
 .zbare.dn { fill: #6d7f84; }
-.zbare-u { fill: var(--dimmer); font: 7px var(--cond); letter-spacing: 0.14em; text-anchor: middle; }
+/* 1.40:1 measured. This caption is the ONLY thing that says `+333` is a rate
+   of richness against its tier and not an ore count or a balance — the unit on
+   the mark that replaced `BARE`, rendered as decoration. 5.7:1 now. */
+.zbare-u {
+  fill: var(--text-2); font: 8px var(--cond); letter-spacing: 0.14em; text-anchor: middle;
+  paint-order: stroke; stroke: #00060a; stroke-width: 2.6px; stroke-linejoin: round;
+}
 
 /* THE ANCHOR. `anchorHot` has been on every claim line since the field was
    written and no pixel has ever depended on it: a cold claim collects nothing
@@ -804,7 +833,10 @@ table.t.click tbody tr { cursor: pointer; }
 .zstate.am { fill: var(--amber); }
 .zstate.rd { fill: var(--red-text); }
 .zstate.ce { fill: #8496c4; }
-.zstate.dm { fill: var(--dimmer); }
+/* 2.06–2.12:1 measured, on the line that carries SWAY and REACHERS — §9's
+   force projection, the most strategically loaded fact on this screen, and the
+   least readable text on it. 4.9:1 now. */
+.zstate.dm { fill: var(--dim); }
 .zhold { fill: var(--dim); font: 9px var(--mono); }
 .zhold.tr { fill: var(--cyan-deep); }
 /* a QUANTITY beside a handle, when the STATE beside it would have been the
