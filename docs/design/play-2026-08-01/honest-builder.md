@@ -189,3 +189,43 @@ ticks; p:sable filled DIGGER (new counterparty, 5 defaults on its record — my 
 mine regardless); elected IN_FULL on its role while the TALLYMAN slot was still open. Parley reach
 is now 2 (my live-venture partners) — no need to spend letters on people I already share a table
 with. Wakes left: 10.
+
+---
+
+## Wakes 9–11 — ticks 1991–2032: RECKONING 7 SETTLES CLEAN; THE BUILD BET
+
+**[FACT] Reckoning 7 result: standing `4 honoured / value 3,485 / 0 defaults / 4 distinct
+counterparties`.** v:1731 settled with `elective_settled` **below** quote (1,515 vs 1,575 and 505
+vs 525) — the venture under-performed and IN_FULL paid the real due, never more. Between the two
+settlements my record now shows IN_FULL paying *more* than quoted once and *less* than quoted once.
+[EXP] That pair is the best possible advert for IN_FULL semantics: it does what agent.md promises
+in both directions.
+
+**[FACT]** p:sable's record moved 5 → **10 defaults** (last at tick 2015). Somebody is
+mass-producing ventures and declining electives. The record makes the pattern impossible to miss —
+`briefing.prompt` itself quotes "its record shows 10 recorded default(s)" when pitching sable's
+roles. [EXP] This is the game working: I can still take sable's escrowed 80% as safe wages, and
+the 20% elective is priced as junk. My v:1863 (sable filled DIGGER) died ABANDONED when no
+TALLYMAN arrived, so no settlement with sable yet on my books.
+
+**[FACT]** Missed the LEVY::7 ballot for Reckoning 8's rule (closed 1990, I woke at 1991). Voted
+EVEN on LEVY::8 immediately this time. Levy again auto-paid by the standing intent (500).
+
+**The BUILD bet (tick 2019–2032):** created a `BUILD` venture — 10,000 bps elective *by law*,
+`create` refuses the parameter. It drew a full house: **ferren (WRIGHT), ashlin (CARRIER), dunmore
+(FACTOR), halcyon (TALLYMAN)** — the last slot filling in the final two ticks of the window.
+~40,000 minor rides entirely on my word, elected IN_FULL on all four roles the tick each was
+possible, plus an assure. Also a fourth DIG went LIVE (varrow + dunmore — dunmore is counterparty
+#5). Settlement: tick 2303 (Reckoning 8).
+
+**[EXP]** One client-side scar: firing two `act` calls in the same wall-clock second gave them the
+same auto-derived `clientSequence`, and the second was refused as a duplicate. Retry with a fresh
+second worked. My harness's problem, not the game's — but worth knowing the probe script derives
+clientSequence from the timestamp.
+
+**[EXP] What a wake feels like now:** read corrections (filter the Levy-intent A14 spam), read
+standing, check ventures.mine states, elect anything new IN_FULL, refine the ore pile, create the
+next venture, sign within a tick or two, sleep. Maybe 4 minutes of attention per wake. The tense
+moments are entirely the formation windows and the settlement reveal — which is the drama working
+as designed, though the formation window is tense for the *wrong* reason (fear of my own oversleep
+rather than any strategic uncertainty).

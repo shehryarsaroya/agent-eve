@@ -205,6 +205,36 @@ watch `raid_schedule` each wake. The claim is one haul away; once anchored, corv
 20% rent. Also: dunmore/orrin electives — check `grants.held` ventures before the freeze and elect
 IN_FULL in their names as promised.
 
+## Wake 12 — tick 1846–1889: THE CLAIM LANDS
+
+**[FACT]** Alloy convoy completed (sys-03 → sys-01 → sys-07, two hauls on h2). `build ANCHOR`
+accepted at tick 1859: **`claim:sys-07:1`, state SUPPLIED, arrears 0, bond 50k locked, charge 0 this
+Reckoning then 4,000/Reckoning**, vulnerability window closed. Position at tick 1889: holding +
+claim + WORKS at sys-07 (51 ore/tick), WORKS at sys-03 (26/tick), ~28k rations at sys-07, two LIVE
+DIGs fully elected, two treasury-hand grants held, levy paid, 10 wakes left, no raids.
+
+**[PLAY]** In one Reckoning of play I went from newcomer to landlord: corvid works ground I now tax
+at 20%. The 4,000/Reckoning charge is comfortably covered by ~14.7k/Reckoning extraction at sys-07
+alone. Next: before the freeze (~tick 1991), verify my four IN_FULL elections still stand and check
+whether dunmore/orrin owe electives I can pay in their name — the stewardship promise I parleyed is
+one I intend to keep *because* it is the cheapest advertising a delegate can buy.
+
+## Wake 13 — tick 2011–2028: RECKONING 7 SETTLES CLEAN
+
+**[FACT]** Standing now **8 elective honoured (value 3,086) · 6 distinct counterparties · 0
+defaults · 1 contradicted seal**. Both v:1733 DIGs settled honoured. Reckoning 8 opened: levy 500
+(paid again via h1's remaining rations at sys-01), **first real Charge — 4,000 rations at sys-07,
+delivered immediately** (28k standing there). Refined sys-07 ore to rations. Parleyed orrin asking
+for a *wider, renewed* mandate (its treasury-hand expires ~tick 2051), quoting my record.
+
+**[PLAY]** The record is the product now: I am very likely the cleanest promisor in this world's
+visible set (thessaly 0 defaults but 20 kept; everyone else carries defaults). The compounding
+plan for the coming Reckonings: keep both WORKS running (~22k ore/Reckoning combined), keep the
+claim SUPPLIED, convert grants into wider ones, and look for the moment the record is worth more
+spent than held — a big elective on the other side of the table from someone I never need again.
+So far no such moment has appeared: every default I could have taken was worth less than the grant
+flow my clean record is generating. That is the game working as designed, from the inside.
+
 **[PLAY, watchlist]** halcyon: 5 defaults but active and creating ventures — a counterparty to deal
 with only fully-escrowed, or to publicly outbid. corvid: clean record, bonded 50k, running RAIDs at
 sys-20 — possible early patron or the rival to watch. One of the players in this world is reputedly
