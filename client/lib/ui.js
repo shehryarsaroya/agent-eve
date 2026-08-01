@@ -57,6 +57,34 @@ var U = (function () {
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); return n; }
 
+  /**
+   * ⚑ **A DRAW THAT THROWS INSIDE A rAF MUST STILL SAY WHAT BROKE.**
+   *
+   * `app.js` wraps `paint()` in a try/catch precisely so a broken screen is
+   * never a blank page. The two map screens then defer their canvas draw to
+   * `requestAnimationFrame` — which runs OUTSIDE that catch — so a
+   * `ReferenceError` in the layout blanked the entire drill-down, printed
+   * nothing to the console the harness could see, and left a fully rendered
+   * set of rails around 1450×960 of black. It looked like an empty
+   * constellation, which is a state this world genuinely has.
+   *
+   * That is this project's own defect at 1:1: a failure indistinguishable
+   * from a legitimate empty. Every deferred draw goes through here.
+   */
+  function guard(host, fn) {
+    return function () {
+      try { fn(); } catch (e) {
+        if (window.console) console.error(e);
+        if (!host) return;
+        clear(host).appendChild(el('div', { class: 'empty' }, [
+          el('span', { class: 'mark' }),
+          el('span', { class: 'say', text: 'the canvas failed on this frame' }),
+          el('span', { class: 'why', text: String((e && e.message) || e) }),
+        ]));
+      }
+    };
+  }
+
   // ── numbers ────────────────────────────────────────────────────────────
   // `minor` is the currency unit. Compact form on tiles, exact form in tables:
   // a viewer skims the tile and audits the table, and rounding the table would
@@ -403,7 +431,7 @@ var U = (function () {
   }
 
   return {
-    el: el, svg: svg, clear: clear, add: add,
+    el: el, svg: svg, clear: clear, add: add, guard: guard,
     n: n, k: k, bps: bps, pct: pct, clock: clock, handleOf: handleOf,
     h: h, sysLink: sysLink, tag: tag, sw: sw, empty: empty, skeleton: skeleton, nul: nul,
     table: table, panel: panel, tile: tile, bar: bar, kv: kv, pips: pips,

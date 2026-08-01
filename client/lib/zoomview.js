@@ -44,7 +44,7 @@ var ZoomView = (function () {
   }
 
   /** the room a disc's own labels need below it: state lines run r+26 … r+62. */
-  function belowNeed(R) { return R + 68; }
+  function belowNeed(R) { return R + 96; }
 
   /** the widest `handle · STATE` label a disc puts beside itself, in px. */
   var LABEL_W = 132;
@@ -304,6 +304,39 @@ var ZoomView = (function () {
     var cxAll = 0, cyAll = 0;
     members.forEach(function (m) { cxAll += P[m.id].x; cyAll += P[m.id].y; });
     cxAll /= members.length; cyAll /= members.length;
+    var taken = [];
+    function claim(x, y, w, h) { taken.push({ x: x, y: y, w: w, h: h }); }
+    function hits(x, y, w, h) {
+      for (var i = 0; i < taken.length; i++) {
+        var t = taken[i];
+        if (x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y) return true;
+      }
+      return false;
+    }
+    /* ⚑ **THE REGISTRY IS BUILT BEFORE ANYTHING IS PLACED, NOT HALFWAY
+     * THROUGH.** Round 2 registered the name stacks and the state lines and
+     * then placed the exit stubs through them — but the collar handles were
+     * already down by that point, so `kestrel ▲3` printed under `NETTLE` and
+     * `corvid` under `OCCUPANTS 1 · EXTRACTING`. Every label goes through one
+     * registry or the registry is decoration. */
+    members.forEach(function (m) {
+      var q = P[m.id], rr = discR(m.yieldPerTick, minY, maxY);
+      var hasRaid = (o.raids || []).some(function (x) { return x.stage === m.id; });
+      claim(q.x - 84, q.y - rr - 42 - (hasRaid ? 18 : 0), 168, 46 + (hasRaid ? 18 : 0));
+      // ±120, not ±96: `ashlin SWAY 2 · REACHERS 6 · GATE` is ~200 px wide,
+      // so an exit stub could butt up against its end 10 px away and the two
+      // read as one run-on string on a shared baseline.
+      claim(q.x - 120, q.y + rr + 14, 240, 84);       // rings + the state lines
+      claim(q.x - rr - 8, q.y - rr - 8, 2 * rr + 16, 2 * rr + 16);  // the disc
+      // ...only when there is something to label with. A bare system was
+      // reserving 366×62 px of clear air, which starved the collar-handle
+      // search of every side candidate and dropped `ashlin ▲2` back onto
+      // `NETTLE` — the fallback it is supposed to never need.
+      if ((works[m.id] || []).length || (convoys[m.id] || []).length) {
+        claim(q.x - rr - 13 - LABEL_W, q.y - 26, 2 * (rr + 13 + LABEL_W), 62);
+      }
+    });
+
     var collarSeen = {};
     (R.swayLines || []).forEach(function (s) {
       var p = P[s.system]; if (!s.principal || !p) return;
@@ -325,16 +358,54 @@ var ZoomView = (function () {
         collarSeen[s.principal] = { d: Math.hypot(p.x - cxAll, p.y - cyAll), p: p, th: th, col: col, pid: s.principal, rr: rr };
       }
     });
+    /* ⚑ **THE HANDLE GOES THROUGH THE REGISTRY, AND ONLY THE BADGE IS RED.**
+     *
+     * Two failures, both measured. (1) The whole string was painted
+     * `#e34a3f` when the principal had a default — `kestrel ▲ 3` came out as
+     * 74 px of solid red — while the MAP had already been fixed to keep the
+     * handle in its bloc colour and redden only the `▲N`. The rule landed on
+     * one surface and the two screens disagreed about what red means.
+     * (2) Placement was a bearing, so `kestrel ▲3` printed under `NETTLE` and
+     * `ashlin ▲2` rendered its count under the SYSTEM rail. An illegible
+     * default count is A5′ failing in pixels: a viewer sees red and cannot
+     * attribute it, which is worse than not drawing it.
+     *
+     * Eight candidate bearings around the disc, first clear one wins, then
+     * clamped into the free area. Same registry as everything else.
+     */
     Object.keys(collarSeen).sort().forEach(function (pid) {
-      var c = collarSeen[pid];
-      gVerge.appendChild(S('text', {
-        class: 'zverge-lab',
-        x: (c.p.x + (c.rr + 8) * Math.cos(c.th)).toFixed(1),
-        y: (c.p.y + (c.rr + 8) * Math.sin(c.th) + 3).toFixed(1),
-        'text-anchor': Math.cos(c.th) < -0.2 ? 'end' : Math.cos(c.th) > 0.2 ? 'start' : 'middle',
-        fill: defaulters[pid] ? '#e34a3f' : c.col,
-        text: U.handleOf(pid) + (defaulters[pid] ? ' ▲' + defaulters[pid] : ''),
-      }));
+      var c = collarSeen[pid], bad = defaulters[pid];
+      var txt = U.handleOf(pid);
+      var wpx = (txt.length + (bad ? 4 : 0)) * 6.3, hpx = 15;
+      var best = null, found = false;
+      for (var ring = 0; ring < 2 && !found; ring++) {
+        for (var k = 0; k < 8; k++) {
+          // start outboard and walk round; ±0.55 rad steps keep it on the
+          // collar, and a second ring 26 px further out when the first is full
+          var th2 = c.th + (k === 0 ? 0 : (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 0.55);
+          var rad = c.rr + 10 + ring * 26;
+          var lx = c.p.x + rad * Math.cos(th2);
+          var ly = c.p.y + rad * Math.sin(th2) + 3;
+          var an = Math.cos(th2) < -0.2 ? 'end' : Math.cos(th2) > 0.2 ? 'start' : 'middle';
+          var lo = an === 'end' ? lx - wpx : an === 'middle' ? lx - wpx / 2 : lx;
+          lo = Math.max(ins.l + 10, Math.min(W - ins.r - 14 - wpx, lo));
+          lx = an === 'end' ? lo + wpx : an === 'middle' ? lo + wpx / 2 : lo;
+          var cand = { x: lx, y: ly, an: an, lo: lo };
+          // the fallback is the OUTERMOST candidate, not the first one tried:
+          // outboard-and-far is empty far more often than outboard-and-close,
+          // and the first candidate is by construction the one on the collar.
+          if (!best || ring === 1) best = cand;
+          if (!hits(lo, ly - 11, wpx, hpx)) { best = cand; found = true; break; }
+        }
+      }
+      claim(best.lo, best.y - 11, wpx, hpx);
+      var lab = S('text', {
+        class: 'zverge-lab', x: best.x.toFixed(1), y: best.y.toFixed(1),
+        'text-anchor': best.an, fill: c.col,
+      }, S('tspan', { text: txt }));
+      // identity keeps its colour; the badge is the accusation
+      if (bad) lab.appendChild(S('tspan', { fill: '#e34a3f', text: ' ▲' + bad }));
+      gVerge.appendChild(lab);
     });
 
     // ── lanes, including the ones that leave ────────────────────────────
@@ -373,6 +444,11 @@ var ZoomView = (function () {
             class: 'zpinch-t rd', x: (wx + px * 20).toFixed(1), y: (wy + py * 20 + 3).toFixed(1),
             text: 'STRANDED ' + st.severed,
           }));
+          // THE PINCH goes in the registry: `→ sys-26 Jetsam` printed straight
+          // through a severing door and its `STRANDED 3` caption and the three
+          // of them came out as `⊙Tsys≡26⊃≺`.
+          claim(wx + px * 20 - 40, wy + py * 20 - 10, 80, 20);
+          claim(wx - 14, wy - 14, 28, 28);
         } else {
           [1, -1].forEach(function (sgn) {
             gLanes.appendChild(S('path', {
@@ -386,6 +462,7 @@ var ZoomView = (function () {
             class: 'zpinch-t', x: (wx + px * 17).toFixed(1), y: (wy + py * 17 + 3).toFixed(1),
             text: String(st.detourHops),
           }, S('title', { text: 'STRAIT · ' + st.detourHops + ' hops to go around' })));
+          claim(wx - 22, wy - 14, 44, 28);
         }
       });
     });
@@ -397,7 +474,7 @@ var ZoomView = (function () {
      * of it, and two of them are straits — which is precisely the fact §16.12
      * ranks first. So every exit gets a stub, an arrow and the name of the
      * system on the other end. */
-    /* ⚑ **A LABEL REGISTRY, BECAUSE THE ARROWS KEPT LANDING ON THE NAMES.**
+    /* ⚑ **THE REGISTRY, BECAUSE THE ARROWS KEPT LANDING ON THE NAMES.**
      *
      * Three separate collisions survived two rounds of geometric reasoning —
      * `Harrow` through `IRONHOLD`, `Wither` through `→ sys-09`, `Ashen Ford`
@@ -411,30 +488,6 @@ var ZoomView = (function () {
      * alternating up and down, until it lands in clear air. Deterministic
      * order, bounded search, and it degrades to "as close as it could get"
      * rather than to a pile. */
-    var taken = [];
-    function claim(x, y, w, h) { taken.push({ x: x, y: y, w: w, h: h }); }
-    function hits(x, y, w, h) {
-      for (var i = 0; i < taken.length; i++) {
-        var t = taken[i];
-        if (x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y) return true;
-      }
-      return false;
-    }
-    members.forEach(function (m) {
-      var q = P[m.id], rr = discR(m.yieldPerTick, minY, maxY);
-      var hasRaid = (o.raids || []).some(function (x) { return x.stage === m.id; });
-      // the raid caption rides 16 px ABOVE the id line and had no rect, so
-      // `→ sys-20 Ashen Ford` landed on `RAID PAID · 4,626` — the exit stub
-      // covering the only live raid on the constellation.
-      claim(q.x - 84, q.y - rr - 42 - (hasRaid ? 18 : 0), 168, 46 + (hasRaid ? 18 : 0));
-      claim(q.x - 96, q.y + rr + 16, 192, 56);        // the state lines
-      claim(q.x - rr - 8, q.y - rr - 8, 2 * rr + 16, 2 * rr + 16);  // the disc
-    });
-    Object.keys(collarSeen).forEach(function (pid) {
-      var c = collarSeen[pid];
-      claim(c.p.x + (c.rr + 8) * Math.cos(c.th) - 50, c.p.y + (c.rr + 8) * Math.sin(c.th) - 9, 100, 16);
-    });
-
     var exSeen = {};
     exits.forEach(function (e) {
       if (!e.to || exSeen[e.to.id]) return; exSeen[e.to.id] = 1;
@@ -490,6 +543,9 @@ var ZoomView = (function () {
     members.forEach(function (s) {
       var p = P[s.id], r = discR(s.yieldPerTick, minY, maxY);
       var wk = works[s.id] || [], cl = claims[s.id], sw = sway[s.id], rn = ruins[s.id] || [];
+      // hoisted: the state lines step down when a venture-ring row occupies
+      // the band under the disc, and they are laid out before the rings are.
+      var vg = (o.glyphs || []).filter(function (x) { return x.stage === s.id; }).slice(0, 4);
       var lastMiss = cl && (cl.state === 'LAPSED' || (cl.arrearsOf > 0 && cl.arrears >= cl.arrearsOf));
       var ceded = cl && cl.state === 'CEDED';
       // the ring says who holds it and how close to falling it is — the same
@@ -559,11 +615,34 @@ var ZoomView = (function () {
           'text-anchor': 'middle', text: '+' + (wk.length - 9),
         }));
       }
+      /* ⚑ **AND `BARE` WAS THE SAME DEFECT, EIGHT TIMES.** One round after
+       * replacing ten identical `EXTRACTING` labels with the totals that
+       * differ, `con-4` was printing the identical word `BARE` inside all
+       * eight of its discs. A word repeated across every instance carries no
+       * bits; it just looks like data.
+       *
+       * The field that discriminates unworked ground is THE LODE against its
+       * own tier — `richnessBps` runs +533 · +333 · +66 · −133 · −600 across
+       * `con-4`, which is the reason somebody would take one of these places
+       * rather than the one beside it. It is on the frame and nothing has ever
+       * drawn it as anything but a tooltip. */
       if (!wk.length && !rn.length) {
+        var rich = s.richnessBps;
         g.appendChild(S('text', {
-          class: 'zbare', x: p.x.toFixed(1), y: (p.y + 4).toFixed(1), 'text-anchor': 'middle',
-          text: 'BARE',
-        }, S('title', { text: 'no WORKS stands here on this frame' })));
+          class: 'zbare' + (rich > 0 ? ' up' : rich < 0 ? ' dn' : ''),
+          x: p.x.toFixed(1), y: (p.y + 4).toFixed(1), 'text-anchor': 'middle',
+          text: rich ? (rich > 0 ? '+' : '') + rich : 'FLAT',
+        }, S('title', {
+          text: 'no WORKS stands here \u00b7 THE LODE is ' + rich + ' bps against its tier',
+        })));
+        // the sublabel only when the disc is wide enough to hold it: at r=38
+        // a 62 px caption runs past the rim of a 76 px disc.
+        if (r >= 44) {
+          g.appendChild(S('text', {
+            class: 'zbare-u', x: p.x.toFixed(1), y: (p.y + 15).toFixed(1), 'text-anchor': 'middle',
+            text: 'BPS · UNWORKED',
+          }));
+        }
       }
 
       /* ★ THE ANCHOR, AND `anchorHot` IS THE WHOLE REASON IT IS DRAWN.
@@ -628,9 +707,11 @@ var ZoomView = (function () {
       }
       // +26, not +15: the reticle's lower tick reaches r+18, and at +15 the
       // selected system's first state line had a bright cyan bar through it.
+      // …and +52 when a venture ring row is sitting in that band.
+      var stTop = p.y + r + (vg.length ? 54 : 26);
       st.slice(0, 4).forEach(function (l, i) {
         gLab.appendChild(S('text', {
-          class: 'zstate ' + l.c, x: p.x.toFixed(1), y: (p.y + r + 26 + i * 12).toFixed(1),
+          class: 'zstate ' + l.c, x: p.x.toFixed(1), y: (stTop + i * 12).toFixed(1),
           'text-anchor': 'middle', text: l.t,
         }));
       });
@@ -723,20 +804,26 @@ var ZoomView = (function () {
        * The RING is the same glyph the VENTURES screen draws (escrowed arc
        * deep, elective arc bright, socket for an unfilled role) so a viewer
        * reads it once. The raid is amber — a raid is a LOSS and not a lie. */
-      var vg = (o.glyphs || []).filter(function (x) { return x.stage === s.id; });
-      /* ⚑ **ON THE RIGHT HORIZONTAL, NOT SWEEPING UP OVER THE LABELS.**
-       * Round 1 put them at `-π/4 - i·0.42`, which is arithmetically
-       * guaranteed to fail: at i=1 the 26 px box lands in y[p.y−71, p.y−45]
-       * and at i=2 it is centred on `p.x` — exactly where `zname` (p.y−r−19)
-       * and `zyield` (p.y−r−5) are. Confirmed cutting the "D" of WARD and the
-       * "0" of 110 on Coldwater. The right horizontal is the one arc with the
-       * name stack above it and the state lines below it. */
-      vg.slice(0, 3).forEach(function (x, i) {
-        var a = -0.24 + i * 0.5;
-        var gx = p.x + (r + 22) * Math.cos(a), gy = p.y + (r + 22) * Math.sin(a);
+      /* ⚑ **A ROW DIRECTLY UNDER THE DISC, AND THE STATE LINES STEP DOWN.**
+       *
+       * Two rounds of arc placement, two rounds of collisions. At
+       * `-π/4 - i·0.42` the second and third rings were *arithmetically
+       * guaranteed* to land on the name and the ore number (at i=2 the box is
+       * centred on `p.x`, which is exactly where `zname` and `zyield` are).
+       * Moved to the right horizontal they landed on the HOLDER labels
+       * instead — three times out of three.
+       *
+       * Every arc around a disc is already occupied, because the disc is
+       * ringed by labels ON PURPOSE. So the rings get their own band and the
+       * state lines below them move out of the way. It is the one arrangement
+       * that cannot collide, and it also groups the two "what is happening
+       * here" channels together instead of scattering them round a circle. */
+      var gy0 = p.y + r + 15;
+      vg.forEach(function (x, i) {
+        var gx = p.x + (i - (vg.length - 1) / 2) * 30;
         var gl = U.glyph(x, 26);
         gl.setAttribute('x', (gx - 13).toFixed(1));
-        gl.setAttribute('y', (gy - 13).toFixed(1));
+        gl.setAttribute('y', gy0.toFixed(1));
         gl.setAttribute('class', 'glyph zglyph');
         g.appendChild(gl);
       });

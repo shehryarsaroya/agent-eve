@@ -1259,10 +1259,15 @@ var Screens = (function () {
       legend.appendChild(el('hr'));
       legend.appendChild(el('div', { class: 'row', style: 'color:var(--dim)', text: 'THE VERGES ON SCREEN' }));
       bl.slice().sort(function (a, b) { return b.systems - a.systems; }).forEach(function (b) {
+        // ⚑ the KEY was drawing a defaulter's HANDLE in red while the map drew
+        // the same handle in its bloc colour with only the badge red. The one
+        // panel whose job is to teach the encoding was teaching a different
+        // one. Handle = identity = bloc colour, here and everywhere.
         legend.appendChild(el('div', { class: 'row' }, [
           el('i', { class: 'sw', style: 'background:' + b.colour }),
-          el('span', { style: 'color:' + (b.defaults ? 'var(--red-text)' : 'var(--text-2)'), text: U.handleOf(b.principal) }),
-          el('span', { style: 'color:var(--dimmer)', text: ' · ' + b.systems + (b.defaults ? ' · ▲' + b.defaults : '') }),
+          el('span', { style: 'color:' + b.colour, text: U.handleOf(b.principal) }),
+          el('span', { style: 'color:var(--dimmer)', text: ' · ' + b.systems }),
+          b.defaults ? el('span', { style: 'color:var(--red-text)', text: ' ▲' + b.defaults }) : null,
         ]));
       });
     }
@@ -1332,7 +1337,14 @@ var Screens = (function () {
       var id = MapView.selected();
       Array.prototype.forEach.call(wrap.querySelectorAll('table.t tbody tr'), function (tr) {
         var a = tr.querySelector('a.sysl');
-        if (a) tr.classList.toggle('sel', !!id && a.getAttribute('href') === '#/map/' + id);
+        if (!a) return;
+        var on = !!id && a.getAttribute('href') === '#/map/' + id;
+        tr.classList.toggle('sel', on);
+        // ⚑ and SCROLL TO IT. The rail shows 21 of 30 rows, so selecting
+        // `sys-25` lit a row nine rows below the fold: measured, zero pixels
+        // changed in the SYSTEMS table when the reticle moved. A highlight
+        // nobody can see is the same defect as no highlight.
+        if (on && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
       });
       Array.prototype.forEach.call(wrap.querySelectorAll('.prom .r'), function (r) {
         r.classList.toggle('sel', !!id && (r.getAttribute('data-at') || '').split(' ').indexOf(id) >= 0);
@@ -1370,7 +1382,7 @@ var Screens = (function () {
       on: { click: function () { mapLegendOpen = !mapLegendOpen; D.rerender(); } },
     }, [
       'KEY',
-      el('span', { class: 'sub', text: legOpen ? 'every mark the canvas draws' : '16 marks' }),
+      el('span', { class: 'sub', text: legOpen ? 'every mark the canvas draws' : 'colours \u00b7 click for all 16 marks' }),
       el('span', { class: 'right', text: legOpen ? '–' : '+' }),
     ]));
     var blocSlot = null;
@@ -1423,7 +1435,7 @@ var Screens = (function () {
     U.clear(host).appendChild(wrap);
     if (sel) MapView.select(sel);
     // one frame later, so clientWidth is real
-    requestAnimationFrame(function () { draw(); markRail(); fillBlocKey(); });
+    requestAnimationFrame(U.guard(host2, function () { draw(); markRail(); fillBlocKey(); }));
   }
 
   /**
@@ -1460,6 +1472,28 @@ var Screens = (function () {
         rank: a.state === 'DRAWN' ? 1 : 3, stake: a.granted || 0,
       });
     });
+    /* ★ **AND TRIBUTE, WHICH IS THE ONE PROMISE NOBODY CAN DODGE.**
+     *
+     * A14: the Levy is scheduled and cannot be dodged into quiet — it is the
+     * mechanism the whole clock exists for. `tributeLines[]` carries thirteen
+     * rows and, before this, appeared on exactly one screen (the OVERVIEW
+     * table) and on no map at all. A rail called PROMISES that lists the two
+     * promises an agent may CHOOSE to make and omits the one it cannot refuse
+     * is not the scoreboard, it is a subset of it.
+     *
+     * `RED` is unpaid at the freeze, which is a word broken; `REVERSING` is a
+     * seizure and `DASHED` is a line with no hand on it, both of which are
+     * value at risk and therefore amber. A `SOLID` line is a promise being
+     * kept on time and it gets no colour at all. */
+    (R.tributeLines || []).forEach(function (t) {
+      rows.push({
+        kind: 'TRIBUTE', from: t.principal, to: null, toSys: t.to, at: [t.to],
+        state: t.state, bad: t.state === 'RED',
+        warn: t.state === 'REVERSING' || t.state === 'DASHED',
+        rank: t.state === 'RED' ? 0 : (t.state === 'SOLID' ? 4 : 1),
+        stake: t.owed || 0,
+      });
+    });
     rows.sort(function (a, b) { return a.rank - b.rank || b.stake - a.stake; });
     var broke = rows.filter(function (r) { return r.bad; }).length;
 
@@ -1477,14 +1511,16 @@ var Screens = (function () {
         var row = el('div', {
           class: 'r' + (r.bad ? ' bad' : r.warn ? ' warn' : ''),
           'data-at': r.at.filter(Boolean).join(' '),
-          title: r.kind + ' · ' + U.handleOf(r.from) + ' → ' + (r.to ? U.handleOf(r.to) : 'unfilled') +
+          title: r.kind + ' · ' + U.handleOf(r.from) + ' → ' +
+            (r.to ? U.handleOf(r.to) : r.toSys || 'unfilled') +
             ' · ' + r.state + ' · ' + U.n(r.stake),
         }, [
           el('span', { class: 'kd', text: r.kind }),
           el('span', { class: 'fr' }, hOf(D, r.from)),
           el('span', { class: 'ar', text: '→' }),
           r.to ? el('span', { class: 'to' }, hOf(D, r.to))
-            : el('span', { class: 'to dim', text: 'unfilled' }),
+            : r.toSys ? el('span', { class: 'to' }, U.sysLink(r.toSys, 'THE SEAT ' + r.toSys))
+              : el('span', { class: 'to dim', text: 'unfilled' }),
           el('span', { class: 'st', text: r.state }),
         ]);
         var at = r.at.filter(Boolean)[0];
@@ -1636,7 +1672,7 @@ var Screens = (function () {
     }) : [el('div', { class: 'ln' }, el('span', { class: 'de', text: 'the record is quiet' }))]));
 
     U.clear(host).appendChild(wrap);
-    requestAnimationFrame(function () {
+    requestAnimationFrame(U.guard(stage, function () {
       ZoomView.render(stage, D, con, selId, {
         // the layout knows where every float is. Same principle as the map's
         // `inset`: translucency is not a licence to cover a system.
@@ -1653,7 +1689,7 @@ var Screens = (function () {
         onSelect: function (id) { location.hash = '#/zoom/' + id; },
         onExit: function (s) { location.hash = '#/zoom/' + s.id; },
       });
-    });
+    }));
   }
 
   /** the selected system's header block — the concept's top-right panel. */

@@ -133,7 +133,7 @@ body {
    outnumbered the stars ~800:1 — so the sky read as graph paper. The two map
    screens are the only ones with a sky, and they are the only ones that lose
    it. */
-#stage:has(#mapfull)::before { opacity: 0.22; }
+#stage:has(#mapfull)::before { opacity: 0; }
 
 /* ══════════════════════════════════════════════════ chrome: the tab bar ══ */
 
@@ -482,13 +482,18 @@ table.t.click tbody tr { cursor: pointer; }
 .node.sel { stroke: #fff; stroke-width: 2; }
 /* Halos, because 30 labels on a 30-node graph WILL collide somewhere and an
    unreadable name is worse than a name overlapping a lane. */
+/* 4.4 px of halo, not 3.2. The tier ladder now lives on three 3 px BRIGHT
+   strokes rather than on three flat fills, and a bright hairline crossing a
+   9 px label is a strikethrough where a dark fill was merely a background:
+   `sys-08`, `sys-07`, `sys-19` and `sys-20` were each cut by a band edge. The
+   halo has to be wider than the thing it is defending against. */
 .node-lab {
   fill: #b7c5c9; font: 9px var(--mono); pointer-events: none;
-  paint-order: stroke; stroke: #00060a; stroke-width: 3.2px; stroke-linejoin: round;
+  paint-order: stroke; stroke: #00060a; stroke-width: 4.4px; stroke-linejoin: round;
 }
 .node-id {
   fill: #7d979e; font: 9px var(--mono); pointer-events: none;
-  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+  paint-order: stroke; stroke: #00060a; stroke-width: 4.4px; stroke-linejoin: round;
 }
 /* ⚑ **FUEL IS AN ATTRIBUTE, NOT AN ALARM.** Amber was carrying four meanings
    at once — a raid, a claim in arrears, a WORKS spinning up, and "this ground
@@ -526,6 +531,15 @@ table.t.click tbody tr { cursor: pointer; }
 .compact-arc.snapped { stroke: var(--red); stroke-dasharray: 5 4; opacity: 0.85; }
 .convoy-path { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: 0.4; stroke-dasharray: 4 4; }
 .convoy-dot { fill: var(--cyan); }
+/* ★ THE SEAT — where the Levy's tribute converges. `tributeLines[]` has
+   carried 13 rows all along and the map drew none of them. */
+.seat-ring { fill: none; stroke: #cfe3e7; stroke-width: 1.2; stroke-dasharray: 1 3; opacity: 0.8; }
+.seat-t {
+  fill: #cfe3e7; font: 9px var(--mono); text-anchor: middle; pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3.4px; stroke-linejoin: round;
+}
+.seat-t.hot { fill: var(--amber); }
+
 /* the FRONT was the biggest object on the map and it was in no legend line */
 .front-cone { fill: var(--amber); fill-opacity: 0.06; stroke: var(--amber); stroke-opacity: 0.32; stroke-width: 1; stroke-dasharray: 3 4; }
 
@@ -540,19 +554,24 @@ table.t.click tbody tr { cursor: pointer; }
  * The deep-cyan bucket is 4% of the field and exists only so the sky is not one
  * flat grey; it is still dimmer than the dimmest lane (#17414c). */
 .starfield { pointer-events: none; }
-.sf-a { fill: #7d9197; fill-opacity: 0.32; }
-.sf-b { fill: #9db0b5; fill-opacity: 0.44; }
-.sf-c { fill: #ccd8db; fill-opacity: 0.62; }
-.sf-d { fill: #19d7f2; fill-opacity: 0.42; }
+.sf-a { fill: #7d9197; fill-opacity: 0.26; }
+.sf-b { fill: #93a7ac; fill-opacity: 0.36; }
+.sf-c { fill: #b4c2c6; fill-opacity: 0.50; }
+.sf-d { fill: #19d7f2; fill-opacity: 0.34; }
 
 /* ═══════════════════════════════════ ★ THE RETICLE AND THE CALLOUT ══ */
 .selg { pointer-events: none; }
 .ret-arc { fill: none; stroke: var(--cyan); stroke-width: 1.4; opacity: 0.95; }
 .ret-tick { stroke: var(--cyan); stroke-width: 1.4; opacity: 0.95; }
 .ret-lead { fill: none; stroke: var(--cyan); stroke-width: 1.3; opacity: 0.9; }
-.co-box {
-  fill: rgba(0, 9, 14, 0.88); stroke: var(--cyan-deep); stroke-width: 1;
-}
+/* ⚑ **OPAQUE. A CALLOUT IS A MASK, NOT A TINT.**
+   At 0.88 a white `STRANDS 4` chip and an exit stub underneath still came
+   through at 12% — enough to garble 10 px type, and what it garbled was
+   `▸ DRILL INTO CON-4 · 8 SYSTEMS`, rendering it as
+   `▸ DRILL INTO CON-#ANDS-8-SYSTEMS`. The only new interaction affordance on
+   the screen, made illegible by the one panel that is supposed to answer
+   things. Nothing is worth seeing through a callout. */
+.co-box { fill: #00080d; stroke: var(--cyan-deep); stroke-width: 1; }
 .co-t { font: 10px var(--mono); pointer-events: none; }
 .co-h {
   font: 600 10px var(--cond); letter-spacing: 0.16em; fill: var(--cyan);
@@ -718,9 +737,12 @@ table.t.click tbody tr { cursor: pointer; }
 .zruin { fill: #06111a; stroke: #6f8288; stroke-width: 1; }
 .zruin-x { stroke: #8a969a; stroke-width: 1.4; fill: none; }
 .zmore { fill: var(--dim); font: 9px var(--mono); }
-.zbare {
-  fill: var(--dimmer); font: 9px var(--cond); letter-spacing: 0.22em;
-}
+/* unworked ground is labelled with THE LODE against its tier — the field that
+   differs between two bare systems — not with the word BARE eight times. */
+.zbare { fill: var(--dim); font: 400 13px var(--mono); }
+.zbare.up { fill: var(--cyan-mid); }
+.zbare.dn { fill: #6d7f84; }
+.zbare-u { fill: var(--dimmer); font: 7px var(--cond); letter-spacing: 0.14em; text-anchor: middle; }
 
 /* THE ANCHOR. `anchorHot` has been on every claim line since the field was
    written and no pixel has ever depended on it: a cold claim collects nothing

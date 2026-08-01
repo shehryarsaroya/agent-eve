@@ -158,23 +158,42 @@ var MapView = (function () {
    * system is 2,100 stars, still four <path>s, still zero per-frame cost, and
    * still every one of them a pure function of a stable system id. */
   var PER_SYSTEM = 70;
+  /**
+   * ⚑ **AND THE DENSITY COMES OFF THE VIEWPORT, NOT OFF THE SYSTEM COUNT.**
+   *
+   * Seeding N stars per system meant zooming IN — where the sky has the most
+   * room and the fewest systems — emptied it. Measured, stars per 10k px:
+   * map 32.3, `con-2` 3.7, `sys-05` 6.1, `con-4` 7.5, against the concept's
+   * 28.0. `con-4`, the one screen whose entire story is that nobody has taken
+   * this ground, had the barest sky in the product.
+   *
+   * Stars are still a pure function of stable system ids — that is the rule
+   * and it is unchanged — but the COUNT is now what the canvas can hold, so
+   * the ids just get more draws each.
+   */
+  function starCount(W, H) { return Math.max(24, Math.round((W * H) / 760)); }
   function starField(systems, W, H) {
     var d = ['', '', '', ''];
+    var per = Math.max(1, Math.ceil(starCount(W, H) / Math.max(1, systems.length)));
     systems.forEach(function (s) {
-      for (var i = 0; i < PER_SYSTEM; i++) {
+      for (var i = 0; i < per; i++) {
         var x = h01(s.id + '#sx' + i) * W;
         var y = h01(s.id + '#sy' + i) * H;
         var v = h01(s.id + '#sv' + i);
         // bucket 3 is the rare cyan one, ~4% of the field
         var b = v > 0.96 ? 3 : v > 0.80 ? 2 : v > 0.44 ? 1 : 0;
-        /* ⚑ **1 px WAS INVISIBLE, AND "IN THE DOM" IS NOT "ON SCREEN".**
-         * Round 1 drew 1.0/1.7 px squares at 0.13–0.42. `querySelectorAll`
-         * found all four paths and 390 squares and a viewer found no sky at
-         * all — the field was there and it was, in this repo's own phrase,
-         * indistinguishable from missing. 1.6–2.6 px reads; a charted node is
-         * still 6–12 px WITH a 1 px stroke, a name, an id and a hit area, so
-         * the two channels stay unmistakable. */
-        var w = b === 3 ? 2.6 : b === 2 ? 2.2 : b === 1 ? 1.8 : 1.6;
+        /* ⚑ **DENSE AND SMALL, NOT SPARSE AND FAT — AND THE ROUND-2 FIELD WAS
+         * THE WRONG ONE OF THOSE.** Round 1 drew 1.0 px at 0.13 and was
+         * invisible; round 2 answered with 1.6–2.6 px at 0.22–0.62 and
+         * overshot in the other direction: median blob 8 px against the
+         * concept's 2 px, median peak luminance 78 against 39, and the
+         * BRIGHTEST background star at L=223 out-punching SIX of nine charted
+         * systems. That is the hard rule failing — a dim unnamed decoration
+         * cannot be the brightest thing in its neighbourhood.
+         *
+         * The concept's answer is thousands of 1–2 px pinpricks. 1.0–1.9 px,
+         * alphas back down, and roughly nine times as many of them. */
+        var w = b === 3 ? 1.9 : b === 2 ? 1.6 : b === 1 ? 1.2 : 1.0;
         d[b] += 'M' + x.toFixed(1) + ' ' + y.toFixed(1) + 'h' + w + 'v' + w + 'h-' + w + 'Z';
       }
     });
@@ -778,7 +797,13 @@ var MapView = (function () {
       // `nodeLabelAt` is the one definition of it.
       R.map.forEach(function (s) {
         var p2 = P[s.id]; if (!p2) return;
-        labelPts.push(nodeLabelAt(s, p2, state.layers.lode ? nodeR(s, minY, maxY) : 7, blocs, blocOf));
+        var rr2 = state.layers.lode ? nodeR(s, minY, maxY) : 7;
+        labelPts.push(nodeLabelAt(s, p2, rr2, blocs, blocOf));
+        // ⚑ and the NODE ITSELF. Round 2 dodged `brannock` off Bastion's
+        // label and dropped it straight onto Mirefall's node halo — a
+        // collision detector that knows about text and not about the discs
+        // the text is attached to just relocates the collision.
+        labelPts.push({ x: p2.x, y: p2.y, r: rr2 + 6 });
       });
       Object.keys(blocs).sort().forEach(function (pid) {
         var pts = blocs[pid], col = blocColour(pid);
@@ -823,7 +848,9 @@ var MapView = (function () {
               // as `brann·ck` with `sys-18`'s halo through the middle. The
               // band is [y−14, y+22]: name ascender to id descender.
               var a3 = labelPts[li], cy2 = c0[1] - 11;
-              if (Math.abs(a3.x - c0[0]) < 56 && cy2 > a3.y - 14 && cy2 < a3.y + 22) { ok = false; break; }
+              if (a3.r) {
+                if (Math.hypot(a3.x - c0[0], a3.y - cy2) < a3.r + 9) { ok = false; break; }
+              } else if (Math.abs(a3.x - c0[0]) < 56 && cy2 > a3.y - 14 && cy2 < a3.y + 22) { ok = false; break; }
             }
             if (ok) { t2 = c0; break; }
           }
@@ -933,6 +960,60 @@ var MapView = (function () {
             ' ' + b.x.toFixed(1) + ' ' + b.y.toFixed(1),
         }, S('title', { text: cl.legend || cl.kind })));
       });
+      /* ★ **THE SEAT — WHERE THE LEVY CONVERGES, AND THE MAP'S ONLY STAKE.**
+       *
+       * The critic's sharpest line: *"your map answers where things are; the
+       * concept's answers who is about to lose something."* It was right, and
+       * the missing field was not missing — `tributeLines[]` has carried
+       * THIRTEEN rows since it was written and not one pixel depended on any
+       * of them. A14 makes the Levy the one promise nobody can dodge into
+       * quiet, and it was the one promise with no mark.
+       *
+       * Eleven of tonight's thirteen converge on `sys-01`, one on `sys-08`,
+       * one on `sys-16` — which is exactly the *"convergence on a handful of
+       * hands"* the frame contract says this key exists to render. So the
+       * receiving system gets a dotted collection ring and a count, and the
+       * count goes AMBER the moment any line into it is REVERSING (a seizure)
+       * or DASHED (no hand assigned to carry it). Amber, not red: value at
+       * risk is not yet a broken word. `RED` — unpaid at the freeze — is the
+       * state that earns the alarm colour, and it is a state this frame does
+       * not currently carry. */
+      var seats = {};
+      (R.tributeLines || []).forEach(function (t) {
+        var e = seats[t.to] || (seats[t.to] = { n: 0, owed: 0, hot: 0, red: 0 });
+        e.n++; e.owed += t.owed || 0;
+        if (t.state === 'REVERSING' || t.state === 'DASHED') e.hot++;
+        if (t.state === 'RED') e.red++;
+      });
+      Object.keys(seats).sort().forEach(function (sid) {
+        var p = P[sid]; if (!p) return;
+        var e = seats[sid], rr3 = nodeR(idx[sid] || { yieldPerTick: minY }, minY, maxY);
+        gMotion.appendChild(S('circle', {
+          class: 'seat-ring', cx: p.x, cy: p.y, r: (rr3 + 9).toFixed(1),
+        }, S('title', {
+          text: 'THE SEAT · ' + e.n + ' tribute lines converge here' +
+            (e.owed ? ' · ' + U.n(e.owed) + ' owed' : '') +
+            (e.hot ? ' · ' + e.hot + ' not moving' : ''),
+        })));
+        /* \u2691 OPPOSITE THE NODE'S OWN NAME \u2014 AND ASKED, NOT INFERRED.
+         *
+         * A fixed `+rr+21` put `\u25c8 11 \u00b7 31K OWED` straight through
+         * `Salt Ward / sys-01`, which is the busiest seat on the map (ten of
+         * the eleven tribute lines land there) and therefore the one caption
+         * that had to be readable. Inferring the free side from `sin(th)` got
+         * it backwards for the Commons ring, which is exactly where those ten
+         * are. `nodeLabelAt` already knows where the name went \u2014 five branches
+         * of radial offset, halo and anchor \u2014 so ask it rather than
+         * re-deriving a rule it owns.
+         */
+        var la = nodeLabelAt(idx[sid], p, rr3, blocs, blocOf);
+        gMotion.appendChild(S('text', {
+          class: 'seat-t' + (e.red || e.hot ? ' hot' : ''),
+          x: p.x, y: (la.y > p.y ? p.y - rr3 - 13 : p.y + rr3 + 22).toFixed(1),
+          text: '\u25c8 ' + e.n + (e.owed ? ' \u00b7 ' + U.k(e.owed) + ' OWED' : ''),
+        }));
+      });
+
       ((L && L.raidLines) || R.raidLines || []).forEach(function (rd) {
         var p = P[rd.stage]; if (!p) return;
         gMotion.appendChild(S('circle', { class: 'raid-halo', cx: p.x, cy: p.y, r: 12 }));
