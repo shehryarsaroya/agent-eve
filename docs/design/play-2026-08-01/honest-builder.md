@@ -46,3 +46,52 @@ extra unsigned fetch.
 **Next:** wake ~tick 1462 to read `corrections[]`, countersign DIG fills (formation window ~12
 ticks), and check the WORKS landed. Then budget remaining ~14 wakes across the 275 ticks to
 Reckoning 6: elect IN_FULL before freeze, deliver Levy at sys-01, seal my role honestly.
+
+---
+
+## Wake 2–3 — ticks 1474–1489 (a flaked venture, then the loop closes to LIVE)
+
+**[EXP] I killed my own first venture by oversleeping, and the frame's stale tick helped me do it.**
+I waited on `frames/latest.json`'s `tick` to reach 1462; it read 1439 *twenty-five minutes after my
+signed observation said 1452*, so my wait loop never fired. When I finally did a signed observe it
+was tick 1474 and `v:1453:6ff1bfa2` was `ABANDONED` (resolved 1466): **both roles had filled
+(p:halcyon DIGGER, p:ferren TALLYMAN), both had countersigned, and the venture died waiting for my
+signature.** My escrow came back; their committed hands got nothing for ~13 ticks.
+
+- **[FACT]** The frame's `tick` lags the live tick by a large, variable amount (observed 35+ ticks).
+  agent.md says the feed is public parity on facts; a stale tick field is arguably fine (cached
+  frames are the design) but it is useless as a clock. `GET /compact/api/health` carries the real
+  tick (`report.tick`) unsigned — that is the right wait target. Possible discrepancy report:
+  nothing on the surface says the frame can be ~35 ticks old.
+- **[FACT]** The abandonment produced **no `briefing.corrections[]` row** and nothing in `briefing.prompt`
+  at my next wake said "your venture died unsigned". The prompt had moved on to "Nothing is waiting
+  on you". A creator that slept through its own formation window learns it only by reading
+  `ventures.mine[].state == ABANDONED`. **[EXP]** I'd have wanted the briefing to name it — this was
+  the most consequential thing that happened to me between wakes.
+- **[EXP]** My fault on the game's terms — agent.md's instructions ("be awake to countersign") are
+  explicit. But note the trap shape: `create` costs an action, formation is ~12 ticks, and a naive
+  agent that trusts the frame clock will flake exactly as I did, and looks unreliable to the cast.
+
+**Recovery (wake 3, ticks 1475–1488):** recreated the DIG (`v:1476:d8ff7974`, escrow 4,800 +
+1,200, elective 2,400 total at 20%). p:thessaly filled DIGGER within a tick; **signed the terms_hash
+verbatim from the sign affordance at tick 1481**; p:varrow took TALLYMAN; state `LIVE`, all three
+countersigned, resolves at tick 1727 (Reckoning 6).
+
+Then, in the same wake:
+- **`elect IN_FULL` on both roles immediately.** The elect affordance's `what_it_forecloses` is
+  excellent: "You have currently stated: nothing, which is a decline." Restatable until freeze, so
+  electing early is strictly safer for an honest strategy — if I oversleep the rest of the
+  Reckoning, my promise is already stated.
+- **`set_delivery_intent` LEVY 500 until_tick 2063** — standing order, pays while I sleep. My 600
+  rations and hand h3 are standing at sys-01 (the delivery place).
+- **Voted `EVEN` on the LEVY ballot** (free). [EXP] Politics I don't have a stake in yet; EVEN is
+  the posture that matches the handle.
+- **[FACT]** WORKS `works:sys-02:1453:p:mason-01` exists, `online: false` (24-tick spinup from 1453
+  → online ~1477). Check extraction next wake.
+- **[FACT]** Noticed in the deliver affordances: I'm offered `deliver {payer: p:ashlin}` (13,248)
+  and `{payer: p:corvid}` (44,500) — neighbours' Levy shortfalls I could carry. Filed as a future
+  relationship play once I can parley (still 0 parleys — no honoured elective yet).
+
+**Next:** wake ~1550 (check works extraction + refine ore→rations, intent running), ~1650, ~1715
+(pre-freeze: verify elections stand, seal if anything requires it), ~1730 (post-settlement: standing
+should move 0→2 honoured, 0→2 distinct counterparties, parley opens). Wakes left: 12.
