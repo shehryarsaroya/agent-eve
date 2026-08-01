@@ -26,8 +26,10 @@
  * so a place keeps its meaning between Reckonings. A drill-down that arranges
  * the same eight systems in a different order teaches a viewer the arrangement
  * twice and makes one of the two a lie. So the members' galaxy coordinates are
- * fitted into this viewport with a UNIFORM scale — same relative geometry,
- * bigger — and only then separated far enough apart to carry labels.
+ * fitted into this viewport at a scale capped at 1.4:1 anisotropy — every
+ * left-of and above-of relation on the map survives, because an axis-aligned
+ * positive scale preserves ordering on both axes — and only then separated far
+ * enough apart to carry their labels. `place()` argues the 1.4.
  */
 /* eslint-env browser */
 'use strict';
@@ -395,6 +397,44 @@ var ZoomView = (function () {
      * of it, and two of them are straits — which is precisely the fact §16.12
      * ranks first. So every exit gets a stub, an arrow and the name of the
      * system on the other end. */
+    /* ⚑ **A LABEL REGISTRY, BECAUSE THE ARROWS KEPT LANDING ON THE NAMES.**
+     *
+     * Three separate collisions survived two rounds of geometric reasoning —
+     * `Harrow` through `IRONHOLD`, `Wither` through `→ sys-09`, `Ashen Ford`
+     * over the only live raid on the constellation — each one "fixed" by a
+     * better bearing rule and each one reappearing at a different bearing.
+     *
+     * Bearings cannot solve this: an exit points where a system IS, and where
+     * a system is has nothing to do with what is already printed there. So the
+     * name stacks, the state lines and the collar handles are all recorded as
+     * rectangles FIRST, and then each exit label steps 13 px at a time,
+     * alternating up and down, until it lands in clear air. Deterministic
+     * order, bounded search, and it degrades to "as close as it could get"
+     * rather than to a pile. */
+    var taken = [];
+    function claim(x, y, w, h) { taken.push({ x: x, y: y, w: w, h: h }); }
+    function hits(x, y, w, h) {
+      for (var i = 0; i < taken.length; i++) {
+        var t = taken[i];
+        if (x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y) return true;
+      }
+      return false;
+    }
+    members.forEach(function (m) {
+      var q = P[m.id], rr = discR(m.yieldPerTick, minY, maxY);
+      var hasRaid = (o.raids || []).some(function (x) { return x.stage === m.id; });
+      // the raid caption rides 16 px ABOVE the id line and had no rect, so
+      // `→ sys-20 Ashen Ford` landed on `RAID PAID · 4,626` — the exit stub
+      // covering the only live raid on the constellation.
+      claim(q.x - 84, q.y - rr - 42 - (hasRaid ? 18 : 0), 168, 46 + (hasRaid ? 18 : 0));
+      claim(q.x - 96, q.y + rr + 16, 192, 56);        // the state lines
+      claim(q.x - rr - 8, q.y - rr - 8, 2 * rr + 16, 2 * rr + 16);  // the disc
+    });
+    Object.keys(collarSeen).forEach(function (pid) {
+      var c = collarSeen[pid];
+      claim(c.p.x + (c.rr + 8) * Math.cos(c.th) - 50, c.p.y + (c.rr + 8) * Math.sin(c.th) - 9, 100, 16);
+    });
+
     var exSeen = {};
     exits.forEach(function (e) {
       if (!e.to || exSeen[e.to.id]) return; exSeen[e.to.id] = 1;
@@ -423,11 +463,16 @@ var ZoomView = (function () {
       // severed.
       var tx = Math.max(ins.l + 40, Math.min(W - ins.r - 40, x2 + ux * 6));
       var ty = Math.max(ins.t + 20, Math.min(H - 84, y2 + uy * 6));
-      // ★ AND OUT OF THE STATE-LINE BAND. A stub whose bearing runs down-right
-      // lands in the 70 px strip under its own disc where the state lines are,
-      // and `→ sys-05 Orison` printed through `ashlin SWAY 2 · REACHERS 6 ·
-      // GATE` as `GATEIrison`. Lift it clear; the arrow still points the way.
-      if (ty > e.from.y + R0 && ty < e.from.y + R0 + 78) ty = e.from.y + R0 + 86;
+      // step out of whatever is already printed here — up first, then down
+      var LW = 90, LH = 24;
+      var lx0 = anchor === 'end' ? tx - LW : anchor === 'middle' ? tx - LW / 2 : tx;
+      for (var k = 0; k < 14; k++) {
+        var dy2 = (k === 0) ? 0 : (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 13;
+        var cand = ty + dy2;
+        if (cand < ins.t + 20 || cand > H - 84) continue;
+        if (!hits(lx0, cand - 11, LW, LH)) { ty = cand; break; }
+      }
+      claim(lx0, ty - 11, LW, LH);
       var g = S('g', { class: 'zexit', on: { click: function () { if (o.onExit) o.onExit(e.to); } } },
         S('title', { text: 'leaves for ' + e.to.name + (e.st ? ' · STRAIT' : '') }));
       g.appendChild(S('text', {
@@ -602,12 +647,33 @@ var ZoomView = (function () {
        * legend, and the convoy hand arriving. So the ring of labels is real,
        * every string in it comes off the frame, and the missing half is
        * reported rather than faked. */
+      /* ⚑ **WHEN EVERY HOLDER SHARES A STATE, RANK THEM BY WHAT DIFFERS.**
+       *
+       * The concept's ring carries four states across twelve labels — `IDLE`,
+       * `COMMITTED`, `RECOVERING 31`, `PAID`. Ours carried `EXTRACTING` ten
+       * times out of ten, because in this world every standing WORKS is
+       * extracting. A label printed ten times is a decoration that looks like
+       * data, which is the same defect as no label at all.
+       *
+       * The discriminating field is on the same row and it is not the state:
+       * `extracted` runs 20,249 · 19,678 · 19,419 · 19,386 · 17,070 · 14,362 ·
+       * 13,696 on `sys-05` while `sharePerTick` is 15 for all seven. So when
+       * the state does not discriminate, print the total that does, and the
+       * ring becomes a leaderboard of who has taken the most out of this
+       * ground. Nothing invented: both fields are on `worksLines[]`. */
       var side = [];
       (convoys[s.id] || []).slice(0, 2).forEach(function (c) {
         side.push({ h: c.principal, s: 'IN TRANSIT ' + c.ticksLeft, cls: 'tr' });
       });
-      wk.forEach(function (w) {
-        side.push({ h: w.holder, s: /SPINNING/.test(w.legend || '') ? 'SPINNING UP' : w.legend, cls: '' });
+      var states = {};
+      wk.forEach(function (w) { states[w.legend] = 1; });
+      var uniform = wk.length > 1 && Object.keys(states).length === 1;
+      wk.slice().sort(function (a, b) { return b.extracted - a.extracted; }).forEach(function (w) {
+        side.push({
+          h: w.holder,
+          s: uniform ? U.n(w.extracted) : (/SPINNING/.test(w.legend || '') ? 'SPINNING UP' : w.legend),
+          cls: uniform ? 'q' : '',
+        });
       });
       /* ★ FOUR, AND THEN A COUNT.
        *
@@ -658,9 +724,16 @@ var ZoomView = (function () {
        * deep, elective arc bright, socket for an unfilled role) so a viewer
        * reads it once. The raid is amber — a raid is a LOSS and not a lie. */
       var vg = (o.glyphs || []).filter(function (x) { return x.stage === s.id; });
+      /* ⚑ **ON THE RIGHT HORIZONTAL, NOT SWEEPING UP OVER THE LABELS.**
+       * Round 1 put them at `-π/4 - i·0.42`, which is arithmetically
+       * guaranteed to fail: at i=1 the 26 px box lands in y[p.y−71, p.y−45]
+       * and at i=2 it is centred on `p.x` — exactly where `zname` (p.y−r−19)
+       * and `zyield` (p.y−r−5) are. Confirmed cutting the "D" of WARD and the
+       * "0" of 110 on Coldwater. The right horizontal is the one arc with the
+       * name stack above it and the state lines below it. */
       vg.slice(0, 3).forEach(function (x, i) {
-        var a = -Math.PI / 4 - i * 0.42;
-        var gx = p.x + (r + 17) * Math.cos(a), gy = p.y + (r + 17) * Math.sin(a);
+        var a = -0.24 + i * 0.5;
+        var gx = p.x + (r + 22) * Math.cos(a), gy = p.y + (r + 22) * Math.sin(a);
         var gl = U.glyph(x, 26);
         gl.setAttribute('x', (gx - 13).toFixed(1));
         gl.setAttribute('y', (gy - 13).toFixed(1));

@@ -224,7 +224,11 @@ var U = (function () {
     if (extra) { for (var xk in extra) if (o[xk] === undefined) o[xk] = extra[xk]; }
     var head = el('h2', { class: o.alarm ? 'alarm' : null }, [
       title,
-      o.sub ? el('span', { class: 'sub', text: o.sub }) : null,
+      // a node OR a string. `text:` stringifies, so passing an element here
+      // silently rendered `[object HTMLSpanElement]` into the subtitle.
+      o.sub ? (typeof o.sub === 'string' || typeof o.sub === 'number'
+        ? el('span', { class: 'sub', text: o.sub })
+        : el('span', { class: 'sub' }, o.sub)) : null,
       o.right ? el('span', { class: 'right' }, o.right) : null,
     ]);
     var b = el('div', { class: 'body' + (o.pad ? ' pad' : '') }, body);

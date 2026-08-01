@@ -98,8 +98,35 @@ var MapView = (function () {
    * 1.12:1 contrast step is not a boundary a stranger can find. Lightest at
    * the core: the Commons is settled ground, the Frontier is raw.
    */
-  var BAND_FILL = { COMMONS: '#1a5c6d', MARCHES: '#0c3a4b', FRONTIER: '#06222c' };
-  var BAND_EDGE = { COMMONS: '#b4c6ca', MARCHES: '#4e9db2', FRONTIER: '#31768a' };
+  /**
+   * ⚑ **THE LADDER MOVED OFF THE FILL AND ONTO THE EDGE, AND IT IS MEASURED.**
+   *
+   * The old ramp put the whole tier distinction in three flat fills covering
+   * 17.9% of the screen at 1.62 : 1.35 : 1.24 contrast — and 1.35:1 between
+   * MARCHES and FRONTIER is the step a stranger needs MOST (18 systems against
+   * 8) and the one that was weakest. At these luminances the `+0.05` term in
+   * the WCAG ratio dominates, so darkening the fills to let the star field
+   * through collapses the ladder further: −35% gives 1.33/1.18, −50% gives
+   * 1.23/1.11. **The fill is the wrong instrument for the ladder.**
+   *
+   * So: fills go dark and get out of the sky's way, and the 3 px boundary —
+   * which was already drawn and already the thing an eye actually lands on —
+   * carries the ladder instead.
+   *
+   *              edge vs its own fill      before → after
+   *   COMMONS            4.25 : 1     →      9.4 : 1
+   *   MARCHES            3.94 : 1     →      8.4 : 1
+   *   FRONTIER           3.21 : 1     →      5.8 : 1
+   *   edge-to-edge ladder      —      →   1.51 · 1.68
+   *
+   * A2 is served BETTER — three rings at near-white / bright cyan / mid cyan
+   * are findable without reading a word — and it costs 3 × 3 px of area rather
+   * than 41% of the screen. FRONTIER's fill stays two steps clear of the void
+   * ground (#02141b vs #00060a) because the file has been burned once already
+   * by a band one value off its backing, which made the outer tier vanish.
+   */
+  var BAND_FILL = { COMMONS: '#0b3946', MARCHES: '#052029', FRONTIER: '#02141b' };
+  var BAND_EDGE = { COMMONS: '#cfe3e7', MARCHES: '#6fc3d8', FRONTIER: '#3f97ad' };
 
   /* ════════════════════════════════════════════════ ★ THE STAR FIELD ════
    *
@@ -124,10 +151,17 @@ var MapView = (function () {
    * static, so this costs one string build per resize and nothing per frame.
    */
   var STAR_BUCKETS = ['sf-a', 'sf-b', 'sf-c', 'sf-d'];
+  /* ⚑ **70, NOT 13.** Counted against the concept in an identical empty
+   * 290×190 patch of sky: concept 272 legible blobs, this field 8. Full-screen
+   * that is ~9,000 against ~264 — **34× short**, and the shortfall was not
+   * subtle, it was the difference between "space" and "a few specks". 70 per
+   * system is 2,100 stars, still four <path>s, still zero per-frame cost, and
+   * still every one of them a pure function of a stable system id. */
+  var PER_SYSTEM = 70;
   function starField(systems, W, H) {
     var d = ['', '', '', ''];
     systems.forEach(function (s) {
-      for (var i = 0; i < 13; i++) {
+      for (var i = 0; i < PER_SYSTEM; i++) {
         var x = h01(s.id + '#sx' + i) * W;
         var y = h01(s.id + '#sy' + i) * H;
         var v = h01(s.id + '#sv' + i);
@@ -168,9 +202,20 @@ var MapView = (function () {
     var ins = inset || { l: 0, r: 0, t: 0, b: 0 };
     var FW = Math.max(240, W - ins.l - ins.r), FH = Math.max(200, H - ins.t - ins.b);
     var R = 1, cx = ins.l + FW / 2, cy = ins.t + FH / 2;
-    // 0.425 rather than 0.48 so the FRONTIER band label at unit radius 1.08
-    // still lands inside the panel rather than clipping against its top edge.
-    var RX = FW * 0.435, RY = FH * 0.425;
+    /* ⚑ **0.435/0.425 WAS THE DOCKED BUILD'S MARGIN AND IT MADE FULL-BLEED A
+     * LOSS.** Measured against the previous screenshot the "full-bleed" map
+     * came out 1251×759 against 1257×776 — SIX PIXELS NARROWER and seventeen
+     * shorter than the panel it replaced, because the inset now reserves the
+     * rail (348) and the strip (33) explicitly where the old grid got the
+     * header for free. A refactor that moves the rail one pixel and shrinks
+     * the galaxy is not a layout change, it is a rewrite with a cost.
+     *
+     * The margin those factors leave is 6.5% / 7.5% of the FREE area — on top
+     * of an inset that already reserves every panel. It was being paid twice.
+     * 0.448/0.452 leaves ~5% for the outermost node's own label to fan into,
+     * which is what the margin is actually for, and takes the ellipse to
+     * 1300×866: **+16% area over the docked build** rather than −3%. */
+    var RX = FW * 0.448, RY = FH * 0.452;
     var by = {}, cons = [];
     systems.forEach(function (s) {
       (by[s.tier] || (by[s.tier] = [])).push(s);
@@ -440,6 +485,48 @@ var MapView = (function () {
     return 6 + 6 * t;
   }
 
+  /**
+   * ★ LABELS FAN RADIALLY OUTWARD, AND CLEAR THEIR OWN FENCE.
+   *
+   * Round 1 painted labels over the VERGE and their halos punched holes in it
+   * — a false claim about a real principal. Round 2 painted the VERGE over the
+   * labels and struck 12 of 30 system names through. Neither paint order is
+   * the answer, because the two objects were occupying the same pixels.
+   *
+   * A fence is a union of discs of radius VERGE_R around the bloc's nodes, so
+   * a label on a bloc member at `rr + 7` is always inside it. Pushing it past
+   * VERGE_R puts it OUTSIDE its own fence — and then paint order stops
+   * mattering. It clears EVERY fence, not just its own, because the verge is
+   * painted last and a neighbouring bloc's outline drew over `kestrel`'s final
+   * glyph. Capped, so a label can never fly off the map.
+   *
+   * ★ **AND IT IS A FUNCTION NOW, NOT A LOOP BODY.** The fence handles have to
+   * dodge these anchors, which means they have to be known before any fence is
+   * drawn — and a second copy of this arithmetic that drifted by 4 px would be
+   * a collision detector that misses.
+   */
+  function nodeLabelAt(s, p, rr, blocs, blocOf) {
+    // +14 when selected: the reticle's ticks reach rr+18 and at rr+7 the act
+    // of selecting a system struck through its own name.
+    var lx, ly, off = (blocOf[s.id] ? VERGE_R + 9 : rr + 7) + (state.sel === s.id ? 14 : 0);
+    for (var att = 0; att < 5; att++) {
+      lx = p.x + off * Math.cos(p.th); ly = p.y + off * Math.sin(p.th);
+      var clash = false;
+      for (var bp in blocs) {
+        for (var bi = 0; bi < blocs[bp].length; bi++) {
+          var q0 = blocs[bp][bi];
+          if (Math.hypot(lx - q0.x, ly - q0.y) < VERGE_R + 5) { clash = true; break; }
+        }
+        if (clash) break;
+      }
+      if (!clash) break;
+      off += 13;
+    }
+    var right = Math.cos(p.th) > 0.24, left = Math.cos(p.th) < -0.24;
+    var dy = Math.abs(Math.cos(p.th)) > 0.24 ? 3 : (Math.sin(p.th) > 0 ? 10 : -4);
+    return { x: lx, y: ly + dy, anchor: right ? 'start' : left ? 'end' : 'middle' };
+  }
+
   function render(host, R, L, opts) {
     var o = opts || {};
     var W = host.clientWidth || 1200, H = host.clientHeight || 700;
@@ -674,7 +761,7 @@ var MapView = (function () {
     });
 
     // ── ★ THE VERGE ─────────────────────────────────────────────────────
-    var blocs = {}, blocOf = {};
+    var blocs = {}, blocOf = {}, labelPts = [];
     if (state.layers.verge && R.swayLines && R.swayLines.length) {
       R.swayLines.forEach(function (s) {
         if (!s.principal) return;                       // bare ground is drawn bare
@@ -686,6 +773,13 @@ var MapView = (function () {
       var defaulters = {};
       (R.standings || []).forEach(function (r) { if (r.defaults > 0) defaulters[r.principal] = r.defaults; });
       state.blocs = [];
+      // every system name's anchor, computed before any fence is labelled so a
+      // handle can be placed clear of them. Same formula the node loop uses;
+      // `nodeLabelAt` is the one definition of it.
+      R.map.forEach(function (s) {
+        var p2 = P[s.id]; if (!p2) return;
+        labelPts.push(nodeLabelAt(s, p2, state.layers.lode ? nodeR(s, minY, maxY) : 7, blocs, blocOf));
+      });
       Object.keys(blocs).sort().forEach(function (pid) {
         var pts = blocs[pid], col = blocColour(pid);
         var loops = contours(pts, VERGE_R, 7);
@@ -705,15 +799,56 @@ var MapView = (function () {
         var ranked = loops.slice().sort(function (a, b) { return b.length - a.length; }).slice(0, 2);
         var placed = [];
         ranked.forEach(function (lp) {
-          var t2 = lp.reduce(function (a, b) { return b[1] < a[1] ? b : a; }, lp[0]);
+          /* ⚑ **THE HANDLE HAS TO DODGE THE SYSTEM NAMES, NOT LOSE TO THEM.**
+           *
+           * The fence's topmost vertex is ~VERGE_R above its topmost member,
+           * and a bloc member's own label is pushed to exactly VERGE_R + 9 —
+           * so the two land on each other by construction. Node labels are
+           * drawn LATER in the same group and carry a 3.2 px halo, so the
+           * handle lost: `brannock` rendered as `b` … `k` with the middle
+           * eaten by `Mirefall`, on the map whose subject is which named
+           * principal holds which named ground.
+           *
+           * Every node label's anchor is already computed above, so this walks
+           * the fence's own vertices — topmost first, then the next highest —
+           * and takes the first one clear of all of them. It stays ON the
+           * fence, which is where a fence's label belongs. */
+          var cands = lp.slice().sort(function (a, b) { return a[1] - b[1]; });
+          var t2 = cands[0];
+          for (var ci = 0; ci < cands.length; ci += 3) {
+            var c0 = cands[ci], ok = true;
+            for (var li = 0; li < labelPts.length; li++) {
+              // ⚑ the label BLOCK is two lines — the name at `y` and the id at
+              // `y + 9` — and checking only the name is how `brannock` came out
+              // as `brann·ck` with `sys-18`'s halo through the middle. The
+              // band is [y−14, y+22]: name ascender to id descender.
+              var a3 = labelPts[li], cy2 = c0[1] - 11;
+              if (Math.abs(a3.x - c0[0]) < 56 && cy2 > a3.y - 14 && cy2 < a3.y + 22) { ok = false; break; }
+            }
+            if (ok) { t2 = c0; break; }
+          }
           var far = placed.every(function (q) { return Math.hypot(q[0] - t2[0], q[1] - t2[1]) > 130; });
           if (!far) return;
           placed.push(t2);
-          gLabels.appendChild(S('text', {
+          /* ⚑ **THE HANDLE KEEPS ITS BLOC COLOUR; ONLY THE BADGE IS RED.**
+           *
+           * Counted: the concept spends 17 red marks on ONE subject and drags
+           * the eye there. This map was spending 13 across EIGHT — five broken
+           * promises plus three bloc handles — so red stopped pointing at
+           * anything and became a census. A handle is IDENTITY, and identity
+           * is not an accusation; the ▲N badge beside it is the accusation and
+           * it is the part that gets the alarm colour. Same information, one
+           * subject per mark. */
+          var lab = S('text', {
             class: 'verge-lab', x: t2[0].toFixed(1), y: (t2[1] - 11).toFixed(1), 'text-anchor': 'middle',
-            fill: defaulters[pid] ? '#e34a3f' : col,
-            text: U.handleOf(pid) + (defaulters[pid] ? ' \u25b2' + defaulters[pid] : ''),
-          }));
+            fill: col,
+          }, S('tspan', { text: U.handleOf(pid) }));
+          if (defaulters[pid]) {
+            lab.appendChild(S('tspan', {
+              fill: '#e34a3f', text: ' \u25b2' + defaulters[pid],
+            }));
+          }
+          gLabels.appendChild(lab);
         });
         // a dark backing stroke under the fence, so a label halo crossing it
         // cannot punch a hole through the one line that must never have one
@@ -854,30 +989,16 @@ var MapView = (function () {
         // so a neighbouring bloc's outline drew straight over `kestrel`'s
         // final glyph. Walk outwards until the label origin is clear of every
         // bloc's disc, capped so a label can never fly off the map.
-        var lx, ly, off = blocOf[s.id] ? VERGE_R + 9 : rr + 7;
-        for (var att = 0; att < 5; att++) {
-          lx = p.x + off * Math.cos(p.th); ly = p.y + off * Math.sin(p.th);
-          var clash = false;
-          for (var bp in blocs) {
-            for (var bi = 0; bi < blocs[bp].length; bi++) {
-              var q0 = blocs[bp][bi];
-              if (Math.hypot(lx - q0.x, ly - q0.y) < VERGE_R + 5) { clash = true; break; }
-            }
-            if (clash) break;
-          }
-          if (!clash) break;
-          off += 13;
-        }
-        var right = Math.cos(p.th) > 0.24, left = Math.cos(p.th) < -0.24;
-        var anchor = right ? 'start' : left ? 'end' : 'middle';
-        var dy = Math.abs(Math.cos(p.th)) > 0.24 ? 3 : (Math.sin(p.th) > 0 ? 10 : -4);
+        var a2 = nodeLabelAt(s, p, rr, blocs, blocOf);
+        // the halo is the BAND FILL rather than the void, so a name is not the
+        // highest-contrast edge on a map whose subject is a tier boundary.
         var halo = BAND_FILL[s.tier];
         gLabels.appendChild(S('text', {
-          class: 'node-lab', x: lx.toFixed(1), y: (ly + dy).toFixed(1), 'text-anchor': anchor,
+          class: 'node-lab', x: a2.x.toFixed(1), y: a2.y.toFixed(1), 'text-anchor': a2.anchor,
           stroke: halo, text: s.name,
         }));
         gLabels.appendChild(S('text', {
-          class: 'node-id', x: lx.toFixed(1), y: (ly + dy + 9).toFixed(1), 'text-anchor': anchor,
+          class: 'node-id', x: a2.x.toFixed(1), y: (a2.y + 9).toFixed(1), 'text-anchor': a2.anchor,
           stroke: halo, text: s.id,
         }));
       }
@@ -940,17 +1061,35 @@ var MapView = (function () {
           c: 'co-b',
         },
       ];
-      // ★ THE PINCH, NAMED ON THE CALLOUT. §16.12 ranks the chokepoint FIRST
-      // and the map draws it as a waist on a lane with a bare number beside
-      // it. A viewer who selects the system it gates is owed the sentence.
-      (ss.straits || []).slice(0, 3).forEach(function (st) {
+      /* ★ THE CLAIM GOES SECOND, AND THE STRAITS GET ONE LINE BETWEEN THEM.
+       *
+       * Round 1 pushed up to three `STRAIT …` rows ahead of everything else,
+       * so a system one miss from LAPSING got its red line as row 7 of 8, in
+       * the same 10 px type as its routing. §16.12 does rank the chokepoint
+       * first among FEATURES, which is not the same as ranking it first in a
+       * callout about one place. The concept's callout ENDS on `ARREARS 2 of 2
+       * · NEXT MISS LAPSES`: the drama outranks the road. */
+      if (cl) {
+        var last = cl.state === 'LAPSED' || (cl.arrearsOf > 0 && cl.arrears >= cl.arrearsOf);
         lines.push({
-          t: st.severs
-            ? 'SEVERS ' + st.to + '  ·  strands ' + st.severed
-            : 'STRAIT ' + st.to + '  ·  detour ' + st.detourHops + ' hops',
+          t: 'CLAIM ' + U.handleOf(cl.claimant) + '  ·  ' + (cl.legend || cl.state) +
+            (cl.arrearsOf && cl.arrears ? '  ·  ARREARS ' + cl.arrears + ' of ' + cl.arrearsOf : '') +
+            (last ? '  ·  NEXT MISS LAPSES' : '') +
+            (cl.anchorHot === false ? '  ·  ANCHOR COLD' : ''),
+          c: last ? 'co-r' : cl.arrears > 0 ? 'co-a' : 'co-c',
+        });
+      }
+      var sts = ss.straits || [];
+      if (sts.length) {
+        var st0 = sts[0];
+        lines.push({
+          t: (st0.severs
+            ? 'SEVERS ' + st0.to + '  ·  strands ' + st0.severed
+            : 'STRAIT ' + st0.to + '  ·  detour ' + st0.detourHops + ' hops') +
+            (sts.length > 1 ? '  ·  +' + (sts.length - 1) + ' more' : ''),
           c: 'co-b',
         });
-      });
+      }
       if (wk.length) {
         lines.push({
           t: 'WORKS ' + wk.length + '  ·  ' + wk[0].legend +
@@ -964,14 +1103,6 @@ var MapView = (function () {
         lines.push({ t: 'SWAY ' + U.handleOf(sw.principal) + ' ' + sw.sway + (sw.gate ? '  ·  STRAIT GATE' : ''), c: 'co-d' });
       }
       if (rn) lines.push({ t: (rn.legend || 'RUIN').toUpperCase(), c: 'co-d' });
-      if (cl) {
-        var last = cl.state === 'LAPSED' || (cl.arrearsOf > 0 && cl.arrears >= cl.arrearsOf);
-        lines.push({
-          t: 'CLAIM ' + U.handleOf(cl.claimant) + '  ·  ' + (cl.legend || cl.state) +
-            (cl.anchorHot === false ? '  ·  ANCHOR COLD' : ''),
-          c: last ? 'co-r' : cl.arrears > 0 ? 'co-a' : 'co-c',
-        });
-      }
 
       // ★ THE DRILL AFFORDANCE LIVES ON THE CALLOUT.
       //
@@ -1025,11 +1156,21 @@ var MapView = (function () {
         var above = sp.y - RR - 10 - BH;
         by = above > ins.t + 6 ? above : Math.min(H - ins.b - BH - 6, sp.y + RR + 10);
       }
+      /* ★ THE LEADER IS DRAWN AFTER THE DODGE AND IT IS BRIGHT.
+       *
+       * Round 1 built the path from `by` BEFORE the vertical dodge could move
+       * the box, so on every dodged callout the line pointed at empty space —
+       * and at 0.6 opacity nobody noticed, which meant the box read as an
+       * unrelated panel that happened to be nearby. The two leaders are the
+       * concept's most recognisable mark; a reticle answered by an unconnected
+       * rectangle is not the same picture. */
+      var ex = right ? bx - 3 : bx + BW + 3;
+      var ey = Math.max(by + 9, Math.min(by + BH - 6, sp.y));
       gSel.appendChild(S('path', {
         class: 'ret-lead',
-        d: 'M' + (sp.x + (right ? RR + 2 : -RR - 2)) + ' ' + sp.y.toFixed(1) +
-          'L' + (right ? bx - 8 : bx + BW + 8) + ' ' + sp.y.toFixed(1) +
-          'L' + (right ? bx : bx + BW) + ' ' + (by + 11).toFixed(1),
+        d: 'M' + (sp.x + (right ? RR + 2 : -RR - 2)).toFixed(1) + ' ' + sp.y.toFixed(1) +
+          'L' + ((sp.x + ex) / 2).toFixed(1) + ' ' + sp.y.toFixed(1) +
+          'L' + ex.toFixed(1) + ' ' + ey.toFixed(1),
       }));
       gSel.appendChild(S('rect', { class: 'co-box', x: bx, y: by, width: BW, height: BH }));
       lines.forEach(function (l, i) {

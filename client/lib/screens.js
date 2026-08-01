@@ -1177,15 +1177,24 @@ var Screens = (function () {
         'LEVY SHORT ', el('b', { class: (R.meters.levyShort || 0) > 0 ? 'hot' : null, text: U.n(R.meters.levyShort) }),
         L ? el('span', null, [' · RECKONING ', el('b', { text: U.clock(L.ticksUntilReckoning) })]) : null,
       ]) : null,
+      el('span', { class: 'seg hint', text: '\u25b8 CLICK A SYSTEM \u00b7 DRAG TO PAN \u00b7 SCROLL TO ZOOM' }),
       el('button', {
         text: 'RESET VIEW', on: { click: function () { MapView.reset(); D.rerender(); } },
       }),
     ]);
     wrap.appendChild(strip);
 
-    // ── the layer chips — one 21px row, not a 100px grid of checkboxes ──
+    /* ── the layer chips — one 21px row, not a 100px grid of checkboxes ──
+     *
+     * BOTTOM-right, not top-right. At the top they and the summary strip both
+     * grew to fit their content from opposite ends of the same 1452 px line
+     * and met in the middle: measured, the chips' left edge landed at x=1094
+     * and clipped `RESET VIEW` to `RESET VI`. Two auto-width bars on one row
+     * is a collision waiting for a longer number, and the LEVY figure is a
+     * number that grows. The bottom-right corner of an inscribed ellipse is
+     * empty by construction. */
     var chips = el('div', {
-      class: 'mchips', style: 'top:0;right:' + (RAIL_W + 6) + 'px',
+      class: 'mchips', style: 'bottom:0;right:' + (RAIL_W + 6) + 'px',
     }, LAYER_CHIPS.map(function (t) {
       return el('button', {
         'aria-pressed': MapView.layers[t[0]] ? 'true' : 'false',
@@ -1205,7 +1214,7 @@ var Screens = (function () {
      ['FRONTIER', 'the rim, the prize']].forEach(function (r) {
       legend.appendChild(el('div', { class: 'row' }, [
         el('i', {
-          class: 'sw',
+          class: 'sw tier',
           style: 'background:' + MapView.BAND_FILL[r[0]] + ';border:1px solid ' + MapView.BAND_EDGE[r[0]],
         }),
         'THE ' + r[0],
@@ -1260,7 +1269,21 @@ var Screens = (function () {
 
     function draw() {
       MapView.render(host2, R, D.L, {
-        inset: { l: 0, r: RAIL_W + 12, t: STRIP_H + 8, b: 30 },
+        /* ⚑ **`l` IS WIRED NOW, AND `t`/`b` STOPPED OVER-RESERVING.**
+         *
+         * Two measured failures in one line. (1) `l` was 0, so opening the
+         * KEY — 268 px wide, ~390 px tall, anchored bottom-left — put it
+         * squarely on Ironhold at (250,705), which is the precise failure
+         * `MapView`'s own header says the inset exists to prevent. (2) `t: 33`
+         * and `b: 30` reserved a full-width strip for panels that are 460 px
+         * and 306 px wide AT THE LEFT, while the ellipse's top and bottom
+         * extremes are at `cx` — dead centre, where neither panel is. Paying
+         * full width for a corner is how "full-bleed" came out 17 px SHORTER
+         * than the panel it replaced. */
+        inset: {
+          l: mapLegendOpen ? LEG_W + 12 : 0,
+          r: RAIL_W + 12, t: 8, b: 8,
+        },
         onSelect: function (id) { MapView.select(id); draw(); markRail(); },
         onZoom: function (con, sys) { location.hash = '#/zoom/' + (sys || con); },
       });
@@ -1278,8 +1301,8 @@ var Screens = (function () {
           k: 'tier', t: 'tier', w: '30px',
           cell: function (s) {
             return el('i', {
-              class: 'sw', title: s.tier,
-              style: 'margin:0;background:' + MapView.BAND_FILL[s.tier] +
+              class: 'sw tier', title: s.tier,
+              style: 'margin:0;width:14px;background:' + MapView.BAND_FILL[s.tier] +
                 ';border:1px solid ' + MapView.BAND_EDGE[s.tier],
             });
           },
@@ -1358,7 +1381,7 @@ var Screens = (function () {
       bar.appendChild(el('div', { class: 'kb' }, ['COMMONS', 'MARCHES', 'FRONTIER'].map(function (t) {
         return el('span', { title: t }, [
           el('i', {
-            class: 'sw',
+            class: 'sw tier',
             style: 'background:' + MapView.BAND_FILL[t] + ';border:1px solid ' + MapView.BAND_EDGE[t],
           }), t,
         ]);
@@ -1469,10 +1492,17 @@ var Screens = (function () {
         body.appendChild(row);
       });
     }
+    // M6: the HEADING was `--red-text` — the largest single red cluster on the
+    // map — while `5 broken`, the fact that earns it, was dim grey. The noun
+    // was alarmed and the number was not.
     return panel('PROMISES', {
       cls: 'mfloat',
-      sub: rows.length + ' on the frame' + (broke ? ' · ' + broke + ' broken' : ''),
-      alarm: broke > 0,
+      sub: broke
+        ? el('span', null, [
+          rows.length + ' on the frame · ',
+          el('b', { style: 'color:var(--red-text);font-weight:400', text: broke + ' broken' }),
+        ])
+        : rows.length + ' on the frame · none broken',
       foot: 'a COMPACT is a word between two principals; a GRANT is authority handed over. ' +
         'Both can be broken and only one of them moves a ship.',
     }, body, { style: 'flex:1 1 42%;min-height:0' });
@@ -1528,6 +1558,34 @@ var Screens = (function () {
         el('b', { text: String(members.length) }), ' SYSTEMS · ',
         Object.keys(tierCount).sort().map(function (t) { return tierCount[t] + ' ' + t; }).join(' · '),
       ]),
+      /* \u26d1 **THE EMPTY CONSTELLATION IS A STORY, AND IT WAS READING AS AN
+       * OUTAGE.** `con-4` is the FRONTIER: eight systems, 1,204 ore/tick, and
+       * NOBODY HOLDS ANY OF IT. Drawn as eight discs each captioned `BARE`
+       * over two panels reading `nothing extracting`, a viewer's first
+       * question is *"did this load?"* rather than *"why has nobody taken the
+       * richest ground in the region?"* Every number in this line is already
+       * on the frame and none of it is invented. It only prints when the
+       * answer is genuinely nothing, so it never competes with a busy
+       * constellation. */
+      (function () {
+        var nW = 0, nC = 0, ore = 0;
+        members.forEach(function (m) {
+          ore += m.yieldPerTick;
+          if ((R.worksLines || []).some(function (w) { return w.system === m.id; })) nW++;
+          if ((R.claimLines || []).some(function (c) { return c.system === m.id; })) nC++;
+        });
+        if (nW || nC) {
+          return el('span', { class: 'seg' }, [
+            el('b', { text: String(nW) }), ' WORKING \u00b7 ',
+            el('b', { text: String(nC) }), ' CLAIMED \u00b7 ',
+            el('b', { text: U.n(ore) }), ' ORE/TICK',
+          ]);
+        }
+        return el('span', { class: 'seg untaken' }, [
+          'NOBODY HOLDS ANY OF IT \u00b7 0 WORKS \u00b7 0 CLAIMS \u00b7 ',
+          el('b', { text: U.n(ore) }), ' ORE/TICK STANDING IDLE',
+        ]);
+      })(),
       el('span', { class: 'seg' }, cons.map(function (c) {
         return el('button', {
           'aria-pressed': c === con ? 'true' : 'false',
@@ -1560,8 +1618,17 @@ var Screens = (function () {
     wrap.appendChild(el('div', {
       class: 'zlog', style: 'left:320px;right:' + (RAIL_W + 6) + 'px',
     }, lines.length ? lines.map(function (t, i) {
+      /* ⚑ **AMBER ONLY WHILE IT IS STILL OPEN.**
+       *
+       * `/raid|demand|arrears|short/` matched every line on this frame — six
+       * of six — including *"p:brannock paid 3816 of ration and the raid
+       * left"*, which is a threat RESOLVED painted exactly like a threat
+       * standing. Measured: 92–95% of all the amber on this screen was in this
+       * strip, outnumbering the one live `RAID PAID · 5,504` on the canvas
+       * 19:1. A hue that fires on every row is not a signal. */
       var broke = /\bdefault|failed to|walked away|contradicted|snapped|lapsed\b/i.test(t);
-      var risk = /\braid|demand|arrears|short\b/i.test(t);
+      var settled = /\bpaid\b|\bleft\b|\brepelled\b|\bhonoured\b/i.test(t);
+      var risk = !settled && /\bdemands?\b|\barrears\b|\bshort\b|\bthreatens\b/i.test(t);
       return el('div', { class: 'ln' + (broke ? ' bad' : risk ? ' warn' : '') }, [
         el('span', { class: 'tk', text: String(i + 1).padStart(2, '0') }),
         el('span', { class: 'de', text: t }),
