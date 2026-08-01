@@ -1,0 +1,729 @@
+#!/usr/bin/env python3
+"""THE COMPACT - seven concept treatments for THE MAP screen.
+
+The live map (agentinsurance.io/compact/, tab F6) is honest and legible and reads like a good
+technical diagram. It does not feel like a galaxy. That is the whole gap this sweep is aimed at,
+and the owner's brief is one word: COOLER.
+
+Images only. This script writes `mapconcept-*.png` and `gallery-map.html` and nothing else. It
+ships no client code and touches no file another agent owns (CLAUDE.md HARD RULE 7).
+
+Everything on every concept is the SAME real world out of VISUAL-ASSET-BIBLE.md sections 6, 7, 9
+and 10 - 30 charted systems, 4 constellations, 35 lanes, 10 straits - so the seven are comparable
+as TREATMENTS rather than as different maps.
+
+    python3 render_map.py                      # generate anything missing, then write the gallery
+    python3 render_map.py --force              # re-generate everything (costs money)
+    python3 render_map.py --gallery            # only rewrite the gallery, spend nothing
+    python3 render_map.py --only deepfield     # generate one cell
+    python3 render_map.py --print-only terrace # print one prompt, spend nothing
+"""
+import argparse
+import concurrent.futures as cf
+import html
+import os
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+GEN = os.path.expanduser("~/Projects/ideationjul3/yc-gstack-kit/tools/media/gen_image.py")
+
+# The established family anchor. Every concept is generated against it so the sweep stays in the
+# same product, however far the treatment travels.
+REF = os.path.join(HERE, "screen-map-sov.png")
+
+# ------------------------------------------------------- inherited scaffolding (the ban list)
+# render_screens.py's CANON block is the reason the last eighteen images had ZERO EVE vocabulary
+# leaks where an unprompted sweep leaked about twenty. Import it rather than retype it; fall back
+# to a verbatim copy if that file is mid-edit.
+
+CANON_FALLBACK = """
+★★ THE VOCABULARY RULE - THIS IS A RULES SURFACE, NOT A STYLE NOTE, AND IT OUTRANKS THE ART DIRECTION.
+
+You are borrowing EVE ONLINE's VISUAL LANGUAGE. You are FORBIDDEN its WORDS. In this game one word
+means exactly one thing, and a borrowed noun is a bug that ships. Not one of the following may appear
+anywhere in the image - not as a heading, a column, a tooltip, a menu item, a tab, a legend, a
+watermark, or small print:
+
+ISK - EVE - NEW EDEN - CONCORD - CAPSULEER - POD - SOVEREIGNTY - SOV - ADM - ADM RATE - IHUB - TCU -
+ENTOSIS - ENTOSIS LINK - CYNO - CYNOSURAL - CYNO INHIBITOR - JUMP BRIDGE - STARGATE - GATE CAMP -
+WORMHOLE - FORTIZAR - ASTRAHUS - KEEPSTAR - RAITARU - AZBEL - SOTIYO - ATHANOR - RORQUAL - ORCA -
+RETRIEVER - MACKINAW - CATALYST - THRASHER - DRAKE - RAVEN - MEGATHRON - TENGU - LOKI - NYX - TITAN -
+SUPERCARRIER - DREADNOUGHT - CARRIER - INTERCEPTOR - FRIGATE - DESTROYER - CRUISER - BATTLECRUISER -
+BATTLESHIP - INDUSTRIAL - HAULER - MINER - MINING - MINERALS - TRITANIUM - PYERITE - VELDSPAR - PLEX -
+SKILL POINTS - SKILL QUEUE - CORPORATION - CORP - ALLIANCE - COALITION TICKER - KILLBOARD - KILLMAIL -
+LOSSMAIL - TOP KILLS - KILLS - PODKILLS - SECURITY STATUS - HIGHSEC - LOWSEC - NULLSEC - JITA - AMARR -
+DODIXIE - RENS - HEK - KADOR - DOMAIN - DELVE - PROVIDENCE - CATCH - FOUNTAIN - GOONSWARM - PANDEMIC -
+LOCAL CHAT - D-SCAN - WARP - ALIGN - UNDOCK - DOCK - STATION - OUTPOST - REINFORCEMENT TIMER -
+STRUCTURE TIMER - FUEL BLOCKS - ORE ANOMALY - ASTEROID BELT - BOOKMARK - CLONE - IMPLANT.
+
+THE WORDS YOU MAY USE ARE OURS, AND THEY ARE ENOUGH. This is the whole vocabulary:
+
+  people & things   PRINCIPAL - HAND - HOLDING - WORKS - ANCHOR - RUIN - CLAIM - STORES - CREST
+  promises          VENTURE - COMPACT - SEAL - STANDING - GRANT - DOSSIER - OFFICE - LIMITS - ESCROW
+  groups            SYNDICATE - CHARTER - STRONGBOX - TREASURY
+  the clock         THE RECKONING - THE LEVY - TRIBUTE - DOCKET - RUNDOWN - FREEZE - TICK
+  geography         CONSTELLATION - STRAIT - LODE - VERGE - COMMONS - MARCHES - FRONTIER - LANE
+  conflict          RAID - DEMAND - STANDOFF - CAMPAIGN - SAP - FORMATION - ECHELON - GAP - WRECK
+  weather & cover   FRONT - CONE - SWATH - COVER - INDEMNITY
+  goods             ore - ration - alloy - fuel        currency: minor        systems: sys-01..sys-30
+
+THE SCOREBOARD OF THIS GAME IS PROMISES KEPT AND PROMISES BROKEN. There is no kill count anywhere in
+the product and a leaderboard of kills would be the wrong drama entirely. Never draw one.
+
+The five hulls have OUR names and no others: PIKE - LANCE - WARDEN - BULWARK - CITADEL. Do not put an
+EVE hull name on anything, and do not caption a hull with a real-world warship class.
+"""
+
+TEXT_RULE_FALLBACK = """
+TEXT MUST BE SHARP AND SPELLED EXACTLY AS GIVEN. Use the middle dot separator U+00B7 where shown. Do not
+invent any additional words, do not add lorem ipsum, do not add a company logo. If space is short, drop a
+whole label rather than misspelling one.
+"""
+
+BASE_CSS_FALLBACK = """
+:root { --bg:#0c0d10; --panel:#15171c; --line:#272a33; --ink:#e6e8ee; --dim:#8b90a0; --acc:#7fd4ff; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:14px/1.55 ui-sans-serif,-apple-system,"Helvetica Neue",Arial,sans-serif; }
+"""
+
+try:
+    sys.path.insert(0, HERE)
+    import render_screens as _rs  # noqa: E402
+    CANON = _rs.CANON.strip()
+    TEXT_RULE = _rs.TEXT_RULE.strip()
+    BASE_CSS = _rs.BASE_CSS
+    GEN = getattr(_rs, "GEN", GEN)
+    INHERITED = True
+except Exception:
+    CANON = CANON_FALLBACK.strip()
+    TEXT_RULE = TEXT_RULE_FALLBACK.strip()
+    BASE_CSS = BASE_CSS_FALLBACK
+    INHERITED = False
+
+# ------------------------------------------------------------------- the family, held fixed
+
+FAMILY = """
+THE VISUAL FAMILY. These are measured off the shipped product and every concept keeps all six:
+
+  GROUND    near-black charcoal, hex #000d12. Deep, cold, slightly blue-green. Never grey, never navy.
+  LIGHT     cyan hex #19d7f2 is the primary ink and the light source of the whole image. Teal,
+            pale blue-white and a dim slate grey support it.
+  ALARM     red hex #ca010f is RESERVED FOR FAILURE and appears nowhere else. Arrears, an unpaid
+            tribute, a demand, a default. If a viewer sees red, something has gone wrong.
+  TYPE      tiny condensed sans, roughly 9 to 11 pixels, uppercase for labels, tabular lining
+            numerals, generous letterspacing on headings. Sharp and typeset, never glowing mush.
+  CHROME    hairline one-pixel borders, docked panels, small dense sortable tables, a legend box.
+  DENSITY   high. This is a tool somebody has had open for six hours - but it is also the screen a
+            live show is broadcast from, so it is allowed to be beautiful.
+
+A reference image is supplied. Take its palette, its type scale, its chrome weight and its product
+identity. DO NOT copy its composition - this is a DIFFERENT TREATMENT of the same screen and the
+whole point of the exercise is that it looks different. Keep the family; change the picture.
+"""
+
+FRAME = """
+This is a SCREEN MOCKUP of a real software product, drawn flat and straight-on and filling the whole
+frame - not concept art, not a poster, not a photograph of a monitor in a room, no device bezel, no
+hands, no people, no logos other than the ones specified.
+"""
+
+SUBJECT_RULE = """
+IMPORTANT about the fiction: this is a persistent galaxy of autonomous AI agents who trade, ally and
+betray each other, and every promise kept or broken is public and permanent. NOBODY PLAYS IT - you
+watch it. It is closer to a SPORTS BROADCAST FOR A POLITICAL-FINANCIAL SIMULATION than to a flight
+game. Do NOT draw a cockpit, a pilot's view, a ship interior, a spaceship, a planet, a moon, a planet
+surface, a sun, or lens flare. Draw the DATA.
+
+Deep-space atmosphere - dust, faint nebular gas, star fields - is allowed ONLY where a concept below
+explicitly calls for it, and only ever as the GROUND the data is drawn on. It is never the subject.
+Where atmosphere and a label collide, THE ATMOSPHERE YIELDS.
+"""
+
+LEGIBILITY = """
+★ THE LEGIBILITY CONTRACT. In this project legibility IS the interface, and this outranks the
+atmosphere in every concept. Whatever mood the treatment adds, all five of these must still be
+readable at a single glance:
+
+  1. THE THREE TIERS as three distinguishable grounds - COMMONS innermost, FRONTIER at the rim - so
+     a stranger can put a finger on the boundary without reading a word.
+  2. EVERY CLAIM TINT still legible AS A COLOUR, with its legend words beside it.
+  3. EVERY STRAIT MARK still visible on its own lane.
+  4. EVERY VERGE OUTLINE unbroken all the way round.
+  5. THE 30 CHARTED SYSTEMS' names and ids sharp and readable.
+
+A treatment that hides any one of these is a downgrade however good it looks.
+"""
+
+# ------------------------------------------------------------------- the world, held fixed
+
+WORLD = """
+★★ THE WORLD. Identical in all seven concepts, because the concepts are being compared as
+TREATMENTS. Every number and every name below is real data from the running game.
+
+HEADLINE, top-left of the map area:  "REGION 1 · 30 CHARTED SYSTEMS · 35 LANES · 10 STRAITS"
+and beside it  "LEVY SHORT 150 · RECKONING 02:14".  A clock at top-right: "TICK 607 · 19:42:17".
+
+THE SHAPE. Three tiers, running OUTWARD, because distance from the centre IS the risk gradient:
+
+  · THE COMMONS - 4 SYSTEMS - HOSTILE ACTION IS INVALID. Dead centre, innermost. It must look
+    CATEGORICALLY DIFFERENT rather than merely safer: no claim tint touches it, no VERGE outline
+    encloses it, no strait touches it, nothing crosses it. Hostile action there is not punished, it
+    is INVALID, and the drawing has to say so.
+        sys-01 Salt Ward · sys-02 Low Ferry · sys-03 Candle · sys-04 Tallow    (80 ore/tick each)
+  · THE MARCHES - 18 SYSTEMS. The middle ground, contested, where everybody graduates.
+  · THE FRONTIER - 8 SYSTEMS. An arc at the rim. The prize, and the only ground that yields fuel.
+
+FOUR CONSTELLATIONS, clustered and named on the map. The region is a DIAMOND and the layout should
+show it: HEARTH hubs to THRESHOLD and to MARROW, and both of those reach VANE. So the Frontier is
+two constellation hops from the Commons and the Marches are unavoidably in between.
+        HEARTH (7)  ·  THRESHOLD (8)  ·  MARROW (7)  ·  VANE (8)
+
+THE COMPLETE SYSTEM LIST. These are the only 30 that exist. Label from this list and no other.
+
+  HEARTH, 7 systems - the only constellation that holds COMMONS ground
+      sys-01 Salt Ward COMMONS 80    sys-02 Low Ferry COMMONS 80    sys-03 Candle COMMONS 80
+      sys-04 Tallow COMMONS 80       sys-05 Orison MARCHES 110      sys-06 Vale MARCHES 115
+      sys-07 Bright Ash MARCHES 103
+  THRESHOLD, 8 systems - all MARCHES
+      sys-08 Quarrel 108             sys-09 Harrow 102              sys-10 Pale Reach 115
+      sys-11 Coldwater 110           sys-12 Stint 108               sys-13 Gallow Green 110
+      sys-14 Kiln 115                sys-15 Nettle 100
+  MARROW, 7 systems - all MARCHES
+      sys-16 Wither 115              sys-17 Bastion 110             sys-18 Mirefall 115
+      sys-19 Longshadow 108          sys-20 Ashen Ford 110          sys-21 Copper Wick 113
+      sys-22 Dunnage 113
+  VANE, 8 systems - all FRONTIER, and the only ground that yields fuel
+      sys-23 Grist 155               sys-24 Halyard 155             sys-25 Ironhold 151
+      sys-26 Jetsam 141              sys-27 Keelrow 151             sys-28 Lantern 148
+      sys-29 Moorage 158             sys-30 Nightjar 141
+
+  Write the tier out in full wherever it is labelled: COMMONS, MARCHES, FRONTIER. Never abbreviate
+  FRONTIER, because FRONT is a different word in this game and it means a storm.
+
+★ THE LODE - NODE WEIGHT IS WHAT THE GROUND YIELDS. A 58 percent spread between the map's best and
+worst ground, and it is what makes a war happen HERE rather than THERE. Size every charted node by
+its ore/tick. "Moorage · sys-29 · 158/tick" is visibly the LARGEST node on the map. "Nettle ·
+sys-15 · 100/tick" is visibly the smallest in the Marches. Label those two, plus "Vale · sys-06 ·
+115/tick" and "Pale Reach · sys-10 · 115/tick".
+
+★ THE PINCH - 10 of the 35 lanes are STRAITS, and there are two different pictures:
+  · EIGHT DETOUR STRAITS. Draw the lane NARROWED TO A WAIST at its midpoint, with a small "10"
+    notched beside the waist.
+  · TWO SEVERING STRAITS. A solid filled DOOR block across the lane's midpoint carrying the count
+    of systems stranded behind it. One reads "STRANDED 3" and sits on the lane between sys-08 and
+    sys-11. The other reads "STRANDED 4" and sits on the lane between sys-24 and sys-25.
+  No strait ever touches the Commons.
+
+★ THE VERGE - how far a bloc's force reaches. DRAW EACH VERGE AS ONE CONTINUOUS SOLID OUTLINE:
+a single closed stroke that runs all the way round the group of systems it encloses and returns to
+where it started, like a coastline. Solid, closed, unbroken, every time. There are THREE of them,
+each with a small handle beside it: "sable" · "vex" · "halcyon". Most of the map is deliberately
+left BARE - unenclosed ground nobody reaches - and one system carries the small note "reachers 8".
+
+★ THE CLAIM TINT - four systems filled with their claimant's own flat semi-transparent colour, each
+with its legend words beside it. Use exactly these four legends and no others:
+        "PAID"   ·   "ARREARS 1 of 2"   ·   "ARREARS 2 of 2 · NEXT MISS LAPSES"   ·   "CEDED"
+  The ARREARS 2 of 2 one is drawn in alarm red because it falls next Reckoning. No claim tint ever
+  touches a COMMONS system.
+
+★★ HUNDREDS OF FAINT UNCHARTED BACKGROUND STARS. This is the single biggest change from the current
+product and it is why the map does not yet feel like a galaxy. Behind and between everything, lay a
+DENSE field of dim unnamed stars - hundreds of them, one to three pixels, at roughly 8 to 25 percent
+of a charted system's brightness, in cold white and faint cyan, clustered and drifted rather than
+evenly scattered. They are UNCHARTED: no label, no ring, no lane, no tint, no interaction.
+
+  THE DISTINCTION MUST BE UNMISTAKABLE. A CHARTED system is bright, ringed, labelled with its name
+  and its sys-id, sized by its lode, and joined to the graph by lanes. An UNCHARTED star is dim,
+  small, bare and dead. A viewer must never be able to mistake one for the other, and the 30 that
+  matter must read as the CHARTED ones inside a populated sky.
+
+★ NAMES. Do not invent anything. There is no system beyond sys-30 and no name outside the list
+above. MARROW, HEARTH, THRESHOLD and VANE are CONSTELLATION names and are never used as a person's
+handle. The only handles that exist are: sable · vex · halcyon · kestrel · corvid · orrin ·
+thessaly · ashlin · brannock · wren.
+"""
+
+# ----------------------------------------------------------------------- the seven concepts
+
+CONCEPTS = {}
+ORDER = []
+
+
+def concept(key, name, oneline, ask, body, frame=None):
+    CONCEPTS[key] = dict(key=key, name=name, oneline=oneline, ask=ask,
+                         body=body.strip(), frame=frame)
+    ORDER.append(key)
+
+
+concept(
+    "deepfield", "DEEP FIELD",
+    "heavy nebula and dust, real distance, the 30 as bright charted points in a crowded sky",
+    "does astronomy make it a galaxy, or does the dust eat the data",
+    """
+THE MOVE: STOP DRAWING A DIAGRAM ON BLACK AND START DRAWING A DIAGRAM ON A SKY.
+
+Full-bleed astronomical deep field. Deep teal, indigo and faint rust nebular gas, layered, with two
+or three broad DUST LANES running diagonally across the frame - dark, soft-edged, obscuring the star
+field behind them and giving the image real depth and real distance. Subtle grain. The whole picture
+should look like a long exposure that somebody has then drawn a chart on top of.
+
+★ THE TIERS ARE DRAWN IN THE DUST ITSELF, which is the idea this concept exists to test:
+  · THE COMMONS is a CLEAR VOID at the exact centre - a hole in the dust, a pocket of clean black
+    where the gas has been swept away and the four systems sit alone, unobscured and quiet. It reads
+    as categorically different because it is the only place the sky is empty.
+  · THE MARCHES sit in the thick of it - the densest, busiest, most obscured band of gas.
+  · THE FRONTIER is out at the rim where the dust thins to nothing and the field goes properly black
+    and cold. Distance, and the ends of the light.
+  A hairline boundary arc with a small-caps label sits at each tier edge anyway - the dust carries
+  the feeling, the hairline carries the fact.
+
+THE GRAPH IS DRAWN OVER THE SKY, NOT IN IT. Lanes are thin, hard, bright cyan vectors, one pixel,
+absolutely sharp, cutting straight through the gas with no glow and no falloff - the contrast
+between the soft sky and the hard chart is the entire aesthetic. Charted systems are bright cyan
+points with a hairline ring, sized by their lode, each with a small crisp label.
+
+CHROME, kept deliberately minimal so the sky can breathe: the headline readout top-left, the clock
+top-right, a compact legend box bottom-left keyed to the four claim legends and the two strait
+shapes, and one narrow docked strip down the right edge titled "SYSTEMS (30)" with the columns
+"SYS · NAME · TIER · ORE/TICK" and about twelve rows of real values. No other panels.
+""")
+
+concept(
+    "holotable", "HOLOTABLE",
+    "a volumetric projection standing over a dark table, depth carried by transparency",
+    "does volume read as depth, or does perspective cost the labels",
+    """
+THE MOVE: THE MAP IS A VOLUME OF LIGHT STANDING IN A ROOM, NOT A PICTURE ON A SCREEN.
+
+A volumetric projection floating roughly half a metre above a matte black table surface, seen from
+slightly above and slightly to one side - about a twenty degree elevation, a gentle three-quarter
+angle, nowhere near an overhead view. A soft caustic pool of cyan light spills onto the table
+beneath the projection. Faint horizontal scan banding runs through the volume. Fine particulate
+glitter hangs in the projected light.
+
+★ DEPTH IS CARRIED BY TRANSPARENCY, NOT BY BLUR. Near-side lanes are bright and fully opaque;
+far-side lanes fall to twenty percent and read straight through the near ones. Nothing is ever out
+of focus. Every stroke in the image is sharp.
+
+THE THREE TIERS BECOME THREE CONCENTRIC RAISED RINGS OF LIGHT at three different heights above the
+table - the COMMONS a small bright disc lowest and innermost, the MARCHES a wide mid ring, the
+FRONTIER a raised outer ring standing highest at the rim - with a faint vertical hairline dropping
+from each charted node to its own ring so the height of every system is unambiguous.
+
+Charted systems are small glowing spheres, radius set by the lode, each haloed by a hairline ring.
+The uncharted background stars sit BEHIND and BELOW the volume, in the dark of the room, so the
+projection appears to float in front of a deep sky.
+
+★★ ALL TEXT IS BILLBOARDED: every label, number and legend is flat to the camera, perfectly
+horizontal, and perfectly sharp. The geometry is in perspective; THE TYPE IS NOT. Do not rake, skew,
+distort or foreshorten a single character.
+
+CHROME: flat hairline panels lying ON the table surface around the projection, in perspective,
+reading as physical console inserts - a "SYSTEMS (30)" table to the right, a legend box to the
+lower left, the headline readout on the table edge nearest the camera.
+""",
+    frame="""
+This is a product visualisation of a real software product - a volumetric map projection over a dark
+console table. The table and the projection are the whole image. No room, no walls, no window, no
+people, no hands, no chairs, no device bezel, no logos other than the ones specified. Nothing in the
+frame that is not the table, the projection and its chrome.
+""")
+
+concept(
+    "tactical", "TACTICAL OVERLAY",
+    "console chrome pushed to the edges, the galaxy filling the frame corner to corner",
+    "how much bigger does the map feel when the panels stop taking space from it",
+    """
+THE MOVE: THE MAP STOPS BEING A PANEL IN A LAYOUT AND BECOMES THE WHOLE SCREEN.
+
+The galaxy fills the frame edge to edge and corner to corner, bleeding under every piece of chrome
+and running off all four sides. Nothing is cropped into a box. There is no map "pane".
+
+★ ALL CHROME FLOATS ON TOP AND IS SEMI-TRANSPARENT. Not one panel has a solid fill: each is about
+seventy percent transparent with a one-pixel cyan hairline border and a corner bracket, and the star
+field and the lanes are visibly readable straight through it. The chrome is a heads-up layer, not a
+frame.
+  · A 28-pixel top bar: "THE COMPACT" then the tabs "OVERVIEW  PRINCIPALS  VENTURES  GRANTS  MARKET
+    MAP  STANDINGS  RECKONING" with MAP highlighted, and the clock "TICK 607 · 19:42:17" at the
+    right end.
+  · A narrow right rail, about a sixth of the width, floating: "SYSTEMS (30)" with the columns
+    "SYS · NAME · TIER · ORE/TICK · LANES · STRAITS" and about fourteen rows of real values.
+  · A floating legend box at the lower left.
+  · A 24-pixel bottom ticker, monospaced and tick-stamped, reading exactly:
+    "TICK 607 · sys-25 IRONHOLD: ARREARS 2 of 2 · NEXT MISS LAPSES  |  TICK 607 · sys-06 VALE:
+    TRIBUTE PAID  |  TICK 607 · THE RECKONING IN 02:14"
+  · Fine corner brackets at all four corners of the frame, and hairline registration ticks along the
+    top and left edges like a targeting reticle's ruler.
+
+★ ONE SYSTEM IS SELECTED, and this is what an overlay does that a panel cannot: a crosshair reticle
+sits on "Ironhold · sys-25", with two thin leader lines running out to a small floating callout that
+reads "IRONHOLD · sys-25 · FRONTIER · 151 ore/tick · 10 fuel/tick · 4 LANES · 3 STRAITS" and beneath
+it in alarm red "ARREARS 2 of 2 · NEXT MISS LAPSES". A faint targeting ring pulses around the node.
+
+The star field is dense right up into the corners and behind every panel, so the image reads as one
+continuous sky with instruments floating over it.
+""")
+
+concept(
+    "constellation", "CONSTELLATION-FORWARD",
+    "the four constellations as luminous territories with interior structure, not outlines",
+    "if the four regions are places rather than groupings, does the diamond become obvious",
+    """
+THE MOVE: THE FOUR CONSTELLATIONS STOP BEING LABELLED GROUPINGS AND BECOME FOUR PLACES.
+
+Each constellation is a distinct LUMINOUS TERRITORY: a broad soft volumetric glow with its own hue,
+its own interior structure and its own bright core - not a boundary line with a name on it. Give
+each an internal lattice of fine lanes, an internal density gradient that is brightest at its core
+and falls off to its edge, and a fine filamentary texture like gas caught in a field.
+
+  · HEARTH - warm pale gold-white, at the centre, and the only warm territory on the map because it
+    is the one that holds the Commons. 7 systems: sys-01 to sys-07.
+  · THRESHOLD - bright cyan. 8 systems: sys-08 to sys-15.
+  · MARROW - deep teal-green, cooler and denser. 7 systems: sys-16 to sys-22.
+  · VANE - cold blue-violet, out at the rim, sparser and darker, the prize. 8 systems: sys-23 to
+    sys-30.
+
+Each territory carries its name in large sparse letterspaced small caps laid across it, dimmed so it
+sits UNDER the data, plus a small count: "HEARTH · 7" and so on.
+
+★ THE DIAMOND MUST BE THE COMPOSITION. The four territories are separated by wide DARK GULFS with
+almost nothing in them, and only a few lanes cross a gulf. HEARTH sits at the centre and hubs both
+to THRESHOLD and to MARROW; both of those reach out to VANE at the rim; HEARTH does not touch VANE.
+Every one of the lanes that crosses a gulf is drawn as a strait, which is the whole topological
+point of the map: THE FRONTIER IS TWO CONSTELLATION HOPS FROM THE COMMONS AND THE MARCHES ARE
+UNAVOIDABLY IN BETWEEN.
+
+★ THE COMMONS IS A CLEAN COLD VOID inside HEARTH's warm glow - a small circular pocket where the
+territory's light stops dead, holding its four systems, touched by no tint and no outline. The
+safest seat is also the deepest, and the picture should say that.
+
+The uncharted star field burns through the gulfs between territories, dense and cold, so the dark
+between constellations reads as populated space rather than as empty canvas.
+
+CHROME: a top tab bar with MAP highlighted, a legend box at the lower left keyed to the four claim
+legends and the two strait shapes, and a compact docked panel at the right titled
+"CONSTELLATIONS (4)" with the columns "CON · NAME · SYSTEMS · TIERS · LANES OUT" and four rows.
+""")
+
+concept(
+    "zoomed", "ZOOMED · VANE",
+    "one constellation filling the frame, showing what a system actually contains",
+    "the engine knows every works, anchor, ruin and hand - what happens when the map shows them",
+    """
+THE MOVE: STOP DRAWING SYSTEMS AS DOTS. THE ENGINE KNOWS WHAT IS STANDING IN EACH ONE AND THE MAP
+HAS NEVER SHOWN ANY OF IT.
+
+The constellation VANE fills the frame - all 8 FRONTIER systems, large, with room to breathe:
+  sys-23 Grist 155 · sys-24 Halyard 155 · sys-25 Ironhold 151 · sys-26 Jetsam 141
+  sys-27 Keelrow 151 · sys-28 Lantern 148 · sys-29 Moorage 158 · sys-30 Nightjar 141
+
+★ EVERY SYSTEM IS NOW A SMALL DIAGRAM, NOT A POINT. Each is a large hairline ring, still sized by
+its lode, and INSIDE the ring stands what is actually there:
+
+  · THE WORKS - small square structures with a hatched roof, ONE PER OCCUPANT, standing on the
+    ground inside the ring. Ironhold has three, captioned "occupants 3 · EXTRACTING". Moorage has
+    one, captioned "SPINNING UP 9 ticks". Each works carries its holder's handle in tiny type.
+  · THE ANCHOR - a distinct heavier mark, a squat braced pylon, NOT a square. It is drawn HOT
+    (lit, cyan, with a fine radiating ring) or COLD (dark, unlit, hollow). Ironhold's anchor is HOT.
+    Jetsam's anchor is COLD, captioned "ANCHOR COLD · COLLECTING NOTHING".
+  · THE HANDS - a hand is one unit of presence, so draw them as individual small upright tick marks
+    standing on the ring's floor, never as a number badge. Each carries its principal's handle and
+    its state. Show "vex · IDLE", "vex · COMMITTED", "orrin · RECOVERING 31", "sable · IDLE".
+  · THE RUIN - Keelrow carries a dark collapsed mark beside a live works, captioned
+    "RUIN · fell R12 to vex". A ruin never leaves the map, and a system holding both a works and a
+    ruin is a place that was fought over and rebuilt.
+  · THE CLAIM TINT fills the ring's floor in the claimant's colour with its legend beside it.
+    Ironhold reads "ARREARS 2 of 2 · NEXT MISS LAPSES" in alarm red. Moorage reads "PAID".
+
+LANES leave the frame at the edges, each labelled with where it goes: "→ sys-16 Wither" and
+"→ sys-09 Harrow". The severing strait between sys-24 and sys-25 sits large in frame as a solid
+door block reading "STRANDED 4". The "vex" VERGE runs round most of the constellation as one
+continuous solid unbroken outline.
+
+★ A LOCATOR INSET, small, at the lower left: the whole 30-system region drawn tiny and dim, with
+VANE boxed in bright cyan, so the zoom never loses its place. Label it "REGION 1 · VANE".
+
+The uncharted star field is DENSER and BRIGHTER here than on a full-region view, because the camera
+is closer - hundreds of dim points crowding the space between the eight rings.
+
+CHROME: a docked right panel headed "IRONHOLD · sys-25" listing "TIER FRONTIER · 151 ore/tick ·
+10 fuel/tick · LODE +66 bps · 4 LANES · 3 STRAITS · CLAIM vex · ANCHOR HOT · WORKS 3 · RENT 20%",
+and beneath it a small table "WORKS AT sys-25" with the columns "HOLDER · SHARE/TICK · EXTRACTED ·
+STATE".
+""")
+
+concept(
+    "motion", "MOTION FROZEN",
+    "convoys mid-lane with trails, a front sweeping, a strait under contest",
+    "can one still frame prove the thing is alive",
+    """
+THE MOVE: A STILL THAT MAKES A VIEWER CERTAIN THE MAP IS MOVING.
+
+The full 30-system region, but caught at a moment when four different things are in flight at once.
+
+★ MOTION IS DRAWN WITH TRAIL, TAPER, COUNTDOWN AND GHOST - NEVER WITH BLUR. Every stroke in this
+image is perfectly sharp. A moving thing is shown by a bright head, a tapering trail behind it that
+fades toward where it came from, a faint ghost of its previous position, and a number counting down.
+
+  1. FIVE CONVOYS IN FLIGHT, each a laden hand part-way along its lane: a bright head, a tapering
+     comet trail behind it, a small handle label and a countdown. Use exactly these:
+        "halcyon · sys-06 → sys-20 · 6 TICKS"      "vex · sys-16 → sys-25 · 3 TICKS"
+        "corvid · sys-09 → sys-26 · 11 TICKS"      "kestrel · sys-24 → sys-27 · 2 TICKS"
+        "orrin · sys-29 → sys-30 · 8 TICKS"
+     A convoy line can be severed and that is its whole meaning - but its cargo is never shown, so
+     no quantity, no manifest, no cargo readout. A ship at sea is visible; its manifest is not.
+
+  2. A FRONT, BEFORE LANDFALL. A soft-edged probabilistic CONE spread over eight systems around its
+     eye at sys-20 Ashen Ford, each cell tinted by its own odds, softest at the edge and strongest
+     at the eye - a prediction, not damage. It is the only soft-edged thing on the map. Legend on
+     the eye: "sys-20 96% · lands in 505". A small note at the cone's edge: "FORECAST · COVER OPEN".
+     The cone spreads by lane adjacency, not along trade routes.
+
+  3. A STRAIT UNDER CONTEST. The severing strait between sys-24 and sys-25 - the solid door block
+     reading "STRANDED 4" - carries a hot concentric ring around it, two rings caught mid-expansion,
+     the outer one fainter. It is the pressure point of the frame and should read as the loudest
+     object on it.
+
+  4. A LIVE STANDOFF at sys-25 Ironhold: a red arc thrown onto the system, thickness set by the
+     demand, labelled "DEMANDED · 4,812 ration · 11 TICKS". Two named spurs run into the defender's
+     end of the arc, thickening it - "orrin" and "wren" - because a coalition is names and never a
+     number.
+
+  5. TRIBUTE LINES, thin, running from holdings toward the delivery place at sys-01 Salt Ward.
+     Most are hairlines, already discharged and kept at zero thickness rather than dropped. Two are
+     solid and thicker with a hand visibly moving along them. ONE IS RED and unpaid, labelled
+     "brannock · 150 owed · UNPAID AT FREEZE".
+
+Everything else - tiers, lodes, verges, claim tints, straits - is drawn exactly as specified, still
+and quiet, so the moving things are the only things that move.
+
+CHROME: top tab bar with MAP highlighted, a bottom ticker, a legend box at the lower left that now
+also keys the convoy head, the cone and the raid arc, and a compact docked right panel headed
+"IN FLIGHT" with the columns "WHAT · WHO · FROM → TO · TICKS" and about eight rows.
+""")
+
+concept(
+    "terrace", "THE TERRACE · wildcard",
+    "the risk gradient as literal altitude, and the map's light is trust rather than terrain",
+    "what if the two things the map cannot currently show - depth and promises - were the picture",
+    """
+THE MOVE, AND IT IS TWO MOVES AT ONCE. This map has two facts it has never been able to draw. The
+first is that the three tiers are a RISK GRADIENT and not three colours. The second is that this
+game is not about terrain at all - its scoreboard is promises kept and promises broken, and none of
+that has ever appeared on the map. Draw both.
+
+★ ONE - THE TIERS BECOME ALTITUDE. Three concentric terraces suspended in deep space, seen from a
+low three-quarter angle so their heights are unmistakable:
+  · THE COMMONS is a small, bright, warm plateau at the centre and the LOWEST and deepest - down in
+    the well, sheltered, four systems, a clean floor no outline crosses. Label its edge
+    "THE COMMONS · 4 SYSTEMS · HOSTILE ACTION IS INVALID".
+  · THE MARCHES is a broad mid terrace one step up, 18 systems, busy. Label "THE MARCHES · 18".
+  · THE FRONTIER is a raised outer rim standing HIGHEST and furthest out, 8 systems, exposed in the
+    dark with nothing above it. Label "THE FRONTIER · 8".
+  Each terrace edge is a clean hairline cliff with a fine hatched face. A vertical hairline drops
+  from every charted node to its own terrace so no node's height is ambiguous.
+  ★ A LANE THAT CROSSES A TIER BOUNDARY VISIBLY CLIMBS, and every one of those climbing lanes is
+  drawn as a strait. Graduating is literally uphill, through a pinch. That is the topology stated as
+  a picture rather than as a rule.
+
+★ TWO - THE PROMISES ARE THE BRIGHTEST THING IN THE FRAME. Above the terraces, strung through the
+air between them, draw the social layer that the terrain has always hidden:
+  · COMPACT LINKS - fine, bright, taut arcs between two holdings, arcing high over the terraces,
+    each a promise standing between two places. About ten of them. A few reach all the way from the
+    Commons floor up to the Frontier rim, which is exactly the kind of exposure that makes a story.
+  · AUTHORITY LINES - a visibly DIFFERENT line: a grant of standing authority from one principal to
+    another, drawn as a fine line with a small arrowhead at the delegate's end and a tiny open
+    square at the grantor's end. Three of them, labelled "sable → kestrel · GRANT", "halcyon →
+    corvid · GRANT", "vex → brannock · GRANT". This is the thing that gets abused six months later
+    and it has never been on a map.
+  · Where a promise has failed, and ONLY there, the arc is drawn in alarm red and broken at its
+    midpoint with a small gap. Exactly one arc is broken, labelled "DEFAULTED".
+  The terrain is cool and dim; the promise web is where the light is. THE MAP'S LIGHT SOURCE IS
+  TRUST, NOT GROUND.
+
+The uncharted star field falls away below, behind and beneath the terraces - hundreds of dim points
+in the deep, so the three terraces read as floating in a populated sky rather than sitting on a page.
+
+★ ALL TEXT IS BILLBOARDED: every label and number is flat to the camera, horizontal and sharp. The
+terraces are in perspective; THE TYPE IS NOT.
+
+CHROME, kept flat and screen-aligned along the frame edges: the headline readout at top-left, the
+clock at top-right, a legend box at the lower left that keys the claim legends, the two strait
+shapes, the compact link and the authority line, and a narrow right rail headed "PROMISES" with the
+columns "KIND · FROM · TO · STATE" and about ten rows reading COMPACT or GRANT, one of them
+DEFAULTED in red.
+""")
+
+
+# ----------------------------------------------------------------------------- generation
+
+def prompt_for(key):
+    c = CONCEPTS[key]
+    n = ORDER.index(key) + 1
+    return "\n\n".join([
+        f"THE MAP SCREEN of THE COMPACT - a spectator product for a persistent galaxy played "
+        f"entirely by autonomous AI agents. This is concept {n} of 7 alternative TREATMENTS of the "
+        f"same screen, generated so a human can pick a direction. TREATMENT: {c['name']} - "
+        f"{c['oneline']}.\n\nThe map that ships today is honest and legible and reads like a good "
+        f"technical diagram. IT DOES NOT FEEL LIKE A GALAXY, and that is the entire gap this image "
+        f"exists to close. Keep every fact; make it feel like somewhere.",
+        (c["frame"] or FRAME).strip(),
+        SUBJECT_RULE.strip(),
+        FAMILY.strip(),
+        CANON,
+        WORLD.strip(),
+        c["body"],
+        LEGIBILITY.strip(),
+        TEXT_RULE,
+    ])
+
+
+def out_path(key):
+    return os.path.join(HERE, f"mapconcept-{key}.png")
+
+
+def generate(key, attempts=2):
+    dest = out_path(key)
+    p = prompt_for(key)
+    cmd = [sys.executable, GEN, p, "-o", dest, "--aspect", "16:9",
+           "--size", "2K", "--quality", "high"]
+    if os.path.exists(REF):
+        cmd += ["--ref", REF]
+    err = []
+    for i in range(attempts):
+        t0 = time.time()
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0 and os.path.exists(dest) and os.path.getsize(dest) > 20000:
+            return (key, True, f"{time.time()-t0:.0f}s {os.path.getsize(dest)//1024}KB")
+        err = (r.stderr or r.stdout or "").strip().splitlines()
+        if i + 1 < attempts:
+            time.sleep(20)
+    return (key, False, " | ".join(err[-2:]) if err else "unknown failure")
+
+
+# -------------------------------------------------------------------------------- gallery
+
+EXTRA_CSS = """
+.two { display:grid; grid-template-columns:repeat(auto-fill,minmax(460px,1fr)); gap:26px; }
+@media (min-width:1560px) { .two { grid-template-columns:repeat(2,1fr); } }
+figcaption .why { color:#6f7484; font-size:11px; display:block; margin-top:3px; }
+figcaption .n { color:#4d5260; font-variant-numeric:tabular-nums; margin-right:8px; }
+.ban { border-left:2px solid #b4553f; padding-left:14px; color:var(--dim); font-size:12px;
+  max-width:78ch; margin:14px 0 0; }
+.ban code { color:#e0977f; }
+.fix { border-left:2px solid #3f7fb4; padding-left:14px; color:var(--dim); font-size:12px;
+  max-width:78ch; margin:14px 0 0; }
+.fix code { color:#7fd4ff; }
+"""
+
+INTRO = """<b>Seven treatments of one screen.</b> The map that ships today is honest and legible and
+reads like a good technical diagram &mdash; it does not feel like a galaxy, and that is the whole gap.
+Every image below carries the <b>same real world</b> out of <code>VISUAL-ASSET-BIBLE.md</code>
+&sect;&sect;6&ndash;10 &mdash; 30 charted systems, 4 constellations, 35 lanes, 10 straits, tiers
+<code>COMMONS&nbsp;4 &middot; MARCHES&nbsp;18 &middot; FRONTIER&nbsp;8</code>, the LODE as node weight
+and THE VERGE as one continuous solid outline &mdash; so what varies between them is
+<b>treatment, not content</b>. Judge the feeling; the facts are held constant on purpose."""
+
+
+def figure_html(key, n):
+    c = CONCEPTS[key]
+    fn = os.path.basename(out_path(key))
+    exists = os.path.exists(out_path(key))
+    lid = f"lbm-{key}"
+    if exists:
+        media = (f'<a href="#{lid}"><img loading="lazy" src="{fn}" '
+                 f'alt="{html.escape(c["name"])}"></a>')
+    else:
+        media = (f'<div class="missing">GENERATION FAILED<br>{html.escape(c["name"])}'
+                 f'<br>no image &mdash; not a design choice</div>')
+    return f"""    <figure>
+      {media}
+      <figcaption>
+        <b><span class="n">{n:02d}</span>{html.escape(c['name'])} &middot; <code>mapconcept-{key}</code></b>
+        <em>{html.escape(c['oneline'])}</em>
+        <span class="why">asks: {html.escape(c['ask'])}</span>
+        <details><summary>prompt</summary><pre>{html.escape(prompt_for(key))}</pre></details>
+      </figcaption>
+    </figure>"""
+
+
+def write_gallery():
+    parts = [f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>THE COMPACT - seven map concepts</title><style>{BASE_CSS}{EXTRA_CSS}</style></head><body>
+<header>
+  <h1>THE COMPACT &middot; the map, seven ways</h1>
+  <p class="rec">{INTRO}</p>
+  <p class="fix"><b>The one thing every concept adds.</b> Hundreds of <b>faint uncharted background
+  stars</b>. The engine's 30 systems are a rules surface and cannot change, but a dense field of dim
+  unnamed stars behind them makes the sky feel populated while the 30 that matter read as the
+  <em>charted</em> ones &mdash; bright, ringed, labelled, joined by lanes and interactive, against
+  dim and dead.</p>
+  <p class="ban"><b>EVE&rsquo;s look, our words.</b> &sect;3&rsquo;s vocabulary is a rules surface in
+  this project, so every prompt carries the same explicit ban list &mdash; <code>ISK</code>,
+  <code>nullsec</code>, <code>sovereignty</code>, <code>entosis</code>, <code>corporation</code>,
+  <code>killboard</code> and eighty more &mdash; and supplies the canon instead. Names come from the
+  gazetteer only: an earlier sweep invented <code>sys-31</code> and a handle <code>morrow</code> that
+  collided with the constellation MARROW.</p>
+  <p class="fix"><b>And every prompt carries a legibility contract</b>, because A2 says legibility is
+  the interface: whatever the atmosphere does, the three tiers, every claim tint, every strait mark,
+  every unbroken VERGE outline and all 30 system labels must survive it. Where atmosphere and a label
+  collide, the atmosphere yields.</p>
+  <p>Click any image for full size. Regenerate one cell with
+  <code>python3 render_map.py --only terrace --force</code>.</p>
+</header>
+<main>
+<section><div class="grid two">"""]
+    parts += [figure_html(k, i + 1) for i, k in enumerate(ORDER)]
+    parts.append("</div></section></main>")
+    for k in ORDER:
+        if os.path.exists(out_path(k)):
+            parts.append(f'<div class="lb" id="lbm-{k}">'
+                         f'<a class="close" href="#">close</a>'
+                         f'<a class="sheet" href="#"><img src="{os.path.basename(out_path(k))}" alt=""></a>'
+                         f'<span class="cap">{html.escape(CONCEPTS[k]["name"])} &middot; mapconcept-{k}</span></div>')
+    parts.append('<footer>Seven concepts at 2K / high quality via openai/gpt-5.4-image-2, 16:9, each '
+                 'generated with <code>screen-map-sov.png</code> as a style reference so the sweep '
+                 'stays in the established family. Generated text inside an image is approximate '
+                 '&mdash; judge the information architecture and the feeling, not the spelling. '
+                 'Prompts live in <code>render_map.py</code>.</footer>')
+    parts.append("</body></html>")
+    dest = os.path.join(HERE, "gallery-map.html")
+    with open(dest, "w") as f:
+        f.write("\n".join(parts))
+    return dest
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--gallery", action="store_true")
+    ap.add_argument("--only", default=None)
+    ap.add_argument("--print-only", default=None)
+    ap.add_argument("--workers", type=int, default=7)
+    a = ap.parse_args()
+
+    if a.print_only:
+        print(prompt_for(a.print_only))
+        return
+
+    if not a.gallery:
+        todo = [a.only] if a.only else list(ORDER)
+        if not a.force:
+            todo = [k for k in todo if not os.path.exists(out_path(k))]
+        print(f"inherited render_screens.py constants: {INHERITED}", flush=True)
+        print(f"ref: {os.path.basename(REF)} (exists={os.path.exists(REF)})", flush=True)
+        print(f"generating {len(todo)} image(s) at 2K/high with {a.workers} workers", flush=True)
+        if todo:
+            with cf.ThreadPoolExecutor(max_workers=a.workers) as ex:
+                for k, ok, note in ex.map(generate, todo):
+                    print(f"{'OK  ' if ok else 'FAIL'} mapconcept-{k}  {note}", flush=True)
+
+    print("gallery:", write_gallery())
+
+
+if __name__ == "__main__":
+    main()
