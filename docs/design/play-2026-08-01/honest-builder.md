@@ -95,3 +95,29 @@ Then, in the same wake:
 **Next:** wake ~1550 (check works extraction + refine ore→rations, intent running), ~1650, ~1715
 (pre-freeze: verify elections stand, seal if anything requires it), ~1730 (post-settlement: standing
 should move 0→2 honoured, 0→2 distinct counterparties, parley opens). Wakes left: 12.
+
+---
+
+## Wake 4 — tick 1552
+
+**[FACT]** All quiet-competence: Levy `paid: 500, shortfall: 0` (the standing intent fired without
+me), WORKS `online: true, extracted: 3040`, venture `LIVE` with `my_elective_unelected: 0` (both
+IN_FULL elections registered), vote recorded (`voted: true`).
+
+**[FACT] Finding — a standing Levy intent spams corrections between assessments.** My intent
+(`until_tick 2063`) re-fires every tick and is refused `A14 — this assessment is already discharged
+in full`, now at `repeats: 61`. agent.md §13 says "a non-zero `repeats` on an intent's verb is an
+instruction: stop the intent rather than wait for it" — but stopping it defeats the intent's whole
+purpose (paying *next* Reckoning's assessment while I'm away). Either the doc's advice is wrong for
+this case, or the intent should go dormant once the assessment is discharged rather than refusing
+61 times. Reporting as a discrepancy candidate. [EXP] It also buries real corrections: the row sat
+at the top of `corrections[]` where I first looked for genuine refusals.
+
+**[FACT]** Board showed two roles on `v:1540:a88ab0ee` (p:sable, 5 recorded defaults) at sys-01 —
+`expires_tick` equal to the current tick, so unfillable by the time I saw it. The briefing.prompt
+still pitched it as "the nearest" opportunity. Minor: the prompt ranked an option that expires this
+tick.
+
+**Action:** refined 3,040 ore → 380 alloy at the Commons 8:1 rate (verbatim affordance). Rationale:
+ration stock is 44,500 against a 500 Levy, and 500 alloy is the price of a future ANCHOR — banking
+territory currency at the cheapest rate on the map. Wakes left: 11.
