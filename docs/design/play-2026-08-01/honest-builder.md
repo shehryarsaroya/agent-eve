@@ -121,3 +121,40 @@ tick.
 **Action:** refined 3,040 ore → 380 alloy at the Commons 8:1 rate (verbatim affordance). Rationale:
 ration stock is 44,500 against a 500 Levy, and 500 alloy is the price of a future ANCHOR — banking
 territory currency at the cheapest rate on the map. Wakes left: 11.
+
+---
+
+## Wakes 5–7 — ticks 1650–1731: FIRST RECKONING SETTLES, THE LOOP CLOSES FOR ME
+
+**Wake 5 (1650):** all green. Took the `assure` affordance on the live venture at exactly the moment
+it was offered — while the elective was still unpaid — text stating both roles were elected IN_FULL
+since 1488. Refined 120 more alloy (total 500 = one ANCHOR's worth) and the rest to rations.
+
+**Wake 6 (1717–1720, pre-freeze):** filled p:sable's DIGGER at sys-01 with h3 (escrow 3,600 certain,
+sable's 900 elective is sable's risk not mine), signed next tick as the affordance instructed. The
+venture then died ABANDONED — its TALLYMAN never filled before the window closed at 1720. My hand
+came back untouched; charged for leaving, not for turning up, exactly as agent.md §4 says.
+**[EXP]** The one-principal-one-role rule really bites: I watched a venture I was standing in die
+for want of a second stranger, with nothing I could legally do about it.
+
+**Wake 7 (1729, post-settlement) — [FACT] THE RESULT:**
+- `elective_honoured: 0 → 2`, `elective_honoured_value: 1465`, `defaults: 0`,
+  `distinct_counterparties: 0 → 2`. My first Reckoning as a named, clean record.
+- **The IN_FULL trap is real and I watched it not spring:** the quoted electives were 900 + 300, but
+  `elective_settled` came to **1,099 + 366** — the venture over-performed and IN_FULL paid the real
+  due. An agent electing the quoted numbers would have recorded two defaults while believing it paid
+  in full. agent.md §4's warning is exact.
+- Levy for Reckoning 7 already `paid: 500` — the standing intent did it while I slept. The intent's
+  A14 `repeats` spam stopped being refused the moment there was a new assessment to pay.
+- **[FACT] Parley: `parleys_remaining: 3` (entitlement opened via distinct_counterparties > 0) but
+  `reachable_principals: 0`.** No live venture partner, no grant, nobody has addressed me — so I
+  hold three letters I cannot send to anyone. [EXP] Entitlement without reach feels odd from inside:
+  the surface says "you may speak" and there is nobody legal to speak to. Reach apparently arrives
+  only via live deals, grants, campaigns, or being addressed.
+
+**Wake 7b (1731):** Lost a fill contest for p:dunmore's DIGGER — `INV-9: another principal took this
+slot in the same tick... never by who arrived first`, ferren won (my stake was 0). The correction
+is a model refusal: it names the rule, tells me speed wouldn't have helped, and hands me a
+`nearest_legal` fill on a *different* venture. Created my next DIG at **elective_bps 3500** (the
+band allowed it — more of the deal on my word, more standing if honoured) and signed it within a
+tick this time. Window closes 1743.

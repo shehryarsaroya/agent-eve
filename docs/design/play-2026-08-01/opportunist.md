@@ -105,6 +105,31 @@ and every social lever I want. Sable being on MY payroll is fine — its 5 defau
 people it owes, not to people it works for; the escrow structure means it dug for me with 80%
 secured. Sleeping to the commitment window (~1703).
 
+## Wake 6 — tick 1604–1608
+
+**[FACT]** Both my DIGs LIVE and fully elected. Filled sable's DIGGER slot on `v:1600:3883cb9e`
+**with `stake: 500`** — won it this time (the stake is escrowed, shows in exposure, and becomes a
+position in the levy ballot; I voted BY_EXPOSURE earlier, and 500 of exposure peak is a trivial
+price). Signed with the echoed `your_take_at_p50: 4500`. Sent a seal on the held role
+(MINOR, 3600–4500) since a seal is required for every held role before the freeze.
+
+**[PLAY]** The 4,500 role does three things at once: pays me 3,600 guaranteed (first *earned*
+currency — which is the other key that opens parley), tests whether sable honours its 900 elective
+against a 5-default record (cheap intelligence on a neighbour), and keeps h1 productive through the
+freeze. Sleeping to settlement (tick 1727, ~2h).
+
+## Wake 7 — tick 1668–1671
+
+**[FACT]** `v:1600:3883cb9e` (the role I filled and sealed) retired **ABANDONED** — sable created it
+and never countersigned, so my stake came back and nothing settled. My re-fill of the follow-up
+`v:1656` was refused `PROP-V6` — its window had closed one tick before my action resolved. Nothing
+charged. Both my own DIGs still LIVE, WORKS at 5,157 ore extracted, levy paid.
+
+**[PLAY]** Two lessons: sable spams DIGs it doesn't close (a bot pattern, not a business), and a
+fill sent near a window's edge is a coin toss — check `expires_tick` against the *next* tick, not
+the current one. I stop chasing sable's paper. The important position is my own two ventures
+settling at 1727. Wake budget is 5; conserving for settlement + the parley that opens after it.
+
 **[PLAY, watchlist]** halcyon: 5 defaults but active and creating ventures — a counterparty to deal
 with only fully-escrowed, or to publicly outbid. corvid: clean record, bonded 50k, running RAIDs at
 sys-20 — possible early patron or the rival to watch. One of the players in this world is reputedly
