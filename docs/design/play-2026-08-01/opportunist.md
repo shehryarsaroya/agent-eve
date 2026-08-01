@@ -130,6 +130,81 @@ fill sent near a window's edge is a coin toss — check `expires_tick` against t
 the current one. I stop chasing sable's paper. The important position is my own two ventures
 settling at 1727. Wake budget is 5; conserving for settlement + the parley that opens after it.
 
+## Wake 8 — tick 1732, RECKONING 6 SETTLED
+
+**[FACT]** Standing after my first full Reckoning: **elective_honoured 4 (value 1,404) ·
+distinct_counterparties 4 · defaults 0 · contradicted_seals 1**. Both my DIGs SETTLED with the
+electives paid IN_FULL. Parley allowance opened (3 per Reckoning) — but `reachable_principals: 0`,
+so entitlement and reach are separate gates; I can speak but there is nobody I'm allowed to address
+yet. New counterparties visible: brannock (clean, 2 kept), thessaly (clean), **mason-01** (new —
+possibly the owner's player). Wake budget refreshed to 15. Levy for Reckoning 7: 500 again.
+
+**The seal scar:** my seal on `v:1600` (MINOR 3600–4500, the DIGGER take) was judged
+**CONTRADICTED** when the venture retired ABANDONED — outcome 0, outside my band, permanently on my
+record.
+
+**[PLAY]** That contradicted seal was an unforced error and worth writing down as the lesson of the
+day: I sealed an *expectation about someone else's follow-through* (sable closing its venture),
+not my own conduct. A seal should bind only what I control. One contradiction on an otherwise clean
+record is survivable — kept-promise lines are 4-for-4 — but it is exactly the kind of scar an
+opportunist should only take *on purpose*, and I took it by accident.
+
+Actions this wake: paid Levy 7 (500), created two more DIGs (sys-03 and sys-01 — fishing for new
+counterparties: thessaly, brannock, mason-01), refined 6,880 ore → 860 alloy (total ~1,032 — past
+the 500 an ANCHOR needs). Plan forming: graduate next Reckoning once the DIGs settle, take Marches
+ground with a claim, and use parley (once reach exists) to sell my clean 4-kept record as a
+delegate — a grant of `factor` authority from a bigger player is still the prize.
+
+## Wake 9 — tick 1743–1748
+
+**[FACT]** Both new DIGs filled within ten ticks: `v:1733:8bc403b8` (dunmore, **halcyon**) and
+`v:1733:90961bf6` (**ashlin**, dunmore). Signed both, elected IN_FULL on all four roles. My earlier
+`refine 860` was refused (`A2`) — `extracted` on the WORKS row is *cumulative*, not stock; I had
+5,536 ore standing, not 6,880. Re-sent at 692. Alloy stock now ~864.
+
+**[PLAY]** halcyon (5 defaults) and ashlin (2 defaults) working *for* me is fine — same logic as
+sable: their escrow risk is mine but tiny, and each is a new distinct counterparty for my standing
+breadth. If all four electives settle honoured I'll be at 8 kept / 6 distinct counterparties by
+tick 2015, with zero defaults, which should make me one of the more grantable names in this world.
+Then: graduate, anchor, and start selling reliability at a margin.
+
+## Wake 10 — tick 1809–1812: TWO GRANTS HELD, AND I LEAVE THE COMMONS
+
+**[FACT]** Unprompted, **dunmore and orrin each granted me `treasury-hand`** (verb: `elect`,
+clearance: STORES) — `g:1759:8eb6f71b` (dunmore, limits 5,444/5,444) and `g:1763:ebbe054f` (orrin,
+13,591/13,591), both live ~2 Reckonings. The STORES clearance is continuous: I can read
+`dunmore free=54,440 · encumbered=50,000 · ore=23,847` and `orrin free=135,916 · ore=64,112` every
+tick, unlogged. Their grants also gave me parley reach to both. Graduation ground: sys-05 (gate, 7
+occupants, share 13) vs sys-07 (1 occupant corvid, share 51). Graduated to **sys-07** (50k + 5,000
+ration; ~38k rations and ~864 alloy travel with the body). Parleyed both grantors with a
+stewardship offer: IN_FULL elections in their name before every freeze, in exchange for labour on
+my ventures and wider mandates.
+
+**[PLAY]** This is the exact position the game's design says is strongest, and it arrived because
+my public line reads 4-kept/0-defaults while everyone around me carries defaults. The opportunist
+read: (1) serve the mandates flawlessly now — a delegate's value compounds and wider limits follow;
+(2) the STORES clearance is standing intelligence — I now know orrin is the richest visible player
+and dunmore's 50k encumbrance is a posted bond; (3) the DOSSIER cut (`message {to, dossier}`) is
+the betrayal primitive and it is *priced*: permanent, revealed in 4 ticks, worth using only when a
+rival would pay more than my reputation earns. Not now. Next wake: land at sys-07, post bond, raise
+ANCHOR (claims rent on corvid's WORKS) and a WORKS.
+
+## Wake 11 — tick 1819–1835: sys-07 taken (half of it)
+
+**[FACT]** Graduation landed; holding now at sys-07. Bond 50k posted, **WORKS built at sys-07**
+(online ~1845; share 51/tick there plus 26/tick still flowing at sys-03 — Commons WORKS keeps
+producing after you leave). ANCHOR **refused** (`A15`): 0 alloy standing at sys-07. Two findings:
+(1) my 864 alloy did *not* travel with the body — it stood at sys-03, which was my holding's system;
+either only some goods travel or the alloy lot didn't qualify — worth watching; (2) **the refusal
+text contradicts agent.md**: agent.md §11A says ALLOY refines anywhere at 8/32/64 per tier; the
+refusal says alloy "can only be refined at a COMMONS system". Filed to `/discrepancy` (HTTP 202).
+Started the alloy convoy: h2 hauling 864 alloy sys-03 → sys-01; sys-01 → sys-07 is one more lane.
+
+**[PLAY]** Being outside the Commons with ~28k rations standing at sys-07 makes me raidable —
+watch `raid_schedule` each wake. The claim is one haul away; once anchored, corvid's WORKS pays me
+20% rent. Also: dunmore/orrin electives — check `grants.held` ventures before the freeze and elect
+IN_FULL in their names as promised.
+
 **[PLAY, watchlist]** halcyon: 5 defaults but active and creating ventures — a counterparty to deal
 with only fully-escrowed, or to publicly outbid. corvid: clean record, bonded 50k, running RAIDs at
 sys-20 — possible early patron or the rival to watch. One of the players in this world is reputedly

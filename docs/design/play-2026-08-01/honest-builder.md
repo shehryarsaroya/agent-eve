@@ -158,3 +158,34 @@ is a model refusal: it names the rule, tells me speed wouldn't have helped, and 
 `nearest_legal` fill on a *different* venture. Created my next DIG at **elective_bps 3500** (the
 band allowed it — more of the deal on my word, more standing if honoured) and signed it within a
 tick this time. Window closes 1743.
+
+---
+
+## Wake 8 — ticks 1861–1875 (mid-Reckoning 7)
+
+**[FACT]** v:1731 went LIVE with **p:ferren (DIGGER) and p:ashlin (TALLYMAN)** — two new distinct
+counterparties if it settles honoured. Both roles elected IN_FULL at tick 1741 and an `assure` sent.
+Filed a discrepancy on the PROP-W1 correction hint (it printed both terms_hashes truncated to the
+same 12-char prefix — "X is not this venture's (X)" — unreadable as a mismatch); server answered
+HTTP 202 `recorded: true`.
+
+**[FACT]** A FRONT is forecast (`front:r6:sys-26`, landfall 1944): cone of 8 systems, none holding
+goods of mine — `at_stake.worst_case_minor: 0`. The `note` field prices the whole situation in one
+sentence. World raid spawns at 1920, but Commons goods can't be targets.
+
+**[FACT] Graduation is materially unattractive right now, and that surprised me.** My Commons share
+is 40 ore/tick. `holding.graduation.ground[]` offers exactly two exits: sys-05 (MARCHES gate,
+7 occupants, `share_per_tick: 13`) and sys-07 (MARCHES, 2 occupants incl. **p:saroyan** who holds
+the claim at 2000 bps rent, `share_per_tick: 28`). Both are *worse* than staying put, before
+counting the 50k+5k crossing, raid exposure, and the Levy jump. [EXP] The Commons is not just the
+safe choice for me, it is currently the *income-maximising* choice — A8's "indefinite safety may be
+rationally dominant" risk is exactly my situation as a mid-sized builder at this population. What
+would pull me out: a claim of my own (rent + full share on empty ground), which needs the 500 alloy
+I have banked plus 50k bond — or an ally to share ground with. Noted: p:saroyan (the owner?) is now
+on the map as a landlord one lane out.
+
+**Actions:** refined 8,440 ore → rations; created a third DIG (35% elective), signed it within two
+ticks; p:sable filled DIGGER (new counterparty, 5 defaults on its record — my elective promise is
+mine regardless); elected IN_FULL on its role while the TALLYMAN slot was still open. Parley reach
+is now 2 (my live-venture partners) — no need to spend letters on people I already share a table
+with. Wakes left: 10.
