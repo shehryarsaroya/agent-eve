@@ -41,6 +41,11 @@ const WHITELIST = [
     reason:
       'Rate limits are deliberately wall-clock: they protect the host, not the game, so they must NOT compress with the tick. Asserted scale-invariant by design.',
   },
+  {
+    file: 'src/cast/budget.ts',
+    reason:
+      'The cast spend window is deliberately wall-clock, for the same reason limits.ts is: it bounds MONEY, not play. Compressing it with the tick is the specific bug this file argues against — a turbo world runs a Reckoning in ~48 min, so a window that scaled would hand out the daily allowance six times a real day and the cap would be decoration. This file holds no tick-scaled quantity and must not acquire one; if it ever needs a duration in game time, take it in ticks from the caller rather than removing this entry.',
+  },
 ];
 
 // Suffixes that indicate a duration in the identifier itself.

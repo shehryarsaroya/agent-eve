@@ -744,10 +744,15 @@ function envInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
  * to the default is the safe reading. The spend WINDOW is the one exception: `0` means
  * *no window*, i.e. the life-of-process cap, and it is a documented escape hatch.
  *
- * Shared with `envInt` this was a silent no-op — `COMPACT_CAST_SPEND_WINDOW_HOURS=0` came
- * back as 24 h and the operator would have had no way to tell, because the only symptom is
+ * Shared with `envInt` this was a silent no-op — setting that variable to zero came back as
+ * a 24 h window and the operator would have had no way to tell, because the only symptom is
  * a cap that self-heals when they asked for one that does not. Caught by the test that
  * asserted the documented behaviour rather than the implemented one.
+ *
+ * (The variable is deliberately not spelled with its value here: DET-8's scale audit strips
+ * `//` comments but not the interior lines of a block comment, so `NAME=0` in prose reads to
+ * it as an assignment of a bare duration literal. Naming the value in words costs nothing
+ * and keeps the audit's false-positive rate at zero, which is what keeps it read.)
  */
 function envIntAllowingZero(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const raw = env[name];
