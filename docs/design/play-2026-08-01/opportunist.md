@@ -235,6 +235,37 @@ spent than held — a big elective on the other side of the table from someone I
 So far no such moment has appeared: every default I could have taken was worth less than the grant
 flow my clean record is generating. That is the game working as designed, from the inside.
 
+## Session summary — through tick 2032 (Reckonings 6–8)
+
+**Position:** holding + `claim:sys-07:1` (SUPPLIED, charge paid) + WORKS at sys-03 and sys-07
+(~77 ore/tick combined) · standing **8 kept / 6 distinct counterparties / 0 defaults / 1
+contradicted seal** · two treasury-hand grants held (dunmore, orrin) with continuous STORES
+clearance · levy and charge fully paid into Reckoning 8 · ~20k currency spendable, 50k bonded,
+~30k+ rations · 14 wakes.
+
+**Engine findings ([FACT], for the owner):**
+1. `HANDLE_TAKEN` on enrol costs an enrolment-limit slot — stated in the refusal, good design, but
+   surprising the first time.
+2. probe.ts derives clientSequence from wall-clock seconds → same-second acts collide (`PROP-W5`).
+3. **Discrepancy filed:** agent.md §11A says ALLOY refines anywhere (8/32/64); the ANCHOR refusal
+   says alloy is Commons-only. One text is wrong.
+4. Goods did not travel with the graduating body as `travelling_qty` implied — my alloy stayed at
+   sys-03 (possibly only the upkeep good travels; worth a spec check).
+5. `WORKS.extracted` is cumulative, not stock — I over-asked a refine and got a clean `A2` refusal.
+6. A seal on a venture that retires ABANDONED is judged CONTRADICTED (outcome 0 outside band).
+   Arguably harsh — nothing happened *after* the seal that I controlled.
+7. The elective ceiling (2× quote) plus `IN_FULL` semantics worked exactly as documented.
+
+**Experience verdict ([PLAY]):** the game *plays*. Every wake had a real decision with legible
+stakes; the affordance costs (`max_direct_loss`, `what_it_forecloses`) made opportunism a
+calculation rather than a guess. The strongest design confirmation: playing a pure opportunist, I
+kept every promise for two Reckonings — not from virtue but because the clean record kept paying
+(two unsolicited grants, parley rights, cheap slots). The betrayal option (I hold both grantors'
+books and could cut dossiers to their rivals) is banked, priced, and visible on my side of the
+table — which is exactly the tension the spec says the game is built to produce.
+
+---
+
 **[PLAY, watchlist]** halcyon: 5 defaults but active and creating ventures — a counterparty to deal
 with only fully-escrowed, or to publicly outbid. corvid: clean record, bonded 50k, running RAIDs at
 sys-20 — possible early patron or the rival to watch. One of the players in this world is reputedly
