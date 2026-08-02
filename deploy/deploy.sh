@@ -18,7 +18,7 @@ HOST=147.93.179.114
 KEY=~/.ssh/agenttransfer_vps
 SSH="ssh -i $KEY -o ConnectTimeout=20 root@$HOST"
 CODE_DIR=/opt/compact
-WEB_DIR=/var/www/agentinsurance.io/compact
+WEB_DIR=/var/www/agenttransfer.dev
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 TARGET="${1:-all}"
@@ -187,9 +187,18 @@ fi
 if [[ "$TARGET" == "client" || "$TARGET" == "all" ]]; then
   log "syncing spectator client → $WEB_DIR"
   $SSH "mkdir -p $WEB_DIR"
-  # NO --delete here. This lives inside the live landing page's webroot, and a
-  # --delete with a wrong path would take agentinsurance.io down. The cost of a
-  # stale orphan file is nothing; the cost of that mistake is the whole site.
+  # STILL NO --delete, and the reason CHANGED on 2026-08-02 rather than going away.
+  #
+  # It used to be co-tenancy: this lived inside agentinsurance.io's webroot and a
+  # --delete with a wrong path would have taken the landing page down. The game has its
+  # own host now and owns this directory outright, so that specific danger is gone.
+  #
+  # What replaces it is the frames. COMPACT_FRAMES_DIR is $WEB_DIR/frames — the ENGINE
+  # writes there every tick, and this script does not sync it. A --delete from client/
+  # would therefore delete every published frame, including the whole Reckoning archive,
+  # and the client would keep returning 200 while showing an empty world. That is scar #4
+  # with the same shape and a different victim, which is the argument for keeping the
+  # habit rather than re-earning the scar.
   rsync -az -e "ssh -i $KEY" "$REPO_ROOT/client/" "root@$HOST:$WEB_DIR/"
   ok "client synced (deliberately without --delete)"
 
@@ -231,10 +240,10 @@ fi
 # which are the two ways this has actually gone wrong.
 if [[ "$TARGET" == "api" || "$TARGET" == "client" || "$TARGET" == "all" ]]; then
   WANT=$(wc -l < "$REPO_ROOT/engine/agent.md" | tr -d ' ')
-  GOT=$(curl -s --max-time 20 https://agentinsurance.io/compact/agent.md | wc -l | tr -d ' ')
+  GOT=$(curl -s --max-time 20 https://agenttransfer.dev/agent.md | wc -l | tr -d ' ')
   if [[ "$WANT" != "$GOT" ]]; then
     fail "THE SERVED RULEBOOK IS NOT THE ONE IN THIS REPO: agent.md is $WANT lines here and
-     $GOT lines at agentinsurance.io/compact/agent.md. Agents play from the served copy, so a
+     $GOT lines at agenttransfer.dev/agent.md. Agents play from the served copy, so a
      stale one means the engine offers verbs the rules do not describe. This exact gap hid
      hulls, battles and campaigns from every live agent for fifteen rules versions because
      agent.md was published only by the 'client' target."
@@ -250,14 +259,15 @@ done
 $SSH 'systemctl daemon-reload'
 ok "units installed"
 
-log "installing nginx snippet"
-scp -q -i "$KEY" "$REPO_ROOT/deploy/nginx-compact.conf" "root@$HOST:/etc/nginx/snippets/compact.conf"
-# Wire it in with a single idempotent line rather than rewriting the vhost that
-# also carries the live landing page and the certbot TLS block.
-$SSH 'grep -q "snippets/compact.conf" /etc/nginx/sites-available/agentinsurance.io || \
-      sed -i "0,/^    location \/ {/s##    include /etc/nginx/snippets/compact.conf;\n\n    location / {#" \
-        /etc/nginx/sites-available/agentinsurance.io'
-$SSH 'nginx -t' || fail "nginx config invalid — NOT reloading, the landing page stays up"
+log "installing the agenttransfer.dev vhost"
+# A WHOLE VHOST, not an include. Until 2026-08-02 this was a fragment grafted into
+# agentinsurance.io's vhost with an idempotent sed, because the game lived inside that
+# site's webroot and could not have a server block of its own. It has its own host now,
+# so it owns its own file and the graft is gone.
+scp -q -i "$KEY" "$REPO_ROOT/deploy/nginx-agenttransfer.conf" \
+    "root@$HOST:/etc/nginx/sites-available/agenttransfer.dev"
+$SSH 'ln -sfn /etc/nginx/sites-available/agenttransfer.dev /etc/nginx/sites-enabled/agenttransfer.dev'
+$SSH 'nginx -t' || fail "nginx config invalid — NOT reloading, the running site stays up"
 $SSH 'systemctl reload nginx'
 ok "nginx reloaded"
 
@@ -419,22 +429,25 @@ head_lacks() { [[ "${BODY:0:400}" != *"$1"* ]]; }
 # The same question of the WHOLE body, for a key that legitimately sits deep in a document.
 body_has()   { [[ "$BODY" == *"$1"* ]]; }
 
-# The landing page is the thing most likely to be collateral damage, and it is
-# not something we deployed, so it is exactly what scar #4 says to check.
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://agentinsurance.io/ || echo 000)
-[[ "$CODE" == "200" ]] || fail "landing page returned $CODE — it was 200 before this deploy"
-ok "landing page still 200"
-
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://agentinsurance.io/whitepaper.html || echo 000)
-[[ "$CODE" == "200" ]] || fail "whitepaper returned $CODE"
-ok "whitepaper still 200"
+# ── THE CO-TENANCY CHECK IS GONE, AND THAT IS THE POINT OF THE MOVE ──
+#
+# This used to curl agentinsurance.io/ and /whitepaper.html after every deploy, because
+# the game lived INSIDE that site's webroot and scar #4 says to verify the thing you did
+# not deploy. As of 2026-08-02 the site is on a different box entirely (ahmadecho,
+# 89.117.78.215) and this one serves the game and nothing else. Checking the site from
+# here would now be checking a server this script cannot affect — a red light for causes
+# outside its reach, which is how a check earns a reputation for lying and stops being read.
+#
+# The rule it enforced still applies and still has teeth below: verify what you did not
+# deploy. On this box that is compact-api itself when only the client was synced, and the
+# BEFORE/AFTER unit comparison at the end.
 
 # agent.md must return MARKDOWN, not the client's index.html. nginx's
-# `try_files $uri $uri/ /compact/index.html` turns a missing file into a 200 serving a
+# `try_files $uri $uri/ /index.html` turns a missing file into a 200 serving a
 # web page, so a probe fetching the rules would get HTML and try to parse it as rules —
 # and the status code would say everything was fine. A 200 is not evidence; the content
 # is. This check exists because that is exactly what happened.
-fetch https://agentinsurance.io/compact/agent.md
+fetch https://agenttransfer.dev/agent.md
 head_has 'THE COMPACT' || fail "agent.md is not being served as markdown (got: ${BODY:0:40})"
 head_lacks '<!DOCTYPE' || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
 ok "agent.md served as markdown"
@@ -448,7 +461,7 @@ ok "agent.md served as markdown"
 # Same shape as the agent.md check above, and added for the same reason: a 200 carrying
 # the wrong body is worse than a 404, since it looks like success to everything except
 # the thing that has to parse it.
-fetch https://agentinsurance.io/compact/frames/latest.json
+fetch https://agenttransfer.dev/frames/latest.json
 head_lacks '<!DOCTYPE' || fail "frames/latest.json fell through to index.html — the client polls this and would parse HTML as a frame"
 head_has '{' || fail "frames/latest.json is not JSON (got: ${BODY:0:60})"
 ok "the spectator frame is served as JSON"
@@ -471,7 +484,7 @@ ok "the market's print reaches the frame"
 # reachable and undiscoverable, which for a viewer is the same thing. The index is the
 # fix, and it is checked the same way the frame is: by fetching the URL and reading the
 # body, because a 200 carrying HTML looks like success to everything but the parser.
-fetch https://agentinsurance.io/compact/frames/index.json
+fetch https://agenttransfer.dev/frames/index.json
 head_lacks '<!DOCTYPE' || fail "frames/index.json fell through to index.html — the history strip would parse HTML as an index"
 body_has '"reckonings"' || fail "frames/index.json carries no reckonings (got: ${BODY:0:80})"
 # And the file it names must actually be there. A table of contents with a broken link in
@@ -484,7 +497,7 @@ body_has '"reckonings"' || fail "frames/index.json carries no reckonings (got: $
 ARCHIVED=''
 if [[ "$BODY" =~ \"file\":\"(r-[0-9]+\.json)\" ]]; then ARCHIVED="${BASH_REMATCH[1]}"; fi
 [[ -n "$ARCHIVED" ]] || fail "frames/index.json names no archive file"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://agentinsurance.io/compact/frames/$ARCHIVED" || echo 000)
+CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://agenttransfer.dev/frames/$ARCHIVED" || echo 000)
 [[ "$CODE" == "200" ]] || fail "the index names $ARCHIVED and it returns $CODE — the archive has a broken link in it"
 ok "the archive is indexed and $ARCHIVED resolves"
 
@@ -494,7 +507,7 @@ ok "the archive is indexed and $ARCHIVED resolves"
 # not — right after a restart there is no run, so the deciding-share floor (scar #14b)
 # is EXPECTED to be tripped and must not fail the deploy. It is a monitoring alert for
 # during a run, surfaced here as a warning.
-HEALTH=$(curl -s --max-time 20 https://agentinsurance.io/compact/health || echo '{}')
+HEALTH=$(curl -s --max-time 20 https://agenttransfer.dev/health || echo '{}')
 printf '  health: %s\n' "$HEALTH"
 # Structural soundness — these WOULD be deploy failures:
 grep -q '"world":"RUNNING"' <<<"$HEALTH" || fail "world is not RUNNING after deploy"
@@ -518,4 +531,4 @@ ok "nothing that was running stopped running"
 
 fi  # end api-only restart + world verification
 
-printf '\n\033[1;32mdeploy complete\033[0m  https://agentinsurance.io/compact/\n\n'
+printf '\n\033[1;32mdeploy complete\033[0m  https://agenttransfer.dev/\n\n'
