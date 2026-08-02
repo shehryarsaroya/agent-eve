@@ -164,7 +164,12 @@ describe('SCAR-11 — malformed input never leaks the host', () => {
     const res = await raw(h, 'GET', `${PATHS.agentMd}?q=${encodeURIComponent('{"a":')}`);
     expect(res.status).toBe(200);
     expect(res.contentType).toContain('text/markdown');
-    expect(res.text).toContain('THE COMPACT');
+    // 'how to play', not the game's name: the check's job is "this is the rulebook, not the
+    // SPA fallback", and the title phrase survives a rename where the title itself did not —
+    // this line failed a deploy the day THE COMPACT became AGENT TRANSFER, and it was the
+    // second copy of the same title-pinned check (deploy.sh's grep was the first, and was
+    // caught in advance; this one was found by gate 0 doing its job).
+    expect(res.text).toContain('how to play');
     expect(res.text).not.toMatch(/\/(?:Users|home|opt|srv|var|usr|private|root)\//);
     expect(res.text).not.toContain('node_modules');
   });
