@@ -1281,10 +1281,15 @@ body.landing-mode #stage { padding: 0; }
 .l-steps b { color: var(--text); font-weight: 500; }
 
 .l-paste {
-  margin: 0 0 14px; padding: 14px; overflow-x: auto;
+  margin: 0 0 14px; padding: 14px 16px;
   background: var(--void); border: 1px solid var(--rule-dim);
-  color: var(--text-2); font-size: 11.5px; line-height: 1.5;
-  white-space: pre; -webkit-overflow-scrolling: touch;
+  color: var(--text-2); font-size: 12px; line-height: 1.55;
+  /* pre-WRAP. The v1 block held 80-column lines in white-space:pre, which
+     h-scrolled inside the door panel and grew scrollbar chrome on two edges —
+     the owner's "doesn't fit right", verbatim. The copied text keeps its
+     newlines; the display bends them. */
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 46vh; overflow-y: auto;
 }
 .l-agent-note { margin: 0 0 12px; color: var(--dim); font-size: 12.5px; line-height: 1.5; }
 .l-alt { margin: 12px 0 0; font-size: 12.5px; color: var(--dim); }
@@ -1425,8 +1430,10 @@ body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
   position: fixed; inset: 0; z-index: 50;
   display: flex; align-items: flex-start; justify-content: center;
   padding: clamp(10px, 4vh, 48px) 14px;
-  background: rgba(0, 4, 7, 0.62);
-  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  /* A dim, NOT a blur (owner direction): the running world behind the panel
+     is the pitch, and it should read crisply — plates, motion, ticker — not
+     as frosted glass. The dim is just enough for the panel's own contrast. */
+  background: rgba(0, 4, 7, 0.55);
   overflow-y: auto;
 }
 .door-panel {
@@ -1448,10 +1455,8 @@ body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
   color: var(--dim); font: inherit; font-size: 11px; letter-spacing: 0.14em; cursor: pointer;
 }
 .door-enter:hover { color: var(--cyan); border-color: var(--cyan-deep); }
-#door .l-pane { border: 0; }
-#door .l-tabs { border: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+#door .l-tabs { border: 1px solid var(--rule); }
 #door .l-body { padding: 14px 2px 0; }
-#door .l-paste { max-height: 34vh; overflow: auto; }
 
 /* the chrome chips */
 #doorchip {
