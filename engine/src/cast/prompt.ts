@@ -13,7 +13,7 @@
  * The general lesson is not "write better prompts". It is: **an LLM-facing prompt is a
  * rules surface, and two rules surfaces will drift.** So this file does not contain a
  * description of the game. It reads `agent.md` — the same bytes served at
- * `GET /compact/api/agent.md` to every external agent, the same file
+ * `GET /api/agent.md` to every external agent, the same file
  * `test/rules-surface/agent-md.test.ts` pins against the spec — and pastes the relevant
  * sections in verbatim.
  *
@@ -2752,7 +2752,7 @@ function absenceNotice(contract: ContractExcerpt): string {
     '(NOT IN THIS EXCERPT, and why. Every rule for every verb offered to you in `affordances[]` ' +
     `IS above; these are not: ${clauses.join('. ')}. Nothing above is paraphrased and nothing ` +
     'is hidden — every block is verbatim, and the complete document is `agent.md`, served at ' +
-    'GET /compact/api/agent.md.)'
+    'GET /api/agent.md.)'
   );
 }
 

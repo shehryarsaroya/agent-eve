@@ -16,8 +16,8 @@
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * The scenario under test is the deployed one: `deploy/nginx-compact.conf` proxies
- * `/compact/api/` to `http://127.0.0.1:8801/`, and the trailing slash strips the
- * mount prefix — so a conformant client signs `@path: /compact/api/observe` and the
+ * `/api/` to `http://127.0.0.1:8801/`, and the trailing slash strips the
+ * mount prefix — so a conformant client signs `@path: /api/observe` and the
  * app is handed `/observe`. `deliverTo` is how that is reproduced without nginx.
  */
 
@@ -156,7 +156,7 @@ async function enrolForeign(c: ForeignClient): Promise<number> {
   const res = await raw(
     live(),
     'POST',
-    '/compact/api/enroll',
+    '/api/enroll',
     JSON.stringify({ handle: c.handle, publicKey: c.publicKeyB64Url }),
     { 'content-type': 'application/json' },
   );
@@ -171,7 +171,7 @@ async function sendForeign(c: ForeignClient, req: ForeignRequest) {
 // ── 1. The headline, end to end, over a socket ──────────────────────────────
 
 describe('a foreign RFC 9421 client is accepted at its first signed request', () => {
-  it('signs the target it sent (/compact/api/observe) and is accepted behind the stripping proxy', async () => {
+  it('signs the target it sent (/api/observe) and is accepted behind the stripping proxy', async () => {
     h = await harness();
     const c = foreignClient('foreign-one');
     expect(await enrolForeign(c)).toBe(201);
@@ -180,7 +180,7 @@ describe('a foreign RFC 9421 client is accepted at its first signed request', ()
     // delivered on the app-internal one, which is what nginx does today.
     const res = await sendForeign(c, {
       method: 'GET',
-      signAs: '/compact/api/observe',
+      signAs: '/api/observe',
       deliverTo: '/observe',
     });
 
@@ -195,7 +195,7 @@ describe('a foreign RFC 9421 client is accepted at its first signed request', ()
     h = await harness();
     const c = foreignClient('foreign-two');
     expect(await enrolForeign(c)).toBe(201);
-    const res = await sendForeign(c, { method: 'GET', signAs: '/compact/api/observe' });
+    const res = await sendForeign(c, { method: 'GET', signAs: '/api/observe' });
     expect(res.status).toBe(200);
   });
 
@@ -207,7 +207,7 @@ describe('a foreign RFC 9421 client is accepted at its first signed request', ()
     expect(res.status).toBe(200);
   });
 
-  it('POSTs a signed body to /compact/api/act behind the stripping proxy — digest and @path together', async () => {
+  it('POSTs a signed body to /api/act behind the stripping proxy — digest and @path together', async () => {
     h = await harness();
     const c = foreignClient('foreign-four');
     expect(await enrolForeign(c)).toBe(201);
@@ -216,7 +216,7 @@ describe('a foreign RFC 9421 client is accepted at its first signed request', ()
     // the whole documented loop, under the proxy, with a Content-Digest in the base.
     const observed = await sendForeign(c, {
       method: 'GET',
-      signAs: '/compact/api/observe',
+      signAs: '/api/observe',
       deliverTo: '/observe',
     });
     expect(observed.status).toBe(200);
@@ -228,7 +228,7 @@ describe('a foreign RFC 9421 client is accepted at its first signed request', ()
 
     const res = await sendForeign(c, {
       method: 'POST',
-      signAs: '/compact/api/act',
+      signAs: '/api/act',
       deliverTo: '/act',
       body: JSON.stringify({ verb: first['verb'], args: first['args'] ?? {} }),
     });
@@ -244,7 +244,7 @@ describe('a foreign RFC 9421 client is accepted at its first signed request', ()
     expect(await enrolForeign(c)).toBe(201);
     const res = await sendForeign(c, {
       method: 'GET',
-      signAs: '/compact/api/observe?wait=false',
+      signAs: '/api/observe?wait=false',
       deliverTo: '/observe?wait=false',
       components: ['@method', '@path', '@authority', '@scheme', '@query', '@target-uri'],
     });
@@ -263,7 +263,7 @@ describe('when the signature really is wrong, the refusal names @path first', ()
     // A genuinely wrong signature: signed over a different endpoint entirely.
     const res = await sendForeign(c, {
       method: 'GET',
-      signAs: '/compact/api/act',
+      signAs: '/api/act',
       deliverTo: '/observe',
     });
 
@@ -272,7 +272,7 @@ describe('when the signature really is wrong, the refusal names @path first', ()
     const diagnostic = res.json['diagnostic'] as Record<string, unknown>;
     const base = diagnostic['signature_base'] as readonly string[];
     // The client can diff its own base against ours, which is the whole point.
-    expect(base).toContain('"@path": /compact/api/observe');
+    expect(base).toContain('"@path": /api/observe');
     expect(base[base.length - 1]).toContain('"@signature-params":');
     const detail = String(res.json['detail']);
     expect(detail).toContain('@path');
@@ -292,7 +292,7 @@ describe('the diagnostic base survives the outbound scrubber intact', () => {
     expect(await enrolForeign(c)).toBe(201);
     const res = await sendForeign(c, {
       method: 'GET',
-      signAs: '/compact/api/act',
+      signAs: '/api/act',
       deliverTo: '/observe',
     });
     const diagnostic = res.json['diagnostic'] as Record<string, unknown>;
@@ -317,8 +317,8 @@ describe('the diagnostic base survives the outbound scrubber intact', () => {
     h = await harness({ limits: { ...LOOSE_LIMITS, observe: { burst: 1, windowSeconds: 600 } } });
     const c = foreignClient('foreign-twelve');
     expect(await enrolForeign(c)).toBe(201);
-    expect((await sendForeign(c, { method: 'GET', signAs: '/compact/api/observe' })).status).toBe(200);
-    const limited = await sendForeign(c, { method: 'GET', signAs: '/compact/api/observe' });
+    expect((await sendForeign(c, { method: 'GET', signAs: '/api/observe' })).status).toBe(200);
+    const limited = await sendForeign(c, { method: 'GET', signAs: '/api/observe' });
 
     expect(limited.status).toBe(429);
     const detail = String(limited.json['detail']);
@@ -338,7 +338,7 @@ describe('the forgiveness is exactly one mount prefix and nothing else', () => {
     // not resolve to the real route — otherwise the "one no-op prefix" argument fails.
     const res = await sendForeign(c, {
       method: 'GET',
-      signAs: '/compact/api/compact/api/observe',
+      signAs: '/api/api/observe',
     });
     expect(res.status).toBe(404);
   });
@@ -347,7 +347,7 @@ describe('the forgiveness is exactly one mount prefix and nothing else', () => {
     h = await harness();
     const c = foreignClient('foreign-eight');
     expect(await enrolForeign(c)).toBe(201);
-    for (const signAs of ['/act', '/compact/api/act', '/health', '/compact/api/discrepancy']) {
+    for (const signAs of ['/act', '/api/act', '/health', '/api/discrepancy']) {
       const res = await sendForeign(c, { method: 'GET', signAs, deliverTo: '/observe' });
       expect(res.status, `signature over ${signAs} must not authorise observe`).toBe(401);
     }
@@ -360,7 +360,7 @@ describe('the forgiveness is exactly one mount prefix and nothing else', () => {
     const shared = 'foreign-shared-nonce-1';
     const first = await sendForeign(c, {
       method: 'GET',
-      signAs: '/compact/api/observe',
+      signAs: '/api/observe',
       deliverTo: '/observe',
       nonce: shared,
     });
@@ -370,7 +370,7 @@ describe('the forgiveness is exactly one mount prefix and nothing else', () => {
     const second = await sendForeign(c, {
       method: 'GET',
       signAs: '/observe',
-      deliverTo: '/compact/api/observe',
+      deliverTo: '/api/observe',
       nonce: shared,
     });
     expect(second.status).toBe(401);
@@ -387,7 +387,7 @@ describe('the forgiveness is exactly one mount prefix and nothing else', () => {
         .reduce((n, t) => n + live().runtime.events.eventsAtTick(t).length, 0);
     const before = count();
     for (let i = 0; i < 5; i += 1) {
-      await sendForeign(c, { method: 'GET', signAs: '/compact/api/act', deliverTo: '/observe' });
+      await sendForeign(c, { method: 'GET', signAs: '/api/act', deliverTo: '/observe' });
     }
     // A5′: a refusal is private and recoverable. Five failed signatures must not put
     // a single line on the permanent record against anyone.

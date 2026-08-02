@@ -3,7 +3,7 @@
  *
  * ┌─ THE GATE-3 FINDING THIS FILE EXISTS FOR ─────────────────────────────────┐
  * │ A probe wrote a textbook RFC 9421 client and got 401 SIGNATURE_INVALID    │
- * │ until it signed `"@path": /observe` instead of `/compact/api/observe`. It  │
+ * │ until it signed `"@path": /observe` instead of `/api/observe`. It  │
  * │ found that only by brute-forcing eight variants. **Every conformant       │
  * │ client failed at its first signed request**, and the refusal text named    │
  * │ the two causes that were fine ("a different key, or a message that        │
@@ -36,8 +36,8 @@ import type { SignableRequest } from '../../src/identity/index.js';
 import { NOW, TICK, enrol, freshStore, newKeyring } from './helpers.js';
 
 /** What the client sent. What §2.2.6 says `@path` is derived from. */
-const SENT = '/compact/api/observe';
-/** What the app was handed, because nginx proxies `/compact/api/` to the app root. */
+const SENT = '/api/observe';
+/** What the app was handed, because nginx proxies `/api/` to the app root. */
 const RECEIVED = '/observe';
 
 interface Fixture {
@@ -87,7 +87,7 @@ function verify(f: Fixture, request: SignableRequest, replay = freshStore()) {
 describe('§2.2.6 — @path comes from the request target the client sent', () => {
   it('accepts a signature over the client-visible path when the proxy delivered the stripped one', () => {
     const f = fixture();
-    // The probe's exact case: it signed /compact/api/observe, nginx handed us /observe.
+    // The probe's exact case: it signed /api/observe, nginx handed us /observe.
     const verified = verify(f, crossSigned(f, SENT, SENT, [RECEIVED]));
 
     expect(verified.ok).toBe(true);
@@ -125,7 +125,7 @@ describe('§2.2.6 — @path comes from the request target the client sent', () =
     const f = fixture();
     // /act and /observe are different resources. Nothing about accepting a mount
     // prefix may make a signature for one authorise the other.
-    const verified = verify(f, crossSigned(f, '/compact/api/act', SENT, [RECEIVED]));
+    const verified = verify(f, crossSigned(f, '/api/act', SENT, [RECEIVED]));
 
     expect(verified.ok).toBe(false);
     if (verified.ok) return;
@@ -149,7 +149,7 @@ describe('§2.2.6 — @path comes from the request target the client sent', () =
 
   it('carries the alternate through @query and @target-uri, not @path alone', () => {
     const f = fixture();
-    const sent = '/compact/api/observe?wait=true';
+    const sent = '/api/observe?wait=true';
     const built = buildSignedRequest({
       method: 'GET',
       scheme: 'https',
@@ -254,7 +254,7 @@ describe('§2.2.6 — @path comes from the request target the client sent', () =
 describe('SIGNATURE_INVALID says what the server computed', () => {
   it('returns the signature base line by line, so a client diffs instead of guessing', () => {
     const f = fixture();
-    const verified = verify(f, crossSigned(f, '/compact/api/act', RECEIVED, []));
+    const verified = verify(f, crossSigned(f, '/api/act', RECEIVED, []));
 
     expect(verified.ok).toBe(false);
     if (verified.ok) return;
@@ -274,7 +274,7 @@ describe('SIGNATURE_INVALID says what the server computed', () => {
 
   it('names @path as the likely cause and lists every spelling it checked', () => {
     const f = fixture();
-    const verified = verify(f, crossSigned(f, '/compact/api/act', SENT, [RECEIVED]));
+    const verified = verify(f, crossSigned(f, '/api/act', SENT, [RECEIVED]));
 
     expect(verified.ok).toBe(false);
     if (verified.ok) return;
@@ -289,7 +289,7 @@ describe('SIGNATURE_INVALID says what the server computed', () => {
 
   it('quotes no RFC section number, because the outbound scrubber would eat it', () => {
     const f = fixture();
-    const verified = verify(f, crossSigned(f, '/compact/api/act', SENT, [RECEIVED]));
+    const verified = verify(f, crossSigned(f, '/api/act', SENT, [RECEIVED]));
     expect(verified.ok).toBe(false);
     if (verified.ok) return;
     // `scrub` redacts anything shaped like a semantic version, so "§2.2.6" reaches

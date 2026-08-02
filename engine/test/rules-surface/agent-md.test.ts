@@ -203,7 +203,7 @@ describe('SCAR-1 — agent.md and the canon must agree', () => {
   it('tells the player how to report a wrong record, because that is the worst failure', () => {
     // A5′. A fabricated default libels a real agent permanently, in a system that
     // looks perfectly healthy. The players are the only sensor we have for it.
-    expect(AGENT_MD).toContain('/compact/api/discrepancy');
+    expect(AGENT_MD).toContain('/api/discrepancy');
     expect(AGENT_MD).toMatch(/worse than a crash/);
   });
 

@@ -129,12 +129,12 @@ describe('SCAR-11 — malformed input never leaks the host', () => {
   }
 
   it('an unknown route answers JSON, not the HTML 404 page', async () => {
-    const res = await raw(h, 'GET', '/compact/api/does-not-exist');
+    const res = await raw(h, 'GET', '/api/does-not-exist');
     expect(res.status).toBe(404);
     assertNoLeak(res.text, res.contentType);
     expect(res.json['reason']).toBe('NO_SUCH_ROUTE');
     // Helpful: it names the whole API rather than only saying no.
-    expect(String(res.json['detail'])).toContain('/compact/api/observe');
+    expect(String(res.json['detail'])).toContain('/api/observe');
   });
 
   it('a wrong method on a real path answers JSON', async () => {
@@ -190,7 +190,7 @@ describe('SCAR-11 — malformed input never leaks the host', () => {
     // And it tells the agent the two things it needs: nothing was charged, and where
     // to report it (A5′'s sensor).
     expect(String(res.json['detail'])).toContain('Nothing was charged');
-    expect(String(res.json['detail'])).toContain('/compact/api/discrepancy');
+    expect(String(res.json['detail'])).toContain('/api/discrepancy');
   });
 
   it('a query string full of junk does not reach a parser that reports its input', async () => {

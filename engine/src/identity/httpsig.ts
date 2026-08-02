@@ -79,8 +79,8 @@ export interface SignableRequest {
    *
    * `@path` is defined over the target *the client sent*. A path-stripping reverse
    * proxy destroys that information before we see it: nginx proxies
-   * `/compact/api/observe` to the app root, so the app is handed `/observe` and a
-   * conformant client — which signed `/compact/api/observe`, correctly — fails at
+   * `/api/observe` to the app root, so the app is handed `/observe` and a
+   * conformant client — which signed `/api/observe`, correctly — fails at
    * its first request with nothing to go on. Measured in Gate 3: every conformant
    * client failed, and the workaround (sign the app-internal path) is the one thing
    * the RFC forbids.

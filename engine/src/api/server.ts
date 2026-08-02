@@ -15,7 +15,7 @@
  * │    middleware is registered before any route can throw (scar #11).       │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
- * The mount path is `agent.md`'s: `/compact/api/*`. The bare `/enroll` spelling
+ * The mount path is `agent.md`'s: `/api/*`. The bare `/enroll` spelling
  * SPEC §12.5 uses is mounted too, because a signature covers `@path` and therefore
  * each spelling verifies against itself — but `agent.md` is what a player reads, so
  * that is the canonical one and it is the one the tests exercise.
@@ -117,7 +117,7 @@ import {
 } from './wire.js';
 
 /** `agent.md`'s base path. The canonical spelling. */
-export const API_BASE_PATH = '/compact/api';
+export const API_BASE_PATH = '/api';
 
 /** Actions accepted in one `act` batch. §12.3: one batch per tick. */
 export const MAX_ACTIONS_PER_BATCH = 8;
@@ -897,8 +897,8 @@ export function createApp(options: ApiOptions): CreatedApp {
   // ══════════════════════════════════════════════════════════════════════════
   // ★ **`GET /frames/latest.json` — THE ROUTE `agent.md` SENDS AGENTS TO AND THE APP DENIED EXISTED.**
   //
-  // §8: *"There is an audience, and you can read what it reads. `GET /compact/frames/latest.json` …
-  // Note the path: `/compact/frames/`, **not** `/compact/api/`."* §11G sends an agent to the same file
+  // §8: *"There is an audience, and you can read what it reads. `GET /frames/latest.json` …
+  // Note the path: `/frames/`, **not** `/api/`."* §11G sends an agent to the same file
   // for the straits. In production nginx serves it off disk and both sentences are true. On a locally
   // run world the Express app had **no frames route at all**, so the doc's own instruction returned
   // `NO_SUCH_ROUTE` with a detail asserting *"the whole API is …"* — a refusal that names the route
@@ -931,9 +931,9 @@ export function createApp(options: ApiOptions): CreatedApp {
           404,
           refusal(
             WIRE_REASON.NO_SUCH_ROUTE,
-            `no frame ${scrub(name)}. The frames are GET /compact/frames/${LATEST} (the last settled ` +
-              `Reckoning), /compact/frames/${FRAME_INDEX} (every one so far), and ` +
-              `/compact/frames/${frameFileName(1)} for one by number — six digits, zero-padded.`,
+            `no frame ${scrub(name)}. The frames are GET /frames/${LATEST} (the last settled ` +
+              `Reckoning), /frames/${FRAME_INDEX} (every one so far), and ` +
+              `/frames/${frameFileName(1)} for one by number — six digits, zero-padded.`,
           ),
         );
         return;
@@ -963,7 +963,7 @@ export function createApp(options: ApiOptions): CreatedApp {
             WIRE_REASON.NO_SUCH_ROUTE,
             `the frames route EXISTS and ${scrub(wanted)} has not been written yet — no Reckoning has ` +
               `settled since this world started, or that one is outside the retained window. ` +
-              `/compact/frames/${FRAME_INDEX} lists every frame that does exist.`,
+              `/frames/${FRAME_INDEX} lists every frame that does exist.`,
           ),
         );
         return;
@@ -976,16 +976,20 @@ export function createApp(options: ApiOptions): CreatedApp {
 
   // ── REGISTERED ON THE APP, NOT THE ROUTER, AND AT THE PATH `agent.md` PRINTS ──
   //
-  // The router is mounted twice (`/compact/api` and `/`), and `/compact/frames/...` is under neither —
-  // which is how the first version of this fix landed a route that still 404'd, from a test. §8's
-  // sentence is *"Note the path: `/compact/frames/`, **not** `/compact/api/`"*, so the path in the
-  // document is the path that has to answer. Both spellings, the same handler, for the reason the
-  // router is mounted twice: SPEC §12.5 and `agent.md` disagree about the prefix and both must work.
-  app.get('/compact/frames/:name', framesHandler);
+  // The router is mounted twice (`/api` and `/`), and `/frames/...` is under neither — which is
+  // how the first version of this fix landed a route that still 404'd, from a test. §8's sentence
+  // is *"Note the path: `/frames/`, **not** `/api/`"*, so the path in the document is the path
+  // that has to answer.
+  //
+  // This was two registrations until 2026-08-02, one per prefix, because the mount used to be
+  // `/compact/api` and the frames lived at `/compact/frames`. With the game moved to the root of
+  // its own host both spellings collapsed onto this one, and the second line became a duplicate
+  // registration of the identical route — harmless in express, but a duplicate that looks
+  // deliberate is worse than no comment at all.
   app.get('/frames/:name', framesHandler);
 
   app.use(API_BASE_PATH, router);
-  // SPEC §12.5 writes `POST /enroll`; `agent.md` writes `/compact/api/enroll`.
+  // SPEC §12.5 writes `POST /enroll`; `agent.md` writes `/api/enroll`.
   // Both are mounted and each signature verifies against its own `@path`, so the
   // two spellings cannot disagree about anything an agent can observe.
   app.use('/', router);
@@ -1004,7 +1008,7 @@ export function createApp(options: ApiOptions): CreatedApp {
         `no route ${req.method} ${scrub(req.path)}. The whole API is POST ${API_BASE_PATH}/enroll, ` +
           `GET ${API_BASE_PATH}/observe, POST ${API_BASE_PATH}/act, GET ${API_BASE_PATH}/health, ` +
           `POST ${API_BASE_PATH}/discrepancy, GET ${API_BASE_PATH}/agent.md, and the unsigned public ` +
-          `frames at GET /compact/frames/${LATEST} · /compact/frames/${FRAME_INDEX}.`,
+          `frames at GET /frames/${LATEST} · /frames/${FRAME_INDEX}.`,
       ),
     );
   });
@@ -1632,16 +1636,16 @@ function bytesOf(req: Request): Uint8Array {
  *
  * ┌─ THE SINGLE BIGGEST BARRIER IN THE PRODUCT, IN A GATE-3 PROBE'S WORDS ────┐
  * │ A probe wrote a textbook RFC 9421 client and got 401 SIGNATURE_INVALID    │
- * │ until it signed `"@path": /observe` instead of `/compact/api/observe`. It  │
+ * │ until it signed `"@path": /observe` instead of `/api/observe`. It  │
  * │ found that only by brute-forcing eight variants, at a cost of five        │
  * │ rejections and a large part of its session. **Every conformant client     │
  * │ failed at its first signed request.**                                     │
  * └──────────────────────────────────────────────────────────────────────────┘
  *
  * The cause is not `originalUrl` vs `url` — that part was already right. It is that
- * `deploy/nginx-compact.conf` proxies `/compact/api/` to `http://127.0.0.1:8801/`,
+ * `deploy/nginx-compact.conf` proxies `/api/` to `http://127.0.0.1:8801/`,
  * and the trailing slash makes nginx **strip the mount prefix**: the client sends
- * `/compact/api/observe` and the app is handed `/observe`. RFC 9421 §2.2.6 derives
+ * `/api/observe` and the app is handed `/observe`. RFC 9421 §2.2.6 derives
  * `@path` from the target the *client* sent, so the client is right and the origin
  * cannot see what it needs by inspection.
  *
@@ -1649,8 +1653,8 @@ function bytesOf(req: Request): Uint8Array {
  * `/observe` arriving directly are byte-identical requests. So both spellings are
  * accepted, with the client-visible one canonical:
  *
- *   received `/observe`              → [`/compact/api/observe`, `/observe`]
- *   received `/compact/api/observe`  → [`/compact/api/observe`, `/observe`]
+ *   received `/observe`              → [`/api/observe`, `/observe`]
+ *   received `/api/observe`  → [`/api/observe`, `/observe`]
  *
  * Two properties make this the right shape rather than a shrug:
  *

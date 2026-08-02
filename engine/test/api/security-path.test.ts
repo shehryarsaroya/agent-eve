@@ -3,11 +3,11 @@
  *
  * ┌─ 1. `@path`, AND IT WAS "THE SINGLE BIGGEST BARRIER IN THE PRODUCT" ──────┐
  * │ A probe wrote a textbook RFC 9421 client and got 401 SIGNATURE_INVALID    │
- * │ until it signed `"@path": /observe` instead of `/compact/api/observe`,     │
+ * │ until it signed `"@path": /observe` instead of `/api/observe`,     │
  * │ found by brute-forcing eight variants at a cost of five rejections and a   │
  * │ large part of its session. `deploy/nginx-compact.conf` proxies            │
- * │ `/compact/api/` to the app root, so the app is handed `/observe` while the │
- * │ client sent `/compact/api/observe` — and §2.2.6 says the client is right.  │
+ * │ `/api/` to the app root, so the app is handed `/observe` while the │
+ * │ client sent `/api/observe` — and §2.2.6 says the client is right.  │
  * └──────────────────────────────────────────────────────────────────────────┘
  * ┌─ 2. `/enroll` COST 27 MINUTES FOR ONE ENROLMENT ──────────────────────────┐
  * │ Three requests per ten minutes, and a `FIELD_MALFORMED` refusal that      │
@@ -63,7 +63,7 @@ function live(): Harness {
  *
  * This is the whole shape of the bug and nothing else in the suite can produce it:
  * `signed()` signs and sends the same string, which is exactly the case that always
- * worked. Delivering to `/observe` while signing `/compact/api/observe` is what
+ * worked. Delivering to `/observe` while signing `/api/observe` is what
  * nginx does to a conformant client.
  */
 async function crossSigned(

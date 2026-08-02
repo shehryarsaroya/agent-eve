@@ -348,13 +348,13 @@ describe('★ the BID refusal explains "0 free" against a real balance (claim 11
 
 describe('★ GET /frames/latest.json is a route, not a NO_SUCH_ROUTE (claim 12)', () => {
   it('★ it answers with a REASON rather than denying it exists', async () => {
-    // `agent.md` §8 and §11G both send an agent to `/compact/frames/latest.json`. In production nginx
+    // `agent.md` §8 and §11G both send an agent to `/frames/latest.json`. In production nginx
     // serves it; locally the Express app had no frames route at all, so the doc's own instruction
     // returned a detail asserting *"the whole API is …"* — a list that also omitted `/agent.md`.
     //
     // MUTATION: delete the `router.get('/frames/:name')` block and the detail goes back to naming no
     // frames at all.
-    const res = await fetch(`${h.origin}/compact/frames/latest.json`);
+    const res = await fetch(`${h.origin}/frames/latest.json`);
     const body = await res.text();
     expect(
       body,
@@ -365,7 +365,7 @@ describe('★ GET /frames/latest.json is a route, not a NO_SUCH_ROUTE (claim 12)
   });
 
   it('an unknown frame name is refused with the three real spellings', async () => {
-    const res = await fetch(`${h.origin}/compact/frames/nonsense.json`);
+    const res = await fetch(`${h.origin}/frames/nonsense.json`);
     const body = await res.text();
     expect(body).toContain('latest.json');
     expect(body).toContain('index.json');
@@ -398,18 +398,18 @@ describe('★ GET /frames/latest.json is a route, not a NO_SUCH_ROUTE (claim 12)
     await new Promise((done) => server.once('listening', done));
     const port = (server.address() as { port: number }).port;
     try {
-      const latest = await fetch(`http://127.0.0.1:${String(port)}/compact/frames/latest.json`);
+      const latest = await fetch(`http://127.0.0.1:${String(port)}/frames/latest.json`);
       expect(latest.status, 'a written frame must be served, not refused').toBe(200);
       expect(await latest.text()).toContain('"reckoning":7');
       expect(latest.headers.get('cache-control'), 'a frame at a Reckoning must never be cached').toBe('no-store');
 
       // The archive, by NUMBER — six digits zero-padded, resolved through `frameFileName`.
-      const archive = await fetch(`http://127.0.0.1:${String(port)}/compact/frames/r-7.json`);
+      const archive = await fetch(`http://127.0.0.1:${String(port)}/frames/r-7.json`);
       expect(archive.status, 'r-7.json must resolve to r-000007.json').toBe(200);
       expect(await archive.text()).toContain('"archived":true');
 
       // A frame that has not been written yet says so, and does not claim the route is missing.
-      const missing = await fetch(`http://127.0.0.1:${String(port)}/compact/frames/r-99.json`);
+      const missing = await fetch(`http://127.0.0.1:${String(port)}/frames/r-99.json`);
       expect(await missing.text()).toMatch(/the frames route EXISTS/);
       expect(await (await fetch(`http://127.0.0.1:${String(port)}/frames/latest.json`)).text(), 'both mounts')
         .toContain('"reckoning":7');
@@ -420,10 +420,10 @@ describe('★ GET /frames/latest.json is a route, not a NO_SUCH_ROUTE (claim 12)
   });
 
   it('★ the 404 enumerates every REGISTERED route, including the two it used to omit', async () => {
-    const res = await fetch(`${h.origin}/compact/api/nope`);
+    const res = await fetch(`${h.origin}/api/nope`);
     const body = await res.text();
     expect(body, '`/agent.md` has been served since §12.5 and was never listed').toContain('/agent.md');
-    expect(body, 'and the frames are what `agent.md` itself points at').toContain('/compact/frames/latest.json');
+    expect(body, 'and the frames are what `agent.md` itself points at').toContain('/frames/latest.json');
   });
 });
 

@@ -1411,7 +1411,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // flat form only implied: whether a section is absent entirely or PRESENT WITH BLOCKS GONE.
     // That distinction is the whole hazard of `###` granularity, so it is asserted directly.
     expect(text).toContain('NOT IN THIS EXCERPT');
-    expect(text).toContain('GET /compact/api/agent.md');
+    expect(text).toContain('GET /api/agent.md');
     expect(text, '§11B ships partial here, and the member has to be told so').toMatch(
       /## 11B\. Sovereignty[^\n]*is here WITHOUT 3 of its blocks/,
     );
@@ -2574,7 +2574,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //             fix installs is checkable by the agent reading it rather than only by us.
       //     +318    §6 `### Read affordances[] carefully` — withheld from the MENU is not withheld
       //             from the GAME, which is the sentence a capped list needs to not read as a ban.
-      //     +257    §8 — the spectator frames exist and are at `/compact/frames/`, not the API path.
+      //     +257    §8 — the spectator frames exist and are at `/frames/`, not the API path.
       //     +151    §7 — the alloy rate again (§7 states it too) and **`build` is FOUR acts, not
       //             three**: §7 said three, the engine has WORKS · ANCHOR · CAMPAIGN · HULL, and §7
       //             is FLOOR so that line was charged to every position on every wake.
