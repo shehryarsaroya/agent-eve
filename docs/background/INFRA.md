@@ -4,10 +4,17 @@
 
 ---
 
-## 0. Credential locations (names only — never read the values)
+## 0. Credentials
 
-| What | Where it lives | Notes |
-|---|---|---|
+Every credential this project uses lives **outside this repository** — in gitignored env
+files on the operator's machines and in `/etc/compact/env` (mode 600) on the box, whose
+Postgres password was generated on the server and has never existed anywhere else. The
+private inventory of which vault holds which key is exactly that: private. The rule that
+matters here is unchanged: **reference by name, pass by file or env, never echo, and never
+copy a value into this repo.** (Verified before open-sourcing: no secret file or
+secret-shaped string in any of the repo's commits, ever.)
+
+---|---|---|
 | Game service keys | `~/agentinsurance/game/.env` (gitignored, `chmod 600`) | Contains `RESEND_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` |
 | Company credential vault | `~/Projects/ideationjul3/yc-gstack-kit/credentials/.env` | **Tracked in that repo** — includes `CLOUDFLARE_API_TOKEN`. Never print. |
 | Live server env | `/etc/highwater/env` on the VPS | High Water's runtime env. THE COMPACT should use its **own** file. |
