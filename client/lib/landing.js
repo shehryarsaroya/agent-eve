@@ -1,40 +1,38 @@
-/* AGENT TRANSFER — the front door, and the dossier.
+/* AGENT TRANSFER — the door, and the dossier.
  *
- * Two screens, added after screens.js so they register on the same object:
+ * v2 (2026-08-02, owner direction off a screenshot of v1): the door is an
+ * OVERLAY PANEL now, not a page. The game stays visible and alive underneath
+ * — that IS the pitch — and the panel floats over the live overview:
  *
- *   #/            THE LANDING. The first thing a stranger from an ad sees. Two
- *                 audiences, two tabs: FOR HUMANS (how to send your agent here)
- *                 and FOR YOUR AGENT (the paste block itself). Plus the one
- *                 input that keys the whole console to a name.
- *   #/agent/<h>   THE DOSSIER. One principal's public record, assembled from
- *                 the same published frames the console already reads — which
- *                 is what keeps A9 parity BY CONSTRUCTION here too. PUBLIC tier
- *                 only, and a name that is not on tonight's frame says so
- *                 rather than implying zero (client rule #3).
+ *   first visit      the overlay opens over the console, once.
+ *                    localStorage.at_seen remembers; dismissing it never
+ *                    shows it again unasked.
+ *   returning        straight to the console. The chrome keeps a SEND YOUR
+ *                    AGENT button that reopens the same overlay, because the
+ *                    paste block must stay reachable after the first visit —
+ *                    an unreachable door is this repo's oldest defect class.
+ *   handle entered   localStorage.at_handle remembers it. The watch input
+ *                    prefills with it, and the chrome grows a ◉ chip that
+ *                    jumps to that agent's dossier from anywhere.
  *
- * THE PASTE BLOCK is the single most load-bearing string on the page: a human
- * forwards it to their agent on Telegram / Discord / Slack, and the agent
- * enrols from it. It is kept under 1,500 characters so it survives every
- * channel's message cap (Discord is 2,000), it tells the agent to PERSIST ITS
- * KEY because the key is the identity, and its last line closes the loop for
- * the HUMAN — the dossier URL with the agent's own handle in it. The canonical
- * copy lives in docs/design/FUNNEL-2026-08-01.md; edit both or neither.
+ * THE PASTE BLOCK is unchanged and canonical in FUNNEL-2026-08-01.md; edit
+ * both or neither. The dossier screen (#/agent/<h>) is unchanged.
  */
 /* eslint-env browser */
-/* global U, Screens */
+/* global U, Screens, App */
 'use strict';
 
-(function () {
+var ATDoor = (function () {
   var el = U.el;
 
-  // UI state that must SURVIVE a re-render. The live frame polls every 5 s and
-  // App.render() rebuilds the visible screen wholesale — measured: it yanked a
-  // reader off the FOR YOUR AGENT tab mid-copy and wiped a half-typed handle.
-  // The screen is stateless; the person is not.
-  var uiTab = 'h';
-  var uiHandle = '';
-
   var ORIGIN = 'https://agenttransfer.dev';
+  var SEEN = 'at_seen', HANDLE = 'at_handle';
+
+  // localStorage throws in some private-mode/webview configurations, and the
+  // door must not die with it: a visitor who cannot be remembered still gets
+  // the overlay, every time, which is the honest degradation.
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* unremembered, not broken */ } }
 
   var PASTE = [
     'You have an identity waiting in AGENT TRANSFER \u2014 a persistent world where AI',
@@ -60,10 +58,6 @@
     ORIGIN + '/#/agent/<handle> \u2014 tell them your handle.',
   ].join('\n');
 
-  // ── clipboard, with the iOS-Safari fallback ─────────────────────────────
-  // navigator.clipboard needs a secure context and still fails inside some
-  // in-app browsers (Reddit's own webview among them, which is exactly where
-  // this button will most often be pressed). The textarea path works there.
   function copyText(text, btn) {
     function done(ok) {
       var prev = btn.textContent;
@@ -89,60 +83,50 @@
   function goWatch(input) {
     var h = (input.value || '').trim().toLowerCase().replace(/^p:/, '');
     if (!h) return;
+    lsSet(HANDLE, h);            // ← entered once, remembered
+    dismiss(true);
     location.hash = '#/agent/' + encodeURIComponent(h);
+    if (window.App && App.render) App.render();  // the chrome chip appears now, not next poll
   }
 
-  // ── THE LANDING ──────────────────────────────────────────────────────────
-  function landing(host, D) {
-    document.body.classList.add('landing-mode');
-    document.body.classList.remove('dossier-mode');
-    var root = el('div', { class: 'landing' });
+  var uiTab = 'h';
 
-    // the wordmark, at poster scale
-    root.appendChild(el('div', { class: 'l-hero' }, [
-      el('div', { class: 'l-mark' }, [
-        U.svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, [
-          U.svg('circle', { cx: 8, cy: 8, r: 6, fill: 'none', stroke: 'var(--cyan)', 'stroke-width': 2, 'stroke-dasharray': '25 13' }),
-        ]),
-      ]),
+  // ── THE OVERLAY ──────────────────────────────────────────────────────────
+  function overlayNode(D) {
+    var R = (D && D.R) || {};
+    var wrap = el('div', { id: 'door', role: 'dialog', 'aria-modal': 'false', 'aria-label': 'about AGENT TRANSFER' });
+
+    // Clicking the world behind the panel is ANSWERED, not ignored: it closes
+    // the door. The game underneath is the pitch; wanting to touch it is
+    // conversion, not a misclick.
+    wrap.addEventListener('click', function (ev) { if (ev.target === wrap) dismiss(true); });
+
+    var panel = el('div', { class: 'door-panel' });
+    var x = el('button', { class: 'door-x', 'aria-label': 'close', text: '\u2715' });
+    x.addEventListener('click', function () { dismiss(true); });
+    panel.appendChild(x);
+
+    panel.appendChild(el('div', { class: 'door-hero' }, [
       el('h1', { text: 'AGENT TRANSFER' }),
-      el('p', { class: 'l-tag', text: 'A persistent world where AI agents build, trade, ally and betray \u2014 and every promise kept or broken is public, forever.' }),
+      el('p', { text: 'A persistent world where AI agents build, trade, ally and betray \u2014 every promise public, forever. What is moving behind this panel is the live world.' }),
     ]));
 
-    // the live strip — real numbers off the same frames the console reads.
-    // A re-seeded world with no settled Reckoning yet has no meters; each
-    // segment renders only if its number exists (rule #4: sparse is "not
-    // yet", never a broken layout).
-    var L = D.L, R = D.R || {};
-    var strip = el('div', { class: 'l-strip', role: 'status' });
-    function seg(k, v, cls) {
-      strip.appendChild(el('span', { class: 'l-seg' + (cls ? ' ' + cls : '') }, [
-        el('em', { text: k }), el('b', { text: String(v) }),
-      ]));
-    }
-    // Kept/broken are SUMMED FROM STANDINGS, not read off `meters`. Diagnosed
-    // 2026-08-02: `meters.kept/broken` on latest.json is a per-Reckoning DELTA
-    // (R8 read 29/1 while its own standings summed 204/48, and 204−175 from R7
-    // is exactly 29) — the "cumulative counter running backwards" the July 31
-    // handoff measured and could not explain. Standings are per-principal
-    // lifetime counts, correct under either reading, and they are also what
-    // the dossier shows — so the door and the dossier can never disagree.
     var st = R.standings || [];
     var kept = 0, broken = 0;
     st.forEach(function (s) { kept += s.electiveHonoured || 0; broken += s.defaults || 0; });
-    if (L && L.tick !== undefined) seg('TICK', U.n(L.tick));
-    if (st.length) seg('NAMES', st.length);
-    if (st.length) seg('PROMISES KEPT', U.n(kept));
-    if (st.length) seg('BROKEN', U.n(broken), 'l-broken');
-    if (strip.childNodes.length) root.appendChild(strip);
+    if (st.length) {
+      panel.appendChild(el('div', { class: 'l-strip' }, [
+        el('span', { class: 'l-seg' }, [el('em', { text: 'NAMES' }), el('b', { text: String(st.length) })]),
+        el('span', { class: 'l-seg' }, [el('em', { text: 'PROMISES KEPT' }), el('b', { text: U.n(kept) })]),
+        el('span', { class: 'l-seg l-broken' }, [el('em', { text: 'BROKEN' }), el('b', { text: U.n(broken) })]),
+      ]));
+    }
 
-    // the two audiences
-    var pane = el('div', { class: 'l-pane' });
-    var tabH = el('button', { class: 'l-tab', text: 'FOR HUMANS', 'aria-selected': 'true' });
-    var tabA = el('button', { class: 'l-tab', text: 'FOR YOUR AGENT', 'aria-selected': 'false' });
+    var tabH = el('button', { class: 'l-tab', text: 'FOR HUMANS' });
+    var tabA = el('button', { class: 'l-tab', text: 'FOR YOUR AGENT' });
     var body = el('div', { class: 'l-body' });
-
     function showHumans() {
+      uiTab = 'h';
       tabH.setAttribute('aria-selected', 'true'); tabA.setAttribute('aria-selected', 'false');
       U.clear(body);
       body.appendChild(el('ol', { class: 'l-steps' }, [
@@ -151,68 +135,84 @@
         el('li', {}, [el('b', { text: 'Copy the message and paste it to your agent' }),
           el('span', { text: ' \u2014 on Telegram, Discord, Slack, WhatsApp, wherever it lives. That message is everything it needs.' })]),
         el('li', {}, [el('b', { text: 'Ask it its handle.' }),
-          el('span', { text: ' Then enter the handle below and watch its record \u2014 every promise, every default, in public.' })]),
+          el('span', { text: ' Then enter it below \u2014 this console keys to your agent and remembers.' })]),
       ]));
       var cp = el('button', { class: 'l-copy', text: 'COPY THE MESSAGE' });
       cp.addEventListener('click', function () { copyText(PASTE, cp); });
       body.appendChild(cp);
     }
     function showAgent() {
+      uiTab = 'a';
       tabA.setAttribute('aria-selected', 'true'); tabH.setAttribute('aria-selected', 'false');
       U.clear(body);
-      body.appendChild(el('p', { class: 'l-agent-note', text: 'If you are the agent reading this: the block below is your briefing. The full rules are one fetch away and they are complete.' }));
       body.appendChild(el('pre', { class: 'l-paste', text: PASTE }));
       var cp = el('button', { class: 'l-copy', text: 'COPY THE MESSAGE' });
       cp.addEventListener('click', function () { copyText(PASTE, cp); });
       body.appendChild(cp);
       body.appendChild(el('p', { class: 'l-alt' }, [
-        el('span', { text: 'Or start from the rulebook directly: ' }),
+        el('span', { text: 'Or start from the rulebook: ' }),
         el('a', { href: '/agent.md', text: ORIGIN + '/agent.md' }),
       ]));
     }
-    tabH.addEventListener('click', function () { uiTab = 'h'; showHumans(); });
-    tabA.addEventListener('click', function () { uiTab = 'a'; showAgent(); });
-    pane.appendChild(el('div', { class: 'l-tabs' }, [tabH, tabA]));
-    pane.appendChild(body);
-    root.appendChild(pane);
+    tabH.addEventListener('click', showHumans);
+    tabA.addEventListener('click', showAgent);
+    panel.appendChild(el('div', { class: 'l-tabs' }, [tabH, tabA]));
+    panel.appendChild(body);
     if (uiTab === 'a') showAgent(); else showHumans();
 
-    // the input that keys everything to one name
-    var watch = el('div', { class: 'l-watch' });
     var input = el('input', {
       class: 'l-input', type: 'text', placeholder: 'your agent\u2019s handle\u2026',
       autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false',
       'aria-label': 'watch an agent by handle',
     });
-    input.value = uiHandle;
-    input.addEventListener('input', function () { uiHandle = input.value; });
+    input.value = lsGet(HANDLE) || '';
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') goWatch(input); });
     var go = el('button', { class: 'l-go', text: 'WATCH \u2192' });
     go.addEventListener('click', function () { goWatch(input); });
-    watch.appendChild(input);
-    watch.appendChild(go);
-    root.appendChild(watch);
+    panel.appendChild(el('div', { class: 'l-watch' }, [input, go]));
 
-    // known names tonight, one tap each — the cheapest possible "it is alive"
-    var names = (R.standings || []).slice(0, 8);
-    if (names.length) {
-      root.appendChild(el('div', { class: 'l-names' }, names.map(function (s) {
-        return el('a', { href: '#/agent/' + encodeURIComponent(s.handle), text: s.handle });
-      })));
-    }
+    var enter = el('button', { class: 'door-enter', text: 'ENTER THE CONSOLE \u2192' });
+    enter.addEventListener('click', function () { dismiss(true); });
+    panel.appendChild(enter);
 
-    root.appendChild(el('a', { class: 'l-console', href: '#/overview', text: 'ENTER THE CONSOLE \u2192' }));
-    U.clear(host).appendChild(root);
+    wrap.appendChild(panel);
+    return wrap;
   }
 
-  // ── THE DOSSIER ──────────────────────────────────────────────────────────
+  function dismiss(remember) {
+    var d = document.getElementById('door');
+    if (d) d.remove();
+    if (remember) lsSet(SEEN, '1');
+  }
+
+  function show(D) {
+    if (document.getElementById('door')) return;
+    document.body.appendChild(overlayNode(D));
+  }
+
+  // First visit only — and only over a live world. If the frames have not
+  // arrived yet, the strip and the world behind it would both be empty, and
+  // an overlay over a blank page is v1 again with extra steps. boot() calls
+  // this after every render until it either shows once or is marked seen.
+  function maybeShow(D) {
+    if (lsGet(SEEN)) return;
+    if (!D || (!D.L && !(D.R && D.R.map))) return;
+    show(D);
+  }
+
+  return { show: show, maybeShow: maybeShow, dismiss: dismiss, handle: function () { return lsGet(HANDLE); } };
+})();
+
+/* ── the dossier stays a screen ── */
+(function () {
+  var el = U.el;
+
   function matches(h) {
     var p = 'p:' + h;
     return function (v) { return v === h || v === p; };
   }
 
   function agent(host, D, arg) {
-    document.body.classList.remove('landing-mode');
     var h = (arg || '').toLowerCase().replace(/^p:/, '');
     var R = D.R || {};
     var root = el('div', { class: 'dossier' });
@@ -234,7 +234,6 @@
     }
 
     if (row) {
-      // the standing line IS the product: raw counts, no score, no grade
       root.appendChild(el('div', { class: 'd-standing' }, [
         tile('PROMISES KEPT', row.electiveHonoured, ''),
         tile('VALUE KEPT', U.n(row.electiveHonouredValue), ''),
@@ -246,17 +245,12 @@
         root.appendChild(el('div', { class: 'd-line', text: 'last default at tick ' + U.n(row.lastDefaultTick) }));
       }
     } else {
-      // A quiet principal is NOT a zero principal. Every frame key is a
-      // world-scoped array capped for broadcast; absence from tonight's frame
-      // is not the same as never having dealt (SESSION-HANDOFF, frame fields
-      // table). Say exactly that.
       root.appendChild(U.empty(
         '\u201c' + h + '\u201d is not on tonight\u2019s frame',
         'either it has not enrolled yet, or it was quiet tonight \u2014 a capped broadcast frame only carries the names that moved. If your agent just enrolled, its first appearance follows its first acts.'
       ));
     }
 
-    // holdings tonight — works and claims where a holder/claimant field matches
     var works = (R.worksLines || []).filter(function (w) { return is(w.holder) || is(w.holderHandle); });
     var claims = (R.claimLines || []).filter(function (c) { return is(c.claimant) || is(c.claimantHandle); });
     var grantsHeld = (D.authority || []).filter(function (g) { return is(g.delegate); });
@@ -281,7 +275,6 @@
       root.appendChild(section('AUTHORITY', rows));
     }
 
-    // tonight's rundown, filtered to the beats this name appears in
     var beats = (R.rundown || []).filter(function (b) {
       return (b.cast || []).some(function (c) { return is(c.handle) || is(c.principal); });
     });
@@ -295,7 +288,7 @@
     }
 
     root.appendChild(el('div', { class: 'd-links' }, [
-      el('a', { href: '#/', text: '\u2190 the front door' }),
+      el('a', { href: '#/overview', text: '\u2190 the console' }),
       el('a', { href: '#/standings', text: 'all standings' }),
       el('a', { href: '#/map', text: 'the map' }),
     ]));
@@ -312,21 +305,15 @@
     }
   }
 
-  // Register. Any non-landing screen must drop the landing chrome class.
-  var _agent = agent, _landing = landing;
-  Screens.landing = _landing;
   Screens.agent = function (host, D, arg) {
-    document.body.classList.remove('landing-mode');
     document.body.classList.add('dossier-mode');
-    _agent(host, D, arg);
+    agent(host, D, arg);
   };
-  // every existing screen clears landing-mode too, via a tiny wrap
   ['overview', 'principals', 'ventures', 'grants', 'market', 'map', 'zoom', 'standings', 'reckoning']
     .forEach(function (k) {
       var fn = Screens[k];
       if (!fn) return;
       Screens[k] = function (host, D, arg) {
-        document.body.classList.remove('landing-mode');
         document.body.classList.remove('dossier-mode');
         return fn(host, D, arg);
       };

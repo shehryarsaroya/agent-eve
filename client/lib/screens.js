@@ -240,6 +240,39 @@ var Screens = (function () {
         { note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · not yet payable' : 'awaiting the first settlement'), neutral: true }),
     ]));
 
+    /* ── THE MAP, ON THE FIRST SCREEN (owner direction, 2026-08-02) ──────
+     *
+     * The overview is what a first visitor sees under the door overlay, and
+     * a first visitor decides in seconds whether this is a real world or a
+     * dashboard. The real chart — stars, tiers, stakes, plates — is that
+     * argument, so a band of it sits above the fold, fully live (hover,
+     * click, the works) and captioned with tonight's stakes count. Click
+     * a system: the full MAP screen, selected. The band renders after
+     * attach inside U.guard'd rAF — a deferred draw that throws must still
+     * say what broke (handoff lesson #4).
+     */
+    if ((R.map || []).length) {
+      var stakes = MapView.stakesOf(R, L);
+      var nStk = Object.keys(stakes).length;
+      var band = el('div', { class: 'ovmap' });
+      var bandHead = el('div', { class: 'ovmap-head' }, [
+        el('b', { text: 'THE MAP TONIGHT' }),
+        el('span', { text: (R.map || []).length + ' SYSTEMS' + (nStk ? ' · ' + nStk + ' AT STAKE' : '') }),
+        el('a', { href: '#/map', text: 'OPEN THE FULL CHART →' }),
+      ]);
+      var bandHost = el('div', { class: 'ovmap-host' });
+      band.appendChild(bandHead);
+      band.appendChild(bandHost);
+      stack.appendChild(band);
+      requestAnimationFrame(U.guard(bandHost, function () {
+        MapView.render(bandHost, R, L, {
+          inset: { l: 0, r: 0, t: 0, b: 0 },
+          onSelect: function (id) { location.hash = '#/map/' + encodeURIComponent(id); },
+          onZoom: function (con, sid) { location.hash = '#/zoom/' + encodeURIComponent(sid || con); },
+        });
+      }));
+    }
+
     var main = el('div', { class: 'grid', style: 'grid-template-columns:1fr 250px;flex:1 1 auto;min-height:0' });
     // ★ SLICING, not just sorting. The mock's second-level strip is
     // ALL · HANDS · HOLDINGS · VENTURES · STANDOFFS · CONVOYS · TRIBUTE and it

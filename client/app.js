@@ -118,6 +118,25 @@ var App = (function () {
 
   // ── chrome ─────────────────────────────────────────────────────────────
   function drawChrome() {
+    // ── the door chip and the handle chip live between brand and tabs ──
+    var chip = document.getElementById('doorchip');
+    if (!chip) {
+      chip = el('button', { id: 'doorchip', text: '⌘ SEND YOUR AGENT' });
+      chip.addEventListener('click', function () { if (window.ATDoor) ATDoor.show(S.derived); });
+      var brand = document.getElementById('brand');
+      brand.parentNode.insertBefore(chip, brand.nextSibling);
+    }
+    var mine = window.ATDoor ? ATDoor.handle() : null;
+    var mychip = document.getElementById('mychip');
+    if (mine && !mychip) {
+      mychip = el('a', { id: 'mychip', href: '#/agent/' + encodeURIComponent(mine) });
+      chip.parentNode.insertBefore(mychip, chip.nextSibling);
+    }
+    if (mychip) {
+      if (mine) { U.clear(mychip).appendChild(el('span', { text: '◉ ' + mine })); mychip.href = '#/agent/' + encodeURIComponent(mine); }
+      else mychip.remove();
+    }
+
     var tabs = document.getElementById('tabs');
     if (!tabs.childNodes.length) {
       TABS.forEach(function (t) {
@@ -199,6 +218,9 @@ var App = (function () {
     drawChrome();
     var D = derive();
     S.derived = D;
+    // The door waits for a live frame so it never opens over a blank page,
+    // then opens exactly once per browser (localStorage.at_seen).
+    if (window.ATDoor) ATDoor.maybeShow(D);
     var host = document.getElementById('stage');
     var fn = Screens[S.screen] || Screens.overview;
     fn(host, D, S.arg);
@@ -227,9 +249,10 @@ var App = (function () {
   // ── router ─────────────────────────────────────────────────────────────
   function route() {
     var p = (location.hash || '#/').replace(/^#\/?/, '').split('/');
-    // The empty hash is THE LANDING — the ad lands there; the console is one
-    // tap deeper. Every named screen keeps its old URL.
-    var name = p[0] || 'landing';
+    // The empty hash is the CONSOLE with the door floating over it on a first
+    // visit (ATDoor.maybeShow) — the world stays visible under the pitch,
+    // which is the pitch. Every named screen keeps its URL.
+    var name = p[0] || 'overview';
     if (!Screens[name]) name = 'overview';
     S.screen = name; S.arg = p[1] ? decodeURIComponent(p[1]) : null;
     if (name === 'map' && S.arg) MapView.select(S.arg);

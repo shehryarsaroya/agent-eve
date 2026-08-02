@@ -1419,3 +1419,73 @@ body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
 .lad-detail { padding: 4px 14px 12px; border-top: 1px dashed var(--rule-dim); }
 .lad-detail div { color: var(--text-2); font-size: 12px; padding: 3px 0; }
 .lad-legend { color: var(--dimmer); font-size: 9.5px; letter-spacing: 0.08em; text-align: center; padding: 4px; }
+
+/* ── THE DOOR: the landing as an overlay over the live world ── */
+#door {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: clamp(10px, 4vh, 48px) 14px;
+  background: rgba(0, 4, 7, 0.62);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  overflow-y: auto;
+}
+.door-panel {
+  position: relative; width: 100%; max-width: 560px;
+  background: var(--panel); border: 1px solid var(--rule-bright);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 24px 80px rgba(0, 0, 0, 0.7);
+  padding: 22px 20px 20px; display: grid; gap: 14px;
+  margin: auto 0;
+}
+.door-x {
+  position: absolute; top: 8px; right: 8px; width: 34px; height: 34px;
+  background: none; border: 0; color: var(--dim); font: 14px/1 inherit; cursor: pointer;
+}
+.door-x:hover { color: var(--text); }
+.door-hero h1 { margin: 2px 0 8px; font-size: clamp(22px, 5vw, 30px); letter-spacing: 0.14em; font-weight: 500; }
+.door-hero p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; max-width: 52ch; }
+.door-enter {
+  min-height: 44px; background: none; border: 1px solid var(--rule);
+  color: var(--dim); font: inherit; font-size: 11px; letter-spacing: 0.14em; cursor: pointer;
+}
+.door-enter:hover { color: var(--cyan); border-color: var(--cyan-deep); }
+#door .l-pane { border: 0; }
+#door .l-tabs { border: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+#door .l-body { padding: 14px 2px 0; }
+#door .l-paste { max-height: 34vh; overflow: auto; }
+
+/* the chrome chips */
+#doorchip {
+  background: var(--panel); border: 0; border-right: var(--hair) solid var(--rule);
+  color: var(--amber); font: inherit; font-size: var(--fs-sm);
+  letter-spacing: var(--track); text-transform: uppercase;
+  padding: 0 12px; cursor: pointer; white-space: nowrap;
+}
+#doorchip:hover { background: var(--amber-wash); }
+#mychip {
+  display: flex; align-items: center; padding: 0 12px; white-space: nowrap;
+  border-right: var(--hair) solid var(--rule); color: var(--cyan);
+  font-size: var(--fs-sm); letter-spacing: var(--track); text-decoration: none;
+}
+#mychip:hover { background: var(--cyan-wash); }
+
+/* ── the map band on OVERVIEW ── */
+/* `flex: 0 0 auto` — the SAME load-bearing declaration app.css already
+   documents at the tile strip: `.rows > * { min-height: 0 }` plus the default
+   `flex: 0 1 auto` shrank this band to a 39px sliver on its first render,
+   with the plates squashed inside it. Measured, then fixed the way the file's
+   own comment says to. */
+.ovmap { border: 1px solid var(--rule); background: var(--panel); display: flex; flex-direction: column; flex: 0 0 auto; }
+.ovmap-head {
+  display: flex; gap: 14px; align-items: baseline; padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.ovmap-head b { color: var(--cyan-mid); font-size: 11px; letter-spacing: 0.14em; font-weight: 500; }
+.ovmap-head span { color: var(--dim); font-size: 10.5px; }
+.ovmap-head a { margin-left: auto; color: var(--cyan-mid); font-size: 10.5px; letter-spacing: 0.1em; text-decoration: none; }
+.ovmap-head a:hover { color: var(--cyan); }
+.ovmap-host { height: min(44vh, 430px); position: relative; overflow: hidden; }
+.ovmap-host svg { width: 100%; height: 100%; display: block; }
+@media (max-width: 720px) {
+  .ovmap-host { height: 300px; }
+  #doorchip { font-size: 10px; padding: 0 8px; }
+}
