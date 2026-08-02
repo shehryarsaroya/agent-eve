@@ -554,15 +554,22 @@ var MapView = (function () {
   // ── the renderer ───────────────────────────────────────────────────────
   var state = {
     layers: { verge: true, lode: true, pinch: true, claims: true, works: true, motion: true, labels: true },
-    sel: null, view: null, cache: null, blocs: [],
+    sel: null, hov: null, view: null, cache: null, blocs: [],
   };
 
   /* THE LODE is node size, but the range is 6→12 rather than 5→14: at 3× the
      biggest discs merged into each other and swallowed their own labels, and
      the verge fill is drawn concentric with the node, so an oversized node and
      a territory blob become one visual channel. 2× still reads as a ladder. */
-  function nodeR(sys, minY, maxY) {
+  function nodeR(sys, minY, maxY, lvl) {
     var t = maxY > minY ? (sys.yieldPerTick - minY) / (maxY - minY) : 0.5;
+    // Stakes set the SIZE CLASS; the lode only breathes inside it. A quiet
+    // system is 4\u20135.5 px \u2014 texture \u2014 and a staked one 10\u201313, which is the
+    // whole hierarchy argument in one line. lvl is optional so the zoom
+    // screen's callers keep their old geometry untouched.
+    if (lvl === 2) return 12 + 1.5 * t;
+    if (lvl === 1) return 10 + 1.5 * t;
+    if (lvl === 0) return 4 + 1.5 * t;
     return 6 + 6 * t;
   }
 
@@ -606,6 +613,44 @@ var MapView = (function () {
     var right = Math.cos(p.th) > 0.24, left = Math.cos(p.th) < -0.24;
     var dy = Math.abs(Math.cos(p.th)) > 0.24 ? 3 : (Math.sin(p.th) > 0 ? 10 : -4);
     return { x: lx, y: ly + dy, anchor: right ? 'start' : left ? 'end' : 'middle' };
+  }
+
+  /* Stakes come off THE FRAME, once, shared by the chart and the phone
+   * ladder — two copies of "what is at stake tonight" that drift by one
+   * clause would be the vocabulary bug in mark form.
+   *   lvl 2 (red)   a promise broke: a claim at final arrears, or a rundown
+   *                 beat that settled DEFAULTED on this stage. Red keeps
+   *                 meaning a broken promise and nothing else.
+   *   lvl 1 (amber) value at risk: arrears short of final, tribute owed on
+   *                 a claim, a live raid or battle standing here.
+   */
+  function stakesOf(R, L) {
+    var stakes = {};
+    function stake(sid, lvl, line) {
+      if (!sid) return;
+      var cur = stakes[sid];
+      if (!cur || lvl > cur.lvl) stakes[sid] = { lvl: lvl, line: line };
+    }
+    (R.claimLines || []).forEach(function (c) {
+      var last = c.state === 'LAPSED' || (c.arrearsOf > 0 && c.arrears >= c.arrearsOf);
+      if (last) stake(c.system, 2, 'CLAIM ' + U.handleOf(c.claimant) + ' \u00b7 NEXT MISS LAPSES');
+      else if (c.arrears > 0 || c.owed > 0) {
+        stake(c.system, 1, 'CLAIM ' + U.handleOf(c.claimant) +
+          (c.arrears ? ' \u00b7 ARREARS ' + c.arrears + ' of ' + c.arrearsOf : '') +
+          (c.owed ? ' \u00b7 OWED ' + U.n(c.owed) : ''));
+      }
+    });
+    ((L && L.raidLines) || R.raidLines || []).forEach(function (rd) {
+      stake(rd.stage || rd.system, 1, 'RAID' + (rd.demand ? ' \u00b7 DEMAND ' + U.n(rd.demand) : '') +
+        (rd.sides ? ' \u00b7 ' + rd.sides + ' SIDES' : ''));
+    });
+    ((L && L.battleLines) || R.battleLines || []).forEach(function (b) {
+      stake(b.stage || b.system, 1, 'BATTLE LIVE');
+    });
+    (R.rundown || []).forEach(function (b) {
+      if (b.defaulted && b.glyph && b.glyph.stage) stake(b.glyph.stage, 2, 'PROMISE BROKEN TONIGHT');
+    });
+    return stakes;
   }
 
   function render(host, R, L, opts) {
@@ -656,8 +701,28 @@ var MapView = (function () {
     var minY = Infinity, maxY = -Infinity;
     R.map.forEach(function (s) { minY = Math.min(minY, s.yieldPerTick); maxY = Math.max(maxY, s.yieldPerTick); });
 
+    /* ═══════════════════════════ ★ INK FOLLOWS STAKES ═══════════════════
+     *
+     * The owner's complaint, verbatim off a screenshot of this screen:
+     * thirty near-identical rings, and the night's one line of real drama
+     * ten pixels tall. The fix is a HIERARCHY pass, not more pixels: a
+     * system where money or a promise stands at risk TONIGHT is large and
+     * annotated; a quiet system is a small dim point that reads as
+     * texture. Concept plate map-v2-a-hierarchy.png is the reference, and
+     * its legend line is the rule: LARGE MEANS AT STAKE TONIGHT.
+     *
+     * Stakes come off THIS FRAME only, same as every other mark here:
+     *   lvl 2 (red)   a promise broke — a claim at its final arrears, or a
+     *                 rundown beat that settled DEFAULTED on this stage.
+     *                 Red keeps meaning a broken promise and nothing else.
+     *   lvl 1 (amber) value at risk — arrears short of final, tribute
+     *                 owed, a live raid or battle standing here.
+     * Everything else is lvl 0: quiet, and drawn quiet.
+     */
+    var stakes = stakesOf(R, L);
+
     var gBands = S('g'), gLanes = S('g'), gVerge = S('g'), gClaims = S('g'),
-      gMotion = S('g'), gNodes = S('g'), gLabels = S('g'), gCon = S('g'),
+      gMotion = S('g'), gNodes = S('g'), gLabels = S('g'), gCon = S('g'), gPlates = S('g'),
       gSel = S('g', { class: 'selg' });
 
     // ── ★ THE THREE BANDS ────────────────────────────────────────────────
@@ -1134,11 +1199,14 @@ var MapView = (function () {
     // ── nodes, and THE LODE ─────────────────────────────────────────────
     R.map.forEach(function (s) {
       var p = P[s.id]; if (!p) return;
-      var rr = state.layers.lode ? nodeR(s, minY, maxY) : 7;
+      var stk = stakes[s.id];
+      var lvl = stk ? stk.lvl : 0;
+      var rr = state.layers.lode ? nodeR(s, minY, maxY, lvl) : (lvl ? 10 : 5);
       var g = S('g');
       if (s.fuelPerTick > 0) g.appendChild(S('circle', { class: 'fuel-ring', cx: p.x, cy: p.y, r: rr + 3.6 }));
       var c = S('circle', {
-        class: 'node node-' + s.tier + (state.sel === s.id ? ' sel' : ''),
+        class: 'node node-' + s.tier + (state.sel === s.id ? ' sel' : '') +
+          (lvl === 2 ? ' node-stk2' : lvl === 1 ? ' node-stk1' : ' node-quiet'),
         cx: p.x, cy: p.y, r: rr.toFixed(1),
         'data-sys': s.id,
       }, S('title', {
@@ -1154,6 +1222,16 @@ var MapView = (function () {
       c.addEventListener('dblclick', function (ev) {
         ev.stopPropagation(); if (o.onZoom) o.onZoom(s.constellation, s.id);
       });
+      // Hover = the callout without the pin. Fine pointers only: on touch,
+      // pointerenter fires glued to the tap and the leave never comes, which
+      // would wedge the last-touched callout on screen forever.
+      if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+        c.addEventListener('pointerenter', function () { state.hov = s.id; focusDraw(s.id); });
+        c.addEventListener('pointerleave', function () {
+          if (state.hov === s.id) state.hov = null;
+          focusDraw(state.sel);
+        });
+      }
       g.appendChild(c);
       gNodes.appendChild(g);
       if (state.layers.labels) {
@@ -1203,10 +1281,22 @@ var MapView = (function () {
      * its final arrears — red on this map means a promise broke, and a callout
      * that spends it on "3 straits" spends the one alarm colour on geography.
      */
-    if (state.sel && P[state.sel]) {
-      var ss = idx[state.sel], sp = P[state.sel];
-      var srr = state.layers.lode ? nodeR(ss, minY, maxY) : 7;
+    /* ★ HOVER IS SELECT-LITE. The callout used to fire only on CLICK, so the
+     * three-second answer the comment below promises was gated behind knowing
+     * the map is clickable. Now pointing at a system draws the same callout
+     * (concept plate map-v2-b-hovercard.png), and clicking PINS it — the
+     * reticle marks the pin, hover shows no reticle, and leaving returns to
+     * whatever was pinned. Touch has no hover; a tap is a click and pins,
+     * exactly as before. focusDraw is idempotent over gSel. */
+    function focusDraw(focusId) {
+      while (gSel.firstChild) gSel.removeChild(gSel.firstChild);
+      if (!focusId || !P[focusId]) return;
+      var pinned = focusId === state.sel;
+      var ss = idx[focusId], sp = P[focusId];
+      var slvl = stakes[focusId] ? stakes[focusId].lvl : 0;
+      var srr = state.layers.lode ? nodeR(ss, minY, maxY, slvl) : (slvl ? 10 : 5);
       var RR = srr + 13;
+      if (pinned) {
       // two opposing arcs + four ticks: a ring alone reads as another claim
       // tint, and the claim tint is a real mark this map already draws.
       [0, 180].forEach(function (a0) {
@@ -1226,12 +1316,13 @@ var MapView = (function () {
           x2: (sp.x + (RR + 5) * Math.cos(a)).toFixed(1), y2: (sp.y + (RR + 5) * Math.sin(a)).toFixed(1),
         }));
       });
+      }
 
       // ── the lines, and every one of them comes off this frame ──────────
-      var cl = (R.claimLines || []).filter(function (c) { return c.system === state.sel; })[0];
-      var wk = (R.worksLines || []).filter(function (w) { return w.system === state.sel; });
-      var sw = (R.swayLines || []).filter(function (w) { return w.system === state.sel; })[0];
-      var rn = (R.ruins || []).filter(function (r) { return r.system === state.sel; })[0];
+      var cl = (R.claimLines || []).filter(function (c) { return c.system === focusId; })[0];
+      var wk = (R.worksLines || []).filter(function (w) { return w.system === focusId; });
+      var sw = (R.swayLines || []).filter(function (w) { return w.system === focusId; })[0];
+      var rn = (R.ruins || []).filter(function (r) { return r.system === focusId; })[0];
       var lines = [
         { t: ss.name.toUpperCase() + '  ·  ' + ss.id + '  ·  ' + ss.tier, c: 'co-h' },
         {
@@ -1281,7 +1372,7 @@ var MapView = (function () {
           c: 'co-b',
         });
       }
-      var pl = (R.places || []).filter(function (p) { return p.system === state.sel; })[0];
+      var pl = (R.places || []).filter(function (p) { return p.system === focusId; })[0];
       if (pl) lines.push({ t: 'NAMED FOR ' + pl.handle + '  ·  since t' + pl.sinceTick, c: 'co-d' });
       if (sw && sw.principal) {
         lines.push({ t: 'SWAY ' + U.handleOf(sw.principal) + ' ' + sw.sway + (sw.gate ? '  ·  STRAIT GATE' : ''), c: 'co-d' });
@@ -1377,6 +1468,35 @@ var MapView = (function () {
         }));
       });
     }
+    /* ★ THE PLATES. Concept A's signature mark: the top staked systems
+     * carry a two-line annotation ON the canvas, so the night's drama is
+     * readable from across the room with nothing hovered. Capped at four —
+     * past that the plates would recreate the noise they exist to cut — and
+     * lvl 2 outranks lvl 1 outranks nothing. The callout remains the full
+     * record; a plate is the headline. */
+    Object.keys(stakes)
+      .sort(function (a, b) { return stakes[b].lvl - stakes[a].lvl; })
+      .slice(0, 4)
+      .filter(function (sid) { return P[sid] && idx[sid]; })
+      .forEach(function (sid) {
+        var p = P[sid], sy = idx[sid], stk = stakes[sid];
+        var t1 = sy.name.toUpperCase() + ' \u00b7 ' + sid;
+        var t2 = stk.line;
+        var pw = Math.max(t1.length, t2.length) * 6.05 + 16;
+        var px2 = p.x + (p.x < cx ? -(pw + 22) : 22);
+        px2 = Math.max(ins.l + 4, Math.min(W - ins.r - pw - 4, px2));
+        var py2 = Math.max(ins.t + 4, Math.min(H - ins.b - 40, p.y - 18));
+        var cls = stk.lvl === 2 ? 'plate-red' : 'plate-amber';
+        gPlates.appendChild(S('line', {
+          class: 'plate-lead ' + cls,
+          x1: p.x + (p.x < cx ? -10 : 10), y1: p.y,
+          x2: p.x < cx ? px2 + pw : px2, y2: py2 + 18,
+        }));
+        gPlates.appendChild(S('rect', { class: 'plate-box ' + cls, x: px2, y: py2, width: pw, height: 36 }));
+        gPlates.appendChild(S('text', { class: 'plate-t1', x: px2 + 8, y: py2 + 14, text: t1 }));
+        gPlates.appendChild(S('text', { class: 'plate-t2 ' + cls, x: px2 + 8, y: py2 + 29, text: t2 }));
+      });
+    focusDraw(state.hov || state.sel);
 
     // ★ THE FENCE IS PAINTED LAST, AND THAT IS A CORRECTNESS FIX.
     //
@@ -1406,7 +1526,7 @@ var MapView = (function () {
      * reads as sky. The reticle is painted after the fence for the same reason
      * the fence is painted after the labels: it is the one mark that must
      * never be cut by anything. */
-    var ORDER = [gBands, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge, gSel];
+    var ORDER = [gBands, gCon, gLanes, gClaims, gMotion, gNodes, gLabels, gVerge, gPlates, gSel];
     var root = S('svg', {
       id: 'mapsvg', viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet',
     }, ORDER);
@@ -1464,7 +1584,7 @@ var MapView = (function () {
   }
 
   return {
-    render: render, layers: state.layers, blocColour: blocColour,
+    render: render, stakesOf: stakesOf, layers: state.layers, blocColour: blocColour,
     // exported so the legend and the SYSTEMS swatch read the SAME constants the
     // map fills from — three literals that disagreed is what made the key lie
     BAND_FILL: BAND_FILL, BAND_EDGE: BAND_EDGE,

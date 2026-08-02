@@ -1160,8 +1160,96 @@ var Screens = (function () {
   /** the rail and the legend, in px. The layout reserves exactly this. */
   var RAIL_W = 336, LEG_W = 268, STRIP_H = 25;
 
+  /* ═══════════════ THE MAP ON A PHONE: A LADDER, NOT A CHART ═══════════
+   *
+   * Concept plate map-v2-d-phone.png. At thumb width the ellipse chart is a
+   * postage stamp of hairlines — un-tappable, un-readable, and panning it
+   * fights the page scroll. So under 720 px the SAME WORLD renders as a
+   * one-column ladder: the seat pinned first if tribute converges anywhere,
+   * then one card per constellation, each system a thumb-height row wearing
+   * its stake line. Tap a row to unfold the record the desktop callout
+   * carries. Same frames, same stakesOf, so the two shapes cannot disagree.
+   *
+   * (The concept plate also drew a fifth constellation, THE VERGE — a model
+   * invention that collides with the canon term for the bloc fence. The
+   * ladder draws the constellations the frame carries and nothing else.)
+   */
+  function ladderMap(host, D) {
+    var R = D.R, L = D.L;
+    var stakes = MapView.stakesOf(R, L);
+    var root = el('div', { class: 'ladder' });
+
+    // THE SEAT strip: where tribute converges tonight, and how much
+    var seatCount = {}, seatOwed = {};
+    (R.tributeLines || []).forEach(function (t) {
+      if (!t.to && !t.seat) return;
+      var sid = t.seat || t.to;
+      seatCount[sid] = (seatCount[sid] || 0) + 1;
+      seatOwed[sid] = (seatOwed[sid] || 0) + (t.owed || t.amount || 0);
+    });
+    var seats = Object.keys(seatCount).sort(function (a, b) { return seatCount[b] - seatCount[a]; });
+    if (seats.length) {
+      var s0 = seats[0];
+      root.appendChild(el('div', { class: 'lad-seat' }, [
+        el('b', { text: 'THE SEAT · ' + s0 }),
+        el('span', { text: seatCount[s0] + ' TRIBUTE' + (seatOwed[s0] ? ' · ' + U.n(seatOwed[s0]) + ' OWED' : '') }),
+      ]));
+    }
+
+    var byCon = {};
+    (R.map || []).forEach(function (sys) {
+      (byCon[sys.constellation] = byCon[sys.constellation] || []).push(sys);
+    });
+    Object.keys(byCon).sort().forEach(function (con) {
+      var list = byCon[con];
+      var staked = list.filter(function (sys) { return stakes[sys.id]; }).length;
+      var card = el('div', { class: 'lad-card' });
+      card.appendChild(el('div', { class: 'lad-head' }, [
+        el('b', { text: String(con).toUpperCase() }),
+        el('span', { text: list.length + ' SYSTEMS' + (staked ? ' · ' + staked + ' AT STAKE' : '') }),
+      ]));
+      list.slice().sort(function (a, b) {
+        var la = stakes[a.id] ? stakes[a.id].lvl : 0, lb = stakes[b.id] ? stakes[b.id].lvl : 0;
+        return lb - la || (b.yieldPerTick - a.yieldPerTick);
+      }).forEach(function (sys) {
+        var stk = stakes[sys.id];
+        var row = el('button', {
+          class: 'lad-row' + (stk ? (stk.lvl === 2 ? ' lad-red' : ' lad-amber') : ''),
+        }, [
+          el('span', { class: 'lad-name' }, [
+            el('b', { text: sys.name }), el('i', { text: ' ' + sys.id + ' · ' + sys.tier }),
+          ]),
+          el('span', { class: 'lad-note', text: stk ? stk.line : sys.yieldPerTick + ' ore/tick' }),
+        ]);
+        var open = null;
+        row.addEventListener('click', function () {
+          if (open) { open.remove(); open = null; row.classList.remove('is-open'); return; }
+          var cl = (R.claimLines || []).filter(function (c) { return c.system === sys.id; })[0];
+          var wk = (R.worksLines || []).filter(function (w) { return w.system === sys.id; });
+          var lines = [
+            sys.yieldPerTick + ' ore/tick' + (sys.fuelPerTick ? ' · ' + sys.fuelPerTick + ' fuel/tick' : '') +
+              (sys.richnessBps ? ' · ' + (sys.richnessBps > 0 ? '+' : '') + sys.richnessBps + ' bps' : ''),
+            (sys.lanes || []).length + ' lanes · ' + (sys.straits || []).length + ' straits',
+          ];
+          if (cl) lines.push('CLAIM ' + U.handleOf(cl.claimant) + ' · ' + (cl.legend || cl.state));
+          if (wk.length) lines.push('WORKS ' + wk.length + ' · ' + wk[0].legend);
+          open = el('div', { class: 'lad-detail' }, lines.map(function (t) {
+            return el('div', { text: t });
+          }));
+          row.classList.add('is-open');
+          row.parentNode.insertBefore(open, row.nextSibling);
+        });
+        card.appendChild(row);
+      });
+      root.appendChild(card);
+    });
+    root.appendChild(el('div', { class: 'lad-legend', text: 'LARGE TYPE MEANS AT STAKE TONIGHT · AMBER IS VALUE AT RISK · RED IS A PROMISE BROKEN' }));
+    U.clear(host).appendChild(root);
+  }
+
   function mapScreen(host, D, sel) {
     var R = D.R, L = D.L;
+    if (R && R.map && R.map.length && window.innerWidth <= 720) return ladderMap(host, D);
     var wrap = el('div', { id: 'mapfull' });
     var host2 = el('div', { id: 'mapwrap' });
     wrap.appendChild(host2);

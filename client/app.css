@@ -1370,3 +1370,52 @@ body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
   #stage { padding: 8px; overflow-y: auto; }
   #ticker .lead { display: none; }
 }
+
+/* ── map v2: ink follows stakes ── */
+.node-quiet { opacity: 0.55; }
+.node-stk1 { stroke: var(--amber); stroke-width: 1.6; }
+.node-stk2 { stroke: var(--red-text); stroke-width: 1.8; }
+.plate-box { fill: rgba(0, 13, 18, 0.88); stroke: var(--rule-bright); }
+.plate-box.plate-red { stroke: var(--red-text); }
+.plate-box.plate-amber { stroke: var(--amber); }
+.plate-lead { stroke: var(--rule-bright); stroke-width: 1; }
+.plate-lead.plate-red { stroke: var(--red-text); }
+.plate-lead.plate-amber { stroke: var(--amber); }
+.plate-t1 { fill: var(--text); font: 600 10px "Roboto Condensed", sans-serif; letter-spacing: 0.08em; }
+.plate-t2 { fill: var(--text-2); font: 10px ui-monospace, monospace; }
+.plate-t2.plate-red { fill: var(--red-text); }
+.plate-t2.plate-amber { fill: var(--amber); }
+
+/* ── the map ladder (phone) ── */
+.ladder { display: grid; gap: 10px; padding: 4px 2px 24px; }
+.lad-seat {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  border: 1px solid var(--amber); background: var(--amber-wash); padding: 12px 14px;
+}
+.lad-seat b { color: var(--amber); font-size: 13px; letter-spacing: 0.1em; }
+.lad-seat span { color: var(--amber); font-size: 12px; }
+.lad-card { border: 1px solid var(--rule); background: var(--panel); }
+.lad-head {
+  display: flex; justify-content: space-between; padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.lad-head b { color: var(--cyan-mid); font-size: 11px; letter-spacing: 0.14em; }
+.lad-head span { color: var(--dim); font-size: 10.5px; }
+.lad-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  width: 100%; min-height: 48px; padding: 8px 12px;
+  background: none; border: 0; border-top: 1px solid var(--rule-dim);
+  color: var(--text-2); font: inherit; text-align: left; cursor: pointer;
+}
+.lad-row:first-of-type { border-top: 0; }
+.lad-name b { color: var(--text); font-size: 14px; font-weight: 500; }
+.lad-name i { font-style: normal; color: var(--dimmer); font-size: 10.5px; }
+.lad-note { font-size: 11px; color: var(--dim); text-align: right; }
+.lad-row.lad-amber .lad-note { color: var(--amber); }
+.lad-row.lad-amber .lad-name b { font-size: 16px; }
+.lad-row.lad-red .lad-note { color: var(--red-text); }
+.lad-row.lad-red .lad-name b { font-size: 16px; }
+.lad-row.is-open { background: var(--panel-2); }
+.lad-detail { padding: 4px 14px 12px; border-top: 1px dashed var(--rule-dim); }
+.lad-detail div { color: var(--text-2); font-size: 12px; padding: 3px 0; }
+.lad-legend { color: var(--dimmer); font-size: 9.5px; letter-spacing: 0.08em; text-align: center; padding: 4px; }
