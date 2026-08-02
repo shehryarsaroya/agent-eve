@@ -226,8 +226,10 @@ var App = (function () {
 
   // ── router ─────────────────────────────────────────────────────────────
   function route() {
-    var p = (location.hash || '#/overview').replace(/^#\/?/, '').split('/');
-    var name = p[0] || 'overview';
+    var p = (location.hash || '#/').replace(/^#\/?/, '').split('/');
+    // The empty hash is THE LANDING — the ad lands there; the console is one
+    // tap deeper. Every named screen keeps its old URL.
+    var name = p[0] || 'landing';
     if (!Screens[name]) name = 'overview';
     S.screen = name; S.arg = p[1] ? decodeURIComponent(p[1]) : null;
     if (name === 'map' && S.arg) MapView.select(S.arg);

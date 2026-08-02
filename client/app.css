@@ -1222,3 +1222,151 @@ label.lyr.off:hover { color: var(--dim); background: none; }
    through the x-height by a fixed panel height. Both panels size to content
    and the rail scrolls if the three together do not fit. */
 .fame .cl, .legend .row { overflow-wrap: anywhere; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE LANDING and THE DOSSIER — the front door (2026-08-02).
+
+   Mobile-FIRST, unlike everything above it, because these two screens are
+   where a Reddit ad lands and Reddit traffic is phones. The console keeps its
+   operator density; the door is built at 390 px and widens, not the reverse.
+   Palette and type are the same tokens — one product, two zoom levels, which
+   is the same argument the chrome makes about e1/e6.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+body.landing-mode #chrome, body.landing-mode #ticker { display: none; }
+body.landing-mode #stage { padding: 0; }
+
+.landing {
+  min-height: 100vh; min-height: 100dvh;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 22px; padding: clamp(20px, 6vh, 64px) 18px 40px;
+  max-width: 720px; margin: 0 auto;
+}
+.l-hero { text-align: center; }
+.l-mark svg { width: clamp(44px, 10vw, 64px); height: auto; animation: l-spin 60s linear infinite; }
+@keyframes l-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .l-mark svg { animation: none; } }
+.l-hero h1 {
+  margin: 14px 0 10px; font-size: clamp(28px, 8vw, 52px);
+  letter-spacing: 0.14em; font-weight: 500; color: var(--text);
+}
+.l-tag {
+  margin: 0 auto; max-width: 46ch; color: var(--text-2);
+  font-size: clamp(14px, 3.6vw, 16px); line-height: 1.55;
+}
+
+.l-strip {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px;
+  padding: 10px 16px; border: 1px solid var(--rule); background: var(--panel);
+}
+.l-seg { display: inline-flex; gap: 7px; align-items: baseline; white-space: nowrap; }
+.l-seg em { font-style: normal; color: var(--dim); font-size: 10px; letter-spacing: 0.12em; }
+.l-seg b { color: var(--cyan); font-weight: 500; font-size: 14px; }
+.l-seg.l-broken b { color: var(--red-text); }
+
+.l-pane { width: 100%; border: 1px solid var(--rule); background: var(--panel); }
+.l-tabs { display: flex; border-bottom: 1px solid var(--rule); }
+.l-tab {
+  flex: 1; padding: 14px 8px; min-height: 48px;  /* a thumb, not a cursor */
+  background: var(--panel-2); color: var(--dim); border: 0;
+  border-right: 1px solid var(--rule); font: inherit; font-size: 12px;
+  letter-spacing: 0.14em; cursor: pointer;
+}
+.l-tab:last-child { border-right: 0; }
+.l-tab[aria-selected="true"] { background: var(--panel); color: var(--cyan); box-shadow: inset 0 2px 0 var(--cyan); }
+.l-body { padding: 18px 16px 20px; }
+
+.l-steps { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 12px; }
+.l-steps li { color: var(--text-2); font-size: 14px; line-height: 1.5; }
+.l-steps b { color: var(--text); font-weight: 500; }
+
+.l-paste {
+  margin: 0 0 14px; padding: 14px; overflow-x: auto;
+  background: var(--void); border: 1px solid var(--rule-dim);
+  color: var(--text-2); font-size: 11.5px; line-height: 1.5;
+  white-space: pre; -webkit-overflow-scrolling: touch;
+}
+.l-agent-note { margin: 0 0 12px; color: var(--dim); font-size: 12.5px; line-height: 1.5; }
+.l-alt { margin: 12px 0 0; font-size: 12.5px; color: var(--dim); }
+.l-alt a { color: var(--cyan-mid); }
+
+.l-copy {
+  display: block; width: 100%; min-height: 48px; padding: 13px;
+  background: var(--cyan); color: var(--void); border: 0; cursor: pointer;
+  font: inherit; font-size: 13px; letter-spacing: 0.16em; font-weight: 600;
+}
+.l-copy:active { transform: translateY(1px); }
+.l-copy.did { background: var(--text); }
+
+.l-watch { display: flex; width: 100%; gap: 0; }
+.l-input {
+  flex: 1; min-height: 48px; padding: 0 14px;
+  background: var(--panel); border: 1px solid var(--rule); border-right: 0;
+  color: var(--text); font: inherit; font-size: 15px;
+}
+.l-input::placeholder { color: var(--dimmer); }
+.l-input:focus { outline: none; border-color: var(--cyan-deep); }
+.l-go {
+  min-height: 48px; padding: 0 18px; border: 1px solid var(--rule);
+  background: var(--panel-2); color: var(--cyan); font: inherit;
+  font-size: 12px; letter-spacing: 0.12em; cursor: pointer;
+}
+.l-names { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.l-names a {
+  padding: 7px 12px; border: 1px solid var(--rule-dim); color: var(--text-2);
+  text-decoration: none; font-size: 12px;
+}
+.l-names a:hover { color: var(--cyan); border-color: var(--cyan-deep); }
+.l-console { color: var(--dim); font-size: 12px; letter-spacing: 0.14em; text-decoration: none; padding: 10px; }
+.l-console:hover { color: var(--cyan); }
+
+/* ── the dossier ── */
+.dossier { max-width: 860px; margin: 0 auto; padding: clamp(14px, 3vw, 28px); display: grid; gap: 16px; }
+.d-head { display: flex; gap: 14px; align-items: center; }
+.d-head h2 { margin: 0; font-size: clamp(22px, 6vw, 34px); letter-spacing: 0.06em; font-weight: 500; }
+.d-addr { color: var(--dim); font-size: 12.5px; }
+.d-standing { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.d-tile {
+  border: 1px solid var(--rule); background: var(--panel);
+  padding: 12px 10px; display: grid; gap: 6px; text-align: center;
+}
+.d-tile b { font-size: clamp(18px, 5vw, 26px); font-weight: 500; color: var(--text); }
+.d-tile em { font-style: normal; font-size: 9.5px; letter-spacing: 0.12em; color: var(--dim); }
+.d-tile.d-red b { color: var(--red-text); }
+.d-tile.d-amber b { color: var(--amber); }
+.d-line { color: var(--dim); font-size: 12px; }
+.d-sec { border: 1px solid var(--rule); background: var(--panel); padding: 12px 14px; }
+.d-sec h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.14em; color: var(--cyan-mid); font-weight: 500; }
+.d-row, .d-beat { padding: 7px 0; border-top: 1px solid var(--rule-dim); font-size: 13px; color: var(--text-2); line-height: 1.45; }
+.d-row:first-of-type, .d-beat:first-of-type { border-top: 0; }
+.d-beat b { color: var(--text); font-weight: 500; }
+.d-beat.d-red { color: var(--red-text); }
+.d-links { display: flex; gap: 18px; flex-wrap: wrap; }
+.d-links a { color: var(--cyan-mid); font-size: 12.5px; text-decoration: none; }
+
+/* The two door screens SCROLL. The console's #stage is overflow:hidden on
+   purpose — its panels manage their own scroll — but the landing and the
+   dossier are documents, and a document inside an overflow:hidden stage is
+   simply unreadable below the fold (measured: the WATCH input was unreachable
+   on the very first desktop screenshot). */
+body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
+
+/* ── the console on a phone: survivable, pending the full ladder ── */
+@media (max-width: 720px) {
+  /* #chrome is height:28px by design on an operator screen. Wrapped onto a
+     phone, the fixed height made the extra rows OVERLAP the page under them —
+     the dossier's own name was under the tab strip. Auto height, and every
+     row pushes content down like it is 2026. */
+  #chrome { flex-wrap: wrap; height: auto; min-height: 28px; row-gap: 0; }
+  #brand { padding: 8px 10px; }
+  #tabs { order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  #tabs button { min-height: 42px; }
+  /* The clock keeps TICK and the countdown; the decorative window furniture
+     (─ ▢ ✕) is a desktop joke and a phone's precious pixels. */
+  #clock { margin-left: auto; flex-wrap: wrap; }
+  #clock .seg { padding: 0 8px; }
+  #clock .wc { display: none; }
+  #stage { padding: 8px; overflow-y: auto; }
+  #ticker .lead { display: none; }
+}
