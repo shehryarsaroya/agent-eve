@@ -35,7 +35,9 @@ import { setSpeed } from '../../src/core/time.js';
 import {
   CastBudget,
   CastTransportError,
+  castSettingsFromEnv,
   createCast,
+  DEFAULT_CAST_LIMITS,
   openAiTransport,
   type CastTransport,
 } from '../../src/cast/index.js';
@@ -220,6 +222,40 @@ describe('a call that never REACHED a provider is still refunded', () => {
     const keyless = await call(openAiTransport({ fetchImpl: (() => undefined) as unknown as typeof fetch }));
     expect(keyless.reachedProvider).toBe(false);
     expect(keyless.message).toContain('OPENAI_API_KEY is not set');
+  });
+});
+
+describe('the operator can reach BOTH halves of the daily cap from the environment', () => {
+  // The cap was env-settable and the window was not, so an operator could raise the
+  // ceiling and silently keep the old period. A knob that exists in the code and not on
+  // the surface is this repo's most-repeated defect; these pin the surface.
+
+  it('defaults to the shipped $100 per 24 h with an empty environment', () => {
+    const s = castSettingsFromEnv({});
+    expect(s.limits.spendCapMicros).toBe(100_000_000);
+    expect(s.limits.spendWindowMs).toBe(24 * 3_600_000);
+    expect(s.limits.spendWindowMs).toBe(DEFAULT_CAST_LIMITS.spendWindowMs);
+  });
+
+  it('takes the window in HOURS, because that is the unit the log line speaks', () => {
+    const s = castSettingsFromEnv({ COMPACT_CAST_SPEND_WINDOW_HOURS: '6' });
+    expect(s.limits.spendWindowMs).toBe(6 * 3_600_000);
+  });
+
+  it('lets an operator raise the ceiling and the period independently', () => {
+    const s = castSettingsFromEnv({
+      COMPACT_CAST_SPEND_CAP_MICROS: '250000000',
+      COMPACT_CAST_SPEND_WINDOW_HOURS: '12',
+    });
+    expect(s.limits.spendCapMicros).toBe(250_000_000);
+    expect(s.limits.spendWindowMs).toBe(12 * 3_600_000);
+  });
+
+  it('0 hours restores the life-of-process cap, and stays constructible', () => {
+    const s = castSettingsFromEnv({ COMPACT_CAST_SPEND_WINDOW_HOURS: '0' });
+    expect(s.limits.spendWindowMs).toBe(0);
+    // The whole point of 0: no window means no clock is required.
+    expect(() => new CastBudget(s.limits)).not.toThrow();
   });
 });
 

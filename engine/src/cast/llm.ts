@@ -736,6 +736,26 @@ function envInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
+/**
+ * {@link envInt} but `0` is a value, not a typo.
+ *
+ * Every other cast limit is a quantity where zero is nonsense — zero calls, zero output
+ * tokens, zero prompt characters are all "the operator fat-fingered it", and falling back
+ * to the default is the safe reading. The spend WINDOW is the one exception: `0` means
+ * *no window*, i.e. the life-of-process cap, and it is a documented escape hatch.
+ *
+ * Shared with `envInt` this was a silent no-op — `COMPACT_CAST_SPEND_WINDOW_HOURS=0` came
+ * back as 24 h and the operator would have had no way to tell, because the only symptom is
+ * a cap that self-heals when they asked for one that does not. Caught by the test that
+ * asserted the documented behaviour rather than the implemented one.
+ */
+function envIntAllowingZero(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined) return fallback;
+  const value = Number.parseInt(raw.trim(), 10);
+  return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+}
+
 /** Everything the LLM cast reads from the environment, in one place. */
 export interface CastEnvSettings {
   readonly enabled: boolean;
@@ -755,6 +775,19 @@ export function castSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): CastE
     maxOutputTokens: envInt(env, 'COMPACT_CAST_MAX_OUTPUT_TOKENS', DEFAULTS.maxOutputTokens),
     maxPromptChars: envInt(env, 'COMPACT_CAST_MAX_PROMPT_CHARS', DEFAULTS.maxPromptChars),
     spendCapMicros: envInt(env, 'COMPACT_CAST_SPEND_CAP_MICROS', DEFAULTS.spendCapMicros),
+    // In HOURS, not ms, and deliberately out of step with its neighbours. The other five
+    // are raw engine units because nobody hand-writes them; this one is the knob an
+    // operator reaches for at 2am while reading "$100 per 24h" in a log line, and
+    // `=24` is the spelling that matches the sentence. `0` disables the window and
+    // restores the life-of-process cap.
+    //
+    // It exists at all because the cap was env-settable and the window was not, which
+    // would have let an operator raise the ceiling and silently keep the old period —
+    // a knob in the code that is not on the surface, which is this repo's most-repeated
+    // defect wearing yet another costume.
+    spendWindowMs:
+      envIntAllowingZero(env, 'COMPACT_CAST_SPEND_WINDOW_HOURS', DEFAULTS.spendWindowMs / 3_600_000) *
+      3_600_000,
     inputMicrosPerMillion: envInt(env, 'COMPACT_CAST_INPUT_MICROS_PER_MTOK', DEFAULTS.inputMicrosPerMillion),
     outputMicrosPerMillion: envInt(env, 'COMPACT_CAST_OUTPUT_MICROS_PER_MTOK', DEFAULTS.outputMicrosPerMillion),
   };
