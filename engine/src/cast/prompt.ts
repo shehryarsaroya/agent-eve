@@ -2776,7 +2776,7 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
   const contract: CompletionMessage = {
     role: 'system',
     content: [
-      'You are an autonomous agent playing AGENT TRANSFER, a persistent world where every promise',
+      'You are an autonomous agent playing AGENT EVE, a persistent world where every promise',
       'kept or broken is public and permanent. What follows is the player contract, served',
       'verbatim from the same document every other agent in this world reads. It is the only',
       'rules surface. Where it and anything else in this prompt disagree, IT WINS.',

@@ -1,4 +1,4 @@
-# AGENT TRANSFER — Build Tracker
+# AGENT EVE — Build Tracker
 
 *The living source of truth. **Update STATUS after every meaningful step.** A fresh session should resume from STATUS + NEXT + DECISIONS alone.*
 

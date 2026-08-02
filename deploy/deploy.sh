@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AGENT TRANSFER (né THE COMPACT) — deploy.
+# AGENT EVE (né THE COMPACT, then AGENT TRANSFER) — deploy.
 #
 # Scar #4 cost a live outage: High Water's backend deploy ran `rsync --delete`
 # into /opt/highwater/, which repeatedly deleted the sibling players/ directory
@@ -18,7 +18,7 @@ HOST=147.93.179.114
 KEY=~/.ssh/agenttransfer_vps
 SSH="ssh -i $KEY -o ConnectTimeout=20 root@$HOST"
 CODE_DIR=/opt/compact
-WEB_DIR=/var/www/agenttransfer.dev
+WEB_DIR=/var/www/agenteve.io
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 TARGET="${1:-all}"
@@ -240,10 +240,10 @@ fi
 # which are the two ways this has actually gone wrong.
 if [[ "$TARGET" == "api" || "$TARGET" == "client" || "$TARGET" == "all" ]]; then
   WANT=$(wc -l < "$REPO_ROOT/engine/agent.md" | tr -d ' ')
-  GOT=$(curl -s --max-time 20 https://agenttransfer.dev/agent.md | wc -l | tr -d ' ')
+  GOT=$(curl -s --max-time 20 https://agenteve.io/agent.md | wc -l | tr -d ' ')
   if [[ "$WANT" != "$GOT" ]]; then
     fail "THE SERVED RULEBOOK IS NOT THE ONE IN THIS REPO: agent.md is $WANT lines here and
-     $GOT lines at agenttransfer.dev/agent.md. Agents play from the served copy, so a
+     $GOT lines at agenteve.io/agent.md. Agents play from the served copy, so a
      stale one means the engine offers verbs the rules do not describe. This exact gap hid
      hulls, battles and campaigns from every live agent for fifteen rules versions because
      agent.md was published only by the 'client' target."
@@ -259,14 +259,17 @@ done
 $SSH 'systemctl daemon-reload'
 ok "units installed"
 
-log "installing the agenttransfer.dev vhost"
+log "installing the agenteve.io vhost"
 # A WHOLE VHOST, not an include. Until 2026-08-02 this was a fragment grafted into
 # agentinsurance.io's vhost with an idempotent sed, because the game lived inside that
 # site's webroot and could not have a server block of its own. It has its own host now,
 # so it owns its own file and the graft is gone.
-scp -q -i "$KEY" "$REPO_ROOT/deploy/nginx-agenttransfer.conf" \
-    "root@$HOST:/etc/nginx/sites-available/agenttransfer.dev"
-$SSH 'ln -sfn /etc/nginx/sites-available/agenttransfer.dev /etc/nginx/sites-enabled/agenttransfer.dev'
+scp -q -i "$KEY" "$REPO_ROOT/deploy/nginx-agenteve.conf" \
+    "root@$HOST:/etc/nginx/sites-available/agenteve.io"
+# One file now carries the game AND the old domain's 301, so the old
+# standalone vhost is UNLINKED in the same breath — two files both claiming
+# server_name agenttransfer.dev would be a duplicate-name conflict.
+$SSH 'ln -sfn /etc/nginx/sites-available/agenteve.io /etc/nginx/sites-enabled/agenteve.io && rm -f /etc/nginx/sites-enabled/agenttransfer.dev'
 $SSH 'nginx -t' || fail "nginx config invalid — NOT reloading, the running site stays up"
 $SSH 'systemctl reload nginx'
 ok "nginx reloaded"
@@ -447,7 +450,7 @@ body_has()   { [[ "$BODY" == *"$1"* ]]; }
 # web page, so a probe fetching the rules would get HTML and try to parse it as rules —
 # and the status code would say everything was fine. A 200 is not evidence; the content
 # is. This check exists because that is exactly what happened.
-fetch https://agenttransfer.dev/agent.md
+fetch https://agenteve.io/agent.md
 head_has 'how to play' || fail "agent.md is not being served as markdown (got: ${BODY:0:40})"
 head_lacks '<!DOCTYPE' || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
 ok "agent.md served as markdown"
@@ -461,7 +464,7 @@ ok "agent.md served as markdown"
 # Same shape as the agent.md check above, and added for the same reason: a 200 carrying
 # the wrong body is worse than a 404, since it looks like success to everything except
 # the thing that has to parse it.
-fetch https://agenttransfer.dev/frames/latest.json
+fetch https://agenteve.io/frames/latest.json
 head_lacks '<!DOCTYPE' || fail "frames/latest.json fell through to index.html — the client polls this and would parse HTML as a frame"
 head_has '{' || fail "frames/latest.json is not JSON (got: ${BODY:0:60})"
 ok "the spectator frame is served as JSON"
@@ -484,7 +487,7 @@ ok "the market's print reaches the frame"
 # reachable and undiscoverable, which for a viewer is the same thing. The index is the
 # fix, and it is checked the same way the frame is: by fetching the URL and reading the
 # body, because a 200 carrying HTML looks like success to everything but the parser.
-fetch https://agenttransfer.dev/frames/index.json
+fetch https://agenteve.io/frames/index.json
 head_lacks '<!DOCTYPE' || fail "frames/index.json fell through to index.html — the history strip would parse HTML as an index"
 body_has '"reckonings"' || fail "frames/index.json carries no reckonings (got: ${BODY:0:80})"
 # And the file it names must actually be there. A table of contents with a broken link in
@@ -497,7 +500,7 @@ body_has '"reckonings"' || fail "frames/index.json carries no reckonings (got: $
 ARCHIVED=''
 if [[ "$BODY" =~ \"file\":\"(r-[0-9]+\.json)\" ]]; then ARCHIVED="${BASH_REMATCH[1]}"; fi
 [[ -n "$ARCHIVED" ]] || fail "frames/index.json names no archive file"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://agenttransfer.dev/frames/$ARCHIVED" || echo 000)
+CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://agenteve.io/frames/$ARCHIVED" || echo 000)
 [[ "$CODE" == "200" ]] || fail "the index names $ARCHIVED and it returns $CODE — the archive has a broken link in it"
 ok "the archive is indexed and $ARCHIVED resolves"
 
@@ -507,7 +510,7 @@ ok "the archive is indexed and $ARCHIVED resolves"
 # not — right after a restart there is no run, so the deciding-share floor (scar #14b)
 # is EXPECTED to be tripped and must not fail the deploy. It is a monitoring alert for
 # during a run, surfaced here as a warning.
-HEALTH=$(curl -s --max-time 20 https://agenttransfer.dev/health || echo '{}')
+HEALTH=$(curl -s --max-time 20 https://agenteve.io/health || echo '{}')
 printf '  health: %s\n' "$HEALTH"
 # Structural soundness — these WOULD be deploy failures:
 grep -q '"world":"RUNNING"' <<<"$HEALTH" || fail "world is not RUNNING after deploy"
@@ -531,4 +534,4 @@ ok "nothing that was running stopped running"
 
 fi  # end api-only restart + world verification
 
-printf '\n\033[1;32mdeploy complete\033[0m  https://agenttransfer.dev/\n\n'
+printf '\n\033[1;32mdeploy complete\033[0m  https://agenteve.io/\n\n'

@@ -105,7 +105,7 @@ import type { SubmittedAction } from '../tick/index.js';
  * principal outright (see the A5′ note in `src/api/server.ts`).
  *
  * This list previously began with `vale`, which is exactly the handle `agent.md` §2
- * uses in `{ "handle": "vale" }` and in `vale@agenttransfer.dev`. `agent.md` is the
+ * uses in `{ "handle": "vale" }` and in `vale@agenteve.io`. `agent.md` is the
  * contract and does not move, so the cast does.
  * `test/cast/heuristic.test.ts` parses the document and asserts the disjointness, so
  * the next name added cannot quietly re-close the trap.

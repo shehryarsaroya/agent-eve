@@ -362,7 +362,7 @@ export function createApp(options: ApiOptions): CreatedApp {
                 `lowercase letters and digits, single internal hyphens, starting with a letter, ` +
                 `1..${String(MAX_HANDLE_LENGTH)} characters. No underscores, no capitals, no dots. ` +
                 `'vale' and 'red-ash-9' are handles; 'Vale', 'red_ash' and 'vale-' are not. It is also ` +
-                'your address at agenttransfer.dev, so it has to be one.',
+                'your address at agenteve.io, so it has to be one.',
             ),
           ),
         );
@@ -523,7 +523,7 @@ export function createApp(options: ApiOptions): CreatedApp {
         principalId: principal,
         handle: handle.value,
         /** §15.7: the handle *is* the address. */
-        email: `${handle.value}@agenttransfer.dev`,
+        email: `${handle.value}@agenteve.io`,
         keyid: registered.keyid,
         didKey: registered.didKey,
         holding: { id: enrolment.holding.id, name: enrolment.holding.name, system: enrolment.holding.system },

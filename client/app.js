@@ -1,4 +1,4 @@
-/* AGENT TRANSFER — the spectator console: data layer, router, backdrop.
+/* AGENT EVE — the spectator console: data layer, router, backdrop.
  *
  * SPEC §15.5: static cacheable files behind Cloudflare, NOT per-connection SSE.
  * The Reckoning is exactly when you have an audience, which is exactly when a

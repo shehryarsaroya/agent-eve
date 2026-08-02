@@ -1,4 +1,4 @@
-# CLAUDE.md — AGENT TRANSFER (né THE COMPACT)
+# CLAUDE.md — AGENT EVE (né THE COMPACT, then AGENT TRANSFER)
 
 *Context file for any AI session in this repo. Written 2026-07-24, updated for SPEC v3.0. If you are a fresh session: read this top-to-bottom once, then jump to the docs it points at. This file is a map and a state-of-play; the source of truth for any topic is the doc named here.*
 
