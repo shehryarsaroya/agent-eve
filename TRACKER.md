@@ -6,6 +6,19 @@
 
 ## ⏱ STATUS
 
+> ### ⚑ ENGINE FINDING, DIAGNOSED FROM THE CLIENT (2026-08-02): `meters.kept/broken` IS A PER-RECKONING DELTA
+>
+> The July 31 handoff measured `meters.kept/broken` disagreeing with `sum(standings)` on one
+> fixture frame — *"a cumulative counter running backwards"* — and could not explain it. The
+> landing page found the signature on production: **R8's frame reads `kept 29 · broken 1` while
+> its own standings sum 204/48, and 204 − 175 (R7's cumulative) is exactly 29.** The meter is
+> publishing the Reckoning's DELTA under a field the frame contract describes as cumulative.
+> One of the two is wrong — the field or its name — and §3 says a name that means two things is
+> the bug. The client sums standings everywhere it shows the figure (landing strip, dossier),
+> which is correct under either reading; the engine owes either a rename or a re-cumulation,
+> plus the frame-contract line. Filed from client work; not touched tonight.
+>
+
 > ### ★★★ **THREE BRANCHES LANDED — `RULES_VERSION` 40, AND ONE OF THEM WAS RE-PRICED AT MERGE.**
 >
 > `sign-the-menu` (**38**), `lode-40-risk-observe` (**39**) and `lode-38-conflict` (**40**) merged into
