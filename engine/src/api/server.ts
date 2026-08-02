@@ -1005,14 +1005,17 @@ export function createApp(options: ApiOptions): CreatedApp {
         // somebody remembered: it used to omit `/agent.md`, which has been served since §12.5, and
         // said nothing about `/frames/`, which `agent.md` itself sends agents to. A refusal that
         // enumerates is only as true as its enumeration, and this one is the reader's whole map.
-        // `originalUrl`, not `path`: this handler also catches falls-through from the
-        // router mounted at API_BASE_PATH, where express has already stripped the mount —
-        // the QA probe sent GET /api/enroll and was told "no route GET /enroll", which
-        // reads as the server misquoting the request. And the enumeration carries
-        // live.json now: the same probe found the freshest frame absent from the
-        // reader's whole map (the older comment above already relearned this once
-        // for /frames/ as a class).
-        `no route ${req.method} ${scrub(req.originalUrl.split('?')[0])}. The whole API is POST ${API_BASE_PATH}/enroll, ` +
+        // The QA probe sent GET /api/enroll and was told "no route GET /enroll" — the
+        // server misquoting the request. First fix reached for `originalUrl`, which
+        // handles EXPRESS's mount-strip and did nothing in production, because the strip
+        // happens one layer up: nginx proxies `/api/` with a trailing-slash proxy_pass,
+        // so the app is handed `/enroll` and that IS the original URL as far as express
+        // knows (`httpsig.ts` documents the same topology for `@path`). So the public
+        // spelling is RECONSTRUCTED: what the app was handed, prefixed with the mount it
+        // is published under unless it already carries it. And the enumeration carries
+        // live.json now — the same probe found the freshest frame absent from the
+        // reader's whole map.
+        `no route ${req.method} ${scrub(publicSpelling(req.originalUrl))}. The whole API is POST ${API_BASE_PATH}/enroll, ` +
           `GET ${API_BASE_PATH}/observe, POST ${API_BASE_PATH}/act, GET ${API_BASE_PATH}/health, ` +
           `POST ${API_BASE_PATH}/discrepancy, GET ${API_BASE_PATH}/agent.md, and the unsigned public ` +
           `frames at GET /frames/live.json (every tick) · /frames/${LATEST} · /frames/${FRAME_INDEX}.`,
@@ -1678,6 +1681,14 @@ function bytesOf(req: Request): Uint8Array {
  * routing no-op here, so both spellings are the same resource, and the nonce is
  * spent per key rather than per path.
  */
+/** The spelling a request has on the PUBLIC side of nginx's mount-strip. */
+function publicSpelling(originalUrl: string): string {
+  const path = originalUrl.split('?')[0] ?? '';
+  return path.startsWith(API_BASE_PATH + '/') || path === API_BASE_PATH
+    ? path
+    : API_BASE_PATH + path;
+}
+
 export function requestTargetsFor(received: string, mount: string = API_BASE_PATH): readonly string[] {
   const unmounted =
     received === mount
