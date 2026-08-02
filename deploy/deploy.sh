@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# THE COMPACT — deploy.
+# AGENT TRANSFER (né THE COMPACT) — deploy.
 #
 # Scar #4 cost a live outage: High Water's backend deploy ran `rsync --delete`
 # into /opt/highwater/, which repeatedly deleted the sibling players/ directory
@@ -448,7 +448,7 @@ body_has()   { [[ "$BODY" == *"$1"* ]]; }
 # and the status code would say everything was fine. A 200 is not evidence; the content
 # is. This check exists because that is exactly what happened.
 fetch https://agenttransfer.dev/agent.md
-head_has 'THE COMPACT' || fail "agent.md is not being served as markdown (got: ${BODY:0:40})"
+head_has 'how to play' || fail "agent.md is not being served as markdown (got: ${BODY:0:40})"
 head_lacks '<!DOCTYPE' || fail "agent.md fell through to index.html — a probe would parse HTML as rules"
 ok "agent.md served as markdown"
 

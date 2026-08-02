@@ -1,5 +1,5 @@
 /**
- * RFC 9421 HTTP Message Signatures — the subset THE COMPACT needs.
+ * RFC 9421 HTTP Message Signatures — the subset AGENT TRANSFER needs.
  *
  * Covered components: `@method` `@path` `@authority` `content-digest` (plus
  * `@scheme`, `@query` and `@target-uri`, which cost nothing to support and stop a

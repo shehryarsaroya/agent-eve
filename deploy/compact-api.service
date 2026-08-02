@@ -17,7 +17,7 @@
 # When the API genuinely needs to scale out, the split is: this unit keeps the
 # scheduler, the new stateless workers get NO write path, and OPS-5 becomes an
 # assertion rather than an artefact of there being one process.
-Description=THE COMPACT — agent API and tick scheduler (single writer)
+Description=AGENT TRANSFER (né THE COMPACT) — agent API and tick scheduler (single writer)
 After=network-online.target postgresql.service
 Wants=network-online.target
 Requires=postgresql.service

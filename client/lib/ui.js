@@ -1,4 +1,4 @@
-/* THE COMPACT — shared drawing helpers.
+/* AGENT TRANSFER — shared drawing helpers.
  *
  * Classic script, no modules, no build step: the deploy is an rsync of static
  * files and `index.html` has to open straight off disk.

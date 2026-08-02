@@ -1004,7 +1004,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(104_535);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(106_357);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1044,7 +1044,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 104,647 = **15,353**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 98,128 — leaving **21,872**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(104_535);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(106_357);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1114,7 +1114,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // — the number to quote about SAFETY and never the number to quote about ROOM.
     // ★ RE-MEASURED at 40: +3,123 — §6's `risk` key line (+460, FLOOR) and §11F's schedule,
     // `at_stake` and four previously-unnamed fields (+2,663, act-gated). Read, not added.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(98_024);
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(99_846);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1141,18 +1141,26 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }
   });
 
-  it('★ CONTRACT_NOT_EXCERPTED STAYS AT THREE, and none of them is there because of size', () => {
+  it('★ CONTRACT_NOT_EXCERPTED STAYS AT FOUR, and none of them is there because of size', () => {
     // ══════════════════════════════════════════════════════════════════════════
     // A bigger budget must not quietly absorb these, and it must not tempt anyone to park a
-    // section here for room again. All three are CAPABILITY reasons — you cannot enrol, you are
-    // never offline, you cannot file a bug report from a plan — and a member that cannot act on
-    // a rule should still not be charged for reading it.
+    // section here for room again. All four are CAPABILITY reasons — you have no first wake,
+    // you cannot enrol, you are never offline, you cannot file a bug report from a plan — and
+    // a member that cannot act on a rule should still not be charged for reading it.
     //
     // This list held §11B, §11C and §11D for a size reason, with the only rules for nine live
     // verbs in them. That is what "it does not fit" costs, and the test is here so the next
     // person has to argue capability rather than characters.
+    //
+    // Three became four on 2026-08-02: §0 is the first-wake digest for EXTERNAL newcomers,
+    // added off the onboarding study, and it is §2's argument one step earlier — a house
+    // member is seated at boot, so "your first wake" is a situation it can never be in. Every
+    // fact in §0 is a compression of a section the catalog already selects, so excluding it
+    // charges the cast nothing it needs; the measured table above shows §0's 1,976 characters
+    // appearing in NO position's cell, which is this ledger doing exactly what it claims.
     // ══════════════════════════════════════════════════════════════════════════
     expect(CONTRACT_NOT_EXCERPTED.map((s) => s.heading)).toEqual([
+      '## 0. Your first wake, in five moves',
       '## 2. Enrolling',
       '## 9. Being offline',
       '## 13. When something seems wrong',
@@ -2722,6 +2730,25 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // it was still read rather than added, because that is the only version of this that survives a
     // merge with a branch nobody here measured against.
     //
+    // ── 2026-08-02, LATER THE SAME DAY: EVERY CELL ROSE, and the decomposition is exact ──
+    //
+    // The onboarding pass (docs/design/ONBOARDING-2026-08-01.md) added four things to sections
+    // this catalog selects, and one thing it deliberately does not:
+    //
+    //     §5  two clock facts (frame-lag + wake pool)   850
+    //     §4  the IN_FULL "tip before the bill" line    250
+    //     §8  "seal only what your own hands control"   462
+    //     §11 the reading-order note                    260
+    //     ────────────────────────────────────────────────
+    //     full-selection positions                    +1,822   (title's +3 never appears: the
+    //                                                           doc title is not in any excerpt)
+    //
+    // The newcomer moved +1,111 ≈ 850 + 260: it holds no role and owes no elective, so the seal
+    // and IN_FULL units are not in its selection — the same gating this table already documents.
+    // And §0, the 1,976-character first-wake digest, appears in NO cell: it is claimed by
+    // CONTRACT_NOT_EXCERPTED (a house member is seated at boot and has no first wake), so the
+    // one addition aimed at external newcomers costs the cast exactly nothing.
+    //
     // ── 2026-08-02: EVERY CELL FELL, AND THE ARITHMETIC IS THE SECOND CHECKABLE CASE ──
     //
     // The game moved to the root of its own host, so `agent.md` says `/api/observe` where it used
@@ -2734,13 +2761,13 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // other amount would have meant the re-path changed something other than the path, which is
     // exactly the question this table exists to answer — and the reason to record the divisibility
     // here rather than just re-reading the numbers and moving on.
-      45_063, // a newcomer on its first wake            (+460: §6's key line ONLY)
-      53_802, // mid-game in the Commons                 (+460)
-      63_497, // about to take territory                 (+460)
-      66_639, // at war: party to a live campaign        (+460)
-      96_523, // a claimant in trouble                   (+3,123)
-      78_409, // the Commons at its fullest              (+3,123)
-      98_024, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,123)
+      46_174, // a newcomer on its first wake            (+460: §6's key line ONLY)
+      55_624, // mid-game in the Commons                 (+460)
+      65_319, // about to take territory                 (+460)
+      68_461, // at war: party to a live campaign        (+460)
+      98_345, // a claimant in trouble                   (+3,123)
+      80_231, // the Commons at its fullest              (+3,123)
+      99_846, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,123)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -2915,7 +2942,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      104_535, // the analytic ceiling                    (+3,123 at 40)
+      106_357, // the analytic ceiling                    (+3,123 at 40)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

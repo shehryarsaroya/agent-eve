@@ -1,4 +1,4 @@
-/* THE COMPACT — the eight screens.
+/* AGENT TRANSFER — the eight screens.
  *
  *   OVERVIEW · PRINCIPALS · VENTURES · GRANTS · MARKET · MAP · STANDINGS · RECKONING
  *

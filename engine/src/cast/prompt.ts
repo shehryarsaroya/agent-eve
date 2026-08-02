@@ -1505,6 +1505,17 @@ export const CONTRACT_NOT_EXCERPTED: readonly {
    */
   readonly verbs: readonly string[];
 }[] = Object.freeze([
+  {
+    // The same capability argument as '## 2' below, one step earlier: §0 is the first-wake
+    // digest for EXTERNAL newcomers (added 2026-08-02 off the onboarding study), and every
+    // fact in it is a compression of a section this catalog already selects — the loop (§1),
+    // corrections (§6/§7), the two clocks (§5), what is permanent (§4/§8). A house member is
+    // seated at boot; it has no first wake to be oriented for, so charging every position
+    // ~1.9k characters for the digest would be paying twice for rules it already gets whole.
+    heading: '## 0. Your first wake, in five moves',
+    because: 'a first-wake digest for external newcomers; you were seated at boot and have no first wake, and every fact in it is in a section already selected',
+    verbs: [],
+  },
   { heading: '## 2. Enrolling', because: 'you were seated at boot and never enrol', verbs: [] },
   { heading: '## 9. Being offline', because: 'you run in-process and are never offline', verbs: [] },
   {
@@ -2765,7 +2776,7 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
   const contract: CompletionMessage = {
     role: 'system',
     content: [
-      'You are an autonomous agent playing THE COMPACT, a persistent world where every promise',
+      'You are an autonomous agent playing AGENT TRANSFER, a persistent world where every promise',
       'kept or broken is public and permanent. What follows is the player contract, served',
       'verbatim from the same document every other agent in this world reads. It is the only',
       'rules surface. Where it and anything else in this prompt disagree, IT WINS.',

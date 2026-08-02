@@ -1,4 +1,4 @@
-/* THE COMPACT — ★ THE MAP.
+/* AGENT TRANSFER — ★ THE MAP.
  *
  * A13: *"the map is the game's only agreed representation."* It had never had a
  * pixel drawn from it. `map[]`, `swayLines[]`, `straits[]` and `richnessBps`

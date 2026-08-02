@@ -79,7 +79,7 @@ import type { WallSeconds } from '../src/identity/wallclock.js';
 
 /** Outside the repo, by rule. Never move this under the working tree. */
 const STORE = join(homedir(), '.compact-probes');
-const BASE = process.env['COMPACT_BASE'] ?? 'https://agentinsurance.io/compact/api';
+const BASE = process.env['COMPACT_BASE'] ?? 'https://agenttransfer.dev/api';
 
 interface ProbeFile {
   readonly name: string;

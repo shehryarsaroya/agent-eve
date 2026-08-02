@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""THE COMPACT — the client's generated art plates.
+"""AGENT TRANSFER — the client's generated art plates.
 
 The screen mocks under docs/design/graphics-2026-07-30/samples/ are the house style. This script
 generates the *pieces* the renderer needs as real assets, in that same language, so the CSS and the
