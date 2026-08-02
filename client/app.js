@@ -126,6 +126,15 @@ var App = (function () {
       var brand = document.getElementById('brand');
       brand.parentNode.insertBefore(chip, brand.nextSibling);
     }
+    // …and the repo, one small chip, from every screen. The door carries the
+    // big version; this is for whoever dismissed it and got curious later.
+    if (!document.getElementById('ghchip')) {
+      var ghc = el('a', {
+        id: 'ghchip', href: 'https://github.com/shehryarsaroya/agent-eve',
+        target: '_blank', rel: 'noopener', text: 'GITHUB \u2197',
+      });
+      chip.parentNode.insertBefore(ghc, chip.nextSibling);
+    }
     var mine = window.ATDoor ? ATDoor.handle() : null;
     var mychip = document.getElementById('mychip');
     if (mine && !mychip) {

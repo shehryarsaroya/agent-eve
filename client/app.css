@@ -1494,3 +1494,27 @@ body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
   .ovmap-host { height: 300px; }
   #doorchip { font-size: 10px; padding: 0 8px; }
 }
+
+/* ── the GitHub button on the door, and its chip in the chrome ── */
+.door-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .door-row { grid-template-columns: 1fr; } }
+.door-row .door-enter { min-height: 54px; }
+.door-gh {
+  display: grid; grid-template-columns: auto 1fr; align-items: center;
+  column-gap: 12px; row-gap: 2px; min-height: 54px; padding: 10px 16px;
+  border: 1px solid var(--cyan-deep); background: var(--cyan-wash);
+  color: var(--cyan); text-decoration: none;
+  font-size: 13px; letter-spacing: 0.16em; font-weight: 600;
+}
+.door-gh:hover { background: var(--cyan-wash-2); border-color: var(--cyan); }
+.door-gh .gh-mark { width: 22px; height: 22px; grid-row: 1 / span 2; }
+.door-gh-sub {
+  grid-column: 2; font-style: normal; font-weight: 400;
+  font-size: 10px; letter-spacing: 0.08em; color: var(--cyan-mid); text-transform: none;
+}
+#ghchip {
+  display: flex; align-items: center; padding: 0 12px; white-space: nowrap;
+  border-right: var(--hair) solid var(--rule); color: var(--dim);
+  font-size: var(--fs-sm); letter-spacing: var(--track); text-decoration: none;
+}
+#ghchip:hover { color: var(--text); background: var(--panel-3); }

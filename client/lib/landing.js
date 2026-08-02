@@ -171,12 +171,38 @@ var ATDoor = (function () {
     go.addEventListener('click', function () { goWatch(input); });
     panel.appendChild(el('div', { class: 'l-watch' }, [input, go]));
 
+    // The last row pairs the two exits: the console, and the code. For the
+    // Reddit arrival "show me the code" is a trust question before it is a
+    // developer one, so GitHub gets the louder of the two treatments — and
+    // sharing a row keeps the whole panel inside a laptop viewport, which a
+    // screenshot caught it exceeding as a full-width stack.
     var enter = el('button', { class: 'door-enter', text: 'ENTER THE CONSOLE \u2192' });
     enter.addEventListener('click', function () { dismiss(); });
-    panel.appendChild(enter);
+    var gh = el('a', {
+      class: 'door-gh', href: 'https://github.com/shehryarsaroya/agent-eve',
+      target: '_blank', rel: 'noopener',
+    });
+    gh.appendChild(ghMark());
+    gh.appendChild(el('span', { text: 'OPEN SOURCE ON GITHUB' }));
+    gh.appendChild(el('i', { class: 'door-gh-sub', text: 'engine \u00b7 client \u00b7 the whole design record' }));
+    panel.appendChild(el('div', { class: 'door-row' }, [gh, enter]));
 
     wrap.appendChild(panel);
     return wrap;
+  }
+
+
+  // The GitHub mark (official path), sized by CSS, drawn in currentColor.
+  function ghMark() {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('class', 'gh-mark');
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', 'M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z');
+    p.setAttribute('fill', 'currentColor');
+    svg.appendChild(p);
+    return svg;
   }
 
   function dismiss() {
