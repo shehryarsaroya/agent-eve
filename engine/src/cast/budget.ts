@@ -14,10 +14,29 @@
  *      a *rate* cap, and it is the only one that resets.
  *   2. **Output tokens per call.** Catches a model that answers a request for one JSON
  *      object with an essay. Sent on the request, so the provider enforces it too.
- *   3. **Cumulative spend.** Catches everything else, including the case the other two
+ *   3. **Spend per window.** Catches everything else, including the case the other two
  *      cannot see: a correct cast running correctly for longer than anybody intended.
- *      This one **never resets** — it is the total for the process — and when it trips the
- *      LLM cast is **disabled for good** and the world falls back to heuristics.
+ *      Latching *within* its window — once it trips the cast is on heuristics until the
+ *      window rolls — and the window is wall-clock, so the figure means what an operator
+ *      reading an invoice thinks it means.
+ *
+ * ── WHY #3 GREW A WINDOW (2026-08-01) ──
+ *
+ * It used to have none: one cumulative total for the life of the process, latching for
+ * good. The argument for that is still in {@link CastBudget.disabled} and it is still
+ * right about what it was arguing against — *a cap that un-trips on the next **Reckoning**
+ * is a rate limit wearing a spend cap's name*, because a Reckoning is world time and world
+ * time is not money.
+ *
+ * A **wall-clock day** is money. The failure the old shape actually produced, in
+ * production, on 2026-07-31: the cast tripped $5.00 after 310 calls seven and a half hours
+ * into a fresh world, and then the world ran **thirty-two hours on heuristics** with the
+ * site up, frames publishing, and nothing but `/health` saying so. That is not a budget
+ * working; that is a budget failing in the direction that hides — the same class of defect
+ * this repo keeps re-finding. A daily ceiling bounds the money *and* self-heals, and it is
+ * what an operator means by "a hundred a day".
+ *
+ * Set {@link CastBudgetLimits.spendWindowMs} to `0` to get the old lifetime behaviour back.
  *
  * ── EVERY FIGURE IS AN INTEGER NUMBER OF MICRO-DOLLARS ──
  *
@@ -35,8 +54,13 @@
  * treats an unmetered call as free is a spend cap that does not cap.
  */
 
+import type { Clock } from '../core/time.js';
+
 /** Micro-dollars in a dollar. Named so the arithmetic reads. */
 const MICROS_PER_DOLLAR = 1_000_000;
+
+/** Milliseconds in an hour, so the window default reads as the day it is. */
+const MS_PER_HOUR = 3_600_000;
 
 /** Tokens are priced per million; this is that million. */
 const TOKENS_PER_PRICE_UNIT = 1_000_000;
@@ -73,8 +97,27 @@ export interface CastBudgetLimits {
    * built, so a prompt over this figure is billed at what it really costs.
    */
   readonly maxPromptChars: number;
-  /** Cumulative, for the life of the process. Tripping this disables the LLM cast. */
+  /** Ceiling on spend inside one {@link spendWindowMs}. Tripping it disables the LLM cast. */
   readonly spendCapMicros: number;
+  /**
+   * The window {@link spendCapMicros} is measured over, in wall-clock milliseconds.
+   *
+   * `0` disables the window: the cap becomes cumulative for the life of the process and
+   * latches for good, which is what this class did before 2026-08-01.
+   *
+   * **Tumbling, not sliding**, anchored on the first charge. A sliding window would need a
+   * timestamped entry per call and would buy one thing: it would stop an operator spending
+   * the cap at 23:59 and again at 00:01. That worst case is bounded at 2× over a few
+   * minutes, every provider's own daily limit works this way, and the honest comparison is
+   * against the alternative actually on the table — a cap with no window at all, whose
+   * worst case is *the world runs on heuristics until somebody notices*. If the burst ever
+   * matters, the fix is a ring of `(nowMs, micros)` here and nothing outside this file.
+   *
+   * **Requires a {@link Clock}.** Construct with one or the window silently cannot roll;
+   * the constructor refuses that combination rather than letting it become a lifetime cap
+   * wearing a daily cap's name.
+   */
+  readonly spendWindowMs: number;
   /** Micro-dollars per million input tokens. `gpt-5.6-luna`: $1 → 1,000,000. */
   readonly inputMicrosPerMillion: number;
   /** Micro-dollars per million output tokens. `gpt-5.6-luna`: $6 → 6,000,000. */
@@ -100,8 +143,14 @@ export interface CastBudgetLimits {
  *   - 200 calls per Reckoning is a little over the 192 that twelve members at sixteen
  *     wakes can legitimately want, so the rate cap does not bind in normal operation and
  *     does bind hard on a runaway.
- *   - $5.00 total is roughly two to three Reckonings. It is meant to be raised
- *     deliberately by an operator watching the spend, not to be a working ceiling.
+ *   - **$100 per 24 h** is the working ceiling, set by owner decision on 2026-08-01. It is
+ *     roughly six times the measured burn — production spent $5.00 in seven and a half
+ *     hours, so ~$16 a day at twelve members — which is headroom enough that it should
+ *     never bind in normal operation and still bounds a runaway wake trigger to a number
+ *     an operator can absorb noticing a day late.
+ *   - The predecessor was **$5.00 for the life of the process**, and raising it is not the
+ *     whole change: a lifetime cap that trips is a world on heuristics forever, and that is
+ *     what it did. See the header note.
  */
 export const DEFAULT_CAST_LIMITS: CastBudgetLimits = Object.freeze({
   callsPerReckoning: 200,
@@ -116,7 +165,8 @@ export const DEFAULT_CAST_LIMITS: CastBudgetLimits = Object.freeze({
   // case per call, and calls are charged at worst case before they are made.
   maxOutputTokens: 1500,
   maxPromptChars: 24_000,
-  spendCapMicros: 5 * MICROS_PER_DOLLAR,
+  spendCapMicros: 100 * MICROS_PER_DOLLAR,
+  spendWindowMs: 24 * MS_PER_HOUR,
   inputMicrosPerMillion: 1 * MICROS_PER_DOLLAR,
   cachedInputMicrosPerMillion: MICROS_PER_DOLLAR / 10,
   outputMicrosPerMillion: 6 * MICROS_PER_DOLLAR,
@@ -130,8 +180,21 @@ export type BudgetVerdict = { readonly ok: true } | { readonly ok: false; readon
 export interface CastSpendReport {
   readonly calls: number;
   readonly callsThisReckoning: number;
+  /** Spend inside the current window — the figure {@link CastBudgetLimits.spendCapMicros} gates. */
   readonly spentMicros: number;
   readonly capMicros: number;
+  /** The window `spentMicros` is measured over, in ms. `0` when the cap is cumulative. */
+  readonly windowMs: number;
+  /**
+   * Ms until the window rolls and a tripped cap clears, or `null` when there is no window
+   * (or nothing has been charged yet, so no window has been anchored).
+   *
+   * On the report on purpose: without it, "the cast is disabled" is the whole story an
+   * operator gets, and the follow-up question is always *for how long*.
+   */
+  readonly windowResetsInMs: number | null;
+  /** Process total, across every window. Reporting only — no cap gates this. */
+  readonly spentLifetimeMicros: number;
   /** Calls whose token counts were guessed from characters rather than reported. */
   readonly estimatedCalls: number;
   readonly disabled: boolean;
@@ -140,15 +203,35 @@ export interface CastSpendReport {
 
 export class CastBudget {
   private readonly limits: CastBudgetLimits;
+  private readonly clock: Clock | null;
   private reckoning = -1;
   private inReckoning = 0;
   private calls = 0;
   private estimated = 0;
+  /** Spend inside the current window. This is the figure the cap gates. */
   private spent = 0;
+  /** Spend for the life of the process. Reporting only; nothing gates on it. */
+  private spentLifetime = 0;
+  /** When the current window opened, or `null` before the first charge anchors one. */
+  private windowStartMs: number | null = null;
   private stopped: BudgetRefusal | null = null;
 
-  constructor(limits: Partial<CastBudgetLimits> = {}) {
+  /**
+   * @param clock Required whenever `spendWindowMs > 0`. Omitting it is refused rather than
+   *   tolerated: a window that cannot read a clock cannot roll, so it would behave exactly
+   *   like a lifetime cap while reporting a daily one — and a budget that lies about its
+   *   own shape is worse than the shape it lies about. `Date.now` is banned here (DET-7);
+   *   production injects `systemClock()` and tests inject `fixedClock()`.
+   */
+  constructor(limits: Partial<CastBudgetLimits> = {}, clock?: Clock) {
     this.limits = { ...DEFAULT_CAST_LIMITS, ...limits };
+    this.clock = clock ?? null;
+    if (this.limits.spendWindowMs > 0 && this.clock === null) {
+      throw new Error(
+        'CastBudget: spendWindowMs > 0 requires a Clock. Pass one, or set spendWindowMs: 0 ' +
+          'for a cumulative life-of-process cap.',
+      );
+    }
   }
 
   get caps(): CastBudgetLimits {
@@ -156,17 +239,25 @@ export class CastBudget {
   }
 
   /**
-   * True once the cumulative cap has tripped.
+   * True once the spend cap has tripped.
    *
-   * **Latching**, with exactly one exception. Neither a new Reckoning nor a downward
-   * {@link settle} clears it: the cap trips on *reserved* spend, which is deliberately
-   * pessimistic, and a cap that flickers as estimates are corrected is not a cap. A cap
-   * that un-trips on the next Reckoning is a rate limit wearing a spend cap's name.
+   * **Latching within its window**, with two exceptions, and the distinction between them
+   * is the whole design.
    *
-   * The exception is {@link refund}, and it is not a loophole: a refund reverses a charge
-   * for a call that **provably never reached the provider**, so the money was never spent
-   * and the line was never actually crossed. Without it, a world misconfigured with no key
-   * would disable its cast permanently after a few Reckonings of spending nothing at all.
+   * Neither a new Reckoning nor a downward {@link settle} clears it. The cap trips on
+   * *reserved* spend, which is deliberately pessimistic, and a cap that flickers as
+   * estimates are corrected is not a cap. **A cap that un-trips on the next Reckoning is a
+   * rate limit wearing a spend cap's name** — a Reckoning is world time, world time runs at
+   * whatever `COMPACT_SPEED` says, and money does not.
+   *
+   * The exceptions are both things that genuinely mean *the line was not crossed*:
+   *
+   *   1. {@link refund} — reverses a charge for a call that **provably never reached the
+   *      provider**, so the money was never spent. Without it, a world misconfigured with
+   *      no key would disable its cast permanently after spending nothing at all.
+   *   2. {@link rollWindow} — a **wall-clock** window elapsing. This is not the Reckoning
+   *      loophole the paragraph above refuses: the sentence there is about world time, and
+   *      a day is not world time. $100 in the last 24 h is a claim about an invoice.
    */
   get disabled(): boolean {
     return this.stopped === 'SPEND_CAP';
@@ -192,8 +283,36 @@ export class CastBudget {
     if (this.stopped === 'CALL_RATE') this.stopped = null;
   }
 
-  /** May one more call be made? Pure: it decides nothing and charges nothing. */
+  /**
+   * Roll the spend window if it has elapsed, clearing a `SPEND_CAP` latch with it.
+   *
+   * Called from {@link mayCall} and {@link charge} rather than from a timer, so the window
+   * advances on use. Nothing is spending while nothing is asking, so a window that only
+   * moves when asked is indistinguishable from one that moves on its own — and it needs no
+   * lifecycle.
+   *
+   * A backwards clock jump (NTP correcting a drifting VM, which this box is) re-anchors the
+   * window without clearing the spend. The alternative reading — treat it as elapsed — hands
+   * out a fresh allowance every time the clock steps back, which is a way to spend real
+   * money on a fault nobody would think to look for.
+   */
+  private rollWindow(): void {
+    const windowMs = this.limits.spendWindowMs;
+    if (windowMs <= 0 || this.clock === null) return;
+    const now = this.clock.nowMs();
+    if (this.windowStartMs === null || now < this.windowStartMs) {
+      this.windowStartMs = now;
+      return;
+    }
+    if (now - this.windowStartMs < windowMs) return;
+    this.windowStartMs = now;
+    this.spent = 0;
+    if (this.stopped === 'SPEND_CAP') this.stopped = null;
+  }
+
+  /** May one more call be made? Rolls the window; charges nothing. */
   mayCall(): BudgetVerdict {
+    this.rollWindow();
     if (this.stopped === 'SPEND_CAP') return { ok: false, why: 'SPEND_CAP' };
     if (this.spent >= this.limits.spendCapMicros) return { ok: false, why: 'SPEND_CAP' };
     if (this.inReckoning >= this.limits.callsPerReckoning) return { ok: false, why: 'CALL_RATE' };
@@ -210,12 +329,14 @@ export class CastBudget {
    * ceiling; {@link settle} then corrects the estimate downwards when the truth arrives.
    */
   charge(promptChars: number): number {
+    this.rollWindow();
     this.calls += 1;
     this.inReckoning += 1;
     const inputTokens = Math.ceil(Math.max(0, promptChars) / CHARS_PER_TOKEN);
     const worstCase =
       this.priceInput(inputTokens) + this.priceOutput(this.limits.maxOutputTokens);
     this.spent += worstCase;
+    this.spentLifetime += worstCase;
     this.checkCap();
     return worstCase;
   }
@@ -249,14 +370,16 @@ export class CastBudget {
     const actual =
       (inputTokens === null ? 0 : this.priceInput(fresh) + this.priceCachedInput(cached)) +
       this.priceOutput(outputTokens);
-    if (inputTokens === null) {
-      // Only the output half is known: keep the reserved input estimate, swap the output.
-      const reservedOutput = this.priceOutput(this.limits.maxOutputTokens);
-      this.spent += actual - reservedOutput;
-    } else {
-      this.spent += actual - reserved;
-    }
+    // Only the output half is known when input was not measured: keep the reserved input
+    // estimate and swap the output half only.
+    const correction =
+      inputTokens === null
+        ? actual - this.priceOutput(this.limits.maxOutputTokens)
+        : actual - reserved;
+    this.spent += correction;
+    this.spentLifetime += correction;
     if (this.spent < 0) this.spent = 0;
+    if (this.spentLifetime < 0) this.spentLifetime = 0;
     this.checkCap();
   }
 
@@ -270,6 +393,7 @@ export class CastBudget {
    */
   refund(reserved: number): void {
     this.spent = Math.max(0, this.spent - reserved);
+    this.spentLifetime = Math.max(0, this.spentLifetime - reserved);
     if (this.stopped === 'SPEND_CAP' && this.spent < this.limits.spendCapMicros) {
       this.stopped = null;
     }
@@ -281,10 +405,27 @@ export class CastBudget {
       callsThisReckoning: this.inReckoning,
       spentMicros: this.spent,
       capMicros: this.limits.spendCapMicros,
+      windowMs: this.limits.spendWindowMs,
+      windowResetsInMs: this.windowResetsInMs(),
+      spentLifetimeMicros: this.spentLifetime,
       estimatedCalls: this.estimated,
       disabled: this.disabled,
       disabledWhy: this.stopped,
     };
+  }
+
+  /**
+   * Ms until the window rolls, or `null` when there is no window or none is anchored yet.
+   *
+   * Never negative: an elapsed-but-unrolled window reads `0`, because {@link rollWindow}
+   * runs on use and a report taken between the elapse and the next call would otherwise
+   * print a countdown that had gone through zero.
+   */
+  private windowResetsInMs(): number | null {
+    if (this.limits.spendWindowMs <= 0 || this.clock === null) return null;
+    if (this.windowStartMs === null) return null;
+    const elapsed = this.clock.nowMs() - this.windowStartMs;
+    return Math.max(0, this.limits.spendWindowMs - elapsed);
   }
 
   /**

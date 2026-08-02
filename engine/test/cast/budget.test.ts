@@ -15,12 +15,27 @@ import {
   DEFAULT_CAST_LIMITS,
   formatMicros,
 } from '../../src/cast/index.js';
+import { fixedClock } from '../../src/core/time.js';
+
+/** A clock that can be stepped, for the window tests. `advance` is on the fixedClock shape. */
+type Steppable = ReturnType<typeof fixedClock> & { advance(ms: number): void };
+const clockAt = (ms = 1_700_000_000_000): Steppable => fixedClock(ms) as Steppable;
+
+/**
+ * A budget with a clock, for every test whose subject is NOT the window.
+ *
+ * The default limits carry a 24 h window and the constructor refuses a window with no
+ * clock, so these all need one. They get a fixed clock that never advances, which pins
+ * them to a single window and leaves each test asserting exactly what it asserted before.
+ */
+const budgetOf = (limits: Partial<typeof DEFAULT_CAST_LIMITS> = {}): CastBudget =>
+  new CastBudget(limits, clockAt());
 
 describe('pricing', () => {
   it('is exact integer micro-dollars at the default prices', () => {
     // $1/1M input is exactly 1 micro-dollar per token and $6/1M output is exactly 6.
     // No rounding at all, which is why micro-dollars is the unit.
-    const budget = new CastBudget({ maxOutputTokens: 100 });
+    const budget = budgetOf({ maxOutputTokens: 100 });
     const reserved = budget.charge(4_000);
     // 4000 chars / 4 = 1000 input tokens = 1000 micros; 100 output tokens = 600 micros.
     expect(reserved).toBe(1_600);
@@ -28,14 +43,14 @@ describe('pricing', () => {
   });
 
   it('never produces a float', () => {
-    const budget = new CastBudget({ inputMicrosPerMillion: 333, outputMicrosPerMillion: 777 });
+    const budget = budgetOf({ inputMicrosPerMillion: 333, outputMicrosPerMillion: 777 });
     budget.charge(4_001);
     budget.settle(budget.charge(1_234), { inputTokens: 7, outputTokens: 3 , cachedInputTokens: null}, 99);
     expect(Number.isInteger(budget.spentMicros)).toBe(true);
   });
 
   it('settles down to the measured cost when the provider reports usage', () => {
-    const budget = new CastBudget({ maxOutputTokens: 1_000 });
+    const budget = budgetOf({ maxOutputTokens: 1_000 });
     const reserved = budget.charge(4_000); // 1000 in + 1000 out worst case = 7000 micros
     expect(reserved).toBe(7_000);
     budget.settle(reserved, { inputTokens: 1_000, outputTokens: 10 , cachedInputTokens: null}, 40);
@@ -45,7 +60,7 @@ describe('pricing', () => {
   });
 
   it('estimates from characters when the provider reports nothing, and says it did', () => {
-    const budget = new CastBudget({ maxOutputTokens: 1_000 });
+    const budget = budgetOf({ maxOutputTokens: 1_000 });
     const reserved = budget.charge(4_000);
     budget.settle(reserved, { inputTokens: null, outputTokens: null , cachedInputTokens: null}, 4 * CHARS_PER_TOKEN);
     // Input estimate kept (1000 micros), output swapped from the 1000-token ceiling to 4
@@ -57,7 +72,7 @@ describe('pricing', () => {
 
 describe('the three caps', () => {
   it('the cumulative spend cap trips and LATCHES — it does not reset on a Reckoning', () => {
-    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 });
+    const budget = budgetOf({ spendCapMicros: 2_000, maxOutputTokens: 100 });
     budget.rollTo(0);
     expect(budget.mayCall().ok).toBe(true);
     budget.charge(4_000); // 1600
@@ -75,7 +90,7 @@ describe('the three caps', () => {
   });
 
   it('the call-rate cap binds for one Reckoning and then clears', () => {
-    const budget = new CastBudget({ callsPerReckoning: 2, spendCapMicros: 1_000_000_000 });
+    const budget = budgetOf({ callsPerReckoning: 2, spendCapMicros: 1_000_000_000 });
     budget.rollTo(0);
     budget.charge(100);
     budget.charge(100);
@@ -92,7 +107,7 @@ describe('the three caps', () => {
     // Ten wakes started in one tick against a cap that only three fit under. If the
     // charge happened on the reply, all ten would be in flight before the first one
     // returned and the cap would be blown by seven calls' worth of tokens.
-    const budget = new CastBudget({ spendCapMicros: 5_000, maxOutputTokens: 100 });
+    const budget = budgetOf({ spendCapMicros: 5_000, maxOutputTokens: 100 });
     budget.rollTo(0);
     let started = 0;
     for (let i = 0; i < 10; i += 1) {
@@ -105,7 +120,7 @@ describe('the three caps', () => {
   });
 
   it('a refund gives back exactly what was reserved, and never goes negative', () => {
-    const budget = new CastBudget({ maxOutputTokens: 100 });
+    const budget = budgetOf({ maxOutputTokens: 100 });
     const reserved = budget.charge(4_000);
     budget.refund(reserved);
     expect(budget.spentMicros).toBe(0);
@@ -117,7 +132,7 @@ describe('the three caps', () => {
     // The misconfiguration case: no key, so every call fails before it reaches the
     // provider. Without this, a world that spends nothing at all disables its own cast
     // permanently after a few Reckonings of reserving money it never used.
-    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 });
+    const budget = budgetOf({ spendCapMicros: 2_000, maxOutputTokens: 100 });
     budget.rollTo(0);
     const a = budget.charge(4_000);
     const b = budget.charge(4_000);
@@ -133,7 +148,7 @@ describe('the three caps', () => {
     // The distinction that keeps the cap a cap. A settle corrects an estimate for a call
     // that HAPPENED; the worst case genuinely crossed the line, and a cap that flickers
     // as estimates land is not a cap. A refund reverses a call that never happened.
-    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 1_000 });
+    const budget = budgetOf({ spendCapMicros: 2_000, maxOutputTokens: 1_000 });
     budget.rollTo(0);
     const reserved = budget.charge(4_000);
     expect(budget.disabled).toBe(true);
@@ -143,21 +158,120 @@ describe('the three caps', () => {
   });
 });
 
+describe('the daily window — what the latch does and does not survive', () => {
+  const DAY = 24 * 3_600_000;
+
+  it('rolls after the window and clears the latch, so a world comes back on its own', () => {
+    // The 2026-07-31 production failure, replayed: trip the cap, then let a day pass.
+    const clock = clockAt();
+    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 }, clock);
+    budget.charge(4_000);
+    budget.charge(4_000);
+    expect(budget.disabled).toBe(true);
+
+    clock.advance(DAY - 1);
+    expect(budget.mayCall().ok).toBe(false); // one ms short: still the same day
+
+    clock.advance(1);
+    expect(budget.mayCall().ok).toBe(true);
+    expect(budget.disabled).toBe(false);
+    expect(budget.spentMicros).toBe(0);
+  });
+
+  it('a Reckoning still buys nothing — only wall time does', () => {
+    // The distinction the whole design rests on. World time runs at whatever COMPACT_SPEED
+    // says; if a Reckoning cleared the latch, a turbo world would hand out the daily
+    // allowance six times a day and the cap would be decoration.
+    const clock = clockAt();
+    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 }, clock);
+    budget.charge(4_000);
+    budget.charge(4_000);
+    expect(budget.disabled).toBe(true);
+    for (let r = 1; r <= 20; r += 1) budget.rollTo(r);
+    expect(budget.disabled).toBe(true);
+    expect(budget.mayCall().ok).toBe(false);
+  });
+
+  it('the lifetime total keeps counting across windows, so the real spend stays visible', () => {
+    // A daily cap that also resets the only number anybody reports would hide the total.
+    const clock = clockAt();
+    const budget = new CastBudget({ spendCapMicros: 10_000, maxOutputTokens: 100 }, clock);
+    budget.charge(4_000); // 1600
+    clock.advance(DAY);
+    budget.charge(4_000); // 1600, new window
+    expect(budget.spentMicros).toBe(1_600);
+    expect(budget.report().spentLifetimeMicros).toBe(3_200);
+  });
+
+  it('reports how long until it comes back, because that is the operator\'s next question', () => {
+    const clock = clockAt();
+    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 }, clock);
+    expect(budget.report().windowResetsInMs).toBeNull(); // nothing charged, nothing anchored
+    budget.charge(4_000);
+    expect(budget.report().windowResetsInMs).toBe(DAY);
+    clock.advance(6 * 3_600_000);
+    expect(budget.report().windowResetsInMs).toBe(18 * 3_600_000);
+  });
+
+  it('never reports a negative countdown once the window has elapsed unused', () => {
+    // rollWindow runs on use, so a report taken after the elapse but before the next call
+    // would otherwise print a countdown that had gone through zero.
+    const clock = clockAt();
+    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 }, clock);
+    budget.charge(4_000);
+    clock.advance(DAY * 3);
+    expect(budget.report().windowResetsInMs).toBe(0);
+  });
+
+  it('a clock that steps BACKWARDS does not hand out a fresh allowance', () => {
+    // NTP correcting a drifting VM, which this box is. Reading a backwards jump as "the
+    // window elapsed" would mean a fault nobody thinks to look for spends real money.
+    const clock = clockAt();
+    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 }, clock);
+    budget.charge(4_000);
+    budget.charge(4_000);
+    expect(budget.disabled).toBe(true);
+    clock.advance(-DAY * 2);
+    expect(budget.disabled).toBe(true);
+    expect(budget.mayCall().ok).toBe(false);
+    expect(budget.spentMicros).toBeGreaterThan(0);
+  });
+
+  it('re-anchors after a backwards jump rather than wedging forever', () => {
+    // The other half of the same guard: having re-anchored, a genuine day must still roll.
+    const clock = clockAt();
+    const budget = new CastBudget({ spendCapMicros: 2_000, maxOutputTokens: 100 }, clock);
+    budget.charge(4_000);
+    budget.charge(4_000);
+    clock.advance(-DAY * 2);
+    budget.mayCall(); // re-anchors the window at the new, earlier now
+    clock.advance(DAY);
+    expect(budget.mayCall().ok).toBe(true);
+  });
+});
+
 describe('the defaults are conservative', () => {
-  it('caps a forgotten world at a few dollars, not a weekend', () => {
-    // The bound on `maxOutputTokens` used to be <= 1000 and stood in for cost. It had to
-    // move: gpt-5.6-luna spends REASONING tokens out of the same budget, and a cap that is
-    // too low returns HTTP 200 with EMPTY content (measured: a cap of 200 was consumed
-    // entirely by reasoning). So the token cap is a CORRECTNESS floor, not a cost ceiling,
-    // and pinning it low was pinning the cast broken.
+  it('bounds a forgotten world PER DAY, and self-heals instead of dying', () => {
+    // The guarantee changed shape on 2026-08-01 and this test changed with it, so state
+    // both halves rather than just relaxing the number.
     //
-    // Rather than just raise the number, assert the property the old bound was a proxy
-    // for: the thing that actually stops a forgotten world spending a weekend is the
-    // LATCHING spend cap, so bound the real worst case instead of one of its inputs.
-    expect(DEFAULT_CAST_LIMITS.spendCapMicros).toBeLessThanOrEqual(10_000_000);
+    // It used to be "a few dollars, ever": $5 for the life of the process, latching for
+    // good. That bounded the money and produced the failure it was not looking at — the
+    // cast tripped seven hours into a fresh world and production ran THIRTY-TWO HOURS on
+    // heuristics with the site up and frames publishing. A bound that converts a cost
+    // overrun into an indefinite silent degradation is not conservative; it just moved
+    // where the loss lands.
+    //
+    // The guarantee now is a DAILY ceiling that rolls: bounded spend per day, and a world
+    // that comes back on its own. Assert the ceiling, the window, and the arithmetic that
+    // makes the ceiling meaningful.
+    expect(DEFAULT_CAST_LIMITS.spendCapMicros).toBeLessThanOrEqual(100_000_000); // $100/day
+    expect(DEFAULT_CAST_LIMITS.spendWindowMs).toBe(24 * 3_600_000);
     expect(DEFAULT_CAST_LIMITS.callsPerReckoning).toBeLessThanOrEqual(400);
 
-    // Worst case for one call under the defaults, priced exactly as the budget prices it.
+    // The rate cap is what makes the daily cap a real bound rather than a hope: whatever a
+    // call costs, only so many can be made in a Reckoning, and only so many Reckonings fit
+    // in a day. Worst case per day, priced exactly as the budget prices it.
     const worstInputTokens = Math.ceil(DEFAULT_CAST_LIMITS.maxPromptChars / 4);
     const worstCallMicros =
       Math.ceil((worstInputTokens * DEFAULT_CAST_LIMITS.inputMicrosPerMillion) / 1_000_000) +
@@ -168,12 +282,38 @@ describe('the defaults are conservative', () => {
     // A single call can never be expensive enough to be a surprise on its own.
     expect(worstCallMicros).toBeLessThanOrEqual(50_000); // $0.05
 
-    // And the latch binds the total regardless of how many Reckonings run unattended:
-    // whatever the per-call cost, spending stops at the cap and the world runs on
-    // heuristics. That is the actual "not a weekend" guarantee.
-    const worstReckoningMicros = worstCallMicros * DEFAULT_CAST_LIMITS.callsPerReckoning;
-    expect(worstReckoningMicros).toBeGreaterThan(0);
-    expect(DEFAULT_CAST_LIMITS.spendCapMicros).toBeLessThanOrEqual(10_000_000);
+    // And the day's spend stops at the cap however many Reckonings run unattended — the
+    // window only ever gives back the SAME allowance, never a larger one.
+    expect(worstCallMicros * DEFAULT_CAST_LIMITS.callsPerReckoning).toBeGreaterThan(0);
+  });
+
+  it('the daily ceiling is real money against the measured burn, not a number', () => {
+    // Production measured $5.00 over 7.5 h at twelve members — call it $16/day. The cap
+    // should be comfortable headroom over that (so it never binds in normal operation) and
+    // still small enough that a runaway wake trigger is a bill somebody can absorb noticing
+    // a day late. Both directions asserted, because only checking one is how a cap ends up
+    // either strangling the cast or not being a cap.
+    const measuredDailyBurnMicros = 16_000_000; // $16
+    expect(DEFAULT_CAST_LIMITS.spendCapMicros).toBeGreaterThan(measuredDailyBurnMicros * 3);
+    expect(DEFAULT_CAST_LIMITS.spendCapMicros).toBeLessThanOrEqual(measuredDailyBurnMicros * 10);
+  });
+
+  it('legacy: the pre-window shape is still reachable, and needs no clock', () => {
+    // spendWindowMs: 0 restores the life-of-process cap. Kept working on purpose so a sim
+    // harness that wants a hard total can have one, and so the window can be bisected out.
+    const budget = new CastBudget({ spendWindowMs: 0, spendCapMicros: 2_000, maxOutputTokens: 100 });
+    budget.charge(4_000);
+    budget.charge(4_000);
+    expect(budget.disabled).toBe(true);
+    expect(budget.report().windowMs).toBe(0);
+    expect(budget.report().windowResetsInMs).toBeNull();
+  });
+
+  it('a window with no clock is REFUSED, not silently treated as a lifetime cap', () => {
+    // The failure this guards is a budget that lies about its own shape: a 24 h window that
+    // cannot read a clock never rolls, so it behaves exactly like the lifetime cap while
+    // every report says "of $100 per 24h". Louder to throw at construction.
+    expect(() => new CastBudget({ spendWindowMs: 1_000 })).toThrow(/requires a Clock/);
   });
 
   it('the output cap is high enough that a reasoning model can actually answer', () => {
@@ -201,7 +341,7 @@ describe('prompt caching is priced, because it is most of the bill', () => {
     // Measured live against gpt-5.6-luna with the real agent.md contract as the first
     // message: 6498 of 6543 prompt tokens served from cache on the second call, i.e. 99%.
     // The contract is identical for all 20 members, so once warm the whole cast rides it.
-    const budget = new CastBudget({ maxOutputTokens: 1_000 });
+    const budget = budgetOf({ maxOutputTokens: 1_000 });
     const reserved = budget.charge(4 * 6_543);
     budget.settle(reserved, { inputTokens: 6_543, outputTokens: 10, cachedInputTokens: 6_498 }, 40);
     // 45 fresh (45 micros) + 6498 cached at a tenth (649) + 10 out (60) = 754.
@@ -209,7 +349,7 @@ describe('prompt caching is priced, because it is most of the bill', () => {
 
     // The same call priced as if nothing were cached costs ~8.7x more. That ratio is the
     // difference between the cast running for hours and being cut off in minutes.
-    const naive = new CastBudget({ maxOutputTokens: 1_000 });
+    const naive = budgetOf({ maxOutputTokens: 1_000 });
     const r2 = naive.charge(4 * 6_543);
     naive.settle(r2, { inputTokens: 6_543, outputTokens: 10, cachedInputTokens: null }, 40);
     expect(naive.spentMicros).toBe(6_603);
@@ -218,7 +358,7 @@ describe('prompt caching is priced, because it is most of the bill', () => {
 
   it('a nonsense cached count can never price a call below zero', () => {
     // The provider is not trusted to be coherent: cached is clamped to the reported total.
-    const budget = new CastBudget({ maxOutputTokens: 100 });
+    const budget = budgetOf({ maxOutputTokens: 100 });
     const reserved = budget.charge(400);
     budget.settle(reserved, { inputTokens: 10, outputTokens: 1, cachedInputTokens: 999_999 }, 4);
     expect(budget.spentMicros).toBeGreaterThanOrEqual(0);

@@ -177,8 +177,16 @@ export interface CastHealth {
   /** Micro-dollars, integer. Never a float — this gates spending. */
   readonly spentMicros: number;
   readonly capMicros: number;
-  /** True once the cumulative cap has latched and the world is back on heuristics. */
+  /** True once the spend cap has latched and the world is back on heuristics. */
   readonly capTripped: boolean;
+  /**
+   * Ms until the spend window rolls and a tripped cap clears itself, or `null` when the cap
+   * is cumulative (no window) and only a restart lifts it.
+   *
+   * Optional so a caller building this shape by hand — every test in `budget.test.ts` does
+   * — is not forced to answer a question it is not asking about.
+   */
+  readonly windowResetsInMs?: number | null;
   /** Calls whose tokens were estimated rather than reported. An unmetered call is not free. */
   readonly estimatedCalls: number;
 }
@@ -324,10 +332,20 @@ export function buildHealth(
   // path — the one the whole cast exists for — has switched itself off. That is
   // precisely scar #14b, so it is reported in the same voice as the deciding-share floor.
   if (cast !== null && cast.capTripped) {
+    // Name the relief, not just the fault. On 2026-07-31 this failure was true and correct
+    // for thirty-two hours and told the reader to do something that was never done, because
+    // the something was "restart a process whose boot replays the whole record". A failure
+    // that says when it clears is one an operator can triage; one that does not is noise
+    // with a timestamp.
+    const resets = cast.windowResetsInMs;
+    const relief =
+      resets === null || resets === undefined
+        ? 'This cap is cumulative: only raising COMPACT_CAST_SPEND_CAP_MICROS and restarting lifts it.'
+        : `It clears itself in ${String(Math.ceil(resets / 60_000))} min when the spend window ` +
+          'rolls; no restart needed. Raise COMPACT_CAST_SPEND_CAP_MICROS only to lift it sooner.';
     failures.push(
       `the house cast has spent its cap (${String(cast.spentMicros)} of ` +
-        `${String(cast.capMicros)} micro-dollars) and has fallen back to heuristics. ` +
-        'Raise COMPACT_CAST_SPEND_CAP_MICROS deliberately, or accept a bots-only world.',
+        `${String(cast.capMicros)} micro-dollars) and has fallen back to heuristics. ${relief}`,
     );
   }
 

@@ -2002,6 +2002,7 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
           spentMicros: report.spend.spentMicros,
           capMicros: report.spend.capMicros,
           capTripped: report.spend.disabled,
+          windowResetsInMs: report.spend.windowResetsInMs,
           estimatedCalls: report.spend.estimatedCalls,
         };
       },

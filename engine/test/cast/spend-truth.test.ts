@@ -228,7 +228,7 @@ describe('the total can never stop being a number', () => {
     // `NaN >= cap` is false forever, so a poisoned total would switch the cumulative cap
     // off silently and permanently. The safe reading of "we no longer know what we have
     // spent" is stop spending.
-    const budget = new CastBudget({ spendCapMicros: 5_000_000 });
+    const budget = new CastBudget({ spendCapMicros: 5_000_000 }, stoppedClock);
     const reserved = budget.charge(1_000);
     budget.settle(reserved, { inputTokens: null, outputTokens: null }, Number.NaN);
     expect(Number.isFinite(budget.spentMicros)).toBe(true);

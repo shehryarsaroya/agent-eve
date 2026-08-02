@@ -254,7 +254,7 @@ export class LlmCast {
     private readonly options: LlmCastOptions,
   ) {
     this.heuristic = new HeuristicCast(runtime, options);
-    this.budget = new CastBudget(options.limits ?? {});
+    this.budget = new CastBudget(options.limits ?? {}, options.clock);
     this.memory = options.memory ?? new CastMemory();
     this.contract = options.contract === undefined ? loadContractDocument() : options.contract;
     this.model = options.model ?? DEFAULT_CAST_MODEL;
@@ -515,11 +515,19 @@ export class LlmCast {
       if (verdict.why === 'SPEND_CAP' && !this.capAnnounced) {
         this.capAnnounced = true;
         const spend = this.budget.report();
+        // Say when it comes back, not just that it stopped. The 2026-07-31 incident was
+        // thirty-two hours of heuristics, and the log line that announced it ended with
+        // "restart to continue" — which was true then and would be a lie now.
+        const relief =
+          spend.windowResetsInMs === null
+            ? 'The LLM cast is DISABLED for the life of this process. Raise ' +
+              'COMPACT_CAST_SPEND_CAP_MICROS and restart to continue.'
+            : `The LLM cast is on heuristics until the window rolls in ` +
+              `${String(Math.ceil(spend.windowResetsInMs / 60_000))} min, when it resumes on its ` +
+              'own. No restart needed. To lift it now, raise COMPACT_CAST_SPEND_CAP_MICROS and restart.';
         this.log(
           `cast: ⚑ SPEND CAP TRIPPED at ${formatMicros(spend.spentMicros)} of ` +
-            `${formatMicros(spend.capMicros)} after ${String(spend.calls)} call(s). The LLM cast is ` +
-            'DISABLED for the life of this process and the world is on heuristics. Raise ' +
-            'COMPACT_CAST_SPEND_CAP_MICROS and restart to continue.',
+            `${formatMicros(spend.capMicros)} after ${String(spend.calls)} call(s). ${relief}`,
         );
       }
       return;
