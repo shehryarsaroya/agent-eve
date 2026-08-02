@@ -1005,10 +1005,17 @@ export function createApp(options: ApiOptions): CreatedApp {
         // somebody remembered: it used to omit `/agent.md`, which has been served since §12.5, and
         // said nothing about `/frames/`, which `agent.md` itself sends agents to. A refusal that
         // enumerates is only as true as its enumeration, and this one is the reader's whole map.
-        `no route ${req.method} ${scrub(req.path)}. The whole API is POST ${API_BASE_PATH}/enroll, ` +
+        // `originalUrl`, not `path`: this handler also catches falls-through from the
+        // router mounted at API_BASE_PATH, where express has already stripped the mount —
+        // the QA probe sent GET /api/enroll and was told "no route GET /enroll", which
+        // reads as the server misquoting the request. And the enumeration carries
+        // live.json now: the same probe found the freshest frame absent from the
+        // reader's whole map (the older comment above already relearned this once
+        // for /frames/ as a class).
+        `no route ${req.method} ${scrub(req.originalUrl.split('?')[0])}. The whole API is POST ${API_BASE_PATH}/enroll, ` +
           `GET ${API_BASE_PATH}/observe, POST ${API_BASE_PATH}/act, GET ${API_BASE_PATH}/health, ` +
           `POST ${API_BASE_PATH}/discrepancy, GET ${API_BASE_PATH}/agent.md, and the unsigned public ` +
-          `frames at GET /frames/${LATEST} · /frames/${FRAME_INDEX}.`,
+          `frames at GET /frames/live.json (every tick) · /frames/${LATEST} · /frames/${FRAME_INDEX}.`,
       ),
     );
   });
