@@ -23,7 +23,7 @@ full account of the merges.*
 | vitest | **312 files, 3,889 passed, 1 skipped** |
 | budgets | verbs **40/40** · axioms 15/15 · **observe keys 11/11** · venture kinds 8/8 |
 | balance gate 3R · 6R · 9R, 8 seeds | `levyShort` **0** at every horizon · red **0/192 · 0/384 · 0/576** · `halted 0` · `trapped 0` |
-| contract | analytic ceiling **104,647** of 120,000 · largest reachable **98,128** (margin 21,872) |
+| contract | analytic ceiling **104,535** of 120,000 · largest reachable **98,024** (margin 21,976) — every cell fell by an exact multiple of 8 on 2026-08-02 when `/compact/api` became `/api`; see `TRACKER.md` |
 | market | **19 fills** over 7 seeds at 6 Reckonings, **no seed silent** |
 
 ⚑ **§17's observe-key ceiling moved for the first time**, 10 → 11, by owner decision, so `risk` could

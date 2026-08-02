@@ -146,13 +146,23 @@
 > ### The contract pins, RE-MEASURED
 >
 > `test/cast/prompt.test.ts` is 55 assertions and every figure in it is an equality, so a green run
-> **is** the measurement. On the merged tree: analytic ceiling **104,647** of `MAX_CONTRACT_CHARS`
-> 120,000 (margin 15,353), largest reachable position **98,128** (margin 21,872 against a required
-> 4,000), and the eight-cell per-position array unchanged — `45,143 · 53,882 · 63,585 · 66,727 ·
-> 96,619 · 78,489 · 98,128 · 104,647`. **Unchanged is a reading here, not an assumption**: none of the
-> three merges touched `agent.md` or `CONTRACT_CATALOG` past what 39 already pinned, and the last time
-> an array was *adjusted* rather than read its first four cells were right to the character and its
-> last four were 251 low.
+> **is** the measurement. On the merged tree: analytic ceiling **104,535** of `MAX_CONTRACT_CHARS`
+> 120,000 (margin 15,465), largest reachable position **98,024** (margin 21,976 against a required
+> 4,000), and the eight-cell per-position array — `45,063 · 53,802 · 63,497 · 66,639 ·
+> 96,523 · 78,409 · 98,024 · 104,535`.
+>
+> **Every cell fell on 2026-08-02, and the arithmetic is why that is reassuring rather than
+> alarming.** The game moved to the root of its own host, so `agent.md` — which *is* the contract
+> these cells measure — says `/api/observe` where it said `/compact/api/observe`. That deletes the
+> eight-character string `/compact` once per mention. The deltas are therefore **divisible**: −80,
+> −80, −88, −88, −96, −80, −104, and −112, i.e. 10, 10, 11, 11, 12, 10, 13 and 14 mentions inside
+> each position's selection. A cell that had moved by anything not a multiple of 8 would have meant
+> the re-path changed something other than the path.
+>
+> The previous reading (`104,647` · `98,128` · `45,143 …`) held across the three merges of
+> 2026-07-30, and **unchanged was a reading there, not an assumption** — the last time an array was
+> *adjusted* rather than read, its first four cells were right to the character and its last four
+> were 251 low.
 >
 > ### Stale cross-references, swept
 >
