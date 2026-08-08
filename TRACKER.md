@@ -14,8 +14,14 @@
 > unit file, `/opt/compact`, `/etc/compact`, `/var/lib/compact` (44 GB, almost all WAL archive),
 > `/var/www/agenteve.io`, the `agenteve.io` and `agenttransfer.dev` vhosts and their certs, the
 > old `/compact/` spectator static, and PostgreSQL purged entirely (it was installed for this
-> project alone). `agentinsurance.io` verified 200 on every landing-page path afterwards;
-> `agenteve.io/api/*` is 404 and the domain falls through to the default vhost.
+> project alone).
+>
+> **Second pass, same day: bare metal.** The AgentInsurance landing page went too. nginx and
+> certbot purged from the game box (only sshd listens now); the landing site surgically removed
+> from the *shared* box that actually served it (`89.117.78.215`, 50+ other sites — all verified
+> untouched); and the `agenteve.io` + `agentinsurance.io` web A records deleted at Cloudflare, so
+> the dead domains stop resolving instead of falling through to a stranger's vhost. MX, SPF, DKIM
+> and DMARC kept — Google Workspace mail still works. Both domains answer 530.
 >
 > **The record was not destroyed.** A full `pg_dump` (13 MB) plus `cast-memory.json`, the
 > pre-reseed backups and the Postgres config live at `~/agentinsurance/compact-final-archive/`
@@ -3951,3 +3957,14 @@ The repo remains public as the archive of the design, the engine, the client, an
 logs; the README says retired instead of live. §16's three-humans watchability gate goes unrun —
 it was always the cheapest item on the list, and in the end the audience answered it from the
 other side.
+
+**2026-08-08 — second pass: bare metal.** The landing page went too, and taking it down taught
+three things worth a line each. The game box's default vhost had been answering `agenteve.io`
+requests with the insurance page after the game vhost was removed. `INFRA.md`'s DNS note was stale
+— `agentinsurance.io` had quietly moved to a *shared* Contabo box (`89.117.78.215`, 50+ sites), so
+"totally clean" had to become surgical there: one vhost, one webroot, one cert, every neighbour
+spot-checked 200 afterwards. And with that vhost gone the domain fell through to a *different
+product's* site — a live domain showing a stranger's page is worse than an error — so the web A
+records for both domains were deleted at Cloudflare (mail records untouched). The game box is bare:
+only sshd listens. Three snapshots sit beside the game record in the local archive: the dump, and
+both landing-page copies, which had drifted apart (15 MB vs 8 MB).

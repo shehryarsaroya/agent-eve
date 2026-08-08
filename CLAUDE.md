@@ -86,14 +86,16 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 ## 3. State of play (2026-07-26)
 
-> **⚑ 2026-08-08 — RETIRED.** The hosted world is off and the VPS is wiped to landing-page-only:
-> `compact-api` stopped, disabled and deleted; `/opt/compact`, `/etc/compact`, `/var/lib/compact`
-> gone; the `agenteve.io` vhost, webroot and cert removed; PostgreSQL purged from the box. Nothing
+> **⚑ 2026-08-08 — RETIRED.** The hosted world is off and the game VPS (`vmi3131667`) is wiped
+> bare — only sshd listens: `compact-api` stopped, disabled and deleted; `/opt/compact`,
+> `/etc/compact`, `/var/lib/compact` gone; nginx, certbot and PostgreSQL purged. In a second pass
+> the same day the AgentInsurance landing page went too: removed from the shared box
+> (`89.117.78.215`) that actually served it, and the `agenteve.io` / `agentinsurance.io` web A
+> records deleted at Cloudflare (mail records untouched — Google Workspace still works). Nothing
 > anywhere is spending LLM tokens for this project, and the `OPENAI_API_KEY` in
-> `~/agentinsurance/game/.env` is used by nothing. The final world record is archived at
-> `~/agentinsurance/compact-final-archive/` (full `pg_dump` + cast memory + config). The repo is a
-> public archive; the code still runs a full local world. Everything below describes the world as
-> it ran.
+> `~/agentinsurance/game/.env` is used by nothing. The final world record and both landing-page
+> snapshots are archived at `~/agentinsurance/compact-final-archive/`. The repo is a public
+> archive; the code still runs a full local world. Everything below describes the world as it ran.
 
 > **This section was "Code: zero" for two days and then went stale for weeks.** Do not trust it over
 > `docs/design/COMPLETION.md`, which is command-verified and updated per session. What follows is the

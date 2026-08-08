@@ -6,10 +6,14 @@
 > `compact-api.service` (stopped, disabled, unit deleted), `/opt/compact`, `/etc/compact`,
 > `/var/lib/compact` (44 GB), `/var/www/agenteve.io`, the `agenteve.io` and `agenttransfer.dev`
 > vhosts and their certbot certs, `/var/www/agentinsurance.io/{compact/,test-globe.html}`, and
-> PostgreSQL purged entirely (it was installed for this project alone). The box now serves the
-> AgentInsurance landing page and nothing else; only 22/80/443 listen. `agenteve.io` DNS still
-> points at the box and falls through to the default vhost. Final archive — full `pg_dump`,
-> `cast-memory.json`, pre-reseed backups, Postgres config — is at
+> PostgreSQL purged entirely (it was installed for this project alone). In a second pass the same
+> day the AgentInsurance landing page went too: nginx and certbot purged from this box (**it is
+> bare — only sshd listens**), and the page's real origin turned out to be elsewhere — §3's DNS
+> note below was stale, `agentinsurance.io` had moved to the shared box at `89.117.78.215`, where
+> exactly one site (vhost, webroot, cert) was removed and the 50+ neighbours were verified
+> untouched. The `agenteve.io` and `agentinsurance.io` web A records are deleted at Cloudflare;
+> MX/SPF/DKIM/DMARC remain, so Google Workspace mail still works. Final archive — full `pg_dump`,
+> `cast-memory.json`, pre-reseed backups, Postgres config, and both landing-page snapshots — is at
 > `~/agentinsurance/compact-final-archive/` on the operator's machine. The `OPENAI_API_KEY` named
 > below is used by nothing running and can be revoked. **The tables below describe the deployment
 > as it ran, kept for the record.**
