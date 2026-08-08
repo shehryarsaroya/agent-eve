@@ -86,6 +86,15 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 ## 3. State of play (2026-07-26)
 
+> **⚑ 2026-08-08 — RETIRED.** The hosted world is off and the VPS is wiped to landing-page-only:
+> `compact-api` stopped, disabled and deleted; `/opt/compact`, `/etc/compact`, `/var/lib/compact`
+> gone; the `agenteve.io` vhost, webroot and cert removed; PostgreSQL purged from the box. Nothing
+> anywhere is spending LLM tokens for this project, and the `OPENAI_API_KEY` in
+> `~/agentinsurance/game/.env` is used by nothing. The final world record is archived at
+> `~/agentinsurance/compact-final-archive/` (full `pg_dump` + cast memory + config). The repo is a
+> public archive; the code still runs a full local world. Everything below describes the world as
+> it ran.
+
 > **This section was "Code: zero" for two days and then went stale for weeks.** Do not trust it over
 > `docs/design/COMPLETION.md`, which is command-verified and updated per session. What follows is the
 > orientation; that file is the ledger.

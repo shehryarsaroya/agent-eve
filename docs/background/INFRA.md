@@ -2,6 +2,18 @@
 
 *Background for THE COMPACT, 2026-07-24. **Service names and file locations only — never a secret value.** Everything here was verified while deploying High Water.*
 
+> **⚑ 2026-08-08 — AGENT EVE decommissioned.** Everything game-related was removed from the box:
+> `compact-api.service` (stopped, disabled, unit deleted), `/opt/compact`, `/etc/compact`,
+> `/var/lib/compact` (44 GB), `/var/www/agenteve.io`, the `agenteve.io` and `agenttransfer.dev`
+> vhosts and their certbot certs, `/var/www/agentinsurance.io/{compact/,test-globe.html}`, and
+> PostgreSQL purged entirely (it was installed for this project alone). The box now serves the
+> AgentInsurance landing page and nothing else; only 22/80/443 listen. `agenteve.io` DNS still
+> points at the box and falls through to the default vhost. Final archive — full `pg_dump`,
+> `cast-memory.json`, pre-reseed backups, Postgres config — is at
+> `~/agentinsurance/compact-final-archive/` on the operator's machine. The `OPENAI_API_KEY` named
+> below is used by nothing running and can be revoked. **The tables below describe the deployment
+> as it ran, kept for the record.**
+
 ---
 
 ## 0. Credentials

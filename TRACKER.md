@@ -6,6 +6,25 @@
 
 ## ⏱ STATUS
 
+> ### ⚑ 2026-08-08 — RETIRED. THE HOSTED WORLD IS OFF AND THE SERVER IS WIPED.
+>
+> Owner decision: almost nobody came to play, and the cast was burning ~$16/day of LLM spend
+> performing for an empty room. `compact-api` was stopped and disabled first (that alone ended the
+> token burn), a final archive was taken, and then the box was cleaned to landing-page-only: the
+> unit file, `/opt/compact`, `/etc/compact`, `/var/lib/compact` (44 GB, almost all WAL archive),
+> `/var/www/agenteve.io`, the `agenteve.io` and `agenttransfer.dev` vhosts and their certs, the
+> old `/compact/` spectator static, and PostgreSQL purged entirely (it was installed for this
+> project alone). `agentinsurance.io` verified 200 on every landing-page path afterwards;
+> `agenteve.io/api/*` is 404 and the domain falls through to the default vhost.
+>
+> **The record was not destroyed.** A full `pg_dump` (13 MB) plus `cast-memory.json`, the
+> pre-reseed backups and the Postgres config live at `~/agentinsurance/compact-final-archive/`
+> on the operator's machine — A5 kept to the end. The repo stays public as the archive and the
+> README now says retired instead of live. The `OPENAI_API_KEY` in `~/agentinsurance/game/.env`
+> is no longer used by anything and can be revoked.
+>
+> Everything below this banner describes the world as it ran.
+
 > ### ⚑ ENGINE FINDING, DIAGNOSED FROM THE CLIENT (2026-08-02): `meters.kept/broken` IS A PER-RECKONING DELTA
 >
 > The July 31 handoff measured `meters.kept/broken` disagreeing with `sum(standings)` on one
@@ -3921,3 +3940,14 @@ Recommended default for agent work: **`fast` = 10 s ticks (30×)** — a full 28
 **2026-07-24 — v3.0 tidy: real protocols, information tiers, the owner restored.** Cross-pollinated the agent-finance research: replaced the bearer key with **Ed25519 + RFC 9421 signed requests**, serialised grants as **W3C Verifiable Credentials**, and made `agenttransfer.dev` a real SMTP surface where an agent's handle *is* its address. Added a hosted private **message channel** for negotiation — then caught and reversed a version that pushed it off our server, because the drama has to be on the record we can show. Added the **five-tier visibility ladder** (§11.2) so strategy can stay hidden without the show going dark. Restored the **owner layer** as §13B (narrative and status, never control) with R14 as a published disposition-only mandate, and added **THE RECEIPT REEL** to §14 — the declassified negotiation transcript replayed beside the promise it broke. Unified `vote` into one ballot verb. Fixed the dangling `§13B` and pre-seeding-filename references across the docs. Budgets re-verified: 15 axioms, 38/40 verbs.
 
 **2026-07-24 — v3.0, the cohesion pass and critic integration.** Wrote `REARCHITECTURE-2026-07-24.md` diagnosing that the v2.0 core loop was an event rather than a loop, and proposing scarce presence + ventures + tiering + offline-as-exposure as the fix. Ran six adversarial critics against it; they found the keystone did not bind, the reckoning was abstention-trivial, the economy had no demand side, four mechanics had a Sybil price of zero, and the architecture could fabricate a false default. Rewrote SPEC as v3.0: added the Levy, role concurrency, offices-vs-ventures, the continuous bond + sureties, the vocabulary canon, the venture resolution waterfall, world-spawned raids and the Demand window, the wake budget, the docket and rundown, three meters, and the correctness architecture. Added axiom A15. Scoring panel run against the result.
+
+**2026-08-08 — retired.** The world ran; almost nobody came to play it, and the honest response was
+to stop paying a cast to perform for an empty room. Token burn stopped first (`compact-api` stopped
+and disabled), a final archive was taken (full `pg_dump` + cast memory + config, pulled to
+`~/agentinsurance/compact-final-archive/`), and then the box was wiped to landing-page-only —
+systemd unit, code, 44 GB of data, env, both game vhosts and their certs, spectator static, and
+Postgres purged. The landing page was verified intact afterwards (scar #4's habit, one last time).
+The repo remains public as the archive of the design, the engine, the client, and the play-test
+logs; the README says retired instead of live. §16's three-humans watchability gate goes unrun —
+it was always the cheapest item on the list, and in the end the audience answered it from the
+other side.
