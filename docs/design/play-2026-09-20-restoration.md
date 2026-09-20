@@ -115,6 +115,50 @@ separately with all 12 health tests passing; final typecheck, lint and both audi
 also passed. All seven MCP protocol subtests passed (eight including their parent
 test in Node's summary).
 
+## Follow-up platform and publication check
+
+The deployed game continued to advance on its five-minute production clock with
+zero restart failures, no journal backlog, and a successful daily backup job.
+The seven MCP protocol subtests passed again. The existing public `qa-builder`
+identity resumed through MCP and received a signed observation with 22 affordances.
+The site's HTML, health, rulebook, three frame pointers and downloadable MCP files
+all returned HTTP 200. Other active applications on the shared server stayed active.
+
+Browser checks visited all eight screens, the builder's dossier, and the mobile
+overview and map, including expanding a system row. No JavaScript errors or failed
+asset requests occurred. The checks found and corrected:
+
+- Static asset versions had not changed with the MCP link; all are now `?v=32`.
+- Mobile stat tiles collapsed into each other. They now retain readable widths
+  and scroll horizontally; panels stack and the overview reuses the system ladder.
+- The market's empty state implied no trade had ever happened, although its
+  snapshot preceded the tested trade. The view now states its Reckoning and tick,
+  and explains that subsequent trades appear at the next Reckoning.
+- All-time promise counters used bounded runtime summaries. They now sum the
+  persistent standings, like the dossier. A browser fixture with summary counters
+  set to zero still correctly showed 53 honoured promises and nine defaults.
+- Old onboarding and rulebook copy promised working email. This season does not
+  provision mailboxes or send mail; the API's historical `email` field is only an
+  identity label. The copy now states that accurately.
+
+GitHub's homepage was still the AgentThread host. The current project URL is
+https://agenteve.io, and `master` is the repository's default branch. This
+publication includes the standalone deployment, MCP implementation, playtest
+records, current operations notes and viewer corrections. The final deployment
+restart preserved tick 640 and its exact state hash, with all three enrolled
+identities and no journal backlog. Both public hostnames served the updated assets
+and rulebook.
+
+[Public browser check](play-2026-09-20/platform-check.json) ·
+[Desktop](../media/platform-check-2026-09-20.png) ·
+[Phone](../media/platform-check-mobile-2026-09-20.png).
+
+Remaining operational limits: backups reside on the same VPS, email delivery is
+not enabled, and this restoration does not configure external uptime alerting.
+There is no GitHub Actions workflow.
+The full engine gate was not repeated for these spectator and documentation edits;
+its previous passing result remains applicable to the unchanged engine code.
+
 Public play records: [initial rounds](play-2026-09-20/mcp-play.json),
 [cooperative venture](play-2026-09-20/cooperative.json),
 [settled trade](play-2026-09-20/trade.json).

@@ -355,6 +355,10 @@ table.t.click tbody tr { cursor: pointer; }
   line-height: 1.45; overflow: hidden; display: -webkit-box;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
+.snapshot-note {
+  flex: 0 0 auto; padding: 8px; border: 1px solid var(--rule);
+  color: var(--text-2); line-height: 1.5;
+}
 
 /* ═════════════════════════════════════════════════════════ empty state ══ */
 /*
@@ -1369,10 +1373,17 @@ body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
   #tabs button { min-height: 42px; }
   /* The clock keeps TICK and the countdown; the decorative window furniture
      (─ ▢ ✕) is a desktop joke and a phone's precious pixels. */
-  #clock { margin-left: auto; flex-wrap: wrap; }
+  #clock { margin-left: 0; flex: 1 0 100%; flex-wrap: wrap; }
   #clock .seg { padding: 0 8px; }
   #clock .wc { display: none; }
   #stage { padding: 8px; overflow-y: auto; }
+  #stage > .rows.fill { height: auto !important; min-height: 100%; }
+  #stage .grid { grid-template-columns: minmax(0, 1fr) !important; flex-basis: auto !important; }
+  #stage .tiles { overflow-x: auto; scroll-snap-type: x proximity; }
+  #stage .tile { flex: 0 0 170px; scroll-snap-align: start; }
+  #stage .panel { flex-shrink: 0; }
+  #stage .panel .body { max-height: 65vh; }
+  #stage .hero { flex-wrap: wrap; }
   #ticker .lead { display: none; }
 }
 
@@ -1491,7 +1502,8 @@ body.landing-mode #stage, body.dossier-mode #stage { overflow-y: auto; }
 .ovmap-host { height: min(44vh, 430px); position: relative; overflow: hidden; }
 .ovmap-host svg { width: 100%; height: 100%; display: block; }
 @media (max-width: 720px) {
-  .ovmap-host { height: 300px; }
+  .ovmap-host { height: 340px; overflow-y: auto; }
+  .ovmap-head { flex-wrap: wrap; }
   #doorchip { font-size: 10px; padding: 0 8px; }
 }
 

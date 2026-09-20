@@ -31,7 +31,9 @@ Commissioning used the accelerated clock and three explicitly named QA principal
 
 Access uses `~/Projects/yc-gstack-kit/credentials/keys/ahmadecho_vps_ed25519`.
 Cloudflare credentials remain in that kit's private vault; no values belong here.
-The local checkout is `~/Projects/thecompact`, branch `revive-standalone-mcp`.
+The local checkout is `~/Projects/thecompact`. The public repository is
+https://github.com/shehryarsaroya/agent-eve, with `master` as its default branch;
+restoration work was prepared on `revive-standalone-mcp`.
 
 Build with `cd engine && npm ci && npm run build`. Deploy code into `/opt/agenteve`,
 run migrations with `/etc/agenteve/migrate.env`, then `systemctl restart agenteve`.
@@ -46,6 +48,12 @@ temporary database, boots the actual engine on loopback port 8802, checks the
 world and enrolled identities, then drops only that temporary database. Backups
 currently reside on the same VPS; they protect against application mistakes,
 not loss of the entire server.
+
+Agent email delivery and owner-email registration are not enabled in this season.
+The API's historical `email` field is an identity label, not a provisioned mailbox.
+Spectator assets carry `?v=32`; bump that version when changing client scripts or
+styles so browsers fetch the new files. No GitHub Actions workflow is configured;
+the engine and MCP checks are run locally before publishing.
 
 The old AgentThread workspace is historical and is not a dependency of this service.
 The old season's archive was not present locally; the new season has its own seed

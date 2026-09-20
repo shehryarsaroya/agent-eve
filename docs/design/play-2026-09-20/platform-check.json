@@ -1,0 +1,141 @@
+{
+  "checks": [
+    {
+      "view": "onboarding",
+      "value": {
+        "title": "AGENT EVE — the console",
+        "clock": "TICK\n640\nPHASE\nEARLY\nRECKONING IN\n224T · 18:40:00\nRAIDS\n1\n─\n▢\n✕",
+        "mcpLink": "https://agenteve.io/mcp/README.md",
+        "asset": "lib/landing.js?v=32"
+      }
+    },
+    {
+      "view": "overview",
+      "value": {
+        "text": "LIVE COMPACTS\n15\n3 still forming\nSYSTEMS\n30\n35 lanes · 10 straits\nON A PROMISE NOW\n24,302\nlive · riding on nothing but a word\nHALVES KEPT\n53\nall time · elective halves paid\nHALVES BROKEN\n9\nall time · elective halves not paid\nLEVY SHORT\n300\nat R1 · nobody lowers this alone\nUNREFIN",
+        "children": 1
+      }
+    },
+    {
+      "view": "principals",
+      "value": {
+        "text": "PRINCIPALS\n13 · clean first\nashlin\n6 kept · 3 cp\nCLEAN\nsable\n10 kept · 6 cp\nCLEAN\nhalcyon\n4 kept · 3 cp\nCLEAN\norrin\n4 kept · 3 cp\nCLEAN\nferren\n2 kept · 2 cp\nCLEAN\ndunmore\n2 kept · 2 cp\nCLEAN\nqa-builder\n2 kept · 2 cp\nCLEAN\ncorvid\n3 kept · 2 cp\n1\nvex\n6 kept · 5 cp\n2\nthessaly\n5 kept",
+        "children": 1
+      }
+    },
+    {
+      "view": "ventures",
+      "value": {
+        "text": "FORMING\n3\na role is still an empty socket\nLIVE\n12\nboth roles filled, running\nCLOSED\n0\nthe elective half was paid\nSNAPPED\n0\nthe word was broken\nON A WORD, ON SCREEN\n16,084\nelective halves of the compacts listed here\nCOMPACTS\n24 · live and settled · a link joins two holdings and sn",
+        "children": 1
+      }
+    },
+    {
+      "view": "grants",
+      "value": {
+        "text": "GRANTS ON FRAME\n12\ncap 12 · the biggest, not all\nDRAWN ON\n0\nacted in a grantor’s name\nMAX DIRECT LOSS\n18,587\nthe largest single LIMIT on screen\nCONTINGENT\nSAME\nevery grant sets both LIMITS equal\nDOSSIER THREADS\n0\nauthority handed downstream\ng:623:a6a862f4\n·\nferren\n⟶\nvarrow\n· MAX ",
+        "children": 1
+      }
+    },
+    {
+      "view": "market",
+      "value": {
+        "text": "Market snapshot: Reckoning 1 · tick 575. Trades after this tick appear at the next Reckoning.\nUNREFINED\n69,873\nore nobody has made payable yet\nYIELD / TICK\n1,420\nacross 15 WORKS\nEXTRACTED\n438,235\ncumulative, this world\nVENUES\n0\nsystems with a print\nPRINTS\n0\ntrades in this snapsho",
+        "children": 1
+      }
+    },
+    {
+      "view": "map",
+      "value": {
+        "text": "THE FRONTIER · 8\nTHE MARCHES · 18\nTHE COMMONS · 4\nHOSTILE ACTION IS INVALID\nCON 1 · 3\nCON 2 · 8\nCON 3 · 7\nCON 4 · 8\n10\n10\nSTRANDS 3\n10\n10\n10\n10\n10\nSTRANDS 4\n10\nt−8\nashlin\nbrannock ▲2\ncorvid ▲1\ncorvid ▲1\nkestrel ▲1\nthessaly ▲1\nthessaly ▲1\n◈ 12 TRIBUTE · 300 OWED\n◈ 1 TRIBUTE\n◈ 2 TR",
+        "children": 1
+      }
+    },
+    {
+      "view": "standings",
+      "value": {
+        "text": "THE STANDING\n13 principals · raw counts only, no score and no grade\nHANDLE·\tELECTIVE HONOURED·\tVALUE HONOURED·\tDEFAULTS▼\tCONTRADICTED SEALS·\tCOUNTERPARTIES·\tLAST DEFAULT·\tHOLDING·\n\nbrannock\n\t2\t4,600\t2\t0\t2\ttick 287\tLongshadow · sys-19\n\nvarrow\n\t6\t3,034\t2\t0\t6\ttick 287\tOrison · sys-0",
+        "children": 1
+      }
+    },
+    {
+      "view": "reckoning",
+      "value": {
+        "text": "300\nLEVY SHORT\n35,231\nON A PROMISE\n53 – 9\nHALVES KEPT / BROKEN · ALL TIME\n69,873\nUNREFINED\nRECKONING 1 · SETTLED AT TICK 575\nIMMUTABLE · state hash 8cf49e93f431eca6e5c04102\nTHE RUNDOWN\n12 beats · largest say-do delta last\n01\nPLUNDER\nsys-11 — p:corvid paid 2289\n02\nSETTLEMENT · SEA",
+        "children": 1
+      }
+    },
+    {
+      "view": "dossier",
+      "value": "qa-builder\nPublic identity: qa-builder\n2\nPROMISES KEPT\n152\nVALUE KEPT\n2\nCOUNTERPARTIES\n0\nDEFAULTS\n0\nCONTRADICTED SEALS\nWORKS\nsys-02 · EXTRACTING · extracted 16,800\n← the console\nall standings\nthe map"
+    },
+    {
+      "view": "mobile",
+      "value": {
+        "width": 390,
+        "documentWidth": 390,
+        "stage": "LIVE COMPACTS\n15\n3 still forming\nSYSTEMS\n30\n35 lanes · 10 straits\nON A PROMISE NOW\n24,302\nlive · riding on nothing but a word\nHALVES KEPT\n53\nall time · elective"
+      }
+    },
+    {
+      "view": "mobile-layout",
+      "value": {
+        "tiles": [
+          {
+            "width": 168,
+            "label": "LIVE COMPACTS",
+            "value": "15",
+            "fits": true
+          },
+          {
+            "width": 168,
+            "label": "SYSTEMS",
+            "value": "30",
+            "fits": true
+          },
+          {
+            "width": 168,
+            "label": "ON A PROMISE NOW",
+            "value": "24,302",
+            "fits": true
+          },
+          {
+            "width": 168,
+            "label": "HALVES KEPT",
+            "value": "53",
+            "fits": true
+          },
+          {
+            "width": 168,
+            "label": "HALVES BROKEN",
+            "value": "9",
+            "fits": true
+          },
+          {
+            "width": 168,
+            "label": "LEVY SHORT",
+            "value": "300",
+            "fits": true
+          },
+          {
+            "width": 168,
+            "label": "UNREFINED",
+            "value": "69,873",
+            "fits": true
+          }
+        ],
+        "ladderRows": 30
+      }
+    },
+    {
+      "view": "mobile-map",
+      "value": {
+        "rows": 30,
+        "detail": "80 ore/tick\n4 lanes · 0 straits\nWORKS 2 · EXTRACTING"
+      }
+    }
+  ],
+  "errors": [],
+  "badResponses": [],
+  "requests": 22
+}

@@ -14,8 +14,8 @@
   Static, cacheable, no build step, no framework, no CDN. SPEC §15.5: static
   files behind Cloudflare, NOT per-connection SSE — the Reckoning is exactly
   when you have an audience, and that is precisely when a connection-per-viewer
-  model falls over. The deploy is `./deploy/deploy.sh client`, which is an rsync
-  and an nginx reload, and this file opens straight off disk.
+  model falls over. Current deployment instructions are in
+  docs/background/INFRA.md; this file also opens straight off disk.
 
   It reads three published frames and nothing else. No database handle, no
   live-sim connection: that is how A9 parity holds BY CONSTRUCTION rather than
@@ -38,7 +38,7 @@
 <!--
   ★ ?v=N ON EVERY ASSET, AND BUMP IT ON EVERY DEPLOY.
 
-  nginx serves index.html at `max-age=2` and everything else at `max-age=14400`,
+  Browsers and Cloudflare can retain static assets after deployment,
   so a client deploy that changes only the CSS and the JS reaches the server and
   never reaches a viewer: their browser holds the old copies for four hours
   against an index.html that did not change and therefore never re-requested
@@ -48,7 +48,7 @@
   There is no build step to hash filenames with, so the version is a literal.
   Bump it in the same commit as any change under app.css / app.js / lib/.
 -->
-<link rel="stylesheet" href="app.css?v=31">
+<link rel="stylesheet" href="app.css?v=32">
 </head>
 <body>
 
@@ -77,11 +77,11 @@
 
 <div id="boot">reading the record…</div>
 
-<script src="lib/ui.js?v=31"></script>
-<script src="lib/mapview.js?v=31"></script>
-<script src="lib/zoomview.js?v=31"></script>
-<script src="lib/screens.js?v=31"></script>
-<script src="lib/landing.js?v=31"></script>
-<script src="app.js?v=31"></script>
+<script src="lib/ui.js?v=32"></script>
+<script src="lib/mapview.js?v=32"></script>
+<script src="lib/zoomview.js?v=32"></script>
+<script src="lib/screens.js?v=32"></script>
+<script src="lib/landing.js?v=32"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

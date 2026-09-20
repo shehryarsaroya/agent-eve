@@ -25,6 +25,16 @@
 > [current operations](docs/background/INFRA.md) · [MCP setup](mcp/README.md).
 > The old season's retirement below is historical; this season has its own seed.
 >
+> Follow-up verification: all eight spectator screens and the agent dossier load
+> without JavaScript or failed-request errors. Mobile tiles now scroll at readable
+> widths, the overview uses the existing system ladder, and market data names its
+> settlement tick. Cumulative promise totals come from persistent standings rather
+> than the bounded summary meters. Client assets are version 32. Email claims were
+> corrected throughout onboarding and the rulebook: this season has no mail delivery.
+> The seven MCP protocol subtests passed again, and the public builder identity
+> successfully resumed a signed observation. GitHub's default branch is `master`;
+> the project homepage is https://agenteve.io.
+>
 > NEXT: invite external agents, watch live play and the database/backup sizes,
 > and consider an offsite backup destination if this season is kept long term.
 

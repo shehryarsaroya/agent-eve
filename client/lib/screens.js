@@ -31,6 +31,16 @@ var Screens = (function () {
   // shared bits
   // ───────────────────────────────────────────────────────────────────────
 
+  // Standings are cumulative and survive replay. Meter summaries are bounded
+  // and can cover a shorter window after a checkpoint has been adopted.
+  function promiseTotals(R) {
+    return (R.standings || []).reduce(function (total, row) {
+      total.kept += row.electiveHonoured || 0;
+      total.broken += row.defaults || 0;
+      return total;
+    }, { kept: 0, broken: 0 });
+  }
+
   /**
    * ★ RED DISCIPLINE, and it is the single most load-bearing rule in this file.
    *
@@ -210,6 +220,7 @@ var Screens = (function () {
   // ═══════════════════════════════════════════════════════════ OVERVIEW ══
   function overview(host, D) {
     var R = D.R, L = D.L, M = (R && R.meters) || {};
+    var promises = promiseTotals(R);
     var rows = liveRows(D);
     var stack = el('div', { class: 'rows fill', style: 'height:100%' });
 
@@ -230,9 +241,9 @@ var Screens = (function () {
       // settlement; `standings[].defaults` counts DEFAULT EVENTS per principal.
       // Different subjects, and both were captioned "on the record" — so
       // OVERVIEW said 20 and STANDINGS said 33 for what read as one number.
-      tile('HALVES KEPT', U.n(M.kept), { note: (R.reckoningIndex !== undefined ? 'all time · elective halves paid' : 'awaiting the first settlement') }),
-      tile('HALVES BROKEN', U.n(M.broken),
-        { bad: (M.broken || 0) > 0, note: (R.reckoningIndex !== undefined ? 'all time · elective halves not paid' : 'awaiting the first settlement') }),
+      tile('HALVES KEPT', U.n(promises.kept), { note: (R.reckoningIndex !== undefined ? 'all time · elective halves paid' : 'awaiting the first settlement') }),
+      tile('HALVES BROKEN', U.n(promises.broken),
+        { bad: promises.broken > 0, note: (R.reckoningIndex !== undefined ? 'all time · elective halves not paid' : 'awaiting the first settlement') }),
       // Amber, not red: a shortfall is value at risk, and nobody has lied yet.
       tile('LEVY SHORT', U.n(M.levyShort),
         { warn: (M.levyShort || 0) > 0, note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · nobody lowers this alone' : 'awaiting the first settlement') }),
@@ -265,6 +276,10 @@ var Screens = (function () {
       band.appendChild(bandHost);
       stack.appendChild(band);
       requestAnimationFrame(U.guard(bandHost, function () {
+        if (window.innerWidth <= 720) {
+          ladderMap(bandHost, D);
+          return;
+        }
         MapView.render(bandHost, R, L, {
           inset: { l: 0, r: 0, t: 0, b: 0 },
           onSelect: function (id) { location.hash = '#/map/' + encodeURIComponent(id); },
@@ -1054,12 +1069,17 @@ var Screens = (function () {
     var totalYield = wl.reduce(function (a, w) { return a + (w.yieldPerTick || 0); }, 0);
     var extracted = wl.reduce(function (a, w) { return a + (w.extracted || 0); }, 0);
 
+    stack.appendChild(el('div', { class: 'snapshot-note', text: R.tick === undefined
+      ? 'Market snapshot available after the first Reckoning.'
+      : 'Market snapshot: Reckoning ' + R.reckoningIndex + ' · tick ' + R.tick +
+        '. Trades after this tick appear at the next Reckoning.' }));
+
     stack.appendChild(el('div', { class: 'tiles' }, [
       tile('UNREFINED', U.n(R.meters && R.meters.unrefined), { note: 'ore nobody has made payable yet' }),
       tile('YIELD / TICK', U.n(totalYield), { note: 'across ' + wl.length + ' WORKS' }),
       tile('EXTRACTED', U.n(extracted), { note: 'cumulative, this world' }),
       tile('VENUES', String(new Set(ml.map(function (m) { return m.venue; })).size), { note: 'systems with a print' }),
-      tile('PRINTS', U.n(ml.reduce(function (a, m) { return a + (m.prints || 0); }, 0)), { note: 'trades on the record' }),
+      tile('PRINTS', U.n(ml.reduce(function (a, m) { return a + (m.prints || 0); }, 0)), { note: 'trades in this snapshot' }),
     ]));
 
     var g2 = el('div', { class: 'grid g-2', style: 'flex:0 0 244px' });
@@ -1084,9 +1104,8 @@ var Screens = (function () {
       { k: 'prints', t: 'prints', w: '56px', num: true },
       { k: 'legend', t: 'legend', cell: function (m) { return el('span', { title: m.legend, text: m.legend }); } },
     ], ml, { sort: 'volume', dir: -1, rerender: D.rerender })
-      : empty('nothing has printed',
-        'marketLines[] is empty. A print appears when two principals trade at a venue; the measured ' +
-        'reading in a heuristic world is 7 rows across 9 frames, alloy only, with premiumBps zero on all seven.'),
+      : empty('no trades in this snapshot',
+        'The market view updates at each Reckoning. Trades after the displayed tick will appear in the next snapshot.'),
     { style: 'flex:1 1 auto;min-height:0' }));
 
     // ★ THE FOUR GOODS. §10 specifies four and the chain is ore → refine →
@@ -1104,7 +1123,7 @@ var Screens = (function () {
     var maxVol = Math.max(1, GOODS.reduce(function (a, g) { return Math.max(a, (byGood[g] || {}).volume || 0); }, 0));
     g2.appendChild(panel('THE GOODS', {
       sub: 'ore is dug · refine makes it payable · a debt settles in the rest',
-      foot: 'A good with no print has never been traded on a venue in this world. That is a fact about the world, not a gap in the frame.',
+      foot: 'No print means no trade for this good is shown in this snapshot. Newer trades appear at the next Reckoning.',
     }, el('div', { style: 'padding:4px 0' }, GOODS.map(function (gd) {
       var e = byGood[gd];
       return el('div', { style: 'display:flex;align-items:center;gap:10px;padding:5px 8px;border-bottom:1px solid var(--rule-dim)' }, [
@@ -2249,6 +2268,7 @@ var Screens = (function () {
       return;
     }
     var M = R.meters || {}, rd = (R.rundown || []).slice().sort(function (a, b) { return a.order - b.order; });
+    var promises = promiseTotals(R);
     var cur = rd.filter(function (s) { return String(s.order) === String(sel); })[0] ||
       rd.filter(function (s) { return s.defaulted; })[0] || rd[rd.length - 1];
 
@@ -2265,9 +2285,9 @@ var Screens = (function () {
       el('div', { style: 'width:1px;align-self:stretch;background:var(--rule)' }),
       el('div', null, [
         el('div', { class: 'big' }, [
-          String(M.kept),
+          String(promises.kept),
           el('span', { style: 'color:var(--dimmer)', text: ' – ' }),
-          el('span', { style: 'color:' + (M.broken ? 'var(--red-text)' : 'var(--cyan)'), text: String(M.broken) }),
+          el('span', { style: 'color:' + (promises.broken ? 'var(--red-text)' : 'var(--cyan)'), text: String(promises.broken) }),
         ]),
         el('div', { class: 'lab', text: 'HALVES KEPT / BROKEN · ALL TIME' }),
       ]),
