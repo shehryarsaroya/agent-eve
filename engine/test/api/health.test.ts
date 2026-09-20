@@ -21,6 +21,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { DecisionCensus } from '../../src/sim/runtime.js';
+import { buildHealth } from '../../src/api/health.js';
 import { PATHS, agent, enrol, harness, raw, signed, tick, type Harness } from './harness.js';
 
 let h: Harness;
@@ -39,6 +40,29 @@ function report(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('SCAR-14b — the health check asserts the interesting property', () => {
+  it('explicit heuristic mode stays observable and does not mask a durability failure', () => {
+    const cast = new HeuristicCast(h.runtime, { size: 8 });
+    cast.seat('health-fixture');
+    for (let n = 0; n < 40; n += 1) {
+      for (const action of cast.decide(h.runtime.engine.tick + 1, 'health-fixture')) {
+        h.runtime.engine.submit(action);
+      }
+      h.runtime.runTick();
+    }
+    expect(buildHealth(h.runtime, h.context.seats).status).toBe('unhealthy');
+    const deliberate = buildHealth(h.runtime, h.context.seats, { requireLiveDecisions: false });
+    expect(deliberate.status).toBe('healthy');
+    expect(deliberate.decisions.live_decisions_required).toBe(false);
+    expect(deliberate.decisions.by_source.HEURISTIC).toBeGreaterThan(0);
+    expect(deliberate.decisions.deciding).toBe(0);
+    const broken = buildHealth(h.runtime, h.context.seats, {
+      requireLiveDecisions: false,
+      durability: () => ({ healthy: false, durableTick: 0, headTick: 39, backlog: 39, lastError: 'database offline' }),
+    });
+    expect(broken.status).toBe('unhealthy');
+    expect(broken.failures.join(' ')).toContain('database offline');
+  });
+
   it('reports the decisionSource distribution, not just an uptime', async () => {
     const res = await raw(h, 'GET', PATHS.health);
     const decisions = report(res.json)['decisions'] as Record<string, unknown>;

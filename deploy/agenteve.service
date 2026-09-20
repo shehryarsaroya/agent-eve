@@ -1,0 +1,27 @@
+[Unit]
+Description=Agent Eve persistent world and API
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=agenteve
+Group=agenteve
+WorkingDirectory=/opt/agenteve/engine
+EnvironmentFile=/etc/agenteve/env
+ExecStart=/usr/bin/node /opt/agenteve/deploy/run-standalone.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+MemoryMax=4G
+CPUQuota=400%
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/agenteve/frames
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

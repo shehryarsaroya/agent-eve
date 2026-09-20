@@ -1,0 +1,714 @@
+[
+  {
+    "round": 0,
+    "agent": "builder",
+    "tick": 167,
+    "wakes": 15,
+    "corrections": [],
+    "action": {
+      "verb": "build",
+      "params": {
+        "kind": "WORKS",
+        "system": "sys-02"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 1,
+          "verb": "build",
+          "resolvesInTick": 168,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    },
+    "idempotencyVerified": true
+  },
+  {
+    "round": 0,
+    "agent": "trader",
+    "tick": 167,
+    "wakes": 15,
+    "corrections": [],
+    "action": {
+      "verb": "deliver",
+      "params": {
+        "obligation": "LEVY",
+        "amount": 500
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 1,
+          "verb": "deliver",
+          "resolvesInTick": 168,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    },
+    "idempotencyVerified": true
+  },
+  {
+    "round": 0,
+    "agent": "diplomat",
+    "tick": 167,
+    "wakes": 15,
+    "corrections": [],
+    "action": {
+      "verb": "form",
+      "params": {
+        "name": "qa-diplomat-house",
+        "admission": "INVITE",
+        "decision": "MAJORITY",
+        "treasury_offices": false
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 1,
+          "verb": "form",
+          "resolvesInTick": 168,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    },
+    "idempotencyVerified": true
+  },
+  {
+    "round": 1,
+    "agent": "builder",
+    "tick": 173,
+    "wakes": 14,
+    "corrections": [],
+    "action": {
+      "verb": "create",
+      "params": {
+        "kind": "DIG",
+        "stage": "sys-02",
+        "elective_bps": 2000
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 3,
+          "verb": "create",
+          "resolvesInTick": 174,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 1,
+    "agent": "trader",
+    "tick": 173,
+    "wakes": 14,
+    "corrections": [],
+    "action": {
+      "verb": "build",
+      "params": {
+        "kind": "WORKS",
+        "system": "sys-01"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 3,
+          "verb": "build",
+          "resolvesInTick": 174,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 1,
+    "agent": "diplomat",
+    "tick": 173,
+    "wakes": 14,
+    "corrections": [],
+    "action": {
+      "verb": "create",
+      "params": {
+        "kind": "DIG",
+        "stage": "sys-02",
+        "elective_bps": 2000
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 3,
+          "verb": "create",
+          "resolvesInTick": 175,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 2,
+    "agent": "builder",
+    "tick": 179,
+    "wakes": 13,
+    "corrections": [],
+    "action": {
+      "verb": "sign",
+      "params": {
+        "venture": "v:174:606d5ec8",
+        "terms_hash": "b92bdd6b64911f99ea1fb1d0a53e16d6af78e3b217f2ef0cc721f48c69ab5a4f",
+        "your_take_at_p50": 0
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 4,
+          "verb": "sign",
+          "resolvesInTick": 180,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 2,
+    "agent": "trader",
+    "tick": 179,
+    "wakes": 13,
+    "corrections": [],
+    "action": {
+      "verb": "fill_role",
+      "params": {
+        "venture": "v:172:5928d7a5",
+        "role": 1,
+        "hand": "p:qa-trader:h1",
+        "stake": 0
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 4,
+          "verb": "fill_role",
+          "resolvesInTick": 180,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 2,
+    "agent": "diplomat",
+    "tick": 179,
+    "wakes": 13,
+    "corrections": [],
+    "action": {
+      "verb": "sign",
+      "params": {
+        "venture": "v:175:b0c2e443",
+        "terms_hash": "161dcf05c60af606b30f3e8dda1d56371de251acc7ae903055679171a902e0eb",
+        "your_take_at_p50": 0
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 4,
+          "verb": "sign",
+          "resolvesInTick": 181,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 3,
+    "agent": "builder",
+    "tick": 185,
+    "wakes": 12,
+    "corrections": [],
+    "action": {
+      "verb": "elect",
+      "params": {
+        "venture": "v:174:606d5ec8",
+        "role": 0,
+        "election": "IN_FULL"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 5,
+          "verb": "elect",
+          "resolvesInTick": 186,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 3,
+    "agent": "trader",
+    "tick": 185,
+    "wakes": 12,
+    "corrections": [],
+    "action": {
+      "verb": "publish_offer",
+      "params": {
+        "text": "HANDS FOR HIRE"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 5,
+          "verb": "publish_offer",
+          "resolvesInTick": 186,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 3,
+    "agent": "diplomat",
+    "tick": 185,
+    "wakes": 12,
+    "corrections": [],
+    "action": {
+      "verb": "elect",
+      "params": {
+        "venture": "v:175:b0c2e443",
+        "role": 0,
+        "election": "IN_FULL"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 5,
+          "verb": "elect",
+          "resolvesInTick": 186,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 4,
+    "agent": "builder",
+    "tick": 191,
+    "wakes": 11,
+    "corrections": [],
+    "action": {
+      "verb": "publish_offer",
+      "params": {
+        "text": "HANDS FOR HIRE"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 6,
+          "verb": "publish_offer",
+          "resolvesInTick": 192,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 4,
+    "agent": "trader",
+    "tick": 191,
+    "wakes": 11,
+    "corrections": [],
+    "action": {
+      "verb": "create",
+      "params": {
+        "kind": "DIG",
+        "stage": "sys-01",
+        "elective_bps": 2000
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 6,
+          "verb": "create",
+          "resolvesInTick": 192,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 4,
+    "agent": "diplomat",
+    "tick": 191,
+    "wakes": 11,
+    "corrections": [],
+    "action": {
+      "verb": "vote",
+      "params": {
+        "ballot": "LEVY",
+        "rule": "INVERSE_EXPOSURE"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 6,
+          "verb": "vote",
+          "resolvesInTick": 192,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 5,
+    "agent": "builder",
+    "tick": 197,
+    "wakes": 10,
+    "corrections": [],
+    "action": {
+      "verb": "refine",
+      "params": {
+        "system": "sys-02"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 7,
+          "verb": "refine",
+          "resolvesInTick": 198,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 5,
+    "agent": "trader",
+    "tick": 197,
+    "wakes": 10,
+    "corrections": [],
+    "action": {
+      "verb": "sign",
+      "params": {
+        "venture": "v:192:dbbe8c8c",
+        "terms_hash": "50726887cb275bd791aecbc2e293c5427347f61d0c9db26ac4a197afcea04524",
+        "your_take_at_p50": 0
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 7,
+          "verb": "sign",
+          "resolvesInTick": 198,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 5,
+    "agent": "diplomat",
+    "tick": 197,
+    "wakes": 10,
+    "corrections": [],
+    "action": {
+      "verb": "publish_offer",
+      "params": {
+        "text": "HANDS FOR HIRE"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 7,
+          "verb": "publish_offer",
+          "resolvesInTick": 198,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 6,
+    "agent": "builder",
+    "tick": 203,
+    "wakes": 9,
+    "corrections": [],
+    "action": {
+      "verb": "refine",
+      "params": {
+        "system": "sys-02"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 8,
+          "verb": "refine",
+          "resolvesInTick": 204,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 6,
+    "agent": "trader",
+    "tick": 203,
+    "wakes": 9,
+    "corrections": [],
+    "action": {
+      "verb": "elect",
+      "params": {
+        "venture": "v:192:dbbe8c8c",
+        "role": 0,
+        "election": "IN_FULL"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 8,
+          "verb": "elect",
+          "resolvesInTick": 204,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 6,
+    "agent": "diplomat",
+    "tick": 203,
+    "wakes": 9,
+    "corrections": [],
+    "action": {
+      "verb": "build",
+      "params": {
+        "kind": "WORKS",
+        "system": "sys-02"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 8,
+          "verb": "build",
+          "resolvesInTick": 204,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 7,
+    "agent": "builder",
+    "tick": 209,
+    "wakes": 8,
+    "corrections": [],
+    "action": {
+      "verb": "refine",
+      "params": {
+        "system": "sys-02"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 9,
+          "verb": "refine",
+          "resolvesInTick": 210,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 7,
+    "agent": "trader",
+    "tick": 209,
+    "wakes": 8,
+    "corrections": [],
+    "action": {
+      "verb": "fill_role",
+      "params": {
+        "venture": "v:207:79adbac0",
+        "role": 0,
+        "hand": "p:qa-trader:h1",
+        "stake": 0
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 9,
+          "verb": "fill_role",
+          "resolvesInTick": 210,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 7,
+    "agent": "diplomat",
+    "tick": 209,
+    "wakes": 8,
+    "corrections": [],
+    "action": null
+  },
+  {
+    "round": 8,
+    "agent": "builder",
+    "tick": 215,
+    "wakes": 7,
+    "corrections": [],
+    "action": {
+      "verb": "refine",
+      "params": {
+        "system": "sys-02"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 10,
+          "verb": "refine",
+          "resolvesInTick": 216,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 8,
+    "agent": "trader",
+    "tick": 215,
+    "wakes": 7,
+    "corrections": [],
+    "action": {
+      "verb": "sign",
+      "params": {
+        "venture": "v:207:79adbac0",
+        "terms_hash": "a5420122fed92d3405094b13cbe3159acfc48bce078ec96bf3962c8377b1a093",
+        "your_take_at_p50": 4500
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 10,
+          "verb": "sign",
+          "resolvesInTick": 216,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 8,
+    "agent": "diplomat",
+    "tick": 215,
+    "wakes": 7,
+    "corrections": [],
+    "action": null
+  },
+  {
+    "round": 9,
+    "agent": "builder",
+    "tick": 221,
+    "wakes": 6,
+    "corrections": [],
+    "action": {
+      "verb": "refine",
+      "params": {
+        "system": "sys-02"
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 11,
+          "verb": "refine",
+          "resolvesInTick": 222,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 9,
+    "agent": "trader",
+    "tick": 221,
+    "wakes": 6,
+    "corrections": [],
+    "action": {
+      "verb": "fill_role",
+      "params": {
+        "venture": "v:209:7cda8c32",
+        "role": 0,
+        "hand": "p:qa-trader:h1",
+        "stake": 0
+      }
+    },
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 11,
+          "verb": "fill_role",
+          "resolvesInTick": 222,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "round": 9,
+    "agent": "diplomat",
+    "tick": 221,
+    "wakes": 6,
+    "corrections": [],
+    "action": null
+  }
+]

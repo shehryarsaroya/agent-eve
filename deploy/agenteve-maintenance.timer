@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Agent Eve backup and partition maintenance
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

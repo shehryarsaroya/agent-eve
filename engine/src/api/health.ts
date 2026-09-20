@@ -85,6 +85,8 @@ export interface HealthReport {
     readonly deciding: number;
     readonly deciding_share_bps: number;
     readonly floor_bps: number;
+    /** False when the operator deliberately runs a heuristic house cast. */
+    readonly live_decisions_required: boolean;
   };
   readonly seats: {
     /** Self-enrolled principals holding a seat. What the cap bounds. */
@@ -144,6 +146,8 @@ export interface HaltRecord {
 }
 
 export interface HealthOptions {
+  /** Default true preserves the LLM-fallback alarm for existing callers. */
+  readonly requireLiveDecisions?: boolean;
   readonly floorBps?: number;
   readonly warmupTicks?: number;
   /** A live probe of the journal's durability frontier, or absent for a store-less run. */
@@ -256,7 +260,7 @@ export function buildHealth(
       `no decisions in the last ${String(CENSUS_WINDOW_TICKS)} ticks. The process is alive and nothing is ` +
         'playing, which is exactly the failure a liveness check cannot see (scar #14b).',
     );
-  } else if (livePlayed >= warmup && deciding === 0) {
+  } else if (livePlayed >= warmup && deciding === 0 && options.requireLiveDecisions !== false) {
     // ── A COLLAPSE TO ZERO, NOT A PROPORTION ────────────────────────────────
     //
     // This used to fire on `shareBps < floorBps`, and the analysis a few lines below —
@@ -276,8 +280,9 @@ export function buildHealth(
     // Silencing it is what this is, and it is done deliberately and narrowly: the condition
     // becomes the one `DECIDING_FLOOR_BPS`'s own doc comment always claimed it was for — *"to
     // catch a collapse to zero, not to police the cast's proportion"*. A world where the
-    // heuristic is playing and NOT ONE decision came from a player is unambiguously broken,
-    // and it has no structural false positive: a healthy cast always decides something.
+    // heuristic is playing and NOT ONE decision came from an expected LLM player is broken.
+    // A deliberately heuristic-only deployment has no expensive path to fall back from;
+    // its operator explicitly opts out, and that choice stays visible in the report.
     //
     // `deciding_share_bps` and `floor_bps` stay in the payload. The number is worth watching;
     // it just no longer decides whether the world is up.
@@ -372,6 +377,7 @@ export function buildHealth(
       deciding,
       deciding_share_bps: shareBps,
       floor_bps: floorBps,
+      live_decisions_required: options.requireLiveDecisions !== false,
     },
     seats: {
       occupied: seats.occupied,

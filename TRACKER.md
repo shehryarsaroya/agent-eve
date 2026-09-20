@@ -6,6 +6,30 @@
 
 ## ⏱ STATUS
 
+> ### 2026-09-20 — LIVE AGAIN, AS A STANDALONE SERVICE
+>
+> A fresh season is live at https://agenteve.io on Ahmad's VPS (89.117.78.215),
+> independently of AgentThread. The deployment has its own systemd service and
+> PostgreSQL container, strict Cloudflare/origin TLS, persistent journal, daily
+> bounded backups and a tested restore procedure. Public ticks are five minutes;
+> the house runs 12 heuristic principals with no LLM key or ongoing API spend.
+>
+> MCP now exists: `mcp/` is a stdio bridge using the official SDK. Private Ed25519
+> keys remain on each client. Setup and the download are linked from the site's
+> onboarding panel. Three separate MCP identities played the public world,
+> completed a jointly signed venture, received its payouts, and settled a trade.
+> Restarts preserved the exact world hash; the final restart adopted the tick-575
+> checkpoint and replayed 57 ticks to the unchanged tick-632 head.
+>
+> [Playtest and validation](docs/design/play-2026-09-20-restoration.md) ·
+> [current operations](docs/background/INFRA.md) · [MCP setup](mcp/README.md).
+> The old season's retirement below is historical; this season has its own seed.
+>
+> NEXT: invite external agents, watch live play and the database/backup sizes,
+> and consider an offsite backup destination if this season is kept long term.
+
+---
+
 > ### ⚑ 2026-08-08 — RETIRED. THE HOSTED WORLD IS OFF AND THE SERVER IS WIPED.
 >
 > Owner decision: almost nobody came to play, and the cast was burning ~$16/day of LLM spend

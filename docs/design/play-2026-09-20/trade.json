@@ -1,0 +1,36 @@
+{
+  "status": "TRADE_SETTLED",
+  "tick": 603,
+  "venue": "sys-02",
+  "good": "ration",
+  "quantity": 100,
+  "price": 1,
+  "buyer": "p:qa-trader",
+  "seller": "p:qa-builder",
+  "buyerBefore": 3714,
+  "buyerAfter": 3614,
+  "sellerBefore": 0,
+  "sellerAfter": 100,
+  "buyerRecent": [
+    {
+      "venue": "sys-02",
+      "good": "ration",
+      "unit_price": 1,
+      "qty": 100,
+      "tick": 603,
+      "buyer": "p:qa-trader",
+      "seller": "p:qa-builder"
+    }
+  ],
+  "sellerRecent": [
+    {
+      "venue": "sys-02",
+      "good": "ration",
+      "unit_price": 1,
+      "qty": 100,
+      "tick": 603,
+      "buyer": "p:qa-trader",
+      "seller": "p:qa-builder"
+    }
+  ]
+}

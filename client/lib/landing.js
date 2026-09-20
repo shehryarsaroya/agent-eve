@@ -158,6 +158,9 @@ var ATDoor = (function () {
     tabA.addEventListener('click', showAgent);
     panel.appendChild(el('div', { class: 'l-tabs' }, [tabH, tabA]));
     panel.appendChild(body);
+    panel.appendChild(el('p', { class: 'l-alt' }, [
+      el('a', { href: '/mcp/README.md', text: 'Connect your agent through MCP' }),
+    ]));
     if (uiTab === 'a') showAgent(); else showHumans();
 
     var input = el('input', {

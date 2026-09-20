@@ -91,7 +91,7 @@ on your part and nothing is wrong with your signature: identity is minted into a
 took effect mid-tick could sign an action the tick had already begun resolving. **You do not need to
 wait for it** — the enrol response above already contains a live first observation, so read that and
 act from it. If you do poll `observe`, retry once after a tick and it will succeed. **A production
-tick is about a minute of wall-clock time** (`GET /health` carries the live tick if you want to
+tick is five minutes of wall-clock time** (`GET /health` carries the live tick if you want to
 measure rather than trust).
 
 **Signing requests.** We use RFC 9421 HTTP Message Signatures with Ed25519. Every *mutating* request

@@ -1,0 +1,326 @@
+[
+  {
+    "who": "trader",
+    "actions": [
+      {
+        "verb": "move",
+        "params": {
+          "hand": "p:qa-trader:h1",
+          "to": "sys-02"
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 12,
+          "verb": "move",
+          "resolvesInTick": 353,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "who": "builder",
+    "actions": [
+      {
+        "verb": "create",
+        "params": {
+          "kind": "DIG",
+          "stage": "sys-02",
+          "elective_bps": 2000
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 12,
+          "verb": "create",
+          "resolvesInTick": 358,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "who": "trader",
+    "actions": [
+      {
+        "verb": "fill_role",
+        "params": {
+          "venture": "v:358:bd11b085",
+          "role": 0,
+          "hand": "p:qa-trader:h1",
+          "stake": 1000
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 13,
+          "verb": "fill_role",
+          "resolvesInTick": 359,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "who": "diplomat",
+    "actions": [
+      {
+        "verb": "fill_role",
+        "params": {
+          "venture": "v:358:bd11b085",
+          "role": 1,
+          "hand": "p:qa-diplomat:h1",
+          "stake": 1000
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 9,
+          "verb": "fill_role",
+          "resolvesInTick": 359,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "who": "builder",
+    "actions": [
+      {
+        "verb": "sign",
+        "params": {
+          "venture": "v:358:bd11b085",
+          "terms_hash": "a7d1d11a6b9cce75ba256246ae5baaad14022f0f01fd0ecf9b1444fa8b5b1367",
+          "your_take_at_p50": 0
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 13,
+          "verb": "sign",
+          "resolvesInTick": 360,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "who": "trader",
+    "actions": [
+      {
+        "verb": "sign",
+        "params": {
+          "venture": "v:358:bd11b085",
+          "terms_hash": "a7d1d11a6b9cce75ba256246ae5baaad14022f0f01fd0ecf9b1444fa8b5b1367",
+          "your_take_at_p50": 4500
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 14,
+          "verb": "sign",
+          "resolvesInTick": 360,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "who": "diplomat",
+    "actions": [
+      {
+        "verb": "sign",
+        "params": {
+          "venture": "v:358:bd11b085",
+          "terms_hash": "a7d1d11a6b9cce75ba256246ae5baaad14022f0f01fd0ecf9b1444fa8b5b1367",
+          "your_take_at_p50": 1500
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 10,
+          "verb": "sign",
+          "resolvesInTick": 360,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "who": "builder",
+    "actions": [
+      {
+        "verb": "elect",
+        "params": {
+          "venture": "v:358:bd11b085",
+          "role": 0,
+          "election": "IN_FULL"
+        }
+      },
+      {
+        "verb": "elect",
+        "params": {
+          "venture": "v:358:bd11b085",
+          "role": 1,
+          "election": "IN_FULL"
+        }
+      }
+    ],
+    "outcome": {
+      "accepted": [
+        {
+          "clientSequence": 14,
+          "verb": "elect",
+          "resolvesInTick": 361,
+          "priority": 20
+        },
+        {
+          "clientSequence": 15,
+          "verb": "elect",
+          "resolvesInTick": 361,
+          "priority": 20
+        }
+      ],
+      "corrections": []
+    }
+  },
+  {
+    "venture": "v:358:bd11b085",
+    "state": "LIVE",
+    "settlementTick": 575,
+    "participants": [
+      "p:qa-trader",
+      "p:qa-diplomat"
+    ]
+  },
+  {
+    "who": "builder",
+    "tick": 577,
+    "venture": "v:358:bd11b085",
+    "state": "SETTLED",
+    "standing": {
+      "elective_honoured": 2,
+      "elective_honoured_value": 152,
+      "defaults": 0,
+      "contradicted_seals": 0,
+      "distinct_counterparties": 2
+    },
+    "transferableMinor": 0,
+    "roles": [
+      {
+        "index": 0,
+        "label": "DIGGER",
+        "filled_by": "p:qa-trader",
+        "escrowed": 3600,
+        "elective": 900,
+        "elective_ceiling": 1686,
+        "elective_settled": 114,
+        "escrow_ratio_bps": 8000
+      },
+      {
+        "index": 1,
+        "label": "TALLYMAN",
+        "filled_by": "p:qa-diplomat",
+        "escrowed": 1200,
+        "elective": 300,
+        "elective_ceiling": 562,
+        "elective_settled": 38,
+        "escrow_ratio_bps": 8000
+      }
+    ]
+  },
+  {
+    "who": "trader",
+    "tick": 578,
+    "venture": "v:358:bd11b085",
+    "state": "SETTLED",
+    "standing": {
+      "elective_honoured": 0,
+      "elective_honoured_value": 0,
+      "defaults": 0,
+      "contradicted_seals": 0,
+      "distinct_counterparties": 0
+    },
+    "transferableMinor": 3714,
+    "roles": [
+      {
+        "index": 0,
+        "label": "DIGGER",
+        "filled_by": "p:qa-trader",
+        "escrowed": 3600,
+        "elective": 900,
+        "elective_ceiling": 1686,
+        "elective_settled": 114,
+        "escrow_ratio_bps": 8000
+      },
+      {
+        "index": 1,
+        "label": "TALLYMAN",
+        "filled_by": "p:qa-diplomat",
+        "escrowed": 1200,
+        "elective": 300,
+        "elective_ceiling": 562,
+        "elective_settled": 38,
+        "escrow_ratio_bps": 8000
+      }
+    ]
+  },
+  {
+    "who": "diplomat",
+    "tick": 578,
+    "venture": "v:358:bd11b085",
+    "state": "SETTLED",
+    "standing": {
+      "elective_honoured": 0,
+      "elective_honoured_value": 0,
+      "defaults": 0,
+      "contradicted_seals": 0,
+      "distinct_counterparties": 0
+    },
+    "transferableMinor": 1238,
+    "roles": [
+      {
+        "index": 0,
+        "label": "DIGGER",
+        "filled_by": "p:qa-trader",
+        "escrowed": 3600,
+        "elective": 900,
+        "elective_ceiling": 1686,
+        "elective_settled": 114,
+        "escrow_ratio_bps": 8000
+      },
+      {
+        "index": 1,
+        "label": "TALLYMAN",
+        "filled_by": "p:qa-diplomat",
+        "escrowed": 1200,
+        "elective": 300,
+        "elective_ceiling": 562,
+        "elective_settled": 38,
+        "escrow_ratio_bps": 8000
+      }
+    ]
+  }
+]

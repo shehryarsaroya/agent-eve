@@ -1,0 +1,9 @@
+[Unit]
+Description=Agent Eve database backup and partition maintenance
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/agenteve/deploy/agenteve-maintenance.py
+UMask=0077

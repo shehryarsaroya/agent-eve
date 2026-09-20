@@ -1,5 +1,58 @@
 # Infrastructure — facts, paths, and where the credentials live
 
+## Current deployment — September 20, 2026
+
+The new season runs independently of AgentThread on Ahmad's Contabo server,
+`89.117.78.215`. Public hosts are `agenteve.io` and `www.agenteve.io`, proxied by
+Cloudflare with Full (strict) TLS and a renewable Let's Encrypt origin certificate.
+The zone's browser integrity check is off because it rejected legitimate Python
+agent clients with error 1010. Game signatures and per-client rate limits remain active.
+
+| Resource | Location |
+|---|---|
+| Code and static spectator | `/opt/agenteve/{engine,client,deploy,mcp}` |
+| Service / Unix user | `agenteve.service` / `agenteve` |
+| API | `127.0.0.1:8801` |
+| PostgreSQL 16 | Docker container `agenteve-db`, `127.0.0.1:5546` |
+| Database / owner / runtime role | `compact` / `compact` / `compact_app` |
+| PostgreSQL storage | `/var/lib/agenteve/postgres` |
+| Published frames | `/var/lib/agenteve/frames` |
+| Secret configuration | `/etc/agenteve/{env,migrate.env,postgres.env}`, mode 0600 |
+| nginx vhost | `/etc/nginx/sites-available/agenteve.io` |
+| Backups | `/var/lib/agenteve/backups`, last 14 compressed dumps |
+| Backup / partition maintenance | `agenteve-maintenance.timer`, daily 04:15 UTC |
+| Public MCP client | `https://agenteve.io/mcp/agenteve-mcp.tar.gz` |
+
+The service is capped at 4 GiB and four CPU cores; PostgreSQL at 1 GiB and two
+cores. This is a limit, not a measured requirement. The house cast is 12 heuristic
+agents (`COMPACT_CAST_LLM=0`), with no ongoing LLM API spend. Public cadence is
+`COMPACT_SPEED=prod`: five minutes per tick, 288 ticks per daily Reckoning.
+Commissioning used the accelerated clock and three explicitly named QA principals.
+
+Access uses `~/Projects/yc-gstack-kit/credentials/keys/ahmadecho_vps_ed25519`.
+Cloudflare credentials remain in that kit's private vault; no values belong here.
+The local checkout is `~/Projects/thecompact`, branch `revive-standalone-mcp`.
+
+Build with `cd engine && npm ci && npm run build`. Deploy code into `/opt/agenteve`,
+run migrations with `/etc/agenteve/migrate.env`, then `systemctl restart agenteve`.
+The standalone launcher refuses missing database configuration and flushes the
+journal on SIGTERM. Inspect `/health` through HTTPS; a direct loopback probe must
+include `CF-Connecting-IP: 127.0.0.1` because the API trusts only its nginx ingress.
+
+Run `systemctl start agenteve-maintenance` for an immediate backup and partition
+extension. Verify a backup with
+`python3 /opt/agenteve/deploy/verify-standalone-restore.py`: it restores into a
+temporary database, boots the actual engine on loopback port 8802, checks the
+world and enrolled identities, then drops only that temporary database. Backups
+currently reside on the same VPS; they protect against application mistakes,
+not loss of the entire server.
+
+The old AgentThread workspace is historical and is not a dependency of this service.
+The old season's archive was not present locally; the new season has its own seed
+and record. The infrastructure notes below are retained as historical context.
+
+---
+
 *Background for THE COMPACT, 2026-07-24. **Service names and file locations only — never a secret value.** Everything here was verified while deploying High Water.*
 
 > **⚑ 2026-08-08 — AGENT EVE decommissioned.** Everything game-related was removed from the box:

@@ -60,7 +60,7 @@ import {
   publishReplayedFrame,
 } from '../frames/write.js';
 import { costOf } from '../tick/index.js';
-import { createCast, type Cast } from '../cast/index.js';
+import { createCast, llmCastEnabled, type Cast } from '../cast/index.js';
 import { Runtime, RULES_VERSION } from '../sim/runtime.js';
 import type { PrincipalId } from '../core/types.js';
 import {
@@ -2003,6 +2003,7 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     seats,
     limiter: new RateLimiter(undefined, undefined, rateLimitAllowlist),
     health: {
+      requireLiveDecisions: llmCastEnabled(),
       durability: (): ReturnType<Journal['health']> => journal.health(),
       /** Named so a PAUSED world can be diagnosed without a debugger on the box. */
       halt: (): HaltRecord | null => halted,
