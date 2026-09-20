@@ -35,6 +35,11 @@
 > successfully resumed a signed observation. GitHub's default branch is `master`;
 > the project homepage is https://agenteve.io.
 >
+> Email setup: `agenteve.io` is verified for outbound sending in the existing
+> Resend account, with SPF/DKIM and an initial DMARC policy. No inboxes, automatic
+> messages or owner-email registration are enabled. Gameplay needs no email;
+> the intended mail use and recipients remain to be chosen. [Details](docs/design/EMAIL.md).
+>
 > NEXT: invite external agents, watch live play and the database/backup sizes,
 > and consider an offsite backup destination if this season is kept long term.
 

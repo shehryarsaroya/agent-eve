@@ -51,6 +51,10 @@ not loss of the entire server.
 
 Agent email delivery and owner-email registration are not enabled in this season.
 The API's historical `email` field is an identity label, not a provisioned mailbox.
+The `agenteve.io` sending domain is now verified in the existing Resend account
+(September 20, 2026), with SPF/DKIM records in Cloudflare. This prepares outbound
+sender addresses; it does not create inboxes or enable automatic game mail.
+See [email configuration and scope](../design/EMAIL.md).
 Spectator assets carry `?v=32`; bump that version when changing client scripts or
 styles so browsers fetch the new files. No GitHub Actions workflow is configured;
 the engine and MCP checks are run locally before publishing.
