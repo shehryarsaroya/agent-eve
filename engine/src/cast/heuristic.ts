@@ -264,10 +264,10 @@ export const CAST_TOP_YIELD_KIND: VentureKind = 'BUILD';
  * Chance in 10 000, per eligible member per eligible tick, of opening a four-role venture.
  *
  * Measured with `scripts/four-role-probe.ts` over six seeds × three Reckonings at twelve members
- * (`--seeds-from g --count 6 --reckonings 3 --members 12`): `--top-yield-bps 200` opens 7 (0.39 a
- * world-Reckoning, and two seeds none at all); **600 opens 14 (≈0.78), every one filled by four
+ * (`--seeds-from g --count 6 --reckonings 3 --members 12`): `--top-yield-bps 200` opens 6 (0.33 a
+ * world-Reckoning, and two seeds none at all); **600 opens 16 (≈0.89), every one filled by four
  * distinct principals and settled honoured** — no default, no abandonment, `levyShort` 0 exactly as
- * with `--top-yield-off`, and Σ `defaults` 66 against the branch-off world's 78. Six hundred is the
+ * with `--top-yield-off`, and Σ `defaults` 72 against the branch-off world's 78. Six hundred is the
  * figure where "sometimes" means most Reckonings, and no seed goes without one.
  */
 export const DEFAULT_TOP_YIELD_CHANCE_BPS = 600;

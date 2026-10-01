@@ -244,6 +244,9 @@ export function frame(reckoningIndex: number, over: Partial<ReckoningFrame> = {}
     glyphs: [],
     ticker: [],
     nextDocket: [],
+    // ★ 41: the contact lines are required keys, and `publishFrame`'s budget assert walks them.
+    directoryLines: [],
+    parleyLines: [],
   };
   return { ...base, ...over } as unknown as ReckoningFrame;
 }
