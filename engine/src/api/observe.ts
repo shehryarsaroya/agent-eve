@@ -68,6 +68,7 @@ import {
 } from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
+  CREATE_IS_COUNTERSIGNATURE,
   creatorElective,
   escrowRatioBps,
   escrowRequired,
@@ -4943,13 +4944,20 @@ const CREATE_ROLE_RULE =
 function countersignWarning(tick: number): string {
   // `create` resolves at tick+1 and the window opens there — `Runtime.vCreate`'s `opens = ctx.tick`.
   const closes = tick + 1 + FORMATION_WINDOW_TICKS;
+  // ── ★ `RULES_VERSION` 41: THIS SENTENCE USED TO SEND THE CREATOR BACK TO SIGN ──────────────
+  //
+  // It read *"THIS DOES NOT BIND ANYONE YET … that includes YOU: `sign` will be the first row of your
+  // next observation"*, and it had to: the creator needed a second wake inside a 12-tick window that
+  // an even pace of 16 wakes could not reach (`formationWindowOutlastsAWake` −6). The create is now
+  // the creator's countersignature, so the sentence says what is true — this binds YOU now, it binds
+  // nobody else until they sign, and the one decision left to you is `abandon`. The rule's wording is
+  // `venture/create.ts:CREATE_IS_COUNTERSIGNATURE`, the same constant `agent.md` is held to.
   return (
-    '★ THIS DOES NOT BIND ANYONE YET. A venture goes live only when every party has countersigned the ' +
-    'same terms_hash, and that includes YOU: `sign` will be the first row of your next observation, ' +
-    `carrying this venture's id and hash ready to send. Countersign by tick ${String(closes)} or the ` +
-    'window closes and it is retired ABANDONED — your escrow comes back and no default is recorded, ' +
-    'but the deal, the counterparties who filled its roles and the standing you would have earned are ' +
-    'all gone. Observe again before then; that is what the wake is for.'
+    `★ THIS BINDS YOU NOW AND NOBODY ELSE YET. ${CREATE_IS_COUNTERSIGNATURE} Every filler must ` +
+    `countersign by tick ${String(closes)}, when the window closes: a venture short of a role or a ` +
+    'signature then retires ABANDONED — your escrow comes back and no default is recorded, but the deal ' +
+    'and the standing it would have earned are gone. ventures.mine[] shows who filled what; you do not ' +
+    'have to be awake for it to bind.'
   );
 }
 
@@ -5854,8 +5862,10 @@ function promptFor(
   // A blind player read *"v:265 is waiting on your countersignature"* while all four of its ventures
   // showed `filled_by: null` in the same payload. The predicate was `FORMING && !countersigned` and
   // nothing more, so it fired from tick 0 on every draft a principal had ever created — because
-  // `countersigned` is seeded only for a *delegated* create (`venture/create.ts:boundAtFormation`),
-  // so a self-created venture starts with an empty set by design.
+  // `countersigned` was seeded only for a *delegated* create (`venture/create.ts:boundAtFormation`),
+  // so a self-created venture started with an empty set by design. (Since `RULES_VERSION` 41 every
+  // create seeds its creator, so for a creator this branch is closed by construction; the
+  // `partiesOf` gate still matters for a filler reading a venture nobody else has joined.)
   //
   // §7.3 is explicit that nothing binds until the PARTIES countersign, so a draft nobody has joined
   // carries no obligation and there is nothing to sign for. `observe/catalogue.ts` had already made
@@ -6513,7 +6523,16 @@ function nextDecisionAt(runtime: Runtime, principal: PrincipalId, tick: number):
   }
   for (const venture of runtime.ventures.forPrincipal(principal)) {
     // `> tick` on the CLOSE, so `windowClosesTick - 1 >= tick` — the last tick a sign still lands.
-    if (venture.state === 'FORMING' && venture.windowClosesTick > tick && venture.windowClosesTick - 1 < soonest) {
+    //
+    // ★ Only where a signature is still OWED by this reader. Since `RULES_VERSION` 41 a creator is
+    // countersigned by its own `create`, so its window is not a deadline it must be awake for — and a
+    // wake-by tick that named it would spend a creator's wake on a venture that binds without it.
+    if (
+      venture.state === 'FORMING' &&
+      !venture.countersigned.has(principal) &&
+      venture.windowClosesTick > tick &&
+      venture.windowClosesTick - 1 < soonest
+    ) {
       soonest = venture.windowClosesTick - 1;
     }
   }

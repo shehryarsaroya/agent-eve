@@ -51,13 +51,28 @@
  * Every assertion below is preceded by its non-vacuity check, because *"an invariant whose subject
  * cannot occur"* is this project's standing defect and it has already been filed against the
  * accountability sweep that was supposed to catch this one.
+ *
+ * ── ★ `RULES_VERSION` 41: THE SENTENCE WAS NOT THE END OF IT ────────────────
+ *
+ * The sentence made the loop *findable*; it did not make it *forgiving*. An agent that paced evenly
+ * and did not book a second wake still lost every venture, and a blind playtester and a design review
+ * both read the deadline as busywork — a clock, not a decision. So the owner took the third option:
+ * **the creator's own `create` is its countersignature** (`venture/create.ts:boundAtFormation`), and
+ * `formationWindowOutlastsAWake()` reads +12. The play-through below is now the harder version — a
+ * creator that wakes ONLY on the even gap and never books a deadline — and it still gets from
+ * `create` to a moved standing without ever being offered, or sending, a `sign`.
  * ══════════════════════════════════════════════════════════════════════════
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TICKS_PER_RECKONING, WAKES_PER_RECKONING } from '../../src/core/time.js';
 import type { PrincipalId } from '../../src/core/types.js';
-import { FORMATION_WINDOW_TICKS, formationWindowOutlastsAWake } from '../../src/sim/runtime.js';
+import {
+  CREATOR_WAKES_INSIDE_FORMATION_WINDOW,
+  FORMATION_WINDOW_TICKS,
+  formationWindowOutlastsAWake,
+} from '../../src/sim/runtime.js';
+import { CREATE_IS_COUNTERSIGNATURE } from '../../src/venture/index.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from './harness.js';
 
 /** The gap between two wakes for an agent that spends its allowance evenly. */
@@ -112,61 +127,62 @@ async function act(who: Agent, verb: string, params: unknown): Promise<boolean> 
   return accepted.length > 0;
 }
 
-describe('the wake arithmetic this surface has to compensate for', () => {
-  it('★ an evenly-paced creator has NEGATIVE room in its own window, which is why the sentence exists', () => {
+describe('the wake arithmetic the creator no longer has to compensate for', () => {
+  it('★ an evenly-paced creator has the WHOLE window, because its create is its countersignature', () => {
     // Non-vacuity first: the measurement must be reading real constants, not zeroes.
     expect(EVEN_WAKE_GAP, 'the even-pacing gap must be a real number of ticks').toBeGreaterThan(0);
     expect(FORMATION_WINDOW_TICKS, 'the window must be a real number of ticks').toBeGreaterThan(0);
 
-    // This is a MEASUREMENT and not a gate — see `formationWindowOutlastsAWake`'s note. It is
-    // negative as shipped, and that is the whole reason `create` has to name the deadline: an agent
-    // that spreads its wakes evenly and reads nothing is locked out of the core loop by arithmetic
-    // rather than by any rule. Pinned so the day it goes non-negative is a day somebody notices,
-    // because on that day the clock carries the guarantee and the surface no longer has to.
+    // The history, kept as the mutation: while the creator had to come back inside the window to
+    // `sign`, a 12-tick window against an 18-tick even gap was −6, and an agent that paced evenly and
+    // read nothing was locked out of the core loop by arithmetic rather than by any rule.
     expect(
-      formationWindowOutlastsAWake(THE_WINDOW_THAT_WAS_TOO_SHORT),
-      'the shipped window really is shorter than the gap between two evenly-spaced wakes',
+      formationWindowOutlastsAWake(THE_WINDOW_THAT_WAS_TOO_SHORT, 1),
+      'one wake owed inside a 12-tick window really was shorter than the gap between two even wakes',
     ).toBeLessThan(0);
+
+    // ★ Now. No wake is owed inside the window, so the room is the whole window. Pinned so the day a
+    // rule sends the creator back inside its window is a day somebody notices: that day this goes
+    // negative again and the play-through below has to start booking wakes.
+    expect(CREATOR_WAKES_INSIDE_FORMATION_WINDOW, 'the creator owes no wake inside its own window').toBe(0);
     expect(
       formationWindowOutlastsAWake(),
-      'if this has gone non-negative the window now outlasts a wake on its own, and the play-through ' +
-        'below no longer depends on the creator reading its deadline — re-read both notes before ' +
-        'trusting either.',
-    ).toBeLessThan(0);
+      'if this has gone negative a rule has sent the creator back inside its window — re-read ' +
+        '`venture/create.ts:boundAtFormation` before trusting the play-through below.',
+    ).toBeGreaterThanOrEqual(0);
+    expect(formationWindowOutlastsAWake()).toBe(FORMATION_WINDOW_TICKS);
   });
 });
 
-describe('a creator pacing its published wake budget can bind its own venture', () => {
-  it('★ create → sign → LIVE → elect → settle → standing moves, all from the menu', async () => {
+describe('a creator pacing its published wake budget evenly can bind its own venture', () => {
+  it('★ create → LIVE → elect → settle → standing moves, on the even gap, with no sign ever owed', async () => {
     const creator = agent('pt-corr');
     const sable = agent('p-sable');
     const vex = agent('p-vex');
     for (const a of [creator, sable, vex]) expect((await enrol(h, a)).status).toBe(201);
     tick(h, 1);
 
-    // ── HOW THIS AGENT DECIDES WHEN TO WAKE, WHICH IS THE WHOLE POINT ──────
+    // ── EVERYONE PACES EVENLY, AND NOBODY BOOKS A DEADLINE ─────────────────
     //
-    // Not a fixed cadence. It reads `window_closes_tick` off its own `ventures.mine[]` row — the
-    // deadline `create` told it about in words — and books its next wake for that tick. When it has
-    // nothing outstanding it falls back to the even gap. That is a strategy an agent can form from
-    // the payload alone, it never exceeds `WAKES_PER_RECKONING`, and it is exactly what the old
-    // surface made unformulable: with no deadline published, an even cadence is the only rational
-    // default, and the even cadence is the one that misses.
+    // This is the agent the old rule locked out: it wakes every EVEN_WAKE_GAP ticks, never earlier,
+    // and reads nothing about deadlines. The fillers keep the even gap too, staggered, and sign blind
+    // the next tick off the board row's hash — the documented no-second-wake path.
     //
-    // The fillers keep the even gap, staggered, so they are the ordinary players they were before.
+    // Their offsets are the one thing chosen here, and the reason is the FILLERS' arithmetic, not the
+    // creator's: a filler's `fill_role` and its blind `sign` each resolve one tick after they are
+    // sent, so both land inside a window that opens at +1 and closes at +13 only if the filler wakes
+    // at +11 or earlier. 5 and 9 are two ordinary wakes inside that; the creator's schedule is the
+    // bare even gap and nothing else.
     const offset = new Map<string, number>([
-      [sable.handle, 6],
-      [vex.handle, 12],
+      [creator.handle, 0],
+      [sable.handle, 5],
+      [vex.handle, 9],
     ]);
-    /** The tick the creator has booked its next wake for. Its first is the moment it can act at all. */
-    let creatorNextWake = h.runtime.engine.tick;
-    let wakesSpent = 0;
-    /** A filler signs BLIND next tick off the board row's hash — the documented no-second-wake path. */
+    let creatorWakes = 0;
     const pending: { who: Agent; venture: string; hash: string; at: number }[] = [];
 
     let created = 0;
     let sawSign = 0;
-    let signedFromMenu = 0;
     let sawElect = 0;
     let electedFromMenu = 0;
     let stage = '';
@@ -177,69 +193,23 @@ describe('a creator pacing its published wake budget can bind its own venture', 
         await act(p.who, 'sign', { venture: p.venture, terms_hash: p.hash });
       }
       for (const who of [creator, sable, vex]) {
-        if (who === creator) {
-          if (now !== creatorNextWake) continue;
-          // Never more than the published allowance, and the assertion below proves it stayed under.
-          if (wakesSpent >= WAKES_PER_RECKONING) continue;
-          wakesSpent += 1;
-        } else if (now % EVEN_WAKE_GAP !== offset.get(who.handle)) {
-          continue;
-        }
+        if (now % EVEN_WAKE_GAP !== offset.get(who.handle)) continue;
+        if (who === creator) creatorWakes += 1;
         const o = await observe(who);
         const rows = affordances(o);
 
         if (who === creator) {
-          // ── THE SCHEDULE, DERIVED ONLY FROM WHAT THE SURFACE SAID ────────
-          //
-          // An unsigned FORMING venture publishes `window_closes_tick`, so the deadline is a field
-          // once the venture exists. It does NOT exist yet in the wake that creates it — the action
-          // resolves next tick — so for that one hop the agent is following the sentence `create`
-          // now carries: *"`sign` will be the first row of your next observation."* Booking `now+1`
-          // after a create is the literal reading of it, and it needs no prose parsing.
-          //
-          // ⚑ This is the sharp edge of the defect and it is worth naming: at the moment of the
-          //    decision the deadline exists ONLY as prose in `what_it_forecloses`. A2 wants known
-          //    arithmetic machine-readable, and `expires_tick` on a `create` row is already spoken
-          //    for — it is the QUOTE pin (`tick + QUOTE_PIN_TICKS`), not the formation deadline.
-          //    Overloading it would be HARD RULE 4. So the sentence carries it, and this is the
-          //    strategy the sentence makes formulable.
-          const mineRows = ((o['ventures'] as Record<string, unknown>)['mine'] ?? []) as Record<
-            string,
-            unknown
-          >[];
-          const deadlines = mineRows
-            .filter((v) => v['state'] === 'FORMING' && v['i_have_signed'] === false)
-            .map((v) => Number(v['window_closes_tick']))
-            .filter((n) => Number.isFinite(n) && n > now);
-          creatorNextWake = deadlines.length > 0 ? Math.min(...deadlines) : now + EVEN_WAKE_GAP;
-        }
-
-        if (who === creator) {
           if (rows.some((r) => r.verb === 'sign')) sawSign += 1;
           if (rows.some((r) => r.verb === 'elect')) sawElect += 1;
-        }
-
-        const sign = rows.find((r) => r.verb === 'sign');
-        if (sign !== undefined && (await act(who, 'sign', sign.params)) && who === creator) {
-          signedFromMenu += 1;
-        }
-        // Every role, not just the first: an unelected role is a real default and this test is
-        // about the honoured path.
-        for (const elect of rows.filter((r) => r.verb === 'elect')) {
-          if ((await act(who, 'elect', elect.params)) && who === creator) electedFromMenu += 1;
-        }
-
-        if (who === creator) {
-          if (sign === undefined) {
-            const create = rows.find((r) => r.verb === 'create');
-            if (create !== undefined) {
-              stage = String(create.params['stage']);
-              if (await act(who, 'create', create.params)) {
-                created += 1;
-                // The sentence the affordance now carries, acted on literally.
-                creatorNextWake = now + 1;
-              }
-            }
+          // Every role, not just the first: an unelected role is a real default and this test is
+          // about the honoured path.
+          for (const elect of rows.filter((r) => r.verb === 'elect')) {
+            if (await act(who, 'elect', elect.params)) electedFromMenu += 1;
+          }
+          const create = rows.find((r) => r.verb === 'create');
+          if (create !== undefined) {
+            stage = String(create.params['stage']);
+            if (await act(who, 'create', create.params)) created += 1;
           }
         } else {
           const hands = (o['hands'] ?? []) as Record<string, unknown>[];
@@ -268,24 +238,25 @@ describe('a creator pacing its published wake budget can bind its own venture', 
     const mine = h.runtime.ventures.all().filter((v) => String(v.creator) === creator.principalId);
 
     // ── NON-VACUITY, IN THE ORDER THE CHAIN DEPENDS ON ─────────────────────
-    // Each of these has been the thing that was actually zero at some point in this project's life,
-    // so each is asserted before the claim that rests on it.
     expect(created, 'the creator must have opened at least one venture from its own menu').toBeGreaterThan(0);
     expect(
-      wakesSpent,
-      'this whole run must fit inside the PUBLISHED allowance — a play-through that needed a ' +
-        '17th wake would be proving something no lawful agent can do',
+      creatorWakes,
+      'this whole run must fit inside the PUBLISHED allowance, spent evenly',
     ).toBeLessThanOrEqual(WAKES_PER_RECKONING);
     expect(
       sawSign,
-      'REGRESSION: `sign` never appeared in a wake-budgeted creator\'s affordances. This is the ' +
-        'exact reading a play-tester got, and it means the formation window has fallen back below ' +
-        'the wake gap.',
-    ).toBeGreaterThan(0);
-    expect(signedFromMenu, 'the creator must have countersigned by copying its own affordance').toBeGreaterThan(0);
+      'REGRESSION: a creator was offered `sign` on its own venture — its create is its countersignature',
+    ).toBe(0);
 
     const bound = mine.filter((v) => v.countersigned.has(creator.principalId as PrincipalId));
-    expect(bound.length, 'at least one venture must carry the creator\'s countersignature').toBeGreaterThan(0);
+    expect(bound.length, 'every venture must carry the creator’s countersignature from its create').toBe(
+      mine.length,
+    );
+    const wentLive = mine.filter((v) => v.state !== 'FORMING' && v.state !== 'ABANDONED');
+    expect(
+      wentLive.length,
+      'at least one venture must have bound and gone past FORMING with the creator never signing',
+    ).toBeGreaterThan(0);
 
     // A role filled by a real counterparty, which is what makes the elective half a promise to
     // somebody rather than a transfer to yourself (scar #9).
@@ -311,11 +282,11 @@ describe('a creator pacing its published wake budget can bind its own venture', 
     ).toBeGreaterThan(0);
     expect(standing.electiveHonouredValue).toBeGreaterThan(0);
     expect(standing.distinctCounterparties).toBeGreaterThan(0);
-  });
+  }, 300_000);
 });
 
 describe('the surface tells a creator what create actually costs it', () => {
-  it('★ `create` names the countersignature and the exact tick it is due', async () => {
+  it('★ `create` says it IS the countersignature, and names the tick the window closes', async () => {
     const creator = agent('pt-c');
     expect((await enrol(h, creator)).status).toBe(201);
     tick(h, 1);
@@ -325,11 +296,9 @@ describe('the surface tells a creator what create actually costs it', () => {
     expect(create, 'non-vacuity: `create` must be on the menu at all').toBeDefined();
     const text = create?.what_it_forecloses ?? '';
 
-    // The act that creates the obligation to countersign has to mention that one exists. It did
-    // not, and a play-tester lost eleven ventures to the omission before concluding the verb was
-    // missing rather than the sentence.
-    expect(text, 'create must name the act that binds it').toContain('sign');
-    expect(text.toLowerCase(), 'and say the window can close on it').toContain('window closes');
+    // The engine's own sentence, verbatim — the same constant `agent.md` is held to.
+    expect(text, 'create must carry the countersignature rule').toContain(CREATE_IS_COUNTERSIGNATURE);
+    expect(text.toLowerCase(), 'and say when the window closes on the fillers').toContain('window closes');
 
     // Exact, not "soon" (A2). `create` resolves next tick and the window opens there.
     const closes = h.runtime.engine.tick + 1 + FORMATION_WINDOW_TICKS;
@@ -337,17 +306,19 @@ describe('the surface tells a creator what create actually costs it', () => {
       String(closes),
     );
 
-    // And the promise has to be true: take it, and `sign` is really there next tick.
+    // And the promise has to be true: take it, and NO `sign` is waiting next tick.
     expect(await act(creator, 'create', create?.params)).toBe(true);
     tick(h, 1);
     const next = affordances(await observe(creator));
     expect(
       next.some((r) => r.verb === 'sign'),
-      'create promised `sign` would be on the next observation; it must be',
-    ).toBe(true);
-    // The venture the engine actually minted must close its window when the sentence said it would.
+      'create said it was the countersignature; a `sign` on the next observation would contradict it',
+    ).toBe(false);
+    // The venture the engine actually minted must carry the creator already, and close its window
+    // when the sentence said it would.
     const minted = h.runtime.ventures.all().filter((v) => String(v.creator) === creator.principalId);
     expect(minted.length, 'non-vacuity: the create must have minted a venture').toBe(1);
+    expect(minted[0]?.countersigned.has(creator.principalId as PrincipalId)).toBe(true);
     expect(minted[0]?.windowClosesTick, 'the published deadline must be the real one').toBe(closes);
   });
 });

@@ -33,6 +33,7 @@ import type { Handle, GrantId, PrincipalId, SystemId, VentureId } from '../../sr
 import { minor, type Bps } from '../../src/core/units.js';
 import { storesAccount } from '../../src/ledger/index.js';
 import {
+  CREATE_IS_COUNTERSIGNATURE,
   GRANT_IS_CONSENT,
   activate,
   bindingNote,
@@ -53,19 +54,24 @@ const SETTLE_TICK = TICKS_PER_RECKONING - 1;
 
 // ── The unit half: the constructor, the signature set, and activation ─────────
 
-describe('the creator is countersigned at formation exactly when a grant stood in for it', () => {
-  it('boundAtFormation names the creator under a grant and nobody without one', () => {
+describe('the creator is countersigned at formation — by a grant, or (since 41) by its own create', () => {
+  it('boundAtFormation names the creator under a grant AND without one', () => {
+    // ★ `RULES_VERSION` 41. This asserted `[]` for an ordinary create: the creator had to come back
+    // and sign terms it had written itself, inside a 12-tick window an even pace of 16 wakes could
+    // not reach. The create is now its countersignature (`CREATE_IS_COUNTERSIGNATURE`).
     const creator = 'p:grantor' as PrincipalId;
-    expect(boundAtFormation({ creator, boundByGrant: null })).toEqual([]);
+    expect(boundAtFormation({ creator, boundByGrant: null })).toEqual([creator]);
     expect(boundAtFormation({ creator, boundByGrant: 'g:1' as GrantId })).toEqual([creator]);
   });
 
-  it('a self-create still needs the creator’s own signature (the rule was NOT widened)', () => {
+  it('a self-create is countersigned by its creator and still needs every role-holder', () => {
     const f = fixture();
     const v = makeHaul(f);
     expect(v.boundByGrant).toBeNull();
-    expect([...v.countersigned]).toEqual([]);
+    expect([...v.countersigned]).toEqual([v.creator]);
     expect(signatoriesRequired(v)).toContain(v.creator);
+    // Bound to its creator, and to nobody else yet: the other half of §7.3 is untouched.
+    fill(f, v, 0, BRAM);
     expect(isFullyCountersigned(v)).toBe(false);
   });
 
@@ -151,9 +157,12 @@ describe('the creator is countersigned at formation exactly when a grant stood i
     const unbound = createVenture({ ...args, id: 'v-house-unbound' as VentureId });
     expect(unbound.ok).toBe(true);
     if (!unbound.ok) return;
-    // No signature the house could ever produce, and it is a required signatory.
+    // A required signatory that could never produce a signature — and since `RULES_VERSION` 41 it does
+    // not have to: the formation itself is the creator's countersignature, with or without a grant.
+    // (Through the verb a house is only ever a creator by a delegate's act, so the grant still names
+    // whose act it was; that is provenance now, not consent.)
     expect(signatoriesRequired(unbound.value)).toContain(house);
-    expect(isFullyCountersigned(unbound.value)).toBe(false);
+    expect(unbound.value.countersigned.has(house)).toBe(true);
 
     const bound = createVenture({
       ...args,
@@ -169,9 +178,11 @@ describe('the creator is countersigned at formation exactly when a grant stood i
     expect(isFullyCountersigned(bound.value)).toBe(true);
   });
 
-  it('the same venture WITHOUT the grant cannot activate however many counterparties sign', () => {
-    // The mutation, run as a test: this is precisely the world before the change, and it is what
-    // "going dark is a perfect defence" looked like from the counterparties' side.
+  it('★ since 41 the same venture WITHOUT a grant goes live once its counterparties sign', () => {
+    // This used to be the mutation run as a test — the world before delegated binding, where going
+    // dark was a perfect defence and the venture could not activate however many counterparties
+    // signed. Under `RULES_VERSION` 41 the creator's create is its countersignature, so the same
+    // venture binds the moment its role-holders sign, whether or not the creator is awake.
     const f = fixture();
     const v = makeHaul(f, { id: 'v-unbound' as VentureId });
     fill(f, v, 0, BRAM);
@@ -181,10 +192,9 @@ describe('the creator is countersigned at formation exactly when a grant stood i
       countersign(v, p, v.termsHash ?? '', server, server);
     }
     const live = activate(v, 7, 2);
-    expect(live.ok).toBe(false);
-    if (live.ok) return;
-    expect(live.invariant).toBe('PROP-W1');
-    expect(live.hint).toContain(String(ALICE));
+    expect(live.ok, live.ok ? '' : `${live.invariant} ${live.hint}`).toBe(true);
+    expect(v.state).toBe('LIVE');
+    expect(v.countersigned.has(ALICE)).toBe(true);
   });
 });
 
@@ -390,13 +400,21 @@ describe('a delegate binds its grantor through the real verb', () => {
     expect(w.runtime.ledger.freeBalance(storesAccount(w.grantor))).toBeGreaterThan(0);
   });
 
-  it('a self-create is unchanged: the creator is not bound and must still sign', () => {
+  it('★ a self-create binds its creator through the verb, with no grant and no `sign` (RULES_VERSION 41)', () => {
     const w = world('bind-self');
     expect(act(w.runtime, w.grantor, 'create', { stage: w.stage, kind: 'HAUL', value: 12_000 })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
+    // No grant stood in — the create itself is the creator's countersignature.
     expect(v.boundByGrant).toBeNull();
-    expect(v.countersigned.has(w.grantor)).toBe(false);
+    expect(v.actedBy).toBeNull();
+    expect(v.countersigned.has(w.grantor)).toBe(true);
+    // And the menu agrees: nothing offers the creator a `sign` it no longer owes.
+    const mine = observe(w, w.grantor);
+    const offered = mine.affordances.filter(
+      (a) => a.verb === 'sign' && (a.params as Record<string, unknown>)['venture'] === v.id,
+    );
+    expect(offered).toHaveLength(0);
   });
 
   it('every party can READ that a delegate bound it — including the grantor itself', () => {
@@ -550,6 +568,16 @@ describe('the rules surface says it once', () => {
     // slide between, and one of them is a quiet-equilibrium failure.
     const normalised = AGENT_MD.replace(/\n> ?/g, ' ').replace(/[ \t]+/g, ' ');
     expect(normalised).toContain(GRANT_IS_CONSENT.replace(/[ \t]+/g, ' '));
+  });
+
+  it('★ CREATE_IS_COUNTERSIGNATURE is in agent.md verbatim (RULES_VERSION 41)', () => {
+    // The same discipline, for the creator's half. "Your create is your signature" and "come back and
+    // sign" are the two readings a paraphrase can slide between, and the second one is exactly the
+    // wake-gap trap the rule was changed to close.
+    const normalised = AGENT_MD.replace(/\n> ?/g, ' ').replace(/[ \t]+/g, ' ');
+    expect(normalised).toContain(CREATE_IS_COUNTERSIGNATURE.replace(/[ \t]+/g, ' '));
+    // And the advice it replaced is gone from the document.
+    expect(AGENT_MD).not.toContain('come back inside the window to `sign`');
   });
 
   it('states the consequence, not just the mechanic', () => {

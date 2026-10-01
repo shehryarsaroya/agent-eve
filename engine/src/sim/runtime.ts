@@ -2197,7 +2197,44 @@ import {
  * version to arrive out of order and the protocol has now paid for itself six times.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 40;
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **41 — SEASON 1: ABSENCE STOPS COSTING THE PRESENT, AND THE CLOCK STOPS BEING THE CHORE.**
+ *
+ * Cut for a FRESH world (owner decision, 2026-10-01: a new seed and a new record), so no live
+ * record is replayed across it. Four rule changes, each found by playing the live world:
+ *
+ *   1. **The creator's own `create` is its countersignature** (`venture/create.ts:boundAtFormation`,
+ *      `CREATE_IS_COUNTERSIGNATURE`). A creator pacing its wakes evenly could not be awake inside a
+ *      12-tick window it opened itself; {@link formationWindowOutlastsAWake} goes from −6 to +12.
+ *      `abandon` keeps the creator's real veto while the venture is FORMING.
+ *   2. **A standing intent can be ended** — `set_delivery_intent {"stop": "<intent id>"}`, the verb
+ *      that makes intents taking the parameter that ends one. No verb is spent (40/40 stands).
+ *   3. **A satisfied intent reads as satisfied** — a run with nothing left to do this Reckoning (the
+ *      Levy or Charge already discharged, the ballot already cast as stated) is recorded as
+ *      `satisfied` on the intent row, writes no action-log row and posts no correction. Captured.
+ *   4. **A dormant principal's WORKS stops dividing the yield** (`works/book.ts`, `DORMANT_STATEMENT`):
+ *      no accepted action for `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings, and its WORKS neither
+ *      extracts nor counts in its system's split until the tick after it acts again. Nothing is
+ *      confiscated. Captured (`works.played`).
+ *
+ * Plus one cast change that is a surface fix: `openSlotFor` skips a slot the member's own grant bars
+ * it from (INV-23), which the engine refused and the cast re-picked every tick.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * None to accept: Season 1 starts a new record at genesis. A world journalled under 40 refuses to
+ * adopt a 41 checkpoint on `RULES_VERSION_MISMATCH`, which is the cheap door, and a replay of a 40
+ * record under 41 diverges at its first self-created venture.
+ *
+ * ── ⚑ PRE-ASSIGNED, RENUMBER AT MERGE ───────────────────────────────────────
+ *
+ * Another lane (the season and its finale) was in flight when this was cut. Per 24's protocol —
+ * pre-assign to avoid the collision, renumber to the tail at merge, one block per number.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const RULES_VERSION = 41;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -2403,39 +2440,59 @@ export const MAX_RAID_TICKER_LINES = 32;
  * the published budget and gets to a moved standing without this constant changing.
  *
  * **The relation is still worth knowing and is still exported** — see
- * {@link formationWindowOutlastsAWake}. It is negative today (12 against a gap of
- * 18), which is precisely why the sentence is load-bearing rather than a courtesy:
- * an agent that paces itself evenly and reads nothing is still locked out. Widening
- * the window is the alternative fix, it is a world-shape change with measured
- * collateral in the combat layer, and it is the owner's call rather than a
- * bugfix's.
+ * {@link formationWindowOutlastsAWake}. It was negative (12 against a gap of
+ * 18), which is precisely why the sentence was load-bearing rather than a courtesy:
+ * an agent that paced itself evenly and read nothing was still locked out. Widening
+ * the window was the alternative fix, a world-shape change with measured
+ * collateral in the combat layer, and the owner's call rather than a bugfix's.
+ *
+ * ── ★ `RULES_VERSION` 41: THE OWNER'S CALL WAS THE THIRD OPTION ─────────────────
+ *
+ * Neither the window nor the wake budget moved. **The creator's own `create` became its
+ * countersignature** (`venture/create.ts:boundAtFormation`), so the one party that used
+ * to need a second wake inside this window needs none: it is bound by the act that
+ * opened the window, and a filler's `sign` already travels on the next tick without a
+ * second observation (`POST /act` is not wake-gated). The window stays 12, the free
+ * hands the combat layer was measured to need stay free, and
+ * {@link formationWindowOutlastsAWake} reads +12 because the creator now has the
+ * whole window and nothing it must be awake for inside it.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const FORMATION_WINDOW_TICKS = 12;
 
 /**
- * **How much room an evenly-paced creator has inside its own formation window.** Negative today.
+ * How many wakes the CREATOR must spend inside its own formation window, after the one that created
+ * the venture. **Zero since `RULES_VERSION` 41** — its `create` is its countersignature.
+ *
+ * A named constant rather than a literal folded into the arithmetic below, because the whole value of
+ * {@link formationWindowOutlastsAWake} is that it can go negative again: if a later rule ever asks the
+ * creator to come back inside the window — for any act — this becomes 1, the measurement reads −6
+ * again, and the play-through test that pins it says so by name.
+ */
+export const CREATOR_WAKES_INSIDE_FORMATION_WINDOW = 0;
+
+/**
+ * **How much room an evenly-paced creator has inside its own formation window.** `+12` since 41.
  *
  * A creator that spreads `WAKES_PER_RECKONING` evenly gets one wake every
- * `TICKS_PER_RECKONING / WAKES_PER_RECKONING` ticks. When the formation window is shorter than that,
- * an agent pacing itself and reading nothing **cannot be awake to countersign its own venture** — it
- * is not refused, it is never asked, and the symptom is *"the verb is missing from the menu"* rather
- * than a failure anywhere. That is A4 arriving through a clock: the in-process cast decides about
- * once per tick and closes every deal, while a lawful HTTP agent closes none.
+ * `TICKS_PER_RECKONING / WAKES_PER_RECKONING` ticks. The room is the window less the wake gaps the
+ * creator must bridge inside it — {@link CREATOR_WAKES_INSIDE_FORMATION_WINDOW} of them. While that
+ * was one (the creator had to come back and `sign`), a 12-tick window against an 18-tick gap read
+ * **−6**: an agent pacing itself and reading nothing **could not be awake to countersign its own
+ * venture** — not refused, never asked, and the symptom was *"the verb is missing from the menu"*.
+ * That is A4 arriving through a clock: the in-process cast decides about once per tick and closed
+ * every deal, while a lawful HTTP agent closed none.
  *
- * This is **a measurement, not a gate**, and the difference is deliberate. The slack is `-6` as
- * shipped, and the loop is nonetheless reachable because the budget is a pool rather than a rate and
- * `api/observe.ts:countersignWarning` now names the deadline on the act that opens it — so an agent
- * that reads its affordance can spend two wakes close together and bind. Making this a hard
- * assertion would force {@link FORMATION_WINDOW_TICKS} wider, which was measured and costs the
- * combat layer its free hands.
- *
- * Exported so the trade-off is countable rather than remembered: if the wake budget rises, the
- * Reckoning shortens, or the window widens, this number says whether the surface still has to carry
- * the warning or whether the clock finally does.
+ * Since `RULES_VERSION` 41 the creator's `create` is its countersignature, the count is zero, and the
+ * room is the whole window. Still **a measurement, not a gate**, and still exported so the trade-off
+ * is countable rather than remembered: if a rule ever sends the creator back inside the window again,
+ * pass the new count and this says whether the clock carries the guarantee or the surface has to.
  */
-export function formationWindowOutlastsAWake(windowTicks: number = FORMATION_WINDOW_TICKS): number {
-  return windowTicks - Math.ceil(TICKS_PER_RECKONING / WAKES_PER_RECKONING);
+export function formationWindowOutlastsAWake(
+  windowTicks: number = FORMATION_WINDOW_TICKS,
+  wakesInsideWindow: number = CREATOR_WAKES_INSIDE_FORMATION_WINDOW,
+): number {
+  return windowTicks - wakesInsideWindow * Math.ceil(TICKS_PER_RECKONING / WAKES_PER_RECKONING);
 }
 
 /** Bound on every agent-written text buffer (INV-26, scar #3). */

@@ -95,10 +95,12 @@ async function filledUnsigned(): Promise<{ readonly venture: string; readonly fi
   await act(creator, 'create', create?.['params']);
   tick(h, 1);
   const second = obs((await signed(h, creator, 'GET', PATHS.observe)).json);
-  const sign = affordance(second, 'sign');
-  expect(sign, 'the creator must be offered its own countersignature').toBeDefined();
-  await act(creator, 'sign', sign?.['params']);
-  const venture = String((sign?.['params'] as Row)['venture']);
+  // ★ `RULES_VERSION` 41: the creator's `create` IS its countersignature, so it is offered no `sign`
+  // and owes no wake inside the window. The venture is read off its own `ventures.mine[]` row.
+  expect(affordance(second, 'sign'), 'a creator is never offered a sign on its own venture').toBeUndefined();
+  const mineRows = ((second['ventures'] as Row)['mine'] ?? []) as Row[];
+  const venture = String(mineRows[0]?.['id']);
+  expect(mineRows[0]?.['i_have_signed'], 'the create signed it').toBe(true);
   tick(h, 1);
 
   const record = h.runtime.ventures.get(venture as never);
