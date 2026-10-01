@@ -10,6 +10,22 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
+## ⏱ 2026-10-01 — branch `season1-stakes-and-chores`, `RULES_VERSION` 41 (unmerged, nothing deployed)
+
+*A Season 1 lane, cut for a fresh world. `TRACKER.md`'s STATUS carries the account; this is the reading.*
+
+| | reading, 2026-10-01 |
+|---|---|
+| `RULES_VERSION` | **41** — pre-assigned; renumber at merge if another Season 1 lane lands first |
+| `tsc` · lint · audits | 0 · 0 · DET-8 and PROP-O3 pass |
+| vitest (`npm run gate0`) | **340 files, 4,192 passed, 1 skipped** — plus 2 failed in `follow/integration.spec.ts`, pre-existing on `c771ece` and load-dependent (passes alone, 4 of 4) |
+| budgets | verbs **40/40** (no verb spent: `stop` is a `set_delivery_intent` param) · axioms 15/15 · observe keys 11/11 · venture kinds 8/8 |
+| `formationWindowOutlastsAWake()` | **−6 → +12** — the creator's `create` is its countersignature |
+| DORMANT | `WORKS_DORMANT_AFTER_RECKONINGS` **4** (= 1,152 ticks, the seat lease's span) |
+| cast contract | analytic ceiling **111,254** of 120,000 · largest reachable **104,743** (margin 15,257) |
+
+---
+
 ## ⏱ 2026-07-30 — `RULES_VERSION` 40, 312 files / 3,889 tests, and a re-seeded world
 
 *The rest of this file predates the three merges of 2026-07-30 and its version numbers, test counts
