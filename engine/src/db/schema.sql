@@ -528,4 +528,65 @@ ALTER TABLE journal_divergence ADD COLUMN IF NOT EXISTS accepted_as text;
 CREATE INDEX IF NOT EXISTS journal_divergence_tick_idx
   ON journal_divergence (tick, seq);
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- FOLLOW BY EMAIL — migration 002. PRIVATE, DELETABLE, AND NOT PART OF THE RECORD.
+--
+-- Everything above this line is the world: append-only by grant, replayed at boot, hashed
+-- into `state_hash`, public by A5. Everything below it is the opposite kind of fact. An email
+-- address is private and must be deletable on request, so these two tables are:
+--
+--   * NOT append-only. They appear in neither APPEND_ONLY list in migrate.ts, so the app role
+--     keeps full DML on them — an unsubscribe is an UPDATE and an erasure is a DELETE.
+--   * NOT partitioned, NOT in a snapshot, NOT read by boot, NOT in `state_hash`. No module
+--     that writes the record imports the store that writes these.
+--   * NOT `journal_enrollment.owner_email`. That column is an agent's own enrolment input,
+--     inside the record's boot data; a follower is anyone, about anyone, and is no OWNER.
+--
+-- Tokens are stored only as sha-256 hashes (see src/api/follow/tokens.ts), so a dump of this
+-- table holds no working confirm or unsubscribe link.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS follow_subscription (
+  -- Random (16 bytes, base64url), never a sequence: an id must not count followers.
+  id                      text    PRIMARY KEY,
+  handle                  text    NOT NULL,
+  -- Normalised to lower case. Never logged, never published, never in the record.
+  email                   text    NOT NULL,
+  status                  text    NOT NULL,
+  confirm_token_hash      text,
+  unsubscribe_token_hash  text    NOT NULL,
+  created_ms              bigint  NOT NULL,
+  -- When the latest confirmation went to the provider; NULL when that send failed.
+  confirm_sent_ms         bigint,
+  confirmed_ms            bigint,
+  unsubscribed_ms         bigint,
+  -- The exactly-once mark: the highest Reckoning whose recap this follower was sent.
+  last_sent_reckoning     integer,
+  last_sent_ms            bigint,
+  CONSTRAINT follow_subscription_status CHECK (status IN ('PENDING', 'ACTIVE', 'UNSUBSCRIBED')),
+  CONSTRAINT follow_subscription_one_per_pair UNIQUE (handle, email),
+  CONSTRAINT follow_subscription_email_len CHECK (length(email) <= 254),
+  CONSTRAINT follow_subscription_handle_len CHECK (length(handle) <= 64)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS follow_subscription_confirm_idx
+  ON follow_subscription (confirm_token_hash) WHERE confirm_token_hash IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS follow_subscription_unsubscribe_idx
+  ON follow_subscription (unsubscribe_token_hash);
+CREATE INDEX IF NOT EXISTS follow_subscription_email_idx
+  ON follow_subscription (email);
+-- The recap worker's page: ACTIVE rows, in id order.
+CREATE INDEX IF NOT EXISTS follow_subscription_due_idx
+  ON follow_subscription (id COLLATE "C") WHERE status = 'ACTIVE';
+
+-- The GLOBAL daily mail ceiling, counted durably. An in-memory counter resets with the
+-- process, and this service has restarted sixty times in one measured day.
+CREATE TABLE IF NOT EXISTS follow_mail_day (
+  -- UTC calendar day, YYYY-MM-DD.
+  day   text    PRIMARY KEY,
+  sent  integer NOT NULL DEFAULT 0,
+  CONSTRAINT follow_mail_day_shape CHECK (day ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  CONSTRAINT follow_mail_day_nonneg CHECK (sent >= 0)
+);
+
 COMMIT;

@@ -389,3 +389,94 @@ export class RateLimiter {
     }
   }
 }
+
+// ── Follow by email ─────────────────────────────────────────────────────────
+//
+// ══════════════════════════════════════════════════════════════════════════
+// **MAIL IS THE ONE OUTPUT OF THIS PROCESS THAT LANDS SOMEWHERE WE DO NOT CONTROL**, and
+// that is why every number below is here, in wall-clock time, rather than in ticks.
+//
+// Scar #12 is High Water's open relay: an endpoint that let anyone put a real email in an
+// arbitrary inbox, unlimited, with an attacker-chosen name unescaped in it. What a mail limit
+// protects is a stranger's inbox and the sending domain's reputation, and mailbox providers
+// measure both in REAL days. A ceiling that compressed with the tick would hand a `turbo`
+// world 150 days of mail per day — the inverse of the hazard the scale audit names for a
+// Dispatch, and the same reason `RATE_LIMITS` above does not scale.
+//
+// The consequence is deliberate and stated: at `prod` a Reckoning is a day and a follower gets
+// one recap a day; at `rehearsal` a Reckoning is ~4.8 hours and the SAME daily ceiling covers
+// a fifth as many followers. A faster world runs out of mail sooner. That is the correct
+// direction for a limit that exists to protect people who never asked to be part of a test.
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * The follow routes' four buckets. Kept OUT of {@link RATE_LIMITS} on purpose: the main
+ * limiter carries the operator's probe-fleet allowlist, and an exemption granted so a test
+ * fleet can enrol must not also let it mail strangers.
+ *
+ * Each is *(calibrate)*.
+ */
+export const FOLLOW_LIMITS = {
+  /** `POST /api/follow`, per client IP. Every accepted one may put a confirmation in an inbox. */
+  'follow-ip': { burst: 10, windowSeconds: 3_600 },
+  /** The two emailed links — confirm and unsubscribe, RFC 8058's one-click POST included — per IP. */
+  'follow-link': { burst: 60, windowSeconds: 600 },
+  /**
+   * Confirmation emails to ONE address, across every handle. The victim-inbox bound: an
+   * attacker naming one stranger's address against three hundred handles gets five emails
+   * into it per day, not three hundred. Five rather than three so a new fan can follow a few
+   * of the house's characters in one sitting; the sixth confirmation waits for tomorrow.
+   */
+  'follow-email': { burst: 5, windowSeconds: 86_400 },
+  /**
+   * Confirmation emails naming ONE handle, across every address. Loose enough for a house
+   * character a launch spike makes popular, tight enough that one hostile handle cannot spend
+   * the whole day's ceiling before anyone else is served.
+   */
+  'follow-handle': { burst: 100, windowSeconds: 3_600 },
+} as const satisfies Record<string, Allowance>;
+
+export type FollowBucket = keyof typeof FOLLOW_LIMITS;
+
+/**
+ * Emails sent per UTC day, confirmations and recaps together, unless `COMPACT_MAIL_DAILY_LIMIT`
+ * says otherwise. Counted DURABLY (`follow_mail_day`) rather than in memory, because this
+ * service has been measured restarting sixty times in a day and an in-memory daily counter
+ * would reset with each one.
+ */
+export const MAIL_DAILY_CEILING_DEFAULT = 2_000;
+
+/**
+ * The share of the daily ceiling recaps may use, in bps. The rest is held for confirmations, so
+ * a night with many followers cannot lock every newcomer out until tomorrow.
+ */
+export const RECAP_CEILING_SHARE_BPS = 9_000;
+
+/** Active follows one address may hold, unless `COMPACT_FOLLOW_MAX_PER_EMAIL` says otherwise. */
+export const FOLLOW_MAX_PER_EMAIL_DEFAULT = 10;
+
+/** A second confirmation for the SAME (handle, address) is not sent sooner than this. */
+export const FOLLOW_CONFIRM_COOLDOWN_MS = 10 * 60 * 1_000;
+
+/** How long a confirmation link works. Expired PENDING rows are deleted, not kept. */
+export const FOLLOW_CONFIRM_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
+
+/** One provider call may take this long before it is abandoned and retried later. */
+export const MAIL_SEND_TIMEOUT_MS = 15_000;
+
+/**
+ * The gap between two provider calls. Resend's default ceiling is ten requests a second per
+ * TEAM — shared by every key in the account, and this account is shared with other projects —
+ * so this process stays under a fifth of it. Every send goes through one pacer, so the
+ * confirmations and the recaps share the allowance instead of racing each other into a 429.
+ */
+export const MAIL_SEND_INTERVAL_MS = 600;
+
+/** After a recap run that left anyone unsent — an outage, a 429 — try again after this. */
+export const RECAP_RETRY_MS = 15 * 60 * 1_000;
+
+/** One UTC day. The ceiling's window, and what `Retry-After` counts down to. */
+export const MS_PER_UTC_DAY = 86_400_000;
+
+/** A spent ceiling resumes this long after UTC midnight, so the reset has certainly happened. */
+export const CEILING_RESUME_GRACE_MS = 60_000;

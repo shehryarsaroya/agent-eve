@@ -482,7 +482,13 @@ var Screens = (function () {
     wrap.appendChild(lst);
     wrap.appendChild(dossier(D, cur));
     U.clear(host).appendChild(wrap);
+    // The follow form survives the five-second re-render (lib/follow.js); give its focus back.
+    if (followRefocus) followRefocus.refocus();
+    followRefocus = null;
   }
+
+  /** Set by `dossier()` when it mounts the follow form, consumed once the tree is in the page. */
+  var followRefocus = null;
 
   /**
    * The dossier at E6 scale — the owner's chosen pair are the SAME SCREEN at two
@@ -493,7 +499,10 @@ var Screens = (function () {
     var R = D.R, pid = r.principal, bad = r.defaults > 0;
     var stack = el('div', { class: 'rows', style: 'min-height:0;overflow:auto' });
 
-    stack.appendChild(el('section', { class: 'panel' }, el('div', { class: 'body' }, [
+    // `flex: 0 0 auto`: the hero must not be the thing that gives way when the stack is short.
+    // `.rows > * { min-height: 0 }` lets every child shrink, and the follow strip below it
+    // was enough to cut the six tiles' numbers off — the grids under it scroll instead.
+    stack.appendChild(el('section', { class: 'panel', style: 'flex:0 0 auto' }, el('div', { class: 'body' }, [
       el('div', { style: 'display:flex;align-items:center;gap:16px;padding:12px 14px 10px' }, [
         U.crest(pid, 'lg'),
         el('div', null, [
@@ -530,6 +539,15 @@ var Screens = (function () {
           { sm: true, bad: bad, dim: !bad }),
       ]),
     ])));
+
+    // ★ FOLLOW BY EMAIL. One short email after each Reckoning, from this principal's public
+    // record. The form is lib/follow.js's, built once per handle so a re-render cannot eat an
+    // address mid-typing; the server's own sentence is what it shows back.
+    if (window.FollowForm) {
+      var followHost = el('div', { class: 'f-console' });
+      followRefocus = FollowForm.mount(followHost, r.handle);
+      stack.appendChild(followHost);
+    }
 
     var g2 = el('div', { class: 'grid g-2' });
 

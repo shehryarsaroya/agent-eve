@@ -33,6 +33,7 @@
 import type { DecisionSource, WorldStatus } from '../core/types.js';
 import { BPS_ONE } from '../core/units.js';
 import { CENSUS_WINDOW_TICKS, type Runtime } from '../sim/runtime.js';
+import type { FollowHealth } from './follow/setup.js';
 import type { SeatBook } from './seats.js';
 
 /**
@@ -122,6 +123,8 @@ export interface HealthReport {
   readonly durability: DurabilityHealth | null;
   /** The house cast and its spend, when an LLM cast is running. Null otherwise. */
   readonly cast: CastHealth | null;
+  /** Follow by email's counters, when the server runs it. Never contributes to `failures`. */
+  readonly follow: FollowHealth | null;
   /** Every reason it is unhealthy. Empty when healthy. Read this, not the status. */
   readonly failures: readonly string[];
 }
@@ -175,6 +178,15 @@ export interface HealthOptions {
    * to hit the cap. A bounded risk is still an unobserved one.
    */
   readonly cast?: () => CastHealth | null;
+  /**
+   * Follow by email, when the server runs it — the meter for the mechanism, so "nobody
+   * follows anyone" and "the mail path is broken" can be told apart from outside.
+   *
+   * **Informational, never a failure.** A provider outage stops recaps, not the world, and a
+   * `/health` that went 503 over mail would page an operator — or trip a restart — for
+   * something the tick loop is designed not to notice.
+   */
+  readonly follow?: () => FollowHealth | null;
 }
 
 /** What the house cast is doing and what it is spending. */
@@ -407,6 +419,7 @@ export function buildHealth(
     rollback_gaps: runtime.engine.rollbackGaps,
     durability,
     cast,
+    follow: options.follow?.() ?? null,
     failures,
   };
 }

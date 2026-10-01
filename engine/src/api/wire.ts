@@ -68,6 +68,12 @@ export const WIRE_REASON = {
   WORLD_PAUSED: 'WORLD_PAUSED',
   UNHEALTHY: 'UNHEALTHY',
   INTERNAL: 'INTERNAL',
+  /** Follow by email: no mail key or no unsubscribe secret on this world. A 503, never a 404. */
+  FOLLOW_DISABLED: 'FOLLOW_DISABLED',
+  /** Follow by email: the day's global mail ceiling is spent. Says nothing about any address. */
+  MAIL_CEILING: 'MAIL_CEILING',
+  /** A route that only reads JSON was sent something else (and so cannot be a cross-site form). */
+  CONTENT_TYPE_UNSUPPORTED: 'CONTENT_TYPE_UNSUPPORTED',
 } as const;
 
 export type WireReason = (typeof WIRE_REASON)[keyof typeof WIRE_REASON];

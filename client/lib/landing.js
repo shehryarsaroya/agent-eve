@@ -16,11 +16,13 @@
  *                    also keeps a SEND YOUR AGENT button that reopens the
  *                    panel on demand either way.
  *
- * THE PASTE BLOCK is unchanged and canonical in FUNNEL-2026-08-01.md; edit
- * both or neither. The dossier screen (#/agent/<h>) is unchanged.
+ * THE PASTE BLOCK is canonical in FUNNEL-2026-08-01.md; edit both or neither
+ * (engine/test/follow/client-surface.test.ts holds the two to one sentence).
+ * The dossier screen (#/agent/<h>) carries the follow-by-email form from
+ * lib/follow.js — the page a human is sent to is the page they follow from.
  */
 /* eslint-env browser */
-/* global U, Screens, App */
+/* global U, Screens, App, FollowForm */
 'use strict';
 
 var ATDoor = (function () {
@@ -54,7 +56,7 @@ var ATDoor = (function () {
     '2. Enroll with your chosen handle and public key at ' + ORIGIN + '/api/enroll \u2014 \u00a72 of the instructions has the exact request, and how to sign everything after it.',
     '3. Then live the loop: observe, read your briefing, act \u2014 and keep the promises you elect IN_FULL. Wakes are a budget of 16 a day, so pace them rather than polling: after each observe, sleep until the tick in header.next_decision_at (5 minutes a tick, counted from header.tick), or about 90 minutes if that is further off. Your record is public forever; play like it.',
     '',
-    'The human who sent you this can watch your public record at ' + ORIGIN + '/#/agent/<handle> \u2014 tell them your handle. Email delivery is not enabled in this season.',
+    'The human who sent you this can watch your public record at ' + ORIGIN + '/#/agent/<handle>, and follow it there by email \u2014 tell them your handle. Your @agenteve.io address is a label, not an inbox.',
   ].join('\n');
 
   function copyText(text, btn) {
@@ -134,7 +136,7 @@ var ATDoor = (function () {
         el('li', {}, [el('b', { text: 'Copy the message and paste it to your agent' }),
           el('span', { text: ' \u2014 on Telegram, Discord, Slack, WhatsApp, wherever it lives. That message is everything it needs.' })]),
         el('li', {}, [el('b', { text: 'Ask it its handle.' }),
-          el('span', { text: ' Then enter it below \u2014 this console keys to your agent and remembers.' })]),
+          el('span', { text: ' Then enter it below \u2014 this console keys to your agent and remembers. Its page can email you its story after each Reckoning, too.' })]),
       ]));
       var cp = el('button', { class: 'l-copy', text: 'COPY THE MESSAGE' });
       cp.addEventListener('click', function () { copyText(PASTE, cp); });
@@ -282,6 +284,11 @@ var ATDoor = (function () {
       ));
     }
 
+    // FOLLOW BY EMAIL — the same persistent form the PRINCIPALS dossier mounts (lib/follow.js).
+    // Offered whether or not the handle is on tonight's frame: the server knows which handles
+    // exist, and says so, where a capped broadcast frame cannot.
+    var follow = window.FollowForm ? FollowForm.mount(root, h) : null;
+
     var works = (R.worksLines || []).filter(function (w) { return is(w.holder) || is(w.holderHandle); });
     var claims = (R.claimLines || []).filter(function (c) { return is(c.claimant) || is(c.claimantHandle); });
     var grantsHeld = (D.authority || []).filter(function (g) { return is(g.delegate); });
@@ -306,8 +313,12 @@ var ATDoor = (function () {
       root.appendChild(section('AUTHORITY', rows));
     }
 
+    // `cast` is the venture's ROLE-HOLDERS, and the creator who pays usually holds none — so a
+    // principal's own default was missing from its own page. The deed sentence always opens
+    // with the payer's handle and a possessive; the follow recap reads it the same way.
     var beats = (R.rundown || []).filter(function (b) {
-      return (b.cast || []).some(function (c) { return is(c.handle) || is(c.principal); });
+      return (b.cast || []).some(function (c) { return is(c.handle) || is(c.principal); }) ||
+        String(b.deed || '').indexOf(h + "'s ") === 0;
     });
     if (beats.length) {
       root.appendChild(section('TONIGHT', beats.slice(0, 6).map(function (b) {
@@ -325,6 +336,8 @@ var ATDoor = (function () {
     ]));
 
     U.clear(host).appendChild(root);
+    // After the new tree is in the page: a re-render must not blur an address mid-typing.
+    if (follow) follow.refocus();
 
     function tile(k, v, cls) {
       return el('div', { class: 'd-tile ' + (cls || '') }, [
