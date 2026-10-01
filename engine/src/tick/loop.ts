@@ -586,6 +586,17 @@ export class Engine {
     return this.version;
   }
 
+  /**
+   * True while a tick is resolving — between FREEZE_QUEUE and the end of WAKE.
+   *
+   * For readers that cache a derived view of the world between ticks (`Runtime.perEpoch`): inside a
+   * tick the world is mid-mutation, and a view cached there would be a view of a state no tick ever
+   * published. Read-only and derived from the one phase field there is.
+   */
+  get resolving(): boolean {
+    return this.inPhase !== null;
+  }
+
   /** The last published tick-boundary hash. */
   get stateHash(): string {
     return this.lastHash;

@@ -111,6 +111,7 @@ import {
   type Affordance,
   type Observation,
 } from './observe.js';
+import { serializeObservation } from './fragments.js';
 import { HANDLE_GRAMMAR, MAX_HANDLE_LENGTH, SeatBook } from './seats.js';
 import { classifyVerb, unbuiltVerbs } from './verbs.js';
 import {
@@ -628,7 +629,9 @@ export function createApp(options: ApiOptions): CreatedApp {
       // `MAX_PENDING_CORRECTIONS` and a principal that never wakes simply accumulates to that cap,
       // which is the behaviour the ring was built for.
       const observation = observe(who, fresh, fresh);
-      const body = JSON.stringify({ ok: true, observation });
+      // ★ SPEC §15.5: the shared fragments of this read epoch are serialized once and spliced, and the
+      // bytes are exactly `JSON.stringify({ ok: true, observation })` (`api/fragments.ts`).
+      const body = serializeObservation(observation, (v) => runtime.isSharedView(v));
       observationCache.set(who, { tick: runtime.engine.tick, body });
       res.status(200).type('application/json').send(body);
     });

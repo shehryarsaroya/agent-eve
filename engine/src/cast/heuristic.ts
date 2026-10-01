@@ -199,6 +199,29 @@ export interface CastOptions {
   readonly graduateChanceBps?: number;
   /** Chance in 10 000 that a member takes the ground it already works, on a tick it can. */
   readonly claimChanceBps?: number;
+  /**
+   * ★ **A SYNTHETIC ROSTER, FOR THE SCALE HARNESS AND NOTHING ELSE.** When set, these handles
+   * replace {@link CAST_NAMES} and `size` is capped at their count instead of {@link MAX_CAST}.
+   *
+   * The house cast is 12–20 named principals on purpose (§15.6), and `CAST_NAMES` is the only list
+   * the server ever seats — so production never passes this. It exists because the population
+   * harness (`scripts/population-scale.ts`) has to measure 300, 1,000 and 3,000 heuristic
+   * principals, and `MAX_CAST` made 20 the ceiling of every measurement this repo could take.
+   * Each handle must satisfy `HANDLE_GRAMMAR` and must not be a handle `agent.md` uses; the
+   * harness generates `s0001`-style handles, which are neither.
+   */
+  readonly names?: readonly string[];
+  /**
+   * ★ **DECIDE ON A WAKE CADENCE INSTEAD OF EVERY TICK.** Member `i` (in roster order) decides on
+   * the ticks where `(tick + i) % wakeEvery === 0`, and on no others. Absent or 1, every member
+   * decides every tick — the house cast's behaviour, unchanged.
+   *
+   * §12.4 gives an external agent 16 wakes a Reckoning, one per 18 ticks, so a world of thousands
+   * of self-hosted agents is a world where a principal acts about once in eighteen ticks — not a
+   * world where all of them act on every one. The phase offset spreads them across the cycle so no
+   * tick is a stampede. Integer arithmetic only, and a pure function of the roster and the tick.
+   */
+  readonly wakeEvery?: number;
 }
 
 /**
@@ -1607,9 +1630,10 @@ export class HeuristicCast {
    */
   seat(seed: string): readonly CastMember[] {
     const rng = Rng.fromSeed(`${seed}:cast:seating`);
-    const size = Math.max(0, Math.min(this.options.size, MAX_CAST));
+    const names = this.options.names ?? CAST_NAMES;
+    const size = Math.max(0, Math.min(this.options.size, this.options.names === undefined ? MAX_CAST : names.length));
     for (let i = 0; i < size; i += 1) {
-      const handle = CAST_NAMES[i];
+      const handle = names[i];
       if (handle === undefined) break;
       const role = CAST_ROLES[i % CAST_ROLES.length];
       if (role === undefined) break;
@@ -1689,7 +1713,9 @@ export class HeuristicCast {
     // the decision is made or it binds several ticks late — long after every member has already
     // sent a hand.
     const reinforced = new Map<string, number>();
-    for (const member of this.members) {
+    const wakeEvery = this.options.wakeEvery ?? 1;
+    for (const [index, member] of this.members.entries()) {
+      if (wakeEvery > 1 && (tick + index) % wakeEvery !== 0) continue;
       const rng = Rng.fromSeed(`${seed}:cast:${member.principal}:${String(tick)}`);
       const action = this.decideOne(member, tick, rng, out.length, claimed, reinforced);
       if (action !== null) {

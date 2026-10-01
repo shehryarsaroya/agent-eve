@@ -125,7 +125,9 @@ import {
   checkLevyAttribution,
   constellationOf,
   creditFor,
+  deliveryDelivererFault,
   deliveryFault,
+  deliveryPayerFault,
   deliveryPlaceOf,
   docketRowsFor,
   inv24InputsFor,
@@ -136,6 +138,7 @@ import {
   tributeLinesFor,
   voteFault,
   type LevyCarryQuote,
+  type Owing,
   type LevySettlement,
   type LevySubject,
   type SweepPort,
@@ -588,6 +591,44 @@ import {
   type WorldResult,
   type WorldState,
 } from '../world/index.js';
+
+/**
+ * A deliverer id no principal can hold, for asking `deliveryPayerFault` the question it answers for every
+ * row of a carry scan: "and the deliverer is someone else". Principal ids are `p:<handle>` and a handle
+ * cannot contain `#`, so this is never equal to a payer.
+ */
+const CARRY_OTHER = 'p:#carry-other' as PrincipalId;
+
+/** The payer half of one carry row — shared by every deliverer in the constellation for a read epoch. */
+interface CarryPayerRow {
+  readonly payer: PrincipalId;
+  readonly place: SystemId;
+  readonly payerOwing: Owing;
+  readonly payerReach: Minor;
+  /** `carryableOf`'s escrowable bucket, which reads the payer alone. */
+  readonly escrowableOwed: number;
+  /** `deliveryPayerFault` for a deliverer who is not the payer. */
+  readonly payerFault: string | null;
+}
+
+/** The deliverer half, fixed for one scan. */
+interface CarryOwnSide {
+  readonly ownOwing: Owing;
+  readonly available: Qty;
+}
+
+/**
+ * One full carry row, built only when a view keeps it — and built by the SAME `carryableOf` the verb
+ * and the cast read, so a kept row is field-for-field the row the old traversal made.
+ */
+function carryQuoteOf(row: CarryPayerRow, fault: string | null, own: CarryOwnSide): LevyCarryQuote {
+  return {
+    payer: row.payer,
+    place: row.place,
+    ...carryableOf({ payerOwing: row.payerOwing, ownOwing: own.ownOwing, available: own.available, payerReach: row.payerReach }),
+    fault,
+  };
+}
 
 /** The rules version every row this runtime writes is pinned to (INV-15). */
 /**
@@ -5154,12 +5195,17 @@ export class Runtime {
 
   /** The published schedule, for `observe`. A pure function of the tick (A2, A14). */
   raidSchedule(tick: number): RaidSchedule {
-    return scheduleAt(tick);
+    // The same published clock in every observation of a tick: one object, so it serializes once.
+    return this.perEpoch(`raidSchedule:${String(tick)}`, () => scheduleAt(tick));
   }
 
   /** Raids this principal is the target of, or a party to. Bounded (INV-26). */
   raidsFor(principal: PrincipalId, tick: number, limit: number): readonly RaidView[] {
-    return raidViewsFor({ book: this.raids, port: this.predationPort(tick), principal, tick, limit });
+    // `observe` reads this four times per build (the obligations row, the affordances, the briefing's
+    // two clauses), and each read solved every live standoff's force and march from scratch.
+    return this.perEpoch(`raidsFor:${String(principal)}:${String(tick)}:${String(limit)}`, () =>
+      raidViewsFor({ book: this.raids, port: this.predationPort(tick), principal, tick, limit }),
+    );
   }
 
   /**
@@ -6505,7 +6551,124 @@ export class Runtime {
       this.faults.push(`${principal} could not be added to the Levy tenure register (${describeError(error)})`);
     }
     this.admitLateToLevy(principal, Math.max(0, tick));
+    // An enrolment is the one mutation that lands BETWEEN ticks, so every shared view cached for this
+    // read epoch is now a view of a world with one principal fewer than it has.
+    this.memoEpoch += 1;
     return enrolment;
+  }
+
+  // ── ★ THE READ EPOCH — SHARED VIEWS, COMPUTED ONCE BETWEEN TWO TICKS (SPEC §15.5) ──
+
+  /**
+   * One view of the world that every observation in a tick would otherwise recompute — the Levy roll,
+   * a constellation's carry rows, the world's exposure band — computed once and handed to every reader
+   * until the world moves.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **WHY THIS EXISTS: THE OBSERVATION WAS O(P) PER PRINCIPAL, SO THE BURST WAS O(P²).** Measured
+   * with `scripts/population-scale.ts`: one observation cost 21 ms at 300 principals and 93 ms at
+   * 1,000, because a handful of world-wide reads ran inside every build — `levyCarryRows` walked the
+   * whole constellation roll twice per observation, and `exposureBand` summed every principal's
+   * EXPOSURE. The tick after a Reckoning is the one where every agent wakes at once, so that is the
+   * tick where an O(P²) term arrives in full, in front of the audience.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * **The key is the world, not the clock.** `stateHash` moves with every committed tick and every
+   * adopted snapshot; `principalOrder.length` and {@link memoEpoch} move with an enrolment, which is
+   * the one mutation that lands between ticks. Inside a tick nothing is cached at all
+   * (`Engine.resolving`), because the world is mid-mutation and a view of it is a view of a state no
+   * tick ever published.
+   *
+   * **What may be cached here, and the rule that keeps it honest:** only a pure function of HASHED
+   * state. A read that depends on the submission queue (`electionsInFlight`, a principal's own window
+   * spend) or on a ring outside the hash may not use this, because those move between ticks without
+   * moving the key. `test/api/fragments.spec.ts` builds every principal's observation with the cache
+   * and again with it disabled, with enrolments and submissions in between, and asserts the bytes.
+   */
+  private memoEpoch = 0;
+  private memoKey = '';
+  private readonly memo = new Map<string, unknown>();
+  private memoDisabled = 0;
+
+  perEpoch<T>(name: string, compute: () => T): T {
+    if (this.memoDisabled > 0 || this.engine.resolving) return compute();
+    const key =
+      `${this.engine.stateHash}|${String(this.engine.tick)}|${String(this.world.principalOrder.length)}|` +
+      String(this.memoEpoch);
+    if (key !== this.memoKey) {
+      this.memo.clear();
+      this.memoKey = key;
+    }
+    if (this.memo.has(name)) return this.memo.get(name) as T;
+    const value = compute();
+    // Frozen, so every reader of the epoch holds the same IMMUTABLE object — which is what lets
+    // `api/fragments.ts` serialize it once by identity, and what turns an accidental in-place
+    // `.sort()` on a shared view into a TypeError in a test instead of a corrupted neighbour's payload.
+    if (value !== null && typeof value === 'object') {
+      Object.freeze(value);
+      this.sharedViews.add(value);
+    }
+    this.memo.set(name, value);
+    return value;
+  }
+
+  /** Every object {@link perEpoch} has handed out. Weak, so a retired epoch's views are collected. */
+  private readonly sharedViews = new WeakSet<object>();
+
+  /** Is this value a shared, frozen view of the world — a fragment `api/fragments.ts` may splice? */
+  isSharedView(value: object): boolean {
+    return this.sharedViews.has(value);
+  }
+
+  /**
+   * Run `fn` with every shared view recomputed from scratch — the reference path the equivalence test
+   * compares the cached one against. Nested calls stack; nothing is cached while any is open.
+   */
+  withoutReadMemo<T>(fn: () => T): T {
+    this.memoDisabled += 1;
+    try {
+      return fn();
+    } finally {
+      this.memoDisabled -= 1;
+    }
+  }
+
+  /**
+   * `VentureBook.forPrincipal`, from an index built once per read epoch.
+   *
+   * The book's own method filters every venture in the world, and `observe` asks it several times per
+   * reader — so the post-Reckoning burst paid O(P × V). Between ticks the index is one pass over the
+   * book; inside a tick, where the book is moving, it is the book's own method, unchanged. Same rows,
+   * same order (the book's canonical `venture_id` order), one entry per venture however many of its
+   * roles the principal holds.
+   */
+  venturesFor(principal: PrincipalId): readonly VentureRecord[] {
+    if (this.engine.resolving || this.memoDisabled > 0) return this.ventures.forPrincipal(principal);
+    const index = this.perEpoch('venturesByPrincipal', () => {
+      const out = new Map<PrincipalId, VentureRecord[]>();
+      for (const venture of this.ventures.all()) {
+        const parties = new Set<PrincipalId>([venture.creator]);
+        for (const role of venture.roles) if (role.filledByPrincipal !== null) parties.add(role.filledByPrincipal);
+        for (const p of parties) {
+          const list = out.get(p) ?? [];
+          list.push(venture);
+          out.set(p, list);
+        }
+      }
+      return out;
+    });
+    return index.get(principal) ?? [];
+  }
+
+  /** `VentureBook.live`, once per read epoch between ticks. */
+  liveVentures(): readonly VentureRecord[] {
+    if (this.engine.resolving || this.memoDisabled > 0) return this.ventures.live();
+    return this.perEpoch('liveVentures', () => this.ventures.live());
+  }
+
+  /** `levy/place.ts:rollByConstellation`, once per read epoch. */
+  rollByConstellationNow(): ReadonlyMap<ConstellationId, readonly PrincipalId[]> {
+    return this.perEpoch('rollByConstellation', () => rollByConstellation(this.world));
   }
 
   /**
@@ -6816,8 +6979,13 @@ export class Runtime {
 
   /** Verbs this runtime actually implements. The API compares against the canon. */
   get liveVerbs(): ReadonlySet<string> {
-    return new Set([...Object.keys(this.verbTable()), 'move', 'set_delivery_intent']);
+    // The verb table is fixed at construction, so this is computed once — it used to rebuild every
+    // handler on every call, and `observe` reads it in every observation.
+    this.liveVerbSet ??= new Set([...Object.keys(this.verbTable()), 'move', 'set_delivery_intent']);
+    return this.liveVerbSet;
   }
+
+  private liveVerbSet: ReadonlySet<string> | null = null;
 
   // ── The tick ──────────────────────────────────────────────────────────────
 
@@ -10455,7 +10623,7 @@ export class Runtime {
       books: books.map((book) => ({ ...book, reference_mark: markOf(this.referenceMark(book.good, tick)) })),
       mine: ownOrdersFor(this.marketBook, principal),
       recent: ownPrintsFor(this.marketBook, principal, MAX_MARKET_ROWS),
-      ticker: recentPrints(this.marketBook, MAX_MARKET_ROWS),
+      ticker: this.perEpoch('marketTicker', () => recentPrints(this.marketBook, MAX_MARKET_ROWS)),
       fees: MARKET_FEES,
     };
   }
@@ -10470,7 +10638,10 @@ export class Runtime {
    * The market's job is to supply the prints; it must never form a second opinion.
    */
   referenceMark(good: GoodId, tick: number): Valuation {
-    return valueGood(good, tick, this.marketBook.prints(), DEFAULT_VALUATION_RULE);
+    // A windowed median over every print in the world — the same for every reader of the tick.
+    return this.perEpoch(`referenceMark:${String(good)}:${String(tick)}`, () =>
+      valueGood(good, tick, this.marketBook.prints(), DEFAULT_VALUATION_RULE),
+    );
   }
 
   /** One book, for a viewer frame or a test. Aggregate only; no reader, no `mine`. */
@@ -11251,7 +11422,16 @@ export class Runtime {
         yieldPerTick: systemYield(this.world.map, works.system),
         occupants,
         sharePerTick: split.net,
-        legend: online ? 'EXTRACTING' : `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`,
+        // ★ CROWDED OUT: online, and the system's yield divided by everyone online there truncates to
+        // nothing. Measured at 3,000 principals — 100+ WORKS on one MARCHES system yielding 110 a tick
+        // — and the old legend read EXTRACTING over a share of 0, which `assertFrameBudgets` refused,
+        // so the Reckoning frame did not render at all on the one night it had the most to show.
+        // The truth is the crowding, so the legend says it.
+        legend: online
+          ? split.net > 0
+            ? 'EXTRACTING'
+            : 'CROWDED OUT'
+          : `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`,
         extracted: works.extracted,
         // The RATE, not "did anything move": at a small enough share the amount truncates to zero
         // while the rate is still in force, and reading the rate off `rent > 0` would draw a WORKS
@@ -13788,7 +13968,7 @@ export class Runtime {
 
   /** The published campaign clock, for `header`. Present at zero campaigns and at four alike. */
   campaignClock(tick: number): ReturnType<typeof campaignClockAt> {
-    return campaignClockAt(this.campaigns, tick, MAX_LIVE_CAMPAIGNS);
+    return this.perEpoch(`campaignClock:${String(tick)}`, () => campaignClockAt(this.campaigns, tick, MAX_LIVE_CAMPAIGNS));
   }
 
   /** Ticker lines from campaign beats, newest last. Read by the frame (§14.5). */
@@ -15497,9 +15677,13 @@ export class Runtime {
     // A cap that counts unusable rows is a cap on the mechanism rather than on the payload, which
     // is the `Book.prune` hazard wearing a different hat: the instrument was blind in the hiding
     // direction. `carryFor` is subject to the same figure, so the bot inherited the same blindness.
-    return this.levyCarryRows(deliverer, tick)
-      .filter((row) => row.fault === null && row.payable > 0)
-      .slice(0, max);
+    const out: LevyCarryQuote[] = [];
+    this.scanLevyCarry(deliverer, tick, (row, payable, fault, own) => {
+      if (fault !== null || payable <= 0) return false;
+      out.push(carryQuoteOf(row, fault, own));
+      return out.length >= max;
+    });
+    return out;
   }
 
   /**
@@ -15512,9 +15696,49 @@ export class Runtime {
    * not apply to it, which is the same lie one layer down.
    */
   levyCarryObstacles(deliverer: PrincipalId, tick = this.engine.tick): readonly LevyCarryQuote[] {
-    return this.levyCarryRows(deliverer, tick).filter(
-      (row) => row.escrowableOwed > 0 && (row.fault !== null || row.payable <= 0),
-    );
+    const out: LevyCarryQuote[] = [];
+    this.scanLevyCarry(deliverer, tick, (row, payable, fault, own) => {
+      if (row.escrowableOwed > 0 && (fault !== null || payable <= 0)) out.push(carryQuoteOf(row, fault, own));
+      return false;
+    });
+    return out;
+  }
+
+  /**
+   * {@link levyCarryObstacles} as `observe`'s `withheld` row reads it: how many, and the distinct
+   * reasons — without building a row object per co-member, which at a few thousand principals in one
+   * constellation was most of an observation. `orElse` is the sentence for a row whose only obstacle
+   * is that the deliverer's own tribute needs the goods (`fault === null`, `payable <= 0`).
+   */
+  levyCarryObstacleSummary(
+    deliverer: PrincipalId,
+    tick = this.engine.tick,
+  ): {
+    readonly count: number;
+    readonly faults: ReadonlySet<string>;
+    /** Rows whose only obstacle is the deliverer's own tribute (`fault === null`, nothing surplus). */
+    readonly ownNeeds: number;
+    readonly ownOwed: number;
+    readonly available: number;
+  } {
+    let count = 0;
+    let ownNeeds = 0;
+    const faults = new Set<string>();
+    this.scanLevyCarry(deliverer, tick, (row, payable, fault) => {
+      if (!(row.escrowableOwed > 0 && (fault !== null || payable <= 0))) return false;
+      count += 1;
+      if (fault === null) ownNeeds += 1;
+      else faults.add(fault);
+      return false;
+    });
+    const reckoning = reckoningOf(tick);
+    return {
+      count,
+      faults,
+      ownNeeds,
+      ownOwed: Math.max(0, this.levy.owingOf(reckoning, deliverer).owed),
+      available: this.levyGoodAvailable(deliverer),
+    };
   }
 
   /**
@@ -15525,52 +15749,104 @@ export class Runtime {
    * the two halves must agree by construction or `withheld` starts explaining an omission that did
    * not happen.
    */
-  private levyCarryRows(deliverer: PrincipalId, tick: number): readonly LevyCarryQuote[] {
+  /**
+   * Every co-member's carry position, in canonical payer order, handed to `visit` one row at a time.
+   * `visit` returns true to stop.
+   *
+   * One home for the arithmetic, three views over it — the offer list, the obstacle list and the
+   * obstacle summary. A second traversal computing the same figures for the "why not" half is scar #5
+   * on a rules surface, and the views must agree by construction or `withheld` starts explaining an
+   * omission that did not happen.
+   *
+   * ★ **Why a visitor and not an array.** The payer half of every row is the same for every deliverer
+   * in the constellation, so it is computed once per read epoch ({@link levyCarryPayers}); what is
+   * left per row is two subtractions and a comparison. Building a full row object for every
+   * co-member, for every principal, for every observation, was the O(P^2) term the scale harness
+   * found — at 3,000 principals it was a fifth of every observation, and nearly every row it built
+   * was thrown away by the `.slice(0, 2)` above it. A row is materialised only when a view keeps it.
+   */
+  private scanLevyCarry(
+    deliverer: PrincipalId,
+    tick: number,
+    visit: (row: CarryPayerRow, payable: number, fault: string | null, own: CarryOwnSide) => boolean,
+  ): void {
     const reckoning = reckoningOf(tick);
     const constellation = constellationOf(this.world, deliverer);
-    if (constellation === null) return [];
+    if (constellation === null) return;
     const available = this.levyGoodAvailable(deliverer);
     const ownOwing = this.levy.owingOf(reckoning, deliverer);
-    const out: LevyCarryQuote[] = [];
-    // The roll rather than the plan's lines: `rollByConstellation` is the same reader the
-    // assessment and the ballot use, so a payer this method can see is a payer the docket has.
-    for (const payer of rollByConstellation(this.world).get(constellation) ?? []) {
-      if (payer === deliverer) continue;
-      const line = this.levy.lineFor(reckoning, payer);
-      if (line === null) continue;
-      const place = line.plan.deliverableTo;
-      const payerOwing = this.levy.owingOf(reckoning, payer);
-      // ── WHAT THE PAYER CAN DO FOR ITSELF, WHICH A CARRY MUST NOT RACE ────────
-      //
-      // §5.2's carry is for a principal that cannot reach the goods. A payer standing at the
-      // delivery place with stock in hand is not that principal: it will pay its own bill in the
-      // same tick, and because actions resolve from snapshot T neither side can see the other —
-      // whichever lands second is refused for want of room (`A14`, "nothing of that delivery can
-      // be credited"). That was measured as six repeated refusals in `heuristic.test.ts`, and
-      // AGT-S3 reads a repeated refusal as the affordance being wrong.
-      //
-      // **Presence gated, not just stock**: a payer holding a fortune with every hand elsewhere
-      // cannot deliver a unit this tick, and that is exactly the payer a carry should serve.
-      const payerReach =
-        carrierAt(this.world, payer, place, tick) === null
-          ? minor(0)
-          : minor(this.levyGoodAvailable(payer));
-      out.push({
-        payer,
-        place,
-        ...carryableOf({ payerOwing, ownOwing, available, payerReach }),
-        fault: deliveryFault({
-          world: this.world,
-          payer,
-          deliverer,
-          place,
-          tick,
-          owing: payerOwing,
-          available,
-        }),
-      });
+    const own: CarryOwnSide = { ownOwing, available };
+    const ownOwed = Math.max(0, ownOwing.owed);
+    const surplus = Math.max(0, available - ownOwed);
+    // The deliverer's half of `deliveryFault`, once per delivery place: a constellation has one.
+    const delivererFault = new Map<SystemId, string | null>();
+    for (const row of this.levyCarryPayers(constellation, tick)) {
+      if (row.payer === deliverer) continue;
+      let fault = row.payerFault;
+      if (fault === null) {
+        let mine = delivererFault.get(row.place);
+        if (mine === undefined) {
+          mine = deliveryDelivererFault({ world: this.world, deliverer, place: row.place, tick, available });
+          delivererFault.set(row.place, mine);
+        }
+        fault = mine;
+      }
+      if (visit(row, Math.min(row.escrowableOwed, surplus), fault, own)) return;
     }
-    return out;
+  }
+
+  /**
+   * The payer half of every carry row in one constellation — who owes, where, what it could carry
+   * itself, what is left for another hand to carry, and the payer half of `deliveryFault` — once per
+   * read epoch.
+   *
+   * None of it depends on the deliverer, which is what made the old traversal O(roll) of real work per
+   * observation and the post-Reckoning burst O(P^2): every co-member recomputed every payer's owing and
+   * reach. The roll rather than the plan's lines, for the reason the traversal always gave:
+   * `rollByConstellation` is the same reader the assessment and the ballot use, so a payer this can see
+   * is a payer the docket has.
+   */
+  private levyCarryPayers(constellation: ConstellationId, tick: number): readonly CarryPayerRow[] {
+    return this.perEpoch(`levyCarryPayers:${String(constellation)}:${String(tick)}`, () => {
+      const reckoning = reckoningOf(tick);
+      const rows: CarryPayerRow[] = [];
+      for (const payer of this.rollByConstellationNow().get(constellation) ?? []) {
+        const line = this.levy.lineFor(reckoning, payer);
+        if (line === null) continue;
+        const place = line.plan.deliverableTo;
+        const payerOwing = this.levy.owingOf(reckoning, payer);
+        // ── WHAT THE PAYER CAN DO FOR ITSELF, WHICH A CARRY MUST NOT RACE ────────
+        //
+        // §5.2's carry is for a principal that cannot reach the goods. A payer standing at the
+        // delivery place with stock in hand is not that principal: it will pay its own bill in the
+        // same tick, and because actions resolve from snapshot T neither side can see the other —
+        // whichever lands second is refused for want of room (`A14`, "nothing of that delivery can
+        // be credited"). That was measured as six repeated refusals in `heuristic.test.ts`, and
+        // AGT-S3 reads a repeated refusal as the affordance being wrong.
+        //
+        // **Presence gated, not just stock**: a payer holding a fortune with every hand elsewhere
+        // cannot deliver a unit this tick, and that is exactly the payer a carry should serve.
+        const payerReach =
+          carrierAt(this.world, payer, place, tick) === null
+            ? minor(0)
+            : minor(this.levyGoodAvailable(payer));
+        // `carryableOf`'s escrowable bucket, which reads the payer alone: the deliverer's stock and
+        // its own owing move `surplus` and `payable`, never this.
+        const reachToEscrowable = Math.max(0, Math.max(0, payerReach) - payerOwing.presenceOwed);
+        const escrowableOwed = Math.max(0, payerOwing.purchasableOwed - reachToEscrowable);
+        rows.push({
+          payer,
+          place,
+          payerOwing,
+          payerReach,
+          escrowableOwed,
+          // The payer half of `deliveryFault` for a deliverer who is NOT the payer — which every row
+          // here is, because the scan skips the deliverer's own line.
+          payerFault: deliveryPayerFault({ payer, deliverer: CARRY_OTHER, tick, owing: payerOwing }),
+        });
+      }
+      return rows;
+    });
   }
 
   /** Per-Reckoning Levy history, oldest first. Bounded; the record is in the ledger. */

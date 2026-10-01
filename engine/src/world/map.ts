@@ -586,6 +586,34 @@ export function route(map: WorldMap, from: SystemId, to: SystemId): Route | null
   systemOf(map, from);
   systemOf(map, to);
   if (from === to) return { path: [from], lanes: [], ticks: 0 };
+  // ★ Memoised per map OBJECT, `strait.ts`'s pattern: a route is a pure function of a frozen map, so
+  // a cached one can never be stale — and a grown map is a new object with an empty cache. Measured:
+  // `route` was 9% of an observation at 1,000 principals, recomputed for every hand of every reader
+  // against every live standoff, on a graph that had not changed since the season began.
+  let memo = ROUTES.get(map);
+  if (memo === undefined) {
+    memo = new Map<string, Route | null>();
+    ROUTES.set(map, memo);
+  }
+  const key = `${from}>${to}`;
+  if (memo.has(key)) return memo.get(key) ?? null;
+  const found = routeUncached(map, from, to);
+  // Deep-frozen: every caller now shares one object, so an in-place edit would corrupt the route for
+  // every later reader. Frozen, that edit is a TypeError in the test that makes it.
+  if (found !== null) {
+    Object.freeze(found.path);
+    Object.freeze(found.lanes);
+    Object.freeze(found);
+  }
+  memo.set(key, found);
+  return found;
+}
+
+const ROUTES = new WeakMap<WorldMap, Map<string, Route | null>>();
+
+function routeUncached(map: WorldMap, from: SystemId, to: SystemId): Route | null {
+  systemOf(map, from);
+  systemOf(map, to);
 
   const dist = new Map<SystemId, number>([[from, 0]]);
   const prev = new Map<SystemId, SystemId>();

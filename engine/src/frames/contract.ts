@@ -1151,7 +1151,11 @@ export interface WorksLine {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly sharePerTick: number;
-  /** `EXTRACTING` · `SPINNING UP 6 ticks` — the two words a viewer reads. */
+  /**
+   * `EXTRACTING` · `SPINNING UP 6 ticks` · `CROWDED OUT` — the words a viewer reads. The third is an
+   * online WORKS whose share of the system truncates to nothing because too many stand there, which
+   * at a few thousand principals is a real and common state rather than an edge case.
+   */
   readonly legend: string;
   /** Cumulative units the place has HANDED OVER to this WORKS, GROSS. Never a stock reading. */
   readonly extracted: number;
