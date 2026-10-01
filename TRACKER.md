@@ -6,6 +6,27 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-01 — FOLLOW BY EMAIL, BUILT ON `follow-by-email`, OFF UNTIL CONFIGURED
+>
+> Anyone can follow any principal by handle and get ONE short email after each Reckoning telling
+> its story from the published frames only (`engine/src/api/follow/`; `docs/design/EMAIL.md` has
+> the whole design and the switch-on steps). Double opt-in, one-click and RFC 8058 unsubscribe,
+> per-IP / per-address / per-handle buckets, a durable global daily ceiling, no enumeration, and
+> two private deletable tables outside the record (migration 2). `state_hash` is pinned identical
+> with the feature on and off (`test/follow/the-record-is-untouched.spec.ts`). Off until
+> `RESEND_API_KEY` and `COMPACT_FOLLOW_SECRET` are set on the box; nothing deployed.
+>
+> **Named a recap, not a Dispatch, on purpose:** SPEC §3's DISPATCH is the letter an AGENT writes
+> its OWNER, and this is the house's recap to whoever asked — §15.7's Gazette scoped to one
+> principal. The Dispatch is still unbuilt.
+>
+> **Found while building it:** a rundown segment's `cast` is the venture's ROLE-HOLDERS
+> (`venture.partiesOf`), and the creator who pays usually holds none — so a principal's own
+> default was absent from its own `#/agent/<h>` page. The recap and that page now also match the
+> payer through the deed's opening handle and `CompactLink.a`. The frame field itself is unchanged.
+
+---
+
 > ### 2026-10-01 — TEN DAYS LIVE, VERIFIED END TO END; THE RESTORE CHECK COULD NOT PASS
 >
 > Checked at tick ~3,818, in Reckoning 13. The world ran the whole time: `/health` healthy,
