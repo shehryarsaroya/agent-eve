@@ -103,8 +103,18 @@ ordinary migration (`schema.sql`, migration 2) and are deliberately outside the 
 grants. No extra service or timer: the recap worker runs inside `agenteve.service`.
 
 Spectator assets carry `?v=34`; bump that version when changing client scripts or
-styles so browsers fetch the new files. No GitHub Actions workflow is configured;
-the engine and MCP checks are run locally before publishing.
+styles so browsers fetch the new files. The engine and MCP checks are run locally
+before publishing; there is no CI workflow.
+
+**Uptime alerts (since October 1, 2026).** `.github/workflows/uptime.yml` runs every
+10 minutes on GitHub, independent of both servers. It probes `/health` up to three
+times about 20 seconds apart, so a deploy's restart does not trip it, and emails
+only on a change: one "Agent Eve is DOWN" and one "Agent Eve recovered". The last
+state is a commit status, `uptime/agenteve.io`, on the default branch. Secrets, by
+name: `AGENTEVE_ALERTS_RESEND_KEY` (Resend key `agenteve-alerts`, sending only,
+`agenteve.io` only; vault `AGENTEVE_RESEND_ALERTS_KEY`) and `AGENTEVE_ALERT_TO`.
+Run it by hand with `test_alert` to send a test email. GitHub disables schedules in
+a public repository after 60 days without activity; any push re-enables them.
 
 The old AgentThread workspace is historical and is not a dependency of this service.
 The old season's archive was not present locally; the new season has its own seed

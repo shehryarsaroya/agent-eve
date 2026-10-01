@@ -1,0 +1,119 @@
+# Uptime alert for https://agenteve.io (docs/background/INFRA.md).
+#
+# Every 10 minutes: probe /health up to three times about 20 s apart, so a deploy's ~25 s restart
+# never trips it. The last known state is kept as a commit status (context uptime/agenteve.io) on
+# the default branch, which also shows as a check mark on GitHub. Mail goes out only when the state
+# CHANGES — DOWN once, RECOVERED once — never on every failed run. The job itself always succeeds
+# unless the checker breaks, so GitHub's own failure emails stay quiet.
+#
+# Secrets (names only): AGENTEVE_ALERTS_RESEND_KEY, a Resend key restricted to agenteve.io with
+# sending access; AGENTEVE_ALERT_TO, the address alerts go to (kept out of this public file).
+# GitHub disables schedules in a public repo after 60 days without activity; a push re-enables it.
+name: uptime
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: 'Send a test alert email even if the site is healthy'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe agenteve.io and alert on a change
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESEND_API_KEY: ${{ secrets.AGENTEVE_ALERTS_RESEND_KEY }}
+          ALERT_TO: ${{ secrets.AGENTEVE_ALERT_TO }}
+          TEST_ALERT: ${{ inputs.test_alert }}
+        run: |
+          python3 - <<'PY'
+          import datetime, json, os, time, urllib.error, urllib.request
+
+          CONTEXT = 'uptime/agenteve.io'
+          HEALTH = 'https://agenteve.io/health'
+          REPO, SHA, BRANCH = os.environ['GITHUB_REPOSITORY'], os.environ['GITHUB_SHA'], os.environ.get('GITHUB_REF_NAME', 'master')
+
+          def gh(method, path, body=None):
+              req = urllib.request.Request('https://api.github.com' + path, method=method,
+                  data=None if body is None else json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json',
+                           'User-Agent': 'agenteve-uptime', 'X-GitHub-Api-Version': '2022-11-28'})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+
+          def probe():
+              why = 'no answer'
+              for attempt in range(3):
+                  if attempt:
+                      time.sleep(20)
+                  try:
+                      req = urllib.request.Request(HEALTH, headers={'User-Agent': 'agenteve-uptime/1'})
+                      with urllib.request.urlopen(req, timeout=20) as r:
+                          report = json.load(r)['report']
+                      if report.get('world') == 'RUNNING' and report.get('status') == 'healthy':
+                          return True, f"tick {report.get('tick')}, healthy"
+                      why = f"world {report.get('world')}, status {report.get('status')}, failures {report.get('failures')}"
+                  except urllib.error.HTTPError as error:
+                      why = f'HTTP {error.code}'
+                      try:
+                          why += f": {json.load(error)['report'].get('failures')}"
+                      except Exception:
+                          pass
+                  except Exception as error:
+                      why = repr(error)
+              return False, why[:600]
+
+          def previous():
+              for commit in gh('GET', f'/repos/{REPO}/commits?sha={BRANCH}&per_page=20'):
+                  for status in gh('GET', f"/repos/{REPO}/commits/{commit['sha']}/statuses?per_page=100"):
+                      if status['context'] == CONTEXT:
+                          return status['state'], status['created_at'], commit['sha'] == SHA
+              return None, None, False
+
+          def mail(subject, text):
+              if not os.environ.get('RESEND_API_KEY') or not os.environ.get('ALERT_TO'):
+                  print('alert mail is not configured; would have sent:', subject)
+                  return
+              body = {'from': 'Agent Eve alerts <alerts@agenteve.io>', 'to': [os.environ['ALERT_TO']],
+                      'subject': subject, 'text': text}
+              req = urllib.request.Request('https://api.resend.com/emails', method='POST', data=json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['RESEND_API_KEY'], 'Content-Type': 'application/json',
+                           'User-Agent': 'agenteve-uptime/1'})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  print('alert mail sent:', subject, '| resend status', r.status)
+
+          up, detail = probe()
+          state = 'success' if up else 'failure'
+          before, since, on_head = previous()
+          now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+          print(f'agenteve.io is {"UP" if up else "DOWN"} ({detail}); previous state {before} since {since}')
+
+          if before != state or not on_head:
+              gh('POST', f'/repos/{REPO}/statuses/{SHA}', {'state': state, 'context': CONTEXT,
+                  'description': (('up: ' if up else 'DOWN: ') + detail)[:139], 'target_url': HEALTH})
+
+          footer = f'\n\nChecked {now} by .github/workflows/uptime.yml in {REPO}.\nHealth: {HEALTH}\nRunbook: docs/background/INFRA.md'
+          if not up and before != 'failure':
+              mail('Agent Eve is DOWN', f'agenteve.io did not answer healthy on three tries about 20 seconds apart.\n\n{detail}{footer}')
+          elif up and before == 'failure':
+              mail('Agent Eve recovered', f'agenteve.io is answering healthy again ({detail}). It was first seen down at {since}.{footer}')
+          if os.environ.get('TEST_ALERT') == 'true':
+              mail('Agent Eve uptime alerts are set up (test)',
+                   f'This is a test. agenteve.io is currently {"UP" if up else "DOWN"} ({detail}). From now on you get one email '
+                   f'when it goes down and one when it recovers, checked every 10 minutes.{footer}')
+          PY
