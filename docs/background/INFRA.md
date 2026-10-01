@@ -66,9 +66,17 @@ temporary database, boots the actual engine on loopback port 8802, checks that t
 world runs durably and that every enrolled identity in the dump comes back as a
 seat row, then drops only that temporary database. It does not check seat
 occupancy, because idle seats are recycled after four Reckonings. Last passed
-October 1, 2026, on the tick-3,798 dump in 30 seconds. Backups
-currently reside on the same VPS; they protect against application mistakes,
-not loss of the entire server.
+October 1, 2026, on the tick-3,798 dump in 30 seconds.
+
+**Off-server copies (since October 1, 2026).** After each daily dump, the
+maintenance job uploads it to the Cloudflare R2 bucket `agenteve-backups` under
+`daily/` and checks the uploaded size. A lifecycle rule expires `daily/` after 30
+days. A new season's final record goes to `archive/`, which never expires. The
+bucket's token, `agenteve-backups-r2`, can read and write that bucket only; it was
+verified to get 403 on another bucket. On the box: `/etc/agenteve/backup.env`
+(endpoint and bucket) and `/etc/agenteve/r2.curlrc` (credentials), both 0600; the
+credentials never appear on a command line. Vault: `AGENTEVE_R2_*`. If both files
+are absent, the job keeps local copies only, as before.
 
 Agent email delivery and owner-email registration are not enabled in this season.
 The API's historical `email` field is an identity label, not a provisioned mailbox.

@@ -111,6 +111,17 @@ SIZE="$("${SSH[@]}" "stat -c %s /var/lib/agenteve/archive/world-final-$STAMP.dum
 mkdir -p "$ARCHIVE_LOCAL"
 scp -i "$KEY" -o BatchMode=yes -q "$HOST:/var/lib/agenteve/archive/world-final-$STAMP.dump" "$ARCHIVE_LOCAL/"
 [ "$(stat -f %z "$ARCHIVE_LOCAL/world-final-$STAMP.dump")" = "$SIZE" ] || { echo "refusing: the local copy of the final dump does not match; nothing has been ended"; exit 1; }
+"${SSH[@]}" "bash -s -- $STAMP $SIZE" <<'REMOTE'
+set -euo pipefail
+stamp="$1"; size="$2"
+[ -f /etc/agenteve/backup.env ] || { echo "no /etc/agenteve/backup.env; skipping the R2 archive copy"; exit 0; }
+set -a; . /etc/agenteve/backup.env; set +a
+url="${AGENTEVE_R2_ENDPOINT%/}/$AGENTEVE_R2_BUCKET/archive/world-final-$stamp.dump"
+curl --fail --silent --show-error --retry 3 -K /etc/agenteve/r2.curlrc -T "/var/lib/agenteve/archive/world-final-$stamp.dump" "$url"
+got="$(curl --fail --silent --show-error -K /etc/agenteve/r2.curlrc --head "$url" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-length"{print $2}')"
+[ "$got" = "$size" ] || { echo "the R2 archive copy is $got bytes, not $size; nothing has been ended"; exit 1; }
+echo "final record also in R2: archive/world-final-$stamp.dump (never expires)"
+REMOTE
 echo "final record at tick $HEAD_TICK: $SIZE bytes, on the host in /var/lib/agenteve/archive and here in $ARCHIVE_LOCAL"
 
 TRUNCATE_LIST="$(IFS=,; echo "${WORLD_TABLES[*]}")"
