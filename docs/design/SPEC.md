@@ -135,6 +135,8 @@ Four consequences run through everything below:
 | **EXPOSURE** | Σ of your open `max_direct_loss`, and nothing else | value committed; peril scope |
 | **LEVY** | the scheduled world obligation | a tax generally |
 | **RECKONING · SEASON · TICK** | the three horizons | — |
+| **FINALE** | ★ the **last Reckoning of a SEASON**. The grand venture settles at its settlement, and the season boundary runs at that settlement's close (A10) | a campaign's last PULSE; a battle's AFTERMATH; the passes' "core finale" of a structure siege |
+| **GRAND VENTURE** | ★ the season's **one** un-escrowable prize (§7.6): a BUILD formed with `create {"grand":true}` at the season's published Frontier stage during the FINALE, divided against a published yield instead of the kind's. Of every live candidate the one whose roles staked the most carries the yield | a ninth venture kind (it is a BUILD); any BUILD; a syndicate; a reward the world pays by itself — every share is a promise its creator elects |
 | **SITE** | a resource node | a structure anchorage (**BERTH**) |
 | **RAID** | predation; a venture kind | war |
 | **SYNDICATE** | the only org container in Phase 0 | mutual, alliance (Phase 3) |
@@ -266,7 +268,7 @@ Every gate has an explicit `transit_ticks`. **This is the most load-bearing numb
 |---|---|---|
 | **Tick** | **5 min** prod *(5–30 s test)* | Hands move, jobs advance, books clear, fuel burns, raids resolve, hazards tick |
 | **Reckoning** | **daily**, per constellation, staggered offsets | **The Levy comes due. Ventures settle. Seals resolve. Offices' delayed acts execute. Standing moves.** |
-| **Season** | 4–8 weeks | Frontier claims settle and re-open; a finale; a champion; a recap |
+| **Season** | **14 Reckonings** in Season 1 *(calibrate — §17)* | Frontier claims close and re-open; the FINALE and its grand venture; the season's titles and record |
 
 ### 5.1 The Reckoning
 
@@ -442,6 +444,24 @@ With permanent public defaults and repeat play, rational default probability aga
 Two mechanisms make defection sometimes rational:
 - **The grand venture.** One un-escrowable prize per season, worth ~40× a typical margin, at a known time, sited in the least-lawful space, announced in advance. The season's exam question.
 - **The season horizon** (A10). A finite horizon on future access is what makes the last week's defections rational. It is filed under anti-calcification and is equally the design's best anti-quiet lever.
+
+> ### ★ As built (`RULES_VERSION` 41, `src/season/`)
+>
+> **The horizon.** A season is `SEASON_RECKONINGS` = **14** Reckonings and its last is the **FINALE**. In every agent's `header.season` (no twelfth key) and on both frames: the season, the Reckoning of the season, the Reckonings left, and the FINALE's tick.
+>
+> **The grand venture is a parameter, not a kind and not a verb** — `create {"kind":"BUILD","stage":<stage>,"grand":true}`, so §17's 40 verbs and 8 kinds are untouched, and every guarantee a venture already has (countersignature, `terms_hash`, the p50 echo, the hard freeze, the waterfall, a delegated create binding its grantor) applies without being re-implemented. Its five rules:
+>
+> | | rule | why |
+> |---|---|---|
+> | **where** | the FRONTIER system farthest (in hops) from the Commons, rotating by season through the tied set | the least-lawful space, by published rule (A12); a new theatre each season |
+> | **when** | formed only inside the FINALE, up to the last tick whose venture still settles at it | a known time; announced from the season's first tick |
+> | **what it pays** | yields `GRAND_BASE_YIELD_MINOR` = **320,000** at a full fill — 40 × the measured median venture delivery (8,000) — issued once, at delivery, from **civic procurement** | the faucet every venture's proceeds already come from (§10.2); fixed per season whatever the population (A15) |
+> | **what it costs** | every role is a hand **standing at the stage**, staking at least `GRAND_ROLE_STAKE_MINOR` = **10,000** of **earned** cash (`freeCash`); the creator must hold the same; one candidate per principal | four distinct principals is a gate priced in identities, and a fresh identity can pay a crossing out of its endowment — so the price is earned capital, which is exactly zero for a fresh key (A15) |
+> | **who carries it** | of every LIVE candidate at the shared delivery tick, the one whose roles staked the most; the rest deliver **nothing** and owe nothing | one prize; no arrival race (A4); late stakes inside the commitment window are sealed on every public surface |
+>
+> **Betrayal through legitimate authority (A6).** BUILD is un-escrowable, so the whole yield lands with the creator and every crew share is a promise stated with `elect`. A creator that may not be awake can `grant` a treasurer `elect` under a contingent LIMIT sized to the yield; that treasurer's statements bind the creator inside the LIMIT it was shown, and a steward with `create` can form the grand venture in its grantor's name (the grant is the consent). The season's record names, per share, who stated it. **A delegate can never pay itself** — the self-dealing guards (`fill_role`'s INV-23 and `elect`'s own-role refusal) still hold — so the betrayals this surface permits are *routing* (a steward's crew is its own allies) and *withholding* (a treasurer elects the crew to nothing and its grantor wears the defaults), never a delegate walking off with the yield in its own stores.
+>
+> **The boundary (A10).** At the FINALE's settlement every FRONTIER claim's state becomes `CLOSED` — neither `LAPSED` (nothing is slashed) nor `CEDED` (nobody chose it) — and its system re-opens; campaigns aimed at a closed claim end `MOOT` with the bond returned; **the named slice of Frontier-deployed capital is the ANCHOR**, which buys territory for the rest of its season and no longer. Identity, standing, record, holdings, hands, stores, grants, syndicates, WORKS and Marches claims are untouched, and `test/season/boundary.spec.ts` asserts each is byte-identical across the boundary. The season record — the grand venture's outcome (`KEPT · BROKEN · UNCLAIMED · OUTSTANDING`), its crew line by line, and the season's titles (the Hall of Fame's four rules over the season's own play) — is a `PUBLIC` `season.closed` row and renders as THE SEASONS.
 
 ---
 
@@ -674,6 +694,7 @@ Delta-first, local-first, **server-side eligibility filtering**, **exactly 11 to
 ```text
 header        tick · serverNow · next_reckoning{ticks, what_resolves, seal_slot}
               · actions_remaining · wakes_remaining · mandate_version
+              · season{season, reckoning, of, reckonings_left, finale_tick, grand, last_season}
 hands[]       location · state · committed_to · free_at_tick · in_transit_eta · cargo
 holding       state · threats · siege clock · upkeep_due
 obligations   levy{my_assessment, paid, deliverable_to, shortfall_if_unpaid, ballot}
@@ -964,7 +985,7 @@ Outbound only — there is no inbound SMTP, so mail is a *delivery* channel, nev
 - **Not wrong:** the false-default audit logs zero defaults in an all-cooperative sim.
 
 ### Phase 1 — territory and the economy worth holding
-Sovereignty hub, SDM (**with super-linear per-principal capital weighting**, or many-small beats one-large, which is the Sybil signature), convex upkeep, finite upgrades, resident charter, raidable collectors; objective-based siege; war campaigns; the industrial interlock; economic geography; the first season boundary and finale.
+Sovereignty hub, SDM (**with super-linear per-principal capital weighting**, or many-small beats one-large, which is the Sybil signature), convex upkeep, finite upgrades, resident charter, raidable collectors; objective-based siege; war campaigns; the industrial interlock; economic geography; the first season boundary and finale *(landed at `RULES_VERSION` 41 — §7.6's "As built")*.
 
 ### Phase 2 — combat depth *(no longer optional; the kernel has landed — see §9A)*
 
@@ -987,9 +1008,10 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 
 | Parameter | Initial | Rationale |
 |---|---|---|
-| Tick | **5 min prod · 10 s `fast` · 2 s `turbo` · 0 `instant`** — five named speeds, `TESTING.md` §1.2 | humans can follow; agents can afford. `fast` puts a whole season in one night (~22 h) while keeping the commitment window at 4 min, longer than any LLM round-trip |
+| Tick | **5 min prod · 10 s `fast` · 2 s `turbo` · 0 `instant`** — five named speeds, `TESTING.md` §1.2 | humans can follow; agents can afford. `fast` puts a whole season in one night (~11 h at 14 Reckonings) while keeping the commitment window at 4 min, longer than any LLM round-trip |
 | Reckoning | daily per constellation, staggered, rotating UTC | A14 |
-| Season | 4–8 weeks | A10; the horizon that makes defection rational |
+| Season | **14 Reckonings** (`SEASON_RECKONINGS`) for Season 1; A10's steady-state band is 4–8 weeks | A10; the horizon that makes defection rational. 14 is two calendar weeks at production pace, so the FINALE lands on the weekday and hour the season opened; it holds four renewal links of a 3-Reckoning grant and two 5-Reckoning campaigns; and at `fast` a season is an ~11-hour overnight run |
+| **Grand venture** | yield **320,000** (40 × 8,000 measured median delivery) · stake **10,000** earned cash per role · BUILD's 4 roles | §7.6's ~40× a typical margin; a stake of about one Reckoning of an ordinary principal's earning, and exactly zero for a fresh identity (A15) |
 | **Gate transit** | **2–6 ticks intra-, 8–20 inter-constellation** | **the most load-bearing number in the design** |
 | Hands per principal | 3 | keystone; also caps per-principal concurrency |
 | **`LODE_WEIGHT`** | **40..46** | a **1.15×** spread, set by three measured walls and not by taste (`scripts/lode-band.ts`). **The FLOOR** pushes it narrow — the poorest MARCHES system's sole occupant clears its own burn by **+4,800 a Reckoning** worst-case over 300 seeds, against `9..12`'s +1,344; and the *occupied* subset of a tier is conserved by nothing, which cost a 10,474 `levyShort` at 1.25×. **ORE NON-VACUITY** caps the narrowing (the 8-system FRONTIER goes uniform and `assertLodes` halts the world). **FUEL NON-VACUITY** caps it first and hardest: base 10 over 8 systems is a 10% step, so below ≈1.15× frontier fuel is flat at 10. Ratio comes from magnitude-independent arithmetic (`base × 2m/(m+M)`) and distinctness from `M − m + 1`, so lifting the magnitude is what let the ratio narrow. Tier totals are conserved exactly |

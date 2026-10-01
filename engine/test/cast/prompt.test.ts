@@ -1004,7 +1004,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_946);
+    // ★ RE-MEASURED at 41: +3,030 — §5's `### The season, the FINALE and the grand venture` (+2,617,
+    // FLOOR), §5's season row and §6's `· season` header line (+160, FLOOR), and §11B's CLOSED
+    // paragraph (+253, the claimant's). Margin 120,000 − 111,976 = **8,024** against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_976);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1063,7 +1066,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 108,946 = **11,054**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 102,435 — leaving **17,565**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_946);
+    // ★ RE-MEASURED at 41: +3,030 — §5's `### The season, the FINALE and the grand venture` (+2,617,
+    // FLOOR), §5's season row and §6's `· season` header line (+160, FLOOR), and §11B's CLOSED
+    // paragraph (+253, the claimant's). Margin 120,000 − 111,976 = **8,024** against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_976);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1137,7 +1143,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Margin 120,000 − 102,169 = **17,831** against a required 4,000.
     // ★ +266: §4's escrow-is-not-EXPOSURE sentence and §11A's corrected alloy line.
     // Margin 120,000 − 102,435 = **17,565** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(102_435);
+    // ★ +2,777 at 41: the season's FLOOR unit and its two one-line mentions, on every position. Margin
+    // 120,000 − 105,212 = **14,788** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(105_212);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1820,11 +1828,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only offered once a standoff is already live, by which point a member reading the rules for
       // the first time inside a 24-tick window has already chosen wrong.
       64: 'sixty-four',
+      // ★ 65 at 41: §5's `### The season, the FINALE and the grand venture`. One FLOOR unit, so every
+      // measured position below moved by the same amount — the unit's own length.
+      65: 'sixty-five',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(64);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(65);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 64],
+      spelled[n as 65],
     );
     // ── ★ MATCHED ON A WORD BOUNDARY, NOT AS A SUBSTRING ─────────────────────
     //
@@ -2815,13 +2826,22 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //
       // The newcomer is not offered a stake-bearing act, so it reads §11A's line and not §4's — the
       // gate, measured. Read, not added.
-      48_543, // a newcomer on its first wake            (+848, then +46)
-      58_213, // mid-game in the Commons                 (+848, then +266)
-      67_908, // about to take territory                 (+848, then +266)
-      71_050, // at war: party to a live campaign        (+848, then +266)
-      100_934, // a claimant in trouble                  (+848, then +266)
-      82_820, // the Commons at its fullest              (+848, then +266)
-      102_435, // outside the Commons and landless, at its fullest: the largest REACHABLE (+848, +266)
+      // ── ★ AT 41, +2,777 ON EVERY ROW AND +253 MORE ON THE CLAIMANT ──────────────────
+      //
+      //   §5   `### The season, the FINALE and the grand venture`  +2,617  FLOOR (every position)
+      //   §5   the Season row of the horizons table                   +80   FLOOR
+      //   §6   `· season (§5 …)` on the header entry                  +80   FLOOR
+      //   §11B "The season ends every Frontier claim"                +253   the claimant's section
+      //
+      // A FLOOR unit because the FINALE is scheduled and cannot be dodged (A14): a member that never
+      // read the season walks into its last Reckoning with no hand at the stage. Read, not added.
+      51_320, // a newcomer on its first wake            (+848, +46, then +2,777)
+      60_990, // mid-game in the Commons                 (+848, +266, then +2,777)
+      70_685, // about to take territory                 (+848, +266, then +2,777)
+      73_827, // at war: party to a live campaign        (+848, +266, then +2,777)
+      103_964, // a claimant in trouble                  (+848, +266, then +3,030)
+      85_597, // the Commons at its fullest              (+848, +266, then +2,777)
+      105_212, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,777 at 41)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -2996,7 +3016,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      108_946, // the analytic ceiling                    (+848: next_decision_at, then +266)
+      111_976, // the analytic ceiling                    (+848, +266, then +3,030 at 41)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

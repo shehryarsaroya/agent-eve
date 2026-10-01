@@ -623,7 +623,7 @@ export function actTokensOf(verb: string, params: unknown): readonly string[] {
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of sixty-four could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of sixty-five could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -811,6 +811,16 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     block: '### The Levy — nobody sits this out',
     floor: true,
     verbs: ['deliver', 'set_delivery_intent', 'vote'],
+    because: 'floor',
+  },
+  // ★ The season and its exam question (SPEC §5, §7.6). Floor, for the Levy's reason: the FINALE is
+  // scheduled and cannot be dodged (A14), and a member that never read the season would walk into
+  // its last Reckoning with no hand at the stage and no idea what `reckonings_left: 1` meant.
+  {
+    section: S5,
+    block: '### The season, the FINALE and the grand venture',
+    floor: true,
+    verbs: [],
     because: 'floor',
   },
 
@@ -1671,7 +1681,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are sixty-four: 2^55 is not enumerable, and it
+ * was free. At `###` granularity there are sixty-five: 2^55 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -2411,7 +2421,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` — **or one of whose `acts`** — is offered in `affordances[]` is
  * `RULES`: checked before any per-unit predicate, and `RULES` is never dropped for any reason
  * including length. That ordering is the whole safety argument: an agent is refused for breaking
- * a rule it was given, never for one it was not. There are sixty-four units; put the same rule
+ * a rule it was given, never for one it was not. There are sixty-five units; put the same rule
  * inside each predicate and the forty-fifth will forget it.
  *
  * ── ★ `acts` IS A SECOND DISCRIMINATOR AT THE SAME PRECEDENCE, NOT A WEAKER ONE ──
@@ -2684,6 +2694,19 @@ export function situationalFocus(observation: Readonly<Record<string, unknown>>)
   // fixture put the key where the code looked instead of where `observe` puts it.
   if (((observation['grants'] as Record<string, unknown> | undefined)?.['syndicates'] as unknown[] | undefined ?? []).length > 0)
     focus.push('§11C Syndicates — you are inside one, and its charter cannot change');
+  // ★ The season's exam question, in the two Reckonings it can be answered (SPEC §7.6). Read off
+  // `header.season`, which every observation carries, so the pointer and the payload cannot disagree.
+  const season = ((observation['header'] as Record<string, unknown> | undefined)?.['season'] ?? null) as
+    | Record<string, unknown>
+    | null;
+  const left = typeof season?.['reckonings_left'] === 'number' ? season['reckonings_left'] : null;
+  if (left !== null && left <= 2) {
+    focus.push(
+      left === 1
+        ? '§5 The FINALE is tonight — the grand venture is in header.season.grand, and every share in it is elective'
+        : '§5 The FINALE is the next Reckoning — the grand venture is filled only by hands standing at its stage',
+    );
+  }
   // The assurance, and it is listed LAST on purpose: it is free, so it should be the thing an
   // agent does in addition to its plan rather than instead of it.
   if (has('message'))

@@ -160,11 +160,11 @@ export const MAX_LISTED_GRAND_CANDIDATES = 6;
  * the engine and `agent.md` both carry. `test/season/rules-surface.spec.ts` pins the document to it.
  */
 export const SEASON_STATEMENT =
-  `A season is ${String(SEASON_RECKONINGS)} Reckonings, and its last Reckoning is the FINALE. At the ` +
-  'FINALE’s settlement every Frontier CLAIM closes and its system re-opens for anyone to anchor — an ' +
-  'ANCHOR buys territory for the rest of its season and no longer — and any campaign aimed at a closed ' +
-  'claim ends MOOT with its bond returned. Nothing else resets: your identity, standing, record, ' +
-  'holding, hands, stores, grants and syndicates carry into the next season unchanged.';
+  `A season is ${String(SEASON_RECKONINGS)} Reckonings; its last is the FINALE. At the FINALE's ` +
+  'settlement every Frontier CLAIM closes and its system re-opens — an ANCHOR buys territory for the ' +
+  'rest of its season, no longer — and a campaign aimed at a closed claim ends MOOT with its bond ' +
+  'returned. Nothing else resets: identity, standing, record, holding, hands, stores, grants and ' +
+  'syndicates all carry over.';
 
 /**
  * **A RULES SURFACE** (HARD RULE 4). The grand venture, in the sentence an agent reads in
@@ -172,14 +172,11 @@ export const SEASON_STATEMENT =
  * prose cannot drift from the numbers the engine enforces (scar #1).
  */
 export const GRAND_VENTURE_STATEMENT =
-  'Every season has one GRAND VENTURE, published from its first tick in `header.season.grand`: a ' +
-  `${GRAND_KIND} staged at the Frontier system farthest from the Commons, yielding ` +
-  `${String(GRAND_BASE_YIELD_MINOR)} at a full fill and settling at the FINALE. During the FINALE ` +
-  'anyone holding at least the stake in earned cash may `create` a candidate with `"grand": true`; every ' +
-  'role must be filled by a hand standing at the stage, staking at least ' +
-  `${String(GRAND_ROLE_STAKE_MINOR)} of the filler’s earned cash, and a principal may be party to one ` +
-  'candidate at a time. Several crews may form: at delivery the live candidate whose roles staked the ' +
-  'most carries the yield, and every other candidate delivers nothing and owes nothing. ' +
-  `${GRAND_KIND} is top-yield, so every share is ELECTIVE — the yield lands with the creator, and the ` +
-  'creator, or a delegate electing in its name under a grant, decides at the FINALE whether the crew ' +
-  'is paid.';
+  `Each season has one GRAND VENTURE: a ${GRAND_KIND} staged at the Frontier system farthest from the ` +
+  `Commons, yielding ${String(GRAND_BASE_YIELD_MINOR)} at a full fill and settling at the FINALE. During ` +
+  'the FINALE anyone holding at least the stake in earned cash may create one with "grand": true. Every ' +
+  `role is a hand standing at the stage, staking at least ${String(GRAND_ROLE_STAKE_MINOR)} of earned ` +
+  'cash, and a principal is party to one candidate at a time. At delivery the live candidate whose roles ' +
+  'staked the most carries the yield; the rest deliver nothing and owe nothing. Every share is ELECTIVE: ' +
+  'the yield lands with the creator, and the creator — or a delegate electing in its name under a grant ' +
+  '— decides whether the crew is paid.';

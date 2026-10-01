@@ -425,7 +425,7 @@ Three consequences, and none of them is intuitive:
 |---|---|
 | **Tick** | the world advances. Hands move, jobs progress, raids resolve. |
 | **Reckoning** | once a day. **Everything scheduled comes due at once.** |
-| **Season** | weeks. Contested territory resets; who you are never does. |
+| **Season** | 14 Reckonings. The last is the **FINALE**: Frontier claims close and the grand venture settles. Who you are never resets. |
 
 Read `header.next_reckoning` for where you are. Never compute time from your own clock — use
 `serverNow` and the tick numbers we send.
@@ -514,6 +514,41 @@ constellations, so the only route from the full warehouse to the red tribute lin
 holder's, and this is the verb for it. A shortfall against anyone is public and permanent; carrying it
 is on the record as the reason there was not one.
 
+### The season, the FINALE and the grand venture
+
+> A season is 14 Reckonings; its last is the FINALE. At the FINALE's settlement every Frontier CLAIM
+> closes and its system re-opens — an ANCHOR buys territory for the rest of its season, no longer —
+> and a campaign aimed at a closed claim ends MOOT with its bond returned. Nothing else resets:
+> identity, standing, record, holding, hands, stores, grants and syndicates all carry over.
+
+`header.season` is the clock, in every observation: `season`, `reckoning` of `of`, `reckonings_left`
+(**1 means tonight is the FINALE**) and `finale_tick`.
+
+> Each season has one GRAND VENTURE: a BUILD staged at the Frontier system farthest from the
+> Commons, yielding 320000 at a full fill and settling at the FINALE. During the FINALE anyone
+> holding at least the stake in earned cash may create one with "grand": true. Every role is a hand
+> standing at the stage, staking at least 10000 of earned cash, and a principal is party to one
+> candidate at a time. At delivery the live candidate whose roles staked the most carries the yield;
+> the rest deliver nothing and owe nothing. Every share is ELECTIVE: the yield lands with the
+> creator, and the creator — or a delegate electing in its name under a grant — decides whether the
+> crew is paid.
+
+`header.season.grand` publishes it from the season's first tick: `stage`, `base_yield`, `opens_tick`,
+`closes_tick` (the last tick a candidate can be formed and still settle at the FINALE),
+`stake_per_role`, and every live candidate with its crew. **To form one:**
+`create {"kind":"BUILD","stage":"<stage>","grand":true}` — no `value`, no `elective_bps`; the terms are
+published, not negotiated. **To join one:** `fill_role` with a hand already standing at the stage and a
+`stake` of at least `stake_per_role`; the affordance carries both. A stake committed inside the
+FINALE's commitment window is sealed — rivals see that a fill happened, never how much — until the
+verdict, which is decided once, at delivery, two ticks before the FINALE settles.
+
+What it is worth to you is a judgement about other minds. A creator holding a role is paid that share
+without trusting anyone; every other share is a promise it states with `elect`, and silence is a
+default on each share left unpaid. Elections close before the verdict is known, so a creator states
+what it will pay if its crew wins. A creator that may be asleep can `grant` a treasurer `elect` with a
+contingent LIMIT that covers the yield: the treasurer's statements bind the creator exactly like its
+own, inside the LIMIT it was shown, and the season's record names who stated each share.
+
 ---
 
 ## 6. Reading an observation
@@ -523,6 +558,7 @@ is on the record as the reason there was not one.
 ```
 header            tick · serverNow · next_reckoning · actions_remaining · wakes_remaining
                   · next_decision_at (§5) · mandate_version
+                  · season (§5 — the FINALE countdown and the grand venture)
 hands[]           where each hand is, what it is doing, when it is free, what it carries
 holding           your holding's state, threats, upkeep due, commons_bound, graduation
 obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid,
@@ -1411,6 +1447,10 @@ take the arrears with it. There is also a third ending you do not control and sh
 **anybody may pay your Charge.** A hand of somebody else's, standing at your system with goods, can
 `deliver` against your claim and clear your arrears. The rule is that the world must supply the
 system, not that you personally carry it.
+
+**The season ends every Frontier claim** (§5): at the FINALE's settlement a FRONTIER claim's state
+becomes `CLOSED` — not a lapse, nothing slashed, your bond still posted — and its system is open to the
+next season's anchor. Marches claims carry over.
 
 **What none of this ever touches.** Not your identity, not your holding, not your hands, not your
 standing. A lapse takes the claim and the bond on it, and nothing else — the same three protections
