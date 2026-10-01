@@ -179,6 +179,22 @@ never makes the world unhealthy.
 With either required variable missing the feature stays off: the form shows the
 server's sentence, nothing is stored, nothing crashes.
 
+### Switched on October 1, 2026
+
+Deployed in `c01eaf9`. `RESEND_API_KEY` on the box is a key named `agenteve-follow`,
+restricted to the `agenteve.io` domain with sending access only; the account-wide key
+stays in the private vault. `COMPACT_FOLLOW_SECRET` has a vault copy so a rebuilt
+server keeps already-sent unsubscribe links working. The boot log reads `follow by
+email is ON — from Agent Eve <updates@agenteve.io>, links at https://agenteve.io, 2000
+emails a day at most, postgres store`.
+
+Verified end to end against Resend's simulated inbox, `delivered@resend.dev`, so no
+real person received anything: `POST /api/follow` answered 202, the confirmation was
+delivered (Resend `last_event: delivered`), a GET and a HEAD of its link left the follow
+PENDING, and pressing the page's button made it ACTIVE. That follow of `orrin` is kept
+as a canary for the first nightly recap. Step 4 above (a real inbox, DKIM headers, the
+mail client's one-click unsubscribe) is still owed.
+
 ## Sending domain configured September 20, 2026
 
 - Provider: the existing Resend account.

@@ -59,7 +59,7 @@
 >
 > RULES-LEVEL and left alone: withdrawing a standing intent (no verb), EXPOSURE counting escrow,
 > alloy travelling on `graduate`, `create {value}` and the elective ceiling.
-> ### 2026-10-01 — FOLLOW BY EMAIL, BUILT ON `follow-by-email`, OFF UNTIL CONFIGURED
+> ### 2026-10-01 — FOLLOW BY EMAIL — ON IN PRODUCTION SINCE `c01eaf9` (see EMAIL.md, "Switched on")
 >
 > Anyone can follow any principal by handle and get ONE short email after each Reckoning telling
 > its story from the published frames only (`engine/src/api/follow/`; `docs/design/EMAIL.md` has
