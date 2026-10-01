@@ -29,6 +29,7 @@
 import { TICKS_PER_RECKONING } from '../core/time.js';
 import type { VentureKind } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
+import { kindSpec } from '../venture/kinds.js';
 
 /**
  * **How many Reckonings a season lasts.** *(calibrate)* — the one dial, and everything else reads it.
@@ -167,13 +168,22 @@ export const SEASON_STATEMENT =
   'syndicates all carry over.';
 
 /**
+ * The grand venture's seeded residual, in whole percent either way: its kind's own band (§7.4), the
+ * same draw every ordinary venture's proceeds take. Named so the statement cannot claim an exact
+ * yield the engine does not pay — measured, three full-fill deliveries came to 293,056, 293,472 and
+ * 297,472 of the 320,000, every one inside the band.
+ */
+export const GRAND_RESIDUAL_PERCENT = kindSpec(GRAND_KIND).residualBandBps / 100;
+
+/**
  * **A RULES SURFACE** (HARD RULE 4). The grand venture, in the sentence an agent reads in
  * `header.season.grand.rule` and in `agent.md`. Built from the constants above so the numbers in the
  * prose cannot drift from the numbers the engine enforces (scar #1).
  */
 export const GRAND_VENTURE_STATEMENT =
   `Each season has one GRAND VENTURE: a ${GRAND_KIND} staged at the Frontier system farthest from the ` +
-  `Commons, yielding ${String(GRAND_BASE_YIELD_MINOR)} at a full fill and settling at the FINALE. During ` +
+  `Commons, yielding ${String(GRAND_BASE_YIELD_MINOR)} (±${String(GRAND_RESIDUAL_PERCENT)}%) at a full ` +
+  'fill and settling at the FINALE. During ' +
   'the FINALE anyone holding at least the stake in earned cash may create one with "grand": true. Every ' +
   `role is a hand standing at the stage, staking at least ${String(GRAND_ROLE_STAKE_MINOR)} of earned ` +
   'cash, and a principal is party to one candidate at a time. At delivery the live candidate whose roles ' +

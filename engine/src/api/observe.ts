@@ -106,7 +106,7 @@ import {
 // is the one gate both it and the verb ask. Only the two published constants are imported, so a
 // `withheld` sentence quoting the allowance cannot quote a different number than the engine charges.
 import { PARLEYS_PER_RECKONING } from '../say/parley.js';
-import { GRAND_BASE_YIELD_MINOR, GRAND_KIND, GRAND_ROLE_STAKE_MINOR } from '../season/index.js';
+import { GRAND_BASE_YIELD_MINOR, GRAND_KIND, GRAND_RESIDUAL_PERCENT, GRAND_ROLE_STAKE_MINOR } from '../season/index.js';
 import { MAX_LIVE_INTENTS_PER_PRINCIPAL } from '../tick/intent.js';
 import { MAX_REACH_ROWS } from '../say/reach.js';
 // ── COMBAT (SPEC §9A) ───────────────────────────────────────────────────────
@@ -3000,7 +3000,8 @@ function affordancesFor(
           max_contingent_liability: ceiling,
           what_it_forecloses:
             `THE SEASON ${String(seasonNow.season)} GRAND VENTURE, staged at ${grand.stage}: a ${GRAND_KIND} ` +
-            `yielding ${String(GRAND_BASE_YIELD_MINOR)} at a full fill, settling at the FINALE (tick ` +
+            `yielding ${String(GRAND_BASE_YIELD_MINOR)} (±${String(GRAND_RESIDUAL_PERCENT)}%) at a full fill, ` +
+            'settling at the FINALE (tick ' +
             `${String(grand.finale_tick)}). Nothing is escrowed — the yield lands with YOU and every share of it ` +
             `is elective, so you are asked for up to ${String(ceiling)} at the FINALE and staying silent is a ` +
             'permanent public default on each share you leave unpaid. Its four roles must be filled by hands ' +
@@ -6021,7 +6022,8 @@ function grandPressure(runtime: Runtime, principal: PrincipalId, tick: number): 
   }
   if (g.open_now) {
     return (
-      `${tag} FINALE is tonight: the grand venture at ${g.stage} yields ${String(g.base_yield)} at a full fill and ` +
+      `${tag} FINALE is tonight: the grand venture at ${g.stage} yields ${String(g.base_yield)} ` +
+      `(±${String(GRAND_RESIDUAL_PERCENT)}%) at a full fill and ` +
       `settles at tick ${String(g.finale_tick)}. Form a candidate with create {"kind":"${g.kind}","stage":` +
       `"${g.stage}","grand":true}, or fill one of the ${String(g.candidates.length)} candidate(s) on the board — ` +
       `every role is a hand standing at ${g.stage} staking at least ${String(g.stake_per_role)} of earned cash, ` +
@@ -6031,7 +6033,8 @@ function grandPressure(runtime: Runtime, principal: PrincipalId, tick: number): 
   if (tick < g.opens_tick && !principalIsCommonsBound(runtime.world, principal)) {
     return (
       `The FINALE is the next Reckoning: ${tag}'s grand venture at ${g.stage} opens at tick ` +
-      `${String(g.opens_tick)} and yields ${String(g.base_yield)}. Its roles are filled only by hands standing ` +
+      `${String(g.opens_tick)} and yields ${String(g.base_yield)} (±${String(GRAND_RESIDUAL_PERCENT)}%) at a full ` +
+      'fill. Its roles are filled only by hands standing ' +
       `at ${g.stage}, so a hand that is not on its way by then will not be in a crew.`
     );
   }

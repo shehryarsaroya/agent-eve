@@ -455,7 +455,7 @@ Two mechanisms make defection sometimes rational:
 > |---|---|---|
 > | **where** | the FRONTIER system farthest (in hops) from the Commons, rotating by season through the tied set | the least-lawful space, by published rule (A12); a new theatre each season |
 > | **when** | formed only inside the FINALE, up to the last tick whose venture still settles at it | a known time; announced from the season's first tick |
-> | **what it pays** | yields `GRAND_BASE_YIELD_MINOR` = **320,000** at a full fill — 40 × the measured median venture delivery (8,000) — issued once, at delivery, from **civic procurement** | the faucet every venture's proceeds already come from (§10.2); fixed per season whatever the population (A15) |
+> | **what it pays** | yields `GRAND_BASE_YIELD_MINOR` = **320,000** at a full fill, ±10% by BUILD's own seeded residual (§7.4) — 40 × the measured median venture delivery (8,000) — issued once, at delivery, from **civic procurement** | the faucet every venture's proceeds already come from (§10.2); fixed per season whatever the population (A15) |
 > | **what it costs** | every role is a hand **standing at the stage**, staking at least `GRAND_ROLE_STAKE_MINOR` = **10,000** of **earned** cash (`freeCash`); the creator must hold the same; one candidate per principal | four distinct principals is a gate priced in identities, and a fresh identity can pay a crossing out of its endowment — so the price is earned capital, which is exactly zero for a fresh key (A15) |
 > | **who carries it** | of every LIVE candidate at the shared delivery tick, the one whose roles staked the most; the rest deliver **nothing** and owe nothing | one prize; no arrival race (A4); late stakes inside the commitment window are sealed on every public surface |
 >

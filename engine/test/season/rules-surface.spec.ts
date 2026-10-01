@@ -13,11 +13,14 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   GRAND_BASE_YIELD_MINOR,
+  GRAND_KIND,
+  GRAND_RESIDUAL_PERCENT,
   GRAND_ROLE_STAKE_MINOR,
   GRAND_VENTURE_STATEMENT,
   SEASON_RECKONINGS,
   SEASON_STATEMENT,
 } from '../../src/season/index.js';
+import { kindSpec } from '../../src/venture/kinds.js';
 
 const AGENT_MD = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
 const SPEC = readFileSync(new URL('../../../docs/design/SPEC.md', import.meta.url), 'utf8');
@@ -33,6 +36,9 @@ describe('agent.md says what the engine does about seasons', () => {
     // The statement is built from the constants, so this is the check that they are the ones meant.
     expect(GRAND_VENTURE_STATEMENT).toContain(String(GRAND_BASE_YIELD_MINOR));
     expect(GRAND_VENTURE_STATEMENT).toContain(String(GRAND_ROLE_STAKE_MINOR));
+    // A2: the yield is not claimed exact — the band is the kind's own seeded residual, in the prose.
+    expect(GRAND_RESIDUAL_PERCENT * 100).toBe(kindSpec(GRAND_KIND).residualBandBps);
+    expect(GRAND_VENTURE_STATEMENT).toContain(`${String(GRAND_BASE_YIELD_MINOR)} (±${String(GRAND_RESIDUAL_PERCENT)}%)`);
     expect(SEASON_STATEMENT).toContain(`${String(SEASON_RECKONINGS)} Reckonings`);
   });
 

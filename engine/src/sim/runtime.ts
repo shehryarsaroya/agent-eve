@@ -2222,13 +2222,14 @@ import {
  *   - **`ClaimState` gains `CLOSED`** — the season's ending, neither the world's verdict (`LAPSED`)
  *     nor the holder's choice (`CEDED`). At the FINALE's settlement every FRONTIER claim closes; the
  *     bond is untouched; campaigns aimed at a closed claim end `MOOT` with the bond returned.
- *   - **Two new PUBLIC event kinds** — `grand.verdict` (the delivery tick the crews share) and
- *     `claim.closed` / `season.closed` (the boundary).
+ *   - **Three new PUBLIC event kinds** — `grand.verdict` (at the delivery tick the crews share), and
+ *     `claim.closed` and `season.closed` (the boundary).
  *   - **`create` takes `grand: true`**, `fill_role` on a grand candidate requires presence at the stage
  *     and a stake of earned capital, and a grand candidate delivers the season's yield or nothing.
  *   - **`observe.header.season`** — the clock, the grand venture and the last season. No twelfth key.
- *   - The heuristic cast's decision ladder gains grand branches, so the action log diverges from the
- *     first FINALE a cast member reaches, which for a fresh world is the fourteenth Reckoning.
+ *   - The heuristic cast's decision ladder gains grand branches. They return null outside a season's
+ *     last two Reckonings and draw no RNG, so by construction they add no action before the first
+ *     muster — for a fresh world, the thirteenth Reckoning.
  *
  * **Verbs spent: none (40 of 40). Venture kinds: none (8 of 8). Observe keys: none (11 of 11).**
  *

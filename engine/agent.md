@@ -525,7 +525,7 @@ is on the record as the reason there was not one.
 (**1 means tonight is the FINALE**) and `finale_tick`.
 
 > Each season has one GRAND VENTURE: a BUILD staged at the Frontier system farthest from the
-> Commons, yielding 320000 at a full fill and settling at the FINALE. During the FINALE anyone
+> Commons, yielding 320000 (±10%) at a full fill and settling at the FINALE. During the FINALE anyone
 > holding at least the stake in earned cash may create one with "grand": true. Every role is a hand
 > standing at the stage, staking at least 10000 of earned cash, and a principal is party to one
 > candidate at a time. At delivery the live candidate whose roles staked the most carries the yield;
