@@ -30,6 +30,7 @@ export {
 
 export {
   CLIENT_IP_HEADER,
+  ENROLMENT_QUOTA,
   IP_REFUSAL,
   MAX_BODY_BYTES,
   MAX_TRACKED_CLIENTS,
@@ -66,6 +67,8 @@ export {
   IDLE_SEAT_TICKS,
   MAX_HANDLE_LENGTH,
   SeatBook,
+  UNPLAYED_SEAT_TICKS,
+  type AcceptedRow,
   type Seat,
   type SeatGrant,
   type SeatRefusal,

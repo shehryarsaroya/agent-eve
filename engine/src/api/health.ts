@@ -95,6 +95,16 @@ export interface HealthReport {
     readonly rows: number;
     readonly recycled: number;
     /**
+     * Occupied seats whose principal has had no action accepted since it took the seat.
+     *
+     * A seat is kept by PLAY (`seats.ts`), so this is the share of the cap that will come back
+     * within {@link recycle_after_ticks}`.unplayed` unless it starts playing — the number an
+     * operator reads to tell a full world from a squatted one.
+     */
+    readonly unplayed: number;
+    /** The two leases, in ticks: after the last accepted action, and for a seat never played. */
+    readonly recycle_after_ticks: { readonly played: number; readonly unplayed: number };
+    /**
      * Every principal in the world, cast included.
      *
      * Reported beside `occupied` because the two are different numbers and the
@@ -384,6 +394,8 @@ export function buildHealth(
       capacity: seats.capacity,
       rows: seats.rows,
       recycled: seats.recyclesTotal,
+      unplayed: seats.unplayed,
+      recycle_after_ticks: { played: seats.idleTicks, unplayed: seats.unplayedTicks },
       population: runtime.world.principalOrder.length,
     },
     buffers: runtime.bufferSizes(),
