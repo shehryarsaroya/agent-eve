@@ -27,6 +27,13 @@ The service is capped at 4 GiB and four CPU cores; PostgreSQL at 1 GiB and two
 cores. This is a limit, not a measured requirement. Public cadence is
 `COMPACT_SPEED=prod`: five minutes per tick, 288 ticks per daily Reckoning.
 
+**Seats and memory (measured 2026-10-01, `docs/design/SCALE-2026-10-01.md`).** The host's seat count
+is `COMPACT_SEATS` (optional; default 500, refused above the world ceiling of 10,000). Memory, not CPU,
+is what a seat costs: the in-memory journal grows ~0.5–0.8 KB per principal per tick, ~1.4 GB of heap
+for 500 principals over a 14-Reckoning season, ~2.1 GB for 1,000. Before raising `COMPACT_SEATS`, raise
+`MemoryMax` and set `--max-old-space-size` explicitly in `ExecStart` — V8's default heap limit derives
+from the memory it can see, which under a cgroup may be well below `MemoryMax`.
+
 Since October 1, 2026 the 12 house characters are played by **GPT-6 Astra**, Moving
 Atoms' OpenAI-compatible endpoint, which accepts streaming requests only. Between their
 wakes, and whenever a call fails, each member falls back to its scripted heuristic.

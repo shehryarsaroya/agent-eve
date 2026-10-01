@@ -2322,11 +2322,12 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * spent; 11 of 11 stands) and the frame gains `growth` (THE RISE).
  *
  * **And the caps stop binding by arrival order.** `MAX_PRINCIPALS` becomes the WORLD ceiling (10,000)
- * rather than the seat count, the host's seats move to `api/seats.ts:DEFAULT_SEATS` (3,000, raised by
- * `COMPACT_SEATS`), and every book that holds rows per principal derives from the ceiling: the
- * submission window, the fill queue, elections and elections in flight, grants and their journals,
- * dossiers, open orders, Charge ballots, syndicates, covers, indemnities, the per-tick event buffer;
- * claims and THE VERGE derive from the map's own ceiling. `test/core/capacity.spec.ts` classifies
+ * rather than the seat count, the host's seats move to `api/seats.ts:DEFAULT_SEATS` (500 — sized by
+ * memory over a season on the shipped slice — and raised by `COMPACT_SEATS`, which is host
+ * configuration and never reaches the hash), and every book that holds rows per principal derives
+ * from the ceiling: the submission window, the fill queue, elections and elections in flight, grants
+ * and their journals, dossiers, open orders, Charge ballots, syndicates, covers, indemnities, the
+ * per-tick event buffer; claims and THE VERGE derive from the map's own ceiling. `test/core/capacity.spec.ts` classifies
  * every published cap and checks each derivation. A book that was never full under 40 accepts and
  * refuses exactly what it did, so this half moves nothing in a world of the house cast's size.
  *

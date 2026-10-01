@@ -10,6 +10,29 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
+## ⏱ 2026-10-01 — Season 1 scale: one world at 3,000 principals, and what a season costs
+
+*Branch `season1-scale`, `RULES_VERSION` 41. Measured, not projected — `docs/design/SCALE-2026-10-01.md`
+has the method, every table and the owner decisions. §4c below is superseded: its 300-principal figure
+was a projection from 20, and it is now measured.*
+
+| | reading, 2026-10-01 (process CPU time, M4 Pro) |
+|---|---|
+| one Reckoning at 300 · 1,000 · 3,000 | steady tick **19 · 69 · 211 ms**; Reckoning **46 · 243 · 832 ms**; one observation **1.6 · 2.0 · 4.4 ms**; the burst after the Reckoning **0.5 · 2.0 · 13.3 s** (was 1.9 · 29.2 · ~442 s) |
+| the 3,000-principal Reckoning frame | **renders** (was refused: 100+ WORKS on one system all read `EXTRACTING` at a share of 0) |
+| caps | every `export const MAX_*` in `src/` classified in `test/core/capacity.spec.ts`; **eight books** that bound by arrival order or halted the world now derive from `MAX_PRINCIPALS` = **10,000** |
+| seats | `DEFAULT_SEATS` **500**, host configuration via `COMPACT_SEATS`, refused above the ceiling |
+| age (1,000 principals, tick 863) | steady tick **2,289 → 680 ms**, Reckoning **4,831 → 1,170 ms** — INV-1 and INV-7's supply walk incremental, lot list cached, state hash streamed |
+| what binds now | **memory**: the journal grows ~0.5–0.8 KB per principal per tick, ~1.4 GB of heap at 500 principals over a 14-Reckoning season, ~5.4 GB at 3,000 |
+| growth (§4.2) | spent: a qualified population (paid capital, an elective promise kept to someone else, capital at stake — never headcount) opens one constellation at the Reckoning, joined by one STRAIT, at 8 qualified per system |
+| latent fault fixed | adopting a checkpoint of any world past ~150,000 postings threw (`push(...rows)`) and fell back to a replay from genesis |
+
+**Still open, in order:** page the in-memory journal out (the season wall) · consolidate lots (the
+remaining per-tick term, and a raid-balance decision) · bound `postingsFor` by tick · per-constellation
+drama budgets · the parley ring's lifetime refusal (the parley lane's).
+
+---
+
 ## ⏱ 2026-07-30 — `RULES_VERSION` 40, 312 files / 3,889 tests, and a re-seeded world
 
 *The rest of this file predates the three merges of 2026-07-30 and its version numbers, test counts
@@ -369,6 +392,11 @@ For scale: the next largest are `api/observe.ts` (2,866), `api/server.ts` (2,236
   reason, or it is not deferred.
 
 ### 4c. Scale: MEASURED at last — the number is wrong by ~10×, the conclusion survives
+
+> **Superseded 2026-10-01** by `SCALE-2026-10-01.md`, which seats 300, 1,000 and 3,000 principals
+> rather than projecting from 20: 51 ms a tick at 300 on the base commit, 19 ms after Season 1's
+> fixes. The conclusion below held for one Reckoning and failed for a season — the tick grew with the
+> world's age (INV-1, INV-7's supply walk, the state hash), and memory, not CPU, is what binds.
 
 `SPEC.md` §15 and `CLAUDE.md` §6 both rest on *"at 300 principals a deterministic tick is **single-digit
 milliseconds** on the target box, so every remaining risk is a correctness risk, not a capacity risk."*

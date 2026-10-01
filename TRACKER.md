@@ -6,6 +6,26 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-01 — SEASON 1 SCALE: ONE WORLD AT 3,000 PRINCIPALS (branch `season1-scale`, `RULES_VERSION` 41)
+>
+> Measured, not projected (`docs/design/SCALE-2026-10-01.md`; `scripts/population-scale.ts` seats
+> synthetic heuristic populations on §12.4's wake cadence). **Fixed:** the observation burst after a
+> Reckoning was O(P²) in the BUILD — world-wide reads inside every principal's observation — so
+> `Runtime.perEpoch` shares them and `api/fragments.ts` splices each shared view's JSON into the
+> per-principal envelope, byte-identical (147 → 4.4 ms an observation at 3,000; ~7 min → 13 s for
+> everybody). **Eight books** bound below the population by arrival order or halted the world
+> (submission window, fill queue, elections, grants, open orders, Charge ballots, syndicates, the
+> per-tick event buffer); every cap is now classified in `test/core/capacity.spec.ts` and population
+> books derive from `MAX_PRINCIPALS` = 10,000. The tick grew with the world's AGE (INV-1 and INV-7
+> re-read the whole log, the state hash materialised the whole state): 2,289 → 680 ms at 1,000
+> principals by tick 863. Adopting a checkpoint past ~150,000 postings threw (`push(...rows)`).
+> **Growth is spent** (§4.2): a qualified population — paid capital, an elective promise kept to
+> someone else, capital at stake, never headcount — opens one constellation at the Reckoning, joined by
+> one STRAIT; THE RISE draws it. **What binds now is memory over a season** (~0.5–0.8 KB per principal
+> per tick of in-memory journal), so `DEFAULT_SEATS` is **500** on the shipped 4 GiB slice and
+> `COMPACT_SEATS` raises it. Open: page the journal out; consolidate lots (interacts with
+> `MAX_SEIZE_LOTS`); per-constellation drama budgets; the parley ring's lifetime refusal.
+
 > ### 2026-10-01 (latest) — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
 >
 > **The 12 house characters now decide with a model.** GPT-6 Astra (Moving Atoms'
