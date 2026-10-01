@@ -178,6 +178,7 @@ import type {
   LiveFrame,
   TributeLine,
   ReckoningFrame,
+  SeasonLine,
 } from '../frames/contract.js';
 import { authorityLinesFor } from '../frames/authority.js';
 import {
@@ -2354,6 +2355,7 @@ import {
   type WithheldRisk,
 } from '../risk/index.js';
 import { frontBands, type FrontTake } from '../risk/lines.js';
+import { seasonLineFor, seasonRecordLinesFor } from '../frames/season.js';
 import { riskStateTable } from '../risk/book.js';
 // ── ★ THE SEASON (SPEC §5, §7.6, A10) ───────────────────────────────────────
 //
@@ -7684,6 +7686,13 @@ export class Runtime {
       last: this.seasonBookRef.last(),
     };
     return seasonBlockFor(port, viewer);
+  }
+
+  /** THE SEASON LINE for a frame: the public season block, re-spelled for the client. */
+  private seasonLine(tick: number): SeasonLine {
+    return seasonLineFor(this.seasonBlock(tick, null), this.frameHandles(), (id) =>
+      this.world.map.systems.get(id)?.name ?? null,
+    );
   }
 
   /** The closed seasons a frame carries, newest first, bounded. */
@@ -16625,6 +16634,8 @@ export class Runtime {
       saps: this.sapLines(tick),
       frontBands: this.frontBandLines(tick),
       ticker: this.raidTicker.all,
+      // ★ THE SEASON LINE, from the block every agent's `header.season` is built by, with no viewer.
+      season: this.seasonLine(Math.max(0, tick)),
     };
     // The same boundary `reckoningFrame` crosses, with one clause of its own: a live frame is
     // published BEFORE settlement, so it is the one artifact on which a `PARTIES`, `SENSED` or
@@ -17032,6 +17043,10 @@ export class Runtime {
       // of its own rather than an absence in `worksLines`.
       convoyLines: this.convoyLines(outcome.tick),
       compactLinks: this.compactLinks(settledRecords),
+      // ★ THE SEASON LINE and THE SEASON RECORD (SPEC §5, §7.6, A10, A13). On the FINALE's frame the
+      // record already carries the season that just closed, because the boundary ran in this tick.
+      season: this.seasonLine(outcome.tick),
+      seasonRecords: seasonRecordLinesFor(this.seasonRecordsForFrame(), this.frameHandles()),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

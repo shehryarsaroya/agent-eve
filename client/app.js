@@ -107,8 +107,13 @@ var App = (function () {
       laneCount += (s.lanes || []).length;
       (s.straits || []).forEach(function (t) { straitCount++; if (t.severs) severCount++; });
     });
+    // ★ THE SEASON. The live frame's line is newer (its candidates are still forming), the
+    // Reckoning frame's is the fallback, and the closed seasons only ever ride the Reckoning frame.
+    var season = (L && L.season) || R.season || null;
+    var seasonRecords = R.seasonRecords || [];
     return {
       R: R, L: L, index: S.index, sysIndex: sysIndex, byPrincipal: byPrincipal,
+      season: season, seasonRecords: seasonRecords,
       glyphs: glyphs, glyphIndex: glyphIndex, links: links, authority: authority, ticker: ticker,
       laneCount: laneCount / 2, straitCount: straitCount / 2, severCount: severCount / 2,
       rerender: render, loadReckoning: loadReckoning,
@@ -172,10 +177,30 @@ var App = (function () {
     if (L) {
       c.appendChild(el('div', { class: 'seg' }, [el('em', { text: 'TICK' }), el('b', { text: String(L.tick) })]));
       c.appendChild(el('div', { class: 'seg' }, [el('em', { text: 'PHASE' }), el('b', { text: L.phase })]));
-      c.appendChild(el('div', { class: 'seg' + (L.ticksUntilReckoning < 24 ? ' warn' : '') }, [
-        el('em', { text: 'RECKONING IN' }),
+      // ★ THE FINALE COUNTDOWN (A13). The FINALE is a Reckoning — the season's last — so on its own
+      // day the Reckoning countdown IS the finale countdown, relabelled and amber at no extra width.
+      // Before it, one segment counts the Reckonings left, in the `R` unit the way ticks are `t`.
+      // (Not `R1/14`: a season-relative Reckoning beside LAST SETTLED's world index reads as an
+      // off-by-one — `R14/14` next to `R12` — and measured, this bar already clips below ~1830px.)
+      var SE = L.season || (R && R.season) || null;
+      var finaleNow = !!(SE && SE.inFinale);
+      c.appendChild(el('div', {
+        class: 'seg' + (L.ticksUntilReckoning < 24 || finaleNow ? ' warn' : ''),
+        title: finaleNow ? 'the FINALE: season ' + SE.season + ' settles at tick ' + SE.finaleTick +
+          ', its Frontier claims close and its grand venture is carried' : null,
+      }, [
+        el('em', { text: finaleNow ? 'FINALE IN' : 'RECKONING IN' }),
         el('b', { text: L.ticksUntilReckoning + 't · ' + U.clock(L.ticksUntilReckoning) }),
       ]));
+      if (SE && !finaleNow) {
+        c.appendChild(el('div', {
+          class: 'seg',
+          title: 'Reckoning ' + SE.reckoning + ' of ' + SE.of + ' · the FINALE settles at tick ' + SE.finaleTick,
+        }, [
+          el('em', { text: 'SEASON ' + SE.season }),
+          el('b', { text: 'FINALE IN ' + SE.reckoningsLeft + 'R' }),
+        ]));
+      }
       if ((L.meters || {}).raidsLive) {
         // ⚑ AMBER. `app.css` writes the rule down twice — *"a raid is a LOSS,
         // not a betrayal"* — and the chrome broke it on every screen. On the

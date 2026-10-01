@@ -698,6 +698,9 @@ var MapView = (function () {
     var lay = state.cache.lay, P = lay.pos, cx = lay.cx, cy = lay.cy, RX = lay.RX, RY = lay.RY;
     var idx = {}; R.map.forEach(function (s) { idx[s.id] = s; });
     setBlocOrder(R.standings);
+    // ★ THE SEASON LINE: the live frame's is newer (it counts tonight's Reckoning and the crews still
+    // forming); the Reckoning frame's is from the last settlement and is only the fallback.
+    var SEASON = (L && L.season) || R.season || null;
     var minY = Infinity, maxY = -Infinity;
     R.map.forEach(function (s) { minY = Math.min(minY, s.yieldPerTick); maxY = Math.max(maxY, s.yieldPerTick); });
 
@@ -1027,6 +1030,22 @@ var MapView = (function () {
           fill: col, stroke: col,
         }, S('title', { text: c.legend || c.state })));
       });
+      // ★ THE CROWN — the season's grand venture, on its stage from the season's first tick (A13).
+      // Gold, the one colour that means "this is what the season is for"; never red, because
+      // nothing has been broken by being announced.
+      var GV = (SEASON && SEASON.grand) || null;
+      if (GV && GV.stage && P[GV.stage]) {
+        var gp = P[GV.stage];
+        var gr = nodeR(idx[GV.stage] || { yieldPerTick: minY }, minY, maxY) + 9;
+        gClaims.appendChild(S('circle', { class: 'grand-ring', cx: gp.x, cy: gp.y, r: gr }));
+        gClaims.appendChild(S('path', {
+          class: 'grand-mk',
+          d: 'M' + (gp.x - 7) + ' ' + (gp.y - gr - 3) + 'l2 -6l3 4l2 -6l2 6l3 -4l2 6z',
+        }, S('title', {
+          text: 'GRAND VENTURE · season ' + SEASON.season + ' · yields ' + GV.baseYield +
+            ' · ' + (SEASON.inFinale ? 'the FINALE is tonight' : 'FINALE in ' + SEASON.reckoningsLeft + ' Reckonings'),
+        })));
+      }
       (R.ruins || []).forEach(function (r) {
         var p = P[r.system]; if (!p) return;
         // THE RUIN is a heavy dark blot with a broken ring, not a red cross:
@@ -1378,6 +1397,15 @@ var MapView = (function () {
         lines.push({ t: 'SWAY ' + U.handleOf(sw.principal) + ' ' + sw.sway + (sw.gate ? '  ·  STRAIT GATE' : ''), c: 'co-d' });
       }
       if (rn) lines.push({ t: (rn.legend || 'RUIN').toUpperCase(), c: 'co-d' });
+      var gv = (SEASON && SEASON.grand) || null;
+      if (gv && gv.stage === focusId) {
+        lines.push({
+          t: 'GRAND VENTURE  ·  yields ' + gv.baseYield + '  ·  ' +
+            (SEASON.inFinale ? 'FINALE TONIGHT' : 'FINALE IN ' + SEASON.reckoningsLeft + 'R') +
+            (gv.candidates && gv.candidates.length ? '  ·  ' + gv.candidates.length + ' crew(s)' : ''),
+          c: 'co-g',
+        });
+      }
 
       // ★ THE DRILL AFFORDANCE LIVES ON THE CALLOUT.
       //

@@ -402,6 +402,26 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // already publishes); the negotiation (`PARTIES` until settlement, which is why the LIVE frame
   // carries links and carries no reel); the seal. Refused by field name in `assertFrameBudgets`.
   'compactLinks',
+  // ── ★ THE SEASON LINE (SPEC §5, §7.6, A13) ─────────────────────────────────
+  //
+  // The clock half is a pure function of the tick and a published constant — no fact at all. The
+  // grand venture's announcement (stage, yield, window, stake) is published constants and a pure
+  // function of the map. A candidate card is a venture: its creator, its role-holders, its stage and
+  // its state are on `venture.formed` / the fills, all `PUBLIC`, and `formedBy` is that row's actor
+  // column. Its `staked` is the PUBLIC part of the crew's stake — the locks taken before the FINALE's
+  // commitment window — because §5.1 makes a commitment inside the window `PARTIES`-visible until
+  // settlement; those fills are a count (`sealedFills`), never an amount, and `assertFrameBudgets`
+  // refuses a sealed-stake field by name. The verdict is the `PUBLIC` `grand.verdict` row.
+  //
+  // It is built by the same function that builds every agent's `header.season`, called with no
+  // viewer, so the line is a strict subset of what every agent reads (A9) by construction.
+  'season',
+  // ── ★ THE SEASON RECORD (A10, §16 *Remembered*) ──────────────────────────
+  //
+  // A re-read of the `season.closed` row, `PUBLIC` at birth. Every figure on it is a settled venture's
+  // payout (`venture.settled`, `PUBLIC`), a difference of two public standing vectors (`standings` is
+  // admitted above), or a closed claim (`claimLines`' own clause). Nothing here was ever `PARTIES`.
+  'seasonRecords',
 ]);
 
 export class ProjectionError extends Error {}

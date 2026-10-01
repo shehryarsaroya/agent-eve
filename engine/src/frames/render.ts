@@ -62,6 +62,8 @@ import {
   type SyndicateLine,
   type ReckoningFrame,
   type RundownSegment,
+  type SeasonLine,
+  type SeasonRecordLine,
   type TributeLine,
   type VentureGlyph,
   type BeatKind,
@@ -183,6 +185,14 @@ export interface FrameSource {
   readonly convoyLines?: readonly ConvoyLine[];
   /** ★ A13's second and third: THE COMPACT LINK, and the snap. Supplied by `frames/motion.ts`. */
   readonly compactLinks?: readonly CompactLink[];
+  /**
+   * ★ THE SEASON LINE (SPEC §5, §7.6, A13), supplied by the season layer — the FINALE countdown and
+   * the grand venture. Passed in for the reason every line set is: a renderer that decided which crew
+   * carries the yield would be inventing a verdict.
+   */
+  readonly season?: SeasonLine;
+  /** ★ THE SEASON RECORD — closed seasons, newest first, each FINALE and its champions (A10). */
+  readonly seasonRecords?: readonly SeasonRecordLine[];
 }
 
 export interface SettledView {
@@ -930,6 +940,8 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     glyphs: byStakesAscending.map(glyphFor),
     ticker: src.ticker.filter((t) => t.length <= 140),
     nextDocket: docket,
+    season: src.season ?? null,
+    seasonRecords: src.seasonRecords ?? [],
   };
 
   // A13 as arithmetic. Throws rather than shipping an unreadable frame.
@@ -971,6 +983,8 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     glyphs: [],
     ticker: [],
     nextDocket: [],
+    season: null,
+    seasonRecords: [],
   };
   assertFrameBudgets(frame);
   return frame;
