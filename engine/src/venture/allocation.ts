@@ -49,7 +49,7 @@ import { minor, type Minor } from '../core/units.js';
 import { compareIds } from '../ledger/index.js';
 import { commitHand, type HandRecord } from '../world/index.js';
 import { VentureBook } from './book.js';
-import { fillRole, vacateRole, type VentureRoleRecord } from './venture.js';
+import { fillRole, vacateRole, windowContains, type VentureRecord, type VentureRoleRecord } from './venture.js';
 
 /** One agent's bid for one slot, submitted during a tick. */
 export interface FillRequest {
@@ -206,10 +206,13 @@ export function allocateFills(
         // `?? null` is load-bearing: a role index the kind does not have reads
         // `undefined`, and `undefined !== null` would tell an agent it was outbid for
         // a slot that does not exist — the one reading it cannot act on.
-        reason:
-          (venture.roles[request.roleIndex]?.filledByHandId ?? null) !== null
-            ? 'LOST_CONTEST'
-            : 'ROLE_RULE',
+        //
+        // ★ And only a slot a RIVAL holds, on a venture still FORMING inside its window, is a lost
+        // contest. An ABANDONED formation keeps its fills, so a request against one read
+        // "… is ABANDONED; roles are filled while a venture is FORMING. Another principal took this
+        // slot in the same tick" — two incompatible causes in one hint, and the second one false.
+        // The label only chooses which advice is appended; who gets the slot is decided above.
+        reason: lostContest(venture, request.roleIndex, request.principal, ctx.tick) ? 'LOST_CONTEST' : 'ROLE_RULE',
         invariant: result.invariant,
         hint: result.hint,
       });
@@ -248,4 +251,17 @@ export function stakeBid(requests: readonly FillRequest[]): Minor {
   let total = 0;
   for (const r of requests) total += r.stake;
   return minor(total);
+}
+
+/**
+ * Was this refusal a contest lost to somebody else — the only case `LOST_CONTEST`'s advice is true of?
+ *
+ * The venture must still be FORMING and inside its window (otherwise the refusal is about the
+ * venture, and nobody "took" anything), and the role must be held by a principal other than the one
+ * asking (holding it yourself is not losing it).
+ */
+function lostContest(venture: VentureRecord, roleIndex: number, principal: PrincipalId, tick: number): boolean {
+  if (venture.state !== 'FORMING' || !windowContains(venture, tick)) return false;
+  const holder = venture.roles[roleIndex]?.filledByPrincipal ?? null;
+  return holder !== null && holder !== principal;
 }

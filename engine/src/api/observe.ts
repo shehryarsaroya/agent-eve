@@ -106,6 +106,7 @@ import {
 // is the one gate both it and the verb ask. Only the two published constants are imported, so a
 // `withheld` sentence quoting the allowance cannot quote a different number than the engine charges.
 import { PARLEYS_PER_RECKONING } from '../say/parley.js';
+import { MAX_LIVE_INTENTS_PER_PRINCIPAL } from '../tick/intent.js';
 import { MAX_REACH_ROWS } from '../say/reach.js';
 // ── COMBAT (SPEC §9A) ───────────────────────────────────────────────────────
 //
@@ -2928,7 +2929,8 @@ function affordancesFor(
       max_direct_loss: probe,
       max_contingent_liability: probeElective(kind),
       what_it_forecloses:
-        `${String(probe)} of your stores is locked in escrow until this settles or is abandoned, and ` +
+        `${String(probe)} of your stores is locked in escrow until this settles or is abandoned — committed ` +
+        'value, not EXPOSURE, so obligations.exposure.mine will not count it — and ' +
         `${String(probeElective(kind))} stays elective — you are asked for it at the Reckoning and ` +
         `staying silent is a permanent public default. ${probeRoles(kind)}${roleRule} ${band} ` +
         countersignWarning(tick),
@@ -3742,7 +3744,10 @@ function affordancesFor(
         `hands over up to ${String(levyQuote.payable)} of ${LEVY_GOOD} each Reckoning until tick ` +
         `${String(tick + TICKS_PER_RECKONING * 2)}, and it will keep doing so whether or not you are ` +
         `watching — including when you would rather have spent those goods on something else. Raise ` +
-        `\`until_tick\` to cover a longer absence, or send it again later to replace this one.`,
+        `\`until_tick\` to cover a longer absence. Sending it again ADDS a second order rather than ` +
+        `replacing this one — you may hold ${String(MAX_LIVE_INTENTS_PER_PRINCIPAL)} — and an order ends only ` +
+        'at its until_tick. Once the bill is paid it reads "already discharged in full" each tick: that is ' +
+        'the order satisfied, not stuck.',
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'set_delivery_intent', { obligation: 'LEVY' }),
     });
@@ -4410,8 +4415,9 @@ function affordancesFor(
       verb: 'fill_role',
       text:
       `${String(rowsWithNoHand)} slot(s) on ventures.board[] have no fill_role offered because none of your ` +
-        'hands is both IDLE and present this tick — a hand that arrived this tick is not present until the ' +
-        'next one. They are still on the board and still yours to take once a hand frees up',
+        'hands is both IDLE and present this tick — a hand that arrived this tick, or was minted at your ' +
+        'enrolment, is not present until the next one. Such a hand needs no move, only a tick. The slots are ' +
+        'still on the board and still yours to take once a hand frees up',
     });
   }
   if (commonsBoundLanes > 0) {
@@ -5797,6 +5803,11 @@ function promptFor(
       ? 'A venture of yours still has open roles.'
       : `${first.id} still needs ${String(openIndices(first).length)} role(s) filled and its window closes at tick ${String(first.windowClosesTick)}; you cannot staff it alone, so somebody has to be persuaded.`;
   }
+  // ★ A Charge owed outranks an opportunity on the board: missing it is public arrears on territory
+  // you hold, and at the last step the claim lapses with the bond slashed — permanence before
+  // opportunity, the ladder's own rule. See {@link obligationPressure}.
+  const charge = obligationPressure(runtime, principal, tick, 'CHARGE');
+  if (charge !== null) return charge;
   if (board.length > 0) {
     const first = board[0];
     // ══════════════════════════════════════════════════════════════════════════
@@ -5821,8 +5832,23 @@ function promptFor(
     const usable = handsOf(runtime.world, principal).filter(
       (h) => h.state === 'IDLE' && isPresent(h, tick),
     );
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★ **A HAND CAN BE STANDING THERE AND NOT YET PRESENT — AND "MOVE ONE THERE" IS THEN FALSE.**
+    //
+    // An enrolment mints three IDLE hands at the holding with `presentSinceTick` one tick ahead of
+    // the observation the enrol response carries, and a hand that arrived this tick is the same. A
+    // blind player's very first briefing read *"You have no idle hand at sys-01, so move one there
+    // first"* with all three of its hands at sys-01 — and `move` refuses a trip to the system a hand
+    // is already in (INV-10), so the sentence sent it at an act the engine cannot take. Such a hand
+    // needs no trip, only a tick; the sentence now says which one.
+    // ══════════════════════════════════════════════════════════════════════════
+    const arriving = handsOf(runtime.world, principal).filter(
+      (h) => h.state === 'IDLE' && !isPresent(h, tick),
+    );
     const reachable = board.find((row) => usable.some((h) => occupiesSystem(h, row.stage)));
-    const pick = reachable ?? first;
+    const waitingFor =
+      reachable === undefined ? board.find((row) => arriving.some((h) => occupiesSystem(h, row.stage))) : undefined;
+    const pick = reachable ?? waitingFor ?? first;
     const payer = runtime.standing.row(pick.creator);
     const record =
       payer.defaults > 0
@@ -5831,12 +5857,19 @@ function promptFor(
           ? `${String(payer.electiveHonoured)} elective part(s) honoured across ` +
             `${String(payer.distinctCounterparties)} distinct counterparties and no defaults`
           : 'no record either way yet — unproven, which is not the same as clean';
+    const atStage = arriving.filter((h) => occupiesSystem(h, pick.stage));
+    const presentAt = atStage.reduce((n, h) => Math.min(n, h.presentSinceTick), Number.MAX_SAFE_INTEGER);
     const close =
-      reachable === undefined
-        ? `You have no idle hand at ${pick.stage}, so move one there first — a hand fills a role where the ` +
-          `venture happens, the window shuts at tick ${String(pick.expires_tick)}, and the trip has to fit.`
-        : `To close it, fill_role now and sign ${String(pick.terms_hash)} on the next tick; unsigned by tick ` +
-          `${String(pick.expires_tick)} and it retires with nothing settled.`;
+      reachable !== undefined
+        ? `To close it, fill_role now and sign ${String(pick.terms_hash)} on the next tick; unsigned by tick ` +
+          `${String(pick.expires_tick)} and it retires with nothing settled.`
+        : atStage.length > 0
+          ? `${String(atStage.length)} of your idle hands ${atStage.length === 1 ? 'is' : 'are'} already at ` +
+            `${pick.stage} and ${atStage.length === 1 ? 'becomes' : 'become'} PRESENT at tick ${String(presentAt)} — ` +
+            `do not move ${atStage.length === 1 ? 'it' : 'them'}; fill_role is offered from that tick, and the ` +
+            `window shuts at tick ${String(pick.expires_tick)}.`
+          : `You have no idle hand at ${pick.stage}, so move one there first — a hand fills a role where the ` +
+            `venture happens, the window shuts at tick ${String(pick.expires_tick)}, and the trip has to fit.`;
     return (
       `${String(board.length)} open role(s) you are eligible for. The nearest is ${pick.label} on ` +
       `${pick.venture} at ${pick.stage}, which pays you ${String(pick.your_take_at_p50)} at p50, of which ` +
@@ -5846,6 +5879,11 @@ function promptFor(
     );
   }
   const idle = handsOf(runtime.world, principal).filter((h) => h.state === 'IDLE').length;
+  // ★ And the Levy, last before the fallback — it is owed by everybody all cycle, so above the board
+  // it would drown every opportunity; below it, "Nothing is waiting on you" can no longer be said
+  // while `if_you_do_nothing` one key over records a public shortfall.
+  const levy = obligationPressure(runtime, principal, tick, 'LEVY');
+  if (levy !== null) return `${levy} ${String(idle)} of your hands are idle.`;
   // ── ★ THE TAIL SENTENCE NAMED A TIER THE READER MAY HAVE LEFT ──────────────
   //
   // *"the Commons is safe but poor"* was emitted unconditionally, so a principal that had already
@@ -5862,6 +5900,49 @@ function promptFor(
     : 'you are outside the Commons, where an idle hand is also an exposed one — it can be raided ' +
       'where it stands, and nothing out here makes hostile action invalid.';
   return `Nothing is waiting on you and ${String(idle)} of your hands are idle; an idle hand earns nothing, and ${where}`;
+}
+
+/**
+ * ★ **A Charge or a Levy still owed** — the two obligations `promptFor`'s ladder never read.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * A blind player read *"Nothing is waiting on you"* while `if_you_do_nothing`, one key over in the
+ * same object, warned that a claim would go into public ARREARS tonight — and the same held for an
+ * unpaid Levy, which is owed by everybody from the first tick of every Reckoning. `agent.md` §6 says
+ * the prompt *"reaches 'nothing is waiting on you' only when all of those are empty — if it says
+ * that and `if_you_do_nothing` disagrees, report it"*: this is that report, fixed.
+ *
+ * Read from the SAME calls `ifYouDoNothing` makes (`claimsFor`, `levyBlockFor`) and quoting the
+ * claim row's own `consequence`, so the prompt and the preview cannot disagree about either debt.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function obligationPressure(
+  runtime: Runtime,
+  principal: PrincipalId,
+  tick: number,
+  which: 'CHARGE' | 'LEVY',
+): string | null {
+  const settlement = nextSettlement(tick);
+  if (which === 'CHARGE') {
+    const failing = runtime
+      .claimsFor(principal, tick)
+      .filter((c) => c.if_you_do_nothing !== 'STAYS_SUPPLIED' && c.owed > 0)
+      .sort((a, b) => b.owed - a.owed || cmp(a.claim, b.claim));
+    const first = failing[0];
+    if (first === undefined) return null;
+    return (
+      `The Charge on your claim at ${first.system} is not paid: ${String(first.owed)} of ${first.good} is owed ` +
+      `by tick ${String(first.deadline_tick)}. ${first.consequence}` +
+      (failing.length > 1 ? ` (${String(failing.length - 1)} more claim(s) of yours owe a Charge too.)` : '')
+    );
+  }
+  const levy = runtime.levyBlockFor(principal, tick);
+  const short = levy === null ? 0 : Math.max(0, levy.shortfall_if_unpaid ?? 0);
+  if (levy === null || short <= 0) return null;
+  return (
+    `Your Levy assessment is not paid: ${String(short)} is still owed, deliverable at ${String(levy.deliverable_to)}, ` +
+    `and unpaid at tick ${String(settlement)} it is recorded as a public shortfall against you.`
+  );
 }
 
 /**
@@ -6244,7 +6325,9 @@ function ifYouDoNothing(
   if (parts.length === 0) {
     return `Nothing resolves for you before tick ${String(settlement)}. Your identity, your holding and your standing are unchanged — absence costs opportunity and nothing else.`;
   }
-  return `${parts.join('; ')}.`;
+  // Some parts are whole sentences (a claim's `consequence` ends in a full stop), so the join trims
+  // each one first — it printed "… tonight.; your Levy assessment …".
+  return `${parts.map((p) => p.replace(/[.\s]+$/, '')).join('; ')}.`;
 }
 
 // ── Small derivations ───────────────────────────────────────────────────────

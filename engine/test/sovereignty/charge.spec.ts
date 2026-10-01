@@ -528,6 +528,11 @@ describe('the pixel signature is PUBLIC LEGAL STATE ONLY (A13, §11.2)', () => {
     // refuses the frame, so this is guarded twice on purpose — but the string itself is what a
     // stranger reads in three seconds, so it is asserted directly too.
     expect(claimLegend('SUPPLIED', 0)).toBe('PAID');
+    // ★ With this Reckoning's bill in hand, SUPPLIED reads PAID only once it is all delivered.
+    expect(claimLegend('SUPPLIED', 0, { due: 4_000, paid: 0, owed: 4_000 })).toBe('CHARGE DUE · 0 of 4000 PAID');
+    expect(claimLegend('SUPPLIED', 0, { due: 4_000, paid: 4_000, owed: 0 })).toBe('PAID');
+    expect(claimLegend('SUPPLIED', 0, { due: 0, paid: 0, owed: 0 })).toBe('NOTHING DUE');
+    expect(claimLegend('SUPPLIED', 0, { due: 4_000, paid: 1_000, owed: 3_000 })).not.toMatch(/^ARREARS/);
     expect(claimLegend('STRAINED', 1)).toBe(`ARREARS 1 of ${String(ARREARS_STEPS)}`);
     expect(claimLegend('CONTESTED', 2)).toContain('NEXT MISS LAPSES');
     expect(claimLegend('LAPSED', 3)).toContain('BOND SLASHED');

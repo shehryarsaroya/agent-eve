@@ -362,7 +362,15 @@ describe('THE ACCEPTANCE TEST — enrol, graduate, claim, pay, miss, lapse', () 
     expect(row['paid']).toBe(0);
     expect(row['owed']).toBe(row['due']);
     expect(row['state']).toBe('SUPPLIED');
-    expect(row['legend']).toBe('PAID');
+    // ★ SUPPLIED is last night's verdict; tonight's bill is unpaid, so the label must not say PAID.
+    // A blind player read `legend: PAID` beside `paid: 0` and `if_you_do_nothing: ENTERS_ARREARS`.
+    expect(row['legend']).toBe(`CHARGE DUE · 0 of ${String(row['due'])} PAID`);
+    expect(String(row['legend'])).not.toMatch(/^ARREARS/);
+    // And the prompt says so too, rather than "Nothing is waiting on you" beside a preview of arrears.
+    const prompt = String((observation['briefing'] as Row)['prompt']);
+    expect(prompt).not.toContain('Nothing is waiting on you');
+    expect(prompt).toContain(`The Charge on your claim at ${system} is not paid`);
+    expect(String((observation['briefing'] as Row)['if_you_do_nothing'])).not.toContain('.;');
     expect(row['arrears']).toBe(0);
     expect(row['arrears_of']).toBe(CHARGE_MISSES_TO_LAPSE - 1);
 

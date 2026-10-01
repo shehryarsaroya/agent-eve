@@ -137,21 +137,27 @@ describe("tomorrow's docket is built from what is actually riding", () => {
       claimed += 1;
       const v = rt.ventures.get(card.venture);
       expect(v, 'a card names a venture that exists').toBeDefined();
+      // The oracle is the definition, stated independently: a venture that BOUND and FINISHED
+      // (`SETTLED` or `DEFAULTED` — an ABANDONED formation keeps its fills and was never a deal), with
+      // the creator and somebody OTHER than the creator both parties to it, whichever of them made it.
+      // The old oracle repeated the bug it was checking: `resolvedAtTick !== null`, creator-only, and
+      // a filler set that included the creator's own role.
       const fillers = new Set(
         (v?.roles ?? [])
           .map((r) => r.filledByPrincipal)
-          .filter((x): x is PrincipalId => x !== null)
+          .filter((x): x is PrincipalId => x !== null && x !== v?.creator)
           .map(String),
       );
       const shared = rt.ventures
         .all()
-        .filter((past) => past.id !== card.venture && past.resolvedAtTick !== null)
-        .filter((past) => past.creator === v?.creator)
-        .some((past) =>
-          past.roles.some(
-            (r) => r.filledByPrincipal !== null && fillers.has(String(r.filledByPrincipal)),
-          ),
-        );
+        .filter((past) => past.id !== card.venture && (past.state === 'SETTLED' || past.state === 'DEFAULTED'))
+        .some((past) => {
+          const parties = new Set([
+            String(past.creator),
+            ...past.roles.map((r) => r.filledByPrincipal).filter((x) => x !== null).map(String),
+          ]);
+          return parties.has(String(v?.creator)) && [...fillers].some((f) => parties.has(f));
+        });
       expect(
         shared,
         `${card.venture}'s card says these parties have dealt before, and no resolved venture shares ` +
@@ -190,7 +196,8 @@ describe("tomorrow's docket is built from what is actually riding", () => {
             .filter((x): x is PrincipalId => x !== null)
             .map(String),
         );
-        for (const relation of rt.relationsFor(v?.creator as PrincipalId)) {
+        // Uncapped: the default cap is six counterparties, and a break with a seventh is still a break.
+        for (const relation of rt.relationsFor(v?.creator as PrincipalId, Number.MAX_SAFE_INTEGER)) {
           if (!fillers.has(String(relation.other))) continue;
           expect(
             relation.broke + relation.youBroke,

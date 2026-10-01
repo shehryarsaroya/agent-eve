@@ -345,7 +345,11 @@ export function deliveryFault(args: {
   const room = args.deliverer === args.payer ? args.owing.owed : args.owing.purchasableOwed;
   if (room <= 0) {
     return args.deliverer === args.payer
-      ? 'this assessment is already discharged in full.'
+      ? // The key phrase stays first and verbatim: the corrections ring collapses on it, and a
+        // standing order that reads it is SATISFIED rather than stuck — say so where it is read.
+        'this assessment is already discharged in full. Nothing more is owed this Reckoning: a standing ' +
+        'delivery order that reads this is satisfied, not stuck — it stays armed and pays the next ' +
+        "Reckoning's bill, so it needs nothing from you."
       : `${args.payer}'s assessment has ${String(args.owing.presenceOwed)} left that only its own hand can ` +
           'carry: a stated share of every Levy is non-escrowable and cannot be bought as a service.';
   }

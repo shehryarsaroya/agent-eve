@@ -41,6 +41,12 @@ const obj = (v: unknown): Row => (typeof v === 'object' && v !== null ? (v as Ro
 const rows = (v: unknown): Row[] => (Array.isArray(v) ? v.map(obj) : []);
 
 const IDLE_HANDS_LINE = 'Nothing is waiting on you';
+/**
+ * The fallback family: the idle line, or — once the Levy has been assessed and is unpaid — the Levy
+ * line that now replaces it, because "nothing is waiting on you" beside an `if_you_do_nothing` that
+ * records a public shortfall was the briefing disagreeing with itself (a blind playtest's report).
+ */
+const QUIET = /Nothing is waiting on you|Your Levy assessment is not paid/;
 
 /** The campaign fixture's own submit-and-run helper, re-exported under the local name. */
 const act2 = campaignAct;
@@ -129,11 +135,11 @@ describe('the dilemma names the delegate, the grant and the leak', () => {
       expires_tick: 400,
     });
     // Issuing a grant is STILL not a dilemma: it is the USE that is news. A branch that fired here
-    // would nag every grantor forever and would be ignored within one wake.
-    expect(
-      String(obj(observe(w.rt, w.grantor)['briefing'])['prompt']),
-      'a delegate that has done nothing is not a dilemma',
-    ).toContain(IDLE_HANDS_LINE);
+    // would nag every grantor forever and would be ignored within one wake. (The tick the grant took
+    // also issued the first Levy, so the quiet line is now the Levy's — still not the delegate's.)
+    const quiet = String(obj(observe(w.rt, w.grantor)['briefing'])['prompt']);
+    expect(quiet, 'a delegate that has done nothing is not a dilemma').toMatch(QUIET);
+    expect(quiet, 'and the delegate is not named').not.toContain(String(w.delegate));
 
     // The mole cuts a dossier on its grantor's books and hands it to a rival.
     act(w.rt, w.delegate, 'message', { to: w.rival, dossier: `${String(w.grantor)}/STORES` });

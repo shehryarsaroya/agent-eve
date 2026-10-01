@@ -46,7 +46,7 @@ import { reject, type Rejection } from '../world/result.js';
 // The manufactured half of an anchor. Imported from `works/` rather than re-declared here: the
 // alloy constants have one home and `test/core/goods-are-independent.test.ts` polices the discipline
 // that says a goods constant is never defined in terms of another.
-import { ALLOY_ANCHOR_QTY, ALLOY_GOOD, ALLOY_TIER } from '../works/params.js';
+import { ALLOY_ANCHOR_QTY, ALLOY_GOOD, ALLOY_IN_BY_TIER, ALLOY_TIER, WORKS_YIELD_GOOD } from '../works/params.js';
 import { bondCoversOneMore, bondNeededForOneMore, postedBondOf, type BondRead } from './bond.js';
 import type { Book, ClaimRecord } from './book.js';
 import { inVulnerabilityWindow, vulnerabilityViewAt } from './cycle.js';
@@ -204,11 +204,13 @@ export function claimRejection(args: {
   // currency, **manufactured administration goods**, and hub fuel."* Currency is the bond and the
   // cession price; hub fuel is `ANCHOR_FUEL_BY_TIER`; this is the third, and it was the missing one.
   //
-  // **The whole point is that no claimable system can make it.** `ALLOY_TIER` is COMMONS and every
-  // claim is outside the Commons (the tier gate above refuses a Commons claim as INVALID), so this
-  // line is what makes a territorial ambition depend on somebody else's industry and on a convoy that
-  // actually arrived. It is checked here, on the merits, before anything is destroyed — the ordering
-  // `vBuild`'s header calls "the honesty".
+  // **It is the EXPENSIVE half, not the impossible one.** Alloy refines anywhere, at a rate set by the
+  // tier the ore stands in (`ALLOY_IN_BY_TIER`: COMMONS 8 · MARCHES 32 · FRONTIER 64), and every claim
+  // is outside the Commons — so a claimant either refines its own at four to eight times the Commons
+  // price or buys Commons alloy and hauls it in. This comment, and the refusal below, used to say no
+  // claimable system could make any; `sovereignty/params.ts`'s statement was corrected for that and
+  // this refusal was missed. It is checked here, on the merits, before anything is destroyed — the
+  // ordering `vBuild`'s header calls "the honesty".
   //
   // A15: priced in produced goods and in *place*, never in identities. Ten puppets at one Commons
   // system refine exactly what one refines, because `Book.sharesAt` divides a tier yield that is a
@@ -218,10 +220,12 @@ export function claimRejection(args: {
       'A15',
       `raising an anchor also destroys ${String(ALLOY_ANCHOR_QTY)} units of ${ALLOY_GOOD} standing at ` +
         `${system}, and you have ${String(args.alloyAvailable)} unpledged there. ${ALLOY_GOOD} is the ` +
-        `manufactured good and it can only be refined at a ${ALLOY_TIER} system — ${system} is ${tier}, ` +
-        `so no amount of ore here becomes any. Buy it at a ${ALLOY_TIER} venue with \`trade\` and carry ` +
-        'it here with `haul`, or refine your own in the Commons and haul it out. This is the half of a ' +
-        'claim that somebody else has to have made for you.',
+        `manufactured good, and \`refine {"kind":"ALLOY"}\` makes it anywhere at a rate set by the tier: ` +
+        `${(['COMMONS', 'MARCHES', 'FRONTIER'] as const).map((t) => `${t} ${String(ALLOY_IN_BY_TIER[t])}:1`).join(' · ')}. ` +
+        `${system} is ${tier}, so refining the ${String(ALLOY_ANCHOR_QTY)} here costs ` +
+        `${String(ALLOY_ANCHOR_QTY * ALLOY_IN_BY_TIER[tier])} ${WORKS_YIELD_GOOD} standing at ${system}. Or buy it ` +
+        `at a ${ALLOY_TIER} venue with \`trade\` and carry it here with \`haul\` — the cheaper road depends on ` +
+        'what you are short of.',
     );
   }
   if (!bondCoversOneMore(book, principal, args.bondRead)) {

@@ -1004,7 +1004,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_680);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_946);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1054,7 +1054,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 108,680 = **11,320**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 102,169 — leaving **17,831**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_680);
+    // ── ★ AND +266: TWO CORRECTIONS A BLIND PLAYTEST FORCED ─────────────────
+    //
+    // §4's EXPOSURE bullet now says a venture's escrow is not in `exposure.mine` (+220, on every
+    // position that reads the stake block), and §11A's ANCHOR line drops "only the Commons refines
+    // it" — a prohibition the engine does not enforce — for the gradient (+46, on all eight). The
+    // newcomer moves +46 only, which is the stake block's gate working.
+    //
+    // Analytic margin 120,000 − 108,946 = **11,054**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 102,435 — leaving **17,565**, against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_946);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1126,7 +1135,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // `at_stake` and four previously-unnamed fields (+2,663, act-gated). Read, not added.
     // ★ +848: §5/§6/§7 document `header.next_decision_at`, the clock the paste block paces by.
     // Margin 120,000 − 102,169 = **17,831** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(102_169);
+    // ★ +266: §4's escrow-is-not-EXPOSURE sentence and §11A's corrected alloy line.
+    // Margin 120,000 − 102,435 = **17,565** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(102_435);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2797,13 +2808,20 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //
       // §5's bullet, §6's header line and §7's Budgets sentence, all in the always-selected family,
       // so every position pays the same and nothing was displaced. Read, not added.
-      48_497, // a newcomer on its first wake            (+848: next_decision_at)
-      57_947, // mid-game in the Commons                 (+848)
-      67_642, // about to take territory                 (+848)
-      70_784, // at war: party to a live campaign        (+848)
-      100_668, // a claimant in trouble                  (+848)
-      82_554, // the Commons at its fullest              (+848)
-      102_169, // outside the Commons and landless, at its fullest: the largest REACHABLE (+848)
+      // ── ★ THEN +266 ON SEVEN AND +46 ON THE NEWCOMER: two corrections a blind playtest forced ──
+      //
+      //   §4   a venture's escrow is not in `exposure.mine`        +220  (the stake block's readers)
+      //   §11A "only the Commons refines it" → the price gradient    +46  (every position)
+      //
+      // The newcomer is not offered a stake-bearing act, so it reads §11A's line and not §4's — the
+      // gate, measured. Read, not added.
+      48_543, // a newcomer on its first wake            (+848, then +46)
+      58_213, // mid-game in the Commons                 (+848, then +266)
+      67_908, // about to take territory                 (+848, then +266)
+      71_050, // at war: party to a live campaign        (+848, then +266)
+      100_934, // a claimant in trouble                  (+848, then +266)
+      82_820, // the Commons at its fullest              (+848, then +266)
+      102_435, // outside the Commons and landless, at its fullest: the largest REACHABLE (+848, +266)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -2978,7 +2996,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      108_680, // the analytic ceiling                    (+848: next_decision_at)
+      108_946, // the analytic ceiling                    (+848: next_decision_at, then +266)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

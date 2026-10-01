@@ -71,16 +71,39 @@ import { FUEL_GOOD } from '../works/params.js';
 export const ARREARS_STEPS = CHARGE_MISSES_TO_CONTEST;
 
 /**
+ * This Reckoning's Charge, for the one legend whose truth depends on it. See {@link claimLegend}.
+ */
+export interface LegendCharge {
+  readonly due: number;
+  readonly paid: number;
+  readonly owed: number;
+}
+
+/**
  * The label, and it is a rules surface: it is what a viewer believes and what an agent reads.
  *
  * `PAID` · `ARREARS 1 of 2` · `ARREARS 2 of 2 · NEXT MISS LAPSES` — the three the corrected
  * design names, plus the two terminal ones a viewer is owed the difference between (a lapse
  * is the world taking the claim; a cession is the holder letting go and salvaging).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **`SUPPLIED` IS LAST NIGHT'S VERDICT, AND "PAID" IS A CLAIM ABOUT TONIGHT'S BILL.**
+ *
+ * The state is written at settlement; the Charge is assessed fresh every Reckoning. So every
+ * SUPPLIED claim read `PAID` from the moment its new bill was issued until it was delivered — a
+ * blind player saw `{legend: PAID, paid: 0, owed: 4000, if_you_do_nothing: ENTERS_ARREARS}` in one
+ * row. When the caller hands over this Reckoning's figures the label says what is true of them:
+ * `CHARGE DUE · <paid> of <due> PAID` while anything is owed, `PAID` once it is all delivered, and
+ * `NOTHING DUE` when no Charge was levied. It never begins with `ARREARS` — that word is the legal
+ * state's, and `assertFrameBudgets` holds the two together.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-export function claimLegend(state: ClaimState, misses: number): string {
+export function claimLegend(state: ClaimState, misses: number, charge?: LegendCharge): string {
   switch (state) {
     case 'SUPPLIED':
-      return 'PAID';
+      if (charge === undefined) return 'PAID';
+      if (charge.due <= 0) return 'NOTHING DUE';
+      return charge.owed > 0 ? `CHARGE DUE · ${String(charge.paid)} of ${String(charge.due)} PAID` : 'PAID';
     case 'STRAINED':
       return `ARREARS ${String(Math.max(1, misses))} of ${String(ARREARS_STEPS)}`;
     case 'CONTESTED':
@@ -295,7 +318,7 @@ function claimView(
     tier,
     claimant: claim.claimant,
     state: claim.state,
-    legend: claimLegend(claim.state, misses),
+    legend: claimLegend(claim.state, misses, { due: owing.assessment, paid: owing.paid, owed: owing.owed }),
     arrears: misses,
     arrears_of: ARREARS_STEPS,
     good: CHARGE_GOOD,
@@ -423,7 +446,13 @@ export function claimLinesFor(args: {
       system: claim.system,
       claimant: claim.claimant,
       state: claim.state,
-      legend: claimLegend(claim.state, settled?.misses ?? misses),
+      // This Reckoning's figures, as the observation's own row passes them, so the frame and the
+      // claimant's `observe` publish one legend for one claim (A9).
+      legend: claimLegend(claim.state, settled?.misses ?? misses, {
+        due: owing.assessment,
+        paid: owing.paid,
+        owed: owing.owed,
+      }),
       arrears: settled?.misses ?? misses,
       arrearsOf: ARREARS_STEPS,
       due: owing.assessment,

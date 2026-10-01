@@ -213,7 +213,7 @@ import { reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
 import { sign } from '../venture/sign.js';
 import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
-import { refine, refineKindOf, REFINE_KINDS } from '../works/refine.js';
+import { refine, refineKindOf, unknownRefineKindHint } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
@@ -2278,13 +2278,8 @@ import { rentApplies, rentOn, type RentTerms } from '../works/rent.js';
 import {
   ALLOY_ANCHOR_QTY,
   ALLOY_GOOD,
-  ALLOY_IN_QTY,
-  ALLOY_OUT_QTY,
   ALLOY_STATEMENT,
-  ALLOY_TIER,
   FUEL_GOOD,
-  REFINE_IN_QTY,
-  REFINE_OUT_QTY,
   WORKS_BUILD_QTY,
   WORKS_COST_MINOR,
   WORKS_GOOD,
@@ -8160,15 +8155,8 @@ export class Runtime {
     const namedKind = readString(req.params, ['kind', 'recipe', 'into']);
     const kind = refineKindOf(namedKind);
     if (kind === null) {
-      return reject(
-        'A2',
-        `refine has no kind "${String(namedKind)}". The recipes are ` +
-          `${REFINE_KINDS.map((k) => `{kind:"${k}"}`).join(' · ')} — ` +
-          `RATION is ${String(REFINE_IN_QTY)} ${WORKS_YIELD_GOOD} for ${String(REFINE_OUT_QTY)} ` +
-          `${WORKS_GOOD} anywhere, ALLOY is ${String(ALLOY_IN_QTY)} ${WORKS_YIELD_GOOD} for ` +
-          `${String(ALLOY_OUT_QTY)} ${ALLOY_GOOD} and runs ONLY at a ${ALLOY_TIER} system. ` +
-          'Omitting the kind means RATION.',
-      );
+      // The sentence lives beside the recipe table it quotes — `works/refine.ts`.
+      return reject('A2', unknownRefineKindHint(namedKind));
     }
     return refine(
       {
@@ -11460,24 +11448,46 @@ export class Runtime {
     fillers: readonly PrincipalId[],
     exclude: VentureId,
   ): 'NEVER' | 'HELD' | 'BROKEN' {
-    if (fillers.length === 0) return 'NEVER';
-    const wanted = new Set<string>(fillers.map(String));
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★ **"THEY HAVE DEALT BEFORE, AND IT HELD" — PRINTED ABOUT TWO PRINCIPALS WHO NEVER HAD.**
+    //
+    // A blind playtest read it on a public docket card, and three readings made it true for a pair
+    // that never dealt, each fixed here (a projection: the frame's docket is the only caller):
+    //
+    //   1. **The creator counted as its own counterparty.** `fillers` carries every filled role, the
+    //      creator's own included, so any earlier venture where it staffed its own role "dealt".
+    //   2. **ABANDONED counted as dealing.** `resolvedAtTick` is set for every terminal state and for
+    //      DEFERRED, and an abandoned formation keeps its fills — so two agents whose only contact was
+    //      a venture that never bound read as having dealt. Dealing is a venture that BOUND and
+    //      FINISHED: `SETTLED` or `DEFAULTED`.
+    //   3. **"It held" was checked against six counterparties.** `relationsFor`'s default cap is a
+    //      prompt budget; a default with a seventh-most-recent counterparty fell off the list and the
+    //      line said it held. The journal is walked in full either way; only the output was sliced.
+    //
+    // And dealing is symmetric now: the pair dealt if both were parties to a finished venture,
+    // whichever of them created it.
+    // ══════════════════════════════════════════════════════════════════════════
+    const others = fillers.filter((f) => f !== creator);
+    if (others.length === 0) return 'NEVER';
+    const wanted = new Set<string>(others.map(String));
     let dealt = false;
     for (const past of this.ventures.all()) {
-      if (past.id === exclude || past.resolvedAtTick === null) continue;
-      if (past.creator !== creator) continue;
+      if (past.id === exclude) continue;
+      if (past.state !== 'SETTLED' && past.state !== 'DEFAULTED') continue;
+      const parties = new Set<string>([String(past.creator)]);
       for (const role of past.roles) {
-        if (role.filledByPrincipal !== null && wanted.has(String(role.filledByPrincipal))) {
-          dealt = true;
-          break;
-        }
+        if (role.filledByPrincipal !== null) parties.add(String(role.filledByPrincipal));
       }
-      if (dealt) break;
+      if (!parties.has(String(creator))) continue;
+      if ([...wanted].some((w) => parties.has(w))) {
+        dealt = true;
+        break;
+      }
     }
     if (!dealt) return 'NEVER';
     // A break in EITHER direction makes "it held" false. Which of them broke it is the receipt
     // reel's job at settlement; the docket line only has to stop asserting something untrue.
-    for (const relation of this.relationsFor(creator)) {
+    for (const relation of this.relationsFor(creator, Number.MAX_SAFE_INTEGER)) {
       if (!wanted.has(String(relation.other))) continue;
       if (relation.broke > 0 || relation.youBroke > 0) return 'BROKEN';
     }

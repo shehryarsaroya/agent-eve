@@ -97,6 +97,25 @@ interface Recipe {
   readonly outQty: number;
 }
 
+/**
+ * The refusal for a `kind` {@link refineKindOf} does not recognise — **with the rates the engine runs.**
+ *
+ * It lived in `runtime.ts` and said *"ALLOY is 8 ore for 1 alloy and runs ONLY at a COMMONS system"*:
+ * the Commons rate quoted as the only rate, and a tier ban that does not exist. ALLOY refines anywhere
+ * at {@link tierRates}, which is what `agent.md` §7 and §11A, the affordance and every other refusal
+ * say. A typo'd kind is exactly the moment an agent is reading the recipe table, so the table it is
+ * handed is the engine's own.
+ */
+export function unknownRefineKindHint(named: string | null): string {
+  return (
+    `refine has no kind "${String(named)}". The recipes are ` +
+    `${REFINE_KINDS.map((k) => `{kind:"${k}"}`).join(' · ')} — RATION is ${String(REFINE_IN_QTY)} ` +
+    `${WORKS_YIELD_GOOD} for ${String(REFINE_OUT_QTY)} ${WORKS_GOOD} anywhere; ALLOY makes ` +
+    `${String(ALLOY_OUT_QTY)} ${ALLOY_GOOD} anywhere too, from an amount of ${WORKS_YIELD_GOOD} set by the ` +
+    `tier you stand in: ${tierRates()}. Omitting the kind means RATION.`
+  );
+}
+
 /** Parse a `kind` param. Unknown spellings are refused by name rather than defaulted (A2). */
 export function refineKindOf(named: string | null): RefineKind | null {
   if (named === null) return 'RATION';

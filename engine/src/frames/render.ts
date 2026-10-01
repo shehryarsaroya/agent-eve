@@ -427,7 +427,9 @@ function headlineFor(src: FrameSource, v: SettledView): string {
  * why §14.1 makes the docket the default view rather than the map.
  */
 function headlineForUpcoming(src: FrameSource, u: UpcomingView): string {
-  const named = [...u.parties].sort(compareIds);
+  // De-duplicated: a creator that fills its own role is in `parties` twice, and the card used to read
+  // "alpha's 3K is riding on alpha" — a principal named as its own counterparty.
+  const named = [...new Set(u.parties)].sort(compareIds);
   const first = named[0];
   const second = named[1];
   if (first === undefined) return `${money(u.atStake)} is riding on a promise.`;

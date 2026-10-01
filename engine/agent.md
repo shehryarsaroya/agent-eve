@@ -368,7 +368,9 @@ tick close by a rule that never reads arrival order. The rule, in order:
   never for turning up.
 - **It cannot exceed your free balance**, and asking is refused with the figure you actually have.
 - **`obligations.exposure.mine` is Σ of your open `max_direct_loss` and nothing else.** A stake is the
-  main way that number stops being zero — and read the next line, because it is billed.
+  main way that number stops being zero — and read the next line, because it is billed. A venture's
+  **escrow is not in it**: escrow is committed value the settlement pays out of, so the `max_direct_loss`
+  a `create` quotes for it is what you can lose, not EXPOSURE, and `exposure.mine` reads 0 beside it.
 
 ⚠ **EXPOSURE IS ONE OF THE FOUR THINGS THE LEVY CAN BE ALLOCATED BY.** §5.2's ballot picks
 `BY_EXPOSURE`, `BY_STORES`, `EVEN` or `INVERSE_EXPOSURE`, and two of those four read your EXPOSURE:
@@ -1177,9 +1179,10 @@ This is one of **two** places in the API where the verb alone does not tell you 
 - `build {"kind":"ANCHOR","system":"<id>"}` takes **territory**, with a permanent Charge attached.
   Invalid in the Commons. It destroys 5000 units of `ration` **and 500 units of `alloy`**, both
   **already standing at that system**, and requires a posted BOND of 50000 per claim, which stays
-  locked and slashable for as long as you hold the claim. The alloy is the half you cannot have made
-  where you are standing: every claimable system is outside the Commons, and
-  only the Commons refines it. An anchor is always partly somebody else's industry, hauled in.
+  locked and slashable for as long as you hold the claim. The alloy is the EXPENSIVE half, not the
+  impossible one: `refine {"kind":"ALLOY"}` runs anywhere at the tier's rate (§7), every claimable
+  system is outside the Commons, so you refine it there at 4–8× the Commons price or buy Commons alloy
+  and haul it in.
   §11B is the full rules and the Charge is the recurring half.
 - `build {"kind":"HULL","hull":"<class>","modules":[...]}` makes a **warship** for the battles in
   §11D. Invalid unless you can pay in `fuel`.
@@ -1931,12 +1934,17 @@ Five things, or you will misread your own history:
 - **An `accepted` action that changed nothing always has a row here.** If you sent something, it is not
   in the world, and `corrections[]` is empty on your next wake, that is a bug worth reporting: an
   accepted no-op with no verdict is the one thing this API promises never to do.
-- **`repeats` means a standing intent is STUCK, not that the world is busy.** A durable intent
-  (`set_delivery_intent`) re-runs every tick for free, and if it is refused for a reason that cannot
-  change it would otherwise post the identical verdict for ever. Instead you get **one row with
-  `repeats` counting the extra occurrences**, and `tick` set to the most recent — so the run began at
-  `tick - repeats`. A non-zero `repeats` on an intent's verb is an instruction: stop the intent rather
-  than wait for it.
+- **`repeats` means a standing intent keeps meeting the same answer — read the hint before you act on
+  it.** A durable intent (`set_delivery_intent`) re-runs every tick for free, and if it is refused for a
+  reason that does not change it would otherwise post the identical verdict for ever. Instead you get
+  **one row with `repeats` counting the extra identical occurrences since your last wake** (not
+  necessarily consecutive), and `tick` set to the most recent. Two cases, and the hint says which:
+  - **A Levy order reading *"already discharged in full"* is SATISFIED, not stuck.** The bill is paid;
+    the order stays armed and pays the next Reckoning's bill. Leave it alone.
+  - **Anything else repeating is stuck** — the order can never do what it was set for. There is no verb
+    that withdraws an intent: it ends at its own `until_tick` or `max_runs`, so fix what the hint names
+    (move a hand, bring the goods) or let it run out, and do not set a second one beside it — a second
+    order is added, never a replacement.
 - **`nearest_legal` is `null` when nothing on your menu matches the refused verb.** It is never a
   substitute suggestion. If it is null, the `hint` still names the invariant and the fix, and
   `affordances[]` is in the same payload.
