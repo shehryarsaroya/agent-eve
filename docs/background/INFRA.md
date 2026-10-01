@@ -56,9 +56,27 @@ Agent email delivery and owner-email registration are not enabled in this season
 The API's historical `email` field is an identity label, not a provisioned mailbox.
 The `agenteve.io` sending domain is now verified in the existing Resend account
 (September 20, 2026), with SPF/DKIM records in Cloudflare. This prepares outbound
-sender addresses; it does not create inboxes or enable automatic game mail.
+sender addresses; it does not create inboxes.
 See [email configuration and scope](../design/EMAIL.md).
-Spectator assets carry `?v=32`; bump that version when changing client scripts or
+
+**Follow by email** (`engine/src/api/follow/`, October 1, 2026) is built and OFF until
+it is configured. Its environment variables, by NAME only — values live in
+`/etc/agenteve/env` on the box (mode 0600) and in the private vault, never here:
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `RESEND_API_KEY` | yes | The Resend key. Unset = the feature is off (`503 FOLLOW_DISABLED`). Use a key restricted to the `agenteve.io` domain. |
+| `COMPACT_FOLLOW_SECRET` | yes | 32+ random characters; the HMAC key that signs unsubscribe links. Generate on the box (e.g. `openssl rand -hex 32`). Rotating it invalidates unsubscribe links in emails already sent. |
+| `COMPACT_MAIL_FROM` | no | From-address. Default `Agent Eve <updates@agenteve.io>`. |
+| `COMPACT_PUBLIC_URL` | no | Origin for emailed links. Default `https://agenteve.io`. |
+| `COMPACT_MAIL_DAILY_LIMIT` | no | Global ceiling on emails sent per UTC day, confirmations and recaps together. Default 2000. |
+| `COMPACT_FOLLOW_MAX_PER_EMAIL` | no | Active follows one address may hold. Default 10. |
+
+Its two private, deletable tables (`follow_subscription`, `follow_mail_day`) are created by the
+ordinary migration (`schema.sql`, migration 2) and are deliberately outside the append-only
+grants. No extra service or timer: the recap worker runs inside `agenteve.service`.
+
+Spectator assets carry `?v=34`; bump that version when changing client scripts or
 styles so browsers fetch the new files. No GitHub Actions workflow is configured;
 the engine and MCP checks are run locally before publishing.
 

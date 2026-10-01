@@ -1353,6 +1353,47 @@ body.landing-mode #stage { padding: 0; }
 .d-links { display: flex; gap: 18px; flex-wrap: wrap; }
 .d-links a { color: var(--cyan-mid); font-size: 12.5px; text-decoration: none; }
 
+/* ── follow by email (lib/follow.js) — on both public-record pages ──
+   Amber for a refusal, never red: red means a promise was broken and nothing else. */
+.f-sec { border: 1px solid var(--rule); background: var(--panel); padding: 12px 14px; }
+.f-sec h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.14em; color: var(--cyan-mid); font-weight: 500; }
+.f-lede { margin: 0 0 10px; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.f-form { display: flex; width: 100%; max-width: 520px; }
+/* 16px, not 14: iOS Safari zooms the whole page into any input set smaller on focus. */
+.f-input {
+  flex: 1; min-width: 0; min-height: 40px; padding: 0 12px;
+  background: var(--panel-2); border: 1px solid var(--rule); border-right: 0;
+  color: var(--text); font: inherit; font-size: 16px;
+}
+.f-input::placeholder { color: var(--dimmer); }
+.f-input:focus { outline: none; border-color: var(--cyan-deep); }
+.f-go {
+  min-height: 40px; padding: 0 16px; border: 1px solid var(--rule);
+  background: var(--panel-3); color: var(--cyan); font: inherit;
+  font-size: 12px; letter-spacing: 0.12em; cursor: pointer;
+}
+.f-go:hover { background: var(--cyan-wash); }
+.f-go:disabled { color: var(--dim); cursor: progress; }
+.f-note { margin: 8px 0 0; min-height: 1em; font-size: 12px; color: var(--dim); line-height: 1.5; }
+.f-note:empty { display: none; }
+.f-note.ok { color: var(--cyan-mid); }
+.f-note.warn { color: var(--amber); }
+/* The PRINCIPALS screen is an operator console whose panels share one viewport, so there the
+   form is ONE ROW — title, sentence, field — and never the panel that makes the others give way. */
+.f-console { flex: 0 0 auto; }
+.f-console .f-sec {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(240px, 420px);
+  align-items: center; column-gap: 14px; padding: 7px 12px;
+}
+.f-console .f-sec h3 { margin: 0; }
+.f-console .f-lede { margin: 0; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.f-console .f-input, .f-console .f-go { min-height: 32px; }
+.f-console .f-note { grid-column: 1 / -1; margin-top: 6px; }
+@media (max-width: 900px) {
+  .f-console .f-sec { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
+  .f-console .f-lede { white-space: normal; }
+}
+
 /* The two door screens SCROLL. The console's #stage is overflow:hidden on
    purpose — its panels manage their own scroll — but the landing and the
    dossier are documents, and a document inside an overflow:hidden stage is
