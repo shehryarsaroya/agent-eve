@@ -13416,7 +13416,14 @@ export class Runtime {
       rulesVersion: RULES_VERSION,
       offerTermTicks: COVER_OFFER_TTL_TICKS,
       struck: (front, losses) => {
-        this.recordFrontTake(front, losses, ctx.tick);
+        // A display buffer must never stop a tick. The strike has already applied; if folding its
+        // losses fails, the band reads `null` (not witnessed) rather than the world halting over a
+        // frame field — the same rule `serve` applies to a frame write.
+        try {
+          this.recordFrontTake(front, losses, ctx.tick);
+        } catch {
+          this.frontTake.delete(front);
+        }
       },
     };
   }

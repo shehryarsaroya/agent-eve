@@ -10,8 +10,8 @@
 >
 > Presentation and onboarding defects only; **world computation is unchanged** — a 12-member
 > heuristic world plus outsiders exercising every changed refusal path produced the identical
-> `state_hash` on all 1,500 ticks under the old and new trees (front strike, Levy and settlements
-> included). What moved:
+> `state_hash` on every tick under the old and new trees, on two seeds (1,500 and 2,100 ticks;
+> front strikes, Levy sweeps and settlements included). What moved:
 >
 > - **Wake pacing.** The paste block said "Wake every ~20 minutes" (16 wakes gone in ~5 h). It and
 >   `agent.md` §0/§5/§6/§7 now pace by `header.next_decision_at`, which now names the last tick an

@@ -5805,8 +5805,8 @@ function promptFor(
   }
   // ★ A Charge owed outranks an opportunity on the board: missing it is public arrears on territory
   // you hold, and at the last step the claim lapses with the bond slashed — permanence before
-  // opportunity, the ladder's own rule. See {@link obligationPressure}.
-  const charge = obligationPressure(runtime, principal, tick, 'CHARGE');
+  // opportunity, the ladder's own rule. See {@link chargePressure}.
+  const charge = chargePressure(runtime, principal, tick);
   if (charge !== null) return charge;
   if (board.length > 0) {
     const first = board[0];
@@ -5882,7 +5882,7 @@ function promptFor(
   // ★ And the Levy, last before the fallback — it is owed by everybody all cycle, so above the board
   // it would drown every opportunity; below it, "Nothing is waiting on you" can no longer be said
   // while `if_you_do_nothing` one key over records a public shortfall.
-  const levy = obligationPressure(runtime, principal, tick, 'LEVY');
+  const levy = levyPressure(runtime, principal, tick);
   if (levy !== null) return `${levy} ${String(idle)} of your hands are idle.`;
   // ── ★ THE TAIL SENTENCE NAMED A TIER THE READER MAY HAVE LEFT ──────────────
   //
@@ -5903,45 +5903,44 @@ function promptFor(
 }
 
 /**
- * ★ **A Charge or a Levy still owed** — the two obligations `promptFor`'s ladder never read.
+ * ★ **A Charge still owed** — one of the two obligations `promptFor`'s ladder never read.
  *
  * ══════════════════════════════════════════════════════════════════════════
  * A blind player read *"Nothing is waiting on you"* while `if_you_do_nothing`, one key over in the
  * same object, warned that a claim would go into public ARREARS tonight — and the same held for an
- * unpaid Levy, which is owed by everybody from the first tick of every Reckoning. `agent.md` §6 says
- * the prompt *"reaches 'nothing is waiting on you' only when all of those are empty — if it says
- * that and `if_you_do_nothing` disagrees, report it"*: this is that report, fixed.
+ * unpaid Levy ({@link levyPressure}), which is owed by everybody from the first tick of every
+ * Reckoning. `agent.md` §6 says the prompt *"reaches 'nothing is waiting on you' only when all of
+ * those are empty — if it says that and `if_you_do_nothing` disagrees, report it"*: this is that
+ * report, fixed.
  *
  * Read from the SAME calls `ifYouDoNothing` makes (`claimsFor`, `levyBlockFor`) and quoting the
  * claim row's own `consequence`, so the prompt and the preview cannot disagree about either debt.
+ * Two functions rather than one taking `'CHARGE' | 'LEVY'`: both are §3 canon terms, and a union
+ * spelled with them would be a second use of each (the repo-wide vocabulary guard says so).
  * ══════════════════════════════════════════════════════════════════════════
  */
-function obligationPressure(
-  runtime: Runtime,
-  principal: PrincipalId,
-  tick: number,
-  which: 'CHARGE' | 'LEVY',
-): string | null {
-  const settlement = nextSettlement(tick);
-  if (which === 'CHARGE') {
-    const failing = runtime
-      .claimsFor(principal, tick)
-      .filter((c) => c.if_you_do_nothing !== 'STAYS_SUPPLIED' && c.owed > 0)
-      .sort((a, b) => b.owed - a.owed || cmp(a.claim, b.claim));
-    const first = failing[0];
-    if (first === undefined) return null;
-    return (
-      `The Charge on your claim at ${first.system} is not paid: ${String(first.owed)} of ${first.good} is owed ` +
-      `by tick ${String(first.deadline_tick)}. ${first.consequence}` +
-      (failing.length > 1 ? ` (${String(failing.length - 1)} more claim(s) of yours owe a Charge too.)` : '')
-    );
-  }
+function chargePressure(runtime: Runtime, principal: PrincipalId, tick: number): string | null {
+  const failing = runtime
+    .claimsFor(principal, tick)
+    .filter((c) => c.if_you_do_nothing !== 'STAYS_SUPPLIED' && c.owed > 0)
+    .sort((a, b) => b.owed - a.owed || cmp(a.claim, b.claim));
+  const first = failing[0];
+  if (first === undefined) return null;
+  return (
+    `The Charge on your claim at ${first.system} is not paid: ${String(first.owed)} of ${first.good} is owed ` +
+    `by tick ${String(first.deadline_tick)}. ${first.consequence}` +
+    (failing.length > 1 ? ` (${String(failing.length - 1)} more claim(s) of yours owe a Charge too.)` : '')
+  );
+}
+
+/** ★ **The Levy still owed** — {@link chargePressure}'s twin, for the obligation nobody sits out. */
+function levyPressure(runtime: Runtime, principal: PrincipalId, tick: number): string | null {
   const levy = runtime.levyBlockFor(principal, tick);
   const short = levy === null ? 0 : Math.max(0, levy.shortfall_if_unpaid ?? 0);
   if (levy === null || short <= 0) return null;
   return (
     `Your Levy assessment is not paid: ${String(short)} is still owed, deliverable at ${String(levy.deliverable_to)}, ` +
-    `and unpaid at tick ${String(settlement)} it is recorded as a public shortfall against you.`
+    `and unpaid at tick ${String(nextSettlement(tick))} it is recorded as a public shortfall against you.`
   );
 }
 
