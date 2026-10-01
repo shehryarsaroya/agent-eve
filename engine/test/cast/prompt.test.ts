@@ -1007,7 +1007,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_177);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_254);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1076,9 +1076,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ranking its DORMANT rung. §9's standing-intent block is in a section the cast is never shown, so
     // it costs no cell. MEASURED against this tree, not added.
     //
-    // Analytic margin 120,000 − 111,177 = **8,823**. The reachable maximum is `outside the Commons
-    // and landless, at its fullest` at 104,666 — leaving **15,334**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_177);
+    // Then +77 on the four positions that hold a grant: §10's preamble said a delegated `create` draws
+    // the venture's elective "total — every role's unsecured part added up", the PRICE the gate stopped
+    // charging; it now names the worst case `create` quotes. A correction, which is the spend that is
+    // never optional.
+    //
+    // Analytic margin 120,000 − 111,254 = **8,746**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 104,743 — leaving **15,257**, against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_254);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1152,7 +1157,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Margin 120,000 − 102,169 = **17,831** against a required 4,000.
     // ★ +266: §4's escrow-is-not-EXPOSURE sentence and §11A's corrected alloy line.
     // Margin 120,000 − 102,435 = **17,565** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(104_666);
+    // ★ +2,231 at 41 (Season 1's two gated blocks and its FLOOR corrections), then +77 for §10's
+    // delegated-create sentence, corrected from the price to the worst case `create` quotes.
+    // Margin 120,000 − 104,743 = **15,257** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(104_743);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2845,9 +2853,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       60_444, // mid-game in the Commons                 (+848, +266, then +2,231 at 41)
       70_139, // about to take territory                 (+848, +266, then +2,231 at 41)
       73_281, // at war: party to a live campaign        (+848, +266, then +2,231 at 41)
-      103_165, // a claimant in trouble                  (+848, +266, then +2,231 at 41)
-      85_051, // the Commons at its fullest              (+848, +266, then +2,231 at 41)
-      104_666, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,231 at 41)
+      103_242, // a claimant in trouble                  (+848, +266, then +2,231 and +77 at 41)
+      85_128, // the Commons at its fullest              (+848, +266, then +2,231 and +77 at 41)
+      104_743, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308 at 41)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3022,7 +3030,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      111_177, // the analytic ceiling                    (+848, +266, then +2,231 at 41)
+      111_254, // the analytic ceiling                    (+848, +266, then +2,231 and +77 at 41)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

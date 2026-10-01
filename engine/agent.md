@@ -868,9 +868,10 @@ numbers bound what a delegate can cost you, including through *destruction* rath
 delegate cannot simply send your hands somewhere they will be lost and call it within budget.
 
 **Both limits are enforced, and a delegated `create` draws on both.** The escrow it locks out of your
-stores draws on `max_direct_loss`; the venture's **elective** total — every role's unsecured part
-added up — draws on `max_contingent_liability`, because that is what *you* are asked for at the
-Reckoning and staying silent is a decline, which is a permanent public default. Those two are
+stores draws on `max_direct_loss`; the venture's **elective** worst case — every role's unsecured part
+at the top of its band, added up, exactly what the `create` affordance quotes — draws on
+`max_contingent_liability`, because that is what *you* can be asked for at the Reckoning and staying
+silent is a decline, which is a permanent public default. Those two are
 separate budgets and neither is counted as the other. **`max_contingent_liability: 0` means your
 delegate cannot create anything on your behalf at all**, because every role carries an elective part;
 the top-yield kinds (`BUILD`, `SIEGE`) are un-escrowable, so they lock no escrow and are 100%

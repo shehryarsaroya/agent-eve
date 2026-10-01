@@ -481,9 +481,13 @@ describe('scar #1 — agent.md and the engine describe the same gate', () => {
     // a failure rather than a silent lie to every player.
     const doc = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
     expect(doc).toContain('a delegated `create` draws on both');
+    // ★ The WORST CASE, not the price: the gate charges `maxElectiveLiability` (`Runtime.vCreate`), and
+    // since `RULES_VERSION` 41 the `create` affordance quotes that same figure. This sentence used to
+    // say "elective total — every role's unsecured part added up", which is the price the gate
+    // stopped charging — a grantor budgeting by it had its delegate's create refused for INV-22.
     expect(doc).toContain(
-      "the venture's **elective** total — every role's unsecured part added up — draws on " +
-        '`max_contingent_liability`',
+      "the venture's **elective** worst case — every role's unsecured part at the top of its band, " +
+        'added up, exactly what the `create` affordance quotes — draws on `max_contingent_liability`',
     );
     expect(doc).toContain(
       '**`max_contingent_liability: 0` means your delegate cannot create anything on your behalf at all**',
