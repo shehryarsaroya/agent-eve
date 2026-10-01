@@ -1136,6 +1136,15 @@ export interface WorksLine {
   /** Live WORKS standing there. The crowding, which is the economic story. */
   readonly occupants: number;
   /**
+   * ★ The WORKS actually **dividing** the yield this tick — online and not DORMANT (`RULES_VERSION` 41).
+   *
+   * `occupants` counts structures standing; this counts the ones sharing. The gap is a WORKS whose
+   * holder has stopped playing, and on the live world it was 18.5% of all output paid to nobody. The
+   * identity a reader can check is now `sharePerTick + rentPerTick === trunc(yieldPerTick /
+   * extractors)` for an EXTRACTING line (largest remainder may hand one line a unit more).
+   */
+  readonly extractors: number;
+  /**
    * What this WORKS's holder **keeps** per tick at today's crowding: the share less the rent.
    *
    * ══════════════════════════════════════════════════════════════════════════
@@ -1151,8 +1160,17 @@ export interface WorksLine {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly sharePerTick: number;
-  /** `EXTRACTING` · `SPINNING UP 6 ticks` — the two words a viewer reads. */
+  /** `EXTRACTING` · `SPINNING UP 6 ticks` · `DORMANT` — the words a viewer reads. */
   readonly legend: string;
+  /**
+   * ★ The tick this WORKS stopped dividing its system's yield because its holder stopped playing, or
+   * null while it is not DORMANT (`RULES_VERSION` 41, `works/params.ts:WORKS_DORMANT_AFTER_TICKS`).
+   *
+   * `PUBLIC`, and `frames/projection.ts` argues it: the split is public arithmetic, and a neighbour can
+   * read this exact tick off its own extraction the moment its share rises. Nothing about the holder
+   * is lost while it shows — the WORKS stands, and it resumes the tick after its holder acts again.
+   */
+  readonly dormantSinceTick: number | null;
   /** Cumulative units the place has HANDED OVER to this WORKS, GROSS. Never a stock reading. */
   readonly extracted: number;
   /** The rate the claim on this system takes, in bps. Zero on unclaimed ground. */
@@ -2242,6 +2260,25 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     }
     if (line.occupants < 1) {
       problems.push(`${line.works} is drawn on ${line.system} with ${line.occupants} occupants`);
+    }
+    // ── ★ DORMANT MUST AGREE WITH ITS OWN FIELDS (`RULES_VERSION` 41) ───────────────
+    //
+    // A DORMANT line extracts nothing, which the `!extracting` checks already refuse a share, a rent and a
+    // fuel figure for; these refuse the two ways the new fields could contradict the legend or the
+    // crowding — a dormant tick on a working WORKS, or more WORKS sharing than are standing.
+    const dormant = line.legend === 'DORMANT';
+    if (dormant !== (line.dormantSinceTick !== null)) {
+      problems.push(
+        `${line.works} reads "${line.legend}" with dormantSinceTick ${String(line.dormantSinceTick)} — the legend and the tick disagree`,
+      );
+    }
+    if (line.extractors < 0 || line.extractors > line.occupants) {
+      problems.push(
+        `${line.works} reports ${String(line.extractors)} extractors among ${String(line.occupants)} occupants`,
+      );
+    }
+    if (extracting && line.extractors < 1) {
+      problems.push(`${line.works} reads EXTRACTING at a system where nothing is dividing the yield`);
     }
     // ── THE RENT SPLIT MUST ADD UP, ON SCREEN ────────────────────────────────
     //

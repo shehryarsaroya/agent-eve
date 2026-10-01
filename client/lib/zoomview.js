@@ -575,7 +575,9 @@ var ZoomView = (function () {
        *
        * A square that is still SPINNING UP is drawn hollow, because it is not
        * taking a share yet, and a viewer counting productive ground would
-       * otherwise count it. */
+       * otherwise count it. A DORMANT one is drawn grey and dotted for the
+       * same reason from the other end: it stands, its holder stopped playing,
+       * and it divides nothing until that holder acts again. */
       var SQ = 13, GAP = 4, n = Math.min(wk.length, 9);
       var cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(n))));
       var rows = Math.ceil(n / cols);
@@ -584,13 +586,15 @@ var ZoomView = (function () {
       wk.slice(0, 9).forEach(function (w, i) {
         var cc = i % cols, rr2 = Math.floor(i / cols);
         var up = /SPINNING/.test(w.legend || '');
+        var asleep = w.legend === 'DORMANT';
         g.appendChild(S('rect', {
-          class: 'zworks' + (up ? ' up' : ''),
+          class: 'zworks' + (up ? ' up' : '') + (asleep ? ' dormant' : ''),
           x: (x0 + cc * (SQ + GAP)).toFixed(1), y: (y0 + rr2 * (SQ + GAP)).toFixed(1),
           width: SQ, height: SQ,
         }, S('title', {
-          text: U.handleOf(w.holder) + ' · ' + w.legend + ' · ' + w.sharePerTick +
-            '/tick · ' + U.n(w.extracted) + ' extracted',
+          text: U.handleOf(w.holder) + ' · ' + w.legend +
+            (asleep && w.dormantSinceTick != null ? ' since t' + w.dormantSinceTick : '') +
+            ' · ' + w.sharePerTick + '/tick · ' + U.n(w.extracted) + ' extracted',
         })));
       });
       // a RUIN is a square with a cross through it, in the same grid — what
@@ -691,6 +695,12 @@ var ZoomView = (function () {
             : 'OCCUPANTS ' + (wk[0].occupants || wk.length) + ' · ' + wk[0].legend,
           c: spin ? 'am' : 'cy',
         });
+        // ★ DORMANT ground: how many stand idle and how many are dividing the yield,
+        // straight off `worksLines[].extractors` — the gap is the story.
+        var asleepN = wk.filter(function (w) { return w.legend === 'DORMANT'; }).length;
+        if (asleepN > 0) {
+          st.push({ t: 'DORMANT ' + asleepN + ' · ' + (wk[0].extractors != null ? wk[0].extractors : '?') + ' SHARING', c: 'dm' });
+        }
       }
       if (cl) {
         if (lastMiss) st.push({ t: 'ARREARS ' + cl.arrears + ' of ' + cl.arrearsOf + ' · NEXT MISS LAPSES', c: 'rd' });

@@ -4690,7 +4690,7 @@ export class Runtime {
     const tier = tierOf(this.world.map, system);
     return {
       taken: this.worksBook.rentTakenAt(system, reckoningOf(tick)),
-      tenants: this.worksBook.tenantsAt(system, claimant),
+      tenants: this.worksBook.tenantsAt(system, claimant, tick),
       perTick: qty(perTick),
       fuelDue: ANCHOR_FUEL_BY_TIER[tier],
       // Hot means "already fuelled for this Reckoning". A claim that needs no fuel is never cold:
@@ -7998,7 +7998,7 @@ export class Runtime {
    * These do not take a slot off the board: each is a condition the principal can clear (seal, pay,
    * wait a tick), and the slot is still one it is eligible for once it does.
    */
-  fillGateRefusalFor(principal: PrincipalId, atTick: number): Rejection | null {
+  ventureGateRefusalFor(principal: PrincipalId, atTick: number): Rejection | null {
     return (
       this.committingAt(atTick) ??
       this.sealComplianceAt(principal, atTick) ??
@@ -11563,18 +11563,25 @@ export class Runtime {
    */
   worksLines(tick: number): readonly WorksLine[] {
     const out: WorksLine[] = [];
+    // ★ The SAME split the PRODUCE phase pays, read once per system — `sharesAt` excludes a spinning-up
+    // WORKS and (since `RULES_VERSION` 41) a DORMANT one, so a mark can never quote a share the ledger
+    // does not move. It used to re-derive the division here as `yield / online`, which is one rule in
+    // two homes and would have gone on paying a dormant WORKS on screen.
+    const sharesBySystem = new Map<SystemId, ReadonlyMap<WorksId, Qty>>();
+    const sharesFor = (system: SystemId): ReadonlyMap<WorksId, Qty> => {
+      let shares = sharesBySystem.get(system);
+      if (shares === undefined) {
+        shares = this.worksBook.sharesAt(system, systemYield(this.world.map, system), tick);
+        sharesBySystem.set(system, shares);
+      }
+      return shares;
+    };
     for (const works of this.worksBook.liveInOrder()) {
       const occupants = this.worksBook.liveAt(works.system).length;
       const online = tick >= works.onlineAtTick;
+      const dormant = online && this.worksBook.isDormant(works.holder, tick);
       const terms = this.rentTermsAt(works.system);
-      // Divided by the ONLINE count, which is what `sharesAt` actually divides by — a mark
-      // quoting a share the engine does not pay would be the frame contradicting the ledger.
-      const gross = online
-        ? Math.trunc(
-            systemYield(this.world.map, works.system) /
-              Math.max(1, this.worksBook.liveAt(works.system).filter((w) => tick >= w.onlineAtTick).length),
-          )
-        : 0;
+      const gross = sharesFor(works.system).get(works.id) ?? 0;
       // The SAME function the PRODUCE phase splits with, so the mark and the ledger cannot
       // disagree about who keeps what. `sharePerTick` is the NET — see `WorksLine.sharePerTick`.
       const split = rentOn({ terms, extractor: works.holder, gross: qty(gross) });
@@ -11586,8 +11593,12 @@ export class Runtime {
         // so a viewer could not see which ground was worth taking — and neither could an agent.
         yieldPerTick: systemYield(this.world.map, works.system),
         occupants,
+        // ★ What the yield is actually divided by right now — online and not DORMANT. `occupants` counts
+        // standing structures; this counts the ones sharing, and the gap between them is the story.
+        extractors: this.worksBook.extractorsAt(works.system, tick),
         sharePerTick: split.net,
-        legend: online ? 'EXTRACTING' : `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`,
+        legend: !online ? `SPINNING UP ${String(works.onlineAtTick - tick)} ticks` : dormant ? 'DORMANT' : 'EXTRACTING',
+        dormantSinceTick: dormant ? this.worksBook.dormantFromTick(works.holder) : null,
         extracted: works.extracted,
         // The RATE, not "did anything move": at a small enough share the amount truncates to zero
         // while the rate is still in force, and reading the rate off `rent > 0` would draw a WORKS
@@ -11598,7 +11609,7 @@ export class Runtime {
         // The second good. A property of the **system** divided by the online count, exactly like
         // the first — so the map, and not a stockpile, is what a viewer reads (§11.2). Per-system
         // since §16.12 #1: some frontier ground makes far more fuel than the rest of it.
-        fuelPerTick: online
+        fuelPerTick: online && !dormant
           ? (this.worksBook.fuelSharesAt(works.system, systemFuelYield(this.world.map, works.system), tick).get(works.id) ?? 0)
           : 0,
         fuelExtracted: works.fuelExtracted,
@@ -12408,12 +12419,25 @@ export class Runtime {
   // ── WORKS: the production structure (§10.2, A15) ─────────────────────────
 
   /** Every live WORKS this principal holds. Read by `observe` and by the frame. */
-  worksOf(principal: PrincipalId): readonly { readonly id: string; readonly system: SystemId; readonly online: boolean; readonly extracted: number }[] {
+  worksOf(principal: PrincipalId): readonly {
+    readonly id: string;
+    readonly system: SystemId;
+    readonly online: boolean;
+    readonly extracted: number;
+    readonly dormant: boolean;
+    readonly dormant_from_tick: number | null;
+  }[] {
+    const tick = this.engine.tick;
     return this.worksBook.ofPrincipal(principal).map((w) => ({
       id: w.id,
       system: w.system,
-      online: this.engine.tick >= w.onlineAtTick,
+      online: tick >= w.onlineAtTick,
       extracted: w.extracted,
+      // ★ `RULES_VERSION` 41. Whether it is dividing its system's yield, and the tick it stops (or
+      // stopped) if this principal sends nothing more — the holder's own clock, read before it lapses.
+      // An extraction NEXT tick reads tick+1, so the flag is the one production will apply.
+      dormant: this.worksBook.isDormant(w.holder, tick + 1),
+      dormant_from_tick: this.worksBook.dormantFromTick(w.holder),
     }));
   }
 
@@ -12457,6 +12481,15 @@ export class Runtime {
      * ══════════════════════════════════════════════════════════════════════════
      */
     readonly occupiedBy: readonly PrincipalId[];
+    /**
+     * ★ **Which of those occupants are DORMANT** (`RULES_VERSION` 41) — standing, and dividing nothing.
+     *
+     * `PUBLIC` for `occupiedBy`'s reason: the frame draws each of them DORMANT, and A9 forbids the frame
+     * knowing more than an agent's own observe. They are excluded from the division below — today — and
+     * every one of them resumes the tick after its holder's next accepted action, so a quote that reads
+     * high because a neighbour is asleep is a quote about today, which is what it has always been.
+     */
+    readonly dormantBy: readonly PrincipalId[];
     /**
      * What this principal would **keep** per tick once online, at today's crowding and rent.
      *
@@ -12605,8 +12638,17 @@ export class Runtime {
     // never a question about anywhere else.
     // ══════════════════════════════════════════════════════════════════════════
     const held = this.worksBook.holdsAt(principal, system) > 0;
+    // ── ★ AND A DORMANT NEIGHBOUR DIVIDES NOTHING (`RULES_VERSION` 41) ─────────────
+    //
+    // The division counts the WORKS that would actually share the yield with yours: every occupant but
+    // a DORMANT one, plus yours. Yours is counted as working whatever its own clock says, because this is
+    // "what YOURS would take" and acting — which building is — is exactly what wakes it.
+    const dormantBy = standing
+      .filter((w) => w.holder !== principal && this.worksBook.isDormant(w.holder, this.engine.tick + 1))
+      .map((w) => w.holder);
+    const dividing = occupants - dormantBy.length;
     const quotedGross = Math.trunc(
-      systemYield(this.world.map, system) / (held ? Math.max(1, occupants) : occupants + 1),
+      systemYield(this.world.map, system) / (held ? Math.max(1, dividing) : dividing + 1),
     );
     const quotedTerms = this.rentTermsAt(system);
     const quotedSplit = rentOn({ terms: quotedTerms, extractor: principal, gross: qty(quotedGross) });
@@ -12668,6 +12710,7 @@ export class Runtime {
       occupants,
       // `liveAt` is already canonical by WORKS id (DET-2), so this order is stable across replays.
       occupiedBy: standing.map((w) => w.holder),
+      dormantBy,
       // ── THE CROWDING DIVISION IS ABOVE; THE RENT COMES OFF IT HERE ──────────
       //
       // Split with the SAME function the PRODUCE phase uses, so the quote and the ledger cannot
@@ -12930,6 +12973,15 @@ export class Runtime {
     // WORKS, so a viewer sees the total. What disappears is a per-tick narration nobody reads,
     // which is the definition of noise in an append-only record.
     void rows;
+
+    // ── ★ AND THEN THE DORMANT CLOCK, AFTER EXTRACTION (`RULES_VERSION` 41) ───────────
+    //
+    // Every action in the frozen window entered the queue, which is what "accepted" means to the seat
+    // lease and to `works/params.ts:WORKS_DORMANT_AFTER_TICKS`; a standing intent's own run is not in
+    // the window at all, so it is never counted as play. Folded in HERE, after the shares above were
+    // divided, so a returning principal's WORKS resumes on the tick AFTER its action — production at
+    // T reads the world as the window froze it, and an action resolving at T is part of T+1.
+    for (const action of ctx.actions) this.worksBook.notePlayed(action.principal, ctx.tick);
   }
 
   /**

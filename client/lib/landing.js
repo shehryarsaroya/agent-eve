@@ -296,7 +296,7 @@ var ATDoor = (function () {
 
     if (works.length) {
       root.appendChild(section('WORKS', works.map(function (w) {
-        return el('div', { class: 'd-row', text: (w.system || '?') + ' \u00b7 ' + (w.legend || '') + (w.extracted !== undefined ? ' \u00b7 extracted ' + U.n(w.extracted) : '') });
+        return el('div', { class: 'd-row', text: (w.system || '?') + ' \u00b7 ' + (w.legend || '') + (w.legend === 'DORMANT' && w.dormantSinceTick != null ? ' since t' + w.dormantSinceTick : '') + (w.extracted !== undefined ? ' \u00b7 extracted ' + U.n(w.extracted) : '') });
       })));
     }
     if (claims.length) {

@@ -16,7 +16,7 @@
  * **The general cause is a rule with one reader**, and the fix is one home with three:
  * `Runtime.fillRoleAuthorityRefusal` (the handler, the board and the heuristic cast all call it),
  * `Runtime.fillSlotRefusalFor` (the slot's own rules, asked at the tick the fill would land in) and
- * `Runtime.fillGateRefusalFor` (the verb table's gates in front of the handler).
+ * `Runtime.ventureGateRefusalFor` (the verb table's gates in front of the handler).
  *
  * What this file asserts, each preceded by the non-vacuity check its claim rests on:
  *
@@ -212,6 +212,44 @@ describe('a delegate is offered exactly the fills the engine will take', () => {
       'REGRESSION: a slot whose window closes before an act sent now could land is on the board',
     ).toBe(false);
   }, 60_000);
+
+  it('★ a principal that owes a seal is offered neither create nor fill_role — and the engine agrees', () => {
+    // The verb table puts `committing ?? sealCompliance ?? commonsCapacityRejection` in front of BOTH
+    // `create` and `fill_role`, and the menu checked none of the three. A role-holder in a LIVE venture
+    // that has not sealed is refused both (PROP-D4) — so it must be offered neither, and told why.
+    const w = world('menu-engine-seal');
+    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage })).toBeNull();
+    w.runtime.runTick();
+    const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
+    expect(v, 'non-vacuity: a FORMING venture to fill').toBeDefined();
+    if (v === undefined) return;
+    for (const [who, role] of [
+      [w.delegate, 0],
+      [w.outsider, 1],
+    ] as const) {
+      const hand = handsOf(w.runtime.world, who).find((x) => x.state === 'IDLE');
+      expect(act(w.runtime, who, 'fill_role', { venture: v.id, role, hand: hand?.id })).toBeNull();
+    }
+    for (const who of [w.delegate, w.outsider]) {
+      const row = ((observe(w.runtime, who)['affordances'] ?? []) as Row[]).find(
+        (a) => a['verb'] === 'sign' && (a['params'] as Row)['venture'] === v.id,
+      );
+      expect(row, 'non-vacuity: the filler is offered its countersignature').toBeDefined();
+      expect(act(w.runtime, who, 'sign', row?.['params'] as Row)).toBeNull();
+    }
+    expect(w.runtime.ventures.get(v.id)?.state, 'non-vacuity: the venture bound').toBe('LIVE');
+    expect(w.runtime.sealableRoles(w.delegate, w.runtime.engine.tick + 1).length, 'and it owes a seal').toBeGreaterThan(0);
+
+    const seen = observe(w.runtime, w.delegate);
+    const offered = (seen['affordances'] ?? []) as Row[];
+    expect(offered.some((a) => a['verb'] === 'seal'), 'the seal itself is offered').toBe(true);
+    expect(offered.some((a) => a['verb'] === 'create'), 'REGRESSION: create offered to a principal owing a seal').toBe(false);
+    expect(offered.some((a) => a['verb'] === 'fill_role'), 'REGRESSION: fill_role offered to a principal owing a seal').toBe(false);
+    expect(reasonOf(seen)).toContain('PROP-D4');
+    // The engine's answer to the act the menu withheld.
+    const refused = act(w.runtime, w.delegate, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage });
+    expect(refused?.invariant, 'the engine refuses it for the reason the menu gave').toBe('PROP-D4');
+  }, 120_000);
 });
 
 describe('across a world nobody steers, no delegate is offered a fill the engine refuses on authority', () => {

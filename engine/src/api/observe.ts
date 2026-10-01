@@ -197,9 +197,11 @@ import {
   ALLOY_IN_BY_TIER,
   ALLOY_OUT_QTY,
   ALLOY_TIER,
+  DORMANT_STATEMENT,
   FUEL_GOOD,
   REFINE_IN_QTY,
   REFINE_OUT_QTY,
+  WORKS_DORMANT_AFTER_RECKONINGS,
   WORKS_GOOD,
   WORKS_YIELD_GOOD,
 } from '../works/params.js';
@@ -1411,8 +1413,15 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
   if (seat === null) return { held: mine, here: null };
   const quote = runtime.worksQuote(principal, seat.from);
   return {
-    /** Live WORKS of yours, with whether each is past spin-up and what it has extracted. */
+    /**
+     * Live WORKS of yours, with whether each is past spin-up and what it has extracted — and, since
+     * `RULES_VERSION` 41, whether it is DORMANT and `dormant_from_tick`: the tick it stops dividing its
+     * system's yield if you send nothing more (or the tick it stopped). Any accepted action of yours —
+     * any verb — moves that tick a full `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings out.
+     */
     held: mine,
+    /** The rule, in the engine's own words — the same sentence `agent.md` carries. */
+    dormant_rule: DORMANT_STATEMENT,
     here: {
       system: quote.system,
       tier: quote.tier,
@@ -1432,6 +1441,13 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
        * list of rivals.
        */
       occupied_by: quote.occupiedBy,
+      /**
+       * ★ **Which of them are DORMANT** — standing, dividing nothing (`RULES_VERSION` 41). Their holders
+       * have had no action accepted for `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings, so they are left out
+       * of `share_per_tick` below today; each resumes the tick after its holder's next accepted action.
+       * `PUBLIC`: the frame draws them DORMANT, and A9 forbids it knowing more than you.
+       */
+      dormant_by: quote.dormantBy,
       /**
        * What yours would **KEEP** per tick once online, at today's crowding **and after rent**.
        *
@@ -1590,6 +1606,8 @@ function graduationBlock(
         occupants: there.occupants,
         /** Who they are, named — the principals you would be dividing this ground with. */
         occupied_by: there.occupiedBy,
+        /** ★ Which of them are DORMANT and dividing nothing today — each resumes when its holder acts. */
+        dormant_by: there.dormantBy,
         /**
          * ★ **WHAT YOU WOULD KEEP PER TICK IF YOU CROSSED AND BUILT HERE** — the decision figure.
          *
@@ -2823,10 +2841,10 @@ function affordancesFor(
   //
   // The verb table refuses every `fill_role` from a principal inside the freeze, one that owes a
   // seal (PROP-D4), or one whose Commons capacity a chronic Levy shortfall has used up — and this
-  // loop offered fills in all three. `Runtime.fillGateRefusalFor` is the table's own order and
+  // loop offered fills in all three. `Runtime.ventureGateRefusalFor` is the table's own order and
   // sentences, asked at the tick the act would resolve in; when it refuses, nothing is offered and
   // the slots are counted with the engine's sentence instead.
-  const fillGate = runtime.fillGateRefusalFor(principal, tick + 1);
+  const fillGate = runtime.ventureGateRefusalFor(principal, tick + 1);
   let rowsGated = 0;
   for (const row of board) {
     if (fillGate !== null) {
@@ -2971,11 +2989,23 @@ function affordancesFor(
   //    numbers covering the whole band would be wrong at every point in it except one.
   //    ══════════════════════════════════════════════════════════════════════
   let firstCreate = true;
+  // ── ★ THE SAME GATES `fill_role` READS, BECAUSE THE VERB TABLE PUTS THEM IN FRONT OF BOTH ──
+  //
+  // `create` sits behind `committing ?? sealCompliance ?? commonsCapacityRejection`, exactly like
+  // `fill_role`, and this loop checked affordability and nothing else — so inside the freeze, owing a
+  // seal, or with a demoted Commons capacity, every `create` on the menu was an act the engine would
+  // refuse (AGT-S2). One predicate, asked once, at the tick the act would land in.
+  const createGate = fillGate;
+  let createsGated = 0;
   for (const kind of OFFERED_KINDS) {
     const seat = hands[0]?.location;
     if (seat === undefined) continue;
     const probe = probeEscrow(kind);
     if (probe > free) continue;
+    if (createGate !== null) {
+      createsGated += 1;
+      continue;
+    }
     const roleRule = firstCreate
       ? ` ${CREATE_ROLE_RULE}`
       : ' The rule about that count is on the first create affordance.';
@@ -4541,6 +4571,14 @@ function affordancesFor(
         `refuse any fill from you on the tick it would land (${fillGate.invariant}): ${fillGate.hint}`,
     });
   }
+  if (createsGated > 0 && createGate !== null) {
+    reasons.push({
+      verb: 'create',
+      text:
+        `${String(createsGated)} create act(s) you could fund are not offered because the engine would refuse ` +
+        `any venture from you on the tick it would land (${createGate.invariant}): ${createGate.hint}`,
+    });
+  }
   if (boardBarred.slots > 0) {
     reasons.push({
       verb: 'fill_role',
@@ -4904,6 +4942,7 @@ function affordancesFor(
         rowsWithNoHand +
         rowsOutOfReach +
         rowsGated +
+        createsGated +
         boardBarred.slots +
         boardDropped +
         crossingWithheld +
@@ -5963,6 +6002,21 @@ function promptFor(
   // ★ A live standoff outranks the whole venture ladder — see {@link standoffPressure}.
   const standoff = standoffPressure(runtime, principal, tick);
   if (standoff !== null) return standoff;
+  // ── ★ A DORMANT WORKS, NAMED TO THE ONE PRINCIPAL WHO CAN WAKE IT (`RULES_VERSION` 41) ──────
+  //
+  // The returning principal is the only reader for whom this is news, and the fix is any act at all —
+  // so it is named, with the tick it stopped, before the venture ladder rather than buried in
+  // `holding.works.held[]`. Read at `tick + 1`, the tick an act sent now would make it work again.
+  const asleep = runtime.worksOf(principal).find((w) => w.dormant);
+  if (asleep !== undefined) {
+    return (
+      `Your WORKS at ${asleep.system} has been DORMANT since tick ${String(asleep.dormant_from_tick)}: no ` +
+      `action of yours has been accepted for ${String(WORKS_DORMANT_AFTER_RECKONINGS)} Reckonings, so it has ` +
+      'extracted nothing and the WORKS ' +
+      'beside it have divided its share. Nothing was taken from you — any accepted action, any verb, ' +
+      'makes it work again from the tick after.'
+    );
+  }
   // ══════════════════════════════════════════════════════════════════════════
   // ★ **AND SOMEBODY HAS TO BE WAITING ON IT.** `partiesOf(v).length > 0`.
   //
