@@ -71,6 +71,7 @@ import {
   CREATE_IS_COUNTERSIGNATURE,
   createVenture,
   creatorElective,
+  electiveCeilingOfRole,
   escrowRatioBps,
   escrowRequired,
   IN_FULL,
@@ -3055,7 +3056,7 @@ function affordancesFor(
         'the top of the band. Creating does NOT decide what you pay — that is `elect`, one role at a time, ' +
         'restatable every tick until the freeze; create and never elect and you pay nothing, which is a ' +
         'decline and a permanent public default. ' +
-        `${probeRoles(kind)}${roleRule} ${band} ` +
+        `${probeRoles(kind, tick)}${roleRule} ${band} ` +
         countersignWarning(tick),
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'create', { kind, stage: seat }),
@@ -5047,15 +5048,11 @@ function probeElective(kind: VentureKind): Minor {
 }
 
 /**
- * ★ The most a default-priced venture of this kind can ever ask its creator for on the elective half —
- * the BOUND, where {@link probeElective} is the PRICE (`RULES_VERSION` 41).
- *
- * Built by minting the venture `vCreate` would mint, in memory and nowhere else, and asking
- * `maxElectiveLiability` of it: the same function the delegated create charges a grant's contingent
- * LIMIT with, so the affordance and the gate cannot quote one obligation two ways. Pure — `createVenture`
- * touches no book.
+ * The venture a default-priced `create {kind}` sent now would mint — in memory and nowhere else.
+ * Pure: `createVenture` touches no book. `null` only if the kind table could not mint its own default
+ * terms, which `test/venture` would already be red about.
  */
-function probeElectiveCeiling(kind: VentureKind, tick: number): Minor {
+function probeVenture(kind: VentureKind, tick: number): VentureRecord | null {
   const opens = tick + 1;
   const closes = opens + FORMATION_WINDOW_TICKS;
   const made = createVenture({
@@ -5070,7 +5067,21 @@ function probeElectiveCeiling(kind: VentureKind, tick: number): Minor {
     valuation: pinnedAt(DEFAULT_VALUATION_RULE, tick),
     rulesVersion: 0,
   });
-  return made.ok ? maxElectiveLiability(made.value) : probeElective(kind);
+  return made.ok ? made.value : null;
+}
+
+/**
+ * ★ The most a default-priced venture of this kind can ever ask its creator for on the elective half —
+ * the BOUND, where {@link probeElective} is the PRICE (`RULES_VERSION` 41).
+ *
+ * `maxElectiveLiability` over {@link probeVenture}: the same function the delegated create charges a
+ * grant's contingent LIMIT with, so the affordance and the gate cannot quote one obligation two ways —
+ * and Σ of the per-role `electiveCeilingOfRole` {@link probeRoles} prints, so the manifest and this
+ * figure are one arithmetic too.
+ */
+function probeElectiveCeiling(kind: VentureKind, tick: number): Minor {
+  const probe = probeVenture(kind, tick);
+  return probe === null ? probeElective(kind) : maxElectiveLiability(probe);
 }
 
 /**
@@ -5095,9 +5106,10 @@ function probeElectiveCeiling(kind: VentureKind, tick: number): Minor {
  * are one arithmetic. A second table here would be the engine and the agent-facing surface
  * disagreeing about a deal, which is scar #1 with roles attached.
  */
-function probeRoles(kind: VentureKind): string {
+function probeRoles(kind: VentureKind, tick: number): string {
   const spec = kindSpec(kind);
   const terms = defaultTerms(kind, spec.baseYieldMinor);
+  const probe = probeVenture(kind, tick);
   const lines = spec.roles.map((role, i) => {
     const t = terms[i];
     if (t === undefined) return role.label;
@@ -5106,7 +5118,16 @@ function probeRoles(kind: VentureKind): string {
     // inline rather than borrowing the legend's. `defaultTerms` produces only share roles today,
     // and this branch is what stops the legend from starting to lie on the day one does not.
     const claim = t.wage === null ? String(role.marginalOutputBps) : `wage ${String(t.wage)}`;
-    return `${role.label} ${claim} → ${String(t.escrowed)} + ${String(t.elective)}`;
+    // ── ★ AND THE ROLE'S BOUND, BECAUSE `max_contingent_liability` BESIDE IT IS NOW A BOUND ──────
+    //
+    // The two `max_*` figures on this affordance were Σ of these rows' escrowed and elective, and
+    // `the-engine-knew-and-did-not-say.spec.ts` holds them to it. `RULES_VERSION` 41 made `create` the
+    // creator's countersignature, so the contingent figure became the worst case (`maxElectiveLiability`)
+    // — and a manifest still summing to the PRICE beside it would be scar #1 inside one object. So each
+    // row prints the price it was pinned at AND the most it can be asked for, and the bounds sum to the
+    // field: `electiveCeilingOfRole` per row, the same `computeClaims` pass `maxElectiveLiability` sums.
+    const bound = probe === null ? t.elective : electiveCeilingOfRole(probe, probe.roles[i]?.index ?? i);
+    return `${role.label} ${claim} → ${String(t.escrowed)} + ${String(t.elective)} (at most ${String(bound)})`;
   });
   // The legend rides on EVERY row rather than moving to `CREATE_ROLE_RULE`, and the ~40 characters
   // are the cheapest in this change: numbers with the unit one row away is the shape
@@ -5114,7 +5135,8 @@ function probeRoles(kind: VentureKind): string {
   // (MINOR) on the same line is the exact adjacency that keeps producing it.
   return (
     `Roles minted: ${String(spec.roles.length)} (one principal each, never the same twice), as ` +
-    `LABEL share-bps → escrowed + elective MINOR: ${lines.join(' · ')}.`
+    `LABEL share-bps → escrowed + elective (at most what that elective can be asked for) MINOR: ` +
+    `${lines.join(' · ')}.`
   );
 }
 

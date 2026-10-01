@@ -48,7 +48,7 @@ import type { PrincipalId, VentureKind } from '../../src/core/types.js';
 import { minor, type Minor } from '../../src/core/units.js';
 import { LEVY_GOOD } from '../../src/levy/index.js';
 import { defaultTerms, type Runtime } from '../../src/sim/runtime.js';
-import { kindSpec, settleVenture, type SettleInput } from '../../src/venture/index.js';
+import { kindSpec, maxElectiveLiability, settleVenture, type SettleInput } from '../../src/venture/index.js';
 import { handsOf, principalIsCommonsBound } from '../../src/world/index.js';
 import { act, commonsWorld, raidWorld, tick } from '../predation/fixture.js';
 import {
@@ -337,6 +337,11 @@ describe('§7 — a create affordance names the roles it will mint, and what eac
     // arithmetic as `max_direct_loss` and `max_contingent_liability` on the same affordance.
     // A manifest that disagreed with the two `max_*` figures beside it would be scar #1 inside
     // one object — and it is exactly what a second table here would produce.
+    //
+    // ★ `RULES_VERSION` 41: the contingent figure is the BOUND (`maxElectiveLiability`), because
+    // `create` is now the act that binds the creator — so each row prints its pinned elective AND
+    // the most that elective can be asked for, and it is the bounds that sum to the field. Each bound
+    // is at least its price, or "at most" would be a lie in the other direction.
     // ══════════════════════════════════════════════════════════════════════
     const { runtime, principals } = raidWorld('a2-split', 3);
     tick(runtime);
@@ -347,22 +352,40 @@ describe('§7 — a create affordance names the roles it will mint, and what eac
       const spec = kindSpec(kind);
       const terms = defaultTerms(kind, spec.baseYieldMinor);
       let escrowed = 0;
-      let elective = 0;
+      let bounds = 0;
       for (const [i, role] of spec.roles.entries()) {
         const t = terms[i];
         if (t === undefined) throw new Error('kind table');
         escrowed += t.escrowed;
-        elective += t.elective;
-        expect(
-          offer.what_it_forecloses,
-          `${kind}/${role.label} does not publish its own escrowed + elective`,
-        ).toContain(`${role.label} ${String(role.marginalOutputBps)} → ${String(t.escrowed)} + ${String(t.elective)}`);
+        const row = `${role.label} ${String(role.marginalOutputBps)} → ${String(t.escrowed)} + ${String(t.elective)}`;
+        const at = offer.what_it_forecloses.indexOf(`${row} (at most `);
+        expect(at, `${kind}/${role.label} does not publish its own escrowed + elective and its bound`).toBeGreaterThan(-1);
+        const bound = Number(/^\(at most (\d+)\)/.exec(offer.what_it_forecloses.slice(at + row.length + 1))?.[1]);
+        expect(bound, `${kind}/${role.label}: the bound is below the price it bounds`).toBeGreaterThanOrEqual(t.elective);
+        bounds += bound;
       }
       expect(offer.max_direct_loss, `${kind}: the manifest and max_direct_loss disagree`).toBe(escrowed);
-      expect(offer.max_contingent_liability, `${kind}: the manifest and the contingent figure disagree`).toBe(
-        elective,
-      );
+      expect(offer.max_contingent_liability, `${kind}: the manifest and the contingent figure disagree`).toBe(bounds);
     }
+  });
+
+  it('★ the contingent figure on `create` is the bound the engine holds the venture it mints to', () => {
+    // The quote and the obligation, one arithmetic: create the DIG the menu offered, then ask
+    // `maxElectiveLiability` — the function the delegated-create gate charges a grant's contingent
+    // LIMIT with — of the venture the engine actually minted.
+    const { runtime, principals } = raidWorld('a2-bound', 3);
+    tick(runtime);
+    const me = principals[0];
+    if (me === undefined) throw new Error('fixture');
+    const offer = createOffer(runtime, me, 'DIG');
+    expect(act(runtime, me, 'create', offer.params), 'the offered create is taken').toBeNull();
+    const minted = runtime.ventures.all().find((v) => v.creator === me && v.kind === 'DIG');
+    expect(minted, 'the create minted a DIG').toBeDefined();
+    if (minted === undefined) return;
+    expect(offer.max_contingent_liability, 'quoted at the price, bound by the ceiling').toBe(maxElectiveLiability(minted));
+    expect(offer.max_contingent_liability, 'non-vacuity: the bound and the price differ here').toBeGreaterThan(
+      minted.roles.reduce((sum, r) => sum + r.terms.elective, 0),
+    );
   });
 
   it('★ THE CONTROL — BUILD says FOUR, so a hardcoded two would fail here', () => {
