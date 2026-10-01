@@ -19,7 +19,8 @@ try:
     with backup.open('rb') as source:
         subprocess.run(['docker', 'exec', '-i', 'agenteve-db', 'pg_restore', '-U', 'compact', '-d', database, '--exit-on-error'], stdin=source, check=True)
     # Identities are never deleted, so every enrolment in the dump must come back as a seat row.
-    # Occupancy is not the test: an idle seat is recycled after four Reckonings.
+    # Occupancy is not the test: a seat is recycled four Reckonings after its last accepted action,
+    # or one Reckoning after it was taken if it never played (engine/src/api/seats.ts).
     enrolled = int(subprocess.run(prefix + ['psql', '-U', 'compact', '-d', database, '-Atc', 'SELECT count(*) FROM journal_enrollment'], text=True, capture_output=True, check=True).stdout)
     env = dict(os.environ)
     env.update(dict(line.split('=', 1) for line in Path('/etc/agenteve/env').read_text().splitlines()))
