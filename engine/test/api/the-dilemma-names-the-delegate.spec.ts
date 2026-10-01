@@ -28,6 +28,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { escrowRequired } from '../../src/venture/index.js';
 import { buildObservation } from '../../src/api/observe.js';
 import { setSpeed } from '../../src/core/time.js';
 import type { PrincipalId, SystemId } from '../../src/core/types.js';
@@ -258,48 +259,45 @@ describe('the dilemma names the delegate, the grant and the leak', () => {
   });
 });
 
-describe("a creator's own `sign` quotes the escrow it actually owes", () => {
-  it('★ max_direct_loss does not fall to 0 when the creator also fills a role', () => {
-    // Measured from outside on a live turbo world: 4,800 before the creator filled a role in its own
-    // venture, **0** after, with the escrow unchanged. The gate was `role === null` — the escrow
-    // quoted to whoever holds NO role, rather than to whoever OWES it — and those come apart for
-    // exactly one party: the creator that also fills a role. `fill_role` on your own venture is
-    // offered from the menu, so this is two affordances copied in a row.
+describe("a creator's binding act quotes the escrow it actually owes — and since 41 that act is `create`", () => {
+  it('★ the create quote is the escrow locked, and no `sign` is owed even after the creator fills a role', () => {
+    // This test was "a creator's own `sign` quotes the escrow it actually owes": measured from outside,
+    // the creator's `sign` quoted 4,800 before it filled a role in its own venture and **0** after, with
+    // the escrow unchanged — A6's headline promise (`max_direct_loss` shown before you sign) reading
+    // zero on the verb it is named after.
     //
-    // A6's headline promise is `max_direct_loss` shown before you sign. It read zero.
+    // `RULES_VERSION` 41 moved the creator's signature to `create` itself (`CREATE_IS_COUNTERSIGNATURE`),
+    // so the promise now lives on the act that binds: `create`'s `max_direct_loss` must be the escrow
+    // the engine then locks, and no later act — filling its own role included — may reopen a `sign` for
+    // it to misquote.
     const w = world('creator-escrow-quote');
-    act(w.rt, w.grantor, 'create', { kind: 'DIG', stage: w.stage, value: 8_000, elective_bps: 2_000 });
+    const offer = rows(observe(w.rt, w.grantor)['affordances']).find(
+      (a) => a['verb'] === 'create' && obj(a['params'])['kind'] === 'DIG',
+    );
+    expect(offer, 'the creator must be offered a DIG to create').toBeDefined();
+    const quoted = Number(offer?.['max_direct_loss']);
+    expect(quoted, 'the escrow must be non-zero, or the assertion below is about nothing').toBeGreaterThan(0);
+    act(w.rt, w.grantor, 'create', obj(offer?.['params']));
     const venture = w.rt.ventures.all().find((v) => v.creator === w.grantor);
     expect(venture, 'the fixture needs a venture').toBeDefined();
     if (venture === undefined) return;
+    expect(escrowRequired(venture), 'the quote was the escrow the engine locked').toBe(quoted);
+    expect(venture.countersigned.has(w.grantor), 'and the create bound its creator').toBe(true);
 
     const signOf = (): Row | undefined =>
       rows(observe(w.rt, w.grantor)['affordances']).find(
         (a) => a['verb'] === 'sign' && obj(a['params'])['venture'] === venture.id,
       );
-
-    const before = signOf();
-    expect(before, 'the creator must be offered its own countersignature').toBeDefined();
-    const quoted = Number(before?.['max_direct_loss']);
-    // Non-vacuity: a venture whose escrow is 0 could not show this defect at all.
-    expect(quoted, 'the escrow must be non-zero, or the assertion below is about nothing').toBeGreaterThan(0);
+    expect(signOf(), 'a creator is never offered a sign on its own venture').toBeUndefined();
 
     const hand = [...w.rt.world.hands.values()].find((h) => h.principal === w.grantor);
-    expect(hand).toBeDefined();
-    if (hand === undefined) return;
     const role = venture.roles[0];
-    expect(role).toBeDefined();
-    if (role === undefined) return;
+    expect(hand !== undefined && role !== undefined).toBe(true);
+    if (hand === undefined || role === undefined) return;
     act(w.rt, w.grantor, 'fill_role', { venture: venture.id, role: role.index, hand: hand.id, stake: 0 });
-
-    const after = signOf();
-    expect(after, 'still FORMING and still unsigned, so still offered').toBeDefined();
     const mine = rows(obj(observe(w.rt, w.grantor)['ventures'])['mine']).find((v) => v['id'] === venture.id);
-    expect(mine?.['my_role'], 'the creator now holds a role — the case that broke the quote').not.toBeNull();
-    expect(
-      Number(after?.['max_direct_loss']),
-      'the creator still escrows the whole amount; holding a role changes who DELIVERS, never who PAYS',
-    ).toBe(quoted);
+    expect(mine?.['my_role'], 'the creator now holds a role — the case that broke the old quote').not.toBeNull();
+    expect(signOf(), 'holding a role changes who DELIVERS, never who must sign').toBeUndefined();
   });
 });
 

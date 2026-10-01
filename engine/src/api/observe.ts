@@ -56,7 +56,7 @@ import {
 } from '../core/time.js';
 import type { GoodId, Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor, type Minor } from '../core/units.js';
-import { storesAccount } from '../ledger/index.js';
+import { DEFAULT_VALUATION_RULE, storesAccount } from '../ledger/index.js';
 import {
   MAX_ORDER_QTY,
   freeCash,
@@ -69,6 +69,7 @@ import {
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
   CREATE_IS_COUNTERSIGNATURE,
+  createVenture,
   creatorElective,
   escrowRatioBps,
   escrowRequired,
@@ -78,7 +79,9 @@ import {
   maxElectiveBps,
   minElectiveBps,
   openIndices,
+  maxElectiveLiability,
   partiesOf,
+  pinnedAt,
   pinnedValue,
   roleOfPrincipal,
   projectedSettlement,
@@ -3026,12 +3029,32 @@ function affordancesFor(
       params: { kind, stage: seat, elective_bps: low },
       cost: 1,
       max_direct_loss: probe,
-      max_contingent_liability: probeElective(kind),
+      // ── ★ THE WORST CASE, BECAUSE SINCE 41 THIS IS THE ACT THAT BINDS THE CREATOR ──────────────
+      //
+      // This published `probeElective` — the elective PRICE, Σ `role.terms.elective` — and that was
+      // tolerable while `sign` came after it quoting `creatorElective().ceiling`, the bound: A6's
+      // headline is *"max_contingent_liability shown before you sign"*, and the sign was where it was
+      // kept. `RULES_VERSION` 41 made the create the creator's countersignature, so the figure has to
+      // be the bound here or the creator commits to a liability it was quoted at its p50. The ceiling is
+      // `maxElectiveLiability` over the very terms `vCreate` would mint — the same call the delegated
+      // create charges a grant's contingent LIMIT, so the three figures for one obligation are one
+      // arithmetic.
+      max_contingent_liability: probeElectiveCeiling(kind, tick),
       what_it_forecloses:
         `${String(probe)} of your stores is locked in escrow until this settles or is abandoned — committed ` +
         'value, not EXPOSURE, so obligations.exposure.mine will not count it — and ' +
-        `${String(probeElective(kind))} stays elective — you are asked for it at the Reckoning and ` +
-        `staying silent is a permanent public default. ${probeRoles(kind)}${roleRule} ${band} ` +
+        `${String(probeElective(kind))} is priced elective, of which up to ` +
+        `${String(probeElectiveCeiling(kind, tick))} can be asked of you at the Reckoning once proceeds run to ` +
+        // ── ★ THE POINTER AT `elect` MOVED HERE WITH THE BINDING ──────────────────────────────────
+        //
+        // It lived on the creator's own `sign` ("It does NOT decide what you pay — that is `elect`"),
+        // because that was the payer's binding act. Since 41 the create is, and the creator is never
+        // offered a `sign` again — so without this sentence a payer reading only the act that binds it
+        // would think binding was the whole decision, never elect, and take a `DECLINED` it did not choose.
+        'the top of the band. Creating does NOT decide what you pay — that is `elect`, one role at a time, ' +
+        'restatable every tick until the freeze; create and never elect and you pay nothing, which is a ' +
+        'decline and a permanent public default. ' +
+        `${probeRoles(kind)}${roleRule} ${band} ` +
         countersignWarning(tick),
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'create', { kind, stage: seat }),
@@ -4991,6 +5014,33 @@ function probeElective(kind: VentureKind): Minor {
   let total = 0;
   for (const t of defaultTerms(kind, kindSpec(kind).baseYieldMinor)) total += t.elective;
   return minor(total);
+}
+
+/**
+ * ★ The most a default-priced venture of this kind can ever ask its creator for on the elective half —
+ * the BOUND, where {@link probeElective} is the PRICE (`RULES_VERSION` 41).
+ *
+ * Built by minting the venture `vCreate` would mint, in memory and nowhere else, and asking
+ * `maxElectiveLiability` of it: the same function the delegated create charges a grant's contingent
+ * LIMIT with, so the affordance and the gate cannot quote one obligation two ways. Pure — `createVenture`
+ * touches no book.
+ */
+function probeElectiveCeiling(kind: VentureKind, tick: number): Minor {
+  const opens = tick + 1;
+  const closes = opens + FORMATION_WINDOW_TICKS;
+  const made = createVenture({
+    id: 'v:probe' as VentureId,
+    kind,
+    creator: 'p:probe' as PrincipalId,
+    stage: 'sys-probe' as SystemId,
+    terms: defaultTerms(kind, kindSpec(kind).baseYieldMinor),
+    windowOpensTick: opens,
+    windowClosesTick: closes,
+    resolvesAtTick: closes,
+    valuation: pinnedAt(DEFAULT_VALUATION_RULE, tick),
+    rulesVersion: 0,
+  });
+  return made.ok ? maxElectiveLiability(made.value) : probeElective(kind);
 }
 
 /**

@@ -160,13 +160,33 @@ function haul(w: World): VentureId {
   runtime.runTick();
   const hash = venture.termsHash;
   if (hash === null) throw new Error('no terms_hash');
-  submit(runtime, payer, 'sign', { venture: venture.id, terms_hash: hash }, 0);
+  // Only the counterparty signs: since `RULES_VERSION` 41 the payer's `create` was its countersignature.
   submit(runtime, hand, 'sign', { venture: venture.id, terms_hash: hash }, 1);
   runtime.runTick();
   runtime.runTick();
   const live = runtime.ventures.require(venture.id);
   if (live.state !== 'LIVE') throw new Error(`the venture is ${live.state}, not LIVE`);
   return venture.id;
+}
+
+/**
+ * A `HAUL` created by the payer with role 1 filled by the counterparty and nothing signed by it yet —
+ * the state in which the counterparty is the one principal a `sign` is still owed by.
+ */
+function filledByHand(w: World): ReturnType<Runtime['ventures']['require']> {
+  const { runtime, payer, hand, stage } = w;
+  submit(runtime, payer, 'create', { kind: 'HAUL', stage, value: 12_000 });
+  runtime.runTick();
+  const venture = runtime.ventures.all().find((v) => v.creator === payer && v.state === 'FORMING');
+  if (venture === undefined) throw new Error('create did not mint a venture');
+  const idle = [...runtime.world.hands.values()].find((h) => h.principal === hand && h.state === 'IDLE');
+  if (idle === undefined) throw new Error('the counterparty has no idle hand');
+  submit(runtime, hand, 'fill_role', { venture: venture.id, role: 1, hand: idle.id });
+  runtime.runTick();
+  if (venture.roles.find((r) => r.index === 1)?.filledByPrincipal !== hand) {
+    throw new Error('the counterparty did not take role 1');
+  }
+  return venture;
 }
 
 function observe(runtime: Runtime, principal: PrincipalId): readonly Affordance[] {
@@ -526,15 +546,14 @@ describe('the rules surface cannot disagree with the engine about how to elect',
     // reasonable person implements by accident, and it ends in a `DECLINED` default —
     // "a deliberate refusal" — permanently, against an agent that was trying to pay.
     // ══════════════════════════════════════════════════════════════════════
+    // The signer is the counterparty, because since `RULES_VERSION` 41 the creator's `create` IS its
+    // countersignature: a creator never owes a `sign`, so a sign from it is no test of this refusal.
     const w = world('sign-election');
-    submit(w.runtime, w.payer, 'create', { kind: 'HAUL', stage: w.stage, value: 12_000 });
-    w.runtime.runTick();
-    const venture = w.runtime.ventures.all().find((v) => v.creator === w.payer);
-    if (venture === undefined) throw new Error('no venture');
+    const venture = filledByHand(w);
     const hash = venture.termsHash;
     if (hash === null) throw new Error('no terms_hash');
 
-    const refusal = act(w.runtime, w.payer, 'sign', {
+    const refusal = act(w.runtime, w.hand, 'sign', {
       venture: venture.id,
       terms_hash: hash,
       election: IN_FULL,
@@ -544,22 +563,31 @@ describe('the rules surface cannot disagree with the engine about how to elect',
     // Neither half happened. A signature recorded with the election dropped would be the
     // exact failure this refusal exists to prevent.
     expect(refusal?.hint).toContain('Nothing was signed and nothing was elected');
-    expect(w.runtime.ventures.require(venture.id).countersigned.has(w.payer)).toBe(false);
-    expect(w.runtime.electionOn(venture.id, 0)).toBeUndefined();
+    expect(w.runtime.ventures.require(venture.id).countersigned.has(w.hand)).toBe(false);
+    expect(w.runtime.electionOn(venture.id, 1)).toBeUndefined();
   });
 
   it('never offers an `election` on a `sign` affordance', () => {
     const w = world('sign-affordance');
-    submit(w.runtime, w.payer, 'create', { kind: 'HAUL', stage: w.stage, value: 12_000 });
+    filledByHand(w);
     w.runtime.runTick();
-    w.runtime.runTick();
-    const signs = observe(w.runtime, w.payer).filter((a) => a.verb === 'sign');
-    expect(signs.length).toBeGreaterThan(0);
-    for (const a of signs) {
+    const signs = observe(w.runtime, w.hand).filter((a) => a.verb === 'sign');
+    expect(signs.length, 'the counterparty holding a role is the principal a `sign` is owed by').toBeGreaterThan(0);
+    for (const a of signs) expect(Object.keys(a.params)).not.toContain('election');
+  });
+
+  it('points the payer at `elect` from the act that binds it — which since 41 is `create`, not `sign`', () => {
+    // The payer's binding act has to say it does NOT decide the payment, or a payer reading only that
+    // string thinks binding was the whole decision and never elects — a `DECLINED` default it did not
+    // choose. That sentence lived on the creator's own `sign`; `RULES_VERSION` 41 made `create` the
+    // creator's countersignature, so it moved with the binding. `/`elect`/` and not `'elect'`, because
+    // every create string says "elective" and a substring check would pass on a sentence with no pointer.
+    const w = world('create-points-at-elect');
+    const creates = observe(w.runtime, w.payer).filter((a) => a.verb === 'create');
+    expect(creates.length, 'a funded payer is offered a create').toBeGreaterThan(0);
+    for (const a of creates) {
       expect(Object.keys(a.params)).not.toContain('election');
-      // And it points at the verb that does decide the payment, or a payer reading only
-      // this string would think signing was the whole decision.
-      expect(String(a.what_it_forecloses)).toContain('elect');
+      expect(String(a.what_it_forecloses)).toMatch(/`elect`/);
     }
   });
 
