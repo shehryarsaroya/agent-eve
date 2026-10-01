@@ -164,4 +164,4 @@ export {
   type SweepPort,
 } from './settle.js';
 
-export { levyShortNow, tributeLinesFor, tributeStateFor } from './tribute.js';
+export { levyShortNow, owedAfterSweep, tributeLinesFor, tributeStateFor } from './tribute.js';

@@ -203,8 +203,10 @@ export interface WrittenFrame {
  *
  * The three meters ride along because a history strip that cannot say what a night was
  * *like* is a list of numbers a viewer has no reason to click. §14.2's `levyShort`,
- * `kept` and `broken` are the smallest set that makes one row legible, and all three are
- * already on the published frame.
+ * `keptRecent` and `brokenRecent` are the smallest set that makes one row legible, and all
+ * three are already on the published frame — under the same names, with the span they cover
+ * (`recentFromReckoning`), because a row that called a trailing window `kept` beside an
+ * all-time standings table was one word for two counts.
  */
 export interface FrameIndexRow {
   readonly reckoning: number;
@@ -213,8 +215,9 @@ export interface FrameIndexRow {
   readonly file: string;
   readonly stateHash: string;
   readonly levyShort: number;
-  readonly kept: number;
-  readonly broken: number;
+  readonly keptRecent: number;
+  readonly brokenRecent: number;
+  readonly recentFromReckoning: number;
   /** Rundown segments that night, so a viewer can see which Reckonings had a show in them. */
   readonly beats: number;
 }
@@ -237,8 +240,9 @@ export function frameIndexRow(frame: ReckoningFrame): FrameIndexRow {
     file: frameFileName(frame.reckoningIndex),
     stateHash: frame.stateHash,
     levyShort: frame.meters.levyShort,
-    kept: frame.meters.kept,
-    broken: frame.meters.broken,
+    keptRecent: frame.meters.keptRecent,
+    brokenRecent: frame.meters.brokenRecent,
+    recentFromReckoning: frame.meters.recentFromReckoning,
     beats: frame.rundown.length,
   };
 }

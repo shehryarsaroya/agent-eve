@@ -76,8 +76,11 @@ export interface FrameSource {
   readonly meters: {
     readonly levyShort: Minor;
     readonly onAPromise: Minor;
-    readonly kept: number;
-    readonly broken: number;
+    /** Elective halves kept and broken over the RECENT span. See `Meters.keptRecent`. */
+    readonly keptRecent: number;
+    readonly brokenRecent: number;
+    /** The span's first Reckoning. Optional so fixtures stay terse; absent means 0 — all-time. */
+    readonly recentFromReckoning?: number;
     /** Raw yield nobody has converted. Optional so older fixtures stay valid; defaults to 0. */
     readonly unrefined?: Qty;
   };
@@ -535,7 +538,10 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       kind: 'SETTLEMENT' as const,
       subject: String(v.venture),
       defaulted: v.defaulted,
-      atStake: v.atStake,
+      // The elective half DUE at settlement — not `atStake`, which on the compact link and the
+      // docket card is the pinned price of the filled roles. See `RundownSegment.magnitude`.
+      magnitude: v.atStake,
+      magnitudeUnit: 'MINOR' as const,
       venture: v.venture,
       cast: chipsFor(src, v.parties),
       publicLine: v.publicLine,
@@ -591,7 +597,8 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       subject: String(c.system),
       // A lapse is the largest delta the territorial system has, so it sorts with the defaults.
       defaulted: true,
-      atStake: c.slashed,
+      magnitude: c.slashed,
+      magnitudeUnit: 'MINOR' as const,
       venture: null,
       cast: [] as readonly CastChip[],
       publicLine: null,
@@ -624,7 +631,9 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       subject: String(r.stage),
       // A plunder took something and belongs late; a repulse is a win and belongs early.
       defaulted: r.state === 'PLUNDERED',
-      atStake: r.lost > 0 ? r.lost : r.demand,
+      magnitude: r.lost > 0 ? r.lost : r.demand,
+      // Units of the good, never currency — the reason `beatRank` exists.
+      magnitudeUnit: 'QTY' as const,
       venture: null,
       cast: [] as readonly CastChip[],
       publicLine: null,
@@ -688,7 +697,9 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
   // be able to outrank one.
   //
   // A beat CLASS fixes both: rank across classes, magnitude only WITHIN a class, so two different
-  // units are never compared.
+  // units are never compared. And the field is published as `magnitude` with its `magnitudeUnit`:
+  // it was `atStake`, the word the compact link and the docket card use for the PINNED elective
+  // price of a compact's filled roles — a different number about the same venture (HARD RULE 4).
   const beatRank = (b: { readonly kind: BeatKind; readonly defaulted: boolean }): number =>
     b.kind === 'SETTLEMENT' && b.defaulted
       ? 3 // a broken elective promise — the say-do delta itself
@@ -707,13 +718,13 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
   const chosen = [...allBeats]
     .sort(
       (a, b) =>
-        beatRank(b) - beatRank(a) || b.atStake - a.atStake || compareIds(a.subject, b.subject),
+        beatRank(b) - beatRank(a) || b.magnitude - a.magnitude || compareIds(a.subject, b.subject),
     )
     .slice(0, MAX_RUNDOWN_SEGMENTS);
 
   const rundown: RundownSegment[] = chosen
     .sort(
-      (a, b) => beatRank(a) - beatRank(b) || a.atStake - b.atStake || compareIds(a.subject, b.subject),
+      (a, b) => beatRank(a) - beatRank(b) || a.magnitude - b.magnitude || compareIds(a.subject, b.subject),
     )
     .map((beat, i) => ({ ...beat, order: i + 1 }));
 
@@ -738,7 +749,14 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     reckoningIndex: src.reckoning,
     tick: src.tick,
     stateHash: src.stateHash,
-    meters: { ...src.meters, unrefined: src.meters.unrefined ?? qty(0) },
+    meters: {
+      levyShort: src.meters.levyShort,
+      onAPromise: src.meters.onAPromise,
+      keptRecent: src.meters.keptRecent,
+      brokenRecent: src.meters.brokenRecent,
+      recentFromReckoning: src.meters.recentFromReckoning ?? 0,
+      unrefined: src.meters.unrefined ?? qty(0),
+    },
     docket,
     rundown,
     // Tribute lines come from the Levy layer, glyphs from the venture layer. Neither is
@@ -921,7 +939,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     reckoningIndex: reckoning,
     tick,
     stateHash,
-    meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0, unrefined: qty(0) },
+    meters: { levyShort: minor(0), onAPromise: minor(0), keptRecent: 0, brokenRecent: 0, recentFromReckoning: 0, unrefined: qty(0) },
     docket: [],
     rundown: [],
     tributeLines: [],

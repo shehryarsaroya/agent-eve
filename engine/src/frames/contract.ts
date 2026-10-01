@@ -175,9 +175,24 @@ export interface Meters {
    * trusting someone: escrowed parts contribute zero by construction.
    */
   readonly onAPromise: Minor;
-  /** The scoreboard. Moves only on the event the whole game is about. */
-  readonly kept: number;
-  readonly broken: number;
+  /**
+   * ★ **The scoreboard, over the RECENT span — and the span is in the name.** Elective halves kept
+   * and broken across the Reckonings from {@link recentFromReckoning} to this one.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * These were `kept` and `broken`, and they were summed over the runtime's last
+   * `MAX_RECKONING_SUMMARIES` (eight) settlement summaries — a trailing window — while every other
+   * count beside them (`standings[].electiveHonoured`, `.defaults`) is all-time. For eight
+   * Reckonings the two agreed by coincidence; from the ninth they parted, and the client printed
+   * *"THE FRAME DISAGREES WITH ITSELF"* over two honest numbers that were answering two different
+   * questions under one word. So the window is now named, and its first Reckoning published: a
+   * reader comparing these against the standings must see `recentFromReckoning === 0` first.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly keptRecent: number;
+  readonly brokenRecent: number;
+  /** The first Reckoning {@link keptRecent} and {@link brokenRecent} cover. 0 means they are all-time. */
+  readonly recentFromReckoning: number;
   /**
    * **Raw yield nobody has converted yet** — the production chain's tension, in one number.
    *
@@ -878,9 +893,16 @@ export interface CompactLink {
   readonly bAt: SystemId | null;
   /** How many parties in total, so a renderer knows the link is a simplification of a web. */
   readonly parties: number;
-  /** The unsecured proportion of the whole compact, in bps. The part riding on someone's word. */
+  /**
+   * The unsecured proportion of the whole compact, in bps — the creator's OFFER. The part riding on
+   * someone's word. One number with `VentureGlyph.electiveBps` and `DocketCard.electiveBps`.
+   */
   readonly electiveBps: number;
-  /** Value on the elective half. What the link is worth breaking. */
+  /**
+   * Value on the elective half: the PINNED elective price of the filled roles (`RoleTerms.elective`),
+   * the same figure `DocketCard.atStake` carries. Already the elective half — a reader must not
+   * multiply it by {@link electiveBps} again. The half DUE at settlement is the rundown's `magnitude`.
+   */
   readonly atStake: Minor;
   /** **The snap.** True exactly when this compact ended in a default (A5). */
   readonly snapped: boolean;
@@ -1275,7 +1297,15 @@ export interface VentureGlyph {
   readonly stage: SystemId;
   readonly rolesFilled: number;
   readonly rolesTotal: number;
-  /** Fraction of value that is elective, in bps. The hollow arc. */
+  /**
+   * The creator's OFFER — A7's unsecured share of the compact, in bps. The hollow arc.
+   *
+   * The same number on every frame and every line that names it — the live glyph, the settled
+   * glyph, `CompactLink.electiveBps`, `DocketCard.electiveBps` — read off `ventureEscrowRatioBps`.
+   * The settled glyph used to publish the share REALISED at settlement (`electiveDue / proceeds`)
+   * under this name, so the arc changed size the night a compact settled and disagreed with the link
+   * drawn through it. The realised elective half is the rundown's `magnitude`.
+   */
   readonly electiveBps: number;
   readonly state: 'FORMING' | 'LIVE' | 'CLOSED_GOLD' | 'SNAPPED_BLACK' | 'DEFERRED';
 }
@@ -1355,6 +1385,18 @@ export interface RundownSegment {
   readonly kind: BeatKind;
   /** What this beat is about: a venture id, a system, a principal. Always present. */
   readonly subject: string;
+  /**
+   * ★ **How big this beat is, in {@link magnitudeUnit}.** The elective half DUE at settlement on a
+   * `SETTLEMENT` beat, the bond slashed on a `LAPSE`, the goods taken (or demanded) on a `PLUNDER`.
+   *
+   * It was published as `atStake` — the word `CompactLink.atStake` and `DocketCard.atStake` use for
+   * the PINNED elective price of a compact's filled roles. On a share role the two differ, so one
+   * venture carried two different `atStake`s on one frame (HARD RULE 4), and on a plunder this one
+   * is not even currency. One word per concept: the beat's own size has its own name and its unit.
+   */
+  readonly magnitude: number;
+  /** `MINOR` (currency) on SETTLEMENT and LAPSE beats; `QTY` (units of a good) on PLUNDER. */
+  readonly magnitudeUnit: 'MINOR' | 'QTY';
   /** Present only on a `VENTURE` beat. */
   readonly venture: VentureId | null;
   readonly cast: readonly CastChip[];

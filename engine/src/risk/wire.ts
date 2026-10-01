@@ -48,7 +48,7 @@ import {
   strikeFront,
   type FrontPort,
 } from './run.js';
-import { destroySet, isLandfallTick, stateAt } from './front.js';
+import { destroySet, isLandfallTick, stateAt, type FrontLoss } from './front.js';
 import { assertRiskInvariants } from './invariants.js';
 import {
   COVER_ELECTIVE_BPS_CEILING,
@@ -162,6 +162,16 @@ export interface RiskWirePort {
    * barrel and the runtime imports the real one; this member survives so a test can still move it.
    */
   readonly offerTermTicks: number;
+  /**
+   * ★ **What a strike took, per lot — for THE FRONT BAND's `took` / `tookQty`, and for nothing else.**
+   *
+   * `frontBands` was handed an empty map by its only caller, so every struck band published
+   * `took: 0 · tookQty: 0` beside a ticker reading *"THE FRONT STRUCK … 40,000 goods gone"* — a frame
+   * disagreeing with itself about a public loss (A5). The per-system split exists only here, at the
+   * strike, so it is handed out here. A display hook: the receiver keeps it outside `state_hash`, and
+   * it is called after the strike has been applied, so it cannot change what the strike did.
+   */
+  readonly struck?: (front: string, losses: readonly FrontLoss[]) => void;
 }
 
 // ── HAZARD ──────────────────────────────────────────────────────────────────
@@ -238,6 +248,7 @@ export function runFrontPhase(port: RiskWirePort): void {
       reckoningIndex(port.tick) * TICKS_PER_RECKONING + SETTLEMENT_PHASE,
     );
     port.step(outcome.losses.length + outcome.indemnities.length);
+    port.struck?.(front.id, outcome.losses);
     port.emit({
       kind: 'front.swept',
       actor: null,

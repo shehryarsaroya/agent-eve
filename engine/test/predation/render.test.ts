@@ -27,7 +27,7 @@ function source(over: Partial<FrameSource> = {}): FrameSource {
     tick: 287,
     stateHash: 'abc',
     settled: [],
-    meters: { levyShort: 0 as never, onAPromise: 0 as never, kept: 0, broken: 0 },
+    meters: { levyShort: 0 as never, onAPromise: 0 as never, keptRecent: 0, brokenRecent: 0 },
     handles: new Map(),
     ticker: [],
     tomorrow: [],

@@ -86,7 +86,7 @@ function source(over: Partial<FrameSource> = {}): FrameSource {
     reckoning: 1,
     tick: 288,
     stateHash: 'h',
-    meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0 },
+    meters: { levyShort: minor(0), onAPromise: minor(0), keptRecent: 0, brokenRecent: 0 },
     settled: [],
     handles: new Map(),
     modelBadges: new Map(),

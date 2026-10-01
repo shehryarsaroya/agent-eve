@@ -428,8 +428,8 @@ describe('★ THE BALANCE GATE — territory must not make the Levy harder', () 
     for (const seed of GATE_SEEDS) {
       const run = play(seed, CLAIM_TICKS);
       const frame = run.runtime.reckoningFrame();
-      kept += frame?.meters.kept ?? 0;
-      broken += frame?.meters.broken ?? 0;
+      kept += frame?.meters.keptRecent ?? 0;
+      broken += frame?.meters.brokenRecent ?? 0;
       ventures += run.runtime.ventures.all().length;
     }
     // Both halves non-zero, because §7.6 needs a real answer: a cast that broke nothing would make

@@ -31,6 +31,35 @@ var Screens = (function () {
   // shared bits
   // ───────────────────────────────────────────────────────────────────────
 
+  /**
+   * The meters' kept/broken against the all-time standings — compared only when they cover
+   * the same span.
+   *
+   * `meters.keptRecent`/`brokenRecent` are summed over the engine's last eight settlement
+   * summaries, from `meters.recentFromReckoning` to this frame; the standings are all-time.
+   * They were both called `kept`/`broken`, agreed for eight Reckonings and parted on the ninth,
+   * and this panel printed THE FRAME DISAGREES WITH ITSELF over two honest numbers answering
+   * two questions. So the span is now on the frame: when it reaches back to R0 the two must
+   * agree and a mismatch is still flagged; when it does not, the line says what it covers.
+   */
+  function recentMeters(R, kept, broke) {
+    var M = R.meters || {};
+    // A frame from before the span was named: `kept`/`broken`, span unknown — say nothing.
+    if (M.keptRecent === undefined) return null;
+    var from = M.recentFromReckoning || 0;
+    if (from === 0) {
+      return (M.keptRecent !== kept || M.brokenRecent !== broke)
+        ? el('div', { class: 'note-line', style: 'color:var(--amber)' },
+            'THE FRAME DISAGREES WITH ITSELF: meters say ' + U.n(M.keptRecent) + ' kept / ' +
+            U.n(M.brokenRecent) + ' broken since R0; the standings rows above sum to ' + U.n(kept) +
+            ' / ' + U.n(broke) + '.')
+        : null;
+    }
+    return el('div', { class: 'note-line' },
+      'R' + from + '\u2013R' + R.reckoningIndex + ' only: ' + U.n(M.keptRecent) + ' kept / ' +
+      U.n(M.brokenRecent) + ' broken. The rows above are all time.');
+  }
+
   // Standings are cumulative and survive replay. Meter summaries are bounded
   // and can cover a shorter window after a checkpoint has been adopted.
   function promiseTotals(R) {
@@ -193,7 +222,10 @@ var Screens = (function () {
       push('CAMPAIGN', s.campaign, s.objective, s.state, s.nextPulseTick, s.bond, s.attacker, 'amber', 'sap');
     });
     ((L && L.frontBands) || R.frontBands || []).forEach(function (f) {
-      push('FRONT', f.front, f.system, f.state, f.ticksToLandfall, null, null,
+      // `took` is the value the strike destroyed here: zero before landfall, the real figure after,
+      // and null only when the serving process never saw the strike — so null stays a blank.
+      push('FRONT', f.front, f.system, f.state, f.ticksToLandfall,
+        typeof f.took === 'number' && f.took > 0 ? f.took : null, null,
         f.state === 'FORECAST' ? 'amber' : null, 'front');
     });
     ((L && L.authorityLines) || R.authorityLines || []).forEach(function (a) {
@@ -237,8 +269,8 @@ var Screens = (function () {
         : tile('SYSTEMS', '—', { dim: true, note: 'the lane graph is published at settlement' }),
       tile('ON A PROMISE NOW', U.n((L && L.meters ? L.meters.onAPromise : M.onAPromise)),
         { note: 'live · riding on nothing but a word' }),
-      // ★ SCOPE IN THE LABEL. `meters.kept`/`broken` count ELECTIVE HALVES at
-      // settlement; `standings[].defaults` counts DEFAULT EVENTS per principal.
+      // ★ SCOPE IN THE LABEL. `meters.keptRecent`/`brokenRecent` count ELECTIVE HALVES
+      // over a trailing span; `standings[].defaults` counts DEFAULT EVENTS per principal.
       // Different subjects, and both were captioned "on the record" — so
       // OVERVIEW said 20 and STANDINGS said 33 for what read as one number.
       tile('HALVES KEPT', U.n(promises.kept), { note: (R.reckoningIndex !== undefined ? 'all time · elective halves paid' : 'awaiting the first settlement') }),
@@ -576,7 +608,9 @@ var Screens = (function () {
     mine.forEach(function (c) {
       if (c.a === pid) { vout += c.atStake || 0; nout++; } else { vin += c.atStake || 0; nin++; }
     });
-    var onWord = mine.reduce(function (a, c) { return a + (c.atStake || 0) * (c.electiveBps || 0) / 10000; }, 0);
+    // `compactLinks[].atStake` is already the elective half (the pinned price of the filled roles).
+    // Multiplying it by `electiveBps` again printed a fraction of a fraction.
+    var onWord = mine.reduce(function (a, c) { return a + (c.atStake || 0); }, 0);
     g3.appendChild(panel('VALUE FLOW', { sub: 'across the compacts on this frame' }, el('div', null, [
       el('div', { class: 'meter' }, [el('span', { class: 'nm', text: 'OUT' }), U.bar(vout / Math.max(1, vin + vout)), el('span', { class: 'qt', text: U.n(vout) })]),
       el('div', { class: 'meter' }, [el('span', { class: 'nm', text: 'IN' }), U.bar(vin / Math.max(1, vin + vout)), el('span', { class: 'qt', text: U.n(vin) })]),
@@ -661,7 +695,7 @@ var Screens = (function () {
       tile('LIVE', String(byState.LIVE || 0), { note: 'both roles filled, running' }),
       tile('CLOSED', String(byState.CLOSED_GOLD || 0), { note: 'the elective half was paid' }),
       tile('SNAPPED', String(byState.SNAPPED_BLACK || 0), { bad: (byState.SNAPPED_BLACK || 0) > 0, note: 'the word was broken' }),
-      tile('ON A WORD, ON SCREEN', U.n(links.reduce(function (a, c) { return a + (c.atStake || 0) * (c.electiveBps || 0) / 10000; }, 0)),
+      tile('ON A WORD, ON SCREEN', U.n(links.reduce(function (a, c) { return a + (c.atStake || 0); }, 0)),
         { note: 'elective halves of the compacts listed here' }),
     ]));
 
@@ -709,9 +743,12 @@ var Screens = (function () {
     // no screen but the OVERVIEW table. A raid with a countdown is the most
     // legible thing the live frame carries, and the ventures rail was spending
     // its height redrawing the ten rows of the table beside it.
+    // `raidLines` is THIS Reckoning's raids — live, or resolved tonight — on both frames. It used
+    // to be the season's six biggest, which reran old plunders as tonight's; the count is now one
+    // night's, and the label says so.
     var rl = (D.L && D.L.raidLines || R.raidLines || []).slice();
     right.appendChild(panel('STANDOFFS', {
-      sub: rl.length + ' raids · ' + ((R.battleLines || []).length) + ' battles',
+      sub: rl.length + ' raids this Reckoning · ' + ((R.battleLines || []).length) + ' battles',
     }, rl.length ? table('vt-r', [
       { k: 'stage', t: 'at', w: '108px', cell: function (x) { return U.sysLink(x.stage, sysName(D, x.stage)); } },
       { k: 'target', t: 'target', w: '84px', cell: function (x) { return hOf(D, x.target); } },
@@ -2110,16 +2147,7 @@ var Screens = (function () {
       // the degree sum, named as one: it counts each relationship from both
       // ends, so it is not an edge count and must not be labelled as one
       U.kv('COUNTERPARTY TIES, SUMMED', U.n(totalCp)),
-      ((R.meters || {}).kept !== kept || (R.meters || {}).broken !== broke)
-        ? el('div', { class: 'note-line', style: 'color:var(--amber)', title:
-            'Measured across nine frames of a heuristic world, meters.kept/broken equal the standings ' +
-            'sums exactly on eight of them and part company on the ninth. Both are published, both are ' +
-            'cumulative, and the client draws both — so it can see the divergence. Hiding it would be ' +
-            'the renderer keeping the engine\u2019s secret.',
-          }, 'THE FRAME DISAGREES WITH ITSELF: meters say ' + U.n((R.meters || {}).kept) + ' kept / ' +
-             U.n((R.meters || {}).broken) + ' broken; the standings rows above sum to ' + U.n(kept) +
-             ' / ' + U.n(broke) + '. Hover for what is known.')
-        : null,
+      recentMeters(R, kept, broke),
       el('div', { class: 'note-line' },
         'Gate 3 measured 12% of settled elective promises broken, unprompted. Neither zero — which would have ' +
         'made trust worthless — nor universal, which would make the elective half a fee.'),
@@ -2398,7 +2426,12 @@ var Screens = (function () {
           return el('button', {
             'aria-current': ix.reckoning === R.reckoningIndex ? 'true' : null,
             text: 'R' + ix.reckoning,
-            title: 'tick ' + ix.tick + ' · kept ' + ix.kept + ' · broken ' + ix.broken + ' · levy short ' + ix.levyShort,
+            // `keptRecent`/`brokenRecent` since the span was named; an index row written before it
+            // carries `kept`/`broken` and is read as what it was.
+            title: 'tick ' + ix.tick + ' · kept ' + (ix.keptRecent !== undefined ? ix.keptRecent : ix.kept) +
+              ' · broken ' + (ix.brokenRecent !== undefined ? ix.brokenRecent : ix.broken) +
+              (ix.recentFromReckoning ? ' (since R' + ix.recentFromReckoning + ')' : '') +
+              ' · levy short ' + ix.levyShort,
             on: { click: function () { D.loadReckoning(ix.file); } },
           });
         })))));
@@ -2526,9 +2559,16 @@ var Screens = (function () {
             }, [U.crest(c.principal, 18), el('span', { style: 'font-size:11px;color:var(--cyan)', text: c.handle })]);
           })),
       ]),
+      // `magnitude` is the beat's own size — the elective half DUE (SETTLEMENT), the bond slashed
+      // (LAPSE) or the goods taken (PLUNDER, in units, never currency). It was `atStake`, the word
+      // the compact links and docket cards use for a different number about the same venture.
       el('div', { style: 'margin-left:auto;text-align:right' }, [
-        el('div', { style: 'font:400 30px var(--mono);color:' + (s.defaulted ? 'var(--red-text)' : 'var(--cyan)'), text: U.n(s.atStake) }),
-        el('div', { style: 'font:9px var(--cond);letter-spacing:.16em;color:var(--dimmer)', text: 'AT STAKE' }),
+        el('div', { style: 'font:400 30px var(--mono);color:' + (s.defaulted ? 'var(--red-text)' : 'var(--cyan)'),
+          text: U.n(s.magnitude !== undefined ? s.magnitude : s.atStake) }),
+        el('div', { style: 'font:9px var(--cond);letter-spacing:.16em;color:var(--dimmer)',
+          // A PLUNDER beat's magnitude is what was taken, or the demand on a repulse — units either
+          // way, so the label names the unit rather than guessing which.
+          text: s.kind === 'LAPSE' ? 'BOND SLASHED' : s.kind === 'PLUNDER' ? 'UNITS OF GOODS' : 'ELECTIVE DUE' }),
       ]),
       stageRail(s.glyph && s.glyph.stage),
     ])));

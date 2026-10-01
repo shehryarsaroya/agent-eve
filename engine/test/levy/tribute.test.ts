@@ -129,8 +129,8 @@ describe('the lines reach the frame the client already draws', () => {
       meters: {
         levyShort: levyShortNow(runtime.levy, 0).total,
         onAPromise: 0 as never,
-        kept: 0,
-        broken: 0,
+        keptRecent: 0,
+        brokenRecent: 0,
       },
       handles: new Map(),
       ticker: [],

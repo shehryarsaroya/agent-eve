@@ -65,7 +65,7 @@ function frameOf(views: readonly SettledView[]): ReturnType<typeof renderFrame> 
     tick: 2879,
     stateHash: 'x'.repeat(64),
     settled: views,
-    meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0 },
+    meters: { levyShort: minor(0), onAPromise: minor(0), keptRecent: 0, brokenRecent: 0 },
     handles: HANDLES,
     ticker: [],
     tomorrow: [],

@@ -49,7 +49,7 @@ function source(over: Partial<FrameSource> = {}): FrameSource {
     tick: 1151,
     stateHash: 'abc123',
     settled: [settled()],
-    meters: { levyShort: minor(1_800_000), onAPromise: minor(812_000), kept: 214, broken: 9 },
+    meters: { levyShort: minor(1_800_000), onAPromise: minor(812_000), keptRecent: 214, brokenRecent: 9 },
     handles: new Map([
       [P('halcyon'), H('halcyon')],
       [P('vex'), H('vex')],
@@ -141,7 +141,7 @@ describe('renderFrame', () => {
     const f = renderFrame(source());
     expect(f.rundown.length).toBe(1);
     expect(f.reckoningIndex).toBe(3);
-    expect(f.meters.broken).toBe(9);
+    expect(f.meters.brokenRecent).toBe(9);
   });
 
   it('holds defaults to the END of the rundown regardless of amount', () => {
@@ -275,7 +275,7 @@ describe('renderFrame', () => {
     const f = emptyFrame(0, 287, 'hash');
     expect(f.rundown).toEqual([]);
     expect(f.docket).toEqual([]);
-    expect(f.meters.kept).toBe(0);
+    expect(f.meters.keptRecent).toBe(0);
   });
 });
 

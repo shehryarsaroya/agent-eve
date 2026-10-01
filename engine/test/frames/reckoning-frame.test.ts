@@ -45,7 +45,7 @@ describe('runtime.reckoningFrame', () => {
 
     const latest = JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8')) as {
       reckoningIndex: number;
-      meters: { kept: number; broken: number; levyShort: number };
+      meters: { keptRecent: number; brokenRecent: number; levyShort: number };
       rundown: unknown[];
       tributeLines: unknown[];
     };

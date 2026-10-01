@@ -2308,12 +2308,13 @@ import {
   type CoverChain,
   type CoverId,
   type FrontBand,
+  type FrontLoss,
   type HoldingRead,
   type RiskAffordance,
   type RiskViewInput,
   type WithheldRisk,
 } from '../risk/index.js';
-import { frontBands } from '../risk/lines.js';
+import { frontBands, type FrontTake } from '../risk/lines.js';
 import { riskStateTable } from '../risk/book.js';
 import {
   electCover,
@@ -3608,6 +3609,18 @@ export class Runtime {
    * would make two identical worlds differ over what a viewer had scrolled past.
    */
   private readonly raidTicker = new Ring<string>(MAX_RAID_TICKER_LINES);
+
+  /**
+   * ★ What each FRONT's strike took, by front then system — THE FRONT BAND's `took` / `tookQty`.
+   *
+   * A display buffer outside `state_hash`, for `raidTicker`'s reason: it is derived from the strike
+   * and read only by the frame. Filled through `RiskWirePort.struck` after the strike has applied, so
+   * it cannot change what the strike did; `set`, never accumulate, so a tick re-run after a halt
+   * writes the same figures again rather than doubling them. A replay refills it by re-running HAZARD;
+   * a boot that adopts a checkpoint past a strike has no row for it, and the band says `null` rather
+   * than zero. Bounded: a front is on the frame for at most one Reckoning after landfall.
+   */
+  private readonly frontTake = new Map<string, FrontTake>();
 
   /**
    * The battle ticker (§9A, §14.5). A **second ring, not a share of the raid one.**
@@ -13392,7 +13405,37 @@ export class Runtime {
       markOf: (good) => this.markOf(good, ctx.tick),
       rulesVersion: RULES_VERSION,
       offerTermTicks: COVER_OFFER_TTL_TICKS,
+      struck: (front, losses) => {
+        this.recordFrontTake(front, losses, ctx.tick);
+      },
     };
+  }
+
+  /**
+   * Fold one strike's losses into {@link frontTake}, valued at the mark at landfall — the mark the
+   * INDEMNITY arithmetic falls back to when a COVER pinned none (`markOf`). One mark per good, read
+   * once: the losses are per lot and a busy swath has many.
+   */
+  private recordFrontTake(front: string, losses: readonly FrontLoss[], tick: number): void {
+    const marks = new Map<string, Minor>();
+    const bySystem = new Map<SystemId, { value: Minor; qty: Qty }>();
+    for (const loss of losses) {
+      let mark = marks.get(loss.good);
+      if (mark === undefined) {
+        mark = this.markOf(loss.good, tick);
+        marks.set(loss.good, mark);
+      }
+      const at = bySystem.get(loss.system) ?? { value: minor(0), qty: qty(0) };
+      bySystem.set(loss.system, { value: minor(at.value + loss.qty * mark), qty: qty(at.qty + loss.qty) });
+    }
+    this.frontTake.set(front, bySystem);
+    // A front stays on the frame for one Reckoning after landfall (`RiskBook.liveFronts`), and at most
+    // `MAX_LIVE_FRONTS` are live, so eight strikes of memory is ample and never grows (scar #3).
+    while (this.frontTake.size > 8) {
+      const oldest = this.frontTake.keys().next();
+      if (oldest.done === true) break;
+      this.frontTake.delete(oldest.value);
+    }
   }
 
   /**
@@ -13428,7 +13471,7 @@ export class Runtime {
 
   /** THE FRONT BAND — A13's first signature. */
   frontBandLines(tick: number = this.engine.tick): readonly FrontBand[] {
-    return frontBands(this.risk, tick, new Map());
+    return frontBands(this.risk, tick, this.frontTake);
   }
 
   /** THE COVER ARC — A13's second. */
@@ -16046,7 +16089,13 @@ export class Runtime {
         creator: v.creator,
         rolesFilled: filled,
         rolesTotal: v.roles.length,
-        electiveBps: v.roles.length === 0 ? 0 : Math.round((electiveDue / Math.max(1, st.claims.proceeds)) * 10_000),
+        // ★ The creator's OFFER — A7's unsecured share, read off the venture module's own function —
+        // exactly as the live glyph, the compact link and the docket card read it. This was
+        // `electiveDue / proceeds`, the share REALISED at settlement, under the same name the compact
+        // link one field over uses for the offer: one word for two numbers on the same frame (HARD
+        // RULE 4), and the arc a viewer watched all day redrew itself at a different size the night
+        // it settled. The realised half is on the rundown, as `magnitude`.
+        electiveBps: BPS_ONE - ventureEscrowRatioBps(v),
         atStake: electiveDue,
         // ── ★ A5′: WHAT WAS WITHHELD, NOT WHAT WAS PROMISED ─────────────────────
         //
@@ -16105,11 +16154,15 @@ export class Runtime {
       });
     }
 
-    // Meters: LEVY SHORT is the headline (§14.2), kept/broken is the cumulative
-    // scoreboard, on-a-promise is the elective value that settled this Reckoning.
+    // Meters: LEVY SHORT is the headline (§14.2), on-a-promise is the elective value that settled
+    // this Reckoning, and kept/broken is the scoreboard over the RECENT span — the summaries ring
+    // holds the last `MAX_RECKONING_SUMMARIES`, so it is a trailing window and not the cumulative
+    // count this comment used to call it. The window's first Reckoning is published beside the two
+    // sums (`Meters.recentFromReckoning`) so nobody compares them against the all-time standings.
     const summaries = this.summaries.all;
-    const kept = summaries.reduce((a, r) => a + r.electiveHonoured, 0);
-    const broken = summaries.reduce((a, r) => a + r.defaults, 0);
+    const keptRecent = summaries.reduce((a, r) => a + r.electiveHonoured, 0);
+    const brokenRecent = summaries.reduce((a, r) => a + r.defaults, 0);
+    const recentFromReckoning = summaries.reduce((a, r) => Math.min(a, r.reckoning), outcome.reckoning);
     const onAPromise = sumMinor(settled.map((v) => v.atStake));
 
     // ── A6's AUTHORITY SIGNATURE (§8, §14), NOW BUILT IN ONE REVIEWABLE PLACE ──
@@ -16143,8 +16196,9 @@ export class Runtime {
       meters: {
         levyShort: this.levy.shortFor(outcome.reckoning),
         onAPromise,
-        kept,
-        broken,
+        keptRecent,
+        brokenRecent,
+        recentFromReckoning,
         // Raw yield nobody has converted. Summed over every principal's lots rather than tracked as a
         // counter, because a second home for a quantity the ledger already holds is scar #5 — and the
         // ledger is the only thing that knows about encumbrance and location.
