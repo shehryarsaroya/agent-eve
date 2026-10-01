@@ -562,6 +562,7 @@ import {
   GROWTH_QUALIFIED_PER_SYSTEM,
   HANDS_PER_PRINCIPAL,
   GROWTH_STATEMENT,
+  GROWTH_SUMMARY,
   growthReading,
   handsOf,
   haul,
@@ -663,6 +664,11 @@ export interface GrownView {
 
 /** `header.growth` — the rule, the reading, and the newest constellation (SPEC §4.2). */
 export interface GrowthBlock {
+  /**
+   * `GROWTH_SUMMARY`: one line and the name of the `agent.md` section that holds the rule. Never the
+   * rule itself — static prose in every observation is what `observe.ts`'s sovereignty note measured
+   * crowding the house cast's own affordances out of its prompt. The frame carries the rule in full.
+   */
   readonly rule: string;
   /** Principals that are capitalised, non-related and with capital at stake. A count, never a list. */
   readonly qualified: number;
@@ -14132,7 +14138,7 @@ export class Runtime {
     const last = map.grown[map.grown.length - 1];
     const lastAt = this.world.openedAtTick[map.grown.length - 1] ?? 0;
     return {
-      rule: GROWTH_STATEMENT,
+      rule: GROWTH_SUMMARY,
       qualified: reading.qualified,
       needed: reading.needed,
       systems: reading.systems,
@@ -16974,7 +16980,9 @@ export class Runtime {
       growth: (() => {
         const block = this.growthBlock(outcome.tick);
         return {
-          rule: block.rule,
+          // The viewer has no `agent.md`, so the frame carries the rule in full; `observe` carries one
+          // line and the section's name (`GROWTH_SUMMARY`).
+          rule: GROWTH_STATEMENT,
           qualified: block.qualified,
           needed: block.needed,
           systems: block.systems,

@@ -27,6 +27,7 @@ import {
   GROWTH_PLAN,
   GROWTH_QUALIFIED_PER_SYSTEM,
   GROWTH_STATEMENT,
+  GROWTH_SUMMARY,
   growthReading,
   isQualified,
   launchMap,
@@ -92,11 +93,21 @@ describe('the gate counts the three words of §4.2, and nothing about headcount'
     expect(growthReading(map, port(short)).opens).toBe(false);
   });
 
-  it('is in agent.md verbatim, because the observation and the document must say one thing', () => {
+  it('is in agent.md verbatim, because the frame and the document must say one thing', () => {
     // The `agent-md.test.ts` normalisation: blockquote markers and runs of spaces collapse.
     const agentMd = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
     const normalised = agentMd.replace(/\n> ?/g, ' ').replace(/[ \t]+/g, ' ');
     expect(normalised).toContain(GROWTH_STATEMENT.replace(/[ \t]+/g, ' '));
+  });
+
+  it('serves observe one line, not the rule — and the line names a section agent.md really has', () => {
+    // `api/observe.ts`'s sovereignty note: static prose in every observation crowded the house cast's
+    // own affordances out of its prompt. MUTATION: serve GROWTH_STATEMENT in `header.growth` — RED.
+    expect(GROWTH_SUMMARY.length).toBeLessThan(GROWTH_STATEMENT.length / 3);
+    const title = /agent\.md, "([^"]+)"/.exec(GROWTH_SUMMARY)?.[1];
+    expect(title).toBeDefined();
+    const agentMd = readFileSync(new URL('../../agent.md', import.meta.url), 'utf8');
+    expect(agentMd).toMatch(new RegExp(`^## [0-9A-Z]+\\. ${title ?? '∅'}`, 'm'));
   });
 
   it('prices capital at one night of the Levy, and the rule says every number it relies on', () => {
@@ -153,6 +164,9 @@ describe('when the gate opens, the world takes the new constellation whole', () 
     expect(frame?.growth).not.toBeNull();
     expect(growth['qualified']).toBe(frame?.growth?.qualified);
     expect(growth['grown']).toBe(1);
+    // One line to the agent (agent.md holds the rule); the whole rule to the viewer, who has no agent.md.
+    expect(growth['rule']).toBe(GROWTH_SUMMARY);
+    expect(frame?.growth?.rule).toBe(GROWTH_STATEMENT);
     expect(frame?.growth?.opened).toHaveLength(1);
     // THE RISE is drawable: every system it names is on the frame's map.
     const onMap = new Set(frame?.map.map((s) => s.id));

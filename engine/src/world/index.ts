@@ -65,6 +65,7 @@ export {
   GROWTH_PLAN,
   GROWTH_QUALIFIED_PER_SYSTEM,
   GROWTH_STATEMENT,
+  GROWTH_SUMMARY,
   GrowthError,
   growthName,
   growthReading,

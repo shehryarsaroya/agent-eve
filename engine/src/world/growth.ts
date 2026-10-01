@@ -595,6 +595,22 @@ export const GROWTH_STATEMENT =
   'exists is redrawn: every place, lane, strait and lode stays exactly as it was, and newcomers are ' +
   'seated in whichever COMMONS system has the fewest holdings, the newest first on a tie.';
 
+/**
+ * What `observe` carries in place of {@link GROWTH_STATEMENT}: one line, and the name of the `agent.md`
+ * section that holds the rule in full.
+ *
+ * `api/observe.ts` keeps the measured reason beside its sovereignty statement: three static statements
+ * in every observation pushed the house cast's payload past `cast/prompt.ts`'s 16,000-character
+ * projection, which then truncated the agent's own affordances, and LIVE decisions fell below the
+ * health floor. The full rule here is ~1 KB in every observation of every principal, so it lives where
+ * a complete rules surface belongs — `agent.md`, verbatim and pinned — and on the frame, whose viewer
+ * has no `agent.md`. Named by title rather than by section number, so a renumbered document still
+ * resolves it; `test/world/growth-gate.spec.ts` checks the title is there.
+ */
+export const GROWTH_SUMMARY =
+  'A new constellation opens at the Reckoning where qualified reaches needed; enrolling more ' +
+  'principals never counts. The rule in full: agent.md, "THE REGION GROWS".';
+
 /** For refusals and logs: why a reading did not open anything. */
 export function describeReading(r: GrowthReading): string {
   return (
