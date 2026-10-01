@@ -27,6 +27,7 @@
 import type { IntRead } from '../core/params.js';
 import type { EventId, PrincipalId } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
+import { AUDIT_LAG_TICKS } from '../grant/dossier.js';
 import { reject, type WorldResult } from '../world/result.js';
 import { describeError } from './describe.js';
 import type { Book, SyndicateId, SyndicateRecord } from './book.js';
@@ -99,7 +100,14 @@ export type ApplyOutcome =
  * The request is deliberately not queued. A pending-application queue is a buffer that grows with
  * enrolments — scar #3's shape — and it would need its own cap, its own place in `state_hash` and its
  * own expiry. The `message` channel already exists for asking: it costs no action, it is PARTIES-visible,
- * and it declassifies at settlement, so an approach and its answer end up where a viewer can read them.
+ * and a letter addressed `{to}` (a PARLEY) declassifies `AUDIT_LAG_TICKS` after it is sent, so an
+ * approach and its answer end up where a viewer can read them.
+ *
+ * ★ 41 — the refusal used to say only "`message` one of them". That was half the rule: a first letter
+ * to somebody you have no tie to is a PARLEY **opening**, and an opening needs a reach rung to that
+ * member and an earned entitlement (`say/reach.ts`, `say/parley.ts`, A15). A hint that names the verb
+ * and not its price sends a newcomer into a second refusal it was not warned about (A2), so the price
+ * is now in the sentence.
  */
 export function apply(port: ApplyPort, book: Book, req: ApplyRequest): WorldResult<ApplyOutcome> {
   const row = book.at(req.syndicate);
@@ -127,9 +135,12 @@ export function apply(port: ApplyPort, book: Book, req: ApplyRequest): WorldResu
       'A2',
       `${req.syndicate}'s charter is INVITE: a sitting member has to bring you in, and there is no ` +
         'application queue for me to put you in. Its members are ' +
-        `${book.sittingMembers(req.syndicate, req.tick).join(' · ')} — \`message\` one of them, which ` +
-        'costs no action, and it will admit you by naming you itself. What you say there becomes ' +
-        'public at settlement, so it is also how you build the case.',
+        `${book.sittingMembers(req.syndicate, req.tick).join(' · ')} — \`message {to, act, text}\` one ` +
+        'of them, which costs no action, and it will admit you by naming you itself. A first letter to ' +
+        'somebody you have no tie with is a PARLEY opening: it needs a reach rung to that member and an ' +
+        'opening you have earned (`header.parley` shows both, and the refusal names what is missing). ' +
+        `It becomes PUBLIC ${String(AUDIT_LAG_TICKS)} ticks after you send it, so it is also how you ` +
+        'build the case.',
     );
   }
 

@@ -53,6 +53,9 @@ import {
 } from '../levy/index.js';
 import {
   IN_FULL,
+  MIN_ROLES_TOP_YIELD,
+  isEscrowable,
+  isTopYield,
   kindSpec,
   openIndices,
   roleOfPrincipal,
@@ -199,6 +202,8 @@ export interface CastOptions {
   readonly graduateChanceBps?: number;
   /** Chance in 10 000 that a member takes the ground it already works, on a tick it can. */
   readonly claimChanceBps?: number;
+  /** ★ Chance in 10 000 that an eligible member opens a four-role venture. 0 turns it off. */
+  readonly topYieldChanceBps?: number;
 }
 
 /**
@@ -229,6 +234,57 @@ export interface CastOptions {
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const DEFAULT_CREATE_CHANCE_BPS = 4_000;
+
+/**
+ * ★ The four-role venture the cast opens, and how often. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **NO VENTURE WITH FOUR OR MORE ROLES HAD EVER OCCURRED IN THE LIVE WORLD** (design review,
+ * 2026-10-01), and the reason was this file: {@link CREATES} maps the four bot roles onto
+ * `DIG | HAUL | ESCORT | RAID`, all two-role kinds, so in a world nobody steers a four-role kind was
+ * never authored and §7.2's *"top-yield kinds require ≥4 roles"* — the rule that forces cooperation by
+ * arithmetic — was true of the engine and invisible in the world. `scripts/formation-probe.ts` had
+ * already measured the other half: when somebody else opens a BUILD, the cast fills it one time in
+ * five, because every member bid for `open[0]` of the first id-ordered venture it saw.
+ *
+ * `scripts/formation-probe.ts`'s own docblock argued for NOT giving the cast a BUILD branch, because
+ * a top-yield kind is 40,000 of pure elective liability and seeding one would move `levyShort`. Both
+ * halves of that are answered rather than ignored: the creator honours its BUILD out of the BUILD's
+ * own proceeds (see {@link HeuristicCast.electionFor} — Phase 1 of the settlement returns the
+ * proceeds to the creator before Phase 2 asks it for the elective half, so IN_FULL is always
+ * fundable), and the branch is gated hard enough to run about once a Reckoning per tier — one four-role
+ * venture live per tier at a time, opened in the first sixth of a cycle (the one moment a settlement
+ * has just freed enough hands), and only where three cast-mates have a hand free to take the other
+ * roles.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const CAST_TOP_YIELD_KIND: VentureKind = 'BUILD';
+
+/**
+ * Chance in 10 000, per eligible member per eligible tick, of opening a four-role venture.
+ *
+ * Measured with `scripts/four-role-probe.ts` over six seeds × three Reckonings at twelve members
+ * (`--seeds-from g --count 6 --reckonings 3 --members 12`): `--top-yield-bps 200` opens 7 (0.39 a
+ * world-Reckoning, and two seeds none at all); **600 opens 14 (≈0.78), every one filled by four
+ * distinct principals and settled honoured** — no default, no abandonment, `levyShort` 0 exactly as
+ * with `--top-yield-off`, and Σ `defaults` 66 against the branch-off world's 78. Six hundred is the
+ * figure where "sometimes" means most Reckonings, and no seed goes without one.
+ */
+export const DEFAULT_TOP_YIELD_CHANCE_BPS = 600;
+
+/**
+ * The phase window a four-role venture may be opened in: the first sixth of a Reckoning.
+ *
+ * **Early, and the first version of this was late and opened nothing.** Measured on `g01` at 12
+ * members: in phases 168–240 at most THREE of the nine Commons members ever had an idle hand, and
+ * usually two, because a role holds its hand until the Reckoning settles — so the four-filler gate
+ * below never once passed and the branch was a capability nobody could reach. A settlement releases
+ * every role's hand at the same tick, which makes the opening of a cycle the one moment a
+ * hand-starved tier has four free: in phases 1–48 the gate holds on 84 of 147 ticks. The cost is the
+ * same one every early venture pays — its hands are held until this Reckoning's settlement.
+ */
+export const CAST_TOP_YIELD_FIRST_PHASE = 1;
+export const CAST_TOP_YIELD_LAST_PHASE = 48;
 
 /**
  * Default appetite for handing out an office. *(calibrate)*
@@ -1098,6 +1154,10 @@ export class HeuristicCast {
     for (const venture of runtime.ventures.forPrincipal(member.principal)) {
       if (venture.creator !== member.principal) continue;
       if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) continue;
+      // ★ A top-yield venture funds its own elective half (see `electionFor`), so what it promises is
+      // not a claim on the appetite that pays for every OTHER promise. Counting it here would let one
+      // BUILD's IN_FULL block every stake, crossing and create the member makes until it settles.
+      if (!isEscrowable(venture.kind)) continue;
       for (const role of venture.roles) {
         if (role.filledByPrincipal === null) continue;
         // Its own role is booked as paid in full and can never be a breach (scar #9).
@@ -1689,6 +1749,13 @@ export class HeuristicCast {
     // the decision is made or it binds several ticks late — long after every member has already
     // sent a hand.
     const reinforced = new Map<string, number>();
+    // ── ★ AND ONE FOUR-ROLE VENTURE PER TIER PER TICK, FOR THE SAME REASON ─────────
+    //
+    // `topYieldCreateFor` refuses a tier that already has a four-role venture LIVE, but two members reading
+    // one snapshot both see none — measured on `g03` at tick 10, two BUILDs opened in one tier in one
+    // tick and split its four free hands between them. The claim is staked here, in roster order,
+    // which is the only within-tick coordination §15.2 permits a heuristic.
+    this.topYieldTiersThisTick.clear();
     for (const member of this.members) {
       const rng = Rng.fromSeed(`${seed}:cast:${member.principal}:${String(tick)}`);
       const action = this.decideOne(member, tick, rng, out.length, claimed, reinforced);
@@ -1700,6 +1767,9 @@ export class HeuristicCast {
     }
     return out;
   }
+
+  /** Tiers a member has already opened a four-role venture in during the current `decide`. Scratch only. */
+  private readonly topYieldTiersThisTick = new Set<string>();
 
   /**
    * One member's move, in priority order.
@@ -2148,6 +2218,15 @@ export class HeuristicCast {
     // So the two branches now read the same budget, and the rule is the honest one: **do not offer
     // work you have no hand to do, and do not commission work you have no hand to fill.**
     // ══════════════════════════════════════════════════════════════════════════
+    // ── ★ THE FOUR-ROLE VENTURE: WHOLLY ELECTIVE, ABOUT ONCE A RECKONING PER TIER ──
+    //
+    // Above the ordinary create because it is the rarer and the more gated of the two, and on a
+    // DERIVED stream (`rng.derive`) so adding it moves none of the draws the ordinary create roll and
+    // every later branch were calibrated against — a world with no four-role venture in it decides
+    // exactly as it did before 41. {@link topYieldCreateFor} carries the gates.
+    const fourRole = this.topYieldCreateFor(member, tick, rng, spendable, idle);
+    if (fourRole !== null) return { ...base, ...fourRole };
+
     const appetite = this.options.createChanceBps ?? DEFAULT_CREATE_CHANCE_BPS;
     if (spendable > 0 && idle.length > 0 && rng.chance(appetite, 10_000)) {
       const hand = idle[0];
@@ -4067,6 +4146,21 @@ export class HeuristicCast {
         // (scar #9), and `elect` refuses it by name.
         if (role.filledByPrincipal === null) continue;
         if (role.filledByPrincipal === member.principal) continue;
+        // ── ★ A TOP-YIELD VENTURE PAYS ITS OWN ELECTIVE HALF, SO IT IS HONOURED IN FULL ──
+        //
+        // A BUILD or a SIEGE is un-escrowable (§7.5), so its whole consideration is elective — and
+        // every role's claim is a SHARE of the proceeds, which settlement Phase 1 returns to the
+        // creator's stores before Phase 2 asks it for the elective half. IN_FULL is therefore always
+        // fundable from the venture itself; the appetite below, which budgets promises against
+        // stores, has nothing to say about it. Stated once and left alone — like every statement
+        // here, never restated UP over somebody else's choice (an LLM member that elected less has
+        // decided, and the heuristic acting on its idle ticks must not overrule it).
+        if (!isEscrowable(venture.kind)) {
+          if (runtime.electionOn(venture.id, role.index) === undefined && first === null) {
+            first = { venture: venture.id, role: role.index, want: IN_FULL };
+          }
+          continue;
+        }
         const owed = runtime.electiveCeilingOf(venture, role.index);
         if (owed <= 0) continue;
 
@@ -4665,8 +4759,19 @@ export class HeuristicCast {
     member: CastMember,
     tick: number,
   ): { readonly venture: string; readonly role: number } | null {
+    // ★ A four-role venture forming in this member's tier comes first (`RULES_VERSION` 41). It is the
+    // only venture that needs FOUR principals inside twelve ticks, so it is the one an id-ordered
+    // first-fit starved: measured by `scripts/formation-probe.ts`, BUILDs the cast was handed formed
+    // one time in five. A world with no four-role venture forming falls straight through to the loop
+    // below, unchanged.
+    const fourRole = this.topYieldSlotFor(member, tick);
+    if (fourRole !== null) return fourRole;
     for (const venture of this.runtime.ventures.live()) {
       if (venture.state !== 'FORMING') continue;
+      // A four-role venture is `topYieldSlotFor`'s alone: when it declined (the only open role is the one
+      // the cast creator is about to take), this first-fit must not take it instead — measured, it did,
+      // and the creator of a BUILD was left without a role in its own venture.
+      if (isTopYield(venture.kind)) continue;
       if (tick > venture.windowClosesTick) continue;
       if (venture.creator === member.principal) continue;
       if (roleOfPrincipal(venture, member.principal) !== null) continue;
@@ -4691,5 +4796,111 @@ export class HeuristicCast {
       return { venture: venture.id, role: first };
     }
     return null;
+  }
+
+  /**
+   * ★ The role this member should take in a four-role venture still forming in its tier, or null.
+   *
+   * Three rules, each closing a measured way the first-fit loop lost a BUILD:
+   *
+   *   - **The creator works the top role of its own.** Role 0 (`WRIGHT` on a BUILD) is the largest
+   *     share; a creator that staffs it needs three counterparties rather than four, which inside a
+   *     twelve-tick window is the difference between forming and abandoning.
+   *   - **Cast-mates spread across the open roles** by roster position, so four members reading one
+   *     snapshot do not all bid for `open[0]` in the same tick — three INV-9 refusals and one fill,
+   *     which is what the probe's refusal list showed. Role 0 is left for a cast creator that has not
+   *     taken it yet.
+   *   - **INV-23 is respected before the bid, not after it.** A member that held a grant over the
+   *     creator when the venture opened may not fill a role in it, and `vFillRole` refuses that by
+   *     name — so asking would be the AGT-S3 noise this file avoids everywhere else.
+   */
+  private topYieldSlotFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly venture: string; readonly role: number } | null {
+    const runtime = this.runtime;
+    const tier = tierOf(runtime.world.map, member.seat);
+    const ordinal = Math.max(0, this.members.findIndex((m) => m.principal === member.principal));
+    for (const venture of runtime.ventures.live()) {
+      if (venture.state !== 'FORMING' || !isTopYield(venture.kind)) continue;
+      if (tick > venture.windowClosesTick) continue;
+      if (tierOf(runtime.world.map, venture.stage) !== tier) continue;
+      if (roleOfPrincipal(venture, member.principal) !== null) continue;
+      const open = openIndices(venture);
+      if (open.length === 0) continue;
+      if (venture.creator === member.principal) {
+        if (open.includes(0)) return { venture: venture.id, role: 0 };
+        continue;
+      }
+      if (runtime.grants.liveGrantBetween(venture.creator, member.principal, venture.windowOpensTick) !== null) {
+        continue;
+      }
+      const creatorIsCast = this.members.some((m) => m.principal === venture.creator);
+      const creatorHolds = roleOfPrincipal(venture, venture.creator) !== null;
+      const candidates = open.filter((i) => i !== 0 || creatorHolds || !creatorIsCast);
+      const pick = candidates[ordinal % Math.max(1, candidates.length)];
+      if (pick === undefined) continue;
+      return { venture: venture.id, role: pick };
+    }
+    return null;
+  }
+
+  /**
+   * ★ Open a four-role venture, or null. The gates, in order, and why each:
+   *
+   *   1. **A hand to spare and the appetite on**, the same `spendable` budget `fill_role` reads — do
+   *      not commission work you have no hand to fill.
+   *   2. **Inside the phase window** ({@link CAST_TOP_YIELD_FIRST_PHASE}..{@link CAST_TOP_YIELD_LAST_PHASE}),
+   *      the opening of a cycle, when the last settlement has just released every role's hand — the
+   *      only time a hand-starved tier has four free (measured; see the constant).
+   *   3. **No four-role venture live in this tier already** — the cast's own or anybody's. One BUILD takes
+   *      four of a tier's hands; two would starve the two-role loop the economy runs on, and an
+   *      outsider's BUILD is better filled than competed with.
+   *   4. **Three cast-mates in the tier with an idle hand**, none of them this member's delegate —
+   *      the other three roles, now, from principals INV-23 will let fill them.
+   *   5. **The roll**, on a stream derived from this tick's, so no existing draw moves.
+   *
+   * No solvency gate, deliberately: the creator receives the BUILD's proceeds in settlement Phase 1
+   * before Phase 2 asks it for the elective half, and every share role's claim is a share of those
+   * proceeds — so IN_FULL is fundable from the venture itself, whatever the creator's stores hold.
+   */
+  private topYieldCreateFor(
+    member: CastMember,
+    tick: number,
+    rng: Rng,
+    spendable: number,
+    idle: readonly { readonly location: SystemId }[],
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const chance = this.options.topYieldChanceBps ?? DEFAULT_TOP_YIELD_CHANCE_BPS;
+    if (chance <= 0 || spendable <= 0) return null;
+    const hand = idle[0];
+    if (hand === undefined) return null;
+    if (inFreeze(tick) || isSettlementTick(tick)) return null;
+    const phase = phaseOfReckoning(tick);
+    if (phase < CAST_TOP_YIELD_FIRST_PHASE || phase > CAST_TOP_YIELD_LAST_PHASE) return null;
+    const runtime = this.runtime;
+    const tier = tierOf(runtime.world.map, member.seat);
+    if (this.topYieldTiersThisTick.has(tier)) return null;
+    for (const venture of runtime.ventures.live()) {
+      if (!isTopYield(venture.kind)) continue;
+      if (venture.creator === member.principal) return null;
+      if (tierOf(runtime.world.map, venture.stage) === tier) return null;
+    }
+    let fillers = 0;
+    for (const other of this.members) {
+      if (other.principal === member.principal) continue;
+      if (tierOf(runtime.world.map, other.seat) !== tier) continue;
+      // A cast-mate holding a grant over this member may not fill a role in a venture this member
+      // creates (INV-23, asked at the creation tick, which is this one) — so its idle hand is no
+      // filler. Measured on `g03` at eight members over six Reckonings, counting it anyway was the
+      // largest single reason a BUILD retired unfilled: 130 member-ticks of a would-be filler barred
+      // by a grant on three of the four abandoned BUILDs, against 6 on the one that settled.
+      if (runtime.grants.liveGrantBetween(member.principal, other.principal, tick) !== null) continue;
+      if (handsOf(runtime.world, other.principal).some((h) => h.state === 'IDLE')) fillers += 1;
+    }
+    if (fillers < MIN_ROLES_TOP_YIELD - 1) return null;
+    if (!rng.derive('top-yield').chance(chance, 10_000)) return null;
+    this.topYieldTiersThisTick.add(tier);
+    return { verb: 'create', params: { kind: CAST_TOP_YIELD_KIND, stage: hand.location } };
   }
 }

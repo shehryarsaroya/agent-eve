@@ -2958,6 +2958,37 @@ function affordancesFor(
     });
   }
 
+  // ── ★ 41: THE OTHER FOUR-ROLE KIND, WHERE IT IS LEGAL ─────────────────────────
+  //
+  // `OFFERED_KINDS` leaves SIEGE out because every NEWCOMER is Commons-seated, where a hostile kind is
+  // invalid rather than refused (A8). That reason is about the Commons, not about SIEGE: a principal
+  // whose hand stands in the Marches or the Frontier can open one, the engine accepts it, and no menu
+  // anywhere offered it — so the second four-role kind §7.2 relies on to force cooperation was
+  // reachable only by an agent that guessed the call. Offered here, outside the Commons only, aimed at
+  // the stage itself (a SIEGE names the system it is against), and LAST, for `BUILD`'s reason: the
+  // prioritiser keeps the first offer of each verb, and the daily texture comes from the two-role kinds.
+  {
+    const stage = hands.find((h) => h.state === 'IDLE')?.location ?? hands[0]?.location;
+    if (stage !== undefined && tierOf(runtime.world.map, stage) !== 'COMMONS') {
+      eligible.push({
+        verb: 'create',
+        params: { kind: 'SIEGE', stage, target_system: stage, elective_bps: minElectiveBps('SIEGE') },
+        cost: 1,
+        max_direct_loss: probeEscrow('SIEGE'),
+        max_contingent_liability: probeElective('SIEGE'),
+        what_it_forecloses:
+          `nothing is locked: SIEGE is a top-yield kind and legally un-escrowable, so all ` +
+          `${String(probeElective('SIEGE'))} of it is elective — a promise you are asked for at the Reckoning, ` +
+          `and staying silent is a permanent public default. ${probeRoles('SIEGE')} It needs FOUR principals, ` +
+          'one per role, inside the formation window: you cannot fill it alone at any capital, which is the ' +
+          'point (§7.2). It is a hostile act, so it is legal only outside the Commons, and it is aimed at the ' +
+          `system you name. ${countersignWarning(tick)}`,
+        expires_tick: tick + QUOTE_PIN_TICKS,
+        quote_id: quoteId(principal, tick, 'create', { kind: 'SIEGE', stage }),
+      });
+    }
+  }
+
   // 5b. **Leave the Commons.** The one affordance on this list that cannot be undone.
   //
   //     ══════════════════════════════════════════════════════════════════════
