@@ -139,6 +139,18 @@ export interface ScaleRow {
     readonly maxPerSystem: number;
   };
   readonly stateHash: string;
+  /**
+   * Every population-sized book against its cap at the end of the run, fullest first
+   * (`Runtime.capPressure`). The Season 1 audit found six books that bound on legitimate play at a few
+   * hundred principals; this is the column that would have shown each one before it bound.
+   */
+  readonly pressure: readonly { readonly book: string; readonly size: number; readonly cap: number }[];
+  /** The most rows any book reached, as a share of its cap, in basis points. */
+  readonly peakPressureBps: number;
+  /** Constellations growth opened during the run. */
+  readonly grown: number;
+  /** The growth gate at the end of the run: qualified principals against the count that opens one. */
+  readonly growth: { readonly qualified: number; readonly needed: number };
 }
 
 /** `s0001`, `s0002`, … — valid handles, and none of them a handle `agent.md` uses. */
@@ -258,6 +270,10 @@ export function measurePopulation(options: ScaleOptions): ScaleRow {
   } catch (error: unknown) {
     frameError ??= `live: ${error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error)}`;
   }
+  const pressure = [...runtime.capPressure()].sort(
+    (a, b) => b.size / Math.max(1, b.cap) - a.size / Math.max(1, a.cap) || (a.book < b.book ? -1 : 1),
+  );
+  const growthNow = runtime.growthReadingAt();
   const memory = process.memoryUsage();
   const ran = tickMs.length;
   const events = runtime.events.eventCount;
@@ -303,6 +319,10 @@ export function measurePopulation(options: ScaleOptions): ScaleRow {
       maxPerSystem: maxOf(runtime.world.map.systemOrder),
     },
     stateHash: runtime.engine.stateHash,
+    pressure,
+    peakPressureBps: pressure.length === 0 ? 0 : Math.trunc(((pressure[0]?.size ?? 0) * 10_000) / Math.max(1, pressure[0]?.cap ?? 1)),
+    grown: runtime.world.map.grown.length,
+    growth: { qualified: growthNow.qualified, needed: growthNow.needed },
   };
 }
 

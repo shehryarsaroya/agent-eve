@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { Rng } from '../../src/core/rng.js';
 import type { SystemId } from '../../src/core/types.js';
 import { allLodes, YIELD_PER_TICK } from '../../src/works/params.js';
 import {
@@ -18,6 +19,7 @@ import {
   generateMap,
   GROWTH_PLAN,
   GrowthError,
+  growthName,
   laneKey,
   launchMap,
   mapHash,
@@ -188,5 +190,20 @@ describe('growth keeps every promise across many seeds and many openings', () =>
       landing: 'sys-02',
     })) } as unknown as WorldMap;
     expect(() => openConstellation(full)).toThrow(GrowthError);
+  });
+
+  it('names every system a map at its ceiling can hold, uniquely and deterministically', () => {
+    // MUTATION: put back the throw when the syllable space runs out — a growth past ~336 fused names
+    // would halt the settlement tick. Or drop the numbered fallback's uniqueness check. Either is RED.
+    const draw = (): string[] => {
+      const used = new Set<string>();
+      const rng = Rng.fromSeed('growth-names').derive('ceiling');
+      return Array.from({ length: MAX_MAP_SYSTEMS }, () => growthName(['Civic One', 'Civic Two'], used, rng));
+    };
+    const names = draw();
+    expect(names).toHaveLength(MAX_MAP_SYSTEMS);
+    expect(new Set(names).size).toBe(MAX_MAP_SYSTEMS);
+    expect(names.slice(0, 2)).toEqual(['Civic One', 'Civic Two']); // the authored list is spent first
+    expect(draw()).toEqual(names);
   });
 });

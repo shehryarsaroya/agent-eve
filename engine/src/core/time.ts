@@ -47,19 +47,31 @@ export const FREEZE_TICKS = 1;
 export const WAKES_PER_RECKONING = 16;
 
 /**
- * How many principals the world admits at once (SPEC §15.6's architecture note). *(calibrate)*
+ * ★ **THE WORLD CEILING: the largest population every book in the world is dimensioned for.**
+ *
+ * Not the seat count. The seat count is the HOST's (`api/seats.ts:DEFAULT_SEATS`, overridden by
+ * `COMPACT_SEATS`), may be anything up to this, and is never read by a tick. This is the WORLD's
+ * number: every cap that holds one row per principal derives from it (`test/core/capacity.spec.ts`
+ * classifies every published cap in `src/` and checks the arithmetic; `Runtime.capPressure` meters the
+ * books live), so a host may raise its seats without a rules change and no legitimate principal can be
+ * refused by a book that was sized for fewer.
  *
  * Here, in `core`, rather than in `api/seats.ts` where it began, because **two modules need to
- * derive from it and one of them may not import the other.** `api/seats.ts` owns the seat POLICY;
- * this is the number the policy and the domain caps both read, so they cannot drift apart.
+ * derive from it and one of them may not import the other.**
  *
- * They had drifted. `MAX_LEVY_BALLOTS` was a flat 512 while the ballot book keys one row per
+ * They had drifted, twice. `MAX_LEVY_BALLOTS` was a flat 512 while the ballot book keys one row per
  * principal per Reckoning and retains three — so it bound at 512/3 ≈ 171 concurrently-voting
- * principals, well below the 300 the world seats. Past that, the first 171 to vote filled the book
- * and everyone else was refused: a denial of the Levy ballot decided by arrival order, which is A4's
- * "never let requests-per-second be power" arriving through the cap table.
+ * principals, well below the 300 the world then seated. And on 2026-10-01 the Season 1 cap audit found
+ * the same shape in the submission window (4,096: bound at 128 fully-loaded principals), the fill queue
+ * (512 a tick), the election book, the grant book, the open-order book and the syndicate book — each a
+ * denial decided by ARRIVAL ORDER once the world held a few hundred principals, which is A4's "never let
+ * requests-per-second be power" arriving through the cap table.
+ *
+ * Ten thousand: several times the Season 1 launch seats, so the host can grow into it by
+ * configuration. A cap costs nothing until rows exist — every book is a `Map` or an array, never
+ * preallocated — so the ceiling is a promise about arithmetic, not a memory reservation.
  */
-export const MAX_PRINCIPALS = 300;
+export const MAX_PRINCIPALS = 10_000;
 
 /** Material actions per tick (SPEC §17). Social verbs are free. */
 export const ACTIONS_PER_TICK = 4;

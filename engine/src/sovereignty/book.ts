@@ -264,6 +264,10 @@ export class Book {
   private readonly plans = new Map<string, ChargePlan>();
   private readonly payments = new Map<string, ChargePayment>();
   private readonly ballots = new Map<string, ChargeBallot>();
+  /** Ballots held, for the cap-pressure report (`Runtime.capPressure`). */
+  get ballotCount(): number {
+    return this.ballots.size;
+  }
   private readonly shortfalls = new Map<string, ChargeShortfallRow>();
   private readonly cessions = new Map<SystemId, CessionOffer>();
   /** Bond locks per principal, in canonical id order. The **amounts** live in the ledger. */

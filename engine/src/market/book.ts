@@ -31,6 +31,7 @@
  * event array in memory.
  */
 
+import { MAX_PRINCIPALS } from '../core/time.js';
 import type { GoodId, PrincipalId } from '../core/types.js';
 import { qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds, type Print } from '../ledger/index.js';
@@ -49,8 +50,12 @@ export class MarketBookError extends Error {}
 
 /** Open orders one principal may hold at once. A hard door, not a hint. */
 export const MAX_OPEN_ORDERS_PER_PRINCIPAL = 24;
-/** Open orders in the whole world. The book's own scar-#3 ceiling. */
-export const MAX_OPEN_ORDERS = 2_048;
+/**
+ * Open orders in the whole world. The book's own scar-#3 ceiling: every principal the world can hold,
+ * each at its own cap. It was a flat 2,048, which 86 principals at their per-principal cap fill — and
+ * past it `place` refused by arrival order.
+ */
+export const MAX_OPEN_ORDERS = MAX_OPEN_ORDERS_PER_PRINCIPAL * MAX_PRINCIPALS;
 /** Fills retained. Several times the valuation window, so a mark never runs dry. */
 export const MAX_FILLS = 2_048;
 /** Closed orders retained, so an agent can read what became of its own order. */

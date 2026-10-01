@@ -63,13 +63,41 @@ import type { PrincipalId } from '../core/types.js';
 import { compareIds } from '../ledger/index.js';
 
 /**
- * Seats in the world.
+ * ★ **The HOST's seat count at launch — decoupled from the WORLD's ceiling.** *(calibrate)*
  *
- * SPEC §15.6 sizes the house cast at 12–20 and the architecture note at 300
- * principals; 300 is therefore the cap, not an aspiration, and the number is
- * *(calibrate)*.
+ * Seats are a host resource (see the file header): how many principals this one box serves at once.
+ * `MAX_PRINCIPALS` is the world's ceiling — the population every book is dimensioned for — and this is
+ * deliberately below it, so a host can raise its seats with `COMPACT_SEATS` and no rules change.
+ *
+ * **Three thousand, from the Season 1 scale measurement** (`docs/design/SCALE-2026-10-01.md`): at 3,000
+ * heuristic principals on the launch map a steady tick costs well under a second of a 300-second
+ * production tick, the Reckoning batch a few seconds, and — after serialize-once observations — every
+ * principal observing on the tick after a Reckoning is seconds of one core rather than minutes. The
+ * binding term past this is not CPU: it is principals per stage, which growth relieves only as the
+ * population qualifies.
  */
-export const DEFAULT_SEATS = MAX_PRINCIPALS;
+export const DEFAULT_SEATS = 3_000;
+
+/**
+ * Read `COMPACT_SEATS`. Absent or empty is {@link DEFAULT_SEATS}; anything else must be a positive
+ * integer no larger than the world's ceiling, and anything that is not is refused at boot with the
+ * reason — a host that silently fell back to the default would be a host serving a number nobody set.
+ */
+export function seatCapacityFrom(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return DEFAULT_SEATS;
+  const n = Number(raw.trim());
+  if (!Number.isSafeInteger(n) || n < 1) {
+    throw new Error(`COMPACT_SEATS must be a positive integer, got '${raw}'`);
+  }
+  if (n > MAX_PRINCIPALS) {
+    throw new Error(
+      `COMPACT_SEATS is ${String(n)}, above the world's ceiling of ${String(MAX_PRINCIPALS)} (core/time.ts:MAX_PRINCIPALS). ` +
+        'Every population-sized book is dimensioned for that ceiling, so seating more would let a cap bind on ' +
+        'legitimate play; raising it is a rules change, not a configuration one.',
+    );
+  }
+  return n;
+}
 
 /**
  * Ticks after a principal's last ACCEPTED action before its seat is recyclable.
@@ -159,6 +187,12 @@ export class SeatBook {
   ) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) {
       throw new Error(`seat capacity must be a positive integer, got ${String(capacity)}`);
+    }
+    if (capacity > MAX_PRINCIPALS) {
+      throw new Error(
+        `seat capacity ${String(capacity)} is above the world's ceiling of ${String(MAX_PRINCIPALS)}; ` +
+          'see seatCapacityFrom',
+      );
     }
     if (!Number.isSafeInteger(idleTicks) || idleTicks < 1) {
       throw new Error(`the idle threshold must be a positive number of ticks, got ${String(idleTicks)}`);

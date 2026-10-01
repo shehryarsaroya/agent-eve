@@ -121,11 +121,11 @@ export const GROWTH_CAPITAL_MINOR = 20_000;
 
 /**
  * How many constellations growth may ever open. A ceiling on the map rather than a target, sized so the
- * map can stage `MAX_PRINCIPALS` at the stage floor with room to spare, and asserted against it in
- * `test/core/capacity.spec.ts`. Place IDs are permanent, so this also bounds every table keyed on a
- * system (INV-26).
+ * map can stage `MAX_PRINCIPALS` at the stage floor — `MAX_MAP_SYSTEMS × GROWTH_QUALIFIED_PER_SYSTEM ≥
+ * MAX_PRINCIPALS`, asserted in `test/core/capacity.spec.ts`. Place IDs are permanent, so this also
+ * bounds every table keyed on a system (INV-26).
  */
-export const MAX_GROWN_CONSTELLATIONS = 48;
+export const MAX_GROWN_CONSTELLATIONS = 160;
 
 /**
  * The most systems a map can ever hold: the launch plan's ceiling plus every constellation growth may
@@ -167,23 +167,36 @@ const GROWN_CONSTELLATION_NAMES: readonly string[] = Object.freeze([
 const SYLLABLES_A: readonly string[] = Object.freeze(['Ash', 'Brin', 'Cal', 'Dun', 'Ell', 'Fen', 'Gar', 'Hal', 'Ise', 'Kor', 'Lor', 'Mor', 'Nor', 'Os', 'Pen', 'Ros', 'Sel', 'Tor', 'Ul', 'Ves', 'Wen']);
 const SYLLABLES_B: readonly string[] = Object.freeze(['ford', 'mere', 'holt', 'wick', 'stead', 'dale', 'mouth', 'reach', 'ley', 'by', 'wold', 'fell', 'side', 'gate', 'more', 'tor']);
 
-function nameFrom(list: readonly string[], used: Set<string>, rng: Rng): string {
+/**
+ * The next free name: the authored list first, then a fused two-syllable name drawn from this
+ * constellation's own stream, then — once the syllable space is spent, which only a map near
+ * {@link MAX_MAP_SYSTEMS} reaches — the first free `<fused> <n>`. Deterministic and unique on every map
+ * growth can make; `test/world/growth.spec.ts` names {@link MAX_MAP_SYSTEMS} systems and counts.
+ */
+export function growthName(list: readonly string[], used: Set<string>, rng: Rng): string {
   for (const name of list) {
     if (!used.has(name)) {
       used.add(name);
       return name;
     }
   }
-  // Generated, deterministic, unique: the stream is this constellation's own, and a collision draws
-  // again rather than suffixing, so the name a viewer sees is always pronounceable.
-  for (let attempt = 0; attempt < 10_000; attempt += 1) {
+  // A collision draws again rather than suffixing while there is room, so the name a viewer sees is
+  // pronounceable for as long as it can be.
+  for (let attempt = 0; attempt < 64; attempt += 1) {
     const name = `${rng.pick(SYLLABLES_A)}${rng.pick(SYLLABLES_B)}`;
     if (!used.has(name)) {
       used.add(name);
       return name;
     }
   }
-  throw new GrowthError('ran out of names for a grown system; extend the authored lists');
+  const stem = `${rng.pick(SYLLABLES_A)}${rng.pick(SYLLABLES_B)}`;
+  for (let n = 2; ; n += 1) {
+    const name = `${stem} ${String(n)}`;
+    if (!used.has(name)) {
+      used.add(name);
+      return name;
+    }
+  }
 }
 
 // ── Bridges: where an anchor may stand without moving an existing strait ─────
@@ -305,7 +318,7 @@ export function openConstellation(map: WorldMap): WorldMap {
     const id = `sys-${String(n).padStart(2, '0')}` as SystemId;
     n += 1;
     const tier: ZoneTier = i < GROWTH_PLAN.commons ? 'COMMONS' : 'MARCHES';
-    const name = nameFrom(tier === 'COMMONS' ? GROWN_CIVIC_NAMES : GROWN_OUTER_NAMES, usedNames, nameRng);
+    const name = growthName(tier === 'COMMONS' ? GROWN_CIVIC_NAMES : GROWN_OUTER_NAMES, usedNames, nameRng);
     fresh.set(id, { id, constellation: cid, name, tier, lanes: new Set<SystemId>() });
     ids.push(id);
   }
@@ -367,7 +380,7 @@ export function openConstellation(map: WorldMap): WorldMap {
   const constellations = new Map<ConstellationId, Constellation>(map.constellations);
   constellations.set(cid, {
     id: cid,
-    name: nameFrom(GROWN_CONSTELLATION_NAMES, usedConNames, nameRng),
+    name: growthName(GROWN_CONSTELLATION_NAMES, usedConNames, nameRng),
     systems: ids,
   });
   const record: GrownConstellation = {

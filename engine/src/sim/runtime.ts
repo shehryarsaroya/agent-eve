@@ -55,7 +55,9 @@
 import { canonicalHash, type CanonicalValue } from '../core/canonical.js';
 import { Rng } from '../core/rng.js';
 import {
+  ACTIONS_PER_TICK,
   FREEZE_TICKS,
+  MAX_PRINCIPALS,
   TICKS_PER_RECKONING,
   WAKES_PER_RECKONING,
   inFreeze,
@@ -234,7 +236,7 @@ import {
   Engine,
   EngineError,
   MAX_BUFFERED_EVENTS,
-  MAX_QUEUED_PER_PRINCIPAL,
+  MAX_QUEUED_ACTIONS,
   tickInputsFor,
   type ActionRequest,
   type CascadeAttempt,
@@ -558,6 +560,7 @@ import {
   checkCargoMirror,
   graduationRejection,
   GROWTH_QUALIFIED_PER_SYSTEM,
+  HANDS_PER_PRINCIPAL,
   GROWTH_STATEMENT,
   growthReading,
   handsOf,
@@ -598,6 +601,17 @@ import {
   type WorldResult,
   type WorldState,
 } from '../world/index.js';
+// ── The caps the cap-pressure report reads (`Runtime.capPressure`). One import block, so the report's
+// reach is visible in one place.
+import { MAX_OPEN_ORDERS as MARKET_MAX_OPEN_ORDERS, MAX_FILLS as MARKET_MAX_FILLS } from '../market/index.js';
+import { MAX_LEVY_BALLOTS as LEVY_MAX_BALLOTS } from '../levy/index.js';
+import { MAX_CHARGE_BALLOTS as SOV_MAX_BALLOTS, MAX_CLAIMS as SOV_MAX_CLAIMS } from '../sovereignty/index.js';
+import { MAX_SYNDICATES as SYN_MAX_SYNDICATES } from '../syndicate/params.js';
+import { MAX_COVERS as RISK_MAX_COVERS, MAX_INDEMNITIES as RISK_MAX_INDEMNITIES } from '../risk/index.js';
+import { MAX_RAID_ROWS as PRD_MAX_RAID_ROWS } from '../predation/index.js';
+import { MAX_CAMPAIGNS as CMP_MAX_CAMPAIGNS } from '../campaign/index.js';
+import { MAX_ENGAGEMENT_ROWS as CBT_MAX_ENGAGEMENT_ROWS } from '../combat/index.js';
+import { MAX_PARLEY_ENTRIES as SAY_MAX_PARLEY_ENTRIES } from '../say/parley.js';
 
 /**
  * A deliverer id no principal can hold, for asking `deliveryPayerFault` the question it answers for every
@@ -2301,12 +2315,23 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * COMMONS system ties at rank 0 and the order is 40's. `observe` gains `header.growth` (no key is
  * spent; 11 of 11 stands) and the frame gains `growth` (THE RISE).
  *
+ * **And the caps stop binding by arrival order.** `MAX_PRINCIPALS` becomes the WORLD ceiling (10,000)
+ * rather than the seat count, the host's seats move to `api/seats.ts:DEFAULT_SEATS` (3,000, raised by
+ * `COMPACT_SEATS`), and every book that holds rows per principal derives from the ceiling: the
+ * submission window, the fill queue, elections and elections in flight, grants and their journals,
+ * dossiers, open orders, Charge ballots, syndicates, covers, indemnities, the per-tick event buffer;
+ * claims and THE VERGE derive from the map's own ceiling. `test/core/capacity.spec.ts` classifies
+ * every published cap and checks each derivation. A book that was never full under 40 accepts and
+ * refuses exactly what it did, so this half moves nothing in a world of the house cast's size.
+ *
  * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
  *
- * **None, until a constellation opens.** The launch map needs 240 qualified principals for the first
- * one, so an existing world replays byte-identically under 41 up to that Reckoning, and at it diverges
- * with `SNAPSHOT_HASH_MISMATCH` on the world table. Season 1 starts from a fresh seed, so the operator
- * door is not expected to be needed; if it is, the preflight prints the exact
+ * **None, until a constellation opens or a flat cap would have bound.** The launch map needs 240
+ * qualified principals for the first constellation, and no flat cap bound in any world the house cast
+ * has run, so an existing world replays byte-identically under 41 until one of the two happens, and at
+ * it diverges with `SNAPSHOT_HASH_MISMATCH` on the world table (growth) or at the first action a full
+ * book would have refused (a cap). Season 1 starts from a fresh seed, so the operator door is not
+ * expected to be needed; if it is, the preflight prints the exact
  * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` string (`D37`).
  *
  * ── PRE-ASSIGNED, PER 24's PROTOCOL ──────────────────────────────────────────
@@ -2560,6 +2585,17 @@ export function formationWindowOutlastsAWake(windowTicks: number = FORMATION_WIN
 export const MAX_TALK_ENTRIES = 512;
 
 /**
+ * `fill_role` requests one tick may queue for resolution at tick close.
+ *
+ * ⚑ **IT USED `MAX_TALK_ENTRIES` — A TEXT-BUFFER BOUND — AND SO CAPPED HIRING AT 512 A TICK.** One
+ * world-wide number for two unrelated things: past 512 fills in a tick, `vFillRole` refused with "the
+ * fill queue for this tick is full", by arrival order, however many open roles and idle hands the world
+ * held. A principal can submit at most `ACTIONS_PER_TICK` material actions a tick, so that times the
+ * world ceiling is the most fills a legitimate tick can carry.
+ */
+export const MAX_PENDING_FILLS = ACTIONS_PER_TICK * MAX_PRINCIPALS;
+
+/**
  * Counterparties a cast member is reminded of. *(calibrate)*
  *
  * Small on purpose. The point is *"you have dealt with these people and here is how it went"*, not a
@@ -2605,8 +2641,15 @@ export const CENSUS_WINDOW_TICKS = TICKS_PER_RECKONING;
  */
 export const DELIVERY_LEAD_TICKS = FREEZE_TICKS + 1;
 
-/** Elections held for un-resolved ventures. Bounded (INV-26, scar #3). */
-export const MAX_ELECTIONS = 2_048;
+/**
+ * Elections held for un-resolved ventures. Bounded (INV-26, scar #3).
+ *
+ * One per filled role a creator owes, and a role is filled by a HAND, so the legitimate maximum is
+ * every hand in the world: `HANDS_PER_PRINCIPAL × MAX_PRINCIPALS`. It was a flat 2,048 and refused
+ * the 2,049th `elect` with "the election book is full" — a payer denied the right to state what it
+ * will pay because other payers arrived first.
+ */
+export const MAX_ELECTIONS = HANDS_PER_PRINCIPAL * MAX_PRINCIPALS;
 
 /**
  * The longest a grant may live: ~3 Reckonings (SPEC §8.1 #5, scar #7 — the sticky
@@ -2616,12 +2659,19 @@ export const MAX_ELECTIONS = 2_048;
 export const GRANT_MAX_LIFETIME_TICKS = 3 * TICKS_PER_RECKONING;
 
 /**
+ * Grant rows the book is dimensioned for, per principal the world can hold. *(calibrate)* A grant
+ * is a lifetime row until expired-grant pruning lands, so this is a budget over a SEASON, not a
+ * concurrent count: eight per principal is a grant every few Reckonings for a whole season.
+ */
+export const MAX_GRANTS_PER_PRINCIPAL = 8;
+
+/**
  * A total cap on the grant book (INV-26): a principal that minted grants without
  * limit would bloat `state_hash` and every capture. Generous, because grants expire
  * and a real world clears them by time; deterministic pruning of expired rows is a
  * follow-on (until then a long season is bounded by this, not by expiry).
  */
-export const MAX_GRANTS = 4_096;
+export const MAX_GRANTS = MAX_GRANTS_PER_PRINCIPAL * MAX_PRINCIPALS;
 
 /**
  * The named grant templates (SPEC §8: "ship 5–8 named templates").
@@ -2657,7 +2707,7 @@ export const GRANT_TEMPLATES: readonly string[] = OFFICE_NAMES;
  * arithmetic. It carries its own published cap anyway, because "bounded by a cap in
  * another module" is exactly how scar #3's structure was argued safe.
  */
-export const MAX_IN_FLIGHT_ELECTIONS = MAX_QUEUED_PER_PRINCIPAL * 32;
+export const MAX_IN_FLIGHT_ELECTIONS = MAX_QUEUED_ACTIONS;
 
 /**
  * Venture states in which an election is still a live statement — **one home, three
@@ -6760,6 +6810,46 @@ export class Runtime {
     return this.perEpoch('liveVentures', () => this.ventures.live());
   }
 
+  /**
+   * ★ **CAP PRESSURE** — every population-sized book against its published cap, right now.
+   *
+   * The Season 1 cap audit found six books that bound on legitimate play at a few hundred principals,
+   * each refusing by arrival order and none of them visible in any report until it bound. A cap nobody
+   * measures is the unmeasured-capability defect one level up, so this is the meter: the scale harness
+   * prints it and `test/core/capacity.spec.ts` checks the arithmetic the caps were derived from.
+   * Read-only, cheap (sizes, not scans), and outside the hash.
+   */
+  capPressure(): readonly { readonly book: string; readonly size: number; readonly cap: number }[] {
+    const row = (book: string, size: number, cap: number): { book: string; size: number; cap: number } => ({
+      book,
+      size,
+      cap,
+    });
+    return [
+      row('submission window', this.engine.queue.depth, MAX_QUEUED_ACTIONS),
+      row('fill queue', this.pendingFills.length, MAX_PENDING_FILLS),
+      row('elections', this.elections.size, MAX_ELECTIONS),
+      row('elections in flight', this.electionsInFlight.size, MAX_IN_FLIGHT_ELECTIONS),
+      row('grants', this.grantBook.all().length, MAX_GRANTS),
+      row('grant spends', this.grantBook.spendCount, MAX_GRANT_SPENDS),
+      row('grant releases', this.grantBook.releaseCount, MAX_GRANT_RELEASES),
+      row('dossiers', this.dossiers.size, MAX_DOSSIERS),
+      row('open orders', this.marketBook.countOpen(), MARKET_MAX_OPEN_ORDERS),
+      row('fills retained', this.marketBook.fills().length, MARKET_MAX_FILLS),
+      row('levy ballots', this.levy.ballotCount, LEVY_MAX_BALLOTS),
+      row('charge ballots', this.sovereignty.ballotCount, SOV_MAX_BALLOTS),
+      row('claims', this.sovereignty.claimsInOrder().length, SOV_MAX_CLAIMS),
+      row('syndicates', this.syndicates.size, SYN_MAX_SYNDICATES),
+      row('covers', this.risk.coverCount, RISK_MAX_COVERS),
+      row('indemnities', this.risk.indemnityCount, RISK_MAX_INDEMNITIES),
+      row('raid rows', this.raids.size(), PRD_MAX_RAID_ROWS),
+      row('campaign rows', this.campaigns.size(), CMP_MAX_CAMPAIGNS),
+      row('engagement rows', this.battles.size(), CBT_MAX_ENGAGEMENT_ROWS),
+      row('parley book', this.parleys.size, SAY_MAX_PARLEY_ENTRIES),
+      row('talk ring', this.talk.size, MAX_TALK_ENTRIES),
+    ];
+  }
+
   /** `levy/place.ts:rollByConstellation`, once per read epoch. */
   rollByConstellationNow(): ReadonlyMap<ConstellationId, readonly PrincipalId[]> {
     return this.perEpoch('rollByConstellation', () => rollByConstellation(this.world));
@@ -8013,7 +8103,7 @@ export class Runtime {
     //   3. this check, restored.
     // Reported upward rather than half-shipped.
 
-    if (this.pendingFills.length >= MAX_TALK_ENTRIES) {
+    if (this.pendingFills.length >= MAX_PENDING_FILLS) {
       return reject('INV-26', 'the fill queue for this tick is full; try the next tick.');
     }
     // ── ★ THE STAKE IS PRICED HERE, BECAUSE A LOCK THAT FAILS AT TICK CLOSE IS SILENT ──

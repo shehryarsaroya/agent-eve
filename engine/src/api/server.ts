@@ -97,7 +97,7 @@ import {
   type FollowService,
   type FollowSetup,
 } from './follow/index.js';
-import { IdempotencyStore } from './idempotency.js';
+import { IdempotencyStore, MAX_KEYS_PER_PRINCIPAL } from './idempotency.js';
 import {
   MAX_BODY_BYTES,
   RateLimiter,
@@ -112,7 +112,7 @@ import {
   type Observation,
 } from './observe.js';
 import { serializeObservation } from './fragments.js';
-import { HANDLE_GRAMMAR, MAX_HANDLE_LENGTH, SeatBook } from './seats.js';
+import { DEFAULT_SEATS, HANDLE_GRAMMAR, MAX_HANDLE_LENGTH, SeatBook, seatCapacityFrom } from './seats.js';
 import { classifyVerb, unbuiltVerbs } from './verbs.js';
 import {
   WIRE_REASON,
@@ -289,7 +289,9 @@ export function createApp(options: ApiOptions): CreatedApp {
   const seats = options.seats ?? new SeatBook();
   const keyring = options.keyring ?? new Keyring();
   const limiter = options.limiter ?? new RateLimiter();
-  const idempotency = new IdempotencyStore();
+  // Host books sized from the HOST's seats, not the world's ceiling: a flat 20,000 keys evicted
+  // live replays once a few hundred principals each held their per-principal allowance.
+  const idempotency = new IdempotencyStore(MAX_KEYS_PER_PRINCIPAL, MAX_KEYS_PER_PRINCIPAL * seats.capacity);
   const replay = new BoundedReplayStore(REPLAY_STORE_LIMITS);
   // The invariant that spans the three: a nonce must be remembered for at least as
   // long as a signature bearing it can still be fresh. Asserted at construction,
@@ -1874,6 +1876,11 @@ export interface ServeOptions {
   /** Force a genesis replay, whatever the snapshot says. See {@link checkpointAdoptionDisabledFromEnv}. */
   readonly disableCheckpointAdoption?: boolean;
   /**
+   * The host's seat capacity — `COMPACT_SEATS`, read by `seatCapacityFrom` (`api/seats.ts`). Absent is
+   * `DEFAULT_SEATS`. Never above the world's ceiling (`MAX_PRINCIPALS`), which the parser refuses.
+   */
+  readonly seats?: number;
+  /**
    * Follow by email, already assembled (tests), or null for none. When omitted it is built
    * from the environment by `createFollow`, which leaves it OFF unless `RESEND_API_KEY` and
    * `COMPACT_FOLLOW_SECRET` are both set.
@@ -2325,7 +2332,7 @@ async function bootTheWorld(
   // Built before boot, because boot re-registers each persisted enrolment's key and
   // seat as it re-seats the world principal — the identity half of A10.
   const keyring = new Keyring();
-  const seats = new SeatBook();
+  const seats = new SeatBook(options.seats ?? DEFAULT_SEATS);
   const shell = { runtime, cast, keyring, seats, seed };
 
   try {
@@ -2619,6 +2626,7 @@ if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
     framesDir: process.env['COMPACT_FRAMES_DIR'] ?? null,
     acceptDivergence: acceptDivergenceFromEnv(),
     disableCheckpointAdoption: checkpointAdoptionDisabledFromEnv(),
+    seats: seatCapacityFrom(process.env['COMPACT_SEATS']),
   });
   if (started.created === null) {
     // HELD. The socket is bound and answering 503 with the diagnosis; the process

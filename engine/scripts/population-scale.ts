@@ -83,6 +83,11 @@ for (const r of rows) {
       `${r.actionsPerTick.toFixed(1)} actions/tick · journal ${String(r.journal.events)} events / ${String(r.journal.postings)} postings ` +
       `(max ${String(r.journal.maxEventsPerTick)} events in one tick) · state ${r.stateHash.slice(0, 12)}` +
       (r.frames.reckoningError === null ? '' : `\n      FRAME ERROR: ${r.frames.reckoningError}`) +
+      `\n      growth: ${String(r.growth.qualified)} of ${String(r.growth.needed)} qualified · ${String(r.grown)} grown` +
+      `\n      fullest books: ${r.pressure
+        .slice(0, 5)
+        .map((p) => `${p.book} ${String(p.size)}/${String(p.cap)}`)
+        .join(' · ')}` +
       '\n',
   );
 }

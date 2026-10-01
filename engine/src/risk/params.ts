@@ -71,7 +71,7 @@
 
 import type { GoodId, ZoneTier } from '../core/types.js';
 import { BPS_ONE, bps, minor, type Bps, type Minor } from '../core/units.js';
-import { FREEZE_FIRST_PHASE, TICKS_PER_RECKONING } from '../core/time.js';
+import { FREEZE_FIRST_PHASE, MAX_PRINCIPALS, TICKS_PER_RECKONING } from '../core/time.js';
 import { LEVY_DUTY_PER_PRINCIPAL, LEVY_GOOD, LEVY_UNIT_MINOR } from '../levy/params.js';
 
 /**
@@ -398,10 +398,15 @@ export const FRONT_LIFETIME_TICKS = (FRONT_CONE_RECKONINGS + 1) * TICKS_PER_RECK
 export const COVER_TERM_TICKS = FRONT_LIFETIME_TICKS + TICKS_PER_RECKONING;
 
 export const MAX_FRONTS = 16;
-export const MAX_COVERS = 512;
-export const MAX_INDEMNITIES = 1_024;
 /** Covers one principal may have written and still standing. Bounds the chain walk. */
 export const MAX_COVERS_PER_PAYER = 32;
+/**
+ * Covers in the world: every principal the world can hold, each at its own cap
+ * ({@link MAX_COVERS_PER_PAYER}). A flat 512 refused the 513th cover in the world by arrival order.
+ */
+export const MAX_COVERS = MAX_COVERS_PER_PAYER * MAX_PRINCIPALS;
+/** Two indemnity rows per cover at most (a primary and a cession), the ratio the flat figures had. */
+export const MAX_INDEMNITIES = 2 * MAX_COVERS;
 
 /**
  * **Unstruck** FRONTs at once.

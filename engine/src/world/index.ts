@@ -66,6 +66,7 @@ export {
   GROWTH_QUALIFIED_PER_SYSTEM,
   GROWTH_STATEMENT,
   GrowthError,
+  growthName,
   growthReading,
   isQualified,
   MAX_GROWN_CONSTELLATIONS,
