@@ -38,6 +38,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Clock } from '../../core/time.js';
+import { BPS_ONE } from '../../core/units.js';
 import type { ReckoningFrame } from '../../frames/contract.js';
 import { frameFileName, LATEST } from '../../frames/write.js';
 import {
@@ -270,7 +271,7 @@ export class RecapWorker {
     // and all. Best-effort — a failure here must not cost tonight's recaps.
     await store.pruneExpiredPending(clock.nowMs() - FOLLOW_CONFIRM_TTL_MS).catch(() => 0);
 
-    const recapLimit = Math.floor((this.options.dailyCeiling * RECAP_CEILING_SHARE_BPS) / 10_000);
+    const recapLimit = Math.floor((this.options.dailyCeiling * RECAP_CEILING_SHARE_BPS) / BPS_ONE);
     const recaps = new Map<string, Recap>();
     let sent = 0;
     let failed = 0;
