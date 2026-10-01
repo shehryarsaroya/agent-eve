@@ -57,6 +57,7 @@ import {
   openIndices,
   roleOfPrincipal,
   type Election,
+  type VentureRecord,
 } from '../venture/index.js';
 import { DEFAULT_CHARTER } from '../syndicate/charter.js';
 import { FOUNDING_COST_MINOR } from '../syndicate/params.js';
@@ -70,6 +71,8 @@ import {
   YIELD_PER_TICK,
 } from '../works/params.js';
 import { freeCash } from '../market/index.js';
+import { GRAND_ROLE_STAKE_MINOR, grandWindowOf, isSeasonBoundaryTick } from '../season/index.js';
+import { stanceFor, type CastStance } from './stance.js';
 import {
   handsOf,
   holdingOccupancy,
@@ -943,6 +946,40 @@ export const CAST_COALITION_SPARE_HANDS = 0;
 export const CAST_ELECTIVE_APPETITE_BPS = 700;
 
 /**
+ * ★ **How much of its earned cash a cast member stakes on a grand role.** *(calibrate)*
+ *
+ * The verdict goes to the crew whose roles staked the most (`season/grand.ts:chooseGrandWinner`), so
+ * a cast that staked only the floor would decide every contest by tiebreak. A fifth of
+ * `market.transferable_minor`, never below `GRAND_ROLE_STAKE_MINOR` and never above what it holds —
+ * the stake is returned at settlement, so the price is a Reckoning of capital locked, not lost.
+ */
+export const CAST_GRAND_STAKE_BPS = 2_000;
+
+/** From how many Reckonings out a member starts walking a hand to the grand stage. */
+export const CAST_GRAND_MUSTER_RECKONINGS = 2;
+
+/**
+ * ★ **What each character does with the yield when it is the grand venture's creator.**
+ *
+ * The heuristic never reads a stance anywhere else, and this is the one decision where it should:
+ * §7.6's exam question is whether the holder of an un-escrowable prize shares it at the season's
+ * horizon, and a cast that always shared would answer it for every seed. So the creed decides, and the
+ * creed is public (`cast/characters.ts`), which keeps it a published disposition rather than a hidden
+ * meter (A6). `MERCENARY` keeps the yield and states nothing to its crew; `PATIENT` appoints a treasurer
+ * under a grant to pay the crew — A6's surface exercised honestly — and pays any share the treasurer
+ * has not stated by the eve of the freeze itself; the rest pay in full.
+ */
+export const CAST_GRAND_POLICY: Readonly<Record<CastStance, 'PAY' | 'KEEP' | 'TREASURER'>> = Object.freeze({
+  PATIENT: 'TREASURER',
+  OPPORTUNIST: 'PAY',
+  ZEALOT: 'PAY',
+  MERCENARY: 'KEEP',
+});
+
+/** How many ticks before the freeze a PATIENT creator stops waiting on its treasurer. */
+export const CAST_GRAND_FALLBACK_TICKS = 6;
+
+/**
  * ★ What share of a **role's own published value** a cast member bids as its stake. *(calibrate)*
  *
  * ══════════════════════════════════════════════════════════════════════════
@@ -1018,6 +1055,10 @@ export class HeuristicCast {
   get roster(): readonly CastMember[] {
     return this.members;
   }
+  /** The seed the stances are drawn from. Set by {@link decide}; read by the grand branches. */
+  private stanceSeed = '';
+  private grandClaims = new Set<string>();
+  private grandFormedThisTick = false;
 
   /**
    * Where this member's BODY stands right now — **not where it was seated.**
@@ -1634,6 +1675,12 @@ export class HeuristicCast {
    */
   decide(tick: number, seed: string): readonly SubmittedAction[] {
     const out: SubmittedAction[] = [];
+    this.stanceSeed = seed;
+    // ★ Grand-venture slots and formations a cast-mate already took this tick — `claimed`'s rule
+    // (§15.2: within-tick actions never react to each other), so the cast never races itself for one
+    // socket or forms two crews in the tick one was enough.
+    this.grandClaims = new Set<string>();
+    this.grandFormedThisTick = false;
     // ── WHOSE TRIBUTE A CAST-MATE IS ALREADY CARRYING THIS TICK ───────────────
     //
     // §15.2: *"within-tick actions never react to another within-tick action."* So four members
@@ -1817,6 +1864,15 @@ export class HeuristicCast {
 
     const election = this.electionFor(member, tick);
     if (election !== null) return { ...base, ...election };
+
+    // ── ★ THE GRAND VENTURE (SPEC §7.6), IN THE TWO RECKONINGS IT IS LIVE ─────────
+    //
+    // Under the member's own signatures and elections — promises already made come first — and above
+    // everything that spends a hand, because the FINALE's window is the one clock in this file measured
+    // in a single Reckoning per season. Every branch returns null outside the last two Reckonings and
+    // draws no RNG, so no earlier tick of any seeded world moves.
+    const grand = this.grandFor(member, tick);
+    if (grand !== null) return { ...base, ...grand };
 
     // ── REFINE FIRST: RAW ORE PAYS NOTHING ────────────────────────────────────
     //
@@ -4037,6 +4093,229 @@ export class HeuristicCast {
     return null;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ★ THE GRAND VENTURE — muster, form, fill, appoint, and pay (or keep)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * The grand venture's branches, in the order a crew needs them: settle what is owed, appoint a
+   * treasurer, take a socket, form a crew, walk a hand there. Null outside the last
+   * {@link CAST_GRAND_MUSTER_RECKONINGS} Reckonings of the season, in the freeze, and on the boundary.
+   *
+   * Everything it reads is what an agent's `header.season.grand` publishes, through the runtime's own
+   * gates (`grandCreateRefusal`, `grandFillRefusal`) — so the cast is never offered an act the verb
+   * would refuse, and never plays a game with rules the agents cannot see.
+   */
+  private grandFor(
+    member: CastMember,
+    tick: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    if (inFreeze(tick) || isSettlementTick(tick) || isSeasonBoundaryTick(tick)) return null;
+    const season = this.runtime.seasonBlock(tick, member.principal);
+    if (season.reckonings_left > CAST_GRAND_MUSTER_RECKONINGS) return null;
+    const g = season.grand;
+    if (g.stage === null) return null;
+    return (
+      this.grandElectionFor(member, tick, season.season) ??
+      this.grandTreasurerFor(member, tick, season.season) ??
+      this.grandFillFor(member, tick, season.season, g.stage) ??
+      this.grandCreateFor(member, tick, g.stage) ??
+      this.grandMusterFor(member, tick, season.season, g.stage)
+    );
+  }
+
+  private stanceOf(member: CastMember): CastStance {
+    return stanceFor(member.handle, this.stanceSeed) ?? 'ZEALOT';
+  }
+
+  /** This member's grand candidate as creator, if it has one live this season. */
+  private grandCreatedBy(member: CastMember, season: number): VentureRecord | null {
+    for (const v of this.runtime.grandVenturesOf(season)) {
+      if (v.creator !== member.principal) continue;
+      if (v.state === 'FORMING' || v.state === 'LIVE') return v;
+    }
+    return null;
+  }
+
+  /**
+   * ★ The creator's statement on each crew share — the season's exam question, answered by the creed.
+   *
+   * `PAY` states IN_FULL on every share it owes, `KEEP` states 0 on every one (the yield stays with
+   * it and each share is a default on the record — §7.6's last-week defection), and `TREASURER` leaves
+   * the statement to the delegate it appointed until {@link CAST_GRAND_FALLBACK_TICKS} before the
+   * freeze, then pays whatever the treasurer has not stated. Never restates a statement already made.
+   */
+  private grandElectionFor(
+    member: CastMember,
+    tick: number,
+    season: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const v = this.grandCreatedBy(member, season);
+    if (v === null || v.state !== 'LIVE') return null;
+    const policy = CAST_GRAND_POLICY[this.stanceOf(member)];
+    const window = grandWindowOf(season, 0);
+    // The freeze is the tick before the FINALE's settlement; the fallback lands before it.
+    const lastCall = window.finale_tick - 1 - CAST_GRAND_FALLBACK_TICKS;
+    if (policy === 'TREASURER' && tick < lastCall) return null;
+    for (const role of v.roles) {
+      if (role.filledByPrincipal === null || role.filledByPrincipal === member.principal) continue;
+      if (this.runtime.electionOn(v.id, role.index) !== undefined) continue;
+      return {
+        verb: 'elect',
+        params: { venture: v.id, role: role.index, election: policy === 'KEEP' ? 0 : IN_FULL },
+      };
+    }
+    return null;
+  }
+
+  /**
+   * ★ A PATIENT creator appoints a treasurer to pay its crew at the FINALE — A6's surface, used.
+   *
+   * A grant whose verbs are `elect` (`treasury-hand`) and whose contingent LIMIT is exactly the most the
+   * grand venture can ask its creator for, issued once the crew is LIVE, to the first counterparty
+   * `grantCandidates` names that is not in the crew (a crew member could not elect on its own share,
+   * and that share would then go unpaid). The treasurer pays through {@link delegatedElectionFor}.
+   */
+  private grandTreasurerFor(
+    member: CastMember,
+    tick: number,
+    season: number,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    if (CAST_GRAND_POLICY[this.stanceOf(member)] !== 'TREASURER') return null;
+    const v = this.grandCreatedBy(member, season);
+    if (v === null || v.state !== 'LIVE') return null;
+    const ceiling = this.runtime.grandElectiveCeiling(season);
+    const appointed = this.runtime.grants
+      .forGrantor(member.principal)
+      .some(
+        (g) =>
+          this.runtime.grants.isLive(g.id, tick) &&
+          g.verbs.includes('elect') &&
+          this.runtime.grants.headroom(g.id).contingent >= ceiling,
+      );
+    if (appointed) return null;
+    const crew = new Set(v.roles.map((r) => r.filledByPrincipal));
+    const pick = this.runtime
+      .grantCandidates(member.principal, tick, 8)
+      .find((c) => !crew.has(c.to));
+    if (pick === undefined) return null;
+    return {
+      verb: 'grant',
+      params: {
+        to: pick.to,
+        template: 'treasury-hand',
+        max_direct_loss: 0,
+        max_contingent_liability: ceiling,
+        expires_tick: grandWindowOf(season, 0).finale_tick + 1,
+      },
+    };
+  }
+
+  /**
+   * ★ Take a socket in a crew: an idle hand standing at the stage, a stake of earned cash, and the
+   * crew closest to full first, so crews complete rather than splinter.
+   */
+  private grandFillFor(
+    member: CastMember,
+    tick: number,
+    season: number,
+    stage: SystemId,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const window = grandWindowOf(season, 0);
+    if (tick < window.opens_tick) return null;
+    const hand = handsOf(this.runtime.world, member.principal)
+      .filter((h) => h.state === 'IDLE' && isPresent(h, tick) && h.location === stage)
+      .sort((a, b) => compareIds(a.id, b.id))[0];
+    if (hand === undefined) return null;
+    const cash = freeCash(this.runtime.ledger, member.principal);
+    const stake = minor(
+      Math.min(cash, Math.max(GRAND_ROLE_STAKE_MINOR, Math.trunc((cash * CAST_GRAND_STAKE_BPS) / BPS_ONE))),
+    );
+    const forming = this.runtime
+      .grandVenturesOf(season)
+      .filter((v) => v.state === 'FORMING' && tick <= v.windowClosesTick && openIndices(v).length > 0)
+      .sort(
+        (a, b) =>
+          openIndices(a).length - openIndices(b).length || compareIds(a.id, b.id),
+      );
+    for (const v of forming) {
+      if (this.runtime.grandFillRefusal(member.principal, v, hand, stake) !== null) continue;
+      for (const role of openIndices(v)) {
+        const key = `${v.id}::${String(role)}`;
+        if (this.grandClaims.has(key)) continue;
+        this.grandClaims.add(key);
+        return { verb: 'fill_role', params: { venture: v.id, role, hand: hand.id, stake } };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * ★ Form a crew — once a tick for the whole cast, and only when no forming crew still has a socket
+   * to offer, so four hands at the stage make one crew of four rather than four crews of one.
+   */
+  private grandCreateFor(
+    member: CastMember,
+    tick: number,
+    stage: SystemId,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    if (this.grandFormedThisTick) return null;
+    if (this.runtime.grandCreateRefusal(member.principal, tick) !== null) return null;
+    const season = this.runtime.seasonBlock(tick, member.principal);
+    if (!season.grand.open_now) return null;
+    const atStage = handsOf(this.runtime.world, member.principal).some(
+      (h) => h.state === 'IDLE' && isPresent(h, tick) && h.location === stage,
+    );
+    if (!atStage) return null;
+    const open = this.runtime
+      .grandVenturesOf(season.season)
+      .some((v) => v.state === 'FORMING' && tick <= v.windowClosesTick && openIndices(v).length > 0);
+    if (open) return null;
+    // ── ★ AND ONLY WHEN A CREW CAN ACTUALLY STAND HERE ─────────────────────────────
+    //
+    // A crew is four principals with a hand at the stage, and a candidate that cannot fill in its
+    // twelve-tick window retires ABANDONED. Measured before this gate (`cf-a`, twelve members): the
+    // first crew formed and carried the yield, and then two members re-formed a candidate every
+    // fourteen ticks for the rest of the FINALE — fourteen abandoned candidates, never more than
+    // three hands to fill any of them. So the cast forms a crew only when at least as many unattached
+    // principals stand at the stage as the kind has roles, itself included.
+    let unattached = 0;
+    const seen = new Set<PrincipalId>();
+    for (const h of this.runtime.world.hands.values()) {
+      if (h.location !== stage || h.state !== 'IDLE' || !isPresent(h, tick) || seen.has(h.principal)) continue;
+      seen.add(h.principal);
+      if (this.runtime.grandPartyOf(h.principal, season.season, null) === null) unattached += 1;
+    }
+    if (unattached < kindSpec('BUILD').roles.length) return null;
+    this.grandFormedThisTick = true;
+    return { verb: 'create', params: { kind: 'BUILD', stage, grand: true } };
+  }
+
+  /**
+   * ★ Walk one hand toward the grand stage, from {@link CAST_GRAND_MUSTER_RECKONINGS} out, if this
+   * member could stake a grand role and has a hand to spare — never one the world's bill needs.
+   */
+  private grandMusterFor(
+    member: CastMember,
+    tick: number,
+    season: number,
+    stage: SystemId,
+  ): { readonly verb: string; readonly params: Readonly<Record<string, unknown>> } | null {
+    const window = grandWindowOf(season, 0);
+    if (tick > window.closes_tick) return null;
+    if (freeCash(this.runtime.ledger, member.principal) < GRAND_ROLE_STAKE_MINOR) return null;
+    if (this.runtime.grandPartyOf(member.principal, season, null) !== null) return null;
+    const hands = handsOf(this.runtime.world, member.principal);
+    // One hand per member, and not a second while the first is still walking.
+    if (hands.some((h) => h.location === stage || h.destination === stage)) return null;
+    if (hands.some((h) => h.state === 'IN_TRANSIT')) return null;
+    if (this.spareHands(member, tick) <= 0) return null;
+    if (this.carriageNeeded(member, tick) > 0) return null;
+    const march = this.runtime.grandMarchFor(member.principal, tick);
+    if (march === null || !this.mayEnter(member, march.next)) return null;
+    return { verb: 'move', params: { hand: march.hand, to: march.next } };
+  }
+
   private electionFor(
     member: CastMember,
     tick: number,
@@ -4061,6 +4340,10 @@ export class HeuristicCast {
 
     for (const venture of mine) {
       if (!ELECTABLE_VENTURE_STATES.includes(venture.state)) continue;
+      // ★ The grand venture is not budgeted from stores: its yield lands before its shares are paid
+      // (the escrow remainder returns to the creator in phase 1, the elective parts move in phase 2),
+      // and what to state on it is the creator's character, not its purse. {@link grandElectionFor}.
+      if (venture.grand !== null) continue;
       for (const role of venture.roles) {
         // The payer owes an elective part only where somebody else holds the role: a
         // payment to its own stores is booked as paid in full and can never be a breach
@@ -4670,6 +4953,8 @@ export class HeuristicCast {
       if (tick > venture.windowClosesTick) continue;
       if (venture.creator === member.principal) continue;
       if (roleOfPrincipal(venture, member.principal) !== null) continue;
+      // ★ A grand role is presence and earned capital (`grandFillFor`), never an ordinary slot.
+      if (venture.grand !== null) continue;
       // A hostile venture in the Commons can never be filled, so do not try.
       //
       // ── AND THIS ONE STAYS ON `member.seat`, WHICH IS THE OPPOSITE OF {@link bodyOf}'s RULE ──

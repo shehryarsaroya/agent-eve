@@ -7388,6 +7388,37 @@ export class Runtime {
     return proceedsBand('BUILD', roles, NEUTRAL_STAGE_BPS, marker.baseYieldMinor).p90;
   }
 
+  /**
+   * ★ The soonest idle hand's route to this season's grand stage, or null — the `march` the raid view
+   * publishes, aimed at the grand venture instead of a standoff. The same legality on both ends: the
+   * next gate must be one this hand may cross, and the stage must be somewhere it may stand, so a
+   * Commons-bound principal is never routed at a Frontier stage it can never reach.
+   */
+  grandMarchFor(principal: PrincipalId, tick: number): MarchRoute | null {
+    const stage = grandStageFor(this.world.map, seasonOf(tick));
+    if (stage === null) return null;
+    let best: MarchRoute | null = null;
+    for (const hand of handsOf(this.world, principal)) {
+      if (hand.state !== 'IDLE' || !isPresent(hand, tick)) continue;
+      if (hand.location === stage) continue;
+      const path = route(this.world.map, hand.location, stage);
+      if (path === null) continue;
+      const next = path.path[1];
+      if (next === undefined) continue;
+      if (commonsBoundRejection(this.world, hand, next) !== null) continue;
+      if (commonsBoundRejection(this.world, hand, stage) !== null) continue;
+      const candidate: MarchRoute = {
+        hand: hand.id,
+        from: hand.location,
+        next,
+        hops: path.path.length - 1,
+        arrives_tick: tick + path.ticks,
+      };
+      if (best === null || candidate.arrives_tick < best.arrives_tick) best = candidate;
+    }
+    return best;
+  }
+
   /** Every grand venture of `season` still in the venture book, in id order. Any state. */
   grandVenturesOf(season: number): readonly VentureRecord[] {
     return this.ventures
