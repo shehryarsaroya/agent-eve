@@ -956,6 +956,26 @@ export function buildObservation(input: ObserveInput): Observation {
       charge: myClaims.slice(0, MAX_LIST_ROWS),
       /** The allocation ballot, while it is open. Who bears the total is the vote (§5.2's split). */
       charge_ballot: chargeBallotBlock(runtime, principal, tick),
+      /**
+       * ★ **THE ORDERS YOU LEFT RUNNING TO MEET ALL OF THE ABOVE** (`RULES_VERSION` 41).
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * A standing intent was the one durable commitment an agent could make and never read back: it
+       * appeared in no observation, it could not be ended, and the only trace of it was a correction
+       * every tick it was refused — including the ticks it had nothing to do, which is how a PAID
+       * Levy order came to read as a stuck one. So every intent the reader holds is listed here, live
+       * ones plus any that ended inside the last Reckoning, with what it last did (`status`: `ARMED` ·
+       * `RAN` · `SATISFIED` · `REFUSED`, or how it ended) and what it will do next tick (`now`) — the
+       * same predicate the engine asks before running it, so the row cannot promise a run the tick
+       * will not make. Each live one has a `set_delivery_intent {"stop": id}` affordance beside it.
+       *
+       * In `obligations`, not a key of its own: §17's observe budget is at eleven, and an order to pay
+       * the Levy or the Charge belongs adjacent to the bill it pays — the argument that put `levy` and
+       * `exposure` here. PRIVATE to the reader: what an order DOES is public on the events it produces,
+       * and that it exists is the reader's own strategy.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      intents: runtime.intentRows(principal, tick),
     },
 
     ventures: {
@@ -1843,6 +1863,12 @@ function affordancesFor(
       quote_id: quoteId(principal, tick, offer.verb, offer.params),
     });
   }
+  /**
+   * This principal's live standing intents, read once. The chore orders below are offered only where
+   * none already stands, because a second identical order would run beside the first and the cap is
+   * four (`MAX_LIVE_INTENTS_PER_PRINCIPAL`).
+   */
+  const liveOrders = runtime.engine.intents.liveFor(principal);
   /** Charge deliveries withheld because no hand of this principal is standing there. */
   let chargeNoHand = 0;
   const chargeNoHandAt: string[] = [];
@@ -2456,6 +2482,33 @@ function affordancesFor(
       chargeNoHand += 1;
       chargeNoHandAt.push(claim.system);
     }
+    // ── ★ AND THE STANDING ORDER THAT PAYS IT EVERY RECKONING (`RULES_VERSION` 41) ──────────
+    //
+    // A claim is a Charge every Reckoning for as long as it is held, and the Levy has had a standing
+    // order since R19 while the Charge had none — so a claimant paid the same bill by hand every day,
+    // and an absent one lost the ground. The order is the same verb carrying the same `deliver`, and
+    // every cost stays visible: what it hands over is the bill, at the claimed system, by a hand that
+    // has to be standing there — offered only while one is, because an order refused every tick is a
+    // stuck order, which is the defect the satisfied state exists to end.
+    if (claim.hand_here && !liveOrders.some((i) => i.verb === 'deliver' && i.params['system'] === claim.system)) {
+      const until = tick + TICKS_PER_RECKONING * 2;
+      eligible.push({
+        verb: 'set_delivery_intent',
+        params: { intent_verb: 'deliver', obligation: 'CHARGE', system: claim.system, until_tick: until },
+        cost: 1,
+        max_direct_loss: claim.due,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `sets a STANDING ORDER to pay ${claim.system}'s Charge every Reckoning out of the ${claim.good} ` +
+          `standing there, so the claim stays supplied while you are away. Creating it costs one action and ` +
+          `every tick it runs costs none. It hands over each Reckoning's bill (${String(claim.due)} this one) ` +
+          `until tick ${String(until)}, and only while one of your hands stands at ${claim.system} — move them ` +
+          'all away and it is refused, with that reason, until one returns. Once a bill is paid it reads ' +
+          'SATISFIED in obligations.intents and stays armed; end it with {"stop": "<intent id>"}.',
+        expires_tick: tick + 1,
+        quote_id: quoteId(principal, tick, 'set_delivery_intent', { obligation: 'CHARGE', system: claim.system }),
+      });
+    }
     // The two exits, offered **only once the record has actually published a miss.** The
     // first draft offered them whenever a Charge was outstanding, which is *every* claim at
     // the start of *every* Reckoning — so a principal that had just taken territory and had
@@ -3056,6 +3109,35 @@ function affordancesFor(
         `skipped rather than refused.`,
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'refine', { system: holdingOf(world, principal).system }),
+    });
+  }
+
+  // 5E-bis. ★ **THE STANDING ORDER THAT REFINES WHAT YOUR WORKS EXTRACTS** (`RULES_VERSION` 41).
+  //
+  //     A WORKS extracts ore every tick and every obligation is payable in rations, so refining was a
+  //     chore repeated every day by hand — and an absent principal's ore piled up unpayable while its
+  //     Levy order found nothing to hand over. One order per system a WORKS of yours stands on, offered
+  //     only where none already runs. The choice it carries is stated rather than hidden: it refines ALL
+  //     the ore there, and ore refined into rations cannot become alloy or be sold as ore.
+  for (const system of [...new Set(runtime.worksOf(principal).map((w) => w.system))].sort(cmp)) {
+    if (liveOrders.some((i) => i.verb === 'refine' && (i.params['system'] ?? null) === system)) continue;
+    const until = tick + TICKS_PER_RECKONING * 2;
+    eligible.push({
+      verb: 'set_delivery_intent',
+      params: { intent_verb: 'refine', system, until_tick: until },
+      cost: 1,
+      // Goods of one kind become goods of another in your own stores; the cost is the alternative.
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `sets a STANDING ORDER to refine the ${WORKS_YIELD_GOOD} at ${system} into ${WORKS_GOOD} — the good ` +
+        'the Levy, a Charge and a WORKS build are payable in — every tick a whole batch stands there, until ' +
+        `tick ${String(until)}. Creating it costs one action and every run costs none. **It refines ALL the ` +
+        `${WORKS_YIELD_GOOD} at ${system}**, including any you meant for ${ALLOY_GOOD} or for \`trade\`: ` +
+        'end it with {"stop": "<intent id>"} before you want the ore for something else. Between batches it ' +
+        'reads SATISFIED (waiting for ore) in obligations.intents, not stuck.',
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'set_delivery_intent', { intent_verb: 'refine', system }),
     });
   }
 
@@ -3761,11 +3843,36 @@ function affordancesFor(
         `${String(tick + TICKS_PER_RECKONING * 2)}, and it will keep doing so whether or not you are ` +
         `watching — including when you would rather have spent those goods on something else. Raise ` +
         `\`until_tick\` to cover a longer absence. Sending it again ADDS a second order rather than ` +
-        `replacing this one — you may hold ${String(MAX_LIVE_INTENTS_PER_PRINCIPAL)} — and an order ends only ` +
-        'at its until_tick. Once the bill is paid it reads "already discharged in full" each tick: that is ' +
-        'the order satisfied, not stuck.',
+        `replacing this one — you may hold ${String(MAX_LIVE_INTENTS_PER_PRINCIPAL)} — and it ends at its ` +
+        'until_tick or when you stop it ({"stop": "<intent id>"}, one action). Once a Reckoning\'s bill is ' +
+        'paid the order reads SATISFIED in obligations.intents — it does not run, posts no correction and ' +
+        'stays armed for the next bill — so a paid order is never a stuck one.',
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'set_delivery_intent', { obligation: 'LEVY' }),
+    });
+  }
+
+  // 5B-quater. ★ **END A STANDING INTENT — the door `IntentBook.stop` never had** (`RULES_VERSION` 41).
+  //
+  //     An intent could only end at its own stop condition, so an agent that set one and changed its
+  //     mind — a refine order eating ore it now wanted as alloy, a Levy order for a hand it needed
+  //     elsewhere — had no move at all, and the cap's refusal said so in words. `stop` is a parameter of
+  //     the verb that makes intents (A3: creating or amending one costs an action), so no verb is spent.
+  //     One row per LIVE intent, each the complete act: the id is the only thing in it.
+  for (const intent of runtime.engine.intents.liveFor(principal)) {
+    eligible.push({
+      verb: 'set_delivery_intent',
+      params: { stop: intent.id },
+      cost: 1,
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `ENDS your standing ${intent.verb} intent ${intent.id} on the tick this lands, before it would run; it ` +
+        `has run ${String(intent.runs)} time(s) and is satisfied or refused as obligations.intents shows. It ` +
+        'is final — an ended intent never runs again — and it gives back nothing it already did. Set a new ' +
+        'one if you want it back.',
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'set_delivery_intent', { stop: intent.id }),
     });
   }
 

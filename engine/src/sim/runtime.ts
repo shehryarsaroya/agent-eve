@@ -213,7 +213,7 @@ import { reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
 import { sign } from '../venture/sign.js';
 import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
-import { refine, refineKindOf, unknownRefineKindHint } from '../works/refine.js';
+import { recipeOf, refine, refineKindOf, unknownRefineKindHint } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
@@ -237,6 +237,7 @@ import {
   type CascadeAttempt,
   type EngineOptions,
   type ObligationSource,
+  type IntentRecord,
   type PhaseContext,
   type QueuedAction,
   type StateTable,
@@ -504,6 +505,7 @@ import {
   CESSION_SALVAGE_BPS,
   CHARGE_BALLOT,
   CHARGE_BY_TIER,
+  chargeBallotWindow,
   CHARGE_GOOD,
   CHARGE_MISSES_TO_LAPSE,
   CHARGE_STATEMENT,
@@ -4081,6 +4083,9 @@ export class Runtime {
       // keeping a second copy of the count (scar #5). Before this hook existed the
       // budget charged for every seal and agent.md's promise was simply false — a
       // doc/engine disagreement about a cost, which is scar #1's shape.
+      // ★ `RULES_VERSION` 41. A due intent with nothing left to do does not run; see
+      // {@link Runtime.intentSatisfaction} for the three verbs that can be satisfied and why.
+      intentSatisfied: (intent, tick) => this.intentSatisfaction(intent, tick),
       allowance: (request): boolean => {
         if (request.verb !== 'seal') return false;
         const roles = this.sealableRoles(request.principal, this.engine.tick);
@@ -7310,6 +7315,189 @@ export class Runtime {
         'too, for a different reason and with a different answer: see its own refusal — what you last stated ' +
         'is what happens tonight, and submitting again will not change it.)',
     );
+  }
+
+  // ── ★ STANDING INTENTS: WHAT "NOTHING TO DO" MEANS, PER VERB (`RULES_VERSION` 41) ──
+
+  /**
+   * ★ **Has this due intent nothing to do at `tick`?** A sentence saying why, or `null` to run it.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A PAID ORDER LOOKED STUCK, AND THE RECORD SAID IT WAS.** `set_delivery_intent` re-firing after
+   * its Levy was discharged produced 16 identical refusals in 16 ticks, a playtester read "stuck", and
+   * the affordance had to carry a sentence pleading that it was not. The run was the wrong thing to do:
+   * there was nothing to deliver. So the engine asks this before running a due intent, and a non-null
+   * answer is recorded as `satisfied` on the intent — never a run, never a refusal, no correction, no
+   * action-log row (`IntentBook.satisfiedAt`, `tick/loop.ts:validateAndLock`).
+   *
+   * **Only "the obligation is met, or not yet open" is satisfaction.** Every obstacle an agent could act
+   * on — no hand at the delivery place, no goods, no live claim, a ballot it cannot cast — returns null,
+   * so the verb runs and refuses with its own sentence and the correction reaches the agent. Calling an
+   * obstacle "satisfied" would be the stuck-order defect run backwards: an order failing silently.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Read-only and deterministic: every branch reads the books the verb itself reads, at the tick the
+   * intent would run, after every live action in the window has resolved.
+   */
+  intentSatisfaction(intent: IntentRecord, tick: number): string | null {
+    switch (intent.verb) {
+      case 'deliver':
+        return this.deliverySatisfaction(intent.principal, intent.params, tick);
+      case 'vote':
+        return this.ballotSatisfaction(intent.principal, intent.params, tick);
+      case 'refine':
+        return this.refineSatisfaction(intent.principal, intent.params, tick);
+      default:
+        return null;
+    }
+  }
+
+  /** `deliver` has nothing to do when the obligation it names is discharged for this Reckoning. */
+  private deliverySatisfaction(
+    principal: PrincipalId,
+    params: Readonly<Record<string, unknown>>,
+    tick: number,
+  ): string | null {
+    const reckoning = reckoningOf(tick);
+    // The SAME dispatch `vDeliver` makes, read off the same keys, so the predicate and the verb can
+    // never disagree about which obligation an order is for.
+    const obligation = (readString(params, ['obligation', 'against', 'duty']) ?? '').toUpperCase();
+    const chargeSystem = readString(params, ['system', 'claim', 'system_id']) as SystemId | null;
+    if (obligation === 'CHARGE' || (obligation === '' && chargeSystem !== null)) {
+      if (chargeSystem === null) return null;
+      const claim = this.sovereignty.liveAt(chargeSystem);
+      // No live claim is an obstacle — the claim lapsed or changed hands — so the verb says so.
+      if (claim === null) return null;
+      const owing = this.sovereignty.owingOf(reckoning, claim.system);
+      if (owing.owed > 0) return null;
+      return (
+        `the Charge on ${chargeSystem} is discharged for Reckoning ${String(reckoning)}; this order pays the ` +
+        "next Reckoning's bill the tick it is assessed"
+      );
+    }
+    const payer = (readString(params, ['on_behalf_of', 'onBehalfOf', 'for', 'payer']) ?? principal) as PrincipalId;
+    if (this.world.holdingByPrincipal.get(payer) === undefined) return null;
+    const owing = this.levy.owingOf(reckoning, payer);
+    // A foreign hand may fill only the escrowable bucket (`levy/payment.ts:creditFor`), so a carry
+    // order is done when that bucket is — even while the payer still owes its own presence share.
+    const room = payer === principal ? owing.owed : owing.purchasableOwed;
+    if (room > 0) return null;
+    if (owing.assessment <= 0) {
+      return `no Levy is assessed on ${payer} for Reckoning ${String(reckoning)} yet, so there is nothing to deliver`;
+    }
+    return payer === principal
+      ? `this Reckoning's Levy is discharged in full; this order pays the next one the tick it is assessed`
+      : `${payer}'s Levy share that another hand may carry is discharged for Reckoning ${String(reckoning)}`;
+  }
+
+  /** `vote` has nothing to do when its ballot is closed, or already says exactly what it would cast. */
+  private ballotSatisfaction(
+    principal: PrincipalId,
+    params: Readonly<Record<string, unknown>>,
+    tick: number,
+  ): string | null {
+    const kind = (readString(params, ['ballot', 'ballot_kind', 'kind']) ?? LEVY_BALLOT).toUpperCase();
+    const rule = readString(params, ['rule', 'allocation', 'formula']) ?? '';
+    const spare = readString(params, ['spare', 'spare_principal', 'relieve']);
+    const window = kind === CHARGE_BALLOT ? chargeBallotWindow(tick) : kind === LEVY_BALLOT ? ballotWindow(tick) : null;
+    if (window === null) return null;
+    if (!window.open) {
+      return (
+        `the ${kind} ballot for Reckoning ${String(window.forReckoning)} closed at tick ${String(window.closesTick)}; ` +
+        'this order votes again when the next one opens'
+      );
+    }
+    const standing =
+      kind === CHARGE_BALLOT
+        ? this.sovereignty.ballotOf(window.forReckoning, principal)
+        : this.levy.ballotOf(window.forReckoning, principal);
+    if (standing === undefined) return null;
+    if (standing.rule !== rule || (standing.spare ?? null) !== (spare ?? null)) return null;
+    // Re-casting an identical ballot would replace it with itself and post a `PUBLIC` row every tick —
+    // a ballot box that recorded the same vote 200 times a Reckoning.
+    return `your ${kind} ballot for Reckoning ${String(window.forReckoning)} already says ${rule}`;
+  }
+
+  /** `refine` has nothing to do until a whole batch of its input stands where it refines. */
+  private refineSatisfaction(
+    principal: PrincipalId,
+    params: Readonly<Record<string, unknown>>,
+    tick: number,
+  ): string | null {
+    const named = readString(params, ['system', 'at', 'place']) as SystemId | null;
+    const holding = this.world.holdingByPrincipal.get(principal);
+    if (named === null && holding === undefined) return null;
+    const system = named ?? holdingOf(this.world, principal).system;
+    const tier = this.world.map.systems.get(system)?.tier;
+    const kind = refineKindOf(readString(params, ['kind', 'recipe', 'into']));
+    // An unknown kind or place is the verb's to refuse by name; never satisfied.
+    if (tier === undefined || kind === null) return null;
+    const recipe = recipeOf(kind, tier);
+    // `refine` sits behind `committing`, so inside the freeze it would be refused twice a Reckoning for
+    // a reason that is nobody's obstacle: there is nothing to do until the Reckoning has settled.
+    if (inFreeze(tick) || isSettlementTick(tick)) {
+      return 'the Reckoning’s freeze is on; it refines again the tick after settlement';
+    }
+    const have = this.goodLotsAt(principal, system, recipe.inGood).reduce((n, l) => n + l.qty, 0);
+    const wanted = readInt(params, ['qty', 'quantity', 'amount']);
+    const batches = wanted === null ? 1 : Math.trunc(wanted / recipe.outQty);
+    if (batches <= 0) return null;
+    const need = batches * recipe.inQty;
+    if (have >= need) return null;
+    return (
+      `waiting for ${String(need)} ${recipe.inGood} at ${system} (${String(have)} there now); it refines the ` +
+      'tick a whole batch has been extracted'
+    );
+  }
+
+  /**
+   * ★ **This principal's standing intents, as `obligations.intents` publishes them** — its own and nobody
+   * else's (PRIVATE: an order you left running is your strategy, not a public fact; what it DOES is
+   * public, on the events it produces).
+   *
+   * Live ones, plus any that ended inside the last Reckoning so "my order stopped" is readable for a
+   * cycle. `status` is the latest thing that happened to it, and `now` is what it will do at the next
+   * tick it is due — the same predicate the engine asks, so the row cannot promise a run the tick will
+   * not make.
+   */
+  intentRows(principal: PrincipalId, tick: number): readonly Readonly<Record<string, unknown>>[] {
+    const out: Readonly<Record<string, unknown>>[] = [];
+    for (const intent of this.engine.intents.inOrder()) {
+      if (intent.principal !== principal) continue;
+      const ended = intent.state !== 'LIVE';
+      if (ended && (intent.endedAtTick === null || intent.endedAtTick < tick - TICKS_PER_RECKONING)) continue;
+      const last = Math.max(intent.lastRanTick ?? -1, intent.lastRefusedTick ?? -1, intent.lastSatisfiedTick ?? -1);
+      const status = ended
+        ? intent.state
+        : last < 0
+          ? 'ARMED'
+          : last === intent.lastSatisfiedTick
+            ? 'SATISFIED'
+            : last === intent.lastRefusedTick
+              ? 'REFUSED'
+              : 'RAN';
+      const why = ended ? null : this.intentSatisfaction(intent, tick + 1);
+      out.push({
+        id: intent.id,
+        verb: intent.verb,
+        params: intent.params,
+        state: intent.state,
+        status,
+        status_tick: ended ? intent.endedAtTick : last < 0 ? null : last,
+        created_tick: intent.createdTick,
+        until_tick: intent.untilTick,
+        max_runs: intent.maxRuns,
+        runs: intent.runs,
+        refusals: intent.refusals,
+        satisfied: intent.satisfied,
+        now: ended
+          ? 'ended; it never runs again'
+          : why === null
+            ? 'due next tick: it will try to act, and a refusal will reach briefing.corrections'
+            : `satisfied next tick — ${why}`,
+      });
+    }
+    return out;
   }
 
   private vCreate(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {

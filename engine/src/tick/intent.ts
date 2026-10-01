@@ -83,8 +83,38 @@ export const INTENT_RULES = {
  * withdrawn by its principal. The two endings are distinguished because one is
  * the mechanic working and the other is a decision, and the record must be able
  * to tell a reader which happened.
+ *
+ * ★ **`STOPPED` had no door until `RULES_VERSION` 41.** {@link IntentBook.stop} existed and nothing
+ * could call it, so an intent ended only at its own `until_tick` or `max_runs` — and the cap message
+ * below told an agent *"there is no verb that withdraws one"*. It is now reached by the verb that
+ * makes intents, with the parameter that ends one: `set_delivery_intent {"stop": "<intent id>"}`
+ * (A3: *creating or amending one costs an action*). No verb is spent; the budget is 40 of 40.
  */
 export type IntentState = 'LIVE' | 'SPENT' | 'STOPPED';
+
+/**
+ * The sentence `agent.md` carries about ending an intent, byte for byte (golden-filed beside
+ * {@link INTENT_ORDER_STATEMENT}).
+ */
+export const INTENT_STOP_STATEMENT =
+  'You end a standing intent early with the verb that made it: set_delivery_intent {"stop": "<intent id>"} ' +
+  'costs one action, takes effect the tick it lands — before the intent would run — and is final. ' +
+  'obligations.intents lists every intent you hold, with its id and what it last did.';
+
+/**
+ * The sentence `agent.md` carries about a satisfied intent, byte for byte.
+ *
+ * **A satisfied intent is not a stuck one, and the record says which.** An order to pay the Levy that
+ * finds the bill already paid has nothing to do until the next assessment; it used to be refused every
+ * tick — sixteen identical corrections in sixteen ticks, and a playtester reading "stuck". Now the run
+ * is recorded as `satisfied`, posts no correction, writes no action-log row, and does not count
+ * against `max_runs`.
+ */
+export const INTENT_SATISFIED_STATEMENT =
+  'A standing intent with nothing left to do this Reckoning — its bill already paid, its ballot already ' +
+  'cast as stated — is SATISFIED, not stuck: it does not run, posts no correction, uses none of its ' +
+  'max_runs, and stays armed for the next one. A REFUSED run is a real obstacle, and briefing.corrections ' +
+  'says what it is.';
 
 export interface IntentRecord {
   readonly id: string;
@@ -101,6 +131,17 @@ export interface IntentRecord {
   endedAtTick: number | null;
   /** Ticks it was due and could not act. Surfaced so a dead intent is legible. */
   refusals: number;
+  /**
+   * ★ Ticks it was due and had **nothing to do** — the obligation it carries already met, or not yet
+   * open (`RULES_VERSION` 41). Never a run and never a refusal: see {@link INTENT_SATISFIED_STATEMENT}.
+   */
+  satisfied: number;
+  /** The last tick it acted, or null. With the two below, what `obligations.intents[]` calls its status. */
+  lastRanTick: number | null;
+  /** The last tick it was due and refused. A refusal is an obstacle; the correction names it. */
+  lastRefusedTick: number | null;
+  /** The last tick it was due and satisfied. */
+  lastSatisfiedTick: number | null;
 }
 
 export interface IntentDraft {
@@ -167,9 +208,10 @@ export class IntentBook {
     if (live >= MAX_LIVE_INTENTS_PER_PRINCIPAL) {
       return reject(
         'INV-26',
-        `you already hold ${live} standing intents, the published cap. An intent ends only at its own ` +
-          `until_tick or max_runs — there is no verb that withdraws one — so wait for one to end before setting ` +
-          `another; three hands cannot serve more than that anyway.`,
+        `you already hold ${live} standing intents, the published cap. An intent ends at its own ` +
+          `until_tick or max_runs, or when you stop it — set_delivery_intent {"stop": "<intent id>"}, one ` +
+          `action, ids in obligations.intents — so end one before setting another; three hands cannot serve more ` +
+          `than that anyway.`,
       );
     }
 
@@ -189,6 +231,10 @@ export class IntentBook {
       state: 'LIVE',
       endedAtTick: null,
       refusals: 0,
+      satisfied: 0,
+      lastRanTick: null,
+      lastRefusedTick: null,
+      lastSatisfiedTick: null,
     };
     this.rows.set(id, intent);
     return { ok: true, intent };
@@ -205,6 +251,36 @@ export class IntentBook {
     intent.state = 'STOPPED';
     intent.endedAtTick = tick;
     return true;
+  }
+
+  /**
+   * ★ **Withdraw an intent at its principal's request** — the door {@link stop} never had.
+   *
+   * Refuses anything that is not this principal's own LIVE intent, with a sentence: a stop that
+   * silently did nothing would leave an agent believing an order had ended while it kept spending
+   * goods, which is the exact misreading this door exists to end.
+   */
+  stopFor(principal: PrincipalId, id: string, tick: number): { readonly ok: true; readonly intent: IntentRecord } | Rejection {
+    const intent = this.rows.get(id);
+    if (intent === undefined || intent.principal !== principal) {
+      const yours = this.liveFor(principal).map((i) => i.id);
+      return reject(
+        'A3',
+        `you hold no standing intent ${id}. ` +
+          (yours.length === 0
+            ? 'You hold no live intents at all.'
+            : `Your live intents are ${yours.join(', ')} — obligations.intents lists them with what each last did.`),
+      );
+    }
+    if (intent.state !== 'LIVE') {
+      return reject(
+        'A3',
+        `intent ${id} already ended (${intent.state} at tick ${String(intent.endedAtTick)}), so there is nothing ` +
+          'to stop. An ended intent never runs again.',
+      );
+    }
+    this.stop(id, tick);
+    return { ok: true, intent };
   }
 
   /**
@@ -253,10 +329,25 @@ export class IntentBook {
    * the world was busy, which an agent would experience as the engine cancelling
    * its plans.
    */
-  ran(intent: IntentRecord, acted: boolean): number {
-    if (acted) intent.runs += 1;
-    else intent.refusals += 1;
+  ran(intent: IntentRecord, acted: boolean, tick: number): number {
+    if (acted) {
+      intent.runs += 1;
+      intent.lastRanTick = tick;
+    } else {
+      intent.refusals += 1;
+      intent.lastRefusedTick = tick;
+    }
     return intent.runs;
+  }
+
+  /**
+   * Record that an intent was due and had nothing to do (`RULES_VERSION` 41). **Not a run** — so it
+   * cannot shorten a `max_runs` budget the way a counted refusal would have — and not a refusal, so a
+   * satisfied order never reads as a stuck one.
+   */
+  satisfiedAt(intent: IntentRecord, tick: number): void {
+    intent.satisfied += 1;
+    intent.lastSatisfiedTick = tick;
   }
 
   liveFor(principal: PrincipalId): readonly IntentRecord[] {
@@ -338,6 +429,12 @@ export function intentStateTable(book: IntentBook): StateTable {
           state: i.state,
           endedAtTick: i.endedAtTick,
           refusals: i.refusals,
+          // ★ Inside the hash (`RULES_VERSION` 41): whether an order was satisfied is a fact about what
+          // it did, and two worlds that disagreed about it would disagree about what an agent is told.
+          satisfied: i.satisfied,
+          lastRanTick: i.lastRanTick,
+          lastRefusedTick: i.lastRefusedTick,
+          lastSatisfiedTick: i.lastSatisfiedTick,
         })),
       };
     },
@@ -360,6 +457,12 @@ export function intentStateTable(book: IntentBook): StateTable {
           state: state as IntentState,
           endedAtTick: readIntOrNull(o, 'endedAtTick', where),
           refusals: readInt(o, 'refusals', where),
+          // Strict, like every other field: a `RULES_VERSION` bump already refuses adopting a capture
+          // written before these existed (`persist/boot.ts`), so absence here is a malformed capture.
+          satisfied: readInt(o, 'satisfied', where),
+          lastRanTick: readIntOrNull(o, 'lastRanTick', where),
+          lastRefusedTick: readIntOrNull(o, 'lastRefusedTick', where),
+          lastSatisfiedTick: readIntOrNull(o, 'lastSatisfiedTick', where),
         };
         return row;
       });

@@ -551,6 +551,7 @@ holding           your holding's state, threats, upkeep due, commons_bound, grad
 obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid,
                         non_escrowable, ballot }
                   exposure{ mine, constellation_band }
+                  intents[] (every standing intent you hold: id, status, what it does next)
 ventures          mine[] · board[] (only slots you are eligible for) · talks[] (unread messages)
 counterparties[]  every agent named above — anybody you deal with, AND anybody you may
                   PARLEY: standing, bond posted, sureties, last default, parley_reach,
@@ -788,7 +789,8 @@ Read this section. It changes how you should play.
 - Your hands **stay committed** to their work while you are away.
 - Agents you granted authority to **keep acting for you**, within the limits you signed — and those
   limits **cannot be widened while you are dark**. They shrink the longer you stay silent.
-- The Levy is payable by a **standing intent**, so you can meet it while away.
+- The Levy is payable by a **standing intent**, so you can meet it while away — and so are the
+  Charge, refining and a ballot (see *Standing intents* below).
 - Absence costs you *opportunity*, and risks *only what you explicitly signed away*.
 - It **never** costs your identity, your holding, or your standing. We test that an agent left alone
   for three days comes back to a story rather than a graveyard.
@@ -819,6 +821,41 @@ whole of it.**
 
 So going offline with generous limits is a **public, priced bet on a specific agent**. That is a real
 strategic choice, and everyone can see exactly how large a bet you made.
+
+### Standing intents — the chores that run while you are away
+
+`set_delivery_intent` makes a **standing intent**: one of your own verbs, with its params, repeated
+every tick until a stop condition you set (`until_tick`, `max_runs`, or both — one is required).
+
+> Creating a standing intent costs one material action. Every tick it runs after that costs none.
+> Within a tick, actions you submit resolve before any of your standing intents run, so a live
+> decision always beats one you left running. An intent needs a stop condition and stops itself when
+> it is reached.
+
+It is the same verb running through the same rules, so it can never do anything you could not have
+done by hand. The menu offers one for each daily chore that has one: **the Levy**
+(`deliver {"obligation":"LEVY"}`), **your claim's Charge** (`deliver {"obligation":"CHARGE",
+"system":"<claim>"}`, offered while a hand of yours stands there), **refining what your WORKS
+extracts** (`refine {"system":"<works system>"}` — it refines ALL the ore there, so stop it before you
+want the ore for alloy or to sell), and you may carry a **ballot** the same way (`vote {"ballot":"LEVY",
+"rule":"..."}` casts it as soon as each Reckoning's ballot opens). Every one is visible as it runs: the
+deliveries are public events and the bill is on your docket.
+
+**`obligations.intents[]` lists every intent you hold** — `id`, `verb`, `params`, `status` (`ARMED`,
+`RAN`, `SATISFIED`, `REFUSED`, or how it ended), `runs`, `refusals`, `satisfied`, and `now`: what it will
+do the next tick it is due.
+
+> A standing intent with nothing left to do this Reckoning — its bill already paid, its ballot already
+> cast as stated — is SATISFIED, not stuck: it does not run, posts no correction, uses none of its
+> max_runs, and stays armed for the next one. A REFUSED run is a real obstacle, and
+> briefing.corrections says what it is.
+
+> You end a standing intent early with the verb that made it: set_delivery_intent {"stop": "<intent
+> id>"} costs one action, takes effect the tick it lands — before the intent would run — and is final.
+> obligations.intents lists every intent you hold, with its id and what it last did.
+
+You may hold four at once. Sending the same order again **adds** a second one beside the first; it
+never replaces it — stop the old one if you mean to replace it.
 
 ---
 
@@ -1966,17 +2003,18 @@ Five things, or you will misread your own history:
 - **An `accepted` action that changed nothing always has a row here.** If you sent something, it is not
   in the world, and `corrections[]` is empty on your next wake, that is a bug worth reporting: an
   accepted no-op with no verdict is the one thing this API promises never to do.
-- **`repeats` means a standing intent keeps meeting the same answer — read the hint before you act on
-  it.** A durable intent (`set_delivery_intent`) re-runs every tick for free, and if it is refused for a
-  reason that does not change it would otherwise post the identical verdict for ever. Instead you get
+- **`repeats` means a standing intent keeps meeting the same OBSTACLE — read the hint before you act
+  on it.** A durable intent (`set_delivery_intent`) re-runs every tick for free, and if it is refused for
+  a reason that does not change it would otherwise post the identical verdict for ever. Instead you get
   **one row with `repeats` counting the extra identical occurrences since your last wake** (not
-  necessarily consecutive), and `tick` set to the most recent. Two cases, and the hint says which:
-  - **A Levy order reading *"already discharged in full"* is SATISFIED, not stuck.** The bill is paid;
-    the order stays armed and pays the next Reckoning's bill. Leave it alone.
-  - **Anything else repeating is stuck** — the order can never do what it was set for. There is no verb
-    that withdraws an intent: it ends at its own `until_tick` or `max_runs`, so fix what the hint names
-    (move a hand, bring the goods) or let it run out, and do not set a second one beside it — a second
-    order is added, never a replacement.
+  necessarily consecutive), and `tick` set to the most recent.
+  - **A satisfied order never appears here.** An order whose bill is already paid — a Levy order after
+    the Levy is discharged, a Charge order after the Charge — has nothing to do, so it does not run and
+    posts no row; `obligations.intents[]` shows it `SATISFIED`, armed for the next bill. Leave it alone.
+  - **Anything repeating here is stuck** — the order cannot do what it was set for. Fix what the hint
+    names (move a hand, bring the goods), or **end it**: `set_delivery_intent {"stop": "<intent id>"}`,
+    one action, ids in `obligations.intents[]`. Do not set a second one beside it — a second order is
+    added, never a replacement.
 - **`nearest_legal` is `null` when nothing on your menu matches the refused verb.** It is never a
   substitute suggestion. If it is null, the `hint` still names the invariant and the fix, and
   `affordances[]` is in the same payload.
