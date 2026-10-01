@@ -753,6 +753,13 @@ table.t.click tbody tr { cursor: pointer; }
 .zclaim { fill-opacity: 0.14; stroke-width: 2.2; }
 .zclaim.hot { stroke-width: 3; fill-opacity: 0.2; }
 .zfuel { fill: none; stroke: #4a7d86; stroke-width: 1.2; stroke-dasharray: 2 4; opacity: 0.9; }
+/* ★ 41 — THE DEALING MARK: a lit lantern on the rim of a disc where somebody is offering or
+   recruiting. And THE PARLEY THREAD: a dotted arc between two holdings from the tick a letter
+   declassified; an answer is the solid-dashed return stroke bowed the other way. Neither is red —
+   talk is not a risk, and the screen must not say it is. */
+.zdeal { fill: var(--cyan); stroke: #00060a; stroke-width: 1; }
+.zthread { fill: none; stroke: var(--cyan-mid); stroke-width: 1; stroke-dasharray: 1.5 3.5; opacity: 0.75; }
+.zthread.ans { stroke-dasharray: 5 3; opacity: 0.6; }
 .zhit { fill: transparent; cursor: pointer; }
 .zsys .zhit:hover ~ * { pointer-events: none; }
 .zsys:hover .zdisc { stroke: var(--cyan); }

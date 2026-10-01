@@ -239,6 +239,22 @@ var Screens = (function () {
     (R.battleLines || []).forEach(function (b) {
       push('BATTLE', b.engagement, b.stage, b.state, b.ticksLeft, null, null, 'amber', 'battle');
     });
+    // ★ 41 — THE DEALING MARK. Who is offering or recruiting near each stage, with the offer's words or
+    // the roles still open as the state, and the record on hover in the dossier. Never red: dealing is
+    // an invitation, not a risk.
+    (D.directory || []).forEach(function (d) {
+      var seeking = (d.seeking || [])[0];
+      push('DEALING', U.handleOf(d.principal), d.at,
+        seeking ? 'SEEKS ' + seeking.open + ' OF ' + seeking.roles + ' · ' + seeking.kind
+          : (d.offering ? 'OFFERS · ' + d.offering.slice(0, 40) : 'AT WORK · ' + d.liveRoles),
+        null, null, d.principal, null, 'dealing');
+    });
+    // ★ 41 — THE PARLEY THREAD. A letter, from the tick it declassified: sender to recipient, the act,
+    // and whether it answered one.
+    (D.parleys || []).forEach(function (t) {
+      push('PARLEY', U.handleOf(t.from) + ' → ' + U.handleOf(t.to), t.fromAt,
+        (t.answering ? 'ANSWER · ' : '') + String(t.act).toUpperCase(), null, null, t.from, null, 'parley');
+    });
     return out;
   }
 
@@ -247,6 +263,7 @@ var Screens = (function () {
   var KIND_SW = {
     venture: 'cy', raid: 'am', convoy: 'cyd', claim: 'cy', works: 'gy',
     sap: 'am', front: 'am', grant: 'cyd', tribute: 'cy', battle: 'am',
+    dealing: 'cy', parley: 'cyd',
   };
 
   // ═══════════════════════════════════════════════════════════ OVERVIEW ══
@@ -328,7 +345,7 @@ var Screens = (function () {
     var SLICES = [
       ['ALL', null], ['VENTURES', 'venture'], ['STANDOFFS', 'raid'], ['CONVOYS', 'convoy'],
       ['HOLDINGS', 'claim'], ['WORKS', 'works'], ['GRANTS', 'grant'], ['TRIBUTE', 'tribute'],
-      ['WEATHER', 'front'],
+      ['WEATHER', 'front'], ['DEALING', 'dealing'], ['PARLEYS', 'parley'],
     ];
     var slice = D.slice || 'ALL';
     var sliceBar = el('div', { class: 'slices' }, SLICES.map(function (sl) {
@@ -665,6 +682,44 @@ var Screens = (function () {
       : empty('no authority on tonight\u2019s frame names them',
         'authorityLines[] is capped at 12 for broadcast and sorted by size, so a small or an expired ' +
         'grant does not appear. Authority is drawn on far more often than a nightly frame can show.')));
+
+    // ★ 41 — DEALING and LETTERS, on the page of the principal they belong to. The directory row says
+    // what it is offering or recruiting for, with the record a stranger prices it by; the letters are
+    // every declassified parley that names it, sender to recipient. Both off the frame, nothing derived.
+    var g4 = el('div', { class: 'grid g-2' });
+    var dealing = (D.directory || []).filter(function (d) { return d.principal === pid; })[0];
+    g4.appendChild(panel('DEALING', {
+      sub: dealing ? 'listed in ' + dealing.constellation : 'not listed on this frame',
+      foot: 'Being listed reaches nobody: an agent still needs a parley rung to write to it.',
+    }, dealing ? el('div', null, [
+      dealing.offering ? U.kv('OFFERING', dealing.offering) : null,
+      (dealing.seeking || []).length
+        ? table('dos-d', [
+          { k: 'kind', t: 'recruiting for', w: '120px', cell: function (v) { return el('span', { class: 'k', text: v.kind }); } },
+          { k: 'open', t: 'open', w: '64px', num: true, cell: function (v) { return v.open + ' of ' + v.roles; } },
+          { k: 'venture', t: 'venture', cell: function (v) { return el('span', { class: 'dim', text: v.venture }); } },
+        ], dealing.seeking, { rerender: D.rerender })
+        : null,
+      U.kv('LIVE ROLES', String(dealing.liveRoles)),
+      U.kv('RECORD', dealing.kept + ' kept · ' + dealing.broke + ' broken · ' + dealing.counterparties + ' counterparties'),
+    ]) : empty('not dealing on this frame',
+      'A principal is listed when it has an offer out, a venture still recruiting, or a live role. ' +
+      'The frame lists at most four per constellation, strongest record first.')));
+    var letters = (D.parleys || []).filter(function (t) { return t.from === pid || t.to === pid; });
+    g4.appendChild(panel('LETTERS', {
+      sub: letters.length + ' declassified · newest first',
+      foot: 'Private between the two while live; public four ticks after it was sent, to every agent and viewer at once.',
+    }, letters.length ? el('div', { class: 'log' }, letters.map(function (t) {
+      var out = t.from === pid;
+      return el('div', { class: 'ln' }, [
+        el('span', { class: 'tk', text: 't' + t.sentTick }),
+        el('span', { class: 'ty', text: (out ? 'TO ' : 'FROM ') + U.handleOf(out ? t.to : t.from) }),
+        el('span', { class: 'de', text: (t.answering ? '↩ ' : '') + t.act + ' — ' + t.excerpt }),
+      ]);
+    })) : empty('no letter names them yet',
+      'A parley is drawn from the tick it declassifies. Nothing here means nothing has been said in public yet, ' +
+      'not that nothing has been said.')));
+    stack.appendChild(g4);
 
     // the rundown beats about them
     var beats = (R.rundown || []).filter(function (s) {

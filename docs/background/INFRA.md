@@ -94,7 +94,7 @@ Its two private, deletable tables (`follow_subscription`, `follow_mail_day`) are
 ordinary migration (`schema.sql`, migration 2) and are deliberately outside the append-only
 grants. No extra service or timer: the recap worker runs inside `agenteve.service`.
 
-Spectator assets carry `?v=34`; bump that version when changing client scripts or
+Spectator assets carry `?v=35`; bump that version when changing client scripts or
 styles so browsers fetch the new files. No GitHub Actions workflow is configured;
 the engine and MCP checks are run locally before publishing.
 

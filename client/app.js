@@ -102,6 +102,10 @@ var App = (function () {
     var links = (L && L.compactLinks && L.compactLinks.length) ? L.compactLinks : (R.compactLinks || []);
     var authority = (L && L.authorityLines && L.authorityLines.length) ? L.authorityLines : (R.authorityLines || []);
     var ticker = (L && L.ticker && L.ticker.length) ? L.ticker : (R.ticker || []);
+    // ★ 41 — who is dealing, and the letters that have declassified. Live first, like every other
+    // moving line: the live frame is newer, and both frames build these from one builder.
+    var directory = (L && L.directoryLines) ? L.directoryLines : (R.directoryLines || []);
+    var parleys = (L && L.parleyLines) ? L.parleyLines : (R.parleyLines || []);
     var laneCount = 0, straitCount = 0, severCount = 0;
     (R.map || []).forEach(function (s) {
       laneCount += (s.lanes || []).length;
@@ -110,6 +114,7 @@ var App = (function () {
     return {
       R: R, L: L, index: S.index, sysIndex: sysIndex, byPrincipal: byPrincipal,
       glyphs: glyphs, glyphIndex: glyphIndex, links: links, authority: authority, ticker: ticker,
+      directory: directory, parleys: parleys,
       laneCount: laneCount / 2, straitCount: straitCount / 2, severCount: severCount / 2,
       rerender: render, loadReckoning: loadReckoning,
       slice: S.slice, setSlice: function (v) { S.slice = v; render(); },
