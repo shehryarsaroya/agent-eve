@@ -1,10 +1,10 @@
 """Restore the newest backup into a disposable database and boot the actual engine."""
+import http.client
 import json
 import os
 from pathlib import Path
 import subprocess
 import time
-import urllib.error
 import urllib.request
 
 database = 'compact_restore_check'
@@ -18,29 +18,38 @@ process = None
 try:
     with backup.open('rb') as source:
         subprocess.run(['docker', 'exec', '-i', 'agenteve-db', 'pg_restore', '-U', 'compact', '-d', database, '--exit-on-error'], stdin=source, check=True)
+    # Identities are never deleted, so every enrolment in the dump must come back as a seat row.
+    # Occupancy is not the test: an idle seat is recycled after four Reckonings.
+    enrolled = int(subprocess.run(prefix + ['psql', '-U', 'compact', '-d', database, '-Atc', 'SELECT count(*) FROM journal_enrollment'], text=True, capture_output=True, check=True).stdout)
     env = dict(os.environ)
     env.update(dict(line.split('=', 1) for line in Path('/etc/agenteve/env').read_text().splitlines()))
     env.update(PGDATABASE=database, COMPACT_PORT='8802', COMPACT_SPEED='prod', COMPACT_FRAMES_DIR='/var/lib/agenteve/restore-frames')
     with open('/var/lib/agenteve/restore-check.log', 'w') as log:
         process = subprocess.Popen(['/usr/bin/node', '/opt/agenteve/deploy/run-standalone.mjs'], env=env, stdout=log, stderr=log)
-        for attempt in range(45):
+        # Hydration is synchronous, so a booting engine can accept a connection and not answer it
+        # for several seconds. A read timeout, a refused connection and a 503 all mean "not yet".
+        deadline = time.monotonic() + 600
+        last = 'no response'
+        while time.monotonic() < deadline:
             time.sleep(1)
             if process.poll() is not None:
                 raise RuntimeError('Restored engine exited; read restore-check.log')
             try:
                 req = urllib.request.Request('http://127.0.0.1:8802/health', headers={'CF-Connecting-IP': '127.0.0.1'})
-                with urllib.request.urlopen(req, timeout=2) as response:
+                with urllib.request.urlopen(req, timeout=10) as response:
                     report = json.load(response)['report']
-                if report['world'] == 'RUNNING':
-                    assert report['durability']['healthy']
-                    assert report['tick'] > 0
-                    assert report['seats']['occupied'] >= 3
-                    print(json.dumps({'backup': backup.name, 'status': 'RESTORE_PASSED', 'tick': report['tick'], 'state_hash': report['state_hash'], 'population': report['seats']['population'], 'enrolled_agents': report['seats']['occupied']}))
-                    break
-            except (urllib.error.URLError, ConnectionError):
-                pass
+            except (OSError, http.client.HTTPException) as error:
+                last = repr(error)
+                continue
+            if report['world'] == 'RUNNING':
+                assert report['durability']['healthy'], report['durability']
+                assert report['tick'] > 0
+                assert report['seats']['rows'] == enrolled, (report['seats'], enrolled)
+                print(json.dumps({'backup': backup.name, 'status': 'RESTORE_PASSED', 'tick': report['tick'], 'state_hash': report['state_hash'], 'population': report['seats']['population'], 'enrolled_identities': enrolled, 'seated_agents': report['seats']['occupied']}))
+                break
+            last = f"world {report['world']}"
         else:
-            raise RuntimeError('Restored engine did not become healthy; read restore-check.log')
+            raise RuntimeError(f'Restored engine did not become healthy ({last}); read restore-check.log')
 finally:
     if process is not None:
         process.terminate()

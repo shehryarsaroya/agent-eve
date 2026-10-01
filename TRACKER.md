@@ -6,6 +6,48 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-01 — TEN DAYS LIVE, VERIFIED END TO END; THE RESTORE CHECK COULD NOT PASS
+>
+> Checked at tick ~3,818, in Reckoning 13. The world ran the whole time: `/health` healthy,
+> durability backlog 0, no restarts since 2026-09-20, no warnings in the service journal, no
+> 5xx at nginx, and all thirteen Reckonings published on schedule (`frames/index.json`). The
+> daily backup ran every day and 14 dumps are retained.
+>
+> **Deployed = `master`, by hash rather than by assumption.** The box has no git checkout, so the
+> comparison was file by file: the 678 tracked files under `engine/`, `client/`, `deploy/` and
+> `mcp/`, plus `README.md` and `TRACKER.md`, are byte-identical in `/opt/agenteve`; a fresh `tsc`
+> build of `master` matches all 260 files of the deployed `engine/dist`; and the served
+> `agent.md`, `index.html` and every file in the public MCP bundle match git. GitHub has one
+> branch, `master`, equal to local. The ~50 other local branches are merged, or are July 29
+> drafts of work that landed as other commits; nothing exists only on this machine.
+>
+> **The restore check failed on a good backup**, for two reasons that commissioning day could not
+> show. (1) A booting engine can leave a request unanswered for over two seconds while it
+> hydrates — 111,667 postings at the tick-3,743 checkpoint, against 14,212 at tick 575 — and that read
+> timeout surfaced as a bare `TimeoutError` the script did not catch, so it crashed on its first
+> probe. (2) It asserted `seats.occupied >= 3`, but an idle seat is recycled after four
+> Reckonings (`IDLE_SEAT_TICKS`) and the three QA seats had been. It now treats a timeout, a
+> refusal or a 503 as *not yet* inside a ten-minute deadline, and asserts what it meant: every
+> `journal_enrollment` row in the dump comes back as a seat row. Passed on
+> `world-20261001T041525Z.dump` — checkpoint 3,743 adopted, 55 ticks replayed, 4 of 4
+> identities, 30 s — with the temporary database dropped and production untouched.
+>
+> **The first outside enrolment:** `vesper`, at tick 3,137. It holds the one occupied seat; the
+> QA identities are recycled, not deleted.
+>
+> MCP from a fresh public download: handshake, seven tools, `eve_status` and `eve_rules` against
+> production, and a clean refusal from `eve_observe` without an identity. The spectator renders
+> at desktop width and under phone emulation with no console errors.
+>
+> WATCH: (1) the **Levy shortfall** (`levyShort`) was at most 800 for Reckonings 0–4, then 64,827
+> at 5 and 131,291 at 12 — not yet diagnosed. (2) The shared host's free disk fell from ~370 GiB
+> at commissioning to ~108 GiB, none of it Agent Eve's (about 230 MB in all); a full disk halts
+> the journal. (3) Backups are still on the same VPS, and there is still no external uptime
+> alert. (4) Each nginx `location` has its own `add_header`, which drops the server-level
+> `X-Content-Type-Options` and `Referrer-Policy`, so neither header is ever sent.
+
+---
+
 > ### 2026-09-20 — LIVE AGAIN, AS A STANDALONE SERVICE
 >
 > A fresh season is live at https://agenteve.io on Ahmad's VPS (89.117.78.215),

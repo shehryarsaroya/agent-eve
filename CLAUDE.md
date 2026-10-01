@@ -6,7 +6,7 @@
 
 ## 0. 🚨 HARD RULES
 
-1. **No secrets in this repo, ever.** Reference credentials by **name and location only** (see `docs/background/INFRA.md`). Never read, print, echo, or paste a secret value. Live keys exist in `~/agentinsurance/game/.env` and `~/Projects/ideationjul3/yc-gstack-kit/credentials/.env` — both are **outside this repo and must stay there**.
+1. **No secrets in this repo, ever.** Reference credentials by **name and location only** (see `docs/background/INFRA.md`). Never read, print, echo, or paste a secret value. Live keys exist in the private kit vault `~/Projects/yc-gstack-kit/credentials/` (`.env` and `keys/`) — **outside this repo and must stay there**. *(The older locations named in some docs, `~/agentinsurance/game/.env` and `~/Projects/ideationjul3/yc-gstack-kit/`, no longer exist on the operator's Mac — checked 2026-10-01.)*
 2. **Deploy safely on the VPS.** High Water is **fully removed and deleted** — repo, server, and services (confirmed 2026-07-24). There is nothing left to break, so the old "don't clobber it" rule is retired. What survives is the *habit*: pick fresh names for everything (port, systemd unit, env file, data dir, code dir, nginx path), and **never `rsync --delete` into a directory containing anything you didn't sync** — scar #4 caused a silent live outage exactly that way, and after any deploy verify the components you *didn't* deploy are still running.
 3. **The design test.** Every feature must serve at least one of the **three goals** in `docs/design/SPEC.md` §1.1: **watchable · autonomous · legible on screen.** A feature serving none of them **does not ship** — and per A13, a feature with no named pixel signature is not ready regardless of how good the mechanic is. The goals are the *test*; they serve **three audiences** — viewers, agents, and owners. Owners get **narrative and status, never control** (§13B): no owner action moves a piece, and an unowned agent must be able to reach the top of this game.
 4. **One word per concept.** `SPEC.md` §3 is the vocabulary canon and it is a *rules surface*, not a style guide. Never reuse a canon term for a second concept — not in docs, not in field names, not in affordance strings, not in `agent.md`. High Water's worst bug survived a full build and three critic passes because the engine and the agent-facing text disagreed about one word.
@@ -86,6 +86,17 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 ## 3. State of play (2026-07-26)
 
+> **⚑ 2026-09-20 — LIVE AGAIN; verified end to end 2026-10-01.** A fresh season (its own seed)
+> runs at **https://agenteve.io** as a standalone service on Ahmad's *shared* Contabo box
+> (`89.117.78.215`, key `ahmadecho_vps_ed25519` in the kit's `credentials/keys/`):
+> `agenteve.service`, code in `/opt/agenteve`, PostgreSQL in the Docker container `agenteve-db`,
+> daily backups from `agenteve-maintenance.timer`. Twelve **heuristic** house principals, no LLM
+> key, five-minute ticks. The box serves other tenants' sites — touch only resources named
+> `agenteve`, and `nginx -t` before any reload. **Runbook:** the first section of
+> `docs/background/INFRA.md`. **Current state:** `TRACKER.md` STATUS. There is no git checkout on
+> the box, so "deployed = `master`" is a claim about file hashes; TRACKER's 2026-10-01 entry says
+> how it was checked. The retirement note below is history.
+
 > **⚑ 2026-08-08 — RETIRED.** The hosted world is off and the game VPS (`vmi3131667`) is wiped
 > bare — only sshd listens: `compact-api` stopped, disabled and deleted; `/opt/compact`,
 > `/etc/compact`, `/var/lib/compact` gone; nginx, certbot and PostgreSQL purged. In a second pass
@@ -94,7 +105,8 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 > records deleted at Cloudflare (mail records untouched — Google Workspace still works). Nothing
 > anywhere is spending LLM tokens for this project, and the `OPENAI_API_KEY` in
 > `~/agentinsurance/game/.env` is used by nothing. The final world record and both landing-page
-> snapshots are archived at `~/agentinsurance/compact-final-archive/`. The repo is a public
+> snapshots are archived at `~/agentinsurance/compact-final-archive/` *(not present on the
+> operator's Mac by 2026-09-20 — if that archive survives, it is somewhere else)*. The repo is a public
 > archive; the code still runs a full local world. Everything below describes the world as it ran.
 
 > **This section was "Code: zero" for two days and then went stale for weeks.** Do not trust it over

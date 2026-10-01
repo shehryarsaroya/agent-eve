@@ -44,8 +44,11 @@ include `CF-Connecting-IP: 127.0.0.1` because the API trusts only its nginx ingr
 Run `systemctl start agenteve-maintenance` for an immediate backup and partition
 extension. Verify a backup with
 `python3 /opt/agenteve/deploy/verify-standalone-restore.py`: it restores into a
-temporary database, boots the actual engine on loopback port 8802, checks the
-world and enrolled identities, then drops only that temporary database. Backups
+temporary database, boots the actual engine on loopback port 8802, checks that the
+world runs durably and that every enrolled identity in the dump comes back as a
+seat row, then drops only that temporary database. It does not check seat
+occupancy, because idle seats are recycled after four Reckonings. Last passed
+October 1, 2026, on the tick-3,798 dump in 30 seconds. Backups
 currently reside on the same VPS; they protect against application mistakes,
 not loss of the entire server.
 
