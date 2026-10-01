@@ -2,6 +2,10 @@
 
 `--engine-dir DIR` boots a different build (default: the deployed one). The deploy uses it to
 prove a NEW build migrates and adopts today's record before the live tree is touched.
+
+`--empty` restores nothing: it migrates an empty database and proves the build boots a world from
+genesis. A new season's build cannot replay the old record — new rules diverge from it, correctly —
+so this is the pre-flight `new-season-standalone.sh` runs instead.
 """
 import argparse
 import http.client
@@ -14,9 +18,11 @@ import urllib.request
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--engine-dir', default='/opt/agenteve', help='tree containing engine/ and deploy/')
-root = Path(parser.parse_args().engine_dir)
+parser.add_argument('--empty', action='store_true', help='boot from genesis on an empty database instead of a restore')
+arguments = parser.parse_args()
+root = Path(arguments.engine_dir)
 database = 'compact_restore_check'
-backup = sorted(Path('/var/lib/agenteve/backups').glob('world-*.dump'))[-1]
+backup = None if arguments.empty else sorted(Path('/var/lib/agenteve/backups').glob('world-*.dump'))[-1]
 prefix = ['docker', 'exec', 'agenteve-db']
 exists = subprocess.run(prefix + ['psql', '-U', 'compact', '-d', 'compact', '-Atc', f"SELECT 1 FROM pg_database WHERE datname='{database}'"], text=True, capture_output=True, check=True).stdout.strip()
 if exists:
@@ -24,17 +30,18 @@ if exists:
 subprocess.run(prefix + ['createdb', '-U', 'compact', '-T', 'template0', '--locale=C', database], check=True)
 process = None
 try:
-    with backup.open('rb') as source:
-        subprocess.run(['docker', 'exec', '-i', 'agenteve-db', 'pg_restore', '-U', 'compact', '-d', database, '--exit-on-error'], stdin=source, check=True)
-    # Identities are never deleted, so every enrolment in the dump must come back as a seat row.
-    # Occupancy is not the test: a seat is recycled four Reckonings after its last accepted action,
-    # or one Reckoning after it was taken if it never played (engine/src/api/seats.ts).
-    enrolled = int(subprocess.run(prefix + ['psql', '-U', 'compact', '-d', database, '-Atc', 'SELECT count(*) FROM journal_enrollment'], text=True, capture_output=True, check=True).stdout)
+    if backup is not None:
+        with backup.open('rb') as source:
+            subprocess.run(['docker', 'exec', '-i', 'agenteve-db', 'pg_restore', '-U', 'compact', '-d', database, '--exit-on-error'], stdin=source, check=True)
     # The build under test brings its own schema changes, so migrate the copy with them first.
     migrate = dict(os.environ)
     migrate.update(dict(line.split('=', 1) for line in Path('/etc/agenteve/migrate.env').read_text().splitlines()))
     migrate.update(PGDATABASE=database)
     subprocess.run(['/usr/bin/node', str(root / 'engine/dist/db/migrate.js')], env=migrate, check=True, stdout=subprocess.DEVNULL)
+    # Identities are never deleted, so every enrolment in the dump must come back as a seat row.
+    # Occupancy is not the test: a seat is recycled four Reckonings after its last accepted action,
+    # or one Reckoning after it was taken if it never played (engine/src/api/seats.ts).
+    enrolled = int(subprocess.run(prefix + ['psql', '-U', 'compact', '-d', database, '-Atc', 'SELECT count(*) FROM journal_enrollment'], text=True, capture_output=True, check=True).stdout)
     env = dict(os.environ)
     env.update(dict(line.split('=', 1) for line in Path('/etc/agenteve/env').read_text().splitlines()))
     env.update(PGDATABASE=database, COMPACT_PORT='8802', COMPACT_SPEED='prod', COMPACT_FRAMES_DIR='/var/lib/agenteve/restore-frames')
@@ -43,6 +50,8 @@ try:
     env.update(COMPACT_CAST_LLM='0')
     for name in ('OPENAI_API_KEY', 'COMPACT_CAST_MEMORY', 'RESEND_API_KEY'):
         env.pop(name, None)
+    if backup is None:
+        env.update(COMPACT_SEED='preflight-genesis-check')
     with open('/var/lib/agenteve/restore-check.log', 'w') as log:
         process = subprocess.Popen(['/usr/bin/node', str(root / 'deploy/run-standalone.mjs')], env=env, stdout=log, stderr=log)
         # Hydration is synchronous, so a booting engine can accept a connection and not answer it
@@ -62,9 +71,9 @@ try:
                 continue
             if report['world'] == 'RUNNING':
                 assert report['durability']['healthy'], report['durability']
-                assert report['tick'] > 0
+                assert report['tick'] >= 0 if backup is None else report['tick'] > 0
                 assert report['seats']['rows'] == enrolled, (report['seats'], enrolled)
-                print(json.dumps({'engine': str(root), 'backup': backup.name, 'status': 'RESTORE_PASSED', 'tick': report['tick'], 'state_hash': report['state_hash'], 'population': report['seats']['population'], 'enrolled_identities': enrolled, 'seated_agents': report['seats']['occupied']}))
+                print(json.dumps({'engine': str(root), 'backup': None if backup is None else backup.name, 'status': 'GENESIS_PASSED' if backup is None else 'RESTORE_PASSED', 'tick': report['tick'], 'state_hash': report['state_hash'], 'population': report['seats']['population'], 'enrolled_identities': enrolled, 'seated_agents': report['seats']['occupied']}))
                 break
             last = f"world {report['world']}"
         else:
