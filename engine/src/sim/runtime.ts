@@ -557,10 +557,14 @@ import {
   graduationDestinations,
   checkCargoMirror,
   graduationRejection,
+  GROWTH_QUALIFIED_PER_SYSTEM,
+  GROWTH_STATEMENT,
+  growthReading,
   handsOf,
   haul,
   haulQuotes,
   holdingOf,
+  openConstellation,
   isPresent,
   landArrivedCargo,
   launchMap,
@@ -583,6 +587,9 @@ import {
   systemOf,
   tierOf,
   type Enrolment,
+  type GrownConstellation,
+  type GrowthPort,
+  type GrowthReading,
   type HaulPort,
   type HaulQuote,
   type Rejection,
@@ -627,6 +634,42 @@ function carryQuoteOf(row: CarryPayerRow, fault: string | null, own: CarryOwnSid
     place: row.place,
     ...carryableOf({ payerOwing: row.payerOwing, ownOwing: own.ownOwing, available: own.available, payerReach: row.payerReach }),
     fault,
+  };
+}
+
+/** One grown constellation as `observe` and the frame both publish it. Every field is PUBLIC geography. */
+export interface GrownView {
+  readonly constellation: ConstellationId;
+  readonly opened_at_tick: number;
+  readonly opened_at_reckoning: number;
+  /** The STRAIT that joins it to the map it grew from: `[anchor on the old side, landing on the new]`. */
+  readonly gate: readonly [SystemId, SystemId];
+  readonly systems: readonly SystemId[];
+}
+
+/** `header.growth` — the rule, the reading, and the newest constellation (SPEC §4.2). */
+export interface GrowthBlock {
+  readonly rule: string;
+  /** Principals that are capitalised, non-related and with capital at stake. A count, never a list. */
+  readonly qualified: number;
+  /** The count at which the next constellation opens: `GROWTH_QUALIFIED_PER_SYSTEM` × systems. */
+  readonly needed: number;
+  readonly systems: number;
+  readonly constellations: number;
+  /** Constellations growth has opened so far. */
+  readonly grown: number;
+  /** The next tick the gate is read — the next settlement. */
+  readonly next_check_tick: number;
+  readonly latest: GrownView | null;
+}
+
+function grownView(g: GrownConstellation, at: number): GrownView {
+  return {
+    constellation: g.constellation,
+    opened_at_tick: at,
+    opened_at_reckoning: reckoningOf(at),
+    gate: [g.anchor, g.landing] as const,
+    systems: [...g.systems],
   };
 }
 
@@ -2237,7 +2280,42 @@ function carryQuoteOf(row: CarryPayerRow, fault: string | null, own: CarryOwnSid
  * version to arrive out of order and the protocol has now paid for itself six times.
  * ══════════════════════════════════════════════════════════════════════════
  */
-export const RULES_VERSION = 40;
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **41 — THE REGION GROWS (SPEC §4.2), FOR SEASON 1.**
+ *
+ * The reserved generator is spent. At each settlement tick, after every Reckoning obligation has
+ * settled, the gate in `world/growth.ts` counts the principals that are capitalised (D7's `freeCash`
+ * ≥ one night's Levy), non-related (an elective promise honoured to a distinct counterparty) and have
+ * capital at stake (the Reckoning's EXPOSURE high-water mark, or a posted bond) — never headcount —
+ * and when that count reaches `GROWTH_QUALIFIED_PER_SYSTEM` (8) for every system the region has, ONE
+ * constellation opens: two COMMONS systems of its own and 4–6 MARCHES, joined to the map by one INTER
+ * lane that is a STRAIT from the day it opens, anchored where no existing strait, lane, system or lode
+ * moves (`assertGrowthStructure` re-derives every one and halts on a difference).
+ *
+ * **What moves, and what deliberately does not.** `WorldMap` gains `grown` and `WorldState` gains
+ * `openedAtTick`; both reach their canonical forms ONLY once something has opened, so a world that
+ * never grows hashes exactly as it did under 40, and the launch map's golden hash is untouched. LODES
+ * are allocated per grown constellation, so the launch map's yields are byte-identical. Newcomer
+ * seating breaks a least-occupied tie toward the NEWEST enclave — on a map that never grew every
+ * COMMONS system ties at rank 0 and the order is 40's. `observe` gains `header.growth` (no key is
+ * spent; 11 of 11 stands) and the frame gains `growth` (THE RISE).
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * **None, until a constellation opens.** The launch map needs 240 qualified principals for the first
+ * one, so an existing world replays byte-identically under 41 up to that Reckoning, and at it diverges
+ * with `SNAPSHOT_HASH_MISMATCH` on the world table. Season 1 starts from a fresh seed, so the operator
+ * door is not expected to be needed; if it is, the preflight prints the exact
+ * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` string (`D37`).
+ *
+ * ── PRE-ASSIGNED, PER 24's PROTOCOL ──────────────────────────────────────────
+ *
+ * Three other Season 1 lanes are in flight. If one lands first and takes 41, renumber this block to
+ * the tail at merge and keep it stacked rather than blended.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const RULES_VERSION = 41;
 
 /**
  * The `eventId` a delegated `create`'s draw is recorded under, in **one** place.
@@ -3327,6 +3405,12 @@ export interface RuntimeOptions {
    * edit.
    */
   readonly hazards?: boolean;
+  /**
+   * ★ GROWTH's threshold, in qualified principals per system (`world/growth.ts`). Production never
+   * passes this and reads `GROWTH_QUALIFIED_PER_SYSTEM`; it exists so a test can open a constellation
+   * without seating 240 qualified principals, and so the scale harness can measure a grown region.
+   */
+  readonly growthPerSystem?: number;
 }
 
 /**
@@ -3483,6 +3567,8 @@ export class Runtime {
   readonly obligations = new SimpleObligationBook();
   readonly engine: Engine;
   readonly census = new DecisionCensus();
+  /** GROWTH's threshold. See `RuntimeOptions.growthPerSystem`. */
+  private readonly growthPerSystem: number;
   /** The WORKS book. Swapped wholesale on restore, like every other hashed book. */
   private worksBook = new WorksBook();
   /** The syndicate book. Swapped wholesale on restore, like every other hashed book. */
@@ -3724,6 +3810,7 @@ export class Runtime {
     // §16.6 MUST-20 cuts, arriving through a calibration) or invent a verdict (A12). Refused here,
     // at construction, rather than discovered on the fifth Reckoning of somebody's war.
     assertCampaignSchedule();
+    this.growthPerSystem = options.growthPerSystem ?? GROWTH_QUALIFIED_PER_SYSTEM;
     this.world = createWorld(launchMap());
     // ── ★ §16.12 #1: THE GROUND, CHECKED AT CONSTRUCTION ──────────────────
     //
@@ -4265,6 +4352,13 @@ export class Runtime {
           // than an incidental one: the Levy's goods first, then sovereignty's territory.
           this.assessChargeNow(ctx);
           this.settleChargeNow(ctx);
+          // ── ★ GROWTH, LAST OF ALL, AND ONLY ON THE SETTLEMENT TICK (`world/growth.ts`) ──
+          //
+          // After every Reckoning obligation has settled, so the gate reads the standing, the stores
+          // and the stakes the Reckoning actually left — and so a constellation that opens tonight
+          // cannot move a figure any settlement above was computed from. Before DERIVE, so the grown
+          // map is inside the `state_hash` this tick publishes.
+          this.growNow(ctx);
         },
         // ── DERIVE, and the slot is the rule ────────────────────────────────
         //
@@ -13900,6 +13994,134 @@ export class Runtime {
     this.sovereignty.prune(reckoning);
   }
 
+  // ── ★ GROWTH (SPEC §4.2, `world/growth.ts`) ───────────────────────────────
+
+  /**
+   * What the gate reads, as a port. Three hardened quantities and the roll — nothing else, so the
+   * signature enumerates the gate's reach (`works/refine.ts`'s shape).
+   *
+   * `atStake` is the Reckoning's EXPOSURE high-water mark plus any posted BOND: capital that could be
+   * lost, measured across the whole cycle rather than at the settlement tick, when every stake has just
+   * been released (`levy/book.ts:exposurePeaks` carries the 22x trough that reading would hit).
+   */
+  private growthPort(tick: number): GrowthPort {
+    const reckoning = reckoningOf(tick);
+    return {
+      principals: () => [...this.world.principalOrder].sort(compareIds),
+      freeCash: (principal) => Number(freeCash(this.ledger, principal)),
+      distinctCounterparties: (principal) => this.standing.row(principal).distinctCounterparties,
+      atStake: (principal) =>
+        Number(this.levy.exposurePeakOf(reckoning, principal)) + Number(this.bondView(principal).posted),
+    };
+  }
+
+  /**
+   * The gate as it reads right now — what `observe` and the frame both publish, from one reader.
+   *
+   * O(principals): one ledger read and two map reads each, never a scan of a book. Read between ticks
+   * by the observation and the frame, and at the settlement tick by {@link growNow}, which is the only
+   * reading that can open anything.
+   */
+  growthReadingAt(tick = this.engine.tick): GrowthReading {
+    return growthReading(this.world.map, this.growthPort(Math.max(0, tick)), this.growthPerSystem);
+  }
+
+  /**
+   * The public growth block: the rule, the reading, and every constellation growth has opened.
+   *
+   * One builder for both readers — `observe`'s `header.growth` and the frame's `growth` — so an agent
+   * and a viewer can never be shown two different counts (A9, scar #5).
+   */
+  growthBlock(tick = this.engine.tick): GrowthBlock {
+    return this.perEpoch(`growthBlock:${String(tick)}`, () => this.growthBlockNow(tick));
+  }
+
+  private growthBlockNow(tick: number): GrowthBlock {
+    const reading = this.growthReadingAt(tick);
+    const map = this.world.map;
+    const last = map.grown[map.grown.length - 1];
+    const lastAt = this.world.openedAtTick[map.grown.length - 1] ?? 0;
+    return {
+      rule: GROWTH_STATEMENT,
+      qualified: reading.qualified,
+      needed: reading.needed,
+      systems: reading.systems,
+      constellations: map.constellations.size,
+      grown: map.grown.length,
+      next_check_tick: nextSettlementAtOrAfter(Math.max(0, tick) + 1),
+      latest: last === undefined ? null : grownView(last, lastAt),
+    };
+  }
+
+  /**
+   * Every constellation growth has opened, oldest first — the frame's half, which carries the whole
+   * history where `observe` carries the latest one (a per-observation list that grows with the season
+   * is a payload that grows with the season).
+   */
+  grownConstellations(): readonly GrownView[] {
+    return this.world.map.grown.map((g, i) => grownView(g, this.world.openedAtTick[i] ?? 0));
+  }
+
+  /**
+   * Open a constellation if the qualified population has outgrown the region's stages.
+   *
+   * Settlement tick only, at most one a Reckoning, deterministic in the world it reads. The grown map
+   * replaces `world.map` whole; every memo in `world/` is keyed on the map object, so straits, lodes
+   * and sway recompute on first read. The record is one PUBLIC row and a ticker line — the night a
+   * constellation opens is news, and A14 wants it on the clock where it can be announced.
+   */
+  private growNow(ctx: PhaseContext): void {
+    if (!isSettlementTick(ctx.tick)) return;
+    const reading = this.growthReadingAt(ctx.tick);
+    ctx.step(reading.qualified + 1);
+    if (!reading.opens) return;
+    const grown = openConstellation(this.world.map);
+    // The ground, checked at construction for the grown map exactly as for the launch map — a
+    // constellation whose lodes over-sum or bankrupt its sole occupant must never exist.
+    assertMapLodes(grown, {
+      dutyPerReckoning: Number(LEVY_DUTY_PER_PRINCIPAL),
+      chargeByTier: CHARGE_BY_TIER,
+      ticksPerReckoning: TICKS_PER_RECKONING,
+    });
+    this.world.map = grown;
+    this.world.openedAtTick.push(ctx.tick);
+    const record = grown.grown[grown.grown.length - 1];
+    if (record === undefined) return;
+    this.emitRow({
+      tick: ctx.tick,
+      kind: 'constellation.opened',
+      rulesVersion: RULES_VERSION,
+      actorPrincipalId: null,
+      onBehalfOfPrincipalId: null,
+      grantId: null,
+      eventFamilyId: `growth::${record.constellation}`,
+      parentEventId: null,
+      isPublic: true,
+      publicAt: ctx.tick,
+      declassifyAt: ctx.tick,
+      provenanceClass: 'FACT',
+      actedOnStateVersion: ctx.frozenStateVersion,
+      decisionSource: null,
+      visibility: 'PUBLIC',
+      audience: [],
+      payload: {
+        constellation: record.constellation,
+        index: record.index,
+        systems: [...record.systems],
+        gate: record.gate,
+        anchor: record.anchor,
+        landing: record.landing,
+        qualified: reading.qualified,
+        needed: reading.needed,
+      },
+    });
+    this.raidTicker.push(
+      `T${String(ctx.tick)} · A NEW CONSTELLATION OPENS: ${String(record.constellation)}, ` +
+        `${String(record.systems.length)} systems, gated at ${String(record.anchor)} · ` +
+        `${String(reading.qualified)} qualified`,
+    );
+  }
+
   /**
    * The only thing a lapse may reach for: posted bond.
    *
@@ -16658,6 +16880,26 @@ export class Runtime {
         })),
       })),
       swayLines: this.swayLines(),
+      // ★ THE RISE (§4.2). The same reader `observe`'s `header.growth` uses, plus the whole history.
+      growth: (() => {
+        const block = this.growthBlock(outcome.tick);
+        return {
+          rule: block.rule,
+          qualified: block.qualified,
+          needed: block.needed,
+          systems: block.systems,
+          constellations: block.constellations,
+          grown: block.grown,
+          nextCheckTick: block.next_check_tick,
+          opened: this.grownConstellations().map((g) => ({
+            constellation: g.constellation,
+            openedAtTick: g.opened_at_tick,
+            openedAtReckoning: g.opened_at_reckoning,
+            gate: g.gate,
+            systems: g.systems,
+          })),
+        };
+      })(),
       // ── ★ A13's TWO REMAINING NAMED EXAMPLES, FINALLY ON THE FRAME ────────────
       //
       // *"A convoy is a line that can be severed"* and *"a compact draws a link between two holdings

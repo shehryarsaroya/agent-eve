@@ -187,8 +187,10 @@ var ZoomView = (function () {
    * It reads the SAME `MapView.layout` the map itself draws from, so the
    * miniature and the thing it is a key to cannot disagree.
    */
-  function locator(map, con, W, H) {
-    var lay = MapView.layout(map, W, H, { l: 8, r: 8, t: 14, b: 14 });
+  function locator(map, con, W, H, grown) {
+    // `grown` is the frame's `growth.opened`: the locator must place a grown constellation where the
+    // map does (THE RISE puts it on a satellite ring), or the box it draws would point at nothing.
+    var lay = MapView.layout(map, W, H, { l: 8, r: 8, t: 14, b: 14 }, grown);
     var P = lay.pos, kids = [], seen = {};
     map.forEach(function (s) {
       var a = P[s.id]; if (!a) return;
@@ -245,7 +247,7 @@ var ZoomView = (function () {
     var members = map.filter(function (m) { return m.constellation === con; });
     if (!members.length) { U.clear(host); return; }
 
-    var gal = MapView.layout(map, 1200, 800);
+    var gal = MapView.layout(map, 1200, 800, undefined, R.growth && R.growth.opened);
     MapView.setBlocOrder(R.standings);
     var minY = Infinity, maxY = -Infinity;
     members.forEach(function (m) {

@@ -1836,7 +1836,7 @@ var Screens = (function () {
       class: 'panel mfloat at', style: 'left:0;bottom:0;width:314px',
     }, [
       el('h2', null, ['LOCATOR', el('span', { class: 'sub', text: 'region 1 · ' + map.length + ' systems' })]),
-      el('div', { class: 'body', style: 'overflow:hidden' }, ZoomView.locator(map, con, 312, 178)),
+      el('div', { class: 'body', style: 'overflow:hidden' }, ZoomView.locator(map, con, 312, 178, D.R && D.R.growth && D.R.growth.opened)),
     ]);
     wrap.appendChild(loc);
 

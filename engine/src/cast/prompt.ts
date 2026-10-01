@@ -1519,6 +1519,15 @@ export const CONTRACT_NOT_EXCERPTED: readonly {
   { heading: '## 2. Enrolling', because: 'you were seated at boot and never enrol', verbs: [] },
   { heading: '## 9. Being offline', because: 'you run in-process and are never offline', verbs: [] },
   {
+    // §4.2's growth is the WORLD's act at a Reckoning, not a member's: no verb opens a constellation and
+    // none is refused for not knowing how one opens. `header.growth` carries the rule verbatim and the
+    // count on every wake, so the one thing a plan could use — that a new gate is a strait — is in the
+    // payload whether or not this section is excerpted.
+    heading: '## 11H. THE REGION GROWS — new constellations, never more crowding',
+    because: 'no act of yours opens a constellation — the region grows itself at a Reckoning, and header.growth carries the rule and the count on every wake',
+    verbs: [],
+  },
+  {
     heading: '## 13. When something seems wrong',
     because: 'it is a bug-report channel you cannot reach from a plan',
     verbs: [],

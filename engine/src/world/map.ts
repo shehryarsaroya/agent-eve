@@ -90,6 +90,33 @@ export interface WorldMap {
   readonly systems: ReadonlyMap<SystemId, StarSystem>;
   readonly constellations: ReadonlyMap<ConstellationId, Constellation>;
   readonly lanes: ReadonlyMap<LaneKey, Lane>;
+  /**
+   * ★ The constellations GROWTH opened (`growth.ts`), in the order they opened. Empty for the launch
+   * map and for every map {@link generateMap} returns.
+   *
+   * On the map rather than beside it because two derived facts depend on it: a grown constellation's
+   * LODES are allocated within it (`lode.ts`), so the launch map's ground is never redrawn, and
+   * {@link mapCanonical} names it so a grown map and a launch map can never share a hash.
+   */
+  readonly grown: readonly GrownConstellation[];
+}
+
+/**
+ * One constellation that GROWTH opened (SPEC §4.2). The geography only — the tick it opened at is the
+ * record's, kept in the world table, because the map is a function of the seed and the COUNT alone.
+ */
+export interface GrownConstellation {
+  /** 1-based: the n-th constellation growth opened. */
+  readonly index: number;
+  readonly constellation: ConstellationId;
+  /** Its systems, in generation order (COMMONS first). */
+  readonly systems: readonly SystemId[];
+  /** The one INTER lane that joins it to the map it grew from — a STRAIT from the day it opens. */
+  readonly gate: LaneKey;
+  /** The gate's end on the existing map. */
+  readonly anchor: SystemId;
+  /** The gate's end inside the new constellation. */
+  readonly landing: SystemId;
 }
 
 /**
@@ -340,6 +367,7 @@ export function generateMap(seed: string, plan: MapPlan = LAUNCH_PLAN): WorldMap
     systems: frozen,
     constellations,
     lanes,
+    grown: [],
   };
 
   assertMapStructure(map, plan);
@@ -468,15 +496,23 @@ export function assertMapStructure(map: WorldMap, plan: MapPlan = LAUNCH_PLAN): 
   // Connectivity of the whole region, and of the Commons on its own. The second
   // matters because §9 promises "a complete if low-margin loop exists entirely
   // inside the Commons" — a disconnected Commons cannot host a haul.
+  //
+  // ★ PER CONSTELLATION, since GROWTH (`growth.ts`). A grown constellation brings its own COMMONS
+  // enclave, and no lane may leave a COMMONS system for another constellation (the second structural
+  // property above), so two enclaves can never be joined by Commons ground — and must not be. What §9
+  // needs is that each enclave hosts a loop of its own; on the launch map there is one enclave and
+  // the two readings are the same check.
   const reachedAll = reachable(map, map.systemOrder[0]);
   if (reachedAll.size !== map.systems.size) {
     problems.push(`the region is not connected: ${reachedAll.size} of ${map.systems.size} reachable`);
   }
-  if (commons.length > 0) {
-    const inCommons = new Set(commons);
-    const reachedCommons = reachable(map, commons[0], (id) => inCommons.has(id));
-    if (reachedCommons.size !== commons.length) {
-      problems.push('the COMMONS systems are not connected to each other');
+  for (const cid of map.constellationOrder) {
+    const enclave = commons.filter((id) => map.systems.get(id)?.constellation === cid);
+    if (enclave.length === 0) continue;
+    const inEnclave = new Set(enclave);
+    const reachedCommons = reachable(map, enclave[0], (id) => inEnclave.has(id));
+    if (reachedCommons.size !== enclave.length) {
+      problems.push(`the COMMONS systems of ${cid} are not connected to each other`);
     }
   }
 
@@ -488,13 +524,23 @@ export function assertMapStructure(map: WorldMap, plan: MapPlan = LAUNCH_PLAN): 
   }
 
   if (plan === LAUNCH_PLAN) {
-    if (
-      map.systems.size < LAUNCH_SYSTEM_BOUNDS.min ||
-      map.systems.size > LAUNCH_SYSTEM_BOUNDS.max
-    ) {
+    // The launch plan's bound is on the systems the PLAN made. A grown map carries more, and every one
+    // of them is accounted for by a `grown` record — so the plan's own count is the total less those.
+    const grownSystems = map.grown.reduce((n, g) => n + g.systems.length, 0);
+    const planned = map.systems.size - grownSystems;
+    if (planned < LAUNCH_SYSTEM_BOUNDS.min || planned > LAUNCH_SYSTEM_BOUNDS.max) {
       problems.push(
-        `launch plan produced ${map.systems.size} systems, outside ${LAUNCH_SYSTEM_BOUNDS.min}-${LAUNCH_SYSTEM_BOUNDS.max}`,
+        `launch plan produced ${planned} systems, outside ${LAUNCH_SYSTEM_BOUNDS.min}-${LAUNCH_SYSTEM_BOUNDS.max}`,
       );
+    }
+  }
+  for (const g of map.grown) {
+    if (map.constellations.get(g.constellation) === undefined) {
+      problems.push(`grown constellation ${g.constellation} is not on the map`);
+    }
+    const gate = map.lanes.get(g.gate);
+    if (gate === undefined || gate.kind !== 'INTER') {
+      problems.push(`grown constellation ${g.constellation}'s gate ${g.gate} is not an INTER lane on the map`);
     }
   }
 
@@ -612,8 +658,6 @@ export function route(map: WorldMap, from: SystemId, to: SystemId): Route | null
 const ROUTES = new WeakMap<WorldMap, Map<string, Route | null>>();
 
 function routeUncached(map: WorldMap, from: SystemId, to: SystemId): Route | null {
-  systemOf(map, from);
-  systemOf(map, to);
 
   const dist = new Map<SystemId, number>([[from, 0]]);
   const prev = new Map<SystemId, SystemId>();
@@ -699,7 +743,24 @@ export function nearestCommons(map: WorldMap, from: SystemId): Route | null {
 
 /** The map as a canonical structure. Integers only; no floats reach a hash. */
 export function mapCanonical(map: WorldMap): CanonicalValue {
+  // ★ `grown` only when growth has happened, so the launch map's canonical form — and its golden
+  // hash — is the one it has always had. Absent means absent (`canonical.ts`): a launch map and a
+  // grown map can still never share a hash, because the grown one has more systems AND this key.
+  const grown: { readonly grown?: CanonicalValue } =
+    map.grown.length === 0
+      ? {}
+      : {
+          grown: map.grown.map((g) => ({
+            index: g.index,
+            constellation: g.constellation,
+            systems: [...g.systems],
+            gate: g.gate,
+            anchor: g.anchor,
+            landing: g.landing,
+          })),
+        };
   return {
+    ...grown,
     seed: map.seed,
     constellations: map.constellationOrder.map((cid) => {
       const con = map.constellations.get(cid);

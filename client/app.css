@@ -614,6 +614,21 @@ table.t.click tbody tr { cursor: pointer; }
 .co-go-hit:hover { fill: var(--cyan-wash); }
 .co-go-hit:hover + .co-rule { stroke: var(--cyan-deep); }
 .con-label.go { pointer-events: all; cursor: pointer; }
+/* ★ THE RISE (SPEC §4.2): a constellation growth opened is a satellite enclave outside the core,
+   haloed, and haloed in amber on the Reckoning it opened. Its label has no CSS text-anchor so the
+   renderer can push it outward on either side of the cluster. */
+.rise-halo { pointer-events: none; }
+.rise-halo.fresh { filter: drop-shadow(0 0 6px rgba(255, 210, 122, 0.55)); }
+.rise-label {
+  fill: #3f7d8c; font: 600 11px var(--cond); letter-spacing: 0.22em; pointer-events: none;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+}
+.rise-label.go { pointer-events: all; cursor: pointer; }
+.rise-label.go:hover { fill: var(--cyan-deep); }
+.rise-meter {
+  fill: #4f7f8b; font: 600 10px var(--mono); letter-spacing: 0.18em; pointer-events: all;
+  paint-order: stroke; stroke: #00060a; stroke-width: 3px; stroke-linejoin: round;
+}
 .con-label.go:hover { fill: var(--cyan-deep); }
 
 /* ══════════════════════════════════════ ★ TACTICAL: THE FLOATING PANELS ══

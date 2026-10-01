@@ -732,6 +732,16 @@ export function buildObservation(input: ObserveInput): Observation {
       // agent learned the resource existed by exhausting it.
       campaign_clock: runtime.campaignClock(tick),
       /**
+       * ★ **GROWTH (SPEC §4.2) — HOW CLOSE THE REGION IS TO OPENING ITS NEXT CONSTELLATION.**
+       *
+       * On `header` for `raid_schedule`'s and `campaign_clock`'s reason: it is a world-wide published
+       * clock, §17's observe budget is at eleven of eleven, and a clock nobody can read is not a
+       * published clock. The rule is the one sentence `world/growth.ts` states; the reading is the
+       * same `Runtime.growthBlock` the frame prints, so an agent and a viewer read one count (A9).
+       * `qualified` is a COUNT and never a list — it names nobody and no figure.
+       */
+      growth: runtime.growthBlock(tick),
+      /**
        * §13B: the owner mandate is stable text, not per-tick state, so it is a free
        * read with a version announced here rather than a key of its own.
        */
