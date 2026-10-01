@@ -43,7 +43,8 @@ not built.
 
 Code: `engine/src/api/follow/` (wired into `server.ts`, which only mounts it).
 Tests: `engine/test/follow/`, including an end-to-end run against a mocked Resend
-endpoint and a proof that `state_hash` is identical with the feature on and off.
+endpoint and a proof that every tick's `state_hash` and journal rows are identical
+with the feature on and off.
 
 ## Safeguards
 
