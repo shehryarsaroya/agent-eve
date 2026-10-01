@@ -26,6 +26,7 @@ import { TICKS_PER_RECKONING, setSpeed } from '../../src/core/time.js';
 import { HeuristicCast } from '../../src/cast/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
 import { publishFrame } from '../../src/frames/write.js';
+import { extractTick } from '../../src/persist/extract.js';
 import { RecapWorker, FollowService, InMemoryFollowStore, followWorldOf } from '../../src/api/follow/index.js';
 import { APPEND_ONLY_UNPARTITIONED, PRIVATE_DELETABLE_TABLES, SCHEMA_MIGRATIONS } from '../../src/db/migrate.js';
 import { RateLimiter } from '../../src/api/limits.js';
@@ -34,25 +35,35 @@ import { LOOSE_FOLLOW_LIMITS, RecordingMailer, TEST_SECRET, clockAt, linkIn, tok
 const SEED = 'follow-record-untouched';
 const TICKS = TICKS_PER_RECKONING + 12;
 
-/** Every tick's state_hash for one run, with `between` called after each committed tick. */
-async function hashes(between: (runtime: Runtime, tick: number, settled: boolean) => Promise<void>): Promise<string[]> {
+interface Run {
+  /** Every tick's `state_hash`. */
+  readonly hashes: readonly string[];
+  /** Every tick's DURABLE rows — events, postings, actions, seed — exactly as the journal writes them. */
+  readonly journal: readonly string[];
+}
+
+/** One run of the world, with `between` called after each committed tick. */
+async function run(between: (runtime: Runtime, tick: number, settled: boolean) => Promise<void>): Promise<Run> {
   setSpeed('instant');
   const runtime = new Runtime({ seed: SEED });
   const cast = new HeuristicCast(runtime, { size: 4 });
   cast.seat(SEED);
-  const out: string[] = [];
+  const hashes: string[] = [];
+  const journal: string[] = [];
   for (let i = 0; i < TICKS; i += 1) {
     for (const action of cast.decide(runtime.engine.tick + 1, SEED)) runtime.engine.submit(action);
     const report = runtime.runTick();
-    out.push(report.stateHash);
+    hashes.push(report.stateHash);
+    // What the journal would persist for this tick — the record replay reads back.
+    journal.push(JSON.stringify(extractTick(runtime, report)));
     await between(runtime, report.tick, report.clock.isSettlementTick);
   }
-  return out;
+  return { hashes, journal };
 }
 
 describe('★ behavioural: the world is byte-identical with follows on and off', () => {
-  it('every tick’s state_hash matches across a follow, a confirmation, a recap and an unsubscribe', async () => {
-    const plain = await hashes(() => Promise.resolve());
+  it('every tick’s state_hash and journal rows match across a follow, a confirmation, a recap and an unsubscribe', async () => {
+    const plain = await run(() => Promise.resolve());
 
     const dir = mkdtempSync(join(tmpdir(), 'follow-untouched-'));
     const store = new InMemoryFollowStore();
@@ -62,7 +73,7 @@ describe('★ behavioural: the world is byte-identical with follows on and off',
     let service: FollowService | null = null;
     let handle = '';
     try {
-      const followed = await hashes(async (runtime, tick, settled) => {
+      const followed = await run(async (runtime, tick, settled) => {
         if (service === null) {
           handle = String(runtime.world.principalOrder[0] ?? '').replace(/^p:/, '');
           service = new FollowService({
@@ -99,8 +110,12 @@ describe('★ behavioural: the world is byte-identical with follows on and off',
         `Confirm: follow ${handle} on Agent Eve`,
         expect.stringContaining('Reckoning 0') as unknown as string,
       ]);
-      expect(followed).toHaveLength(plain.length);
-      expect(followed).toEqual(plain);
+      expect(followed.hashes).toHaveLength(TICKS);
+      expect(followed.hashes).toEqual(plain.hashes);
+      // And the journal — the event ledger, the postings, the action log — row for row: the
+      // record that replay reads back is the same bytes with followers and without them.
+      expect(followed.journal).toEqual(plain.journal);
+      expect(followed.journal.join('')).not.toMatch(/watcher@example\.com|follow_subscription/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

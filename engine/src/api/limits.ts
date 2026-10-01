@@ -344,10 +344,11 @@ export const FOLLOW_LIMITS = {
   'follow-link': { burst: 60, windowSeconds: 600 },
   /**
    * Confirmation emails to ONE address, across every handle. The victim-inbox bound: an
-   * attacker naming one stranger's address against three hundred handles gets three emails
-   * into it per day, not three hundred.
+   * attacker naming one stranger's address against three hundred handles gets five emails
+   * into it per day, not three hundred. Five rather than three so a new fan can follow a few
+   * of the house's characters in one sitting; the sixth confirmation waits for tomorrow.
    */
-  'follow-email': { burst: 3, windowSeconds: 86_400 },
+  'follow-email': { burst: 5, windowSeconds: 86_400 },
   /**
    * Confirmation emails naming ONE handle, across every address. Loose enough for a house
    * character a launch spike makes popular, tight enough that one hostile handle cannot spend

@@ -84,7 +84,7 @@ days):
 |---|---|---|
 | `POST /api/follow` per client IP (`CF-Connecting-IP`) | 10 / hour | `429` with `Retry-After` |
 | Confirm and unsubscribe links per IP | 60 / 10 min | `429` page |
-| Confirmations to one address, across all handles | 3 / day | silent: same `202`, no mail |
+| Confirmations to one address, across all handles | 5 / day | silent: same `202`, no mail |
 | Confirmations naming one handle | 100 / hour | silent: same `202`, no mail |
 | Re-sending to the same (handle, address) | once per 10 min | silent: same `202`, no mail |
 | Global emails per UTC day (`COMPACT_MAIL_DAILY_LIMIT`) | 2,000 | `503 MAIL_CEILING` until 00:00 UTC; recaps stop at 90% of it and resume after midnight |
