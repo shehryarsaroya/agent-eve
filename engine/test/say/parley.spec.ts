@@ -65,7 +65,7 @@ import { TICKS_PER_RECKONING } from '../../src/core/time.js';
 import { minor } from '../../src/core/units.js';
 import { AUDIT_LAG_TICKS } from '../../src/grant/dossier.js';
 import { compareIds } from '../../src/ledger/index.js';
-import { PARLEYS_PER_RECKONING, MAX_PARLEY_LENGTH } from '../../src/say/parley.js';
+import { PARLEYS_PER_RECKONING, MAX_PARLEY_LENGTH, PARLEY_ANSWER_WINDOW_TICKS } from '../../src/say/parley.js';
 import { MAX_MESSAGE_LENGTH, type Runtime } from '../../src/sim/runtime.js';
 import { act, campaignWorld, fund, runTo, tick } from '../campaign/fixture.js';
 
@@ -472,43 +472,60 @@ describe('★ a parley is reachable, takeable, and it forms a coalition', () => 
     const replier = w.bystanders[0];
     if (replier === undefined) throw new Error('no replier');
 
-    // One approach, inside Reckoning 0. That is the replier's whole allowance and it expires with the
-    // cycle: nobody has paid for it to speak in Reckoning 1.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ★ 41 MOVED THE EXPIRY THIS TEST PINS, ON PURPOSE, AND THE PROPERTY STAYS.
+    //
+    // This sweep used to assert the reply was GONE at the boundary — the approach was in the previous
+    // Reckoning, so *"nobody has paid for it to speak in Reckoning 1"*. That was the design, and a
+    // blind playtester found what it cost: a letter landing two ticks before settlement had two ticks
+    // of life against an eighteen-tick wake, and its two parleys to house characters went unanswered.
+    // The answer right is now a rolling `PARLEY_ANSWER_WINDOW_TICKS` from the LETTER (`say/parley.ts`
+    // §4). The A15 argument is untouched — the answer was paid for by the asker's opening, and a
+    // letter buys exactly one — so what this sweep holds is the property it was written for: **at
+    // every tick, across the boundary AND across the window's end, the menu and the gate agree.**
+    // ══════════════════════════════════════════════════════════════════════════
     expect(act(w.runtime, w.attacker, 'message', { to: replier, act: 'offer', text: 'join me' })).toBeNull();
     const boundary = TICKS_PER_RECKONING;
-    expect(w.runtime.engine.tick, 'the approach must land inside Reckoning 0').toBeLessThan(boundary);
+    const sentAt = w.runtime.engine.tick;
+    expect(sentAt, 'the approach must land inside Reckoning 0').toBeLessThan(boundary);
     const capacity = w.runtime.parleysFor(replier, w.runtime.engine.tick + 1);
     expect(capacity.distinct_counterparties, 'the replier is entitled to nothing of its own').toBe(0);
     expect(capacity.earned_minor).toBe(0);
-    expect(capacity.parleys_remaining, 'and holds exactly the one reply it was paid for').toBe(1);
+    expect(capacity.parleys_remaining, 'and holds exactly the one answer it was paid for').toBe(1);
+    const windowEnd = sentAt + PARLEY_ANSWER_WINDOW_TICKS;
+    expect(windowEnd, 'the window reaches past the boundary, which is the point').toBeGreaterThan(boundary);
 
     const answers = new Set<boolean>();
-    runTo(w.runtime, boundary - 3);
-    while (w.runtime.engine.tick <= boundary + 2) {
-      const at = w.runtime.engine.tick + 1;
-      const published = w.runtime.parleysFor(replier, at).parleys_remaining > 0;
-      const gate = w.runtime.parleyRefusalFor(replier, w.attacker, at) === null;
-      expect(
-        gate,
-        `at tick ${String(at)} the menu published ${published ? 'capacity' : 'none'} and the shared gate said ` +
-          `${gate ? 'yes' : 'no'}. One of the two is reading a different Reckoning — and inside a handler ` +
-          '`ctx.tick` is `engine.tick + 1`, because `Engine.tick` advances at COMMIT.',
-      ).toBe(published);
-      // ── THE EXPIRY, PER SIDE OF THE BOUNDARY ────────────────────────────────
-      //
-      // Before it: the reply it was paid for. At and after it: nothing, because the approach that
-      // funded it was in the previous cycle and *unspent capacity does not carry*. This is the
-      // assertion that catches the Reckoning scope being dropped from the count.
-      expect(
-        published,
-        at < boundary
-          ? `at tick ${String(at)} the replier still holds the reply it was paid for`
-          : `at tick ${String(at)} the reply must be GONE — the approach that funded it was in the previous ` +
-            'Reckoning, and a reply allowance that carried would be the war chest §9 refuses to fund',
-      ).toBe(at < boundary);
-      answers.add(published);
-      tick(w.runtime);
-    }
+    const sweep = (from: number, to: number): void => {
+      runTo(w.runtime, from);
+      while (w.runtime.engine.tick <= to) {
+        const at = w.runtime.engine.tick + 1;
+        const published = w.runtime.parleysFor(replier, at).parleys_remaining > 0;
+        const gate = w.runtime.parleyRefusalFor(replier, w.attacker, at) === null;
+        expect(
+          gate,
+          `at tick ${String(at)} the menu published ${published ? 'capacity' : 'none'} and the shared gate said ` +
+            `${gate ? 'yes' : 'no'}. One of the two is reading a different clock — and inside a handler ` +
+            '`ctx.tick` is `engine.tick + 1`, because `Engine.tick` advances at COMMIT.',
+        ).toBe(published);
+        // ── THE EXPIRY, PER SIDE OF THE WINDOW'S END ─────────────────────────
+        //
+        // Inside the window: the answer it was paid for, on BOTH sides of the Reckoning boundary.
+        // Past it: nothing, because the letter that funded it is stale, and a licence that never
+        // expired would be the war chest §9 refuses to fund.
+        expect(
+          published,
+          at <= windowEnd
+            ? `at tick ${String(at)} the replier still holds the answer it was paid for — the boundary at ` +
+              `${String(boundary)} must not take it`
+            : `at tick ${String(at)} the answer must be GONE — the letter is past its window`,
+        ).toBe(at <= windowEnd);
+        answers.add(published);
+        tick(w.runtime);
+      }
+    };
+    sweep(boundary - 3, boundary + 2);
+    sweep(windowEnd - 3, windowEnd + 2);
     expect(
       answers.size,
       'the sweep must have seen BOTH answers, or it is asserting an equivalence over one value',

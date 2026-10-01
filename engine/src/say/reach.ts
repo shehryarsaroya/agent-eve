@@ -17,6 +17,21 @@
  * therefore inapplicable to the only relationship that mattered: the one it did not have yet.
  * ══════════════════════════════════════════════════════════════════════════
  *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **★ AND THEN IT COULD NOT SPEAK TO THE ALLY IT HAD JUST FOUGHT BESIDE (`RULES_VERSION` 41).**
+ *
+ * The two-rung version above shipped and a blind playtester (2026-10-01) hit its edge from the inside:
+ * *"a shared raid gives no right to address someone."* It had stood on the DEFENDER side of a standoff
+ * with another principal, won, and could not say thank you, settle up, or ask it to stand there again.
+ * A design review measured the same edge from the outside: `reachable_principals: 0` on most
+ * observations, because a campaign and a grant are the two rarest situations in the world. The rule
+ * was A15-sound and almost never applied.
+ *
+ * So reach now reads **every situation the world already publishes in which two principals stood
+ * together** — and keeps the property that made the first version safe: reach is never a property of
+ * the sender or the recipient alone, it is a property of a PUBLIC situation both are standing in.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
  * ── WHY THE ADDRESS BOOK IS THE WORLD'S AND NEVER THE SENDER'S ───────────────
  *
  * A15: *"any gate priced in identities is unpriced"*, and HARD RULE 5: every gate costs produced
@@ -29,41 +44,82 @@
  * So reachability is **not a property of the sender and not a property of the recipient.** It is a
  * property of a **situation the world already published**, and both ends have to be standing in it.
  * Every relation below is a fact §11.2 already assigns to `PUBLIC` — a live campaign and its roster,
- * a holding's system, a grant's two parties — so A9 holds by construction: nothing here is a fact a
- * spectator frame could not already carry, and nothing here is a fact the recipient does not already
- * know about itself.
+ * a standoff and its sides, a settled venture and its parties, a syndicate's membership, a grant's two
+ * parties, a published offer, a holding's system — so A9 holds by construction: nothing here is a fact
+ * a spectator frame could not already carry, and nothing here is a fact the recipient does not already
+ * know about itself. `say/directory.ts` publishes who is dealing; it grants no reach of its own.
  *
- * That also makes discovery honest rather than a directory. An agent does not *look up* who to talk
- * to; the situations it is standing in name them, and the affordance carries the names (see
- * `api/observe.ts`'s `message {to}` block). The alternative — publish the principal list and let
- * agents guess — is the same thing with a Sybil funnel attached.
+ * ── THE RUNGS, IN THE ORDER THEY RANK ───────────────────────────────────────
  *
- * ── THE TWO RELATIONS, AND WHY EACH ONE ─────────────────────────────────────
+ *   0. **`REPLY`** — anybody whose letter to you is still inside the answer window
+ *      (`PARLEY_ANSWER_WINDOW_TICKS`). The rung that keeps this a channel rather than a megaphone.
+ *   1. **`CAMPAIGN`** — a live campaign you are standing in, as its attacker, its defender or a roster
+ *      party. It reaches the two principals the war is about, every roster party, **and every seated
+ *      principal whose holding stands in the objective's constellation** — the clause that lets a lone
+ *      attacker recruit at all, bounded by the **map** rather than by the population.
+ *   2. **`RAID`** — ★ a standoff you stood in — as its target, its initiator, or a party on either
+ *      side — while it is live and for `PARLEY_TIE_TICKS` after it resolved. It reaches the target, the
+ *      initiator and every party. **An ENGAGEMENT is fought inside its standoff** (`combat/engage.ts`:
+ *      a hull is committed only by a party to the raid), so the battle's combatants are exactly this
+ *      set and the rung covers *"an ally it had just fought beside"* without a second rung.
+ *   3. **`GRANT`** — the counterparty of a live grant, in either direction. A6 is the core loop: a
+ *      delegate that cannot talk to its grantor cannot ask for more rope.
+ *   4. **`SYNDICATE`** — ★ a fellow sitting member of a syndicate you sit in. Membership needs a
+ *      member's `admit`, so it is consent on both sides; `propose` moves a treasury, and it carries no
+ *      conversation.
+ *   5. **`VENTURE`** — ★ a party to a venture you were both parties to that BOUND and FINISHED
+ *      (`SETTLED` or `DEFAULTED`) within `PARLEY_TIE_TICKS`. Not a live one: a live venture has its
+ *      own channel, `message {venture}`, which is a MESSAGE and declassifies at that venture's
+ *      settlement (§3 keeps the two words apart). A finished deal is the best reason there is to
+ *      propose the next one, and a broken one is the most natural thing in the world to want to say
+ *      something about.
+ *   6. **`OFFER`** — ★ a principal whose holding stands in **your** constellation and who published an
+ *      offer within `DIRECTORY_OFFER_FRESH_TICKS`. An advertisement is an invitation to be addressed;
+ *      answering it is the reason it was posted. The advertiser chose this, and the asker still has to
+ *      be entitled to speak first (`say/parley.ts`), so a free identity reaches nobody through it.
+ *   7. **`CONSTELLATION`** — ★ **EARNED.** Every seated principal whose holding stands in your
+ *      constellation, once your public record shows elective promises honoured to at least
+ *      {@link PARLEY_CONSTELLATION_MIN_COUNTERPARTIES} DISTINCT counterparties. See the price below.
  *
- *   1. **`CAMPAIGN`** — a live campaign you are standing in, as its attacker, its defender or a
- *      roster party. It reaches the other two principals the war is about, every other roster party,
- *      **and every seated principal whose holding stands in the objective's constellation.** The last
- *      clause is the one that does the work and it is the one that needs the argument: a roster-only
- *      rule would let allies talk to each other and leave the lone attacker mute, which is the exact
- *      state the probe was in. Constellation rather than system, because a war is won by hands that
- *      can *arrive* — §4.2 bounds a constellation at 5–8 systems, so this is who could actually help,
- *      and it is bounded by the **map** rather than by the population.
+ * ── THE PRICE OF THE CONSTELLATION RUNG, AND WHY IT IS STANDING ─────────────
  *
- *   2. **`GRANT`** — the counterparty of a live grant, in either direction. §11.2 puts a grant's
- *      parties, limits, clearance and renewal chain in `PUBLIC` explicitly, and A6 is the core loop:
- *      a delegate that cannot talk to its grantor cannot ask for more rope, and *betrayal by
- *      persuasion* is unreachable if the persuading has to happen inside a venture the two are
- *      already committed to.
+ * The task the owner set was *"anyone in its constellation once it has EARNED parley rights, priced
+ * in produced goods or standing, never in identities."* Standing, specifically
+ * `standing.distinctCounterparties`, for three reasons that each rule a candidate out:
  *
- * **What is deliberately NOT here.** Syndicate co-members (they already have `propose` and a shared
- * treasury), the whole enrolled population (A15), and "anyone eligible to `join` this campaign" —
- * that last one looks attractive and is the trap: `join {side:"DEFENDER"}` is **free** and needs only
- * a seat (§16.6 MUST-9 makes it free on purpose), so "eligible to join" is satisfiable by any free
- * identity, and a reach relation built on it would be A15-unpriced through a door another axiom holds
- * open. The price on the *sender's* side is in `parley.ts`; this file is the price on the
+ *   - **It is HARD RULE 5's third price verbatim** — an independently-capitalised counterparty — and
+ *     the one vector the engine already hardened against duplicate dealing (scar #9: `StandingBook`
+ *     counts a counterparty once, ever, and halts on a self-credit rather than writing it). A fresh
+ *     identity reads 0 by construction.
+ *   - **Produced goods were measured out.** A WORKS is buildable from the endowment (`works/`'s gate
+ *     reads `freeBalance`, deliberately — a build DESTROYS currency), so "holds a WORKS" or "has
+ *     extracted N" is purchasable by enrolling and waiting. That is a gate priced in identities plus
+ *     time, and A4 forbids time as power.
+ *   - **A bond was ruled out for parley's own reason** (`say/parley.ts` §2): `post_bond` reads
+ *     `freeBalance`, so a bond is postable straight out of the withheld endowment.
+ *
+ * Two, not one, because one is already the price of speaking first at all: the constellation is a
+ * larger audience than any situation, so it costs more than any situation. It is a THRESHOLD, not a
+ * scale — a reach set that grew with standing would be a second, unmeasured knob on a quantity the
+ * Levy and the board already price.
+ *
+ * ⚑ **The honest limit, stated rather than discovered.** `distinctCounterparties` counts distinct
+ * IDENTITIES. A ring of free identities that plays one Reckoning together can manufacture it — the
+ * same is true of the entitlement `parley.ts` has always used. What bounds the damage is the opening
+ * allowance (three a Reckoning, expiring unspent), not the reach set; hardening the vector itself
+ * (counting only counterparties whose capital is not endowment-funded) is an owner decision, flagged
+ * in the build report rather than made here.
+ *
+ * ── WHAT IS DELIBERATELY NOT HERE ────────────────────────────────────────────
+ *
+ * The whole enrolled population (A15, above). "Anyone eligible to `join` this campaign" — the trap:
+ * `join {side:"DEFENDER"}` is **free** and needs only a seat (§16.6 MUST-9 makes it free on purpose),
+ * so "eligible to join" is satisfiable by any free identity. And a live venture's parties, for §3's
+ * reason above. The price on the *sender's* side is in `parley.ts`; this file is the price on the
  * *situation's*.
  */
 
+import { TICKS_PER_RECKONING } from '../core/time.js';
 import type { PrincipalId, SystemId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 
@@ -77,15 +133,32 @@ import { compareIds } from '../ledger/order.js';
  * reply as the reason the negotiation channel felt unbuildable."* A parley an agent cannot answer is
  * the same defect with the arrow reversed — and the recipient of a cold approach is, by construction,
  * the party that never chose to be in the conversation.
+ *
+ * The canon words among these name the situation **as the reason** — the campaign, the raid, the
+ * grant, the syndicate, the venture you both stood in — which is the shape `vocabulary-repo.test.ts`
+ * sanctions for `CAMPAIGN` and `GRANT`, and the reason a second word for each would be worse.
  */
-export type ReachWhy = 'CAMPAIGN' | 'GRANT' | 'REPLY';
+export type ReachWhy = 'REPLY' | 'CAMPAIGN' | 'RAID' | 'GRANT' | 'SYNDICATE' | 'VENTURE' | 'OFFER' | 'CONSTELLATION';
+
+/** Every rung, in rank order. Published so a reader can tell a missing rung from an empty one. */
+export const REACH_RUNGS: readonly ReachWhy[] = Object.freeze([
+  'REPLY',
+  'CAMPAIGN',
+  'RAID',
+  'GRANT',
+  'SYNDICATE',
+  'VENTURE',
+  'OFFER',
+  'CONSTELLATION',
+] as const);
 
 /**
  * One addressable principal, and the situation that makes it addressable.
  *
- * `about` is the situation's own id — a campaign id or a grant id — so a PARLEY row can name the
- * public fact that authorised it. A row that recorded only *who* would leave the legality of the
- * address unfalsifiable after the situation ended, which is A5′ applied to a permission.
+ * `about` is the situation's own id — a campaign, raid, grant, syndicate or venture id, the
+ * constellation for the two map rungs, `parley` for a reply — so a PARLEY row can name the public
+ * fact that authorised it. A row that recorded only *who* would leave the legality of the address
+ * unfalsifiable after the situation ended, which is A5′ applied to a permission.
  */
 export interface ReachRow {
   readonly principal: PrincipalId;
@@ -112,6 +185,39 @@ export interface ReachGrant {
   readonly iAmGrantor: boolean;
 }
 
+/** A standoff the reader stood in, live or recently resolved. Deliberately not `RaidRecord`. */
+export interface ReachRaid {
+  readonly id: string;
+  readonly stage: SystemId;
+  /** `DEMANDED` while live, otherwise the resolved state. */
+  readonly state: string;
+  readonly target: PrincipalId;
+  /** `null` for a world raid — weather has no initiator to address. */
+  readonly initiator: PrincipalId | null;
+  readonly parties: readonly { readonly principal: PrincipalId; readonly side: 'RAIDER' | 'DEFENDER' }[];
+  /** True when an ENGAGEMENT was fought over this standoff. */
+  readonly fought: boolean;
+}
+
+/** A venture that bound and finished, with every principal that was a party to it. */
+export interface ReachVenture {
+  readonly id: string;
+  readonly kind: string;
+  readonly stage: SystemId;
+  /** `SETTLED` or `DEFAULTED`. */
+  readonly state: string;
+  /** The creator and every role-holder, deduplicated. */
+  readonly parties: readonly PrincipalId[];
+  readonly resolvedAtTick: number;
+}
+
+/** A syndicate the reader sits in, with its other sitting members. */
+export interface ReachSyndicate {
+  readonly id: string;
+  readonly name: string;
+  readonly members: readonly PrincipalId[];
+}
+
 /**
  * What reach reads. Narrow on purpose: the signature ENUMERATES what the rule can see, which is the
  * whole value of the extractions `D21` ordered.
@@ -126,29 +232,65 @@ export interface ReachPort {
   /** Live grants this principal is a party to, either direction. */
   readonly liveGrants: (principal: PrincipalId) => readonly ReachGrant[];
   /**
-   * Principals that have addressed this one **inside the current Reckoning**.
+   * Principals whose letter to this one is still inside the answer window.
    *
-   * Not filtered to *unanswered*: the allowance already bounds how much can be said, and filtering
-   * here would close the channel to a second sender the moment the first was answered. Scoped to the
-   * Reckoning for the allowance's reason — a licence to talk to somebody who spoke once six cycles
-   * ago accumulates exactly the way §9 forbids a war chest to.
+   * Not filtered to *unanswered*: the price already bounds how much can be said, and filtering here
+   * would close the channel to a sender the moment it was answered once — the next letter back would
+   * then have no rung. The window is a rolling `PARLEY_ANSWER_WINDOW_TICKS` rather than "this
+   * Reckoning", for `say/parley.ts`'s reason: a letter sent at tick 286 must not become unanswerable
+   * two ticks later because a boundary fell between it and the reader's next wake.
    */
   readonly approachedBy: (principal: PrincipalId) => readonly PrincipalId[];
+  /** ★ Standoffs this principal stood in: live, or resolved within {@link PARLEY_TIE_TICKS}. */
+  readonly raidTies: (principal: PrincipalId) => readonly ReachRaid[];
+  /** ★ Syndicates this principal sits in, with their sitting members. */
+  readonly syndicatesOf: (principal: PrincipalId) => readonly ReachSyndicate[];
+  /** ★ Ventures this principal was a party to that bound and finished within {@link PARLEY_TIE_TICKS}. */
+  readonly ventureTies: (principal: PrincipalId) => readonly ReachVenture[];
+  /** ★ Where this principal's HOLDING stands, or null for an unseated principal. */
+  readonly homeOf: (principal: PrincipalId) => SystemId | null;
+  /** ★ Principals in the constellation of `system` with an offer fresh at the reader's tick. */
+  readonly advertisersNear: (system: SystemId) => readonly { readonly principal: PrincipalId; readonly tick: number }[];
+  /** ★ `standing.distinctCounterparties` — the constellation rung's price is read off this. */
+  readonly distinctCounterparties: (principal: PrincipalId) => number;
 }
 
 /**
- * The published cap on how many principals one agent may address (INV-26).
+ * How long a finished standoff or venture keeps its parties addressable, in ticks. *(calibrate)*
  *
- * A bound rather than a clock, for `MAX_DOSSIERS`' reason: what is dropped here is dropped from the
- * *menu*, and `header.withheld` counts it with a sentence naming the situation, so an agent can still
- * construct the call. Sized against the map rather than the population: §4.2 bounds a constellation
- * at 5–8 systems and `MAX_CAMPAIGN_PARTIES` is 12, so a principal in one war at full roster reaches
- * at most ~20, and a principal in four reaches this cap.
+ * Two Reckonings, so a tie formed late in one survives the whole of the next — long enough to settle
+ * up, ask again or complain, short enough that reach tracks who you are dealing with now rather than
+ * everybody you ever stood near. Measured against the books that hold the facts: the raid book keeps
+ * `MAX_RAID_ROWS` (96) and prunes oldest-first, which at the launch spawn rate is several Reckonings,
+ * so this window, not the prune, is what normally ends a raid tie.
+ */
+export const PARLEY_TIE_TICKS = 2 * TICKS_PER_RECKONING;
+
+/**
+ * ★ The price of the CONSTELLATION rung: elective promises honoured to this many DISTINCT
+ * counterparties. *(calibrate)* The argument is in the module note.
+ */
+export const PARLEY_CONSTELLATION_MIN_COUNTERPARTIES = 2;
+
+/**
+ * The published cap on how many reach rows a list carries (INV-26).
+ *
+ * **A cap on what is PUBLISHED, never on what is LEGAL.** The first version capped
+ * {@link reachableFor} itself and the gate read the capped list, so a principal past row 32 was
+ * unaddressable while every sentence said it was reachable — scar #1 inside the rule. With the
+ * constellation rung a reach set can be the whole constellation, so the predicate is now uncapped
+ * (it is bounded by seats, which are bounded) and this number bounds only the names a list prints.
  */
 export const MAX_REACH_ROWS = 32;
 
+/** Is this principal's record enough for the CONSTELLATION rung? */
+export function constellationEarned(distinctCounterparties: number): boolean {
+  return distinctCounterparties >= PARLEY_CONSTELLATION_MIN_COUNTERPARTIES;
+}
+
 /**
- * Every principal this one may address, in canonical order, deduplicated, capped.
+ * Every principal this one may address, in canonical order, deduplicated. **Uncapped** — see
+ * {@link MAX_REACH_ROWS}.
  *
  * **Deduplicated by principal, keeping the first row.** Two situations naming the same principal is
  * one addressable principal, not two, and the order below is the order of decision relevance — a war
@@ -178,10 +320,10 @@ export function reachableFor(port: ReachPort, principal: PrincipalId): readonly 
       why: 'REPLY',
       about: 'parley',
       sentence:
-        `${other} addressed you this Reckoning, so you may answer it whatever your own record. Answering costs ` +
-        'nothing you had to earn — the price of a parley is on whoever starts one — and ' +
-        '`counterparties[].last_parley` carries what it said, with its standing row beside it so you can price ' +
-        'the offer before you take it.',
+        `${other} wrote to you, so you may answer it whatever your own record. Answering costs nothing you ` +
+        'had to earn — the price of a parley is on whoever starts one — and `header.parley.awaiting_reply` ' +
+        'carries what it said, with its standing line in `counterparties[]` so you can price the offer ' +
+        'before you take it.',
     });
   }
 
@@ -236,7 +378,48 @@ export function reachableFor(port: ReachPort, principal: PrincipalId): readonly 
     }
   }
 
-  // ── 2. GRANTS ─────────────────────────────────────────────────────────────
+  // ── 2. ★ RAIDS — the standoff you stood in, and the battle fought inside it ─
+  //
+  // Live first, then the most recent: a live standoff is a decision with a clock on it, a resolved
+  // one is a debt or a thank-you. `sideOf` is the one predicate for "which side is this principal
+  // on", the same rule `predation/book.ts:sideInRaid` states — target is DEFENDER and initiator is
+  // RAIDER whether or not either joined explicitly.
+  const raids = [...port.raidTies(principal)].sort(
+    (a, b) => Number(b.state === 'DEMANDED') - Number(a.state === 'DEMANDED') || compareIds(b.id, a.id),
+  );
+  for (const raid of raids) {
+    const sideOf = (who: PrincipalId): 'RAIDER' | 'DEFENDER' | null =>
+      raid.target === who
+        ? 'DEFENDER'
+        : raid.initiator === who
+          ? 'RAIDER'
+          : (raid.parties.find((p) => p.principal === who)?.side ?? null);
+    const mine = sideOf(principal);
+    if (mine === null) continue;
+    const others: PrincipalId[] = [raid.target];
+    if (raid.initiator !== null) others.push(raid.initiator);
+    for (const p of [...raid.parties].sort((a, b) => compareIds(a.principal, b.principal))) others.push(p.principal);
+    const live = raid.state === 'DEMANDED';
+    for (const other of others) {
+      const theirs = sideOf(other);
+      if (theirs === null) continue;
+      const beside = theirs === mine;
+      push({
+        principal: other,
+        why: 'RAID',
+        about: raid.id,
+        sentence:
+          `${other} stood ${beside ? 'beside you' : 'against you'} in ${raid.id} at ${raid.stage}` +
+          ` (you ${mine}, it ${theirs}${raid.fought ? ', and the standoff was fought out as a battle' : ''})` +
+          (live ? ', which is still open. ' : `, which ended ${raid.state}. `) +
+          (beside
+            ? 'A shared standoff is a tie: settle up, thank it, or ask it to stand with you again.'
+            : 'A standoff is a negotiation with a clock on it, and the other side can be asked what it wants.'),
+      });
+    }
+  }
+
+  // ── 3. GRANTS ─────────────────────────────────────────────────────────────
   for (const grant of port.liveGrants(principal)) {
     push({
       principal: grant.counterparty,
@@ -250,7 +433,77 @@ export function reachableFor(port: ReachPort, principal: PrincipalId): readonly 
     });
   }
 
-  return rows.slice(0, MAX_REACH_ROWS);
+  // ── 4. ★ SYNDICATES — a house you both sit in ──────────────────────────────
+  for (const syndicate of [...port.syndicatesOf(principal)].sort((a, b) => compareIds(a.id, b.id))) {
+    for (const other of [...syndicate.members].sort(compareIds)) {
+      push({
+        principal: other,
+        why: 'SYNDICATE',
+        about: syndicate.id,
+        sentence:
+          `${other} sits in ${syndicate.name} (${syndicate.id}) with you. A charter pools capital and votes ` +
+          'offices; it carries no conversation, and this does — the office you might hand it, or take from it, ' +
+          'is usually agreed here first.',
+      });
+    }
+  }
+
+  // ── 5. ★ VENTURES — a deal you finished together ──────────────────────────
+  //
+  // Most recent first. Only ventures that BOUND and FINISHED: a live one is still shared, and its
+  // channel is `message {venture}` (a MESSAGE, which declassifies at that venture's settlement).
+  const ventures = [...port.ventureTies(principal)].sort(
+    (a, b) => b.resolvedAtTick - a.resolvedAtTick || compareIds(a.id, b.id),
+  );
+  for (const venture of ventures) {
+    for (const other of [...venture.parties].sort(compareIds)) {
+      push({
+        principal: other,
+        why: 'VENTURE',
+        about: venture.id,
+        sentence:
+          `${other} was a party to ${venture.id} (${venture.kind} at ${venture.stage}) with you, and it ` +
+          `ended ${venture.state} at tick ${String(venture.resolvedAtTick)}. What each of you did is on both ` +
+          'records, so this is the counterparty you can price best — propose the next one, or say what you ' +
+          'think of the last.',
+      });
+    }
+  }
+
+  // ── 6 & 7. ★ THE MAP RUNGS — your own constellation ───────────────────────
+  const home = port.homeOf(principal);
+  if (home !== null) {
+    const constellation = port.constellationOf(home);
+    for (const ad of [...port.advertisersNear(home)].sort((a, b) => compareIds(a.principal, b.principal))) {
+      push({
+        principal: ad.principal,
+        why: 'OFFER',
+        about: constellation,
+        sentence:
+          `${ad.principal} published an offer at tick ${String(ad.tick)} and its holding stands in ` +
+          `${constellation}, your constellation. An advertisement is an invitation to be addressed — what it ` +
+          'is offering is on its `ventures.directory` row. Starting the conversation spends one of your openings.',
+      });
+    }
+    const counterparties = port.distinctCounterparties(principal);
+    if (constellationEarned(counterparties)) {
+      for (const other of [...port.seatedNear(home)].sort(compareIds)) {
+        push({
+          principal: other,
+          why: 'CONSTELLATION',
+          about: constellation,
+          sentence:
+            `${other}'s holding stands in ${constellation}, your constellation, and your record has earned ` +
+            `you the right to address anyone seated here: you have honoured elective promises to ` +
+            `${String(counterparties)} distinct counterparties (the price is ` +
+            `${String(PARLEY_CONSTELLATION_MIN_COUNTERPARTIES)}). It spends one of your openings, and what ` +
+            'you say publishes beside what you both do.',
+        });
+      }
+    }
+  }
+
+  return rows;
 }
 
 /** Is this principal addressable by that one, and why? `null` when it is not. */
@@ -260,3 +513,18 @@ export function reachTo(
 ): ReachRow | null {
   return rows.find((r) => r.principal === to) ?? null;
 }
+
+/**
+ * The one sentence every "you cannot reach them" surface carries, so the refusal, the note and
+ * `agent.md` name the same ladder (scar #1 through three copies of a list).
+ */
+export const REACH_LADDER_SENTENCE =
+  'A parley reaches only principals the world already stands you beside: anybody whose letter to you is ' +
+  'unanswered; the attacker, defender, roster and objective-constellation holders of a live campaign you ' +
+  'are in; everyone who stood in a raid with you, on either side, while it is open and for ' +
+  `${String(PARLEY_TIE_TICKS / TICKS_PER_RECKONING)} Reckonings after; the counterparty of a live grant; ` +
+  'the members of a syndicate you sit in; the parties to a venture you finished together in the last ' +
+  `${String(PARLEY_TIE_TICKS / TICKS_PER_RECKONING)} Reckonings; anyone in your constellation with a fresh ` +
+  'offer out; and — once you have honoured elective promises to ' +
+  `${String(PARLEY_CONSTELLATION_MIN_COUNTERPARTIES)} distinct counterparties — anyone seated in your ` +
+  'constellation.';

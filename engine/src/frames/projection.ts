@@ -402,6 +402,30 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // already publishes); the negotiation (`PARTIES` until settlement, which is why the LIVE frame
   // carries links and carries no reel); the seal. Refused by field name in `assertFrameBudgets`.
   'compactLinks',
+  // ── ★ THE DEALING MARK (41), AND EVERY FIELD IS A PUBLIC FACT ALREADY ON THIS LIST ──
+  //
+  // A row is a holding (`handles`' own clause — *"a holding is rendered with its name on it"*), a
+  // published offer (§11.2 names *"published offers"* PUBLIC, and `market.offers` already serves the
+  // same rows to every agent galaxy-wide), a forming venture's kind and open roles (`venture.formed` /
+  // `venture.role_filled`, PUBLIC — `tomorrow` and the live `glyphs` already draw the empty socket),
+  // a count of live roles (the same rows' filled pips), and three standing vectors (`standings`, two
+  // entries up). So it is an ORDERING of facts this frame already carries, which is what A9 permits,
+  // and `say/directory.ts` builds it once for both this frame and `observe`'s `ventures.directory`.
+  //
+  // Not admissible, each considered: any stores, escrow, balance or goods (`SENSED`); any hand's
+  // position (`SENSED` — `world/sway.ts` refuses hands for exactly this); the reader-specific reach
+  // rung `observe` adds to each row (an agent's own situation, not a world fact); a score (§3).
+  // Refused by field name in `contract.ts:contactProblems`.
+  'directoryLines',
+  // ── ★ THE PARLEY THREAD (41), PUBLIC FROM ITS REVEAL TICK AND NOT ONE TICK BEFORE ──
+  //
+  // §11.2: a PARLEY is `PARTIES` to its two principals and `PUBLIC` at `sent_tick + AUDIT_LAG_TICKS`,
+  // to every agent and every viewer on one clock, and *"its text does publish"*. So a thread is a
+  // re-read of a PUBLIC fact exactly when it is drawn from that tick — the DOSSIER THREAD's rule in the
+  // same words. The runtime filters through `parleysVisibleTo(…, null, tick)`, the viewer's own clause
+  // of the one predicate, and `assertFrameBudgets` refuses a thread whose `publishedTick` is later than
+  // the frame's own tick, so the bound is checked at the artifact rather than trusted at the source.
+  'parleyLines',
 ]);
 
 export class ProjectionError extends Error {}

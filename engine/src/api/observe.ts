@@ -108,6 +108,7 @@ import {
 import { PARLEYS_PER_RECKONING } from '../say/parley.js';
 import { MAX_LIVE_INTENTS_PER_PRINCIPAL } from '../tick/intent.js';
 import { MAX_REACH_ROWS } from '../say/reach.js';
+import { directoryRule } from '../say/directory.js';
 // ── COMBAT (SPEC §9A) ───────────────────────────────────────────────────────
 //
 // The offer BUILDERS live in `combat/view.ts`, not here. This file is 3,300 lines and the last two
@@ -313,9 +314,9 @@ export const MAX_DOSSIER_OFFERS = 6;
  * `PARLEYS_PER_RECKONING` is 3, so an agent can act on three of these in a cycle and a menu of thirty
  * would be twenty-seven rows an agent reads, ranks and cannot take. Six leaves it a genuine choice —
  * the decision the expiring allowance exists to force is *whom*, and a choice of three from three is
- * not one — while `MAX_REACH_ROWS` (32) stays the bound on what the engine will accept, and
- * `header.withheld` names every principal dropped so the agent can still construct the call.
- * *(calibrate)*
+ * not one. `MAX_REACH_ROWS` (32) bounds the names `header.withheld` prints for the rest; it never
+ * bounded what the engine accepts after 41 — reach is uncapped (`say/reach.ts`), so any principal
+ * the rule admits can be addressed by constructing the call. *(calibrate)*
  */
 export const MAX_PARLEY_AFFORDANCES = 6;
 
@@ -964,6 +965,24 @@ export function buildObservation(input: ObserveInput): Observation {
         .talksFor(principal)
         .slice(-MAX_LIST_ROWS)
         .map((t) => ({ venture: t.venture, from: t.from, act: t.act, text: t.text, tick: t.tick })),
+      /**
+       * ★ **THE DIRECTORY — who is dealing in your constellation** (§7.3's discovery, `RULES_VERSION` 41).
+       *
+       * ══════════════════════════════════════════════════════════════════════════
+       * **In `ventures`, and not a key of its own**: §12.1 is at eleven of eleven and *"adding one means
+       * removing one"*, and §7.3 puts discovery inside the venture's own section — *"Formation, discovery,
+       * and slot allocation"*. The board answers *which slot can I take*; this answers the question an
+       * agent asks before it takes one, or before it posts its own: *who near me wants something done,
+       * and have they kept their word?* A design review measured probes managing five to seven
+       * counterparties across a whole run because nothing answered it.
+       *
+       * Every field is `PUBLIC` and is built by `say/directory.ts` — the builder the frames'
+       * `directoryLines` use too, so a viewer and an agent read one list (A9). The one addition is
+       * `parley` on each row: the reach rung that lets *this reader* address that principal, or null —
+       * the reader's own situation, never a world fact, which is why the frame does not carry it.
+       * ══════════════════════════════════════════════════════════════════════════
+       */
+      directory: directoryBlock(runtime, principal, tick),
     },
 
     /**
@@ -3497,40 +3516,74 @@ function affordancesFor(
     // own comment cites it. `test/api/withheld-is-accountable.spec.ts` promotes `message` to CLOSED
     // on the strength of this line.
     if (capacity.parleys_remaining > 0 && reach.length > 0) {
-      for (const row of reach.slice(0, MAX_PARLEY_AFFORDANCES)) {
+      // ── ★ 41: ANSWERS FIRST, AND THEY SAY THEY ARE FREE ────────────────────
+      //
+      // Reach ranks REPLY first, so the rows a reader owes an answer on lead the menu. An answer and
+      // an opening are different prices (`say/parley.ts` §4), and a row that did not say which would
+      // be the "spends 1 of your 3" sentence on a letter that spends nothing — an agent budgeting
+      // openings would refuse to answer to save one it was never going to be charged.
+      //
+      // The scan is bounded by `MAX_REACH_ROWS` and stops at `MAX_PARLEY_AFFORDANCES` offered: an
+      // unentitled reader's opening rows are refused cheaply (the entitlement is checked before reach
+      // is read), so walking past them to find its answers costs nothing worth bounding further.
+      let offered = 0;
+      let scanned = 0;
+      for (const row of reach.slice(0, MAX_REACH_ROWS)) {
+        if (offered >= MAX_PARLEY_AFFORDANCES) break;
+        scanned += 1;
         if (runtime.parleyRefusalFor(principal, row.principal, tick) !== null) {
           parleyGated += 1;
           continue;
         }
+        const answering = runtime.owesParleyAnswer(principal, row.principal, tick);
+        const letter = answering ? capacity.awaiting_reply.find((l) => l.from === row.principal) : undefined;
+        offered += 1;
         eligible.push({
           verb: 'message',
-          // `act: "offer"` rather than `assure`: an opening address to a stranger is a proposal, and
-          // `assure` is the unsecured promise — the most damaging sentence in the game if broken
-          // (§14). A menu must not hand a copier the binding-sounding one by default.
-          params: { to: row.principal, act: 'offer', text: '' },
+          // `act: "offer"` for an opening rather than `assure`: an opening address to a stranger is a
+          // proposal, and `assure` is the unsecured promise — the most damaging sentence in the game if
+          // broken (§14). A menu must not hand a copier the binding-sounding one by default. An ANSWER
+          // to an offer or a counter defaults to `counter` — the negotiating move — and never to
+          // `accept`, for the same reason: a copier must not say yes by accident.
+          params: {
+            to: row.principal,
+            act: letter !== undefined && (letter.act === 'offer' || letter.act === 'counter') ? 'counter' : 'offer',
+            text: '',
+          },
           // FREE, like every other `message`. `FREE_VERBS`' own note: charging for talk starves the
-          // receipt reel. The price of a parley is the per-Reckoning allowance and the entitlement,
-          // never the action budget — see `parley.ts` §2 for why an action would not be A15-safe
-          // anyway (N enrolments buy N budgets).
+          // receipt reel. The price of a parley is the per-Reckoning opening allowance and the
+          // entitlement, never the action budget — see `parley.ts` §2 for why an action would not be
+          // A15-safe anyway (N enrolments buy N budgets).
           cost: 0,
           max_direct_loss: 0,
           // Zero, and it is a fact rather than an omission: a parley moves nothing and binds nothing.
-          // What it costs is one of `header.parley.parleys_remaining`, which is denominated in
+          // What an opening costs is one of `header.parley.openings_remaining`, denominated in
           // parleys and not in currency, so folding it in here would name a quantity of nothing.
           max_contingent_liability: 0,
-          what_it_forecloses:
-            `${row.sentence} Spends 1 of your ${String(capacity.parleys_remaining)} remaining parley(s) this ` +
-            'Reckoning; unspent ones DO NOT CARRY. It is PARTIES-private to the two of you and becomes PUBLIC ' +
-            `at tick ${String(tick + capacity.declassifies_after_ticks)} — to every agent and every viewer at ` +
-            'once, printed beside what you both actually did. It binds nothing and moves nothing: what it buys ' +
-            'is that somebody who could help you knows you asked, and on what terms. Put your own text in ' +
-            '"text" — the empty string here is a placeholder, not a message.',
+          what_it_forecloses: answering
+            ? `ANSWERS ${String(row.principal)}'s letter` +
+              (letter === undefined
+                ? ''
+                : ` of tick ${String(letter.tick)} (${letter.act}) — header.parley.awaiting_reply quotes it —`) +
+              ' and is FREE: it spends none of your openings and needs no record of your own, because the ' +
+              'price of a conversation is on whoever started it (§7.3: replies inside a thread are free). ' +
+              'Choose the act you mean — accept · decline · counter · assure — and answer by tick ' +
+              `${String(letter?.answer_by_tick ?? tick)}; after that, writing back is an opening. It is ` +
+              'PARTIES-private now and PUBLIC ' +
+              `at tick ${String(tick + capacity.declassifies_after_ticks)}, printed beside what you both actually ` +
+              'did. Put your own text in "text" — the empty string here is a placeholder, not a message.'
+            : `${row.sentence} Spends 1 of your ${String(capacity.openings_remaining)} remaining opening(s) this ` +
+              'Reckoning; unspent ones DO NOT CARRY. It is PARTIES-private to the two of you and becomes PUBLIC ' +
+              `at tick ${String(tick + capacity.declassifies_after_ticks)} — to every agent and every viewer at ` +
+              'once, printed beside what you both actually did. It binds nothing and moves nothing: what it buys ' +
+              'is that somebody who could help you knows you asked, and on what terms. Put your own text in ' +
+              '"text" — the empty string here is a placeholder, not a message.',
           expires_tick: tick + QUOTE_PIN_TICKS,
           quote_id: quoteId(principal, tick, 'message', { to: row.principal }),
         });
       }
-      parleyReachDropped = Math.max(0, reach.length - MAX_PARLEY_AFFORDANCES);
-      parleyReachDroppedNames = reach.slice(MAX_PARLEY_AFFORDANCES).map((r) => String(r.principal));
+      parleyReachDropped = Math.max(0, reach.length - scanned);
+      parleyReachDroppedNames = reach.slice(scanned).map((r) => String(r.principal));
     } else {
       // ── THE THREE SILENCES, TOLD APART ────────────────────────────────────
       //
@@ -4595,10 +4648,14 @@ function affordancesFor(
       verb: 'message',
       text:
         `${String(parleyReachDropped)} principal(s) you may PARLEY are not on this list — the menu carries ` +
-        `${String(MAX_PARLEY_AFFORDANCES)} at a time because your allowance is ` +
+        `${String(MAX_PARLEY_AFFORDANCES)} at a time because your openings are ` +
         `${String(PARLEYS_PER_RECKONING)} a Reckoning and a longer list is rows you cannot take. ` +
-        `\`message {"to": "<principal>", "act": "offer", "text": "..."}\` is accepted for any of them, up to ` +
-        `${String(MAX_REACH_ROWS)} reachable principals: ${[...parleyReachDroppedNames].sort(cmp).join(', ')}`,
+        `\`message {"to": "<principal>", "act": "offer", "text": "..."}\` is accepted for any of them — reach ` +
+        'is never capped, only this list is. The first of them: ' +
+        `${[...parleyReachDroppedNames].sort(cmp).slice(0, MAX_REACH_ROWS).join(', ')}` +
+        (parleyReachDroppedNames.length > MAX_REACH_ROWS
+          ? ` and ${String(parleyReachDroppedNames.length - MAX_REACH_ROWS)} more; \`ventures.directory\` lists who is dealing`
+          : ''),
     });
   }
   if (parleyGated > 0) {
@@ -5403,12 +5460,18 @@ function counterpartiesFor(
     }
   }
   for (const row of board) named.add(row.creator);
-  // Everyone the reader may PARLEY, because `affordances[]` names each of them by id — so they are
-  // "agents named above" in §12.1's sense, and a standing line is exactly what an agent needs
-  // before it answers a stranger's offer of 20,000 a hand.
+  // Everyone the menu names as a PARLEY recipient, because `affordances[]` names each of them by id —
+  // so they are "agents named above" in §12.1's sense, and a standing line is exactly what an agent
+  // needs before it answers a stranger's offer of 20,000 a hand.
+  //
+  // ★ 41: **the rows the MENU names, not the whole reach set.** With the constellation rung a reach
+  // set can be the whole constellation, and this list is sliced to `MAX_LIST_ROWS` by the caller — so
+  // naming all of it would have let a stranger in the constellation sort ahead of the principal whose
+  // letter is waiting on the reader, and the inbox would have lost a letter to alphabetical order.
+  // The directory (`ventures.directory`) is where everybody dealing nearby is listed, with a record.
   const reach = runtime.reachFor(principal, tick);
-  for (const row of reach) named.add(row.principal);
-  named.delete(principal);
+  const reachBy = new Map(reach.map((r) => [r.principal, r]));
+  for (const row of reach.slice(0, MAX_PARLEY_AFFORDANCES)) named.add(row.principal);
 
   // The mail, indexed once so the map below stays linear over the ring.
   const inbound = new Map<PrincipalId, { readonly count: number; readonly last: ParleyRead }>();
@@ -5443,12 +5506,24 @@ function counterpartiesFor(
     }
   }
 
+  // Every correspondent is named: a principal the reader wrote to or heard from is, by definition,
+  // somebody it is dealing with — and its standing line is what prices the next letter.
+  for (const other of inbound.keys()) named.add(other);
+  for (const other of outbound.keys()) named.add(other);
+  named.delete(principal);
+
+  // ★ 41: **WHO IS WAITING ON YOU COMES FIRST.** The caller slices this list to `MAX_LIST_ROWS`, so the
+  // order decides what survives — and a letter the reader has not answered is the row it most needs.
+  const waiting = new Set(runtime.parleyLettersAwaiting(principal, tick).map((l) => l.from));
+
   // The PAIRWISE record, indexed once. `standingRow` carries a principal's record with EVERYBODY;
   // this is its record with YOU, and they are different facts that were reported as one.
   const pairwise = new Map(runtime.relationsFor(principal, MAX_LIST_ROWS * 2).map((r) => [r.other, r]));
 
-  return [...named].sort(cmp).map((other) => {
-    const reachRow = reach.find((r) => r.principal === other);
+  return [...named]
+    .sort((a, b) => Number(waiting.has(b)) - Number(waiting.has(a)) || cmp(a, b))
+    .map((other) => {
+    const reachRow = reachBy.get(other);
     const mail = inbound.get(other);
     const sent = outbound.get(other);
     const pair = pairwise.get(other);
@@ -5509,6 +5584,61 @@ function counterpartiesFor(
       last_parley_sent: sent?.last ?? null,
     };
   });
+}
+
+/**
+ * `ventures.directory` — the reader's constellation, from `say/directory.ts`, plus the one
+ * reader-specific field (the reach rung, if any) and the rule. Present for an unseated principal as
+ * an honest empty block, because an absent key and an empty one read the same to a reader.
+ */
+function directoryBlock(runtime: Runtime, principal: PrincipalId, tick: number): Readonly<Record<string, unknown>> {
+  const directory = runtime.directoryFor(principal, tick);
+  if (directory === null) {
+    return {
+      constellation: null,
+      seated: 0,
+      listed: 0,
+      unlisted: 0,
+      rows: [],
+      rule: 'You hold no seat, so you stand in no constellation and nobody is near you.',
+    };
+  }
+  const reach = new Map(runtime.reachFor(principal, tick).map((r) => [r.principal, r]));
+  return {
+    constellation: directory.constellation,
+    seated: directory.seated,
+    listed: directory.rows.length,
+    unlisted: directory.unlisted,
+    rows: directory.rows.map((row) => {
+      const rung = reach.get(row.principal);
+      return {
+        principal: row.principal,
+        at: row.at,
+        offering: row.offering === null ? null : { text: row.offering.text, tick: row.offering.tick },
+        seeking: row.seeking.map((v) => ({
+          venture: v.venture,
+          kind: v.kind,
+          stage: v.stage,
+          open_roles: [...v.open],
+          roles: v.roles,
+          closes_tick: v.closesTick,
+        })),
+        seeking_unlisted: row.seekingUnlisted,
+        live_roles: row.liveRoles,
+        /** §6.4's public vectors, never a score — the same names `standing` uses everywhere else. */
+        record: {
+          elective_honoured: row.record.kept,
+          defaults: row.record.broke,
+          distinct_counterparties: row.record.counterparties,
+          last_default: row.record.lastDefaultTick,
+          bond_posted: row.record.bondMinor,
+        },
+        /** The reach rung that lets YOU address this principal now, or null — listing grants none. */
+        parley: rung === undefined ? null : { why: rung.why, about: rung.about },
+      };
+    }),
+    rule: directoryRule(directory),
+  };
 }
 
 /** One inbound parley, as a counterparty row carries it. */

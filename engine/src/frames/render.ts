@@ -36,8 +36,12 @@ import {
   MAX_DOCKET_CARDS,
   MAX_FRAME_COMPACT_LINKS,
   MAX_FRAME_CONVOY_LINES,
+  MAX_FRAME_DIRECTORY_LINES,
+  MAX_FRAME_PARLEY_LINES,
   type CompactLink,
   type ConvoyLine,
+  type DirectoryLine,
+  type ParleyLine,
   MAX_RAID_LINES,
   MAX_FRAME_BATTLE_LINES,
   MAX_LABELS_PER_FRAME,
@@ -183,6 +187,17 @@ export interface FrameSource {
   readonly convoyLines?: readonly ConvoyLine[];
   /** ★ A13's second and third: THE COMPACT LINK, and the snap. Supplied by `frames/motion.ts`. */
   readonly compactLinks?: readonly CompactLink[];
+  /**
+   * ★ THE DEALING MARK (41). Supplied by `say/directory.ts` through the runtime — the same builder
+   * `observe`'s `ventures.directory` reads — and never derived here, because a renderer that chose
+   * who is "dealing" would be a second opinion on a list agents read as fact.
+   */
+  readonly directoryLines?: readonly DirectoryLine[];
+  /**
+   * ★ THE PARLEY THREAD (41). Supplied already filtered to letters that have DECLASSIFIED; the frame
+   * asserts the bound against its own tick, so a thread can never be drawn ahead of its reveal (A9).
+   */
+  readonly parleyLines?: readonly ParleyLine[];
 }
 
 export interface SettledView {
@@ -841,6 +856,10 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // of one line set is scar #5 and the module that knows which snap is news is the one that made it.
     convoyLines: (src.convoyLines ?? []).slice(0, MAX_FRAME_CONVOY_LINES),
     compactLinks: (src.compactLinks ?? []).slice(0, MAX_FRAME_COMPACT_LINKS),
+    // Pass-throughs, ordered by their builders (`say/directory.ts` ranks; the runtime orders threads
+    // newest first) — a second ordering here would be a second home for one rule.
+    directoryLines: (src.directoryLines ?? []).slice(0, MAX_FRAME_DIRECTORY_LINES),
+    parleyLines: (src.parleyLines ?? []).slice(0, MAX_FRAME_PARLEY_LINES),
     syndicateLines: (src.syndicateLines ?? [])
       .slice()
       .sort(
@@ -966,6 +985,8 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     swayLines: [],
     convoyLines: [],
     compactLinks: [],
+    directoryLines: [],
+    parleyLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],

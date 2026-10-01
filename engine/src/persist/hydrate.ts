@@ -272,6 +272,13 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // legible. Worse in the other direction: the audit stamps go too, so a principal that spent an
   // action reading its log would be shown nothing and could not tell that from an empty log.
   'dossier',
+  // ★ 41 — the PARLEY book and the prose OFFER book (`say/capture.ts`). Named in the change that
+  // registered the table. Dropped here, an adopted world would forget every letter still inside the
+  // rolling answer window: the replayed tail's first answer to one of them is refused, and since the
+  // tail past the last snapshot has no tripwire the boot SUCCEEDS into a world that has silently
+  // forked from its own journal (measured: `a-letter-survives-adoption.spec.ts`). A5′ — which is why a
+  // ring the gate reads across a boundary is a table.
+  'say',
 ];
 
 /** Why a checkpoint was not adopted, or null when one was. */
