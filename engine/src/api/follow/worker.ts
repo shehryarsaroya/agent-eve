@@ -315,6 +315,7 @@ export class RecapWorker {
         const mail = composeRecap(recap, {
           recordUrl: this.links.record(row.handle),
           unsubscribeUrl: this.links.unsubscribe(token),
+          site: this.links.site,
         });
         try {
           await mailer.send({

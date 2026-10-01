@@ -1,26 +1,40 @@
 /**
- * The follow routes: one JSON endpoint and two links that land on a small HTML page.
+ * The follow routes: one JSON endpoint, and two links that open a page with one button.
  *
- *   POST /api/follow                   {handle, email}  → 202, the same body every time
- *   GET  /api/follow/confirm?token=…                    → PENDING → ACTIVE, idempotent
- *   GET  /api/follow/unsubscribe?token=…                → → UNSUBSCRIBED, idempotent, one click
- *   POST /api/follow/unsubscribe?token=…                → RFC 8058's one-click, for mail clients
+ *   POST /api/follow                      {handle, email} JSON  -> 202, the same body every time
+ *   GET  /api/follow/confirm?token=...    a page with a Confirm button — CHANGES NOTHING
+ *   POST /api/follow/confirm              token=... (form)      -> PENDING -> ACTIVE, idempotent
+ *   GET  /api/follow/unsubscribe?token=.. a page with an Unsubscribe button — CHANGES NOTHING
+ *   POST /api/follow/unsubscribe          token=... (form), or RFC 8058's one-click from a mail
+ *                                         client (token in the URL) -> UNSUBSCRIBED, idempotent
  *
  * ══════════════════════════════════════════════════════════════════════════
- * Three properties, each the reason for some code below:
+ * Five properties, each the reason for some code below:
  *
  *   1. **No enumeration.** Every refusal `POST /api/follow` can give is about the request or
  *      the caller — shape, IP bucket, an unknown (public) handle, the global ceiling, a full
  *      queue — and never about the address. Whatever the address's state, a valid request
  *      gets `202` with identical bytes, and the work that depends on the state happens after
- *      the response (see `service.ts`).
- *   2. **No cross-site form can reach it.** `POST /api/follow` reads only
- *      `Content-Type: application/json`. An HTML form cannot send that type, and a script
- *      on another origin that does must pass a CORS preflight this API never grants. Without
- *      this rule any web page could make its visitors' browsers request confirmations.
- *   3. **A HEAD is not a click.** Express answers HEAD with the GET handler unless told
- *      otherwise, and link scanners and prefetchers send HEAD. A HEAD on a confirm or
- *      unsubscribe link therefore gets its own handler that changes nothing.
+ *      the response (see `service.ts`). The link pages say the same for any token that
+ *      verifies, whatever the follow's state; only "invalid or expired" differs.
+ *   2. **A GET is not consent.** Corporate mail scanners open every link in every email. If
+ *      opening the confirm link confirmed, anyone could subscribe a stranger's address and the
+ *      stranger's own scanner would complete the double opt-in. So a GET renders a page that
+ *      names the handle and carries one button; only that button's POST acts. The same for
+ *      unsubscribe, where a scanner would otherwise unsubscribe people who never asked to stop.
+ *   3. **A HEAD is not a click either.** Express answers HEAD with the GET handler unless told
+ *      otherwise, and prefetchers send HEAD. Both links get a HEAD handler that does nothing.
+ *   4. **No cross-site form can reach `POST /api/follow`.** It reads only
+ *      `Content-Type: application/json`: an HTML form cannot send that type, and a script on
+ *      another origin that does must pass a CORS preflight this API never grants. The two link
+ *      POSTs DO take a form (`application/x-www-form-urlencoded`, which is what their own page
+ *      sends) — safe because the token in the body is the whole capability, and nothing here
+ *      sets or reads a cookie, so there is no ambient authority for another page to ride.
+ *   5. **RFC 8058 keeps working exactly as before.** A mail client's one-click POST carries the
+ *      token in the List-Unsubscribe URL and `List-Unsubscribe=One-Click` as a body that RFC 8058
+ *      says SHOULD be `multipart/form-data` — so the unsubscribe POST takes the token from the
+ *      form body when there is one and from the URL otherwise, whatever the body's type. That
+ *      POST is the scanner-safe path: it is what a mail client's own Unsubscribe button sends.
  *
  * The routes are always mounted, even with mail off. A link already in someone's inbox must
  * keep working — above all the unsubscribe link — whatever the operator has since switched
@@ -69,23 +83,26 @@ export function followRouter(options: FollowRouterOptions): Router {
     void postFollow(req, res);
   });
 
-  // HEAD first: registered before GET so a scanner's HEAD never reaches the handler that acts.
+  // HEAD first: registered before GET so a prefetcher's HEAD never reaches even the page.
   router.head(FOLLOW_PATHS.confirm, (_req, res) => {
     res.status(200).set(PAGE_HEADERS).end();
-  });
-  router.get(FOLLOW_PATHS.confirm, (req, res) => {
-    void link(req, res, 'confirm');
   });
   router.head(FOLLOW_PATHS.unsubscribe, (_req, res) => {
     res.status(200).set(PAGE_HEADERS).end();
   });
-  router.get(FOLLOW_PATHS.unsubscribe, (req, res) => {
-    void link(req, res, 'unsubscribe');
+  // GET: read, never act. A page naming the handle, with one button.
+  router.get(FOLLOW_PATHS.confirm, (req, res) => {
+    void showLink(req, res, 'confirm');
   });
-  // RFC 8058: a mail client POSTs `List-Unsubscribe=One-Click` to the List-Unsubscribe URL.
-  // The token in the URL is the whole authority; the body is not read.
+  router.get(FOLLOW_PATHS.unsubscribe, (req, res) => {
+    void showLink(req, res, 'unsubscribe');
+  });
+  // POST: the button, and for unsubscribe also RFC 8058's one-click from a mail client.
+  router.post(FOLLOW_PATHS.confirm, (req, res) => {
+    void actOnLink(req, res, 'confirm');
+  });
   router.post(FOLLOW_PATHS.unsubscribe, (req, res) => {
-    void link(req, res, 'unsubscribe');
+    void actOnLink(req, res, 'unsubscribe');
   });
 
   return router;
@@ -196,7 +213,7 @@ export function followRouter(options: FollowRouterOptions): Router {
         handle: handle.value,
         detail:
           `If that address can receive mail, a confirmation link for ${handle.value} is on its way. ` +
-          'Nothing else is sent until it is clicked, and every update carries a one-click unsubscribe. ' +
+          'Nothing else is sent until the link is opened and Confirm is pressed, and every update carries an unsubscribe link. ' +
           'This answer is the same whether or not the address already follows anyone.',
         record: service.links.record(handle.value),
       });
@@ -205,45 +222,105 @@ export function followRouter(options: FollowRouterOptions): Router {
     }
   }
 
-  async function link(req: Request, res: Response, which: 'confirm' | 'unsubscribe'): Promise<void> {
+  /**
+   * Admit a link request: the caller's address, the follow store, the IP bucket. Returns the
+   * service, or null when it has already answered with a page.
+   */
+  function admitLink(req: Request, res: Response): FollowService | null {
+    const ip = callerOf(req, res, 'html');
+    if (ip === null) return null;
+    const service = options.service;
+    if (service === null) {
+      sendPage(res, 503, {
+        title: 'Not available',
+        paragraphs: ['Follow by email is not available on this world right now. Nothing was changed.'],
+      });
+      return null;
+    }
+    const gate = service.admitLink(ip);
+    if (!gate.allowed) {
+      res.setHeader('Retry-After', String(gate.retryAfterSeconds));
+      sendPage(res, 429, {
+        title: 'Too many requests',
+        paragraphs: [`Please try this link again in ${String(gate.retryAfterSeconds)} seconds. Nothing was changed.`],
+      });
+      return null;
+    }
+    return service;
+  }
+
+  /** The GET: what the link names, and one button. Never a state change. */
+  async function showLink(req: Request, res: Response, which: 'confirm' | 'unsubscribe'): Promise<void> {
     try {
-      const ip = callerOf(req, res, 'html');
-      if (ip === null) return;
-      const service = options.service;
-      if (service === null) {
-        sendPage(res, 503, {
-          title: 'Not available',
-          paragraphs: ['Follow by email is not available on this world right now. Nothing was changed.'],
-        });
-        return;
-      }
-      const gate = service.admitLink(ip);
-      if (!gate.allowed) {
-        res.setHeader('Retry-After', String(gate.retryAfterSeconds));
-        sendPage(res, 429, {
-          title: 'Too many requests',
-          paragraphs: [`Please try this link again in ${String(gate.retryAfterSeconds)} seconds. Nothing was changed.`],
-        });
-        return;
-      }
+      const service = admitLink(req, res);
+      if (service === null) return;
       const raw: unknown = req.query['token'];
       const token = typeof raw === 'string' ? raw : null;
+      const seen = which === 'confirm' ? await service.inspectConfirm(token) : await service.inspectUnsubscribe(token);
+      if (seen.kind === 'invalid-link' || token === null) {
+        sendPage(res, 404, invalidLinkPage());
+        return;
+      }
+      const h = seen.handle;
+      const record = { href: service.links.record(h), text: `${h}'s public record` };
+      sendPage(
+        res,
+        200,
+        which === 'confirm'
+          ? {
+              title: `Follow ${h}?`,
+              paragraphs: [
+                `Press Confirm to get one short email about ${h} after each Reckoning, told from its public record.`,
+                'Nothing changes until you press it. If you did not ask for this, close this page and nothing more will be sent.',
+              ],
+              form: { action: 'confirm', token, button: 'Confirm' },
+              links: [record],
+            }
+          : {
+              title: `Unsubscribe from ${h}?`,
+              paragraphs: [
+                `Press Unsubscribe and no more email about ${h} will be sent to this address.`,
+                'Nothing changes until you press it.',
+              ],
+              form: { action: 'unsubscribe', token, button: 'Unsubscribe' },
+              links: [record],
+            },
+      );
+    } catch {
+      if (!res.headersSent) sendPage(res, 500, brokenPage());
+    }
+  }
+
+  /** The POST: the button on that page — and, for unsubscribe, RFC 8058's one-click. */
+  async function actOnLink(req: Request, res: Response, which: 'confirm' | 'unsubscribe'): Promise<void> {
+    try {
+      const service = admitLink(req, res);
+      if (service === null) return;
+      const form = isFormRequest(req) ? formFields(req) : null;
       if (which === 'confirm') {
-        const outcome = await service.confirm(token, options.world.latestSettledReckoning());
+        // Only the page's own form confirms, and it always sends this type. Anything else is not
+        // a person pressing the button.
+        if (form === null) {
+          sendPage(res, 415, {
+            title: 'Open the link from your email',
+            paragraphs: ['Confirming takes the button on the page your confirmation link opens. Nothing was changed.'],
+          });
+          return;
+        }
+        const outcome = await service.confirm(form.get('token'), options.world.latestSettledReckoning());
         const page = confirmPage(outcome, service, options.world.msUntilNextReckoning());
         sendPage(res, page.status, page.content);
-      } else {
-        const outcome = await service.unsubscribe(token);
-        const page = unsubscribePage(outcome, service);
-        sendPage(res, page.status, page.content);
+        return;
       }
+      // Unsubscribe: the form's token when the page sent one, else the token in the URL — which
+      // is where RFC 8058 puts it, whatever type its one-click body is.
+      const fromForm = form?.get('token') ?? null;
+      const raw: unknown = req.query['token'];
+      const token = fromForm !== null && fromForm.length > 0 ? fromForm : typeof raw === 'string' ? raw : null;
+      const page = unsubscribePage(await service.unsubscribe(token), service);
+      sendPage(res, page.status, page.content);
     } catch {
-      if (!res.headersSent) {
-        sendPage(res, 500, {
-          title: 'Something went wrong',
-          paragraphs: ['This link could not be processed just now. Nothing was changed; please try it again later.'],
-        });
-      }
+      if (!res.headersSent) sendPage(res, 500, brokenPage());
     }
   }
 
@@ -266,17 +343,7 @@ function confirmPage(
   service: FollowService,
   msUntilNext: number,
 ): { readonly status: number; readonly content: PageContent } {
-  if (outcome.kind === 'unknown-link') {
-    return {
-      status: 404,
-      content: {
-        title: 'This link is not recognised',
-        paragraphs: [
-          'It may have been replaced by a newer confirmation email, or copied incompletely. Nothing was changed.',
-        ],
-      },
-    };
-  }
+  if (outcome.kind === 'unknown-link') return { status: 404, content: invalidLinkPage() };
   const h = outcome.handle;
   const record = { href: service.links.record(h), text: `${h}'s public record` };
   switch (outcome.kind) {
@@ -288,7 +355,7 @@ function confirmPage(
           paragraphs: [
             `One short email about ${h} will arrive after each Reckoning, told from its public record.`,
             `The next Reckoning settles in ${aboutDuration(msUntilNext)}.`,
-            'Every email carries a one-click unsubscribe.',
+            'Every email carries an unsubscribe link.',
           ],
           links: [record],
         },
@@ -333,7 +400,7 @@ function confirmPage(
           title: 'This address follows as many as it may',
           paragraphs: [
             `This address already follows ${String(outcome.max)} principals, the most one address may.`,
-            'Unsubscribe from one (every update has the link), then click this confirmation link again.',
+            'Unsubscribe from one (every update has the link), then open this confirmation link again.',
           ],
           links: [record],
         },
@@ -347,15 +414,7 @@ function unsubscribePage(
 ): { readonly status: number; readonly content: PageContent } {
   switch (outcome.kind) {
     case 'unknown-link':
-      return {
-        status: 404,
-        content: {
-          title: 'This link is not recognised',
-          paragraphs: [
-            'Nothing was changed. If updates keep arriving, use the unsubscribe link in the newest one.',
-          ],
-        },
-      };
+      return { status: 404, content: invalidLinkPage() };
     case 'unsubscribed':
     case 'already-unsubscribed':
       return {
@@ -371,6 +430,39 @@ function unsubscribePage(
           links: [{ href: service.links.record(outcome.handle), text: `${outcome.handle}'s public record` }],
         },
       };
+  }
+}
+
+/** The one page any token that does not verify gets — unknown, replaced, or past its window. */
+function invalidLinkPage(): PageContent {
+  return {
+    title: 'This link is invalid or expired',
+    paragraphs: [
+      'It may have been replaced by a newer email, copied incompletely, or be past its seven days. Nothing was changed.',
+      'If updates keep arriving, use the unsubscribe link in the newest one.',
+    ],
+  };
+}
+
+function brokenPage(): PageContent {
+  return {
+    title: 'Something went wrong',
+    paragraphs: ['This link could not be processed just now. Nothing was changed; please try it again later.'],
+  };
+}
+
+/** `application/x-www-form-urlencoded` — what a browser form sends, and RFC 8058 MAY send. */
+function isFormRequest(req: Request): boolean {
+  const type = req.headers['content-type'];
+  return typeof type === 'string' && /^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(type.trim());
+}
+
+/** A form body's fields. Bounded by the router's 64 KB body cap; a malformed body is an empty one. */
+function formFields(req: Request): URLSearchParams {
+  try {
+    return new URLSearchParams(Buffer.from(bytesOf(req)).toString('utf8'));
+  } catch {
+    return new URLSearchParams();
   }
 }
 

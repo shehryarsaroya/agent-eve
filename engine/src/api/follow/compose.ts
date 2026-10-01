@@ -28,15 +28,37 @@ export interface FollowLinks {
   unsubscribe(token: string): string;
   /** The public record page the spectator client serves: `#/agent/<handle>` (client/lib/landing.js). */
   record(handle: string): string;
+  /** The site's name as a reader knows it — the host of the base URL, e.g. `agenteve.io`. */
+  readonly site: string;
 }
 
 export function followLinks(publicUrl: string): FollowLinks {
   const base = publicUrl.replace(/\/+$/, '');
+  let site = base;
+  try {
+    site = new URL(base).host;
+  } catch {
+    // An unparseable base is refused by `followConfigFromEnv`; this is only a safe fallback.
+  }
   return {
     confirm: (token) => `${base}/api/follow/confirm?token=${encodeURIComponent(token)}`,
     unsubscribe: (token) => `${base}/api/follow/unsubscribe?token=${encodeURIComponent(token)}`,
     record: (handle) => `${base}/#/agent/${encodeURIComponent(handle)}`,
+    site,
   };
+}
+
+/**
+ * The sender line every email ends with: who sent it and why this inbox got it, in one plain
+ * sentence. A recap goes only to an address that pressed Confirm, so it may say "you asked";
+ * a confirmation goes to whatever address somebody typed, so it may not.
+ */
+export function recapSenderLine(handle: string, site: string): string {
+  return `You asked to follow ${handle} on Agent Eve at ${site}.`;
+}
+
+export function confirmationSenderLine(handle: string, site: string): string {
+  return `This email is from Agent Eve at ${site}, because this address was entered to follow ${handle}.`;
 }
 
 export interface ConfirmationInput {
@@ -45,6 +67,8 @@ export interface ConfirmationInput {
   readonly recordUrl: string;
   /** How long the link works, in whole days, for the sentence that says so. */
   readonly validDays: number;
+  /** The site's host, for the sender line. */
+  readonly site: string;
 }
 
 /**
@@ -57,29 +81,35 @@ export function composeConfirmation(input: ConfirmationInput): ComposedMail {
   const subject = `Confirm: follow ${h} on Agent Eve`;
   const paragraphs = [
     `Someone — we hope you — asked for one short email about ${h} after each Reckoning, the daily settlement in Agent Eve: a persistent world where AI agents make and break promises in public.`,
-    'Nothing more is sent unless you confirm.',
+    'Nothing more is sent unless you confirm: open the link below and press Confirm on the page it opens.',
   ];
   const after = [
     `The link works for ${days}. If this was not you, ignore this email and you will not hear from us again.`,
-    `Every update is told from ${h}'s public record — nothing a spectator cannot already see — and carries a one-click unsubscribe.`,
+    `Every update is told from ${h}'s public record — nothing a spectator cannot already see — and carries an unsubscribe link.`,
   ];
+  const sender = confirmationSenderLine(h, input.site);
   const text = [
     subject,
     '',
     ...paragraphs.flatMap((p) => [p, '']),
-    `Confirm: ${input.confirmUrl}`,
+    `Open this link and press Confirm: ${input.confirmUrl}`,
     '',
     ...after.flatMap((p) => [p, '']),
     `${h}'s public record: ${input.recordUrl}`,
+    '',
+    '--',
+    sender,
     '',
   ].join('\n');
   const html = shell(subject, [
     kicker('AGENT EVE · FOLLOW BY EMAIL'),
     heading(`Follow ${h}?`, '#1b2326'),
     ...paragraphs.map(para),
-    button(input.confirmUrl, `Confirm — follow ${h}`),
+    button(input.confirmUrl, `Open the confirmation page for ${h}`),
     ...after.map(para),
     link(input.recordUrl, `${h}'s public record`),
+    RULE,
+    footnote(escapeHtml(sender)),
   ]);
   return { subject, text, html };
 }
@@ -87,6 +117,8 @@ export function composeConfirmation(input: ConfirmationInput): ComposedMail {
 export interface RecapLinks {
   readonly recordUrl: string;
   readonly unsubscribeUrl: string;
+  /** The site's host, for the sender line. */
+  readonly site: string;
 }
 
 /** One recap, rendered. `headers` is the RFC 8058 pair the mailer attaches. */
@@ -95,9 +127,8 @@ export function composeRecap(recap: Recap, links: RecapLinks): ComposedMail & { 
   const kick = `AGENT EVE · RECKONING ${String(recap.reckoning)}`;
   const story = [recap.lead, recap.record, ...recap.events].filter((p) => p.length > 0);
   const ahead = recap.ahead.length === 0 ? null : `Next Reckoning: ${recap.ahead.join(' ')}`;
-  const footer =
-    `You follow ${h} on Agent Eve. Everything here comes from the public record: ` +
-    'nothing a spectator cannot already see.';
+  const sender = recapSenderLine(h, links.site);
+  const footer = 'Everything here comes from the public record: nothing a spectator cannot already see.';
 
   const text = [
     kick,
@@ -109,8 +140,9 @@ export function composeRecap(recap: Recap, links: RecapLinks): ComposedMail & { 
     `Read ${h}'s public record: ${links.recordUrl}`,
     '',
     '--',
+    sender,
     footer,
-    `Unsubscribe in one click: ${links.unsubscribeUrl}`,
+    `Unsubscribe: ${links.unsubscribeUrl}`,
     '',
   ].join('\n');
 
@@ -120,9 +152,11 @@ export function composeRecap(recap: Recap, links: RecapLinks): ComposedMail & { 
     ...story.map(para),
     ...(ahead === null ? [] : [para(ahead)]),
     link(links.recordUrl, `Read ${h}'s public record →`),
-    '<hr style="border:0;border-top:1px solid #dde3e5;margin:26px 0 14px">',
-    `<p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#5a6a70">${escapeHtml(footer)} ` +
-      `<a href="${escapeHtml(links.unsubscribeUrl)}" style="color:#5a6a70">Unsubscribe in one click</a>.</p>`,
+    RULE,
+    footnote(escapeHtml(sender)),
+    footnote(
+      `${escapeHtml(footer)} <a href="${escapeHtml(links.unsubscribeUrl)}" style="color:#5a6a70">Unsubscribe</a>.`,
+    ),
   ]);
 
   return {
@@ -162,6 +196,13 @@ function shell(title: string, blocks: readonly string[]): string {
     '</html>',
     '',
   ].join('\n');
+}
+
+const RULE = '<hr style="border:0;border-top:1px solid #dde3e5;margin:26px 0 14px">';
+
+/** A small footer paragraph. Takes HTML the caller has ALREADY escaped, so it can carry a link. */
+function footnote(escaped: string): string {
+  return `<p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#5a6a70">${escaped}</p>`;
 }
 
 function kicker(text: string): string {

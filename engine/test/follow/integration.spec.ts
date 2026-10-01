@@ -9,9 +9,10 @@
  * exactly where `serve()` kicks it: after a settled frame is published.
  *
  * The story it walks is the product: a human follows a house character; one confirmation
- * arrives; they click it; the Reckoning settles and ONE recap arrives telling that character's
- * night, with a one-click unsubscribe in its headers; their mail client uses RFC 8058 to
- * unsubscribe; the next Reckoning settles and nothing more is sent.
+ * arrives; a mail scanner opens its link and nothing happens; the human opens it and presses
+ * Confirm; the Reckoning settles and ONE recap arrives telling that character's night, with a
+ * one-click unsubscribe in its headers; their mail client uses RFC 8058 to unsubscribe; the
+ * next Reckoning settles and nothing more is sent.
  *
  * **THE KEY IS NOT A KEY.** It is assembled from the words "not a real key" and goes only to
  * 127.0.0.1. No request in this file leaves the machine.
@@ -181,6 +182,10 @@ describe('★ follow by email, end to end, against a mocked Resend endpoint', ()
     expect(call.body['to']).toEqual(['watcher@example.com']);
     expect(String(call.body['subject'])).toBe(`Confirm: follow ${handle} on Agent Eve`);
     expect(String(call.body['text'])).toMatch(/https:\/\/agenteve\.io\/api\/follow\/confirm\?token=[A-Za-z0-9_-]{43}/);
+    // Who sent it and why, in one plain line — and it does not claim the reader asked.
+    expect(String(call.body['text'])).toContain(
+      `This email is from Agent Eve at agenteve.io, because this address was entered to follow ${handle}.`,
+    );
     expect(String(call.body['html'])).toContain('/api/follow/confirm?token=');
     // A confirmation is transactional: no list headers, nothing to unsubscribe from yet.
     expect(call.body['headers']).toBeUndefined();
@@ -188,22 +193,40 @@ describe('★ follow by email, end to end, against a mocked Resend endpoint', ()
     expect(JSON.stringify(call.body)).not.toContain(FAKE_KEY);
   });
 
-  it('nothing else is sent before the link is clicked — not even when a Reckoning settles', async () => {
-    // A second, unconfirmed follower who must receive nothing but their confirmation.
+  it('a scanner opening the link is not a confirmation — nothing more is sent to that address', async () => {
+    // A second follower whose corporate scanner opens every link and who never presses Confirm.
     await fetch(`${origin}/api/follow`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ handle, email: 'never-clicks@example.com' }),
+      body: JSON.stringify({ handle, email: 'scanned@corp.example' }),
     });
     await follow.service.idle();
-    expect(emails().filter((c) => JSON.stringify(c.body['to']) === '["never-clicks@example.com"]')).toHaveLength(1);
+    const mine = emails().filter((c) => JSON.stringify(c.body['to']) === '["scanned@corp.example"]');
+    expect(mine).toHaveLength(1);
+    const link = /https:\/\/agenteve\.io\/api\/follow\/confirm\?token=[A-Za-z0-9_-]{43}/.exec(String(mine[0]?.body['text']))?.[0] ?? '';
+    for (const method of ['HEAD', 'GET', 'GET']) {
+      const res = await fetch(`${origin}${pathOf(link)}`, { method });
+      expect(res.status).toBe(200);
+      await res.text();
+    }
   });
 
-  it('the confirm link activates the follow', async () => {
+  it('opening the link and pressing Confirm activates the follow', async () => {
     const confirmUrl = /https:\/\/agenteve\.io\/api\/follow\/confirm\?token=[A-Za-z0-9_-]{43}/.exec(String(emails()[0]?.body['text']))?.[0] ?? '';
     const page = await fetch(`${origin}${pathOf(confirmUrl)}`);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain(`You follow ${handle}`);
+    const html = await page.text();
+    expect(html).toContain(`Follow ${handle}?`);
+    // Press the button exactly as the browser would: the form's action, the form's field.
+    const token = /name="token" value="([A-Za-z0-9_-]{43})"/.exec(html)?.[1] ?? '';
+    const action = /<form method="post" action="([a-z]+)">/.exec(html)?.[1] ?? '';
+    const pressed = await fetch(new URL(action, `${origin}${pathOf(confirmUrl)}`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }).toString(),
+    });
+    expect(pressed.status).toBe(200);
+    expect(await pressed.text()).toContain(`You follow ${handle}`);
   });
 
   it('after the Reckoning settles: ONE recap, for that character, with RFC 8058 headers', async () => {
@@ -222,8 +245,11 @@ describe('★ follow by email, end to end, against a mocked Resend endpoint', ()
     expect(headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
     const text = String(recap.body['text']);
     expect(text).toContain(`https://agenteve.io/#/agent/${handle}`);
-    expect(text).toContain('Unsubscribe in one click: https://agenteve.io/api/follow/unsubscribe?token=');
+    expect(text).toContain('Unsubscribe: https://agenteve.io/api/follow/unsubscribe?token=');
     expect(text).toContain(`${handle}'s public record`);
+    expect(text).toContain(`You asked to follow ${handle} on Agent Eve at agenteve.io.`);
+    // The scanned, never-confirmed address got no recap.
+    expect(recaps.map((c) => JSON.stringify(c.body['to']))).not.toContain('["scanned@corp.example"]');
     expect(String(recap.body['html'])).toContain('<h1');
     // Kicking again for the same Reckoning sends nothing: exactly once.
     follow.recaps.kick();

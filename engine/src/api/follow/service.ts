@@ -19,10 +19,12 @@
  * list every one), the day's global ceiling, a full queue. None of them is enumeration.
  * ══════════════════════════════════════════════════════════════════════════
  *
- * Confirmation is double opt-in: nothing but the one confirmation email is ever sent to an
- * address that has not clicked its link, and the cap on follows per address is enforced at
- * the click — the only moment the reader is provably the inbox's owner — so even the cap
- * cannot be probed from the request route.
+ * Confirmation is double opt-in, and the opt-in is a deliberate POST: nothing but the one
+ * confirmation email is ever sent to an address whose holder has not opened its link AND
+ * pressed Confirm on the page it opens. Opening the link alone changes nothing, because mail
+ * scanners open every link (see {@link FollowService.inspectConfirm}). The cap on follows per
+ * address is enforced at that POST — the only moment the reader is provably the inbox's owner
+ * — so even the cap cannot be probed from the request route.
  */
 
 import { wallSecondsFrom } from '../../identity/index.js';
@@ -76,6 +78,11 @@ export type UnsubscribeOutcome =
   | { readonly kind: 'unsubscribed'; readonly handle: string }
   | { readonly kind: 'already-unsubscribed'; readonly handle: string }
   | { readonly kind: 'unknown-link' };
+
+/** What a GET on a link learns — never more than "this names <handle>" or "this does not verify". */
+export type LinkInspection =
+  | { readonly kind: 'valid-link'; readonly handle: string }
+  | { readonly kind: 'invalid-link' };
 
 /** What one queued request turned into. Never returned to the caller who made it. */
 export type RequestOutcome =
@@ -280,6 +287,7 @@ export class FollowService {
       confirmUrl: this.links.confirm(token),
       recordUrl: this.links.record(handle),
       validDays: Math.round(FOLLOW_CONFIRM_TTL_MS / MS_PER_UTC_DAY),
+      site: this.links.site,
     });
     try {
       await mailer.send({ to: email, ...mail, idempotencyKey: `follow-confirm-${hashToken(token).slice(0, 40)}` });
@@ -296,8 +304,46 @@ export class FollowService {
   }
 
   /**
-   * The confirm link. Idempotent: a second click on a live follow is a success page, not an
-   * error. Works with sending OFF — a link already in an inbox must keep meaning what it said.
+   * What a confirm link names, WITHOUT acting on it — the GET half.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A LINK-SCANNER MUST NOT BE ABLE TO COMPLETE A DOUBLE OPT-IN.** Corporate mail security
+   * (SafeLinks, Proofpoint and their kind) opens every link in an email before a person does.
+   * If opening the confirm link confirmed, anyone could subscribe a stranger's corporate address
+   * and the stranger's own scanner would finish the job. So a GET only READS: it says which
+   * principal the link would follow and offers a button, and only {@link confirm} — reached by
+   * that button's POST — changes anything.
+   *
+   * The answer is the same for a pending, a live and an unsubscribed follow: the page a scanner
+   * fetches says nothing about the address's state. Only a token that does not verify — unknown,
+   * replaced by a newer link, or a pending link past its window — gets a different page, and it
+   * says only that the link is invalid or expired.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  async inspectConfirm(token: unknown): Promise<LinkInspection> {
+    if (!isTokenShaped(token)) return { kind: 'invalid-link' };
+    const row = await this.store.byConfirmHash(hashToken(token));
+    if (row === null) return { kind: 'invalid-link' };
+    if (
+      row.status === 'PENDING' &&
+      (row.confirmSentMs === null || this.clock.nowMs() - row.confirmSentMs > FOLLOW_CONFIRM_TTL_MS)
+    ) {
+      return { kind: 'invalid-link' };
+    }
+    return { kind: 'valid-link', handle: row.handle };
+  }
+
+  /** What an unsubscribe link names, without acting on it. The GET half; see {@link inspectConfirm}. */
+  async inspectUnsubscribe(token: unknown): Promise<LinkInspection> {
+    if (!isTokenShaped(token)) return { kind: 'invalid-link' };
+    const row = await this.store.byUnsubscribeHash(hashToken(token));
+    return row === null ? { kind: 'invalid-link' } : { kind: 'valid-link', handle: row.handle };
+  }
+
+  /**
+   * Confirm a follow — the POST half, reached only by pressing the button on the page the
+   * link opens. Idempotent: a second press on a live follow is a success page, not an error.
+   * Works with sending OFF — a link already in an inbox must keep meaning what it said.
    *
    * `startAfterReckoning` is the Reckoning that has already settled: the first recap this
    * follower receives is the next one, not yesterday's arriving at a random hour.
@@ -328,7 +374,10 @@ export class FollowService {
     }
   }
 
-  /** The unsubscribe link, and RFC 8058's one-click POST. Idempotent, and never needs mail. */
+  /**
+   * Unsubscribe — the POST half: the button on the page the link opens, and RFC 8058's one-click
+   * POST from a mail client. Idempotent, and never needs mail.
+   */
   async unsubscribe(token: unknown): Promise<UnsubscribeOutcome> {
     if (!isTokenShaped(token)) return { kind: 'unknown-link' };
     const row = await this.store.byUnsubscribeHash(hashToken(token));

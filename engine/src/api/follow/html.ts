@@ -37,6 +37,11 @@ export function escapeHtml(value: unknown): string {
  * nginx's own `add_header` lines do not reach these responses — its `/api/` location declares
  * one, which in nginx replaces rather than extends the server-level set — so the app sends
  * its own.
+ *
+ * `form-action 'self'`: the confirm and unsubscribe pages carry exactly one form, which POSTs
+ * the token back to this origin, and nothing else may be a form target. No cookie is ever set:
+ * the token is the whole capability, and a page that also set a session would be a page whose
+ * POST could be ridden by a request that carried the cookie and not the token.
  */
 export const PAGE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'Content-Type': 'text/html; charset=utf-8',
@@ -45,7 +50,7 @@ export const PAGE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'X-Robots-Tag': 'noindex, nofollow',
   'X-Content-Type-Options': 'nosniff',
   'Content-Security-Policy':
-    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 });
 
 export interface PageLink {
@@ -53,10 +58,24 @@ export interface PageLink {
   readonly text: string;
 }
 
+/**
+ * The one button a link page may carry: a POST of the link's token back to its own path.
+ *
+ * `action` is RELATIVE (`confirm`, `unsubscribe`), so the browser resolves it against the URL
+ * the reader actually opened — `/api/follow/…` behind nginx, `/follow/…` on a bare local world —
+ * and drops the query string, so the token travels in the body and not in a second URL.
+ */
+export interface PageForm {
+  readonly action: string;
+  readonly token: string;
+  readonly button: string;
+}
+
 export interface PageContent {
   readonly title: string;
   /** Plain-text paragraphs. Escaped here; never pre-escaped by a caller. */
   readonly paragraphs: readonly string[];
+  readonly form?: PageForm;
   readonly links?: readonly PageLink[];
 }
 
@@ -71,6 +90,15 @@ export function renderPage(content: PageContent): string {
   const links = (content.links ?? [])
     .map((l) => `<p><a href="${escapeHtml(l.href)}">${escapeHtml(l.text)}</a></p>`)
     .join('\n');
+  const form =
+    content.form === undefined
+      ? ''
+      : [
+          `<form method="post" action="${escapeHtml(content.form.action)}">`,
+          `<input type="hidden" name="token" value="${escapeHtml(content.form.token)}">`,
+          `<button type="submit">${escapeHtml(content.form.button)}</button>`,
+          '</form>',
+        ].join('\n');
   return [
     '<!doctype html>',
     '<html lang="en">',
@@ -88,6 +116,9 @@ export function renderPage(content: PageContent): string {
     'h1{font-size:20px;font-weight:500;margin:0 0 14px;color:#cfdadd}',
     'p{margin:0 0 12px;color:#9aa9ad}',
     'a{color:#19d7f2}',
+    'form{margin:18px 0 16px}',
+    'button{font:inherit;font-size:14px;letter-spacing:.12em;padding:11px 20px;cursor:pointer;',
+    'background:#19d7f2;color:#00060a;border:0}',
     '</style>',
     '</head>',
     '<body>',
@@ -95,6 +126,7 @@ export function renderPage(content: PageContent): string {
     '<p class="k">AGENT EVE · FOLLOW BY EMAIL</p>',
     `<h1>${title}</h1>`,
     body,
+    form,
     links,
     '</main>',
     '</body>',

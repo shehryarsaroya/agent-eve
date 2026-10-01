@@ -3,14 +3,16 @@
  *
  * Every test drives `createApp` exactly as `serve()` mounts it, with a recording mailer in
  * place of Resend. The properties under test only exist on the wire — an identical body for
- * five different address states, a HEAD that changes nothing, a page that carries its own
- * security headers — so a mocked request object would prove none of them.
+ * five different address states, a GET or HEAD that changes nothing however often a scanner
+ * sends it, a page that carries its own security headers and sets no cookie — so a mocked
+ * request object would prove none of them.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { FOLLOW_CONFIRM_COOLDOWN_MS, FOLLOW_CONFIRM_TTL_MS, type Allowance } from '../../src/api/limits.js';
 import { MAX_QUEUED_REQUESTS } from '../../src/api/follow/index.js';
-import { LOOSE_FOLLOW_LIMITS, followHarness, linkIn, pathOf, tokenOf, type FollowHarness } from './helpers.js';
+import { LOOSE_FOLLOW_LIMITS, TEST_SECRET, followHarness, linkIn, pathOf, tokenOf, type FollowHarness, type Reply } from './helpers.js';
+import { unsubscribeTokenFor } from '../../src/api/follow/index.js';
 
 const FOLLOW = '/api/follow';
 
@@ -31,6 +33,28 @@ async function requestAndLink(x: FollowHarness, handle: string, email: string): 
   expect(res.status).toBe(202);
   await x.service.idle();
   return linkIn(x.mailer.to(email).at(-1), 'confirm');
+}
+
+/** Press a page's one button: POST the token as a form, exactly as a browser sends it. */
+async function press(x: FollowHarness, which: 'confirm' | 'unsubscribe', token: string): Promise<Reply> {
+  return x.request('POST', `/api/follow/${which}`, `token=${encodeURIComponent(token)}`, {
+    'content-type': 'application/x-www-form-urlencoded',
+  });
+}
+
+/** What a person does: open the link (the same GET a scanner makes), then press Confirm. */
+async function confirmByHand(x: FollowHarness, link: string): Promise<Reply> {
+  const page = await x.get(pathOf(link));
+  expect(page.status).toBe(200);
+  return press(x, 'confirm', tokenOf(link));
+}
+
+/** A link scanner: every link opened, twice, plus the HEAD a prefetcher sends. Never a POST. */
+async function scan(x: FollowHarness, path: string): Promise<void> {
+  await x.request('HEAD', path);
+  await x.get(path);
+  await x.get(path);
+  await x.request('HEAD', path);
 }
 
 describe('POST /api/follow — validation is free and precise', () => {
@@ -104,11 +128,11 @@ describe('POST /api/follow — no enumeration', () => {
     const pending = await x.post(FOLLOW, body('pending@example.com'));
 
     const confirm = await requestAndLink(x, 'vale', 'active@example.com');
-    await x.get(pathOf(confirm));
+    await confirmByHand(x, confirm);
     const active = await x.post(FOLLOW, body('active@example.com'));
 
     const link2 = await requestAndLink(x, 'vale', 'gone@example.com');
-    await x.get(pathOf(link2));
+    await confirmByHand(x, link2);
     const row = await x.store.find('vale', 'gone@example.com');
     if (row === null) throw new Error('no row');
     await x.store.unsubscribe(row.id, 1);
@@ -145,9 +169,10 @@ describe('POST /api/follow — no enumeration', () => {
     x.clock.advance(FOLLOW_CONFIRM_COOLDOWN_MS + 1);
     const second = await requestAndLink(x, 'vale', 'you@example.com');
     expect(second).not.toBe(first);
-    // The replaced link is dead; the new one works.
+    // The replaced link is dead — on its page and on its button — and the new one works.
     expect((await x.get(pathOf(first))).status).toBe(404);
-    expect((await x.get(pathOf(second))).status).toBe(200);
+    expect((await press(x, 'confirm', tokenOf(first))).status).toBe(404);
+    expect((await confirmByHand(x, second)).status).toBe(200);
   });
 });
 
@@ -238,98 +263,175 @@ describe('POST /api/follow — switched off', () => {
   });
 });
 
-describe('the confirm link', () => {
-  it('activates once, idempotently, and starts the follower at the NEXT Reckoning', async () => {
-    const x = await harness({ startTick: 3 * 288 + 100 });
+describe('the confirm link — a GET shows, only the button acts', () => {
+  it('a GET answers a page naming the handle with ONE Confirm button, and changes NOTHING', async () => {
+    const x = await harness();
     const link = await requestAndLink(x, 'vale', 'you@example.com');
     expect(link.startsWith('https://agenteve.io/api/follow/confirm?token=')).toBe(true);
-    const first = await x.get(pathOf(link));
+    const page = await x.get(pathOf(link));
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('Follow vale?');
+    expect(page.text.match(/<form /g)).toHaveLength(1);
+    expect(page.text).toContain('<form method="post" action="confirm">');
+    expect(page.text).toContain(`<input type="hidden" name="token" value="${tokenOf(link)}">`);
+    expect(page.text).toContain('<button type="submit">Confirm</button>');
+    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('PENDING');
+  });
+
+  it('★ a mail scanner opening the link — GET, GET, HEAD — never completes the opt-in', async () => {
+    // The attack this whole shape exists for: somebody subscribes a stranger's corporate address,
+    // and the stranger's own SafeLinks/Proofpoint opens every link in the confirmation. Before this
+    // change that GET WAS the confirmation.
+    const x = await harness();
+    const link = await requestAndLink(x, 'vale', 'victim@corp.example');
+    for (let i = 0; i < 3; i += 1) await scan(x, pathOf(link));
+    const row = await x.store.find('vale', 'victim@corp.example');
+    expect(row?.status).toBe('PENDING');
+    expect(row?.confirmedMs).toBeNull();
+    // And nothing was mailed to it after the one confirmation.
+    expect(x.mailer.to('victim@corp.example')).toHaveLength(1);
+  });
+
+  it('the button (a form POST of the token) activates once, idempotently, from the NEXT Reckoning', async () => {
+    const x = await harness({ startTick: 3 * 288 + 100 });
+    const link = await requestAndLink(x, 'vale', 'you@example.com');
+    const first = await confirmByHand(x, link);
     expect(first.status).toBe(200);
     expect(first.text).toContain('You follow vale');
     const row = await x.store.find('vale', 'you@example.com');
     expect(row?.status).toBe('ACTIVE');
     // Reckoning 2 had settled at tick 863; the first recap will be Reckoning 3's.
     expect(row?.lastSentReckoning).toBe(2);
-    const again = await x.get(pathOf(link));
+    const again = await press(x, 'confirm', tokenOf(link));
     expect(again.status).toBe(200);
     expect(again.text).toContain('You already follow vale');
   });
 
-  it('an unknown, malformed or missing token changes nothing and says so', async () => {
+  it('the GET page is the same for a pending, a live and an unsubscribed follow', async () => {
+    const x = await harness();
+    const link = await requestAndLink(x, 'vale', 'you@example.com');
+    const pending = await x.get(pathOf(link));
+    await press(x, 'confirm', tokenOf(link));
+    const live = await x.get(pathOf(link));
+    const row = await x.store.find('vale', 'you@example.com');
+    if (row === null) throw new Error('no row');
+    await x.store.unsubscribe(row.id, 1);
+    const gone = await x.get(pathOf(link));
+    for (const res of [live, gone]) {
+      expect(res.status).toBe(200);
+      expect(res.text).toBe(pending.text);
+    }
+  });
+
+  it('a token that does not verify — unknown, malformed, missing, doubled — gets "invalid or expired"', async () => {
     const x = await harness();
     for (const q of ['?token=' + 'A'.repeat(43), '?token=short', '', '?token=a&token=b']) {
       const res = await x.get(`/api/follow/confirm${q}`);
       expect(res.status, q).toBe(404);
-      expect(res.text).toContain('not recognised');
+      expect(res.text).toContain('This link is invalid or expired');
+      expect(res.text).not.toContain('<form');
     }
+    const pressed = await press(x, 'confirm', 'A'.repeat(43));
+    expect(pressed.status).toBe(404);
+    expect(pressed.text).toContain('This link is invalid or expired');
   });
 
-  it('expires after its window', async () => {
+  it('past its window the page says "invalid or expired", and the button cannot revive it', async () => {
     const x = await harness();
     const link = await requestAndLink(x, 'vale', 'you@example.com');
     x.clock.advance(FOLLOW_CONFIRM_TTL_MS + 1);
-    const res = await x.get(pathOf(link));
-    expect(res.status).toBe(410);
+    const page = await x.get(pathOf(link));
+    expect(page.status).toBe(404);
+    expect(page.text).toContain('This link is invalid or expired');
+    expect((await press(x, 'confirm', tokenOf(link))).status).toBe(410);
     expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('PENDING');
   });
 
-  it('enforces the follows-per-address cap at the click, where only the inbox owner sees it', async () => {
+  it('only a form confirms: JSON, text/plain or a token in the URL change nothing', async () => {
+    const x = await harness();
+    const link = await requestAndLink(x, 'vale', 'you@example.com');
+    const token = tokenOf(link);
+    const json = await x.request('POST', '/api/follow/confirm', JSON.stringify({ token }), { 'content-type': 'application/json' });
+    expect(json.status).toBe(415);
+    const plain = await x.request('POST', '/api/follow/confirm', `token=${token}`, { 'content-type': 'text/plain' });
+    expect(plain.status).toBe(415);
+    const inUrl = await x.request('POST', pathOf(link), 'List-Unsubscribe=One-Click', {
+      'content-type': 'application/x-www-form-urlencoded',
+    });
+    expect(inUrl.status).toBe(404);
+    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('PENDING');
+  });
+
+  it('enforces the follows-per-address cap at the button, where only the inbox owner sees it', async () => {
     const x = await harness({ maxActivePerEmail: 1 });
     const one = await requestAndLink(x, 'vale', 'you@example.com');
     const two = await requestAndLink(x, 'orison', 'you@example.com');
-    expect((await x.get(pathOf(one))).status).toBe(200);
-    const capped = await x.get(pathOf(two));
+    expect((await confirmByHand(x, one)).status).toBe(200);
+    const capped = await confirmByHand(x, two);
     expect(capped.status).toBe(409);
     expect(capped.text).toContain('already follows 1 principals');
     expect((await x.store.find('orison', 'you@example.com'))?.status).toBe('PENDING');
   });
 
-  it('a HEAD (a scanner, a prefetch) changes nothing', async () => {
+  it('every link page carries its own security headers and sets NO cookie', async () => {
     const x = await harness();
     const link = await requestAndLink(x, 'vale', 'you@example.com');
-    const head = await x.request('HEAD', pathOf(link));
-    expect(head.status).toBe(200);
-    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('PENDING');
-  });
-
-  it('serves a page with its own security headers, because the URL carries a token', async () => {
-    const x = await harness();
-    const link = await requestAndLink(x, 'vale', 'you@example.com');
-    const res = await x.get(pathOf(link));
-    expect(res.headers.get('content-type')).toContain('text/html');
-    expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
-    expect(res.headers.get('x-robots-tag')).toContain('noindex');
-    expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
-    expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
+    for (const res of [await x.get(pathOf(link)), await press(x, 'confirm', tokenOf(link)), await x.get('/api/follow/confirm?token=x')]) {
+      expect(res.headers.get('content-type')).toContain('text/html');
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(res.headers.get('x-robots-tag')).toContain('noindex');
+      const csp = res.headers.get('content-security-policy') ?? '';
+      expect(csp).toContain("frame-ancestors 'none'");
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain("form-action 'self'");
+      expect(res.headers.get('set-cookie')).toBeNull();
+    }
   });
 });
 
-describe('the unsubscribe link', () => {
+describe('the unsubscribe link — a GET shows, the button or RFC 8058 acts', () => {
   async function following(x: FollowHarness, email = 'you@example.com'): Promise<string> {
     const link = await requestAndLink(x, 'vale', email);
-    await x.get(pathOf(link));
+    await confirmByHand(x, link);
     const row = await x.store.find('vale', email);
     if (row === null) throw new Error('no row');
     // The worker prints this exact link in every recap; derive it the same way.
-    const { unsubscribeTokenFor } = await import('../../src/api/follow/index.js');
-    const { TEST_SECRET } = await import('./helpers.js');
     return `/api/follow/unsubscribe?token=${unsubscribeTokenFor(TEST_SECRET, row.id)}`;
   }
 
-  it('one GET unsubscribes, idempotently', async () => {
+  it('a GET answers a page with ONE Unsubscribe button, and changes nothing', async () => {
     const x = await harness();
     const path = await following(x);
-    const first = await x.get(path);
+    const page = await x.get(path);
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('Unsubscribe from vale?');
+    expect(page.text).toContain('<form method="post" action="unsubscribe">');
+    expect(page.text).toContain('<button type="submit">Unsubscribe</button>');
+    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('ACTIVE');
+  });
+
+  it('★ a mail scanner opening every link in a recap never unsubscribes anybody', async () => {
+    const x = await harness();
+    const path = await following(x);
+    for (let i = 0; i < 3; i += 1) await scan(x, path);
+    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('ACTIVE');
+  });
+
+  it('the button unsubscribes, idempotently', async () => {
+    const x = await harness();
+    const path = await following(x);
+    const token = new URL(`https://x${path}`).searchParams.get('token') ?? '';
+    const first = await press(x, 'unsubscribe', token);
     expect(first.status).toBe(200);
     expect(first.text).toContain('You have unsubscribed from vale');
     expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('UNSUBSCRIBED');
-    const again = await x.get(path);
+    const again = await press(x, 'unsubscribe', token);
     expect(again.status).toBe(200);
     expect(again.text).toContain('already unsubscribed');
   });
 
-  it('RFC 8058 one-click: a mail client POSTs List-Unsubscribe=One-Click to the same URL', async () => {
+  it('RFC 8058 one-click, form-encoded: a mail client POSTs List-Unsubscribe=One-Click to the URL', async () => {
     const x = await harness();
     const path = await following(x);
     const res = await x.request('POST', path, 'List-Unsubscribe=One-Click', {
@@ -337,6 +439,17 @@ describe('the unsubscribe link', () => {
     });
     expect(res.status).toBe(200);
     expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('UNSUBSCRIBED');
+  });
+
+  it('RFC 8058 one-click, multipart — the encoding the RFC says SHOULD be used — works the same', async () => {
+    const x = await harness();
+    const path = await following(x);
+    const boundary = 'eve-boundary-1';
+    const body = `--${boundary}\r\nContent-Disposition: form-data; name="List-Unsubscribe"\r\n\r\nOne-Click\r\n--${boundary}--\r\n`;
+    const res = await x.request('POST', path, body, { 'content-type': `multipart/form-data; boundary=${boundary}` });
+    expect(res.status).toBe(200);
+    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('UNSUBSCRIBED');
+    expect(res.headers.get('set-cookie')).toBeNull();
   });
 
   it('works with sending switched OFF — nobody is ever stranded', async () => {
@@ -348,39 +461,42 @@ describe('the unsubscribe link', () => {
       store: x.store, mailer: null, offReason: 'off', secret: null, clock: x.clock, publicUrl: 'https://agenteve.io',
       dailyCeiling: 1, maxActivePerEmail: 1, log: () => undefined,
     });
+    expect((await off.inspectUnsubscribe(tokenOf(`https://x${path}`))).kind).toBe('valid-link');
     expect((await off.unsubscribe(tokenOf(`https://x${path}`))).kind).toBe('unsubscribed');
   });
 
-  it('a HEAD changes nothing; an unknown token is a 404 page', async () => {
+  it('an unknown token is "invalid or expired", on the page and on the button', async () => {
     const x = await harness();
-    const path = await following(x);
-    expect((await x.request('HEAD', path)).status).toBe(200);
-    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('ACTIVE');
+    await following(x);
     expect((await x.get('/api/follow/unsubscribe?token=' + 'B'.repeat(43))).status).toBe(404);
+    const pressed = await press(x, 'unsubscribe', 'B'.repeat(43));
+    expect(pressed.status).toBe(404);
+    expect(pressed.text).toContain('This link is invalid or expired');
+    expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('ACTIVE');
   });
 
-  it('after unsubscribing, the OLD confirm link cannot re-subscribe; a new request can', async () => {
+  it('after unsubscribing, the OLD confirm button cannot re-subscribe; a new request can', async () => {
     const x = await harness();
     const link = await requestAndLink(x, 'vale', 'you@example.com');
-    await x.get(pathOf(link));
+    await confirmByHand(x, link);
     const row = await x.store.find('vale', 'you@example.com');
     if (row === null) throw new Error('no row');
     await x.store.unsubscribe(row.id, 1);
-    const stale = await x.get(pathOf(link));
+    const stale = await press(x, 'confirm', tokenOf(link));
     expect(stale.status).toBe(409);
     expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('UNSUBSCRIBED');
     x.clock.advance(FOLLOW_CONFIRM_COOLDOWN_MS + 1);
     const fresh = await requestAndLink(x, 'vale', 'you@example.com');
-    expect((await x.get(pathOf(fresh))).status).toBe(200);
+    expect((await confirmByHand(x, fresh)).status).toBe(200);
     expect((await x.store.find('vale', 'you@example.com'))?.status).toBe('ACTIVE');
   });
 
-  it('the link routes have their own IP bucket', async () => {
+  it('the link routes have their own IP bucket, for the pages and the buttons alike', async () => {
     const limits: Record<string, Allowance> = { ...LOOSE_FOLLOW_LIMITS, 'follow-link': { burst: 2, windowSeconds: 600 } };
     const x = await harness({ limits });
     const bad = '/api/follow/confirm?token=' + 'C'.repeat(43);
     expect((await x.get(bad)).status).toBe(404);
-    expect((await x.get(bad)).status).toBe(404);
+    expect((await press(x, 'confirm', 'C'.repeat(43))).status).toBe(404);
     const third = await x.get(bad);
     expect(third.status).toBe(429);
     expect(Number(third.headers.get('retry-after'))).toBeGreaterThan(0);

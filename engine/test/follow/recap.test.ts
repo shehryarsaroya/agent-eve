@@ -239,7 +239,7 @@ describe('agent-authored free text never reaches an email (scar #12 by a longer 
     });
     const recap = buildRecap({ frame: f, previous: frame(1, { standings: [standing('vale')] }), handle: 'vale' });
     const links = followLinks('https://agenteve.io');
-    const mail = composeRecap(recap, { recordUrl: links.record('vale'), unsubscribeUrl: links.unsubscribe('U'.repeat(43)) });
+    const mail = composeRecap(recap, { recordUrl: links.record('vale'), unsubscribeUrl: links.unsubscribe('U'.repeat(43)), site: links.site });
     expect(mail.text).not.toContain(SPAM);
     expect(mail.html).not.toContain(SPAM);
     expect(mail.subject).not.toContain(SPAM);

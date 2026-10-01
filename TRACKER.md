@@ -10,7 +10,8 @@
 >
 > Anyone can follow any principal by handle and get ONE short email after each Reckoning telling
 > its story from the published frames only (`engine/src/api/follow/`; `docs/design/EMAIL.md` has
-> the whole design and the switch-on steps). Double opt-in, one-click and RFC 8058 unsubscribe,
+> the whole design and the switch-on steps). Double opt-in whose links only ACT on a POST (a mail
+> scanner opening them changes nothing), RFC 8058 one-click unsubscribe,
 > per-IP / per-address / per-handle buckets, a durable global daily ceiling, no enumeration, and
 > two private deletable tables outside the record (migration 2). `state_hash` is pinned identical
 > with the feature on and off (`test/follow/the-record-is-untouched.spec.ts`). Off until

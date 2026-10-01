@@ -30,7 +30,7 @@ const HOSTILE = [
 ] as const;
 
 /** The only tags our templates emit. Anything else in the output was smuggled in. */
-const OUR_TAGS = new Set(['html', 'head', 'meta', 'title', 'style', 'body', 'main', 'div', 'p', 'h1', 'a', 'hr']);
+const OUR_TAGS = new Set(['html', 'head', 'meta', 'title', 'style', 'body', 'main', 'div', 'p', 'h1', 'a', 'hr', 'form', 'input', 'button']);
 
 /**
  * No tag, attribute or URL from any hostile string survives as MARKUP. The words may appear —
@@ -40,8 +40,17 @@ function assertInert(html: string): void {
   for (const tag of html.matchAll(/<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g)) {
     const [whole, name = '', attrs = ''] = tag;
     expect(OUR_TAGS.has(name.toLowerCase()), whole).toBe(true);
-    expect(attrs, whole).not.toMatch(/\son\w+\s*=/i);
-    expect(attrs, whole).not.toMatch(/javascript:/i);
+    // Tokenise the attributes the way a browser would. Every value we emit is double-quoted and
+    // escaped, so a value may CONTAIN the words "onerror=" as text — that is inert — but no
+    // attribute may BE an event handler, and no URL attribute may be a script.
+    const rest = attrs.replace(/\s([a-zA-Z-]+)(?:="([^"]*)")?/g, (_m, attr: string, value: string | undefined) => {
+      expect(attr.toLowerCase(), whole).not.toMatch(/^on/);
+      if (/^(href|action|src)$/i.test(attr)) expect(value ?? '', whole).not.toMatch(/^\s*javascript:/i);
+      expect(value ?? '', whole).not.toMatch(/[<>"]/);
+      return '';
+    });
+    // Nothing left over: an attribute that broke out of its quotes would leave residue here.
+    expect(rest.trim(), whole).toBe('');
   }
   // The only anchors are ours, and every href is an https URL we built.
   for (const m of html.matchAll(/href="([^"]*)"/g)) expect(m[1]).toMatch(/^https:\/\/agenteve\.io\//);
@@ -65,9 +74,11 @@ describe('every template carries a hostile string only as text', () => {
   const links = followLinks('https://agenteve.io');
 
   it.each(HOSTILE)('the confirmation email, with handle %s', (h) => {
-    const mail = composeConfirmation({ handle: h, confirmUrl: links.confirm('T'.repeat(43)), recordUrl: links.record(h), validDays: 7 });
+    const mail = composeConfirmation({ handle: h, confirmUrl: links.confirm('T'.repeat(43)), recordUrl: links.record(h), validDays: 7, site: links.site });
     assertInert(mail.html);
     expect(mail.html).toContain(escapeHtml(h));
+    // The sender line carries the handle too — escaped like everything else.
+    expect(mail.html).toContain(escapeHtml(`because this address was entered to follow ${h}.`));
     // The record link encodes the handle into the URL rather than splicing it.
     expect(mail.html).toContain(`#/agent/${escapeHtml(encodeURIComponent(h))}`);
   });
@@ -102,8 +113,9 @@ describe('every template carries a hostile string only as text', () => {
     });
     const prev = frame(2, { standings: [standing(s, { principal: pid })] });
     const recap = buildRecap({ frame: f, previous: prev, handle: s });
-    const mail = composeRecap(recap, { recordUrl: links.record(s), unsubscribeUrl: links.unsubscribe('U'.repeat(43)) });
+    const mail = composeRecap(recap, { recordUrl: links.record(s), unsubscribeUrl: links.unsubscribe('U'.repeat(43)), site: links.site });
     assertInert(mail.html);
+    expect(mail.html).toContain(escapeHtml(`You asked to follow ${s} on Agent Eve at agenteve.io.`));
     // It reached the email — as text.
     expect(mail.html).toContain(escapeHtml(s));
     // And the RFC 8058 header pair is exactly the two strings we built.
@@ -117,5 +129,20 @@ describe('every template carries a hostile string only as text', () => {
     const html = renderPage({ title: `You follow ${s}`, paragraphs: [s, `${s}'s record`], links: [{ href: links.record(s), text: s }] });
     assertInert(html);
     expect(html).toContain(escapeHtml(s));
+  });
+
+  it.each(HOSTILE)('the page with the one button, with %s as the handle, the token and the label', (s) => {
+    const html = renderPage({
+      title: `Follow ${s}?`,
+      paragraphs: [`Press Confirm to follow ${s}.`],
+      form: { action: 'confirm', token: s, button: s },
+      links: [{ href: links.record(s), text: s }],
+    });
+    assertInert(html);
+    // Exactly one form, posting to the relative path, the token as an escaped hidden value.
+    expect(html.match(/<form /g)).toHaveLength(1);
+    expect(html).toContain('<form method="post" action="confirm">');
+    expect(html).toContain(`<input type="hidden" name="token" value="${escapeHtml(s)}">`);
+    expect(html).not.toMatch(/<input[^>]*value="[^"]*"[^>]*"/);
   });
 });

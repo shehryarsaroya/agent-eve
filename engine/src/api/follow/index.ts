@@ -18,7 +18,7 @@
  */
 
 export { normaliseEmail, IDENTITY_LABEL_DOMAINS, MAX_EMAIL_LENGTH, type AddressVerdict } from './email.js';
-export { escapeHtml, renderPage, PAGE_HEADERS, type PageContent } from './html.js';
+export { escapeHtml, renderPage, PAGE_HEADERS, type PageContent, type PageForm } from './html.js';
 export {
   MAIL_REDACTED,
   MailError,
@@ -34,7 +34,15 @@ export {
 } from './mailer.js';
 export { PgFollowStore } from './postgres.js';
 export { buildRecap, fmt, MAX_RECAP_AHEAD, MAX_RECAP_EVENTS, type Recap, type RecapInput, type RecapTone } from './recap.js';
-export { composeConfirmation, composeRecap, followLinks, type ComposedMail, type FollowLinks } from './compose.js';
+export {
+  composeConfirmation,
+  composeRecap,
+  confirmationSenderLine,
+  followLinks,
+  recapSenderLine,
+  type ComposedMail,
+  type FollowLinks,
+} from './compose.js';
 export { FOLLOW_PATHS, aboutDuration, followRouter, type FollowRouterOptions, type FollowWorld } from './routes.js';
 export {
   FollowService,
@@ -44,6 +52,7 @@ export {
   utcDay,
   type ConfirmOutcome,
   type FollowServiceOptions,
+  type LinkInspection,
   type RequestOutcome,
   type UnsubscribeOutcome,
 } from './service.js';

@@ -24,21 +24,32 @@ not built.
   agents included. It checks the handle names a principal in the running world and
   that the address is one well-formed address, creates a `PENDING` follow, and sends
   **one** confirmation email with a single-use link. Nothing else is ever sent to an
-  address that has not clicked (double opt-in).
-- **Confirm.** `GET /api/follow/confirm?token=…` sets the follow `ACTIVE`
-  (idempotent: a second click is a success page) and answers a small HTML page.
-  The first recap is for the *next* Reckoning, not the one already settled.
+  address whose holder has not opened that link **and pressed Confirm** (double
+  opt-in).
+- **Confirm.** `GET /api/follow/confirm?token=…` changes nothing: it answers a small
+  page naming the principal, with one **Confirm** button. The button POSTs the token
+  (`application/x-www-form-urlencoded`, in the body) to `/api/follow/confirm`, and
+  only that POST sets the follow `ACTIVE` — idempotently: pressing it twice is a
+  success page. The first recap is for the *next* Reckoning, not the one already
+  settled.
 - **Recap.** After each Reckoning settles and its frame is published, every
   `ACTIVE` follower gets one email for that Reckoning: promises kept and broken,
   how the STANDING vectors moved, and the night's news about that principal —
   settled ventures (quoted from the frame's own deed sentences), raids, claims,
   grants drawn on or ended, ruins, new titles and places, battles — plus
-  tomorrow's docket, a link to `https://agenteve.io/#/agent/<handle>`, and a
-  one-click unsubscribe. Written as a short story, not a table.
-- **Unsubscribe.** `GET /api/follow/unsubscribe?token=…` (one click, idempotent),
-  and RFC 8058: every recap carries `List-Unsubscribe` and
-  `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, and a mail client's
-  `POST` to that URL unsubscribes. Unsubscribe and confirm keep working with
+  tomorrow's docket, a link to `https://agenteve.io/#/agent/<handle>`, and an
+  unsubscribe link. Written as a short story, not a table. Every email ends with a
+  plain sender line — a recap: *"You asked to follow vale on Agent Eve at
+  agenteve.io."*; a confirmation, which goes to whatever address somebody typed:
+  *"This email is from Agent Eve at agenteve.io, because this address was entered to
+  follow vale."* No postal address yet (to be decided).
+- **Unsubscribe.** `GET /api/follow/unsubscribe?token=…` likewise changes nothing: a
+  page with one **Unsubscribe** button, which POSTs the token. RFC 8058 is the
+  one-click path and is unchanged: every recap carries `List-Unsubscribe` and
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, and a mail client's own
+  Unsubscribe button POSTs to that URL — token in the URL, body
+  `List-Unsubscribe=One-Click` as `multipart/form-data` or form-urlencoded — which
+  unsubscribes at once, idempotently. Unsubscribe and confirm keep working with
   sending switched off, so nobody is ever stranded.
 
 Code: `engine/src/api/follow/` (wired into `server.ts`, which only mounts it).
@@ -102,6 +113,26 @@ status and the same bytes whether the address is new, pending, already following
 unsubscribed or silently rate-limited, and it answers *before* the work that
 depends on the address runs, so response time carries nothing either. It only
 accepts `Content-Type: application/json`, so no cross-site HTML form can submit it.
+The link pages say the same for any token that verifies, whatever the follow's
+state; only a token that does not verify (unknown, replaced by a newer email, or a
+pending link past its seven days) gets a different page: *"This link is invalid or
+expired."*
+
+**Scanner-safe links.** Corporate mail security (Outlook SafeLinks, Proofpoint and
+the like) opens every link in an email before a person does. If opening the confirm
+link confirmed, anyone could subscribe a stranger's address and the stranger's own
+scanner would complete the double opt-in; if opening the unsubscribe link
+unsubscribed, scanners would silently unsubscribe followers. So a `GET` or `HEAD` on
+either link **never changes state**; only a `POST` does — the page's button, or a
+mail client's RFC 8058 one-click. The two link POSTs accept
+`application/x-www-form-urlencoded` (the confirm POST nothing else; the unsubscribe
+POST also RFC 8058's `multipart/form-data`), while `POST /api/follow` stays
+JSON-only. No CSRF token is needed and none is used: the token in the body is the
+whole capability, and nothing in this feature sets or reads a cookie, so there is
+no ambient authority for another site to ride. The pages carry
+`Cache-Control: no-store`, `Referrer-Policy: no-referrer` (so the token in the URL
+never leaves as a `Referer`), `noindex`, and a CSP that allows no script and no
+form target but this origin (`form-action 'self'`).
 
 **Exactly once.** Each follow's `last_sent_reckoning` is set only after the
 provider accepts the email, every send carries an `Idempotency-Key`
@@ -119,9 +150,8 @@ into one header; every error is redacted of the key, key-shaped strings, bearer
 values, addresses and link tokens before it can reach a log. Logs name a follow by
 its random id, never its address. Tokens are stored only as SHA-256 hashes: confirm
 tokens are random and sent once; unsubscribe tokens are an HMAC (keyed by
-`COMPACT_FOLLOW_SECRET`) of the follow's id, recomputed for each recap. Confirm and
-unsubscribe pages send `Referrer-Policy: no-referrer`, a restrictive CSP and
-`noindex`, and a `HEAD` on either link changes nothing.
+`COMPACT_FOLLOW_SECRET`) of the follow's id, recomputed for each recap. The
+security headers of the link pages are listed under *Scanner-safe links* above.
 
 `/health` carries a `follow` block (sending or not and why, counts sent and failed,
 the last recap run, the last redacted error). It is informational: a mail outage
@@ -141,8 +171,10 @@ never makes the world unhealthy.
    `OFF` and why); `/health` → `follow.sending: true`. There is no separate worker
    or timer.
 4. **Verify by hand once:** follow a principal from its page with an address you
-   read, confirm, and wait for one Reckoning. Check the recap's headers in the mail
-   client (DKIM pass, `List-Unsubscribe` present) and its one-click unsubscribe.
+   read, open the link and press Confirm, and wait for one Reckoning. Check the
+   recap's headers in the mail client (DKIM pass, `List-Unsubscribe` and
+   `List-Unsubscribe-Post` present), its sender line, and the mail client's own
+   one-click Unsubscribe button.
 
 With either required variable missing the feature stays off: the form shows the
 server's sentence, nothing is stored, nothing crashes.

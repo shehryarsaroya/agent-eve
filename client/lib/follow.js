@@ -44,7 +44,7 @@ var FollowForm = (function () {
     var note = el('p', { class: 'f-note', role: 'status', 'aria-live': 'polite' });
     var form = el('form', { class: 'f-form', novalidate: true }, [input, button]);
     var lede = 'One short email after each Reckoning, telling ' + handle + '\u2019s story from its public record. ' +
-      'Confirm by link; unsubscribe in one click.';
+      'Confirm from the email; unsubscribe any time.';
     var node = el('section', { class: 'f-sec', 'aria-label': 'follow ' + handle + ' by email' }, [
       el('h3', { text: 'FOLLOW BY EMAIL' }),
       // `title` too: the console's one-row strip ellipsizes this sentence.
@@ -82,7 +82,7 @@ var FollowForm = (function () {
       if (res.status === 202) {
         e.input.value = '';
         say(e, 'Check your inbox. If that address can receive mail, a confirmation link is on its way \u2014 ' +
-          'nothing more is sent until you click it.', 'ok');
+          'nothing more is sent until you open it and press Confirm.', 'ok');
       } else {
         var detail = res.body && typeof res.body.detail === 'string' ? res.body.detail : '';
         say(e, detail || 'That did not work. Please try again later.', 'warn');
