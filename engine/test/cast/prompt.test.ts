@@ -1004,7 +1004,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(107_832);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_680);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1044,7 +1044,17 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 104,647 = **15,353**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 98,128 — leaving **21,872**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(107_832);
+    // ── ★ AND +848 ON EVERY CELL: `header.next_decision_at`, DOCUMENTED ──────
+    //
+    // The landing page told newcomers to wake every ~20 minutes, which spends 16 wakes in five hours.
+    // `agent.md` now names the field to pace by: §5's bullet (the tick to be awake BY), §6's header
+    // line, and §7's Budgets sentence (90 minutes is the pool spent evenly). All three sit in the
+    // always-selected family, so the movement is uniform — +848 on all eight cells, newcomer and
+    // ceiling alike, which is the uniformity check passing. §0's sentence appears in no cell.
+    //
+    // Analytic margin 120,000 − 108,680 = **11,320**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 102,169 — leaving **17,831**, against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_680);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1114,7 +1124,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // — the number to quote about SAFETY and never the number to quote about ROOM.
     // ★ RE-MEASURED at 40: +3,123 — §6's `risk` key line (+460, FLOOR) and §11F's schedule,
     // `at_stake` and four previously-unnamed fields (+2,663, act-gated). Read, not added.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(101_321);
+    // ★ +848: §5/§6/§7 document `header.next_decision_at`, the clock the paste block paces by.
+    // Margin 120,000 − 102,169 = **17,831** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(102_169);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2771,13 +2783,27 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // other amount would have meant the re-path changed something other than the path, which is
     // exactly the question this table exists to answer — and the reason to record the divisibility
     // here rather than just re-reading the numbers and moving on.
-      47_649, // a newcomer on its first wake            (+460: §6's key line ONLY)
-      57_099, // mid-game in the Commons                 (+460)
-      66_794, // about to take territory                 (+460)
-      69_936, // at war: party to a live campaign        (+460)
-      99_820, // a claimant in trouble                   (+3,123)
-      81_706, // the Commons at its fullest              (+3,123)
-      101_321, // outside the Commons and landless, at its fullest: the largest REACHABLE (+3,123)
+      // ── ★ +848 ON ALL EIGHT: `header.next_decision_at`, the clock to pace wakes by ──
+      //
+      //   before   after    Δ     position
+      //   47,649   48,497  +848   a newcomer on its first wake
+      //   57,099   57,947  +848   mid-game in the Commons
+      //   66,794   67,642  +848   about to take territory
+      //   69,936   70,784  +848   at war: party to a live campaign
+      //   99,820  100,668  +848   a claimant in trouble
+      //   81,706   82,554  +848   the Commons at its fullest
+      //  101,321  102,169  +848   outside the Commons and landless
+      //  107,832  108,680  +848   the analytic ceiling
+      //
+      // §5's bullet, §6's header line and §7's Budgets sentence, all in the always-selected family,
+      // so every position pays the same and nothing was displaced. Read, not added.
+      48_497, // a newcomer on its first wake            (+848: next_decision_at)
+      57_947, // mid-game in the Commons                 (+848)
+      67_642, // about to take territory                 (+848)
+      70_784, // at war: party to a live campaign        (+848)
+      100_668, // a claimant in trouble                  (+848)
+      82_554, // the Commons at its fullest              (+848)
+      102_169, // outside the Commons and landless, at its fullest: the largest REACHABLE (+848)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -2952,7 +2978,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      107_832, // the analytic ceiling                    (+3,123 at 40)
+      108_680, // the analytic ceiling                    (+848: next_decision_at)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

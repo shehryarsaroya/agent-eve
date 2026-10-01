@@ -6304,17 +6304,57 @@ function lastTickBeforeFreeze(tick: number): number {
   return Math.max(tick, settlement - 1 - FREEZE_TICKS);
 }
 
-/** The tick something changes for this principal. Never decreases within a tick. */
+/**
+ * The last OBSERVATION tick from which an act still lands before the coming freeze — and, once
+ * that has passed, the next Reckoning's.
+ *
+ * An act sent while the payload reads tick `t` resolves in `t + 1`, and the freeze refuses
+ * anything that resolves in it (`Runtime.committing`, `SealBook.commit`, `vElect`). So the last
+ * tick an agent can be awake and still `elect`, `seal` or deliver for tonight is one before
+ * {@link lastTickBeforeFreeze} — which is a RESOLUTION tick, and says so. Rolling forward rather
+ * than clamping to `tick` is the point: inside the freeze and on the settlement tick there is
+ * nothing left to decide about tonight, and a deadline equal to "now" would tell a pacing agent to
+ * spend a wake on every one of those ticks.
+ */
+function lastSubmitTickBeforeFreeze(tick: number): number {
+  const deadline = nextSettlement(tick) - 1 - FREEZE_TICKS - 1;
+  return tick <= deadline ? deadline : deadline + TICKS_PER_RECKONING;
+}
+
+/**
+ * ★ **`header.next_decision_at`: the tick to be awake BY.** Never earlier than `tick`, and never
+ * decreases within a tick.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The soonest of three things, each stated as the last tick an agent can OBSERVE and still act on
+ * it, because that is the only reading under which "sleep until `next_decision_at`" — which is what
+ * `agent.md` §5 and the landing page's paste block now tell a newcomer — is safe advice:
+ *
+ *   1. **a hand of yours coming free** — its `freeAtTick`. An opportunity rather than a deadline,
+ *      and the payload at that tick already shows the hand free;
+ *   2. **a FORMING venture you are party to** — `windowClosesTick - 1`. This used to publish
+ *      `windowClosesTick` itself, and an agent waking AT that tick sends a `sign` that resolves at
+ *      `windowClosesTick + 1`, where `activate` refuses (`tick > windowClosesTick`) and the
+ *      formation is retired ABANDONED in the same tick. A clock that names the tick one past the
+ *      last useful one is a trap, not a clock;
+ *   3. **the coming freeze** — {@link lastSubmitTickBeforeFreeze}. This used to be the settlement
+ *      tick, which is AFTER the freeze: the one wake it pointed at could no longer `elect`, `seal`
+ *      or deliver anything for tonight (§5: "there is no decision to make inside this window").
+ *
+ * The field is projection only. Nothing in the engine, the cast or the replay reads it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
 function nextDecisionAt(runtime: Runtime, principal: PrincipalId, tick: number): number {
-  let soonest = nextSettlement(tick);
+  let soonest = lastSubmitTickBeforeFreeze(tick);
   for (const hand of handsOf(runtime.world, principal)) {
     if (hand.freeAtTick !== null && hand.freeAtTick > tick && hand.freeAtTick < soonest) {
       soonest = hand.freeAtTick;
     }
   }
   for (const venture of runtime.ventures.forPrincipal(principal)) {
-    if (venture.state === 'FORMING' && venture.windowClosesTick > tick && venture.windowClosesTick < soonest) {
-      soonest = venture.windowClosesTick;
+    // `> tick` on the CLOSE, so `windowClosesTick - 1 >= tick` — the last tick a sign still lands.
+    if (venture.state === 'FORMING' && venture.windowClosesTick > tick && venture.windowClosesTick - 1 < soonest) {
+      soonest = venture.windowClosesTick - 1;
     }
   }
   return soonest;
