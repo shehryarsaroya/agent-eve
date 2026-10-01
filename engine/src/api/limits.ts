@@ -179,6 +179,30 @@ export const RATE_LIMITS = {
 
 export type RouteName = keyof typeof RATE_LIMITS;
 
+/**
+ * ★ **IDENTITIES MINTED per client address per day** — a QUOTA, and the one limit in this file
+ * charged on SUCCESS rather than on the attempt.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * `RATE_LIMITS.enroll` meters ATTEMPTS that reach state: eight per ten minutes, which is
+ * 1,152 identities a day from one address against a world of 300 seats. Enrolment is free
+ * and must stay free (A15), so the burst cannot be the bound on how many identities one
+ * caller mints — it was raised to eight precisely so a newcomer guessing at handles gets in
+ * on its first sitting. This is the second, slower bound: **six minted identities per
+ * address per 24 hours**, alongside the burst rather than instead of it.
+ *
+ * Charged only when an identity is actually minted, never for a refused handle or a malformed
+ * field, so it can never cost a newcomer the patience the burst was raised to protect. It
+ * protects the seat cap, not the game: a seat is kept by play (`seats.ts`), and this caps how
+ * fast one address can turn new keys into seats that have to be waited out. The operator
+ * allowlist exempts it, exactly as it exempts every route.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const ENROLMENT_QUOTA: Allowance = { burst: 6, windowSeconds: 86_400 };
+
+/** The bucket-key prefix for {@link ENROLMENT_QUOTA}. Not a route, so it cannot collide with one. */
+const QUOTA_KEY = 'enroll-quota';
+
 /** Signature freshness is 60 s + 30 s skew; a nonce must outlive that (SEC-1). */
 export const REPLAY_STORE_LIMITS = {
   retention: wallSeconds(120),
@@ -240,11 +264,56 @@ export class RateLimiter {
      * (scar #3): an unlisted client is metered exactly as before.
      */
     private readonly allowlist: ReadonlySet<string> = new Set(),
+    /** Identities minted per client per window. See {@link ENROLMENT_QUOTA}. */
+    private readonly quota: Allowance = ENROLMENT_QUOTA,
   ) {}
 
   /** Buckets currently held. Asserted by the soak test: this is the bound. */
   get tracked(): number {
     return this.windows.size;
+  }
+
+  /** The quota this limiter enforces, for the refusal text. */
+  get enrolmentQuota(): Allowance {
+    return this.quota;
+  }
+
+  /**
+   * Would minting one more identity for this client stay inside {@link ENROLMENT_QUOTA}?
+   *
+   * **Spends nothing.** The quota is charged by {@link chargeQuota} after the identity exists,
+   * so a request refused for any other reason — a taken handle, a full world — costs no part
+   * of it.
+   */
+  quotaVerdict(client: string, now: WallSeconds): LimitVerdict {
+    if (this.allowlist.has(client)) {
+      return { allowed: true, retryAfterSeconds: 0, remaining: Number.MAX_SAFE_INTEGER };
+    }
+    const existing = this.windows.get(`${QUOTA_KEY}::${client}`);
+    if (existing === undefined) return { allowed: true, retryAfterSeconds: 0, remaining: this.quota.burst };
+    const age = now - existing.openedAt;
+    if (age >= this.quota.windowSeconds) return { allowed: true, retryAfterSeconds: 0, remaining: this.quota.burst };
+    if (existing.count >= this.quota.burst) {
+      return { allowed: false, retryAfterSeconds: Math.max(1, this.quota.windowSeconds - age), remaining: 0 };
+    }
+    return { allowed: true, retryAfterSeconds: 0, remaining: this.quota.burst - existing.count };
+  }
+
+  /** Charge one minted identity against this client's quota. Call only once it exists. */
+  chargeQuota(client: string, now: WallSeconds): void {
+    if (this.allowlist.has(client)) return;
+    const key = `${QUOTA_KEY}::${client}`;
+    const existing = this.windows.get(key);
+    if (existing === undefined) {
+      this.admit(key, now);
+      return;
+    }
+    if (now - existing.openedAt >= this.quota.windowSeconds) {
+      existing.count = 1;
+      existing.openedAt = now;
+      return;
+    }
+    existing.count += 1;
   }
 
   check(route: string, client: string, now: WallSeconds): LimitVerdict {
@@ -303,10 +372,20 @@ export class RateLimiter {
     this.windows.set(key, { count: 1, openedAt: now });
   }
 
+  /**
+   * Drop every window that has rolled, each judged by its OWN length.
+   *
+   * It used to drop anything older than the longest route window, which was correct while every
+   * bucket was a route of ten minutes or less. A daily quota judged against a ten-minute cut-off
+   * would be forgotten the first time the map came under pressure — a quota that resets when an
+   * attacker floods the table is a quota the attacker controls.
+   */
   private prune(now: WallSeconds): void {
-    const longest = Math.max(...Object.values(this.limits).map((l) => l.windowSeconds));
+    const longest = Math.max(this.quota.windowSeconds, ...Object.values(this.limits).map((l) => l.windowSeconds));
     for (const [key, window] of this.windows) {
-      if (now - window.openedAt >= longest) this.windows.delete(key);
+      const name = key.slice(0, key.indexOf('::'));
+      const length = name === QUOTA_KEY ? this.quota.windowSeconds : (this.limits[name]?.windowSeconds ?? longest);
+      if (now - window.openedAt >= length) this.windows.delete(key);
     }
   }
 }

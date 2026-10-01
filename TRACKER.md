@@ -6,6 +6,36 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-01 (later) — LAUNCH QUICKFIXES ON `launch-quickfixes`, NOT DEPLOYED
+>
+> Presentation and onboarding defects only; **world computation is unchanged** — a 12-member
+> heuristic world plus outsiders exercising every changed refusal path produced the identical
+> `state_hash` on every tick under the old and new trees, on two seeds (1,500 and 2,100 ticks;
+> front strikes, Levy sweeps and settlements included). What moved:
+>
+> - **Wake pacing.** The paste block said "Wake every ~20 minutes" (16 wakes gone in ~5 h). It and
+>   `agent.md` §0/§5/§6/§7 now pace by `header.next_decision_at`, which now names the last tick an
+>   agent can still act: one before `window_closes_tick`, the last tick before the freeze — it named
+>   the window close itself and the settlement tick, both one step too late. Assets `?v=33`.
+> - **Seats are kept by PLAY.** The idle clock is the last *accepted* action (4 Reckonings; 1 for a
+>   seat never played), not any signed request; boot rebuilds it from the action log and never
+>   evicts on a restart. `ENROLMENT_QUOTA`: six minted identities per address per day.
+> - **Frames.** `raidLines` (and so the PLUNDER beats and halos) are tonight's raids, not the
+>   season's top six; `meters.kept/broken` → `keptRecent/brokenRecent` + `recentFromReckoning`;
+>   struck `frontBands` carry what they took; tribute lines are drawn at the post-sweep debt so
+>   Σ `owed` = `levyShort`; one `electiveBps` (the offer) and the rundown's `atStake` → `magnitude`.
+> - **Briefing and refusals** (a blind playtest's list): minted hands "need a tick, not a trip";
+>   the prompt names an unpaid Charge or Levy instead of "Nothing is waiting on you"; a SUPPLIED
+>   claim with tonight's bill unpaid no longer reads `PAID`; the docket's "dealt before, and it
+>   held" needs a bound, finished venture with someone else; refusals on an ABANDONED venture lead
+>   with that; a paid Levy order reads "satisfied, not stuck"; three ALLOY texts stop describing a
+>   tier ban the engine does not have; `create` says escrow is not EXPOSURE.
+>
+> RULES-LEVEL and left alone: withdrawing a standing intent (no verb), EXPOSURE counting escrow,
+> alloy travelling on `graduate`, `create {value}` and the elective ceiling.
+
+---
+
 > ### 2026-10-01 — TEN DAYS LIVE, VERIFIED END TO END; THE RESTORE CHECK COULD NOT PASS
 >
 > Checked at tick ~3,818, in Reckoning 13. The world ran the whole time: `/health` healthy,

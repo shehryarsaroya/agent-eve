@@ -621,13 +621,15 @@ describe('agent.md warns about the one verb whose meaning depends on a parameter
     expect(AGENT_MD, 'the goods a claim destroys, where `build` is documented').toContain(
       'It destroys 5000 units of `ration` **and 500 units of `alloy`**',
     );
-    // ★ And the reason the alloy half is different in kind from every other price in the game: it is
-    // the only one an agent CANNOT pay out of its own production, because the tier that makes it and
-    // the tier a claim lives in are disjoint by construction. An agent that read "500 alloy" as just
-    // another number would spend Reckonings refining ore into a good its ground cannot produce.
-    expect(AGENT_MD, 'and that the alloy half must be hauled in').toContain(
-      'only the Commons refines it',
+    // ★ And what the alloy half actually costs. This pin used to hold the sentence "only the Commons
+    // refines it" — a prohibition the engine does not enforce: `ALLOY_IN_BY_TIER` is a price gradient
+    // (COMMONS 8 · MARCHES 32 · FRONTIER 64) and ALLOY refines anywhere, as §7 and §11A's own rate
+    // table say. A blind player read the two disagreeing and could not tell which was the rule; the
+    // pin kept the wrong one in sync. It now pins the gradient, and refuses the old prohibition.
+    expect(AGENT_MD, 'and that the alloy half is the expensive half, not the impossible one').toContain(
+      'The alloy is the EXPENSIVE half, not the\n  impossible one',
     );
+    expect(AGENT_MD, 'the prohibition the engine does not enforce').not.toContain('only the Commons refines it');
     expect(AGENT_MD, 'and the bond, which is slashable and does not come back').toContain(
       'requires a posted BOND of 50000 per claim',
     );

@@ -390,6 +390,30 @@ export function createApp(options: ApiOptions): CreatedApp {
       const gate = meter(res, 'enroll', ip);
       if (gate === null) return;
 
+      // ── ★ AND THE DAILY QUOTA: identities MINTED per address per day ───────────
+      //
+      // The burst above meters attempts and is generous on purpose (a newcomer guessing at
+      // handles must get in on its first sitting). This bounds how many identities one
+      // address turns into seats in a day. Asked here, charged only once the identity exists
+      // below — so a taken handle or a full world never costs any of it.
+      const quota = limiter.quotaVerdict(ip, wallSecondsFrom(clock));
+      if (!quota.allowed) {
+        res.setHeader('Retry-After', String(quota.retryAfterSeconds));
+        const cap = limiter.enrolmentQuota;
+        return send(
+          res,
+          429,
+          refusal(
+            WIRE_REASON.RATE_LIMITED,
+            `${ip} has already minted ${String(cap.burst)} identities in the last ` +
+              `${String(Math.round(cap.windowSeconds / 3600))} hours, the most one address may; retry in ` +
+              `${String(quota.retryAfterSeconds)}s. Only identities actually minted count — refused handles and ` +
+              'malformed requests do not. Enrolment is free and stays free; this bounds how fast one address ' +
+              'fills the seats, and a seat is kept by play, not by holding a key.',
+          ),
+        );
+      }
+
       const principal = `p:${handle.value}` as PrincipalId;
       const tick = runtime.engine.tick + 1;
 
@@ -505,6 +529,9 @@ export function createApp(options: ApiOptions): CreatedApp {
           ),
         );
       }
+      // The identity exists now, so this is the one moment the daily quota is charged.
+      limiter.chargeQuota(ip, wallSecondsFrom(clock));
+
       // Persist the enrolment so a restart re-seats it. After the world seat
       // succeeded and before the response, so a recorded enrolment is always one the
       // world actually holds. `publicKey.value` is the base64url the agent sent.
@@ -756,6 +783,8 @@ export function createApp(options: ApiOptions): CreatedApp {
 
         if (submitted.ok) {
           if (costOf(verb) === 'MATERIAL') chargeWindow(who, submitted.value.targetTick);
+          // ★ The one thing that keeps a seat: an action accepted into the world, any verb.
+          seats.recordAccepted(who, submitted.value.targetTick);
           accepted.push({
             clientSequence,
             verb,
@@ -1167,6 +1196,8 @@ export function createApp(options: ApiOptions): CreatedApp {
         return null;
       }
     }
+    // SEEN, which is reported and nothing more. A request that plays nothing no longer keeps
+    // a seat — `POST /act` records the accepted action that does (`seats.recordAccepted`).
     seats.touch(principal, runtime.engine.tick);
     return principal;
   }
@@ -2253,10 +2284,15 @@ async function bootTheWorld(
             // Already registered on a prior boot step; identity is never re-minted.
           }
         }
-        seats.claim(enrollment.principal, enrollment.handle, Math.max(0, enrollment.enrolledAtTick));
+        // `restore`, not `claim`: the replay must not run the recycling sweep against a clock
+        // it is still rebuilding. See `SeatBook.restore`.
+        seats.restore(enrollment.principal, enrollment.handle, Math.max(0, enrollment.enrolledAtTick));
       },
       onProgress: (tick, head) => {
         gate.progress(tick, head);
+        // ★ The seat clock, rebuilt from the record: every action the replayed tick accepted
+        // for a seated principal is play, exactly as `POST /act` counts it live.
+        seats.recordAcceptedRows(runtime.engine.log.forTick(tick));
         // Republish every Reckoning the replay crosses. Without this the ONLY publisher is
         // the live tick loop, so a restart that swallowed a settlement tick lost that
         // night's frame permanently, and a renderer change reached a viewer only at the
@@ -2269,6 +2305,17 @@ async function bootTheWorld(
     // replayed decisions so the scar #14b floor judges the world that is running now
     // rather than the log it just re-read (see DecisionCensus.beginLivePlay).
     runtime.census.beginLivePlay(runtime.engine.tick);
+    // ── A RESTART NEVER EVICTS ANYBODY ─────────────────────────────────────────
+    //
+    // The seat clock was rebuilt from the actions the replay re-read, but not from the
+    // requests that re-seated a dormant principal (those are not journalled), nor — after a
+    // checkpoint adoption — from actions older than the adopted snapshot. So every occupied
+    // seat restarts its short lease at the boot tick, and a seat whose history was not re-read
+    // is credited with the boot tick as its last accepted action. `SeatBook.afterRestart`.
+    seats.afterRestart(
+      Math.max(0, runtime.engine.tick) + 1,
+      outcome.status === 'READY' && outcome.result.adoptedAtTick !== null ? outcome.result.adoptedAtTick + 1 : 0,
+    );
     return { ...shell, outcome };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

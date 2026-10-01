@@ -67,6 +67,29 @@ export function tributeStateFor(args: {
 }
 
 /**
+ * ★ **What is still owed, AFTER the settlement sweep** — the figure a tribute line is drawn at.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * `Book.owingOf` is the payments arithmetic and knows nothing of the sweep: the sweep is recorded
+ * beside the payments (`recordSweep`, *"reported in the shortfall row, never as a payment"*). So a
+ * settled frame drew every swept principal's line at its PRE-sweep debt, while `meters.levyShort` —
+ * `Book.shortFor`, the sum of the shortfall rows `settle.ts` writes — subtracts what the sweep took.
+ * Measured on the live world: `levyShort` and Σ `tributeLines[].owed` disagreed on 8 of 13 frames,
+ * every one a night the sweep ran.
+ *
+ * The shortfall row is the authoritative number (it is what the record calls owed), so the line is
+ * now drawn at the shortfall row's own arithmetic — `presenceOwed + max(0, purchasableOwed − swept)`,
+ * `settle.ts` verbatim — and the two agree by construction. Before the settlement sweep has run
+ * `swept` is zero and this is `owingOf(...).owed` exactly, so a live cycle reads as it always did.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function owedAfterSweep(book: Book, reckoning: number, principal: PrincipalId): number {
+  const owing = book.owingOf(reckoning, principal);
+  const swept = book.paymentOf(reckoning, principal).swept;
+  return owing.presenceOwed + Math.max(0, owing.purchasableOwed - swept);
+}
+
+/**
  * Every assessed principal's tribute line for one Reckoning.
  *
  * A paid-in-full line is **kept, at zero thickness**, rather than dropped. §5.2 wants
@@ -85,12 +108,11 @@ export function tributeLinesFor(args: {
   for (const plan of args.book.plansIn(args.reckoning)) {
     for (const line of [...plan.lines].sort((a, b) => compareIds(a.principal, b.principal))) {
       if (args.world.holdingByPrincipal.get(line.principal) === undefined) continue;
-      const owing = args.book.owingOf(args.reckoning, line.principal);
       lines.push({
         principal: line.principal,
         from: holdingOf(args.world, line.principal).id,
         to: plan.deliverableTo,
-        owed: minor(owing.owed),
+        owed: minor(owedAfterSweep(args.book, args.reckoning, line.principal)),
         state: tributeStateFor({
           book: args.book,
           world: args.world,
@@ -124,7 +146,7 @@ export function levyShortNow(book: Book, reckoning: number): {
   const red: PrincipalId[] = [];
   for (const plan of book.plansIn(reckoning)) {
     for (const line of plan.lines) {
-      const owed = book.owingOf(reckoning, line.principal).owed;
+      const owed = owedAfterSweep(book, reckoning, line.principal);
       if (owed <= 0) continue;
       total += owed;
       red.push(line.principal);

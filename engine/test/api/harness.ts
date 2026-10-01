@@ -43,7 +43,15 @@ export interface HarnessOptions {
   readonly trustEdge?: boolean;
   /** Effectively unlimited by default: a limiter is tested on purpose, not by accident. */
   readonly limits?: Readonly<Record<string, Allowance>>;
+  /**
+   * The daily enrolment quota (`ENROLMENT_QUOTA` in production). Effectively unlimited by default
+   * for the same reason, since most files enrol more than six agents from one loopback address.
+   */
+  readonly quota?: Allowance;
   readonly startTick?: number;
+  /** The SeatBook's leases, for the files that drive the seat policy rather than live with it. */
+  readonly idleTicks?: number;
+  readonly unplayedTicks?: number;
 }
 
 /** Wide allowances, so only the tests that mean to hit the limiter hit it. */
@@ -54,6 +62,9 @@ export const LOOSE_LIMITS: Readonly<Record<string, Allowance>> = Object.freeze({
   discrepancy: { burst: 100_000, windowSeconds: 60 },
   health: { burst: 100_000, windowSeconds: 60 },
 });
+
+/** The enrolment quota, likewise wide. A file that tests the quota passes the real one. */
+export const LOOSE_QUOTA: Allowance = Object.freeze({ burst: 100_000, windowSeconds: 60 });
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   setSpeed('instant');
@@ -66,8 +77,8 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     runtime,
     clock,
     trustEdge: options.trustEdge ?? false,
-    seats: new SeatBook(options.seats ?? 64),
-    limiter: new RateLimiter(options.limits ?? LOOSE_LIMITS),
+    seats: new SeatBook(options.seats ?? 64, options.idleTicks, options.unplayedTicks),
+    limiter: new RateLimiter(options.limits ?? LOOSE_LIMITS, undefined, undefined, options.quota ?? LOOSE_QUOTA),
   });
 
   const server: Server = await new Promise((resolve) => {

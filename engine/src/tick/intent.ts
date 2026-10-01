@@ -167,8 +167,9 @@ export class IntentBook {
     if (live >= MAX_LIVE_INTENTS_PER_PRINCIPAL) {
       return reject(
         'INV-26',
-        `you already hold ${live} standing intents, the published cap. Withdraw one before setting another; ` +
-          `three hands cannot serve more than that anyway.`,
+        `you already hold ${live} standing intents, the published cap. An intent ends only at its own ` +
+          `until_tick or max_runs — there is no verb that withdraws one — so wait for one to end before setting ` +
+          `another; three hands cannot serve more than that anyway.`,
       );
     }
 

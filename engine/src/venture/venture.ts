@@ -523,6 +523,18 @@ export function countersign(
   echoedTakeAtP50: Minor,
   serverTakeAtP50: Minor,
 ): WorldResult<VentureRecord> {
+  // ★ The venture's own state FIRST. A sign against an ABANDONED (or settled) venture used to be
+  // answered with whichever earlier check happened to fail — most often a `your_take_at_p50`
+  // mismatch, because the server's figure for a role the signer never got is 0 — so the agent was
+  // told to re-read its role on a deal that no longer existed. Every check below refuses the same
+  // set of signatures in any order; only the sentence an agent reads first depends on it.
+  if (!isLive(venture)) {
+    return reject(
+      'PROP-V6',
+      `${venture.id} is ${venture.state} and can no longer be signed. Its terms_hash and your ` +
+        'your_take_at_p50 echo were not checked, because there is nothing left to bind.',
+    );
+  }
   if (venture.termsHash === null) {
     return reject('PROP-W1', `${venture.id} has no terms_hash to countersign.`);
   }
@@ -546,9 +558,6 @@ export function countersign(
         'The echo confirms you understand what you are being paid, not just that you saw the terms. ' +
         'Re-read the role: a wage is fixed and senior, a share is a residual and junior.',
     );
-  }
-  if (!isLive(venture)) {
-    return reject('PROP-V6', `${venture.id} is ${venture.state} and can no longer be signed.`);
   }
   venture.countersigned.add(principal);
   return accept(venture);

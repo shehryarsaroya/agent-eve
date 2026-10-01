@@ -91,9 +91,10 @@ var U = (function () {
   // make the record wrong on screen while right on the wire.
   function n(v) {
     if (v === null || v === undefined) return '—';
-    // `minor` is an integer unit. A tile that computes a share of it (elective
-    // halves are `atStake * electiveBps / 10000`) was printing 13,276.75, and
-    // a currency with a fractional part is a currency this world does not have.
+    // `minor` is an integer unit. A tile that computed a share of it was
+    // printing 13,276.75, and a currency with a fractional part is a currency
+    // this world does not have. (That tile multiplied `compactLinks[].atStake`
+    // by `electiveBps` — but `atStake` is already the elective half.)
     return Math.round(Number(v)).toLocaleString('en-US');
   }
   function k(v) {

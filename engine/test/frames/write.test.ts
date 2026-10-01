@@ -85,7 +85,7 @@ describe('publishFrame', () => {
     // Money is integer minor units everywhere else and a frame is not an exception. The
     // canonical serialiser is what enforces that, which is why frames go through it
     // instead of JSON.stringify.
-    const bad = { ...emptyFrame(0, 287, 'h'), meters: { levyShort: 1.5, onAPromise: 0, kept: 0, broken: 0 } };
+    const bad = { ...emptyFrame(0, 287, 'h'), meters: { levyShort: 1.5, onAPromise: 0, keptRecent: 0, brokenRecent: 0 } };
     expect(() => serialiseFrame(bad as never)).toThrow(CanonicalError);
   });
 
@@ -145,15 +145,18 @@ describe('the archive index', () => {
     expect(row.tick).toBe(published['tick']);
     expect(row.stateHash).toBe(published['stateHash']);
     expect(row.levyShort).toBe(published.meters['levyShort']);
-    expect(row.kept).toBe(published.meters['kept']);
-    expect(row.broken).toBe(published.meters['broken']);
+    expect(row.keptRecent).toBe(published.meters['keptRecent']);
+    expect(row.brokenRecent).toBe(published.meters['brokenRecent']);
+    // The span rides with the two sums it qualifies, under the same name on both artifacts.
+    expect(row.recentFromReckoning).toBe(published.meters['recentFromReckoning']);
     expect(row.beats).toBe(published.rundown.length);
     expect(Object.keys(row).sort((a, b) => (a < b ? -1 : 1))).toEqual([
       'beats',
-      'broken',
+      'brokenRecent',
       'file',
-      'kept',
+      'keptRecent',
       'levyShort',
+      'recentFromReckoning',
       'reckoning',
       'stateHash',
       'tick',

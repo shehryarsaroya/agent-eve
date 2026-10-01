@@ -176,6 +176,7 @@ export {
 
 export {
   RAID_SILENCE_MULTIPLE,
+  raidIsInReckoning,
   raidLinesFor,
   raidTickerLine,
   raidViewsFor,

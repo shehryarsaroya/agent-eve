@@ -499,7 +499,7 @@ describe('A13 — the binding reaches the frame', () => {
       tick: 287,
       stateHash: 'h',
       settled: [],
-      meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0 },
+      meters: { levyShort: minor(0), onAPromise: minor(0), keptRecent: 0, brokenRecent: 0 },
       handles: new Map([
         [grantor, 'halcyon' as Handle],
         [delegate, 'vex' as Handle],
@@ -518,7 +518,7 @@ describe('A13 — the binding reaches the frame', () => {
       tick: 287,
       stateHash: 'h',
       settled: [],
-      meters: { levyShort: minor(0), onAPromise: minor(0), kept: 0, broken: 0 },
+      meters: { levyShort: minor(0), onAPromise: minor(0), keptRecent: 0, brokenRecent: 0 },
       handles: new Map([
         [grantor, 'halcyon' as Handle],
         [delegate, 'vex' as Handle],

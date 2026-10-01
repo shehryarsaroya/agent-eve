@@ -16,6 +16,7 @@
  * shown a live fact a non-party agent's own `observe` would not contain.
  */
 
+import { TICKS_PER_RECKONING, reckoningIndex } from '../core/time.js';
 import type { HandId, PrincipalId, SystemId, ZoneTier } from '../core/types.js';
 import type { Minor, Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
@@ -600,15 +601,43 @@ function viewOf(
  */
 
 /**
- * The lines for a frame, biggest demand first, capped by the caller's budget.
+ * Does this raid belong to the Reckoning `tick` is in — live at some point inside it, or resolved
+ * inside it — as of `tick`?
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **THE FRAME WAS RERUNNING OLD RAIDS.** {@link raidLinesFor} used to read the whole book — up to
+ * `MAX_RAID_ROWS` (96) rows, retained across Reckonings — and keep the six biggest. A resolved raid's
+ * demand never shrinks, so the all-time largest won every night: the settled frame for Reckoning 12
+ * (ticks 3456–3743) published `raid:1920:0`, `raid:3288:0`, `raid:3216:0`, `raid:768:0`,
+ * `raid:48:0` and `raid:2928:0` — five of six from earlier nights — and the rundown turned them into
+ * PLUNDER beats for tonight, and the map drew their halos as if they were happening now.
+ *
+ * So a line is about THIS Reckoning: a raid still DEMANDED at `tick` (whenever it was spawned —
+ * a standoff that straddles the boundary is live tonight), or one that RESOLVED at or after the
+ * Reckoning's first tick. Anything spawned after `tick` is excluded too, so a frame rendered late
+ * cannot pick up tomorrow's raid. The id encodes the spawn tick, and the record carries both ticks.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function raidIsInReckoning(raid: RaidRecord, tick: number): boolean {
+  const opens = reckoningIndex(tick) * TICKS_PER_RECKONING;
+  if (raid.spawnedAtTick > tick) return false;
+  return raid.resolvedAtTick === null || (raid.resolvedAtTick >= opens && raid.resolvedAtTick <= tick);
+}
+
+/**
+ * The lines for a frame: **this Reckoning's** raids, live first, then the biggest demand, capped
+ * by the caller's budget.
  *
  * Every raid in the world, not just one principal's — the frame is the viewer's, and a
- * raid is `PUBLIC`. `renderFrame`'s budget does the truncation; ordering here is by the
- * one number that says how much is at stake.
+ * raid is `PUBLIC` — but only those {@link raidIsInReckoning} admits for `tick`: a frame is a
+ * picture of one night, and the PLUNDER beats and the map's halos are built from these lines.
+ * `renderFrame`'s budget does the truncation; ordering here is by the one number that says how
+ * much is at stake.
  */
 export function raidLinesFor(book: Book, tick: number, limit: number): readonly RaidLine[] {
   return book
     .all()
+    .filter((raid) => raidIsInReckoning(raid, tick))
     .map((raid) => ({
       raid: raid.id,
       stage: raid.stage,

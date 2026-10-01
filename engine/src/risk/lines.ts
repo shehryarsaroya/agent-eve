@@ -92,29 +92,48 @@ export interface FrontBand {
   readonly tintBps: Bps;
   /** Ticks until it lands. Negative once it has. A countdown a viewer can follow. */
   readonly ticksToLandfall: number;
-  /** Value the front took at this system, at the pinned marks. Zero before landfall. */
-  readonly took: Minor;
-  /** Goods it took here. Zero before landfall. */
-  readonly tookQty: Qty;
+  /**
+   * Value the front took at this system, valued at the mark at landfall. Zero before landfall, and
+   * zero at a struck system where nothing was standing.
+   *
+   * `null` only when the front has struck and this process never saw the strike — a world booted by
+   * adopting a checkpoint taken after it. The split is not in any hashed table, and a zero there would
+   * be a fabricated "it took nothing" about a public loss (A5′); null says *unknown here*.
+   */
+  readonly took: Minor | null;
+  /** Goods it took here. Zero before landfall; null exactly when {@link took} is. */
+  readonly tookQty: Qty | null;
   /** ≤140 chars, so it can be a ticker line (§11.1). */
   readonly legend: string;
 }
 
+/** What one strike took, per system. Keyed by front id in {@link frontBands}' `took` argument. */
+export type FrontTake = ReadonlyMap<SystemId, { readonly value: Minor; readonly qty: Qty }>;
+
 export function frontBands(
   book: RiskBook,
   tick: number,
-  tookBySystem: ReadonlyMap<SystemId, { readonly value: Minor; readonly qty: Qty }>,
+  /**
+   * What each front's strike took, by front id then system — handed over at the strike by
+   * `RiskWirePort.struck`. It used to be one map keyed by system alone and its only caller passed an
+   * empty one, so every struck band published zero.
+   */
+  took: ReadonlyMap<string, FrontTake>,
   limit: number = MAX_FRONT_BANDS,
 ): readonly FrontBand[] {
   const out: FrontBand[] = [];
   for (const front of book.liveFronts(tick)) {
     const state = stateAt(front, tick, FRONT_COVER_FREEZE_TICKS);
-    const cells =
-      state === 'STRUCK' || state === 'PASSED'
-        ? front.swath.map((c) => ({ system: c.system, tintBps: c.intensityBps }))
-        : coneAt(front, tick).map((c) => ({ system: c.system, tintBps: c.oddsBps }));
+    const struck = state === 'STRUCK' || state === 'PASSED';
+    const cells = struck
+      ? front.swath.map((c) => ({ system: c.system, tintBps: c.intensityBps }))
+      : coneAt(front, tick).map((c) => ({ system: c.system, tintBps: c.oddsBps }));
+    const takenByThisFront = took.get(front.id);
     for (const cell of [...cells].sort((a, b) => b.tintBps - a.tintBps || compareIds(a.system, b.system))) {
-      const took = tookBySystem.get(cell.system);
+      const here = takenByThisFront?.get(cell.system);
+      // Before landfall nothing has been taken: zero, honestly. After it, the figures the strike
+      // reported — zero where nothing stood — or null when this process never saw the strike.
+      const witnessed = !struck || takenByThisFront !== undefined;
       out.push({
         front: front.id,
         state,
@@ -122,8 +141,8 @@ export function frontBands(
         system: cell.system,
         tintBps: cell.tintBps,
         ticksToLandfall: front.landfallTick - tick,
-        took: took?.value ?? (0 as Minor),
-        tookQty: took?.qty ?? (0 as Qty),
+        took: witnessed ? (here?.value ?? (0 as Minor)) : null,
+        tookQty: witnessed ? (here?.qty ?? (0 as Qty)) : null,
         legend: bandLegend(state, cell.system, cell.tintBps, front.landfallTick - tick).slice(0, 140),
       });
     }
