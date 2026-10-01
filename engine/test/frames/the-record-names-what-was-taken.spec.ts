@@ -188,10 +188,16 @@ describe('★ the deed line names WHAT WAS WITHHELD, never the whole promise (A5
       if (row['defaulted'] !== true || row['venture'] === null) continue;
       const walked = /walked away from (?:all )?(\d+)/.exec(String(row['deed']));
       if (walked === null) continue;
+      // ★ `magnitude`, not `atStake`: the launch quickfixes renamed the beat's size (HARD RULE 4 —
+      // `CompactLink.atStake` and `DocketCard.atStake` already meant something else), and this read
+      // still named the old key. It was never noticed because no seeded world had produced a PARTIAL
+      // default on this seed until 41's four-role branch moved the trajectory — and then it compared
+      // against `Number(undefined)`, which no figure is ever `<=`. A missing key now fails by name.
+      expect(typeof row['magnitude'], 'a settlement beat carries its size').toBe('number');
       expect(
         Number(walked[1]),
         `${String(row['deed'])} — an accusation may never name more than was at stake`,
-      ).toBeLessThanOrEqual(Number(row['atStake']));
+      ).toBeLessThanOrEqual(Number(row['magnitude']));
     }
     // Reported rather than asserted: whether this seed happened to produce a PARTIAL default is not
     // this test's subject, and pinning it would make the file fail on a calibration change.

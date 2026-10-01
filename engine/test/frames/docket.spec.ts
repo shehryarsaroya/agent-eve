@@ -27,10 +27,10 @@ import { MAX_DOCKET_CARDS } from '../../src/frames/contract.js';
 import { Runtime } from '../../src/sim/runtime.js';
 
 /** A world that actually does something, so the docket has something to be about. */
-function world(seed: string): Runtime {
+function world(seed: string, size = 6): Runtime {
   setSpeed('instant');
   const rt = new Runtime({ seed });
-  const cast = new HeuristicCast(rt, { size: 6 });
+  const cast = new HeuristicCast(rt, { size });
   cast.seat(seed);
   for (let i = 0; i < 700; i += 1) {
     for (const a of cast.decide(rt.engine.tick + 1, seed)) rt.engine.submit(a);
@@ -94,6 +94,19 @@ describe("tomorrow's docket is built from what is actually riding", () => {
     'docket-a', 'docket-b', 'docket-c', 'docket-d', 'docket-e', 'docket-g',
   ] as const;
 
+  // ── ★ AT 41 THE STRANGER SCAN RUNS AT TWELVE MEMBERS, AND THE REASON IS ARITHMETIC ──
+  //
+  // A four-role venture introduces four principals to each other at once — six pairings in one
+  // settlement — and a six-member world has fifteen. Measured with the cast as it now plays: **0 of 26**
+  // `docket-*` seeds at six members carry a never-dealt pairing on the docket at tick 700, against
+  // 2 of 16 with the four-role branch off; at **twelve**, production's cast size, docket-d, -r, -w and -x
+  // all do. Nothing about strangers changed in the renderer or the oracle: a small world simply
+  // finishes introducing its members by its second Reckoning, and this assertion needs a world that
+  // has not. The mutation proof is unchanged — hardcode `priorDealings` to `HELD` and the card these
+  // seeds produce reads "dealt before" about two agents who never met.
+  const STRANGER_SIZE = 12;
+  const STRANGER_SEEDS = ['docket-d', 'docket-r', 'docket-w', 'docket-x', ...CANDIDATE_SEEDS] as const;
+
   it('orders by stakes descending, because the biggest thing riding leads', () => {
     // Ordering holds on every seed, so it is asserted on the first one regardless.
     const ordered = world(CANDIDATE_SEEDS[0]);
@@ -107,8 +120,8 @@ describe("tomorrow's docket is built from what is actually riding", () => {
     // have dealt before, and it held" about two agents who had never met — a false claim about real
     // agents on a public frame, which is A5′ in the one place nobody would look for it.
     let found: { seed: string; never: number } | null = null;
-    for (const seed of CANDIDATE_SEEDS) {
-      const cards = world(seed).reckoningFrame()?.docket ?? [];
+    for (const seed of STRANGER_SEEDS) {
+      const cards = world(seed, STRANGER_SIZE).reckoningFrame()?.docket ?? [];
       const never = cards.filter((c) => /never dealt/.test(c.tension)).length;
       if (never > 0) {
         found = { seed, never };
@@ -117,7 +130,7 @@ describe("tomorrow's docket is built from what is actually riding", () => {
     }
     expect(
       found,
-      `none of ${CANDIDATE_SEEDS.length} seeds produced a docket with a never-dealt pairing, so this ` +
+      `none of ${String(STRANGER_SEEDS.length)} seeds produced a docket with a never-dealt pairing, so this ` +
         `assertion cannot discriminate. Either the cast stopped letting members meet as strangers, or ` +
         `the seed list needs extending — do not delete the assertion.`,
     ).not.toBeNull();

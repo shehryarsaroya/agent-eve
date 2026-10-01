@@ -2970,6 +2970,13 @@ function affordancesFor(
   {
     const stage = hands.find((h) => h.state === 'IDLE')?.location ?? hands[0]?.location;
     if (stage !== undefined && tierOf(runtime.world.map, stage) !== 'COMMONS') {
+      // The shared role-count rule rides on the FIRST create row only, like every other kind's — the
+      // loop above has normally spent it, so this row points at it; it carries it itself only when no
+      // other create was affordable.
+      const roleRule = firstCreate
+        ? ` ${CREATE_ROLE_RULE}`
+        : ' The rule about that count is on the first create affordance.';
+      firstCreate = false;
       eligible.push({
         verb: 'create',
         params: { kind: 'SIEGE', stage, target_system: stage, elective_bps: minElectiveBps('SIEGE') },
@@ -2979,7 +2986,7 @@ function affordancesFor(
         what_it_forecloses:
           `nothing is locked: SIEGE is a top-yield kind and legally un-escrowable, so all ` +
           `${String(probeElective('SIEGE'))} of it is elective — a promise you are asked for at the Reckoning, ` +
-          `and staying silent is a permanent public default. ${probeRoles('SIEGE')} It needs FOUR principals, ` +
+          `and staying silent is a permanent public default. ${probeRoles('SIEGE')}${roleRule} It needs FOUR principals, ` +
           'one per role, inside the formation window: you cannot fill it alone at any capital, which is the ' +
           'point (§7.2). It is a hostile act, so it is legal only outside the Commons, and it is aimed at the ' +
           `system you name. ${countersignWarning(tick)}`,
