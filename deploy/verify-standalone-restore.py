@@ -19,6 +19,7 @@ import urllib.request
 parser = argparse.ArgumentParser()
 parser.add_argument('--engine-dir', default='/opt/agenteve', help='tree containing engine/ and deploy/')
 parser.add_argument('--empty', action='store_true', help='boot from genesis on an empty database instead of a restore')
+parser.add_argument('--cast', type=int, default=None, help='house cast size to boot with (default: the env file\'s)')
 arguments = parser.parse_args()
 root = Path(arguments.engine_dir)
 database = 'compact_restore_check'
@@ -52,6 +53,8 @@ try:
         env.pop(name, None)
     if backup is None:
         env.update(COMPACT_SEED='preflight-genesis-check')
+    if arguments.cast is not None:
+        env.update(COMPACT_CAST=str(arguments.cast))
     with open('/var/lib/agenteve/restore-check.log', 'w') as log:
         process = subprocess.Popen(['/usr/bin/node', str(root / 'deploy/run-standalone.mjs')], env=env, stdout=log, stderr=log)
         # Hydration is synchronous, so a booting engine can accept a connection and not answer it

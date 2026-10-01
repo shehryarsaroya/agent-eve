@@ -77,7 +77,7 @@ npm ci --omit=dev --no-audit --no-fund --loglevel=error
 REMOTE
 
 say "3/7 pre-flight: the new build boots a world from genesis on an empty database"
-"${SSH[@]}" 'python3 /opt/agenteve-next/deploy/verify-standalone-restore.py --empty --engine-dir /opt/agenteve-next'
+"${SSH[@]}" "python3 /opt/agenteve-next/deploy/verify-standalone-restore.py --empty --engine-dir /opt/agenteve-next${CAST:+ --cast $CAST}"
 
 say "4/7 migrate, then check every table is accounted for"
 "${SSH[@]}" '( set -a; . /etc/agenteve/migrate.env; set +a; /usr/bin/node /opt/agenteve-next/engine/dist/db/migrate.js >/dev/null )'
