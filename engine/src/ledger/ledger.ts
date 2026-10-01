@@ -136,6 +136,8 @@ export class Ledger {
    * move; a differential test asserts the new answer equals the old one lot-for-lot.
    */
   private readonly lotsByAccount = new Map<AccountId, Set<LotId>>();
+  /** {@link allLots}' sorted answer, or null when the lot set changed since it was built. Derived, never hashed. */
+  private sortedLots: readonly Lot[] | null = null;
   private readonly postings: Posting[] = [];
   private readonly batches: AppliedBatch[] = [];
   /**
@@ -264,6 +266,7 @@ export class Ledger {
 
     this.lots.clear();
     this.lotsByAccount.clear();
+    this.sortedLots = null;
     for (const lot of state.lots) {
       this.lots.set(lot.id, { ...lot });
       this.indexLot(lot.account, lot.id);
@@ -381,10 +384,15 @@ export class Ledger {
       );
     }
 
+    // ⚑ A loop, never `push(...rows)`: spreading an array into a call passes every element as an
+    // argument, and V8 throws `Maximum call stack size exceeded` past roughly 150,000 of them. The
+    // Season 1 scale measurement put a 1,000-principal world past that by tick ~400, so adopting any
+    // checkpoint of a world that size threw here — and adoption falls back to a replay from genesis,
+    // which at season scale is hours of 503s. `test/ledger/hydrate-at-scale.test.ts` hydrates 600,000.
     this.postings.length = 0;
-    this.postings.push(...postings);
+    for (const p of postings) this.postings.push(p);
     this.batches.length = 0;
-    this.batches.push(...applied);
+    for (const b of applied) this.batches.push(b);
     this.hydrated = true;
   }
 
@@ -413,8 +421,24 @@ export class Ledger {
     return l;
   }
 
+  /**
+   * Every lot, in canonical id order — **sorted once per change to the lot SET, not once per call.**
+   *
+   * Six readers walk it every tick (INV-3, INV-4, INV-7's mirror, the market's MKT-1, the state table's
+   * capture, the risk port), and lots accumulate with a world's age: the Season 1 scale measurement
+   * found a 1,000-principal world past 20,000 lots by tick 200, where this sort alone was a sixth of
+   * the tick. The order depends only on ids and the set only changes where a lot is opened, split off
+   * or deleted (and on `restoreTo`), so those four sites drop the cache and every other call reuses
+   * it. A lot's other fields — `qty`, `location`, `state`, its pledge — mutate in place on the same
+   * object the array holds, exactly as they did when every call built a fresh array. Frozen, so a
+   * reader that tried to sort or splice the shared answer fails loudly instead of reordering everyone
+   * else's.
+   */
   allLots(): readonly Lot[] {
-    return [...this.lots.values()].sort((a, b) => compareIds(a.id, b.id));
+    if (this.sortedLots === null) {
+      this.sortedLots = Object.freeze([...this.lots.values()].sort((a, b) => compareIds(a.id, b.id)));
+    }
+    return this.sortedLots;
   }
 
   private indexLot(account: AccountId, id: LotId): void {
@@ -588,6 +612,7 @@ export class Ledger {
     if (this.lots.has(id)) throw new LedgerError(`duplicate lot id ${id}`);
     lot.qty = qty(lot.qty - args.qty);
     this.indexLot(lot.account, id);
+    this.sortedLots = null;
     this.lots.set(id, {
       id,
       account: lot.account,
@@ -653,6 +678,7 @@ export class Ledger {
     for (const open of draft.opens) {
       if (this.lots.has(open.id)) throw new LedgerError(`duplicate lot id ${open.id}`);
       this.indexLot(open.account, open.id);
+      this.sortedLots = null;
       this.lots.set(open.id, {
         id: open.id,
         account: open.account,
@@ -676,6 +702,7 @@ export class Ledger {
       if (l.qty === 0 && l.encumbranceId === null) {
         this.lots.delete(l.id);
         this.unindexLot(l.account, l.id);
+        this.sortedLots = null;
       }
     }
     if (draft.supply !== null) {

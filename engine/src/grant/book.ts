@@ -59,9 +59,10 @@ export const GRANT_SPENDS_PER_PRINCIPAL = 32;
 export const MAX_GRANT_SPENDS = GRANT_SPENDS_PER_PRINCIPAL * MAX_PRINCIPALS;
 
 /**
- * A cap on the release journal (INV-26), and it is **half** the spend cap on purpose: a release
+ * A cap on the release journal (INV-26), and it is **the spend cap itself** on purpose: a release
  * always names a spend that is already in the journal, so there can never be more releases than
- * spends, and a bound larger than that would be a bound that cannot bind.
+ * spends, and a bound larger than that would be a bound that cannot bind. (This note said "half"
+ * while the code said equal; the reasoning is the code's.)
  */
 export const MAX_GRANT_RELEASES = MAX_GRANT_SPENDS;
 

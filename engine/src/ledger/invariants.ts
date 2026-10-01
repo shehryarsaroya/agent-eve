@@ -45,15 +45,70 @@ function v(id: string, message: string, tick: number): InvariantViolation {
  * INV-1 — every value-moving event produces ≥2 postings summing to zero, or
  * exactly one ISSUE/RETIRE against a named faucet/sink.
  *
- * Re-checks every batch the ledger has applied, using the *same* function
+ * Checks every batch the ledger has applied, using the *same* function
  * `Ledger.apply` used to admit it. That is deliberate: an audit with its own
  * second implementation of the rule is an audit that can disagree with the engine,
  * and a disagreement about the rules is scar #1.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * **EACH BATCH ONCE, NOT EVERY BATCH EVERY TICK — INV-7's PATTERN, FOR INV-7's REASON.**
+ *
+ * This re-checked the whole batch log at every tick close, so its cost grew with the
+ * world's AGE: the Season 1 scale measurement (`docs/design/SCALE-2026-10-01.md`) found a
+ * 1,000-principal world adding a few hundred batches a tick, which by the end of a season
+ * is a re-read of millions of rows sixty times an hour to prove that nothing had moved —
+ * and a replay from genesis pays it quadratically.
+ *
+ * What a re-check of an OLD batch could still find is nothing: `checkBatchForm` reads the
+ * batch and the KIND of each account it names, a batch is never edited after it enters the
+ * log, and an account's kind never changes. So a batch's verdict is fixed the moment it is
+ * verified, and the prefix of verified batches is carried between ticks on one condition —
+ * that the log provably still holds the batches that were verified. Two things can break
+ * that, and both are detected rather than assumed:
+ *
+ *   1. `restoreTo` truncates the log positionally when a tick aborts;
+ *   2. `hydrateAppendOnly` REPLACES it from the durable record — pushing batches that never
+ *      went through `apply`'s check, which is the case this invariant most exists for.
+ *
+ * So the boundary is re-identified at every call by length AND by the **identity** of the
+ * batch object at the last verified index (INV-7 compares an `eventId`; an object is
+ * stronger, because a replacement that lands on the same length with the same ids is still
+ * a different object). Any shrink or replacement forces a full re-check. The prefix only
+ * advances over a pass that found nothing, so a bad batch is reported on every call until
+ * it is gone, exactly as before. Verification state, never game state: a `WeakMap` keyed on
+ * the ledger, outside `state_hash`. `test/ledger/inv1-incremental.spec.ts` pins all of it.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
+interface BatchPrefix {
+  count: number;
+  /** The batch object at `count - 1`, by identity. */
+  boundary: object | null;
+}
+
+const BATCH_PREFIX = new WeakMap<Ledger, BatchPrefix>();
+
+/** Full re-checks vs resumed ones. Read by the test that proves this is actually incremental. */
+export const inv1Stats = { fullRechecks: 0, incremental: 0 };
+
 export function checkInv1(l: Ledger, tick: number, sinceIndex = 0): InvariantViolation[] {
   const out: InvariantViolation[] = [];
   const batches = l.allBatches();
-  for (let i = sinceIndex; i < batches.length; i += 1) {
+
+  let prefix = BATCH_PREFIX.get(l);
+  const intact =
+    prefix !== undefined &&
+    prefix.count <= batches.length &&
+    (prefix.count === 0 || batches[prefix.count - 1] === prefix.boundary);
+  if (prefix === undefined || !intact) {
+    prefix = { count: 0, boundary: null };
+    BATCH_PREFIX.set(l, prefix);
+    inv1Stats.fullRechecks += 1;
+  } else {
+    inv1Stats.incremental += 1;
+  }
+
+  const from = Math.max(sinceIndex, prefix.count);
+  for (let i = from; i < batches.length; i += 1) {
     const b = batches[i];
     if (b === undefined) continue;
     out.push(
@@ -62,6 +117,12 @@ export function checkInv1(l: Ledger, tick: number, sinceIndex = 0): InvariantVio
         { get: (id) => l.account(id) },
       ).map((problem) => v('INV-1', `event ${b.eventId}: ${problem.message}`, tick)),
     );
+  }
+  // Certify only what this pass actually read, and only when it was clean. A caller that
+  // skipped ahead (`sinceIndex` past the prefix) left a gap nobody checked.
+  if (out.length === 0 && sinceIndex <= prefix.count) {
+    prefix.count = batches.length;
+    prefix.boundary = batches.length === 0 ? null : (batches[batches.length - 1] ?? null);
   }
   return out;
 }
@@ -276,6 +337,88 @@ const PREFIX = new WeakMap<Ledger, VerifiedPrefix>();
 /** How many full recomputes have been forced. Read by the soak test, not by the engine. */
 export const inv7Stats = { fullRecomputes: 0, incremental: 0 };
 
+/**
+ * The verified prefix of the BATCH log's supply legs — Mirrors 3 and 4's sums, carried for the posting
+ * prefix's reason and on the posting prefix's condition.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * The posting prefix above made Mirror 1 incremental in 2026-07; Mirrors 3 and 4 kept walking **every
+ * batch ever applied, every tick** to re-add the faucet, sink and endowment legs. The Season 1 scale
+ * measurement (`docs/design/SCALE-2026-10-01.md` §5) found that walk at an eighth of a 300-principal
+ * tick by age 1,000 and growing with the log, after INV-1's own whole-log re-read was fixed — so it is
+ * the same O(history) term, one function over.
+ *
+ * Nothing about what is compared changes. Every faucet's and sink's cached balance, every `movedQty`
+ * accumulator and every endowment counter is still compared, every tick, against sums recomputed from
+ * the append-only log by a road the cached values never touch. What is carried is the SUM over batches
+ * already folded — independently recomputed at the tick they were folded — and it is reused only while
+ * the log provably still holds those batches: same length or longer, and the very same batch object at
+ * the boundary (INV-1's identity test, which a rehydrate that rebuilt the log from the durable record
+ * fails even on the same length and the same ids). A shrink or a replacement folds from zero.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+interface SupplyPrefix {
+  count: number;
+  boundary: object | null;
+  readonly issuedMinor: Map<string, number>;
+  readonly movedQtyByAccount: Map<string, number>;
+  readonly retiredFrom: Map<string, number>;
+  readonly burnedFrom: Map<string, number>;
+}
+
+const SUPPLY_PREFIX = new WeakMap<Ledger, SupplyPrefix>();
+
+/** Full supply-leg folds vs resumed ones. Read by the test that proves Mirror 3 is incremental. */
+export const inv7SupplyStats = { fullRecomputes: 0, incremental: 0 };
+
+function supplyPrefixOf(l: Ledger): SupplyPrefix {
+  const batches = l.allBatches();
+  let prefix = SUPPLY_PREFIX.get(l);
+  const intact =
+    prefix !== undefined &&
+    prefix.count <= batches.length &&
+    (prefix.count === 0 || batches[prefix.count - 1] === prefix.boundary);
+  if (prefix === undefined || !intact) {
+    prefix = {
+      count: 0,
+      boundary: null,
+      issuedMinor: new Map(),
+      movedQtyByAccount: new Map(),
+      retiredFrom: new Map(),
+      burnedFrom: new Map(),
+    };
+    SUPPLY_PREFIX.set(l, prefix);
+    inv7SupplyStats.fullRecomputes += 1;
+  } else {
+    inv7SupplyStats.incremental += 1;
+  }
+  const { issuedMinor, movedQtyByAccount, retiredFrom, burnedFrom } = prefix;
+  for (let i = prefix.count; i < batches.length; i += 1) {
+    const b = batches[i];
+    if (b === undefined || b.supply === null) continue;
+    for (const p of b.postings) {
+      const leg = postingLedger(p);
+      if (leg === 'CURRENCY') {
+        issuedMinor.set(b.supply.account, (issuedMinor.get(b.supply.account) ?? 0) - p.amountMinor);
+        if (b.supply.direction === 'RETIRE') {
+          // `amountMinor` is negative on a retirement leg; accumulate what LEFT.
+          retiredFrom.set(p.account, (retiredFrom.get(p.account) ?? 0) - p.amountMinor);
+        }
+      } else if (leg === 'GOODS' && p.good !== null && p.amountQty !== null) {
+        const k = `${b.supply.account}\u0000${p.good}`;
+        movedQtyByAccount.set(k, (movedQtyByAccount.get(k) ?? 0) + Math.abs(p.amountQty));
+        if (b.supply.direction === 'RETIRE' && p.good === ENDOWMENT_GOOD) {
+          // `amountQty` is negative on a destruction leg; accumulate what LEFT.
+          burnedFrom.set(p.account, (burnedFrom.get(p.account) ?? 0) - p.amountQty);
+        }
+      }
+    }
+  }
+  prefix.count = batches.length;
+  prefix.boundary = batches.length === 0 ? null : (batches[batches.length - 1] ?? null);
+  return prefix;
+}
+
 export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
   const out: InvariantViolation[] = [];
   const postings = l.allPostings();
@@ -346,32 +489,13 @@ export function checkInv7(l: Ledger, tick: number): InvariantViolation[] {
   }
 
   // Mirror 3: faucet and sink accumulators against the batches that moved supply.
-  // Mirror 4 rides this same walk — see below the account loop.
-  const issuedMinor = new Map<string, number>();
-  const movedQtyByAccount = new Map<string, number>();
-  const retiredFrom = new Map<string, number>();
+  // Mirror 4 rides this same walk — see below the account loop. The walk is the carried
+  // supply prefix plus whatever batches arrived since (`supplyPrefixOf`); the comparisons
+  // below still run against every account, every tick.
+  const supply = supplyPrefixOf(l);
+  const { issuedMinor, movedQtyByAccount, retiredFrom } = supply;
   /** Units of `ENDOWMENT_GOOD` destroyed out of each account. Mirror 4's goods half. */
-  const burnedFrom = new Map<string, number>();
-  for (const b of l.allBatches()) {
-    if (b.supply === null) continue;
-    for (const p of b.postings) {
-      const leg = postingLedger(p);
-      if (leg === 'CURRENCY') {
-        issuedMinor.set(b.supply.account, (issuedMinor.get(b.supply.account) ?? 0) - p.amountMinor);
-        if (b.supply.direction === 'RETIRE') {
-          // `amountMinor` is negative on a retirement leg; accumulate what LEFT.
-          retiredFrom.set(p.account, (retiredFrom.get(p.account) ?? 0) - p.amountMinor);
-        }
-      } else if (leg === 'GOODS' && p.good !== null && p.amountQty !== null) {
-        const k = `${b.supply.account}\u0000${p.good}`;
-        movedQtyByAccount.set(k, (movedQtyByAccount.get(k) ?? 0) + Math.abs(p.amountQty));
-        if (b.supply.direction === 'RETIRE' && p.good === ENDOWMENT_GOOD) {
-          // `amountQty` is negative on a destruction leg; accumulate what LEFT.
-          burnedFrom.set(p.account, (burnedFrom.get(p.account) ?? 0) - p.amountQty);
-        }
-      }
-    }
-  }
+  const burnedFrom = supply.burnedFrom;
   for (const a of l.allAccounts()) {
     if (isWorldAccount(a.kind)) continue;
     const expected = issuedMinor.get(a.id) ?? 0;

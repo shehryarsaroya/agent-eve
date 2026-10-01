@@ -94,7 +94,14 @@ describe('the scale harness, at forty principals across one Reckoning', () => {
     for (const book of ['submission window', 'fill queue', 'elections', 'grants', 'open orders', 'levy ballots', 'charge ballots']) {
       expect(books).toContain(book);
     }
-    for (const p of row.pressure) expect(p.size, p.book).toBeLessThanOrEqual(p.cap);
+    for (const p of row.pressure) {
+      expect(p.size, p.book).toBeLessThanOrEqual(p.peak);
+      expect(p.peak, p.book).toBeLessThanOrEqual(p.cap);
+    }
+    // The window is empty after every tick and full just before one: only a peak can see it.
+    const window = row.pressure.find((p) => p.book === 'submission window');
+    expect(window?.size).toBe(0);
+    expect(window?.peak ?? 0).toBeGreaterThan(0);
     expect(row.peakPressureBps).toBeLessThan(10_000);
     expect(row.journal.maxEventsPerTick).toBeGreaterThan(0);
     expect(row.journal.maxEventsPerTick).toBeLessThanOrEqual(MAX_BUFFERED_EVENTS);

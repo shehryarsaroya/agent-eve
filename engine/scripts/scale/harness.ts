@@ -140,12 +140,20 @@ export interface ScaleRow {
   };
   readonly stateHash: string;
   /**
-   * Every population-sized book against its cap at the end of the run, fullest first
-   * (`Runtime.capPressure`). The Season 1 audit found six books that bound on legitimate play at a few
-   * hundred principals; this is the column that would have shown each one before it bound.
+   * Every population-sized book against its cap, fullest PEAK first (`Runtime.capPressure`). `peak` is
+   * the most rows the book held at any point the harness looked — after the submissions land and
+   * after the tick resolves, every tick — because a book binds at its peak, and the submission window
+   * is empty at the end of every tick and at its fullest just before one. The Season 1 audit found six
+   * books that bound on legitimate play at a few hundred principals; this is the column that would
+   * have shown each one before it bound.
    */
-  readonly pressure: readonly { readonly book: string; readonly size: number; readonly cap: number }[];
-  /** The most rows any book reached, as a share of its cap, in basis points. */
+  readonly pressure: readonly {
+    readonly book: string;
+    readonly size: number;
+    readonly peak: number;
+    readonly cap: number;
+  }[];
+  /** The highest peak any book reached, as a share of its cap, in basis points. */
   readonly peakPressureBps: number;
   /** Constellations growth opened during the run. */
   readonly grown: number;
@@ -220,6 +228,10 @@ export function measurePopulation(options: ScaleOptions): ScaleRow {
   let observeRow: ScaleRow['observe'] | null = null;
   const eventsAtStart = runtime.events.eventCount;
   let eventsBefore = eventsAtStart;
+  const peaks = new Map<string, number>();
+  const notePressure = (): void => {
+    for (const p of runtime.capPressure()) peaks.set(p.book, Math.max(peaks.get(p.book) ?? 0, p.size));
+  };
   const postingsAtStart = runtime.ledger.allPostings().length;
 
   for (let i = 0; i < options.ticks; i += 1) {
@@ -229,10 +241,12 @@ export function measurePopulation(options: ScaleOptions): ScaleRow {
     decideMs += clock() - t;
     actions += decided.length;
     for (const action of decided) runtime.engine.submit(action);
+    notePressure(); // the window is fullest now, just before the tick drains it
 
     t = clock();
     const report = runtime.runTick();
     const ms = clock() - t;
+    notePressure();
     tickMs.push(ms);
     options.onTick?.(report.tick, ms);
     if (report.halted) {
@@ -270,9 +284,11 @@ export function measurePopulation(options: ScaleOptions): ScaleRow {
   } catch (error: unknown) {
     frameError ??= `live: ${error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error)}`;
   }
-  const pressure = [...runtime.capPressure()].sort(
-    (a, b) => b.size / Math.max(1, b.cap) - a.size / Math.max(1, a.cap) || (a.book < b.book ? -1 : 1),
-  );
+  notePressure();
+  const pressure = runtime
+    .capPressure()
+    .map((p) => ({ book: p.book, size: p.size, peak: peaks.get(p.book) ?? p.size, cap: p.cap }))
+    .sort((a, b) => b.peak * Math.max(1, a.cap) - a.peak * Math.max(1, b.cap) || (a.book < b.book ? -1 : 1));
   const growthNow = runtime.growthReadingAt();
   const memory = process.memoryUsage();
   const ran = tickMs.length;
@@ -320,7 +336,8 @@ export function measurePopulation(options: ScaleOptions): ScaleRow {
     },
     stateHash: runtime.engine.stateHash,
     pressure,
-    peakPressureBps: pressure.length === 0 ? 0 : Math.trunc(((pressure[0]?.size ?? 0) * 10_000) / Math.max(1, pressure[0]?.cap ?? 1)),
+    peakPressureBps:
+      pressure.length === 0 ? 0 : Math.trunc(((pressure[0]?.peak ?? 0) * 10_000) / Math.max(1, pressure[0]?.cap ?? 1)),
     grown: runtime.world.map.grown.length,
     growth: { qualified: growthNow.qualified, needed: growthNow.needed },
   };

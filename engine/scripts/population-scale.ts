@@ -17,6 +17,7 @@
  *     npx tsx scripts/population-scale.ts --sample 120          # observe a stride sample, extrapolate
  *     npx tsx scripts/population-scale.ts --path reference      # the per-principal build, for "before"
  *     npx tsx scripts/population-scale.ts --json out.json
+ *     npx tsx scripts/population-scale.ts --clock cpu           # CPU time: for a shared, loaded box
  *
  * 300 ticks crosses one settlement (phase 287), so every row reports a Reckoning batch and the burst
  * of observations the tick after it. A row marked `*` in the burst column was extrapolated from a
@@ -42,6 +43,17 @@ const wakeEvery = Number(arg('wake') ?? 18);
 const path = arg('path') ?? 'fragments';
 const jsonOut = arg('json');
 const progress = process.argv.includes('--progress');
+/**
+ * `--clock cpu` times with this process's own CPU time instead of the wall. On a shared box the wall
+ * counts every millisecond the scheduler gave to somebody else — the Season 1 measurements were taken
+ * at a load average above 200 — and CPU time does not. `wall` (the default) is what a dedicated host
+ * would see; on an idle machine the two agree to within GC helper threads.
+ */
+const clockName = arg('clock') ?? 'wall';
+const cpuClock = (): number => {
+  const used = process.cpuUsage();
+  return (used.user + used.system) / 1000;
+};
 
 /** The server's own path: shared fragments once per tick, a per-principal envelope (§15.5). */
 const fragmentObserveBody: ObserveBody = (runtime, principal) => observationBody(wakeInput(runtime, principal));
@@ -49,7 +61,7 @@ const observe = path === 'reference' ? referenceObserveBody : fragmentObserveBod
 
 const rows: ScaleRow[] = [];
 process.stdout.write(
-  `\nPOPULATION SCALE — ${String(ticks)} ticks from genesis, wake every ${String(wakeEvery)} ticks, observe path: ${path}\n\n`,
+  `\nPOPULATION SCALE — ${String(ticks)} ticks from genesis, wake every ${String(wakeEvery)} ticks, observe path: ${path}, clock: ${clockName}\n\n`,
 );
 process.stdout.write(`${ROW_HEADER}\n`);
 for (const population of populations) {
@@ -59,6 +71,7 @@ for (const population of populations) {
     wakeEvery,
     observe,
     ...(sample === undefined ? {} : { observeSample: sample }),
+    ...(clockName === 'cpu' ? { clock: cpuClock } : {}),
     ...(progress
       ? {
           onTick: (tick: number, ms: number) => {
@@ -86,7 +99,7 @@ for (const r of rows) {
       `\n      growth: ${String(r.growth.qualified)} of ${String(r.growth.needed)} qualified · ${String(r.grown)} grown` +
       `\n      fullest books: ${r.pressure
         .slice(0, 5)
-        .map((p) => `${p.book} ${String(p.size)}/${String(p.cap)}`)
+        .map((p) => `${p.book} peak ${String(p.peak)}/${String(p.cap)}`)
         .join(' · ')}` +
       '\n',
   );
