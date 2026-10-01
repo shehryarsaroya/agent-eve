@@ -78,6 +78,7 @@ import {
   CastTransportError,
   DEFAULT_CAST_MODEL,
   describeFailure,
+  OPENAI_COMPLETIONS_URL,
   type CastTransport,
   type CompletionReply,
 } from './transport.js';
@@ -724,8 +725,37 @@ function redactLine(line: string): string {
  * listed and everything else is off.
  */
 export function llmCastEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const raw = (env['COMPACT_CAST_LLM'] ?? '').trim().toLowerCase();
+  return isAffirmative(env['COMPACT_CAST_LLM']);
+}
+
+/** The listed affirmatives, and nothing else, mean "on". See {@link llmCastEnabled}. */
+function isAffirmative(value: string | undefined): boolean {
+  const raw = (value ?? '').trim().toLowerCase();
   return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+}
+
+/**
+ * The completions endpoint, or `null` when one was given and is not acceptable.
+ *
+ * Unset means OpenAI's. **Set but unusable never falls back to the default**: the cast's
+ * key belongs to whichever provider the operator meant, and quietly sending it to a
+ * different one would hand a credential to a third party over a typo. So a value
+ * that is not https — or plain http on loopback, which is how a local proxy or a test is
+ * reached — turns the LLM cast off at `createCast`, loudly, instead.
+ */
+export function castUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = (env['COMPACT_CAST_URL'] ?? '').trim();
+  if (raw.length === 0) return OPENAI_COMPLETIONS_URL;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.username.length > 0 || url.password.length > 0) return null;
+  if (url.protocol === 'https:') return url.href;
+  const loopback = url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]';
+  return url.protocol === 'http:' && loopback ? url.href : null;
 }
 
 /** Read an integer from the environment, or fall back. Never throws, never returns NaN. */
@@ -765,6 +795,10 @@ function envIntAllowingZero(env: NodeJS.ProcessEnv, name: string, fallback: numb
 export interface CastEnvSettings {
   readonly enabled: boolean;
   readonly model: string;
+  /** `COMPACT_CAST_URL`, or `null` when it was set to something unusable. See {@link castUrlFromEnv}. */
+  readonly url: string | null;
+  /** `COMPACT_CAST_STREAM`: ask for an event stream. Required by providers that refuse anything else. */
+  readonly stream: boolean;
   readonly idle: CastIdlePolicy;
   readonly wakeGapTicks: number;
   readonly deadlineTicks: number;
@@ -799,6 +833,8 @@ export function castSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): CastE
   return {
     enabled: llmCastEnabled(env),
     model: model.length > 0 ? model : DEFAULT_CAST_MODEL,
+    url: castUrlFromEnv(env),
+    stream: isAffirmative(env['COMPACT_CAST_STREAM']),
     idle: (env['COMPACT_CAST_LLM_IDLE'] ?? '').trim().toLowerCase() === 'quiet' ? 'quiet' : 'heuristic',
     wakeGapTicks: envInt(env, 'COMPACT_CAST_WAKE_GAP_TICKS', DEFAULT_WAKE_GAP_TICKS),
     deadlineTicks: envInt(env, 'COMPACT_CAST_DEADLINE_TICKS', DEFAULT_DEADLINE_TICKS),

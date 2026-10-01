@@ -20,7 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/agenteve/frames
+ReadWritePaths=/var/lib/agenteve/frames /var/lib/agenteve/cast
 UMask=0027
 
 [Install]

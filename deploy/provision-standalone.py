@@ -20,6 +20,10 @@ os.chmod('/etc/agenteve', 0o700)
 os.chmod('/var/lib/agenteve/backups', 0o700)
 run(['chown', 'agenteve:www-data', '/var/lib/agenteve/frames'])
 os.chmod('/var/lib/agenteve/frames', 0o2750)
+# The LLM cast's private memory. Not under frames/, which nginx serves publicly.
+Path('/var/lib/agenteve/cast').mkdir(parents=True, exist_ok=True)
+run(['chown', 'agenteve:agenteve', '/var/lib/agenteve/cast'])
+os.chmod('/var/lib/agenteve/cast', 0o700)
 
 env = Path('/etc/agenteve/env')
 if not env.exists():

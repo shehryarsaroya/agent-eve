@@ -103,6 +103,16 @@ export function createCast(runtime: Runtime, options: CreateCastOptions): Cast {
     return new HeuristicCast(runtime, options);
   }
 
+  // A completions URL that was given and is unusable turns the cast off rather than falling
+  // back to the default endpoint, which would send this provider's key to another one.
+  if (options.transport === undefined && settings.url === null) {
+    log(
+      'compact: ⚑ COMPACT_CAST_URL is set but is not an https URL (or http on loopback). The LLM ' +
+        'cast is OFF and the world is running on heuristics. Fix the variable and restart.',
+    );
+    return new HeuristicCast(runtime, options);
+  }
+
   // Memory survives a restart when a path is given. Without one the cast is a goldfish
   // between deploys, which quietly caps A6's "months of honest work" at the interval
   // between releases — on this project, hours. Not game state: it is never hashed,
@@ -123,7 +133,11 @@ export function createCast(runtime: Runtime, options: CreateCastOptions): Cast {
       // The deadline is handed to the transport in **ticks**, not milliseconds: it
       // converts with `ticksToMs` at the call site so the wall-clock timeout scales with
       // the world's speed (DET-8, TESTING.md §1.1 hazard 1).
-      openAiTransport({ deadlineTicks: settings.deadlineTicks }),
+      openAiTransport({
+        deadlineTicks: settings.deadlineTicks,
+        ...(settings.url === null ? {} : { url: settings.url }),
+        stream: settings.stream,
+      }),
     model: settings.model,
     limits: settings.limits,
     wakeGapTicks: settings.wakeGapTicks,
@@ -229,6 +243,7 @@ export {
   DEFAULT_CAST_MODEL,
   OPENAI_COMPLETIONS_URL,
   REDACTED,
+  assembleStream,
   describeFailure,
   openAiTransport,
   readReply,
@@ -246,6 +261,7 @@ export {
   DEFAULT_WAKE_GAP_TICKS,
   LlmCast,
   castSettingsFromEnv,
+  castUrlFromEnv,
   llmCastEnabled,
   type CastEnvSettings,
   type CastIdlePolicy,

@@ -180,6 +180,16 @@ export interface OpenAiTransportOptions {
   readonly deadlineTicks?: number;
   /** Injected so a test can drive the transport without a global. */
   readonly fetchImpl?: typeof fetch;
+  /**
+   * Ask for a server-sent-event stream and assemble it into one reply.
+   *
+   * Off by default, because OpenAI answers either way. On for providers that refuse
+   * anything else: the GPT-6 Astra endpoint answers a non-streaming request with
+   * `400 stream_required` ("Codex/GPT models require stream=true"), measured 2026-10-01.
+   * The assembled reply goes through {@link readReply} exactly as a non-streamed one
+   * does, so an empty or reasoning-starved stream fails the same loud way.
+   */
+  readonly stream?: boolean;
 }
 
 /**
@@ -193,6 +203,7 @@ export function openAiTransport(options: OpenAiTransportOptions = {}): CastTrans
   const url = options.url ?? OPENAI_COMPLETIONS_URL;
   const deadlineTicks = options.deadlineTicks ?? 0;
   const doFetch = options.fetchImpl ?? fetch;
+  const stream = options.stream === true;
 
   return {
     async complete(request: CompletionRequest): Promise<CompletionReply> {
@@ -241,6 +252,9 @@ export function openAiTransport(options: OpenAiTransportOptions = {}): CastTrans
             // — the default is the only value some tiers accept.
             max_completion_tokens: request.maxOutputTokens,
             response_format: { type: 'json_object' },
+            // Usage arrives in a final chunk only when asked for, and an un-metered call
+            // is how a spend cap silently stops capping (see `inputTokens`).
+            ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
           }),
           signal: controller.signal,
         });
@@ -255,6 +269,7 @@ export function openAiTransport(options: OpenAiTransportOptions = {}): CastTrans
           );
         }
 
+        if (stream) return readReply(await assembleStream(response));
         const payload: unknown = await response.json();
         return readReply(payload);
       } catch (error: unknown) {
@@ -306,6 +321,99 @@ function isAbort(error: unknown): boolean {
  * network: the shape it accepts is a contract with the provider, and a provider that
  * changes it should fail here with a named error rather than deep inside the cast.
  */
+/**
+ * Fold a chat-completions event stream into the shape a non-streamed reply has.
+ *
+ * Returned as a payload rather than a reply so {@link readReply} stays the one place a
+ * provider's answer is judged: an empty stream, a refusal and a reasoning-starved stream
+ * fail exactly as their non-streamed twins do. Lines split on `\n` with a trailing `\r`
+ * dropped; `:` keep-alive comments and non-`data` fields are ignored; the stream ends at
+ * `[DONE]` or at the end of the body, whichever comes first. An `error` object inside the
+ * stream is the provider's own failure and is raised as one, stamped with the status the
+ * provider answered with, so the budget charges it.
+ */
+export async function assembleStream(response: Response): Promise<unknown> {
+  const body = response.body;
+  if (body === null) {
+    throw new CastTransportError('completions stream carried no body', response.status);
+  }
+  const reader: ReadableStreamDefaultReader<Uint8Array> = body.getReader();
+  const decoder = new TextDecoder();
+  const folded: { content: string; sawChoice: boolean; finish: unknown; usage: unknown; done: boolean } = {
+    content: '',
+    sawChoice: false,
+    finish: undefined,
+    usage: undefined,
+    done: false,
+  };
+
+  const consume = (rawLine: string): void => {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+    if (!line.startsWith('data:')) return;
+    const data = line.slice('data:'.length).trim();
+    if (data.length === 0) return;
+    if (data === '[DONE]') {
+      folded.done = true;
+      return;
+    }
+    let event: unknown;
+    try {
+      event = JSON.parse(data);
+    } catch {
+      throw new CastTransportError('completions stream carried an event that was not JSON', response.status);
+    }
+    if (typeof event !== 'object' || event === null) return;
+    const root = event as Record<string, unknown>;
+    const failure = root['error'];
+    if (failure !== undefined && failure !== null) {
+      const said =
+        typeof failure === 'object' && typeof (failure as Record<string, unknown>)['message'] === 'string'
+          ? String((failure as Record<string, unknown>)['message'])
+          : JSON.stringify(failure);
+      throw new CastTransportError(`completions stream reported an error: ${said.slice(0, 200)}`, response.status);
+    }
+    const usage = root['usage'];
+    if (usage !== undefined && usage !== null) folded.usage = usage;
+    const choices = root['choices'];
+    if (!Array.isArray(choices) || choices.length === 0) return;
+    folded.sawChoice = true;
+    const first: unknown = choices[0];
+    if (typeof first !== 'object' || first === null) return;
+    const choice = first as Record<string, unknown>;
+    const delta = choice['delta'];
+    if (typeof delta === 'object' && delta !== null) {
+      const piece = (delta as Record<string, unknown>)['content'];
+      if (typeof piece === 'string') folded.content += piece;
+    }
+    const finish = choice['finish_reason'];
+    if (typeof finish === 'string') folded.finish = finish;
+  };
+
+  let pending = '';
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    pending += decoder.decode(chunk.value, { stream: true });
+    for (let newline = pending.indexOf('\n'); newline !== -1; newline = pending.indexOf('\n')) {
+      consume(pending.slice(0, newline));
+      pending = pending.slice(newline + 1);
+      if (folded.done) break;
+    }
+    if (folded.done) break;
+  }
+  if (folded.done) {
+    await reader.cancel().catch(() => undefined);
+  } else {
+    pending += decoder.decode();
+    if (pending.length > 0) consume(pending);
+  }
+
+  return {
+    choices: folded.sawChoice ? [{ message: { content: folded.content }, finish_reason: folded.finish }] : [],
+    ...(folded.usage === undefined ? {} : { usage: folded.usage }),
+  };
+}
+
 export function readReply(payload: unknown): CompletionReply {
   if (typeof payload !== 'object' || payload === null) {
     throw new CastTransportError('completions reply was not an object', null);

@@ -24,9 +24,20 @@ agent clients with error 1010. Game signatures and per-client rate limits remain
 | Public MCP client | `https://agenteve.io/mcp/agenteve-mcp.tar.gz` |
 
 The service is capped at 4 GiB and four CPU cores; PostgreSQL at 1 GiB and two
-cores. This is a limit, not a measured requirement. The house cast is 12 heuristic
-agents (`COMPACT_CAST_LLM=0`), with no ongoing LLM API spend. Public cadence is
+cores. This is a limit, not a measured requirement. Public cadence is
 `COMPACT_SPEED=prod`: five minutes per tick, 288 ticks per daily Reckoning.
+
+Since October 1, 2026 the 12 house characters are played by **GPT-6 Astra**, Moving
+Atoms' OpenAI-compatible endpoint, which accepts streaming requests only. Between their
+wakes, and whenever a call fails, each member falls back to its scripted heuristic.
+Configuration lives in `/etc/agenteve/env` by name: `COMPACT_CAST_LLM`,
+`COMPACT_CAST_MODEL`, `COMPACT_CAST_URL`, `COMPACT_CAST_STREAM`, `COMPACT_CAST_MEMORY`
+and the key in `OPENAI_API_KEY` (the variable name is historical; it holds whichever
+provider's key `COMPACT_CAST_URL` points at). The key's vault copy is
+`AGENTEVE_ASTRA_API_KEY` in the kit's `credentials/.env`. The cast's private memory is
+`/var/lib/agenteve/cast/` (mode 0700, never under `frames/`, which nginx serves).
+`/health` reports the cast's live, fallback and spend counts under `cast`. Turn it off
+with `COMPACT_CAST_LLM=0` and a restart; the world continues on heuristics.
 Commissioning used the accelerated clock and three explicitly named QA principals.
 
 Access uses `~/Projects/yc-gstack-kit/credentials/keys/ahmadecho_vps_ed25519`.
@@ -35,8 +46,15 @@ The local checkout is `~/Projects/thecompact`. The public repository is
 https://github.com/shehryarsaroya/agent-eve, with `master` as its default branch;
 restoration work was prepared on `revive-standalone-mcp`.
 
-Build with `cd engine && npm ci && npm run build`. Deploy code into `/opt/agenteve`,
-run migrations with `/etc/agenteve/migrate.env`, then `systemctl restart agenteve`.
+Deploy with `deploy/deploy-standalone.sh` from the repo root, on a clean `master`
+that is already pushed; it refuses anything else. It ships that exact commit with
+`git archive`, stamps it in `/opt/agenteve/REVISION`, builds on the host in
+`/opt/agenteve-next`, takes a fresh backup and boots the *new* build against its
+restore, migrates, swaps directories, and rolls back by itself if the new build will
+not stay up. The previous two trees are kept as `/opt/agenteve-prev-<stamp>`, and the
+script prints the one-line rollback. It finishes by checking that the public
+`index.html`, `agent.md` and `REVISION` match git. To check sync at any time, compare
+`ssh … cat /opt/agenteve/REVISION` with `git rev-parse origin/master`.
 The standalone launcher refuses missing database configuration and flushes the
 journal on SIGTERM. Inspect `/health` through HTTPS; a direct loopback probe must
 include `CF-Connecting-IP: 127.0.0.1` because the API trusts only its nginx ingress.
