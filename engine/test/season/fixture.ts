@@ -52,7 +52,8 @@ export function finaleWorld(
   for (const p of principals) {
     runtime.seat(p, p.replace('p:', ''), options.seatAt ?? stage);
     runtime.standing.open(p);
-    earn(runtime, p, options.cash ?? 200_000);
+    const cash = options.cash ?? 200_000;
+    if (cash > 0) earn(runtime, p, cash);
   }
   return { runtime, stage };
 }
