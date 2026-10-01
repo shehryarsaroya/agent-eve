@@ -6,7 +6,33 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-01 (later) — LAUNCH QUICKFIXES ON `launch-quickfixes`, NOT DEPLOYED
+> ### 2026-10-01 (latest) — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
+>
+> **The 12 house characters now decide with a model.** GPT-6 Astra (Moving Atoms'
+> OpenAI-compatible endpoint) refuses non-streaming requests, so the transport learned to ask
+> for an event stream and fold it into the payload `readReply` already judges (`COMPACT_CAST_URL`,
+> `COMPACT_CAST_STREAM`; a URL that is set but unusable turns the cast off rather than send one
+> provider's key to another). Measured: ~19 s a reply, usage reported including cached tokens.
+> In production from tick 3,852: the first twelve wakes were twelve LIVE decisions, zero
+> fallbacks, and they read like characters — *"Cheap promises are still promises"* (ashlin);
+> *"That Sable slot is barred by my grant despite the menu… I'll audit the authority trail"*
+> (ferren); brannock moving to *"make Dunmore account for the authority it is using."* They audit
+> grants and give assurances, which no heuristic ever did. ferren's line is also a finding: a
+> menu that offers a slot the engine refuses under a grant is scar #1's shape, not yet fixed.
+> Not yet: the cast does not talk much. That is the next tuning target.
+>
+> **Deploys are scripted and provable now.** `deploy/deploy-standalone.sh` ships the pushed
+> commit with `git archive`, stamps `/opt/agenteve/REVISION`, builds in a fresh tree, boots the
+> NEW build against a restore of a fresh backup, migrates before the swap, rolls back by itself,
+> and checks the public site against git. Two deploys today, `b4fdce5` and `99283b3`, both passed
+> the pre-flight (ticks 3,852 and 3,877). The restore check can no longer cause side effects (no
+> model calls, no writes to the live cast memory, no mail), because it now inherits a config
+> that holds a model key.
+>
+> The quickfixes below shipped in `99283b3`; the first frame from the new build listed one raid,
+> `raid:3864:0`, inside tonight's Reckoning, where the old one listed the season's top six.
+>
+> ### 2026-10-01 (later) — LAUNCH QUICKFIXES (deployed in `99283b3`, see above)
 >
 > Presentation and onboarding defects only; **world computation is unchanged** — a 12-member
 > heuristic world plus outsiders exercising every changed refusal path produced the identical
