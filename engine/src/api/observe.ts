@@ -592,7 +592,7 @@ export function buildObservation(input: ObserveInput): Observation {
   // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
   // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick, board, solved.dropped, myCampaigns,
+    ? affordancesFor(runtime, principal, tick, board, solved.dropped, solved.barred, myCampaigns,
     books, marketVenues)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
@@ -1792,6 +1792,8 @@ function affordancesFor(
   board: readonly BoardRow[],
   /** Eligible slots the board's own cap dropped. See {@link boardFor}. */
   boardDropped: number,
+  /** Open slots the board left off because a grant this principal holds bars it from them. */
+  boardBarred: BarredSlots,
   /**
    * The campaign views the payload publishes, passed rather than recomputed.
    *
@@ -2763,7 +2765,20 @@ function affordancesFor(
   let alternateHands = 0;
   let firstFill = true;
   const unreachedStages = new Set<SystemId>();
+  // ── ★ AND THE GATES IN FRONT OF THE HANDLER, ASKED ONCE ─────────────────────
+  //
+  // The verb table refuses every `fill_role` from a principal inside the freeze, one that owes a
+  // seal (PROP-D4), or one whose Commons capacity a chronic Levy shortfall has used up — and this
+  // loop offered fills in all three. `Runtime.fillGateRefusalFor` is the table's own order and
+  // sentences, asked at the tick the act would resolve in; when it refuses, nothing is offered and
+  // the slots are counted with the engine's sentence instead.
+  const fillGate = runtime.fillGateRefusalFor(principal, tick + 1);
+  let rowsGated = 0;
   for (const row of board) {
+    if (fillGate !== null) {
+      rowsGated += 1;
+      continue;
+    }
     const atStage = idleHands.filter((h) => occupiesSystem(h, row.stage));
     const idle = atStage[0];
     if (idle === undefined) {
@@ -4410,6 +4425,25 @@ function affordancesFor(
         'each row publishes in expires_tick',
     });
   }
+  if (rowsGated > 0 && fillGate !== null) {
+    reasons.push({
+      verb: 'fill_role',
+      text:
+        `${String(rowsGated)} slot(s) on ventures.board[] have no fill_role offered because the engine would ` +
+        `refuse any fill from you on the tick it would land (${fillGate.invariant}): ${fillGate.hint}`,
+    });
+  }
+  if (boardBarred.slots > 0) {
+    reasons.push({
+      verb: 'fill_role',
+      text:
+        `${String(boardBarred.slots)} open slot(s) are not on ventures.board[] because you held a grant over ` +
+        `their creator (${boardBarred.creators.join(', ')}) when the venture was created ` +
+        `(${boardBarred.ventures.join(', ')}): a delegate may not be a counterparty to a deal it has authority ` +
+        'over (INV-23, §8.1 #3), and letting the grant lapse does not clear it. Slots in ventures whose ' +
+        'creator you hold no grant over are unaffected',
+    });
+  }
   if (rowsWithNoHand > 0) {
     reasons.push({
       verb: 'fill_role',
@@ -4761,6 +4795,8 @@ function affordancesFor(
         alternateHands +
         rowsWithNoHand +
         rowsOutOfReach +
+        rowsGated +
+        boardBarred.slots +
         boardDropped +
         crossingWithheld +
         crossingAnchored +
@@ -5039,15 +5075,40 @@ function boardFor(
   runtime: Runtime,
   principal: PrincipalId,
   tick: number,
-): { readonly rows: BoardRow[]; readonly dropped: number } {
+): { readonly rows: BoardRow[]; readonly dropped: number; readonly barred: BarredSlots } {
   const rows: BoardRow[] = [];
+  // ── ★ ELIGIBILITY IS THE ENGINE'S RULE, ASKED AT THE TICK THE FILL WOULD LAND IN ──
+  //
+  // This loop used to carry its own short list — FORMING, inside the window, not already a party —
+  // and the engine refused fills for reasons the list had never heard of. The one that was caught
+  // on the record: a delegate offered a slot in its own grantor's venture, which `vFillRole`
+  // refuses as self-dealing (INV-23), and a house cast member wrote *"That Sable slot is barred by
+  // my grant despite the menu."* So the board now asks `Runtime.fillSlotRefusalFor` — the same
+  // predicate the handler and the tick-close allocation run — at `tick + 1`, because an act sent
+  // while this payload reads `tick` resolves in `tick + 1` and the window is checked then.
+  const atTick = tick + 1;
+  const barredVentures = new Set<VentureId>();
+  const barredCreators = new Set<PrincipalId>();
+  let barredSlots = 0;
   for (const venture of runtime.ventures.live()) {
     if (venture.state !== 'FORMING') continue;
-    if (tick > venture.windowClosesTick) continue;
+    if (atTick > venture.windowClosesTick) continue;
     if (roleOfPrincipal(venture, principal) !== null) continue;
     for (const index of openIndices(venture)) {
       const role = venture.roles[index];
       if (role === undefined) continue;
+      const refused = runtime.fillSlotRefusalFor(principal, venture, index, atTick);
+      if (refused !== null) {
+        // The authority case is counted by name: it is an omission the agent caused by holding a
+        // grant, and one it can only learn about from this row. The others are the slot's own
+        // shape (already filled, window, already a party) and are simply not eligible.
+        if (refused.invariant === 'INV-23') {
+          barredSlots += 1;
+          barredVentures.add(venture.id);
+          barredCreators.add(venture.creator);
+        }
+        continue;
+      }
       rows.push({
         venture: venture.id,
         role: index,
@@ -5116,7 +5177,24 @@ function boardFor(
   return {
     rows: sorted.slice(0, MAX_LIST_ROWS),
     dropped: Math.max(0, sorted.length - MAX_LIST_ROWS),
+    barred: {
+      slots: barredSlots,
+      ventures: [...barredVentures].sort(cmp),
+      creators: [...barredCreators].sort(cmp),
+    },
   };
+}
+
+/**
+ * Open slots this principal is barred from by **authority** — it held a live grant over the
+ * venture's creator when the venture was created (§8.1 #3, INV-23). Not on the board, because they
+ * are not slots it is eligible for; counted in `withheld`, because an omission an agent caused by a
+ * grant it holds is one it is entitled to be told about (PROP-O1).
+ */
+interface BarredSlots {
+  readonly slots: number;
+  readonly ventures: readonly VentureId[];
+  readonly creators: readonly PrincipalId[];
 }
 
 /**

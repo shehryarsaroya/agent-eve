@@ -290,6 +290,7 @@ import {
   roleOfPrincipal,
   roleTerms,
   roleTermsFor,
+  slotRefusal,
   vacateRole,
   ventureEscrowRatioBps,
   VentureBook,
@@ -7092,9 +7093,14 @@ export class Runtime {
    * reason (A8): the cure is free, immediate and offered in the same observation.
    */
   private sealCompliance(ctx: PhaseContext, req: ActionRequest): Rejection | null {
-    const held = this.sealableRoles(req.principal, ctx.tick);
+    return this.sealComplianceAt(req.principal, ctx.tick);
+  }
+
+  /** {@link sealCompliance} for a tick the menu is asking about. One predicate, two callers. */
+  sealComplianceAt(principal: PrincipalId, tick: number): Rejection | null {
+    const held = this.sealableRoles(principal, tick);
     if (held.length === 0) return null;
-    return this.seals.sealComplianceRejection(req.principal, ctx.tick, held);
+    return this.seals.sealComplianceRejection(principal, tick, held);
   }
 
   /**
@@ -7226,11 +7232,22 @@ export class Runtime {
   }
 
   private committing(ctx: PhaseContext): Rejection | null {
-    if (!ctx.clock.inFreeze && !ctx.clock.isSettlementTick) return null;
+    return this.committingAt(ctx.tick);
+  }
+
+  /**
+   * {@link committing} for a tick that has not run yet — the one the menu's act would resolve in.
+   *
+   * The same predicate and the same sentence, read off `core/time.ts` rather than off a phase
+   * context, so the menu can ask the question the verb table will ask without a context to ask it
+   * with. `ctx.clock` is `reckoningClock(ctx.tick)`, so the two answers are one answer.
+   */
+  committingAt(tick: number): Rejection | null {
+    if (!inFreeze(tick) && !isSettlementTick(tick)) return null;
     return reject(
       'INV-18',
-      `the Reckoning's freeze has begun (tick ${String(ctx.tick)} of Reckoning ` +
-        `${String(ctx.clock.reckoning)}): no new commitments and no withdrawals until it has settled. ` +
+      `the Reckoning's freeze has begun (tick ${String(tick)} of Reckoning ` +
+        `${String(reckoningIndex(tick))}): no new commitments and no withdrawals until it has settled. ` +
         'Everything the settlement pays from was read at the freeze, so moving any of it now would record a ' +
         'promise as broken that nobody broke. Nothing was lost — submit again next tick. (`elect` is closed ' +
         'too, for a different reason and with a different answer: see its own refusal — what you last stated ' +
@@ -7662,6 +7679,88 @@ export class Runtime {
     return { ok: true, value: null };
   }
 
+  /**
+   * ★ **The AUTHORITY rule on `fill_role` — SPEC §8.1 #3, INV-23 — in ONE home.** `null` when no
+   * grant stands between this principal and this venture.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE MENU OFFERED WHAT THIS REFUSED, AND A PLAYER SAID SO ON THE RECORD.** A house cast member
+   * playing under GPT-6 Astra wrote, in its own reason line: *"That Sable slot is barred by my grant
+   * despite the menu."* It was right. `vFillRole` refused a delegate a role in a venture whose
+   * creator had granted it authority — the self-dealing guard below — while `ventures.board[]` and
+   * the `fill_role` affordance were built from a separate, shorter eligibility list that had never
+   * heard of grants. So the server offered an act, the agent spent an action copying it verbatim,
+   * and the engine declined: AGT-S2, and scar #1's exact shape — two surfaces, each internally
+   * coherent, disagreeing about one rule.
+   *
+   * **The general cause is a rule with one reader.** Every check on this verb lived inline in its
+   * handler or in the tick-close allocation, and the menu could only re-derive the ones it knew
+   * about. The fix is the pattern `demandRefusalFor`, `engageRefusalFor` and `parleyRefusalFor`
+   * already use: the rule is a method, the handler calls it, the menu calls it, the cast calls it,
+   * and a test drives all three against one world (`test/api/the-menu-and-the-engine-agree.spec.ts`).
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * The rule, unchanged: a delegate may not be a counterparty to a deal it holds authority over. If
+   * you held a live grant over this venture's creator when it was created, you could have shaped
+   * it and funded its escrow from the creator's own stores, so you may not also fill a role in it.
+   * Asked at the venture's CREATION tick (see the note in `vFillRole` for the one-tick bypass that
+   * asking at the fill's tick opened), so letting the grant lapse does not clear it.
+   */
+  fillRoleAuthorityRefusal(principal: PrincipalId, venture: VentureRecord): Rejection | null {
+    if (venture.creator === principal) return null;
+    if (this.grantBook.liveGrantBetween(venture.creator, principal, venture.windowOpensTick) === null) {
+      return null;
+    }
+    return reject(
+      'INV-23',
+      `you held a grant over ${venture.creator} when venture ${venture.id} was created, so you may ` +
+        'not also fill a role in it: a delegate cannot be a counterparty to a deal it has authority ' +
+        'over (self-dealing, §8.1 #3). Letting the grant lapse does not clear this — the conflict is ' +
+        'that you could have shaped the venture. Fill roles in ventures whose creator you have no ' +
+        'authority over.',
+    );
+  }
+
+  /**
+   * ★ **Would THIS slot take this principal's fill, if the fill resolved at `atTick`?** The board's
+   * question — every rule that is a property of the slot and the principal together, and none that
+   * is a property of a hand.
+   *
+   * The authority rule above, then the slot's own rules from `venture.ts:slotRefusal` (which the
+   * tick-close allocation runs through `fillRole`). The menu passes **the tick the act would resolve
+   * in** — an observation at `t` sends an act that lands in `t + 1` — and that is not pedantry: the
+   * board offered a slot on the last tick of its window, where `windowContains(t + 1)` refuses it.
+   *
+   * A slot this returns non-null for is NOT eligible and is left off `ventures.board[]` (§12.1:
+   * "only slots I am eligible for"); `api/observe.ts` counts the authority case in `withheld` by name,
+   * because a slot barred by your own grant is an omission you are entitled to be told about.
+   */
+  fillSlotRefusalFor(
+    principal: PrincipalId,
+    venture: VentureRecord,
+    roleIndex: number,
+    atTick: number,
+  ): Rejection | null {
+    return this.fillRoleAuthorityRefusal(principal, venture) ?? slotRefusal(venture, roleIndex, principal, atTick);
+  }
+
+  /**
+   * ★ **Would ANY `fill_role` from this principal be accepted at `atTick`?** The gates the verb table
+   * puts in front of the handler — the freeze, the seal you owe, the Commons capacity a chronic Levy
+   * shortfall demotes — read here in the table's own order, so the menu can withhold every `fill_role`
+   * with the sentence the engine would have sent rather than offer acts that cost an action to refuse.
+   *
+   * These do not take a slot off the board: each is a condition the principal can clear (seal, pay,
+   * wait a tick), and the slot is still one it is eligible for once it does.
+   */
+  fillGateRefusalFor(principal: PrincipalId, atTick: number): Rejection | null {
+    return (
+      this.committingAt(atTick) ??
+      this.sealComplianceAt(principal, atTick) ??
+      this.commonsCapacityRejection(principal)
+    );
+  }
+
   private vFillRole(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
     const roleIndex = readInt(req.params, ['role', 'role_index', 'roleIndex']);
@@ -7706,20 +7805,12 @@ export class Runtime {
     // merely different, which is why this is a one-word fix and not a second condition:
     // liveness is `atTick <= end`, so a grant live now was necessarily live at creation
     // too. Every case the old check caught, this one still catches.
-    if (
-      venture.creator !== req.principal &&
-      this.grantBook.liveGrantBetween(venture.creator, req.principal, venture.windowOpensTick) !==
-        null
-    ) {
-      return reject(
-        'INV-23',
-        `you held a grant over ${venture.creator} when venture ${ventureId} was created, so you may ` +
-          'not also fill a role in it: a delegate cannot be a counterparty to a deal it has authority ' +
-          'over (self-dealing, §8.1 #3). Letting the grant lapse does not clear this — the conflict is ' +
-          'that you could have shaped the venture. Fill roles in ventures whose creator you have no ' +
-          'authority over.',
-      );
-    }
+    //
+    // ★ The rule itself now lives in {@link fillRoleAuthorityRefusal}, because the MENU has to ask it
+    // too: the board offered these slots and this line refused them, and a house cast member said so
+    // on the record — *"That Sable slot is barred by my grant despite the menu."*
+    const barred = this.fillRoleAuthorityRefusal(req.principal, venture);
+    if (barred !== null) return barred;
     // ── GEOGRAPHY IS NOT ENFORCED HERE, AND IT IS NOT AN OVERSIGHT ────────────
     //
     // `fillRole` checks `isPresent`, which is about the hand's *state* — not in transit,

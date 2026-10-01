@@ -141,6 +141,7 @@ export {
   roleAt,
   roleOfPrincipal,
   signatoriesRequired,
+  slotRefusal,
   soloIsImpossible,
   termsHashOf,
   vacateRole,

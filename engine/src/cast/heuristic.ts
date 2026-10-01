@@ -4670,6 +4670,10 @@ export class HeuristicCast {
       if (tick > venture.windowClosesTick) continue;
       if (venture.creator === member.principal) continue;
       if (roleOfPrincipal(venture, member.principal) !== null) continue;
+      // ★ A grant this member holds over the creator bars it from the deal (INV-23, §8.1 #3). The
+      // engine refused that fill and this loop picked the same slot again every tick; the rule has
+      // one home now, and the menu, the handler and this branch all read it.
+      if (this.runtime.fillRoleAuthorityRefusal(member.principal, venture) !== null) continue;
       // A hostile venture in the Commons can never be filled, so do not try.
       //
       // ── AND THIS ONE STAYS ON `member.seat`, WHICH IS THE OPPOSITE OF {@link bodyOf}'s RULE ──

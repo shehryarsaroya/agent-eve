@@ -45,7 +45,7 @@ import type {
   VentureState,
 } from '../core/types.js';
 import { addMinor, BPS_ONE, minor, type Minor } from '../core/units.js';
-import { accept, isPresent, reject, type HandRecord, type WorldResult } from '../world/index.js';
+import { accept, isPresent, reject, type HandRecord, type Rejection, type WorldResult } from '../world/index.js';
 import { boundAtFormation } from './create.js';
 import {
   MAX_ROLES_PER_VENTURE,
@@ -617,19 +617,31 @@ export function activate(venture: VentureRecord, stateVersion: number, tick: num
 }
 
 /**
- * Fill one role.
+ * ★ **Why `principal` could not take role `roleIndex` of this venture at `tick` — the slot's own
+ * rules, with no hand in them.** `null` when the slot would take it.
  *
- * The uniqueness check against every other live venture is **not** here — it lives
- * in {@link ./book.ts}, which owns the index. This function enforces only what one
- * venture can see, so there is exactly one place that can answer "is this hand
- * already committed" and it is the index.
+ * ══════════════════════════════════════════════════════════════════════════
+ * **ONE HOME, TWO READERS: the allocation that grants a fill, and the menu that offers one.**
+ *
+ * These five clauses were the body of {@link fillRole} and nothing else could ask them, so the
+ * board that recruits for a slot re-derived its own shorter list (`FORMING`, not already a party)
+ * and the two drifted: the board offered a slot on the last tick of its window — a fill sent then
+ * resolves the tick after and `windowContains` refuses it — and it could not see any rule that
+ * lived only here. An affordance the engine then refuses is the server telling an agent to act
+ * and then declining (AGT-S2), and it is scar #1's shape: two surfaces, each coherent, disagreeing
+ * about one rule. So the clauses live here, `fillRole` calls them first, and `Runtime` exposes them
+ * to the menu with the tick the fill would actually resolve in.
+ *
+ * Messages and order are unchanged from when they were inline, so a refusal an agent has already
+ * learned to read reads the same.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-export function fillRole(
+export function slotRefusal(
   venture: VentureRecord,
   roleIndex: number,
-  hand: HandRecord,
+  principal: PrincipalId,
   tick: number,
-): WorldResult<VentureRoleRecord> {
+): Rejection | null {
   if (venture.state !== 'FORMING') {
     return reject(
       'PROP-V6',
@@ -659,16 +671,38 @@ export function fillRole(
   // kind at any capital level: the constraint is on the *principal*, not the hand.
   // At the hand level a principal with three hands could fill three of four roles
   // and only need one counterparty, and §7.2's arithmetic would not bind.
-  const existing = roleOfPrincipal(venture, hand.principal);
+  const existing = roleOfPrincipal(venture, principal);
   if (existing !== null) {
     return reject(
       'PROP-V6',
-      `${hand.principal} already holds role ${existing.index} (${existing.label}) in ${venture.id}. ` +
+      `${principal} already holds role ${existing.index} (${existing.label}) in ${venture.id}. ` +
         'One principal fills at most one role in a venture; this kind needs ' +
         `${principalsRequired(venture.kind)} distinct principals and no amount of capital substitutes ` +
         'for one of them.',
     );
   }
+  return null;
+}
+
+/**
+ * Fill one role.
+ *
+ * The uniqueness check against every other live venture is **not** here — it lives
+ * in {@link ./book.ts}, which owns the index. This function enforces only what one
+ * venture can see, so there is exactly one place that can answer "is this hand
+ * already committed" and it is the index.
+ */
+export function fillRole(
+  venture: VentureRecord,
+  roleIndex: number,
+  hand: HandRecord,
+  tick: number,
+): WorldResult<VentureRoleRecord> {
+  const refused = slotRefusal(venture, roleIndex, hand.principal, tick);
+  if (refused !== null) return refused;
+  const role = venture.roles[roleIndex];
+  // `slotRefusal` has already refused a missing index; this narrows the type and nothing else.
+  if (role === undefined) return reject('PROP-V6', `${venture.id} has no role at index ${roleIndex}.`);
 
   if (!isPresent(hand, tick)) {
     return reject(
