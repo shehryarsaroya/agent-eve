@@ -3077,6 +3077,17 @@ export class HeuristicCast {
     if (runtime.alloyAt(member.principal, body) >= want) return null;
 
     const hands = handsOf(runtime.world, member.principal);
+    // ── ★ A HAND PLEDGED TO A STANDOFF IS NOT THIS ERRAND'S TO SEND ({@link musteredAt}, `ALL`) ──────
+    //
+    // This branch and {@link crewMove} each keep a copy of the aimless walk's "stationed" list, and both
+    // copies had lost its last entry — the stages this member has answered FIGHT at or joined. Measured on
+    // seed `gate-d` once `RULES_VERSION` 41 moved that world's trajectory: `p:varrow` joined `p:sable`'s
+    // defence at sys-07 on tick 340, sable answered FIGHT on the REPULSED reading that join made, and on
+    // tick 358 STEP 1 below walked the joined hand off toward an alloy book. `readForce` re-reads the stage
+    // at resolution, so a raid that had read REPULSED for eighteen ticks resolved PLUNDERED, 10,110 lost.
+    // `musteredAt`'s own rule is that a pledged hand can be recalled by a tribute and never by an errand,
+    // and this is an errand — so the pledge stations the hand for STEP 3's carry and STEP 1's walk alike.
+    const pledged = this.musteredAt(member, tick);
 
     // ── STEP 3 FIRST: A CARRY ALREADY UNDER WAY BEATS STARTING ANOTHER ─────────
     //
@@ -3085,6 +3096,7 @@ export class HeuristicCast {
     for (const hand of hands) {
       if (hand.state !== 'IDLE' || !isPresent(hand, tick)) continue;
       if (hand.location === body) continue;
+      if ((pledged.get(hand.location) ?? 0) > 0) continue;
       const here = runtime.alloyAt(member.principal, hand.location);
       if (here <= 0) continue;
       const next = route(runtime.world.map, hand.location, body)?.path[1];
@@ -3178,6 +3190,7 @@ export class HeuristicCast {
     const owedAt = runtime.levyBlockFor(member.principal, tick);
     if (owedAt !== null) owing.add(owedAt.deliverable_to);
     for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
+    for (const stage of pledged.keys()) owing.add(stage);
 
     const venues = [
       ...new Set(
@@ -4523,11 +4536,14 @@ export class HeuristicCast {
     const hulls = runtime.fleet.readyOrBusyOf(member.principal);
     if (hulls.length === 0) return null;
 
-    // Where a hand is genuinely needed elsewhere. The same set the aimless walk treats as stationed.
+    // Where a hand is genuinely needed elsewhere. The same set the aimless walk treats as stationed —
+    // including, as of `RULES_VERSION` 41, the stages a FIGHT or a join has pledged a hand to, which this
+    // copy of the list had lost (see the pledge note in {@link alloyErrandFor} for the measurement).
     const owing = new Set<SystemId>();
     const owedAt = runtime.levyBlockFor(member.principal, tick);
     if (owedAt !== null) owing.add(owedAt.deliverable_to);
     for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
+    for (const stage of this.musteredAt(member, tick).keys()) owing.add(stage);
 
     const hands = handsOf(runtime.world, member.principal);
     // Canonical order over the berths, so one seed walks one sequence.
