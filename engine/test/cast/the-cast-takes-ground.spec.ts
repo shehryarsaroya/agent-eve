@@ -268,7 +268,10 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
     //
     // The gate's actual wording is *"works it, and works it ONLINE"* — a WORKS inside its 24-tick
     // spin-up has produced nothing, so the Charge it is meant to fund is a promise rather than an
-    // income. MUTATION: `if (mine.length === 0 && false)` in `claimFor`. RED here.
+    // income. MUTATION: `if (mine.length === 0 && false)` in `claimFor` — RED here once, and ⚑ NOT
+    // ANY MORE: re-run on 2026-10-01 against this branch and against `c771ece`, it stays green on all
+    // four gate seeds, because no claim lands inside a spin-up with or without the clause. The gate is
+    // in the source and unexercised by this test; a seed or a fixture that reaches it is still owed.
     // ══════════════════════════════════════════════════════════════════════
     for (const seed of GATE_SEEDS) {
       const run = play(seed, CLAIM_TICKS);
@@ -280,13 +283,27 @@ describe('the territorial layer is LIVE — claims, rent and a Charge that gets 
           mine.length,
           `${seed}: ${String(claim.claimant)} holds ${claim.system} and works none of it`,
         ).toBeGreaterThan(0);
-        const earliestOnline = Math.min(...mine.map((w) => w.onlineAtTick));
+        // ★ The WORKS that stood WHEN the claim was taken — not the one standing now. Since 32 a WORKS
+        // can be razed and rebuilt (`works/replacement-demand.spec.ts`), and a claimant razed after it
+        // claimed holds a rebuild with a later `onlineAtTick`. Measured on `gate-b` once `RULES_VERSION`
+        // 41 moved the trajectory: brannock's sys-05 WORKS, online since tick 71, carried the claim it
+        // took at 1707, was razed at 2232 and rebuilt online at 2264 — and this assertion, reading the
+        // earliest LIVE WORKS, called a correctly gated claim a promise against income that did not
+        // exist yet. The gate's property is about the moment of the claim, so the history is asked.
+        const stoodAtClaim = run.runtime.works
+          .everInOrder()
+          .filter(
+            (w) =>
+              w.system === claim.system &&
+              w.holder === claim.claimant &&
+              w.onlineAtTick <= claim.takenAtTick &&
+              (w.razedAtTick === null || w.razedAtTick > claim.takenAtTick),
+          );
         expect(
-          claim.takenAtTick,
-          `${seed}: ${claim.system} was claimed at tick ${String(claim.takenAtTick)} but its ` +
-            `claimant's WORKS did not come online until ${String(earliestOnline)} — the Charge was ` +
-            'taken on against income that did not exist yet',
-        ).toBeGreaterThanOrEqual(earliestOnline);
+          stoodAtClaim.length,
+          `${seed}: ${claim.system} was claimed at tick ${String(claim.takenAtTick)} with no WORKS of its ` +
+            "claimant's online there — the Charge was taken on against income that did not exist yet",
+        ).toBeGreaterThan(0);
         // The body is there too — a claim is anchored by a body (INV-8) and `graduate` is refused
         // while one stands on a claim, so this is the engine's rule read back.
         expect(holdingOf(run.runtime.world, claim.claimant).system).toBe(claim.system);
