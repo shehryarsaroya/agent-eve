@@ -3257,6 +3257,13 @@ export class HeuristicCast {
     const owedAt = runtime.levyBlockFor(member.principal, tick);
     if (owedAt !== null) owing.add(owedAt.deliverable_to);
     for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
+    // ★ And never a hand pledged to a standoff. An errand is optional work and a promise is not —
+    // {@link musteredAt}'s own rule, `ALL` for every optional branch, which `fill_role` and the
+    // aimless walk already obey and this step did not. Measured on `g03` at twenty members:
+    // `p:tolen` joined `raid:336:0` at sys-21 on t338 and this step walked the pledged hand toward an
+    // alloy book on t358, so the standoff resolved without it (`the-cast-forms-a-coalition`, 7 of 8
+    // pledges standing). Latent before 41; the four-role branch's changed trajectory reached it.
+    for (const stage of this.musteredAt(member, tick).keys()) owing.add(stage);
 
     const venues = [
       ...new Set(
@@ -4622,6 +4629,9 @@ export class HeuristicCast {
     const owedAt = runtime.levyBlockFor(member.principal, tick);
     if (owedAt !== null) owing.add(owedAt.deliverable_to);
     for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
+    // ★ Including a standoff this member has pledged a hand to — the aimless walk's set has it, and
+    // `alloyErrandFor` was measured walking exactly such a hand away (see its note).
+    for (const stage of this.musteredAt(member, tick).keys()) owing.add(stage);
 
     const hands = handsOf(runtime.world, member.principal);
     // Canonical order over the berths, so one seed walks one sequence.

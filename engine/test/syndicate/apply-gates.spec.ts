@@ -117,6 +117,15 @@ describe('apply admits under OPEN', () => {
       new RegExp(FOUNDER),
     );
     expect(out.hint, 'and that asking costs no action').toMatch(/costs no action/);
+    // ★ 41: and the PRICE of asking, which the old sentence left out. A first letter to a member you
+    // have no tie with is a PARLEY opening — a reach rung and an earned opening — so naming the verb
+    // alone walked a newcomer into an A15 refusal it had not been warned about.
+    expect(out.hint, 'that a first letter is a priced PARLEY opening').toMatch(/PARLEY opening/);
+    expect(out.hint, 'what the price is made of').toMatch(/reach rung/);
+    expect(out.hint, 'and when it becomes public — not "at settlement", which is a MESSAGE\'s clock').toMatch(
+      /PUBLIC \d+ ticks after you send it/,
+    );
+    expect(out.hint).not.toMatch(/public at settlement/);
     expect(book.isMember(id, JOINER, 5), 'nothing was queued and nobody joined').toBe(false);
   });
 });
