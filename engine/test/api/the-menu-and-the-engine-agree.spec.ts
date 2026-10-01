@@ -30,11 +30,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { setSpeed } from '../../src/core/time.js';
+import { inFreeze, setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { PrincipalId, SystemId } from '../../src/core/types.js';
 import { buildObservation } from '../../src/api/observe.js';
 import { HeuristicCast } from '../../src/cast/index.js';
-import { commonsSystems, handsOf } from '../../src/world/index.js';
+import { commonsSystems, handsOf, holdingOf } from '../../src/world/index.js';
 import { Runtime, type PendingCorrection } from '../../src/sim/runtime.js';
 
 type Row = Record<string, unknown>;
@@ -250,6 +250,45 @@ describe('a delegate is offered exactly the fills the engine will take', () => {
     const refused = act(w.runtime, w.delegate, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage });
     expect(refused?.invariant, 'the engine refuses it for the reason the menu gave').toBe('PROP-D4');
   }, 120_000);
+});
+
+describe('the menu asks the engine’s clock at the tick an act LANDS, not the tick it is read', () => {
+  it('★ an observation whose acts land in the freeze offers nothing the freeze refuses — and says so', () => {
+    // Measured before the fix, at observation tick 285 of a six-member world (acts land at 286, the
+    // freeze): every member was offered `graduate`, `refine`, `post_bond` and `form`, and the engine
+    // refused each one with INV-18. The freeze set is now one home (`Runtime.COMMITTING_VERBS`), the
+    // verb table applies it, and the menu withholds it at `tick + 1` with the engine's sentence.
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'menu-engine-freeze' });
+    const cast = new HeuristicCast(runtime, { size: 6 });
+    const members = cast.seat('menu-engine-freeze');
+    const lastBeforeFreeze = TICKS_PER_RECKONING - 3; // reads 285; an act sent now lands at 286
+    while (runtime.engine.tick < lastBeforeFreeze) {
+      for (const a of cast.decide(runtime.engine.tick + 1, 'menu-engine-freeze')) runtime.engine.submit(a);
+      expect(runtime.runTick().halted).toBe(false);
+    }
+    const landsAt = runtime.engine.tick + 1;
+    expect(inFreeze(landsAt), 'non-vacuity: acts sent now land in the freeze').toBe(true);
+
+    const refusedByTheClock = new Set([...Runtime.COMMITTING_VERBS, 'elect', 'deliver']);
+    let gatedSomewhere = 0;
+    for (const m of members) {
+      const seen = observe(runtime, m.principal);
+      const offered = ((seen['affordances'] ?? []) as Row[]).map((a) => String(a['verb']));
+      const bad = offered.filter((v) => refusedByTheClock.has(v));
+      expect(bad, `REGRESSION: ${m.principal} is offered acts the freeze refuses on landing`).toEqual([]);
+      if (reasonOf(seen).includes(`lands on tick ${String(landsAt)}`)) gatedSomewhere += 1;
+    }
+    expect(gatedSomewhere, 'non-vacuity: some member had an act withheld, with the reason named').toBeGreaterThan(0);
+
+    // And the engine agrees about the act the menu withheld: a refine sent now is refused INV-18.
+    const holder = members.find((m) => runtime.refinableAt(m.principal, holdingOf(runtime.world, m.principal).system) > 0);
+    expect(holder, 'non-vacuity: some member holds a refinable batch at its body on the freeze eve').toBeDefined();
+    if (holder === undefined) return;
+    const system = holdingOf(runtime.world, holder.principal).system;
+    const refusal = act(runtime, holder.principal, 'refine', { system });
+    expect(refusal?.invariant, 'the freeze refuses what the menu withheld').toBe('INV-18');
+  }, 300_000);
 });
 
 describe('across a world nobody steers, no delegate is offered a fill the engine refuses on authority', () => {

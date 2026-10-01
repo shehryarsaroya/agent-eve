@@ -324,6 +324,14 @@ export function carriageUnderway(
  * phase 286, so there are 286 ticks in which to deliver. The refusal says so.
  * ══════════════════════════════════════════════════════════════════════════
  */
+/**
+ * The freeze's refusal of a Levy delivery, as a constant: {@link deliveryFault} answers with it, and the
+ * menu withholds a delivery that would land in the freeze with the same words (`Runtime.clockGateFor`).
+ */
+export const LEVY_FREEZE_REFUSAL =
+  'the freeze is on, so nothing may move against a settling obligation until the Reckoning has run. ' +
+  'A Levy assessment is open from the first tick of its Reckoning; deliver before the freeze.';
+
 export function deliveryFault(args: {
   readonly world: WorldState;
   readonly payer: PrincipalId;
@@ -333,12 +341,7 @@ export function deliveryFault(args: {
   readonly owing: Owing;
   readonly available: number;
 }): string | null {
-  if (inFreeze(args.tick) || isSettlementTick(args.tick)) {
-    return (
-      'the freeze is on, so nothing may move against a settling obligation until the Reckoning has run. ' +
-      'A Levy assessment is open from the first tick of its Reckoning; deliver before the freeze.'
-    );
-  }
+  if (inFreeze(args.tick) || isSettlementTick(args.tick)) return LEVY_FREEZE_REFUSAL;
   if (args.owing.assessment <= 0) {
     return 'you hold no Levy assessment this Reckoning, so there is nothing to deliver against.';
   }

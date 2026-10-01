@@ -60,6 +60,13 @@ const SETTLE_TICK = TICKS_PER_RECKONING - 1;
 const FREEZE_TICK = SETTLE_TICK - FREEZE_TICKS;
 /** The last tick on which a decision aimed at tonight can still be taken. */
 const LAST_ACTING_TICK = FREEZE_TICK - 1;
+/**
+ * The last OBSERVATION an `elect` can be sent from and still be taken: an act sent while the payload
+ * reads tick T resolves in T + 1, so the one that lands on {@link LAST_ACTING_TICK} is sent the tick
+ * before it. The menu used to keep offering `elect` one tick longer — on the observation whose act
+ * lands in the freeze, where `vElect` refuses it (`RULES_VERSION` 41's clock gate, AGT-S2).
+ */
+const LAST_OFFER_TICK = LAST_ACTING_TICK - 1;
 
 interface World {
   readonly runtime: Runtime;
@@ -203,6 +210,20 @@ function observe(runtime: Runtime, principal: PrincipalId): readonly Affordance[
   }).affordances;
 }
 
+function header(runtime: Runtime, principal: PrincipalId): Readonly<Record<string, unknown>> {
+  return buildObservation({
+    runtime,
+    principal,
+    serverNowMs: 0,
+    fresh: true,
+    wakesRemaining: 16,
+    stale: false,
+    corrections: [],
+    correctionsDropped: 0,
+    actionsRemaining: 4,
+  }).header;
+}
+
 function briefing(runtime: Runtime, principal: PrincipalId): Readonly<Record<string, unknown>> {
   return buildObservation({
     runtime,
@@ -243,7 +264,7 @@ describe('`elect` is a real verb, offered every tick until the freeze', () => {
     expect(String(a?.what_it_forecloses)).toContain('nothing, which is a decline');
   });
 
-  it('offers it on EVERY tick from signing to the last acting tick, not just once', () => {
+  it('offers it on EVERY tick from signing to the last one whose act can still land, not just once', () => {
     // "The elective half is a real choice *every time*, not a box you ticked when you
     // signed." An affordance offered once and then withdrawn would be the old behaviour
     // wearing the new verb's name.
@@ -259,7 +280,7 @@ describe('`elect` is a real verb, offered every tick until the freeze', () => {
     expect(act(w.runtime, w.payer, 'elect', { venture: id, role: 1, election: IN_FULL })).toBeNull();
     let offeredOn = 0;
     let missing = 0;
-    while (w.runtime.engine.tick < LAST_ACTING_TICK) {
+    while (w.runtime.engine.tick < LAST_OFFER_TICK) {
       w.runtime.runTick();
       const has = observe(w.runtime, w.payer).some((a) => a.verb === 'elect');
       if (has) offeredOn += 1;
@@ -267,16 +288,31 @@ describe('`elect` is a real verb, offered every tick until the freeze', () => {
     }
     expect(missing).toBe(0);
     expect(offeredOn).toBeGreaterThan(200);
-    // And it is still offered on the very last tick a restatement is legal.
+    // And it is still offered on the last observation whose act lands before the freeze — and the
+    // engine TAKES it there, which is the half of the promise a menu can break on its own: this test
+    // used to stop one tick later and assert an offer the engine refused.
+    expect(w.runtime.engine.tick).toBe(LAST_OFFER_TICK);
+    const last = observe(w.runtime, w.payer).filter((a) => a.verb === 'elect');
+    expect(last).toHaveLength(1);
+    expect(act(w.runtime, w.payer, 'elect', last[0]?.params ?? {}), 'the last offer is an act the engine takes').toBeNull();
     expect(w.runtime.engine.tick).toBe(LAST_ACTING_TICK);
-    expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(true);
   });
 
-  it('stops offering it inside the freeze, because there is nothing there to offer', () => {
+  it('stops offering it on the observation whose act lands in the freeze, and says why', () => {
     const w = world('freeze-offer');
     haul(w);
-    runTo(w.runtime, LAST_ACTING_TICK);
+    runTo(w.runtime, LAST_OFFER_TICK);
     expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(true);
+    w.runtime.runTick();
+    // Not in the freeze yet — but an `elect` sent now resolves in it, and `vElect` refuses there (the
+    // test below proves the refusal from exactly this tick). So the offer is gone, and the gap is named.
+    expect(w.runtime.engine.tick).toBe(LAST_ACTING_TICK);
+    expect(inFreeze(w.runtime.engine.tick)).toBe(false);
+    expect(inFreeze(w.runtime.engine.tick + 1)).toBe(true);
+    expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(false);
+    const withheld = header(w.runtime, w.payer)['withheld'] as { verbs: readonly string[]; reason: string };
+    expect(withheld.verbs, 'the absence is accounted for (PROP-O1)').toContain('elect');
+    expect(withheld.reason).toContain(`elect act(s) are not offered because an act sent now lands on tick ${String(FREEZE_TICK)}`);
     w.runtime.runTick();
     expect(inFreeze(w.runtime.engine.tick)).toBe(true);
     expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(false);

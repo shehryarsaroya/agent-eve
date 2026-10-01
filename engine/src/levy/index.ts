@@ -139,6 +139,7 @@ export {
   carryableOf,
   creditFor,
   deliveryFault,
+  LEVY_FREEZE_REFUSAL,
   nonEscrowableOf,
   owingOf,
   type Carryable,

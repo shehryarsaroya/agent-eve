@@ -251,6 +251,7 @@ import {
   neighboursOf,
   tierOf,
   transitTicks,
+  type Rejection,
 } from '../world/index.js';
 import {
   defaultTerms,
@@ -4512,6 +4513,26 @@ function affordancesFor(
   const live = runtime.liveVerbs;
   const offerable = eligible.filter((a) => live.has(a.verb));
   const notLive = eligible.length - offerable.length;
+  // ── ★ AND NEVER FOR AN ACT THE VERB'S OWN CLOCK WILL REFUSE ON THE TICK IT LANDS ──────────
+  //
+  // An act sent while this payload reads `tick` resolves in `tick + 1`, and every branch above asked
+  // its question at `tick`. So the observation whose acts land in the freeze — tick 285 of a
+  // Reckoning — offered `graduate`, `refine`, `post_bond` and `form` (measured on a six-member world),
+  // plus any `elect`, Levy `deliver` or ballot still open a tick too long, and the engine refused every
+  // one of them. Same family as the `fill_role` window, and the same fix: ask the engine's own clock
+  // gate (`Runtime.clockGateFor` — the freeze set the verb table applies, `elect`'s, a delivery's, a
+  // ballot's) at the tick the act would land in, here, once, where no branch can forget it.
+  const clockGated = new Map<string, { count: number; why: Rejection }>();
+  const landable = offerable.filter((a) => {
+    const why = runtime.clockGateFor(principal, a.verb, a.params, tick + 1);
+    if (why === null) return true;
+    const row = clockGated.get(a.verb);
+    if (row === undefined) clockGated.set(a.verb, { count: 1, why });
+    else row.count += 1;
+    return false;
+  });
+  let clockWithheld = 0;
+  for (const row of clockGated.values()) clockWithheld += row.count;
 
   // ── EVERY DISTINCT VERB BEFORE ANY VERB'S REPEATS ─────────────────────────
   //
@@ -4527,10 +4548,10 @@ function affordancesFor(
   // match it — one pass that takes the first offer of each verb, then the rest in their original
   // order. Stable, no comparator on user data (DET-1), and it guarantees no mechanic is invisible
   // merely because another mechanic has many variants.
-  const firstOfEachVerb: typeof offerable[number][] = [];
-  const repeats: typeof offerable[number][] = [];
+  const firstOfEachVerb: typeof landable[number][] = [];
+  const repeats: typeof landable[number][] = [];
   const seenVerbs = new Set<string>();
-  for (const a of offerable) {
+  for (const a of landable) {
     if (seenVerbs.has(a.verb)) repeats.push(a);
     else {
       seenVerbs.add(a.verb);
@@ -4554,6 +4575,14 @@ function affordancesFor(
       text:
       `${String(dropped)} further legal acts exist and were not sent, because one observation carries at most ` +
         `${String(MAX_AFFORDANCES)}. They are the lowest-priority repeats (extra lanes for an already-listed hand)`,
+    });
+  }
+  for (const [verb, row] of [...clockGated.entries()].sort((a, b) => cmp(a[0], b[0]))) {
+    reasons.push({
+      verb,
+      text:
+        `${String(row.count)} ${verb} act(s) are not offered because an act sent now lands on tick ` +
+        `${String(tick + 1)} and the engine refuses it there (${row.why.invariant}): ${row.why.hint}`,
     });
   }
   if (notLive > 0) {
@@ -4961,6 +4990,7 @@ function affordancesFor(
       count:
         dropped +
         notLive +
+        clockWithheld +
         alternateHands +
         rowsWithNoHand +
         rowsOutOfReach +

@@ -126,6 +126,7 @@ import {
   constellationOf,
   creditFor,
   deliveryFault,
+  LEVY_FREEZE_REFUSAL,
   deliveryPlaceOf,
   docketRowsFor,
   inv24InputsFor,
@@ -521,6 +522,7 @@ import {
   cessionRejection,
   chargeBallotFor,
   chargeDeliveryFault,
+  CHARGE_FREEZE_REFUSAL,
   chargeDocketRowsFor,
   chargeVoteFault,
   checkChargeAttribution,
@@ -6941,7 +6943,7 @@ export class Runtime {
     // it on is the one that silently acts on the sender instead.
     const guarded = (h: VerbHandler): VerbHandler => (ctx, req) => this.unhonouredOnBehalf(req) ?? h(ctx, req);
     const table: Readonly<Record<string, VerbHandler>> = {
-      refine: (ctx, req) => this.committing(ctx) ?? this.vRefine(ctx, req),
+      refine: (ctx, req) => this.vRefine(ctx, req),
       // ── `haul` SPENDS NO VERB: IT IS ONE OF THE 40 AND ITS STEP HAS ARRIVED ──
       //
       // `api/verbs.ts:VERB_ARRIVES_AT` filed it under "step 11 (markets and the production graph)"
@@ -6950,14 +6952,12 @@ export class Runtime {
       // is payable at, and `reckoning/driver.ts:VERIFY_INPUTS` halts on any difference in the figures
       // it froze — so a convoy departing inside the freeze would pause a healthy world on the one
       // night that has an audience (A14).
-      haul: (ctx, req) => this.committing(ctx) ?? this.vHaul(ctx, req),
+      haul: (ctx, req) => this.vHaul(ctx, req),
       create: (ctx, req) =>
-        this.committing(ctx) ??
         this.sealCompliance(ctx, req) ??
         this.commonsCapacityRejection(req.principal) ??
         this.vCreate(ctx, req),
       fill_role: (ctx, req) =>
-        this.committing(ctx) ??
         this.sealCompliance(ctx, req) ??
         this.commonsCapacityRejection(req.principal) ??
         this.vFillRole(ctx, req),
@@ -6968,7 +6968,6 @@ export class Runtime {
       // one act — "countersign the terms you were shown" — so §3 is satisfied by one word meaning one
       // thing, and §17's verb ceiling is not touched.
       sign: (ctx, req) =>
-        this.committing(ctx) ??
         (req.params['cover'] === undefined && req.params['cover_id'] === undefined
           ? this.vSign(ctx, req)
           : this.vSignCover(ctx, req)),
@@ -6988,8 +6987,8 @@ export class Runtime {
         (req.params['cover'] === undefined && req.params['cover_id'] === undefined
           ? this.vElect(ctx, req)
           : this.vElectCover(ctx, req)),
-      withdraw: (ctx, req) => this.committing(ctx) ?? this.vWithdraw(ctx, req),
-      abandon: (ctx, req) => this.committing(ctx) ?? this.vAbandon(ctx, req),
+      withdraw: (ctx, req) => this.vWithdraw(ctx, req),
+      abandon: (ctx, req) => this.vAbandon(ctx, req),
       // ── `publish_offer` HAS THREE SHAPES: prose, `cede`, and now `kind:"COVER"` ──
       //
       // `say/offer.ts`'s header states the precedent for the second: *"naming a claim (`cede`)
@@ -7056,12 +7055,12 @@ export class Runtime {
       // `engage` (SPEC §9A). Guarded by `committing` for the reason every material verb is:
       // §5.1's freeze forbids a new commitment inside the settlement window, and committing a
       // warship is the most commitment-shaped act in the game.
-      engage: (ctx, req) => this.committing(ctx) ?? this.vEngage(ctx, req),
+      engage: (ctx, req) => this.vEngage(ctx, req),
       // ── A6: the two grant verbs. Issuing is a COMMITMENT, so it is refused in the
       // freeze like any other (§8.1: no grant spend in the settlement window). Revoking
       // is NOT behind `committing`: SPEC §8.1 #6 makes revocation always accepted, and
       // the attempted revocation is itself what posts — better drama than either extreme.
-      grant: (ctx, req) => this.committing(ctx) ?? this.vGrant(ctx, req),
+      grant: (ctx, req) => this.vGrant(ctx, req),
       revoke: (ctx, req) => this.vRevoke(ctx, req),
       // ── `audit` — the third office verb, and it was canon with no handler ────
       //
@@ -7079,7 +7078,7 @@ export class Runtime {
       // that has an audience (A14), over a trade nobody did anything wrong in. The
       // clearing pass is closed across the same window from the other side
       // (`clear.ts` skips the settlement tick), so the door shuts on both hinges.
-      trade: (ctx, req) => this.committing(ctx) ?? this.vTrade(ctx, req),
+      trade: (ctx, req) => this.vTrade(ctx, req),
       // ── `graduate` — the exit from the Commons, and it was missing ─────────
       //
       // Behind `committing` for exactly `trade`'s reason, plus one of its own.
@@ -7090,7 +7089,7 @@ export class Runtime {
       // holding is what decides a principal's constellation and therefore its delivery
       // place, and moving it while tonight's obligations are frozen would change where a
       // settling assessment is payable after the inputs that priced it were hashed.
-      graduate: (ctx, req) => this.committing(ctx) ?? this.vGraduate(ctx, req),
+      graduate: (ctx, req) => this.vGraduate(ctx, req),
       // ── SOVEREIGNTY: two words that already existed and had no handler ─────
       //
       // `post_bond` and `build` are both in SPEC §12.2 and both were unregistered, so this
@@ -7103,14 +7102,82 @@ export class Runtime {
       // reason exactly. `build` moves currency (a cession price) and destroys goods, so the
       // same door, plus its own: a claim changing hands mid-settlement changes who a Charge is
       // billed to after the figures were hashed.
-      post_bond: (ctx, req) => this.committing(ctx) ?? this.vPostBond(ctx, req),
-      build: (ctx, req) => this.committing(ctx) ?? this.vBuild(ctx, req),
-      form: (ctx, req) => this.committing(ctx) ?? this.vForm(ctx, req),
-      apply: (ctx, req) => this.committing(ctx) ?? this.vApply(ctx, req),
-      approve: (ctx, req) => this.committing(ctx) ?? this.vApprove(ctx, req),
-      admit: (ctx, req) => this.committing(ctx) ?? this.vAdmit(ctx, req),
+      post_bond: (ctx, req) => this.vPostBond(ctx, req),
+      build: (ctx, req) => this.vBuild(ctx, req),
+      form: (ctx, req) => this.vForm(ctx, req),
+      apply: (ctx, req) => this.vApply(ctx, req),
+      approve: (ctx, req) => this.vApprove(ctx, req),
+      admit: (ctx, req) => this.vAdmit(ctx, req),
     };
-    return Object.fromEntries(Object.entries(table).map(([verb, h]) => [verb, guarded(h)]));
+    // ── ★ THE FREEZE GATE IS APPLIED FROM ONE SET, AND THE MENU READS THE SAME SET ──────────────
+    //
+    // It used to be written `this.committing(ctx) ?? …` inside seventeen entries above, which the menu
+    // could not read — so an observation whose acts land in the freeze offered `graduate`, `refine`,
+    // `post_bond` and `form` (measured at tick 285 of a six-member world), and the engine refused every
+    // one with INV-18. The set is {@link Runtime.COMMITTING_VERBS}; the table wraps from it here, before
+    // the delegation guard, in the order the entries used to spell; `api/observe.ts` withholds the same
+    // verbs from any observation whose acts would land inside the freeze.
+    const frozenOut = (h: VerbHandler): VerbHandler => (ctx, req) => this.committing(ctx) ?? h(ctx, req);
+    return Object.fromEntries(
+      Object.entries(table).map(([verb, h]) => [
+        verb,
+        guarded(Runtime.COMMITTING_VERBS.has(verb) ? frozenOut(h) : h),
+      ]),
+    );
+  }
+
+  /**
+   * ★ **Verbs the verb table fronts with the freeze gate** ({@link committing}). ONE home: the table
+   * applies the gate from this set, and the menu withholds these verbs from an observation whose acts
+   * would land inside the freeze or on the settlement tick ({@link clockGateFor}).
+   */
+  static readonly COMMITTING_VERBS: ReadonlySet<string> = new Set(['abandon', 'admit', 'apply', 'approve', 'build', 'create', 'engage', 'fill_role', 'form', 'graduate', 'grant', 'haul', 'post_bond', 'refine', 'sign', 'trade', 'withdraw']);
+
+  /**
+   * ★ **Would the verb's own CLOCK refuse this act if it landed at `atTick`?** The menu's question, for
+   * the refusals that depend on nothing but the tick: the freeze gate on {@link COMMITTING_VERBS},
+   * `elect`'s, a delivery's, and a closed ballot. `null` when the clock lets it through — every other
+   * rule is still the verb's own to apply.
+   *
+   * Each answer is the sentence the engine itself would send, so a withheld row and a refusal read the
+   * same: `committingAt`, `electingFrozenAt`, the two delivery faults' freeze sentence, and the ballot's
+   * own fault function asked at the landing tick.
+   */
+  clockGateFor(
+    principal: PrincipalId,
+    verb: string,
+    params: Readonly<Record<string, unknown>>,
+    atTick: number,
+  ): Rejection | null {
+    if (Runtime.COMMITTING_VERBS.has(verb)) return this.committingAt(atTick);
+    if (verb === 'elect') return this.electingFrozenAt(atTick);
+    if (verb === 'deliver') {
+      if (!inFreeze(atTick) && !isSettlementTick(atTick)) return null;
+      const obligation = (readString(params, ['obligation', 'against', 'duty']) ?? '').toUpperCase();
+      const charge = obligation === 'CHARGE' || (obligation === '' && readString(params, ['system', 'claim']) !== null);
+      return reject('A14', charge ? CHARGE_FREEZE_REFUSAL : LEVY_FREEZE_REFUSAL);
+    }
+    if (verb === 'vote') {
+      const kind = (readString(params, ['ballot', 'ballot_kind', 'kind']) ?? LEVY_BALLOT).toUpperCase();
+      const window = kind === CHARGE_BALLOT ? chargeBallotWindow(atTick) : ballotWindow(atTick);
+      if (window.open) return null;
+      return reject(
+        'A14',
+        kind === CHARGE_BALLOT
+          ? `the Charge ballot for Reckoning ${String(window.forReckoning)} closed at tick ` +
+              `${String(window.closesTick)}; the allocation is fixed and the assessment is minted at the start of ` +
+              'that Reckoning.'
+          : (voteFault({
+              book: this.levy,
+              world: this.world,
+              voter: principal,
+              rule: readString(params, ['rule', 'allocation', 'formula']) ?? '',
+              spare: readString(params, ['spare', 'spare_principal', 'relieve']),
+              tick: atTick,
+            }) ?? 'the Levy ballot is closed.'),
+      );
+    }
+    return null;
   }
 
   /**
@@ -9012,10 +9079,15 @@ export class Runtime {
    * explains why being offline through a Reckoning cannot be used against you.
    */
   private electingFrozen(ctx: PhaseContext): Rejection | null {
-    if (!ctx.clock.inFreeze && !ctx.clock.isSettlementTick) return null;
+    return this.electingFrozenAt(ctx.tick);
+  }
+
+  /** {@link electingFrozen} for a tick the menu is asking about — `ctx.clock` is `reckoningClock(ctx.tick)`. */
+  electingFrozenAt(tick: number): Rejection | null {
+    if (!inFreeze(tick) && !isSettlementTick(tick)) return null;
     return reject(
       'INV-18',
-      `the freeze for Reckoning ${String(ctx.clock.reckoning)} has landed at tick ${String(ctx.tick)}, so ` +
+      `the freeze for Reckoning ${String(reckoningIndex(tick))} has landed at tick ${String(tick)}, so ` +
         'the elections are closed: whatever you last stated is what happens tonight, and nothing you send ' +
         'now can change it. That is not a penalty — §5.1 puts no decision inside the settlement window, ' +
         'which is exactly why being offline through one cannot be used against you. Ventures that settle ' +
