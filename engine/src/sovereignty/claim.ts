@@ -314,8 +314,10 @@ export function chargeDeliveryFault(args: {
       'refusal is here rather than a halt because §5.1 re-reads the balances the settlement was computed from.'
     );
   }
-  if (args.claim.state === 'LAPSED' || args.claim.state === 'CEDED') {
-    return `the claim on ${args.claim.system} has already ${args.claim.state === 'LAPSED' ? 'lapsed' : 'been ceded'}; there is nothing left to supply.`;
+  if (args.claim.state === 'LAPSED' || args.claim.state === 'CEDED' || args.claim.state === 'CLOSED') {
+    const how =
+      args.claim.state === 'LAPSED' ? 'lapsed' : args.claim.state === 'CEDED' ? 'been ceded' : 'been closed by the season';
+    return `the claim on ${args.claim.system} has already ${how}; there is nothing left to supply.`;
   }
   if (args.owed <= 0) {
     return (

@@ -446,7 +446,7 @@ function claimLines(ctx: Ctx): readonly Ranked[] {
   if (ctx.baseline?.kind === 'frame') for (const c of list<ClaimLine>(ctx.baseline.frame.claimLines)) before.set(c.claim, c);
   for (const c of list<ClaimLine>(ctx.frame.claimLines)) {
     if (c.claimant !== pid) continue;
-    const ended = c.state === 'LAPSED' || c.state === 'CEDED';
+    const ended = c.state === 'LAPSED' || c.state === 'CEDED' || c.state === 'CLOSED';
     if (ended && before.get(c.claim)?.state === c.state) continue;
     const at = place(c.system);
     switch (c.state) {
@@ -474,6 +474,9 @@ function claimLines(ctx: Ctx): readonly Ranked[] {
         break;
       case 'CEDED':
         out.push({ rank: 18, text: `${h} ceded its claim on ${at}.` });
+        break;
+      case 'CLOSED':
+        out.push({ rank: 18, text: `The season closed ${h}'s claim on ${at}; its bond was untouched.` });
         break;
       case 'SUPPLIED':
         supplied += 1;

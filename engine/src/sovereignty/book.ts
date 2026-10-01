@@ -96,6 +96,7 @@ const CLAIM_STATES: readonly ClaimState[] = Object.freeze([
   'CONTESTED',
   'LAPSED',
   'CEDED',
+  'CLOSED',
 ]);
 
 export function isClaimState(s: string): s is ClaimState {
@@ -363,7 +364,12 @@ export class Book {
   }
 
   /** End a claim. Terminal, and the state says which ending it was. */
-  end(system: SystemId, state: Extract<ClaimState, 'LAPSED' | 'CEDED'>, reckoning: number, to: PrincipalId | null): void {
+  end(
+    system: SystemId,
+    state: Extract<ClaimState, 'LAPSED' | 'CEDED' | 'CLOSED'>,
+    reckoning: number,
+    to: PrincipalId | null,
+  ): void {
     const claim = this.claims.get(system);
     if (claim === undefined) throw new SovereigntyBookError(`there is no claim on ${system} to end`);
     claim.state = state;
@@ -1050,7 +1056,7 @@ export class Book {
 
 /** Terminal states end a claim. A terminal claim is not on the roll and owes nothing. */
 export function isTerminal(state: ClaimState): boolean {
-  return state === 'LAPSED' || state === 'CEDED';
+  return state === 'LAPSED' || state === 'CEDED' || state === 'CLOSED';
 }
 
 function pairKey(reckoning: number, id: string): string {

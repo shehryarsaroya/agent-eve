@@ -96,6 +96,19 @@ export interface VentureRoleRecord extends VentureRole {
 }
 
 /**
+ * ★ What makes a venture **the season's grand venture** (SPEC §7.6): its season, and the yield it
+ * was formed against in place of its kind's `baseYieldMinor`.
+ *
+ * Declared here rather than in `src/season/` so the dependency runs one way — the season module
+ * reads ventures, the venture module never reads seasons. Pinned at formation, inside `terms_hash`
+ * (see `TermsHashInput.grand`), never rewritten: the yield a crew divides is part of what it signed.
+ */
+export interface GrandMarker {
+  readonly season: number;
+  readonly baseYieldMinor: Minor;
+}
+
+/**
  * The stored venture row.
  *
  * Extends core's `Venture` with the five things §7's own block names that
@@ -179,6 +192,8 @@ export interface VentureRecord extends Venture {
   readonly actedBy: PrincipalId | null;
   readonly valuation: PinnedValuation;
   readonly rulesVersion: number;
+  /** ★ The season's grand venture marker, or null for every ordinary venture. See {@link GrandMarker}. */
+  readonly grand: GrandMarker | null;
   resolvedAtTick: number | null;
   /** How many Reckonings this has deferred to (§15.3's bounded cascade). */
   deferrals: number;
@@ -233,6 +248,8 @@ export interface CreateVentureInput {
    * create, and required whenever `boundByGrant` is present — see {@link VentureRecord.actedBy}.
    */
   readonly actedBy?: PrincipalId | null;
+  /** ★ Set exactly when this is the season's grand venture (SPEC §7.6). Absent for every other. */
+  readonly grand?: GrandMarker | null;
 }
 
 /**
@@ -374,6 +391,7 @@ export function createVenture(input: CreateVentureInput): WorldResult<VentureRec
     actedBy,
     valuation: input.valuation,
     rulesVersion: input.rulesVersion,
+    grand: input.grand ?? null,
     resolvedAtTick: null,
     deferrals: 0,
     escrowExecutedAtTick: null,
@@ -395,7 +413,20 @@ export function termsHashOf(venture: VentureRecord): string {
     resolvesAtTick: venture.resolvesAtTick,
     valuation: venture.valuation,
     rulesVersion: venture.rulesVersion,
+    grand: venture.grand,
   });
+}
+
+/**
+ * ★ **The yield a venture is divided against** — its kind's `baseYieldMinor`, or the grand venture's
+ * published yield when it carries a {@link GrandMarker}.
+ *
+ * The ONE answer every proceeds computation over a venture record reads: the delivery, the quote a
+ * signer echoes, the elective ceiling a grant is charged, and the board row. Two answers would be the
+ * preview and the payout disagreeing about one number — §7.1's failure, which PROP-V3 exists to catch.
+ */
+export function yieldBasisOf(venture: Pick<VentureRecord, 'kind' | 'grand'>): Minor {
+  return venture.grand?.baseYieldMinor ?? kindSpec(venture.kind).baseYieldMinor;
 }
 
 // ── Queries ──────────────────────────────────────────────────────────────────

@@ -85,16 +85,17 @@ const RAID_STATE = ['DEMANDED', 'PAID', 'REPULSED', 'PLUNDERED', 'MISSED'] as co
 const CAMPAIGN_STATE = ['MASSING', 'PRESSING', 'TAKEN', 'REBUFFED', 'STARVED', 'LIFTED', 'MOOT'] as const;
 const PULSE_OUTCOME = ['BREACH', 'REBUFF', 'STARVED'] as const;
 /**
- * Sovereignty's five (SPEC §6.3). Listed here for `RaidState`'s reason: `ClaimState` lives in
- * `core/types.ts` because the claim book AND the frame's claim line both need the same five
- * words, and one pixel signature may not have two homes.
+ * Sovereignty's six (SPEC §6.3, A10). Listed here for `RaidState`'s reason: `ClaimState` lives in
+ * `core/types.ts` because the claim book AND the frame's claim line both need the same six
+ * words, and one pixel signature may not have two homes. The sixth, `CLOSED`, is the season's
+ * ending (A10): neither the world's verdict (`LAPSED`) nor the holder's choice (`CEDED`).
  *
  * This union IS the pixel signature, and it is the one that replaced a §11.2 leak: the
  * rejected design published "Reckonings of Charge remaining", a public recipe divided by a
  * private stockpile. These five carry no such quantity — they are the world's own published
  * verdict about how many Charges a claim has already missed.
  */
-const CLAIM_STATE = ['SUPPLIED', 'STRAINED', 'CONTESTED', 'LAPSED', 'CEDED'] as const;
+const CLAIM_STATE = ['SUPPLIED', 'STRAINED', 'CONTESTED', 'LAPSED', 'CEDED', 'CLOSED'] as const;
 /**
  * Combat's five (SPEC §9A). Listed here for `RaidState`'s reason: `EngagementState` lives in
  * `core/types.ts` because the engagement book AND the frame's battle line both need the same five
@@ -228,7 +229,7 @@ describe('PROP-O3 — the §17 budgets, counted', () => {
   });
 
   it('the union sizes are all pinned, so a quiet addition shows up as a diff', () => {
-    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5, 5, 5, 7, 3]);
+    expect(ALL_ENUMS.map(([, l]) => l.length)).toEqual([5, 5, 3, 3, 4, 8, 6, 2, 2, 2, 5, 6, 5, 7, 3]);
   });
 });
 

@@ -41,6 +41,7 @@ import {
   computeClaims,
   computeProceeds,
   residualAtPercentile,
+  yieldBasisOf,
   type Percentile,
   type VentureRecord,
 } from '../venture/index.js';
@@ -64,6 +65,7 @@ export function slotClaimAt(
   const filled = allRoleIndices(venture);
   const proceeds = computeProceeds({
     kind: venture.kind,
+    baseYieldMinor: yieldBasisOf(venture),
     filled,
     stageBps: NEUTRAL_STAGE_BPS,
     residualSignedBps: residualAtPercentile(venture.kind, percentile),

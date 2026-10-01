@@ -52,6 +52,7 @@ import {
   openIndices,
   residualAtPercentile,
   roleOfPrincipal,
+  yieldBasisOf,
   type ClaimBreakdown,
   type Percentile,
   type VentureRecord,
@@ -415,6 +416,7 @@ function claimsAt(venture: VentureRecord, percentile: Percentile): ClaimBreakdow
   const filled = filledIndices(venture);
   const proceeds = computeProceeds({
     kind: venture.kind,
+    baseYieldMinor: yieldBasisOf(venture),
     filled,
     stageBps: NEUTRAL_STAGE_BPS,
     residualSignedBps: residualAtPercentile(venture.kind, percentile),
