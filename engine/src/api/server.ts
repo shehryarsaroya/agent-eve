@@ -89,6 +89,14 @@ import {
   type SignableRequest,
 } from '../identity/index.js';
 import { buildHealth, type CastHealth, type HaltRecord, type HealthOptions } from './health.js';
+import {
+  FOLLOW_PATHS,
+  createFollow,
+  followRouter,
+  followWorldOf,
+  type FollowService,
+  type FollowSetup,
+} from './follow/index.js';
 import { IdempotencyStore } from './idempotency.js';
 import {
   MAX_BODY_BYTES,
@@ -231,6 +239,11 @@ export interface ApiOptions {
    * where a file is.
    */
   readonly framesDir?: string | null;
+  /**
+   * Follow by email (`src/api/follow/`), or null/absent for none. Its routes are mounted
+   * either way — with no service they answer `503 FOLLOW_DISABLED`, never `NO_SUCH_ROUTE`.
+   */
+  readonly follow?: FollowService | null;
 }
 
 /**
@@ -243,6 +256,7 @@ export interface ApiContext {
   readonly keyring: Keyring;
   readonly limiter: RateLimiter;
   readonly idempotency: IdempotencyStore;
+  readonly follow: FollowService | null;
   readonly discrepancies: readonly DiscrepancyReport[];
   /** Wakes spent per principal, this Reckoning. §12.4's budget. */
   wakesSpent(principal: PrincipalId): number;
@@ -894,6 +908,14 @@ export function createApp(options: ApiOptions): CreatedApp {
     });
   });
 
+  // ── follow by email ───────────────────────────────────────────────────────
+  //
+  // Wiring only; the feature is `src/api/follow/`. Mounted whether or not mail is on, so a
+  // link already in an inbox keeps working and a client is told "switched off" rather than
+  // "no such route". It reads two facts from the world — does a handle exist, what tick is
+  // it — through an adapter that cannot write, and nothing it stores is in the record.
+  router.use(followRouter({ service: options.follow ?? null, trustEdge, world: followWorldOf(runtime) }));
+
   // ══════════════════════════════════════════════════════════════════════════
   // ★ **`GET /frames/latest.json` — THE ROUTE `agent.md` SENDS AGENTS TO AND THE APP DENIED EXISTED.**
   //
@@ -1017,7 +1039,8 @@ export function createApp(options: ApiOptions): CreatedApp {
         // reader's whole map.
         `no route ${req.method} ${scrub(publicSpelling(req.originalUrl))}. The whole API is POST ${API_BASE_PATH}/enroll, ` +
           `GET ${API_BASE_PATH}/observe, POST ${API_BASE_PATH}/act, GET ${API_BASE_PATH}/health, ` +
-          `POST ${API_BASE_PATH}/discrepancy, GET ${API_BASE_PATH}/agent.md, and the unsigned public ` +
+          `POST ${API_BASE_PATH}/discrepancy, GET ${API_BASE_PATH}/agent.md, POST ${API_BASE_PATH}${FOLLOW_PATHS.follow} ` +
+          `(and the two links it emails), and the unsigned public ` +
           `frames at GET /frames/live.json (every tick) · /frames/${LATEST} · /frames/${FRAME_INDEX}.`,
       ),
     );
@@ -1056,6 +1079,7 @@ export function createApp(options: ApiOptions): CreatedApp {
     keyring,
     limiter,
     idempotency,
+    follow: options.follow ?? null,
     discrepancies,
     wakesSpent: (principal) => wakes.get(principal)?.spent ?? 0,
     cacheHits: () => cacheHits,
@@ -1815,6 +1839,12 @@ export interface ServeOptions {
   readonly acceptDivergence?: string | null;
   /** Force a genesis replay, whatever the snapshot says. See {@link checkpointAdoptionDisabledFromEnv}. */
   readonly disableCheckpointAdoption?: boolean;
+  /**
+   * Follow by email, already assembled (tests), or null for none. When omitted it is built
+   * from the environment by `createFollow`, which leaves it OFF unless `RESEND_API_KEY` and
+   * `COMPACT_FOLLOW_SECRET` are both set.
+   */
+  readonly follow?: FollowSetup | null;
 }
 
 export interface ServeResult {
@@ -1993,6 +2023,21 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     );
   }
 
+  // Follow by email: OFF unless configured, and never part of the record — its store is not
+  // the journal and the runtime never sees it (`src/api/follow/`). Built after a RUNNING boot
+  // only: a HELD world serves nothing, this included.
+  const follow: FollowSetup | null =
+    options.follow !== undefined
+      ? options.follow
+      : createFollow({
+          env: process.env,
+          clock,
+          framesDir: options.framesDir,
+          // An injected journal store is a test; its follows stay in memory beside it.
+          database: options.store === undefined ? databaseFromEnv(options) : null,
+          principalExists: followWorldOf(runtime).principalExists,
+        });
+
   const created = createApp({
     runtime,
     clock,
@@ -2002,7 +2047,10 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     keyring,
     seats,
     limiter: new RateLimiter(undefined, undefined, rateLimitAllowlist),
+    follow: follow?.service ?? null,
     health: {
+      // Informational: a mail outage is never a reason for `/health` to go 503.
+      follow: () => follow?.health() ?? null,
       requireLiveDecisions: llmCastEnabled(),
       durability: (): ReturnType<Journal['health']> => journal.health(),
       /** Named so a PAUSED world can be diagnosed without a debugger on the box. */
@@ -2095,7 +2143,12 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     if (options.framesDir !== null && report.clock.isSettlementTick) {
       try {
         const frame = runtime.reckoningFrame();
-        if (frame !== null) publishFrame(options.framesDir, frame);
+        if (frame !== null) {
+          publishFrame(options.framesDir, frame);
+          // The followers' recaps, from the file just written. `kick` returns at once and
+          // never throws: the work runs between ticks, and the tick never learns mail exists.
+          follow?.recaps.kick();
+        }
       } catch (error: unknown) {
         process.stderr.write(
           `frame publish failed at tick ${String(report.tick)} (non-fatal): ` +
@@ -2142,6 +2195,9 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
 
   // The world is reproduced and running: hand the already-bound socket over to it.
   gate.run(created.app);
+  // Catch up: a restart between publishing a Reckoning and finishing its recaps resumes here,
+  // and `last_sent_reckoning` decides who is still owed one.
+  follow?.recaps.kick();
   return {
     created,
     boot: boot.outcome,
@@ -2149,6 +2205,9 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     port,
     close: async () => {
       clearInterval(interval);
+      // Mail first: stop the worker and drain the request queue, so nothing is mid-send when
+      // the process goes. A follow is not part of the record, so nothing here can delay it.
+      await follow?.close();
       // Drain buffered ticks to the store, then close it. A sustained outage leaves a
       // logged backlog — the bounded tail loss the Journal header describes — never a
       // silent claim of durability.
@@ -2381,13 +2440,9 @@ class ServeGate {
  * shape of the outage this subsystem was written to prevent, so it is made visible.
  */
 function storeFromEnv(options: ServeOptions, clock: Clock): JournalStore {
-  const url =
-    options.databaseUrl ??
-    process.env['COMPACT_DATABASE_URL'] ??
-    process.env['DATABASE_URL'] ??
-    null;
-  const hasPgEnv = process.env['PGHOST'] !== undefined || process.env['PGDATABASE'] !== undefined;
-  if (url !== null || hasPgEnv) {
+  const database = databaseFromEnv(options);
+  if (database !== null) {
+    const url = database.connectionString;
     return new PgJournalStore({
       ...(url === null ? {} : { connectionString: url }),
       nowMs: () => clock.nowMs(),
@@ -2399,6 +2454,22 @@ function storeFromEnv(options: ServeOptions, clock: Clock): JournalStore {
       'the permanent public record durable.\n',
   );
   return new InMemoryJournalStore();
+}
+
+/**
+ * Is a database configured, and by which connection string (null: the `PG*` variables)?
+ *
+ * One reader of the database environment for both stores that use it — the journal and the
+ * follow store — so the two can never disagree about whether this world has a database.
+ */
+function databaseFromEnv(options: ServeOptions): { readonly connectionString: string | null } | null {
+  const url =
+    options.databaseUrl ??
+    process.env['COMPACT_DATABASE_URL'] ??
+    process.env['DATABASE_URL'] ??
+    null;
+  const hasPgEnv = process.env['PGHOST'] !== undefined || process.env['PGDATABASE'] !== undefined;
+  return url !== null || hasPgEnv ? { connectionString: url } : null;
 }
 
 /**

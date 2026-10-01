@@ -79,6 +79,27 @@ export const APPEND_ONLY_UNPARTITIONED = [
   'snapshot',
 ] as const;
 
+/**
+ * Every migration `schema.sql` carries, in order. The file is applied whole on every deploy
+ * (each statement is idempotent), so this list is a record of WHAT is in it rather than a
+ * sequence of scripts to run.
+ *
+ * Migration 2 is the follow-by-email tables, and its description says the one thing about
+ * them that matters: they are not part of the record. They are in NEITHER append-only list
+ * above, deliberately — an email address must be deletable, and an unsubscribe is an UPDATE.
+ */
+export const SCHEMA_MIGRATIONS: readonly (readonly [number, string])[] = Object.freeze([
+  [1, 'initial: identity, value, event ledger, action log, wake accounting, snapshots'],
+  [2, 'follow by email: private, deletable follow_subscription and follow_mail_day, outside the record'],
+]);
+
+/**
+ * The follow-by-email tables. Named so a test can assert they never join an append-only list:
+ * the day one of them did, an unsubscribe would fail at the database and nobody could ever
+ * stop receiving mail.
+ */
+export const PRIVATE_DELETABLE_TABLES = ['follow_subscription', 'follow_mail_day'] as const;
+
 export function partitionIndexForTick(tick: number): number {
   return Math.floor(tick / TICKS_PER_PARTITION);
 }
@@ -196,12 +217,14 @@ export async function migrate(opts: MigrateOptions): Promise<void> {
     const sql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
     await client.query(sql);
 
-    const { rowCount } = await client.query(`SELECT 1 FROM schema_migration WHERE version = 1`);
-    if (rowCount === 0) {
-      await client.query(
-        `INSERT INTO schema_migration (version, description) VALUES (1, $1)`,
-        ['initial: identity, value, event ledger, action log, wake accounting, snapshots'],
-      );
+    for (const [version, description] of SCHEMA_MIGRATIONS) {
+      const { rowCount } = await client.query(`SELECT 1 FROM schema_migration WHERE version = $1`, [version]);
+      if (rowCount === 0) {
+        await client.query(`INSERT INTO schema_migration (version, description) VALUES ($1, $2)`, [
+          version,
+          description,
+        ]);
+      }
     }
 
     const from = partitionIndexForTick(opts.currentTick);
