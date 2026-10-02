@@ -331,6 +331,13 @@ export const MAX_DOSSIER_OFFERS = 6;
 export const MAX_PARLEY_AFFORDANCES = 6;
 
 /**
+ * `revoke`, `apply` and `approve` rows the menu carries, each (5C-ter). Two apiece: each is one act
+ * on one named object, the overflow is counted in `withheld` with the ids, and a menu of every grant a
+ * busy grantor holds open would crowd out the acts with deadlines. *(calibrate)*
+ */
+export const MAX_OFFICE_OFFERS = 2;
+
+/**
  * Kinds offered as a `create` affordance.
  *
  * RAID and SIEGE are excluded because they are hostile and every newcomer is Commons-seated, where a
@@ -436,6 +443,12 @@ export interface Withheld {
 interface WithheldRow {
   readonly verb: string | null;
   readonly text: string;
+  /**
+   * ★ How many acts this row accounts for — required, so a row with no count is a compile error.
+   * `withheld.count` is the sum of these and nothing else: it was a separate hand-kept sum, and the
+   * PARLEY and no-CAMPAIGN rows were in `verbs` and never in it.
+   */
+  readonly n: number;
 }
 
 export interface Observation {
@@ -4481,6 +4494,104 @@ function affordancesFor(
     }
   }
 
+  // 5C-ter. ★ **`revoke`, `apply` and `approve` — legal, executing, and offered nowhere.**
+  //
+  //     ══════════════════════════════════════════════════════════════════════
+  //     Only `observe/catalogue.ts` built a `revoke` row, and nothing serves that module. So the one
+  //     lever A6 hands a grantor — `revoke` bounds what is LEFT — was never on the menu of anybody
+  //     who had issued a grant, while `withheld` told a grantor at its shortlist's end to "`revoke` the
+  //     standing one first" and closed with *"Nothing you were eligible for has been dropped"*. Two
+  //     test exception lists said the verb was offered. `apply` to an OPEN house and `approve` on an
+  //     open office proposal were the same shape: the verb accepts them, the payload shows the input
+  //     (`grants.syndicates[]` and its `open_proposals`), and the menu was silent.
+  //
+  //     Each row is the verb's own precondition read through the same book: `revoke` needs only that
+  //     the reader issued a grant still live where the act lands; `apply` is `admissionFault` (the
+  //     book's predicate, shared with the verb) on an OPEN charter; `approve` an open proposal in a
+  //     house the reader sits in and has not yet approved. Capped, and the overflow is counted below.
+  //     ══════════════════════════════════════════════════════════════════════
+  const revocable = runtime.grants.forGrantor(principal).filter((g) => runtime.grants.isLive(g.id, tick + 1));
+  for (const grant of revocable.slice(0, MAX_OFFICE_OFFERS)) {
+    const room = runtime.grants.headroom(grant.id);
+    eligible.push({
+      verb: 'revoke',
+      params: { grant: grant.id },
+      cost: 1,
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `ends grant ${grant.id} — ${grant.delegate}'s office over you — from the tick after this lands (an act ` +
+        `of theirs landing on the same tick still stands). It takes back the ${String(room.direct)} of direct ` +
+        `and ${String(room.contingent)} of contingent headroom still unspent. Nothing they already did in your ` +
+        'name is undone, every DOSSIER they already cut stays re-handable forever, and the revocation is public ' +
+        'and final: a revoked grant is never live again.',
+      expires_tick: Math.min(grant.expiresTick, tick + QUOTE_PIN_TICKS),
+      quote_id: quoteId(principal, tick, 'revoke', { grant: grant.id }),
+    });
+  }
+  const revokeDropped = revocable.slice(MAX_OFFICE_OFFERS).map((g) => String(g.id));
+  const joinable = runtime.syndicates
+    .liveInOrder()
+    .filter(
+      (s) => s.charter.admission === 'OPEN' && runtime.syndicates.admissionFault(s.id, principal, tick + 1) === null,
+    );
+  for (const house of joinable.slice(0, MAX_OFFICE_OFFERS)) {
+    eligible.push({
+      verb: 'apply',
+      params: { syndicate: house.id },
+      cost: 1,
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `joins ${house.name} (${house.id}) on the tick it lands: its charter admits OPEN, so applying IS admission ` +
+        'and no member has to agree. You join on a charter that can never change — decision ' +
+        `${house.charter.decision}, treasury_offices ${String(house.charter.treasuryOffices)}. Joining pools ` +
+        'nothing; `apply` again with {"stake": N} adds earnings to its pool, which only an office can ever ' +
+        `spend. Leaving costs a Reckoning of notice, and you may sit in ${String(MAX_SYNDICATES_PER_PRINCIPAL)} houses.`,
+      expires_tick: tick + QUOTE_PIN_TICKS,
+      quote_id: quoteId(principal, tick, 'apply', { syndicate: house.id }),
+    });
+  }
+  const applyDropped = joinable.slice(MAX_OFFICE_OFFERS).map((s) => String(s.id));
+  const approvable = runtime.syndicates
+    .of(principal, tick + 1)
+    .flatMap((house) =>
+      runtime.syndicates
+        .openProposals(house.id, tick + 1)
+        .filter((p) => !p.approvals.includes(principal))
+        .map((p) => ({ house, p })),
+    );
+  for (const { house, p } of approvable.slice(0, MAX_OFFICE_OFFERS)) {
+    const limit = (key: string): string => (typeof p.terms[key] === 'number' ? String(p.terms[key]) : '?');
+    eligible.push({
+      verb: 'approve',
+      params: { proposal: p.id },
+      cost: 1,
+      // Nothing of the reader's own stores moves: an office spends the HOUSE's pool, bounded by the
+      // stored terms, and the sentence says how far.
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `approves ${p.id}: an OFFICE for ${p.delegate} over ${house.id}'s pool, on the terms stored with the ` +
+        `proposal (${limit('max_direct_loss')} direct, ${limit('max_contingent_liability')} contingent). It ` +
+        `carries the moment approvals reach ${String(runtime.syndicates.approvalsNeeded(house.id, tick + 1))} ` +
+        `(${String(p.approvals.length)} so far) and lapses at tick ${String(p.expiresAtTick)}; carried, it is an ` +
+        'ordinary grant — LIMITED, public, revocable. Approving twice is one approval.',
+      expires_tick: Math.min(p.expiresAtTick - 1, tick + QUOTE_PIN_TICKS),
+      quote_id: quoteId(principal, tick, 'approve', { proposal: p.id }),
+    });
+  }
+  const approveDropped = approvable.slice(MAX_OFFICE_OFFERS).map(({ p }) => p.id);
+  /**
+   * ★ The delegated half of a grant the reader HOLDS — counted, not built. `create` and `elect` in a
+   * grantor's name are legal through any live grant carrying them, and the menu does not enumerate
+   * acts in somebody else's name; one row per (grant, verb) says so, with the call and the headroom.
+   */
+  const delegatedVerbs = runtime.grants
+    .forDelegate(principal)
+    .filter((g) => runtime.grants.isLive(g.id, tick + 1))
+    .flatMap((g) => g.verbs.map((verb) => ({ grant: g, verb })));
+
   // 5D. **FOUNDING A HOUSE.** `form` was legal, priced, and never offered — the fourth
   //     built-but-unreachable primitive found this session. Its entry point being absent is why a
   //     probe agent that wanted a syndicate had to reconstruct the id convention from our source.
@@ -4768,8 +4879,6 @@ function affordancesFor(
     else row.count += 1;
     return false;
   });
-  let clockWithheld = 0;
-  for (const row of clockGated.values()) clockWithheld += row.count;
 
   // ── EVERY DISTINCT VERB BEFORE ANY VERB'S REPEATS ─────────────────────────
   //
@@ -4808,6 +4917,7 @@ function affordancesFor(
   const reasons: WithheldRow[] = [];
   if (dropped > 0) {
     reasons.push({
+      n: dropped,
       verb: null,
       text:
       `${String(dropped)} further legal acts exist and were not sent, because one observation carries at most ` +
@@ -4816,6 +4926,7 @@ function affordancesFor(
   }
   for (const [verb, row] of [...clockGated.entries()].sort((a, b) => cmp(a[0], b[0]))) {
     reasons.push({
+      n: row.count,
       verb,
       text:
         `${String(row.count)} ${verb} act(s) are not offered because an act sent now lands on tick ` +
@@ -4826,6 +4937,7 @@ function affordancesFor(
     // Counted, not silent. PROP-O1 is about omissions being *countable*, and "the
     // mechanic has not landed" is an omission the agent is entitled to know about.
     reasons.push({
+      n: notLive,
       verb: null,
       text:
       `${String(notLive)} act(s) you are otherwise eligible for name a verb whose mechanic has not landed yet; ` +
@@ -4834,6 +4946,7 @@ function affordancesFor(
   }
   if (alternateHands > 0) {
     reasons.push({
+      n: alternateHands,
       verb: 'fill_role',
       text:
       `${String(alternateHands)} further legal fill_role act(s) exist and are not listed: each open slot on ` +
@@ -4844,6 +4957,7 @@ function affordancesFor(
   }
   if (rowsOutOfReach > 0) {
     reasons.push({
+      n: rowsOutOfReach,
       verb: 'fill_role',
       text:
       `${String(rowsOutOfReach)} slot(s) on ventures.board[] have no fill_role offered because you have no ` +
@@ -4854,6 +4968,7 @@ function affordancesFor(
   }
   if (rowsGated > 0 && fillGate !== null) {
     reasons.push({
+      n: rowsGated,
       verb: 'fill_role',
       text:
         `${String(rowsGated)} slot(s) on ventures.board[] have no fill_role offered because the engine would ` +
@@ -4862,6 +4977,7 @@ function affordancesFor(
   }
   if (createsGated > 0 && createGate !== null) {
     reasons.push({
+      n: createsGated,
       verb: 'create',
       text:
         `${String(createsGated)} create act(s) you could fund are not offered because the engine would refuse ` +
@@ -4870,6 +4986,7 @@ function affordancesFor(
   }
   if (boardBarred.slots > 0) {
     reasons.push({
+      n: boardBarred.slots,
       verb: 'fill_role',
       text:
         `${String(boardBarred.slots)} open slot(s) are not on ventures.board[] because you held a grant over ` +
@@ -4880,10 +4997,11 @@ function affordancesFor(
     });
   }
   // ★ The grand venture's two gates, each counted with the engine's own sentence (PROP-O1).
-  for (const why of grandFillWithheld) reasons.push({ verb: 'fill_role', text: why });
-  if (grandCreateWithheld !== null) reasons.push({ verb: 'create', text: grandCreateWithheld });
+  for (const why of grandFillWithheld) reasons.push({ n: 1, verb: 'fill_role', text: why });
+  if (grandCreateWithheld !== null) reasons.push({ n: 1, verb: 'create', text: grandCreateWithheld });
   if (rowsWithNoHand > 0) {
     reasons.push({
+      n: rowsWithNoHand,
       verb: 'fill_role',
       text:
       `${String(rowsWithNoHand)} slot(s) on ventures.board[] have no fill_role offered because none of your ` +
@@ -4894,6 +5012,7 @@ function affordancesFor(
   }
   if (commonsBoundLanes > 0) {
     reasons.push({
+      n: commonsBoundLanes,
       verb: 'move',
       text:
       `${String(commonsBoundLanes)} move(s) onto lanes leaving the Commons are not offered because your ` +
@@ -4907,6 +5026,7 @@ function affordancesFor(
     // Counted, never silent: this is the one omission that, left uncounted, would look
     // exactly like the defect a playtest already found — an exit that does not exist.
     reasons.push({
+      n: crossingWithheld,
       verb: 'graduate',
       text:
       `${String(crossingWithheld)} graduate act(s) exist and are not offered because the crossing is not ` +
@@ -4918,6 +5038,7 @@ function affordancesFor(
   }
   if (worksWithheld > 0 && worksHere !== null) {
     reasons.push({
+      n: worksWithheld,
       verb: 'build',
       text:
       `a WORKS at ${worksHere.system} is not offered because you cannot pay for it yet: it costs ` +
@@ -4931,6 +5052,7 @@ function affordancesFor(
   }
   if (crossingAnchored > 0 && crossing !== null) {
     reasons.push({
+      n: crossingAnchored,
       verb: 'graduate',
       text:
       `${String(crossingAnchored)} graduate act(s) exist and are not offered because you hold live claim(s) on ` +
@@ -4944,6 +5066,7 @@ function affordancesFor(
     // uncounted this would read as "your Charge is unpayable", which is the shape of the
     // refusal loop that buries real rules-surface defects (AGT-S3).
     reasons.push({
+      n: chargeNoHand,
       verb: 'deliver',
       text:
       `${String(chargeNoHand)} Charge delivery(ies) exist and are not offered because none of YOUR hands is ` +
@@ -4965,6 +5088,7 @@ function affordancesFor(
     // The fix is usually one ordinary act, so the sentence says which: a hand at the delivery
     // place. That is the same hand paying your own tribute puts there.
     reasons.push({
+      n: carryBlocked,
       verb: 'deliver',
       text:
       `${String(carryBlocked)} deliver act(s) on ANOTHER principal's Levy are not offered — a stated share of ` +
@@ -4983,6 +5107,7 @@ function affordancesFor(
     // SIGHT, so there is nothing that could be in the log — which is the fact that teaches the
     // agent what a clearance actually is, at the moment it is holding the alternative.
     reasons.push({
+      n: auditNoClearance,
       verb: 'audit',
       text:
         `${String(auditNoClearance)} grant(s) you issued carry no CLEARANCE, so nobody can cut a DOSSIER on ` +
@@ -5002,6 +5127,7 @@ function affordancesFor(
     // makes it actionable: a delegate reading this can construct the call, which is exactly what
     // §6's promise means and what an uncounted `break` denied.
     reasons.push({
+      n: clearanceOffersDropped,
       verb: 'message',
       text:
         `${String(clearanceOffersDropped)} DOSSIER row(s) you are cleared to cut are not on this list — the ` +
@@ -5020,6 +5146,7 @@ function affordancesFor(
     // there looking useful. `holding.sway` publishes the standing figure, `force.your_sway`
     // publishes it per standoff, and this says out loud that the offer was narrowed and by what.
     reasons.push({
+      n: raiderJoinsBeyondSway,
       verb: 'join',
       text:
         `${String(raiderJoinsBeyondSway)} standoff(s) are offered to you on the DEFENDER side only: your ` +
@@ -5035,9 +5162,40 @@ function affordancesFor(
   // standoff (one principal is one party row) and naming it here would send an agent at a refusal.
   // The row exists because force stopped being a row count: *"more of your hands would count"* is now
   // a true and actionable sentence, and a menu that goes quiet over it teaches the old rule.
-  if (grantSilent !== null) reasons.push({ verb: 'grant', text: grantSilent });
+  if (grantSilent !== null) reasons.push({ n: 1, verb: 'grant', text: grantSilent });
+  // ★ 5C-ter's overflow and the delegated half, each counted with the call that takes it.
+  const overflow = (verb: string, ids: readonly string[], what: string, call: string): void => {
+    if (ids.length === 0) return;
+    reasons.push({
+      n: ids.length,
+      verb,
+      text:
+        `${String(ids.length)} more ${what} and are not on this list — the menu carries ` +
+        `${String(MAX_OFFICE_OFFERS)}: ${ids.join(', ')}. ${call} takes any of them`,
+    });
+  };
+  overflow('revoke', revokeDropped, 'live grant(s) you issued can be revoked', '`revoke {"grant": "<id>"}`');
+  overflow('apply', applyDropped, 'OPEN house(s) would admit you', '`apply {"syndicate": "<id>"}`');
+  overflow('approve', approveDropped, 'open office proposal(s) await your approval', '`approve {"proposal": "<id>"}`');
+  for (const { grant, verb } of delegatedVerbs) {
+    const room = runtime.grants.headroom(grant.id);
+    reasons.push({
+      n: 1,
+      verb,
+      text:
+        `you hold grant ${grant.id} from ${grant.grantor}, carrying \`${verb}\` with ${String(room.direct)} direct ` +
+        `and ${String(room.contingent)} contingent headroom left. Acts in another principal's name are not built ` +
+        'on this menu; send ' +
+        (verb === 'elect'
+          ? `\`elect {"venture": "<a venture ${grant.grantor} created>", "role": <n>, "election": "IN_FULL", ` +
+            `"grant": "${grant.id}"}\` — once per role, charged against those LIMITS`
+          : `\`create {"kind": "<kind>", "stage": "<system>", "on_behalf_of": "${grant.grantor}", ` +
+            `"grant": "${grant.id}"}\` — it binds ${grant.grantor} the moment it is made, inside those LIMITS`),
+    });
+  }
   if (reinforcementSilent.length > 0) {
     reasons.push({
+      n: reinforcementSilent.length,
       verb: 'move',
       text: `no reinforcement is offered for ${reinforcementSilent.join('; ')}`,
     });
@@ -5050,6 +5208,7 @@ function affordancesFor(
     // capacity from silence. `capacity.rule` is the sentence that names which one and what would
     // change it — the entitlement is a deal, never another account (A15).
     reasons.push({
+      n: Math.max(1, parleyWithheldCount),
       verb: 'message',
       text:
         `${String(parleyWithheldCount)} PARLEY act(s) are not offered. ${parleyWithheldReason} A MESSAGE inside ` +
@@ -5064,6 +5223,7 @@ function affordancesFor(
     // unactionable. Naming the principals is what lets an agent construct the call itself, which is
     // the whole promise of "withheld from the MENU is not withheld from the GAME".
     reasons.push({
+      n: parleyReachDropped,
       verb: 'message',
       text:
         `${String(parleyReachDropped)} principal(s) you may PARLEY are not on this list — the menu carries ` +
@@ -5079,6 +5239,7 @@ function affordancesFor(
   }
   if (parleyGated > 0) {
     reasons.push({
+      n: parleyGated,
       verb: 'message',
       text:
         `${String(parleyGated)} reachable principal(s) were dropped by the shared gate rather than by the cap ` +
@@ -5095,6 +5256,7 @@ function affordancesFor(
     // and will not plan the one decision the mechanic exists to force: WHICH target, given that
     // you get two.
     reasons.push({
+      n: 1,
       verb: 'demand',
       text:
       `every demand you could open is withheld because you have spent all ${String(AGGRESSION_PER_RECKONING)} ` +
@@ -5116,6 +5278,7 @@ function affordancesFor(
     // The count is 1 rather than one-per-neighbour for the same reason the branch above gives:
     // the thing withheld is the ACT, and there is exactly one of it.
     reasons.push({
+      n: 1,
       verb: 'demand',
       text:
       `no demand is offered even though you hold ${String(demandsLeft)} of ` +
@@ -5141,9 +5304,11 @@ function affordancesFor(
   // not catch it because it asks a GLOBAL question ("is every live verb offered somewhere") that
   // passes. The property that broke is per-observation. So a campaign that is not offered says which
   // of the three walls it hit, every time.
-  if (campaignObjectives.length === 0 && campaignViews.every((c) => c.your_side === null)) {
+  const campaignSilent = campaignObjectives.length === 0 && campaignViews.every((c) => c.your_side === null);
+  if (campaignSilent) {
     const holdingNow = world.holdingByPrincipal.get(principal) === undefined ? null : holdingOf(world, principal);
     reasons.push({
+      n: 1,
       verb: 'build',
       text:
         'no CAMPAIGN is offered. A campaign is the only way to take a claim from a holder that is PAYING its ' +
@@ -5171,6 +5336,7 @@ function affordancesFor(
     // holding back eligible slots — the engine contradicting `agent.md` §6 in the same
     // breath as the count that exists to prevent exactly that.
     reasons.push({
+      n: boardDropped,
       verb: null,
       text:
       `${String(boardDropped)} further slot(s) you are eligible for are not on ventures.board[] at all, ` +
@@ -5210,7 +5376,7 @@ function affordancesFor(
       })
     : [];
   if (tradeWhy.length > 0) {
-    reasons.push({ verb: 'trade', text: tradeWhy.join('; also ') });
+    reasons.push({ n: 1, verb: 'trade', text: tradeWhy.join('; also ') });
   }
 
   // ── ★ PHASE 3'S RISK MARKET, OFFERED OR ACCOUNTED — NEVER SILENT ───────────
@@ -5224,45 +5390,19 @@ function affordancesFor(
   // Every ground here is an existing `WithheldGround` (`SHORT_FUNDS · WINDOW_SHUT · NO_RECORD ·
   // FROZEN`) rather than a fifth: an agent that has learned `SHORT_FUNDS` on a venture already knows
   // what it means over a COVER, and the union is a closed set checked against §3's canon.
-  let riskWithheld = 0;
   for (const row of riskAffordances.withheld) {
-    riskWithheld += 1;
-    reasons.push({ verb: row.verb, text: row.text });
+    reasons.push({ n: 1, verb: row.verb, text: row.text });
   }
   return {
     list,
     withheld: {
-      count:
-        dropped +
-        notLive +
-        clockWithheld +
-        alternateHands +
-        rowsWithNoHand +
-        rowsOutOfReach +
-        rowsGated +
-        createsGated +
-        boardBarred.slots +
-        grandFillWithheld.length +
-        (grandCreateWithheld === null ? 0 : 1) +
-        boardDropped +
-        crossingWithheld +
-        crossingAnchored +
-        worksWithheld +
-        chargeNoHand +
-        carryBlocked +
-        auditNoClearance +
-        clearanceOffersDropped +
-        commonsBoundLanes +
-        // ★ §16.12 #1. One per standoff whose RAIDER side was withheld, not one for the mechanic:
-        // the thing withheld is an act at a place, and there is one of those per standoff.
-        raiderJoinsBeyondSway +
-        (grantSilent === null ? 0 : 1) +
-        // ★ One per standoff the reader is a party to whose reinforcement route was empty.
-        reinforcementSilent.length +
-        (demandCapacitySpent ? 1 : 0) +
-        (demandSilent ? 1 : 0) +
-        (tradeWhy.length > 0 ? 1 : 0) +
-        riskWithheld,
+      // ── ★ THE SUM OF THE ROWS, AND NOTHING ELSE ─────────────────────────────────────────────
+      //
+      // It was a separate hand-kept sum of ~27 counters, and it drifted: the three PARLEY rows and the
+      // no-CAMPAIGN row were pushed into `reasons` — so `verbs` named `message` and `build` — while the
+      // sum counted neither, and a payload could read `count: 0` beside `verbs: ["message"]`. Every row
+      // now carries its own `n` (required by the type), so the count and the rows cannot disagree.
+      count: reasons.reduce((total, row) => total + row.n, 0),
       verbs: [...new Set(reasons.map((r) => r.verb).filter((v): v is string => v !== null))].sort(cmp),
       reason:
         reasons.length === 0

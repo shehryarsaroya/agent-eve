@@ -56,17 +56,25 @@ const UNOFFERED: Readonly<Record<string, string>> = Object.freeze({
     'RESPONSE-ONLY — needs a claim you hold and want to drop; offered from the sovereignty block ' +
     'when one is STRAINED. Covered by test/sovereignty/anchored-and-territorial.spec.ts.',
   admit:
-    'RESPONSE-ONLY — needs a pending application to your syndicate. Covered by ' +
-    'test/syndicate/form-through-the-front-door.spec.ts.',
+    'RESPONSE-ONLY — an INVITE house keeps no queue of applicants (`syndicate/apply.ts`: "WHY INVITE ' +
+    'STORES NOTHING"), so the menu has nobody to name; a sitting member admits the principal that asked ' +
+    'it by message. Covered by test/syndicate/admit-gates.spec.ts.',
   apply:
-    'RESPONSE-ONLY — needs a syndicate you are not in whose charter admits applications. The ' +
-    'heuristic cast never forms one, so this run never produces the state.',
-  approve: 'RESPONSE-ONLY — needs an open proposal in a syndicate you sit in.',
+    'REACHABLE ELSEWHERE — offered for every OPEN house that would admit the reader (`api/observe.ts` ' +
+    '5C-ter); the heuristic cast founds INVITE houses (`DEFAULT_CHARTER`), so this run has no OPEN one. ' +
+    'Covered by test/api/the-office-acts-are-on-the-menu.spec.ts.',
+  approve:
+    'REACHABLE ELSEWHERE — offered while an office proposal is open in a house the reader sits in and ' +
+    'has not approved (5C-ter); the heuristic cast proposes no office in this run. Covered by ' +
+    'test/api/the-office-acts-are-on-the-menu.spec.ts.',
   deny: 'RESPONSE-ONLY — needs a pending application to refuse.',
-  revoke:
-    'RESPONSE-ONLY — needs a live grant you issued. `grant` itself is now offered (first office at ' +
-    'tick 290 in test/api/legal-but-unoffered.test.ts), so this state is reachable once a cast acts ' +
-    'on it.',
+  // ── ★ `revoke` CAME OFF THIS LIST — AND ITS ENTRY HAD SAID IT WAS OFFERED ──────────
+  //
+  // It read *"`grant` itself is now offered … so this state is reachable once a cast acts on it."* The
+  // cast did act on it, issuing grants in this very sweep, and `revoke` still never appeared: nothing
+  // in the served observation built a row for it — only `observe/catalogue.ts` did. It is offered now,
+  // one row per live grant the reader issued (5C-ter), and the rot check named it before anyone came to
+  // delete the entry.
   engage:
     'REACHABLE ELSEWHERE — needs the narrowest conjunction of any verb in the game: a LIVE raid the ' +
     'observer is party to, ANSWERED FIGHT, plus a READY hull berthed at the stage and an IDLE hand to ' +

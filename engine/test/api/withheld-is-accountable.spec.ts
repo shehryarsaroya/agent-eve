@@ -67,7 +67,7 @@ const rows = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.ma
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 
 type Payload = Record<string, unknown>;
-type Trigger = (o: Payload) => boolean;
+type Trigger = (o: Payload, me: string) => boolean;
 
 /**
  * **CLOSED** — the verb is accounted for in every observation where its input is visible.
@@ -124,6 +124,20 @@ const CLOSED: Readonly<Record<string, Trigger>> = Object.freeze({
   sign: (o) =>
     rows(obj(o['ventures'])['mine']).some(
       (v) => v['i_have_signed'] === false && v['state'] === 'FORMING',
+    ),
+  /**
+   * ★ **PROMOTED FROM `UNTRIGGERED`, WHOSE ENTRY SAID IT WAS ALREADY OFFERED.** It read *"needs a live
+   * grant you issued; `grants.granted[]` publishes it and the verb is offered"* — and the served menu
+   * built no `revoke` row at all. The trigger is the grantor's own reading of that block: a grant whose
+   * `grantor` is me, not revoked, and not expiring before an act sent now would land. (`granted[]` also
+   * lists a house's offices, whose grantor is the house — only the house could revoke those.)
+   */
+  revoke: (o, me) =>
+    rows(obj(o['grants'])['granted']).some(
+      (g) =>
+        g['grantor'] === me &&
+        g['revoked_at_tick'] === null &&
+        Number(g['expires_tick']) > Number(obj(o['header'])['tick']),
     ),
 });
 
@@ -220,11 +234,20 @@ const UNTRIGGERED: Readonly<Record<string, string>> = Object.freeze({
     'whose two states are total: a grantor with a live CLEARANCE out is OFFERED the act, and a grantor ' +
     'with grants but no clearance gets the row saying its access log is empty by construction. A ' +
     'principal that has issued no grant at all is not withholding anything — there is no subject.',
-  admit: 'RESPONSE-ONLY — needs a pending application to your syndicate; offered while one is pending.',
-  apply: 'RESPONSE-ONLY — needs a syndicate whose charter admits applications, which is somebody else\'s act.',
-  approve: 'RESPONSE-ONLY — needs an open proposal in a syndicate you sit in.',
+  admit:
+    'RESPONSE-ONLY — an INVITE house keeps no queue of applicants, so there is nobody for the menu to name; ' +
+    'a member admits the principal that asked it by message. It was "offered while one is pending", which ' +
+    'described a queue the syndicate module deliberately does not have.',
+  apply:
+    'REACHABLE ELSEWHERE — offered for every OPEN house that would admit you (5C-ter), but the payload ' +
+    'publishes no house you are not in, so there is nothing to key a trigger on. Covered by ' +
+    'test/api/the-office-acts-are-on-the-menu.spec.ts.',
+  approve:
+    'REACHABLE ELSEWHERE — offered for each open proposal you have not approved (5C-ter), and ' +
+    '`grants.syndicates[].open_proposals[].i_approved` is the input; the heuristic cast proposes no office ' +
+    'in this sweep, so a CLOSED trigger would assert about nothing. Covered by ' +
+    'test/api/the-office-acts-are-on-the-menu.spec.ts.',
   deny: 'RESPONSE-ONLY — needs a pending application to refuse.',
-  revoke: 'RESPONSE-ONLY — needs a live grant you issued; `grants.granted[]` publishes it and the verb is offered.',
   withdraw: 'RESPONSE-ONLY — needs a syndicate membership to give notice on.',
   yield: 'RESPONSE-ONLY — needs a DEMANDED raid against you; offered on the raid row for its whole window.',
   fight: 'RESPONSE-ONLY — same window as `yield`, same row.',
@@ -254,6 +277,10 @@ interface Sample {
   readonly creatorFormingSeen: number;
   /** …and of those, where it had NOT signed it: the state `RULES_VERSION` 41 removed. */
   readonly creatorUnsignedSeen: number;
+  /** Payloads whose `withheld.count` and `withheld.verbs`/`reason` disagreed — see the test below. */
+  readonly countDisagreements: readonly string[];
+  /** Payloads whose `withheld.verbs` was non-empty — the non-vacuity half of the same test. */
+  readonly namedSeen: number;
 }
 
 /**
@@ -278,6 +305,8 @@ function sweep(): Sample {
   let observations = 0;
   let creatorFormingSeen = 0;
   let creatorUnsignedSeen = 0;
+  const countDisagreements: string[] = [];
+  let namedSeen = 0;
   for (let i = 0; i < 900; i += 1) {
     const target = rt.engine.tick + 1;
     for (const a of cast.decide(target, seed)) rt.engine.submit(a);
@@ -299,8 +328,17 @@ function sweep(): Sample {
       observations += 1;
       const offered = new Set(rows(payload['affordances']).map((a) => String(a['verb'])));
       const named = new Set(strings(obj(obj(payload['header'])['withheld'])['verbs']));
+      // `count` and the rows it sums must agree: no named verb, and no reason, beside a count of 0.
+      const w = obj(obj(payload['header'])['withheld']);
+      const empty = String(w['reason']).startsWith('nothing was withheld');
+      if (named.size > 0) namedSeen += 1;
+      if ((Number(w['count']) === 0) !== empty || (named.size > 0 && Number(w['count']) === 0)) {
+        countDisagreements.push(
+          `${member.principal}@${String(rt.engine.tick)} count=${String(w['count'])} verbs=${[...named].join(',')}`,
+        );
+      }
       for (const [verb, trigger] of Object.entries(CLOSED)) {
-        if (!trigger(payload)) continue;
+        if (!trigger(payload, member.principal)) continue;
         fired.set(verb, (fired.get(verb) ?? 0) + 1);
         if (offered.has(verb) || named.has(verb)) continue;
         silent.set(verb, (silent.get(verb) ?? 0) + 1);
@@ -318,6 +356,8 @@ function sweep(): Sample {
     live: [...rt.liveVerbs].sort(cmp),
     creatorFormingSeen,
     creatorUnsignedSeen,
+    countDisagreements,
+    namedSeen,
   };
   return sweptOnce;
 }
@@ -369,6 +409,20 @@ describe('PROP-O1 — every unoffered verb is either inapplicable or NAMED, per 
       'a creator holding an unsigned FORMING venture of its own is the state 41 removed: a create that ' +
         'did not bind its creator, with no `sign` on the menu to close it',
     ).toBe(0);
+  }, 180_000);
+
+  it('★ withheld.count agrees with the rows it sums — never 0 beside a named verb or a reason', () => {
+    // The three PARLEY rows and the no-CAMPAIGN row were pushed into `reasons` — so `verbs` named
+    // `message` and `build` — while the hand-kept sum counted neither. The count is now the sum of
+    // every row's own `n` (`api/observe.ts:WithheldRow`), required by the type. This sweep pins the
+    // coarse shape — a count of 0 exactly when nothing is withheld; the exact sum is pinned by
+    // `observe-gate3.test.ts` (the old sum reads 10 there against the rows' 12, run).
+    const { countDisagreements, namedSeen, observations } = sweep();
+    expect(namedSeen, 'non-vacuity: some payload withheld something by name').toBeGreaterThan(0);
+    expect(
+      countDisagreements,
+      `${String(countDisagreements.length)} of ${String(observations)} payloads disagreed with their own count`,
+    ).toEqual([]);
   }, 180_000);
 
   it('★ `trade` SPECIFICALLY, because it is the one that was 86% silent', () => {
