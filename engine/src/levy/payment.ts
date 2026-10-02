@@ -333,6 +333,24 @@ export function deliveryFault(args: {
   readonly owing: Owing;
   readonly available: number;
 }): string | null {
+  return deliveryPayerFault(args) ?? deliveryDelivererFault(args);
+}
+
+/**
+ * The half of {@link deliveryFault} that reads only the clock and the PAYER's position — the freeze,
+ * whether there is an assessment, and whether any of it is left for this deliverer to carry.
+ *
+ * Split out, not copied: `deliveryFault` is this, then {@link deliveryDelivererFault}, in that order,
+ * so the verb and every reader still get one sentence from one place. The split is what lets
+ * `Runtime.levyCarryPayers` compute the payer half ONCE per read epoch for a whole constellation,
+ * instead of once per payer per co-member per observation — the O(P^2) term the scale harness found.
+ */
+export function deliveryPayerFault(args: {
+  readonly payer: PrincipalId;
+  readonly deliverer: PrincipalId;
+  readonly tick: number;
+  readonly owing: Owing;
+}): string | null {
   if (inFreeze(args.tick) || isSettlementTick(args.tick)) {
     return (
       'the freeze is on, so nothing may move against a settling obligation until the Reckoning has run. ' +
@@ -353,6 +371,20 @@ export function deliveryFault(args: {
       : `${args.payer}'s assessment has ${String(args.owing.presenceOwed)} left that only its own hand can ` +
           'carry: a stated share of every Levy is non-escrowable and cannot be bought as a service.';
   }
+  return null;
+}
+
+/**
+ * The half of {@link deliveryFault} that reads only the DELIVERER — a hand at the place, and goods in
+ * hand. The same for every payer whose delivery place is `place`.
+ */
+export function deliveryDelivererFault(args: {
+  readonly world: WorldState;
+  readonly deliverer: PrincipalId;
+  readonly place: SystemId;
+  readonly tick: number;
+  readonly available: number;
+}): string | null {
   if (carrierAt(args.world, args.deliverer, args.place, args.tick) === null) {
     return (
       `a Levy is paid in goods physically delivered, so one of your hands has to be standing at ` +

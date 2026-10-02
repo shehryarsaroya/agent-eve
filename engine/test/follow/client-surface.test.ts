@@ -22,13 +22,13 @@ const LANDING = read('lib/landing.js');
 const SCREENS = read('lib/screens.js');
 
 describe('the client loads the follow form, on one asset version', () => {
-  it('every asset carries the same ?v=, and it is 34', () => {
+  it('every asset carries the same ?v=, and it is 35', () => {
     const versions = [...INDEX.matchAll(/\?v=(\d+)/g)].map((m) => m[1]);
     expect(versions.length).toBeGreaterThanOrEqual(8);
-    expect(new Set(versions)).toEqual(new Set(['34']));
+    expect(new Set(versions)).toEqual(new Set(['35']));
     const infra = readFileSync(new URL('../../../docs/background/INFRA.md', import.meta.url), 'utf8');
-    expect(infra).toContain('?v=34');
-    expect(infra).not.toContain('?v=32');
+    expect(infra).toContain('?v=35');
+    expect(infra).not.toContain('?v=34');
   });
 
   it('follow.js loads after ui.js (it uses U) and before both screens that mount it', () => {

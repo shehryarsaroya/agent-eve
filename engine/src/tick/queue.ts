@@ -32,7 +32,7 @@
  */
 
 import type { DecisionSource, PrincipalId } from '../core/types.js';
-import { ACTIONS_PER_TICK } from '../core/time.js';
+import { ACTIONS_PER_TICK, MAX_PRINCIPALS } from '../core/time.js';
 import { compareIds } from '../ledger/index.js';
 import { classifyAction, reject, type ActionParams, type Rejection } from '../world/index.js';
 
@@ -48,11 +48,16 @@ import { classifyAction, reject, type ActionParams, type Rejection } from '../wo
 export const MAX_QUEUED_PER_PRINCIPAL = ACTIONS_PER_TICK * 8;
 
 /**
- * Global cap on one window. At 300 principals × the per-principal cap this is
- * generous; it exists so that a single flood cannot grow the process, and it is
- * the "published cap" §15.2 requires for the PAUSED case.
+ * Global cap on one window: every principal the world can hold, each at its own cap.
+ *
+ * ⚑ **IT WAS A FLAT 4,096 AND ITS NOTE SAID "AT 300 PRINCIPALS × THE PER-PRINCIPAL CAP THIS IS
+ * GENEROUS".** 300 × 32 is 9,600, so it bound at 128 fully-loaded principals — and the tick after a
+ * Reckoning, when every agent wakes and acts, is exactly when a few hundred are loaded at once. Past
+ * the cap the window refused by ARRIVAL ORDER, which is A4's prohibition delivered by a constant. A
+ * single flood still cannot grow the process: the per-principal cap bounds each identity and the
+ * host's seats bound the identities.
  */
-export const MAX_QUEUED_ACTIONS = 4096;
+export const MAX_QUEUED_ACTIONS = MAX_QUEUED_PER_PRINCIPAL * MAX_PRINCIPALS;
 
 /**
  * Priority classes. **Lower runs first.** Only two are used in Phase 0 and the

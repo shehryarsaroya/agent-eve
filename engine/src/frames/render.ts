@@ -55,6 +55,7 @@ import {
   MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
   MAX_FRAME_SYNDICATE_LINES,
+  type FrameGrowth,
   type MapSystem,
   type SwayLine,
   type MarketLine,
@@ -172,6 +173,8 @@ export interface FrameSource {
   readonly map?: readonly MapSystem[];
   /** ★ §16.12 #1's border signature. Optional so `emptyFrame` and older fixtures stay valid. */
   readonly swayLines?: readonly SwayLine[];
+  /** ★ §4.2's signature, THE RISE. Optional so `emptyFrame` and older fixtures stay valid. */
+  readonly growth?: FrameGrowth;
   /**
    * ★ A13's sixth named example: THE CONVOY LINE. Supplied by `frames/motion.ts`, never derived here.
    *
@@ -833,6 +836,10 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // live. `assertFrameBudgets` refuses an over-long list rather than this slicing it, so growth
     // past `MAX_FRAME_SWAY_LINES` is a designed aggregation instead of a silently gappy fence.
     swayLines: [...(src.swayLines ?? [])].sort((a, b) => compareIds(a.system, b.system)),
+    // ★ THE RISE — a pass-through, never truncated: the list is bounded by `MAX_GROWN_CONSTELLATIONS`
+    // at the source, and a frame that dropped an opened constellation would draw ground with no
+    // history, which is the map's hole argument one key over.
+    growth: src.growth ?? null,
     // ── ★ A13's THREE UNRENDERED NAMED EXAMPLES, TWO OF THEM NOW DRAWABLE ─────
     //
     // Selected and ordered by `frames/motion.ts`, which owns the significance rule for each — landings
@@ -964,6 +971,7 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     coverChains: [],
     map: [],
     swayLines: [],
+    growth: null,
     convoyLines: [],
     compactLinks: [],
     glyphs: [],

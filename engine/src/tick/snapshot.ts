@@ -37,6 +37,7 @@ import {
   holdingsInOrder,
   handsInOrder,
   mapHash,
+  regrowMap,
   type HandRecord,
   type HoldingRecord,
   type HoldingState,
@@ -373,7 +374,12 @@ export function worldStateTable(world: WorldState): StateTable {
   return {
     name: 'world',
     capture(): CanonicalValue {
+      // ★ GROWTH: the opening ticks, only once something has opened — so a world that never grew
+      // captures exactly the bytes it always did, and its `state_hash` with them.
+      const grown: { readonly openedAtTick?: CanonicalValue } =
+        world.openedAtTick.length === 0 ? {} : { openedAtTick: [...world.openedAtTick] };
       return {
+        ...grown,
         mapHash: mapHash(world.map),
         // Enrolment order, not sorted: it is the order the world was built in and
         // a restore must reproduce it, because future seating reads the sequence.
@@ -402,6 +408,19 @@ export function worldStateTable(world: WorldState): StateTable {
     },
     restore(captured: CanonicalValue): void {
       const root = asObject(captured, 'world');
+      // ★ GROWTH: the map is a function of the base map and the NUMBER of constellations opened, so a
+      // restore regrows it from the base before comparing hashes. Regrowing rather than trusting the
+      // live map is what makes a rollback across an opening work: the failed tick's growth is undone
+      // by restoring a count that does not include it.
+      const opened = asArray(root['openedAtTick'] ?? [], 'world.openedAtTick').map((t, i) => {
+        if (typeof t !== 'number' || !Number.isSafeInteger(t)) {
+          throw new SnapshotError(`world.openedAtTick[${i}]: expected an integer tick`);
+        }
+        return t;
+      });
+      if (opened.length !== world.map.grown.length) world.map = regrowMap(world.baseMap, opened.length);
+      world.openedAtTick.length = 0;
+      for (const t of opened) world.openedAtTick.push(t);
       const expectedMap = str(root, 'mapHash', 'world');
       const actualMap = mapHash(world.map);
       if (expectedMap !== actualMap) {

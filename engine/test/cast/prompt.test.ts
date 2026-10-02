@@ -1164,7 +1164,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     }
   });
 
-  it('★ CONTRACT_NOT_EXCERPTED STAYS AT FOUR, and none of them is there because of size', () => {
+  it('★ CONTRACT_NOT_EXCERPTED STAYS AT FIVE, and none of them is there because of size', () => {
     // ══════════════════════════════════════════════════════════════════════════
     // A bigger budget must not quietly absorb these, and it must not tempt anyone to park a
     // section here for room again. All four are CAPABILITY reasons — you have no first wake,
@@ -1182,10 +1182,16 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // charges the cast nothing it needs; the measured table above shows §0's 1,976 characters
     // appearing in NO position's cell, which is this ledger doing exactly what it claims.
     // ══════════════════════════════════════════════════════════════════════════
+    //
+    // Four became five on 2026-10-01: §11H is §4.2's growth, which is the WORLD's act at a
+    // Reckoning — no verb opens a constellation and none is refused for not knowing how one opens,
+    // and `header.growth` carries the rule verbatim and the count on every wake. A capability
+    // reason (there is no act to take), not a size one.
     expect(CONTRACT_NOT_EXCERPTED.map((s) => s.heading)).toEqual([
       '## 0. Your first wake, in five moves',
       '## 2. Enrolling',
       '## 9. Being offline',
+      '## 11H. THE REGION GROWS — new constellations, never more crowding',
       '## 13. When something seems wrong',
     ]);
     for (const outside of CONTRACT_NOT_EXCERPTED) {

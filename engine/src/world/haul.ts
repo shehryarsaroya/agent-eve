@@ -80,11 +80,11 @@
 
 import type { GoodId, HandId, PrincipalId, SystemId } from '../core/types.js';
 import { qty, type Qty } from '../core/units.js';
-import { cargoOf, isPresent, loadCargo, MAX_CARGO_GOODS, unloadCargo, type HandRecord } from './hands.js';
+import { cargoOf, cmpHands, isPresent, loadCargo, MAX_CARGO_GOODS, unloadCargo, type HandRecord } from './hands.js';
 import { laneKey, type WorldMap } from './map.js';
 import { commonsBoundRejection } from './movement.js';
 import { accept, reject, type WorldResult } from './result.js';
-import { handById, handsInOrder, type WorldState } from './state.js';
+import { handById, handsInOrder, handsOf, type WorldState } from './state.js';
 
 /**
  * The largest quantity of one good one haul may carry. *(calibrate)*
@@ -569,8 +569,10 @@ export function haulQuotes(
   neighbours: (system: SystemId) => readonly SystemId[],
 ): readonly HaulQuote[] {
   const out: HaulQuote[] = [];
-  for (const hand of handsInOrder(state)) {
-    if (hand.principal !== principal) continue;
+  // This principal's own hands in canonical `(principal, ordinal)` order — the same rows, in the same
+  // order, that filtering `handsInOrder` produced, without sorting every hand in the world to find
+  // three (it was 10% of an observation at 1,000 principals).
+  for (const hand of handsOf(state, principal).sort(cmpHands)) {
     if (!isPresent(hand, tick)) continue;
     const here = port.lotsOf(principal, hand.location, good).reduce((n, l) => n + l.qty, 0);
     if (here <= 0) continue;
@@ -590,12 +592,15 @@ export function haulQuotes(
   return out;
 }
 
-/** Lane-adjacent systems, canonical order. The map has no neighbour index of its own. */
+/**
+ * Lane-adjacent systems, canonical order.
+ *
+ * Read off the system's own adjacency list, which `generateMap` and `openConstellation` both build
+ * from the lane set and sort by code unit — the same set, in the same order, that scanning every lane
+ * produced. `assertMapStructure` checks the two agree (a listed neighbour with no lane, or a lane
+ * missing from either end's list, halts at construction), so this is one index read rather than an
+ * O(lanes) walk per call.
+ */
 export function neighboursOf(map: WorldMap, system: SystemId): readonly SystemId[] {
-  const out: SystemId[] = [];
-  for (const lane of map.lanes.values()) {
-    if (lane.a === system) out.push(lane.b);
-    else if (lane.b === system) out.push(lane.a);
-  }
-  return out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return [...(map.systems.get(system)?.lanes ?? [])];
 }

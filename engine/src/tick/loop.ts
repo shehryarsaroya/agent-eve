@@ -41,6 +41,7 @@ import {
   inCommitmentWindow,
   inFreeze,
   isSettlementTick,
+  MAX_PRINCIPALS,
   reckoningIndex,
   ticksUntilReckoning,
 } from '../core/time.js';
@@ -215,8 +216,18 @@ export function stepBudgetFor(
   );
 }
 
-/** Published cap on events buffered inside one tick (INV-26, scar #3). */
-export const MAX_BUFFERED_EVENTS = 8192;
+/** Rows one principal's share of a tick may legitimately write, at most. *(calibrate)* */
+export const EVENTS_PER_PRINCIPAL_PER_TICK = 16;
+
+/**
+ * Published cap on events buffered inside one tick (INV-26, scar #3).
+ *
+ * ⚑ **A FLAT 8,192, AND OVERRUNNING IT THROWS — WHICH INSIDE A TICK IS A HALT.** The settlement tick
+ * writes rows per principal (a Levy line, a docket row, a sweep) and per settled venture, so its
+ * legitimate size grows with the population. Sixteen rows per principal the world can hold is the
+ * bound; `scripts/population-scale.ts` reports the measured peak per tick next to it.
+ */
+export const MAX_BUFFERED_EVENTS = EVENTS_PER_PRINCIPAL_PER_TICK * MAX_PRINCIPALS;
 
 /** An action to execute, however it originated. */
 export interface ActionRequest {
@@ -584,6 +595,17 @@ export class Engine {
 
   get stateVersion(): number {
     return this.version;
+  }
+
+  /**
+   * True while a tick is resolving — between FREEZE_QUEUE and the end of WAKE.
+   *
+   * For readers that cache a derived view of the world between ticks (`Runtime.perEpoch`): inside a
+   * tick the world is mid-mutation, and a view cached there would be a view of a state no tick ever
+   * published. Read-only and derived from the one phase field there is.
+   */
+  get resolving(): boolean {
+    return this.inPhase !== null;
   }
 
   /** The last published tick-boundary hash. */

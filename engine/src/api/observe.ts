@@ -562,7 +562,7 @@ export function buildObservation(input: ObserveInput): Observation {
   // force readings of the same war in one observation, and `readCampaignForce` is recomputed rather
   // than cached — so they could disagree inside a single payload (scar #5's shape in a projection).
   const myCampaigns = runtime.campaignsFor(principal, tick, MAX_LIST_ROWS);
-  const mine = runtime.ventures.forPrincipal(principal);
+  const mine = runtime.venturesFor(principal);
   // ── READ ONCE, FOR THE `grants` BLOCK *AND* THE DILEMMA SENTENCE ────────────
   //
   // Both of these were derived a second time inside `promptFor` when the A6 branch landed, which is
@@ -732,6 +732,16 @@ export function buildObservation(input: ObserveInput): Observation {
       // agent learned the resource existed by exhausting it.
       campaign_clock: runtime.campaignClock(tick),
       /**
+       * ★ **GROWTH (SPEC §4.2) — HOW CLOSE THE REGION IS TO OPENING ITS NEXT CONSTELLATION.**
+       *
+       * On `header` for `raid_schedule`'s and `campaign_clock`'s reason: it is a world-wide published
+       * clock, §17's observe budget is at eleven of eleven, and a clock nobody can read is not a
+       * published clock. The rule is the one sentence `world/growth.ts` states; the reading is the
+       * same `Runtime.growthBlock` the frame prints, so an agent and a viewer read one count (A9).
+       * `qualified` is a COUNT and never a list — it names nobody and no figure.
+       */
+      growth: runtime.growthBlock(tick),
+      /**
        * §13B: the owner mandate is stable text, not per-tick state, so it is a free
        * read with a version announced here rather than a key of its own.
        */
@@ -750,7 +760,7 @@ export function buildObservation(input: ObserveInput): Observation {
        * mechanic has landed. Published rather than discovered by trial, because an
        * agent burning actions to find out is an agent we misled.
        */
-      live_verbs: [...runtime.liveVerbs].sort(cmp),
+      live_verbs: runtime.perEpoch('liveVerbsSorted', () => [...runtime.liveVerbs].sort(cmp)),
     },
 
     hands: hands.slice(0, MAX_LIST_ROWS).map((hand) => {
@@ -1159,10 +1169,12 @@ export function buildObservation(input: ObserveInput): Observation {
       system: holding.system,
       ...localSummary(books, holding.system),
       ...market,
-      offers: runtime
-        .publishedOffers()
-        .slice(-MAX_LIST_ROWS)
-        .map((o) => ({ by: o.by, text: o.text, tick: o.tick })),
+      offers: runtime.perEpoch('publishedOffers', () =>
+        runtime
+          .publishedOffers()
+          .slice(-MAX_LIST_ROWS)
+          .map((o) => ({ by: o.by, text: o.text, tick: o.tick })),
+      ),
     },
 
     /**
@@ -1882,7 +1894,7 @@ function affordancesFor(
   let clearanceOffersDroppedSubjects: readonly string[] = [];
   const world = runtime.world;
   const hands = handsOf(world, principal);
-  const mine = runtime.ventures.forPrincipal(principal);
+  const mine = runtime.venturesFor(principal);
   const free = runtime.ledger.account(storesAccount(principal)) === undefined
     ? minor(0)
     : runtime.ledger.freeBalance(storesAccount(principal));
@@ -3806,13 +3818,19 @@ function affordancesFor(
       quote_id: quoteId(principal, tick, 'deliver', { obligation: 'LEVY', payer: carry.payer }),
     });
   }
-  for (const blocked of runtime.levyCarryObstacles(principal, tick)) {
-    carryBlocked += 1;
-    carryBlockedWhy.add(
-      blocked.fault ??
+  // The obstacles as a COUNT and their distinct reasons — the same rows `levyCarryObstacles` lists,
+  // read without building one object per co-member (SPEC §15.5: at a few thousand principals in one
+  // constellation, building them was a fifth of every observation).
+  {
+    const blocked = runtime.levyCarryObstacleSummary(principal, tick);
+    carryBlocked += blocked.count;
+    for (const fault of blocked.faults) carryBlockedWhy.add(fault);
+    if (blocked.ownNeeds > 0) {
+      carryBlockedWhy.add(
         `your own assessment still needs ${String(blocked.ownOwed)} of the ${String(blocked.available)} ` +
           `units of ${LEVY_GOOD} you hold, so nothing is surplus yet`,
-    );
+      );
+    }
   }
 
   // 5C. **THE CORE LOOP (A6).** `grant` had no affordance at all. It is legal, it works, and it was
@@ -5041,7 +5059,7 @@ function boardFor(
   tick: number,
 ): { readonly rows: BoardRow[]; readonly dropped: number } {
   const rows: BoardRow[] = [];
-  for (const venture of runtime.ventures.live()) {
+  for (const venture of runtime.liveVentures()) {
     if (venture.state !== 'FORMING') continue;
     if (tick > venture.windowClosesTick) continue;
     if (roleOfPrincipal(venture, principal) !== null) continue;
@@ -6433,7 +6451,7 @@ function nextDecisionAt(runtime: Runtime, principal: PrincipalId, tick: number):
       soonest = hand.freeAtTick;
     }
   }
-  for (const venture of runtime.ventures.forPrincipal(principal)) {
+  for (const venture of runtime.venturesFor(principal)) {
     // `> tick` on the CLOSE, so `windowClosesTick - 1 >= tick` — the last tick a sign still lands.
     if (venture.state === 'FORMING' && venture.windowClosesTick > tick && venture.windowClosesTick - 1 < soonest) {
       soonest = venture.windowClosesTick - 1;
@@ -6453,7 +6471,7 @@ function nextDecisionAt(runtime: Runtime, principal: PrincipalId, tick: number):
  */
 function sealSlotFor(runtime: Runtime, principal: PrincipalId, tick: number): number {
   const held: SealRoleRef[] = [];
-  for (const venture of runtime.ventures.forPrincipal(principal)) {
+  for (const venture of runtime.venturesFor(principal)) {
     const role = roleOfPrincipal(venture, principal);
     if (role !== null) held.push({ venture: venture.id, roleIndex: role.index });
   }
@@ -6467,17 +6485,21 @@ function sealSlotFor(runtime: Runtime, principal: PrincipalId, tick: number): nu
  * accuse. A band is the widest thing that is still useful.
  */
 function exposureBand(runtime: Runtime): string {
-  let total = 0;
-  // Every principal on the roll, not only those with a lock: the delegated half of EXPOSURE is
-  // carried by grants, and `principalsWithExposure` only knows about the encumbrance table — so the
-  // world band would have read "none open" over a galaxy full of live mandates.
-  for (const p of runtime.world.principalOrder) {
-    total += runtime.exposureOf(p);
-  }
-  if (total === 0) return 'none open';
-  if (total < 100_000) return 'under 100000';
-  if (total < 1_000_000) return '100000 to 1000000';
-  return 'over 1000000';
+  // ★ Once per read epoch: a sum over every principal, and it is the same band in every observation
+  // of the tick — computing it inside each one made the post-Reckoning burst O(P²) (SPEC §15.5).
+  return runtime.perEpoch('exposureBand', () => {
+    let total = 0;
+    // Every principal on the roll, not only those with a lock: the delegated half of EXPOSURE is
+    // carried by grants, and `principalsWithExposure` only knows about the encumbrance table — so the
+    // world band would have read "none open" over a galaxy full of live mandates.
+    for (const p of runtime.world.principalOrder) {
+      total += runtime.exposureOf(p);
+    }
+    if (total === 0) return 'none open';
+    if (total < 100_000) return 'under 100000';
+    if (total < 1_000_000) return '100000 to 1000000';
+    return 'over 1000000';
+  });
 }
 
 /**

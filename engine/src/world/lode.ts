@@ -286,8 +286,25 @@ export function lodesOf(map: WorldMap, bases: LodeBases): ReadonlyMap<SystemId, 
     });
   }
 
-  for (const tier of LODE_TIERS) {
-    const ids = map.systemOrder.filter((id) => map.systems.get(id)?.tier === tier);
+  // ── ★ ALLOCATION GROUPS: THE LAUNCH MAP, THEN EACH GROWN CONSTELLATION ON ITS OWN ──
+  //
+  // A tier's total is conserved per GROUP rather than across the whole map, and that is what lets the
+  // region grow without redrawing a single existing lode. `largestRemainder` over every MARCHES system
+  // at once would re-divide the launch map's 1,980 the day a constellation opened — every published
+  // `yield_per_tick` moving by a rounding step, and every agent's ranking of ground with it. Allocating
+  // inside each grown constellation instead keeps the launch map's allocation byte-identical (its group
+  // is exactly the set it always was), and conservation still holds for the tier as a whole, because a
+  // sum of exactly-conserved groups is exactly conserved. The weights are still one stream in
+  // `systemOrder`, which only ever appends, so no existing draw moves either.
+  const grownOf = new Map<SystemId, string>();
+  for (const g of map.grown) for (const id of g.systems) grownOf.set(id, g.constellation);
+  const groups: SystemId[][] = [];
+  const launch = map.systemOrder.filter((id) => !grownOf.has(id));
+  groups.push(launch);
+  for (const g of map.grown) groups.push([...g.systems]);
+
+  for (const group of groups) for (const tier of LODE_TIERS) {
+    const ids = group.filter((id) => map.systems.get(id)?.tier === tier);
     if (ids.length === 0) continue;
     const w = ids.map((id) => weights.get(id) ?? LODE_WEIGHT.min);
     const base = bases.yield[tier];

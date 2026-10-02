@@ -354,6 +354,22 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // matches `/stock|reserve|held|cargo|hand|goods|stores|escrow|cover|remaining/i`, which is that
   // rule made executable rather than remembered — the same instrument as the claim line's.
   'swayLines',
+  // ── ★ THE RISE (§4.2, A13), AND THE ONE NUMBER ON IT THAT NEEDED AN ARGUMENT ──
+  //
+  // The opened constellations are geography — their systems and their gate are on `map`, two keys up
+  // — and their ticks are the `constellation.opened` row's, which is `PUBLIC` at its own tick. That
+  // half adds no disclosure at all.
+  //
+  // **`qualified` is the half that needed an argument**, and it is `hollow`'s: it is computed from
+  // `freeCash`, and §11.2 puts a STORES balance at `SENSED`. It is admitted because it is not a
+  // quantity anybody holds: it is a **count over the whole region** of principals past three published
+  // thresholds, naming nobody and no figure, and it is the one number that makes a scheduled event
+  // watchable before it happens (A14). A viewer learns the region is filling; nobody learns what
+  // anybody holds. The rejected version is the useful half: a per-constellation or per-principal
+  // breakdown, which on a small enough population becomes a statement about one principal's
+  // balance. A9 then holds by construction — `observe`'s `header.growth` carries the same count,
+  // built by the same `Runtime.growthBlock`, to every agent.
+  'growth',
   // ── ★ THE CONVOY LINE (A13's sixth named example), AND IT IS THE CLAUSE ────
   //    EVERY OTHER LINE IN THIS FILE ALREADY BORROWED.
   //

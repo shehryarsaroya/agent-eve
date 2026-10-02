@@ -23,7 +23,8 @@
  * Numbers marked *(calibrate)* are simulation starting points, not claims.
  */
 
-import { TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
+import { MAX_PRINCIPALS, TICKS_PER_RECKONING, WINDOW_FIRST_PHASE } from '../core/time.js';
+import { MAX_MAP_SYSTEMS } from '../world/growth.js';
 import type { GoodId, ZoneTier } from '../core/types.js';
 import { bps, minor, qty, type Bps, type Minor, type Qty } from '../core/units.js';
 // The enrolment allotment, read from the module that mints it rather than through the Levy's alias
@@ -401,11 +402,19 @@ export const VULNERABILITY_WINDOW_TICKS =
 /** Reckonings of claim history the book keeps. Older rows live in the event ledger. */
 export const SOVEREIGNTY_RETAINED_RECKONINGS = 3;
 
-/** Declared bound on the claim book (INV-26, scar #3). One claim per system, so: systems. */
-export const MAX_CLAIMS = 64;
+/**
+ * Declared bound on the claim book (INV-26, scar #3). One claim per system, so: systems — and since
+ * GROWTH the map has a ceiling of its own (`world/growth.ts:MAX_MAP_SYSTEMS`), so this is that, not
+ * the launch map's 64.
+ */
+export const MAX_CLAIMS = MAX_MAP_SYSTEMS;
 
-/** Declared bound on the ballot book. */
-export const MAX_CHARGE_BALLOTS = 512;
+/**
+ * Declared bound on the ballot book: one ballot per principal per Reckoning, the retained Reckonings
+ * plus the one being cast — `MAX_LEVY_BALLOTS`' derivation, for `MAX_LEVY_BALLOTS`' reason. A flat 512
+ * threw inside the tick the day the 513th ballot arrived, which is a halt.
+ */
+export const MAX_CHARGE_BALLOTS = MAX_PRINCIPALS * (SOVEREIGNTY_RETAINED_RECKONINGS + 1);
 
 /** Declared bound on the frame's claim lines. A legend a viewer can read, not a heatmap. */
 export const MAX_CLAIM_LINES = 12;

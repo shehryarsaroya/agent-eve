@@ -23,6 +23,7 @@
  * counter that still looks clean.
  */
 
+import { MAX_PRINCIPALS } from '../core/time.js';
 import type { EventId, Grant, GrantId, PrincipalId } from '../core/types.js';
 import { compareIds } from '../ledger/order.js';
 import { addMinor, minor, type Minor } from '../core/units.js';
@@ -43,17 +44,25 @@ import {
 export class GrantBookError extends Error {}
 
 /**
+ * Draws on grants the journal is dimensioned for, per principal the world can hold. *(calibrate)*
+ * The journal is LIFETIME (nothing prunes it yet) and overrunning it throws inside a tick, which is a
+ * halt — so this has to be a season's worth of A6 at the world ceiling, not a concurrent count.
+ */
+export const GRANT_SPENDS_PER_PRINCIPAL = 32;
+
+/**
  * A cap on the spend journal (INV-26). Every on-behalf act that draws on a grant
  * appends one row; the journal is summed at every tick close, so it is bounded both to
  * keep `state_hash` finite and to keep INV-22's recompute cheap. Generous — grants
  * expire and a real world's live spend is small.
  */
-export const MAX_GRANT_SPENDS = 16_384;
+export const MAX_GRANT_SPENDS = GRANT_SPENDS_PER_PRINCIPAL * MAX_PRINCIPALS;
 
 /**
- * A cap on the release journal (INV-26), and it is **half** the spend cap on purpose: a release
+ * A cap on the release journal (INV-26), and it is **the spend cap itself** on purpose: a release
  * always names a spend that is already in the journal, so there can never be more releases than
- * spends, and a bound larger than that would be a bound that cannot bind.
+ * spends, and a bound larger than that would be a bound that cannot bind. (This note said "half"
+ * while the code said equal; the reasoning is the code's.)
  */
 export const MAX_GRANT_RELEASES = MAX_GRANT_SPENDS;
 
@@ -67,6 +76,10 @@ export class GrantBook {
    * and a journal is not. Append-only within a run; captured and replayed with the rows.
    */
   private readonly spendLog: GrantSpend[] = [];
+  /** Rows in the spend journal — for the cap-pressure report (`Runtime.capPressure`). */
+  get spendCount(): number {
+    return this.spendLog.length;
+  }
 
   /**
    * ★ The **release** journal — draws given back because the obligation they were drawn against
@@ -96,6 +109,10 @@ export class GrantBook {
    * ══════════════════════════════════════════════════════════════════════════
    */
   private readonly releaseLog: GrantRelease[] = [];
+  /** Rows in the release journal — for the cap-pressure report. */
+  get releaseCount(): number {
+    return this.releaseLog.length;
+  }
 
   get(id: GrantId): Grant | undefined {
     return this.byId.get(id);

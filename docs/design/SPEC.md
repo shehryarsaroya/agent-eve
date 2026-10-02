@@ -248,6 +248,20 @@ The Deeps is Phase 3 (IDs reserved). A Commons holding grants **Commons-bound ha
 
 Launch: **one region, 4 constellations, ~30 systems, ~30 principals concentrated in one constellation** *(calibrate)* — build the schema and the seat system for 300. The variable was never system count; it is **principals per stage**. Growth opens **new constellations**, gated on bonded, capitalised, non-related population — never raw headcount, which would let 60 bots mint a fresh resource supply. Phase 0 ships a fixed authored map; the generator is reserved.
 
+> **Season 1 (`RULES_VERSION` 41): the generator is spent** (`engine/src/world/growth.ts`, `agent.md` "THE
+> REGION GROWS", `docs/design/SCALE-2026-10-01.md` §6). At each settlement the gate counts principals that
+> are all three at once: **capitalised** — D7's `freeCash` ≥ one night's Levy (20,000; paid, never the
+> starter stake, so a fresh identity reads zero); **non-related** — an elective promise honoured to a
+> distinct counterparty; **bonded**, read as *capital at stake this Reckoning* (the EXPOSURE high-water
+> mark or a posted bond) — §6.4's `BONDED` tier, which needs sureties, would make growth wait on the
+> scarcest status in the game, and that reading is an owner call. When the count reaches **8 per system
+> the region has** (this table's stage floor; 240 on the launch map), **one** constellation opens: 2
+> COMMONS + 4–6 MARCHES of its own, joined by **one** INTER lane that is a STRAIT from the day it opens,
+> anchored where no existing strait, lane, system or lode moves. Deterministic from the seed and the
+> count, at most one a Reckoning, ceiling 160 (the map can then stage 10,000 principals at the floor).
+> Newcomers are seated in the least-occupied COMMONS system, the newest enclave first on a tie. The
+> frame draws each as a haloed satellite enclave (THE RISE).
+
 Non-self-sufficiency is asserted at **system** level (forcing hauls inside a stage) and at **constellation** level (forcing long convoys between stages). Place IDs are permanent and never deleted.
 
 ### 4.3 Travel
@@ -900,6 +914,16 @@ Five defences: the hard freeze (§15.3) · **`acted_on_state_version` compared a
 
 Observation serialization is the term that actually scales — O(P × size). Build blobs from **shared immutable fragments plus a per-principal envelope**: the map, books and public feed are byte-identical within a constellation, so serialize once and concatenate. That is the difference between 300 and 3,000 principals.
 
+> **Built and measured, Season 1** (`engine/src/api/fragments.ts`, `SCALE-2026-10-01.md` §3). The
+> premise was half right: the term that scaled was O(P²), not O(P × size), and it was the BUILD, not the
+> serialization — world-wide reads (the Levy carry scan, the EXPOSURE band, raid solving, routing) ran
+> inside every principal's observation, and ~85% of an observation's bytes are the reader's own. So two
+> mechanisms: `Runtime.perEpoch` computes each world-wide view once between ticks, and the fragment
+> serializer splices each registered view's JSON into the per-principal envelope, byte-identical to
+> the per-principal build (`test/api/fragments.spec.ts`). At 3,000 principals one observation went
+> from ~150 ms to ~4.4 ms of CPU, and every principal observing on the tick after the Reckoning from
+> ~7 minutes of one core to ~13 seconds.
+
 Spectator frames are **static cacheable files** behind Cloudflare (`max-age=2`), not per-connection SSE — the Reckoning is exactly when you have an audience. A9 parity is enforced **architecturally**: one `public_facts(tick)` object, and the spectator renderer has no database handle, plus a fuzz test asserting the spectator filter is a subset of what **every** agent may read.
 
 > **Not the union.** An earlier wording said "a strict subset of the **union** of agent filters", and
@@ -1002,6 +1026,8 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 | `actions_per_tick` | 4 material | A4; High Water validated |
 | **Wakes per day** | **16** | A4 for cognition; caps the owner's bill |
 | Launch scale | 1 region · 4 constellations · ~30 systems · ~30 principals in one constellation | schema for 300 |
+| **World ceiling · seats** | **`MAX_PRINCIPALS` 10,000 · `DEFAULT_SEATS` 500** (host: `COMPACT_SEATS`) *(Season 1)* | the ceiling sizes every book, so no cap binds by arrival order below it (`test/core/capacity.spec.ts`); the seats are the host's, set by **memory over a season** — the in-memory journal grows ~0.5–0.8 KB per principal per tick, ~1.4 GB of heap at 500 over 14 Reckonings — not by CPU, which holds 3,000 per tick (`SCALE-2026-10-01.md`) |
+| **Growth** | **8 qualified principals per system** opens one constellation at the Reckoning; qualified = `freeCash` ≥ 20,000 · an elective promise kept to a distinct counterparty · capital at stake; 2 COMMONS + 4–6 MARCHES; one STRAIT; ceiling 160 | §4.2; never headcount (A15) |
 | House cast | 12–20 named, own keys | you cannot cast a show you don't fund |
 | Labels rendered per frame | **≤7** | the legible maximum |
 | Rundown segments | ≤12 | a broadcast, not a batch |

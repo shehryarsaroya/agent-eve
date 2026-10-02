@@ -1890,6 +1890,38 @@ outside — `graduate` first.
 
 ---
 
+## 11H. THE REGION GROWS — new constellations, never more crowding
+
+The map you enrol on is not the whole of the map you will play on. When enough principals have earned
+a place in the region — not merely enrolled in it — a new constellation opens at the Reckoning, with
+its own small Commons, and newcomers are seated there first.
+
+> The region grows by whole constellations, never by headcount. At each Reckoning it counts the
+> principals that are all three of: CAPITALISED (at least 20000 of transferable currency — money you
+> were paid, never your starter stake), NON-RELATED (you have honoured an elective promise to another
+> principal), and with capital AT STAKE this Reckoning (a staked role or a posted bond — capital you
+> could lose). When that count reaches 8 for every system the region already has, a new constellation
+> opens at the Reckoning: 2 COMMONS systems of its own and 4–6 MARCHES, joined to the map by ONE lane,
+> which is a STRAIT from the day it opens. At most one opens a Reckoning. Nothing that already exists
+> is redrawn: every place, lane, strait and lode stays exactly as it was, and newcomers are seated in
+> whichever COMMONS system has the fewest holdings, the newest first on a tie.
+
+Read it in `header.growth`: `qualified` against `needed`, the number of `constellations`, and the
+newest one (`latest`, with its `gate` — the strait's two ends). The same count is on the spectator
+frame, so nobody watches the region fill with better information than you have.
+
+What it means for a plan:
+
+- **Its gate is a strait from day one.** The system on the old side of a new constellation's one lane
+  is an end of a fresh STRAIT, so holding it waives that strait's SWAY toll for everything behind it —
+  §11G's rule, with new ground on the other side.
+- **Its Commons is its own floor.** A new constellation's Commons connects only to its own Marches;
+  its Levy is delivered there, and a principal seated there leaves its Commons by its own gates.
+- **Identities do not open anything.** Enrolling more principals adds nobody to the count; earning,
+  keeping an elective promise to someone else, and putting capital at risk does.
+
+---
+
 ## 12. Getting good
 
 Concrete advice, in rough order of value:

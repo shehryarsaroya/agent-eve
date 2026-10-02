@@ -42,6 +42,7 @@ import type {
 } from '../core/types.js';
 import type { Minor, Qty } from '../core/units.js';
 import { TICKS_PER_RECKONING } from '../core/time.js';
+import { MAX_GROWN_CONSTELLATIONS, MAX_MAP_SYSTEMS } from '../world/growth.js';
 
 /** §17: labels rendered per frame. The legible maximum. */
 export const MAX_LABELS_PER_FRAME = 7;
@@ -129,11 +130,15 @@ export const MAX_FRAME_COVER_CHAINS = 4;
  * Every other line budget picks the readable members of a set larger than a viewer can follow.
  * A border cannot be sampled: drop one system and the fence has a hole in it, and a hole reads as
  * *"nobody reaches here"* — which is a specific, false, and load-bearing claim, since bare ground is
- * exactly where §16.12 #1 says a small holder can live. So this is a **ceiling on the map**, checked
- * against `LAUNCH_SYSTEM_BOUNDS.max`, and the day the region grows past it the assertion fires and
- * the renderer's aggregation gets designed rather than discovered.
+ * exactly where §16.12 #1 says a small holder can live. So this is a **ceiling on the map**.
+ *
+ * ⚑ **IT WAS 32, "CHECKED AGAINST `LAUNCH_SYSTEM_BOUNDS.max`", AND THE DAY THE REGION GREW IS HERE.**
+ * Its own note said the assertion would fire when growth arrived and the aggregation would get
+ * designed then. The design is that there is nothing to aggregate: one line per non-COMMONS system is
+ * already the whole fence, so the ceiling is the map's own (`world/growth.ts:MAX_MAP_SYSTEMS`), and a
+ * map can never hold a system this budget cannot draw.
  */
-export const MAX_FRAME_SWAY_LINES = 32;
+export const MAX_FRAME_SWAY_LINES = MAX_MAP_SYSTEMS;
 
 /**
  * Formation bars one battle line may carry. Both sides, both caps.
@@ -939,6 +944,47 @@ export const MAX_FRAME_CONVOY_LINES = 16;
 export const MAX_FRAME_COMPACT_LINKS = 12;
 
 /**
+ * ★ **THE RISE** — growth's pixel signature (SPEC §4.2, A13).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SIGNATURE, NAMED.** A claim **tints** a system · THE PINCH narrows a lane · THE LODE sizes a
+ * node · THE VERGE fences a bloc. **THE RISE lights a new constellation at the rim**: its systems drawn
+ * with a halo on the Reckoning it opened, joined to the map by the one lane THE PINCH already draws as a
+ * door — and a meter on the rim, `qualified` against `needed`, so a viewer can watch the next one
+ * coming. A14's sentence about the Levy applies: the night a constellation opens is scheduled, and the
+ * count that schedules it is on screen every night before it.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `PUBLIC`, every field. The systems and the gate are geography already on this frame's `map`; the
+ * ticks are the `constellation.opened` row's own; and `qualified` is a **count** over three gated
+ * quantities that names nobody and no figure — the same count `observe` puts on every agent's
+ * `header.growth`, which is what A9 asks for. `assertFrameBudgets` checks every system named here
+ * against the frame's own `map`, because a halo drawn around a system the map cannot place is a hole.
+ */
+export interface FrameGrowth {
+  /** `world/growth.ts:GROWTH_STATEMENT`, verbatim. */
+  readonly rule: string;
+  readonly qualified: number;
+  readonly needed: number;
+  readonly systems: number;
+  readonly constellations: number;
+  readonly grown: number;
+  /** The next settlement tick, when the gate is read again. */
+  readonly nextCheckTick: number;
+  /** Every constellation growth has opened, oldest first. Bounded by `MAX_GROWN_CONSTELLATIONS`. */
+  readonly opened: readonly FrameGrownConstellation[];
+}
+
+export interface FrameGrownConstellation {
+  readonly constellation: ConstellationId;
+  readonly openedAtTick: number;
+  readonly openedAtReckoning: number;
+  /** `[anchor, landing]` — the STRAIT's end on the old map, then its end in the new constellation. */
+  readonly gate: readonly [SystemId, SystemId];
+  readonly systems: readonly SystemId[];
+}
+
+/**
  * ★ **THE VERGE** — the projection signature (A13, §16.12 #1).
  *
  * ══════════════════════════════════════════════════════════════════════════
@@ -1151,7 +1197,11 @@ export interface WorksLine {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly sharePerTick: number;
-  /** `EXTRACTING` · `SPINNING UP 6 ticks` — the two words a viewer reads. */
+  /**
+   * `EXTRACTING` · `SPINNING UP 6 ticks` · `CROWDED OUT` — the words a viewer reads. The third is an
+   * online WORKS whose share of the system truncates to nothing because too many stand there, which
+   * at a few thousand principals is a real and common state rather than an edge case.
+   */
   readonly legend: string;
   /** Cumulative units the place has HANDED OVER to this WORKS, GROSS. Never a stock reading. */
   readonly extracted: number;
@@ -1558,6 +1608,8 @@ export interface ReckoningFrame {
   readonly map: readonly MapSystem[];
   /** ★ §16.12 #1's signature: **THE VERGE** — where each bloc's force stops, which is a border. */
   readonly swayLines: readonly SwayLine[];
+  /** ★ §4.2's signature: **THE RISE** — the constellations growth opened, and the meter toward the next. */
+  readonly growth: FrameGrowth | null;
   /** ★ A13's sixth named example: **THE CONVOY LINE** — the map's motion, without its manifest. */
   readonly convoyLines: readonly ConvoyLine[];
   /** ★ A13's second and third: **THE COMPACT LINK**, and the snap that scars both ends of it. */
@@ -2563,6 +2615,27 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
           `${sys.id}~${edge.to} draws a STRAIT touching the COMMONS (${sys.tier}/${other.tier}); the Commons ` +
             'keeps a protected civic route and A8 is a floor, not a default',
         );
+      }
+    }
+  }
+
+  // ── ★ THE RISE: EVERY HALO IS AROUND A SYSTEM THIS FRAME CAN PLACE ─────────
+  if (frame.growth !== null) {
+    const g = frame.growth;
+    if (g.opened.length > MAX_GROWN_CONSTELLATIONS) {
+      problems.push(`${String(g.opened.length)} grown constellations, ceiling is ${String(MAX_GROWN_CONSTELLATIONS)}`);
+    }
+    if (g.opened.length !== g.grown) {
+      problems.push(`the growth block says ${String(g.grown)} grown and lists ${String(g.opened.length)}`);
+    }
+    if (g.qualified < 0 || g.needed < 0 || g.systems < 1) {
+      problems.push(`the growth meter reads ${String(g.qualified)} of ${String(g.needed)} over ${String(g.systems)} systems`);
+    }
+    for (const c of g.opened) {
+      for (const id of [...c.systems, ...c.gate]) {
+        if (frame.map.length > 0 && !mapById.has(id)) {
+          problems.push(`grown constellation ${c.constellation} names ${id}, which is not on this frame's map`);
+        }
       }
     }
   }

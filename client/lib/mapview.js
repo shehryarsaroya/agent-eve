@@ -275,7 +275,18 @@ var MapView = (function () {
    * failure the docked build existed to avoid, reintroduced by going
    * full-bleed. The ellipse is centred in the FREE area, not in the panel.
    */
-  function layout(systems, W, H, inset) {
+  function layout(allSystems, W, H, inset, grown) {
+    // ★ THE RISE (SPEC §4.2). Constellations GROWTH opened are not laid into the three bands: each
+    // is its own small enclave — two COMMONS systems of its own, a ring of MARCHES — joined to the
+    // core by ONE lane, so drawing its COMMONS into the central disc would draw a civic route the
+    // map does not have. They are satellites instead, on a ring outside the FRONTIER, each beside
+    // the core system its gate lands on; the core shrinks to make room only once one exists, so a
+    // map that never grew draws exactly as it always did.
+    var opened = (grown || []).filter(function (g) { return g && g.systems && g.systems.length; });
+    var grownOf = {};
+    opened.forEach(function (g, i) { g.systems.forEach(function (id) { grownOf[id] = i; }); });
+    var systems = allSystems.filter(function (s) { return grownOf[s.id] === undefined; });
+    var CORE = opened.length ? 0.78 : 1;
     // ELLIPTICAL, not circular. A circle inscribed in a 1160×830 panel wastes
     // ~35% of the width, and the map is the one screen that should use every
     // pixel it is given. The layout still reasons in polar coordinates on a
@@ -381,14 +392,60 @@ var MapView = (function () {
       var r = band[0] + w * f;                       // unit radius, 0…1
       out[s.id] = {
         id: s.id, sys: s, tier: s.tier, th: p.th, r: r,
-        x: cx + r * RX * Math.cos(p.th), y: cy + r * RY * Math.sin(p.th),
+        x: cx + r * CORE * RX * Math.cos(p.th), y: cy + r * CORE * RY * Math.sin(p.th),
       };
     });
-    return { pos: out, cx: cx, cy: cy, RX: RX, RY: RY, cons: cons };
+
+    // ── the satellites ────────────────────────────────────────────────────
+    // Each cluster centres at its gate's angle, on a ring just outside the core's FRONTIER edge,
+    // then the centres are pushed apart until neighbours clear one another — fixed passes, no
+    // randomness, so the picture is a pure function of the frame. Inside a cluster the COMMONS
+    // sits at the heart and the MARCHES ring it, the same inside-out gradient as the core.
+    var sats = [];
+    opened.forEach(function (g, i) {
+      var anchor = out[g.gate && g.gate[0]];
+      sats.push({ i: i, g: g, th: anchor ? anchor.th : -Math.PI / 2 + i * 0.7 });
+    });
+    var RING = CORE * 0.985 + (1 - CORE * 0.985) * 0.55;  // unit radius of the satellite ring
+    var minGap = Math.min(0.62, (2 * Math.PI) / Math.max(1, sats.length) * 0.92);
+    for (var pass = 0; pass < 60 && sats.length > 1; pass++) {
+      sats.sort(function (a, b) { return a.th - b.th || a.i - b.i; });
+      for (var k = 0; k < sats.length; k++) {
+        var a = sats[k], b = sats[(k + 1) % sats.length];
+        var d = norm(b.th - a.th); if (d < 0) d += 2 * Math.PI;
+        if (d < minGap) { var push = (minGap - d) / 2; a.th -= push; b.th += push; }
+      }
+    }
+    var span = Math.min(RX, RY);
+    var satellites = [];
+    sats.forEach(function (sat) {
+      var g = sat.g, hx = cx + RING * RX * Math.cos(sat.th), hy = cy + RING * RY * Math.sin(sat.th);
+      var members = allSystems.filter(function (s) { return grownOf[s.id] === sat.i; });
+      var civic = members.filter(function (s) { return s.tier === 'COMMONS'; });
+      var outer = members.filter(function (s) { return s.tier !== 'COMMONS'; });
+      var rIn = span * 0.022, rOut = span * 0.062;
+      civic.forEach(function (s, j) {
+        var t = sat.th + Math.PI / 2 + (2 * Math.PI * j) / Math.max(1, civic.length);
+        out[s.id] = { id: s.id, sys: s, tier: s.tier, th: sat.th, r: RING, sat: g.constellation,
+          x: hx + rIn * Math.cos(t), y: hy + rIn * Math.sin(t) };
+      });
+      outer.forEach(function (s, j) {
+        var t = sat.th + Math.PI + (2 * Math.PI * (j + 0.5)) / Math.max(1, outer.length);
+        out[s.id] = { id: s.id, sys: s, tier: s.tier, th: sat.th, r: RING, sat: g.constellation,
+          x: hx + rOut * Math.cos(t), y: hy + rOut * Math.sin(t) };
+      });
+      satellites.push({ g: g, x: hx, y: hy, th: sat.th, r: rOut + span * 0.03 });
+    });
+    return { pos: out, cx: cx, cy: cy, RX: RX, RY: RY, cons: cons, core: CORE, satellites: satellites };
   }
-  /** unit-polar → screen, the one projection everything on the map goes through */
+  /**
+   * unit-polar → screen, the one projection everything on the map goes through. Radii are CORE
+   * radii: once a constellation has grown the core is drawn at `L.core` of the frame so the
+   * satellites have a ring of their own, and every band, arc and label scales with it.
+   */
   function proj(L, r, th) {
-    return { x: L.cx + r * L.RX * Math.cos(th), y: L.cy + r * L.RY * Math.sin(th) };
+    var k = L.core || 1;
+    return { x: L.cx + r * k * L.RX * Math.cos(th), y: L.cy + r * k * L.RY * Math.sin(th) };
   }
   function norm(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
 
@@ -693,7 +750,7 @@ var MapView = (function () {
     var ins = o.inset || { l: 0, r: 0, t: 0, b: 0 };
     var key = R.stateHash + ':' + W + ':' + H + ':' + ins.l + ',' + ins.r + ',' + ins.t + ',' + ins.b;
     if (!state.cache || state.cache.key !== key) {
-      state.cache = { key: key, lay: layout(R.map, W, H, ins) };
+      state.cache = { key: key, lay: layout(R.map, W, H, ins, R.growth && R.growth.opened) };
     }
     var lay = state.cache.lay, P = lay.pos, cx = lay.cx, cy = lay.cy, RX = lay.RX, RY = lay.RY;
     var idx = {}; R.map.forEach(function (s) { idx[s.id] = s; });
@@ -730,7 +787,7 @@ var MapView = (function () {
     // with a lit edge between each. A stranger has to be able to put a finger
     // on the line between two bands without reading a word, and every
     // generated map in the sweep failed exactly that.
-    function ell(r) { return { rx: (r * RX).toFixed(1), ry: (r * RY).toFixed(1) }; }
+    function ell(r) { var k = lay.core || 1; return { rx: (r * k * RX).toFixed(1), ry: (r * k * RY).toFixed(1) }; }
     [['FRONTIER', 0.985], ['MARCHES', 0.665], ['COMMONS', 0.235]].forEach(function (b) {
       var e = ell(b[1]);
       gBands.appendChild(S('ellipse', {
@@ -742,7 +799,7 @@ var MapView = (function () {
       }));
     });
     var counts = { COMMONS: 0, MARCHES: 0, FRONTIER: 0 };
-    R.map.forEach(function (s) { counts[s.tier] = (counts[s.tier] || 0) + 1; });
+    R.map.forEach(function (s) { if (!(P[s.id] && P[s.id].sat)) counts[s.tier] = (counts[s.tier] || 0) + 1; });
 
     // ★ A BAND LABEL NAMES THE GROUND IT SITS ON.
     //
@@ -783,6 +840,45 @@ var MapView = (function () {
         }));
       });
 
+    // ── ★ THE RISE — a constellation growth opened, and the meter toward the next ──
+    // A halo around each satellite enclave, brightest on the Reckoning it opened, carrying its id and
+    // that Reckoning; the gate lane itself is drawn by the lane pass below as THE PINCH, because it is
+    // a strait from the day it opens. The meter reads `qualified / needed` straight off the frame —
+    // the same count every agent's `header.growth` carries — so the next opening is watchable before
+    // it happens (A14).
+    (lay.satellites || []).forEach(function (sat) {
+      var fresh = R.growth && sat.g.openedAtReckoning === R.reckoningIndex;
+      gBands.appendChild(S('circle', {
+        class: 'rise-halo' + (fresh ? ' fresh' : ''), cx: sat.x.toFixed(1), cy: sat.y.toFixed(1),
+        r: sat.r.toFixed(1), fill: BAND_FILL.MARCHES, stroke: fresh ? '#ffd27a' : '#2f6f80',
+        'stroke-width': fresh ? 2 : 1, 'fill-opacity': 0.85,
+      }));
+      // Centred above the cluster on the top half of the ring and below it on the bottom half, and
+      // clamped inside the map's free area — a label pushed radially outward from a cluster near the
+      // edge ran off the panel, and half a name is a name nobody can drill into.
+      var text = String(sat.g.constellation).toUpperCase().replace('CON-', 'CON ') + ' · OPENED R' + sat.g.openedAtReckoning;
+      var half = (text.length * 8.4) / 2;
+      var lx = Math.max(ins.l + 4 + half, Math.min(W - ins.r - 4 - half, sat.x));
+      var ly = Math.sin(sat.th) < 0 ? sat.y - sat.r - 8 : sat.y + sat.r + 16;
+      ly = Math.max(ins.t + 14, Math.min(H - ins.b - 6, ly));
+      var lab = S('text', {
+        class: 'rise-label' + (o.onZoom ? ' go' : ''), x: lx.toFixed(1), y: ly.toFixed(1), 'text-anchor': 'middle',
+        text: text,
+      }, S('title', { text: 'a constellation the region grew at Reckoning ' + sat.g.openedAtReckoning + ' — drill in' }));
+      if (o.onZoom) {
+        lab.addEventListener('click', function (ev) { ev.stopPropagation(); o.onZoom(sat.g.constellation, null); });
+      }
+      gCon.appendChild(lab);
+    });
+    if (R.growth) {
+      var g0 = R.growth, mp = { x: cx, y: cy + (lay.core || 1) * RY * 0.985 + 18 };
+      gCon.appendChild(S('text', {
+        class: 'rise-meter', x: mp.x.toFixed(1), y: Math.min(H - 6, mp.y).toFixed(1), 'text-anchor': 'middle',
+        text: 'NEXT CONSTELLATION · ' + g0.qualified + ' OF ' + g0.needed + ' QUALIFIED' +
+          (g0.grown ? '  ·  ' + g0.grown + ' GROWN' : ''),
+      }, S('title', { text: g0.rule })));
+    }
+
     // ── CONSTELLATIONS, drawn as arcs rather than watermarks ────────────
     // The frame publishes ids (`con-1`), not names. The mocks invented HEARTH /
     // THRESHOLD / MARROW / VANE and `MARROW` collides with the live handle
@@ -795,7 +891,7 @@ var MapView = (function () {
     var conAgg = {};
     R.map.forEach(function (s) {
       if (s.tier === 'COMMONS') return;               // the Commons is its own thing
-      var p = P[s.id]; if (!p) return;
+      var p = P[s.id]; if (!p || p.sat) return;       // a satellite carries its own label (THE RISE)
       var a = conAgg[s.constellation] ||
         (conAgg[s.constellation] = { ths: [], tier: s.tier, n: 0 });
       a.ths.push(p.th); a.n++;
@@ -1234,7 +1330,11 @@ var MapView = (function () {
       }
       g.appendChild(c);
       gNodes.appendChild(g);
-      if (state.layers.labels) {
+      // A satellite enclave (THE RISE) is a cluster the size of one core system's label, so its
+      // members are named only when something is at stake there or the viewer has selected one —
+      // its constellation label names the cluster, and the drill-down names every system in it.
+      var quietSatellite = p.sat && !(stakes[s.id] && stakes[s.id].lvl > 0) && state.sel !== s.id;
+      if (state.layers.labels && !quietSatellite) {
         // ★ LABELS FAN RADIALLY OUTWARD, AND CLEAR THEIR OWN FENCE.
         //
         // Round 1 painted labels over the VERGE and their halos punched holes
