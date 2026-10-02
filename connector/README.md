@@ -201,7 +201,7 @@ CIMD, which Supabase cannot do (§6).
 ```sh
 cd connector
 npm ci
-npm test                 # 76 tests in 12 files, ~12 s
+npm test                 # 77 tests in 13 files, ~13 s
 npm run typecheck
 npm run build            # dist/main.mjs, dist/migrate.mjs
 ```
@@ -212,6 +212,7 @@ gitignored outputs). Without it, it is skipped with a message.
 | Suite | What it proves |
 |---|---|
 | `signing.test.ts` | The service's requests verify under the **engine's own** RFC 9421 verifier (`engine/src/identity`), bodyless and with a body; the public authority is signed while connecting to loopback; tampered bodies and replayed nonces are refused; the gateway header verifies and is bound to method, path and body |
+| `oauth-flow.test.ts` | **The whole sign-in chain with the official SDK's OAuth client** (what hosts run) against a Supabase-shaped authorization server (`test/helpers/mock-supabase.ts`, modelled on Supabase's source): our 401 → our metadata → RFC 8414 discovery at the path-inserted URL → dynamic registration → authorize with PKCE S256, `resource` and `scope=email` → our consent page logic → code → exchange → an expired token, which our 401 turns into a refresh → rotated refresh token → enroll |
 | `tokens.test.ts` | Connector tokens: audience, issuer, expiry, `client_id`, anonymous and non-UUID subjects, HS256 refused; session vs connector tokens; remote JWKS over HTTP |
 | `http.test.ts` | Protected resource metadata at both paths; CORS; 405s; body cap; Origin check; 2025-06-18 and 2025-11-25 negotiation; 12 tools each with title, four hints and `securitySchemes`; spectator tools signed out; **401 + resource_metadata for every account tool** (also hidden in a batch); 401 for bad/expired/wrong-audience/session tokens; ChatGPT's in-band prompt via the signed session id; `/account`; `/healthz` loopback-only |
 | `tools.test.ts` | Enrolment with the key sealed first; one agent per account; handle re-pick rules; recovery of a lost enrolment reply; signed observe with bounded quoted text and untouched affordances; **retries and concurrent duplicates act once**; a fully refused batch can be resent; re-send under the same key after no answer; `quote_id`; corrections in the log; wake status; isolation; per-account limits; invalid arguments |

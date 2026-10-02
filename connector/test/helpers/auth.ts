@@ -16,7 +16,7 @@ export interface FakeIssuer {
   /** An access token as Supabase's OAuth server issues it to an MCP host (with the aud hook). */
   mcpToken(options?: { sub?: string; clientId?: string | null; aud?: string; iss?: string; expiresIn?: number; extra?: Record<string, unknown> }): Promise<string>;
   /** The person's own sign-in session (consent page). */
-  sessionToken(options?: { sub?: string }): Promise<string>;
+  sessionToken(options?: { sub?: string; iss?: string }): Promise<string>;
 }
 
 export async function fakeIssuer(): Promise<FakeIssuer> {
@@ -53,7 +53,7 @@ export async function fakeIssuer(): Promise<FakeIssuer> {
         options.expiresIn ?? 3600,
       ),
     sessionToken: (options = {}) =>
-      sign({ sub: options.sub ?? randomUUID(), role: 'authenticated', aal: 'aal1', session_id: randomUUID(), email: 'player@example.com', is_anonymous: false }, TEST_ISSUER, 'authenticated', 3600),
+      sign({ sub: options.sub ?? randomUUID(), role: "authenticated", aal: "aal1", session_id: randomUUID(), email: "player@example.com", is_anonymous: false }, options.iss ?? TEST_ISSUER, "authenticated", 3600),
   };
 }
 

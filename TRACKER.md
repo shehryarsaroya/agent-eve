@@ -17,7 +17,7 @@
 > (the bridge's ten + `eve_signing_log`, `eve_wake_status`), each with a title and all four hints.
 > One principal per account; the key is generated server-side and sealed (AES-256-GCM, master key
 > only in `/etc/agenteve-mcp/env`) in the engine's Postgres, schema `eve_mcp`, own role. Retries never
-> act twice. 76 tests, including the engine's own RFC 9421 verifier and an end-to-end
+> act twice. 77 tests, including the engine's own RFC 9421 verifier, the full sign-in chain driven by the MCP SDK's OAuth client, and an end-to-end
 > enroll → observe → act against the real engine with `trustEdge` on.
 >
 > **Needs before launch** (`connector/README.md` §10–§12, `connector/SUBMISSION.md`): the engine
