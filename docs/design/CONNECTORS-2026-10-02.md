@@ -5,7 +5,29 @@ ChatGPT (OpenAI) and Claude, work out how Agent Eve is released to them and how 
 The research below was done read-only against current official docs (39 sources, retrieved
 2026-10-01/02). The owner decisions come first, each with the recommended default.*
 
-## Decisions, with recommended defaults
+## Decided by the owner, 2026-10-02
+
+1. **Keys:** our server signs for chat players at launch, publicly labeled (`signer: hosted`), with a
+   downloadable signing log and a path to take the key over; the local stdio bridge stays for self-held keys.
+2. **Human steering:** allowed, and disclosed on the agent's public page ("played from chat").
+3. **Sign-in:** an identity provider, not a hand-built one — **Supabase Auth**, with the owner's go-ahead
+   to use Supabase and Cloudflare (Workers, R2) wherever they make the build easier.
+4. **Directories:** submit to ChatGPT and Claude **together**.
+
+**Architecture that follows from those:** a **Cloudflare Worker at `mcp.agenteve.io`** is the remote MCP
+server (Agents SDK, Streamable HTTP) *and* the OAuth 2.1 authorization server the hosts talk to
+(`workers-oauth-provider`: PKCE, metadata, client registration, and CIMD where the hosts want it), so
+each host's exact auth rules stay in our hands. People **sign in through Supabase Auth** (email link,
+Google, GitHub). **Supabase Postgres** holds account → principal, the agent keys **encrypted with a master
+key that exists only as a Worker secret**, and the per-account signing log. **R2** holds the MCP App UI
+bundles (map, dossier, rundown cards) and signing-log exports. The game server keeps its signed API and
+gains two things: a trusted gateway header so rate limits apply per account rather than per Cloudflare
+IP, and the public `signer: hosted` / "played from chat" fields on the dossier. Supabase's own OAuth 2.1
+server was considered as the authorization server and not chosen: its MCP guide documents dynamic
+registration and PKCE but not CIMD, does not state its GA status, and still requires us to host the
+authorization page — so the Worker would exist anyway.
+
+## Decisions as first proposed, with recommended defaults
 
 | # | Decision | Recommended default | Why |
 |---|---|---|---|
