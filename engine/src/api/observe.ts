@@ -3442,7 +3442,9 @@ function affordancesFor(
   //     would refuse — not present, nothing standing here, Commons-bound with no legal exit — so the
   //     menu cannot offer a trip the engine declines.
   for (const good of HAULABLE_GOODS) {
-    for (const quote of runtime.haulQuotesFor(principal, good, tick)) {
+    // At `tick + 1`, the tick the haul lands in and the verb checks presence at: an enrolment hand is
+    // present from the tick after it is minted, so asking at `tick` hid every newcomer's first haul.
+    for (const quote of runtime.haulQuotesFor(principal, good, tick + 1)) {
       const to = quote.open[0];
       if (to === undefined) continue;
       eligible.push({
@@ -4009,7 +4011,9 @@ function affordancesFor(
   //     Legality is not decided here. `levyDeliveryQuote` calls the same `deliveryFault` the verb
   //     calls, so this list cannot offer an act the engine will refuse — which costs an agent a
   //     real action, exactly as the Charge's own comment says.
-  const levyQuote = runtime.levyDeliveryQuote(principal, tick);
+  // ★ Presence at `tick + 1`, the tick the delivery lands in: an enrolment hand is present from exactly
+  // then, and asking at `tick` hid the Levy row on the very payload whose briefing names the Levy first.
+  const levyQuote = runtime.levyDeliveryQuote(principal, tick, tick + 1);
   if (levyQuote.fault === null && levyQuote.payable > 0) {
     eligible.push({
       verb: 'deliver',
@@ -4180,7 +4184,7 @@ function affordancesFor(
   //     `MAX_LEVY_CARRY_OFFERS`; the rows it could not offer come back from
   //     `levyCarryObstacles` and are counted in `withheld` below, because an omission an agent
   //     could act on next tick is one it is entitled to know about (PROP-O1).
-  for (const carry of runtime.levyCarryQuotes(principal, tick)) {
+  for (const carry of runtime.levyCarryQuotes(principal, tick, undefined, tick + 1)) {
     eligible.push({
       verb: 'deliver',
       // `payer` rather than `on_behalf_of`: the verb takes either, and this is the spelling that
@@ -4212,7 +4216,7 @@ function affordancesFor(
   // read without building one object per co-member (SPEC §15.5: at a few thousand principals in one
   // constellation, building them was a fifth of every observation).
   {
-    const blocked = runtime.levyCarryObstacleSummary(principal, tick);
+    const blocked = runtime.levyCarryObstacleSummary(principal, tick, tick + 1);
     carryBlocked += blocked.count;
     for (const fault of blocked.faults) carryBlockedWhy.add(fault);
     if (blocked.ownNeeds > 0) {
@@ -5195,7 +5199,8 @@ function affordancesFor(
         world,
         book: runtime.market,
         principal,
-        tick,
+        // The tick a `trade` sent now lands in — the verb's own `checkVenue` tick (see `marketView`).
+        tick: tick + 1,
         books,
         venues,
         // The holding, because `move` needs a destination and "somewhere" is not one. Every

@@ -12392,9 +12392,13 @@ export class Runtime {
    * and `mine` is filtered to the reader before it leaves the market module.
    */
   marketView(principal: PrincipalId, tick: number): Readonly<Record<string, unknown>> {
+    // ★ Present at `tick + 1`, the tick a `trade` sent from this observation lands in and the tick
+    // `checkVenue` asks about. At `tick` an enrolment hand — minted present from the next tick — stood
+    // at the venue and was not counted, so a newcomer's first payload read "no hand standing at sys-01"
+    // about a book its next act could trade. Only the observation reads this method.
     const venues = new Set<SystemId>(
       handsOf(this.world, principal)
-        .filter((hand) => isPresent(hand, tick))
+        .filter((hand) => isPresent(hand, tick + 1))
         .map((hand) => hand.location),
     );
     const books = booksFor(this.marketBook, principal, venues, tick);
@@ -17611,6 +17615,12 @@ export class Runtime {
   levyDeliveryQuote(
     principal: PrincipalId,
     tick = this.engine.tick,
+    /**
+     * ★ The tick the hand must be present at — the menu passes `tick + 1`, the tick its act lands in
+     * (`levy/payment.ts:deliveryDelivererFault`). The clock and the assessment are still read at
+     * `tick`, so a row landing in the freeze is still built and then counted by `clockGateFor`.
+     */
+    presentAt = tick,
   ): {
     readonly place: SystemId | null;
     /** What a full discharge would hand over now, bounded by what is actually to hand. */
@@ -17645,6 +17655,7 @@ export class Runtime {
       tick,
       owing,
       available,
+      presentAt,
     });
     return {
       place,
@@ -17698,6 +17709,8 @@ export class Runtime {
     deliverer: PrincipalId,
     tick = this.engine.tick,
     max = MAX_LEVY_CARRY_OFFERS,
+    /** The tick hands must be present at — see {@link levyDeliveryQuote}. The cast passes nothing. */
+    presentAt = tick,
   ): readonly LevyCarryQuote[] {
     if (max <= 0) return [];
     // ── THE CAP APPLIES TO OFFERS, NOT TO ROWS, AND THAT WAS A MEASURED BUG ───
@@ -17717,7 +17730,7 @@ export class Runtime {
       if (fault !== null || payable <= 0) return false;
       out.push(carryQuoteOf(row, fault, own));
       return out.length >= max;
-    });
+    }, presentAt);
     return out;
   }
 
@@ -17748,6 +17761,8 @@ export class Runtime {
   levyCarryObstacleSummary(
     deliverer: PrincipalId,
     tick = this.engine.tick,
+    /** The tick hands must be present at — see {@link levyDeliveryQuote}. */
+    presentAt = tick,
   ): {
     readonly count: number;
     readonly faults: ReadonlySet<string>;
@@ -17765,7 +17780,7 @@ export class Runtime {
       if (fault === null) ownNeeds += 1;
       else faults.add(fault);
       return false;
-    });
+    }, presentAt);
     const reckoning = reckoningOf(tick);
     return {
       count,
@@ -17804,6 +17819,7 @@ export class Runtime {
     deliverer: PrincipalId,
     tick: number,
     visit: (row: CarryPayerRow, payable: number, fault: string | null, own: CarryOwnSide) => boolean,
+    presentAt = tick,
   ): void {
     const reckoning = reckoningOf(tick);
     const constellation = constellationOf(this.world, deliverer);
@@ -17815,13 +17831,13 @@ export class Runtime {
     const surplus = Math.max(0, available - ownOwed);
     // The deliverer's half of `deliveryFault`, once per delivery place: a constellation has one.
     const delivererFault = new Map<SystemId, string | null>();
-    for (const row of this.levyCarryPayers(constellation, tick)) {
+    for (const row of this.levyCarryPayers(constellation, tick, presentAt)) {
       if (row.payer === deliverer) continue;
       let fault = row.payerFault;
       if (fault === null) {
         let mine = delivererFault.get(row.place);
         if (mine === undefined) {
-          mine = deliveryDelivererFault({ world: this.world, deliverer, place: row.place, tick, available });
+          mine = deliveryDelivererFault({ world: this.world, deliverer, place: row.place, tick, available, presentAt });
           delivererFault.set(row.place, mine);
         }
         fault = mine;
@@ -17841,8 +17857,8 @@ export class Runtime {
    * `rollByConstellation` is the same reader the assessment and the ballot use, so a payer this can see
    * is a payer the docket has.
    */
-  private levyCarryPayers(constellation: ConstellationId, tick: number): readonly CarryPayerRow[] {
-    return this.perEpoch(`levyCarryPayers:${String(constellation)}:${String(tick)}`, () => {
+  private levyCarryPayers(constellation: ConstellationId, tick: number, presentAt = tick): readonly CarryPayerRow[] {
+    return this.perEpoch(`levyCarryPayers:${String(constellation)}:${String(tick)}:${String(presentAt)}`, () => {
       const reckoning = reckoningOf(tick);
       const rows: CarryPayerRow[] = [];
       for (const payer of this.rollByConstellationNow().get(constellation) ?? []) {
@@ -17862,7 +17878,7 @@ export class Runtime {
         // **Presence gated, not just stock**: a payer holding a fortune with every hand elsewhere
         // cannot deliver a unit this tick, and that is exactly the payer a carry should serve.
         const payerReach =
-          carrierAt(this.world, payer, place, tick) === null
+          carrierAt(this.world, payer, place, presentAt) === null
             ? minor(0)
             : minor(this.levyGoodAvailable(payer));
         // `carryableOf`'s escrowable bucket, which reads the payer alone: the deliverer's stock and

@@ -340,6 +340,8 @@ export function deliveryFault(args: {
   readonly tick: number;
   readonly owing: Owing;
   readonly available: number;
+  /** See {@link deliveryDelivererFault}. The verb never passes it. */
+  readonly presentAt?: number;
 }): string | null {
   return deliveryPayerFault(args) ?? deliveryDelivererFault(args);
 }
@@ -387,8 +389,15 @@ export function deliveryDelivererFault(args: {
   readonly place: SystemId;
   readonly tick: number;
   readonly available: number;
+  /**
+   * ★ The tick the hand must be present at, when that is not `tick` — for the MENU only. The verb asks
+   * at its own landing tick and passes nothing; an observation at `tick` asks about an act that lands
+   * at `tick + 1`, and an enrolment hand is present from exactly then (`world/hands.ts`), so asking at
+   * `tick` hid a newcomer's first Levy delivery the engine would have accepted.
+   */
+  readonly presentAt?: number;
 }): string | null {
-  if (carrierAt(args.world, args.deliverer, args.place, args.tick) === null) {
+  if (carrierAt(args.world, args.deliverer, args.place, args.presentAt ?? args.tick) === null) {
     return (
       `a Levy is paid in goods physically delivered, so one of your hands has to be standing at ` +
       `${args.place}. Move a hand there — or set a delivery intent, which fires the moment one arrives.`
