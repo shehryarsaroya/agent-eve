@@ -6410,11 +6410,15 @@ function promptFor(
   if (!fresh) {
     return 'You are outside a wake, so this snapshot carries no fresh affordances and no quote_id. Nothing here can be acted on; wait for your next wake or the next Reckoning.';
   }
-  const delegated = authorityInUse(runtime, mine, issued, dossiersOnMe);
-  if (delegated !== null) return delegated;
-  const war = campaignPressure(campaigns);
-  if (war !== null) return war;
   const riding = electiveRiding(runtime, principal, mine, tick);
+  // ★ The two branches ranked ABOVE the unelected elective may not hide it. `if_you_do_nothing` leads
+  // with that default whenever one is riding, so a prompt that names something else first carries the
+  // default as its last clause — the sentence and the preview one key over then say the same thing.
+  const alsoRiding = riding === null ? '' : ` Also: ${ridingClause(runtime, principal, mine, tick)}`;
+  const delegated = authorityInUse(runtime, mine, issued, dossiersOnMe, tick);
+  if (delegated !== null) return `${delegated}${alsoRiding}`;
+  const war = campaignPressure(campaigns);
+  if (war !== null) return `${war}${alsoRiding}`;
   if (riding !== null) return riding;
   // ★ A live standoff outranks the whole venture ladder — see {@link standoffPressure}.
   const standoff = standoffPressure(runtime, principal, tick);
@@ -6474,6 +6478,11 @@ function promptFor(
   // opportunity, the ladder's own rule. See {@link chargePressure}.
   const charge = chargePressure(runtime, principal, tick);
   if (charge !== null) return charge;
+  // ★ A held role still UNSEALED before the freeze — below every debt, above every opportunity,
+  // because until it is sealed the engine refuses the `create` and `fill_role` the rungs below
+  // point at (PROP-D4). See {@link sealPressure}.
+  const unsealed = sealPressure(runtime, principal, tick);
+  if (unsealed !== null) return unsealed;
   // ★ The season's exam question outranks an ordinary slot in the two Reckonings it is live — see
   // {@link grandPressure}. Below every obligation above, because those are promises already made.
   const grand = grandPressure(runtime, principal, tick);
@@ -6682,6 +6691,22 @@ function levyPressure(runtime: Runtime, principal: PrincipalId, tick: number): s
  * **Silent while nothing has happened**, which is the whole difference between this and a warning:
  * issuing a grant is not a dilemma, and a grantor whose delegates have all behaved gets the
  * ordinary ladder. It is the *use* that is news.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ★ **AND ONLY WHILE `revoke` CAN STILL DO SOMETHING ABOUT IT — IT READ THE WHOLE HISTORY.**
+ *
+ * Every grant ever issued (`forGrantor` keeps revoked and expired rows), every venture ever bound,
+ * and the GROSS spend journal. A probe granted, watched the delegated venture be abandoned (its draw
+ * released in full), revoked — and for ~1,000 ticks the first sentence of every wake still read
+ * *"draws totalling 8000 have been taken … none of it can be undone"*, about authority that no longer
+ * existed and money that had come back, while `if_you_do_nothing` one key over warned of an unelected
+ * elective the prompt never reached. A rung that never empties makes every rung below it unreachable.
+ *
+ * So the branch reads LIVE authority only: grants live at `tick`; ventures bound under one of them that
+ * are still FORMING, LIVE or DEFERRED; draws on one of them NET of what was released; and dossiers
+ * first cut under one of them. A revoked or expired grant leaves nothing for `revoke` to bound; its
+ * history stays on `grants.granted[]` and the public record, and the ladder moves on.
+ * ══════════════════════════════════════════════════════════════════════════
  */
 function authorityInUse(
   runtime: Runtime,
@@ -6689,16 +6714,40 @@ function authorityInUse(
   /** Grants THIS principal issued — the only ones where it carries the risk. Read once by the caller. */
   issuedRows: readonly Grant[],
   leaked: readonly Dossier[],
+  tick: number,
 ): string | null {
-  // A grant this principal HOLDS over somebody else is its own authority and no dilemma at all.
-  if (issuedRows.length === 0 && leaked.length === 0) return null;
-  const issued = new Map(issuedRows.map((g) => [g.id, g] as const));
+  // A grant this principal HOLDS over somebody else is its own authority and no dilemma at all — and
+  // with nothing live issued, there is nothing `revoke` could still bound. Live at `tick + 1`, the tick
+  // any act sent now lands in: a revoke resolved this tick kills its grant from the next one
+  // (`isRevokedAt`), so no further use of it can land and the rung has nothing left to warn about.
+  const issued = new Map(
+    issuedRows.filter((g) => runtime.grants.isLive(g.id, tick + 1)).map((g) => [g.id, g] as const),
+  );
+  if (issued.size === 0) return null;
 
-  const bound = mine.filter((v) => v.boundByGrant !== null && issued.has(v.boundByGrant));
-  // The journal, walked only once something is actually delegated. Bounded by INV-26, but it is a
-  // per-observation walk and the cheap exits above are what keep it off the common path.
-  const draws = issued.size === 0 ? [] : runtime.grants.allSpends().filter((s) => issued.has(s.grant));
-  if (draws.length === 0 && bound.length === 0 && leaked.length === 0) return null;
+  const bound = mine.filter(
+    (v) => v.boundByGrant !== null && issued.has(v.boundByGrant) && UNRESOLVED_STATES.has(v.state),
+  );
+  // Net of releases, per draw (`GrantBook.netDrawOf`'s arithmetic, one pass over each journal): a draw
+  // given back when its venture retired is authority returned, not authority being used.
+  const net = new Map<string, { delegate: PrincipalId; direct: number; contingent: number }>();
+  for (const s of runtime.grants.allSpends()) {
+    if (!issued.has(s.grant)) continue;
+    const key = `${String(s.grant)}|${String(s.eventId)}`;
+    const row = net.get(key) ?? { delegate: s.delegate, direct: 0, contingent: 0 };
+    row.direct += s.direct;
+    row.contingent += s.contingent;
+    net.set(key, row);
+  }
+  for (const r of runtime.grants.allReleases()) {
+    const row = net.get(`${String(r.grant)}|${String(r.eventId)}`);
+    if (row === undefined) continue;
+    row.direct -= r.direct;
+    row.contingent -= r.contingent;
+  }
+  const draws = [...net.values()].filter((d) => d.direct > 0 || d.contingent > 0);
+  const cut = leaked.filter((d) => d.grant !== null && issued.has(d.grant));
+  if (draws.length === 0 && bound.length === 0 && cut.length === 0) return null;
 
   // The delegate with the most to answer for, named. Ties broken by id so the sentence is
   // deterministic (DET-7: no `Date.now`, no unstable sort key).
@@ -6708,10 +6757,10 @@ function authorityInUse(
     const g = v.boundByGrant === null ? undefined : issued.get(v.boundByGrant);
     if (g !== undefined) tally.set(String(g.delegate), (tally.get(String(g.delegate)) ?? 0) + 1);
   }
-  for (const d of leaked) tally.set(String(d.cutBy), (tally.get(String(d.cutBy)) ?? 0) + 1);
+  for (const d of cut) tally.set(String(d.cutBy), (tally.get(String(d.cutBy)) ?? 0) + 1);
   const worst = [...tally.entries()].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0];
 
-  const drawn = draws.reduce((sum, s) => sum + Number(s.direct), 0);
+  const drawn = draws.reduce((sum, s) => sum + Math.max(0, s.direct), 0);
   const parts: string[] = [];
   if (bound.length > 0) {
     const first = bound[0];
@@ -6721,13 +6770,16 @@ function authorityInUse(
     );
   }
   if (draws.length > 0) {
-    parts.push(`${String(draws.length)} draw(s) totalling ${String(drawn)} have been taken against your LIMITS`);
-  }
-  if (leaked.length > 0) {
-    const rooms = [...new Set(leaked.map((d) => d.compartment))].sort(cmp).join('+');
-    const to = [...new Set(leaked.map((d) => String(d.toWhom)))].sort(cmp);
     parts.push(
-      `${String(leaked.length)} DOSSIER(s) on your ${rooms} have been cut and handed to ` +
+      `${String(draws.length)} draw(s) totalling ${String(drawn)} still stand against your LIMITS, net of ` +
+        'anything given back',
+    );
+  }
+  if (cut.length > 0) {
+    const rooms = [...new Set(cut.map((d) => d.compartment))].sort(cmp).join('+');
+    const to = [...new Set(cut.map((d) => String(d.toWhom)))].sort(cmp);
+    parts.push(
+      `${String(cut.length)} DOSSIER(s) on your ${rooms} have been cut and handed to ` +
         `${to.slice(0, 3).join(', ')}${to.length > 3 ? ` and ${String(to.length - 3)} more` : ''} — ` +
         'permanent, re-handable forever, and nothing un-cuts one',
     );
@@ -6740,6 +6792,9 @@ function authorityInUse(
     'has been reading you, and decide whether this delegate keeps its office.'
   );
 }
+
+/** A venture that still binds somebody — not yet SETTLED, DEFAULTED or ABANDONED. */
+const UNRESOLVED_STATES: ReadonlySet<string> = new Set(['FORMING', 'LIVE', 'DEFERRED']);
 
 /**
  * ★ **A war whose next pulse is already scheduled** — the branch a second probe's siege demanded.
@@ -6789,6 +6844,18 @@ function electiveRiding(
   mine: readonly VentureRecord[],
   tick: number,
 ): string | null {
+  const head = ridingHead(runtime, principal, mine, tick);
+  if (head === null) return null;
+  return (
+    `${head}. Paying it is genuinely your choice — the ` +
+    'escrowed half auto-executes either way — but the choice is recorded: `elect` IN_FULL and it ' +
+    'counts as honoured, or let it settle and a DEFAULT goes on your permanent public record naming ' +
+    'you as promisor, which no verb in this game removes. Whoever is owed it reads the same row.'
+  );
+}
+
+/** {@link electiveRiding}'s fact, without the explanation: the figure, the tick, the first venture. */
+function ridingHead(runtime: Runtime, principal: PrincipalId, mine: readonly VentureRecord[], tick: number): string | null {
   const settlement = nextSettlement(tick);
   const resolving = mine.filter((v) => v.state === 'LIVE' && v.resolvesAtTick <= settlement);
   const owed = resolving.reduce((sum, v) => sum + unelectedElective(runtime, v, principal), 0);
@@ -6796,10 +6863,49 @@ function electiveRiding(
   const first = resolving.find((v) => unelectedElective(runtime, v, principal) > 0);
   return (
     `${String(owed)} of ELECTIVE half is unelected and settles at tick ${String(settlement)}` +
-    `${first === undefined ? '' : ` (${first.id} first)`}. Paying it is genuinely your choice — the ` +
-    'escrowed half auto-executes either way — but the choice is recorded: `elect` IN_FULL and it ' +
-    'counts as honoured, or let it settle and a DEFAULT goes on your permanent public record naming ' +
-    'you as promisor, which no verb in this game removes. Whoever is owed it reads the same row.'
+    `${first === undefined ? '' : ` (${first.id} first)`}`
+  );
+}
+
+/** The same fact as a closing clause, for a rung that outranks it (see `promptFor`). */
+function ridingClause(runtime: Runtime, principal: PrincipalId, mine: readonly VentureRecord[], tick: number): string {
+  const head = ridingHead(runtime, principal, mine, tick);
+  return head === null
+    ? ''
+    : `${head} — \`elect\` it IN_FULL before the freeze, or a DEFAULT goes on your permanent record.`;
+}
+
+/**
+ * ★ **Roles you hold whose seal is still owed, and can still be sent** — one read for the prompt and the
+ * preview, so the two cannot disagree about it.
+ *
+ * The roles are `Runtime.sealableRoles` (the `seal` affordance's own set and PROP-D4's) less those
+ * already sealed this Reckoning, and only while a seal sent now still lands before the freeze.
+ */
+function unsealedHeld(runtime: Runtime, principal: PrincipalId, tick: number): readonly SealRoleRef[] {
+  if (tick > sealDeadline(tick)) return [];
+  return runtime.seals.unsealedRoles(principal, reckoningIndex(tick), runtime.sealableRoles(principal, tick));
+}
+
+/** The last observation tick whose `seal` still lands before tonight's freeze. */
+function sealDeadline(tick: number): number {
+  return nextSettlement(tick) - 1 - FREEZE_TICKS - 1;
+}
+
+/**
+ * ★ **A role you hold, still UNSEALED before the freeze** — a mandatory act (§11.1) the dilemma field
+ * never named while the menu carried it as mandatory. Costs no standing if missed; what it costs before
+ * then is every new commitment, because PROP-D4 refuses `create` and `fill_role` until it is sent.
+ */
+function sealPressure(runtime: Runtime, principal: PrincipalId, tick: number): string | null {
+  const open = unsealedHeld(runtime, principal, tick);
+  const first = open[0];
+  if (first === undefined) return null;
+  return (
+    `Your role ${String(first.roleIndex)} on ${first.venture} is UNSEALED` +
+    `${open.length > 1 ? ` (and ${String(open.length - 1)} more)` : ''}: send the \`seal\` row on your menu by ` +
+    `tick ${String(sealDeadline(tick))} — free, no action, judged once against your own delivery. Until every ` +
+    'role you hold is sealed the engine refuses your `create` and `fill_role` (PROP-D4).'
   );
 }
 
@@ -6941,6 +7047,16 @@ function ifYouDoNothing(
           ? `, your escrow on the ${String(mineToRefund)} you created is refunded in full, and any hand you ` +
             'committed comes free — you do not need to `abandon` them and nothing stays locked'
           : ', and any hand you committed comes free'),
+    );
+  }
+
+  // ★ A held role still UNSEALED — the same read `promptFor`'s seal rung makes, so the two agree.
+  const unsealed = unsealedHeld(runtime, principal, tick);
+  if (unsealed.length > 0) {
+    parts.push(
+      `${String(unsealed.length)} role(s) you hold go into the freeze UNSEALED unless you \`seal\` by tick ` +
+        `${String(sealDeadline(tick))}: no standing is charged for that, but until then every \`create\` and ` +
+        '`fill_role` you send is refused (PROP-D4)',
     );
   }
 
