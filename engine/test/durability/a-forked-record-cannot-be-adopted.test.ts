@@ -76,7 +76,13 @@ import type { PrincipalId } from '../../src/core/types.js';
 import type { SubmittedAction } from '../../src/tick/index.js';
 
 const SEED = 'forked-record-1';
-const CAST = 6;
+/**
+ * Eight since the Season 1 merge (`RULES_VERSION` 41), widened as the guard in `build()` instructs
+ * rather than relaxed: under the merged rules a six-member world had ONE principal creating after the
+ * fork point (`p:brannock`), so there was nothing left to rename. Eight puts a second creator back in
+ * the post-fork window.
+ */
+const CAST = 8;
 /** The world the record describes. Two checkpoints at ticks 0 and 100. */
 const TICKS = 200;
 /** Where the rules move. Early enough that plenty of ventures are minted after it. */
