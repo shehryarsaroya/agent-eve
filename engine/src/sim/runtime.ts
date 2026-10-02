@@ -7904,7 +7904,10 @@ export class Runtime {
    */
   sealableRoles(principal: PrincipalId, tick: number): readonly SealRoleRef[] {
     const out: SealRoleRef[] = [];
-    for (const venture of this.ventures.forPrincipal(principal)) {
+    // `venturesFor` (scale's per-epoch index; the book's own method inside a tick): since 41 the menu asks
+    // this twice per observation — the seal row and `ventureGateRefusalFor`'s seal gate — and the book's
+    // method filters every venture the world ever minted on each call.
+    for (const venture of this.venturesFor(principal)) {
       if (venture.state !== 'LIVE') continue;
       const delivery = this.deliveryTickOf(venture);
       if (delivery <= tick) continue;
@@ -10918,7 +10921,9 @@ export class Runtime {
           readonly parties: readonly PrincipalId[];
           readonly resolvedAtTick: number;
         }[] = [];
-        for (const venture of this.ventures.forPrincipal(principal)) {
+        // `venturesFor`, scale's per-epoch index (the book's own method inside a tick): the same rows in the
+        // same order, without filtering every venture the world ever minted once per reader.
+        for (const venture of this.venturesFor(principal)) {
           if (venture.state !== 'SETTLED' && venture.state !== 'DEFAULTED') continue;
           const ended = venture.resolvedAtTick;
           if (ended === null || tick - ended > PARLEY_TIE_TICKS) continue;

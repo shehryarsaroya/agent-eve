@@ -106,6 +106,23 @@ export function hopsFromCommons(map: WorldMap): ReadonlyMap<SystemId, number> {
  * construct a world where that is true, so an agent never reads a grand venture with nowhere to be.
  */
 export function grandStageFor(map: WorldMap, season: number): SystemId | null {
+  // Memoised per map OBJECT, `world/map.ts:route`'s pattern: a pure function of a frozen map and the
+  // season, and a grown map is a new object with an empty memo.
+  let memo = STAGES.get(map);
+  if (memo === undefined) {
+    memo = new Map<number, SystemId | null>();
+    STAGES.set(map, memo);
+  }
+  if (memo.has(season)) return memo.get(season) ?? null;
+  const stage = grandStageNow(map, season);
+  memo.set(season, stage);
+  return stage;
+}
+
+/** {@link grandStageFor}'s memo, keyed by the map object. */
+const STAGES = new WeakMap<WorldMap, Map<number, SystemId | null>>();
+
+function grandStageNow(map: WorldMap, season: number): SystemId | null {
   const dist = hopsFromCommons(map);
   let farthest = -1;
   const ties: SystemId[] = [];

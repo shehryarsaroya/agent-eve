@@ -5272,6 +5272,12 @@ function probeElective(kind: VentureKind): Minor {
  * terms, which `test/venture` would already be red about.
  */
 function probeVenture(kind: VentureKind, tick: number): VentureRecord | null {
+  // ★ Memoised for the tick (Season 1 merge): a pure function of `(kind, tick)` — the same creator, stage
+  // and terms for every reader — and each create row asks it three times (the bound twice, the manifest
+  // once), so every observation was minting and hashing ~18 identical probe ventures. Profiled at 1,000
+  // principals, canonical hashing went from 1.4% to 5.1% of the burst. Read-only to every caller.
+  if (probeMemo === null || probeMemo.tick !== tick) probeMemo = { tick, byKind: new Map() };
+  if (probeMemo.byKind.has(kind)) return probeMemo.byKind.get(kind) ?? null;
   const opens = tick + 1;
   const closes = opens + FORMATION_WINDOW_TICKS;
   const made = createVenture({
@@ -5286,8 +5292,13 @@ function probeVenture(kind: VentureKind, tick: number): VentureRecord | null {
     valuation: pinnedAt(DEFAULT_VALUATION_RULE, tick),
     rulesVersion: 0,
   });
-  return made.ok ? made.value : null;
+  const probe = made.ok ? made.value : null;
+  probeMemo.byKind.set(kind, probe);
+  return probe;
 }
+
+/** {@link probeVenture}'s one-tick memo: the latest tick's probes, by kind. */
+let probeMemo: { readonly tick: number; readonly byKind: Map<VentureKind, VentureRecord | null> } | null = null;
 
 /**
  * ★ The most a default-priced venture of this kind can ever ask its creator for on the elective half —
