@@ -151,15 +151,13 @@ async function stagedVenture(): Promise<{
   expectResolved(creator, 'the create affordance was copied verbatim and must resolve');
 
   const second = obs((await signed(h, creator, 'GET', PATHS.observe)).json);
-  const sign = verb(second, 'sign');
-  expect(sign, 'the creator must be offered its own countersignature').toBeDefined();
-  await act(creator, 'sign', sign?.['params']);
-  tick(h, 1);
-  // The creator's own `sign` affordance has to carry a `terms_hash` the engine accepts and
-  // an echo it agrees with, or nothing this file measures downstream can bind at all.
-  expectResolved(creator, 'the sign affordance was copied verbatim and must resolve');
+  // ★ `RULES_VERSION` 41: the creator's `create` IS its countersignature, so it is offered no `sign`
+  // and the venture is already bound to it — which is what makes the board's slots closeable by the
+  // fillers alone, the property every test below measures.
+  expect(verb(second, 'sign'), 'a creator is never offered a sign on its own venture').toBeUndefined();
 
   const mine = (second['ventures'] as Row)['mine'] as Row[];
+  expect(mine[0]?.['i_have_signed'], 'the create signed it').toBe(true);
   const id = mine[0]?.['id'];
   expect(typeof id).toBe('string');
   const record = h.runtime.ventures.get(String(id) as never);

@@ -30,8 +30,10 @@ function mark(over: Partial<WorksLine> = {}): WorksLine {
     holder: 'p:a' as PrincipalId,
     yieldPerTick: 110,
     occupants: 1,
+    extractors: 1,
     sharePerTick: 110,
     legend: 'EXTRACTING',
+    dormantSinceTick: null,
     extracted: 4_400,
     rentBps: 0,
     rentPerTick: 0,
@@ -87,6 +89,31 @@ describe('a mark may not contradict its own numbers', () => {
 
   it('refuses a mark on a system with no occupants', () => {
     expect(refusal([mark({ occupants: 0 })])).toMatch(/occupants/);
+  });
+
+  // ── ★ DORMANT (`RULES_VERSION` 41) — standing, dividing nothing, and saying since when ──────────
+  it('accepts a DORMANT mark that quotes no share and names the tick it stopped', () => {
+    const asleep = mark({ legend: 'DORMANT', sharePerTick: 0, dormantSinceTick: 1_154, occupants: 2, extractors: 1 });
+    const awake = mark({ works: 'works:sys-05:10:p:b', holder: 'p:b' as PrincipalId, occupants: 2, extractors: 1 });
+    expect(refusal([asleep, awake])).toBe('');
+  });
+
+  it('refuses a DORMANT mark that still quotes a share — a sleeper paid on screen', () => {
+    expect(refusal([mark({ legend: 'DORMANT', sharePerTick: 40, dormantSinceTick: 1_154 })])).toMatch(
+      /not online extracts nothing/,
+    );
+  });
+
+  it('refuses a legend and a dormant tick that disagree, either way round', () => {
+    expect(refusal([mark({ legend: 'DORMANT', sharePerTick: 0, dormantSinceTick: null })])).toMatch(
+      /legend and the tick disagree/,
+    );
+    expect(refusal([mark({ dormantSinceTick: 1_154 })])).toMatch(/legend and the tick disagree/);
+  });
+
+  it('refuses more WORKS sharing than standing, and an EXTRACTING mark nobody is sharing', () => {
+    expect(refusal([mark({ occupants: 1, extractors: 2 })])).toMatch(/extractors among/);
+    expect(refusal([mark({ extractors: 0 })])).toMatch(/nothing is dividing the yield/);
   });
 
   it('keeps the legend a legend, not a heatmap', () => {

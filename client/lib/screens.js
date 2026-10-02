@@ -557,7 +557,14 @@ var Screens = (function () {
     var claims = (R.claimLines || []).filter(function (c) { return c.claimant === pid; });
     var sway = (R.swayLines || []).filter(function (s) { return s.principal === pid; });
     var hold = [];
-    works.forEach(function (w) { hold.push({ k: 'WORKS', at: w.system, d: w.legend + ' · ' + w.yieldPerTick + '/tick', bad: false }); });
+    works.forEach(function (w) {
+      var asleep = w.legend === 'DORMANT';
+      hold.push({
+        k: 'WORKS', at: w.system,
+        d: w.legend + (asleep && w.dormantSinceTick != null ? ' since t' + w.dormantSinceTick : '') + ' · ' + w.yieldPerTick + '/tick',
+        bad: asleep,
+      });
+    });
     claims.forEach(function (c) { hold.push({ k: 'CLAIM', at: c.system, d: c.legend || c.state, bad: c.arrears > 0 }); });
     sway.forEach(function (s) { hold.push({ k: 'SWAY', at: s.system, d: 'sway ' + s.sway + (s.gate ? ' · strait gate' : ''), bad: false }); });
     places.forEach(function (p) { hold.push({ k: 'PLACE', at: p.system, d: 'named for ' + p.handle + ' since t' + p.sinceTick, bad: false }); });
@@ -1210,7 +1217,7 @@ var Screens = (function () {
       { k: 'sharePerTick', t: 'share', w: '58px', num: true },
       { k: 'occupants', t: 'occ', w: '44px', num: true },
       { k: 'extracted', t: 'extracted', w: '82px', num: true, cell: function (w) { return U.n(w.extracted); } },
-      { k: 'legend', t: 'state', w: '92px', cell: function (w) { return U.tag(w.legend, 'cy'); } },
+      { k: 'legend', t: 'state', w: '92px', cell: function (w) { return U.tag(w.legend, w.legend === 'DORMANT' ? 'dm' : 'cy'); } },
     ], wl, { sort: 'yieldPerTick', dir: -1, rerender: D.rerender })
       : U.skeleton(8, 6), { style: 'flex:1 1 auto;min-height:0' }));
 

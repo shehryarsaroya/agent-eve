@@ -89,7 +89,18 @@ describe("tomorrow's docket is built from what is actually riding", () => {
   // Extending rather than re-picking, because a wider list is strictly harder to lose than a luckier
   // single seed — `test/levy/exposure-high-water.spec.ts` had to be re-seeded three times in this one
   // session for exactly the want of that.
+  //
+  // ── ★ AND AT 41, ONE MORE AT THE FRONT — AND THE REASON IS THE RULE WORKING ──
+  //
+  // `RULES_VERSION` 41 made a creator's own `create` its countersignature, so a cast venture binds as
+  // soon as its fillers sign instead of waiting a tick on its creator — more ventures bind and finish,
+  // and in a six-member world nearly every pair has dealt by tick 700. Scanned: none of these twelve
+  // nor fourteen more lettered seeds put a stranger pairing on the docket; `docket-1` does. That is
+  // the message's second branch, not its first — members still meet as strangers, there are simply
+  // fewer strangers left in a world where deals close — so the list is extended, at the front, which
+  // also stops the scan building twelve worlds to find it.
   const CANDIDATE_SEEDS = [
+    'docket-1',
     'docket-k', 'docket-q', 'docket-s', 'docket-u', 'docket-h', 'docket-f',
     'docket-a', 'docket-b', 'docket-c', 'docket-d', 'docket-e', 'docket-g',
   ] as const;

@@ -75,6 +75,7 @@ export {
 } from './kinds.js';
 
 export {
+  CREATE_IS_COUNTERSIGNATURE,
   ELECTIVE_BPS_STATEMENT,
   GRANT_IS_CONSENT,
   bindingNote,
@@ -141,6 +142,7 @@ export {
   roleAt,
   roleOfPrincipal,
   signatoriesRequired,
+  slotRefusal,
   soloIsImpossible,
   termsHashOf,
   vacateRole,

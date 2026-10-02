@@ -87,6 +87,17 @@ import type { FrameSource } from './render.js';
  * known arithmetic be exact and machine-readable. `extracted` is cumulative units the world has
  * **handed over**, one `PUBLIC` event per tick, so it is a sum of completed public acts.
  *
+ * ★ **`DORMANT`, `dormantSinceTick` and `extractors` (`RULES_VERSION` 41) argue themselves the same
+ * way, and the argument has one honest cost stated.** The split is public arithmetic: `sharePerTick`
+ * is the system's yield divided by the WORKS dividing it, and a WORKS whose holder has had no action
+ * accepted for `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings divides nothing — so a frame that hid it
+ * would print a share the ledger does not pay, and every co-located holder can read the exact tick
+ * off its own extraction the moment its share rises. The agent sees the same fact in its own observe
+ * (`holding.works.here.dormant_by`, `graduation.ground[].dormant_by`), so A9 holds by construction.
+ * What it reveals that a viewer could not otherwise count is coarse and late: *this principal has sent
+ * nothing at all, of any kind, for four Reckonings* — the same liveness fact the seat lease acts on,
+ * and nothing about what it did before it stopped.
+ *
  * **What a works line may never carry:** units the holder still has, anywhere (`SENSED`);
  * Reckonings of Levy or Charge the extraction would cover, which is a public rate divided by a
  * private stockpile and is the rejected fuel gauge exactly; anything that moves when a convoy

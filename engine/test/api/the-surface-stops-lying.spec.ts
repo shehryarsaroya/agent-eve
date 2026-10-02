@@ -201,8 +201,10 @@ describe('★ ventures.mine[] publishes the figure settlement can charge (claim 
 
 describe('★ briefing.prompt does not promote a signature on an empty draft (claim 8)', () => {
   it('★ a FORMING venture nobody has joined is a DRAFT, and §7.3 says nothing binds yet', async () => {
-    // MUTATION: drop `&& partiesOf(v).length > 0` and this goes red — the prompt goes back to naming
-    // an unjoined draft ahead of the open roles that are the actual next move.
+    // MUTATION (before `RULES_VERSION` 41): drop `&& partiesOf(v).length > 0` and this went red — the
+    // prompt named an unjoined draft ahead of the open roles that are the actual next move. Since 41 the
+    // creator's `create` is its countersignature, so the creator of a draft has nothing to sign at all
+    // and the claim holds by construction; the assertions below pin both halves of that.
     const creator = await newcomer('lode');
     const seat = asText(obj(look(creator)['holding'])['system']);
     const offer = rows(look(creator)['affordances']).find((a) => a['verb'] === 'create');
@@ -219,7 +221,8 @@ describe('★ briefing.prompt does not promote a signature on an empty draft (cl
         rows(v['roles']).every((r) => r['filled_by'] === null),
         'nobody has joined it, which is the precondition of the claim',
       ).toBe(true);
-      expect(v['i_have_signed'], 'and the creator has not signed it').toBe(false);
+      // ★ 41: the create signed it — and that is exactly why no signature can be "waiting".
+      expect(v['i_have_signed'], 'the creator is countersigned by its own create').toBe(true);
     }
 
     const prompt = String(obj(look(creator)['briefing'])['prompt']);

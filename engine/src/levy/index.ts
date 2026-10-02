@@ -141,6 +141,7 @@ export {
   deliveryDelivererFault,
   deliveryFault,
   deliveryPayerFault,
+  LEVY_FREEZE_REFUSAL,
   nonEscrowableOf,
   owingOf,
   type Carryable,

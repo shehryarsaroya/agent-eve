@@ -114,6 +114,13 @@ export function seatCapacityFrom(raw: string | undefined): number {
  * so no reading of either document has a seat vanishing inside the guarantee — for
  * a principal that plays. What no longer moves this clock is a request that plays
  * nothing: see the file header.
+ *
+ * ★ **The world reads the same fact, separately** (`RULES_VERSION` 41): after the same
+ * four Reckonings without an accepted action a principal's WORKS goes DORMANT and stops
+ * dividing its system's yield (`works/params.ts:WORKS_DORMANT_AFTER_TICKS`). Two
+ * constants, because this one is a host resource the tick never reads and that one is a
+ * world rule inside `state_hash`; `test/works/dormant-works.spec.ts` pins that they
+ * agree, so the host and the world never disagree about when a principal stopped playing.
  */
 export const IDLE_SEAT_TICKS = TICKS_PER_RECKONING * 4;
 

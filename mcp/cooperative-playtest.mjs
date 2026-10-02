@@ -59,7 +59,10 @@ try {
     await act(name, [{verb:'fill_role',params:{venture:venture.id,role,hand:hand.id,stake:1000}}]);
   }
   await waitTick(await tick()+1);
-  for (const name of ['builder','trader','diplomat']) {
+  // Season 1 (RULES_VERSION 41): the builder's create IS its countersignature, so only the fillers sign.
+  assert.ok(!(await observe('builder')).affordances.some(a => a.verb === 'sign' && a.params.venture === venture.id),
+    'the creator must not be offered a sign on its own venture');
+  for (const name of ['trader','diplomat']) {
     const o = await observe(name);
     const signature = o.affordances.find(a => a.verb === 'sign' && a.params.venture === venture.id);
     assert.ok(signature, `${name} must have a signature for the shared venture`);

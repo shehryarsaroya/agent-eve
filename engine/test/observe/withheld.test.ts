@@ -156,13 +156,18 @@ describe('PROP-O1 — the arithmetic balances, per field', () => {
     );
   });
 
-  it('counts SHORT_FUNDS rather than offering a signature nobody can fund', () => {
+  it('counts SHORT_FUNDS rather than offering a purchase nobody can fund', () => {
+    // ★ `RULES_VERSION` 41. This was "a signature nobody can fund" — the creator's own `sign` on a venture
+    // whose escrow it could not cover. The creator's `create` is now its countersignature (and the
+    // escrow was always locked at create), so that signature is never offered at all; the ground is
+    // asserted on the market's BUY instead, which is the other place it is produced.
     const f = brokeFixture();
     const haul = makeHaul(f);
     fill(f, haul, 0, BRAM, 1);
     fill(f, haul, 1, CASS, 1);
-    const built = buildObservation(sourcesFor(f), ALICE);
-    expect(built.observation.affordances.some((a) => a.verb === 'sign')).toBe(false);
+    const built = buildObservation(sourcesFor(f, { market: [bookRow(f.stage, 'ore')] }), ALICE);
+    expect(built.observation.affordances.some((a) => a.verb === 'sign'), 'the creator signed at create').toBe(false);
+    expect(built.observation.affordances.some((a) => a.verb === 'trade')).toBe(false);
     expect(built.observation.header.withheld.some((r) => r.ground === 'SHORT_FUNDS')).toBe(true);
     expect(built.accounting).toEqual([]);
   });
@@ -215,8 +220,10 @@ describe('PROP-O1 — a mandatory affordance survives every rung', () => {
     // mandatory sources at once. This is the *baseline*: nothing here is narrowed, and
     // the test below is the one that exercises the ladder.
     const f = fixture();
-    const haul = makeHaul(f);
-    fill(f, haul, 0, BRAM, 1);
+    // ★ `RULES_VERSION` 41: a creator's own `create` is its countersignature, so the unsigned party is a
+    // FILLER — ALICE holding a role in BRAM's venture, the one `sign` the catalogue still owes.
+    const haul = makeHaul(f, { creator: BRAM });
+    fill(f, haul, 0, ALICE, 1);
     fill(f, haul, 1, CASS, 1);
     const sources = sourcesFor(f, {
       levy: levyOwing(f),
@@ -250,9 +257,10 @@ describe('PROP-O1 — a mandatory affordance survives every rung', () => {
     // A LIVE venture ALICE holds a role in (an unsealed role -> mandatory `seal`).
     const live = makeHaul(f, { id: vid('v-seal-me'), creator: BRAM });
     goLive(f, live, [ALICE, CASS], minor(12_000));
-    // A venture of ALICE's own awaiting its countersignature -> mandatory `sign`.
-    const waiting = makeHaul(f, { id: vid('v-sign-me'), creator: ALICE });
-    fill(f, waiting, 0, DOV, 1);
+    // A venture ALICE filled and has not yet countersigned -> mandatory `sign`. (Since `RULES_VERSION`
+    // 41 a creator is countersigned by its own create, so the waiting signature is a filler's.)
+    const waiting = makeHaul(f, { id: vid('v-sign-me'), creator: DOV });
+    fill(f, waiting, 0, ALICE, 1);
     fill(f, waiting, 1, ESK, 1);
     // And enough of everything else that the ladder has to reach the floor.
     for (let i = 0; i < 40; i += 1) {

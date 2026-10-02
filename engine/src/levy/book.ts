@@ -534,6 +534,11 @@ export class Book {
     return this.ballots.has(principalKey(forReckoning, principal));
   }
 
+  /** The ballot this principal has standing for `forReckoning`, if any. A read; it moves nothing. */
+  ballotOf(forReckoning: number, principal: PrincipalId): LevyBallot | undefined {
+    return this.ballots.get(principalKey(forReckoning, principal));
+  }
+
   ballotsFor(forReckoning: number, constellation: ConstellationId): readonly LevyBallot[] {
     return [...this.ballots.values()]
       .filter((b) => b.forReckoning === forReckoning && b.constellation === constellation)

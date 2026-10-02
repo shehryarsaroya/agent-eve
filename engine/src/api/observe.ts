@@ -56,7 +56,7 @@ import {
 } from '../core/time.js';
 import type { GoodId, Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
 import { BPS_ONE, minor, type Minor } from '../core/units.js';
-import { storesAccount } from '../ledger/index.js';
+import { DEFAULT_VALUATION_RULE, storesAccount } from '../ledger/index.js';
 import {
   MAX_ORDER_QTY,
   freeCash,
@@ -68,7 +68,10 @@ import {
 } from '../market/index.js';
 import { ACTIONS_PER_TICK } from '../core/time.js';
 import {
+  CREATE_IS_COUNTERSIGNATURE,
+  createVenture,
   creatorElective,
+  electiveCeilingOfRole,
   escrowRatioBps,
   escrowRequired,
   IN_FULL,
@@ -77,7 +80,9 @@ import {
   maxElectiveBps,
   minElectiveBps,
   openIndices,
+  maxElectiveLiability,
   partiesOf,
+  pinnedAt,
   pinnedValue,
   roleOfPrincipal,
   projectedSettlement,
@@ -196,9 +201,11 @@ import {
   ALLOY_IN_BY_TIER,
   ALLOY_OUT_QTY,
   ALLOY_TIER,
+  DORMANT_STATEMENT,
   FUEL_GOOD,
   REFINE_IN_QTY,
   REFINE_OUT_QTY,
+  WORKS_DORMANT_AFTER_RECKONINGS,
   WORKS_GOOD,
   WORKS_YIELD_GOOD,
 } from '../works/params.js';
@@ -245,6 +252,7 @@ import {
   neighboursOf,
   tierOf,
   transitTicks,
+  type Rejection,
 } from '../world/index.js';
 import {
   defaultTerms,
@@ -592,7 +600,7 @@ export function buildObservation(input: ObserveInput): Observation {
   // Solving the board twice would let `ventures.board[]` and the `fill_role` list disagree
   // about a hash or a price, which is the two-homes-for-one-rules-surface shape of scar #1.
   const affordanceSet = input.fresh && !input.stale
-    ? affordancesFor(runtime, principal, tick, board, solved.dropped, myCampaigns,
+    ? affordancesFor(runtime, principal, tick, board, solved.dropped, solved.barred, myCampaigns,
     books, marketVenues)
     : { list: [] as Affordance[], withheld: notAWake(input) };
 
@@ -965,6 +973,26 @@ export function buildObservation(input: ObserveInput): Observation {
       charge: myClaims.slice(0, MAX_LIST_ROWS),
       /** The allocation ballot, while it is open. Who bears the total is the vote (§5.2's split). */
       charge_ballot: chargeBallotBlock(runtime, principal, tick),
+      /**
+       * ★ **THE ORDERS YOU LEFT RUNNING TO MEET ALL OF THE ABOVE** (`RULES_VERSION` 41).
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * A standing intent was the one durable commitment an agent could make and never read back: it
+       * appeared in no observation, it could not be ended, and the only trace of it was a correction
+       * every tick it was refused — including the ticks it had nothing to do, which is how a PAID
+       * Levy order came to read as a stuck one. So every intent the reader holds is listed here, live
+       * ones plus any that ended inside the last Reckoning, with what it last did (`status`: `ARMED` ·
+       * `RAN` · `SATISFIED` · `REFUSED`, or how it ended) and what it will do next tick (`now`) — the
+       * same predicate the engine asks before running it, so the row cannot promise a run the tick
+       * will not make. Each live one has a `set_delivery_intent {"stop": id}` affordance beside it.
+       *
+       * In `obligations`, not a key of its own: §17's observe budget is at eleven, and an order to pay
+       * the Levy or the Charge belongs adjacent to the bill it pays — the argument that put `levy` and
+       * `exposure` here. PRIVATE to the reader: what an order DOES is public on the events it produces,
+       * and that it exists is the reader's own strategy.
+       * ══════════════════════════════════════════════════════════════════════
+       */
+      intents: runtime.intentRows(principal, tick),
     },
 
     ventures: {
@@ -1402,8 +1430,15 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
   if (seat === null) return { held: mine, here: null };
   const quote = runtime.worksQuote(principal, seat.from);
   return {
-    /** Live WORKS of yours, with whether each is past spin-up and what it has extracted. */
+    /**
+     * Live WORKS of yours, with whether each is past spin-up and what it has extracted — and, since
+     * `RULES_VERSION` 41, whether it is DORMANT and `dormant_from_tick`: the tick it stops dividing its
+     * system's yield if you send nothing more (or the tick it stopped). Any accepted action of yours —
+     * any verb — moves that tick a full `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings out.
+     */
     held: mine,
+    /** The rule, in the engine's own words — the same sentence `agent.md` carries. */
+    dormant_rule: DORMANT_STATEMENT,
     here: {
       system: quote.system,
       tier: quote.tier,
@@ -1423,6 +1458,13 @@ function worksBlock(runtime: Runtime, principal: PrincipalId): Readonly<Record<s
        * list of rivals.
        */
       occupied_by: quote.occupiedBy,
+      /**
+       * ★ **Which of them are DORMANT** — standing, dividing nothing (`RULES_VERSION` 41). Their holders
+       * have had no action accepted for `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings, so they are left out
+       * of `share_per_tick` below today; each resumes the tick after its holder's next accepted action.
+       * `PUBLIC`: the frame draws them DORMANT, and A9 forbids it knowing more than you.
+       */
+      dormant_by: quote.dormantBy,
       /**
        * What yours would **KEEP** per tick once online, at today's crowding **and after rent**.
        *
@@ -1581,6 +1623,8 @@ function graduationBlock(
         occupants: there.occupants,
         /** Who they are, named — the principals you would be dividing this ground with. */
         occupied_by: there.occupiedBy,
+        /** ★ Which of them are DORMANT and dividing nothing today — each resumes when its holder acts. */
+        dormant_by: there.dormantBy,
         /**
          * ★ **WHAT YOU WOULD KEEP PER TICK IF YOU CROSSED AND BUILT HERE** — the decision figure.
          *
@@ -1804,6 +1848,8 @@ function affordancesFor(
   board: readonly BoardRow[],
   /** Eligible slots the board's own cap dropped. See {@link boardFor}. */
   boardDropped: number,
+  /** Open slots the board left off because a grant this principal holds bars it from them. */
+  boardBarred: BarredSlots,
   /**
    * The campaign views the payload publishes, passed rather than recomputed.
    *
@@ -1852,6 +1898,12 @@ function affordancesFor(
       quote_id: quoteId(principal, tick, offer.verb, offer.params),
     });
   }
+  /**
+   * This principal's live standing intents, read once. The chore orders below are offered only where
+   * none already stands, because a second identical order would run beside the first and the cap is
+   * four (`MAX_LIVE_INTENTS_PER_PRINCIPAL`).
+   */
+  const liveOrders = runtime.engine.intents.liveFor(principal);
   /** Charge deliveries withheld because no hand of this principal is standing there. */
   let chargeNoHand = 0;
   const chargeNoHandAt: string[] = [];
@@ -2465,6 +2517,33 @@ function affordancesFor(
       chargeNoHand += 1;
       chargeNoHandAt.push(claim.system);
     }
+    // ── ★ AND THE STANDING ORDER THAT PAYS IT EVERY RECKONING (`RULES_VERSION` 41) ──────────
+    //
+    // A claim is a Charge every Reckoning for as long as it is held, and the Levy has had a standing
+    // order since R19 while the Charge had none — so a claimant paid the same bill by hand every day,
+    // and an absent one lost the ground. The order is the same verb carrying the same `deliver`, and
+    // every cost stays visible: what it hands over is the bill, at the claimed system, by a hand that
+    // has to be standing there — offered only while one is, because an order refused every tick is a
+    // stuck order, which is the defect the satisfied state exists to end.
+    if (claim.hand_here && !liveOrders.some((i) => i.verb === 'deliver' && i.params['system'] === claim.system)) {
+      const until = tick + TICKS_PER_RECKONING * 2;
+      eligible.push({
+        verb: 'set_delivery_intent',
+        params: { intent_verb: 'deliver', obligation: 'CHARGE', system: claim.system, until_tick: until },
+        cost: 1,
+        max_direct_loss: claim.due,
+        max_contingent_liability: 0,
+        what_it_forecloses:
+          `sets a STANDING ORDER to pay ${claim.system}'s Charge every Reckoning out of the ${claim.good} ` +
+          `standing there, so the claim stays supplied while you are away. Creating it costs one action and ` +
+          `every tick it runs costs none. It hands over each Reckoning's bill (${String(claim.due)} this one) ` +
+          `until tick ${String(until)}, and only while one of your hands stands at ${claim.system} — move them ` +
+          'all away and it is refused, with that reason, until one returns. Once a bill is paid it reads ' +
+          'SATISFIED in obligations.intents and stays armed; end it with {"stop": "<intent id>"}.',
+        expires_tick: tick + 1,
+        quote_id: quoteId(principal, tick, 'set_delivery_intent', { obligation: 'CHARGE', system: claim.system }),
+      });
+    }
     // The two exits, offered **only once the record has actually published a miss.** The
     // first draft offered them whenever a Charge was outstanding, which is *every* claim at
     // the start of *every* Reckoning — so a principal that had just taken territory and had
@@ -2775,7 +2854,20 @@ function affordancesFor(
   let alternateHands = 0;
   let firstFill = true;
   const unreachedStages = new Set<SystemId>();
+  // ── ★ AND THE GATES IN FRONT OF THE HANDLER, ASKED ONCE ─────────────────────
+  //
+  // The verb table refuses every `fill_role` from a principal inside the freeze, one that owes a
+  // seal (PROP-D4), or one whose Commons capacity a chronic Levy shortfall has used up — and this
+  // loop offered fills in all three. `Runtime.ventureGateRefusalFor` is the table's own order and
+  // sentences, asked at the tick the act would resolve in; when it refuses, nothing is offered and
+  // the slots are counted with the engine's sentence instead.
+  const fillGate = runtime.ventureGateRefusalFor(principal, tick + 1);
+  let rowsGated = 0;
   for (const row of board) {
+    if (fillGate !== null) {
+      rowsGated += 1;
+      continue;
+    }
     const atStage = idleHands.filter((h) => occupiesSystem(h, row.stage));
     const idle = atStage[0];
     if (idle === undefined) {
@@ -2914,11 +3006,23 @@ function affordancesFor(
   //    numbers covering the whole band would be wrong at every point in it except one.
   //    ══════════════════════════════════════════════════════════════════════
   let firstCreate = true;
+  // ── ★ THE SAME GATES `fill_role` READS, BECAUSE THE VERB TABLE PUTS THEM IN FRONT OF BOTH ──
+  //
+  // `create` sits behind `committing ?? sealCompliance ?? commonsCapacityRejection`, exactly like
+  // `fill_role`, and this loop checked affordability and nothing else — so inside the freeze, owing a
+  // seal, or with a demoted Commons capacity, every `create` on the menu was an act the engine would
+  // refuse (AGT-S2). One predicate, asked once, at the tick the act would land in.
+  const createGate = fillGate;
+  let createsGated = 0;
   for (const kind of OFFERED_KINDS) {
     const seat = hands[0]?.location;
     if (seat === undefined) continue;
     const probe = probeEscrow(kind);
     if (probe > free) continue;
+    if (createGate !== null) {
+      createsGated += 1;
+      continue;
+    }
     const roleRule = firstCreate
       ? ` ${CREATE_ROLE_RULE}`
       : ' The rule about that count is on the first create affordance.';
@@ -2939,12 +3043,32 @@ function affordancesFor(
       params: { kind, stage: seat, elective_bps: low },
       cost: 1,
       max_direct_loss: probe,
-      max_contingent_liability: probeElective(kind),
+      // ── ★ THE WORST CASE, BECAUSE SINCE 41 THIS IS THE ACT THAT BINDS THE CREATOR ──────────────
+      //
+      // This published `probeElective` — the elective PRICE, Σ `role.terms.elective` — and that was
+      // tolerable while `sign` came after it quoting `creatorElective().ceiling`, the bound: A6's
+      // headline is *"max_contingent_liability shown before you sign"*, and the sign was where it was
+      // kept. `RULES_VERSION` 41 made the create the creator's countersignature, so the figure has to
+      // be the bound here or the creator commits to a liability it was quoted at its p50. The ceiling is
+      // `maxElectiveLiability` over the very terms `vCreate` would mint — the same call the delegated
+      // create charges a grant's contingent LIMIT, so the three figures for one obligation are one
+      // arithmetic.
+      max_contingent_liability: probeElectiveCeiling(kind, tick),
       what_it_forecloses:
         `${String(probe)} of your stores is locked in escrow until this settles or is abandoned — committed ` +
         'value, not EXPOSURE, so obligations.exposure.mine will not count it — and ' +
-        `${String(probeElective(kind))} stays elective — you are asked for it at the Reckoning and ` +
-        `staying silent is a permanent public default. ${probeRoles(kind)}${roleRule} ${band} ` +
+        `${String(probeElective(kind))} is priced elective, of which up to ` +
+        `${String(probeElectiveCeiling(kind, tick))} can be asked of you at the Reckoning once proceeds run to ` +
+        // ── ★ THE POINTER AT `elect` MOVED HERE WITH THE BINDING ──────────────────────────────────
+        //
+        // It lived on the creator's own `sign` ("It does NOT decide what you pay — that is `elect`"),
+        // because that was the payer's binding act. Since 41 the create is, and the creator is never
+        // offered a `sign` again — so without this sentence a payer reading only the act that binds it
+        // would think binding was the whole decision, never elect, and take a `DECLINED` it did not choose.
+        'the top of the band. Creating does NOT decide what you pay — that is `elect`, one role at a time, ' +
+        'restatable every tick until the freeze; create and never elect and you pay nothing, which is a ' +
+        'decline and a permanent public default. ' +
+        `${probeRoles(kind, tick)}${roleRule} ${band} ` +
         countersignWarning(tick),
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'create', { kind, stage: seat }),
@@ -3052,6 +3176,35 @@ function affordancesFor(
         `skipped rather than refused.`,
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'refine', { system: holdingOf(world, principal).system }),
+    });
+  }
+
+  // 5E-bis. ★ **THE STANDING ORDER THAT REFINES WHAT YOUR WORKS EXTRACTS** (`RULES_VERSION` 41).
+  //
+  //     A WORKS extracts ore every tick and every obligation is payable in rations, so refining was a
+  //     chore repeated every day by hand — and an absent principal's ore piled up unpayable while its
+  //     Levy order found nothing to hand over. One order per system a WORKS of yours stands on, offered
+  //     only where none already runs. The choice it carries is stated rather than hidden: it refines ALL
+  //     the ore there, and ore refined into rations cannot become alloy or be sold as ore.
+  for (const system of [...new Set(runtime.worksOf(principal).map((w) => w.system))].sort(cmp)) {
+    if (liveOrders.some((i) => i.verb === 'refine' && (i.params['system'] ?? null) === system)) continue;
+    const until = tick + TICKS_PER_RECKONING * 2;
+    eligible.push({
+      verb: 'set_delivery_intent',
+      params: { intent_verb: 'refine', system, until_tick: until },
+      cost: 1,
+      // Goods of one kind become goods of another in your own stores; the cost is the alternative.
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `sets a STANDING ORDER to refine the ${WORKS_YIELD_GOOD} at ${system} into ${WORKS_GOOD} — the good ` +
+        'the Levy, a Charge and a WORKS build are payable in — every tick a whole batch stands there, until ' +
+        `tick ${String(until)}. Creating it costs one action and every run costs none. **It refines ALL the ` +
+        `${WORKS_YIELD_GOOD} at ${system}**, including any you meant for ${ALLOY_GOOD} or for \`trade\`: ` +
+        'end it with {"stop": "<intent id>"} before you want the ore for something else. Between batches it ' +
+        'reads SATISFIED (waiting for ore) in obligations.intents, not stuck.',
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'set_delivery_intent', { intent_verb: 'refine', system }),
     });
   }
 
@@ -3757,11 +3910,36 @@ function affordancesFor(
         `${String(tick + TICKS_PER_RECKONING * 2)}, and it will keep doing so whether or not you are ` +
         `watching — including when you would rather have spent those goods on something else. Raise ` +
         `\`until_tick\` to cover a longer absence. Sending it again ADDS a second order rather than ` +
-        `replacing this one — you may hold ${String(MAX_LIVE_INTENTS_PER_PRINCIPAL)} — and an order ends only ` +
-        'at its until_tick. Once the bill is paid it reads "already discharged in full" each tick: that is ' +
-        'the order satisfied, not stuck.',
+        `replacing this one — you may hold ${String(MAX_LIVE_INTENTS_PER_PRINCIPAL)} — and it ends at its ` +
+        'until_tick or when you stop it ({"stop": "<intent id>"}, one action). Once a Reckoning\'s bill is ' +
+        'paid the order reads SATISFIED in obligations.intents — it does not run, posts no correction and ' +
+        'stays armed for the next bill — so a paid order is never a stuck one.',
       expires_tick: tick + 1,
       quote_id: quoteId(principal, tick, 'set_delivery_intent', { obligation: 'LEVY' }),
+    });
+  }
+
+  // 5B-quater. ★ **END A STANDING INTENT — the door `IntentBook.stop` never had** (`RULES_VERSION` 41).
+  //
+  //     An intent could only end at its own stop condition, so an agent that set one and changed its
+  //     mind — a refine order eating ore it now wanted as alloy, a Levy order for a hand it needed
+  //     elsewhere — had no move at all, and the cap's refusal said so in words. `stop` is a parameter of
+  //     the verb that makes intents (A3: creating or amending one costs an action), so no verb is spent.
+  //     One row per LIVE intent, each the complete act: the id is the only thing in it.
+  for (const intent of runtime.engine.intents.liveFor(principal)) {
+    eligible.push({
+      verb: 'set_delivery_intent',
+      params: { stop: intent.id },
+      cost: 1,
+      max_direct_loss: 0,
+      max_contingent_liability: 0,
+      what_it_forecloses:
+        `ENDS your standing ${intent.verb} intent ${intent.id} on the tick this lands, before it would run; it ` +
+        `has run ${String(intent.runs)} time(s) and is satisfied or refused as obligations.intents shows. It ` +
+        'is final — an ended intent never runs again — and it gives back nothing it already did. Set a new ' +
+        'one if you want it back.',
+      expires_tick: tick + 1,
+      quote_id: quoteId(principal, tick, 'set_delivery_intent', { stop: intent.id }),
     });
   }
 
@@ -4354,6 +4532,26 @@ function affordancesFor(
   const live = runtime.liveVerbs;
   const offerable = eligible.filter((a) => live.has(a.verb));
   const notLive = eligible.length - offerable.length;
+  // ── ★ AND NEVER FOR AN ACT THE VERB'S OWN CLOCK WILL REFUSE ON THE TICK IT LANDS ──────────
+  //
+  // An act sent while this payload reads `tick` resolves in `tick + 1`, and every branch above asked
+  // its question at `tick`. So the observation whose acts land in the freeze — tick 285 of a
+  // Reckoning — offered `graduate`, `refine`, `post_bond` and `form` (measured on a six-member world),
+  // plus any `elect`, Levy `deliver` or ballot still open a tick too long, and the engine refused every
+  // one of them. Same family as the `fill_role` window, and the same fix: ask the engine's own clock
+  // gate (`Runtime.clockGateFor` — the freeze set the verb table applies, `elect`'s, a delivery's, a
+  // ballot's) at the tick the act would land in, here, once, where no branch can forget it.
+  const clockGated = new Map<string, { count: number; why: Rejection }>();
+  const landable = offerable.filter((a) => {
+    const why = runtime.clockGateFor(principal, a.verb, a.params, tick + 1);
+    if (why === null) return true;
+    const row = clockGated.get(a.verb);
+    if (row === undefined) clockGated.set(a.verb, { count: 1, why });
+    else row.count += 1;
+    return false;
+  });
+  let clockWithheld = 0;
+  for (const row of clockGated.values()) clockWithheld += row.count;
 
   // ── EVERY DISTINCT VERB BEFORE ANY VERB'S REPEATS ─────────────────────────
   //
@@ -4369,10 +4567,10 @@ function affordancesFor(
   // match it — one pass that takes the first offer of each verb, then the rest in their original
   // order. Stable, no comparator on user data (DET-1), and it guarantees no mechanic is invisible
   // merely because another mechanic has many variants.
-  const firstOfEachVerb: typeof offerable[number][] = [];
-  const repeats: typeof offerable[number][] = [];
+  const firstOfEachVerb: typeof landable[number][] = [];
+  const repeats: typeof landable[number][] = [];
   const seenVerbs = new Set<string>();
-  for (const a of offerable) {
+  for (const a of landable) {
     if (seenVerbs.has(a.verb)) repeats.push(a);
     else {
       seenVerbs.add(a.verb);
@@ -4396,6 +4594,14 @@ function affordancesFor(
       text:
       `${String(dropped)} further legal acts exist and were not sent, because one observation carries at most ` +
         `${String(MAX_AFFORDANCES)}. They are the lowest-priority repeats (extra lanes for an already-listed hand)`,
+    });
+  }
+  for (const [verb, row] of [...clockGated.entries()].sort((a, b) => cmp(a[0], b[0]))) {
+    reasons.push({
+      verb,
+      text:
+        `${String(row.count)} ${verb} act(s) are not offered because an act sent now lands on tick ` +
+        `${String(tick + 1)} and the engine refuses it there (${row.why.invariant}): ${row.why.hint}`,
     });
   }
   if (notLive > 0) {
@@ -4426,6 +4632,33 @@ function affordancesFor(
         `idle hand standing at their stage (${[...unreachedStages].sort(cmp).join(', ')}) — a hand fills a ` +
         'role where the venture happens, so `move` one there first and check the trip fits inside the window ' +
         'each row publishes in expires_tick',
+    });
+  }
+  if (rowsGated > 0 && fillGate !== null) {
+    reasons.push({
+      verb: 'fill_role',
+      text:
+        `${String(rowsGated)} slot(s) on ventures.board[] have no fill_role offered because the engine would ` +
+        `refuse any fill from you on the tick it would land (${fillGate.invariant}): ${fillGate.hint}`,
+    });
+  }
+  if (createsGated > 0 && createGate !== null) {
+    reasons.push({
+      verb: 'create',
+      text:
+        `${String(createsGated)} create act(s) you could fund are not offered because the engine would refuse ` +
+        `any venture from you on the tick it would land (${createGate.invariant}): ${createGate.hint}`,
+    });
+  }
+  if (boardBarred.slots > 0) {
+    reasons.push({
+      verb: 'fill_role',
+      text:
+        `${String(boardBarred.slots)} open slot(s) are not on ventures.board[] because you held a grant over ` +
+        `their creator (${boardBarred.creators.join(', ')}) when the venture was created ` +
+        `(${boardBarred.ventures.join(', ')}): a delegate may not be a counterparty to a deal it has authority ` +
+        'over (INV-23, §8.1 #3), and letting the grant lapse does not clear it. Slots in ventures whose ' +
+        'creator you hold no grant over are unaffected',
     });
   }
   if (rowsWithNoHand > 0) {
@@ -4776,9 +5009,13 @@ function affordancesFor(
       count:
         dropped +
         notLive +
+        clockWithheld +
         alternateHands +
         rowsWithNoHand +
         rowsOutOfReach +
+        rowsGated +
+        createsGated +
+        boardBarred.slots +
         boardDropped +
         crossingWithheld +
         crossingAnchored +
@@ -4829,6 +5066,43 @@ function probeElective(kind: VentureKind): Minor {
 }
 
 /**
+ * The venture a default-priced `create {kind}` sent now would mint — in memory and nowhere else.
+ * Pure: `createVenture` touches no book. `null` only if the kind table could not mint its own default
+ * terms, which `test/venture` would already be red about.
+ */
+function probeVenture(kind: VentureKind, tick: number): VentureRecord | null {
+  const opens = tick + 1;
+  const closes = opens + FORMATION_WINDOW_TICKS;
+  const made = createVenture({
+    id: 'v:probe' as VentureId,
+    kind,
+    creator: 'p:probe' as PrincipalId,
+    stage: 'sys-probe' as SystemId,
+    terms: defaultTerms(kind, kindSpec(kind).baseYieldMinor),
+    windowOpensTick: opens,
+    windowClosesTick: closes,
+    resolvesAtTick: closes,
+    valuation: pinnedAt(DEFAULT_VALUATION_RULE, tick),
+    rulesVersion: 0,
+  });
+  return made.ok ? made.value : null;
+}
+
+/**
+ * ★ The most a default-priced venture of this kind can ever ask its creator for on the elective half —
+ * the BOUND, where {@link probeElective} is the PRICE (`RULES_VERSION` 41).
+ *
+ * `maxElectiveLiability` over {@link probeVenture}: the same function the delegated create charges a
+ * grant's contingent LIMIT with, so the affordance and the gate cannot quote one obligation two ways —
+ * and Σ of the per-role `electiveCeilingOfRole` {@link probeRoles} prints, so the manifest and this
+ * figure are one arithmetic too.
+ */
+function probeElectiveCeiling(kind: VentureKind, tick: number): Minor {
+  const probe = probeVenture(kind, tick);
+  return probe === null ? probeElective(kind) : maxElectiveLiability(probe);
+}
+
+/**
  * **The roles a `create` will mint, on the affordance that mints them.**
  *
  * ══════════════════════════════════════════════════════════════════════════
@@ -4850,9 +5124,10 @@ function probeElective(kind: VentureKind): Minor {
  * are one arithmetic. A second table here would be the engine and the agent-facing surface
  * disagreeing about a deal, which is scar #1 with roles attached.
  */
-function probeRoles(kind: VentureKind): string {
+function probeRoles(kind: VentureKind, tick: number): string {
   const spec = kindSpec(kind);
   const terms = defaultTerms(kind, spec.baseYieldMinor);
+  const probe = probeVenture(kind, tick);
   const lines = spec.roles.map((role, i) => {
     const t = terms[i];
     if (t === undefined) return role.label;
@@ -4861,7 +5136,16 @@ function probeRoles(kind: VentureKind): string {
     // inline rather than borrowing the legend's. `defaultTerms` produces only share roles today,
     // and this branch is what stops the legend from starting to lie on the day one does not.
     const claim = t.wage === null ? String(role.marginalOutputBps) : `wage ${String(t.wage)}`;
-    return `${role.label} ${claim} → ${String(t.escrowed)} + ${String(t.elective)}`;
+    // ── ★ AND THE ROLE'S BOUND, BECAUSE `max_contingent_liability` BESIDE IT IS NOW A BOUND ──────
+    //
+    // The two `max_*` figures on this affordance were Σ of these rows' escrowed and elective, and
+    // `the-engine-knew-and-did-not-say.spec.ts` holds them to it. `RULES_VERSION` 41 made `create` the
+    // creator's countersignature, so the contingent figure became the worst case (`maxElectiveLiability`)
+    // — and a manifest still summing to the PRICE beside it would be scar #1 inside one object. So each
+    // row prints the price it was pinned at AND the most it can be asked for, and the bounds sum to the
+    // field: `electiveCeilingOfRole` per row, the same `computeClaims` pass `maxElectiveLiability` sums.
+    const bound = probe === null ? t.elective : electiveCeilingOfRole(probe, probe.roles[i]?.index ?? i);
+    return `${role.label} ${claim} → ${String(t.escrowed)} + ${String(t.elective)} (at most ${String(bound)})`;
   });
   // The legend rides on EVERY row rather than moving to `CREATE_ROLE_RULE`, and the ~40 characters
   // are the cheapest in this change: numbers with the unit one row away is the shape
@@ -4869,7 +5153,8 @@ function probeRoles(kind: VentureKind): string {
   // (MINOR) on the same line is the exact adjacency that keeps producing it.
   return (
     `Roles minted: ${String(spec.roles.length)} (one principal each, never the same twice), as ` +
-    `LABEL share-bps → escrowed + elective MINOR: ${lines.join(' · ')}.`
+    `LABEL share-bps → escrowed + elective (at most what that elective can be asked for) MINOR: ` +
+    `${lines.join(' · ')}.`
   );
 }
 
@@ -4925,13 +5210,20 @@ const CREATE_ROLE_RULE =
 function countersignWarning(tick: number): string {
   // `create` resolves at tick+1 and the window opens there — `Runtime.vCreate`'s `opens = ctx.tick`.
   const closes = tick + 1 + FORMATION_WINDOW_TICKS;
+  // ── ★ `RULES_VERSION` 41: THIS SENTENCE USED TO SEND THE CREATOR BACK TO SIGN ──────────────
+  //
+  // It read *"THIS DOES NOT BIND ANYONE YET … that includes YOU: `sign` will be the first row of your
+  // next observation"*, and it had to: the creator needed a second wake inside a 12-tick window that
+  // an even pace of 16 wakes could not reach (`formationWindowOutlastsAWake` −6). The create is now
+  // the creator's countersignature, so the sentence says what is true — this binds YOU now, it binds
+  // nobody else until they sign, and the one decision left to you is `abandon`. The rule's wording is
+  // `venture/create.ts:CREATE_IS_COUNTERSIGNATURE`, the same constant `agent.md` is held to.
   return (
-    '★ THIS DOES NOT BIND ANYONE YET. A venture goes live only when every party has countersigned the ' +
-    'same terms_hash, and that includes YOU: `sign` will be the first row of your next observation, ' +
-    `carrying this venture's id and hash ready to send. Countersign by tick ${String(closes)} or the ` +
-    'window closes and it is retired ABANDONED — your escrow comes back and no default is recorded, ' +
-    'but the deal, the counterparties who filled its roles and the standing you would have earned are ' +
-    'all gone. Observe again before then; that is what the wake is for.'
+    `★ THIS BINDS YOU NOW AND NOBODY ELSE YET. ${CREATE_IS_COUNTERSIGNATURE} Every filler must ` +
+    `countersign by tick ${String(closes)}, when the window closes: a venture short of a role or a ` +
+    'signature then retires ABANDONED — your escrow comes back and no default is recorded, but the deal ' +
+    'and the standing it would have earned are gone. ventures.mine[] shows who filled what; you do not ' +
+    'have to be awake for it to bind.'
   );
 }
 
@@ -5057,15 +5349,40 @@ function boardFor(
   runtime: Runtime,
   principal: PrincipalId,
   tick: number,
-): { readonly rows: BoardRow[]; readonly dropped: number } {
+): { readonly rows: BoardRow[]; readonly dropped: number; readonly barred: BarredSlots } {
   const rows: BoardRow[] = [];
+  // ── ★ ELIGIBILITY IS THE ENGINE'S RULE, ASKED AT THE TICK THE FILL WOULD LAND IN ──
+  //
+  // This loop used to carry its own short list — FORMING, inside the window, not already a party —
+  // and the engine refused fills for reasons the list had never heard of. The one that was caught
+  // on the record: a delegate offered a slot in its own grantor's venture, which `vFillRole`
+  // refuses as self-dealing (INV-23), and a house cast member wrote *"That Sable slot is barred by
+  // my grant despite the menu."* So the board now asks `Runtime.fillSlotRefusalFor` — the same
+  // predicate the handler and the tick-close allocation run — at `tick + 1`, because an act sent
+  // while this payload reads `tick` resolves in `tick + 1` and the window is checked then.
+  const atTick = tick + 1;
+  const barredVentures = new Set<VentureId>();
+  const barredCreators = new Set<PrincipalId>();
+  let barredSlots = 0;
   for (const venture of runtime.liveVentures()) {
     if (venture.state !== 'FORMING') continue;
-    if (tick > venture.windowClosesTick) continue;
+    if (atTick > venture.windowClosesTick) continue;
     if (roleOfPrincipal(venture, principal) !== null) continue;
     for (const index of openIndices(venture)) {
       const role = venture.roles[index];
       if (role === undefined) continue;
+      const refused = runtime.fillSlotRefusalFor(principal, venture, index, atTick);
+      if (refused !== null) {
+        // The authority case is counted by name: it is an omission the agent caused by holding a
+        // grant, and one it can only learn about from this row. The others are the slot's own
+        // shape (already filled, window, already a party) and are simply not eligible.
+        if (refused.invariant === 'INV-23') {
+          barredSlots += 1;
+          barredVentures.add(venture.id);
+          barredCreators.add(venture.creator);
+        }
+        continue;
+      }
       rows.push({
         venture: venture.id,
         role: index,
@@ -5134,7 +5451,24 @@ function boardFor(
   return {
     rows: sorted.slice(0, MAX_LIST_ROWS),
     dropped: Math.max(0, sorted.length - MAX_LIST_ROWS),
+    barred: {
+      slots: barredSlots,
+      ventures: [...barredVentures].sort(cmp),
+      creators: [...barredCreators].sort(cmp),
+    },
   };
+}
+
+/**
+ * Open slots this principal is barred from by **authority** — it held a live grant over the
+ * venture's creator when the venture was created (§8.1 #3, INV-23). Not on the board, because they
+ * are not slots it is eligible for; counted in `withheld`, because an omission an agent caused by a
+ * grant it holds is one it is entitled to be told about (PROP-O1).
+ */
+interface BarredSlots {
+  readonly slots: number;
+  readonly ventures: readonly VentureId[];
+  readonly creators: readonly PrincipalId[];
 }
 
 /**
@@ -5788,14 +6122,31 @@ function promptFor(
   // ★ A live standoff outranks the whole venture ladder — see {@link standoffPressure}.
   const standoff = standoffPressure(runtime, principal, tick);
   if (standoff !== null) return standoff;
+  // ── ★ A DORMANT WORKS, NAMED TO THE ONE PRINCIPAL WHO CAN WAKE IT (`RULES_VERSION` 41) ──────
+  //
+  // The returning principal is the only reader for whom this is news, and the fix is any act at all —
+  // so it is named, with the tick it stopped, before the venture ladder rather than buried in
+  // `holding.works.held[]`. Read at `tick + 1`, the tick an act sent now would make it work again.
+  const asleep = runtime.worksOf(principal).find((w) => w.dormant);
+  if (asleep !== undefined) {
+    return (
+      `Your WORKS at ${asleep.system} has been DORMANT since tick ${String(asleep.dormant_from_tick)}: no ` +
+      `action of yours has been accepted for ${String(WORKS_DORMANT_AFTER_RECKONINGS)} Reckonings, so it has ` +
+      'extracted nothing and the WORKS ' +
+      'beside it have divided its share. Nothing was taken from you — any accepted action, any verb, ' +
+      'makes it work again from the tick after.'
+    );
+  }
   // ══════════════════════════════════════════════════════════════════════════
   // ★ **AND SOMEBODY HAS TO BE WAITING ON IT.** `partiesOf(v).length > 0`.
   //
   // A blind player read *"v:265 is waiting on your countersignature"* while all four of its ventures
   // showed `filled_by: null` in the same payload. The predicate was `FORMING && !countersigned` and
   // nothing more, so it fired from tick 0 on every draft a principal had ever created — because
-  // `countersigned` is seeded only for a *delegated* create (`venture/create.ts:boundAtFormation`),
-  // so a self-created venture starts with an empty set by design.
+  // `countersigned` was seeded only for a *delegated* create (`venture/create.ts:boundAtFormation`),
+  // so a self-created venture started with an empty set by design. (Since `RULES_VERSION` 41 every
+  // create seeds its creator, so for a creator this branch is closed by construction; the
+  // `partiesOf` gate still matters for a filler reading a venture nobody else has joined.)
   //
   // §7.3 is explicit that nothing binds until the PARTIES countersign, so a draft nobody has joined
   // carries no obligation and there is nothing to sign for. `observe/catalogue.ts` had already made
@@ -6453,7 +6804,16 @@ function nextDecisionAt(runtime: Runtime, principal: PrincipalId, tick: number):
   }
   for (const venture of runtime.venturesFor(principal)) {
     // `> tick` on the CLOSE, so `windowClosesTick - 1 >= tick` — the last tick a sign still lands.
-    if (venture.state === 'FORMING' && venture.windowClosesTick > tick && venture.windowClosesTick - 1 < soonest) {
+    //
+    // ★ Only where a signature is still OWED by this reader. Since `RULES_VERSION` 41 a creator is
+    // countersigned by its own `create`, so its window is not a deadline it must be awake for — and a
+    // wake-by tick that named it would spend a creator's wake on a venture that binds without it.
+    if (
+      venture.state === 'FORMING' &&
+      !venture.countersigned.has(principal) &&
+      venture.windowClosesTick > tick &&
+      venture.windowClosesTick - 1 < soonest
+    ) {
       soonest = venture.windowClosesTick - 1;
     }
   }

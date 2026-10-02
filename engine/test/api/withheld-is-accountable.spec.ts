@@ -128,16 +128,17 @@ const CLOSED: Readonly<Record<string, Trigger>> = Object.freeze({
 });
 
 /**
- * The creator half of `sign`'s trigger, counted separately.
+ * The creator half of `sign`'s trigger, counted separately — and since `RULES_VERSION` 41 it is a
+ * case that must NEVER occur.
  *
- * A widened trigger that never fires on the widened case is the same vacuity one level in: the
- * clause would be gone from the source and the coverage would not have moved. Inside
- * `ventures.mine[]`, `my_role === null` is the creator.
+ * It was widened (above) and asserted to fire, because a widened trigger that never fires on the
+ * widened case is the same vacuity one level in. 41 then made the create its creator's
+ * countersignature (`venture/create.ts:CREATE_IS_COUNTERSIGNATURE`), so a creator holding an unsigned
+ * FORMING venture is a state the engine cannot produce — and "cannot occur" is now the claim, held
+ * non-vacuous by its sibling: creators DO hold FORMING ventures in a world nobody steers.
  */
-const SIGN_AS_CREATOR: Trigger = (o) =>
-  rows(obj(o['ventures'])['mine']).some(
-    (v) => v['my_role'] === null && v['i_have_signed'] === false && v['state'] === 'FORMING',
-  );
+const creatorForming = (o: Payload, me: string): readonly Record<string, unknown>[] =>
+  rows(obj(o['ventures'])['mine']).filter((v) => v['creator'] === me && v['state'] === 'FORMING');
 
 /**
  * **OPEN** — found in `trade`'s position by this sweep and NOT closed here, with the measured
@@ -249,9 +250,10 @@ interface Sample {
   readonly silent: Map<string, number>;
   readonly observations: number;
   readonly live: readonly string[];
-  /** Observations where `sign`'s trigger fired for a CREATOR — see SIGN_AS_CREATOR. */
-  readonly signAsCreatorFired: number;
-  readonly signAsCreatorSilent: number;
+  /** Observations where a creator held one of its own ventures FORMING — see `creatorForming`. */
+  readonly creatorFormingSeen: number;
+  /** …and of those, where it had NOT signed it: the state `RULES_VERSION` 41 removed. */
+  readonly creatorUnsignedSeen: number;
 }
 
 /**
@@ -274,8 +276,8 @@ function sweep(): Sample {
   const fired = new Map<string, number>();
   const silent = new Map<string, number>();
   let observations = 0;
-  let signAsCreatorFired = 0;
-  let signAsCreatorSilent = 0;
+  let creatorFormingSeen = 0;
+  let creatorUnsignedSeen = 0;
   for (let i = 0; i < 900; i += 1) {
     const target = rt.engine.tick + 1;
     for (const a of cast.decide(target, seed)) rt.engine.submit(a);
@@ -303,11 +305,10 @@ function sweep(): Sample {
         if (offered.has(verb) || named.has(verb)) continue;
         silent.set(verb, (silent.get(verb) ?? 0) + 1);
       }
-      // The creator case on its own counter — see SIGN_AS_CREATOR.
-      if (SIGN_AS_CREATOR(payload)) {
-        signAsCreatorFired += 1;
-        if (!offered.has('sign') && !named.has('sign')) signAsCreatorSilent += 1;
-      }
+      // The creator case on its own counters — see `creatorForming`.
+      const forming = creatorForming(payload, member.principal);
+      if (forming.length > 0) creatorFormingSeen += 1;
+      if (forming.some((v) => v['i_have_signed'] !== true)) creatorUnsignedSeen += 1;
     }
   }
   sweptOnce = {
@@ -315,8 +316,8 @@ function sweep(): Sample {
     silent,
     observations,
     live: [...rt.liveVerbs].sort(cmp),
-    signAsCreatorFired,
-    signAsCreatorSilent,
+    creatorFormingSeen,
+    creatorUnsignedSeen,
   };
   return sweptOnce;
 }
@@ -350,22 +351,23 @@ describe('PROP-O1 — every unoffered verb is either inapplicable or NAMED, per 
     ).toEqual([]);
   }, 180_000);
 
-  it('★ `sign` AS THE CREATOR — the case a probe doubted and this guard could not see', () => {
-    // The trigger used to require `my_role !== null`, which inside `ventures.mine[]` excludes
-    // exactly the creator. A probe then claimed `sign` is never offered to a creator, and nothing
-    // here could have contradicted it either way. Both halves are asserted: the case OCCURS in a
-    // world nobody steers, and it is never silent when it does.
-    const { signAsCreatorFired, signAsCreatorSilent, observations } = sweep();
+  it('★ `sign` AS THE CREATOR — owed never since 41, and the sweep sees creators to say so of', () => {
+    // History, because it is why this test exists: the trigger used to require `my_role !== null`,
+    // which inside `ventures.mine[]` excludes exactly the creator, so when a probe claimed `sign` was
+    // never offered to a creator nothing here could contradict it. The clause went and the creator case
+    // was asserted to OCCUR and never be silent. `RULES_VERSION` 41 then removed the case itself — the
+    // create binds its creator, which is why no `sign` is offered to one — so the assertion inverts,
+    // and both halves stay: creators DO hold FORMING ventures here, and not one such row is unsigned.
+    const { creatorFormingSeen, creatorUnsignedSeen, observations } = sweep();
     expect(
-      signAsCreatorFired,
-      `no creator ever held an unsigned FORMING venture in ${String(observations)} observations, so ` +
-        'widening the trigger moved the source and not the coverage — which is the vacuity this ' +
-        'change exists to remove, one level in',
+      creatorFormingSeen,
+      `no creator held one of its own ventures FORMING in ${String(observations)} observations, so ` +
+        '"never unsigned" below would be a claim about nothing — the vacuity this test exists to remove',
     ).toBeGreaterThan(0);
     expect(
-      signAsCreatorSilent,
-      'a creator must never be left unable to close its own venture with nothing saying why: it ' +
-        "wastes every hand its counterparties committed, not only the creator's own action",
+      creatorUnsignedSeen,
+      'a creator holding an unsigned FORMING venture of its own is the state 41 removed: a create that ' +
+        'did not bind its creator, with no `sign` on the menu to close it',
     ).toBe(0);
   }, 180_000);
 

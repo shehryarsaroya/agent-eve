@@ -6,6 +6,62 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-01 (branch `season1-stakes-and-chores`, unmerged) — SEASON 1: STAKES AND CHORES, `RULES_VERSION` 41
+>
+> Cut for the fresh Season 1 world (new seed, new record — no live journal is replayed across it).
+> Nothing deployed. Four rule changes and the surface fix that playing the live world asked for, plus
+> the two defects the work itself turned up (the clock half of the menu fix, and a cast bug):
+>
+> - **DORMANT WORKS.** A system's yield is split evenly among its WORKS, and dormant accounts (three
+>   QA identities, one outsider idle since tick ~3,170) still held WORKS taking 18.5% of world output
+>   and halving the income of the active player on three Commons systems. Now a principal with no
+>   ACCEPTED action for `WORKS_DORMANT_AFTER_RECKONINGS` (4, the seat lease's span) is DORMANT: its
+>   WORKS neither extracts nor counts in the split, nothing is confiscated, and it resumes the tick
+>   after the principal acts again. World-side clock in `works/book.ts` (`played`, captured), folded
+>   from the frozen window after PRODUCE; a standing intent's run is not play. §3 gains DORMANT. Frame
+>   `worksLines[]` gains `extractors` and `dormantSinceTick` and the legend `DORMANT`; the map, the
+>   zoom and both dossiers draw it grey and dotted (assets `?v=35`).
+> - **The creator's own `create` is its countersignature.** `formationWindowOutlastsAWake()` −6 → +12
+>   (the window stays 12; `CREATOR_WAKES_INSIDE_FORMATION_WINDOW` is 0). Fillers still sign; the
+>   creator's say over counterparties is `preference` and `abandon` while FORMING. Because create is
+>   now the binding act, it quotes the worst case (`maxElectiveLiability`, 2,400 on a default DIG, not
+>   the 1,200 price; its manifest prints each role's bound beside its price) and carries the "binding
+>   does NOT decide what you pay — that is `elect`" sentence the creator's `sign` used to. `agent.md`
+>   §10 had the same price-for-bound slip about what a delegated create draws, and now names the bound.
+> - **A standing intent can be ended** — `set_delivery_intent {"stop": id}`, no verb spent (40/40) —
+>   and **a satisfied one reads as satisfied**: a run with nothing to do (bill paid, ballot already
+>   cast, no whole batch of ore, the freeze for a refine) is recorded `satisfied`, posts no correction
+>   and spends no `max_runs`. A standing ballot without this re-cast itself into the public record 59
+>   times in 60 ticks. `obligations.intents[]` lists them; the menu now offers Charge and refine orders.
+> - **The menu stops offering a slot the engine refuses.** `fill_role` legality has one home
+>   (`Runtime.fillRoleAuthorityRefusal` / `fillSlotRefusalFor` / `ventureGateRefusalFor`) read by the
+>   handler, the board, the affordances and the heuristic cast — ferren's *"That Sable slot is barred
+>   by my grant despite the menu"*. The general cause was two-sided — a rule living only in a handler,
+>   and the menu asking at the tick it is READ rather than the tick the act LANDS — and the second half
+>   was wider than `fill_role`: an observation at tick 285 offered `graduate`, `refine`, `post_bond` and
+>   `form` that the freeze refuses at 286. The freeze set is now one home (`Runtime.COMMITTING_VERBS`,
+>   applied by the verb table) and `Runtime.clockGateFor` — that set, `elect`, a delivery and a ballot,
+>   asked at `tick + 1` — withholds them with the engine's own sentence in `header.withheld`.
+> - **A pledged hand stays put.** The alloy errand and the crew walk each kept a copy of the aimless
+>   walk's "stationed" list without the stages a FIGHT or a join pledged a hand to; on seed `gate-d` an
+>   ally's joined hand walked off toward an alloy book and a raid that read REPULSED for eighteen ticks
+>   resolved PLUNDERED (10,110 lost). Both now honour `musteredAt`.
+>
+> `npm run gate0` on the final tree: tsc 0 · lint 0 · DET-8 and PROP-O3 pass · **340 files, 4,192
+> passed, 1 skipped**, and 2 failed — both in `follow/integration.spec.ts`, see (6) below.
+>
+> ⚑ FOR THE OWNER: (1) `RULES_VERSION` 41 is pre-assigned and must be renumbered at merge if another
+> Season 1 lane lands first. (2) A creator can no longer refuse a counterparty by withholding its
+> signature — its levers are `preference` and `abandon` while FORMING; that is the trade for the +12.
+> (3) Canon moved: SPEC §3 gains DORMANT and §7.3 says the create is the creator's countersignature.
+> (4) "Play" for DORMANT is any accepted action by the principal itself: a delegate's act is the
+> delegate's play, and a standing intent's run is nobody's — both deliberate, both calibratable.
+> (5) Fill-role-as-countersignature (one act closes a filler's half) was considered and left out of
+> scope. (6) Pre-existing, found on the way and true on `c771ece` too: `the-cast-takes-ground`'s
+> documented mutation of `claimFor`'s online clause no longer turns it red (no claim lands in a
+> spin-up on the gate seeds), and `follow/integration.spec.ts` fails under heavy machine load and
+> passes alone. See the branch's final report for the test evidence.
+
 > ### 2026-10-01 — SEASON 1 SCALE: ONE WORLD AT 3,000 PRINCIPALS (branch `season1-scale`, `RULES_VERSION` 41)
 >
 > Measured, not projected (`docs/design/SCALE-2026-10-01.md`; `scripts/population-scale.ts` seats

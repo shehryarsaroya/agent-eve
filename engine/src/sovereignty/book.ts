@@ -585,6 +585,11 @@ export class Book {
     return this.ballots.has(pairKey(forReckoning, principal));
   }
 
+  /** The Charge ballot this claimant has standing for `forReckoning`, if any. A read; it moves nothing. */
+  ballotOf(forReckoning: number, principal: PrincipalId): ChargeBallot | undefined {
+    return this.ballots.get(pairKey(forReckoning, principal));
+  }
+
   ballotsFor(forReckoning: number, constellation: ConstellationId): readonly ChargeBallot[] {
     return [...this.ballots.values()]
       .filter((b) => b.forReckoning === forReckoning && b.constellation === constellation)

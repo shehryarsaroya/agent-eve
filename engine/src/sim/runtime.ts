@@ -130,6 +130,7 @@ import {
   deliveryDelivererFault,
   deliveryFault,
   deliveryPayerFault,
+  LEVY_FREEZE_REFUSAL,
   deliveryPlaceOf,
   docketRowsFor,
   inv24InputsFor,
@@ -218,7 +219,7 @@ import { reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
 import { sign } from '../venture/sign.js';
 import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
-import { refine, refineKindOf, unknownRefineKindHint } from '../works/refine.js';
+import { recipeOf, refine, refineKindOf, unknownRefineKindHint } from '../works/refine.js';
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
@@ -242,6 +243,7 @@ import {
   type CascadeAttempt,
   type EngineOptions,
   type ObligationSource,
+  type IntentRecord,
   type PhaseContext,
   type QueuedAction,
   type StateTable,
@@ -295,6 +297,7 @@ import {
   roleOfPrincipal,
   roleTerms,
   roleTermsFor,
+  slotRefusal,
   vacateRole,
   ventureEscrowRatioBps,
   VentureBook,
@@ -508,6 +511,7 @@ import {
   CESSION_SALVAGE_BPS,
   CHARGE_BALLOT,
   CHARGE_BY_TIER,
+  chargeBallotWindow,
   CHARGE_GOOD,
   CHARGE_MISSES_TO_LAPSE,
   CHARGE_STATEMENT,
@@ -523,6 +527,7 @@ import {
   cessionRejection,
   chargeBallotFor,
   chargeDeliveryFault,
+  CHARGE_FREEZE_REFUSAL,
   chargeDocketRowsFor,
   chargeVoteFault,
   checkChargeAttribution,
@@ -2302,7 +2307,17 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  */
 /**
  * ══════════════════════════════════════════════════════════════════════════
- * ★ **41 — THE REGION GROWS (SPEC §4.2), FOR SEASON 1.**
+ * ★ **41 — SEASON 1, ONE BUMP FOR FOUR LANES.**
+ *
+ * Four lanes were cut in parallel for the fresh Season 1 world, each pre-assigned 41 per 24's
+ * protocol. They are merged into ONE version — Season 1 is one rules change, cut at genesis, so no
+ * record is replayed across any of its parts — and each lane keeps its own section below, stacked
+ * rather than blended, so an operator reading a `RULES_VERSION_MISMATCH` still finds every change
+ * 41 made in this one block.
+ *
+ * ── 41 · SCALE ───────────────────────────────────────────────────────────────
+ *
+ * ★ **THE REGION GROWS (SPEC §4.2).**
  *
  * The reserved generator is spent. At each settlement tick, after every Reckoning obligation has
  * settled, the gate in `world/growth.ts` counts the principals that are capitalised (D7's `freeCash`
@@ -2341,10 +2356,37 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * expected to be needed; if it is, the preflight prints the exact
  * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` string (`D37`).
  *
- * ── PRE-ASSIGNED, PER 24's PROTOCOL ──────────────────────────────────────────
  *
- * Three other Season 1 lanes are in flight. If one lands first and takes 41, renumber this block to
- * the tail at merge and keep it stacked rather than blended.
+ * ── 41 · STAKES AND CHORES ───────────────────────────────────────────────────
+ *
+ * ★ **ABSENCE STOPS COSTING THE PRESENT, AND THE CLOCK STOPS BEING THE CHORE.**
+ *
+ * Cut for a FRESH world (owner decision, 2026-10-01: a new seed and a new record), so no live
+ * record is replayed across it. Four rule changes, each found by playing the live world:
+ *
+ *   1. **The creator's own `create` is its countersignature** (`venture/create.ts:boundAtFormation`,
+ *      `CREATE_IS_COUNTERSIGNATURE`). A creator pacing its wakes evenly could not be awake inside a
+ *      12-tick window it opened itself; {@link formationWindowOutlastsAWake} goes from −6 to +12.
+ *      `abandon` keeps the creator's real veto while the venture is FORMING.
+ *   2. **A standing intent can be ended** — `set_delivery_intent {"stop": "<intent id>"}`, the verb
+ *      that makes intents taking the parameter that ends one. No verb is spent (40/40 stands).
+ *   3. **A satisfied intent reads as satisfied** — a run with nothing left to do this Reckoning (the
+ *      Levy or Charge already discharged, the ballot already cast as stated) is recorded as
+ *      `satisfied` on the intent row, writes no action-log row and posts no correction. Captured.
+ *   4. **A dormant principal's WORKS stops dividing the yield** (`works/book.ts`, `DORMANT_STATEMENT`):
+ *      no accepted action for `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings, and its WORKS neither
+ *      extracts nor counts in its system's split until the tick after it acts again. Nothing is
+ *      confiscated. Captured (`works.played`).
+ *
+ * Plus one cast change that is a surface fix: `openSlotFor` skips a slot the member's own grant bars
+ * it from (INV-23), which the engine refused and the cast re-picked every tick.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * None to accept: Season 1 starts a new record at genesis. A world journalled under 40 refuses to
+ * adopt a 41 checkpoint on `RULES_VERSION_MISMATCH`, which is the cheap door, and a replay of a 40
+ * record under 41 diverges at its first self-created venture.
+ *
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const RULES_VERSION = 41;
@@ -2553,39 +2595,59 @@ export const MAX_RAID_TICKER_LINES = 32;
  * the published budget and gets to a moved standing without this constant changing.
  *
  * **The relation is still worth knowing and is still exported** — see
- * {@link formationWindowOutlastsAWake}. It is negative today (12 against a gap of
- * 18), which is precisely why the sentence is load-bearing rather than a courtesy:
- * an agent that paces itself evenly and reads nothing is still locked out. Widening
- * the window is the alternative fix, it is a world-shape change with measured
- * collateral in the combat layer, and it is the owner's call rather than a
- * bugfix's.
+ * {@link formationWindowOutlastsAWake}. It was negative (12 against a gap of
+ * 18), which is precisely why the sentence was load-bearing rather than a courtesy:
+ * an agent that paced itself evenly and read nothing was still locked out. Widening
+ * the window was the alternative fix, a world-shape change with measured
+ * collateral in the combat layer, and the owner's call rather than a bugfix's.
+ *
+ * ── ★ `RULES_VERSION` 41: THE OWNER'S CALL WAS THE THIRD OPTION ─────────────────
+ *
+ * Neither the window nor the wake budget moved. **The creator's own `create` became its
+ * countersignature** (`venture/create.ts:boundAtFormation`), so the one party that used
+ * to need a second wake inside this window needs none: it is bound by the act that
+ * opened the window, and a filler's `sign` already travels on the next tick without a
+ * second observation (`POST /act` is not wake-gated). The window stays 12, the free
+ * hands the combat layer was measured to need stay free, and
+ * {@link formationWindowOutlastsAWake} reads +12 because the creator now has the
+ * whole window and nothing it must be awake for inside it.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const FORMATION_WINDOW_TICKS = 12;
 
 /**
- * **How much room an evenly-paced creator has inside its own formation window.** Negative today.
+ * How many wakes the CREATOR must spend inside its own formation window, after the one that created
+ * the venture. **Zero since `RULES_VERSION` 41** — its `create` is its countersignature.
+ *
+ * A named constant rather than a literal folded into the arithmetic below, because the whole value of
+ * {@link formationWindowOutlastsAWake} is that it can go negative again: if a later rule ever asks the
+ * creator to come back inside the window — for any act — this becomes 1, the measurement reads −6
+ * again, and the play-through test that pins it says so by name.
+ */
+export const CREATOR_WAKES_INSIDE_FORMATION_WINDOW = 0;
+
+/**
+ * **How much room an evenly-paced creator has inside its own formation window.** `+12` since 41.
  *
  * A creator that spreads `WAKES_PER_RECKONING` evenly gets one wake every
- * `TICKS_PER_RECKONING / WAKES_PER_RECKONING` ticks. When the formation window is shorter than that,
- * an agent pacing itself and reading nothing **cannot be awake to countersign its own venture** — it
- * is not refused, it is never asked, and the symptom is *"the verb is missing from the menu"* rather
- * than a failure anywhere. That is A4 arriving through a clock: the in-process cast decides about
- * once per tick and closes every deal, while a lawful HTTP agent closes none.
+ * `TICKS_PER_RECKONING / WAKES_PER_RECKONING` ticks. The room is the window less the wake gaps the
+ * creator must bridge inside it — {@link CREATOR_WAKES_INSIDE_FORMATION_WINDOW} of them. While that
+ * was one (the creator had to come back and `sign`), a 12-tick window against an 18-tick gap read
+ * **−6**: an agent pacing itself and reading nothing **could not be awake to countersign its own
+ * venture** — not refused, never asked, and the symptom was *"the verb is missing from the menu"*.
+ * That is A4 arriving through a clock: the in-process cast decides about once per tick and closed
+ * every deal, while a lawful HTTP agent closed none.
  *
- * This is **a measurement, not a gate**, and the difference is deliberate. The slack is `-6` as
- * shipped, and the loop is nonetheless reachable because the budget is a pool rather than a rate and
- * `api/observe.ts:countersignWarning` now names the deadline on the act that opens it — so an agent
- * that reads its affordance can spend two wakes close together and bind. Making this a hard
- * assertion would force {@link FORMATION_WINDOW_TICKS} wider, which was measured and costs the
- * combat layer its free hands.
- *
- * Exported so the trade-off is countable rather than remembered: if the wake budget rises, the
- * Reckoning shortens, or the window widens, this number says whether the surface still has to carry
- * the warning or whether the clock finally does.
+ * Since `RULES_VERSION` 41 the creator's `create` is its countersignature, the count is zero, and the
+ * room is the whole window. Still **a measurement, not a gate**, and still exported so the trade-off
+ * is countable rather than remembered: if a rule ever sends the creator back inside the window again,
+ * pass the new count and this says whether the clock carries the guarantee or the surface has to.
  */
-export function formationWindowOutlastsAWake(windowTicks: number = FORMATION_WINDOW_TICKS): number {
-  return windowTicks - Math.ceil(TICKS_PER_RECKONING / WAKES_PER_RECKONING);
+export function formationWindowOutlastsAWake(
+  windowTicks: number = FORMATION_WINDOW_TICKS,
+  wakesInsideWindow: number = CREATOR_WAKES_INSIDE_FORMATION_WINDOW,
+): number {
+  return windowTicks - wakesInsideWindow * Math.ceil(TICKS_PER_RECKONING / WAKES_PER_RECKONING);
 }
 
 /** Bound on every agent-written text buffer (INV-26, scar #3). */
@@ -4208,6 +4270,9 @@ export class Runtime {
       // keeping a second copy of the count (scar #5). Before this hook existed the
       // budget charged for every seal and agent.md's promise was simply false — a
       // doc/engine disagreement about a cost, which is scar #1's shape.
+      // ★ `RULES_VERSION` 41. A due intent with nothing left to do does not run; see
+      // {@link Runtime.intentSatisfaction} for the three verbs that can be satisfied and why.
+      intentSatisfied: (intent, tick) => this.intentSatisfaction(intent, tick),
       allowance: (request): boolean => {
         if (request.verb !== 'seal') return false;
         const roles = this.sealableRoles(request.principal, this.engine.tick);
@@ -4819,7 +4884,7 @@ export class Runtime {
     const tier = tierOf(this.world.map, system);
     return {
       taken: this.worksBook.rentTakenAt(system, reckoningOf(tick)),
-      tenants: this.worksBook.tenantsAt(system, claimant),
+      tenants: this.worksBook.tenantsAt(system, claimant, tick),
       perTick: qty(perTick),
       fuelDue: ANCHOR_FUEL_BY_TIER[tier],
       // Hot means "already fuelled for this Reckoning". A claim that needs no fuel is never cold:
@@ -7237,7 +7302,7 @@ export class Runtime {
     // it on is the one that silently acts on the sender instead.
     const guarded = (h: VerbHandler): VerbHandler => (ctx, req) => this.unhonouredOnBehalf(req) ?? h(ctx, req);
     const table: Readonly<Record<string, VerbHandler>> = {
-      refine: (ctx, req) => this.committing(ctx) ?? this.vRefine(ctx, req),
+      refine: (ctx, req) => this.vRefine(ctx, req),
       // ── `haul` SPENDS NO VERB: IT IS ONE OF THE 40 AND ITS STEP HAS ARRIVED ──
       //
       // `api/verbs.ts:VERB_ARRIVES_AT` filed it under "step 11 (markets and the production graph)"
@@ -7246,14 +7311,12 @@ export class Runtime {
       // is payable at, and `reckoning/driver.ts:VERIFY_INPUTS` halts on any difference in the figures
       // it froze — so a convoy departing inside the freeze would pause a healthy world on the one
       // night that has an audience (A14).
-      haul: (ctx, req) => this.committing(ctx) ?? this.vHaul(ctx, req),
+      haul: (ctx, req) => this.vHaul(ctx, req),
       create: (ctx, req) =>
-        this.committing(ctx) ??
         this.sealCompliance(ctx, req) ??
         this.commonsCapacityRejection(req.principal) ??
         this.vCreate(ctx, req),
       fill_role: (ctx, req) =>
-        this.committing(ctx) ??
         this.sealCompliance(ctx, req) ??
         this.commonsCapacityRejection(req.principal) ??
         this.vFillRole(ctx, req),
@@ -7264,7 +7327,6 @@ export class Runtime {
       // one act — "countersign the terms you were shown" — so §3 is satisfied by one word meaning one
       // thing, and §17's verb ceiling is not touched.
       sign: (ctx, req) =>
-        this.committing(ctx) ??
         (req.params['cover'] === undefined && req.params['cover_id'] === undefined
           ? this.vSign(ctx, req)
           : this.vSignCover(ctx, req)),
@@ -7284,8 +7346,8 @@ export class Runtime {
         (req.params['cover'] === undefined && req.params['cover_id'] === undefined
           ? this.vElect(ctx, req)
           : this.vElectCover(ctx, req)),
-      withdraw: (ctx, req) => this.committing(ctx) ?? this.vWithdraw(ctx, req),
-      abandon: (ctx, req) => this.committing(ctx) ?? this.vAbandon(ctx, req),
+      withdraw: (ctx, req) => this.vWithdraw(ctx, req),
+      abandon: (ctx, req) => this.vAbandon(ctx, req),
       // ── `publish_offer` HAS THREE SHAPES: prose, `cede`, and now `kind:"COVER"` ──
       //
       // `say/offer.ts`'s header states the precedent for the second: *"naming a claim (`cede`)
@@ -7352,12 +7414,12 @@ export class Runtime {
       // `engage` (SPEC §9A). Guarded by `committing` for the reason every material verb is:
       // §5.1's freeze forbids a new commitment inside the settlement window, and committing a
       // warship is the most commitment-shaped act in the game.
-      engage: (ctx, req) => this.committing(ctx) ?? this.vEngage(ctx, req),
+      engage: (ctx, req) => this.vEngage(ctx, req),
       // ── A6: the two grant verbs. Issuing is a COMMITMENT, so it is refused in the
       // freeze like any other (§8.1: no grant spend in the settlement window). Revoking
       // is NOT behind `committing`: SPEC §8.1 #6 makes revocation always accepted, and
       // the attempted revocation is itself what posts — better drama than either extreme.
-      grant: (ctx, req) => this.committing(ctx) ?? this.vGrant(ctx, req),
+      grant: (ctx, req) => this.vGrant(ctx, req),
       revoke: (ctx, req) => this.vRevoke(ctx, req),
       // ── `audit` — the third office verb, and it was canon with no handler ────
       //
@@ -7375,7 +7437,7 @@ export class Runtime {
       // that has an audience (A14), over a trade nobody did anything wrong in. The
       // clearing pass is closed across the same window from the other side
       // (`clear.ts` skips the settlement tick), so the door shuts on both hinges.
-      trade: (ctx, req) => this.committing(ctx) ?? this.vTrade(ctx, req),
+      trade: (ctx, req) => this.vTrade(ctx, req),
       // ── `graduate` — the exit from the Commons, and it was missing ─────────
       //
       // Behind `committing` for exactly `trade`'s reason, plus one of its own.
@@ -7386,7 +7448,7 @@ export class Runtime {
       // holding is what decides a principal's constellation and therefore its delivery
       // place, and moving it while tonight's obligations are frozen would change where a
       // settling assessment is payable after the inputs that priced it were hashed.
-      graduate: (ctx, req) => this.committing(ctx) ?? this.vGraduate(ctx, req),
+      graduate: (ctx, req) => this.vGraduate(ctx, req),
       // ── SOVEREIGNTY: two words that already existed and had no handler ─────
       //
       // `post_bond` and `build` are both in SPEC §12.2 and both were unregistered, so this
@@ -7399,14 +7461,82 @@ export class Runtime {
       // reason exactly. `build` moves currency (a cession price) and destroys goods, so the
       // same door, plus its own: a claim changing hands mid-settlement changes who a Charge is
       // billed to after the figures were hashed.
-      post_bond: (ctx, req) => this.committing(ctx) ?? this.vPostBond(ctx, req),
-      build: (ctx, req) => this.committing(ctx) ?? this.vBuild(ctx, req),
-      form: (ctx, req) => this.committing(ctx) ?? this.vForm(ctx, req),
-      apply: (ctx, req) => this.committing(ctx) ?? this.vApply(ctx, req),
-      approve: (ctx, req) => this.committing(ctx) ?? this.vApprove(ctx, req),
-      admit: (ctx, req) => this.committing(ctx) ?? this.vAdmit(ctx, req),
+      post_bond: (ctx, req) => this.vPostBond(ctx, req),
+      build: (ctx, req) => this.vBuild(ctx, req),
+      form: (ctx, req) => this.vForm(ctx, req),
+      apply: (ctx, req) => this.vApply(ctx, req),
+      approve: (ctx, req) => this.vApprove(ctx, req),
+      admit: (ctx, req) => this.vAdmit(ctx, req),
     };
-    return Object.fromEntries(Object.entries(table).map(([verb, h]) => [verb, guarded(h)]));
+    // ── ★ THE FREEZE GATE IS APPLIED FROM ONE SET, AND THE MENU READS THE SAME SET ──────────────
+    //
+    // It used to be written `this.committing(ctx) ?? …` inside seventeen entries above, which the menu
+    // could not read — so an observation whose acts land in the freeze offered `graduate`, `refine`,
+    // `post_bond` and `form` (measured at tick 285 of a six-member world), and the engine refused every
+    // one with INV-18. The set is {@link Runtime.COMMITTING_VERBS}; the table wraps from it here, before
+    // the delegation guard, in the order the entries used to spell; `api/observe.ts` withholds the same
+    // verbs from any observation whose acts would land inside the freeze.
+    const frozenOut = (h: VerbHandler): VerbHandler => (ctx, req) => this.committing(ctx) ?? h(ctx, req);
+    return Object.fromEntries(
+      Object.entries(table).map(([verb, h]) => [
+        verb,
+        guarded(Runtime.COMMITTING_VERBS.has(verb) ? frozenOut(h) : h),
+      ]),
+    );
+  }
+
+  /**
+   * ★ **Verbs the verb table fronts with the freeze gate** ({@link committing}). ONE home: the table
+   * applies the gate from this set, and the menu withholds these verbs from an observation whose acts
+   * would land inside the freeze or on the settlement tick ({@link clockGateFor}).
+   */
+  static readonly COMMITTING_VERBS: ReadonlySet<string> = new Set(['abandon', 'admit', 'apply', 'approve', 'build', 'create', 'engage', 'fill_role', 'form', 'graduate', 'grant', 'haul', 'post_bond', 'refine', 'sign', 'trade', 'withdraw']);
+
+  /**
+   * ★ **Would the verb's own CLOCK refuse this act if it landed at `atTick`?** The menu's question, for
+   * the refusals that depend on nothing but the tick: the freeze gate on {@link COMMITTING_VERBS},
+   * `elect`'s, a delivery's, and a closed ballot. `null` when the clock lets it through — every other
+   * rule is still the verb's own to apply.
+   *
+   * Each answer is the sentence the engine itself would send, so a withheld row and a refusal read the
+   * same: `committingAt`, `electingFrozenAt`, the two delivery faults' freeze sentence, and the ballot's
+   * own fault function asked at the landing tick.
+   */
+  clockGateFor(
+    principal: PrincipalId,
+    verb: string,
+    params: Readonly<Record<string, unknown>>,
+    atTick: number,
+  ): Rejection | null {
+    if (Runtime.COMMITTING_VERBS.has(verb)) return this.committingAt(atTick);
+    if (verb === 'elect') return this.electingFrozenAt(atTick);
+    if (verb === 'deliver') {
+      if (!inFreeze(atTick) && !isSettlementTick(atTick)) return null;
+      const obligation = (readString(params, ['obligation', 'against', 'duty']) ?? '').toUpperCase();
+      const charge = obligation === 'CHARGE' || (obligation === '' && readString(params, ['system', 'claim']) !== null);
+      return reject('A14', charge ? CHARGE_FREEZE_REFUSAL : LEVY_FREEZE_REFUSAL);
+    }
+    if (verb === 'vote') {
+      const kind = (readString(params, ['ballot', 'ballot_kind', 'kind']) ?? LEVY_BALLOT).toUpperCase();
+      const window = kind === CHARGE_BALLOT ? chargeBallotWindow(atTick) : ballotWindow(atTick);
+      if (window.open) return null;
+      return reject(
+        'A14',
+        kind === CHARGE_BALLOT
+          ? `the Charge ballot for Reckoning ${String(window.forReckoning)} closed at tick ` +
+              `${String(window.closesTick)}; the allocation is fixed and the assessment is minted at the start of ` +
+              'that Reckoning.'
+          : (voteFault({
+              book: this.levy,
+              world: this.world,
+              voter: principal,
+              rule: readString(params, ['rule', 'allocation', 'formula']) ?? '',
+              spare: readString(params, ['spare', 'spare_principal', 'relieve']),
+              tick: atTick,
+            }) ?? 'the Levy ballot is closed.'),
+      );
+    }
+    return null;
   }
 
   /**
@@ -7451,9 +7581,14 @@ export class Runtime {
    * reason (A8): the cure is free, immediate and offered in the same observation.
    */
   private sealCompliance(ctx: PhaseContext, req: ActionRequest): Rejection | null {
-    const held = this.sealableRoles(req.principal, ctx.tick);
+    return this.sealComplianceAt(req.principal, ctx.tick);
+  }
+
+  /** {@link sealCompliance} for a tick the menu is asking about. One predicate, two callers. */
+  sealComplianceAt(principal: PrincipalId, tick: number): Rejection | null {
+    const held = this.sealableRoles(principal, tick);
     if (held.length === 0) return null;
-    return this.seals.sealComplianceRejection(req.principal, ctx.tick, held);
+    return this.seals.sealComplianceRejection(principal, tick, held);
   }
 
   /**
@@ -7585,16 +7720,210 @@ export class Runtime {
   }
 
   private committing(ctx: PhaseContext): Rejection | null {
-    if (!ctx.clock.inFreeze && !ctx.clock.isSettlementTick) return null;
+    return this.committingAt(ctx.tick);
+  }
+
+  /**
+   * {@link committing} for a tick that has not run yet — the one the menu's act would resolve in.
+   *
+   * The same predicate and the same sentence, read off `core/time.ts` rather than off a phase
+   * context, so the menu can ask the question the verb table will ask without a context to ask it
+   * with. `ctx.clock` is `reckoningClock(ctx.tick)`, so the two answers are one answer.
+   */
+  committingAt(tick: number): Rejection | null {
+    if (!inFreeze(tick) && !isSettlementTick(tick)) return null;
     return reject(
       'INV-18',
-      `the Reckoning's freeze has begun (tick ${String(ctx.tick)} of Reckoning ` +
-        `${String(ctx.clock.reckoning)}): no new commitments and no withdrawals until it has settled. ` +
+      `the Reckoning's freeze has begun (tick ${String(tick)} of Reckoning ` +
+        `${String(reckoningIndex(tick))}): no new commitments and no withdrawals until it has settled. ` +
         'Everything the settlement pays from was read at the freeze, so moving any of it now would record a ' +
         'promise as broken that nobody broke. Nothing was lost — submit again next tick. (`elect` is closed ' +
         'too, for a different reason and with a different answer: see its own refusal — what you last stated ' +
         'is what happens tonight, and submitting again will not change it.)',
     );
+  }
+
+  // ── ★ STANDING INTENTS: WHAT "NOTHING TO DO" MEANS, PER VERB (`RULES_VERSION` 41) ──
+
+  /**
+   * ★ **Has this due intent nothing to do at `tick`?** A sentence saying why, or `null` to run it.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A PAID ORDER LOOKED STUCK, AND THE RECORD SAID IT WAS.** `set_delivery_intent` re-firing after
+   * its Levy was discharged produced 16 identical refusals in 16 ticks, a playtester read "stuck", and
+   * the affordance had to carry a sentence pleading that it was not. The run was the wrong thing to do:
+   * there was nothing to deliver. So the engine asks this before running a due intent, and a non-null
+   * answer is recorded as `satisfied` on the intent — never a run, never a refusal, no correction, no
+   * action-log row (`IntentBook.satisfiedAt`, `tick/loop.ts:validateAndLock`).
+   *
+   * **Only "the obligation is met, or not yet open" is satisfaction.** Every obstacle an agent could act
+   * on — no hand at the delivery place, no goods, no live claim, a ballot it cannot cast — returns null,
+   * so the verb runs and refuses with its own sentence and the correction reaches the agent. Calling an
+   * obstacle "satisfied" would be the stuck-order defect run backwards: an order failing silently.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Read-only and deterministic: every branch reads the books the verb itself reads, at the tick the
+   * intent would run, after every live action in the window has resolved.
+   */
+  intentSatisfaction(intent: IntentRecord, tick: number): string | null {
+    switch (intent.verb) {
+      case 'deliver':
+        return this.deliverySatisfaction(intent.principal, intent.params, tick);
+      case 'vote':
+        return this.ballotSatisfaction(intent.principal, intent.params, tick);
+      case 'refine':
+        return this.refineSatisfaction(intent.principal, intent.params, tick);
+      default:
+        return null;
+    }
+  }
+
+  /** `deliver` has nothing to do when the obligation it names is discharged for this Reckoning. */
+  private deliverySatisfaction(
+    principal: PrincipalId,
+    params: Readonly<Record<string, unknown>>,
+    tick: number,
+  ): string | null {
+    const reckoning = reckoningOf(tick);
+    // The SAME dispatch `vDeliver` makes, read off the same keys, so the predicate and the verb can
+    // never disagree about which obligation an order is for.
+    const obligation = (readString(params, ['obligation', 'against', 'duty']) ?? '').toUpperCase();
+    const chargeSystem = readString(params, ['system', 'claim', 'system_id']) as SystemId | null;
+    if (obligation === 'CHARGE' || (obligation === '' && chargeSystem !== null)) {
+      if (chargeSystem === null) return null;
+      const claim = this.sovereignty.liveAt(chargeSystem);
+      // No live claim is an obstacle — the claim lapsed or changed hands — so the verb says so.
+      if (claim === null) return null;
+      const owing = this.sovereignty.owingOf(reckoning, claim.system);
+      if (owing.owed > 0) return null;
+      return (
+        `the Charge on ${chargeSystem} is discharged for Reckoning ${String(reckoning)}; this order pays the ` +
+        "next Reckoning's bill the tick it is assessed"
+      );
+    }
+    const payer = (readString(params, ['on_behalf_of', 'onBehalfOf', 'for', 'payer']) ?? principal) as PrincipalId;
+    if (this.world.holdingByPrincipal.get(payer) === undefined) return null;
+    const owing = this.levy.owingOf(reckoning, payer);
+    // A foreign hand may fill only the escrowable bucket (`levy/payment.ts:creditFor`), so a carry
+    // order is done when that bucket is — even while the payer still owes its own presence share.
+    const room = payer === principal ? owing.owed : owing.purchasableOwed;
+    if (room > 0) return null;
+    if (owing.assessment <= 0) {
+      return `no Levy is assessed on ${payer} for Reckoning ${String(reckoning)} yet, so there is nothing to deliver`;
+    }
+    return payer === principal
+      ? `this Reckoning's Levy is discharged in full; this order pays the next one the tick it is assessed`
+      : `${payer}'s Levy share that another hand may carry is discharged for Reckoning ${String(reckoning)}`;
+  }
+
+  /** `vote` has nothing to do when its ballot is closed, or already says exactly what it would cast. */
+  private ballotSatisfaction(
+    principal: PrincipalId,
+    params: Readonly<Record<string, unknown>>,
+    tick: number,
+  ): string | null {
+    const kind = (readString(params, ['ballot', 'ballot_kind', 'kind']) ?? LEVY_BALLOT).toUpperCase();
+    const rule = readString(params, ['rule', 'allocation', 'formula']) ?? '';
+    const spare = readString(params, ['spare', 'spare_principal', 'relieve']);
+    const window = kind === CHARGE_BALLOT ? chargeBallotWindow(tick) : kind === LEVY_BALLOT ? ballotWindow(tick) : null;
+    if (window === null) return null;
+    if (!window.open) {
+      return (
+        `the ${kind} ballot for Reckoning ${String(window.forReckoning)} closed at tick ${String(window.closesTick)}; ` +
+        'this order votes again when the next one opens'
+      );
+    }
+    const standing =
+      kind === CHARGE_BALLOT
+        ? this.sovereignty.ballotOf(window.forReckoning, principal)
+        : this.levy.ballotOf(window.forReckoning, principal);
+    if (standing === undefined) return null;
+    if (standing.rule !== rule || (standing.spare ?? null) !== (spare ?? null)) return null;
+    // Re-casting an identical ballot would replace it with itself and post a `PUBLIC` row every tick —
+    // a ballot box that recorded the same vote 200 times a Reckoning.
+    return `your ${kind} ballot for Reckoning ${String(window.forReckoning)} already says ${rule}`;
+  }
+
+  /** `refine` has nothing to do until a whole batch of its input stands where it refines. */
+  private refineSatisfaction(
+    principal: PrincipalId,
+    params: Readonly<Record<string, unknown>>,
+    tick: number,
+  ): string | null {
+    const named = readString(params, ['system', 'at', 'place']) as SystemId | null;
+    const holding = this.world.holdingByPrincipal.get(principal);
+    if (named === null && holding === undefined) return null;
+    const system = named ?? holdingOf(this.world, principal).system;
+    const tier = this.world.map.systems.get(system)?.tier;
+    const kind = refineKindOf(readString(params, ['kind', 'recipe', 'into']));
+    // An unknown kind or place is the verb's to refuse by name; never satisfied.
+    if (tier === undefined || kind === null) return null;
+    const recipe = recipeOf(kind, tier);
+    // `refine` sits behind `committing`, so inside the freeze it would be refused twice a Reckoning for
+    // a reason that is nobody's obstacle: there is nothing to do until the Reckoning has settled.
+    if (inFreeze(tick) || isSettlementTick(tick)) {
+      return 'the Reckoning’s freeze is on; it refines again the tick after settlement';
+    }
+    const have = this.goodLotsAt(principal, system, recipe.inGood).reduce((n, l) => n + l.qty, 0);
+    const wanted = readInt(params, ['qty', 'quantity', 'amount']);
+    const batches = wanted === null ? 1 : Math.trunc(wanted / recipe.outQty);
+    if (batches <= 0) return null;
+    const need = batches * recipe.inQty;
+    if (have >= need) return null;
+    return (
+      `waiting for ${String(need)} ${recipe.inGood} at ${system} (${String(have)} there now); it refines the ` +
+      'tick a whole batch has been extracted'
+    );
+  }
+
+  /**
+   * ★ **This principal's standing intents, as `obligations.intents` publishes them** — its own and nobody
+   * else's (PRIVATE: an order you left running is your strategy, not a public fact; what it DOES is
+   * public, on the events it produces).
+   *
+   * Live ones, plus any that ended inside the last Reckoning so "my order stopped" is readable for a
+   * cycle. `status` is the latest thing that happened to it, and `now` is what it will do at the next
+   * tick it is due — the same predicate the engine asks, so the row cannot promise a run the tick will
+   * not make.
+   */
+  intentRows(principal: PrincipalId, tick: number): readonly Readonly<Record<string, unknown>>[] {
+    const out: Readonly<Record<string, unknown>>[] = [];
+    for (const intent of this.engine.intents.inOrder()) {
+      if (intent.principal !== principal) continue;
+      const ended = intent.state !== 'LIVE';
+      if (ended && (intent.endedAtTick === null || intent.endedAtTick < tick - TICKS_PER_RECKONING)) continue;
+      const last = Math.max(intent.lastRanTick ?? -1, intent.lastRefusedTick ?? -1, intent.lastSatisfiedTick ?? -1);
+      const status = ended
+        ? intent.state
+        : last < 0
+          ? 'ARMED'
+          : last === intent.lastSatisfiedTick
+            ? 'SATISFIED'
+            : last === intent.lastRefusedTick
+              ? 'REFUSED'
+              : 'RAN';
+      const why = ended ? null : this.intentSatisfaction(intent, tick + 1);
+      out.push({
+        id: intent.id,
+        verb: intent.verb,
+        params: intent.params,
+        state: intent.state,
+        status,
+        status_tick: ended ? intent.endedAtTick : last < 0 ? null : last,
+        created_tick: intent.createdTick,
+        until_tick: intent.untilTick,
+        max_runs: intent.maxRuns,
+        runs: intent.runs,
+        refusals: intent.refusals,
+        satisfied: intent.satisfied,
+        now: ended
+          ? 'ended; it never runs again'
+          : why === null
+            ? 'due next tick: it will try to act, and a refusal will reach briefing.corrections'
+            : `satisfied next tick — ${why}`,
+      });
+    }
+    return out;
   }
 
   private vCreate(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
@@ -8021,6 +8350,88 @@ export class Runtime {
     return { ok: true, value: null };
   }
 
+  /**
+   * ★ **The AUTHORITY rule on `fill_role` — SPEC §8.1 #3, INV-23 — in ONE home.** `null` when no
+   * grant stands between this principal and this venture.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE MENU OFFERED WHAT THIS REFUSED, AND A PLAYER SAID SO ON THE RECORD.** A house cast member
+   * playing under GPT-6 Astra wrote, in its own reason line: *"That Sable slot is barred by my grant
+   * despite the menu."* It was right. `vFillRole` refused a delegate a role in a venture whose
+   * creator had granted it authority — the self-dealing guard below — while `ventures.board[]` and
+   * the `fill_role` affordance were built from a separate, shorter eligibility list that had never
+   * heard of grants. So the server offered an act, the agent spent an action copying it verbatim,
+   * and the engine declined: AGT-S2, and scar #1's exact shape — two surfaces, each internally
+   * coherent, disagreeing about one rule.
+   *
+   * **The general cause is a rule with one reader.** Every check on this verb lived inline in its
+   * handler or in the tick-close allocation, and the menu could only re-derive the ones it knew
+   * about. The fix is the pattern `demandRefusalFor`, `engageRefusalFor` and `parleyRefusalFor`
+   * already use: the rule is a method, the handler calls it, the menu calls it, the cast calls it,
+   * and a test drives all three against one world (`test/api/the-menu-and-the-engine-agree.spec.ts`).
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * The rule, unchanged: a delegate may not be a counterparty to a deal it holds authority over. If
+   * you held a live grant over this venture's creator when it was created, you could have shaped
+   * it and funded its escrow from the creator's own stores, so you may not also fill a role in it.
+   * Asked at the venture's CREATION tick (see the note in `vFillRole` for the one-tick bypass that
+   * asking at the fill's tick opened), so letting the grant lapse does not clear it.
+   */
+  fillRoleAuthorityRefusal(principal: PrincipalId, venture: VentureRecord): Rejection | null {
+    if (venture.creator === principal) return null;
+    if (this.grantBook.liveGrantBetween(venture.creator, principal, venture.windowOpensTick) === null) {
+      return null;
+    }
+    return reject(
+      'INV-23',
+      `you held a grant over ${venture.creator} when venture ${venture.id} was created, so you may ` +
+        'not also fill a role in it: a delegate cannot be a counterparty to a deal it has authority ' +
+        'over (self-dealing, §8.1 #3). Letting the grant lapse does not clear this — the conflict is ' +
+        'that you could have shaped the venture. Fill roles in ventures whose creator you have no ' +
+        'authority over.',
+    );
+  }
+
+  /**
+   * ★ **Would THIS slot take this principal's fill, if the fill resolved at `atTick`?** The board's
+   * question — every rule that is a property of the slot and the principal together, and none that
+   * is a property of a hand.
+   *
+   * The authority rule above, then the slot's own rules from `venture.ts:slotRefusal` (which the
+   * tick-close allocation runs through `fillRole`). The menu passes **the tick the act would resolve
+   * in** — an observation at `t` sends an act that lands in `t + 1` — and that is not pedantry: the
+   * board offered a slot on the last tick of its window, where `windowContains(t + 1)` refuses it.
+   *
+   * A slot this returns non-null for is NOT eligible and is left off `ventures.board[]` (§12.1:
+   * "only slots I am eligible for"); `api/observe.ts` counts the authority case in `withheld` by name,
+   * because a slot barred by your own grant is an omission you are entitled to be told about.
+   */
+  fillSlotRefusalFor(
+    principal: PrincipalId,
+    venture: VentureRecord,
+    roleIndex: number,
+    atTick: number,
+  ): Rejection | null {
+    return this.fillRoleAuthorityRefusal(principal, venture) ?? slotRefusal(venture, roleIndex, principal, atTick);
+  }
+
+  /**
+   * ★ **Would ANY `fill_role` from this principal be accepted at `atTick`?** The gates the verb table
+   * puts in front of the handler — the freeze, the seal you owe, the Commons capacity a chronic Levy
+   * shortfall demotes — read here in the table's own order, so the menu can withhold every `fill_role`
+   * with the sentence the engine would have sent rather than offer acts that cost an action to refuse.
+   *
+   * These do not take a slot off the board: each is a condition the principal can clear (seal, pay,
+   * wait a tick), and the slot is still one it is eligible for once it does.
+   */
+  ventureGateRefusalFor(principal: PrincipalId, atTick: number): Rejection | null {
+    return (
+      this.committingAt(atTick) ??
+      this.sealComplianceAt(principal, atTick) ??
+      this.commonsCapacityRejection(principal)
+    );
+  }
+
   private vFillRole(ctx: PhaseContext, req: ActionRequest): WorldResult<null> {
     const ventureId = readString(req.params, ['venture', 'venture_id']) as VentureId | null;
     const roleIndex = readInt(req.params, ['role', 'role_index', 'roleIndex']);
@@ -8065,20 +8476,12 @@ export class Runtime {
     // merely different, which is why this is a one-word fix and not a second condition:
     // liveness is `atTick <= end`, so a grant live now was necessarily live at creation
     // too. Every case the old check caught, this one still catches.
-    if (
-      venture.creator !== req.principal &&
-      this.grantBook.liveGrantBetween(venture.creator, req.principal, venture.windowOpensTick) !==
-        null
-    ) {
-      return reject(
-        'INV-23',
-        `you held a grant over ${venture.creator} when venture ${ventureId} was created, so you may ` +
-          'not also fill a role in it: a delegate cannot be a counterparty to a deal it has authority ' +
-          'over (self-dealing, §8.1 #3). Letting the grant lapse does not clear this — the conflict is ' +
-          'that you could have shaped the venture. Fill roles in ventures whose creator you have no ' +
-          'authority over.',
-      );
-    }
+    //
+    // ★ The rule itself now lives in {@link fillRoleAuthorityRefusal}, because the MENU has to ask it
+    // too: the board offered these slots and this line refused them, and a house cast member said so
+    // on the record — *"That Sable slot is barred by my grant despite the menu."*
+    const barred = this.fillRoleAuthorityRefusal(req.principal, venture);
+    if (barred !== null) return barred;
     // ── GEOGRAPHY IS NOT ENFORCED HERE, AND IT IS NOT AN OVERSIGHT ────────────
     //
     // `fillRole` checks `isPresent`, which is about the hand's *state* — not in transit,
@@ -9035,10 +9438,15 @@ export class Runtime {
    * explains why being offline through a Reckoning cannot be used against you.
    */
   private electingFrozen(ctx: PhaseContext): Rejection | null {
-    if (!ctx.clock.inFreeze && !ctx.clock.isSettlementTick) return null;
+    return this.electingFrozenAt(ctx.tick);
+  }
+
+  /** {@link electingFrozen} for a tick the menu is asking about — `ctx.clock` is `reckoningClock(ctx.tick)`. */
+  electingFrozenAt(tick: number): Rejection | null {
+    if (!inFreeze(tick) && !isSettlementTick(tick)) return null;
     return reject(
       'INV-18',
-      `the freeze for Reckoning ${String(ctx.clock.reckoning)} has landed at tick ${String(ctx.tick)}, so ` +
+      `the freeze for Reckoning ${String(reckoningIndex(tick))} has landed at tick ${String(tick)}, so ` +
         'the elections are closed: whatever you last stated is what happens tonight, and nothing you send ' +
         'now can change it. That is not a penalty — §5.1 puts no decision inside the settlement window, ' +
         'which is exactly why being offline through one cannot be used against you. Ventures that settle ' +
@@ -11589,18 +11997,25 @@ export class Runtime {
    */
   worksLines(tick: number): readonly WorksLine[] {
     const out: WorksLine[] = [];
+    // ★ The SAME split the PRODUCE phase pays, read once per system — `sharesAt` excludes a spinning-up
+    // WORKS and (since `RULES_VERSION` 41) a DORMANT one, so a mark can never quote a share the ledger
+    // does not move. It used to re-derive the division here as `yield / online`, which is one rule in
+    // two homes and would have gone on paying a dormant WORKS on screen.
+    const sharesBySystem = new Map<SystemId, ReadonlyMap<WorksId, Qty>>();
+    const sharesFor = (system: SystemId): ReadonlyMap<WorksId, Qty> => {
+      let shares = sharesBySystem.get(system);
+      if (shares === undefined) {
+        shares = this.worksBook.sharesAt(system, systemYield(this.world.map, system), tick);
+        sharesBySystem.set(system, shares);
+      }
+      return shares;
+    };
     for (const works of this.worksBook.liveInOrder()) {
       const occupants = this.worksBook.liveAt(works.system).length;
       const online = tick >= works.onlineAtTick;
+      const dormant = online && this.worksBook.isDormant(works.holder, tick);
       const terms = this.rentTermsAt(works.system);
-      // Divided by the ONLINE count, which is what `sharesAt` actually divides by — a mark
-      // quoting a share the engine does not pay would be the frame contradicting the ledger.
-      const gross = online
-        ? Math.trunc(
-            systemYield(this.world.map, works.system) /
-              Math.max(1, this.worksBook.liveAt(works.system).filter((w) => tick >= w.onlineAtTick).length),
-          )
-        : 0;
+      const gross = sharesFor(works.system).get(works.id) ?? 0;
       // The SAME function the PRODUCE phase splits with, so the mark and the ledger cannot
       // disagree about who keeps what. `sharePerTick` is the NET — see `WorksLine.sharePerTick`.
       const split = rentOn({ terms, extractor: works.holder, gross: qty(gross) });
@@ -11612,17 +12027,24 @@ export class Runtime {
         // so a viewer could not see which ground was worth taking — and neither could an agent.
         yieldPerTick: systemYield(this.world.map, works.system),
         occupants,
+        // ★ What the yield is actually divided by right now — online and not DORMANT. `occupants` counts
+        // standing structures; this counts the ones sharing, and the gap between them is the story.
+        extractors: this.worksBook.extractorsAt(works.system, tick),
         sharePerTick: split.net,
         // ★ CROWDED OUT: online, and the system's yield divided by everyone online there truncates to
         // nothing. Measured at 3,000 principals — 100+ WORKS on one MARCHES system yielding 110 a tick
         // — and the old legend read EXTRACTING over a share of 0, which `assertFrameBudgets` refused,
         // so the Reckoning frame did not render at all on the one night it had the most to show.
-        // The truth is the crowding, so the legend says it.
-        legend: online
-          ? split.net > 0
-            ? 'EXTRACTING'
-            : 'CROWDED OUT'
-          : `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`,
+        // The truth is the crowding, so the legend says it. A DORMANT WORKS is not crowded out — it is
+        // not dividing at all — so DORMANT is asked first.
+        legend: !online
+          ? `SPINNING UP ${String(works.onlineAtTick - tick)} ticks`
+          : dormant
+            ? 'DORMANT'
+            : split.net > 0
+              ? 'EXTRACTING'
+              : 'CROWDED OUT',
+        dormantSinceTick: dormant ? this.worksBook.dormantFromTick(works.holder) : null,
         extracted: works.extracted,
         // The RATE, not "did anything move": at a small enough share the amount truncates to zero
         // while the rate is still in force, and reading the rate off `rent > 0` would draw a WORKS
@@ -11633,7 +12055,7 @@ export class Runtime {
         // The second good. A property of the **system** divided by the online count, exactly like
         // the first — so the map, and not a stockpile, is what a viewer reads (§11.2). Per-system
         // since §16.12 #1: some frontier ground makes far more fuel than the rest of it.
-        fuelPerTick: online
+        fuelPerTick: online && !dormant
           ? (this.worksBook.fuelSharesAt(works.system, systemFuelYield(this.world.map, works.system), tick).get(works.id) ?? 0)
           : 0,
         fuelExtracted: works.fuelExtracted,
@@ -12443,12 +12865,25 @@ export class Runtime {
   // ── WORKS: the production structure (§10.2, A15) ─────────────────────────
 
   /** Every live WORKS this principal holds. Read by `observe` and by the frame. */
-  worksOf(principal: PrincipalId): readonly { readonly id: string; readonly system: SystemId; readonly online: boolean; readonly extracted: number }[] {
+  worksOf(principal: PrincipalId): readonly {
+    readonly id: string;
+    readonly system: SystemId;
+    readonly online: boolean;
+    readonly extracted: number;
+    readonly dormant: boolean;
+    readonly dormant_from_tick: number | null;
+  }[] {
+    const tick = this.engine.tick;
     return this.worksBook.ofPrincipal(principal).map((w) => ({
       id: w.id,
       system: w.system,
-      online: this.engine.tick >= w.onlineAtTick,
+      online: tick >= w.onlineAtTick,
       extracted: w.extracted,
+      // ★ `RULES_VERSION` 41. Whether it is dividing its system's yield, and the tick it stops (or
+      // stopped) if this principal sends nothing more — the holder's own clock, read before it lapses.
+      // An extraction NEXT tick reads tick+1, so the flag is the one production will apply.
+      dormant: this.worksBook.isDormant(w.holder, tick + 1),
+      dormant_from_tick: this.worksBook.dormantFromTick(w.holder),
     }));
   }
 
@@ -12492,6 +12927,15 @@ export class Runtime {
      * ══════════════════════════════════════════════════════════════════════════
      */
     readonly occupiedBy: readonly PrincipalId[];
+    /**
+     * ★ **Which of those occupants are DORMANT** (`RULES_VERSION` 41) — standing, and dividing nothing.
+     *
+     * `PUBLIC` for `occupiedBy`'s reason: the frame draws each of them DORMANT, and A9 forbids the frame
+     * knowing more than an agent's own observe. They are excluded from the division below — today — and
+     * every one of them resumes the tick after its holder's next accepted action, so a quote that reads
+     * high because a neighbour is asleep is a quote about today, which is what it has always been.
+     */
+    readonly dormantBy: readonly PrincipalId[];
     /**
      * What this principal would **keep** per tick once online, at today's crowding and rent.
      *
@@ -12640,8 +13084,17 @@ export class Runtime {
     // never a question about anywhere else.
     // ══════════════════════════════════════════════════════════════════════════
     const held = this.worksBook.holdsAt(principal, system) > 0;
+    // ── ★ AND A DORMANT NEIGHBOUR DIVIDES NOTHING (`RULES_VERSION` 41) ─────────────
+    //
+    // The division counts the WORKS that would actually share the yield with yours: every occupant but
+    // a DORMANT one, plus yours. Yours is counted as working whatever its own clock says, because this is
+    // "what YOURS would take" and acting — which building is — is exactly what wakes it.
+    const dormantBy = standing
+      .filter((w) => w.holder !== principal && this.worksBook.isDormant(w.holder, this.engine.tick + 1))
+      .map((w) => w.holder);
+    const dividing = occupants - dormantBy.length;
     const quotedGross = Math.trunc(
-      systemYield(this.world.map, system) / (held ? Math.max(1, occupants) : occupants + 1),
+      systemYield(this.world.map, system) / (held ? Math.max(1, dividing) : dividing + 1),
     );
     const quotedTerms = this.rentTermsAt(system);
     const quotedSplit = rentOn({ terms: quotedTerms, extractor: principal, gross: qty(quotedGross) });
@@ -12703,6 +13156,7 @@ export class Runtime {
       occupants,
       // `liveAt` is already canonical by WORKS id (DET-2), so this order is stable across replays.
       occupiedBy: standing.map((w) => w.holder),
+      dormantBy,
       // ── THE CROWDING DIVISION IS ABOVE; THE RENT COMES OFF IT HERE ──────────
       //
       // Split with the SAME function the PRODUCE phase uses, so the quote and the ledger cannot
@@ -12965,6 +13419,15 @@ export class Runtime {
     // WORKS, so a viewer sees the total. What disappears is a per-tick narration nobody reads,
     // which is the definition of noise in an append-only record.
     void rows;
+
+    // ── ★ AND THEN THE DORMANT CLOCK, AFTER EXTRACTION (`RULES_VERSION` 41) ───────────
+    //
+    // Every action in the frozen window entered the queue, which is what "accepted" means to the seat
+    // lease and to `works/params.ts:WORKS_DORMANT_AFTER_TICKS`; a standing intent's own run is not in
+    // the window at all, so it is never counted as play. Folded in HERE, after the shares above were
+    // divided, so a returning principal's WORKS resumes on the tick AFTER its action — production at
+    // T reads the world as the window froze it, and an action resolving at T is part of T+1.
+    for (const action of ctx.actions) this.worksBook.notePlayed(action.principal, ctx.tick);
   }
 
   /**

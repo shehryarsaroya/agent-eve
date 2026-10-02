@@ -1143,10 +1143,15 @@ var MapView = (function () {
       (R.worksLines || []).forEach(function (w) {
         var p = P[w.system]; if (!p) return;
         var rr = nodeR(idx[w.system], minY, maxY);
+        // DORMANT: standing, dividing nothing — drawn grey and dotted, never removed.
+        var asleep = w.legend === 'DORMANT';
         gClaims.appendChild(S('path', {
-          class: 'works-mk',
+          class: 'works-mk' + (asleep ? ' dormant' : ''),
           d: 'M' + (p.x - rr - 4) + ' ' + (p.y + rr + 4) + 'l4 -7l4 7z',
-        }, S('title', { text: 'WORKS · ' + U.handleOf(w.holder) + ' · ' + w.legend })));
+        }, S('title', {
+          text: 'WORKS · ' + U.handleOf(w.holder) + ' · ' + w.legend +
+            (asleep && w.dormantSinceTick != null ? ' since t' + w.dormantSinceTick : ''),
+        })));
       });
     }
 
@@ -1466,9 +1471,14 @@ var MapView = (function () {
         });
       }
       if (wk.length) {
+        // The share is read off a WORKS that is actually extracting: a DORMANT one quotes 0, and
+        // the callout would otherwise print the sleeper's nothing as everybody's "each".
+        var working = wk.filter(function (w) { return w.legend === 'EXTRACTING'; })[0] || wk[0];
+        var asleepN = wk.filter(function (w) { return w.legend === 'DORMANT'; }).length;
         lines.push({
-          t: 'WORKS ' + wk.length + '  ·  ' + wk[0].legend +
-            (wk[0].sharePerTick ? '  ·  ' + wk[0].sharePerTick + '/tick each' : ''),
+          t: 'WORKS ' + wk.length + '  ·  ' + working.legend +
+            (working.sharePerTick ? '  ·  ' + working.sharePerTick + '/tick each' : '') +
+            (asleepN ? '  ·  ' + asleepN + ' DORMANT' : ''),
           c: 'co-b',
         });
       }

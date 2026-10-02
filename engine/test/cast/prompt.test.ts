@@ -519,7 +519,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ★ 33: §11G's three units each gate on `demand`, which means one thing however it is
     // parameterised — the `grant` control case, and `principal` is not an ACT_SUBJECT_KEY so no
     // `demand{...}` token could ever be produced to gate on instead.
-    expect(verbPairs, 'verb gates in the catalog').toBe(44);
+    // ★ 46 at 41: §4's `### Who has to sign` gates on `sign` and `fill_role` — the two acts whose
+    // signature rule changed when the creator's `create` became its countersignature.
+    expect(verbPairs, 'verb gates in the catalog').toBe(46);
     // ★ 23 at 24: §11D's coalition block is the second unit to gate on `join{RAID}`, which is the
     // token master split out precisely because a raid side and a campaign side are different rules.
     // Two units on one act is not a collision — the both-ways pin below requires every token to be
@@ -653,7 +655,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // it is one more unit where the two could compete — and the precedence matters here more than
     // usual, because a bystander standing at the stage is offered the act while one two lanes off is
     // only `nearStandoff`. Both must select it.
-    expect(checked, 'no unit carries both a gate and a predicate, so this proves nothing').toBe(42);
+    // ★ 44 at 41: the same block carries `wanted: inVenture` beside both verb gates.
+    expect(checked, 'no unit carries both a gate and a predicate, so this proves nothing').toBe(44);
   });
 
   it('★ EVERY UNIT IS REACHABLE BY SOMETHING — no unit is gated on nothing at all', () => {
@@ -1004,7 +1007,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_946);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_254);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1063,7 +1066,24 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 108,946 = **11,054**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 102,435 — leaving **17,565**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(108_946);
+    // ── ★ AND AT 41, +2,231: SEASON 1's TWO RULES WRITTEN DOWN ─────────────────
+    //
+    // Two new `###` blocks, both gated: §4's `### Who has to sign` (the creator's create is its
+    // countersignature; `sign`/`fill_role`) and §11A's `### A WORKS only works while you play —
+    // DORMANT` (`wanted` on holding or raising a WORKS). The rest is FLOOR text that had to change
+    // because it described the old rule — §5's wake-pool and `next_decision_at` bullets told a creator
+    // to come back and sign, §6's observe block gained `obligations.intents[]` and the briefing's
+    // ranking its DORMANT rung. §9's standing-intent block is in a section the cast is never shown, so
+    // it costs no cell. MEASURED against this tree, not added.
+    //
+    // Then +77 on the four positions that hold a grant: §10's preamble said a delegated `create` draws
+    // the venture's elective "total — every role's unsecured part added up", the PRICE the gate stopped
+    // charging; it now names the worst case `create` quotes. A correction, which is the spend that is
+    // never optional.
+    //
+    // Analytic margin 120,000 − 111,254 = **8,746**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 104,743 — leaving **15,257**, against a required 4,000.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_254);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1137,7 +1157,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Margin 120,000 − 102,169 = **17,831** against a required 4,000.
     // ★ +266: §4's escrow-is-not-EXPOSURE sentence and §11A's corrected alloy line.
     // Margin 120,000 − 102,435 = **17,565** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(102_435);
+    // ★ +2,231 at 41 (Season 1's two gated blocks and its FLOOR corrections), then +77 for §10's
+    // delegated-create sentence, corrected from the price to the worst case `create` quotes.
+    // Margin 120,000 − 104,743 = **15,257** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(104_743);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1826,11 +1849,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only offered once a standoff is already live, by which point a member reading the rules for
       // the first time inside a 24-tick window has already chosen wrong.
       64: 'sixty-four',
+      // ★ 66 at 41: §4's `### Who has to sign` (the creator's create is its countersignature) and
+      // §11A's `### A WORKS only works while you play — DORMANT`.
+      66: 'sixty-six',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(64);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(66);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 64],
+      spelled[n as 66],
     );
     // ── ★ MATCHED ON A WORD BOUNDARY, NOT AS A SUBSTRING ─────────────────────
     //
@@ -1965,8 +1991,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       engage:
         'A refused demand becomes a BATTLE — the five phases + Committing a hull — `engage` + `withdraw_below_bps` is a STOP CONDITION, not an act',
       fight: 'Answering either one — `yield` · `fight` · join, or say nothing',
+      // ★ 41: a filler still signs for itself, and §4's new block says when and with what.
       fill_role:
-        '(preamble) + The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
+        '(preamble) + Who has to sign — and why your own `create` is enough + The third half: `stake` on `fill_role` — how you outbid a rival, and what it costs',
       form: 'Founding one — `form` `{"name":"...", ...}`',
       graduate: '`graduate` — leaving, and it is one-way',
       // ★ LEFT EXACTLY ALONE, AND IT IS THE CONTROL CASE. `grant` means ONE thing, so its verb
@@ -1992,7 +2019,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
         'Doing it — `grant`, acting on behalf, and `revoke` (all live now) + CLEARANCE and the DOSSIER — the part `revoke` cannot undo',
       seal: 'Seals — the say-do gap',
       set_delivery_intent: 'The Levy — nobody sits this out',
-      sign: '(preamble)',
+      sign: '(preamble) + Who has to sign — and why your own `create` is enough',
       trade:
         '(preamble) + ★ What you may spend, and the one rule that decides it — `market.transferable_minor`',
       // The Levy block is FLOOR, so `vote` keeps it and it costs nothing. The 4,462-character
@@ -2821,13 +2848,20 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //
       // The newcomer is not offered a stake-bearing act, so it reads §11A's line and not §4's — the
       // gate, measured. Read, not added.
-      48_543, // a newcomer on its first wake            (+848, then +46)
-      58_213, // mid-game in the Commons                 (+848, then +266)
-      67_908, // about to take territory                 (+848, then +266)
-      71_050, // at war: party to a live campaign        (+848, then +266)
-      100_934, // a claimant in trouble                  (+848, then +266)
-      82_820, // the Commons at its fullest              (+848, then +266)
-      102_435, // outside the Commons and landless, at its fullest: the largest REACHABLE (+848, +266)
+      // ── ★ AND AT 41: SEASON 1, MEASURED ──────────────────────────────────────
+      //
+      // §4's `### Who has to sign` reaches every position offered `sign` or `fill_role`; §11A's
+      // DORMANT block every position that works ground or can raise a WORKS; the FLOOR corrections
+      // (§5's sign advice, §6's `intents[]` line and DORMANT rung) every position alike. The
+      // newcomer reads all three, because a newcomer is offered `fill_role` and a WORKS on its
+      // first wake. Read, not added.
+      49_933, // a newcomer on its first wake            (+848, +46, then +1,390 at 41)
+      60_444, // mid-game in the Commons                 (+848, +266, then +2,231 at 41)
+      70_139, // about to take territory                 (+848, +266, then +2,231 at 41)
+      73_281, // at war: party to a live campaign        (+848, +266, then +2,231 at 41)
+      103_242, // a claimant in trouble                  (+848, +266, then +2,231 and +77 at 41)
+      85_128, // the Commons at its fullest              (+848, +266, then +2,231 and +77 at 41)
+      104_743, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308 at 41)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3002,7 +3036,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      108_946, // the analytic ceiling                    (+848: next_decision_at, then +266)
+      111_254, // the analytic ceiling                    (+848, +266, then +2,231 and +77 at 41)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

@@ -298,6 +298,15 @@ function cannotTakeYet(book: Book, live: ClaimRecord, tick: number): string {
  * blockade"* — is closed by the first check: nothing relocates, so nothing can teleport.
  * ══════════════════════════════════════════════════════════════════════════
  */
+/**
+ * The freeze's refusal of a Charge delivery, as a constant: {@link chargeDeliveryFault} answers with it,
+ * and the menu withholds a delivery that would land in the freeze with the same words.
+ */
+export const CHARGE_FREEZE_REFUSAL =
+  'the freeze is on, so nothing may move against a settling obligation until the Reckoning has run. A ' +
+  'Charge is open from the first tick of its Reckoning — there are 286 ticks to deliver in, and the ' +
+  'refusal is here rather than a halt because §5.1 re-reads the balances the settlement was computed from.';
+
 export function chargeDeliveryFault(args: {
   readonly world: WorldState;
   readonly deliverer: PrincipalId;
@@ -307,13 +316,7 @@ export function chargeDeliveryFault(args: {
   /** Unpledged units of {@link CHARGE_GOOD} standing **at the claimed system**. */
   readonly available: Qty;
 }): string | null {
-  if (inFreeze(args.tick) || isSettlementTick(args.tick)) {
-    return (
-      'the freeze is on, so nothing may move against a settling obligation until the Reckoning has run. A ' +
-      'Charge is open from the first tick of its Reckoning — there are 286 ticks to deliver in, and the ' +
-      'refusal is here rather than a halt because §5.1 re-reads the balances the settlement was computed from.'
-    );
-  }
+  if (inFreeze(args.tick) || isSettlementTick(args.tick)) return CHARGE_FREEZE_REFUSAL;
   if (args.claim.state === 'LAPSED' || args.claim.state === 'CEDED') {
     return `the claim on ${args.claim.system} has already ${args.claim.state === 'LAPSED' ? 'lapsed' : 'been ceded'}; there is nothing left to supply.`;
   }

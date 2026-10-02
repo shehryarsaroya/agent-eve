@@ -534,9 +534,18 @@ export const CONTRACT_MULTI_MEANING_VERBS: readonly {
   },
   {
     verb: 'set_delivery_intent',
-    acts: ['set_delivery_intent{LEVY}'],
+    acts: [
+      'set_delivery_intent{LEVY}',
+      'set_delivery_intent{CHARGE}',
+      'set_delivery_intent (a standing refine)',
+      'set_delivery_intent (a stop)',
+    ],
     gate: 'VERB_GATED',
-    because: 'one obligation is offered today, and its only home is §5’s Levy block, which is FLOOR.',
+    because:
+      '`RULES_VERSION` 41 gave it four shapes — a Levy order, a Charge order, a standing refine, and ' +
+      '`{"stop": id}` — and every one carries its whole rule in its own affordance text, because the ' +
+      'one block that documents all four, §9’s `### Standing intents`, sits in a section an in-process ' +
+      'member is never shown (it is never offline). §5’s Levy block stays the FLOOR home for the verb.',
   },
   {
     verb: 'message',
@@ -623,7 +632,7 @@ export function actTokensOf(verb: string, params: unknown): readonly string[] {
  * Getting this wrong is worse than the ceiling was: an agent that acts without a rule it
  * needed is refused for something it was never told, and a refusal costs it a real action out
  * of four (AGT-S2). So the rule that matters is **not** in any individual predicate, where one
- * of sixty-four could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
+ * of sixty-six could be forgotten. It is in {@link unitGrade}: *a unit one of whose `verbs`
  * is offered in `affordances[]` is graded `RULES`, before any predicate is consulted, and
  * `RULES` is never dropped for any reason including length.*
  *
@@ -723,6 +732,17 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
     verbs: ['elect'],
     wanted: (s) => s.inVenture,
     because: 'you owe no elective half you can pay right now',
+  },
+  {
+    // ★ `RULES_VERSION` 41: the creator's create is its countersignature, and every filler still signs
+    // for itself on the next tick. Gated on the two acts that need it — the creator is told the same
+    // rule in its `create` affordance's own words (`CREATE_IS_COUNTERSIGNATURE`), so a member offered
+    // only `create` pays nothing here.
+    section: S4,
+    block: '### Who has to sign — and why your own `create` is enough',
+    verbs: ['sign', 'fill_role'],
+    wanted: (s) => s.inVenture,
+    because: 'neither `sign` nor `fill_role` is offered to you this wake, so there is no signature to give',
   },
   {
     section: S4,
@@ -915,6 +935,16 @@ export const CONTRACT_CATALOG: readonly ContractUnit[] = Object.freeze([
   //    and it is the one that most needs to read this.
   { section: S11A, block: null, floor: true, verbs: [], because: 'floor' },
   { section: S11A, block: '### A place yields; you do not', floor: true, verbs: [], because: 'floor' },
+  {
+    // ★ `RULES_VERSION` 41. An in-process member never goes DORMANT itself, but the rule decides what
+    // ground is worth to it: a neighbour that stops playing stops dividing its yield. `wanted` on the
+    // population that works ground, like the rent block below.
+    section: S11A,
+    block: '### A WORKS only works while you play — DORMANT',
+    verbs: [],
+    wanted: (s) => s.holdsWorks || s.canBuildWorks,
+    because: 'you hold no WORKS and cannot raise one right now',
+  },
   {
     section: S11A,
     block: '### Who owns the ground, and the good only the Frontier makes',
@@ -1680,7 +1710,7 @@ export const NO_SITUATION: ContractSituation = Object.freeze({
  * **WHY POSITIONS AND NOT 2^n OVER THE UNITS.**
  *
  * At `##` granularity there were three conditionals, so eight reachable excerpts and exhaustion
- * was free. At `###` granularity there are sixty-four: 2^55 is not enumerable, and it
+ * was free. At `###` granularity there are sixty-six: 2^55 is not enumerable, and it
  * would be the wrong space anyway. Most of those combinations are not reachable — that is what
  * bit the `##` version, whose worst "combination" included §11 *and* the whole of §11B, a pair
  * no principal can be in.
@@ -2420,7 +2450,7 @@ export function readSituation(observation: Readonly<Record<string, unknown>>): C
  * A unit one of whose `verbs` — **or one of whose `acts`** — is offered in `affordances[]` is
  * `RULES`: checked before any per-unit predicate, and `RULES` is never dropped for any reason
  * including length. That ordering is the whole safety argument: an agent is refused for breaking
- * a rule it was given, never for one it was not. There are sixty-four units; put the same rule
+ * a rule it was given, never for one it was not. There are sixty-six units; put the same rule
  * inside each predicate and the forty-fifth will forget it.
  *
  * ── ★ `acts` IS A SECOND DISCRIMINATOR AT THE SAME PRECEDENCE, NOT A WEAKER ONE ──

@@ -468,6 +468,57 @@ describe('THE ACCEPTANCE TEST — enrol, graduate, claim, pay, miss, lapse', () 
     expect(eventsOfKind('charge.arrears').length, 'a claim that paid must never be recorded short').toBe(0);
   });
 
+  it('★ a Charge standing order pays every Reckoning with nobody awake, and reads SATISFIED between bills', async () => {
+    // ══════════════════════════════════════════════════════════════════════
+    // `RULES_VERSION` 41. The Levy has had a standing order since R19 and the Charge had none, so a
+    // claimant paid the same bill by hand every day and an absent one lost the ground. The order is
+    // the same verb carrying the same `deliver`, offered only while a hand stands at the claim.
+    //
+    // MUTATION: drop the CHARGE branch of `Runtime.deliverySatisfaction`. The paid order is run and
+    // refused every tick, `refusals` climbs, a correction posts — RED on both.
+    // ══════════════════════════════════════════════════════════════════════
+    const { who, system } = await enrolAndClaim('quill');
+    const before = await observe(who);
+    expect(
+      affordance(
+        before,
+        'set_delivery_intent',
+        (a) => (a['params'] as Row)['obligation'] === 'CHARGE' && (a['params'] as Row)['system'] === system,
+      ),
+      'with no hand at the claim the order would be refused every tick, so it must not be offered',
+    ).toBeUndefined();
+    await walkAHandTo(who, system);
+    const ready = await observe(who);
+    const due = Number((chargeRows(ready)[0] as Row)['due']);
+    expect(due, 'non-vacuity: a Charge is due').toBeGreaterThan(0);
+    await take(
+      who,
+      ready,
+      'set_delivery_intent',
+      (a) => (a['params'] as Row)['obligation'] === 'CHARGE' && (a['params'] as Row)['system'] === system,
+    );
+
+    // ── SILENCE. The claimant sends nothing from here on. ─────────────────
+    run(10);
+    const paid = chargeRows(await observe(who))[0] as Row;
+    expect(paid['owed'], 'the order paid this Reckoning’s Charge').toBe(0);
+    const order = h.runtime.engine.intents.liveFor(who.principalId as PrincipalId).find((i) => i.verb === 'deliver');
+    expect(order?.runs).toBe(1);
+    expect(order?.satisfied, 'and is satisfied, not refused, once paid').toBeGreaterThan(0);
+    expect(order?.refusals).toBe(0);
+    expect(
+      h.runtime.peekCorrections(who.principalId as PrincipalId).filter((c) => c.verb === 'deliver'),
+    ).toEqual([]);
+
+    // Through the Reckoning and into the next: it pays the next bill too.
+    runToPhase(TICKS_PER_RECKONING - 1);
+    run(12);
+    const byIntent = eventsOfKind('charge.delivered').filter((e) => e.decisionSource === 'INTENT');
+    expect(byIntent.length, 'it paid tonight and it paid tomorrow').toBe(2);
+    expect(h.runtime.sovereignty.liveAt(system as never)?.state).toBe('SUPPLIED');
+    expect(eventsOfKind('charge.arrears').length).toBe(0);
+  }, 300_000);
+
   it('misses one and goes into PUBLIC arrears — and nothing else is taken', async () => {
     // MUTATION: in `settleCharge`, call `book.clearMisses` on the unpaid branch as well. The
     // arrears counter stays 0, the claim stays SUPPLIED, and both the event assertion and the
