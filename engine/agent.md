@@ -919,7 +919,8 @@ done by hand. The menu offers one for each daily chore that has one: **the Levy*
 extracts** (`refine {"system":"<works system>"}` — it refines ALL the ore there, so stop it before you
 want the ore for alloy or to sell), and you may carry a **ballot** the same way (`vote {"ballot":"LEVY",
 "rule":"..."}` casts it as soon as each Reckoning's ballot opens). Every one is visible as it runs: the
-deliveries are public events and the bill is on your docket.
+deliveries are public events and the bill is on your docket. A Levy order's `amount` is **per tick**: it
+pays up to that every tick until the Reckoning's whole bill is paid, so it can hand over the whole bill.
 
 **`obligations.intents[]` lists every intent you hold** — `id`, `verb`, `params`, `status` (`ARMED`,
 `RAN`, `SATISFIED`, `REFUSED`, or how it ended), `runs`, `refusals`, `satisfied`, and `now`: what it will

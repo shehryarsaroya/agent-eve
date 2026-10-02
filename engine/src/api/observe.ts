@@ -4093,15 +4093,20 @@ function affordancesFor(
         until_tick: tick + TICKS_PER_RECKONING * 2,
       },
       cost: 1,
-      // The intent itself risks nothing at creation. What it will hand over each time it runs is
-      // the delivery's own cost, and that is stated rather than hidden inside the total.
-      max_direct_loss: levyQuote.payable,
+      // ── ★ THE BILL, NOT ONE RUN — IT UNDERSTATED THE ORDER 13x ─────────────────────
+      //
+      // This quoted `payable` — what ONE run hands over — and said "each Reckoning". But the order is
+      // due EVERY tick (`IntentBook.due`) and each run pays up to `amount` until the bill is paid, so a
+      // probe's order quoted at 500 paid 6,656 in one Reckoning. The most it can take this Reckoning is
+      // the bill still owed, so that is the figure; the sentence names the per-tick rate beside it.
+      max_direct_loss: levyQuote.owed,
       max_contingent_liability: 0,
       what_it_forecloses:
         `sets a STANDING ORDER to pay the Levy, so it keeps being paid while you are away. Creating ` +
         `it costs one action and every tick it runs after that costs NONE — that is the whole point ` +
         `of an intent, and it is why going offline costs you opportunity rather than your record. It ` +
-        `hands over up to ${String(levyQuote.payable)} of ${LEVY_GOOD} each Reckoning until tick ` +
+        `hands over up to ${String(levyQuote.payable)} of ${LEVY_GOOD} PER TICK until each Reckoning's ` +
+        `whole bill is paid (this one: ${String(levyQuote.owed)} still owed), every Reckoning until tick ` +
         `${String(tick + TICKS_PER_RECKONING * 2)}, and it will keep doing so whether or not you are ` +
         `watching — including when you would rather have spent those goods on something else. Raise ` +
         `\`until_tick\` to cover a longer absence. Sending it again ADDS a second order rather than ` +
