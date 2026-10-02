@@ -2978,8 +2978,9 @@ function affordancesFor(
     // defect one layer up from the engine. So the sentence names the parameter, the contest rule it
     // decides, and the one way it is lost.
     const stakeNote =
-      'You may add "stake": <minor> to outbid a rival for this slot: a contest is resolved by the ' +
-      "creator's stated preference first and by the LARGER STAKE second, never by who asked first. A " +
+      'You may add "stake": <minor> to outbid a rival for this slot: requests landing in the SAME tick ' +
+      "are resolved by the creator's stated preference first and by the LARGER STAKE second, never by " +
+      'arrival — but a slot filled at an earlier tick is held, and no stake reopens it. A ' +
       'stake is escrowed the moment the role is filled, shows up in obligations.exposure.mine, and is ' +
       'FORFEIT to the other parties if you withdraw (§7.3) — it is returned untouched if the window ' +
       'closes unfilled or the creator abandons. It cannot exceed your free balance. Two of the four ' +

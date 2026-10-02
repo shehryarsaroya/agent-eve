@@ -3107,6 +3107,35 @@ export const FILL_REFUSAL_NOTE: Readonly<Record<'LOST_CONTEST' | 'HAND_COMMITTED
   });
 
 /**
+ * ★ The `LOST_CONTEST` note, branched on WHEN the holder filled the slot — the static sentence said
+ * "in the same tick" for every loss, and `allocation.ts:lostContest` never compares the holder's fill
+ * tick with now. A request against a slot filled at an EARLIER tick met no contest at all: preference
+ * and stake order only requests made in the same tick, and a slot is held from the tick it is filled.
+ * And a winner can be vacated after the losers were labelled (a stake that could not be escrowed, a
+ * grand role re-checked), which leaves the slot OPEN — so "the board is already without it" was false
+ * there too. Read off the role as it stands when the verdict is written; a hint, never an event.
+ */
+export function lostContestNote(
+  holder: { readonly filledByPrincipal: PrincipalId | null; readonly filledAtTick: number | null } | undefined,
+  tick: number,
+): string {
+  if (holder === undefined || holder.filledByPrincipal === null) {
+    return (
+      'The request that took this slot at tick close was itself refused afterwards, so the slot is OPEN ' +
+      'again — it is on the board in your next observation, and a fresh request may take it.'
+    );
+  }
+  if (holder.filledAtTick !== null && holder.filledAtTick < tick) {
+    return (
+      `This slot was already filled at tick ${String(holder.filledAtTick)}, before your request landed: a ` +
+      'slot is held from the tick it is filled, and preference and stake only decide between requests ' +
+      'that land in the SAME tick. The board in your next observation is already without it.'
+    );
+  }
+  return FILL_REFUSAL_NOTE.LOST_CONTEST;
+}
+
+/**
  * What the Levy did in one Reckoning, counted from the settlement's own output.
  *
  * `shortMinor` is `LEVY SHORT` — §14.2's headline, *"a world fact nobody can lower alone,
@@ -11787,7 +11816,11 @@ export class Runtime {
           verb: 'fill_role',
           clientSequence: refused.request.clientSequence,
           invariant: refused.invariant,
-          hint: `${refused.hint} ${FILL_REFUSAL_NOTE[refused.reason]}`,
+          hint: `${refused.hint} ${
+            refused.reason === 'LOST_CONTEST'
+              ? lostContestNote(this.ventures.get(refused.request.venture)?.roles[refused.request.roleIndex], ctx.tick)
+              : FILL_REFUSAL_NOTE[refused.reason]
+          }`,
           params: {
             venture: refused.request.venture,
             role: refused.request.roleIndex,
