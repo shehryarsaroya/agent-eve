@@ -17,7 +17,10 @@
 # host, prove the build first — here by booting it from GENESIS on an empty database, because a
 # new season's rules cannot (and must not) replay the old record — then swap the trees.
 #
-# Usage: ./deploy/new-season-standalone.sh --seed agenteve-season-1 [--cast 20] --yes-end-the-current-world
+# Usage: ./deploy/new-season-standalone.sh --seed agenteve-season-1 [--cast 20] [--seats 1000 --memory-gb 8] --yes-end-the-current-world
+#        --seats sets COMPACT_SEATS; --memory-gb sets the service's MemoryMax and Node's heap limit together,
+#        through a systemd drop-in, because raising seats without memory is an out-of-memory crash mid-season
+#        (docs/design/SCALE-2026-10-01.md: ~1.4 GB at 500 seats, ~2.1 GB at 1,000, ~5.4 GB at 3,000 per season).
 #        add --dry-run to stop after step 4: ship, build, the genesis pre-flight and the table check,
 #        with nothing ended and the live world untouched.
 set -euo pipefail
@@ -36,12 +39,16 @@ KEEP_TABLES=(schema_migration follow_subscription follow_mail_day)
 
 SEED=''
 CAST=''
+SEATS=''
+MEMORY_GB=''
 CONFIRMED=''
 DRY_RUN=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --seed) SEED="${2:-}"; shift 2 ;;
     --cast) CAST="${2:-}"; shift 2 ;;
+    --seats) SEATS="${2:-}"; shift 2 ;;
+    --memory-gb) MEMORY_GB="${2:-}"; shift 2 ;;
     --yes-end-the-current-world) CONFIRMED=yes; shift ;;
     --dry-run) DRY_RUN=yes; shift ;;
     *) echo "unknown argument: $1"; exit 1 ;;
@@ -50,6 +57,9 @@ done
 [ "$CONFIRMED" = yes ] || { echo "refusing without --yes-end-the-current-world: this ends a permanent public record and needs an owner's word"; exit 1; }
 [[ "$SEED" =~ ^[a-z0-9][a-z0-9-]{3,63}$ ]] || { echo "refusing: --seed must be a lowercase name like agenteve-season-1"; exit 1; }
 [ -z "$CAST" ] || [[ "$CAST" =~ ^[0-9]+$ ]] || { echo "refusing: --cast must be a number"; exit 1; }
+[ -z "$SEATS" ] || [[ "$SEATS" =~ ^[0-9]+$ ]] || { echo "refusing: --seats must be a number"; exit 1; }
+[ -z "$MEMORY_GB" ] || [[ "$MEMORY_GB" =~ ^[0-9]+$ ]] || { echo "refusing: --memory-gb must be a whole number"; exit 1; }
+if [ -n "$SEATS" ] && [ -z "$MEMORY_GB" ]; then echo "refusing: --seats needs --memory-gb, so capacity and memory move together"; exit 1; fi
 
 say() { printf '\n== %s\n' "$*"; }
 digest() { shasum -a 256 | cut -c1-64; }
@@ -143,6 +153,7 @@ UPDATES=("COMPACT_SEED=$SEED")
 if [ -n "$CAST" ]; then
   UPDATES+=("COMPACT_CAST=$CAST" "COMPACT_CAST_CALLS_PER_RECKONING=$((CAST * 20))")
 fi
+[ -z "$SEATS" ] || UPDATES+=("COMPACT_SEATS=$SEATS")
 # Values here are validated above and never secret, so they may travel as arguments.
 "${SSH[@]}" "python3 - ${UPDATES[*]}" <<'PY'
 import os, sys
@@ -159,13 +170,17 @@ print('env set:', ', '.join(sorted(updates)), '| any divergence declaration remo
 PY
 
 say "6/7 swap the trees and start the new world"
-"${SSH[@]}" "bash -s -- $STAMP" <<'REMOTE'
+"${SSH[@]}" "bash -s -- $STAMP $MEMORY_GB" <<'REMOTE'
 set -euo pipefail
 stamp="$1"
-if ! cmp -s /opt/agenteve-next/deploy/agenteve.service /etc/systemd/system/agenteve.service; then
-  install -m 0644 /opt/agenteve-next/deploy/agenteve.service /etc/systemd/system/agenteve.service
-  systemctl daemon-reload
+memory_gb="${2:-}"
+if [ -n "$memory_gb" ]; then
+  # Node's default heap limit can sit far below the cgroup cap, so set both; leave headroom for RSS.
+  install -d /etc/systemd/system/agenteve.service.d
+  printf '[Service]\nMemoryMax=%sG\nEnvironment=NODE_OPTIONS=--max-old-space-size=%s\n' "$memory_gb" "$((memory_gb * 1024 * 3 / 4))" > /etc/systemd/system/agenteve.service.d/capacity.conf
 fi
+install -m 0644 /opt/agenteve-next/deploy/agenteve.service /etc/systemd/system/agenteve.service
+systemctl daemon-reload
 mv /opt/agenteve "/opt/agenteve-prev-$stamp"
 mv /opt/agenteve-next /opt/agenteve
 systemctl start agenteve
