@@ -1654,6 +1654,44 @@ export class HeuristicCast {
   }
 
   /**
+   * ★ **WHERE THIS MEMBER'S HANDS ARE STATIONED — ONE LIST, READ BY EVERY OPTIONAL WALK.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * The places a hand is genuinely needed and must not be walked off by an errand: the Levy's delivery
+   * place, every system this member holds a CLAIM on, and every stage a FIGHT or a join has pledged a
+   * hand to ({@link musteredAt}, `ALL` — a pledged hand can be recalled by a tribute and never by an
+   * errand, which is that function's own rule).
+   *
+   * **Three copies of this list existed and two had lost an entry.** The aimless walk, the alloy errand
+   * and the crew walk each built their own, and the errand's and the crew walk's had dropped the pledge.
+   * Two Season 1 lanes found it independently and each patched both copies: seed `gate-d`, a joined
+   * defence at sys-07 walked to an alloy book on tick 358 and a raid that had read REPULSED for eighteen
+   * ticks resolved PLUNDERED, 10,110 lost; seed `g03`, `p:tolen`'s joined hand at sys-21 walked off on
+   * t358 and the standoff resolved without it. The merge keeps ONE list, so the next entry is added once
+   * and reaches every reader.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * `pledged` is returned beside the set because the alloy errand's carry step asks only about pledges —
+   * a carry that starts at the Levy's delivery place is the errand's normal case, not a hand walked off.
+   * The aimless walk adds its warships' berths on top: a hand standing beside a hull is crew, and
+   * {@link crewMove} is the branch that walks hands TO berths, so the berth cannot be on this list.
+   */
+  private stationedAt(
+    member: CastMember,
+    tick: number,
+  ): { readonly systems: Set<SystemId>; readonly pledged: ReadonlyMap<SystemId, number> } {
+    const systems = new Set<SystemId>();
+    // Permanently, not only while something is outstanding: releasing the hand the moment its tribute is
+    // discharged gives back the tug-of-war in full (see the aimless walk's note in `decideOne`).
+    const owedAt = this.runtime.levyBlockFor(member.principal, tick);
+    if (owedAt !== null) systems.add(owedAt.deliverable_to);
+    for (const claim of this.runtime.sovereignty.claimsOf(member.principal)) systems.add(claim.system);
+    const pledged = this.musteredAt(member, tick);
+    for (const stage of pledged.keys()) systems.add(stage);
+    return { systems, pledged };
+  }
+
+  /**
    * ★ Is a hand of this member standing at, or **on its way to**, `place` — however many gates out?
    *
    * ══════════════════════════════════════════════════════════════════════════
@@ -2450,21 +2488,19 @@ export class HeuristicCast {
     // quiet", and the tribute walk IS that source — the aimless one is what stands in for it. And a
     // hand parked on the delivery berth renders as the tribute line's SOLID state, which says more
     // to a viewer than a hand wandering between two systems.
-    const stationed = new Set<SystemId>();
-    const owedAt = runtime.levyBlockFor(member.principal, tick);
-    // Permanently, not only while something is outstanding. Measured both ways: releasing the hand
-    // the moment its tribute is discharged gives back the tug-of-war in full (venture count 691
-    // against 1,189, defaults 66 against 33) because the obligation returns every Reckoning and the
-    // walk has all of the ticks in between to carry the hand out of reach again.
-    if (owedAt !== null) stationed.add(owedAt.deliverable_to);
-    for (const claim of runtime.sovereignty.claimsOf(member.principal)) stationed.add(claim.system);
+    //
+    // The Levy's delivery place permanently, not only while something is outstanding — measured both
+    // ways: releasing the hand the moment its tribute is discharged gives back the tug-of-war in full
+    // (venture count 691 against 1,189, defaults 66 against 33), because the obligation returns every
+    // Reckoning and the walk has all of the ticks in between to carry the hand out of reach again. Every
+    // claim, and every stage this member has answered FIGHT at or joined, for the whole window: the force
+    // reading is taken again at resolution, so a hand that wanders off during it un-answers the raid.
+    // That list is {@link stationedAt}, the one every optional walk reads.
+    const stationed = this.stationedAt(member, tick).systems;
     // And a hand standing beside a warship of yours is **crew**, for the same reason with a sharper
     // edge: a hull does not travel, so the only place its hand is any use is the berth. The aimless
     // walk was measured carrying the crew away — see {@link crewMove}.
     for (const hull of runtime.fleet.readyOrBusyOf(member.principal)) stationed.add(hull.location);
-    // And a stage this member has answered FIGHT at, for the whole window: the force reading is taken
-    // again at resolution, so a hand that wanders off during it un-answers the raid.
-    for (const stage of this.musteredAt(member, tick).keys()) stationed.add(stage);
     const roamers = idle.filter((h) => !stationed.has(h.location));
     if (roamers.length > 0) {
       const hand = roamers[rng.int(roamers.length)];
@@ -3238,17 +3274,13 @@ export class HeuristicCast {
     if (runtime.alloyAt(member.principal, body) >= want) return null;
 
     const hands = handsOf(runtime.world, member.principal);
-    // ── ★ A HAND PLEDGED TO A STANDOFF IS NOT THIS ERRAND'S TO SEND ({@link musteredAt}, `ALL`) ──────
+    // ── ★ A HAND PLEDGED TO A STANDOFF IS NOT THIS ERRAND'S TO SEND ({@link stationedAt}) ──────────
     //
-    // This branch and {@link crewMove} each keep a copy of the aimless walk's "stationed" list, and both
-    // copies had lost its last entry — the stages this member has answered FIGHT at or joined. Measured on
-    // seed `gate-d` once `RULES_VERSION` 41 moved that world's trajectory: `p:varrow` joined `p:sable`'s
-    // defence at sys-07 on tick 340, sable answered FIGHT on the REPULSED reading that join made, and on
-    // tick 358 STEP 1 below walked the joined hand off toward an alloy book. `readForce` re-reads the stage
-    // at resolution, so a raid that had read REPULSED for eighteen ticks resolved PLUNDERED, 10,110 lost.
     // `musteredAt`'s own rule is that a pledged hand can be recalled by a tribute and never by an errand,
     // and this is an errand — so the pledge stations the hand for STEP 3's carry and STEP 1's walk alike.
-    const pledged = this.musteredAt(member, tick);
+    // `stationedAt` carries the measurement (seed `gate-d`: a joined defence walked to an alloy book, and
+    // a raid that had read REPULSED for eighteen ticks resolved PLUNDERED, 10,110 lost).
+    const { systems: stationed, pledged } = this.stationedAt(member, tick);
 
     // ── STEP 3 FIRST: A CARRY ALREADY UNDER WAY BEATS STARTING ANOTHER ─────────
     //
@@ -3344,14 +3376,10 @@ export class HeuristicCast {
     // ── STEP 1: WALK TOWARD THE NEAREST BOOK THAT HAS ANY ─────────────────────
     //
     // Canonical order over the venues so one seed walks one sequence, and never a hand a world
-    // obligation is standing on — `crewMove` states that rule and this one obeys the same list, for
-    // the same reason: pulling a hand off the Levy's delivery place to go shopping reopens the
-    // tug-of-war that cost the world a fifth of its ventures.
-    const owing = new Set<SystemId>();
-    const owedAt = runtime.levyBlockFor(member.principal, tick);
-    if (owedAt !== null) owing.add(owedAt.deliverable_to);
-    for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
-    for (const stage of pledged.keys()) owing.add(stage);
+    // obligation or a pledge is standing on — {@link stationedAt}, the list `crewMove` and the aimless
+    // walk read too, for the same reason: pulling a hand off the Levy's delivery place to go shopping
+    // reopens the tug-of-war that cost the world a fifth of its ventures.
+    const owing = stationed;
 
     const venues = [
       ...new Set(
@@ -4939,14 +4967,9 @@ export class HeuristicCast {
     const hulls = runtime.fleet.readyOrBusyOf(member.principal);
     if (hulls.length === 0) return null;
 
-    // Where a hand is genuinely needed elsewhere. The same set the aimless walk treats as stationed —
-    // including, as of `RULES_VERSION` 41, the stages a FIGHT or a join has pledged a hand to, which this
-    // copy of the list had lost (see the pledge note in {@link alloyErrandFor} for the measurement).
-    const owing = new Set<SystemId>();
-    const owedAt = runtime.levyBlockFor(member.principal, tick);
-    if (owedAt !== null) owing.add(owedAt.deliverable_to);
-    for (const claim of runtime.sovereignty.claimsOf(member.principal)) owing.add(claim.system);
-    for (const stage of this.musteredAt(member, tick).keys()) owing.add(stage);
+    // Where a hand is genuinely needed elsewhere: {@link stationedAt}, the one list the aimless walk and
+    // the alloy errand read too — pledged stages included, which this copy of the list had once lost.
+    const owing = this.stationedAt(member, tick).systems;
 
     const hands = handsOf(runtime.world, member.principal);
     // Canonical order over the berths, so one seed walks one sequence.
