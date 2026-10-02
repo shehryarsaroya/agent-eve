@@ -27,7 +27,7 @@ import { isLoopback } from './engine/gateway.js';
 import { describeError } from './log.js';
 import { buildServer, toolDescriptor } from './mcp/server.js';
 import { mintSessionId, readSessionId, type SessionFacts } from './mcp/session.js';
-import type { ToolDefinition, ToolDeps } from './mcp/tools.js';
+import { healthFrom, type ToolDefinition, type ToolDeps } from './mcp/tools.js';
 
 export const MAX_MCP_BODY_BYTES = 256 * 1024;
 
@@ -247,7 +247,7 @@ export function createHandler(deps: HttpDeps): (request: Request, peer?: Peer) =
     }
     let engine: number | null = null;
     try {
-      engine = (await deps.cache.get('health', 3_000, () => deps.engine.call({ method: 'GET', path: '/api/health' }))).httpStatus;
+      engine = (await healthFrom(deps.cache, deps.engine)).httpStatus;
     } catch {
       engine = null;
     }

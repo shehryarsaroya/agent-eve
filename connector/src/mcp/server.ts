@@ -22,7 +22,7 @@ import {
 import { z } from 'zod';
 import { inbandAuthResult } from '../auth/challenge.js';
 import type { Config } from '../config.js';
-import type { CallContext, ToolDefinition, ToolDeps } from './tools.js';
+import { rulesFrom, type CallContext, type ToolDefinition, type ToolDeps } from './tools.js';
 
 export const SERVER_INFO = { name: 'agenteve', title: 'Agent Eve', version: '0.1.0' } as const;
 
@@ -86,7 +86,7 @@ export function buildServer(config: Config, deps: ToolDeps, tools: readonly Tool
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     if (request.params.uri !== RULES_URI) throw new McpError(ErrorCode.InvalidParams, `Unknown resource ${request.params.uri}`);
-    const reply = await deps.cache.get('agent.md', 600_000, () => deps.engine.call({ method: 'GET', path: '/api/agent.md' }));
+    const reply = await rulesFrom(deps.cache, deps.engine);
     if (reply.httpStatus !== 200 || typeof reply.body['text'] !== 'string') throw new McpError(ErrorCode.InternalError, 'Rules are unavailable.');
     return { contents: [{ uri: RULES_URI, mimeType: 'text/markdown', text: reply.body['text'] }] };
   });

@@ -74,26 +74,36 @@ export interface ToolDefinition {
   run(args: Record<string, unknown>, ctx: CallContext): Promise<ToolResultValue>;
 }
 
-/** A tiny time-boxed cache for the two engine reads every caller shares: /health and agent.md. */
+/**
+ * A tiny time-boxed cache for the two engine reads every caller shares: /health and agent.md.
+ * Without it every chat user's status check would land in the engine's one loopback rate bucket.
+ * A load that throws is never kept; `keep` decides which answers are (a booting engine's 503 is a
+ * true health answer for three seconds, and no answer at all for ten minutes of rules).
+ */
 export class TtlCache {
   readonly #entries = new Map<string, { readonly until: number; readonly value: Promise<EngineReply> }>();
   constructor(private readonly now: () => number) {}
 
-  get(key: string, ttlMs: number, load: () => Promise<EngineReply>): Promise<EngineReply> {
+  get(key: string, ttlMs: number, load: () => Promise<EngineReply>, keep: (reply: EngineReply) => boolean = () => true): Promise<EngineReply> {
     const hit = this.#entries.get(key);
     if (hit !== undefined && hit.until > this.now()) return hit.value;
     const value = load();
-    this.#entries.set(key, { until: this.now() + ttlMs, value });
-    // A failed or non-200 load is not cached beyond this call.
-    value.then(
-      (reply) => {
-        if (reply.httpStatus >= 500) this.#entries.delete(key);
-      },
-      () => this.#entries.delete(key),
-    );
+    const entry = { until: this.now() + ttlMs, value };
+    this.#entries.set(key, entry);
+    const forget = (): void => {
+      if (this.#entries.get(key) === entry) this.#entries.delete(key);
+    };
+    value.then((reply) => (keep(reply) ? undefined : forget()), forget);
     return value;
   }
 }
+
+const RULES_TTL_MS = 600_000;
+const HEALTH_TTL_MS = 3_000;
+export const rulesFrom = (cache: TtlCache, engine: EngineTransport): Promise<EngineReply> =>
+  cache.get('agent.md', RULES_TTL_MS, () => engine.call({ method: 'GET', path: '/api/agent.md' }), (reply) => reply.httpStatus === 200);
+export const healthFrom = (cache: TtlCache, engine: EngineTransport): Promise<EngineReply> =>
+  cache.get('health', HEALTH_TTL_MS, () => engine.call({ method: 'GET', path: '/api/health' }));
 
 class Refusal extends Error {
   constructor(message: string, readonly extra: Record<string, unknown> = {}) {
@@ -200,8 +210,8 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
     }
   }
 
-  const health = (): Promise<EngineReply> => deps.cache.get('health', 3_000, () => engine.call({ method: 'GET', path: '/api/health' }));
-  const rules = (): Promise<EngineReply> => deps.cache.get('agent.md', 600_000, () => engine.call({ method: 'GET', path: '/api/agent.md' }));
+  const health = (): Promise<EngineReply> => healthFrom(deps.cache, engine);
+  const rules = (): Promise<EngineReply> => rulesFrom(deps.cache, engine);
 
   function account(ctx: CallContext): McpPrincipal {
     // Unreachable for HTTP-challenge clients (the gate answered 401 first); the server turns

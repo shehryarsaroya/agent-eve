@@ -201,7 +201,7 @@ CIMD, which Supabase cannot do (§6).
 ```sh
 cd connector
 npm ci
-npm test                 # 77 tests in 13 files, ~13 s
+npm test                 # 79 tests in 14 files, ~13 s
 npm run typecheck
 npm run build            # dist/main.mjs, dist/migrate.mjs
 ```
@@ -216,7 +216,7 @@ gitignored outputs). Without it, it is skipped with a message.
 | `tokens.test.ts` | Connector tokens: audience, issuer, expiry, `client_id`, anonymous and non-UUID subjects, HS256 refused; session vs connector tokens; remote JWKS over HTTP |
 | `http.test.ts` | Protected resource metadata at both paths; CORS; 405s; body cap; Origin check; 2025-06-18 and 2025-11-25 negotiation; 12 tools each with title, four hints and `securitySchemes`; spectator tools signed out; **401 + resource_metadata for every account tool** (also hidden in a batch); 401 for bad/expired/wrong-audience/session tokens; ChatGPT's in-band prompt via the signed session id; `/account`; `/healthz` loopback-only |
 | `tools.test.ts` | Enrolment with the key sealed first; one agent per account; handle re-pick rules; recovery of a lost enrolment reply; signed observe with bounded quoted text and untouched affordances; **retries and concurrent duplicates act once**; a fully refused batch can be resent; re-send under the same key after no answer; `quote_id`; corrections in the log; wake status; isolation; per-account limits; invalid arguments |
-| `store.test.ts`, `hook.test.ts` | The real migration and every statement on Postgres (PGlite); the Supabase audience hook run in Postgres |
+| `store.test.ts`, `hook.test.ts`, `cache.test.ts` | The real migration and every statement on Postgres (PGlite); the Supabase audience hook run in Postgres; the shared /health and agent.md cache (a booting 503 kept briefly for health, never for the rules) |
 | `crypto.test.ts`, `gateway.test.ts` | Key ids equal the engine's thumbprint; vault AAD binding, tamper detection, rotation, no serialisation; config refusals name variables, never values |
 | `secrets.test.ts` | No master key, gateway secret, agent seed or bearer token in any response or log line of a full session, including poisoned errors |
 | `consent.test.ts`, `consent-dom.test.ts` | The consent page logic against a fake supabase-js (sign-in, code, providers, passwords, auto-approve, approve, deny, expired request, unsafe redirect, switching accounts), and its DOM in jsdom (a hostile client name renders as text; Allow calls approve) |
