@@ -39,16 +39,36 @@ import { TICKS_PER_RECKONING } from '../core/time.js';
 // ── WHERE ────────────────────────────────────────────────────────────────────
 
 /**
- * Hops from the nearest COMMONS system to every system, by breadth-first search over lanes.
+ * Hops from the nearest COMMONS system to every system **of the launch map**, by breadth-first search
+ * over lanes.
  *
  * Hops rather than ticks on purpose — the same choice `SWAY_PER_HOP` makes: a stage must not move
  * when a gate's `transit_ticks` is recalibrated, and "how far from civic law" is a fact about the
  * graph, not about the speed of travel.
+ *
+ * ── ★ AND THE LAUNCH MAP'S GRAPH, NOT THE GROWN ONE (Season 1 merge) ─────────────────────────────
+ *
+ * The region grows (`world/growth.ts`): a qualified population opens a constellation with two COMMONS
+ * systems of its own, hung off a MARCHES anchor by one STRAIT. Counted here, those new COMMONS are new
+ * sources for this search, and if one ever sat closer to a Frontier system than the launch Commons do,
+ * the farthest set — and with it the season's published stage — would move at a Reckoning in the middle
+ * of a season, after every agent had walked toward the stage `header.season.grand` announced from the
+ * season's first tick. SSN-1 re-derives every grand venture's stage from the map each tick, so it would
+ * also halt the world on a stage nobody moved.
+ *
+ * Measured, it does not happen with today's generator — 12 seeds × 8 openings × 4 seasons, the stage
+ * never moved, because an anchor sits on the core side of every bridge and a grown COMMONS is at least
+ * two hops behind it. That is a property of the generator, not a rule anybody wrote down, so the stage is
+ * made a function of the season alone by construction: growth never extends the FRONTIER and a grown
+ * constellation hangs off the map by one bridge, so skipping its systems gives exactly the launch map's
+ * distances for every launch system. `test/season/the-stage-stays-where-it-was-announced.spec.ts` pins it.
  */
 export function hopsFromCommons(map: WorldMap): ReadonlyMap<SystemId, number> {
+  const grown = new Set<SystemId>(map.grown.flatMap((g) => g.systems));
   const dist = new Map<SystemId, number>();
   const queue: SystemId[] = [];
   for (const id of map.systemOrder) {
+    if (grown.has(id)) continue;
     if (tierOf(map, id) === 'COMMONS') {
       dist.set(id, 0);
       queue.push(id);
@@ -60,7 +80,7 @@ export function hopsFromCommons(map: WorldMap): ReadonlyMap<SystemId, number> {
     const here = dist.get(at) ?? 0;
     const lanes = [...(map.systems.get(at)?.lanes ?? [])].sort(cmpStr);
     for (const next of lanes) {
-      if (dist.has(next)) continue;
+      if (dist.has(next) || grown.has(next)) continue;
       dist.set(next, here + 1);
       queue.push(next);
     }
