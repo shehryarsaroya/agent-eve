@@ -2824,6 +2824,12 @@ function affordancesFor(
   //         against the list. The nesting is why the fix it recorded did not hold.
   //         ══════════════════════════════════════════════════════════════════════
   for (const owed of runtime.electivePromisesOwedBy(principal)) {
+    // ★ ONE NUMBER FOR ONE OBLIGATION. This quoted `electiveMinor` — the pinned PRICE, summed — while
+    // `ventures.mine[].my_elective_owed` on the same venture is the BOUND `elect` charges, so a creator
+    // read "You owe 1200" beside 2400. The row now quotes the bound, off the same call the row makes.
+    const venture = runtime.ventures.get(owed.venture);
+    const bound = venture === undefined ? minor(0) : creatorElectiveOf(runtime, venture, principal).owed;
+    if (bound <= 0) continue;
     eligible.push({
       verb: 'message',
       params: { venture: owed.venture, act: 'assure', text: '' },
@@ -2831,7 +2837,8 @@ function affordancesFor(
       max_direct_loss: 0,
       max_contingent_liability: 0,
       what_it_forecloses:
-        `You owe ${String(owed.electiveMinor)} on ${owed.venture} that the engine will NOT take from you — ` +
+        `You owe up to ${String(bound)} on ${owed.venture} (ventures.mine[].my_elective_owed) that the engine ` +
+        'will NOT take from you — ' +
         'the escrowed half executes itself, this half is yours to pay or keep. Saying so here costs no ' +
         'action and binds nothing: the channel is private to the parties while the deal runs and becomes ' +
         'PUBLIC at settlement, printed beside what you actually did. An assurance you kept is the ' +

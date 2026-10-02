@@ -13504,7 +13504,9 @@ export class Runtime {
       if (v.creator !== principal || v.resolvedAtTick !== null) continue;
       let owed = 0;
       for (const role of v.roles) {
-        if (role.filledByPrincipal !== null) owed += role.terms.elective;
+        // A role the creator holds itself is booked paid in full and is owed to nobody (scar #9) —
+        // `creatorElective`'s own filter, so the set this returns is the set that owes somebody.
+        if (role.filledByPrincipal !== null && role.filledByPrincipal !== principal) owed += role.terms.elective;
       }
       if (owed > 0) out.push({ venture: v.id, electiveMinor: minor(owed) });
     }
