@@ -2455,12 +2455,15 @@ function affordancesFor(
           continue;
         }
         demandsOffered += 1;
-        // A2: exact arithmetic, not an impression. One hand is force 1; a target that answers
-        // with nothing musters only its terrain; ties go to the defender. So the whole verdict
-        // against a silent target is a comparison of two integers the agent can check.
+        // A2: exact arithmetic, not an impression. A target that answers with nothing musters only
+        // its terrain; ties go to the defender. So the whole verdict against a silent target is a
+        // comparison of two integers the agent can check. ★ "Yours" is the resolver's own raider
+        // term — every IDLE hand of yours standing there, up to your SWAY (`Runtime.demandForceAt`,
+        // read at the tick this lands) — where it used to be the literal 1 whatever stood there.
         const tier = tierOf(world.map, stage);
         const terrain = FORCE_BY_TIER[tier] ?? 0;
-        const aloneWins = 1 > terrain;
+        const yours = runtime.demandForceAt(principal, stage, tick + 1);
+        const aloneWins = yours > terrain;
         eligible.push({
           verb: 'demand',
           // `principal` AND `system`: `demand` is HOSTILE, so the Commons floor refuses it
@@ -2481,9 +2484,10 @@ function affordancesFor(
             `unspent capacity DOES NOT CARRY — what you do not use is gone), locks ` +
             `${String(RAID_JOIN_STAKE_MINOR)} of your stores and puts one IDLE hand in for ` +
             `${String(DEMAND_WINDOW_TICKS)} ticks. A demand brings NO force of its own: all of it is hands, ` +
-            `counted when the window closes. Yours is 1; ${stage} is ${tier}, worth ${String(terrain)} of ` +
+            `counted when the window closes. Yours is ${String(yours)} as it stands — your IDLE hands at ` +
+            `${stage}, up to your SWAY there; ${stage} is ${tier}, worth ${String(terrain)} of ` +
             `terrain to the defender, and ties go to the DEFENDER — so against a target that answers with ` +
-            `nothing you ${aloneWins ? 'TAKE IT ALONE' : 'LOSE ALONE and need one ally on your side'}. If ` +
+            `nothing you ${aloneWins ? 'TAKE IT ALONE' : 'LOSE ALONE: bring more of your own hands there, or an ally'}. If ` +
             `it repulses you, your stake goes to ${other} and your hand goes RECOVERING (never destroyed). ` +
             `Nothing tells you what ${other} actually holds there: guess wrong and the raid finds ballast, ` +
             `takes nothing, and you have paid all of the above for a MISSED.`,

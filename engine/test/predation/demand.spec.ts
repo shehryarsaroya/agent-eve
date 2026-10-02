@@ -193,10 +193,30 @@ describe('demand is REACHABLE — the affordance and the verb are one gate', () 
     expect(offer.max_direct_loss).toBe(RAID_JOIN_STAKE_MINOR);
     expect(offer.what_it_forecloses).toContain('DOES NOT CARRY');
     expect(offer.what_it_forecloses).toContain(String(AGGRESSION_PER_RECKONING));
-    // The MARCHES verdict for one hand, stated rather than left to be derived: terrain 1 beats
-    // force 1 on a tie, and ties go to the defender.
-    expect(offer.what_it_forecloses).toContain('LOSE ALONE');
+    // ★ "Yours" is the resolver's raider term — every IDLE hand standing at the stage, up to SWAY
+    // (`Runtime.demandForceAt`) — and this fixture seats all three of the raider's hands on its own
+    // stage, SWAY 3: force 3 against terrain 1. This line used to assert 'LOSE ALONE', pinned against
+    // a forecast that said "Yours is 1" whatever stood there — the engine would have PLUNDERED.
+    expect(offer.what_it_forecloses).toContain('Yours is 3');
+    expect(offer.what_it_forecloses).toContain('TAKE IT ALONE');
     expect(offer.what_it_forecloses).toContain('ties go to the DEFENDER');
+  });
+
+  it('★ with ONE hand at the stage the MARCHES verdict is LOSE ALONE: terrain 1 holds a tie', () => {
+    // The verdict the old line asserted, in the state where it is true. Mutation: restoring the
+    // literal `1 > terrain` passes this and fails the line above; a count that ignored SWAY or the
+    // hand's state would fail here.
+    const { runtime, raider, stage } = demandWorld('demand-priced-one');
+    const idle = [...runtime.world.hands.values()].filter(
+      (h) => h.principal === raider && h.state === 'IDLE' && h.location === stage,
+    );
+    const away = [...(runtime.world.map.systems.get(stage)?.lanes ?? [])][0];
+    if (away === undefined || idle.length < 3) throw new Error('fixture');
+    for (const hand of idle.slice(1)) expect(act(runtime, raider, 'move', { hand: hand.id, to: away })).toBeNull();
+    const offer = demandAffordances(runtime, raider)[0];
+    if (offer === undefined) throw new Error('one idle hand still stands there, so a demand is offered');
+    expect(offer.what_it_forecloses).toContain('Yours is 1');
+    expect(offer.what_it_forecloses).toContain('LOSE ALONE');
   });
 
   it('says so on the FRONTIER, where terrain is 0 and one hand is enough', () => {

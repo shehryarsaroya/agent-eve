@@ -477,6 +477,7 @@ import {
 import {
   Book as RaidBook,
   DEMAND_RULE_STATEMENT,
+  FORCE_PER_HAND,
   MAX_SEIZE_LOTS,
   RAID_DEMAND_QTY,
   RAID_JOIN_STAKE_MINOR,
@@ -16082,6 +16083,18 @@ export class Runtime {
   /** Hands `principal` may project at `system`. The one reading every caller shares. */
   swayFor(principal: PrincipalId, system: SystemId): number {
     return swayAt(this.world.map, this.swaySeatsOf(principal), system);
+  }
+
+  /**
+   * ★ The FORCE a principal's own hands bring to a demand at `stage`, read at `tick` — the resolver's
+   * raider term (`predation/resolve.ts:readForce`), `FORCE_PER_HAND × min(IDLE present hands there, SWAY
+   * there)`, through the same read-only port it resolves with. The `demand` affordance forecast said
+   * "Yours is 1" whatever stood there; one home for the count, so the forecast and the verdict agree.
+   */
+  demandForceAt(principal: PrincipalId, stage: SystemId, tick: number): number {
+    const port = this.predationPort(tick);
+    const hands = port.handsDefending(principal, stage).length;
+    return FORCE_PER_HAND * Math.max(0, Math.min(hands, this.swayFor(principal, stage)));
   }
 
   /**
