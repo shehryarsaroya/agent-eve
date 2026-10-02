@@ -158,19 +158,64 @@
  *     has answered the first. It spends one of {@link PARLEYS_PER_RECKONING}, which is zero unless the
  *     sender is entitled, and which **expires unspent** at the Reckoning boundary exactly as before.
  *   - **A CEILING** of {@link MAX_PARLEYS_SENT_PER_RECKONING} sends of either kind per Reckoning, which
- *     is INV-26's bound on the book: two principals answering each other turn by turn could otherwise
- *     fill the shared 512-row book in a day and evict everybody else's mail.
+ *     is INV-26's bound on the book: it is per SENDER, so it is also what makes the book's size a
+ *     function of the population rather than of the world's age (§5).
  *
  * **A15 is unchanged, and the argument is the structural one the first version already made for
  * replies.** A free identity's answer capacity is zero until another principal spends its own priced
  * opening on it, so N enrolments buy N × 0, and a turn-by-turn conversation is bounded by the side
  * that paid to open it. The opening price — the only thing a Sybil would want — has not moved.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ## 5. ★ THE BOOK ROLLS: A LETTER LEAVES IT ONCE EVERY WINDOW THAT READS IT HAS PASSED
+ *
+ * **The book held 512 letters for the WORLD'S WHOLE LIFE, and the 513th was refused.** It was a
+ * `Ring` whose eviction the gate could not allow (§4's counts are read off it, so evicting a row
+ * inside a window would hand a busy world free openings and free answers) and so it refused once
+ * full instead. 512 letters is two days of twelve characters talking, or one morning of a launch with
+ * a few hundred agents — after which nobody in the world could address anybody, for ever, and every
+ * refusal said only *"the declared cap"*. Found by the Season 1 scale and contact lanes, both of
+ * which flagged it rather than fixed it because the refusal was load-bearing for A15.
+ *
+ * **The fix keeps every reason the book exists and drops only the letters no reason reads.** Every
+ * reader of the book is windowed, and the windows are few and short:
+ *
+ *   - the opening count, the sends ceiling and the received count — the Reckoning a letter was sent in;
+ *   - the answer-once rule and the REPLY rung — {@link PARLEY_ANSWER_WINDOW_TICKS} from sending;
+ *   - the map's thread (`Runtime.parleyLines`) — {@link PARLEY_THREAD_TICKS} from publication;
+ *   - a correspondent's line in `counterparties[]` — whatever is still in the book, by definition.
+ *
+ * {@link parleyLastReadTick} is the latest of the first three for one letter, and `EXPIRE` — the phase
+ * whose note is *"retire what timed out before anything can lock it"* — drops every letter whose last
+ * reading tick has passed ({@link ParleyBook.retire}). Inside the hash and inside the abort path, like
+ * the intent prune that phase already runs. Nothing is lost: the `say.parley` row is the permanent
+ * record, PUBLIC from `revealsAtTick`, and the receipt reel reads the record.
+ *
+ * **And the cap is now a population book, not a lifetime one** (`test/core/capacity.spec.ts`). A
+ * sender's letters still in the book were all sent inside one {@link PARLEY_RETAINED_TICKS}-tick
+ * stretch, which touches at most {@link PARLEY_RECKONINGS_RETAINED} Reckonings, each capped at the
+ * per-sender ceiling — so no principal ever has more than {@link PARLEYS_RETAINED_PER_PRINCIPAL} rows
+ * in it, and {@link MAX_PARLEY_ENTRIES} is that times `MAX_PRINCIPALS`. The refusal stays, as INV-26's
+ * tripwire, and it cannot fire on legitimate play below the world's ceiling: a principal that has sent
+ * a letter has played, so its seat outlives the stretch its letters are kept for.
+ *
+ * **What A15 needed from the old refusal, it still has.** No count is ever taken over a row that has
+ * left the book, because a row leaves only after the last tick any count could read it at — so the
+ * openings, the answers and the ceiling bind exactly as before, which
+ * `test/say/the-book-rolls.spec.ts` checks over a world that sends far more than 512 letters.
+ *
+ * **Indexed by principal, because the book can now be large.** Every count above reads ONE principal's
+ * rows, so {@link ParleyPort.mailOf} hands over exactly the rows a principal sent or received, in book
+ * order: an observation costs O(its own mail), never O(the world's mail), which is the shape the scale
+ * lane removed the O(P²) burst for. The pure functions below take any such list — the whole book or one
+ * principal's mail give the same answer, because each of them filters to that principal's rows first.
  */
 
 import { readString } from '../core/params.js';
-import { TICKS_PER_RECKONING } from '../core/time.js';
+import { MAX_PRINCIPALS, TICKS_PER_RECKONING } from '../core/time.js';
 import type { PrincipalId } from '../core/types.js';
 import { minor, type Minor } from '../core/units.js';
+import { AUDIT_LAG_TICKS } from '../grant/dossier.js';
 import { reject, type Rejection, type WorldResult } from '../world/result.js';
 import {
   PARLEY_CONSTELLATION_MIN_COUNTERPARTIES,
@@ -254,17 +299,6 @@ export const PARLEYS_PER_RECKONING = 3;
 export const MAX_PARLEY_LENGTH = 480;
 
 /**
- * Total cap on the parley book (INV-26).
- *
- * A bound, not a clock. `MAX_TALK_ENTRIES` is 512 for a channel every venture in the world shares;
- * this is the same order for the same reason, and the ring evicts oldest-first rather than refusing —
- * which is acceptable here and is *not* acceptable for a dossier, because a parley's evidentiary role
- * is the receipt reel (best-effort, and already ring-bounded for MESSAGEs) rather than a disclosure
- * somebody's record depends on.
- */
-export const MAX_PARLEY_ENTRIES = 512;
-
-/**
  * ★ How long a letter stays answerable, in ticks. *(calibrate)*
  *
  * **One Reckoning-length, rolling — never cut at the boundary.** §4's second defect: a per-Reckoning
@@ -278,12 +312,71 @@ export const PARLEY_ANSWER_WINDOW_TICKS = TICKS_PER_RECKONING;
  * ★ The ceiling on parleys one principal may SEND per Reckoning, answers and openings together
  * (INV-26). *(calibrate)*
  *
- * Twelve: three openings plus nine answers, which is a reply on most of a member's sixteen wakes. The
- * bound it protects is the book, not the conversation — `MAX_PARLEY_ENTRIES` is shared by the whole
- * world, and two principals answering each other every tick would otherwise turn it over within a
- * Reckoning and evict every other letter, including the ones still waiting on an answer.
+ * Twelve: three openings plus nine answers, which is a reply on most of a member's sixteen wakes. It is
+ * a bound per SENDER, which is what makes the book's size a function of how many principals there are
+ * rather than of how long the world has run (§5): two principals answering each other every tick can
+ * fill only their own share of it, never anybody else's.
  */
 export const MAX_PARLEYS_SENT_PER_RECKONING = 12;
+
+/**
+ * ★ How long a published letter stays on the map's thread (`Runtime.parleyLines`), in ticks from its
+ * reveal: one Reckoning-length, so the frame a Reckoning closes on carries every letter that
+ * declassified over it. One constant for the frame's window and the book's retention (§5), so the
+ * thread can never ask for a letter the book has let go.
+ */
+export const PARLEY_THREAD_TICKS = TICKS_PER_RECKONING;
+
+/**
+ * ★ The last tick at which anything reads this letter off the book (§5), and so the last tick it is kept.
+ *
+ * The latest of the three windows the book serves: the Reckoning it was sent in (the opening count, the
+ * sends ceiling, the received count), the answer window from its sending (the answer-once rule and the
+ * REPLY rung), and the map's thread from its reveal. Derived from the letter's own two ticks, so it is
+ * correct whatever the clock constants are; `test/say/the-book-rolls.spec.ts` checks each window against
+ * it rather than this sentence.
+ */
+export function parleyLastReadTick(entry: Pick<ParleyEntry, 'tick' | 'revealsAtTick'>): number {
+  const lastOfItsReckoning = entry.tick - (entry.tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING - 1;
+  return Math.max(
+    lastOfItsReckoning,
+    entry.tick + PARLEY_ANSWER_WINDOW_TICKS,
+    entry.revealsAtTick + PARLEY_THREAD_TICKS,
+  );
+}
+
+/**
+ * ★ The most ticks after its sending that any letter stays in the book: {@link parleyLastReadTick} for a
+ * letter that reveals `AUDIT_LAG_TICKS` after it was sent, which is every letter `parley` writes.
+ */
+export const PARLEY_RETAINED_TICKS = Math.max(
+  TICKS_PER_RECKONING - 1,
+  PARLEY_ANSWER_WINDOW_TICKS,
+  AUDIT_LAG_TICKS + PARLEY_THREAD_TICKS,
+);
+
+/**
+ * ★ How many Reckonings one sender's letters still in the book can have been sent in: the most that any
+ * run of `PARLEY_RETAINED_TICKS + 1` consecutive ticks touches. Three today — the stretch is 293 ticks,
+ * five more than a Reckoning, so it can catch the tail of one, the whole of the next and the head of a
+ * third.
+ */
+export const PARLEY_RECKONINGS_RETAINED = Math.floor((PARLEY_RETAINED_TICKS - 1) / TICKS_PER_RECKONING) + 2;
+
+/** ★ The most rows one principal's SENT letters can occupy in the book: the ceiling, per Reckoning kept. */
+export const PARLEYS_RETAINED_PER_PRINCIPAL = MAX_PARLEYS_SENT_PER_RECKONING * PARLEY_RECKONINGS_RETAINED;
+
+/**
+ * Total cap on the parley book (INV-26) — ★ **a population book, never a lifetime total** (§5).
+ *
+ * It used to be a flat 512 that the gate refused past, so the 513th parley of the world's life was the
+ * last one anybody could send. Now a letter leaves the book once every window that reads it has passed
+ * ({@link ParleyBook.retire}), no principal ever holds more than {@link PARLEYS_RETAINED_PER_PRINCIPAL}
+ * rows, and this is that figure for every principal the world can hold — so the refusal is INV-26's
+ * tripwire rather than a rationing rule, and it cannot fire on legitimate play below `MAX_PRINCIPALS`.
+ * No row is preallocated: a world where nobody talks holds none.
+ */
+export const MAX_PARLEY_ENTRIES = PARLEYS_RETAINED_PER_PRINCIPAL * MAX_PRINCIPALS;
 
 /** Unanswered letters `header.parley.awaiting_reply` quotes in full. The rest are counted. */
 export const MAX_AWAITING_SHOWN = 4;
@@ -351,6 +444,129 @@ export interface ParleyEntitlement {
    * Monotone within a Reckoning: it only ever rises.
    */
   readonly inboundParleys: number;
+}
+
+const NO_MAIL: readonly ParleyEntry[] = Object.freeze([]);
+
+/**
+ * ★ THE PARLEY BOOK (§5) — every letter some window can still read, in book order, indexed by principal.
+ *
+ * Replaces a 512-row `Ring` that refused the 513th letter of the world's life. Three operations change
+ * it and each keeps the one property every count depends on — **the rows are the book's own sequence**
+ * (`owesAnswer` reads insertion order, never ticks, to decide which letter is "the latest"):
+ *
+ *   - {@link push} appends, and refuses past {@link MAX_PARLEY_ENTRIES} — a tripwire the gate asks
+ *     about first, so reaching it here is a bug and it says so loudly rather than evicting a row a
+ *     count reads;
+ *   - {@link retire} drops the letters whose {@link parleyLastReadTick} has passed. Called from
+ *     `EXPIRE`, so it is inside the hash and the abort path. Letters are sent in tick order and every
+ *     one is retained for the same span, so the retired rows are always a PREFIX of the book — and of
+ *     every principal's mail, which is in book order too;
+ *   - {@link restore} replaces the contents from a capture and rebuilds the index, which is derived.
+ *
+ * {@link mailOf} is the reason for the index: every count is about one principal, so a reader walks
+ * that principal's rows and never the world's.
+ */
+export class ParleyBook {
+  private readonly rows: ParleyEntry[] = [];
+  private readonly mail = new Map<PrincipalId, ParleyEntry[]>();
+  private dropped = 0;
+
+  constructor(private readonly cap: number = MAX_PARLEY_ENTRIES) {}
+
+  /** Every letter still in the book, oldest first. */
+  get all(): readonly ParleyEntry[] {
+    return this.rows;
+  }
+
+  get size(): number {
+    return this.rows.length;
+  }
+
+  /** Letters that have left the book since the world began — retired, never evicted. The meter. */
+  get droppedCount(): number {
+    return this.dropped;
+  }
+
+  /** The letters this principal sent or received that are still in the book, oldest first. */
+  mailOf(principal: PrincipalId): readonly ParleyEntry[] {
+    return this.mail.get(principal) ?? NO_MAIL;
+  }
+
+  push(entry: ParleyEntry): void {
+    if (this.rows.length >= this.cap) {
+      throw new Error(
+        `the parley book is at its cap of ${String(this.cap)} rows; the gate refuses before this, so a push ` +
+          'here is a bug — evicting a row a count still reads would hand out free openings (A15)',
+      );
+    }
+    this.rows.push(entry);
+    this.index(entry);
+  }
+
+  /**
+   * Drop every letter whose last reading tick is before `tick`. Returns how many left.
+   *
+   * Walks from the front and stops at the first letter still read, so the cost is the letters retired
+   * plus one. A letter cannot be read past {@link parleyLastReadTick}, and every reader of the book is
+   * one of the windows that function takes the latest of, so no count changes by a row leaving.
+   */
+  retire(tick: number): number {
+    let n = 0;
+    for (const entry of this.rows) {
+      if (parleyLastReadTick(entry) >= tick) break;
+      n += 1;
+    }
+    if (n === 0) return 0;
+    const gone = this.rows.splice(0, n);
+    // Each principal's mail is in book order, so its retired rows are a prefix of it too: count, then
+    // cut once, rather than shifting a popular principal's mail one letter at a time.
+    const cut = new Map<PrincipalId, number>();
+    for (const entry of gone) {
+      cut.set(entry.from, (cut.get(entry.from) ?? 0) + 1);
+      if (entry.to !== entry.from) cut.set(entry.to, (cut.get(entry.to) ?? 0) + 1);
+    }
+    for (const [principal, count] of cut) {
+      const list = this.mail.get(principal);
+      if (list === undefined) continue;
+      list.splice(0, count);
+      if (list.length === 0) this.mail.delete(principal);
+    }
+    this.dropped += n;
+    return n;
+  }
+
+  /**
+   * Replace the contents with a captured state — the inverse of reading {@link all} and
+   * {@link droppedCount}. Refuses a capture larger than the cap, because a restore must never produce a
+   * state `push` could not.
+   */
+  restore(items: readonly ParleyEntry[], dropped: number): void {
+    if (items.length > this.cap) {
+      throw new Error(`a parley book of cap ${String(this.cap)} cannot hold the ${String(items.length)} captured rows`);
+    }
+    this.rows.length = 0;
+    this.mail.clear();
+    for (const entry of items) {
+      this.rows.push(entry);
+      this.index(entry);
+    }
+    this.dropped = dropped;
+  }
+
+  private index(entry: ParleyEntry): void {
+    this.mailFor(entry.from).push(entry);
+    if (entry.to !== entry.from) this.mailFor(entry.to).push(entry);
+  }
+
+  private mailFor(principal: PrincipalId): ParleyEntry[] {
+    let list = this.mail.get(principal);
+    if (list === undefined) {
+      list = [];
+      this.mail.set(principal, list);
+    }
+    return list;
+  }
 }
 
 /**
@@ -459,6 +675,10 @@ export function parleyOpeningsFor(entitlement: ParleyEntitlement): number {
  * two letters landing in the same tick are applied in `(priority, principal_id, client_sequence)`
  * order, and comparing ticks would call both of them "at once" and let each side answer the other
  * for free forever inside one tick.
+ *
+ * `entries` is the book or `from`'s mail ({@link ParleyBook.mailOf}) — the same answer either way,
+ * because only rows between the two of them are read and the mail keeps the book's order. The same is
+ * true of every count below that names one principal.
  */
 export function owesAnswer(
   entries: readonly ParleyEntry[],
@@ -606,9 +826,9 @@ export function parleyNote(counts: ParleyCounts, entitlement: ParleyEntitlement)
   if (counts.sendsRemaining === 0) {
     return (
       `You have sent ${String(MAX_PARLEYS_SENT_PER_RECKONING)} parleys this Reckoning, which is the ceiling on ` +
-      'answers and openings together. It refreshes at the next Reckoning. The book every principal shares holds ' +
-      `${String(MAX_PARLEY_ENTRIES)} letters, and the ceiling is what stops two correspondents filling it. A ` +
-      'MESSAGE inside a venture you already share is free and unrationed.'
+      'answers and openings together. It refreshes at the next Reckoning. The ceiling is per sender, so no ' +
+      'correspondent can crowd anybody else\'s letters out of the book every principal shares. A MESSAGE ' +
+      'inside a venture you already share is free and unrationed.'
     );
   }
   if (!isEntitledToOpen(entitlement)) {
@@ -781,8 +1001,12 @@ export interface ParleyPort {
    * three.
    */
   readonly entitlement: (principal: PrincipalId) => ParleyEntitlement;
-  /** ★ The book itself, oldest first. Answers and openings are both counted off it (§4). */
-  readonly entries: () => readonly ParleyEntry[];
+  /**
+   * ★ The book's rows this principal sent or received, oldest first ({@link ParleyBook.mailOf}).
+   * Answers and openings are both counted off it (§4), and every count is about one principal, so the
+   * port hands over exactly those rows: O(its own mail), never O(the world's) (§5).
+   */
+  readonly mailOf: (principal: PrincipalId) => readonly ParleyEntry[];
   readonly reckoningOf: (tick: number) => number;
   readonly isSeated: (principal: PrincipalId) => boolean;
   readonly bookSize: () => number;
@@ -811,7 +1035,7 @@ export function parleyCapacityFor(
   tick: number,
   clock: ParleyClock,
 ): ParleyCapacity {
-  const entries = port.entries();
+  const entries = port.mailOf(principal);
   const entitlement = port.entitlement(principal);
   const counts = parleyCountsFor(port, principal, tick);
   const waiting = lettersAwaitingAnswer(entries, principal, tick);
@@ -881,7 +1105,7 @@ export function parleyRefusal(
   if (!port.isSeated(to)) {
     return reject('A2', `there is no principal ${to} to address; name one that has enrolled and holds a seat.`);
   }
-  const entries = port.entries();
+  const entries = port.mailOf(from);
   const entitlement = port.entitlement(from);
   // Reach is the one expensive read, so it is taken at most once and only where it decides
   // something: an ANSWER needs none of it, and a refusal note needs only its length.
@@ -890,10 +1114,15 @@ export function parleyRefusal(
   const note = (): string => parleyNote(countsWith(port, from, tick, entitlement, reach().length), entitlement);
 
   if (sendsRemaining(entries, from, tick, port.reckoningOf) <= 0) return reject('INV-26', note());
+  // ── INV-26's TRIPWIRE, NOT A RATION (§5) ─────────────────────────────────
+  //
+  // The book is population-sized and rolls, so this cannot fire on legitimate play below the world's
+  // ceiling. It used to be the 513th letter of the world's life, refused for ever.
   if (port.bookSize() >= MAX_PARLEY_ENTRIES) {
     return reject(
       'INV-26',
-      `the parley book holds ${String(MAX_PARLEY_ENTRIES)} entries, which is the declared cap. Nothing was spent.`,
+      `the parley book holds ${String(MAX_PARLEY_ENTRIES)} letters still inside a window, which is its cap for ` +
+        'a world at its ceiling of principals. Nothing was spent; letters leave it as their windows pass.',
     );
   }
   // ── AN ANSWER NEEDS NOTHING MORE ─────────────────────────────────────────
@@ -930,7 +1159,7 @@ function countsWith(
   entitlement: ParleyEntitlement,
   reachable: number,
 ): ParleyCounts {
-  const entries = port.entries();
+  const entries = port.mailOf(principal);
   const openingsPerReckoning = parleyOpeningsFor(entitlement);
   return {
     openingsRemaining: parleysRemaining(entries, principal, tick, port.reckoningOf, openingsPerReckoning),
@@ -987,7 +1216,7 @@ export function parley(
   const refusal = parleyRefusal(port, from, to, tick);
   if (refusal !== null) return refusal;
   // Decided BEFORE the write, against the book as it stands — the bit the opening count is summed over.
-  const answering = owesAnswer(port.entries(), from, to, tick);
+  const answering = owesAnswer(port.mailOf(from), from, to, tick);
   // Non-null: `parleyRefusal` returns a rejection when it is not, and an answer is REPLY-reachable.
   const row = reachTo(port.reach(from), to);
   if (row === null) return reject('A15', `${to} is not reachable.`);

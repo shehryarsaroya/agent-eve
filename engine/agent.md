@@ -394,8 +394,8 @@ letter, and they are priced differently:
   CARRY**: what you do not use this Reckoning is gone, so the real cost of addressing somebody is *the
   other person you could have addressed instead* — pick well. `openings_remaining` is what is left.
 - **A ceiling of 12 sends a Reckoning**, answers and openings together (`sends_remaining_this_reckoning`).
-  The book every principal shares holds 512 letters; the ceiling is what stops two correspondents
-  filling it.
+  It is per sender, so nobody can crowd your letters out. A letter stays in `counterparties[]` for a
+  Reckoning after it publishes; the record keeps it for good.
 
 `parleys_remaining` is the sum you could still send right now: your openings left plus one answer per
 letter waiting, under the ceiling.

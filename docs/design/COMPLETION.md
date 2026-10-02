@@ -65,7 +65,7 @@ was a projection from 20, and it is now measured.*
 
 **Still open, in order:** page the in-memory journal out (the season wall) · consolidate lots (the
 remaining per-tick term, and a raid-balance decision) · bound `postingsFor` by tick · per-constellation
-drama budgets · the parley ring's lifetime refusal (the parley lane's).
+drama budgets. (The parley ring's lifetime refusal is fixed: the book rolls — `say/parley.ts` §5.)
 
 ---
 

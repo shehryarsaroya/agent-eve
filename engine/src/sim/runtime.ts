@@ -201,13 +201,14 @@ import { readInt, readIntOrFault, readList, readString } from '../core/params.js
 import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
 import {
-  MAX_PARLEY_ENTRIES,
   PARLEY_ANSWER_WINDOW_TICKS,
+  PARLEY_THREAD_TICKS,
   lettersAwaitingAnswer,
   parley,
   parleyCapacityFor,
   parleyRefusal,
   parleysVisibleTo,
+  ParleyBook,
   ParleyEntitlementBook,
   type ParleyCapacity,
   type ParleyEntitlement,
@@ -2512,6 +2513,19 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *   - **The contact and season reads share the read epoch** (reach, the parley block, the directory's
  *     ranking, the season block) — scale's `perEpoch` rule, so the burst stays O(P).
  *
+ * ── 41 · THE LAUNCH FIXES — three blockers found on the integrated tree, fixed before any world ran it ──
+ *
+ *   - **The parley book rolls** (`say/parley.ts` §5). It was a 512-row ring that refused the 513th
+ *     letter of the world's life — a launch with a few hundred agents would have gone silent in hours.
+ *     `EXPIRE` now retires a letter once every window that reads it has passed (its Reckoning, the
+ *     answer window, the map's thread), the cap is a population book (`PARLEYS_RETAINED_PER_PRINCIPAL` ×
+ *     `MAX_PRINCIPALS`, a tripwire that cannot fire below the ceiling), and every count reads one
+ *     principal's mail, never the world's. Every per-Reckoning limit binds exactly as before.
+ *
+ * Still a fresh world at genesis, so there is no divergence to accept. The `say` table's shape is
+ * unchanged; a world in which a letter outlives its windows hashes differently from the tick that
+ * letter is retired, and a world in which nobody writes one hashes exactly as before.
+ *
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const RULES_VERSION = 41;
@@ -3948,11 +3962,15 @@ export class Runtime {
   private readonly talk = new Ring<TalkEntry>(MAX_TALK_ENTRIES);
   /**
    * The PARLEY book (§3, `say/parley.ts`) — direct addresses between principals with no shared
-   * venture. A bounded ring, **captured since 41** in the `say` state table beside {@link offers}:
-   * the gate reads it across a Reckoning boundary (the rolling answer window), so a checkpoint must
-   * carry it and an aborted tick must roll it back. `say/capture.ts` carries the argument.
+   * venture. **Captured since 41** in the `say` state table beside {@link offers}: the gate reads it
+   * across a Reckoning boundary (the rolling answer window), so a checkpoint must carry it and an
+   * aborted tick must roll it back. `say/capture.ts` carries the argument.
+   *
+   * ★ **And it ROLLS** (`say/parley.ts` §5): `EXPIRE` retires every letter no window reads any more, the
+   * cap is population-sized, and every reader is handed one principal's mail rather than the world's.
+   * It used to be a 512-row `Ring` that refused the 513th letter of the world's life.
    */
-  private readonly parleys = new Ring<ParleyEntry>(MAX_PARLEY_ENTRIES);
+  private readonly parleys = new ParleyBook();
   /**
    * The per-Reckoning high-water mark of every principal's free cash — what makes
    * `parleys_per_reckoning` a figure for the Reckoning rather than for the instant it was read.
@@ -4598,6 +4616,15 @@ export class Runtime {
         // existing slot changes none of them, and this handler draws nothing at all.
         MOVE: (ctx) => {
           this.landCargoNow(ctx);
+        },
+        // ── ★ EXPIRE: THE PARLEY BOOK ROLLS (`say/parley.ts` §5) ─────────────────
+        //
+        // The phase's own note is *"retire what timed out before anything can lock it"*, and a letter no
+        // window reads any more has timed out. Before VALIDATE+LOCK, so a `message` landing this tick is
+        // gated against exactly the letters some window still reads; inside the hash and the abort path,
+        // the way the tick loop's own intent prune in this phase is. Draws nothing, so no sub-stream moves.
+        EXPIRE: (ctx) => {
+          this.parleys.retire(ctx.tick);
         },
         PREDATE: (ctx) => {
           // ── BATTLES BEFORE RAID RESOLUTION, AND THE ORDER IS THE WHOLE COUPLING ──
@@ -11103,7 +11130,8 @@ export class Runtime {
     const here = reckoningIndex(tick);
     const asked = new Set<PrincipalId>();
     let received = 0;
-    for (const entry of this.parleys.all) {
+    const mail = this.parleys.mailOf(principal);
+    for (const entry of mail) {
       if (entry.to !== principal || entry.tick > tick) continue;
       if (tick - entry.tick <= PARLEY_ANSWER_WINDOW_TICKS) asked.add(entry.from);
       if (reckoningIndex(entry.tick) === here) received += 1;
@@ -11111,7 +11139,7 @@ export class Runtime {
     return {
       senders: [...asked].sort(compareIds),
       received,
-      awaiting: lettersAwaitingAnswer(this.parleys.all, principal, tick).length,
+      awaiting: lettersAwaitingAnswer(mail, principal, tick).length,
     };
   }
 
@@ -11132,7 +11160,7 @@ export class Runtime {
     return {
       reach: (principal) => this.reachFor(principal, tick),
       entitlement: (principal) => this.parleyEntitlementOf(principal, tick),
-      entries: () => this.parleys.all,
+      mailOf: (principal) => this.parleys.mailOf(principal),
       reckoningOf: reckoningIndex,
       isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
       bookSize: () => this.parleys.size,
@@ -11155,7 +11183,7 @@ export class Runtime {
    * answer row can say so, and decided by the same predicate the gate uses (`say/parley.ts`).
    */
   owesParleyAnswer(from: PrincipalId, to: PrincipalId, tick: number): boolean {
-    return lettersAwaitingAnswer(this.parleys.all, from, tick).some((letter) => letter.from === to);
+    return lettersAwaitingAnswer(this.parleys.mailOf(from), from, tick).some((letter) => letter.from === to);
   }
 
   /**
@@ -11163,7 +11191,7 @@ export class Runtime {
    * `header.parley.awaiting_reply` quotes the first few of. The reader's own mail (`PARTIES`).
    */
   parleyLettersAwaiting(principal: PrincipalId, tick: number): readonly ParleyEntry[] {
-    return lettersAwaitingAnswer(this.parleys.all, principal, tick);
+    return lettersAwaitingAnswer(this.parleys.mailOf(principal), principal, tick);
   }
 
   /**
@@ -11191,6 +11219,22 @@ export class Runtime {
    */
   parleysVisible(reader: PrincipalId | null, tick: number): readonly ParleyEntry[] {
     return parleysVisibleTo(this.parleys.all, reader, tick);
+  }
+
+  /**
+   * ★ The reader's own mail — every letter it sent or received that is still in the book, oldest first.
+   *
+   * Exactly the rows of {@link parleysVisible} that name the reader, and the only ones
+   * `counterparties[]` reads, so an observation walks its own mail rather than the world's
+   * (`say/parley.ts` §5). `PARTIES` to the reader by construction: it is a party to every row.
+   */
+  parleyMail(principal: PrincipalId): readonly ParleyEntry[] {
+    return this.parleys.mailOf(principal);
+  }
+
+  /** ★ The parley book's two meters: letters in it now, and letters that have left it (`say/parley.ts` §5). */
+  parleyBookSize(): { readonly size: number; readonly dropped: number } {
+    return { size: this.parleys.size, dropped: this.parleys.droppedCount };
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -11319,7 +11363,9 @@ export class Runtime {
     const home = (p: PrincipalId): SystemId | null =>
       this.world.holdingByPrincipal.get(p) === undefined ? null : holdingOf(this.world, p).system;
     return parleysVisibleTo(this.parleys.all, null, tick)
-      .filter((e) => tick - e.revealsAtTick <= TICKS_PER_RECKONING)
+      // `PARLEY_THREAD_TICKS` is also a term of the book's retention (`say/parley.ts` §5), so the thread
+      // can never ask for a letter the book has let go.
+      .filter((e) => tick - e.revealsAtTick <= PARLEY_THREAD_TICKS)
       .slice(-MAX_FRAME_PARLEY_LINES)
       .reverse()
       .map((e) => ({

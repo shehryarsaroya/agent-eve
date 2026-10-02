@@ -140,6 +140,19 @@ const CAPS: Readonly<Record<string, Cap>> = {
   MAX_COVERS: { value: risk.MAX_COVERS, class: 'POPULATION', per: risk.MAX_COVERS_PER_PAYER, why: 'every payer at its own cap; was 512' },
   MAX_INDEMNITIES: { value: risk.MAX_INDEMNITIES, class: 'POPULATION', per: 2 * risk.MAX_COVERS_PER_PAYER, why: 'two rows per cover at most' },
   MAX_BUFFERED_EVENTS: { value: MAX_BUFFERED_EVENTS, class: 'POPULATION', per: EVENTS_PER_PRINCIPAL_PER_TICK, why: 'rows one tick may write; overrunning it THROWS, which is a halt; was 8,192' },
+  // ★ Was FLAGGED: a flat 512 the gate refused past, so the 513th parley of the WORLD'S LIFE was the last.
+  // The book now rolls — `EXPIRE` retires a letter once every window that reads it has passed
+  // (`say/parley.ts` §5) — so a sender's rows in it all fall inside one PARLEY_RETAINED_TICKS stretch,
+  // at most the per-sender ceiling per Reckoning it touches. `test/say/the-book-rolls.spec.ts` checks
+  // the bound and carries a world through far more than 512 letters with every per-Reckoning limit intact.
+  MAX_PARLEY_ENTRIES: {
+    value: parley.MAX_PARLEY_ENTRIES,
+    class: 'POPULATION',
+    per: parley.PARLEYS_RETAINED_PER_PRINCIPAL,
+    why:
+      'letters still inside a window: the ceiling (MAX_PARLEYS_SENT_PER_RECKONING) for each Reckoning one ' +
+      'PARLEY_RETAINED_TICKS stretch touches, per principal; was a flat 512 for the whole life of the world',
+  },
 
   // ── map books: must clear per × MAX_MAP_SYSTEMS ─────────────────────────────
   MAX_CLAIMS: { value: sovereignty.MAX_CLAIMS, class: 'MAP', per: 1, why: 'one claim per system; was the launch map\'s 64' },
@@ -294,16 +307,6 @@ const CAPS: Readonly<Record<string, Cap>> = {
   MAX_LIVE_QUOTES: { value: MAX_LIVE_QUOTES, class: 'HOST', why: 'the unwired `src/observe/` rival\'s quote store; evicts' },
 
   // ── flagged ─────────────────────────────────────────────────────────────────
-  MAX_PARLEY_ENTRIES: {
-    value: parley.MAX_PARLEY_ENTRIES,
-    class: 'FLAGGED',
-    why:
-      'a Ring whose size saturates at its capacity, and `parleyRefusal` refuses once it is full — so the 513th parley ' +
-      'of the WORLD\'S LIFE is refused, and every one after it, at any population. Season 1\'s contact lane bounds the ' +
-      'RATE (MAX_PARLEYS_SENT_PER_RECKONING) and made the book captured world state, not the lifetime; the refusal is ' +
-      'load-bearing for A15, because the opening allowance and the sends ceiling are counted off this book, so letting ' +
-      'the ring evict would hand a busy world free openings. An owner call: a per-principal count or a population-sized book',
-  },
   MAX_FILLS: {
     value: marketBook.MAX_FILLS,
     class: 'FLAGGED',

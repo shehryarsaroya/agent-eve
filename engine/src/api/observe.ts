@@ -5997,7 +5997,11 @@ function counterpartiesFor(
   // message it never actually sent. A9 is untouched: this is the reader's own outbox.
   // ══════════════════════════════════════════════════════════════════════════
   const outbound = new Map<PrincipalId, { readonly count: number; readonly last: ParleyRead }>();
-  for (const entry of runtime.parleysVisible(principal, tick)) {
+  // ★ The reader's own mail, not every letter it may read: the rows below are only ever the ones that
+  // name it, and walking the world's declassified mail to find them made an observation O(the book).
+  // A letter stays in the book until a Reckoning past its reveal (`say/parley.ts` §5), so these counts
+  // are the correspondence still in play; the `say.parley` rows are the permanent record of the rest.
+  for (const entry of runtime.parleyMail(principal)) {
     const read: ParleyRead = {
       act: entry.act,
       text: entry.text,
@@ -6076,6 +6080,9 @@ function counterpartiesFor(
        *
        * A9: this is the reader's own mail, which is the one thing a party sees ahead of the audience.
        * `publishes_at_tick` on each is the tick every agent and every viewer read it together.
+       *
+       * ★ Counted over the letters still in the book — each stays until a Reckoning past its reveal
+       * (`say/parley.ts` §5) — so this is the correspondence in play, never a lifetime total.
        */
       parleys_received: mail?.count ?? 0,
       last_parley: mail?.last ?? null,

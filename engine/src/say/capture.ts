@@ -24,9 +24,11 @@
  * ══════════════════════════════════════════════════════════════════════════
  *
  * **Contents, not counts.** The event ledger captures counts because its rows are immutable and the
- * truncation is an exact inverse; these books are bounded rings (512 and 256) whose eviction is part
- * of the state, so the rows themselves are the only faithful capture. The cost is bounded by the
- * caps, and both are empty in a world where nobody talks.
+ * truncation is an exact inverse; these books are working sets whose membership is part of the state —
+ * the parley book retires a letter once no window reads it (`say/parley.ts` §5) and the offer book is a
+ * 256-row ring — so the rows themselves are the only faithful capture. `parleysDropped` counts the
+ * letters that have left the book. The cost is bounded by the caps, and both are empty in a world where
+ * nobody talks.
  *
  * Parsed strictly, with located errors, for `StandingBook.restore`'s reason: a restore that quietly
  * dropped a malformed letter would silently revoke an answer somebody was owed.
