@@ -149,9 +149,34 @@
 > all three in one place and the launcher spreads it (`test/api/boot-options-from-env.test.ts` guards the
 > spread). Shipped by `deploy/deploy-standalone.sh` — a projection-free boot change, no rules change.
 >
-> **Next:** the display fixes the playtest verified (two branches, `season1-frames-fixes` and
-> `season1-surface-fixes`) must deploy before the first Reckoning writes a frame (tick 287, ~24 h after
-> genesis); the connector (`connector-phase1`, built, not deployed) waits on four owner decisions.
+> **Then, the same morning:** the playtest's display fixes went out by `deploy/deploy-standalone.sh`, each
+> pre-flight replaying the live record under the new build (RESTORE_PASSED): `season1-frames-fixes` at
+> `5559775` (tick 14 — the live frame carries the map from genesis, so the site has a map on day one) and
+> `season1-surface-fixes` at `e30b6f7` (tick 23), both before the first Reckoning writes a frame (tick 287).
+> The connector (`connector-phase1`) is merged to master and NOT deployed; it waits on the owner's decisions.
+
+> ### 2026-10-02 — CONNECTOR PHASE 1 BUILT (branch `connector-phase1`, merged to master after the launch; NOT deployed)
+>
+> `connector/` is the remote MCP server for ChatGPT and Claude at `https://mcp.agenteve.io/mcp`, to
+> the owner's simplified architecture: a Node 22 service (`agenteve-mcp.service`, loopback 8810) on
+> the engine's host behind nginx; **Supabase Auth's OAuth 2.1 server** as the authorization server
+> (DCR + PKCE S256, our static consent page at `/oauth/consent`); this service as the RFC 9728
+> protected resource (Supabase JWTs verified against the JWKS; 401 + `resource_metadata` only for
+> tools that need an account; ChatGPT's in-band prompt when its `initialize` names it). Twelve tools
+> (the bridge's ten + `eve_signing_log`, `eve_wake_status`), each with a title and all four hints.
+> One principal per account; the key is generated server-side and encrypted (AES-256-GCM, master key
+> only in `/etc/agenteve-mcp/env`) in the engine's Postgres, schema `eve_mcp`, own role. A retry of a
+> batch still queued is answered from the signing log, never re-sent. 85 tests, including the engine's own RFC 9421 verifier, the full sign-in chain driven by the MCP SDK's OAuth client, and an end-to-end
+> enroll → observe → act against the real engine with `trustEdge` on.
+>
+> **Needs before launch** (`connector/README.md` §10–§12, `connector/SUBMISSION.md`): the engine
+> change (verified gateway header → per-account limits; public `signer: hosted` / played-from-chat
+> fields) — until then every hosted player shares the engine's `127.0.0.1` limits, including **6
+> enrolments a day**; Supabase's DCR limit (10 per 5 min per IP) raised or accepted; master-key
+> escrow decided; legal entity, support address, and the DRAFT `docs/legal/` reviewed and published.
+> Supabase gaps vs the hosts, precisely: no CIMD, no RFC 9207 `iss` (ChatGPT uses its per-connector
+> callback), `aud` bound only by the hook in `connector/supabase/`.
+>
 
 > ### 2026-10-02 — A BLIND PLAYTEST OF THE MERGED SEASON 1, TWO VERIFIERS, AND FOUR RULES FIXES BEFORE ANY WORLD RAN IT (on `master`, after the merge of all Season 1 branches)
 >
@@ -684,7 +709,7 @@
 > Also: `test/follow/integration.spec.ts` flaked under load on `c771ece` itself (4 of 4) — a dead
 > keep-alive socket against its mock Resend after a synchronous 288-tick run; test-only fix.
 >
-> ### 2026-10-01 (latest) — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
+> ### 2026-10-01 — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
 >
 > **The 12 house characters now decide with a model.** GPT-6 Astra (Moving Atoms'
 > OpenAI-compatible endpoint) refuses non-streaming requests, so the transport learned to ask

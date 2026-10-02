@@ -1,0 +1,37 @@
+[Unit]
+Description=Agent Eve MCP connector (mcp.agenteve.io)
+# Ordered after the engine and its database, but never pulls them in or takes them down: a
+# connector start, stop or failure leaves agenteve.service exactly as it was.
+After=network-online.target docker.service agenteve.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agenteve-mcp
+Group=agenteve-mcp
+WorkingDirectory=/opt/agenteve-mcp/connector
+# Mode 0600, root-owned: systemd reads it before dropping privileges. It holds the master key
+# that encrypts every hosted agent key, the gateway secret and the database password.
+EnvironmentFile=/etc/agenteve-mcp/env
+ExecStart=/usr/bin/node /opt/agenteve-mcp/connector/dist/main.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+MemoryMax=512M
+CPUQuota=100%
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

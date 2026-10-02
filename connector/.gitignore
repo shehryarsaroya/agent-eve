@@ -1,0 +1,4 @@
+dist/
+coverage/
+public/vendor/
+public/oauth/config.js

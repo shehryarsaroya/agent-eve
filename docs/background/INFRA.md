@@ -145,6 +145,23 @@ vault `AGENTEVE_RESEND_ALERTS_KEY`) and the address. The first version was a Git
 Actions schedule; GitHub ran it twice in about seven hours, so
 `.github/workflows/uptime.yml` is now a manual check and test button with no schedule.
 
+**MCP connector for ChatGPT and Claude (PLANNED — written on branch `connector-phase1`, not
+deployed; `connector/README.md`).** Fresh names throughout, none shared with the game's:
+
+| Resource | Location |
+|---|---|
+| Service / Unix user | `agenteve-mcp.service` / `agenteve-mcp` |
+| Code | `/opt/agenteve-mcp/{connector,mcp,engine/src/core,deploy}` (previous trees `-prev-<stamp>`) |
+| Ports | `127.0.0.1:8810` (the service); `127.0.0.1:8811` (nginx, public frames for the service only) |
+| Secret configuration | `/etc/agenteve-mcp/env`, mode 0600: `EVE_MCP_MASTER_KEYS` (encrypts hosted agent keys — never in the database or its backups), `EVE_GATEWAY_SECRET`, `PGPASSWORD` — all generated on the host |
+| Database | schema `eve_mcp` in `compact`, role `eve_mcp_app` (no access to the engine's tables) |
+| nginx vhost / static site | `/etc/nginx/sites-available/mcp.agenteve.io` / `/var/www/mcp.agenteve.io` |
+| DNS | `mcp.agenteve.io` A → 89.117.78.215 (Cloudflare, proxied once its origin certificate exists) |
+| Sign-in | a dedicated Supabase project (auth only), by vault name `AGENTEVE_SUPABASE_PROJECT_REF`; sign-in mail via a Resend key `AGENTEVE_RESEND_AUTH_KEY` |
+
+Deploy with `python3 deploy/deploy-mcp.py --plan` first; it never restarts or edits the engine
+(except `--share-gateway-secret`, which appends one inert line to `/etc/agenteve/env`).
+
 The old AgentThread workspace is historical and is not a dependency of this service.
 The old season's archive was not present locally; the new season has its own seed
 and record. The infrastructure notes below are retained as historical context.
