@@ -1081,7 +1081,7 @@ export interface SyndicateLine {
   readonly treasuryMinor: Minor;
   /** Live offices over the pool — the count of people who could empty it legally today. */
   readonly officeHolders: number;
-  /** `STRONGBOX` · `4 POOLED · 1 CAN SPEND` — the words a viewer reads. */
+  /** `STRONGBOX · 4 MEMBERS · 0 POOLED` · `4 MEMBERS · 120000 POOLED · 1 CAN SPEND` — the words a viewer reads. */
   readonly legend: string;
 }
 

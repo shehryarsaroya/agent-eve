@@ -566,6 +566,10 @@ describe('the crossing is one-way, and the agent is told so in the words it read
     expect(warning).toContain('one-off charge');
     expect(warning).toContain('RECURRING Charge every Reckoning');
     expect(warning, 'and it names where the agent will meet it').toContain('obligations.charge');
+    // ★ The holding and its goods move and the hands do not (`vGraduate` never touches one). The row
+    // said only that the hands "stop being Commons-bound and can go anywhere", and a crossing player
+    // then found its Charge, its demand and its roles all needed a hand it had left behind.
+    expect(warning, 'and that the hands stay where they stand').toContain('Your HANDS do not move with it');
   });
 
   it('refuses a system that is not one lane away, so a body cannot teleport to the Frontier', async () => {

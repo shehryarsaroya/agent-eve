@@ -6,7 +6,55 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-02 (latest) — FOUR SURFACE FIXES FROM THAT PLAYTEST: WHOM THE DEED NAMES, WHAT "DRAWN" MEANS, WHICH END OF THE TICKER IS NEW, AND A MAP FOR THE FIRST DAY (branch `season1-frames-fixes` off `0aafdf6`; merged to master after the launch)
+> ### 2026-10-02 (latest) — THE SURFACE STOPS LYING, THIRTEEN WAYS, AND NOT ONE ACCEPTED ACTION MOVED (branch `season1-surface-fixes` off `0aafdf6`; merged to master after the launch)
+>
+> The SURFACE half of the playtest entry below, plus what two verifier agents found beside it. Still
+> `RULES_VERSION` 41; nothing in a captured table; the set of accepted actions unchanged. **Proof:** `npm run sim
+> -- --seed s{1,2} --ticks 900 --speed instant --cast heuristic --principals 12` on `0aafdf6` and on the branch
+> tip — the per-tick `state_hash` streams are byte-identical (sha256 `b3c04cc5…` for s1, `ba45bcde…` for s2), and so
+> is the stderr summary, `elapsed_ms` aside. `npm run gate0`: tsc 0 · lint 0 · DET-8 and PROP-O3 pass ·
+> **385 files, 4,415 passed, 1 skipped, 0 failed** (505 s; the first run found one more test pinning the
+> cross-tick "same tick" sentence, `test/sim/gate3.test.ts`, fixed and re-run).
+>
+> - **A refusal costs no wake.** `POST /act` paid a wake to solve a fresh `nearest_legal`, so twenty refused
+>   POSTs drained all sixteen. The A4 hole that charge closed stays closed differently: the row is picked from
+>   the menu the agent already HOLDS this tick (`server.ts:held` — its latest wake or its enrol response).
+>   `contract.test.ts`'s wake-charge pin is replaced by three, each mutation-checked.
+> - **`nearest_legal` is the same act or null** (`api/nearest.ts`, both correction paths): the verb plus every
+>   identifying param the refused act named; a refused `create HAUL` no longer comes back as `create DIG`.
+> - **The briefing moves on.** `authorityInUse` read every grant ever issued and the gross spend journal; it now
+>   reads grants live where an act lands, bound ventures still unresolved, draws net of releases, and dossiers cut
+>   under a live grant. A rung above the unelected elective closes with that elective's figure, and a new rung
+>   (and `if_you_do_nothing` clause) names a held role still UNSEALED before the freeze (PROP-D4).
+> - **The menu offers what the engine accepts.** `revoke` (each live grant issued), `apply` (each OPEN house that
+>   would admit you), `approve` (each open proposal not yet approved), capped and the overflow counted; a held
+>   grant's `create`/`elect` in the grantor's name is counted in `withheld` with the call. Presence is read at the
+>   landing tick for the Levy delivery (own, order, carry — `presentAt`, the verbs pass nothing), `haul` and
+>   `market.at`. ⚑ Finding: at the ENROLMENT tick itself there is no Levy row for a correct reason — the
+>   assessment is cut at the next tick's OBLIGE and a delivery from the enrol response is refused for want of one.
+> - **Numbers that could not be what they said:** the Levy order's `max_direct_loss` is the bill still owed (it
+>   pays up to N **per tick**); `obligations.levy` names `rule · quorum_failed · constellation_total · my_weight ·
+>   newcomer_floor · spared` (a separate `LevyBasis`, so `src/observe`'s reference builder and its 14-character
+>   token proof are untouched); the `assure` row quotes the bound `my_elective_owed` shows; the demand forecast
+>   counts `min(idle hands there, SWAY)` through the resolver's port (`Runtime.demandForceAt`); a lost fill says
+>   "same tick" only when it was; `withheld.count` is the sum of every row's own `n` (the PARLEY and no-CAMPAIGN
+>   rows were in `verbs` and never in the count); ABANDONED projects 0; the endowment "of which" is clamped; POOLED
+>   is the treasury; `graduate` says the hands stay behind; `your_standing_here` is `available_here` (HARD RULE 4).
+> - **Docs:** the Levy's HAND is location-bound and its goods are not — the CHARGE is the location-bound one
+>   (`agent.md` §5/§11A, SPEC §5.2, the `deliver` row); `/health` is rate-limited; nothing checks a `quote_id` on
+>   submit (SPEC §12.3, `agent.md` §6/§7 — enforcing it would be a rules change, so it is not done); and the frames
+>   lane's three facts at its ask (`live.json`'s `map` and `map[].straits` until a season's first settlement, every
+>   `ticker` newest first — true once `season1-frames-fixes` merges).
+> - **Prompt pins:** analytic maximum 118,466 → 118,928 (+462, the hunks sum exactly; margin **1,072**); largest
+>   reachable 111,696 → 112,158 (margin 7,842 against 4,000). §0, §9 and §13 changed too and cost no cell.
+>
+> **Not done here, and why:** `market.endowment` publishes `remaining_minor` unclamped, so its own identity
+> `TRANSFERABLE = balance_minor - remaining_minor` reads negative beside a lock — same class as the clamp above,
+> left for a deliberate call because tests pin the field to the ledger counter. The Charge rows read presence at the
+> observation tick (`claim.hand_here`), the same defect class as the Levy's, outside this list. `admit` stays
+> unoffered: an INVITE house keeps no applicant queue, so the menu has nobody to name.
+
+> ### 2026-10-02 — FOUR SURFACE FIXES FROM THAT PLAYTEST: WHOM THE DEED NAMES, WHAT "DRAWN" MEANS, WHICH END OF THE TICKER IS NEW, AND A MAP FOR THE FIRST DAY (branch `season1-frames-fixes` off `0aafdf6`; merged to master after the launch)
 >
 > Four of the SURFACE findings listed under "Verified and NOT fixed here" in the entry below. **Projections only**
 > — frames, the client, the MCP bridge: still `RULES_VERSION` 41, no captured table, no verb, nothing hashed.

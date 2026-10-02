@@ -130,7 +130,10 @@ export interface MandateRead {
 export interface LevyBlock {
   readonly my_assessment: Minor;
   readonly paid: Minor;
-  /** Payable only in goods physically delivered to a named place (§5.2). */
+  /**
+   * Where a hand of the deliverer must STAND to pay (§5.2). The goods are drawn from wherever they
+   * stand — the Levy is location-blind about the lots, unlike the CHARGE, whose goods must be at the claim.
+   */
   readonly deliverable_to: SystemId;
   readonly shortfall_if_unpaid: Minor;
   /** The allocation ballot, while it is open. */
@@ -168,6 +171,32 @@ export interface LevyBlock {
    * freeze" from being the dominant line.
    */
   readonly exposure_peak_this_cycle: Minor;
+}
+
+/**
+ * ★ **WHY THIS BILL IS THIS NUMBER** — the docket's own record, read off the plan that cut it, as the
+ * served observation publishes it beside {@link LevyBlock} (`Runtime.levyBlockFor`).
+ *
+ * A member's bill went 500 → 6,656 → 56,977 → 39,227 across four Reckonings and the block named none
+ * of what moved it, though the plan holds all of it. So: the `rule` that cut this docket (one of the
+ * four the ballot chooses between), `quorum_failed` when that rule is the published fallback because
+ * the ballot did not reach quorum, the `constellation_total` every line sums to (INV-24), `my_weight`
+ * — this line's weight under `rule` in the remainder pool, 0 when it is billed the nominal rate instead
+ * — and the two reasons a line is billed nominally: `newcomer_floor` and `spared` (the constellation's
+ * vote). No member's weight but your own: the others are built from their EXPOSURE, which is published
+ * as a band and never as a number belonging to somebody else.
+ *
+ * A separate shape rather than six more fields on {@link LevyBlock}, because that one is also this
+ * module's own builder's input, whose fixed block carries a token proof with 14 characters of slack
+ * (`tokens.ts:WORST_ITEM_CHARS.fixed`) — and that builder serves no agent (`server.ts`'s header).
+ */
+export interface LevyBasis {
+  readonly rule: string;
+  readonly quorum_failed: boolean;
+  readonly constellation_total: Minor;
+  readonly my_weight: number;
+  readonly newcomer_floor: boolean;
+  readonly spared: boolean;
 }
 
 export interface BallotRef {

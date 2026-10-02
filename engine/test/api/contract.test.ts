@@ -311,8 +311,13 @@ describe('PROP-O7 — an illegal action is a correction, not an error', () => {
     expect(correction['invariant']).toBe('A8');
     expect(String(correction['hint']).length).toBeGreaterThan(10);
     expect(Array.isArray(correction['changed'])).toBe(true);
-    // The nearest legal thing, so the agent can act rather than guess.
-    expect(correction['nearest_legal']).not.toBeNull();
+    // ★ `nearest_legal` is the SAME act or null (`api/nearest.ts`). It used to be asserted non-null
+    // here, and what came back was a `create` of some OTHER kind — a raid refused in the Commons
+    // answered with a dig, which `agent.md` §13 forbids ("never a substitute suggestion"). A RAID
+    // create is invalid on a Commons newcomer's menu, so the honest answer is null, and the hint
+    // above names the floor.
+    expect(correction['nearest_legal']).toBeNull();
+    expect(correction['nearest_legal_is_same_verb']).toBe(false);
     expect(Object.keys(correction['observation'] as Record<string, unknown>)).toEqual([...OBSERVE_KEYS]);
   });
 
@@ -329,9 +334,17 @@ describe('PROP-O7 — an illegal action is a correction, not an error', () => {
     // evaporated cannot tell that from the world changing underneath it. So it is
     // held and delivered on the next read, once.
     const a = agent('ferren');
-    await enrol(h, a);
+    const enrolled = await enrol(h, a);
+    // A REAL destination one gate from the newcomer's holding, read off its own first menu: the
+    // nearest legal act is the same move with the hand corrected, and `to` is the act's target
+    // (`api/nearest.ts`), so a destination that does not exist has no nearest legal move at all.
+    const offeredMove = (obs(enrolled.json)['affordances'] as Record<string, unknown>[]).find(
+      (r) => r['verb'] === 'move',
+    );
+    expect(offeredMove, 'a newcomer is offered a move, or this proves nothing').toBeDefined();
+    const to = String((offeredMove?.['params'] as Record<string, unknown> | undefined)?.['to']);
     const submitted = await signed(h, a, 'POST', PATHS.act, {
-      actions: [{ verb: 'move', params: { hand: 'no-such-hand', to: 'nowhere' }, clientSequence: 7 }],
+      actions: [{ verb: 'move', params: { hand: 'no-such-hand', to }, clientSequence: 7 }],
     });
     expect(submitted.status).toBe(200);
     const accepted = (submitted.json['outcome'] as Record<string, unknown>)['accepted'] as unknown[];
@@ -346,9 +359,10 @@ describe('PROP-O7 — an illegal action is a correction, not an error', () => {
     expect(corrections[0]?.['verb']).toBe('move');
     expect(corrections[0]?.['clientSequence']).toBe(7);
     expect(String(corrections[0]?.['hint'])).toContain('no hand no-such-hand');
-    // The nearest legal thing is a legal `move`, so the fix is one field away.
+    // The nearest legal thing is a legal `move` to the SAME place, so the fix is one field away.
     const nearest = corrections[0]?.['nearest_legal'] as Record<string, unknown> | null;
     expect(nearest?.['verb']).toBe('move');
+    expect((nearest?.['params'] as Record<string, unknown> | undefined)?.['to']).toBe(to);
 
     // Delivered exactly once: draining on read is what keeps the buffer bounded.
     tick(h, 1);
@@ -757,50 +771,86 @@ describe('§12.4 — a spent wake budget cannot be topped up through a correctio
     expect(h.runtime.engine.budget.remaining(a.principalId as never)).toBe(budgetBefore);
   });
 
-  it('a fresh nearest_legal costs a wake, so it cannot be harvested for free', async () => {
-    // The leak the verifier actually described, which the 0-wake test above does NOT
-    // catch: an agent HOLDING wakes could POST junk repeatedly and pull a fresh priced
-    // affordance set — live quote_ids — each time, unmetered, because solveHintSet
-    // gated on having a wake but never spent one. A fresh set is fresh information and
-    // must cost a wake exactly like an observe. This asserts the budget draws down.
-    const a = agent('harvester');
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★ **THE TEST THAT USED TO SIT HERE PINNED A WAKE CHARGE, AND THE CHARGE WAS THE NEXT DEFECT.**
+  //
+  // It was *"a fresh nearest_legal costs a wake, so it cannot be harvested for free"*, and the leak it
+  // closed was real: an agent HOLDING wakes POSTed junk and pulled a fresh, priced affordance set with
+  // live quote_ids every time. Charging a wake per refusal closed that and turned the refusal channel
+  // into a drain — twenty refused POSTs spent all sixteen wakes and locked the agent out of fresh
+  // observations for up to a Reckoning, while `agent.md` §0 said "a refused action costs nothing but
+  // the action". The fix keeps the protection without the charge: `nearest_legal` is picked from the
+  // affordance set the agent already HOLDS this tick (`server.ts:held`), so a refusal can only ever
+  // hand back a row the agent has already been sold. The three tests below are the two halves and the
+  // regression. Mutation: restoring the paid fresh solve fails the first; serving `held` from an
+  // earlier tick fails the third; dropping `held.set` on the observe path fails the second.
+  // ══════════════════════════════════════════════════════════════════════════
+  it('★ a refusal costs NO wake: twenty refused POSTs leave the budget where it was (agent.md §0)', async () => {
+    const a = agent('refused');
     await enrol(h, a);
-    // Read the spend directly from the context, not the header — unambiguous, and no
-    // GET observe in the middle to confuse the accounting.
-    const before = h.context.wakesSpent(a.principalId as never);
-
-    // Three junk actions in a row, each of which would have harvested a free fresh set
-    // under the bug (nearest_legal solved fresh, gated on having a wake, never spending).
-    let served = 0;
-    for (let n = 0; n < 3; n += 1) {
+    tick(h, 1);
+    await signed(h, a, 'GET', PATHS.observe);
+    const spent = h.context.wakesSpent(a.principalId as never);
+    expect(spent, 'the read is the one wake').toBe(1);
+    for (let n = 0; n < 20; n += 1) {
       const res = await signed(h, a, 'POST', PATHS.act, {
         actions: [{ verb: 'extract', params: {}, clientSequence: n }],
       });
-      const c = ((res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<string, unknown>[])[0];
-      if (c?.['nearest_legal'] !== null && c?.['nearest_legal'] !== undefined) served += 1;
+      expect(((res.json['outcome'] as Record<string, unknown>)['corrections'] as unknown[]).length).toBe(1);
     }
-    const after = h.context.wakesSpent(a.principalId as never);
-    // Every fresh set served cost a wake. Under the bug, `served` sets came back while
-    // `wakesSpent` never moved — free information through the correction channel.
-    expect(after - before).toBe(served);
-    expect(served).toBeGreaterThan(0);
+    expect(h.context.wakesSpent(a.principalId as never), 'twenty refusals must not spend a wake').toBe(spent);
+    tick(h, 1);
+    const next = obs((await signed(h, a, 'GET', PATHS.observe)).json);
+    expect((next['header'] as Record<string, unknown>)['wakes_remaining']).toBe(WAKES_PER_RECKONING - 2);
+    expect((next['affordances'] as unknown[]).length, 'and the next wake is a real one').toBeGreaterThan(0);
   });
 
-  it('still hands back the nearest legal act while the agent holds a wake (PROP-O7)', async () => {
-    // The gate must not eat the guarantee it is protecting: inside a wake, a refusal
-    // still comes with something to try instead.
+  it('★ nearest_legal is a row the agent already HOLDS this tick, so nothing new is sold (PROP-O7, A4)', async () => {
     const a = agent('awake');
     await enrol(h, a);
+    tick(h, 1);
+    const menu = obs((await signed(h, a, 'GET', PATHS.observe)).json)['affordances'] as Record<string, unknown>[];
+    const offer = menu.find((r) => r['verb'] === 'publish_offer');
+    expect(offer, 'every menu carries publish_offer, or this proves nothing').toBeDefined();
+    const spent = h.context.wakesSpent(a.principalId as never);
+    // The same clientSequence twice: the second is refused at submit (PROP-W5), naming an act the
+    // held menu carries, so the PROP-O7 guarantee — a refusal with a next move — is exercised.
     const res = await signed(h, a, 'POST', PATHS.act, {
-      actions: [{ verb: 'extract', params: {}, clientSequence: 1 }],
+      actions: [
+        { verb: 'publish_offer', params: offer?.['params'], clientSequence: 1 },
+        { verb: 'publish_offer', params: offer?.['params'], clientSequence: 1 },
+      ],
     });
-    const corrections = (res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<
-      string,
-      unknown
-    >[];
-    const nearest = corrections[0]?.['nearest_legal'] as Record<string, unknown> | null;
-    expect(nearest).not.toBeNull();
-    expect(typeof nearest?.['quote_id']).toBe('string');
+    const c = ((res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<string, unknown>[])[0];
+    expect(c?.['invariant']).toBe('PROP-W5');
+    const nearest = c?.['nearest_legal'] as Record<string, unknown> | null;
+    expect(nearest, 'inside a wake, a refusal still comes with something to try instead').not.toBeNull();
+    expect(c?.['nearest_legal_is_same_verb']).toBe(true);
+    expect(
+      menu.map((r) => r['quote_id']),
+      'the row must be one the agent was already sold — a fresh quote_id here is the A4 harvest',
+    ).toContain(nearest?.['quote_id']);
+    expect(h.context.wakesSpent(a.principalId as never), 'and it cost no wake').toBe(spent);
+  });
+
+  it('★ an agent that has not observed THIS tick holds no menu, so nearest_legal is null and free', async () => {
+    const a = agent('stale');
+    await enrol(h, a);
+    tick(h, 1);
+    await signed(h, a, 'GET', PATHS.observe);
+    tick(h, 1);
+    const spent = h.context.wakesSpent(a.principalId as never);
+    const res = await signed(h, a, 'POST', PATHS.act, {
+      actions: [
+        { verb: 'publish_offer', params: { text: 'HANDS FOR HIRE' }, clientSequence: 1 },
+        { verb: 'publish_offer', params: { text: 'HANDS FOR HIRE' }, clientSequence: 1 },
+      ],
+    });
+    const c = ((res.json['outcome'] as Record<string, unknown>)['corrections'] as Record<string, unknown>[])[0];
+    expect(c?.['invariant']).toBe('PROP-W5');
+    expect(c?.['nearest_legal'], "last tick's menu is not this tick's").toBeNull();
+    expect(String(c?.['hint']).length, 'the hint still names the invariant and the fix').toBeGreaterThan(20);
+    expect(h.context.wakesSpent(a.principalId as never)).toBe(spent);
   });
 });
 

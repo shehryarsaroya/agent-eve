@@ -1009,7 +1009,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
     // ★ RE-MEASURED at 41, Season 1's four lanes merged — see the cell below for each lane's delta.
     // ★ Then the launch fixes, and then §5.2's max share (+89) — see the cell below.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_466);
+    // ★ Then the surface fixes (+462, analytic margin 1,072) — see the cell below for each hunk.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_928);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1139,7 +1140,27 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Then +70 for the blind playtest's rules fixes: §8's seal example is the offered row and §4's
     // `create` example has no `value`, which is no longer a free parameter. Analytic margin **1,534**.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_466);
+    //
+    // ── ★ THE SURFACE FIXES (still 41): +462, AND EVERY CHARACTER IS A CORRECTION OR A NAMED FIELD ──
+    //
+    // Measured against this tree, per hunk, and the hunks sum to the delta exactly — nothing displaced:
+    //
+    //   §5  Levy bullet: the HAND stands at the place, the goods may be anywhere      +46  FLOOR
+    //   §5  `/health` is rate-limited (60 a minute per address), not "free"            +17  FLOOR
+    //   §6  `levy{}` names its basis: rule, quorum_failed, my_weight, total, …         +77  FLOOR
+    //   §6  the briefing's rungs: LIVE authority, and an unsealed role                 +24  FLOOR
+    //   §6/§7 `quote_id` labels a quote and nothing checks it on submit               +34  FLOOR
+    //   §8  `live.json` carries the `map` until a season's first settlement; every
+    //       `ticker` is newest first (the frames lane's facts, folded in at its ask)  +81  FLOOR
+    //   §11A a Charge needs goods AT its claim; the Levy takes them from anywhere     +35  WORKS readers
+    //   §4  preference wins only among requests landing in the SAME tick             +44  `fill_role`
+    //   §11G `live.json`'s `map[].straits`, before a season's first settlement        +56  raid/campaign acts
+    //   §11D a demand's force is your IDLE hands there up to SWAY, not "1"            +48  `demand`
+    //
+    // §0, §9 and §13 changed too (a refusal costs no wake; a Levy order's amount is per tick;
+    // `nearest_legal` is the same act or null) and are not excerpted, so they cost no cell. Analytic
+    // margin 120,000 − 118,928 = **1,072**.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_928);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1230,7 +1251,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // required 4,000.
     // ★ Then +70 for the playtest's rules fixes (§8's seal example, §4's create example): 111,696,
     // margin **8,304** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_696);
+    // ★ Then +462 for the surface fixes — this row reads every hunk (+279 FLOOR, +35 §11A, +44 §4's
+    // preference, +56 §11G, +48 §11D's demand force): 112,158, margin **7,842** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(112_158);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2418,9 +2441,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // ★ 33: §11E's block plus §11G's, because `build{CAMPAIGN}` gates both. That
       // the two ADD is the check — the day a delta gets absorbed is the day the budget binds — and
       // it is why §11F is act-gated rather than gated on the bare `build` a newcomer really is
-      // offered.
+      // offered. ★ +56 (6,251 → 6,307) for the surface fixes' §11G sentence — `live.json`'s
+      // `map[].straits` before a season's first settlement — which is §11G's, so it rides this delta.
       'what the verb gate cost a newcomer, pinned so the saving cannot quietly come back',
-    ).toBe(6_251);
+    ).toBe(6_307);
   });
 
   it('★ A PARTY TO A LIVE CAMPAIGN IS REQUIRED THE PULSE — no verb announces the clock', () => {
@@ -2972,13 +2996,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // ever be marked CONTRADICTED, and §4's `create` example has no `value` and says why. +86 on the
       // rows that read §8; +70 on the four that also read the delegated-create example, which lost its
       // `"value": 12000` (−16); +97 on the newcomer. MEASURED.
-      54_969, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +97 playtest)
-      65_469, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +86 playtest)
-      75_164, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +86 playtest)
-      80_250, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89, +86)
-      110_454, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30, +89, +70)
-      92_081, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89, +70)
-      111_696, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1, +30, +89, +70)
+      // Then the surface fixes (41), per hunk in the analytic cell: +279 FLOOR on every row (§5's Levy
+      // hand and `/health` rate, §6's `levy{}` basis, briefing rungs and `quote_id`, §7's `quote_id`, §8's
+      // frame facts), +35 §11A on every row, +44 §4's same-tick preference on every row but the
+      // newcomer's, +56 §11G's straits on the four rows outside the Commons, +48 §11D's demand force on
+      // the two that can demand. MEASURED — the per-row sums are exact.
+      55_283, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +97 playtest, +314 surface)
+      65_827, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +86 playtest, +358 surface)
+      75_578, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +86 playtest, +414 surface)
+      80_664, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89, +86, +414 surface)
+      110_868, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30, +89, +70, +414 surface)
+      92_439, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89, +70, +358 surface)
+      112_158, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1, +30, +89, +70, +462)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3153,7 +3182,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      118_466, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30 offer, +89 share, +70 playtest)
+      118_928, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30 offer, +89 share, +70 playtest, +462 surface)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

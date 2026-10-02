@@ -238,7 +238,7 @@ import { recipeOf, refine, refineKindOf, unknownRefineKindHint } from '../works/
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
-import type { LevyBlock } from '../observe/sources.js';
+import type { LevyBasis, LevyBlock } from '../observe/sources.js';
 import {
   SealBook,
   cmpDeeds,
@@ -480,6 +480,7 @@ import {
 import {
   Book as RaidBook,
   DEMAND_RULE_STATEMENT,
+  FORCE_PER_HAND,
   MAX_SEIZE_LOTS,
   RAID_DEMAND_QTY,
   RAID_JOIN_STAKE_MINOR,
@@ -3108,6 +3109,35 @@ export const FILL_REFUSAL_NOTE: Readonly<Record<'LOST_CONTEST' | 'HAND_COMMITTED
       'venture to resolve.',
     ROLE_RULE: 'Nothing was charged. Read the open roles in ventures.board[] and send one of those.',
   });
+
+/**
+ * ★ The `LOST_CONTEST` note, branched on WHEN the holder filled the slot — the static sentence said
+ * "in the same tick" for every loss, and `allocation.ts:lostContest` never compares the holder's fill
+ * tick with now. A request against a slot filled at an EARLIER tick met no contest at all: preference
+ * and stake order only requests made in the same tick, and a slot is held from the tick it is filled.
+ * And a winner can be vacated after the losers were labelled (a stake that could not be escrowed, a
+ * grand role re-checked), which leaves the slot OPEN — so "the board is already without it" was false
+ * there too. Read off the role as it stands when the verdict is written; a hint, never an event.
+ */
+export function lostContestNote(
+  holder: { readonly filledByPrincipal: PrincipalId | null; readonly filledAtTick: number | null } | undefined,
+  tick: number,
+): string {
+  if (holder === undefined || holder.filledByPrincipal === null) {
+    return (
+      'The request that took this slot at tick close was itself refused afterwards, so the slot is OPEN ' +
+      'again — it is on the board in your next observation, and a fresh request may take it.'
+    );
+  }
+  if (holder.filledAtTick !== null && holder.filledAtTick < tick) {
+    return (
+      `This slot was already filled at tick ${String(holder.filledAtTick)}, before your request landed: a ` +
+      'slot is held from the tick it is filled, and preference and stake only decide between requests ' +
+      'that land in the SAME tick. The board in your next observation is already without it.'
+    );
+  }
+  return FILL_REFUSAL_NOTE.LOST_CONTEST;
+}
 
 /**
  * What the Levy did in one Reckoning, counted from the settlement's own output.
@@ -6168,7 +6198,7 @@ export class Runtime {
         }
       },
 
-      standingOf: (principal, stage, good) => {
+      availableAt: (principal, stage, good) => {
         let total = 0;
         for (const pile of assailable(principal)) {
           if (pile.location !== stage || pile.good !== good) continue;
@@ -11790,7 +11820,11 @@ export class Runtime {
           verb: 'fill_role',
           clientSequence: refused.request.clientSequence,
           invariant: refused.invariant,
-          hint: `${refused.hint} ${FILL_REFUSAL_NOTE[refused.reason]}`,
+          hint: `${refused.hint} ${
+            refused.reason === 'LOST_CONTEST'
+              ? lostContestNote(this.ventures.get(refused.request.venture)?.roles[refused.request.roleIndex], ctx.tick)
+              : FILL_REFUSAL_NOTE[refused.reason]
+          }`,
           params: {
             venture: refused.request.venture,
             role: refused.request.roleIndex,
@@ -12361,9 +12395,13 @@ export class Runtime {
    * and `mine` is filtered to the reader before it leaves the market module.
    */
   marketView(principal: PrincipalId, tick: number): Readonly<Record<string, unknown>> {
+    // ★ Present at `tick + 1`, the tick a `trade` sent from this observation lands in and the tick
+    // `checkVenue` asks about. At `tick` an enrolment hand — minted present from the next tick — stood
+    // at the venue and was not counted, so a newcomer's first payload read "no hand standing at sys-01"
+    // about a book its next act could trade. Only the observation reads this method.
     const venues = new Set<SystemId>(
       handsOf(this.world, principal)
-        .filter((hand) => isPresent(hand, tick))
+        .filter((hand) => isPresent(hand, tick + 1))
         .map((hand) => hand.location),
     );
     const books = booksFor(this.marketBook, principal, venues, tick);
@@ -13011,12 +13049,12 @@ export class Runtime {
    * and a consumption posted at the payer's holding while its hand stood at the delivery
    * berth would be a located fact that was false.
    *
-   * The carriage itself is compressed into the presence requirement: `haul` is §16 step
-   * 11 and does not exist, so what the engine can actually check is that one of the
-   * payer's own hands is standing at the named place. That is also the property §5.2 and
-   * PROP-LV3 turn on — presence, not payment — so the compression costs the mechanic
-   * nothing it depends on. It is stated rather than hidden, and it is the one place this
-   * module is thinner than the fiction.
+   * ★ The carriage itself is compressed into the presence requirement, and the Levy is
+   * LOCATION-BLIND about the goods ON PURPOSE (`levyGoodAvailable`): the lots are drawn wherever
+   * they stand, and what is checked is that one of the DELIVERER's own hands is standing at the
+   * named place. That is the property §5.2 and PROP-LV3 turn on — presence, not carriage. (This
+   * read "`haul` is §16 step 11 and does not exist"; `haul` is live and moves goods, and the
+   * Levy still does not ask it to — unlike the CHARGE, whose goods must stand at the claim.)
    *
    * Never throws. A delivery is an agent-reachable path and a sweep runs at settlement;
    * a throw in either would be an agent-triggerable halt or a tick aborted after every
@@ -13038,8 +13076,9 @@ export class Runtime {
       if (portion <= 0) continue;
       // ── RELOCATE, DESTROY THE PORTION, SEND THE REMAINDER HOME ──────────────
       //
-      // §10.2 makes the Levy payable "only in located goods physically delivered to a named place", so
-      // the lot genuinely moves to the delivery place before it is consumed — that part is the rule.
+      // §5.2 makes the Levy payable in goods at a named place, so the lot genuinely moves to the
+      // delivery place before it is consumed — wherever it stood: which lots is location-blind, the
+      // place it is destroyed at is not.
       //
       // What was missing is the last step. `relocate` moves the WHOLE lot and the ledger has no split,
       // so paying a 500 assessment out of a 45,000 lot moved all 45,000 to the Levy's place, destroyed
@@ -13507,7 +13546,9 @@ export class Runtime {
       if (v.creator !== principal || v.resolvedAtTick !== null) continue;
       let owed = 0;
       for (const role of v.roles) {
-        if (role.filledByPrincipal !== null) owed += role.terms.elective;
+        // A role the creator holds itself is booked paid in full and is owed to nobody (scar #9) —
+        // `creatorElective`'s own filter, so the set this returns is the set that owes somebody.
+        if (role.filledByPrincipal !== null && role.filledByPrincipal !== principal) owed += role.terms.elective;
       }
       if (owed > 0) out.push({ venture: v.id, electiveMinor: minor(owed) });
     }
@@ -13543,9 +13584,11 @@ export class Runtime {
         officeHolders: offices,
         // STRONGBOX is asserted by `assertFrameBudgets` when the clause forbids offices, because a
         // viewer reading a pooled treasury needs to know at a glance whether anyone can touch it.
+        // ★ POOLED is the TREASURY, not the head-count: joining pools nothing (`syndicate/apply.ts`),
+        // so "2 POOLED" printed over an empty pool read as two members' stakes nobody had made.
         legend: row.charter.treasuryOffices
-          ? `${String(members)} POOLED · ${String(offices)} CAN SPEND`
-          : `STRONGBOX · ${String(members)} POOLED`,
+          ? `${String(members)} MEMBERS · ${String(treasury)} POOLED · ${String(offices)} CAN SPEND`
+          : `STRONGBOX · ${String(members)} MEMBERS · ${String(treasury)} POOLED`,
       });
     }
     return out;
@@ -16053,6 +16096,18 @@ export class Runtime {
   }
 
   /**
+   * ★ The FORCE a principal's own hands bring to a demand at `stage`, read at `tick` — the resolver's
+   * raider term (`predation/resolve.ts:readForce`), `FORCE_PER_HAND × min(IDLE present hands there, SWAY
+   * there)`, through the same read-only port it resolves with. The `demand` affordance forecast said
+   * "Yours is 1" whatever stood there; one home for the count, so the forecast and the verdict agree.
+   */
+  demandForceAt(principal: PrincipalId, stage: SystemId, tick: number): number {
+    const port = this.predationPort(tick);
+    const hands = port.handsDefending(principal, stage).length;
+    return FORCE_PER_HAND * Math.max(0, Math.min(hands, this.swayFor(principal, stage)));
+  }
+
+  /**
    * ★ **THE VERGE** (A13, §16.12 #1) — one row per non-Commons system, naming whose force reaches it
    * hardest, so a renderer can draw a closed fence per bloc and a border where two fences meet.
    *
@@ -17501,7 +17556,7 @@ export class Runtime {
    * cycle means it is not enrolled. `my_assessment: 0` would read as "assessed at
    * nothing", a claim §5.2 makes about nobody.
    */
-  levyBlockFor(principal: PrincipalId, tick = this.engine.tick): LevyBlock | null {
+  levyBlockFor(principal: PrincipalId, tick = this.engine.tick): (LevyBlock & LevyBasis) | null {
     const reckoning = reckoningOf(tick);
     const found = this.levy.lineFor(reckoning, principal);
     if (found === null) return null;
@@ -17527,6 +17582,14 @@ export class Runtime {
       // the arithmetic that decides a public shortfall.
       assessed_on_exposure_peak: this.levy.exposurePeakOf(reckoning - 1, principal),
       exposure_peak_this_cycle: this.levy.exposurePeakOf(reckoning, principal),
+      // ★ Why the bill is this number, off the plan that cut it (`observe/sources.ts:LevyBlock`). A read
+      // of the book's own rows — the same ones `levy.assessed` publishes — so nothing is recomputed.
+      rule: found.plan.rule,
+      quorum_failed: found.plan.byDefault,
+      constellation_total: found.plan.total,
+      my_weight: found.line.weight,
+      newcomer_floor: found.line.newcomerFloored,
+      spared: found.line.spared,
       ballot: window.open
         ? {
             id: `${LEVY_BALLOT}::${String(window.forReckoning)}::${constellation}`,
@@ -17558,6 +17621,12 @@ export class Runtime {
   levyDeliveryQuote(
     principal: PrincipalId,
     tick = this.engine.tick,
+    /**
+     * ★ The tick the hand must be present at — the menu passes `tick + 1`, the tick its act lands in
+     * (`levy/payment.ts:deliveryDelivererFault`). The clock and the assessment are still read at
+     * `tick`, so a row landing in the freeze is still built and then counted by `clockGateFor`.
+     */
+    presentAt = tick,
   ): {
     readonly place: SystemId | null;
     /** What a full discharge would hand over now, bounded by what is actually to hand. */
@@ -17592,6 +17661,7 @@ export class Runtime {
       tick,
       owing,
       available,
+      presentAt,
     });
     return {
       place,
@@ -17633,8 +17703,9 @@ export class Runtime {
    * `vDeliver` resolves the place from the **payer's** plan (`plan.deliverableTo`) and then
    * demands a hand of the *deliverer* standing on it. A constellation has one delivery place, so
    * in practice a carrier serves its own constellation — and that is the right shape rather than
-   * a limitation: goods cannot cross a constellation (`haul` is not live), so a carry that
-   * reached next door would be inventing transport the world does not have.
+   * a limitation: the hand has to stand at the payer's own place, so a carry that reached next
+   * door would be a presence the carrier does not have. (This said "`haul` is not live"; it is,
+   * and the Levy's goods are drawn wherever they stand all the same.)
    *
    * Ordered by canonical payer id and capped, like {@link grantCandidates}: a deterministic
    * prefix of one list, so the menu an agent reads and the bot that plays pick from the same rows
@@ -17645,6 +17716,8 @@ export class Runtime {
     deliverer: PrincipalId,
     tick = this.engine.tick,
     max = MAX_LEVY_CARRY_OFFERS,
+    /** The tick hands must be present at — see {@link levyDeliveryQuote}. The cast passes nothing. */
+    presentAt = tick,
   ): readonly LevyCarryQuote[] {
     if (max <= 0) return [];
     // ── THE CAP APPLIES TO OFFERS, NOT TO ROWS, AND THAT WAS A MEASURED BUG ───
@@ -17664,7 +17737,7 @@ export class Runtime {
       if (fault !== null || payable <= 0) return false;
       out.push(carryQuoteOf(row, fault, own));
       return out.length >= max;
-    });
+    }, presentAt);
     return out;
   }
 
@@ -17695,6 +17768,8 @@ export class Runtime {
   levyCarryObstacleSummary(
     deliverer: PrincipalId,
     tick = this.engine.tick,
+    /** The tick hands must be present at — see {@link levyDeliveryQuote}. */
+    presentAt = tick,
   ): {
     readonly count: number;
     readonly faults: ReadonlySet<string>;
@@ -17712,7 +17787,7 @@ export class Runtime {
       if (fault === null) ownNeeds += 1;
       else faults.add(fault);
       return false;
-    });
+    }, presentAt);
     const reckoning = reckoningOf(tick);
     return {
       count,
@@ -17751,6 +17826,7 @@ export class Runtime {
     deliverer: PrincipalId,
     tick: number,
     visit: (row: CarryPayerRow, payable: number, fault: string | null, own: CarryOwnSide) => boolean,
+    presentAt = tick,
   ): void {
     const reckoning = reckoningOf(tick);
     const constellation = constellationOf(this.world, deliverer);
@@ -17762,13 +17838,13 @@ export class Runtime {
     const surplus = Math.max(0, available - ownOwed);
     // The deliverer's half of `deliveryFault`, once per delivery place: a constellation has one.
     const delivererFault = new Map<SystemId, string | null>();
-    for (const row of this.levyCarryPayers(constellation, tick)) {
+    for (const row of this.levyCarryPayers(constellation, tick, presentAt)) {
       if (row.payer === deliverer) continue;
       let fault = row.payerFault;
       if (fault === null) {
         let mine = delivererFault.get(row.place);
         if (mine === undefined) {
-          mine = deliveryDelivererFault({ world: this.world, deliverer, place: row.place, tick, available });
+          mine = deliveryDelivererFault({ world: this.world, deliverer, place: row.place, tick, available, presentAt });
           delivererFault.set(row.place, mine);
         }
         fault = mine;
@@ -17788,8 +17864,8 @@ export class Runtime {
    * `rollByConstellation` is the same reader the assessment and the ballot use, so a payer this can see
    * is a payer the docket has.
    */
-  private levyCarryPayers(constellation: ConstellationId, tick: number): readonly CarryPayerRow[] {
-    return this.perEpoch(`levyCarryPayers:${String(constellation)}:${String(tick)}`, () => {
+  private levyCarryPayers(constellation: ConstellationId, tick: number, presentAt = tick): readonly CarryPayerRow[] {
+    return this.perEpoch(`levyCarryPayers:${String(constellation)}:${String(tick)}:${String(presentAt)}`, () => {
       const reckoning = reckoningOf(tick);
       const rows: CarryPayerRow[] = [];
       for (const payer of this.rollByConstellationNow().get(constellation) ?? []) {
@@ -17809,7 +17885,7 @@ export class Runtime {
         // **Presence gated, not just stock**: a payer holding a fortune with every hand elsewhere
         // cannot deliver a unit this tick, and that is exactly the payer a carry should serve.
         const payerReach =
-          carrierAt(this.world, payer, place, tick) === null
+          carrierAt(this.world, payer, place, presentAt) === null
             ? minor(0)
             : minor(this.levyGoodAvailable(payer));
         // `carryableOf`'s escrowable bucket, which reads the payer alone: the deliverer's stock and

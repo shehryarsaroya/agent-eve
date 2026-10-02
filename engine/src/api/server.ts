@@ -112,6 +112,7 @@ import {
   type Affordance,
   type Observation,
 } from './observe.js';
+import { nearestLegal } from './nearest.js';
 import { serializeObservation } from './fragments.js';
 import { DEFAULT_SEATS, HANDLE_GRAMMAR, MAX_HANDLE_LENGTH, SeatBook, seatCapacityFrom } from './seats.js';
 import { classifyVerb, unbuiltVerbs } from './verbs.js';
@@ -303,6 +304,16 @@ export function createApp(options: ApiOptions): CreatedApp {
   const discrepancies: DiscrepancyReport[] = [];
   const wakes = new Map<PrincipalId, { reckoning: number; spent: number }>();
   const observationCache = new Map<PrincipalId, CacheEntry>();
+  /**
+   * ★ The affordance set each principal already HOLDS — the one its latest wake delivered (or its
+   * enrol response, which is a newcomer's first menu), stamped with the tick it was solved at.
+   *
+   * The only source `nearest_legal` may draw from. See {@link correction}: a refusal used to buy a
+   * fresh solve with a wake, so twenty refused POSTs drained a Reckoning's sixteen wakes. Picking from
+   * the set the agent already paid for sells nothing new (A4) and charges nothing. Kept apart from
+   * `observationCache`, which an accepted action deletes — the agent still holds the bytes it read.
+   */
+  const held = new Map<PrincipalId, { readonly tick: number; readonly affordances: readonly Affordance[] }>();
   /**
    * Material actions this API has accepted into the **open window**, per principal.
    *
@@ -562,6 +573,8 @@ export function createApp(options: ApiOptions): CreatedApp {
       });
 
       const observation = observe(principal, true, true);
+      // The enrol response IS this tick's affordance set for a newcomer — §0 tells it to act from it.
+      held.set(principal, { tick: runtime.engine.tick, affordances: observation.affordances });
 
       return send(res, 201, {
         ok: true,
@@ -632,6 +645,7 @@ export function createApp(options: ApiOptions): CreatedApp {
       // `MAX_PENDING_CORRECTIONS` and a principal that never wakes simply accumulates to that cap,
       // which is the behaviour the ring was built for.
       const observation = observe(who, fresh, fresh);
+      if (fresh) held.set(who, { tick: runtime.engine.tick, affordances: observation.affordances });
       // ★ SPEC §15.5: the shared fragments of this read epoch are serialized once and spliced, and the
       // bytes are exactly `JSON.stringify({ ok: true, observation })` (`api/fragments.ts`).
       const body = serializeObservation(observation, (v) => runtime.isSharedView(v));
@@ -718,7 +732,8 @@ export function createApp(options: ApiOptions): CreatedApp {
                     now: runtime.engine.stateVersion,
                   },
                 ],
-                nearest_legal: nearestLegal(preview.affordances, ''),
+                // Nothing was refused — the whole batch went unsent — so there is no act to be near.
+                nearest_legal: null,
                 observation: preview,
               },
             ],
@@ -750,20 +765,22 @@ export function createApp(options: ApiOptions): CreatedApp {
       const accepted: Record<string, unknown>[] = [];
       const corrections: Record<string, unknown>[] = [];
       const observationForHints = observe(who, false, false);
-      // The fresh nearest-legal set, solved at most once for the whole batch and paid
-      // for with one wake (see solveHintSet). Lazy: a batch with no corrections spends
-      // nothing, and a batch with several shares the one solve rather than harvesting
-      // a fresh priced set per rejected action.
-      let hintSet: readonly Affordance[] | null | undefined;
-      const hints = (): readonly Affordance[] | null => {
-        if (hintSet === undefined) hintSet = solveHintSet(who);
-        return hintSet;
-      };
+      // ── ★ A REFUSAL COSTS NO WAKE (`agent.md` §0: "a refused action costs nothing but the action") ──
+      //
+      // `nearest_legal` used to be solved FRESH and paid for with a wake, which closed a real A4 hole —
+      // junk POSTs harvesting priced affordance sets with live quote_ids — and opened another: twenty
+      // refused POSTs drained all sixteen of a Reckoning's wakes and locked an agent out for up to a day,
+      // while the document said a refusal was free. So the row is picked from the affordance set the
+      // agent already HOLDS this tick (`held`): nothing new is sold and nothing is charged. An agent
+      // that has not observed this tick holds no menu, and its `nearest_legal` is null.
+      const heldNow = held.get(who);
+      const hintSet = heldNow !== undefined && heldNow.tick === runtime.engine.tick ? heldNow.affordances : null;
+      const hints = (): readonly Affordance[] | null => hintSet;
 
       for (const [index, raw] of rawActions.entries()) {
         if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
           corrections.push(
-            correction(index, '?', 'A2', 'each action must be an object: {"verb": "...", "params": {...}}', observationForHints, hints()),
+            correction(index, '?', {}, 'A2', 'each action must be an object: {"verb": "...", "params": {...}}', observationForHints, hints()),
           );
           continue;
         }
@@ -781,10 +798,10 @@ export function createApp(options: ApiOptions): CreatedApp {
 
         const verdict = classifyVerb(verb, runtime.liveVerbs);
         if (!verdict.live) {
-          // Refused here, before submission, so nothing is charged. The tick loop
-          // charges the budget before it runs a handler — correct for an act that
+          // Refused here, before submission, so nothing is charged — no action and no wake. The
+          // tick loop charges the budget before it runs a handler — correct for an act that
           // reached the rules and lost, wrong for a verb whose rules do not exist.
-          corrections.push(correction(clientSequence, verb, verdict.invariant, verdict.hint, observationForHints, hints()));
+          corrections.push(correction(clientSequence, verb, params, verdict.invariant, verdict.hint, observationForHints, hints()));
           continue;
         }
 
@@ -813,7 +830,7 @@ export function createApp(options: ApiOptions): CreatedApp {
           });
         } else {
           corrections.push(
-            correction(clientSequence, verb, submitted.invariant, submitted.hint, observationForHints, hints(), {
+            correction(clientSequence, verb, params, submitted.invariant, submitted.hint, observationForHints, hints(), {
               runtime,
               principal: who,
               params,
@@ -1349,9 +1366,11 @@ export function createApp(options: ApiOptions): CreatedApp {
   function correction(
     clientSequence: number,
     verb: string,
+    params: Readonly<Record<string, unknown>>,
     invariant: string,
     hint: string,
     observation: Observation,
+    /** The affordance set the agent already holds this tick, or null if it holds none. */
     hintSet: readonly Affordance[] | null,
     context?: {
       readonly runtime: Runtime;
@@ -1360,6 +1379,7 @@ export function createApp(options: ApiOptions): CreatedApp {
       readonly expected: number | undefined;
     },
   ): Record<string, unknown> {
+    const nearest = hintSet === null ? null : nearestLegal(hintSet, { verb, params });
     return {
       clientSequence,
       verb,
@@ -1370,98 +1390,37 @@ export function createApp(options: ApiOptions): CreatedApp {
        * **One** affordance, not the list — and the distinction is an A4 hole if it
        * is got wrong.
        *
-       * PROP-O7 requires "the nearest legal affordance", singular. Attaching the
-       * whole freshly-solved list would make a deliberately illegal action a way to
-       * buy a complete, un-metered information set: submit junk, read the
-       * affordances, repeat, and the wake budget (§12.4) is bypassed through the
-       * correction channel. So the list is solved to find the nearest one, and only
-       * that one is sent; the observation attached below stays wake-gated exactly as
-       * a read does.
+       * PROP-O7 requires "the nearest legal affordance", singular. Attaching a whole
+       * list would make a deliberately illegal action a way to buy an information set:
+       * submit junk, read the affordances, repeat, and the wake budget (§12.4) is
+       * bypassed through the correction channel.
+       *
+       * ══════════════════════════════════════════════════════════════════════
+       * ★ **AND IT IS PICKED FROM WHAT THE AGENT ALREADY HOLDS, SO A REFUSAL COSTS NO WAKE.**
+       *
+       * Two earlier shapes, both measured wrong. Solving fresh for free let an agent at 0 of 16
+       * wakes harvest five distinct live `quote_id`s through refusals; solving fresh for ONE WAKE
+       * closed that and turned every refused POST into a spent wake — twenty of them locked an
+       * agent out for up to a Reckoning, against `agent.md` §0's *"a refused action costs nothing
+       * but the action"*. The set the agent's own latest wake (or enrol response) delivered this
+       * tick is the answer to both: nothing in it is new to the agent, so nothing is sold, and
+       * nothing is charged. Not observed this tick → no menu held → `null`, and the prose `hint`
+       * still names the invariant and the fix.
+       *
+       * The match is the SAME ACT (`api/nearest.ts`): the verb, and the kind and target when the
+       * refused act named them. Never a substitute — `agent.md` §13.
+       * ══════════════════════════════════════════════════════════════════════
        */
-      nearest_legal: nearestFresh(hintSet, verb),
+      nearest_legal: nearest,
       /**
-       * ★ **Whether {@link nearest_legal} is the SAME VERB you sent, or an unrelated alternative.**
-       *
-       * ══════════════════════════════════════════════════════════════════════
-       * `nearestLegal` prefers a same-verb affordance and falls back to `affordances[0]` — which is
-       * `OFFERED_KINDS[0]`, so a refused `join` came back with `nearest_legal: create {kind:"DIG"}`
-       * and a blind player's report called it *"neither near nor legal"*. The same defect was fixed
-       * on the `observe` corrections path (`api/observe.ts` uses `?? null` and says so), and the
-       * fallback survives here because PROP-O7 makes a null `nearest` a **fault** — *"a refusal with
-       * no next move is where an agent starts looping"* — so the two rules pull opposite ways.
-       *
-       * Both are right, and what was missing is the label: an agent needs a next move AND needs to
-       * know whether it is an answer to the thing it just tried. `false` means *"nothing legal of
-       * that verb exists for you right now; this is something else you could do instead."*
-       * ══════════════════════════════════════════════════════════════════════
+       * Whether {@link nearest_legal} answers the act you sent. Since `api/nearest.ts` it can only
+       * ever be the same verb, so this is `true` exactly when `nearest_legal` is non-null — kept on
+       * the wire because harnesses key on it, and it said `false` for the unrelated-act fallback
+       * that no longer exists.
        */
-      nearest_legal_is_same_verb: nearestFresh(hintSet, verb)?.verb === verb,
+      nearest_legal_is_same_verb: nearest !== null,
       observation,
     };
-  }
-
-  /**
-   * The nearest legal act, solved fresh even when the attached observation is not.
-   *
-   * A correction whose `nearest_legal` was null because the reader happened to be
-   * outside a wake would be PROP-O7 failing in exactly the case an agent most needs
-   * it: it has just made a mistake and has nothing to try instead.
-   *
-   * ══════════════════════════════════════════════════════════════════════════
-   * **BUT IT IS WAKE-GATED, AND THAT IS NOT NEGOTIABLE (A4, §12.4).**
-   *
-   * `observationForHints` is always built with `fresh: false`, so its affordance list
-   * is always empty and the branch below always fired. Combined with a canon-but-
-   * unbuilt verb — which is refused at the boundary and therefore costs **no action
-   * and no wake** — an agent with 0 of 16 wakes left could POST `trade`, read a fully
-   * priced affordance out of `nearest_legal` (exact `max_direct_loss`, exact
-   * `max_contingent_liability`, and a live `quote_id`), and repeat. Measured: five
-   * distinct `quote_id`s harvested with the wake budget at zero and the action budget
-   * untouched.
-   *
-   * `agent.md` §7 states the opposite in as many words: outside a wake there are "no
-   * fresh affordances and no new `quote_id` … a bigger inference budget cannot buy you
-   * a bigger information set." A caller that can buy either through a refusal channel
-   * makes that sentence false, which is A4 and a broken promise in one.
-   *
-   * So: fresh solving happens only for a caller that still holds a wake. Outside one,
-   * `nearest_legal` is null — the hint still names the invariant and what to do, and
-   * §12.4 already tells the agent why the world has gone quiet.
-   * ══════════════════════════════════════════════════════════════════════════
-   */
-  /**
-   * The fresh nearest-legal set for this response, solved AT MOST ONCE and paid for
-   * with exactly one wake.
-   *
-   * The old version gated on HAVING a wake but never SPENT one, so an agent holding a
-   * single wake could POST junk actions and harvest a complete, priced affordance set
-   * with live quote_ids, repeatedly, unmetered — the wake budget (§12.4) bypassed
-   * through the correction channel. A verifier caught it: "gating on having a wake is
-   * not the same as spending one." A fresh affordance set with usable quote_ids IS
-   * fresh information and costs a wake, exactly like a real observe — so it is solved
-   * once per response, one wake, and reused for every correction in the batch. Out of
-   * wakes, `nearest_legal` is null and the prose hint still names the invariant and the
-   * fix (§12.4).
-   */
-  function solveHintSet(principal: PrincipalId): readonly Affordance[] | null {
-    if (!spendWake(principal)) return null;
-    const solved = buildObservation({
-      runtime,
-      principal,
-      serverNowMs: clock.nowMs(),
-      fresh: true,
-      wakesRemaining: wakesRemainingFor(wakes.get(principal)?.spent ?? 0),
-      stale: runtime.engine.status === 'PAUSED',
-      corrections: [],
-      correctionsDropped: 0,
-      actionsRemaining: actionsRemainingFor(principal),
-    });
-    return solved.affordances;
-  }
-
-  function nearestFresh(hintSet: readonly Affordance[] | null, verb: string): Affordance | null {
-    if (hintSet === null) return null;
-    return nearestLegal(hintSet, verb);
   }
 
   function changedFields(context: {
@@ -1501,18 +1460,6 @@ export function createApp(options: ApiOptions): CreatedApp {
 }
 
 // ── Free functions ──────────────────────────────────────────────────────────
-
-/**
- * The nearest legal thing to do instead.
- *
- * Same verb first, because an agent that got `move` wrong wants a legal `move`;
- * otherwise the first affordance, which is priority-ordered and therefore the most
- * useful single thing it could do. Null only when there is genuinely nothing legal,
- * which is itself the answer.
- */
-export function nearestLegal(affordances: readonly Affordance[], verb: string): Affordance | null {
-  return affordances.find((a) => a.verb === verb) ?? affordances[0] ?? null;
-}
 
 function send(res: Response, status: number, body: WireRefusal | Record<string, unknown>): void {
   res.status(status).type('application/json').send(JSON.stringify(body));

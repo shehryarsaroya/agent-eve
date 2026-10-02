@@ -36,7 +36,7 @@ import { storesAccount } from '../../src/ledger/index.js';
 import { slotClaimAt } from '../../src/observe/forecast.js';
 import { yourTakeAtP50 } from '../../src/venture/index.js';
 import { tradeObstacles } from '../../src/market/index.js';
-import { commonsBoundRejection, handsOf, holdingOf } from '../../src/world/index.js';
+import { commonsBoundRejection, handsOf, holdingOf, tierOf } from '../../src/world/index.js';
 import { FORMATION_WINDOW_TICKS } from '../../src/sim/runtime.js';
 import { PATHS, agent, enrol, harness, signed, tick, type Agent, type Harness } from './harness.js';
 
@@ -820,7 +820,7 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
         world: h.runtime.world,
         book: h.runtime.market,
         principal: filler.principalId as never,
-        tick: h.runtime.engine.tick,
+        tick: h.runtime.engine.tick + 1, // the landing tick the observation asks at (`api/observe.ts`)
         books: ((direct(filler)['market'] as Row)['books'] ?? []) as never[],
         venues: marketAt,
         homeVenue: holdingOf(h.runtime.world, filler.principalId as never).system,
@@ -863,13 +863,28 @@ describe('the hands that were not offered are counted (PROP-O1)', () => {
     // principal, and nothing has settled this early — so it is empty and the row fires. If that ever
     // becomes zero here the term stops proving anything and this says so.
     expect(grantWithheld, 'no elective half has settled to this filler yet, so `grant` is withheld').toBe(1);
+    // ── ★ AND TWO ROWS THAT WERE ALWAYS THERE AND NEVER COUNTED ─────────────────
+    //
+    // The PARLEY row ("1 PARLEY act(s) are not offered" — a newcomer may start no conversation) and the
+    // no-CAMPAIGN row (its holding is in the Commons) were pushed into `withheld` with their verbs
+    // tagged, and the hand-kept sum skipped both: this payload read count 10 beside seven rows' worth of
+    // prose. The count is now the sum of every row's own `n`, so both terms belong here. The PARLEY
+    // term reads the number its own row prints, because that row's arithmetic (`reach.length`) is the
+    // parley module's and the property under test is only that the total is the sum of its parts.
+    const parleyWithheld = Number(/(\d+) PARLEY act\(s\) are not offered/.exec(String(withheld['reason']))?.[1] ?? 0);
+    expect(parleyWithheld, 'non-vacuity: a newcomer may open no parley, and the row says so').toBeGreaterThan(0);
+    const campaignWithheld =
+      tierOf(h.runtime.world.map, holdingOf(h.runtime.world, filler.principalId as never).system) === 'COMMONS' ? 1 : 0;
+    expect(campaignWithheld, 'non-vacuity: a Commons holding can stage no campaign').toBe(1);
     expect(Number(withheld['count'])).toBe(
       rows.length * (idle.length - 1) +
         boundLanes +
         worksWithheld +
         tradeWithheld +
         riskWithheld +
-        grantWithheld,
+        grantWithheld +
+        parleyWithheld +
+        campaignWithheld,
     );
     expect(
       (withheld['verbs'] ?? []) as string[],

@@ -383,9 +383,9 @@ describe('the three defences that only bite when something else has already gone
     // ── THE MUTATION THAT WAS INVISIBLE, AND WHY ─────────────────────────────
     //
     // Changing `seize` to return `args.want` instead of the measured total passed every
-    // test, because in the ordinary case the two are equal: `standingOf` and `seize` read
+    // test, because in the ordinary case the two are equal: `availableAt` and `seize` read
     // the same lots. The one path where they part company is `MAX_SEIZE_LOTS` — the
-    // seizure walks a bounded number of lots (scar #3) while `standingOf` counts them all
+    // seizure walks a bounded number of lots (scar #3) while `availableAt` counts them all
     // — and that path is exactly the A5′ hazard: the raid would record a loss larger than
     // the ledger produced, permanently, against a real agent.
     //
@@ -532,7 +532,7 @@ describe('the three defences that only bite when something else has already gone
     // 'COMMONS'` lot filter — **cannot be pinned alone by any black-box test, and that is
     // a fact about the code rather than a gap in the suite.** Removing it changes no
     // observable behaviour: its only consumers are target ranking, where the spawner's
-    // stage skip refuses the Commons candidate it would produce, and `standingOf`, which
+    // stage skip refuses the Commons candidate it would produce, and `availableAt`, which
     // already filters `pile.location !== stage` and so never sees a Commons pile for a
     // legal stage. It is real defence in depth, not redundant code — but a test claiming
     // to pin it would pass under its own mutation, which is a worse artifact than none.
@@ -563,7 +563,7 @@ function inertPort(): PredationPort {
     razeWorks: () => false,
     tierOf: () => 'MARCHES',
     handsDefending: () => [],
-    standingOf: () => qty(0),
+    availableAt: () => qty(0),
     // No battle book at all, so nothing is counting any raid's hulls and every drawn force
     // stands. `null` rather than 0 for `readForce`'s stated reason: 0 would be a free repulse.
     raidForceLeft: () => null, swayAt: fullSway,

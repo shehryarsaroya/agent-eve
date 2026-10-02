@@ -273,6 +273,7 @@ const CAPS: Readonly<Record<string, Cap>> = {
   MAX_LIST_ROWS: { value: observe.MAX_LIST_ROWS, class: 'LEGIBILITY', why: 'observation' },
   MAX_DOSSIER_OFFERS: { value: observe.MAX_DOSSIER_OFFERS, class: 'LEGIBILITY', why: 'observation' },
   MAX_PARLEY_AFFORDANCES: { value: observe.MAX_PARLEY_AFFORDANCES, class: 'LEGIBILITY', why: 'observation' },
+  MAX_OFFICE_OFFERS: { value: observe.MAX_OFFICE_OFFERS, class: 'LEGIBILITY', why: 'observation' },
   MAX_LEVY_CARRY_OFFERS: { value: levy.MAX_LEVY_CARRY_OFFERS, class: 'LEGIBILITY', why: 'observation' },
   MAX_GRANT_OFFERS: { value: runtime.MAX_GRANT_OFFERS, class: 'LEGIBILITY', why: 'observation' },
   MAX_RELATIONS: { value: runtime.MAX_RELATIONS, class: 'LEGIBILITY', why: 'observation' },

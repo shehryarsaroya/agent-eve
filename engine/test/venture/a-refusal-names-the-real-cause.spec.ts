@@ -22,7 +22,7 @@ import { setSpeed } from '../../src/core/time.js';
 import type { HandId, PrincipalId, SystemId, VentureId } from '../../src/core/types.js';
 import { openIndices } from '../../src/venture/index.js';
 import { commonsSystems } from '../../src/world/index.js';
-import { FILL_REFUSAL_NOTE, Runtime, type PendingCorrection } from '../../src/sim/runtime.js';
+import { FILL_REFUSAL_NOTE, lostContestNote, Runtime, type PendingCorrection } from '../../src/sim/runtime.js';
 
 const ALPHA = 'p:alpha' as PrincipalId;
 const BRAVO = 'p:bravo' as PrincipalId;
@@ -95,14 +95,57 @@ describe('a refusal about an ABANDONED venture says so, and only so', () => {
     expect(stale?.invariant).toBe('PROP-V6');
   });
 
-  it('a slot a rival really did take is still reported as a lost contest', () => {
-    // The other side of the label, so the fix cannot pass by never saying LOST_CONTEST at all.
+  // ── ★ "IN THE SAME TICK" WAS SAID OF EVERY LOSS, AND THIS TEST PINNED THE FALSE CASE ─────────────
+  //
+  // It read *"a slot a rival really did take is still reported as a lost contest"*, with BRAVO filling
+  // one tick and CHARLIE asking the NEXT — and asserted the sentence "Another principal took this slot
+  // in the same tick". No contest happened: preference and stake only order requests that land in the
+  // same tick, and BRAVO had held the slot for a tick already (`lostContestNote`). Split in two, so the
+  // label is still proved to fire where it is true.
+  it('a slot filled at an EARLIER tick says when, and that no contest was held', () => {
     const { runtime, stage } = world('refusal-contest');
     expect(act(runtime, ALPHA, 'create', { kind: 'HAUL', stage, value: 12_000 })).toBeNull();
     const v = runtime.ventures.all().find((x) => x.creator === ALPHA && x.state === 'FORMING');
     if (v === undefined) throw new Error('create did not mint a venture');
     expect(act(runtime, BRAVO, 'fill_role', { venture: v.id, role: 1, hand: idleOf(runtime, BRAVO) })).toBeNull();
+    const filledAt = runtime.ventures.require(v.id).roles[1]?.filledAtTick;
     const refusal = act(runtime, CHARLIE, 'fill_role', { venture: v.id, role: 1, hand: idleOf(runtime, CHARLIE) });
-    expect(refusal?.hint).toContain(FILL_REFUSAL_NOTE.LOST_CONTEST);
+    expect(refusal?.hint, 'nobody took it "in the same tick"').not.toContain(FILL_REFUSAL_NOTE.LOST_CONTEST);
+    expect(refusal?.hint).toContain(`already filled at tick ${String(filledAt)}`);
+    expect(refusal?.hint).toContain('SAME tick');
+  });
+
+  it('a slot a rival really did take in the same tick is still reported as a lost contest', () => {
+    // The other side of the label, so the fix cannot pass by never saying LOST_CONTEST at all.
+    const { runtime, stage } = world('refusal-contest-same');
+    expect(act(runtime, ALPHA, 'create', { kind: 'HAUL', stage, value: 12_000 })).toBeNull();
+    const v = runtime.ventures.all().find((x) => x.creator === ALPHA && x.state === 'FORMING');
+    if (v === undefined) throw new Error('create did not mint a venture');
+    for (const [who, seq] of [[BRAVO, 1], [CHARLIE, 2]] as const) {
+      const outcome = runtime.engine.submit({
+        principal: who,
+        verb: 'fill_role',
+        params: { venture: v.id, role: 1, hand: idleOf(runtime, who) },
+        clientSequence: seq,
+        arrivalMs: seq,
+        decisionSource: 'LIVE',
+      });
+      if (!outcome.ok) throw new Error(`submit: ${outcome.invariant}`);
+    }
+    runtime.runTick();
+    const lost = [BRAVO, CHARLIE]
+      .map((p) => runtime.takeCorrections(p)[0])
+      .find((c) => c !== undefined);
+    expect(lost, 'non-vacuity: one of the two lost').toBeDefined();
+    expect(lost?.hint).toContain(FILL_REFUSAL_NOTE.LOST_CONTEST);
+  });
+
+  it('the note reads the role as it stands: same tick, an earlier tick, or vacated after the label', () => {
+    // The third branch is the one no cheap world produces — a winner vacated AFTER the losers were
+    // labelled (a stake that could not be escrowed, a grand role re-checked) — so the pure function is
+    // pinned directly, all three ways.
+    expect(lostContestNote({ filledByPrincipal: BRAVO, filledAtTick: 9 }, 9)).toBe(FILL_REFUSAL_NOTE.LOST_CONTEST);
+    expect(lostContestNote({ filledByPrincipal: BRAVO, filledAtTick: 4 }, 9)).toContain('already filled at tick 4');
+    expect(lostContestNote({ filledByPrincipal: null, filledAtTick: null }, 9)).toContain('OPEN');
   });
 });
