@@ -117,6 +117,17 @@ describe.skipIf(!built)('the real engine behind the connector', () => {
       observed = await call('eve_observe');
     }
     expect(observed).toMatchObject({ httpStatus: 200, mcpError: false });
+    // live.json is written to the frames directory every tick and served by nginx off disk — the
+    // engine's own /frames/ route does not serve it — so the service reads the directory
+    // (production: nginx's loopback listener) and eve_map keeps the live clock once a tick has run.
+    let map = payload(await anonymous.callTool({ name: 'eve_map', arguments: {} }));
+    for (let i = 0; i < 20 && typeof map['phase'] !== 'string'; i++) {
+      await sleep(500);
+      map = payload(await anonymous.callTool({ name: 'eve_map', arguments: {} }));
+    }
+    expect(typeof map['phase']).toBe('string');
+    expect(typeof map['ticksUntilReckoning']).toBe('number');
+    expect(typeof map['tick']).toBe('number');
     // Claude takes tool results up to about 150,000 characters; a fresh world is ~33,000.
     expect(JSON.stringify(observed).length).toBeLessThan(150_000);
     const affordances = (observed['observation'] as { affordances: { verb: string; params: Record<string, unknown>; quote_id?: string }[] }).affordances;

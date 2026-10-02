@@ -33,7 +33,10 @@ export class PublicFrames implements FramesSource {
   async get(name: FrameName): Promise<Record<string, unknown> | null> {
     const cached = this.#cache.get(name);
     const now = Date.now();
-    if (cached !== undefined && now - cached.at < this.#ttlMs) return cached.value;
+    // A frame that is not there yet (a new world before its first tick or Reckoning) is asked for
+    // again after a second rather than the full TTL, so it appears as soon as it is written.
+    const ttl = cached?.value === null ? Math.min(this.#ttlMs, 1_000) : this.#ttlMs;
+    if (cached !== undefined && now - cached.at < ttl) return cached.value;
     const value = await this.#read(name);
     this.#cache.set(name, { at: now, value });
     return value;

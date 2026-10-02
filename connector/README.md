@@ -35,6 +35,7 @@ Status: **built and tested, not deployed.** Nothing in any cloud was created or 
 | Consent page | `public/oauth/` | Static; `consent-flow.mjs` is the logic, `consent.js` the DOM |
 | Accounts, keys, signing log | `migrations/001_eve_mcp.sql` | In the engine's Postgres, own schema and role; **not** in Supabase |
 | Audience hook | `supabase/access-token-hook.sql` | Stamps `aud` = the resource on OAuth-client tokens (see §6) |
+| Public frames | `src/frames.ts` | Read from the frames **directory**, through nginx's loopback-only listener (8811) in production — **never through the engine's port**: the engine's `/frames/` route serves `latest.json` and the archive but not `live.json` (nginx serves that off disk), so `eve_map` would silently lose the live clock and `eve_dossier`'s live lines would go stale. The config refuses a frames URL on the engine's origin; the e2e test asserts `eve_map` carries `phase` and `ticksUntilReckoning` |
 | Deploy | `../deploy/deploy-mcp.py`, `provision-mcp.py`, `agenteve-mcp.service`, `nginx-mcp-agenteve.conf` | Written, not run |
 
 Code the service shares with the stdio bridge is **imported, not copied** (bundled at build): the
@@ -201,7 +202,7 @@ CIMD, which Supabase cannot do (§6).
 ```sh
 cd connector
 npm ci
-npm test                 # 79 tests in 14 files, ~13 s
+npm test                 # 80 tests in 14 files, ~13 s
 npm run typecheck
 npm run build            # dist/main.mjs, dist/migrate.mjs
 ```

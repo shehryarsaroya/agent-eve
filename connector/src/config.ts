@@ -162,6 +162,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const framesUrl = optionalUrl(env, 'EVE_FRAMES_URL');
   if (framesDir === null && framesUrl === null) throw new ConfigError('Set EVE_FRAMES_DIR or EVE_FRAMES_URL so the spectator tools can read the public frames.');
   if (framesUrl !== null && !framesUrl.endsWith('/')) throw new ConfigError('EVE_FRAMES_URL must end with a slash.');
+  // The engine's own /frames/ route serves latest.json and the archive but NOT live.json (nginx
+  // serves that off disk), so frames read through the engine's port would silently lose the live
+  // clock: eve_map falls back to the settled frame, eve_dossier's live lines go stale.
+  if (framesUrl !== null && new URL(framesUrl).origin === new URL(engineUrl).origin) {
+    throw new ConfigError(
+      "EVE_FRAMES_URL must not point at the engine: its /frames/ route does not serve live.json. Use nginx's frames listener (http://127.0.0.1:8811/frames/), the public site, or EVE_FRAMES_DIR.",
+    );
+  }
   const gatewayRaw = env['EVE_GATEWAY_SECRET'];
   const pattern = env['EVE_MCP_INBAND_AUTH_CLIENTS']?.trim() || 'openai|chatgpt';
   let inbandAuthClients: RegExp;
