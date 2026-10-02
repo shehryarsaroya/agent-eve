@@ -212,13 +212,18 @@ function planOrder(ctx: PlaceContext, req: TradeRequest, replacing: Order | null
       const held = ctx.ledger.account(storesAccount(ctx.principal)) === undefined
         ? minor(0)
         : ctx.ledger.freeBalance(storesAccount(ctx.principal));
-      const endowed = ctx.ledger.endowments.remaining(ctx.principal);
+      // ★ Clamped to the balance it is a part of: the endowment counter falls only when currency is
+      // destroyed, so a stake LOCKED out of an untouched endowment read "your unlocked balance is
+      // 245200, of which 250000 is ENDOWMENT". The part of the unlocked balance that is endowment is
+      // never more than the balance, and `held - inHeld` is then the `free` the sentence ends on.
+      const remaining = ctx.ledger.endowments.remaining(ctx.principal);
+      const endowed = Math.min(remaining, held);
       return reject(
         'A7',
         `a buy order escrows the maximum it could spend: ${String(wanted)} x ${String(unitPrice)} = ` +
           `${String(required)}, and you have ${String(free)} TRANSFERABLE. An order that cannot be escrowed is ` +
           'refused rather than half-placed — unescrowed depth is fake depth. ' +
-          (endowed > 0
+          (remaining > 0
             ? `THIS IS NOT YOUR BALANCE. Your unlocked balance is ${String(held)}, of which ` +
               `${String(endowed)} is enrolment ENDOWMENT and may not be sent to another principal, ` +
               `leaving ${String(free)} — the same figure \`market.transferable_minor\` publishes and ` +

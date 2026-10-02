@@ -13580,9 +13580,11 @@ export class Runtime {
         officeHolders: offices,
         // STRONGBOX is asserted by `assertFrameBudgets` when the clause forbids offices, because a
         // viewer reading a pooled treasury needs to know at a glance whether anyone can touch it.
+        // ★ POOLED is the TREASURY, not the head-count: joining pools nothing (`syndicate/apply.ts`),
+        // so "2 POOLED" printed over an empty pool read as two members' stakes nobody had made.
         legend: row.charter.treasuryOffices
-          ? `${String(members)} POOLED · ${String(offices)} CAN SPEND`
-          : `STRONGBOX · ${String(members)} POOLED`,
+          ? `${String(members)} MEMBERS · ${String(treasury)} POOLED · ${String(offices)} CAN SPEND`
+          : `STRONGBOX · ${String(members)} MEMBERS · ${String(treasury)} POOLED`,
       });
     }
     return out;

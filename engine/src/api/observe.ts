@@ -3307,7 +3307,10 @@ function affordancesFor(
           `${crossing.good} travel with your body (max_contingent_liability, in UNITS not currency) and can ` +
           `be raided at ${destination} from that tick` +
           `${crossing.pledgedQty > 0 ? `; ${String(crossing.pledgedQty)} pledged units stay at ${crossing.from}, because a pledged lot cannot be sent away` : ''}. ` +
-          'In exchange your hands stop being Commons-bound and can go anywhere. World raids aim at the ' +
+          // ★ The holding and its goods move; the hands do not (`vGraduate` never touches one) — said,
+          // because a Charge, a demand or a role at the new seat all need a hand standing there.
+          `Your HANDS do not move with it: each stays where it stands and needs one \`move\` per gate to ` +
+          `reach ${destination}, and from that tick none is Commons-bound. World raids aim at the ` +
           'principal with the most goods standing outside the Commons — read header.raid_schedule before ' +
           'you go. This crossing is a one-off charge; territory taken out there carries a RECURRING Charge ' +
           'every Reckoning, and obligations.charge is where it appears.',
@@ -6107,9 +6110,13 @@ function ventureRow(
      * have made the field mean two different things depending on who read it.
      * ══════════════════════════════════════════════════════════════════════════
      */
+    // ★ And 0 on an ABANDONED venture, which retired with every escrow refunded and pays nobody,
+    // ever: the p50 take of roles that will never be paid read as money still coming.
     projected_settlement:
-      yourTakeAtP50(venture, principal) +
-      (venture.creator === principal ? projectedSettlement(venture, runtime.engine.tick).creatorResidualAtP50 : 0),
+      venture.state === 'ABANDONED'
+        ? 0
+        : yourTakeAtP50(venture, principal) +
+          (venture.creator === principal ? projectedSettlement(venture, runtime.engine.tick).creatorResidualAtP50 : 0),
     talks: runtime.talksFor(principal).filter((t) => t.venture === venture.id).length,
   };
 }
