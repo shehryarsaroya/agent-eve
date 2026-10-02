@@ -52,8 +52,9 @@
 >   and `header.season` is ONE shared fragment for every reader outside a crew (a crew member's own
 >   stake stays in its envelope).
 >   The merge had put an O(P) term back into every observation (1,000 principals: 1.94 → 3.23 ms, the
->   burst 1.9 → 3.2 s); profiled and removed, the merged observation costs ~20% more than the scale
->   lane's at 300 and at 1,000 alike — it is ~11% larger — and the burst is O(P) again.
+>   burst 1.9 → 3.2 s); profiled and removed, the merged observation costs 16–17% more than the scale
+>   lane's at 300 and at 1,000 alike — it is ~11% larger — and the burst grows with the population the
+>   way the scale lane's does (0.4 → 1.9 s from 300 to 1,000, against 0.4 → 1.6).
 > - Every new cap classified in `capacity.spec.ts` (season 5, contact 9); `MAX_PARLEY_ENTRIES` stays
 >   FLAGGED, now with the reason its lifetime refusal is load-bearing for A15. SPEC §3 carries FINALE,
 >   GRAND VENTURE, DORMANT, DIRECTORY and the CLAIM row's three endings (LAPSED · CEDED · CLOSED); §7.3
@@ -64,17 +65,20 @@
 >   (one creator left after the fork at 6), and the season fixture stops having a creator sign its own
 >   candidate.
 >
-> **Measured on the merged tree.** `npm ci && npm run gate0`: GATE0_PLACEHOLDER. A 12-member heuristic
+> **Measured on the merged tree.** `npm ci && npm run gate0`: tsc 0 · lint 0 · DET-8 and PROP-O3 pass · **368 files, 4,349 passed, 1 skipped, 0 failed** (14 min 2 s wall, run on `ce381b6` from a clean `npm ci`; the follow integration test, flaky under load on the base, passed in every full run on the merged tree — its root cause, undici reusing a keep-alive socket the mock server closed while a synchronous 288-tick run held the event loop, is fixed in the test harness by the season lane's `807a80f`). A 12-member heuristic
 > world from genesis through the boundary (seed `fs-a`, `instant`, 4,080 ticks): **0 invariant
 > violations**; 1,465 ventures opened — 174 settled, 22 defaulted, 1,252 abandoned unfilled, 17 still
 > open; elective promises honoured 370, defaults 31; **11 four-role BUILDs, 10 settled**; the grand
 > venture formed once (p:corvid, MERCENARY), delivered 322,016 and its creed kept the yield — `BROKEN`,
 > three shares unpaid; DORMANT 0 (a cast that acts every tick never sleeps); letters 0 (the heuristic
-> cast writes none); growth 0 (expected at 12); `levyShort` 0 in every Reckoning but the FINALE's,
-> 14,767 (the whole constellation ran out of the good; the common base reads 20,528 there on this
-> seed). Season-one adoption round trip (`season-one-survives-adoption.spec.ts`): a boot adopts the
+> cast writes none); growth 0 (expected at 12); no Frontier claim was standing at the boundary, so
+> `CLOSED` is proven by `boundary.spec.ts` rather than by this run; `levyShort` 0 in every Reckoning
+> but the FINALE's, 14,767 (the whole constellation ran out of the good; the common base reads 20,528
+> there on this seed). The same season replayed on `ce381b6` ends on the state hash it ended on before
+> the read-epoch commits (`3160799b41ea…` at tick 4,079), so moving those reads moved no fact.
+> Season-one adoption round trip (`season-one-survives-adoption.spec.ts`): a boot adopts the
 > FINALE's checkpoint across a closed season, a grown region, a DORMANT WORKS and a letter answered
-> after it, replays Season 2's first 30 ticks and reaches the live head hash. At 300 principals (CPU clock, paired with the scale lane's tip): tick 15.2 ms mean against 18.4, the Reckoning 38 ms against 38, one observation 1.48 ms against 1.28 and the burst after the Reckoning 0.4 s against 0.4; at 1,000, 1.90 against 1.63 ms and 1.9 against 1.6 s — scale's gains kept (`SCALE-2026-10-01.md` §10).
+> after it, replays Season 2's first 30 ticks and reaches the live head hash. At 300 principals (CPU clock, paired with the scale lane's tip): tick 15.2 ms mean against 18.4, the Reckoning 38 ms against 38, one observation 1.48 ms against 1.28 and the burst after the Reckoning 0.4 s against 0.4; at 1,000, 1.90 against 1.63 ms and 1.9 against 1.6 s — scale's gains kept (`SCALE-2026-10-01.md` §10). Re-read alone on `ce381b6`: tick 16.9 ms, the Reckoning 40 ms, 1.48 ms an observation, the burst 0.4 s, the same state `f25d19578f51`.
 >
 > **Still open, for the owner:** (1) `MAX_PARLEY_ENTRIES` refuses the 513th parley of the world's life
 > (both scale and contact flagged it; the refusal keeps the A15 counts honest, so the fix is a

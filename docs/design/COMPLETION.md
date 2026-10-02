@@ -20,12 +20,12 @@ this one are each lane alone; read this block wherever they disagree.*
 |---|---|
 | `RULES_VERSION` | **41** — one bump for scale, stakes and chores, the season, contact |
 | `tsc` · lint · audits | 0 · 0 · DET-8 and PROP-O3 pass |
-| vitest (`npm ci && npm run gate0`) | GATE0_ROW |
+| vitest (`npm ci && npm run gate0`) | **368 files, 4,349 passed, 1 skipped, 0 failed** (14 min 2 s, clean `npm ci`, `ce381b6`) |
 | budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** · venture kinds 8/8 — none spent by the merge |
 | client | one asset version, `?v=41`; every screen renders headless against a season of frames with no script error |
-| a whole season, played (fs-a, 12 members, `instant`) | **0 violations**; 1,465 ventures · 174 settled · 22 defaulted · 1,252 abandoned; **11 four-role BUILDs** (10 settled); one grand venture, `BROKEN` by a MERCENARY creed (322,016 delivered, three shares kept); DORMANT 0 · letters 0 · growth 0; `levyShort` 0 every Reckoning but the FINALE (14,767; the base reads 20,528 on this seed) |
+| a whole season, played (fs-a, 12 members, `instant`) | **0 violations**; 1,465 ventures · 174 settled · 22 defaulted · 1,252 abandoned; **11 four-role BUILDs** (10 settled); one grand venture, `BROKEN` by a MERCENARY creed (322,016 delivered, three shares unpaid); DORMANT 0 · letters 0 · growth 0 · no Frontier claim standing at the boundary (`CLOSED` is proven by `boundary.spec.ts`); `levyShort` 0 every Reckoning but the FINALE (14,767; the base reads 20,528 on this seed); replayed on `ce381b6`, the same final state hash |
 | adoption | `season-one-survives-adoption.spec.ts`: the FINALE checkpoint adopted across a closed season, a grown region, a DORMANT WORKS and a letter; the head hash reproduced |
-| scale (CPU clock, paired with the scale lane) | 300 principals: tick **15.2** ms (lane 18.4) · Reckoning **38** (38) · one observation **1.48** ms (1.28) · burst **0.4 s** (0.4); 1,000: **1.90** ms (1.63) · burst **1.9 s** (1.6) — a constant ~16% for a ~11% larger observation, scale's O(P) burst kept |
+| scale (CPU clock, paired with the scale lane) | 300 principals: tick **15.2** ms (lane 18.4) · Reckoning **38** (38) · one observation **1.48** ms (1.28) · burst **0.4 s** (0.4); 1,000: **1.90** ms (1.63) · burst **1.9 s** (1.6) — a constant 16–17% for a ~11% larger observation, scale's O(P) burst kept; re-read alone on `ce381b6`, 300: tick 16.9 ms · Reckoning 40 · 1.48 ms · 0.4 s |
 | cast contract | 67 units · analytic **118,219** of 120,000 · largest reachable **111,455** (margin 8,545) |
 
 ---
