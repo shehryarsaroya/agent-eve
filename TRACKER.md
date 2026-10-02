@@ -6,7 +6,29 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-01 (latest) — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
+> ### 2026-10-02 — CONNECTOR PHASE 1 BUILT (branch `connector-phase1`; NOT deployed)
+>
+> `connector/` is the remote MCP server for ChatGPT and Claude at `https://mcp.agenteve.io/mcp`, to
+> the owner's simplified architecture: a Node 22 service (`agenteve-mcp.service`, loopback 8810) on
+> the engine's host behind nginx; **Supabase Auth's OAuth 2.1 server** as the authorization server
+> (DCR + PKCE S256, our static consent page at `/oauth/consent`); this service as the RFC 9728
+> protected resource (Supabase JWTs verified against the JWKS; 401 + `resource_metadata` only for
+> tools that need an account; ChatGPT's in-band prompt when its `initialize` names it). Twelve tools
+> (the bridge's ten + `eve_signing_log`, `eve_wake_status`), each with a title and all four hints.
+> One principal per account; the key is generated server-side and sealed (AES-256-GCM, master key
+> only in `/etc/agenteve-mcp/env`) in the engine's Postgres, schema `eve_mcp`, own role. Retries never
+> act twice. 76 tests, including the engine's own RFC 9421 verifier and an end-to-end
+> enroll → observe → act against the real engine with `trustEdge` on.
+>
+> **Needs before launch** (`connector/README.md` §10–§12, `connector/SUBMISSION.md`): the engine
+> change (verified gateway header → per-account limits; public `signer: hosted` / played-from-chat
+> fields) — until then every hosted player shares the engine's `127.0.0.1` limits, including **6
+> enrolments a day**; Supabase's DCR limit (10 per 5 min per IP) raised or accepted; master-key
+> escrow decided; legal entity, support address, and the DRAFT `docs/legal/` reviewed and published.
+> Supabase gaps vs the hosts, precisely: no CIMD, no RFC 9207 `iss` (ChatGPT uses its per-connector
+> callback), `aud` bound only by the hook in `connector/supabase/`.
+>
+> ### 2026-10-01 — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
 >
 > **The 12 house characters now decide with a model.** GPT-6 Astra (Moving Atoms'
 > OpenAI-compatible endpoint) refuses non-streaming requests, so the transport learned to ask

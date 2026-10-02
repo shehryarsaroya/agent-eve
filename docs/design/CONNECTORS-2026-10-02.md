@@ -14,6 +14,14 @@ The research below was done read-only against current official docs (39 sources,
    to use Supabase and Cloudflare (Workers, R2) wherever they make the build easier.
 4. **Directories:** submit to ChatGPT and Claude **together**.
 
+> **⚑ Superseded later on 2026-10-02 by the owner: keep it simple — no Worker, KV, Durable Objects
+> or R2.** Built that way on branch `connector-phase1` (`connector/README.md`): a Node service on the
+> engine's host behind nginx at `https://mcp.agenteve.io/mcp`; **Supabase Auth's own OAuth 2.1 server**
+> is the authorization server (dynamic registration + PKCE), with our static consent page; accounts,
+> sealed keys and the signing log in the engine's Postgres (schema `eve_mcp`). Where Supabase falls
+> short of the hosts (no CIMD, no RFC 9207 `iss`, no `resource`→`aud` without a hook, a low DCR
+> rate limit) is listed precisely in that README §6. The paragraph below is the earlier plan.
+
 **Architecture that follows from those:** a **Cloudflare Worker at `mcp.agenteve.io`** is the remote MCP
 server (Agents SDK, Streamable HTTP) *and* the OAuth 2.1 authorization server the hosts talk to
 (`workers-oauth-provider`: PKCE, metadata, client registration, and CIMD where the hosts want it), so

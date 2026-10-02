@@ -155,6 +155,17 @@ describe('playing', () => {
     expect((await store.principal(sub))?.nextSequence).toBeGreaterThan(3);
   });
 
+  it('sends a fully refused batch again, since it acted nothing the first time', async () => {
+    const { client } = await enrolledClient('corrected');
+    const first = await tool(client, 'eve_act', { actions: [{ verb: 'invent_money', params: {} }] });
+    expect((first['outcome'] as { accepted: unknown[] }).accepted).toHaveLength(0);
+    const again = await tool(client, 'eve_act', { actions: [{ verb: 'invent_money', params: {} }] });
+    expect(again['replayed']).toBe(false);
+    const keys = h.engine.calls.filter((c) => c.path === '/api/act').map((c) => (c.payload as { idempotencyKey: string }).idempotencyKey);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
   it('re-sends with the same key when the engine never answered', async () => {
     const { client } = await enrolledClient('patient');
     h.engine.override = (call) => (call.path === '/api/act' ? new EngineError('the engine did not answer in time') : undefined);

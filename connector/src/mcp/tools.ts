@@ -458,8 +458,15 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
           args.idempotencyKey === undefined
             ? await store.latestByContent(auth.accountId, contentHash, config.retryWindowSeconds)
             : await store.latestByKey(auth.accountId, args.idempotencyKey);
-        const key = args.idempotencyKey ?? previous?.idempotencyKey ?? `mcp-${randomBytes(18).toString('base64url')}`;
-        if (previous !== null && previous.httpStatus === 200) {
+        // A repeat of a batch the engine processed is a retry — unless it accepted nothing: then
+        // sending it again cannot act twice, and an agent resending after a correction (agent.md
+        // §0.4) means it. An explicit key always replays, as the engine's own idempotency does.
+        const processed = previous !== null && previous.httpStatus === 200;
+        const actedBefore = (previous?.outcome?.accepted.length ?? 0) > 0;
+        const replay = processed && (args.idempotencyKey !== undefined || actedBefore);
+        const reuse = previous !== null && !processed ? previous.idempotencyKey : null;
+        const key = args.idempotencyKey ?? (replay ? previous?.idempotencyKey : reuse) ?? `mcp-${randomBytes(18).toString('base64url')}`;
+        if (replay && previous !== null) {
           // The engine already processed this batch. Never send it again: answer from the log.
           return {
             value: {
